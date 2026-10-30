@@ -64,7 +64,7 @@ pub fn width(ty: &str) -> usize {
 pub fn recovery_type(ty: &str) -> &str {
     match ty {
         "Position" => "Box",
-        "number" => "Number",
+        "number" | "Int" | "Nat" => "Number",
         t => t,
     }
 }

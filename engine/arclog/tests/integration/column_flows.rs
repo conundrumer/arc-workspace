@@ -296,7 +296,7 @@ fn a_part_column_of_a_rigid_det_is_computed_where_a_pose_moves_its_type_and_a_co
     let form = NodePath::default().child(1);
     let node = (0..program.program.graph.nodes.len() as u32).map(GraphNodeIndex).find(|node| *program.program.form_of(*node) == form).expect("the node of the `RIGID_DET` form");
     let part = [OutputStep::Part(DeclaredName::Written("&cell".into()))];
-    let flows = program.column_flows(node, Some(&part), &[ValueType::Number, ValueType::Box, ValueType::Color], registry);
+    let flows = program.column_flows(node, Some(&part), &[ValueType::Int, ValueType::Box, ValueType::Color], registry);
     let kinds = |column: usize| flows[column].iter().map(|source| source.kind).collect::<Vec<_>>();
     assert_eq!(kinds(1), [SourceKind::Computed], "{flows:?}");
     assert_eq!(kinds(2), [SourceKind::Copy], "{flows:?}");
@@ -365,7 +365,7 @@ fn the_pose_output_of_a_rigid_det_reads_the_atoms_of_its_instance_clause_and_no_
     let registry = Registry::get();
     let form = NodePath::default().child(2);
     let node = (0..program.program.graph.nodes.len() as u32).map(GraphNodeIndex).find(|node| *program.program.form_of(*node) == form).expect("the node of the `RIGID_DET` form");
-    let flows = program.column_flows(node, Some(&[OutputStep::Pose]), &[ValueType::Number, ValueType::D4], registry);
+    let flows = program.column_flows(node, Some(&[OutputStep::Pose]), &[ValueType::Int, ValueType::D4], registry);
     let atoms: Vec<&NodePath> = flows[0].iter().map(|source| &source.atom).collect();
     assert_eq!(atoms, [&form.child(0).child(0)], "the instance clause's atom, where the part's atom is at 2.1: {flows:?}");
 }

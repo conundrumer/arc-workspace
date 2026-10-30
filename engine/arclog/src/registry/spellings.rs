@@ -54,6 +54,8 @@ pub(super) fn orientation_type(name: TypeName) -> Option<OrientationType> {
         TypeName::Sym => Some(OrientationType::Sym),
         TypeName::Sense => Some(OrientationType::Sense),
         TypeName::Number
+        | TypeName::Int
+        | TypeName::Nat
         | TypeName::Color
         | TypeName::Example
         | TypeName::Unit

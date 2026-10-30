@@ -103,6 +103,12 @@ impl PyStudyProgram {
         Ok(Self { program, settings })
     }
 
+    /// Proven local static-pruning conclusions at original AST paths.
+    fn static_prune_json(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| arclog::check::static_prune::export(self.program.checked(), Registry::get()))
+            .map(|value| value.to_string()).map_err(PyValueError::new_err)
+    }
+
     /// Structured engine evidence. JSON schema/capabilities are versioned.
     #[staticmethod]
     fn decode_term_json(type_name: &str, packed: i64) -> PyResult<String> {

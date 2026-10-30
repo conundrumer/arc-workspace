@@ -40,7 +40,10 @@ pub struct Param {
 /// [`crate::types::ValueType`], and the file keeps the name it writes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TypeName {
+    /// Historical source spelling, an alias of Int.
     Number,
+    Int,
+    Nat,
     Color,
     Example,
     Unit,
@@ -70,7 +73,8 @@ impl TypeName {
     pub fn value_type(self) -> crate::types::ValueType {
         use crate::types::ValueType;
         match self {
-            TypeName::Number => ValueType::Number,
+            TypeName::Number | TypeName::Int => ValueType::Int,
+            TypeName::Nat => ValueType::Nat,
             TypeName::Color => ValueType::Color,
             TypeName::Example => ValueType::Example,
             TypeName::Unit => ValueType::Unit,

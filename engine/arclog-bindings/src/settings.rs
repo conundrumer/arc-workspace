@@ -20,6 +20,7 @@ pub struct PyDecodeSettings {
     projection_cap: u64,
     table_work_cap: u64,
     rule_tests: bool,
+    static_pruning: bool,
 }
 
 impl PyDecodeSettings {
@@ -34,6 +35,7 @@ impl PyDecodeSettings {
             projection_cap: settings.projection_cap,
             table_work_cap: settings.table_work_cap,
             rule_tests: settings.rule_tests,
+            static_pruning: settings.static_pruning,
         }
     }
 
@@ -48,6 +50,7 @@ impl PyDecodeSettings {
             projection_cap: self.projection_cap,
             table_work_cap: self.table_work_cap,
             rule_tests: self.rule_tests,
+            static_pruning: self.static_pruning,
             ..DecodeSettings::default()
         })
     }
@@ -63,7 +66,7 @@ impl PyDecodeSettings {
     }
 
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None, static_pruning=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -74,6 +77,7 @@ impl PyDecodeSettings {
         projection_cap: Option<u64>,
         table_work_cap: Option<u64>,
         rule_tests: Option<bool>,
+        static_pruning: Option<bool>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::synthesis());
         let settings = PyDecodeSettings {
@@ -86,6 +90,7 @@ impl PyDecodeSettings {
             projection_cap: projection_cap.unwrap_or(base.projection_cap),
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
             rule_tests: rule_tests.unwrap_or(base.rule_tests),
+            static_pruning: static_pruning.unwrap_or(base.static_pruning),
         };
         settings.engine()?;
         Ok(settings)

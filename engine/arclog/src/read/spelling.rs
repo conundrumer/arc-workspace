@@ -64,6 +64,8 @@ pub(crate) const ZERO: &str = "0";
 /// The column types of an arcdata `param` form.
 pub(crate) const TYPE_NAMES: &[(TypeName, &str)] = &[
     (TypeName::Number, "number"),
+    (TypeName::Int, "Int"),
+    (TypeName::Nat, "Nat"),
     (TypeName::Color, "Color"),
     (TypeName::Example, "Example"),
     (TypeName::Unit, "Unit"),

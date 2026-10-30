@@ -58,7 +58,7 @@ fn a_clause_of_equal_content_takes_the_types_of_its_own_relation_s_clauses() {
     let mut cache = CheckCache::default();
     let boxes = check(&zero_typed_clause("(input (:P *D))"), &mut cache).expect("every check passes");
     let numbers = check(&zero_typed_clause("(&counts (:N *D))"), &mut cache).expect("every check passes");
-    assert_eq!((first_head_type(&boxes), first_head_type(&numbers)), (Some(ValueType::Position), Some(ValueType::Number)));
+    assert_eq!((first_head_type(&boxes), first_head_type(&numbers)), (Some(ValueType::Position), Some(ValueType::Nat)));
 }
 
 #[test]

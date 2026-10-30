@@ -54,6 +54,8 @@ pub struct DecodeSettings {
     /// beside the step's other results, which ends no decode and changes no
     /// mask.
     pub rule_tests: bool,
+    /// Apply proven local atom pruning while generating decoder offers.
+    pub static_pruning: bool,
 }
 
 impl DecodeSettings {
@@ -83,6 +85,7 @@ impl Default for DecodeSettings {
             table_work_cap: 1 << 20,
             check_copies: false,
             rule_tests: false,
+            static_pruning: false,
         }
     }
 }

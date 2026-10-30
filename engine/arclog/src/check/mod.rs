@@ -16,6 +16,7 @@ pub use held_det::HeldDetInterfaceError;
 pub mod grammar;
 pub mod safety;
 pub mod render_sites;
+pub mod static_prune;
 mod inference;
 pub mod instance_inputs;
 pub mod instance_sites;

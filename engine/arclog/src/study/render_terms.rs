@@ -47,7 +47,8 @@ pub fn program_orientation_domains(program:&super::StudyProgram,registry:&Regist
 
 pub fn scalar_type(name: &str) -> Result<ValueType, String> {
     Ok(match name.to_ascii_lowercase().as_str() {
-        "number" => ValueType::Number,
+        "number" | "int" => ValueType::Int,
+        "nat" => ValueType::Nat,
         "color" => ValueType::Color,
         "example" => ValueType::Example,
         "unit" => ValueType::Unit,
@@ -142,7 +143,7 @@ pub fn zero_meaning(ty: &ValueType) -> Result<Value, String> {
         return Err(format!("reserved zero is illegal at {ty:?}"));
     }
     let meaning = match ty {
-        ValueType::Number => "number zero",
+        ValueType::Int | ValueType::Nat => "number zero",
         ValueType::Offset => "zero offset: identity translation, all four margins zero",
         ValueType::Position => {
             "zero box at Position type: all four frame margins zero; not a top-left cell coordinate"
@@ -151,7 +152,7 @@ pub fn zero_meaning(ty: &ValueType) -> Result<Value, String> {
     };
     Ok(
         json!({"kind":"reserved_zero","resolved_type":format!("{ty:?}"),"encoding_u32":0,
-        "value":if *ty==ValueType::Number {json!(0)} else {json!({"top":0,"bottom":0,"left":0,"right":0})},
+        "value":if matches!(ty,ValueType::Int | ValueType::Nat) {json!(0)} else {json!({"top":0,"bottom":0,"left":0,"right":0})},
         "meaning":meaning,"documentation":"engine/docs/study-reserved-zero.md"}),
     )
 }

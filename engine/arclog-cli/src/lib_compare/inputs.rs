@@ -293,7 +293,7 @@ pub(super) fn value_kind(ty: &ValueType) -> &'static str {
 }
 
 pub(super) fn is_orientation(ty: &ValueType) -> bool {
-    !(ty.is_box() || matches!(ty, ValueType::Number | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Ident | ValueType::Record(_)))
+    !(ty.is_box() || matches!(ty, ValueType::Int | ValueType::Nat | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Ident | ValueType::Record(_)))
 }
 
 pub(super) fn constant_name(id: TermId) -> &'static str {

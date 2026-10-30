@@ -442,3 +442,58 @@ fn forced_is_the_forced_of_the_step_and_leaves_the_decode_as_it_was() {
         assert_eq!(&program, at.program(), "mask held: {held}");
     }
 }
+
+/// Source-only regression fixtures for the static-pruning grammar boundary.
+/// These use the native stream and checker; they perform no task evaluation.
+fn static_refusal(arclog: &str) -> Option<Token> {
+    let mut settings = DecodeSettings::default();
+    settings.static_pruning = true;
+    let vocabulary = Vocabulary::new(Registry::get(), &settings);
+    let stream = token_stream(&checked(arclog), &vocabulary).expect("checked fixture stream");
+    let inputs = inputs();
+    let mut decoder = Decoder::new(&inputs.task, &inputs.session, Registry::get(), &inputs.constructions, &settings);
+    for (token, emitter) in stream {
+        if emitter == Emitter::Engine { continue; }
+        match decoder.step_untested(token.clone()) {
+            Ok(_) => {},
+            Err(Refusal::Grammar(reason)) if reason.starts_with("static prune:") => return Some(token),
+            Err(error) => panic!("unexpected refusal of {token:?}: {error:?}"),
+        }
+    }
+    None
+}
+
+#[test]
+fn static_prune_review_atom_closed_by_next_relation() {
+    assert_eq!(static_refusal("(RULE &x (input *P) (inside (:A P) (:B P)) (input P (:Col *C)))"),
+        Some(Token::Fact(FactRelation::Input)));
+}
+
+#[test]
+fn static_prune_review_atom_closed_by_clause_end() {
+    assert_eq!(static_refusal("(RULE &x (input *P) (inside (:A P) (:B P)))"),
+        Some(Token::Control(Control::End)));
+}
+
+#[test]
+fn static_prune_review_wider_orientation_keeps_filter() {
+    assert_eq!(static_refusal("(RULE &x (dir8_elem (:D *D)) (input *P) (same_dist (:D D) (:P1 P) (:P2 P)))"), None);
+}
+
+#[test]
+fn static_prune_review_unadmitted_zero_equality_keeps_atom() {
+    assert_eq!(static_refusal("(RULE &x (uniform_inset (:K 0) (:B *B)))"), None);
+}
+
+#[test]
+fn static_prune_review_equal_interface_alias_uses_equality() {
+    assert_eq!(static_refusal("(RULE &x (uniform_inset (:K 0) (:B *A)) (compose (:A A) (:B 0) (:C *C)))"),
+        Some(Token::Control(Control::End)));
+}
+
+#[test]
+fn static_prune_review_changed_interface_keeps_alias_atom() {
+    // A literal zero does not satisfy compose's Offset-labelled type-rule
+    // premise. Its output is Box, whereas equality to input.P is Position.
+    assert_eq!(static_refusal("(RULE &x (input *P) (compose (:A P) (:B 0) (:C *Q)))"), None);
+}

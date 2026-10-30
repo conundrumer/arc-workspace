@@ -1,4 +1,4 @@
-//! The static types of columns and labels, and their lattice: `C4` under
+//! The static types of columns and labels, and their lattice: `Nat` under `Int`, `C4` under
 //! `D4`, `Dir` and `DiagDir` under `Dir8`, `Axis` and `DiagAxis` under
 //! `Axis4`, and `Position` and `Offset` under `Box`. A Pose type is below and
 //! above no other type.
@@ -10,7 +10,10 @@
 /// a translation, and stand under it.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ValueType {
-    Number,
+    /// Signed 32-bit integer; the historical `number` spelling reads this type.
+    Int,
+    /// Nonnegative signed-32-bit integer, a subtype of Int.
+    Nat,
     Color,
     Example,
     Unit,
@@ -95,17 +98,18 @@ impl ValueType {
 
     /// Whether `0` has a value of the type: the number zero, or the zero box.
     pub fn has_zero(&self) -> bool {
-        *self == ValueType::Number || self.is_box()
+        matches!(self, ValueType::Int | ValueType::Nat) || self.is_box()
     }
 
     /// Whether the type equals `other` or stands under it.
-    fn is_below(&self, other: &ValueType) -> bool {
+    pub fn is_below(&self, other: &ValueType) -> bool {
         self == other || self.parent().as_ref() == Some(other)
     }
 
     /// The type the type stands directly under, where it stands under one.
     fn parent(&self) -> Option<ValueType> {
         match self {
+            ValueType::Nat => Some(ValueType::Int),
             ValueType::C4 => Some(ValueType::D4),
             ValueType::Dir | ValueType::DiagDir => Some(ValueType::Dir8),
             ValueType::Axis | ValueType::DiagAxis => Some(ValueType::Axis4),
@@ -130,7 +134,8 @@ impl ValueType {
             ValueType::Axis4 => &[OrientationType::Axis, OrientationType::DiagAxis],
             ValueType::Sym => &[OrientationType::Sym],
             ValueType::Sense => &[OrientationType::Sense],
-            ValueType::Number
+            ValueType::Int
+            | ValueType::Nat
             | ValueType::Color
             | ValueType::Example
             | ValueType::Unit
@@ -152,8 +157,8 @@ impl ValueType {
     }
 
     /// Whether `<`, `<=`, `>` and `>=` may compare values of the type: true
-    /// for `number` alone.
+    /// for Int and its Nat subtype.
     pub fn admits_order(&self) -> bool {
-        *self == ValueType::Number
+        matches!(self, ValueType::Int | ValueType::Nat)
     }
 }

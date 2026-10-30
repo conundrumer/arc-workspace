@@ -545,6 +545,9 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
+                if self.context.settings.static_pruning {
+                    self.check_static_prune(&program, open.as_ref(), checks)?;
+                }
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let relation = state.open_relation().expect("an atom stands open");
                     if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
@@ -564,6 +567,61 @@ impl<'a> Decoder<'a> {
             self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
         }
         Ok((state, forced))
+    }
+
+    /// Check only conjuncts that this grammar step completed. An atom can
+    /// close on the next relation token; END can finish the entire form.
+    /// Restrict replacement certificates to flat top-level clauses for now.
+    fn check_static_prune(
+        &self,
+        program: &Node<Program>,
+        open: Option<&NodePath>,
+        checks: &PrefixChecks<'_>,
+    ) -> Result<(), Refusal> {
+        fn completed<'a>(program: &'a Node<Program>, open: Option<&NodePath>) -> Option<(&'a crate::program::Body, usize)> {
+            let crate::program::Form::Clause(clause) = program.value().forms.last()? else { return None };
+            let body = clause.value().body.value();
+            let count = match open.map(|p| &p.0[..]) {
+                Some([crate::program::path::PathStep(0), crate::program::path::PathStep(index), ..]) => (*index as usize).min(body.conjuncts.len()),
+                _ => body.conjuncts.len(),
+            };
+            Some((body, count))
+        }
+        let Some((body, count)) = completed(program, open) else { return Ok(()) };
+        let before = self.state.partial();
+        let prior = before.as_ref().filter(|(p, _)| p.value().forms.len() == program.value().forms.len())
+            .and_then(|(p, o)| completed(p, o.as_ref())).map_or(0, |(_, count)| count);
+        let type_of = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
+        for index in prior..count {
+            let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
+            let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else { continue };
+            match found.class {
+                crate::program::static_prune::Class::Unsatisfiable => return Err(Refusal::Grammar("static prune: no row satisfies the completed atom")),
+                crate::program::static_prune::Class::Valid => return Err(Refusal::Grammar("static prune: the completed atom repeats an existing test")),
+                crate::program::static_prune::Class::Alias | crate::program::static_prune::Class::Constant => {
+                    let Some(replacement) = found.replacement else { continue };
+                    // Remove the next, still-open atom through the ordinary
+                    // editor to recover this clause prefix's own declaration.
+                    // The replacement checker then PRESERVES that interface.
+                    let body_path = NodePath::default().child(0);
+                    let absolute = NodePath::top((program.value().forms.len() - 1) as u32).join(&body_path);
+                    let mut truncated = program.clone();
+                    let mut available = true;
+                    for later in ((index + 1)..body.conjuncts.len()).rev() {
+                        match truncated.apply(&crate::program::edit::Edit::RemoveConjunct { at: absolute.child(later as u32) }) {
+                            Ok(next) => truncated = next,
+                            Err(_) => { available = false; break; }
+                        }
+                    }
+                    if available && crate::check::static_prune::replacement_admitted(
+                        &self.state.resolved(self.context.registry), &truncated, &body_path, replacement, self.context.registry,
+                    ) {
+                        return Err(Refusal::Grammar("static prune: use the admitted equality binding"));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Where `state` shows a program with a form in progress, the refusal of

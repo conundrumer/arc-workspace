@@ -183,7 +183,7 @@ fn domain(proposer: &Proposer, grids: &Grids<'_>, registry: &Registry) -> Rows {
                 let colors: StableHashSet<TermId> = all().flat_map(|grid| cells(grid).map(|(_, _, c)| color(c))).collect();
                 colors.into_iter().collect()
             }
-            ColumnType::Fixed(ValueType::Number) => {
+            ColumnType::Fixed(ValueType::Int | ValueType::Nat) => {
                 let largest = all().map(|grid| height(grid).max(width(grid))).max();
                 largest.map_or_else(Vec::new, |largest| (0..=largest).map(count).collect())
             }

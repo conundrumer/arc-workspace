@@ -255,7 +255,7 @@ impl Term {
             Term::Constant(Constant::Orientation(OrientationConstant::decode(bits, admitted)))
         };
         match ty {
-            ValueType::Number => Term::Number(Number(Term::decode_number(id))),
+            ValueType::Int | ValueType::Nat => Term::Number(Number(Term::decode_number(id))),
             ValueType::Color => Term::Constant(Constant::Color(Color(bits as u8))),
             ValueType::Example => Term::Constant(Constant::Example(Example(bits as u16))),
             ValueType::Unit => Term::Constant(Constant::Unit),
@@ -498,7 +498,8 @@ pub fn encode_data_value(
             }
             Ok(ids.into())
         }
-        (ValueType::Number, DataValue::Integer(n)) => one(Term::Number(Number(*n))),
+        (ValueType::Nat, DataValue::Integer(n)) if *n >= 0 => one(Term::Number(Number(*n))),
+        (ValueType::Int, DataValue::Integer(n)) => one(Term::Number(Number(*n))),
         (ValueType::Color, DataValue::Integer(n)) => {
             let color = u8::try_from(*n).ok().and_then(Color::from_digit).ok_or_else(not_of_type)?;
             one(Term::Constant(Constant::Color(color)))
@@ -582,7 +583,7 @@ pub fn encode_param_value(
                         let position = Term::Box(margins).encode().map_err(DataValueError::MarginBound)?;
                         let value = match (after, cell) {
                             ([], DataValue::Integer(1)) => Vec::new(),
-                            ([], _) => return Err(DataValueError::NotOfType { value: cell.clone(), ty: ValueType::Number }),
+                            ([], _) => return Err(DataValueError::NotOfType { value: cell.clone(), ty: ValueType::Int }),
                             ([ty], _) => encode_data_value(cell, ty, registry, table)?.into_vec(),
                             (_, DataValue::List(cell)) => values(cell, after, table)?,
                             (_, _) => return Err(DataValueError::NotOfType { value: cell.clone(), ty: row_type(after) }),

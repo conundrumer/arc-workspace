@@ -21,8 +21,8 @@ fn broken(minimal: &[&[i32]]) -> Vec<(usize, usize, usize)> {
     let registry = Registry::get();
     let Some(LibEntry::Component(order)) = registry.entry(&LibName("Order".into())) else { panic!("Order is a component") };
     let inputs = [rows(1, &[&[1], &[2]]), rows(2, &[]), rows(2, &[]), rows(2, &[]), rows(1, &[])];
-    let numbers: Box<[ValueType]> = Box::new([ValueType::Number]);
-    let pair: Box<[ValueType]> = Box::new([ValueType::Number, ValueType::Number]);
+    let numbers: Box<[ValueType]> = Box::new([ValueType::Int]);
+    let pair: Box<[ValueType]> = Box::new([ValueType::Int, ValueType::Int]);
     let types = [numbers.clone(), pair.clone(), pair.clone(), pair.clone(), numbers.clone()];
     let columns = [numbers.clone(), pair.clone(), pair.clone(), pair, numbers];
     let wanted = [true; 6];
