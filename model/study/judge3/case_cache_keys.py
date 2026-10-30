@@ -57,6 +57,11 @@ def implementation_names(path, file_signature):
 # The evaluator transition additionally removes its one newly declared framed
 # storage dependency when reconstructing the old implementation aggregate.
 STORAGE_TRANSITIONS = [
+    # Prefix private report gzip + stat-invalidated source receipt cache only.
+    # Exact source proof: codex-adm/n-eval2-prefix-storage/source.json.
+    ({'prefix_universe.py': (
+        '47c676ef0c54d77e7c2571404287404e45a95f2279615958727b6dbcad194b9f',
+        'ba7b89b2d8998bf7f21e58a35a74be87c9a2c177b3da56eef69d70826073a9cd')}, {}),
     ({'current_native_names.py': (AFTER, BEFORE)}, {}),
     ({'normalized_gold.py': ('dcba33318fa9cdb772693716c426c49587dd3ef54cc1468c9fcaf3e11324b778',
                              'abd8ca57debb074156ed92275e5b0934664f8872b9658f79f910ebe31112c566')}, {}),

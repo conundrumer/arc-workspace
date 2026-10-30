@@ -14,6 +14,7 @@ from study_paths import CODE_ROOT, DATA_ROOT
 from native_correspondence import PrefixCorrespondence, Unavailable, source_program_record
 
 POLICY='native-prefix-parent-universe-v1'
+_DEPENDENCY_CACHE=None
 
 
 def _sha(value):
@@ -22,17 +23,45 @@ def _sha(value):
 
 
 def _write(path,value):
-    from judge3.dataset_format import write_json
-    write_json(path,value,compact=True)
-    digest=hashlib.sha256()
-    with path.open('rb') as stream:
-        for chunk in iter(lambda:stream.read(1024*1024),b''):digest.update(chunk)
-    return dict(path=str(path.resolve()),sha256=digest.hexdigest())
+    """One verified durable gzip publication; keep the original logical ref."""
+    from judge3.paused_storage import write_gzip_json
+    path=Path(path)
+    digest=write_gzip_json(path.with_name(path.name+'.gz'),value,return_sha=True)
+    return dict(path=str(path.resolve()),sha256=digest)
+
+
+def _source_stamps(paths):
+    values=[]
+    for path in sorted(paths):
+        st=Path(path).stat()
+        values.append((path,st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns))
+    return tuple(values)
 
 
 def dependency_receipt():
+    """One bounded source-only cache; every query still checks file stamps.
+
+    Returned dicts are independent. A changed/missing source never receives the
+    cached hashes; no task, native session, table values or model state is held.
+    """
     from evaluator_train import det_dependency_receipt
-    return dict(det_dependency_receipt(),**{str(Path(__file__).resolve()):hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+    global _DEPENDENCY_CACHE
+    if _DEPENDENCY_CACHE is not None:
+        stamps,cached=_DEPENDENCY_CACHE
+        if _source_stamps(cached)==stamps:return dict(cached)
+    declared=det_dependency_receipt()
+    declared[str(Path(__file__).resolve())]=''  # source path; hashed below
+    # Authenticate a stable initial snapshot. The canonical helper supplies the
+    # actual path inventory; metadata before/after hashing prevents associating
+    # a new stamp with bytes read before a concurrent source replacement.
+    for _ in range(2):
+        before=_source_stamps(declared)
+        values={path:hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in declared}
+        after=_source_stamps(declared)
+        if before==after:
+            _DEPENDENCY_CACHE=(after,values)
+            return dict(values)
+    raise Unavailable('prefix dependency sources changed while hashing; cached receipt not reused')
 
 
 def _kind(value):
