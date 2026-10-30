@@ -349,6 +349,7 @@ class ReplayEvaluator:
             if selection is not None:
                 identity['packing']['entries_sha256'] = sha(selection['entries'])
         if result.get('assignment_mode')=='derived':identity['assignment_mode']='derived'
+        if result.get('artifact_mode')=='metadata':identity['artifact_mode']='metadata'
         key = sha(identity)
         folder = self.artifacts/key
         folder.mkdir(exist_ok=True)
@@ -361,6 +362,16 @@ class ReplayEvaluator:
             n = capture['native']
             reader = n['_native_reader']
             tables = n['tables']
+            if result.get('artifact_mode')=='metadata':
+                # No entry()/row conversion here. Demand witnesses are written
+                # by the semantic consumer, from exactly the entries it reads.
+                (folder/f'capture-{i}.json').write_text(canonical(dict(
+                    schema='judgetool-capture-metadata-v1',
+                    artifact_mode='metadata',table_count=len(tables['form']),
+                    entry_count=len(reader.entries['table']),
+                    retained_native_payload=False,
+                    rows='only consumer-demanded table witnesses retained separately'))+'\n')
+                continue
             # The full returned assignment entries are retained, including other
             # assignments and test entries. They are internal artifacts, not judge output.
             selected_form = result.get('form', int(record['point'][0])+1)
@@ -477,13 +488,15 @@ class ReplayEvaluator:
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
 
-    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None,assignment_mode='kept'):
+    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None,assignment_mode='kept',artifact_mode='entries'):
         """Canonical low-level API for tool and n-mech, no copied evaluator.
 
         Caller supplies the whole generated program including OUT and the
         inserted table's form index. Returns all matched groups; stores ALL
         returned tables/assignments internally. No policy/target claim implied.
         """
+        if artifact_mode not in ('entries','metadata'):
+            raise ValueError('artifact_mode must be entries or metadata')
         if assignment_mode not in ('kept','derived'):
             raise ValueError('assignment_mode must be kept or derived')
         if type(full_rows) is not bool:
@@ -504,6 +517,7 @@ class ReplayEvaluator:
         result = dict(schema='judgetool-replay-v1', verified=False,retain_all=retain_all,
                       full_rows=full_rows)
         if assignment_mode=='derived':result['assignment_mode']='derived'
+        if artifact_mode=='metadata':result['artifact_mode']='metadata'
         if retain_forms is not None:result['retain_forms']=retain_forms
         try:
             checked = self.arclog.StudyProgram.from_sexp(program, self.settings)

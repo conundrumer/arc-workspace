@@ -155,7 +155,7 @@ def _relation_snapshot(ev,record,text,side,base,operations,folder):
     replay=_operation(ev,operations,side+'.relations.Search',folder/(side+'-relations.json'),
         lambda:ev.replay_program(record,text,int(record['point'][0]),
             candidate=dict(kind='derived-later-relations',side=side),retain_all=True,
-            full_rows=True,assignment_mode='derived'))
+            full_rows=True,assignment_mode='derived',artifact_mode='metadata'))
     _write(folder/(side+'-relations.json'),replay)
     if replay['engine']!='ran':raise Incomplete(side+' relations: '+replay.get('reason','incomplete'))
     native=ev.captures[-1]['native']
@@ -164,7 +164,7 @@ def _relation_snapshot(ev,record,text,side,base,operations,folder):
     # One completed bounded packed gold payload is retained per case. Decode
     # no earlier/fact table and no later table before its comparison needs it.
     return dict(definitions={(tuple(d['definition_path']),d['relation_slot']):d for d in definitions},
-        native=native,artifact=replay['artifact'],source_export=export_ref,
+        native=native,artifact=replay['artifact'],source_export=export_ref,folder=folder,
         matches=producer.selectors['matches'],decoded=OrderedDict(),cache_units=0)
 
 
@@ -189,7 +189,12 @@ def _relation_value(ev,record,snapshot,definition,side,metrics):
                   if kind==0 else [(kind,index)])
             for axis in axes:families[axis].add(frozenset(e['rows']))
         types=[type_identity(ev,record,ty)[0] for ty in ts['column_types'][table]]
-        value=dict(columns=list(zip(ts['column_names'][table],types)),groups=dict(families))
+        witness=_write(snapshot['folder']/(side+'-table-'+str(table)+'-witness.json'),dict(
+            schema='evaluator-derived-relation-witness-v1',table=table,native_selector=selector,
+            program_artifact=snapshot['artifact'],source_export=snapshot['source_export'],
+            native_schema=snapshot['native']['_native_reader'].schema(table),entries=entries,
+            row_scope='complete canonical read_table entries demanded by later-relation comparison'))
+        value=dict(columns=list(zip(ts['column_names'][table],types)),groups=dict(families),witness=witness)
         metrics[side+'_decoded_tables']+=1;metrics[side+'_decoded_entries']+=len(entries)
         metrics[side+'_decode_seconds']+=time.monotonic()-started
         # Retain only a small bounded amount of decoded gold rows; a larger
@@ -201,6 +206,8 @@ def _relation_value(ev,record,snapshot,definition,side,metrics):
             while cache and (len(cache)>=8 or snapshot['cache_units']+units>100_000):
                 _,(_,old_units)=cache.popitem(last=False);snapshot['cache_units']-=old_units
             cache[table]=(value,units);snapshot['cache_units']+=units
+    metrics.setdefault('table_witnesses',[]).append(dict(side=side,table=table,
+        native_selector=selector,witness=value['witness']))
     return dict(value,name=definition['display_name'],form=definition['definition_path'][0],table=table,
         artifact=snapshot['artifact'],source_export=snapshot['source_export'],native_selector=selector)
 
@@ -240,7 +247,8 @@ def _later(ev,record,task,base,operations,folder,key,metrics):
                 scope='complete native Search value families; comparison group zero aggregates model families, not assignments; no FITS inference',
                 empty_axes=empty,comparison=eq,native_selector=m['native_selector'],
                 gold_source_export=g['source_export'],mutant_source_export=m['source_export'],
-                gold_artifact=g['artifact'],mutant_artifact=m['artifact'])
+                gold_artifact=g['artifact'],mutant_artifact=m['artifact'],
+                gold_witness=g['witness'],mutant_witness=m['witness'])
     return None
 
 
