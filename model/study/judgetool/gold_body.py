@@ -184,7 +184,18 @@ def projection(body,record,binding):
         except Unavailable as error:
             raise Incomplete(str(error)) from error
         index=current['physical_column']
-        if comparison_type(type_identity(ev,record,schema[index]['type'])[0])!=comparison_type(type_identity(ev,record,field['type'])[0]):
+        if 'native_legacy_binding' in field:
+            from native_correspondence import certify_legacy_body_projection
+            try:
+                proof=certify_legacy_body_projection(body['source_correspondence'],
+                    body_path=binding['body_path'],source_column=source,field=field,
+                    current_column=current,actual_type=schema[index]['type'],
+                    source_program=record['gold_sexp'],
+                    native_payload_sha256=record['native']['gold']['sha256'])
+            except (Unavailable,KeyError,TypeError) as error:
+                raise Incomplete('original BODY historical projection: '+str(error)) from error
+            body['receipt'].setdefault('legacy_projection_bindings',[]).append(proof)
+        elif comparison_type(type_identity(ev,record,schema[index]['type'])[0])!=comparison_type(type_identity(ev,record,field['type'])[0]):
             raise Incomplete('original BODY physical field type differs')
         indices.append(index)
     return indices

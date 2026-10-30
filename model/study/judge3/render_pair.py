@@ -333,15 +333,23 @@ class Document:
         require(len(matches) == 1, 'callable relation lacks unique resolver node: ' + definition['source_name'])
         return matches[0]
 
-    def _legacy_body_binding(self, reader, table, schema, view):
+    def _body_side(self, reader, body_side=None):
+        sides=[name for name,actual in self.readers.items() if reader is actual]
+        if body_side is None:
+            require(len(sides)==1,'BODY reader requires explicit body_side when shared or outside point snapshots')
+            body_side=sides[0]
+        require(body_side in sides,'BODY reader differs from explicit body_side')
+        return body_side
+
+    def _legacy_body_binding(self, reader, table, schema, view, *, body_side=None):
         context = getattr(self, 'legacy_body_context', None)
         if context is None or context['resolver'] is None:
             return None
         sides = [side for side, actual in self.readers.items() if reader is actual]
         # A fresh/full-case payload has no source point acquisition receipt.
-        if len(sides) != 1:
+        if not sides:
             return None
-        side = sides[0]
+        side=self._body_side(reader,body_side)
         program, export, _ = context['programs'].load(self.r['programs'][side],
             self.r if side == 'gold' else None,
             mutant_record=self.r if side == 'mutant' else None)
@@ -349,10 +357,10 @@ class Document:
             reader=reader, table=table, schema=schema, program=program,
             export=export, body_path=view['body_path'])
 
-    def schema(self, reader, table, *, body=False, definition=None):
+    def schema(self, reader, table, *, body=False, definition=None, body_side=None):
         schema = [dict(c) for c in reader.schema(table)]
         if body:
-            side = 'gold' if reader is self.readers['gold'] else 'mutant'
+            side=self._body_side(reader,body_side)
             export = self.gexport if side == 'gold' else self.mexport
             views = [v for v in export['body_views'] if v['owner_path'] == self.owner
                      and v['body_path'] == self.body['body_path']
@@ -361,7 +369,7 @@ class Document:
             require(len(views) == 1, 'target body binding is missing or ambiguous: ' + side)
             view = views[0]
             require(reader.tables['point'][table] == view['native_table_selector']['point'], 'body selector differs')
-            binding=self._legacy_body_binding(reader,table,schema,view)
+            binding=self._legacy_body_binding(reader,table,schema,view,body_side=side)
             for c in schema:
                 c['native_source_label'] = c['source_label']
             bind_body_schema(dict(schema=schema), view,legacy_binding=binding)
@@ -433,8 +441,8 @@ class Document:
             return ' '.join(result)
         return '(' + name + (' ' + emit(tree) if tree else '') + ')'
 
-    def target_projection(self, reader, schema, decoded):
-        side = 'gold' if reader is self.readers['gold'] else 'mutant'
+    def target_projection(self, reader, schema, decoded, *, body_side=None):
+        side=self._body_side(reader,body_side)
         export = self.gexport if side == 'gold' else self.mexport
         # A CHOOSE owner has multiple bodies with the same kind/port and
         # native point ordinal. Only the exact source body path identifies X.

@@ -87,10 +87,10 @@ class MetadataProducer(base.MetadataProducer):
                     return None
                 return super().callable_atom(schema, name, definition)
 
-            def target_projection(self, reader, schema, decoded):
+            def target_projection(self, reader, schema, decoded, *, body_side=None):
                 if self.body['kind'] != 'Det':
-                    return super().target_projection(reader, schema, decoded)
-                return producer._project_det(self, reader, schema, decoded)
+                    return super().target_projection(reader, schema, decoded, body_side=body_side)
+                return producer._project_det(self, reader, schema, decoded, body_side=body_side)
 
         self._active_det = copy.deepcopy(det_projection)
         self._feature_only = feature_only
@@ -182,8 +182,8 @@ class MetadataProducer(base.MetadataProducer):
                 require(not any(r['resolution'].get('kind') == 'graph_node' and r['resolution'].get('node') == node
                                 for r in export['definitions']['readers']), 'empty DET still has native readers')
 
-    def _project_det(self, ctx, reader, schema, decoded):
-        side = 'gold' if reader is ctx.readers['gold'] else 'mutant'
+    def _project_det(self, ctx, reader, schema, decoded, *, body_side=None):
+        side=ctx._body_side(reader,body_side)
         export = ctx.gexport if side == 'gold' else ctx.mexport
         view = next(v for v in export['body_views'] if v['body_path'] == ctx.r['point'])
         own = self._active_det['sides'][side]

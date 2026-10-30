@@ -64,7 +64,7 @@ def _policy():
     project, p3 = _extract(paths/'body.py', functions=('project_entries',), namespace=ns)
     ns.update(bind_body_schema=headers['bind_body_schema'], project_entries=project['project_entries'])
     renderer, p4 = _extract(ROOT/'render_pair.py', functions=('under','real_paths'), classes=('Names',),
-        methods={'Document':('_legacy_body_binding','schema','target_projection','callable_atom','dependency_scope','definition_node')},
+        methods={'Document':('_body_side','_legacy_body_binding','schema','target_projection','callable_atom','dependency_scope','definition_node')},
         namespace=dict(ns, S=STUDY, DATA_ROOT=DATA_ROOT, MAIN_ROOT=MAIN_ROOT))
     # dependency_scope uses the exact renderer under() helper.
     renderer['Document'].dependency_scope.__globals__['under'] = renderer['under']
@@ -194,7 +194,7 @@ class MetadataProducer:
             ctx.legacy_body_context=dict(resolver=self.legacy_body_metadata,programs=self.programs,base=base)
             ctx.readers=readers;ctx.owner=view['owner_path'];ctx.body=view
             ctx.values=SimpleNamespace(f={'column_names':{}})
-            raw=ctx.schema(reader,table,body=True)
+            raw=ctx.schema(reader,table,body=True,body_side=side)
             fields=[]
             for index,column in enumerate(raw):
                 _require(column['index']==index,'RAW native physical order differs: '+side)
@@ -207,6 +207,9 @@ class MetadataProducer:
                 fields.append(dict(physical_index=index,field_name=column['display_name'],
                     native_name=column['name'],native_label_identity=copy.deepcopy(identity),
                     type=column['type'],frame=column['frame'],source_body_column=index))
+            for field,column in zip(fields,raw):
+                if 'native_legacy_binding' in column:
+                    field['native_legacy_binding']=copy.deepcopy(column['native_legacy_binding'])
             bindings[side]=dict(side=side,kind='Det',body_path=view['body_path'],
                 owner_path=view['owner_path'],scope=view['scope'],
                 native_ref=copy.deepcopy(record['native'][side]),native_table_index=table,
@@ -253,7 +256,7 @@ class MetadataProducer:
             candidates=[indexes[k] for k in (side+'_kept',side+'_all') if k in indexes]
             _require(bool(candidates),'source record lacks native point table index: '+side)
             table=candidates[0]
-            raw=ctx.schema(reader,table,body=True)
+            raw=ctx.schema(reader,table,body=True,body_side=side)
             # Outer key variables are not necessarily outputs of the input
             # BODY. They must be acquired in the original correlated INIT
             # context, never joined to an independently evaluated key table.
@@ -272,10 +275,13 @@ class MetadataProducer:
                     f'{side} INIT input {view["body_path"]}: outer key LabelIds {missing} '
                     'are absent from the stored BODY; the complete correlated '
                     'key+port tuple requires the evaluator INIT-context adapter')
-            projected,_,view=ctx.target_projection(reader,raw,{})
+            projected,_,view=ctx.target_projection(reader,raw,{},body_side=side)
             fields=[dict(physical_index=c['index'],field_name=c['display_name'],native_name=c['name'],
                 native_label_identity=c['native_label_identity'],type=c['type'],frame=c['frame'],
                 callable_row_path=c['callable_row_path'],source_body_column=c['source_body_column'],source_projection=c['source_projection']) for c in projected]
+            for field,column in zip(fields,projected):
+                if 'native_legacy_binding' in column:
+                    field['native_legacy_binding']=copy.deepcopy(column['native_legacy_binding'])
             bindings[side]=dict(side=side,body_path=view['body_path'],owner_path=view['owner_path'],scope=view['scope'],
                 kind=view['kind'],input_port=view['input_port'],native_ref=r['native'][side],native_table_index=table,
                 native_selector=view['native_table_selector'],source_body_schema=raw,projected_schema=fields,fields=fields,

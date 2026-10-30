@@ -371,7 +371,7 @@ def bind_legacy_body_schema(current, current_program, *, legacy_export,
             canonical_source=deepcopy(new_source)))
     if sum(f['legacy_physical_type']['cell_width'] for f in fields) != legacy_cell_width:
         raise Unavailable('legacy native BODY packed width differs from its descriptor')
-    return dict(schema='native-legacy-body-binding-v1', body_path=list(body_path),
+    result = dict(schema='native-legacy-body-binding-v1', body_path=list(body_path),
         fields=sorted(fields, key=lambda f: f['physical_column']),
         receipt=dict(provenance=deepcopy(provenance),
             program_sha256=hashlib.sha256(current_program.sexp().encode()).hexdigest(),
@@ -383,3 +383,68 @@ def bind_legacy_body_schema(current, current_program, *, legacy_export,
             current_source_program_sha256=hashlib.sha256(current._value['source_program_sexp'].encode()).hexdigest(),
             mapping='native scoped LabelId under exact program and full-stream equality',
             nominal_strings='retained verbatim; never parsed or normalized', rows_checked=False))
+
+    # Projected schemas retain fields, while their enclosing temporary header
+    # object need not survive. Keep its acquisition authority with each field.
+    for field in result['fields']:
+        field['binding_receipt'] = deepcopy(result['receipt'])
+    return result
+
+
+def certify_legacy_body_projection(source_correspondence, *, body_path,
+        source_column, field, current_column, actual_type, source_program,
+        native_payload_sha256):
+    """Compose legacy acquisition -> current source -> fresh inverse proofs.
+
+    No nominal string conversion occurs. Both descriptor edges must already
+    be exported by native correspondence, and the saved acquisition must bind
+    this exact source program and original gold payload.
+    """
+    import hashlib
+    import json
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False,
+            sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    binding = field.get('native_legacy_binding', {})
+    receipt = binding.get('binding_receipt', {})
+    program_sha = hashlib.sha256(source_program.encode()).hexdigest()
+    if (receipt.get('source_local') is not True
+            or receipt.get('program_sha256') != program_sha
+            or receipt.get('current_source_program_sha256') != program_sha
+            or receipt.get('provenance', {}).get('native_payload_sha256') != native_payload_sha256
+            or not isinstance(native_payload_sha256, str) or not native_payload_sha256
+            or source_correspondence._value['program_sexp'] != source_program
+            or source_correspondence._value['source_program_sexp'] != source_program
+            or source_correspondence._value['source_bridge_status'] != 'same_checked_representation'):
+        raise Unavailable('legacy BODY projection lacks exact source-local acquisition authority')
+    original = source_correspondence.body_column(body_path, source_column)
+    legacy_type = _type(binding['legacy_physical_type'])
+    checked_type = _type(binding['physical_type'])
+    source_type = _type(original['physical_type'])
+    fresh_type = _type(current_column['physical_type'])
+    fresh_source = current_column['canonical_source']
+    if (binding['physical_column'] != source_column
+            or binding['current_physical_column'] != original['physical_column']
+            or binding['scope_path'] != original['scope_path']
+            or binding['label_id'] != original['label_id']
+            or field['type'] != legacy_type['type']
+            or checked_type != source_type
+            or legacy_type['wire_type'] != source_type['wire_type']
+            or legacy_type['cell_width'] != source_type['cell_width']
+            or legacy_type['nominal'] != source_type['nominal']
+            or binding['canonical_source'] != original['canonical_source']
+            or fresh_source.get('status') != 'resolved'
+            or fresh_source.get('scope_path') != original['scope_path']
+            or fresh_source.get('label_id') != original['label_id']
+            or _type(fresh_source['source_type']) != source_type
+            or fresh_type['wire_type'] != source_type['wire_type']
+            or fresh_type['cell_width'] != source_type['cell_width']
+            or fresh_type['nominal'] != source_type['nominal']
+            or actual_type not in (fresh_type['type'], fresh_type['wire_type'])):
+        raise Unavailable('legacy BODY projection differs from exact native inverse descriptors')
+    return dict(schema='native-legacy-body-projection-v1', body_path=list(body_path),
+        source_column=source_column, current_column=current_column['physical_column'],
+        acquisition_receipt=deepcopy(receipt), legacy_physical_type=deepcopy(legacy_type),
+        source_physical_type=deepcopy(source_type), current_physical_type=deepcopy(fresh_type),
+        source_correspondence_sha256=digest(source_correspondence._value),
+        native_inverse_sha256=digest(current_column))
