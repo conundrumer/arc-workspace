@@ -251,7 +251,7 @@ def _producer(ev,record,locator):
 
 
 def _normalized_export(ev,view,original_export):
-    """Carry authenticated display names through the native editor relation map.
+    """Preserve authenticated display names through the native editor relation map.
 
     The original name map's stream identity cannot be attached to a different
     normalized stream. Only native source-relation correspondence moves names;
