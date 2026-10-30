@@ -113,6 +113,30 @@ pub fn checked_prefix(
         .map_err(|d| super::diagnostics_text(&d))
 }
 
+/// Restrict the program's one presentation namespace to the actual native
+/// label occurrences in each retained prefix form. The caller constructs
+/// `checked` with `checked_prefix` from this same program; no names or IDs
+/// are paired across forms, and trailing INIT inputs contribute no names.
+pub fn prefix_label_names(
+    program: &StudyProgram,
+    checked: &CheckedProgram,
+    registry: &Registry,
+) -> Result<crate::write::LabelNames, String> {
+    let display = program.label_names(registry);
+    checked.program.program.value().forms.iter().enumerate().map(|(index, form)| {
+        let mut present = std::collections::BTreeSet::new();
+        crate::safety::each_label_use_at(NodeRef::from(form), &NodePath::top(index as u32), &mut |_, use_| {
+            if let Some(id) = crate::types::use_label(use_) { present.insert(id.0); }
+        });
+        let names = display.get(index).ok_or_else(|| format!("display namespace is missing prefix form {index}"))?;
+        let retained = names.iter().filter(|(id, _)| present.contains(&id.0)).cloned().collect::<Vec<_>>();
+        if let Some(id) = present.iter().find(|id| !retained.iter().any(|(label, _)| label.0 == **id)) {
+            return Err(format!("display namespace is missing native label {id} in prefix form {index}"));
+        }
+        Ok(retained)
+    }).collect()
+}
+
 fn label(order: &CanonicalOrder, id: LabelId) -> Result<u32, String> {
     let mut found = order
         .label_scopes()

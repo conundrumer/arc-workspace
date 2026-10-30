@@ -234,7 +234,9 @@ pub fn export(program: &StudyProgram, point: &NodePath, registry: &Registry) -> 
             return json!({"normal_head":normal_head,"types_frames_v1":common("native-types-frames-v1","unsupported",&reason),"canonical_clauses_v1":canonical});
         }
     };
-    let mut typed = match arclog::check::render_sites::export(&checked, registry) {
+    let mut typed = match features::prefix_label_names(program, &checked, registry)
+        .and_then(|names| arclog::check::render_sites::export_with_names(&checked, registry, &names))
+    {
         Ok(t) => t,
         Err(reason) => {
             return json!({"normal_head":normal_head,"types_frames_v1":common("native-types-frames-v1","unsupported",&reason),"canonical_clauses_v1":canonical});
