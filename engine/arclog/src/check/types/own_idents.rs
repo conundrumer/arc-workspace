@@ -1,9 +1,10 @@
-//! The Ident columns of a `RIGID_DET` assembly's parts that are the
+//! The Ident columns of a `RIGID_DET` assembly's parts and key that are the
 //! assembly's own (`docs/arclog/rigid.md#the-pose`): a column is the
 //! assembly's own where no label at it stands at an Ident site outside the
-//! assembly's parts and the relations that take their types from them,
-//! other than a site in the body of a determination relation that an
-//! `instance` clause of the assembly reads.
+//! assembly's parts and key and the relations that take their types from
+//! them, other than a site in the body of a determination relation that a
+//! `key` or `instance` clause of the assembly reads, directly or through
+//! the bodies of the determination relations those read.
 //!
 //! The analysis joins places that hold one Ident: a label of a form's
 //! label scope, a column of a relation that a clause, a `CHOOSE` form or an
@@ -14,8 +15,8 @@
 //! fact, a column of an instance's output that its component declares with
 //! a fixed type, or the head of an instance's input at such a column, joins
 //! a place that stands outside every assembly. The own Idents of an
-//! assembly are the part labels whose joined places hold no such outside
-//! place, and no part label of another assembly.
+//! assembly are the part and key labels whose joined places hold no such
+//! outside place, and no part or key label of another assembly.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -28,11 +29,11 @@ use crate::program::{
     RigidDetName, Site,
 };
 use crate::registry::{binding_sites, is_key, ColumnType, Component, ParameterSite, Registry, TypeParameter};
-use crate::resolver::{form_columns, registry_columns, DependencyKind, Resolution, ResolvedProgram};
+use crate::resolver::{columns, form_columns, registry_columns, DependencyKind, Resolution, ResolvedProgram};
 use crate::types::{each_site_label, use_label};
 
-/// The labels at the part sites of each `RIGID_DET` form of `program`,
-/// by the form's path, that are the assembly's own Idents.
+/// The labels at the part sites and key columns of each `RIGID_DET` form
+/// of `program`, by the form's path, that are the assembly's own Idents.
 pub fn own_idents(program: &ResolvedProgram, registry: &Registry) -> StableHashMap<NodePath, StableHashSet<LabelId>> {
     let mut places = Places::new(program, registry);
     let root = NodeRef::Program(program.program.value());
@@ -67,11 +68,11 @@ struct Join {
     in_body_of: Option<ProgramRelation>,
 }
 
-/// The part labels of one `RIGID_DET` form.
+/// The part and key labels of one `RIGID_DET` form.
 struct Parts {
     form: NodePath,
     labels: Vec<(LabelId, usize)>,
-    /// The relations that its `instance` clause reads.
+    /// The relations that its `key` and `instance` clauses read.
     reads: Vec<ProgramRelation>,
 }
 
@@ -84,14 +85,14 @@ struct Context {
     /// The relation of the clause whose body the node stands in, for a
     /// clause of the program's name scope.
     body_of: Option<ProgramRelation>,
-    /// The index among the program's `RIGID_DET` forms whose `instance`
-    /// clause the node stands in.
-    instance_of: Option<usize>,
+    /// The index among the program's `RIGID_DET` forms whose `key` or
+    /// `instance` clause the node stands in.
+    read_by: Option<usize>,
 }
 
 impl Context {
     fn top(index: u32) -> Self {
-        Context { scope: NodePath::top(index), names: NameScope::Program, body_of: None, instance_of: None }
+        Context { scope: NodePath::top(index), names: NameScope::Program, body_of: None, read_by: None }
     }
 }
 
@@ -102,11 +103,14 @@ struct Places<'a> {
     joins: Vec<Join>,
     parts: Vec<Parts>,
     instances: StableHashMap<InstanceName, &'a Component>,
+    /// Each pair of relations where a clause's body of the first reads the
+    /// second.
+    calls: Vec<(ProgramRelation, ProgramRelation)>,
 }
 
 impl<'a> Places<'a> {
     fn new(program: &'a ResolvedProgram, registry: &'a Registry) -> Self {
-        let mut places = Places { program, registry, ids: StableHashMap::default(), joins: Vec::new(), parts: Vec::new(), instances: StableHashMap::default() };
+        let mut places = Places { program, registry, ids: StableHashMap::default(), joins: Vec::new(), parts: Vec::new(), instances: StableHashMap::default(), calls: Vec::new() };
         places.id(Place::Outside);
         places.find_instances(NodeRef::Program(program.program.value()));
         places
@@ -197,7 +201,8 @@ impl<'a> Places<'a> {
         }
     }
 
-    /// The parts of a `RIGID_DET` form, and the `instance` clause's reads.
+    /// The part and key labels of a `RIGID_DET` form, and the reads of its
+    /// `key` and `instance` clauses.
     fn rigid(&mut self, node: NodeRef<'a>, rigid: &'a RigidDet, at: &NodePath, ctx: &Context) {
         let form = self.parts.len();
         let mut parts = Parts { form: at.clone(), labels: Vec::new(), reads: Vec::new() };
@@ -218,11 +223,21 @@ impl<'a> Places<'a> {
         for column in rigid.instance.iter().flat_map(|instance| instance.columns.iter()) {
             self.join_label(ctx, column.label, Place::Output(rigid.name.clone(), Arc::from([OutputStep::Pose]), column.name.clone()));
         }
+        let outputs = rigid.parts.iter().filter_map(|part| form_columns::part_steps(&part.value().relation)).map(Arc::<[OutputStep]>::from).chain([Arc::from([OutputStep::Pose])]);
+        let outputs: Vec<_> = outputs.collect();
+        for column in rigid.key.iter().flat_map(|key| key.columns.iter()) {
+            let label = self.id(Place::Label(ctx.scope.clone(), column.label));
+            for steps in &outputs {
+                let output = self.id(Place::Output(rigid.name.clone(), steps.clone(), columns::key()));
+                self.joins.push(Join { a: label, b: output, in_body_of: None });
+            }
+            parts.labels.push((column.label, label));
+        }
         self.parts.push(parts);
         let instance_child = u32::from(rigid.key.is_some());
         for (child, index) in node.children().into_iter().zip(0u32..) {
-            let inside = (rigid.instance.is_some() && index == instance_child).then_some(form);
-            self.visit(child, &at.child(index), &Context { instance_of: inside.or(ctx.instance_of), ..ctx.clone() });
+            let reads = (rigid.key.is_some() && index == 0) || (rigid.instance.is_some() && index == instance_child);
+            self.visit(child, &at.child(index), &Context { read_by: reads.then_some(form).or(ctx.read_by), ..ctx.clone() });
         }
     }
 
@@ -276,8 +291,11 @@ impl<'a> Places<'a> {
     /// The joins of the labels at the sites of the atom at `at`.
     fn atom(&mut self, atom: &'a Atom, at: &NodePath, ctx: &Context) {
         let Some(read) = self.read(atom, at) else { return };
-        if let (Some(form), Some(relation)) = (ctx.instance_of, &read.relation) {
+        if let (Some(form), Some(relation)) = (ctx.read_by, &read.relation) {
             self.parts[form].reads.push(relation.clone());
+        }
+        if let (Some(from), Some(to)) = (&ctx.body_of, &read.relation) {
+            self.calls.push((from.clone(), to.clone()));
         }
         let mut sites = Vec::new();
         for site in atom.sites.iter() {
@@ -318,7 +336,7 @@ impl<'a> Places<'a> {
         };
         let derived = |relation: &ProgramRelation| Read { kind: ReadKind::Column(relation.clone(), node.scope.clone()), relation: Some(relation.clone()) };
         Some(match &node.kind {
-            DependencyKind::Fact(_) | DependencyKind::Demonstrated(_) => Read { kind: ReadKind::Outside, relation: None },
+            DependencyKind::Fact(_) | DependencyKind::Demonstrated(_) | DependencyKind::Out(_) => Read { kind: ReadKind::Outside, relation: None },
             DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => derived(relation),
             DependencyKind::Chosen(name) => derived(&ProgramRelation::Declared(name.clone())),
             DependencyKind::RigidAssembly(name) => {
@@ -355,15 +373,30 @@ impl<'a> Places<'a> {
         }
     }
 
-    /// For each `RIGID_DET` form, the labels at its part sites that are the
-    /// assembly's own Idents.
+    /// The relations in `reads` and those that the body of a clause of one
+    /// of them reads, at any depth.
+    fn reached<'r>(&'r self, reads: &'r [ProgramRelation]) -> StableHashSet<&'r ProgramRelation> {
+        let mut reached: StableHashSet<&ProgramRelation> = reads.iter().collect();
+        let mut pending: Vec<&ProgramRelation> = reads.iter().collect();
+        while let Some(relation) = pending.pop() {
+            for (_, to) in self.calls.iter().filter(|(from, _)| from == relation) {
+                if reached.insert(to) {
+                    pending.push(to);
+                }
+            }
+        }
+        reached
+    }
+
+    /// For each `RIGID_DET` form, the labels at its part sites and key
+    /// columns that are the assembly's own Idents.
     fn assemblies(&self) -> StableHashMap<NodePath, StableHashSet<LabelId>> {
         let mut own = StableHashMap::default();
         for (form, parts) in self.parts.iter().enumerate() {
-            let exempt: Vec<&ProgramRelation> = parts.reads.iter().collect();
+            let exempt = self.reached(&parts.reads);
             let mut classes = Classes::new(self.ids.len());
             for join in &self.joins {
-                if !join.in_body_of.as_ref().is_some_and(|relation| exempt.contains(&relation)) {
+                if !join.in_body_of.as_ref().is_some_and(|relation| exempt.contains(relation)) {
                     classes.union(join.a, join.b);
                 }
             }

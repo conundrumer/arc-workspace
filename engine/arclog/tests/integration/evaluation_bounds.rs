@@ -16,7 +16,7 @@ use arclog::terms::{Color, Example};
 
 /// The input grid of the one train pair.
 const GRID: &[&[u8]] = &[&[1, 2, 0, 0], &[2, 2, 1, 1], &[0, 3, 3, 3], &[1, 1, 1, 2]];
-/// A grid of 100 cells, of which 50 are color 0, a wall.
+/// A grid of 100 cells, of which 51 are color 0, the dominant color, and the walls.
 const WIDE: &[&[u8]] = &[
     &[1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
     &[0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
@@ -27,7 +27,7 @@ const WIDE: &[&[u8]] = &[
     &[1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
     &[0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
     &[1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
-    &[0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0],
 ];
 
 fn checked(text: &str) -> CheckedProgram {
@@ -80,7 +80,7 @@ fn the_position_of_a_not_does_not_change_the_rows_or_the_bounds() {
                 "(&wall (:P Q_opp))",
             ];
             conjuncts.insert(at - 1, "(NOT (&wall P))");
-            let text = format!("(RULE &wall (input *P (:Col 0)))\n(RULE &body (input *P) {})\n", conjuncts.join(" "));
+            let text = format!("(DET &bg DominantColor)\n(RULE &wall (input *P (:Col *C)) (&bg (:C C)))\n(RULE &body (input *P) {})\n", conjuncts.join(" "));
             last_clause(&text, 7, WIDE, caps(1 << 30, 3000))
         })
         .collect();

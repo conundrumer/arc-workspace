@@ -1,33 +1,47 @@
 """Write the tables of the corpus's case programs as an index and flat int32 value arrays.
 
-    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--previous <export dir>] [<task id> ...]
+    python engine/arclog-py/tables_export.py <out dir> [--all-cases] [--bodies] [--projection-cap N] [--step-cap N] [--previous <export dir>] [<task id> ...]
 
 It needs an interpreter with `arclog`, pandas and pyarrow, such as the LM work's venv. The code that decides a part's rows, values and fault lines is in `export_rows.py`. A change to that module, or to the engine code that writes the export's files (`engine/arclog-tables/src/`, `engine/arclog-tables-py/src/`, `engine/arclog/src/decode/`), runs `engine/arclog-py/roundtrip_check.py` with an `arclog` built from its tree before its merge.
 
-Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of N worker processes (`run_in_worker`), where N is `ARCLOG_THREADS`
-if set and `os.cpu_count()` otherwise, and checks the parts it writes on N processes. `replay_order` gives the order, which `lm/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
+Runs one `arclog.corpus_tables` call per task id, the longest first, on a queue of worker processes (`run_in_worker`), at most N jobs at once beside the main process, where N is
+`ARCLOG_THREADS` if set and `os.cpu_count()` otherwise: a call of a task of `u` units holds `u` of N slots while it runs, and each check of a part (in a check process) and each write of a task's directory
+under `tasks/` holds one slot; the check and the writes of a replayed task run in the one slot its call keeps (`Slots`). `replay_order` gives the order, which `model/export.py` takes too: the tasks the export `--previous` gives no seconds for, or all tasks where none is given, by the largest
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
-task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its task file, every file of
+task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its files under `work/arclog/gen/cases/<task>/` with their names, its task file, every file of
 the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py` and the text of `settings.json`) equals the key in that export's
 `tasks.txt` lines is not replayed: its rows, values (hard-linked) and fault lines are those of that export,
 written as parts of the out dir. Its check lines are those of that export where the sha256 of `export_checks.py` (the checks digest) equals the one in its `tasks.txt` line,
 and otherwise the part is checked again in the check processes. The run prints the counts reused, of them to check again, and to replay first.
 An export with no key in its lines gives no reuse.
-`--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, so a call
-of a task of one unit runs on one engine thread, and each worker process starts the next task as its task ends and writes each task as its own part.
+`--previous` changes no output file but the Ident numbers of a task it gives more than one unit. The script sets `ARCLOG_THREADS=1` for the engine, and the other variables of `export_checks.POOL_ENVS` to 1, so a call
+of a task of one unit runs on one engine thread, and each worker process starts the next task once the slots it needs are free and writes each task as its own part.
 Where a worker process dies in a call, the export prints on stderr the task and the exit status, and runs the call once more in a new worker;
 where that one dies too, the task's part holds no case, the fault line `death_line` gives, and a bare `tasks.txt` line. Writes to <out dir>:
   values/<task>/<case>.i32   raw int32 (np.fromfile), every row of the case: the rows of each entry, of each DET
                              at each entry's assignment, and of each projection at each entry, each row's cells in
-                             column order, equal runs of a case sharing one offset (see `arclog.decode.columns`)
+                             column order, and the extent runs of the entries and of the projection rows (see
+                             `extent_offset` below), equal runs of a case sharing one offset (see `arclog.decode.columns`)
   parts/<k>.<name>.parquet   the rows of one part (`bases` has a file in a part with a cut case alone)
   parts/<k>.report.txt       the fault lines of the part's tasks
   parts/<k>.tasks.txt        one line `<task> <seconds> <units> <key> <checks digest>` per task of the part, the wall seconds of its call to 0.1 s,
                              the count of units it ran in, the task's reuse key and the checks digest (see `--previous`; a bare task id where the writer gives none), written last: a part is whole where it stands.
                              A line of an older export, `<task> <seconds> <key> <checks digest>`, gives its seconds with 1 unit and no reuse
-  index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns
+  index.parquet    one row per (table, example, entry): task, case, concept, the table's columns, the entry's columns, among them
+                   `extent_offset`, the offset in `values` of the entry's extent run, `extent_stop_bound` and `extent_stop_form`, and `extent_fault`. The extent run holds,
+                   for each row of the entry's run in its order, two cells for each column of the table's `extent_columns` in their order: the count
+                   of rows V and then the count of columns H of the frame that the row's value stands in, at that row, as the engine computes it when it
+                   evaluates the atom or the instance that made the frame at that row; for `apply.P_out@<path>` it is the extent of `P`'s frame, with V and H
+                   swapped where the row's `D` moves the top edge to the left or the right edge. A Box in a frame of extent (V, H) has own size (V - top - bottom,
+                   H - left - right), the box it covers, so a reader tells from the value's margins and the extent which cells of its frame it covers.
+                   A row with no extent has `-1 -1`, since each extent is at least 1: its derivations give its value two extents, or the engine cannot
+                   compute one (a frame lying in a source the export does not follow, such as the table of a form other than a clause). `extent_offset`
+                   is -1 where the table has no extent columns, the entry holds no rows, the evaluation of its extents stopped at a bound, or it has no
+                   result; `extent_stop_bound` and `extent_stop_form` give the bound of a stop, and `extent_fault` gives, for an entry that holds rows and
+                   has no result, the message and form (`<message> at <form>`) of the fault of the widened evaluation, or why the extents do not derive
+                   its rows, and is null for any other entry
   tables.parquet   one row per table: its columns, its `relation_name` (the relation as the case program writes it: `&x` for a
                    declared relation, `&<instance>.<port>` for an output or input of an instance; the fact relation's name for an
                    evidence table; null for a table that faulted, and, in an export of streams, for each table at a slot), and its
@@ -35,12 +49,51 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    relation), its candidate keys (`keys`, a list of lists of column indexes: the columns of each `ONE` mark of
                    its clause, none for `(ONE)`, the row's columns of a `CHOOSE`'s chosen relation, and `E` with `P` of
                    `ex_input` and `ex_output`; the registry declares no key of a component's output, so any other table
-                   gives none), and, for the table of the relation at which the replay's consistency test found the grid
-                   columns of `ex_output`, the index of its Position column (`output_position`) and of its Color column
-                   (`output_color`), which map to `P` and `Col` of `ex_output`, with the entry's example as `E`; -1 in each
-                   other table; and, per DET in `det_relations` order, `det_columns`: the path of each of its columns in
+                   gives none), and, for the table of the relation of the atom of the `OUT` form, at which the decode ended, that selects the
+                   Position column, the index of that column (`output_position`), and, for the table of the relation of the atom
+                   that selects the Color column, the index of that column (`output_color`), which map to `P` and `Col` of
+                   `ex_output`, with the entry's example as `E`; -1 in each other table; and, per DET in `det_relations` order, `det_columns`: the path of each of its columns in
                    `det_types` order (a slot named `slot <k>`, a record's field after a `.`), equal for one column of one
-                   DET relation across the tables of a case, and an empty list where the engine knows none
+                   DET relation across the tables of a case, and an empty list where the engine knows none;
+                   `column_frames`: the frame that the values of each column stand in, one string per column in `column_names` order, and
+                   `det_frames`: per DET in `det_relations` order, one per column in `det_types` order. A frame is `input` (the task's input
+                   grid's) or `output` (its output grid's); `<maker>@<path>`, a frame that a lib column makes, one per row of the atom or the
+                   instance at `<path>` (spelled as `atom` of flows.parquet spells a path), where `<maker>` is `<relation>.<column>` for a lib
+                   relation or a relation macro, such as `relative.X_rel`, and `<component>.<output>.<column>` for a component's output, such as
+                   `Division.tile.P_inner`; or `<maker>@<path> in <frame>`, such a frame lying in `<frame>`, as `relative.X_rel@<path> in input`.
+                   The empty string is no frame: only a column of type `Position` or `Box` has one, and a column whose sources give no frame, or
+                   give two different frames, has none;
+                   `extent_columns`: the indexes, in increasing order, of the table's columns of type `Box` whose frame is a made frame
+                   (`<maker>@<path>`, with or without ` in <frame>`), an empty list for every other table. Each of these columns gives its
+                   rows' frame extents in the extent runs below;
+                   `column_slots`: the slot of each column in the relation's own column order, one int per column in `column_names` order (the
+                   order the relation stores its columns in, which differs from its own where a clause stores its columns at the canonical
+                   positions of their labels, or a `DET` keeps only the columns that its reads name), a record's fields sharing the slot of
+                   their record, and -1 where the engine knows none; and `column_labels`: the name of the label that the table's form writes
+                   at each column, one string per column in `column_names` order, as `arclog.write_synthesized` names that label in the decoded
+                   program, and the empty string where the form writes none; `column_source_labels`: the name that the case's `.arclog` text
+                   writes for that label, one string per column in `column_names` order, and the empty string where the form writes none. The
+                   text is the one `arclog::stream::corpus::case_files` writes for the case, or, for a case whose files the corpus's `cases/`
+                   directory holds, those files, as `arclog.corpus_tables` builds the tables; the tables of `arclog.stream_tables` and
+                   `arclog.step_tables`, whose program comes from a decode, give the entries of `column_labels`; and, per DET in
+                   `det_relations` order, one per column in `det_types` order, `det_slots`, `det_labels` and `det_source_labels`: those of
+                   that column in the latest table of the DET's relation, the table itself where it is the DET's relation's, found by its
+                   path in `det_columns`, and -1 and the empty string where the case holds no such table. By table kind:
+                   a `RULE` clause gives the index in its columns and the clause's label; a `DET` that atoms read gives the index in the
+                   clause's columns, with a gap for each column that the reads do not name, and the clause's label; a `DET` with `ONE` marks
+                   and a `CHOOSE` give the index among the row columns and then the candidate's, and the label of the `for` body or of the `from` body;
+                   an `INIT` output, and an instance input that gets a table, give the index among the port's declared columns, and the empty
+                   string for a declared column, the label of the binding site for a field below a type-parameter column where the engine
+                   places one; a `RIGID_DET` output and a recursive instance's output give the index in the output's listing (`key`, `Pose`, part
+                   columns, or the instance's columns then `Pose`), and the label of the key, part or instance site, the empty string for
+                   `Pose`; a clause with no columns of its own (a proposer's, or an instance output's) gives the index among the proposer's or
+                   the port's declared columns, and the empty string; `ex_input` and `ex_output` give the row position and the empty string.
+                   A table of a body in progress (`bodies`) gives a provisional slot and label: the finished clause's columns are those of
+                   its whole body, so a later conjunct can give a label another slot or none. A name in `column_labels` equals the name in the
+                   solver's `.arclog` file only where the file was written from the stream and kept its names, and a name in
+                   `column_source_labels` is the file's name. A slot is no label id: a label made under a
+                   `NOT`, an `ALL`, or an `OR` or `IF` branch that the clause does not export takes a label id and no slot. A node of several
+                   forms gives the labels of the table's own form. A table that faulted gives empty lists
   flows.parquet    one row per source of a column of a table, keyed by task, case, `table` and `column`: `kind` (copy 0,
                    computed 1, constant 2, lib name 3), `source_table` (the row of the source's table in the case, -1 where
                    the case gives none: a lib relation, a constant, a lib name), `source_relation`
@@ -67,8 +120,11 @@ where that one dies too, the task's part holds no case, the fault line `death_li
                    its `copies` rows are the stream's. A cut case whose stream equals its base's holds no table, entry or flow of its own. An export of the same streams without `bases` gives, for a cut
                    case, rows equal to the base's rows for tables below `k` and the case's own, but for the numbers of Idents, which depend on the session that interned them
   assigned.parquet one row per DET at an entry's assignment: task, case, entry, det, rows, offset
-  projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry
-  orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding
+  projections.parquet    one row per projection (columns) and projection_rows.parquet one row per projection at an entry, with its `extent_offset`:
+                   the offset of the extent run of the projection's rows, two cells for each projection column that the table's `extent_columns`
+                   holds, for each row in its order, a row taking the one extent over the table's rows that it projects (`-1 -1` where they give two);
+                   -1 where none of the projection's columns is among them, the row is not defined, or the entry's extents stopped
+  orientations.json  [encoding, name] of each orientation constant; an orientation cell is its encoding (written before the first task)
   orientation_types.json  [type name, cells] of each orientation type without a parameter (Dir, DiagDir, Dir8, Axis, DiagAxis,
                    Axis4, D4, C4, Sym, Sense): the cells its columns admit; a Pose type admits D4's
   parts/<k>.checks.txt, checks.txt  one line `<task> <case>: <invariant>: <detail>` per violation of an invariant of this layout
@@ -79,6 +135,16 @@ where that one dies too, the task's part holds no case, the fault line `death_li
   settings.json    the options the calls run under, written before the first task: {"projection_cap": N, "step_cap": N, "parts": [...]} with 10000 and 10000 (null for --step-cap 0, no cap)
                    where no --projection-cap is given, each other option given, and the names of the parts of the layout (`export_rows.PARTS`)
   report.txt       the fault lines, by task id
+  tasks/<task>/    the output of one task, made as the task ends: `index.parquet`, `tables.parquet`, `flows.parquet`, `copies.parquet`, `assigned.parquet`,
+                   `projections.parquet`, `projection_rows.parquet` and `report.txt`, which hold the task's rows of the whole files (the same numbering), and `bases.parquet`
+                   where the task has a cut case; the values stay in `values/<task>/`, which stands before the directory. The last file made is
+                   `DONE`, an empty file: where it stands, every other file of the directory is whole. A task that gets no output has `FAILED` in place of `DONE`,
+                   with the reason: the fault line `death_line` gives for a task whose worker process died on both runs, the traceback of the call or the check
+                   that raised, or `the export stopped: <the exception's type and first line>` for a task that had not ended when the run ended with an exception,
+                   a `KeyboardInterrupt` or the SIGTERM that `timeout` sends (the script handles it as an interrupt). A run on an <out dir> that holds a task's
+                   part makes the directory again where it holds no `DONE`; a task that the run replays has its directory removed before its call. With `--previous`, the directory of a reused task is
+                   a hard-linked copy of the previous export's where that one holds `DONE`. A kill that gives the process no chance to run Python (SIGKILL, an abort of
+                   the main process) leaves the tasks that had not ended with neither marker
 The whole files hold the rows of the parts sorted by task, in the order of the parts within a task.
 A run on an out dir whose `settings.json` gives other options prints both and exits with status 2. Otherwise the
 run takes as done each task id of a `parts/*.tasks.txt`, removes the files of a part with no `tasks.txt`, runs the
@@ -87,16 +153,16 @@ Every 10 s a line gives `<k> of <n> tasks ended, <s> s, about <t> s left, runnin
 the ended tasks (done ones of an earlier run included), the seconds since the start, the seconds left (`?` while no
 task has ended in this run), then the tasks running past 10 s, longest first (the first 10 and a count of the rest
 where more), each with the seconds since its call started and the share of its model steps done, as
-arclog.ReplayProgress gives them. `print_progress` prints it, and `lm/export.py` calls it too.
+arclog.ReplayProgress gives them. `print_progress` prints it, and `model/export.py` calls it too.
 
 `export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000, bases=None)` writes the same layout
 for the token streams of one task, for a caller that imports the module: `streams` is a list of `(ids, model)`
 pairs and `bases` the list of bases as `arclog.stream_tables` takes them. `out` must not exist or be empty (else `FileExistsError`). Its
 `report.txt` holds, for each stream replayed, `<task> <case>: ended <kind> at token <index>` (`<kind>` the
-consistency of the last `RULE` clause the stream ends, or `ended none`), then the fault line of each stream that
+consistency of the last `OUT` form the stream ends, or `ended none`), then the fault line of each stream that
 faults (its tables up to the fault are kept) or lies past the cap. It writes no `settings.json`.
 """
-import collections, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
+import argparse, collections, contextlib, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
 from typing import NamedTuple
 import multiprocessing, traceback
 from multiprocessing.connection import Connection
@@ -105,6 +171,8 @@ import numpy as np
 import pandas as pd
 import pyarrow
 import arclog
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
+from engine.package_fingerprint import digest_files, package_files as installed_package_files
 import export_checks
 import export_rows
 from export_rows import PARTS
@@ -174,28 +242,39 @@ def write_part(out, k, results, ran=None, keys=None):
     finish_part(out, k, export_checks.check_part(out, k, pairs))
 
 
-MIN_SHARE_BYTES = 50_000_000     # a share of values under this costs more to start than it saves, where the part has more
+class Slots:
+    """A counting gate of `count` slots, the admission of every job of an export. `take(n)` waits until `n` slots are free and the calls before it have taken theirs, and takes all `n` at once, so
+    two calls never each hold part of what both need (`n` is at most `count`); `give(n)` returns `n` slots."""
+    def __init__(self, count):
+        self.free, self.waiting, self.condition = count, collections.deque(), threading.Condition()
 
+    def take(self, count):
+        ticket = object()
+        with self.condition:
+            self.waiting.append(ticket)
+            self.condition.wait_for(lambda: self.waiting[0] is ticket and self.free >= count)
+            self.waiting.popleft()
+            self.free -= count
+            self.condition.notify_all()
 
-def submit_checks(pool, workers, out, k, pairs):
-    """Submits the check of part `k` of the (task, case) pairs, cut into at most `workers` shares, to `pool`. Returns the futures."""
-    size = sum(os.path.getsize(f"{out}/values/{t}/{c}.i32") for t, c in pairs)
-    cut = export_checks.shares(out, pairs, set(pairs), max(1, min(workers, size // MIN_SHARE_BYTES)))
-    return [pool.submit(export_checks.check_part, out, k, share) for share in cut]
+    def give(self, count):
+        with self.condition:
+            self.free += count
+            self.condition.notify_all()
 
-
-def digest_files(files):
-    """The sha256 of the (name, path) pairs `files`, in the order of the names: each name and the bytes of its file."""
-    digest = hashlib.sha256()
-    for name, f in sorted(files):
-        digest.update(name.encode() + b"\0" + open(f, "rb").read() + b"\0")
-    return digest.hexdigest()
+    @contextlib.contextmanager
+    def held(self, count=1):
+        """Within the block, `count` slots are taken."""
+        self.take(count)
+        try:
+            yield
+        finally:
+            self.give(count)
 
 
 def package_files():
-    """The (name, path) pairs of the files of the installed `arclog` package, its compiled library among them (it holds the lib's registry and constructions)."""
-    package = os.path.dirname(arclog.__file__)
-    return [(os.path.relpath(f, package), f) for f in glob.glob(f"{package}/**", recursive=True) if os.path.isfile(f) and "__pycache__" not in f]
+    """The installed arclog files, including its compiled library."""
+    return installed_package_files(os.path.dirname(arclog.__file__))
 
 
 def engine_digest():
@@ -211,10 +290,11 @@ def checks_digest():
 
 
 def task_key(engine, task, settings, modules):
-    """The sha256 of the task's generated program and data, its task file, the files `modules` gives, the `engine` digest and the settings text."""
+    """The sha256 of the task's generated program and data, its files under `gen/cases/<task>/` with their names, its task file, the files `modules` gives, the `engine` digest and the settings text."""
     digest = hashlib.sha256()
-    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", f"{TASKS}/{task}.json", *modules):
-        digest.update(open(f, "rb").read() + b"\0")
+    cases = sorted(glob.glob(f"{CORPUS}/cases/{task}/*"))
+    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", *cases, f"{TASKS}/{task}.json", *modules):
+        digest.update((os.path.basename(f).encode() + b"\0" if f in cases else b"") + open(f, "rb").read() + b"\0")
     digest.update(engine.encode() + b"\0" + settings.encode())
     return digest.hexdigest()
 
@@ -224,15 +304,113 @@ def line_task(line):
     return line.split()[0].rstrip(":") if line.split() else ""
 
 
-def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
+DONE, FAILED = "DONE", "FAILED"     # the markers of a task's directory under `tasks/`
+
+
+def write_marker(directory, name, text=""):
+    """Makes the file `<directory>/<name>` with `text`, whole at once: written to `<name>.tmp` and moved over `<name>` by `os.replace`. Makes the directory where it stands not."""
+    os.makedirs(directory, exist_ok=True)
+    with open(f"{directory}/{name}.tmp", "w") as sink:
+        sink.write(text)
+    os.replace(f"{directory}/{name}.tmp", f"{directory}/{name}")
+
+
+def ignore_interrupts():
+    """Makes this process ignore SIGINT and SIGTERM, for the handler of a run that is ending: `timeout` signals its command and its process group, so the SIGTERM can come twice."""
+    for number in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(number, signal.SIG_IGN)
+
+
+def stop_reason(exception):
+    """The reason `mark_stopped` gives: `the export stopped: ` and the type of `exception` and the first line of its text, where it has one."""
+    first = next(iter(str(exception).splitlines()), "")
+    return f"the export stopped: {type(exception).__name__}" + (f": {first}" if first else "")
+
+
+def mark_stopped(out, task_ids, exception):
+    """Gives `FAILED` with `stop_reason(exception)` to the directory `<out>/tasks/<task>` of each of `task_ids` that holds neither marker."""
+    for task in task_ids:
+        directory = f"{out}/tasks/{task}"
+        if not any(os.path.exists(f"{directory}/{marker}") for marker in (DONE, FAILED)):
+            write_marker(directory, FAILED, stop_reason(exception) + "\n")
+
+
+@contextlib.contextmanager
+def failing_into(directory):
+    """Within the block, an exception other than `WorkersStopped` gives `<directory>/FAILED` its traceback, and then raises on."""
+    try:
+        yield
+    except WorkersStopped:
+        raise
+    except Exception:
+        write_marker(directory, FAILED, traceback.format_exc())
+        raise
+
+
+def link_files(source, dest, skip=()):
+    """Makes the directory `dest` and hard-links into it the files of the directory `source` (none where it is no directory) but those named in `skip`,
+    in place of a file of the same name."""
+    os.makedirs(dest, exist_ok=True)
+    for name in os.listdir(source) if os.path.isdir(source) else []:
+        if name not in skip:
+            if os.path.lexists(f"{dest}/{name}"):
+                os.remove(f"{dest}/{name}")
+            os.link(f"{source}/{name}", f"{dest}/{name}")
+
+
+def part_tasks(out, k):
+    """The tasks of the part `k` of `out`, from its `tasks.txt`."""
+    return [line.task for line in read_task_lines(f"{out}/parts/{k:05d}.tasks.txt")]
+
+
+def write_task(out, k, task, previous=None):
+    """Makes `<out>/tasks/<task>/` from part `k`, which is whole, with `DONE` made last. A task whose `tasks.txt` line is bare (its worker process died on both runs)
+    gets `FAILED` with its report lines in place of `DONE`. Otherwise the directory holds hard links of `<previous>/tasks/<task>/` where `previous` is given and that directory holds `DONE`
+    (a reused task: equal keys give equal rows), and else the task's rows of the part, as `write_layout` gives them."""
+    directory = f"{out}/tasks/{task}"
+    shutil.rmtree(directory, ignore_errors=True)
+    os.makedirs(directory)
+    stem = f"{out}/parts/{k:05d}"
+    line = next(l for l in read_task_lines(f"{stem}.tasks.txt") if l.task == task)
+    if line.key is None:
+        write_marker(directory, FAILED, "".join(l + "\n" for l in report_lines([stem], task)))
+        return
+    if previous and os.path.exists(f"{previous}/tasks/{task}/{DONE}"):
+        link_files(f"{previous}/tasks/{task}", directory, skip=(DONE, FAILED))
+    else:
+        write_layout(out, [stem], directory, task)
+    write_marker(directory, DONE)
+
+
+def write_tasks(pool, out, k, tasks, previous, reused):
+    """Runs `write_task` for the `tasks` of part `k`, one after another, in the processes of `pool`, with `previous` for the ones in `reused`. A write that raises gives its task `FAILED` with its traceback."""
+    for task in tasks:
+        with failing_into(f"{out}/tasks/{task}"):
+            pool.submit(write_task, out, k, task, previous if task in reused else None).result()
+
+
+def check_and_write(pool, out, k, pairs, previous, reused):
+    """Checks the (task, case) `pairs` of part `k` in a process of `pool` (no check where there are none), makes the part whole with the check lines, and writes the directory of each of its tasks (`write_tasks`).
+    A check that raises gives each task of `pairs` `FAILED` with its traceback."""
+    lines = []
+    if pairs:
+        with contextlib.ExitStack() as stack:
+            for task in dict.fromkeys(task for task, _ in pairs):
+                stack.enter_context(failing_into(f"{out}/tasks/{task}"))
+            lines = pool.submit(export_checks.check_part, out, k, pairs).result()
+    finish_part(out, k, lines)
+    write_tasks(pool, out, k, part_tasks(out, k), previous, reused)
+
+
+def reuse_parts(out, previous, keys, k, skip, checks):
     """Writes parts from `previous`, from its `k`-th on, for each task of `keys` ({task: key}, not in `skip`) whose task key the previous export's `tasks.txt` lines give equal.
 
     A part takes the rows, fault lines and values (hard-linked) of the tasks of one previous part. Where every such line gives the
-    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its check is submitted to `pool`, of `workers` processes,
-    and its `tasks.txt` lines are given `checks`, for `main` to finish as it finishes a replayed part.
-    Returns the set of tasks reused, the next part number and {part: [the (task, case) pairs, the check futures, []]} of the parts to check again (`main`'s `open_parts`).
+    checks digest `checks`, the part takes their check lines and `tasks.txt` lines as well. Otherwise its `tasks.txt` lines are given `checks`, for `export_tasks` to check and finish as it finishes a replayed part.
+    Returns the set of tasks reused, the next part number, {part: the (task, case) pairs} of the parts to check again,
+    and the numbers of the parts made whole here.
     """
-    reused, again = set(), {}
+    reused, again, whole = set(), {}, []
     for tasks_file in sorted(glob.glob(f"{previous}/parts/*.tasks.txt")):
         stem = os.path.basename(tasks_file).split(".")[0]
         lines = [l for l in read_task_lines(tasks_file) if l.key and l.task not in skip and keys.get(l.task) == l.key]
@@ -250,24 +428,22 @@ def reuse_parts(out, previous, keys, k, skip, checks, pool, workers):
             with open(f"{out}/parts/{k:05d}.{kind}.txt", "w") as sink:
                 sink.write("".join(l + "\n" for l in open(f"{previous}/parts/{stem}.{kind}.txt").read().splitlines() if line_task(l) in tasks))
         for task in tasks:
-            os.makedirs(f"{out}/values/{task}", exist_ok=True)
-            for name in os.listdir(f"{previous}/values/{task}") if os.path.isdir(f"{previous}/values/{task}") else []:
-                if os.path.lexists(f"{out}/values/{task}/{name}"):
-                    os.remove(f"{out}/values/{task}/{name}")
-                os.link(f"{previous}/values/{task}/{name}", f"{out}/values/{task}/{name}")
+            link_files(f"{previous}/values/{task}", f"{out}/values/{task}")
         with open(f"{out}/parts/{k:05d}.tasks.tmp", "w") as sink:
             sink.write("".join(l._replace(checks=checks).text() + "\n" for l in lines))
         if len(kinds) == 2:
             os.rename(f"{out}/parts/{k:05d}.tasks.tmp", f"{out}/parts/{k:05d}.tasks.txt")
+            whole.append(k)
         else:
             pairs = part_cases(out, k, tasks)
             if pairs:
-                again[k] = [pairs, set(submit_checks(pool, workers, out, k, pairs)), []]
+                again[k] = pairs
             else:
                 finish_part(out, k, [])
+                whole.append(k)
         reused |= set(tasks)
         k += 1
-    return reused, k, again
+    return reused, k, again, whole
 
 
 def part_cases(out, k, tasks):
@@ -318,10 +494,10 @@ def print_progress(begin, ended, count, done, running):
 
 
 def take_workers():
-    """The count of worker processes of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets `ARCLOG_THREADS` to 1,
-    so that each call runs on one engine thread, in the worker process that makes it."""
+    """The count of worker processes of an export's queue of calls, `ARCLOG_THREADS` if set and `os.cpu_count()` otherwise, and sets each variable of `export_checks.POOL_ENVS` to 1,
+    so that each call runs on one engine thread, in the worker process that makes it, and each process this one starts after it runs on one thread of each pool."""
     workers = int(os.environ.get("ARCLOG_THREADS") or os.cpu_count())
-    os.environ["ARCLOG_THREADS"] = "1"
+    os.environ.update(export_checks.one_thread_env())
     return workers
 
 
@@ -330,6 +506,10 @@ class WorkerDied(Exception):
     def __init__(self, status):
         super().__init__(status)
         self.status = status
+
+
+class WorkersStopped(RuntimeError):
+    """`stop_workers` ran, so the worker processes are gone and the queue starts no call."""
 
 
 class Message(enum.IntEnum):
@@ -382,10 +562,10 @@ def run_in_worker(command, task, payload, progress):
 
     While the call runs, `progress` takes the `done` and `total` the worker sends. Where the worker dies, the death is printed on stderr at once
     and the call runs once more in a new worker; where that one dies too, raises `WorkerDied`. A call that raises in the worker raises `RuntimeError`
-    with the worker's traceback."""
+    with the worker's traceback. After `stop_workers`, raises `WorkersStopped`."""
     for attempt in (1, 2):
         if _stopping.is_set():
-            raise RuntimeError("the export stopped its worker processes")
+            raise WorkersStopped("the export stopped its worker processes")
         if getattr(_threads, "worker", None) is None:
             _threads.worker = start_worker(command)
         process, requests, replies = _threads.worker
@@ -406,7 +586,7 @@ def run_in_worker(command, task, payload, progress):
             replies.close()
             _threads.worker = None
             if _stopping.is_set():
-                raise RuntimeError("the export stopped its worker processes")
+                raise WorkersStopped("the export stopped its worker processes")
             then = "it runs again in a new worker process" if attempt == 1 else "it gets a fault line"
             print(f"the worker process {process.pid} died on task {task} ({status}); {then}", file=sys.stderr, flush=True)
     raise WorkerDied(status)
@@ -464,23 +644,53 @@ def main(out, task_ids, previous=None, **options):
         if found != settings:
             print(f"{out} holds settings {json.dumps(found)}, this run has {json.dumps(settings)}", file=sys.stderr)
             sys.exit(2)
-    settings_text = json.dumps(settings)
     json.dump(settings, open(f"{out}/settings.json", "w"))
-    done, k = set(), 0
+    pool, check_pool = ThreadPoolExecutor(workers), ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
+    try:
+        write_orientations(out)
+        export_tasks(out, task_ids, previous, options, json.dumps(settings), workers, pool, check_pool)
+    except BaseException as stop:       # an exception, a KeyboardInterrupt, or the SIGTERM that `__main__` turns into one
+        ignore_interrupts()
+        stop_workers()
+        pool.shutdown(wait=False, cancel_futures=True)
+        workers_running = list((check_pool._processes or {}).values())
+        check_pool.shutdown(wait=False, cancel_futures=True)
+        for process in workers_running:
+            process.kill()
+        mark_stopped(out, task_ids, stop)
+        raise
+
+
+def export_tasks(out, task_ids, previous, options, settings_text, workers, pool, check_pool):
+    """The run of `main` once its out dir stands: each job runs on a thread of `pool` (threads that each own a worker process), within the slots of a `Slots` of `workers`. A task is replayed in the worker process of
+    its thread, in `units` slots, and its part is then checked and its directory under `tasks/` written, on `check_pool`, in one slot. The checks of reused parts and the writes of reused and resumed parts run in one slot each."""
+    done, k, whole = set(), 0, []
     for f in sorted(glob.glob(f"{out}/parts/*")):
         stem = os.path.basename(f).split(".")[0]
         if os.path.exists(f"{out}/parts/{stem}.tasks.txt"):
             k = max(k, int(stem) + 1)
             if f.endswith(".tasks.txt"):
                 done |= {line.split()[0] for line in open(f) if line.strip()}
+                whole.append(int(stem))
         else:
             os.remove(f)
     engine, checks = engine_digest(), checks_digest()
     keys = {t: task_key(engine, t, settings_text, (ROWS,)) for t in task_ids}
     tagged = {t: (key, checks) for t, key in keys.items()}
-    check_pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
-    reused, k, open_parts = reuse_parts(out, previous, keys, k, done, checks, check_pool, workers) if previous else (set(), k, {})
-    checking = {f: part for part, (_, futures, _) in open_parts.items() for f in futures}   # check future -> its part
+    slots = Slots(workers)
+
+    def in_slot(job, *args):
+        with slots.held():
+            job(*args)
+
+    jobs = []
+    for part in whole:      # parts of an earlier run whose tasks it did not end
+        jobs.append(pool.submit(in_slot, write_tasks, check_pool, out, part, [t for t in part_tasks(out, part) if not os.path.exists(f"{out}/tasks/{t}/{DONE}")], None, ()))
+    reused, k, again, reused_whole = reuse_parts(out, previous, keys, k, done, checks) if previous else (set(), k, {}, [])
+    for part in reused_whole:
+        jobs.append(pool.submit(in_slot, write_tasks, check_pool, out, part, part_tasks(out, part), previous, reused))
+    for part, pairs in again.items():
+        jobs.append(pool.submit(in_slot, check_and_write, check_pool, out, part, pairs, previous, reused))
     done |= reused
     before = {}
     for f in glob.glob(f"{previous}/parts/*.tasks.txt") if previous else []:
@@ -488,57 +698,42 @@ def main(out, task_ids, previous=None, **options):
     todo = replay_order([t for t in task_ids if t not in done], before)
     bound = SPLIT_SHARE * sum(before.get(t, 0) for t in todo) / workers
     units = {t: unit_count(before[t], bound, min(workers, previous_cases(previous, t))) if t in before else 1 for t in todo}
-    print(f"{len(reused)} tasks reused, {len({t for pairs, _, _ in open_parts.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
-    started, progress = {}, {}
+    print(f"{len(reused)} tasks reused, {len({t for pairs in again.values() for t, _ in pairs})} of them to check again, {len(todo)} to replay", flush=True)
+    running = {}        # task -> (start, arclog.ReplayProgress) while its call runs
 
     def run(task, part):
-        progress[task] = types.SimpleNamespace(done=0, total=0)
-        started[task] = time.time()
+        count = units[task]
+        slots.take(count)
         try:
-            return part, run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, units[task], tagged[task]), progress[task])
-        except WorkerDied as died:
-            clear_part(out, part, task)
-            write_files(out, part, [(task, [], [death_line(task, died.status)])])
-            return part, []
+            progress = types.SimpleNamespace(done=0, total=0)
+            running[task] = (time.time(), progress)
+            try:
+                with failing_into(f"{out}/tasks/{task}"):
+                    try:
+                        pairs = run_in_worker([sys.executable, os.path.abspath(__file__)], task, (out, part, task, CORPUS, TASKS, options, count, tagged[task]), progress)
+                    except WorkerDied as died:
+                        clear_part(out, part, task)
+                        write_files(out, part, [(task, [], [death_line(task, died.status)])])
+                        pairs = []
+            finally:
+                running.pop(task, None)
+            slots.give(count - 1)
+            count = 1
+            check_and_write(check_pool, out, part, pairs, previous, reused)
+        finally:
+            slots.give(count)
 
-    pool = ThreadPoolExecutor(workers)
-    futures = {t: pool.submit(run, t, k + i) for i, t in enumerate(todo)}
-    pending, ended, begin, last = set(futures.values()) | set(checking), len(done), time.time(), time.time()
+    runs = {pool.submit(run, t, k + i) for i, t in enumerate(todo)}
+    pending, ended, begin, last = runs | set(jobs), len(done), time.time(), time.time()
     failure = None
     while pending and not failure:
         got, pending = wait(pending, timeout=max(0.0, last + 10 - time.time()), return_when=FIRST_COMPLETED)
-        for f in got:
-            if f.exception():
-                failure = failure or f.exception()
-            elif f in checking:
-                pairs, waiting, lines = open_parts[checking[f]]
-                waiting.remove(f)
-                lines += f.result()
-                if not waiting:
-                    position = {f"{t} {c}": i for i, (t, c) in enumerate(pairs)}
-                    finish_part(out, checking[f], sorted(lines, key=lambda l: position[l.split(": ", 1)[0]]))
-                    del open_parts[checking[f]]
-            else:
-                part, pairs = f.result()
-                new = submit_checks(check_pool, workers, out, part, pairs) if pairs else []
-                if new:
-                    open_parts[part] = [pairs, set(new), []]
-                    checking.update({c: part for c in new})
-                    pending |= set(new)
-                else:
-                    finish_part(out, part, [])
-                ended += 1
-        replaying = pending & set(futures.values())
-        if time.time() - last >= 10 or not replaying or failure:
-            print_progress(begin, ended, len(task_ids), len(done), {t: (started[t], progress[t]) for t in list(started) if futures[t] in pending})
+        failure = next((f.exception() for f in got if f.exception()), None)
+        ended += len(got & runs)
+        if time.time() - last >= 10 or not pending & runs or failure:
+            print_progress(begin, ended, len(task_ids), len(done), dict(running))
             last = time.time()
     if failure:
-        stop_workers()
-        pool.shutdown(wait=False, cancel_futures=True)
-        workers_running = list((check_pool._processes or {}).values())
-        check_pool.shutdown(wait=False, cancel_futures=True)
-        for process in workers_running:
-            process.kill()
         raise failure
     pool.shutdown()
     close_workers()
@@ -547,10 +742,11 @@ def main(out, task_ids, previous=None, **options):
 
 
 def clear_part(out, k, task):
-    """Removes the files of part `k` and the values of `task`, which a worker process that died while it wrote them may have left."""
+    """Removes the files of part `k` and the values and the directory under `tasks/` of `task`, which a worker process that died while it wrote them, or an earlier run, may have left."""
     for f in glob.glob(f"{out}/parts/{k:05d}.*"):
         os.remove(f)
     shutil.rmtree(f"{out}/values/{task}", ignore_errors=True)
+    shutil.rmtree(f"{out}/tasks/{task}", ignore_errors=True)
 
 
 def replay_part(payload, progress):
@@ -563,33 +759,57 @@ def replay_part(payload, progress):
     return write_files(out, k, [(task, cases, lines)], {task: (time.time() - start, units)}, {task: tag})
 
 
-def merge(out):
-    """Writes the whole files, `orientations.json` and `report.txt` from the parts of `out`, and prints the counts."""
-    parts = lambda p: sorted(glob.glob(f"{out}/parts/*.{p}.parquet"))
-    lines = [l for f in sorted(glob.glob(f"{out}/parts/*.report.txt")) for l in open(f).read().splitlines()]
-    lines.sort(key=lambda l: l.split()[0])
-    json.dump(sorted(arclog.orientation_names()), open(f"{out}/orientations.json", "w"))
-    json.dump(arclog.orientation_types(), open(f"{out}/orientation_types.json", "w"))
-    open(f"{out}/report.txt", "w").write("\n".join(lines) + "\n")
-    checks = [l for f in sorted(glob.glob(f"{out}/parts/*.checks.txt")) for l in open(f).read().splitlines()]
-    checks.sort(key=lambda l: l.split()[0])
-    open(f"{out}/checks.txt", "w").write("".join(l + "\n" for l in checks))
-    by_invariant = collections.Counter(l.split(": ", 1)[1].split(": ", 1)[0] for l in checks)
-    summary = f", {len(checks)} check lines" + (": " + ", ".join(f"{inv} {n}" for inv, n in sorted(by_invariant.items())) if checks else "")
-    if not parts("tables"):
-        print(f"0 index rows, {len(lines)} fault lines{summary}")
-        return
-    whole = {p: pd.concat([pd.read_parquet(f) for f in parts(p)]).sort_values("task", kind="stable") for p in PARTS if parts(p)}   # no part is written for `bases` where no case is cut
+def write_orientations(out):
+    """Writes `orientations.json` and `orientation_types.json` of `out`, each whole at once."""
+    for name, value in (("orientations", sorted(arclog.orientation_names())), ("orientation_types", arclog.orientation_types())):
+        with open(f"{out}/{name}.json.tmp", "w") as sink:
+            json.dump(value, sink)
+        os.replace(f"{out}/{name}.json.tmp", f"{out}/{name}.json")
+
+
+def report_lines(stems, task=None):
+    """The fault lines of the parts at the path prefixes `stems`, sorted by task, but for those of `task` alone where one is given."""
+    lines = [l for stem in stems if os.path.exists(f"{stem}.report.txt") for l in open(f"{stem}.report.txt").read().splitlines() if task is None or line_task(l) == task]
+    return sorted(lines, key=lambda l: l.split()[0])
+
+
+def write_layout(out, stems, dest, task=None):
+    """Writes into the directory `dest` the whole files of the parts at the path prefixes `stems` (`<out>/parts/<k>`): the parquet files and `report.txt`, but for the rows of `task` alone where one is given.
+    A task with no `tables` row gets no parquet file, and `bases.parquet` stays where the task has no row of it. Returns the count of index rows and the report lines."""
+    files = lambda p: [f for stem in stems if os.path.exists(f := f"{stem}.{p}.parquet")]
+    lines = report_lines(stems, task)
+    open(f"{dest}/report.txt", "w").write("\n".join(lines) + "\n")
+    if not files("tables"):
+        return 0, lines
+    whole = {p: pd.concat([pd.read_parquet(f) for f in files(p)]).sort_values("task", kind="stable") for p in PARTS if files(p)}   # no part is written for `bases` where no case is cut
+    if task is not None:
+        whole = {p: rows[rows["task"] == task].copy() for p, rows in whole.items()}
+        whole = {p: rows for p, rows in whole.items() if p != "bases" or len(rows)}
+        if not len(whole["tables"]):
+            return 0, lines
     for rows in whole.values():
         if "concept" in rows:
             rows["concept"] = rows["concept"].astype(bool)
     tables, entries = whole["tables"], whole["entries"]
     export_checks.number_rows(tables, entries, whole.get("bases", export_checks.empty_bases()))
-    entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{out}/index.parquet")
+    entries.merge(tables, on=["task", "case", "table"], suffixes=("", "_table")).to_parquet(f"{dest}/index.parquet")
     for p in whole:
         if p != "entries":      # the entries stand in index.parquet
-            whole[p].to_parquet(f"{out}/{p}.parquet")
-    print(f"{len(entries)} index rows, {len(lines)} fault lines{summary}")
+            whole[p].to_parquet(f"{dest}/{p}.parquet")
+    return len(entries), lines
+
+
+def merge(out):
+    """Writes the whole files, `orientations.json`, `report.txt` and `checks.txt` from the parts of `out`, and prints the counts."""
+    write_orientations(out)
+    checks = [l for f in sorted(glob.glob(f"{out}/parts/*.checks.txt")) for l in open(f).read().splitlines()]
+    checks.sort(key=lambda l: l.split()[0])
+    open(f"{out}/checks.txt", "w").write("".join(l + "\n" for l in checks))
+    by_invariant = collections.Counter(l.split(": ", 1)[1].split(": ", 1)[0] for l in checks)
+    summary = f", {len(checks)} check lines" + (": " + ", ".join(f"{inv} {n}" for inv, n in sorted(by_invariant.items())) if checks else "")
+    stems = sorted({f"{out}/parts/{os.path.basename(f).split('.')[0]}" for f in glob.glob(f"{out}/parts/*")})
+    rows, lines = write_layout(out, stems, out)
+    print(f"{rows} index rows, {len(lines)} fault lines{summary}")
 
 
 def export_streams(out, task, streams, names=None, settings=None, bodies=False, step_cap=10000, bases=None):
@@ -612,19 +832,27 @@ def export_streams(out, task, streams, names=None, settings=None, bodies=False, 
 if __name__ == "__main__" and sys.argv[1:2] == ["--worker"]:
     serve(replay_part)
 elif __name__ == "__main__":
-    args, options, ids = sys.argv[2:], {"projection_cap": 10000, "step_cap": 10000}, []
-    while args:
-        a = args.pop(0)
-        if a == "--all-cases": options["all_cases"] = True
-        elif a == "--bodies": options["bodies"] = True
-        elif a == "--previous": options["previous"] = args.pop(0)
-        elif a == "--projection-cap": options["projection_cap"] = int(args.pop(0))
-        elif a == "--step-cap": options["step_cap"] = int(args.pop(0)) or None
-        else: ids.append(a)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("out", help="the new or empty output directory")
+    parser.add_argument("--all-cases", action="store_true", help="the tables of every case of a task, not of its concept case alone")
+    parser.add_argument("--bodies", action="store_true", help="table the bodies in progress as well as the relations of the finished forms")
+    parser.add_argument("--previous", help="an earlier export directory whose parts of the tasks with an equal key are reused")
+    parser.add_argument("--projection-cap", type=int, default=10000, help="the cap of the rows of a projection")
+    parser.add_argument("--step-cap", type=int, default=10000, help="the cap of the model steps of a replay; 0 for no cap")
+    parser.add_argument("task_ids", nargs="*", help="the tasks to export; every task of the corpus where none is given")
+    parsed = parser.parse_intermixed_args(sys.argv[1:])
+    options = {"projection_cap": parsed.projection_cap, "step_cap": parsed.step_cap or None}
+    for flag in ("all_cases", "bodies"):
+        if getattr(parsed, flag):
+            options[flag] = True
+    if parsed.previous:
+        options["previous"] = parsed.previous
+    ids = parsed.task_ids
     ids = ids or sorted(os.path.basename(f)[:-len(".arcdata")] for f in glob.glob(f"{CORPUS}/*.arcdata"))
+    signal.signal(signal.SIGTERM, signal.default_int_handler)       # the SIGTERM of `timeout` ends the run as an interrupt does
     try:
-        main(sys.argv[1], ids, **options)
-    except Exception:       # a failed task or check ends the run at once: the replay threads of the other tasks do not delay the exit
+        main(parsed.out, ids, **options)
+    except (Exception, KeyboardInterrupt):       # a failed task or check, or an interrupt, ends the run at once: the replay threads of the other tasks do not delay the exit
         traceback.print_exc()
         sys.stderr.flush()
         os._exit(1)

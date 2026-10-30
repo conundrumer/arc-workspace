@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use crate::program::{
     written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DeclaredName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
-    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
+    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, Out, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -86,8 +86,16 @@ pub struct Case {
     /// by its path. A node below such a form stands at the same path below
     /// the form's path in the file.
     origins: StableHashMap<NodePath, (FileOwner, NodePath)>,
+    /// The paths of the top-level forms that the case's reading of a line
+    /// makes or rewrites: the file does not write them as the program holds
+    /// them, so no node below one stands at the place of
+    /// [`Case::file_path`] as the file writes it.
+    made: Box<[NodePath]>,
     concept_determinations: Box<[NodePath]>,
     rederived: Box<[NodePath]>,
+    /// The alts of the block of each `OUT` form of the program, in the order of
+    /// the forms, the outermost alt first; none for the tail's.
+    out_blocks: Box<[Box<[AltsName]>]>,
     /// The program as [`Case::program_alone`] gives it, where it differs from
     /// `program`.
     alone: Option<Node<Program>>,
@@ -108,6 +116,23 @@ impl Case {
     /// form in a `DEMO_RULE` form.
     pub fn rederived_forms(&self) -> &[NodePath] {
         &self.rederived
+    }
+
+    /// The fault of a case program that holds more than one `OUT` form, which
+    /// a case does where two blocks that neither holds the other's alts hold
+    /// different `OUT` forms and no combination block holds one of its own,
+    /// naming the blocks the case took them from; `None` where it holds one or
+    /// none.
+    pub fn several_outs(&self) -> Option<String> {
+        if self.out_blocks.len() < 2 {
+            return None;
+        }
+        let block = |alts: &[AltsName]| match alts {
+            [] => "the tail".to_owned(),
+            alts => format!("the block of the alts {}", alts.iter().map(|alt| &*alt.0).collect::<Vec<_>>().join(" ")),
+        };
+        let blocks: Vec<String> = self.out_blocks.iter().map(|alts| block(alts)).collect();
+        Some(format!("the case takes more than one `OUT` form, from {}; an `ALT` block of their combination holds an `OUT` form of its own to state the case's", blocks.join(" and ")))
     }
 
     /// The case program as it reads when it stands alone, with no concept
@@ -132,6 +157,14 @@ impl Case {
     /// drops no column of it. The concept case takes no such `DET`.
     pub fn reads_alone_as_it_stands(&self) -> bool {
         self.concept_determinations.is_empty() && self.alone.is_none()
+    }
+
+    /// Whether the file writes the node at `path` of the case program as the
+    /// program holds it: no form that the case's reading of a line makes or
+    /// rewrites holds the node. [`Case::file_path`] names the line's place
+    /// for such a node, where the file writes other text.
+    pub fn written_as_held(&self, path: &NodePath) -> bool {
+        !self.made.iter().any(|made| path.0.starts_with(&made.0))
     }
 
     /// The arclog file that holds the node at `path` of the case program,
@@ -217,7 +250,7 @@ impl Solver {
         for base in alts_product(&self.program.value().forms) {
             let walk = self.walk(&base);
             let lines: Vec<&Placed> = walk.placed.iter().filter(|p| line_of(&p.form).is_some_and(|line| walk.read_elsewhere(p, line))).collect();
-            let mut picks: Vec<Vec<(usize, AltsName)>> = vec![walk.points.clone()];
+            let mut picks: Vec<Vec<(usize, AltsName)>> = vec![walk.points.iter().map(|point| (point.step, point.alt.clone())).collect()];
             for line in lines {
                 let clause = line_of(&line.form).expect("a line");
                 picks = picks
@@ -244,9 +277,9 @@ impl Solver {
     fn walk<'a>(&'a self, chosen: &'a [AltsName]) -> Walk<'a> {
         let mut walk = Walk { chosen, placed: Vec::new(), points: Vec::new(), unchosen: None };
         for (index, form) in self.representative_claims() {
-            walk.form(form, FileOwner::Representative, NodePath::top(index as u32), 0);
+            walk.form(form, FileOwner::Representative, NodePath::top(index as u32), &[]);
         }
-        walk.forms(&self.program.value().forms, FileOwner::Solver, &NodePath::default(), 0);
+        walk.forms(&self.program.value().forms, FileOwner::Solver, &NodePath::default(), &[]);
         walk
     }
 
@@ -282,12 +315,12 @@ impl Solver {
             if line.keyword == ClauseKeyword::RuleOrDet && *reading == Reading::Stored {
                 stored.push((index, line, port));
             } else if let (Some(Port { instance, name, input: true }), Reading::Stored) = (port, reading) {
-                if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
-                    *form = Node::new(without_input(form.value(), name));
+                if let Some(first) = placed[instance].first_mut() {
+                    rewrite_instance(first, |instance| without_input(instance, name));
                 }
             }
         }
-        let concept_determination = |p: &Placed| p.depth == 0 && is_det(&p.form) && !other_readings.contains(&p.step);
+        let concept_determination = |p: &Placed| p.depth() == 0 && is_det(&p.form) && !other_readings.contains(&p.step);
         let mut helpers = Vec::new();
         if !stored.is_empty() {
             let mut used = self.declared_names();
@@ -303,15 +336,15 @@ impl Solver {
                 let reading = stored_reading(line, port, instance, &others, read_columns.get(&line.derives).map_or(&[], |columns| columns), &mut used);
                 let Some(reading) = reading else {
                     if let Some(Port { instance, name, input: true }) = port {
-                        if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
-                            *form = Node::new(without_input(form.value(), name));
+                        if let Some(first) = placed[instance].first_mut() {
+                            rewrite_instance(first, |instance| without_input(instance, name));
                         }
                     }
                     continue;
                 };
                 if let (Some(Port { instance, name, .. }), Some(body)) = (port, &reading.input) {
-                    if let Some(Placed { form: Form::Instance(form), .. }) = placed[instance].first_mut() {
-                        *form = Node::new(with_input_body(form.value(), name, body));
+                    if let Some(first) = placed[instance].first_mut() {
+                        rewrite_instance(first, |instance| with_input_body(instance, name, body));
                     }
                 }
                 if let Some(rename) = &reading.rename {
@@ -320,6 +353,7 @@ impl Solver {
                             if !concept_determination(p) {
                                 if let Some(form) = map_atoms(&p.form, &|atom| rename.of(atom)) {
                                     p.form = form;
+                                    p.made = true;
                                 }
                             }
                         }
@@ -328,7 +362,7 @@ impl Solver {
                 if let Some(helper) = reading.helper {
                     helpers.push(helper);
                 }
-                placed[index] = reading.forms.into_iter().map(|form| Placed { form, ..original.clone() }).collect();
+                placed[index] = reading.forms.into_iter().map(|form| Placed { form, made: true, ..original.clone() }).collect();
             }
         }
         let placed: Vec<Placed> = placed.into_iter().flatten().collect();
@@ -337,14 +371,22 @@ impl Solver {
         let mut origins = StableHashMap::default();
         let mut concept_determinations = Vec::new();
         let mut rederived = Vec::new();
+        let mut made = Vec::new();
+        let mut out_blocks = Vec::new();
         for taken in taken {
             let p = taken.placed;
             let path = NodePath::top(forms.len() as u32);
-            if p.depth > 0 || !taken.in_rules.is_empty() {
+            if derives(&p.form) == Some(Derives::Out) {
+                out_blocks.push(p.alts.clone().into());
+            }
+            if p.depth() > 0 || !taken.in_rules.is_empty() {
                 rederived.push(path.clone());
             }
             if concept_determination(p) {
                 concept_determinations.push(path.clone());
+            }
+            if p.made {
+                made.push(path.clone());
             }
             let (form, below) = taken.form();
             origins.extend(below.into_iter().map(|(at, origin)| (path.join(&at), origin)));
@@ -371,8 +413,10 @@ impl Solver {
             name,
             program: Node::new(Program { forms: forms.into() }),
             origins,
+            made: made.into(),
             concept_determinations: concept_determinations.into(),
             rederived: rederived.into(),
+            out_blocks: out_blocks.into(),
             alone,
         })
     }
@@ -443,7 +487,7 @@ impl Solver {
                 Some(Derives::RigidDet(name)) => {
                     owners.insert(OutputOwner::RigidDet(name));
                 }
-                None => {}
+                Some(Derives::Out) | None => {}
             });
             each_read(NodeRef::from(form), &mut |relation| {
                 if let RelationRef::Output(output) = relation {
@@ -503,24 +547,25 @@ impl Solver {
         self.build(name).expect("the concept case takes an alt at each `ALTS` form it reaches")
     }
 
-    /// The alts that a case takes without departing from the concept case:
-    /// each alt of the concept case's name, and the first reading of each
-    /// `DET_OR_RULE` and `RULE_OR_DET` line that some base reads, the
-    /// concept case's reading of that line, including a line that the
-    /// concept case's own base does not reach.
-    pub fn concept_alts(&self) -> Vec<AltsName> {
-        let mut alts = self.all_case_names().swap_remove(0).0.into_vec();
-        for base in alts_product(&self.program.value().forms) {
-            for placed in &self.walk(&base).placed {
-                if let Some(line) = line_of(&placed.form) {
-                    let first = readings(line).swap_remove(0).0;
-                    if !alts.contains(&first) {
-                        alts.push(first);
-                    }
-                }
+    /// The alts at which the case `name` departs from the concept case, in
+    /// the order of `name`, each once: at each `ALTS` form the case's walk
+    /// reaches, the alt it takes there where that alt is not the form's
+    /// concept alt, and at each `DET_OR_RULE` and `RULE_OR_DET` line the walk
+    /// places, the reading `name` holds where that reading is not the line's
+    /// first. An alt that the case takes at the concept branch of a point is
+    /// no departure, whether or not the concept case reaches that point.
+    pub fn departures(&self, name: &CaseName) -> Vec<AltsName> {
+        let walk = self.walk(&name.0);
+        let at_points = walk.points.iter().filter(|point| point.alt != point.concept).map(|point| point.alt.clone());
+        let at_lines = walk.placed.iter().filter_map(|placed| line_of(&placed.form)).flat_map(|line| readings(line).into_iter().skip(1).map(|(alt, _)| alt));
+        let departing: Vec<AltsName> = at_points.chain(at_lines).collect();
+        let mut departures: Vec<AltsName> = Vec::new();
+        for alt in name.0.iter().filter(|alt| departing.contains(alt)) {
+            if !departures.contains(alt) {
+                departures.push(alt.clone());
             }
         }
-        alts
+        departures
     }
 
     /// The cases of `case_names(exclusion)`, each built when the iterator
@@ -556,16 +601,41 @@ impl Iterator for Cases<'_> {
 }
 
 /// A form a case reaches: the form, its file and its path there, and the
-/// number of `ALT` blocks it stands in, so the form of a combination's
-/// nested `ALT` stands deeper than each alt's. `step` counts the walk's
-/// steps before it, so it gives the order of the forms in the files.
+/// names of the alts of the `ALT` blocks it stands in, from the outermost, so
+/// the form of a combination's nested `ALT` stands deeper than each alt's.
+/// `step` counts the walk's steps before it, so it gives the order of the
+/// forms in the files.
 #[derive(Clone, Debug)]
 struct Placed {
     step: usize,
     form: Form,
     owner: FileOwner,
     path: NodePath,
-    depth: u32,
+    alts: Vec<AltsName>,
+    /// Whether the case's reading of a line made or rewrote the form, so the
+    /// file does not write it as it stands.
+    made: bool,
+}
+
+impl Placed {
+    /// The number of `ALT` blocks the form stands in.
+    fn depth(&self) -> u32 {
+        self.alts.len() as u32
+    }
+
+    /// Whether the alts of the blocks the form stands in hold those of
+    /// `other`'s blocks and more: the form stands in a more specific block.
+    fn more_specific_than(&self, other: &Placed) -> bool {
+        self.alts.len() > other.alts.len() && other.alts.iter().all(|alt| self.alts.contains(alt))
+    }
+}
+
+/// An `ALTS` form a walk reaches: the walk's step at it, the alt the walk
+/// takes there, and the form's concept alt.
+struct Point {
+    step: usize,
+    alt: AltsName,
+    concept: AltsName,
 }
 
 /// The walk of a case's blocks: the forms it reaches, and the alt of each
@@ -573,48 +643,51 @@ struct Placed {
 struct Walk<'a> {
     chosen: &'a [AltsName],
     placed: Vec<Placed>,
-    /// Each `ALTS` form reached, by the walk's step at it, and its alt.
-    points: Vec<(usize, AltsName)>,
+    points: Vec<Point>,
     /// An `ALTS` form at which `chosen` takes no alt.
     unchosen: Option<AltsName>,
 }
 
 impl<'a> Walk<'a> {
-    fn forms(&mut self, forms: &'a [Form], owner: FileOwner, base: &NodePath, depth: u32) {
+    fn forms(&mut self, forms: &'a [Form], owner: FileOwner, base: &NodePath, alts: &[AltsName]) {
         for (index, form) in forms.iter().enumerate() {
-            self.form(form, owner, base.child(index as u32), depth);
+            self.form(form, owner, base.child(index as u32), alts);
         }
     }
 
-    fn form(&mut self, form: &'a Form, owner: FileOwner, path: NodePath, depth: u32) {
+    fn form(&mut self, form: &'a Form, owner: FileOwner, path: NodePath, alts: &[AltsName]) {
         let chosen = self.chosen;
         match form {
-            Form::Claim(_) => self.descend(Block::Form(form), owner, &path, depth, &|alt| chosen.contains(&alt.name)),
-            Form::Alts(alts) => {
-                let alts = alts.value();
-                let Some(choice) = alt_names(alts).find(|name| chosen.contains(name)) else {
-                    self.unchosen = Some(alts.name.clone());
+            Form::Claim(_) => self.descend(Block::Form(form), owner, &path, alts, &|alt| chosen.contains(&alt.name)),
+            Form::Alts(node) => {
+                let node = node.value();
+                let Some(choice) = alt_names(node).find(|name| chosen.contains(name)) else {
+                    self.unchosen = Some(node.name.clone());
                     return;
                 };
-                self.points.push((self.placed.len() + self.points.len(), choice.clone()));
-                self.descend(Block::Form(form), owner, &path, depth, &|alt| alt.name == *choice);
+                self.points.push(Point { step: self.placed.len() + self.points.len(), alt: choice.clone(), concept: node.concept.clone() });
+                self.descend(Block::Form(form), owner, &path, alts, &|alt| alt.name == *choice);
             }
             _ => {
                 let step = self.placed.len() + self.points.len();
-                self.placed.push(Placed { step, form: form.clone(), owner, path, depth })
+                self.placed.push(Placed { step, form: form.clone(), owner, path, alts: alts.to_vec(), made: false })
             }
         }
     }
 
     /// The blocks of `block`, the block at `path`, that `enter` admits, an
-    /// `ALT` block one deeper than `depth`; below an `ALT` block, each nested
+    /// `ALT` block one deeper than `alts`, the alts of the blocks `block`
+    /// stands in, with its own alt last; below an `ALT` block, each nested
     /// block that the case chooses.
-    fn descend(&mut self, block: Block<'a>, owner: FileOwner, path: &NodePath, depth: u32, enter: &dyn Fn(&Alt) -> bool) {
+    fn descend(&mut self, block: Block<'a>, owner: FileOwner, path: &NodePath, alts: &[AltsName], enter: &dyn Fn(&Alt) -> bool) {
         let chosen = self.chosen;
         for (index, inner) in inner_blocks(block, enter) {
             match inner {
-                Block::Form(form) => self.form(form, owner, path.child(index), depth),
-                Block::Alt(_) => self.descend(inner, owner, &path.child(index), depth + 1, &|alt| chosen.contains(&alt.name)),
+                Block::Form(form) => self.form(form, owner, path.child(index), alts),
+                Block::Alt(alt) => {
+                    let inner_alts = [alts, std::slice::from_ref(&alt.name)].concat();
+                    self.descend(inner, owner, &path.child(index), &inner_alts, &|alt| chosen.contains(&alt.name))
+                }
             }
         }
     }
@@ -623,7 +696,7 @@ impl<'a> Walk<'a> {
     /// atom that names it, or, for an input of an instance, the instance's
     /// `INIT` form, which holds that input. A form that a deeper block
     /// derives again (`rederived`) is not a form of the case, and a form
-    /// that no read leads from to `&output` (`reaching_output`) reads
+    /// that no read leads from to the `OUT` form (`reaching_output`) reads
     /// nothing the case needs.
     fn read_elsewhere(&self, line: &Placed, clause: &Clause) -> bool {
         if port_of(clause, &self.placed).is_some_and(|port| port.input) {
@@ -640,11 +713,10 @@ impl<'a> Walk<'a> {
     }
 }
 
-/// For each of `forms`, whether the thing it derives reaches `&output`: it
-/// is `&output`, or an instance or a rigid determination, or a form that
-/// reaches `&output` reads it.
+/// For each of `forms`, whether the thing it derives reaches the `OUT` form:
+/// it is the `OUT` form, or an instance or a rigid determination, or a form
+/// that reaches the `OUT` form reads it.
 fn reaching_output(forms: &[&Placed]) -> Vec<bool> {
-    let output = relation_of(&ProgramRelation::Declared(RelationName(DeclaredName::Written("&output".into()))));
     let derived: Vec<Option<RelationRef>> = forms
         .iter()
         .map(|p| match derives(&p.form) {
@@ -652,7 +724,7 @@ fn reaching_output(forms: &[&Placed]) -> Vec<bool> {
             _ => None,
         })
         .collect();
-    let mut reaching: Vec<bool> = derived.iter().map(|relation| relation.as_ref().is_none_or(|relation| *relation == output)).collect();
+    let mut reaching: Vec<bool> = derived.iter().map(Option::is_none).collect();
     loop {
         let mut changed = false;
         for reader in 0..forms.len() {
@@ -708,6 +780,14 @@ fn without_input(instance: &Instance, port: &PortName) -> Instance {
     };
     let key = instance.key.as_ref().map(|key| Node::new(KeyClause { inputs: kept(&key.value().inputs), ..key.value().clone() }));
     Instance { key, inputs: kept(&instance.inputs), ..instance.clone() }
+}
+
+/// Rewrites the `INIT` form at `placed` by `rewrite`, and marks it made.
+fn rewrite_instance(placed: &mut Placed, rewrite: impl FnOnce(&Instance) -> Instance) {
+    if let Form::Instance(form) = &mut placed.form {
+        *form = Node::new(rewrite(form.value()));
+        placed.made = true;
+    }
 }
 
 /// `instance` with the body of its input `port` replaced by `body`, of its
@@ -809,11 +889,13 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 
 /// A line's clause in one reading: the stored reading a `DET`, and a derived
 /// reading a `RULE`. Each reading keeps the line's `ONE` marks and its
-/// columns; the stored reading alone keeps its `SET` mark. The line's body is one reading's, as
-/// `docs/arclog/arclog.md#the-alts-form` gives, and the other reading holds
-/// no body. The derived reading by a proposer other than the line's first
-/// holds the line's first proposer, which names the relation's columns, then
-/// its own, whose columns map onto them by position.
+/// columns; the stored reading alone keeps its `SET` mark. The line's body is
+/// one reading's, as `docs/arclog/arclog.md#the-alts-form` gives, and the
+/// other reading holds no body. The reading that owns a body names no
+/// proposer, as a `DET` or `RULE` that names a proposer has no body; the other
+/// reading keeps the line's proposers. The derived reading by a proposer other
+/// than the line's first holds the line's first proposer, which names the
+/// relation's columns, then its own, whose columns map onto them by position.
 fn read_as(line: &Clause, reading: Reading) -> Clause {
     let (keyword, proposers, owns_body) = match reading {
         Reading::Stored => (ClauseKeyword::Det, line.proposers.clone(), line.keyword == ClauseKeyword::DetOrRule),
@@ -827,6 +909,7 @@ fn read_as(line: &Clause, reading: Reading) -> Clause {
         }
     };
     let body = if owns_body { line.body.clone() } else { Node::new(Body { conjuncts: Arc::from([]) }) };
+    let proposers = if body.value().conjuncts.is_empty() { proposers } else { Arc::from([]) };
     // A reading with no body has no labels for the body's columns: its
     // proposer declares the columns.
     let columns = if body.value().conjuncts.is_empty() && !proposers.is_empty() { Arc::from([]) } else { line.columns.clone() };
@@ -1387,18 +1470,23 @@ fn map_atoms(form: &Form, map: &dyn Fn(&Atom) -> Option<Atom>) -> Option<Form> {
                 rules: demonstrated.rules.iter().zip(rules).map(|(old, new)| new.unwrap_or_else(|| old.clone())).collect(),
             })))
         }
+        Form::Out(out) => key_body(&out.value().key, map).map(|key| Form::Out(Node::new(Out { key }))),
         Form::Claim(_) | Form::Alts(_) => None,
     }
 }
 
-/// The relation, instance or rigid `DET` that a form derives. A case keeps,
-/// of the forms that derive one such thing, those of the deepest blocks
+/// The relation, instance, rigid `DET` or `OUT` form that a form derives. A
+/// case keeps, of the forms that derive one such thing, those of the deepest
+/// blocks, and of the `OUT` forms those of the most specific blocks
 /// (`rederived`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Derives {
     Relation(ProgramRelation),
     Instance(InstanceName),
     RigidDet(RigidDetName),
+    /// The `OUT` form, which a case holds once: the forms of the most
+    /// specific blocks that hold one (`rederived`).
+    Out,
 }
 
 fn derives(form: &Form) -> Option<Derives> {
@@ -1410,6 +1498,7 @@ fn derives(form: &Form) -> Option<Derives> {
         Form::Demonstrated(demonstrated) => {
             Some(Derives::Relation(ProgramRelation::Declared(demonstrated.value().name.clone())))
         }
+        Form::Out(_) => Some(Derives::Out),
         Form::Claim(_) | Form::Alts(_) => None,
     }
 }
@@ -1424,6 +1513,7 @@ fn equal_forms(left: &Form, right: &Form) -> bool {
         (Form::RigidDet(a), Form::RigidDet(b)) => a == b,
         (Form::Demonstrated(a), Form::Demonstrated(b)) => a == b,
         (Form::Alts(a), Form::Alts(b)) => a == b,
+        (Form::Out(a), Form::Out(b)) => a == b,
         _ => false,
     }
 }
@@ -1434,33 +1524,45 @@ fn is_det(form: &Form) -> bool {
 
 /// The forms of a case, from the forms its walk reaches: for each thing
 /// derived, the forms of the deepest blocks that derive it, at the place of
-/// the concept program's first form that derives it. The place of a thing
-/// that a `DEMO_RULE` form of the concept program derives is in each such
-/// form, at its first form that derives it, as [`Taken::in_rules`] gives.
-/// Of the kept forms of one thing that are equal, the first in the walk's
-/// order stands: forms that derive one thing equally derive it once, so their
-/// combination needs no nested `ALT`, and a relation is derived by one clause.
+/// the concept program's first form that derives it. The `OUT` form is the
+/// exception: the forms of the most specific blocks that hold one, those
+/// whose alts no other `OUT` form's alts hold with more, the tail's among
+/// them as the block of no alt. Two such blocks that neither holds the
+/// other's alts each keep their `OUT` form, and the case then holds several
+/// ([`Case::several_outs`]). The place of a thing that a `DEMO_RULE` form of
+/// the concept program derives is in each such form, at its first form that
+/// derives it, as [`Taken::in_rules`] gives. Of the kept forms of one thing
+/// that are equal, the first in the walk's order stands: forms that derive
+/// one thing equally derive it once, so their combination needs no nested
+/// `ALT`, and a relation is derived by one clause. The `OUT` forms stand
+/// after every other form, as the `OUT` form does in a solver file.
 fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
     let keys: Vec<Derives> = placed.iter().map(|p| derives(&p.form).expect("a reached form derives")).collect();
     let mut deepest: StableHashMap<&Derives, u32> = StableHashMap::default();
-    for (p, key) in placed.iter().zip(&keys) {
-        let depth = deepest.entry(key).or_insert(p.depth);
-        *depth = (*depth).max(p.depth);
+    for (p, key) in placed.iter().zip(&keys).filter(|(_, key)| **key != Derives::Out) {
+        let depth = deepest.entry(key).or_insert(p.depth());
+        *depth = (*depth).max(p.depth());
     }
-    let mut keep: Vec<bool> = placed.iter().zip(&keys).map(|(p, key)| p.depth == deepest[key]).collect();
+    let is_out = |index: usize| keys[index] == Derives::Out;
+    let mut keep: Vec<bool> = (0..placed.len())
+        .map(|index| match is_out(index) {
+            true => !(0..placed.len()).any(|other| is_out(other) && placed[other].more_specific_than(&placed[index])),
+            false => placed[index].depth() == deepest[&keys[index]],
+        })
+        .collect();
     for index in 0..placed.len() {
         if keep[index] && (0..index).any(|earlier| keep[earlier] && keys[earlier] == keys[index] && equal_forms(&placed[earlier].form, &placed[index].form)) {
             keep[index] = false;
         }
     }
     let rederived_in = |rules: &StableHashSet<Derives>| -> Vec<&Placed> {
-        (0..placed.len()).filter(|index| placed[*index].depth > 0 && keep[*index] && rules.contains(&keys[*index])).map(|index| &placed[index]).collect()
+        (0..placed.len()).filter(|index| placed[*index].depth() > 0 && keep[*index] && rules.contains(&keys[*index])).map(|index| &placed[index]).collect()
     };
     let mut in_rules = StableHashSet::default();
     let mut taken = Vec::new();
     let mut emitted = vec![false; placed.len()];
     let mut placed_keys = StableHashSet::default();
-    for (index, p) in placed.iter().enumerate().filter(|(_, p)| p.depth == 0) {
+    for (index, p) in placed.iter().enumerate().filter(|(index, p)| p.depth() == 0 && !is_out(*index)) {
         let key = &keys[index];
         if keep[index] {
             let rules: StableHashSet<Derives> = rule_derives(&p.form).collect();
@@ -1470,15 +1572,16 @@ fn rederived(placed: &[Placed]) -> Vec<Taken<'_>> {
         }
         if deepest[key] > 0 && placed_keys.insert(key) {
             for other in 0..placed.len() {
-                if !emitted[other] && placed[other].depth > 0 && keep[other] && keys[other] == *key {
+                if !emitted[other] && placed[other].depth() > 0 && keep[other] && keys[other] == *key {
                     taken.push(Taken { placed: &placed[other], in_rules: Vec::new() });
                     emitted[other] = true;
                 }
             }
         }
     }
-    let rest = (0..placed.len()).filter(|index| !emitted[*index] && keep[*index] && !in_rules.contains(&keys[*index]));
-    taken.extend(rest.map(|index| Taken { placed: &placed[index], in_rules: Vec::new() }));
+    let rest = (0..placed.len()).filter(|index| !emitted[*index] && keep[*index] && !is_out(*index) && !in_rules.contains(&keys[*index]));
+    let out = (0..placed.len()).filter(|index| keep[*index] && is_out(*index));
+    taken.extend(rest.chain(out).map(|index| Taken { placed: &placed[index], in_rules: Vec::new() }));
     taken
 }
 

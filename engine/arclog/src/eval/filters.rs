@@ -142,10 +142,22 @@ fn compile_union(
         per_branch.push(exports);
     }
     let exported: BTreeSet<u32> = crate::safety::common_to_all(per_branch).into_iter().map(|label| label.0).collect();
+    // Only context variables and actual exports cross a branch boundary.
+    // Syntactically made labels that another branch merely mentions remain
+    // local; projecting them would ask the join to enumerate an unbound value.
+    let shared: BTreeSet<u32> = around.union(&exported).copied().collect();
     let mut clauses = Vec::with_capacity(branches.len());
     let mut branch_paths: Vec<IrPaths> = Vec::with_capacity(branches.len());
     for (branch, labels) in branches.iter().zip(&held) {
-        let mut clause = nested(builder)?;
+        // Nested unions see this branch's lexical context, not sibling
+        // branches elsewhere in the top-level form. Reusing the top-level
+        // context incorrectly turns a sibling's local into an outer input.
+        let compiled = super::ir::Compiled {
+            conjuncts: branch.lists.iter().flat_map(|(list,path)|
+                (0..list.value().conjuncts.len()).map(|i|path.child(i as u32))).collect(),
+            columns: labels.intersection(&shared).copied().map(LabelId).collect(),
+        };
+        let mut clause = IrBuilder::new(builder.program,builder.form.clone(),std::rc::Rc::new(compiled))?;
         for (list, path) in &branch.lists {
             clause.body(list.value(), path)?;
         }

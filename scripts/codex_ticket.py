@@ -45,7 +45,7 @@ BINDING = "codex-ticket.json"
 ROLES = frozenset(CODEX_ROLES)
 
 CONTROL_ROUTE = mctx("Enrolled Codex ticket {ticket}, owning operator {operator}. "
-                     "See [Codex](prompts/agents/notes/coordinator.md#codex).")
+                     "See [Codex](prompts/agents/notes/ops.md#codex).")
 
 
 class Refused(ValueError):

@@ -39,6 +39,8 @@ fn zero_typed_clause(other: &str) -> String {
 (RULE &output
   (input *P *Col)
   (&way *D))
+
+(DET &counts NumberDomain)
 "
     )
 }
@@ -54,9 +56,9 @@ fn first_head_type(checked: &CheckedProgram) -> Option<ValueType> {
 #[test]
 fn a_clause_of_equal_content_takes_the_types_of_its_own_relation_s_clauses() {
     let mut cache = CheckCache::default();
-    let colors = check(&zero_typed_clause("(input (:Col *D))"), &mut cache).expect("every check passes");
-    let dirs = check(&zero_typed_clause("(dir_elem *D)"), &mut cache).expect("every check passes");
-    assert_eq!((first_head_type(&colors), first_head_type(&dirs)), (Some(ValueType::Color), Some(ValueType::Dir)));
+    let boxes = check(&zero_typed_clause("(input (:P *D))"), &mut cache).expect("every check passes");
+    let numbers = check(&zero_typed_clause("(&counts (:N *D))"), &mut cache).expect("every check passes");
+    assert_eq!((first_head_type(&boxes), first_head_type(&numbers)), (Some(ValueType::Position), Some(ValueType::Nat)));
 }
 
 #[test]
@@ -89,4 +91,14 @@ fn a_read_of_an_undeclared_slot_gives_a_scope_diagnostic_that_names_the_slot() {
     let scope: Vec<_> = resolved.diagnostics.iter().filter(|d| d.kind == DiagnosticKind::Check(CheckId::Scope)).collect();
     assert_eq!(scope.len(), 1, "{:?}", resolved.diagnostics);
     assert!(scope[0].message.contains("slot 7"), "{}", scope[0].message);
+}
+
+#[test]
+fn a_second_init_of_one_name_in_one_scope_gives_a_scope_diagnostic_and_no_panic() {
+    let solver = read_solver("scopes", "(INIT &state Unfold)\n\n(INIT &state Unfold\n  (start ((:t P))\n    (input *P)))\n", "", &|_| None).expect("the file reads").value;
+    let resolved = resolve(&solver.concept_case().program, None, &solver.derived_relations(), Registry::get());
+    let scope: Vec<_> = resolved.diagnostics.iter().filter(|d| d.kind == DiagnosticKind::Check(CheckId::Scope)).collect();
+    assert_eq!(scope.len(), 1, "{:?}", resolved.diagnostics);
+    assert_eq!(scope[0].location, Location::Path(path(&[1])));
+    assert!(scope[0].message.contains("state"), "{}", scope[0].message);
 }

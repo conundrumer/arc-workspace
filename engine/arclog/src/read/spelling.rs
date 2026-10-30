@@ -30,6 +30,7 @@ pub const FACT_RELATIONS: &[(FactRelation, &str)] = &[
 
 pub(crate) const INIT: &str = "INIT";
 pub(crate) const CHOOSE: &str = "CHOOSE";
+pub(crate) const OUT: &str = "OUT";
 pub(crate) const RIGID_DET: &str = "RIGID_DET";
 pub(crate) const DEMONSTRATED: &str = "DEMONSTRATED";
 pub(crate) const DEMO_RULE: &str = "DEMO_RULE";
@@ -63,6 +64,8 @@ pub(crate) const ZERO: &str = "0";
 /// The column types of an arcdata `param` form.
 pub(crate) const TYPE_NAMES: &[(TypeName, &str)] = &[
     (TypeName::Number, "number"),
+    (TypeName::Int, "Int"),
+    (TypeName::Nat, "Nat"),
     (TypeName::Color, "Color"),
     (TypeName::Example, "Example"),
     (TypeName::Unit, "Unit"),

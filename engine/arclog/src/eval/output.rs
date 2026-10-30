@@ -1,4 +1,4 @@
-//! The grid of `&output`, read by its grid columns, as
+//! The grid of an `OUT` form's relation, read by its grid columns, as
 //! `docs/arclog/constraints.md#the-output-set` gives.
 
 use crate::relations::{ColumnIndex, ColumnOrder, Relation};
@@ -6,7 +6,7 @@ use crate::task::Grid;
 use crate::terms::{Color, Constant, Term};
 use crate::types::ValueType;
 
-/// The grid columns of `&output`: one column of type Position and one of
+/// The grid columns of a relation: one column of type Position and one of
 /// type Color.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct GridColumns {
@@ -14,11 +14,10 @@ pub struct GridColumns {
     pub color: ColumnIndex,
 }
 
-/// The pairs of a Position column and a Color column of a relation whose
-/// columns take `types`, each a candidate for its grid columns.
-pub fn candidate_columns(types: &[ValueType]) -> Vec<GridColumns> {
-    let of = |ty: ValueType| types.iter().enumerate().filter(move |(_, t)| **t == ty).map(|(i, _)| ColumnIndex(i as u16));
-    of(ValueType::Box).flat_map(|position| of(ValueType::Color).map(move |color| GridColumns { position, color })).collect()
+impl GridColumns {
+    /// The grid columns of an `OUT` form's relation: the Position column
+    /// first and the Color column second.
+    pub const OUT: GridColumns = GridColumns { position: ColumnIndex(0), color: ColumnIndex(1) };
 }
 
 /// The grid that `relation` gives by `columns`, or `None` where a cell of

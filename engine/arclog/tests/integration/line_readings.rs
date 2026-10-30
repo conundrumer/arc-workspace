@@ -13,13 +13,11 @@ use arclog::decode::corpus::{solver_verdicts, Verdict};
 use arclog::eval::instance::{Construction, ConstructionContext, Constructions, GroupInputs, GroupOutputs};
 use arclog::eval::ReachedBound;
 use arclog::relations::RowSet;
-use arclog::program::{AltsName, ClauseKeyword, DeclaredName, Form, ProgramRelation, RelationName};
-use arclog::stream::corpus::{solver_streams, WantedCases};
-use arclog::stream::{DecodeSettings, Vocabulary};
+use arclog::program::AltsName;
 use arclog::read::read_solver;
 use arclog::registry::Registry;
 use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
-use arclog::solver::{Case, CaseName, Exclusion};
+use arclog::solver::{CaseName, Exclusion};
 use arclog::types::GraphRelation;
 
 /// `&k` is read by `&v`. `$Own` rederives `&v` from the evidence, so in its
@@ -47,6 +45,8 @@ const ARCLOG: &str = "
 
       (RULE &v
         (&j *N)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 fn names() -> Vec<Vec<String>> {
@@ -64,15 +64,41 @@ fn a_line_that_no_form_of_the_case_reads_does_not_split_it() {
     assert_eq!(from_k, 3, "{names:?}");
 }
 
+/// The departures of the case of the alts `alts` in `arclog`.
+fn departures(arclog: &str, alts: &[&str]) -> Vec<String> {
+    let solver = read_solver("lines", arclog, "", &|_| None).expect("the file reads").value;
+    let name = CaseName(alts.iter().map(|alt| AltsName((*alt).into())).collect());
+    solver.departures(&name).into_iter().map(|alt| alt.0.to_string()).collect()
+}
+
 #[test]
-fn the_concept_alts_hold_the_first_reading_of_a_line_that_a_nested_block_holds() {
-    let solver = read_solver("lines", ARCLOG, "", &|_| None).expect("the file reads").value;
-    let alt = |text: &str| AltsName(text.into());
-    let alts = solver.concept_alts();
-    assert!(alts.contains(&alt("&k=$Stored")), "{alts:?}");
-    assert!(alts.contains(&alt("&j=$Stored")), "{alts:?}");
-    assert!(!alts.contains(&alt("&j=SepTileCount")), "{alts:?}");
-    assert!(!alts.contains(&alt("$Own")), "{alts:?}");
+fn a_case_departs_by_the_first_reading_of_no_line_and_by_each_other_reading() {
+    assert_eq!(departures(ARCLOG, &["$FromK", "&k=$Stored"]), Vec::<String>::new());
+    assert_eq!(departures(ARCLOG, &["$FromK", "&k=SepTileCount"]), ["&k=SepTileCount"]);
+    // A line that only a nested block holds: the concept case reaches neither it nor its blocks.
+    assert_eq!(departures(ARCLOG, &["$Own", "&j=$Stored"]), ["$Own"]);
+    assert_eq!(departures(ARCLOG, &["$Own", "&j=SepTileCount"]), ["$Own", "&j=SepTileCount"]);
+}
+
+/// `$Plain` is the concept alt of `$inner`, which only `$Nested` reaches.
+const NESTED: &str = "
+(INPUT sides \"a side.\"
+  (RULE &output
+    (input *P *Col)))
+
+(ALTS $reading \"how a side is found\" $First
+  (ALT $Nested
+    (ALTS $inner \"which side\" $Plain
+      (ALT $Fancy
+        (RULE &extra
+          (input *P *Col))))))
+";
+
+#[test]
+fn the_concept_alt_of_a_nested_point_is_no_departure() {
+    assert_eq!(departures(NESTED, &["$First"]), Vec::<String>::new());
+    assert_eq!(departures(NESTED, &["$Nested", "$Plain"]), ["$Nested"]);
+    assert_eq!(departures(NESTED, &["$Nested", "$Fancy"]), ["$Nested", "$Fancy"]);
 }
 
 #[test]
@@ -100,115 +126,6 @@ fn corpus(arclog: &str) -> std::path::PathBuf {
     let task = r#"{"train": [{"input": [[1, 1]], "output": [[1, 1]]}], "test": [{"input": [[1, 2]], "output": [[1, 2]]}]}"#;
     std::fs::write(dir.join("line.json"), task).expect("the task file");
     dir
-}
-
-/// The stored case of the line `relation`, and whether the writer gives it a
-/// stream.
-fn stored_case(arclog: &str, relation: &str) -> (Case, Result<(), String>) {
-    let solver = read_solver("line", arclog, "", &|_| None).expect("the file reads").value;
-    let stored = AltsName(format!("{relation}=$Stored").into());
-    let name = solver.case_names(Exclusion::WithExcluded).into_iter().find(|name| name.0.contains(&stored)).expect("a case that takes the stored reading");
-    let case = solver.case(&name).expect("the case builds");
-    let dir = corpus(arclog);
-    let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
-    let spelled = arclog::stream::corpus::case_spelled(&name);
-    let streams = solver_streams(&dir, "line", WantedCases::Named(&spelled), &vocabulary);
-    std::fs::remove_dir_all(&dir).ok();
-    let stream = streams.expect("the case checks").remove(0).stream.map(|_| ());
-    (case, stream)
-}
-
-/// The keyword of each clause of `case` that derives the relation spelled
-/// `relation`, in the order of the program.
-fn clauses_of(case: &Case, relation: &str) -> Vec<ClauseKeyword> {
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(relation.into())));
-    let forms = case.program.value().forms.iter();
-    forms.filter_map(|form| match form {
-        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().keyword),
-        _ => None,
-    }).collect()
-}
-
-const BODY_LINE: &str = "
-(INPUT cells \"the cells\"
-  (RULE_OR_DET &cell \"The cells.\"
-    (input *P *Col))
-
-  (RULE &output
-    (input *P *Col)
-    (&cell P)))
-";
-
-#[test]
-fn the_stored_reading_of_a_line_with_a_body_is_a_det_over_a_rule_of_that_body() {
-    let (case, stream) = stored_case(BODY_LINE, "&cell");
-    assert_eq!(clauses_of(&case, "&cell_derived"), vec![ClauseKeyword::Rule]);
-    assert_eq!(clauses_of(&case, "&cell"), vec![ClauseKeyword::Det]);
-    assert_eq!(stream, Ok(()));
-}
-
-const OUTPUT_PORT: &str = "
-(INPUT ring \"the ring\"
-  (INIT &ring Singleton
-    (member ((:v Col))
-      (input *P *Col)))
-
-  (RULE_OR_DET &ring.value \"The one color.\")
-
-  (RULE &output
-    (input *P *Col)
-    (&ring.value (:v Col))))
-";
-
-#[test]
-fn the_stored_reading_of_a_line_on_an_output_port_is_a_det_that_each_read_of_the_port_reads() {
-    let (case, stream) = stored_case(OUTPUT_PORT, "&ring.value");
-    assert_eq!(clauses_of(&case, "&ring_value_stored"), vec![ClauseKeyword::Det]);
-    assert!(case.program.value().forms.iter().any(|form| matches!(form, Form::Instance(_))), "the instance stays");
-    assert_eq!(stream, Ok(()));
-}
-
-const INPUT_PORT: &str = "
-(INPUT canvas \"the canvas\"
-  (INIT &canvas Frame
-    (extent (A N)
-      (input *P)
-      (axis_elem *A)
-      (frame_extent P A *N)))
-
-  (RULE_OR_DET &canvas.extent)
-
-  (RULE &output
-    (&canvas.cell *P)))
-";
-
-#[test]
-fn the_stored_reading_of_a_line_on_an_input_port_is_a_det_over_a_rule_of_the_inputs_clause() {
-    let (case, stream) = stored_case(INPUT_PORT, "&canvas.extent");
-    assert_eq!(clauses_of(&case, "&canvas_extent_derived"), vec![ClauseKeyword::Rule]);
-    assert_eq!(clauses_of(&case, "&canvas_extent_stored"), vec![ClauseKeyword::Det]);
-    assert_eq!(stream, Ok(()));
-}
-
-const CONCEPT_READ: &str = "
-(INPUT cells \"the cells\"
-  (RULE_OR_DET &cell \"The cells.\"
-    (input *P *Col))
-
-  (DET &gap
-    (ex_input *E *P *Col)
-    (NOT (&cell E P Col)))
-
-  (RULE &output
-    (input *P *Col)
-    (&gap P Col)))
-";
-
-#[test]
-fn a_det_of_the_concept_program_that_reads_a_stored_line_with_a_site_on_e_is_taken_from_the_concept_program() {
-    let (case, stream) = stored_case(CONCEPT_READ, "&cell");
-    assert_eq!(case.concept_determinations().len(), 1);
-    assert_eq!(stream, Ok(()));
 }
 
 /// A `Singleton` whose member holds one row, and outside its domain where it
@@ -245,91 +162,8 @@ fn verdict_of(forms: &str) -> Verdict {
 
 #[test]
 fn a_lifted_read_bound_by_ex_output_reads_the_train_examples_alone() {
-    let bound = verdict_of("(DET &d (ex_output (:E *E)) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))");
+    let bound = verdict_of("(DET &d (ex_output *E) (&c E *Col))\n(RULE &output (input *P *Col) (&d Col))\n(OUT (&output ^P ^Col))");
     assert_eq!(bound, Verdict::Consistent);
-    let unbound = verdict_of("(DET &d (ex_input *E) (&c (:E E) (:Col *Col)))\n(RULE &output (input *P *Col) (&d (:Col Col)))");
+    let unbound = verdict_of("(DET &d (ex_input *E) (&c E *Col))\n(RULE &output (input *P *Col) (&d Col))\n(OUT (&output ^P ^Col))");
     assert_ne!(unbound, Verdict::Consistent);
-}
-
-const UNREAD_COLUMN: &str = "
-(INPUT cells \"the cells\"
-  (RULE_OR_DET &cell \"The cells.\"
-    (input *P *Col))
-
-  (RULE &output
-    (input *P *Col)
-    (&cell (:Col Col))))
-";
-
-#[test]
-fn the_stored_det_of_a_line_has_the_columns_that_a_read_names() {
-    let (case, stream) = stored_case(UNREAD_COLUMN, "&cell");
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written("&cell".into())));
-    let det = case.program.value().forms.iter().find_map(|form| match form {
-        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().clone()),
-        _ => None,
-    });
-    let det = det.expect("the stored DET");
-    let sites_of_derivation = |body: &arclog::program::Body| body.conjuncts.iter().filter_map(|c| c.atom().map(|atom| atom.value().sites.len())).collect::<Vec<_>>();
-    // `ex_output (:E)`, then the read of the helper at `E` and `Col` alone.
-    assert_eq!(sites_of_derivation(det.body.value()), vec![1, 2], "{det:?}");
-    assert_eq!(stream, Ok(()));
-}
-
-const READS_IN_THE_BLOCK_THAT_HOLDS_THE_LINE: &str = "
-(ALTS $a \"which block\" $Plain
-  (ALT $Own
-    (INPUT cells \"the cells\"
-      (RULE_OR_DET &cell \"The cells.\"
-        (input *P *Col))
-
-      (RULE &other
-        (&cell (:P *P)))
-
-      (RULE &output
-        (input *P *Col)
-        (&cell (:Col Col))
-        (&other P)))))
-";
-
-#[test]
-fn the_stored_det_has_the_columns_that_forms_of_the_block_that_holds_the_line_name() {
-    let (case, stream) = stored_case(READS_IN_THE_BLOCK_THAT_HOLDS_THE_LINE, "&cell");
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written("&cell".into())));
-    let det = case.program.value().forms.iter().find_map(|form| match form {
-        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().clone()),
-        _ => None,
-    });
-    let det = det.expect("the stored DET");
-    let sites: Vec<usize> = det.body.value().conjuncts.iter().filter_map(|c| c.atom().map(|atom| atom.value().sites.len())).collect();
-    assert_eq!(sites, vec![1, 3], "`E`, `P` and `Col`: {det:?}");
-    assert_eq!(stream, Ok(()));
-}
-
-const KEYED_PORT: &str = "
-(INPUT boxes \"the boxes\"
-  (INIT &bbox BoundingBox
-    (key ((input *P ^Col))
-      (cell (P)
-        (input *P Col))))
-
-  (RULE_OR_DET &bbox.box \"The boxes.\")
-
-  (RULE &output
-    (&bbox.box (:key *Col) *B)))
-";
-
-#[test]
-fn the_stored_reading_of_a_line_on_a_keyed_port_is_a_det_of_the_value_columns_and_a_rule_that_joins_the_other_columns() {
-    let (case, stream) = stored_case(KEYED_PORT, "&bbox.box");
-    assert_eq!(clauses_of(&case, "&bbox_box_value"), vec![ClauseKeyword::Det]);
-    assert_eq!(clauses_of(&case, "&bbox_box_stored"), vec![ClauseKeyword::Rule]);
-    let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written("&bbox_box_stored".into())));
-    let rule = case.program.value().forms.iter().find_map(|form| match form {
-        Form::Clause(clause) if clause.value().derives == declared => Some(clause.value().clone()),
-        _ => None,
-    });
-    let columns: Vec<String> = rule.expect("the joining RULE").columns.iter().map(|column| format!("{:?}", column.name)).collect();
-    assert_eq!(columns, vec!["Written(\"KeyCol\")", "Written(\"B\")"]);
-    assert_eq!(stream, Ok(()));
 }

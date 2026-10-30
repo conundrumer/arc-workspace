@@ -29,12 +29,12 @@ use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Deter
 use arclog::eval::instance::Constructions;
 use arclog::eval::Limits;
 use arclog::task::{JudgedTask, Task};
-use arclog::program::{AltsName, OutputOwner, ParamValue, ProgramRelation, RigidDetName};
+use arclog::program::{OutputOwner, ParamValue, ProgramRelation, RigidDetName};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
 use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
 use arclog::session::TaskSession;
-use arclog::solver::{CaseName, Exclusion};
+use arclog::solver::{CaseName, Exclusion, Solver};
 use arclog::terms::{Ident, Term, TermId};
 use arclog::types::{GraphRelation, ValueType};
 
@@ -109,9 +109,9 @@ pub(crate) struct SolverDetermination {
     pub(crate) task: Task,
     pub(crate) judged: JudgedTask,
     concept: CheckedProgram,
-    /// The alts that a case takes without departing from the concept
-    /// case, as `Solver::concept_alts` gives them.
-    pub(crate) concept_alts: Vec<AltsName>,
+    /// The solver, which gives the departures of each of its cases from the
+    /// concept case.
+    pub(crate) solver: Arc<Solver>,
     /// Every case the `exclude` forms leave, checked once, in the order of
     /// `Solver::case_names`.
     programs: Vec<(CaseName, CheckedProgram)>,
@@ -139,10 +139,9 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
-    let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
-    let concept_alts = solver.concept_alts();
+    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case", false)?;
     let names = solver.case_names(Exclusion::WithoutExcluded);
-    let programs = check_cases(&cases, &clauses, &mut cache, &|name| names.contains(name))?;
+    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| names.contains(name), false)?;
     let session = corpus_session();
     let limits = corpus_limits();
     let constructions = constructions()?;
@@ -157,7 +156,7 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
         findings.extend(comparison.findings());
         (determination, findings)
     };
-    Ok(SolverDetermination { task, judged, concept, concept_alts, programs, session, limits, constructions, determination, findings })
+    Ok(SolverDetermination { task, judged, concept, solver, programs, session, limits, constructions, determination, findings })
 }
 
 /// The fault line of a case that `outcome` gives, or `None` for a case that

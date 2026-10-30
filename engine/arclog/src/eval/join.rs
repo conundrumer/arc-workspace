@@ -39,29 +39,27 @@ const BATCH: u64 = 1024;
 
 /// The counts of one evaluation against its caps and its other bounds: the
 /// bindings tried and the rows held. A native construction counts its own
-/// bindings and rows through the same counter.
+/// bindings and rows through the same counter. The rows it counts are those
+/// of the evaluation it stands for: an evaluation nested in a join counts its
+/// own rows and adds none to the count around it, as [`Budget::nested`]
+/// gives.
 #[derive(Debug)]
 pub struct Budget<'a> {
     limits: &'a Limits,
     session: &'a TaskSession,
     bindings: u64,
     rows: u64,
-    /// The charges made since [`Budget::log`] began a log, in order.
-    log: Option<Vec<Charge>>,
-}
-
-/// A charge to a [`Budget`]: bindings tried, or rows held.
-#[derive(Clone, Copy, Debug)]
-enum Charge {
-    Work(u64),
-    Rows(u64),
+    /// The most rows a nested evaluation that gave a value held.
+    nested_rows: u64,
+    /// The bindings charged since [`Budget::logged`] began a log.
+    log: Option<Charges>,
 }
 
 impl<'a> Budget<'a> {
     /// A budget with no work and no rows counted, under `limits` and the
     /// caps of `session`.
     pub fn new(limits: &'a Limits, session: &'a TaskSession) -> Self {
-        Budget { limits, session, bindings: 0, rows: 0, log: None }
+        Budget { limits, session, bindings: 0, rows: 0, nested_rows: 0, log: None }
     }
 
     /// The caps of the session.
@@ -73,10 +71,7 @@ impl<'a> Budget<'a> {
     /// session's byte bound, the deadline and the cancellation.
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
         if let Some(log) = &mut self.log {
-            match log.last_mut() {
-                Some(Charge::Work(last)) => *last = last.saturating_add(bindings),
-                _ => log.push(Charge::Work(bindings)),
-            }
+            *log = log.saturating_add(bindings);
         }
         self.bindings = self.bindings.saturating_add(bindings);
         let caps = self.session.caps;
@@ -111,53 +106,121 @@ impl<'a> Budget<'a> {
         }
     }
 
+    /// Admits a new full-row buffer before it reserves memory. The compact
+    /// parts of a relation have not paid for their Cartesian product; flat
+    /// rows pay no binding work again. Output rows and their conservative
+    /// byte size count as new held data, under the existing session bound.
+    pub fn materialize(&mut self, relation: &Relation, bytes_per_row: usize) -> Result<crate::session::SessionAllocation, ReachedBound> {
+        self.charge_work(0)?;
+        self.charge_product(relation)?;
+        self.charge_rows(relation.len())?;
+        let bytes = usize::try_from(relation.len()).unwrap_or(usize::MAX).saturating_mul(bytes_per_row);
+        self.session.reserve(bytes.saturating_add(128)).map_err(ReachedBound::SessionBytes)
+    }
+
+    /// Walks admitted rows, checking the same operation deadline, cancellation
+    /// and session bound each batch without charging their bindings twice.
+    pub fn walk_rows(&mut self, relation: &Relation, visit: &mut dyn FnMut(&[TermId])) -> Result<(), ReachedBound> {
+        let mut count = 0u64;
+        try_each_row(relation, &mut |row| {
+            if count % BATCH == 0 { self.charge_work(0)?; }
+            count += 1;
+            visit(row);
+            Ok(())
+        })
+
+    }
+
     /// Counts `rows` more rows held, and checks the row cap.
     pub fn charge_rows(&mut self, rows: u64) -> Result<(), ReachedBound> {
-        if let Some(log) = &mut self.log {
-            match log.last_mut() {
-                Some(Charge::Rows(last)) => *last += rows,
-                _ => log.push(Charge::Rows(rows)),
-            }
-        }
         self.rows += rows;
         let cap = self.session.caps.rows;
         if self.rows > cap { Err(ReachedBound::Rows { cap }) } else { Ok(()) }
     }
 
-    /// Runs `evaluate` and gives its result with the charges it made, in
-    /// order, so that [`Budget::replay`] charges them again as they were
-    /// made. The charges also stand in the log of an enclosing call.
-    fn logged<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Charges), ReachedBound> {
-        let outer = self.log.replace(Vec::new());
+    /// Runs `evaluate`, an evaluation nested in a join, and gives its result.
+    /// The evaluation counts the rows it holds against the row cap on their
+    /// own, from none, and adds none to the count around it, whether it gives
+    /// a value or a stop. It adds each binding it tries to that count. The
+    /// most rows a nested evaluation that gave a value held is recorded by
+    /// [`Budget::record`] as the rows, where it exceeds the rows of the
+    /// evaluation around it.
+    pub fn nested<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<T, ReachedBound> {
+        let outer = std::mem::take(&mut self.rows);
         let result = evaluate(self);
-        let inner = std::mem::replace(&mut self.log, outer).expect("the log this call began");
-        if let Some(outer) = &mut self.log {
-            outer.extend_from_slice(&inner);
+        let held = std::mem::replace(&mut self.rows, outer);
+        if result.is_ok() {
+            self.nested_rows = self.nested_rows.max(held);
         }
-        Ok((result?, inner.into()))
+        result
     }
 
-    /// Charges `charges` in order, as they were made. A memo hit charges the
-    /// work and rows of the evaluation it stands for, so the counts of a
+    /// Runs `evaluate` as a nested evaluation ([`Budget::nested`]) and gives
+    /// its result with the bindings it charged, so that [`Budget::replay`]
+    /// charges them again. The bindings also stand in the log of an enclosing
+    /// call.
+    fn logged<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Charges), ReachedBound> {
+        let outer = self.log.replace(0);
+        let result = self.nested(evaluate);
+        let inner = std::mem::replace(&mut self.log, outer).expect("the log this call began");
+        if let Some(outer) = &mut self.log {
+            *outer = outer.saturating_add(inner);
+        }
+        Ok((result?, inner))
+    }
+
+    /// Charges the `bindings` of an evaluation that [`Budget::logged`] gave.
+    /// A memo hit charges the bindings of the evaluation it stands for and no
+    /// row, since a nested evaluation adds none ([`Budget::nested`]) and the
+    /// memo keeps only an evaluation that gave a value, so the counts of a
     /// search, and the place where it stops at a cap, are those of the search
     /// with no memo.
-    fn replay(&mut self, charges: &Charges) -> Result<(), ReachedBound> {
-        if charges.is_empty() {
-            return self.charge_work(0);
-        }
-        for charge in charges.iter() {
-            match *charge {
-                Charge::Work(bindings) => self.charge_work(bindings)?,
-                Charge::Rows(rows) => self.charge_rows(rows)?,
-            }
-        }
-        Ok(())
+    fn replay(&mut self, bindings: Charges) -> Result<(), ReachedBound> {
+        self.charge_work(bindings)
     }
 
     /// Records the budget's counts in its session, as
     /// [`TaskSession::record_counts`] gives.
     pub fn record(&self) {
-        self.session.record_counts(Counts { bindings: self.bindings, rows: self.rows });
+        self.session.record_counts(Counts { bindings: self.bindings, rows: self.rows.max(self.nested_rows) });
+    }
+}
+
+/// One operation's materialization policy. It borrows the current limits;
+/// retained buffers own only their stable session byte reservations.
+#[derive(Clone, Copy)]
+pub struct Materializer<'a> {
+    session: &'a TaskSession,
+    limits: &'a Limits,
+}
+
+impl<'a> Materializer<'a> {
+    /// Uses the caller's current operation, without starting another timer.
+    pub fn new(session:&'a TaskSession, limits:&'a Limits)->Self { Self {session,limits} }
+
+    /// Conservative per-row owned storage, including hash/vector headers and
+    /// allocator slack. Callers supply their actual scalar payload layout.
+    pub fn row_bytes(payload:usize, allocations:usize)->usize {
+        payload.saturating_add(256).saturating_add(allocations.saturating_mul(64))
+    }
+
+    /// Admits all rows and returns the owner of their retained bytes.
+    pub fn admit(&self,rows:&Relation,bytes_per_row:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
+        Budget::new(self.limits,self.session).materialize(rows,bytes_per_row).map(Arc::new)
+    }
+
+    /// Admits a genuine copy of an existing buffer before cloning it.
+    pub fn copy(&self,bytes:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
+        self.check()?;
+        self.session.reserve(bytes).map(Arc::new).map_err(ReachedBound::SessionBytes)
+    }
+
+    /// A zero-work check under this operation's existing deadline and caps.
+    pub fn check(&self)->Result<(),ReachedBound> {Budget::new(self.limits,self.session).charge_work(0)}
+
+    /// Walks the admitted rows with periodic checks under these same limits.
+    pub fn walk(&self,rows:&Relation,visit:&mut dyn FnMut(&[TermId]))->Result<(),ReachedBound> {
+        Budget::new(self.limits,self.session).walk_rows(rows,visit)
     }
 }
 
@@ -313,7 +376,9 @@ pub fn product(clause: &ClauseIr, parts: Vec<RelationPart>) -> Relation {
 /// variables of `order` that passes every node of `nodes` and agrees with a
 /// row of each relation of `tries`, by generic join in `order`, at the
 /// values `bound` gives some of the clause's variables. A relation of
-/// `tries` is read as an atom over its arguments.
+/// `tries` is read as an atom over its arguments. Where `clause` is one
+/// union and `tries` and `bound` are empty, the rows are those of
+/// `union_rows`.
 #[allow(clippy::too_many_arguments)]
 pub fn search(
     clause: &ClauseIr,
@@ -327,28 +392,107 @@ pub fn search(
     budget: &mut Budget<'_>,
 ) -> Result<RowSet, ReachedBound> {
     let projected: Vec<Variable> = columns.iter().map(|c| clause.columns[usize::from(c.0)]).collect();
+    if tries.is_empty() && bound.is_empty() {
+        if let Some(rows) = union_rows(clause, nodes, &projected, inputs, registry, budget) {
+            return rows;
+        }
+    }
     let variables: Vec<Variable> = bound.iter().map(|&(variable, _)| variable).collect();
     let plan = Plan::new(clause, nodes, tries, order, &variables, inputs, budget)?;
     Search::new(clause, &plan, inputs, registry, &SearchMemo::default(), bound).run(&projected, budget)
 }
 
+/// The rows of `projected`, variables of `clause`, where the one node of
+/// `clause` is a union and `nodes` is that node: the rows of its branches,
+/// each branch searched once at no bound value, with all its nodes, over the
+/// columns of `projected` alone, as an evaluation nested in the union
+/// ([`Budget::nested`]), and projected onto `projected`. A label local to a
+/// branch is searched over and held in no row. The union charges one row for
+/// each distinct row it holds. `None` where `clause` is anything else, or
+/// where a branch leaves out a node at no bound value, or holds no variable
+/// of `projected` among those its order binds; the generic join over `clause`
+/// gives the rows then.
+///
+/// A union that is a clause's whole body is the union of its branches'
+/// relations (`docs/arclog/arclog.md#disjunction`), so no branch is joined again
+/// at the values bound so far, as [`Search::union_values`] joins a union
+/// beside other conjuncts.
+fn union_rows(
+    clause: &ClauseIr,
+    nodes: &[usize],
+    projected: &[Variable],
+    inputs: &JoinInputs,
+    registry: &Registry,
+    budget: &mut Budget<'_>,
+) -> Option<Result<RowSet, ReachedBound>> {
+    let ([IrNode::Or(union)], [0], Some(NodeInput::Clauses(bodies))) = (&*clause.nodes, nodes, inputs.0.first()) else { return None };
+    let searches: Vec<(Vec<Variable>, Vec<ColumnIndex>)> = union
+        .branches
+        .iter()
+        .zip(bodies.iter())
+        .map(|(branch, inputs)| {
+            let order = variable_order(branch, &sizes(inputs), &[]).0.to_vec();
+            let columns: Option<Vec<ColumnIndex>> = projected
+                .iter()
+                .map(|variable| {
+                    let place = branch.columns.iter().position(|column| column == variable)?;
+                    order.contains(variable).then_some(ColumnIndex(place as u16))
+                })
+                .collect();
+            columns.filter(|_| kept_nodes(branch, &[]).len() == branch.nodes.len()).map(|columns| (order, columns))
+        })
+        .collect::<Option<_>>()?;
+    let mut rows = RowSet::empty(projected.len() as u16);
+    for ((branch, inputs), (order, columns)) in union.branches.iter().zip(bodies.iter()).zip(searches) {
+        let nodes: Vec<usize> = (0..branch.nodes.len()).collect();
+        let found = budget.nested(|budget| search(branch, &nodes, &[], order, &[], inputs, registry, &columns, budget));
+        let found = match found {
+            Ok(found) => found,
+            Err(bound) => return Some(Err(bound)),
+        };
+        for row in found.rows() {
+            if rows.insert(row.into()) {
+                if let Err(bound) = budget.charge_rows(1) {
+                    return Some(Err(bound));
+                }
+            }
+        }
+    }
+    Some(Ok(rows))
+}
+
+/// The order and the nodes that the join of `branch`, a branch of a union
+/// whose inputs are `inputs`, takes at the variables bound before it: the
+/// variable order of the branch, and the nodes that [`kept_nodes`] leaves.
+fn branch_order<'a>(branch: &'a ClauseIr, inputs: &'a JoinInputs) -> impl Fn(&[Variable]) -> (VariableOrder, Vec<usize>) + 'a {
+    move |bound| (variable_order(branch, &sizes(inputs), bound), kept_nodes(branch, bound))
+}
+
 /// Calls `visit` on each row of `relation`, the product of its parts, in an
 /// order of encodings and no order of the content.
 pub fn each_row(relation: &Relation, visit: &mut dyn FnMut(&[TermId])) {
-    fn product(parts: &[RelationPart], row: &mut [TermId], visit: &mut dyn FnMut(&[TermId])) {
-        let Some((part, rest)) = parts.split_first() else {
-            visit(row);
-            return;
-        };
+    let result: Result<(), std::convert::Infallible> = try_each_row(relation, &mut |row| {
+        visit(row);
+        Ok(())
+    });
+    match result { Ok(()) => (), Err(never) => match never {} }
+}
+
+/// Visits the same product and order as [`each_row`], ending immediately at
+/// the visitor's error. No later row is constructed after that error.
+pub fn try_each_row<E>(relation: &Relation, visit: &mut dyn FnMut(&[TermId]) -> Result<(), E>) -> Result<(), E> {
+    fn product<E>(parts: &[RelationPart], row: &mut [TermId], visit: &mut dyn FnMut(&[TermId]) -> Result<(), E>) -> Result<(), E> {
+        let Some((part, rest)) = parts.split_first() else { return visit(row); };
         for part_row in part.rows.rows() {
             for (column, &value) in part.columns.iter().zip(part_row) {
                 row[usize::from(column.0)] = value;
             }
-            product(rest, row, visit);
+            product(rest, row, visit)?;
         }
+        Ok(())
     }
     let mut row = vec![TermId::from_encoding(0); usize::from(relation.arity())];
-    product(relation.parts(), &mut row, visit);
+    product(relation.parts(), &mut row, visit)
 }
 
 /// The relation of one part that holds `rows`.
@@ -603,8 +747,8 @@ struct ClausePlan {
 /// new entry. A provisional bound, which changes no output.
 const MEMO_BYTES: usize = 256 << 20;
 
-/// What an evaluation charged to its budget, in order.
-type Charges = Rc<[Charge]>;
+/// The bindings an evaluation charged to its budget.
+type Charges = u64;
 
 /// The rows of a lib atom's algebra relation at bound values.
 type LibRows = Rc<Vec<Box<[TermId]>>>;
@@ -697,7 +841,7 @@ impl SearchMemo {
 
     fn keep_probe(&self, key: (usize, Vec<TermId>), entry: (bool, Charges)) {
         let mut tables = self.tables.borrow_mut();
-        if tables.take(64 + key.1.len() * 8 + entry.1.len() * 16) {
+        if tables.take(64 + key.1.len() * 8 + size_of::<Charges>()) {
             tables.probes.insert(key, entry);
         }
     }
@@ -710,7 +854,7 @@ impl SearchMemo {
 
     fn keep_branch(&self, key: (usize, Vec<(Variable, TermId)>), entry: (Arc<Relation>, Charges)) {
         let mut tables = self.tables.borrow_mut();
-        let size = 96 + key.1.len() * 16 + entry.1.len() * 16 + usize::from(entry.0.arity()) * 8 * (entry.0.len().min(1 << 20) as usize);
+        let size = 96 + key.1.len() * 16 + size_of::<Charges>() + usize::from(entry.0.arity()) * 8 * (entry.0.len().min(1 << 20) as usize);
         if tables.take(size) {
             tables.branches.insert(key, entry);
         }
@@ -944,10 +1088,10 @@ impl<'c> Search<'c> {
             branch.columns.iter().filter_map(|&column| Some((column, self.binding[usize::from(column.0)]?))).collect();
         let key = (std::ptr::from_ref(branch) as usize, bound);
         if let Some((relation, charges)) = self.memo.branch(&key) {
-            budget.replay(&charges)?;
+            budget.replay(charges)?;
             return Ok(relation);
         }
-        let order_at = |bound: &[Variable]| (variable_order(branch, &sizes(&bodies[index]), bound), kept_nodes(branch, bound));
+        let order_at = branch_order(branch, &bodies[index]);
         let (relation, charges) = budget.logged(|budget| join_ordered(self.memo, branch, &order_at, &bodies[index], self.registry, &key.1, budget))?;
         let relation = Arc::new(relation);
         self.memo.keep_branch(key, (relation.clone(), charges));
@@ -1021,7 +1165,7 @@ impl<'c> Search<'c> {
         let outer: Vec<TermId> = filter.outer.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound outer variable")).collect();
         let key = (std::ptr::from_ref(filter) as usize, outer);
         if let Some((holds, charges)) = self.memo.probe(&key) {
-            budget.replay(&charges)?;
+            budget.replay(charges)?;
             return Ok(holds);
         }
         let NodeInput::Clauses(bodies) = &self.inputs.0[node] else { unreachable!("the inputs of a filter's body") };

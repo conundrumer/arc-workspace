@@ -2,14 +2,13 @@
 //! `docs/arclog/arclog.md#negation-and-constraints` gives them, and the
 //! signatures of the clauses that its result on a clause reads.
 
-use super::safety::{form_bodies, FormBody};
-use super::types::result;
-use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, SolverClauses, CheckCacheKey, KeyInput};
+use super::safety::{form_bodies, label_scope, FormBody};
+use super::types::{result, PoseOr};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, Scope, SolverClauses, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{constraint_second, Body, Clause, ClauseKeyword, Conjunct, Constraint, ConstraintOp, Form, LabelId, LabelUse, Operand, RelationRef, SiteArg};
+use crate::program::{constraint_second, Body, Clause, ClauseKeyword, Conjunct, Constraint, ConstraintOp, Form, LabelId, LabelUse, Operand, SiteArg};
 use crate::read::columns::exports;
-use crate::registry::Registry;
 use crate::resolver::Signature;
 use crate::safety::{list_of, site_label_uses};
 use crate::types::ValueType;
@@ -38,8 +37,12 @@ impl Check for EqualityAndZeroCheck {
     ///   clause of the relation in the solver, as [`SolverClauses`] gives
     ///   them across its blocks, holds such a constraint on the label of
     ///   the same column, so that the column is `0` in every clause;
-    /// - a site that holds `0` on a column of a lib relation whose type is
-    ///   neither a number nor a Box;
+    /// - a constraint whose second label is `0`, under any operator, where
+    ///   the type of its first label is fixed and is neither a number nor a
+    ///   Box;
+    /// - a site that holds `0` on a column whose type is fixed and is
+    ///   neither a number nor a Box, on a relation of any kind that the
+    ///   site reads;
     /// - a `=` whose second label is made, `(= Y *X)`;
     /// - a `(= X Y)` whose first label a site or a `=` of its own list
     ///   makes, where `Y` is no label it makes;
@@ -49,7 +52,7 @@ impl Check for EqualityAndZeroCheck {
     ///   body's one conjunct, the `OR` may export `V`, and the check refuses
     ///   the `=` only where it does not.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        let mut refused = rule_refusals(input.form, input.scope.registry, &|_| false);
+        let mut refused = rule_refusals(input.form, input.path, &input.scope, &|_| false);
         refused.extend(head_zero(input.form, input.scope.clauses));
         if refused.is_empty() {
             return CheckResult::Pass;
@@ -65,7 +68,7 @@ impl Check for EqualityAndZeroCheck {
     /// undecided, since the body may yet take a conjunct or the `OR` export
     /// its label.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        let mut refused = rule_refusals(prefix.partial, prefix.scope.registry, &|at| prefix.is_open(at));
+        let mut refused = rule_refusals(prefix.partial, prefix.path, &prefix.scope, &|at| prefix.is_open(at));
         if let Form::Clause(clause) = prefix.partial {
             if matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) {
                 let zeros = top_level_zeros(clause.value()).into_iter().map(|(at, _)| at);
@@ -77,6 +80,8 @@ impl Check for EqualityAndZeroCheck {
 }
 
 const HEAD_ZERO: &str = "the column is `0` in every clause of the relation, so the relation drops it";
+const ZERO_ON: &str = "`0` stands only on a column of a number or a Box";
+const ZERO_AGAINST: &str = "`0` stands only as the second label of a constraint whose first label is a number or a Box";
 
 /// Whether the second label of `constraint` is one it makes, `*X`.
 pub(super) fn second_made(constraint: &Constraint) -> bool {
@@ -142,17 +147,23 @@ fn head_zero(form: &Form, clauses: &SolverClauses) -> Vec<Refusal> {
 }
 
 /// The refusals of the rules on `=` and `0` but the head-zero rule, at
-/// their source paths. A union `OR` at a path that `open` holds is
-/// undecided.
-fn rule_refusals(form: &Form, registry: &Registry, open: &dyn Fn(&NodePath) -> bool) -> Vec<Refusal> {
+/// their source paths, on `form`, the top-level form at `path`. A union
+/// `OR` at a path that `open` holds is undecided.
+fn rule_refusals(form: &Form, path: &NodePath, scope: &Scope<'_>, open: &dyn Fn(&NodePath) -> bool) -> Vec<Refusal> {
     let mut refused = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match node {
         NodeRef::Conjunct(Conjunct::Constraint(constraint)) if constraint.op == ConstraintOp::Eq && second_made(constraint) => {
             refused.push(refusal("`=` makes its first label only", at.clone()));
         }
+        NodeRef::Conjunct(Conjunct::Constraint(Constraint { first, second: Operand::Zero, .. })) => {
+            let label = label_scope(scope.labels, at).into_iter().find(|entry| entry.label == first.label);
+            if label.and_then(|entry| entry.ty.as_ref()).is_some_and(|ty| !ty.has_zero()) {
+                refused.push(refusal(ZERO_AGAINST, at.clone()));
+            }
+        }
         NodeRef::Conjunct(conjunct @ (Conjunct::Atom(_) | Conjunct::Not(_))) => {
             if let Some(atom) = conjunct.atom() {
-                zero_sites(atom.value(), at, registry, &mut refused);
+                zero_sites(atom.value(), path, at, scope, &mut refused);
             }
         }
         _ => {}
@@ -166,20 +177,30 @@ fn rule_refusals(form: &Form, registry: &Registry, open: &dyn Fn(&NodePath) -> b
     refused
 }
 
-/// Pushes onto `refused` each site of `atom`, at `at`, that holds `0` on a
-/// column of a lib relation whose type has no `0`.
-fn zero_sites(atom: &crate::program::Atom, at: &NodePath, registry: &Registry, refused: &mut Vec<Refusal>) {
-    let RelationRef::Lib(name) = &atom.relation else { return };
-    let Some(relation) = registry.algebra_relation(name) else { return };
+/// Pushes onto `refused` each site of `atom`, at `at` of the form at
+/// `path`, that holds `0` on a column whose type is fixed and has no `0`.
+fn zero_sites(atom: &crate::program::Atom, path: &NodePath, at: &NodePath, scope: &Scope<'_>, refused: &mut Vec<Refusal>) {
     for (site, index) in atom.sites.iter().zip(0u32..) {
         if !matches!(&site.value.args[..], [SiteArg::Label(LabelUse::Zero)]) {
             continue;
         }
-        let ty = relation.columns.iter().find(|column| column.name == site.column).and_then(|column| column.ty.fixed());
-        if ty.is_some_and(|ty| !matches!(ty, ValueType::Number | ValueType::Box)) {
-            refused.push(refusal("`0` stands only on a column of a number or a Box", at.child(index)));
+        let ty = column_type(atom, path, at, &site.column, scope);
+        if ty.is_some_and(|ty| !ty.has_zero()) {
+            refused.push(refusal(ZERO_ON, at.child(index)));
         }
     }
+}
+
+/// The fixed type of the column `column` of the relation that `atom`, at
+/// `at` of the form at `path`, reads, as the type inference gives it in the
+/// scope that holds the atom: the form, or a `DEMO_RULE` within it. The
+/// scopes are tried from the innermost, the longest prefix of `at`.
+fn column_type(atom: &crate::program::Atom, path: &NodePath, at: &NodePath, column: &crate::program::ColumnName, scope: &Scope<'_>) -> Option<ValueType> {
+    let column = std::slice::from_ref(column);
+    (0..=at.0.len()).rev().find_map(|depth| {
+        let form = scope.inference.infer(&path.join(&NodePath(at.0[..depth].into())))?;
+        scope.inference.site_type(form.reading(PoseOr::Open), atom, column)
+    })
 }
 
 /// Pushes onto `refused` each `(= X Y)` of the list `body`, at `at`, whose

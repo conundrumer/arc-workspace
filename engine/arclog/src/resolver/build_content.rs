@@ -125,6 +125,7 @@ impl Builder<'_> {
                 None => self.clause_columns(node, clause, scope, &writer),
             },
             NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
+            NodeRef::Out(out) => Some(Columns::of_names(out.key.columns.iter().map(|column| column.name.clone()))),
             _ => None,
         }
     }

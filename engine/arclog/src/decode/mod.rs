@@ -22,7 +22,7 @@
 //! some completion of the projection does (`Decoder::completes_projection`),
 //! or where the search spends its steps. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
-//! consistency test at a `RULE` clause's end, and its batch form, in
+//! consistency test at an `OUT` form's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
 //! in `projections`, give the largest sets of its columns under the projection
 //! cap. The replay of a case program's stream through a decoder, in
@@ -40,11 +40,13 @@ mod batch;
 pub mod corpus;
 mod interface;
 pub mod replay;
+pub mod program_read;
 mod state;
+mod prefix_key;
 mod projections;
 
 pub use batch::step_batch;
-pub use interface::{derived_at, open_clause, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
+pub use interface::{BodyWidening, derived_at, open_clause, held_dets, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
 pub use projections::{projections, Projection, Projections};
 pub use state::State;
 
@@ -56,7 +58,8 @@ use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::CheckId;
 use crate::eval::instance::Constructions;
 use crate::eval::copies::{CopyViolation, CopyViolations};
-use crate::eval::Cancellation;
+use crate::eval::values::HeldStops;
+use crate::eval::{Cancellation, TableWork};
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
@@ -64,6 +67,7 @@ use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
 use crate::resolver::resolve_last;
 use crate::session::TaskSession;
+use crate::judge::run::Tested;
 use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
 use crate::trace::{DecodeRecord, DecodeTrace, TopK, Verdict};
@@ -82,10 +86,11 @@ pub struct Decoder<'a> {
     /// where the decode judges them.
     train: Option<Arc<[PairCandidates<'a>]>>,
     cancellation: Cancellation,
-    /// The first relation that was consistent, at which the decode ended.
-    output: Option<ProgramRelation>,
+    operation_limits: Option<crate::eval::Limits>,
+    /// The path of the first `OUT` form that was consistent, at which the
+    /// decode ended.
+    output: Option<NodePath>,
     assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
-    columns: Option<crate::eval::output::GridColumns>,
     /// One record per accepted token, shared with the forks.
     trace: DecodeTrace,
     /// The mask of the current state with the step of each token it admits.
@@ -93,6 +98,9 @@ pub struct Decoder<'a> {
     /// Where the evaluations report the declared rows that a construction's
     /// outputs break, where the settings check them.
     copies: Option<CopyViolations>,
+    /// The stops that this decode's requests hold, which the limits of each
+    /// request share ([`Decoder::limits`]).
+    held_stops: Arc<HeldStops>,
 }
 
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
@@ -175,7 +183,7 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), output: None, assignments: Vec::new(), columns: None, trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default) }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
     }
 
     /// The ids of the decode's tokens.
@@ -202,6 +210,12 @@ impl<'a> Decoder<'a> {
         &self.context.settings
     }
 
+    /// The work count of a table of this decode, under the settings' table
+    /// work cap.
+    pub fn table_work(&self) -> TableWork {
+        TableWork::new(self.context.settings.table_work_cap)
+    }
+
     /// The state of the decode: its finished forms and the form in progress.
     #[inline]
     pub fn state(&self) -> &State {
@@ -212,13 +226,6 @@ impl<'a> Decoder<'a> {
     #[inline]
     pub fn before(&self) -> Option<&State> {
         self.before.as_ref()
-    }
-
-    /// The grid columns that the consistency test found at the relation the
-    /// decode ended at, none until it ends.
-    #[inline]
-    pub fn grid_columns(&self) -> Option<crate::eval::output::GridColumns> {
-        self.columns
     }
 
     /// The task, the session and the constructions that the decode's
@@ -234,7 +241,109 @@ impl<'a> Decoder<'a> {
         self.held.0.get_or_init(|| self.compute_mask()).mask.clone()
     }
 
+    /// The mask that [`Decoder::next`] gives over every token of the
+    /// vocabulary, the oracle of [`Decoder::admissible`].
+    #[cfg(feature = "admissible-reference")]
+    pub fn admissible_reference(&self) -> TokenMask {
+        self.compute_mask_reference().mask
+    }
+
+    /// The mask of `compute_mask_reference`, which `admissible_workload check`
+    /// compares with it along a corpus's streams, and the step of each token
+    /// it admits. It tries fewer tokens and shares check verdicts, each
+    /// where a rule of the checks makes the verdict equal:
+    ///
+    /// - [`State::mask_may_take`] drops a token that the grammar refuses
+    ///   with no step.
+    /// - [`State::fixed_label_conflicts`] drops the labels that the type
+    ///   check refuses by their first use.
+    /// - [`State::awaits_component`] and [`State::grammar_only_candidate`]
+    ///   take the grammar step alone.
+    /// - [`State::native_classes`] shares one verdict among candidates.
+    /// - [`State::cached_prefix`] shares the verdict of a repeated prefix.
     fn compute_mask(&self) -> Mask {
+        let vocabulary = &self.context.vocabulary;
+        let mut mask = TokenMask::new(vocabulary.len());
+        let mut steps = HashMap::new();
+        if self.output.is_some() {
+            return Mask { mask, steps };
+        }
+        if self.state.awaits_component() {
+            for id in 0..vocabulary.len() as u32 {
+                let token = vocabulary.token(id).expect("a vocabulary token");
+                if matches!(token, Token::Lib(_)) {
+                    if let Ok(step) = self.grammar_next(token) {
+                        mask.insert(id);
+                        steps.insert(id, step);
+                    }
+                }
+            }
+            return Mask { mask, steps };
+        }
+        self.with_checks_at_state(|checks| {
+            checks.prepare_mask();
+            let order = RefCell::default();
+            let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
+            let conflicts = self.state.fixed_label_conflicts(self.context.registry, &column_type);
+            let classes = self.state.native_classes(self.context.registry, &column_type);
+            let mut class_of = vec![None; vocabulary.len()];
+            let mut admitted = vec![None; classes.len()];
+            for (class, tokens) in classes.iter().enumerate() {
+                for token in tokens {
+                    if let Some(id) = vocabulary.id(token) {
+                        class_of[id as usize] = Some(class);
+                    }
+                }
+            }
+            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+                let token = vocabulary.token(id).expect("an id of the vocabulary");
+                if matches!(token, Token::Label(label) if conflicts.contains(label)) {
+                    continue;
+                }
+                if self.state.mask_may_take(token) {
+                    if let Some(result) = class_of[id as usize].and_then(|class| admitted[class]) {
+                        if result {
+                            // A member shares the class's verdict, and takes its own
+                            // grammar step.
+                            let step = self.grammar_next(token).expect("a class member passes the same grammar");
+                            mask.insert(id);
+                            steps.insert(id, step);
+                        }
+                        continue;
+                    }
+                    let next = if self.state.grammar_only_candidate(token) { self.grammar_next(token) } else { self.next(token, checks, &order) };
+                    if let Some(class) = class_of[id as usize] {
+                        admitted[class] = Some(next.is_ok());
+                    }
+                    if let Ok(step) = next {
+                        mask.insert(id);
+                        steps.insert(id, step);
+                    }
+                }
+            }
+        });
+        Mask { mask, steps }
+    }
+
+    /// The fixed scalar type of `column` of `relation` at this decoder's state,
+    /// kept in the state.
+    fn fixed_column_type(&self, checks: &PrefixChecks<'_>, relation: &RelationRef, column: &crate::program::ColumnName) -> Option<crate::types::ValueType> {
+        self.state.fixed_column_type(relation, column, || checks.fixed_column_type(relation, column))
+    }
+
+    /// The step of `token` and the cap on the tokens it forces, with no check
+    /// of the prefix: for a candidate whose verdict is shared or known.
+    fn grammar_next(&self, token: &Token) -> Result<(state::State, Vec<Token>), Refusal> {
+        let (state, forced, _) = self.state.step(&self.context, token, &|_, _, _| unreachable!("grammar-only candidates open no declared atom")).map_err(Refusal::Grammar)?;
+        if forced.iter().any(|token| self.context.vocabulary.id(token).is_none()) {
+            return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
+        }
+        Ok((state, forced))
+    }
+
+    /// The mask of [`Decoder::next`] over every token.
+    #[cfg(feature = "admissible-reference")]
+    fn compute_mask_reference(&self) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
@@ -273,26 +382,54 @@ impl<'a> Decoder<'a> {
     }
 
     /// Advances the decode by `token`, and gives the tokens that the engine
-    /// emits after it, with the consistency of the relation of a `RULE`
-    /// clause that the token ends; or refuses a token outside the mask, and
-    /// leaves the decode as it was. The decode ends at the first consistent
-    /// relation, and refuses every token after it.
+    /// emits after it, with the consistency of the relation of an `OUT` form
+    /// that the token ends and, under the rule tests, of a `RULE` clause that
+    /// it ends; or refuses a token outside the mask, and leaves the decode as
+    /// it was. The decode ends at the first `OUT` form that is consistent,
+    /// and at nothing else, and refuses every token after it.
     pub fn step(&mut self, token: Token) -> StepResult {
-        let advanced = self.advance(&token);
+        let advanced = self.advance(&token, true);
         self.apply(advanced)
     }
 
-    /// The state after `token`, and what the step gives, which
-    /// [`Decoder::apply`] makes the decode's.
-    fn advance(&self, token: &Token) -> Result<Advanced, Refusal> {
+    /// [`Decoder::step`] with no consistency test of an `OUT` form and no
+    /// rule test: the step gives `None` as its `consistency` and as its
+    /// `rule_test`, so the decode ends at no `OUT` form and takes no
+    /// assignments from the step. A caller that steps no further token that
+    /// reads the output of the step uses it.
+    pub fn step_untested(&mut self, token: Token) -> StepResult {
+        let advanced = self.advance(&token, false);
+        self.apply(advanced)
+    }
+
+    /// The tokens that [`Decoder::step`] gives as `forced` after `token`, or
+    /// the refusal that it gives for a token it refuses. It runs no
+    /// consistency test, and leaves the decode as it was. Where the decode
+    /// holds the mask of its state and the mask admits `token`, it reads the
+    /// forced tokens from the mask and runs no check.
+    pub fn forced(&self, token: &Token) -> Result<Vec<Token>, Refusal> {
+        self.next_state(token).map(|(_, forced)| forced)
+    }
+
+    /// The state after `token`, and the tokens the engine emits after it:
+    /// those the held mask keeps for the token's id, or else those that the
+    /// checks of the state give.
+    fn next_state(&self, token: &Token) -> Result<(state::State, Vec<Token>), Refusal> {
         let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
-        let (state, forced) = match kept {
-            Some((state, forced)) => (state.clone(), forced.clone()),
-            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default()))?,
-        };
-        let judged = self.consistency(&self.state, &state);
-        let (consistency, columns) = judged.map_or((None, None), |(result, columns)| (Some(result), columns));
-        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, columns } })
+        match kept {
+            Some((state, forced)) => Ok((state.clone(), forced.clone())),
+            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default())),
+        }
+    }
+
+    /// The state after `token`, and what the step gives, which
+    /// [`Decoder::apply`] makes the decode's. With `tested` false, the step
+    /// runs no consistency test.
+    fn advance(&self, token: &Token, tested: bool) -> Result<Advanced, Refusal> {
+        let (state, forced) = self.next_state(token)?;
+        let consistency = if tested { self.consistency(&self.state, &state, Tested::Out) } else { None };
+        let rule_test = if tested && self.context.settings.rule_tests { self.consistency(&self.state, &state, Tested::Rule) } else { None };
+        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test } })
     }
 
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
@@ -302,30 +439,32 @@ impl<'a> Decoder<'a> {
         self.record(token, &step);
         if let Some(Consistency::Consistent { assignments }) = &step.consistency {
             self.assignments = assignments.clone();
-            self.columns = step.columns;
-            let Some(crate::program::Form::Clause(clause)) = self.state.program().value().forms.last() else {
-                unreachable!("a consistent relation is a clause's")
-            };
-            self.output = Some(clause.value().derives.clone());
+            self.output = Some(NodePath::top(self.state.program().value().forms.len() as u32 - 1));
         }
         Ok(step)
     }
 
-    /// Appends the record of the model's `token`, with the verdict and the
-    /// stop of its consistency test, and the record of each token the
+    /// Appends the record of the model's `token`, with the verdicts and the
+    /// stop of its consistency tests, and the record of each token the
     /// engine forced after it.
     fn record(&mut self, token: Token, step: &Step) {
         let mut record = DecodeRecord::new(token, Emitter::Model);
+        let verdict = |consistency: &Consistency| match consistency {
+            Consistency::Consistent { assignments } => (Verdict::Consistent { assignments: assignments.len() }, None),
+            Consistency::NotConsistent => (Verdict::NotConsistent, None),
+            Consistency::SeveralValues { .. } => (Verdict::SeveralValues, None),
+            Consistency::Fault(_) => (Verdict::Fault, None),
+            Consistency::Stopped(stop) => (Verdict::Stopped, Some(stop.bound.into())),
+        };
         if let Some(consistency) = &step.consistency {
-            let (verdict, stop) = match consistency {
-                Consistency::Consistent { assignments } => (Verdict::Consistent { assignments: assignments.len() }, None),
-                Consistency::NotConsistent => (Verdict::NotConsistent, None),
-                Consistency::SeveralValues { .. } => (Verdict::SeveralValues, None),
-                Consistency::Fault(_) => (Verdict::Fault, None),
-                Consistency::Stopped(stop) => (Verdict::Stopped, Some(stop.bound.into())),
-            };
+            let (verdict, stop) = verdict(consistency);
             record.consistency = Some(verdict);
             record.stop = stop;
+        }
+        if let Some(rule_test) = &step.rule_test {
+            let (verdict, stop) = verdict(rule_test);
+            record.rule_test = Some(verdict);
+            record.stop = record.stop.or(stop);
         }
         self.trace.push(record);
         for forced in step.forced.iter() {
@@ -346,10 +485,25 @@ impl<'a> Decoder<'a> {
         self.trace.update(step, |record| record.top_k = Some(top_k))
     }
 
+    /// Uses one caller operation for every nested query and materialization.
+    /// Forks retain its absolute deadline; no query starts another clock.
+    pub fn with_operation_limits(mut self,limits:crate::eval::Limits)->Self {
+        self.cancellation=limits.cancellation.clone();
+        self.operation_limits=Some(limits);self
+    }
+
     /// A second decode from the same state, which shares this one's caches
-    /// and takes a cancellation of its own.
+    /// and takes a cancellation of its own, and a store of held stops of its
+    /// own that holds the stops at the table work cap this decode holds now
+    /// and shares the stops at the deadline ([`HeldStops::snapshot`]).
     pub fn fork(&self) -> Decoder<'a> {
-        Decoder { cancellation: Cancellation::default(), held: Held::default(), copies: self.copies.as_ref().map(|_| CopyViolations::default()), ..self.clone() }
+        Decoder {
+            cancellation: self.operation_limits.as_ref().map_or_else(Cancellation::default,|limits|limits.cancellation.clone()),
+            held: Held::default(),
+            copies: self.copies.as_ref().map(|_| CopyViolations::default()),
+            held_stops: Arc::new(self.held_stops.snapshot()),
+            ..self.clone()
+        }
     }
 
     /// The declared rows that the constructions' outputs broke in the
@@ -378,7 +532,7 @@ impl<'a> Decoder<'a> {
     fn next(&self, token: &Token, checks: &PrefixChecks<'_>, order: &RefCell<Order>) -> Result<(state::State, Vec<Token>), Refusal> {
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
-            return Err(Refusal::Grammar("the decode has ended at its `&output`"));
+            return Err(Refusal::Grammar("the decode has ended at its `OUT` form"));
         }
         if vocabulary.id(token).is_none() {
             return Err(Refusal::Grammar("the vocabulary holds no such token"));
@@ -391,6 +545,9 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
+                if self.context.settings.static_pruning {
+                    self.check_static_prune(&program, open.as_ref(), checks)?;
+                }
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let relation = state.open_relation().expect("an atom stands open");
                     if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
@@ -412,6 +569,61 @@ impl<'a> Decoder<'a> {
         Ok((state, forced))
     }
 
+    /// Check only conjuncts that this grammar step completed. An atom can
+    /// close on the next relation token; END can finish the entire form.
+    /// Restrict replacement certificates to flat top-level clauses for now.
+    fn check_static_prune(
+        &self,
+        program: &Node<Program>,
+        open: Option<&NodePath>,
+        checks: &PrefixChecks<'_>,
+    ) -> Result<(), Refusal> {
+        fn completed<'a>(program: &'a Node<Program>, open: Option<&NodePath>) -> Option<(&'a crate::program::Body, usize)> {
+            let crate::program::Form::Clause(clause) = program.value().forms.last()? else { return None };
+            let body = clause.value().body.value();
+            let count = match open.map(|p| &p.0[..]) {
+                Some([crate::program::path::PathStep(0), crate::program::path::PathStep(index), ..]) => (*index as usize).min(body.conjuncts.len()),
+                _ => body.conjuncts.len(),
+            };
+            Some((body, count))
+        }
+        let Some((body, count)) = completed(program, open) else { return Ok(()) };
+        let before = self.state.partial();
+        let prior = before.as_ref().filter(|(p, _)| p.value().forms.len() == program.value().forms.len())
+            .and_then(|(p, o)| completed(p, o.as_ref())).map_or(0, |(_, count)| count);
+        let type_of = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
+        for index in prior..count {
+            let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
+            let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else { continue };
+            match found.class {
+                crate::program::static_prune::Class::Unsatisfiable => return Err(Refusal::Grammar("static prune: no row satisfies the completed atom")),
+                crate::program::static_prune::Class::Valid => return Err(Refusal::Grammar("static prune: the completed atom repeats an existing test")),
+                crate::program::static_prune::Class::Alias | crate::program::static_prune::Class::Constant => {
+                    let Some(replacement) = found.replacement else { continue };
+                    // Remove the next, still-open atom through the ordinary
+                    // editor to recover this clause prefix's own declaration.
+                    // The replacement checker then PRESERVES that interface.
+                    let body_path = NodePath::default().child(0);
+                    let absolute = NodePath::top((program.value().forms.len() - 1) as u32).join(&body_path);
+                    let mut truncated = program.clone();
+                    let mut available = true;
+                    for later in ((index + 1)..body.conjuncts.len()).rev() {
+                        match truncated.apply(&crate::program::edit::Edit::RemoveConjunct { at: absolute.child(later as u32) }) {
+                            Ok(next) => truncated = next,
+                            Err(_) => { available = false; break; }
+                        }
+                    }
+                    if available && crate::check::static_prune::replacement_admitted(
+                        &self.state.resolved(self.context.registry), &truncated, &body_path, replacement, self.context.registry,
+                    ) {
+                        return Err(Refusal::Grammar("static prune: use the admitted equality binding"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Where `state` shows a program with a form in progress, the refusal of
     /// `checks` on that program, with `candidate`.
     fn check_state(&self, state: &state::State, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
@@ -419,11 +631,21 @@ impl<'a> Decoder<'a> {
         if program.value().forms.is_empty() {
             return Ok(());
         }
-        let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
-        match checks.check(&resolved, open.as_ref(), candidate, None) {
-            Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
-            None => Ok(()),
+        let check = || {
+            let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
+            match checks.check(&resolved, open.as_ref(), candidate, None) {
+                Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
+                None => Ok(()),
+            }
+        };
+        // Only the verdict at an open node is shared: a completed form keeps the
+        // node that the step built, and its checks run on that node.
+        if checks.is_mask() && candidate == Candidate::Any && open.is_some() {
+            if let Some(key) = prefix_key::key(program.value().forms.last().unwrap(), open.as_ref()) {
+                return self.state.cached_prefix(key, check);
+            }
         }
+        check()
     }
 
     /// Whether some completion of the constraint open in `state` passes the
@@ -491,12 +713,18 @@ impl<'a> Decoder<'a> {
     /// refuses, with a refusal that says the search spent its budget.
     fn completes_projection(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
         let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
+        let conflicts = if checks.is_mask() { state.fixed_label_conflicts(self.context.registry, &|relation, column| self.fixed_column_type(checks, relation, column)) } else { Vec::new() };
         let mut refusal = Refusal::Grammar("a projection has no completion");
         for token in tokens {
             if *steps == 0 {
                 return Err(Refusal::Grammar("the completion search of a projection spent its budget"));
             }
             *steps -= 1;
+            // The refused label still spends its search step, as the original
+            // refuses it at `check_state` with no deeper search.
+            if matches!(&token, Token::Label(label) if conflicts.contains(label)) {
+                continue;
+            }
             let next = match state.step(&self.context, &token, reads_example) {
                 Ok((next, _, _)) => next,
                 Err(unexpected) => {

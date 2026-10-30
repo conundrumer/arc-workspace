@@ -10,8 +10,13 @@
 //! The checker stage writes the bodies of the checks, each in a submodule of
 //! its own.
 
+mod frames;
+mod held_det;
+pub use held_det::HeldDetInterfaceError;
 pub mod grammar;
 pub mod safety;
+pub mod render_sites;
+pub mod static_prune;
 mod inference;
 pub mod instance_inputs;
 pub mod instance_sites;
@@ -19,6 +24,7 @@ pub mod labels;
 pub mod lint;
 pub mod marks;
 pub mod one_clause;
+pub mod out;
 pub mod picks;
 pub mod pose;
 pub mod prefix;
@@ -110,8 +116,7 @@ pub enum CheckId {
     /// and has no body. A column that the clause's label takes from the
     /// rule on `(= *X 0)` above is that rule's.
     Types,
-    /// The pose rule: a Pose label stands only at the sites that
-    /// `docs/arclog/rigid.md#the-pose` gives.
+    /// The pose rule of `docs/arclog/rigid.md#the-pose`.
     PoseRule,
     /// The labels that `=` makes and that an `OR` or an `IF` exports.
     MadeAndExportedLabels,
@@ -154,6 +159,11 @@ pub enum CheckId {
     /// case program, which the form's [`CheckCacheKey`] does not hold, so
     /// its result is cached under no key.
     RigidPartsAndProposers,
+    /// The `OUT` form: its atoms, its sites and the types of its columns,
+    /// and, for a program read from a solver's files, its place in them and
+    /// that the solver holds one. The check reads the other forms of the
+    /// case program and the files, so its result is cached under no key.
+    Out,
 }
 
 /// A label of a label scope within a top-level form, as [`LabelId`] gives
@@ -200,6 +210,9 @@ pub struct Scope<'a> {
 pub struct CaseFiles<'a> {
     pub solver: &'a Solver,
     pub case: &'a Case,
+    /// Whether the files hold a prefix of a solver: whole forms that a
+    /// completion may follow.
+    pub prefix: bool,
 }
 
 impl<'a> CaseFiles<'a> {
@@ -213,6 +226,12 @@ impl<'a> CaseFiles<'a> {
             FileOwner::Representative => self.solver.representative.as_deref().expect("a node of the representative's file has a representative"),
         };
         (owner, owning, file_path)
+    }
+
+    /// Whether the file writes the node at `path` of the case program as
+    /// the program holds it, as [`Case::written_as_held`] gives.
+    pub fn writes(&self, path: &NodePath) -> bool {
+        self.case.written_as_held(path)
     }
 
     /// The layout of the node at `path` of the case program, where its
@@ -389,6 +408,9 @@ pub struct CheckCacheKey {
 /// [`CheckCacheKey`], so that the cases that share a form share its check.
 #[derive(Clone, Debug, Default)]
 pub struct CheckCache {
+    /// An immutable gold-only base, shared by temporary mutation searches.
+    /// Candidate-specific results remain in the requesting search's overlay.
+    base: Option<Arc<CheckCache>>,
     entries: crate::hash::StableHashMap<CheckCacheKey, CheckResult>,
     /// The types the type check inferred for each label scope of a form, by
     /// the scope's canonical path, under the key of the form's
@@ -397,9 +419,13 @@ pub struct CheckCache {
 }
 
 impl CheckCache {
+    pub(crate) fn over(base: Arc<Self>) -> Self {
+        Self { base: Some(base), ..Self::default() }
+    }
+
     /// The result cached under `key`, if any.
     pub fn get(&self, key: &CheckCacheKey) -> Option<&CheckResult> {
-        self.entries.get(key)
+        self.entries.get(key).or_else(|| self.base.as_ref()?.get(key))
     }
 
     /// Caches `result` under `key`.
@@ -410,7 +436,7 @@ impl CheckCache {
     /// The types of each label scope of a form, by the scope's canonical
     /// path, cached under `key`, the key of the form's type check.
     pub fn types(&self, key: &CheckCacheKey) -> Option<std::sync::Arc<types::ScopeTypes>> {
-        self.types.get(key).cloned()
+        self.types.get(key).cloned().or_else(|| self.base.as_ref()?.types(key))
     }
 
     /// Caches `types`, the types of each label scope of a form by the
@@ -439,6 +465,10 @@ pub struct CheckedProgram {
 /// and the count of its key columns.
 pub type InstanceClause = (Arc<ClauseIr>, Arc<IrPaths>, usize);
 
+/// The clause of a `RIGID_DET` form's key and instance bodies, joined with
+/// the atom of one part where it is given, with the paths of its nodes.
+pub type AssemblyClause = (Arc<ClauseIr>, Arc<IrPaths>);
+
 /// What a function of a checked program, a path and its arguments alone
 /// gives, kept per argument on the first ask.
 #[derive(Debug, Default)]
@@ -450,6 +480,10 @@ struct Derived {
     /// is `None`, with the paths of its nodes and the count of its key
     /// columns, as the evaluator compiles it.
     instance_clauses: Mutex<StableHashMap<(NodePath, Option<PortName>), Result<InstanceClause, CompileFault>>>,
+    /// The clause of a `RIGID_DET` form's key and instance bodies, joined
+    /// with the atom at the path of a part where it is given, with the
+    /// paths of its nodes, as the evaluator compiles it.
+    assembly_clauses: Mutex<StableHashMap<(NodePath, Option<NodePath>), Result<AssemblyClause, CompileFault>>>,
     /// The resolved content of the clause at each path.
     contents: Mutex<StableHashMap<NodePath, Option<ResolvedContent>>>,
     /// The resolved content of the part of the clause at a path that its
@@ -478,6 +512,20 @@ impl CheckedProgram {
         let key = (form.clone(), input.cloned());
         let mut memo = self.derived.instance_clauses.lock().expect("a memo that no panic poisoned");
         memo.entry(key).or_insert_with(|| compile().map(|(clause, paths, key)| (Arc::new(clause), Arc::new(paths), key))).clone()
+    }
+
+    /// The clause of the `RIGID_DET` form at `form`: its key and instance
+    /// bodies, joined with the atom at `part` where it is given, with the
+    /// paths of its nodes, from `compile` on the first ask.
+    pub fn assembly_clause(
+        &self,
+        form: &NodePath,
+        part: Option<&NodePath>,
+        compile: impl FnOnce() -> Result<(ClauseIr, IrPaths), CompileFault>,
+    ) -> Result<AssemblyClause, CompileFault> {
+        let key = (form.clone(), part.cloned());
+        let mut memo = self.derived.assembly_clauses.lock().expect("a memo that no panic poisoned");
+        memo.entry(key).or_insert_with(|| compile().map(|(clause, paths)| (Arc::new(clause), Arc::new(paths)))).clone()
     }
 
     /// The resolved content of the clause at `path`, as
@@ -527,7 +575,9 @@ pub fn check_shared_program(
 }
 
 /// [`check_shared_program`] over a program read from `files`, which
-/// [`CheckId::OneClause`] and [`CheckId::Spelling`] read.
+/// [`CheckId::OneClause`], [`CheckId::Spelling`] and the `OUT` form checks
+/// of [`CheckId::Out`] read. The refusal of a program with no `OUT` form
+/// is of a program read whole, so it does not run where `files.prefix`.
 pub fn check_program_of_files(
     program: Arc<ResolvedProgram>,
     clauses: &SolverClauses,
@@ -539,6 +589,13 @@ pub fn check_program_of_files(
     let cycles_key = CheckCacheKey { check: CheckId::Cycles, canonical_form: graph_form(&program), signatures: Box::new([]) };
     if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
         refused.extend(refusals.iter().map(|r| diagnostic(DiagnosticKind::Check(CheckId::Cycles), Severity::Error, r.message.clone(), r.at.clone())));
+    }
+    if let Some(files) = files {
+        let missing = if files.prefix { None } else { out::missing(program.program.value()) };
+        let refusals = [missing, out::several(files.case, program.program.value())];
+        for refusal in refusals.into_iter().flatten() {
+            refused.push(diagnostic(DiagnosticKind::Check(CheckId::Out), Severity::Error, refusal.message, refusal.at));
+        }
     }
     let mut alerts = Vec::new();
     let held = HeldClauses::of(&program);
@@ -747,7 +804,7 @@ fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, orde
 /// a partial form that no completion makes a node of the grammar, or a name
 /// that no completion resolves.
 pub fn checks() -> &'static [&'static dyn Check] {
-    static CHECKS: [&dyn Check; 17] = [
+    static CHECKS: [&dyn Check; 18] = [
         &grammar::GrammarCheck,
         &scope::ScopeCheck,
         &site_columns::SiteColumnsCheck,
@@ -765,6 +822,7 @@ pub fn checks() -> &'static [&'static dyn Check] {
         &spelling::SpellingCheck,
         &picks::PicksCheck,
         &rigid_proposer::RigidPartsAndProposersCheck,
+        &out::OutCheck,
     ];
     &CHECKS
 }

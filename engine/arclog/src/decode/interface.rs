@@ -1,11 +1,11 @@
 //! What a decode gives its caller beside the token mask, as
 //! `docs/engine/synthesis.md#decode-interface` gives it: the rows and the
-//! counts of the body of the clause in progress, and, at the `END` of a
-//! `RULE` clause, the consistency of the new relation, read as `&output`,
-//! with the train pairs.
+//! counts of the body of the clause in progress, and, at the `END` of an
+//! `OUT` form, the consistency of its relation with the train pairs, and,
+//! where the decode settings run the rule tests, at the `END` of a `RULE`
+//! clause, the consistency of the clause's relation read as an output.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use super::state::State;
 use super::Decoder;
@@ -15,30 +15,32 @@ use crate::eval::ir::atom_modes;
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
+use crate::judge::run::{Found, Tested};
 use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, Det, End, EvaluationInputs, Walked};
 use crate::program::path::{NodePath, PathStep};
-use crate::program::{Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, Form, Node, Program, ProgramRelation};
+use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, ConstraintLabel, Constraint, DeclaredName, Form, Instance, LabelId, LabelUse, Negated, Node, Operand, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
 use crate::relations::Relation;
 use crate::stream::Token;
 use crate::terms::Example;
 use crate::resolver::{resolve_last, DependencyKind, GraphNodeIndex, ResolvedProgram};
 use crate::trace::{DecodeRecord, RowsSeen};
-use crate::types::{each_site_label, use_label, GraphRelation};
+use crate::types::{each_site_label, each_site_use, use_label, GraphRelation};
 
-/// The consistency of a relation that a `RULE` clause's `END` finishes,
-/// read as `&output`, with the train pairs, as
-/// `docs/engine/synthesis.md#decode-interface` gives.
+/// The consistency of the relation of an `OUT` form that its `END` finishes,
+/// or, under the rule tests, of a `RULE` clause that its `END` finishes, with
+/// the train pairs, as `docs/engine/synthesis.md#decode-interface` gives.
 #[derive(Clone, Debug)]
 pub enum Consistency {
-    /// M_open over these joint assignments solves every train pair.
-    /// The decode ends at this relation.
+    /// M_open over these joint assignments solves every train pair. Of an
+    /// `OUT` form, the decode ends at it.
     Consistent { assignments: Vec<Vec<(ProgramRelation, Arc<Relation>)>> },
     /// M_open does not solve every train pair.
     NotConsistent,
     /// A `DET` without `(ONE)` that the relation reads takes more than one
     /// value over the consistent assignments.
     SeveralValues { relation: ProgramRelation, values: Vec<Arc<Relation>> },
-    /// The grid columns of M_open are underdetermined, or a run faults.
+    /// A run faults, or, in a rule test, the grid columns of M_open are
+    /// underdetermined.
     Fault(RunFault),
     /// The test reached a bound: the assignment cap, a cap of a run, the
     /// deadline or a cancellation.
@@ -46,13 +48,18 @@ pub enum Consistency {
 }
 
 /// What a step of a decode gives: the tokens that the engine emits after
-/// the token, and, where the token ends a `RULE` clause of a decode that
-/// judges the train pairs, the consistency of its relation.
+/// the token, and, where the token ends an `OUT` form of a decode that
+/// judges the train pairs, the consistency of its relation; and, where it
+/// ends a `RULE` clause of such a decode that runs the rule tests, the
+/// consistency of the clause's relation.
 #[derive(Clone, Debug)]
 pub struct Step {
     pub forced: Box<[Token]>,
+    /// The consistency of the `OUT` form that the token ends.
     pub consistency: Option<Consistency>,
-    pub(super) columns: Option<crate::eval::output::GridColumns>,
+    /// The consistency of the relation of the `RULE` clause that the token
+    /// ends, an observation that ends no decode.
+    pub rule_test: Option<Consistency>,
 }
 
 /// What a prefix gives at each joint assignment of the `DET`s it reads, in
@@ -84,11 +91,76 @@ pub struct SubBody {
     pub scope: ExampleScope,
 }
 
+impl SubBody {
+    /// The column of the body's relation that holds the label `label`, a label
+    /// that the body makes: the label's row position.
+    pub fn column_of(&self, label: LabelId) -> Option<usize> {
+        self.program.program.label_position(&self.form, label).map(|position| usize::from(position.0))
+    }
+}
+
+/// A widening operation bound to its checked owner's evaluation scope.
+/// Its fields are private: callers obtain it from [`Decoder::widening`],
+/// never from a guessed clause keyword or the reads left in one branch.
+pub struct BodyWidening<'d, 'a> {
+    decoder: &'d Decoder<'a>,
+    scope: ExampleScope,
+}
+
+impl BodyWidening<'_, '_> {
+    fn keyword(&self) -> ClauseKeyword {
+        match self.scope {
+            ExampleScope::PerExample => ClauseKeyword::Rule,
+            ExampleScope::TaskWide => ClauseKeyword::Det,
+        }
+    }
+
+    /// Each widened branch of a clause, evaluated in the owner's scope.
+    /// Retains the existing widening and binding rules; only the synthetic
+    /// wrapper's execution context comes from the checked owner.
+    pub fn clause(&self, clause: &Clause) -> Vec<Outcome<SubBody>> {
+        let decoder = self.decoder;
+        let registry = decoder.context.registry;
+        let finished = &decoder.state.program().value().forms;
+        let reads = |atom: &Atom| match &atom.relation {
+            RelationRef::Declared(_) | RelationRef::Output(_) => true,
+            RelationRef::Lib(name) => registry.algebra_relation(name).is_some_and(|relation| relation.frames.iter().any(|(_, rule)| rule.makes)),
+            RelationRef::Fact(_) | RelationRef::DefinedPort(_) => false,
+        };
+        let mut lists = Vec::new();
+        if !widen(clause.body.value().conjuncts.to_vec(), false, &reads, &mut lists) {
+            let form = NodePath::top(finished.len() as u32);
+            return vec![Err(RunFault { message: format!("the clause widens to more than {WIDENED_BODIES} bodies").into(), form })];
+        }
+        let own = Clause { keyword: self.keyword(), derives: decoder.fresh_relation(), ones: Arc::from([]), set: false, ..clause.clone() };
+        let made = |kept: &[Conjunct]| crate::read::columns::made_labels(&Body { conjuncts: kept.into() });
+        lists.into_iter().map(|kept| decoder.body_of(finished, own.clone(), kept.clone(), made(&kept))).collect()
+    }
+
+    /// Each written input clause, including its key context, widened in
+    /// the checked instance's scope. No input can choose its own scope.
+    pub fn input(&self, instance: &Instance, input: &PortName) -> Vec<Vec<Outcome<SubBody>>> {
+        let key = instance.key.as_ref();
+        let keyed = key.into_iter().flat_map(|key| key.value().inputs.iter()).map(|own| (true, own));
+        let plain = instance.inputs.iter().map(|own| (false, own));
+        keyed.chain(plain).filter(|(_, own)| own.value().name == *input).map(|(in_key, own)| {
+            let before = key.filter(|_| in_key).into_iter().flat_map(|key| key.value().key.body.value().conjuncts.iter().map(unkeyed));
+            let conjuncts = before.chain(own.value().body.value().conjuncts.iter().cloned()).collect();
+            let clause = Clause { keyword: self.keyword(), derives: self.decoder.fresh_relation(), gloss: None, proposers: Arc::from([]), body: Node::new(Body { conjuncts }), ones: Arc::from([]), set: false, columns: Arc::from([]) };
+            self.clause(&clause)
+        }).collect()
+    }
+}
+
+/// The most bodies that [`BodyWidening::clause`] gives for one clause.
+pub const WIDENED_BODIES: usize = 32;
+
 impl<'a> Decoder<'a> {
     /// The decode, judging the train pairs of `train`, the candidates of
     /// the task's train pairs under the world of its task data: at the `END`
-    /// of each `RULE` clause, [`Decoder::step`] gives the consistency of its
-    /// relation.
+    /// of each `OUT` form, [`Decoder::step`] gives the consistency of its
+    /// relation, and, under the rule tests, at the `END` of each `RULE`
+    /// clause that of the clause's relation.
     pub fn judging(mut self, train: Arc<[PairCandidates<'a>]>) -> Decoder<'a> {
         self.train = Some(train);
         self
@@ -100,25 +172,30 @@ impl<'a> Decoder<'a> {
         &self.cancellation
     }
 
-    /// The relation at which the decode ended, its `&output`, where a
-    /// relation was consistent.
-    pub fn output(&self) -> Option<&ProgramRelation> {
+    /// The path of the `OUT` form at which the decode ended, where an `OUT`
+    /// form was consistent.
+    pub fn output(&self) -> Option<&NodePath> {
         self.output.as_ref()
     }
 
+    /// The grid columns of the `OUT` form at which the decode ended, none
+    /// until it ends.
+    pub fn grid_columns(&self) -> Option<crate::eval::output::GridColumns> {
+        self.output.as_ref().map(|_| crate::eval::output::GridColumns::OUT)
+    }
+
     /// The attempts on each test input, or none until the decode ends at
-    /// a consistent relation, as `docs/engine/synthesis.md#open-parameters` gives.
+    /// a consistent `OUT` form, as `docs/engine/synthesis.md#open-parameters` gives.
     pub fn attempts(&self) -> Option<Outcome<Box<[crate::judge::attempts::Attempts]>>> {
-        self.output.as_ref()?;
-        let form = NodePath::top(self.program().value().forms.len() as u32 - 1);
+        let form = self.output.as_ref()?;
         Some((|| {
-            let checked = self.checked(self.state.resolved(self.context.registry), &form)?;
-            let relation = derived_at(&checked, &form);
+            let checked = self.checked(self.state.resolved(self.context.registry), form)?;
+            let relation = derived_at(&checked, form);
             let limits = self.limits();
             let parameters: Vec<_> = self.assignments.iter().map(|values| ParameterValues::determined(values.clone())).collect();
             let inputs = self.inputs(&checked, &limits);
             let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
-            crate::judge::attempts::attempts(&evaluations, &relation, self.columns.expect("a consistent decode has grid columns"))
+            crate::judge::attempts::attempts(&evaluations, &relation)
         })())
     }
 
@@ -248,9 +325,11 @@ impl<'a> Decoder<'a> {
     }
 
     /// The bounds of one request: the deadline of the decode settings from
-    /// now, and the decode's cancellation.
+    /// now, the decode's cancellation, and the stops that the decode holds.
     pub fn limits(&self) -> Limits {
-        let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone());
+        let mut limits=self.operation_limits.clone().unwrap_or_else(||self.context.settings.operation_limits());
+        limits.cancellation=self.cancellation.clone();
+        let limits=limits.holding_in(Arc::clone(&self.held_stops));
         match &self.copies {
             Some(violations) => limits.checking_copies(violations.clone()),
             None => limits,
@@ -268,34 +347,42 @@ impl<'a> Decoder<'a> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
-        let form = NodePath::top(finished.len() as u32);
         let OpenClause { clause, kept, .. } = open_clause(last, &open, self.context.registry)?;
-        let mut labels = Vec::new();
-        for conjunct in &kept {
-            if let Conjunct::Atom(atom) = conjunct {
-                for site in atom.value().sites.iter() {
-                    each_site_label(site, &mut Vec::new(), &mut |label, _| labels.extend(use_label(label)));
-                }
-            }
-        }
-        let mut distinct = Vec::new();
-        for label in labels {
-            if !distinct.contains(&label) {
-                distinct.push(label);
-            }
-        }
-        let columns = super::state::slot_columns(distinct, 0);
+        let labels = atom_labels(&kept);
+        Some(self.body_of(finished, clause, kept, labels))
+    }
+
+    /// Bind body reification to the checked owner before any branch or
+    /// input is extracted. A widened branch must retain lifted reads and
+    /// evidence access even when the read that decided the owner's side
+    /// lies in a different input or branch.
+    pub fn widening<'d>(&'d self, program: &CheckedProgram, relation: &GraphRelation) -> BodyWidening<'d, 'a> {
+        BodyWidening { decoder: self, scope: scope_of(program, relation) }
+    }
+
+    /// A relation that no form of the decode declares: the one the next
+    /// declaration would take.
+    fn fresh_relation(&self) -> ProgramRelation {
+        ProgramRelation::Declared(RelationName(DeclaredName::Slot(self.state.open_slot())))
+    }
+
+    /// The sub-body of `clause` with the conjuncts `kept`: a complete clause
+    /// that ends the program of the `finished` forms, whose relation has a
+    /// column for each of `labels`, the labels `kept` makes.
+    fn body_of(&self, finished: &[Form], clause: Clause, kept: Vec<Conjunct>, labels: Vec<LabelId>) -> Outcome<SubBody> {
+        let form = NodePath::top(finished.len() as u32);
+        let columns = crate::read::columns::slot_columns(labels, 0);
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
         let registry = self.context.registry;
         let resolved = resolve_last(&self.state.resolved(registry), &Node::new(Program { forms }), registry);
         let checked = self.checked(Arc::new(resolved), &form);
-        Some(checked.map(|program| {
+        checked.map(|program| {
             let relation = derived_at(&program, &form);
             let scope = scope_of(&program, &relation);
             SubBody { program, form, kept: (0..count).collect(), scope }
-        }))
+        })
     }
 
     /// The program that `resolved` resolves, checked, or a fault at `form`
@@ -332,59 +419,238 @@ impl<'a> Decoder<'a> {
         checked
     }
 
-    /// The consistency of the relation of the `RULE` clause that ends the
-    /// program of `after`, where `before`, the state before the step, holds
-    /// fewer forms and the decode judges the train pairs.
-    pub(super) fn consistency(&self, before: &State, after: &State) -> Option<(Consistency, Option<crate::eval::output::GridColumns>)> {
+    /// The consistency of the relation of the form that ends the program of
+    /// `after`, where `before`, the state before the step, holds fewer forms
+    /// and the decode judges the train pairs: of an `OUT` form when `tested`
+    /// is [`Tested::Out`], and of a `RULE` clause when it is
+    /// [`Tested::Rule`]; none for a form of the other kind.
+    pub(super) fn consistency(&self, before: &State, after: &State, tested: Tested) -> Option<Consistency> {
         let train = self.train.as_ref()?;
         let program = after.program();
         let forms = &program.value().forms;
         if forms.len() == before.program().value().forms.len() {
             return None;
         }
-        let Some(Form::Clause(clause)) = forms.last() else { return None };
-        if clause.value().keyword != ClauseKeyword::Rule {
-            return None;
+        match (forms.last()?, tested) {
+            (Form::Out(_), Tested::Out) => {}
+            (Form::Clause(clause), Tested::Rule) if clause.value().keyword == ClauseKeyword::Rule => {}
+            _ => return None,
         }
         let form = NodePath::top(forms.len() as u32 - 1);
         let checked = match self.finished_checked(before, after) {
             Ok(checked) => checked,
-            Err(fault) => return Some((Consistency::Fault(fault.clone()), None)),
+            Err(fault) => return Some(Consistency::Fault(fault.clone())),
         };
         let output = derived_at(checked, &form);
-        Some(self.test(checked, &output, train))
+        Some(self.test(checked, &output, train, tested))
     }
 
     /// The consistency test of `output` in `program`, at each joint
     /// assignment of the `DET`s it reads, under the assignment cap of the
     /// decode settings.
-    fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>]) -> (Consistency, Option<crate::eval::output::GridColumns>) {
+    fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>], tested: Tested) -> Consistency {
         let dets: Vec<_> = dets_read(program, output.node);
         let limits = self.limits();
-        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments);
+        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested);
         match end {
-            Err(End::Stop(stop)) => return (Consistency::Stopped(stop), None),
-            Err(End::Fault(fault)) => return (Consistency::Fault(fault), None),
+            Err(End::Stop(stop)) => return Consistency::Stopped(stop),
+            Err(End::Fault(fault)) => return Consistency::Fault(fault),
             Ok(()) => {}
         }
         if kept.is_empty() {
-            return (Consistency::NotConsistent, None);
+            return Consistency::NotConsistent;
         }
         for det in dets.iter().filter(|det| !det.open) {
             let values = distinct_values(&kept, &det.relation);
             if values.len() > 1 {
-                return (Consistency::SeveralValues { relation: det.relation.clone(), values }, None);
+                return Consistency::SeveralValues { relation: det.relation.clone(), values };
             }
         }
         let parameters: Vec<_> = kept.iter().map(|assignment| ParameterValues::determined(assignment.values.clone())).collect();
         let inputs = self.inputs(program, &limits);
         let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
-        match crate::judge::run::grid_columns_observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train) {
-            Ok(crate::judge::run::Found::Columns(columns)) => (Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect() }, Some(columns)),
-            Ok(crate::judge::run::Found::None) => (Consistency::NotConsistent, None),
-            Ok(crate::judge::run::Found::Stopped(stop)) => (Consistency::Stopped(stop), None),
-            Err(fault) => (Consistency::Fault(fault), None),
+        match tested.observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train) {
+            Ok(Found::Columns(_)) => Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect() },
+            Ok(Found::None) => Consistency::NotConsistent,
+            Ok(Found::Stopped(stop)) => Consistency::Stopped(stop),
+            Err(fault) => Consistency::Fault(fault),
         }
+    }
+}
+
+/// Appends to `out` the conjunct lists that `list` widens to, in the order of
+/// the branches ([`BodyWidening::clause`]): the first `OR` or `IF` of `list`
+/// that holds an atom `reads` admits is replaced by each branch in turn, and
+/// each result widens again. A list that replaced an `OR` or an `IF` (`split`)
+/// makes, at its first use, each label that only the branches it left made
+/// ([`made_first`]). Gives `false` once `out` holds more than
+/// [`WIDENED_BODIES`] lists.
+fn widen(list: Vec<Conjunct>, split: bool, reads: &dyn Fn(&Atom) -> bool, out: &mut Vec<Vec<Conjunct>>) -> bool {
+    let Some(at) = list.iter().position(|conjunct| splits(conjunct, reads)) else {
+        out.push(if split { made_first(list) } else { list });
+        return out.len() <= WIDENED_BODIES;
+    };
+    let branches: Vec<Vec<Conjunct>> = match &list[at] {
+        Conjunct::Or(branches) => branches.iter().map(|branch| branch.value().conjuncts.to_vec()).collect(),
+        Conjunct::If { test, then, otherwise } => {
+            let negated = match &test.value().conjuncts[..] {
+                [Conjunct::Atom(atom)] => Conjunct::Not(Negated::Atom(atom.clone())),
+                _ => Conjunct::Not(Negated::Form(Arc::new(Conjunct::Or(Arc::from([test.clone()]))))),
+            };
+            vec![test.value().conjuncts.iter().chain(then.value().conjuncts.iter()).cloned().collect(), std::iter::once(negated).chain(otherwise.value().conjuncts.iter().cloned()).collect()]
+        }
+        _ => unreachable!("only an `OR` or an `IF` splits"),
+    };
+    branches.into_iter().all(|branch| {
+        let mut next = list[..at].to_vec();
+        next.extend(branch);
+        next.extend(list[at + 1..].iter().cloned());
+        widen(next, true, reads, out)
+    })
+}
+
+/// The distinct labels of the sites of the positive atoms of `conjuncts`, in
+/// the order of their first use.
+fn atom_labels(conjuncts: &[Conjunct]) -> Vec<LabelId> {
+    let mut labels: Vec<LabelId> = Vec::new();
+    for conjunct in conjuncts {
+        if let Conjunct::Atom(atom) = conjunct {
+            for site in atom.value().sites.iter() {
+                each_site_label(site, &mut Vec::new(), &mut |label, _| {
+                    if let Some(label) = use_label(label)
+                        && !labels.contains(&label)
+                    {
+                        labels.push(label);
+                    }
+                });
+            }
+        }
+    }
+    labels
+}
+
+/// `conjunct` with each `^X` label of a key clause's body made `*X`, since a
+/// clause has no key.
+fn unkeyed(conjunct: &Conjunct) -> Conjunct {
+    let body = |body: &Node<Body>| Node::new(Body { conjuncts: body.value().conjuncts.iter().map(unkeyed).collect() });
+    let atom = |atom: &Node<Atom>| {
+        mapped_atom(atom, &mut |label| match label {
+            LabelUse::Key(label) => LabelUse::Fresh(label),
+            other => other,
+        })
+    };
+    match conjunct {
+        Conjunct::Atom(own) => Conjunct::Atom(atom(own)),
+        Conjunct::Not(Negated::Atom(own)) => Conjunct::Not(Negated::Atom(atom(own))),
+        Conjunct::Not(Negated::Form(inner)) => Conjunct::Not(Negated::Form(Arc::new(unkeyed(inner)))),
+        Conjunct::Constraint(constraint) => Conjunct::Constraint(*constraint),
+        Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(body).collect()),
+        Conjunct::If { test, then, otherwise } => Conjunct::If { test: body(test), then: body(then), otherwise: body(otherwise) },
+        Conjunct::All { domain, body: inner } => Conjunct::All { domain: body(domain), body: body(inner) },
+    }
+}
+
+/// `atom` with each label use at any depth of its sites replaced by what `map` gives.
+fn mapped_atom(atom: &Node<Atom>, map: &mut dyn FnMut(LabelUse) -> LabelUse) -> Node<Atom> {
+    Node::new(Atom { relation: atom.value().relation.clone(), sites: atom.value().sites.iter().map(|site| mapped_site(site, map)).collect() })
+}
+
+/// `site` with each label use at any depth of it replaced by what `map` gives.
+fn mapped_site(site: &Site, map: &mut dyn FnMut(LabelUse) -> LabelUse) -> Site {
+    let args = site
+        .value
+        .args
+        .iter()
+        .map(|arg| match arg {
+            SiteArg::Label(label) => SiteArg::Label(map(*label)),
+            SiteArg::NamedLabel { name, label } => SiteArg::NamedLabel { name: name.clone(), label: map(*label) },
+            SiteArg::Field(field) => SiteArg::Field(mapped_site(field, map)),
+        })
+        .collect();
+    Site { column: site.column.clone(), value: SiteValue { args } }
+}
+
+/// `list`, a list of conjuncts that replaced an `OR` or an `IF`, with the first
+/// use at a site of each label that it reads and no conjunct in it makes made:
+/// an `OR` exports a label that its first branch makes to the later branches
+/// that join it, and a branch alone makes none.
+fn made_first(list: Vec<Conjunct>) -> Vec<Conjunct> {
+    let mut made: Vec<LabelId> = Vec::new();
+    for conjunct in &list {
+        each_made(conjunct, &mut made);
+    }
+    list.into_iter()
+        .map(|conjunct| match &conjunct {
+            Conjunct::Atom(atom) => Conjunct::Atom(mapped_atom(atom, &mut |label| match label {
+                LabelUse::Join(label) if !made.contains(&label) => {
+                    made.push(label);
+                    LabelUse::Fresh(label)
+                }
+                other => other,
+            })),
+            Conjunct::Constraint(constraint) => {
+                let mut make = |label: ConstraintLabel| {
+                    let fresh = label.fresh || !made.contains(&label.label);
+                    made.push(label.label);
+                    ConstraintLabel { fresh, ..label }
+                };
+                let first = make(constraint.first);
+                let second = match constraint.second {
+                    Operand::Label(label) => Operand::Label(make(label)),
+                    Operand::Zero => Operand::Zero,
+                };
+                Conjunct::Constraint(Constraint { first, second, ..*constraint })
+            }
+            _ => conjunct,
+        })
+        .collect()
+}
+
+/// Adds to `made` each label that `conjunct` makes, at any depth of it.
+fn each_made(conjunct: &Conjunct, made: &mut Vec<LabelId>) {
+    let mut add = |label: LabelId| {
+        if !made.contains(&label) {
+            made.push(label);
+        }
+    };
+    match conjunct {
+        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+            for site in atom.value().sites.iter() {
+                each_site_use(site, &mut |label| {
+                    if let LabelUse::Fresh(label) | LabelUse::Key(label) = label {
+                        add(label);
+                    }
+                });
+            }
+        }
+        Conjunct::Constraint(constraint) => {
+            if constraint.first.fresh {
+                add(constraint.first.label);
+            }
+            if let Operand::Label(second) = constraint.second
+                && second.fresh
+            {
+                add(second.label);
+            }
+        }
+        Conjunct::Not(Negated::Form(inner)) => each_made(inner, made),
+        Conjunct::Or(branches) => branches.iter().flat_map(|branch| branch.value().conjuncts.iter()).for_each(|inner| each_made(inner, made)),
+        Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().flat_map(|body| body.value().conjuncts.iter()).for_each(|inner| each_made(inner, made)),
+        Conjunct::All { domain, body } => [domain, body].into_iter().flat_map(|body| body.value().conjuncts.iter()).for_each(|inner| each_made(inner, made)),
+    }
+}
+
+/// Whether `conjunct` is an `OR` or an `IF` that holds, in its branches or its
+/// test, at any depth of `OR` and `IF`, an atom that `reads` admits.
+fn splits(conjunct: &Conjunct, reads: &dyn Fn(&Atom) -> bool) -> bool {
+    let holds = |body: &Node<Body>| body.value().conjuncts.iter().any(|inner| match inner {
+        Conjunct::Atom(atom) => reads(atom.value()),
+        other => splits(other, reads),
+    });
+    match conjunct {
+        Conjunct::Or(branches) => branches.iter().any(holds),
+        Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().any(holds),
+        _ => false,
     }
 }
 
@@ -462,17 +728,18 @@ fn complete_or_atoms(body: &Node<Body>, open_at: Option<usize>, registry: &Regis
     body.value().conjuncts.iter().enumerate().filter(kept).map(|(_, conjunct)| conjunct.clone()).collect()
 }
 
-/// The relation that the clause at `form` derives in `program`: a clause
-/// relation, a chosen relation where the clause has `ONE` marks, or the
-/// parameter of a `DET` clause with no `ONE` mark.
+/// The relation that the form at `form` derives in `program`: a clause
+/// relation, a chosen relation where the clause has `ONE` marks, the
+/// parameter of a `DET` clause with no `ONE` mark, or the relation of an
+/// `OUT` form.
 pub fn derived_at(program: &CheckedProgram, form: &NodePath) -> GraphRelation {
     let resolved = &program.program;
     let node = (0..resolved.graph.nodes.len())
         .map(|index| GraphNodeIndex(u32::try_from(index).expect("fewer than 2^32 nodes")))
         .find(|&node| {
-            matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_)) && resolved.forms_of(node).contains(form)
+            matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) | DependencyKind::Out(_)) && resolved.forms_of(node).contains(form)
         })
-        .expect("a checked clause derives its relation");
+        .expect("a checked clause or `OUT` form derives its relation");
     GraphRelation { node, output: None }
 }
 
@@ -490,6 +757,12 @@ pub fn walked_dets(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
 /// `DET`'s parameter.
 pub fn relation_dets(program: &CheckedProgram, node: GraphNodeIndex) -> Vec<Det> {
     dets_read(program, node).into_iter().filter(|det| !det.pick).collect()
+}
+
+/// Assignable parameter DETs in the full program's native dependency order.
+/// Model picks are excluded, including picks outside OUT's dependencies.
+pub fn held_dets(program: &CheckedProgram) -> Vec<Det> {
+    crate::judge::determination::held_dets(program)
 }
 
 /// The count at the first assignment of `rows`, and the stop of that value

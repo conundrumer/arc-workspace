@@ -1,9 +1,10 @@
 // The components of lib-signature.dl that programs/lib.dl holds no form of,
-// or holds with other relations, as Souffle components over the present lib:
-// each states the relations of its signature component with the semantics of
-// its construction in engine/arclog-constructions/src. The text follows the
-// lib's text and the solver's, and a component stands under the name
-// Sig<signature name>, since the lib's Ray takes its own name.
+// or holds with other relations or other rows (Frame, which Frame2D holds at a
+// key with an extent row on both axes alone), as Souffle components over the
+// present lib: each states the relations of its signature component with the
+// semantics of its construction in engine/arclog-constructions/src. The text
+// follows the lib's text and the solver's, and a component stands under the
+// name Sig<signature name>, since the lib's Ray takes its own name.
 
 // The relations of the signature that the lib holds no relation of, each as
 // sig_<name>, since a relation of the solver may take the name: the text
@@ -58,25 +59,22 @@ sig_frame_offset(P, A, K, V) :- axis_of(D, A), sub_extent(P, A, K), jump_offset(
 
     _key(Ky) :- cell(Ky, _).
 
-    .decl _extent(key: Key, a: Axis, e: number)
-    _extent(Ky, A, E) :- cell(Ky, P), axis_elem(A), axis_dim(P, A, E).
-
     .decl _cut_axis(key: Key, a: Axis)
     _cut_axis(Ky, A) :- parts(Ky, A, _).
     _cut_axis(Ky, A) :- side(Ky, A, _).
 
-    // A side k and a gap g that cut an axis: a given side, or the side that
-    // n parts fill an extent of the key's cells with, where n > 1.
-    .decl _cut(key: Key, a: Axis, k: number, g: number)
-    _cut(Ky, A, K, G) :- side(Ky, A, K), _gap(Ky, A, G).
-    _cut(Ky, A, K, G) :-
-        parts(Ky, A, N), N > 1, _gap(Ky, A, G), _extent(Ky, A, E),
+    // A side k and a gap g that cut an axis of the cell p: a given side, or
+    // the side that n parts fill the extent of p with, where n > 1.
+    .decl _cut(key: Key, p: Position, a: Axis, k: number, g: number)
+    _cut(Ky, P, A, K, G) :- cell(Ky, P), side(Ky, A, K), _gap(Ky, A, G).
+    _cut(Ky, P, A, K, G) :-
+        cell(Ky, P), parts(Ky, A, N), N > 1, _gap(Ky, A, G), axis_dim(P, A, E),
         tile_size(E, N, G, K), G >= 1 - K, G < E.
 
     // The part of p on an axis, as its outer and inner position, each on the
     // axis alone.
     .decl _split(key: Key, p: Position, a: Axis, p_outer: Position, p_inner: Position)
-    _split(Ky, P, A, O, I) :- cell(Ky, P), _cut(Ky, A, K, G), divide_by_size(P, A, K, G, O, I).
+    _split(Ky, P, A, O, I) :- _cut(Ky, P, A, K, G), divide_by_size(P, A, K, G, O, I).
     _split(Ky, P, A, O, I) :-
         cell(Ky, P), parts(Ky, A, 1), _gap(Ky, A, G), axis_dim(P, A, E),
         divide_by_size(P, A, E, G, O, I).
@@ -288,4 +286,45 @@ sig_frame_offset(P, A, K, V) :- axis_of(D, A), sub_extent(P, A, K), jump_offset(
 
     mismatch(Ky, D) :- source(Ky, P, V), _admitted(D), apply(D, P, P2), !target(Ky, P2, V).
     conflict(Ky, D) :- source(Ky, P, V), _admitted(D), apply(D, P, P2), target(Ky, P2, V2), V2 != V.
+}
+
+// The cells of a frame from its extent on each axis. An axis with no extent
+// row at a key that has one on the other axis has extent 1, as the
+// construction gives it; the lib's Frame2D gives no cell there.
+.comp SigFrame<Key> {
+    .decl extent(key: Key, a: Axis, n: number)
+    .decl cell(key: Key, p: Position)
+
+    .decl _key(key: Key)
+    _key(Ky) :- extent(Ky, _, _).
+
+    .decl _given(key: Key, a: Axis)
+    _given(Ky, A) :- extent(Ky, A, _).
+
+    .init _ax = AxisFrame<Key>
+    _ax.extent(Ky, A, N) :- extent(Ky, A, N).
+    _ax.extent(Ky, A, 1) :- _key(Ky), axis_elem(A), !_given(Ky, A).
+
+    cell(Ky, P) :-
+        perp(A1, A2), _ax.cell(Ky, A1, P1), _ax.cell(Ky, A2, P2),
+        compose(P1, P2, P).
+}
+
+// The translations of a valued cell set that fix it, over the lib's
+// OffsetInvariance, whose own period is the damage-tolerant reading: period
+// is each candidate no cell pair contradicts, fundamental_period the least
+// such one that has a pair, per axis, and approximate_period the reading
+// through sparse damage. The lib's period stands under approximate_period.
+.comp SigPeriods<Key, Val> {
+    .decl cell(key: Key, p: Position, v: Val)
+    .decl period(key: Key, a: Axis, k: number)
+    .decl fundamental_period(key: Key, a: Axis, k: number)
+    .decl approximate_period(key: Key, a: Axis, k: number)
+
+    .init _inv = OffsetInvariance<Key, Val>
+    _inv.cell(Ky, P, V) :- cell(Ky, P, V).
+
+    period(Ky, A, K) :- _inv.cand(Ky, A, K, _), !_inv.mismatch(Ky, A, K).
+    fundamental_period(Ky, A, K) :- _inv.min_period(Ky, A, K).
+    approximate_period(Ky, A, K) :- _inv.period(Ky, A, K).
 }

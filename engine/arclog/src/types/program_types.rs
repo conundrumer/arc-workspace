@@ -20,7 +20,7 @@ use super::ValueType;
 /// [`super::KeyRow::Columns`].
 ///
 /// For a `RIGID_DET` form it holds as well the labels at its parts' sites
-/// that are the assembly's own Idents
+/// and key columns that are the assembly's own Idents
 /// (`docs/arclog/rigid.md#semantics`), which a renaming of Idents moves
 /// when it takes the common reading onto an instance's.
 #[derive(Clone, Debug, Default)]
@@ -49,15 +49,15 @@ impl FormTypes {
         FormTypes { labels: labels.into_iter().collect(), relations: relations.into_iter().collect(), own_idents: Default::default() }
     }
 
-    /// These types with `labels` the labels at the form's parts' sites that
-    /// are the assembly's own Idents.
+    /// These types with `labels` the labels at the form's parts' sites and
+    /// key columns that are the assembly's own Idents.
     pub(crate) fn with_own_idents(mut self, labels: impl IntoIterator<Item = crate::program::LabelId>) -> Self {
         self.own_idents = labels.into_iter().collect();
         self
     }
 
-    /// Whether `label` stands at a site of a part of the `RIGID_DET` form,
-    /// and is the assembly's own Ident there.
+    /// Whether `label` stands at a site of a part or a key column of the
+    /// `RIGID_DET` form, and is the assembly's own Ident there.
     pub fn is_own_ident(&self, label: crate::program::LabelId) -> bool {
         self.own_idents.contains(&label)
     }
@@ -121,6 +121,11 @@ impl ProgramTypes {
     /// gives a column of the relation no type.
     pub fn columns(&self, relation: &GraphRelation) -> Option<&[ValueType]> {
         self.columns.get(relation).map(|columns| &columns[..])
+    }
+
+    /// Every typed graph relation, including output ports of shared nodes.
+    pub fn relations(&self) -> impl Iterator<Item = (&GraphRelation, &[ValueType])> + '_ {
+        self.columns.iter().map(|(relation, columns)| (relation, &columns[..]))
     }
 
     /// Sets the type of each column of `relation`.

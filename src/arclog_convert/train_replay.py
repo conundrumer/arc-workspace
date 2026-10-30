@@ -4,11 +4,11 @@ report of the cases that do not end `Consistent`.
     uv run python -m arclog_convert.train_replay [--out <dir>] [<stem> ...]
 
 The command replays the files under `gen/` of `arclog_convert.out`, or of
-`--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.convert` runs the same replay on
-the solvers it converted. the `verdicts` binary of `arclog-cli` replays every case closed-world
-and gives each case a verdict: the consistency of the last `RULE` the stream
+`--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.verify` runs the same replay on
+the solvers it checks. The `verdicts` binary of `arclog-cli` replays every case closed-world
+and gives each case a verdict: the consistency of the last `OUT` form the stream
 ends (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
-`NoRule` where it ends none, `Refused` where the decoder refuses the stream,
+`NoOut` where it ends none, `Refused` where the decoder refuses the stream,
 `NoStream` where the writer gives the case no stream, and `Unread` for a
 solver whose files or task do not read. The cases are the solver's cases,
 without the combinations that its `exclude` forms leave out. A task whose
@@ -23,14 +23,14 @@ line, on which the command writes that task's record at once, so a replay that
 stops or fails keeps the record of each task that ended. A task whose replay
 panics gets no record, a line in the report, and the exit status 1. The report
 does not depend on the order the tasks end in. Where the `verdicts` binary is
-built again in the shared `engine/target` during the run, the run is not
+built again in the checkout's `engine/target` during the run, the run is not
 affected: it runs a private copy of the binary, taken once where the run needs
 it, in a temporary directory that the run removes when it ends or is stopped.
 
 A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, as a
 record with these fields: `files`, the sha256 of the task's `.arclog` and
 `.arcdata`, of the files of each solver that a `(representative <id>)` line
-names, followed to its end, and of the task file; `sources`, the digest of the
+names, followed to its end, of the files under `gen/cases/<stem>/` (`arclog_convert.convert.convert_cases`), and of the task file; `sources`, the digest of the
 engine's sources; `binary`, the sha256 of the `verdicts` binary the run ran; and
 `cases`. A task is fresh, and replays nothing, where its record's `files`
 equal the current ones and either its `sources` equal the current digest or its
@@ -48,7 +48,7 @@ previous record gives as `Consistent` and that is not now; a line for each
 task and verdict whose count fell below the baseline's; and a final line
 with the counts. The exit status is 1 where a count exceeds the baseline or
 a case that was `Consistent` is not now, and 0 otherwise. Only
-`arclog_convert.convert --accept` rewrites the baseline."""
+`arclog_convert.verify --accept` rewrites the baseline."""
 
 import argparse
 import hashlib
@@ -108,7 +108,8 @@ def write_baseline(baseline: dict[tuple[str, str], tuple[int, str]], path: Path 
 
 def solver_files(gen: Path, stem: str) -> list[Path]:
     """The `.arclog` and `.arcdata` files of the solver `stem`, then those of
-    each representative its `.arcdata` names, followed to its end."""
+    each representative its `.arcdata` names, followed to its end, then the
+    files under `cases/<stem>/` of `gen`, by name."""
     files, queue, seen = [], [stem], set()
     while queue:
         name = queue.pop(0)
@@ -119,7 +120,7 @@ def solver_files(gen: Path, stem: str) -> list[Path]:
         data = gen / f"{name}.arcdata"
         if data.exists():
             queue += REPRESENTATIVE.findall(data.read_text())
-    return files
+    return files + sorted((gen / "cases" / stem).glob("*"))
 
 
 def engine_digest() -> str:
@@ -129,7 +130,7 @@ def engine_digest() -> str:
 
 def tool_binary(name: str) -> Path:
     """The built `name` binary of `arclog-cli` (`verdicts`, `arclog-cli`), in the
-    `engine/target` of the main worktree."""
+    `engine/target` of the checkout."""
     return checkout.engine_target() / "tool" / name
 
 
@@ -148,7 +149,7 @@ def private_binaries() -> Iterator[Callable[[str], tuple[Path, str]]]:
     """Give `copy`, which builds the `name` binary of `arclog-cli` and, on its
     first call for `name`, copies it to a temporary directory of the run and
     gives the copy's path and sha256; a later call gives the same pair. A
-    build in `engine/target` after the copy leaves the copy as it was. On
+    build in the checkout's `engine/target` after the copy leaves the copy as it was. On
     leaving, also after a failure, a stop by SIGTERM or an interrupt, the
     directory is removed."""
     directory = Path(tempfile.mkdtemp(prefix="arclog-binaries-"))

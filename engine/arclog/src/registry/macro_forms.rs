@@ -1,14 +1,14 @@
 //! The reader of the registry file's macro form,
-//! `(macro <name> (columns ...) <body>)`, with the labels of its body that
+//! `(macro <name> (columns ...) [(frames ...)] [(types ...)] <body>)`, with the labels of its body that
 //! its columns stand for.
 
 use super::reader::FileReader;
 use super::records::{BodyInFile, LabelColumns, WrittenRelation};
-use super::spellings::{headed, COLUMNS};
+use super::spellings::{headed, COLUMNS, FRAMES, TYPES};
 use super::*;
 
 impl FileReader {
-    /// `(macro <name> (columns ...) <body>)`, after its head.
+    /// `(macro <name> (columns ...) [(frames ...)] [(types ...)] <body>)`, after its head.
     pub(super) fn macro_form(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let name = LibName(self.symbol(rest.first(), "the macro's name", place)?.into());
         match rest.get(1).and_then(head_of) {
@@ -29,38 +29,53 @@ impl FileReader {
         }
     }
 
-    /// Each `(<Column> <Label>)` of `items`, the column's name and the label
-    /// of `labels` it stands for, each column named once. `what` names the
-    /// form whose columns they are.
+    /// Each `(<Column> <Label>)` and `(<Column> <Label> <type>)` of `items`,
+    /// the column's name, the label of `labels` it stands for and the type
+    /// it declares, each column named once. `what` names the form whose
+    /// columns they are.
     fn label_columns(&mut self, items: &[SExpr], labels: &crate::read::LabelNames, what: &str, place: SourcePlace) -> Option<LabelColumns> {
         let mut columns = Vec::new();
         let mut names: Vec<&str> = Vec::new();
         for item in items {
             let SExpr::List { items: pair, .. } = item else {
-                return self.refuse(format!("a column of {what} is a list of its name and its label"), item.place());
+                return self.refuse(format!("a column of {what} is a list of its name, its label and optionally its type"), item.place());
             };
-            let [column, label] = &pair[..] else {
-                return self.refuse(format!("a column of {what} is a list of its name and its label"), item.place());
+            let (column, label, declared) = match &pair[..] {
+                [column, label] => (column, label, None),
+                [column, label, declared] => (column, label, Some(declared)),
+                _ => return self.refuse(format!("a column of {what} is a list of its name, its label and optionally its type"), item.place()),
             };
             let column = self.symbol(Some(column), "the column's name", place)?;
             let label = self.symbol(Some(label), "the column's label", place)?;
             let label = self.label_of(labels, label, &format!("the column `{column}` of {what}"), place)?;
+            let declared = match declared {
+                Some(declared) => Some(self.value_type(declared, "a declared type")?),
+                None => None,
+            };
             if !self.named_once(names.iter().copied(), column, what, item.place()) {
                 continue;
             }
             names.push(column);
-            columns.push((ColumnName::Written(column.into()), label));
+            columns.push(LabelColumn { name: ColumnName::Written(column.into()), label, declared });
         }
         Some(columns.into())
     }
 
     fn relation_macro(&mut self, name: LibName, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let written = headed(&rest[1], COLUMNS).expect("the form's `columns` form");
-        let (definition, labels) = self.read(read_body(&rest[2..]))?;
+        let (frames, rest) = match rest.get(2).and_then(|expr| headed(expr, FRAMES)) {
+            Some(frames) => (frames, &rest[3..]),
+            None => (&[][..], &rest[2..]),
+        };
+        let (rules, body) = match rest.first().and_then(|expr| headed(expr, TYPES)) {
+            Some(items) => (self.type_rules(items)?, &rest[1..]),
+            None => (Box::default(), rest),
+        };
+        let (definition, labels) = self.read(read_body(body))?;
         let columns = self.label_columns(written, &labels, &format!("the macro `{}`", name.0), place)?;
         if self.declare(&name, place) {
             self.bodies.push(BodyInFile { body: definition.clone(), place });
-            self.relation_macros.push(WrittenRelation { name, place, columns, definition });
+            self.relation_macros.push(WrittenRelation { name, place, columns, definition, frames: frames.into(), rules });
         }
         Some(())
     }

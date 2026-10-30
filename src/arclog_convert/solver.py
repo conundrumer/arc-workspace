@@ -54,7 +54,7 @@ from arclog_convert.lib import (
     plan_proposer,
 )
 from arclog_convert.solver_cases import CasesMixin
-from arclog_convert.solver_instances import InstancesMixin
+from arclog_convert.solver_instances import InstancesMixin, set_name
 from arclog_convert.solver_params import ParamsMixin
 from arclog_convert.solver_render import RenderMixin
 from arclog_convert.terms import MOVED_RELS, NEG_OP, ctor_names, subst, subst_terms, var_uses
@@ -178,6 +178,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         self.todo = todo
         self.c = Converter(stem, lib, sig, todo, inline, own_copies, checks)
         self.alt_derived: set[str] = set()   # the relations that some alt's block derives
+        self.rerendered: dict[tuple[int, frozenset[str]], tuple[Form, Form | None]] = {}   # the forms that `written_without` wrote
         self.lines = self.c.src_lines
         self.c.skip_rels = {"impl_choice"}
 
@@ -276,19 +277,26 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
     def written_without(self, f: Form, empty: frozenset[str]) -> Form | None:
         """The form `f` written again with the relations `empty` empty: a positive
         read of one kills its list, and a NOT of one is dropped. None where `f`
-        derives nothing then, or where it has no source to write again."""
-        saved = list(self.todo.pending), Counter(self.todo.kinds)
-        try:
-            if f.src_inst is not None:
-                inst, us, side = f.src_inst
-                gs = self.instance(inst, us, side, empty)
-                return gs[0] if gs else None
-            if f.src is not None:
-                u, side, scope, sub, ns = f.src
-                return self.clause(u, side, scope, sub, ns, drop_neg=empty)
-            return None
-        finally:
-            self.todo.pending, self.todo.kinds = saved
+        derives nothing then, or where it has no source to write again. The same
+        `f` and `empty` give the same form in every case, so it is written once."""
+        key = id(f), empty
+        if key not in self.rerendered:
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            try:
+                if f.src_inst is not None:
+                    inst, us, side = f.src_inst
+                    gs = self.instance(inst, us, side, empty)
+                    g = gs[0] if gs else None
+                elif f.src is not None:
+                    u, side, scope, sub, ns = f.src
+                    g = self.clause(u, side, scope, sub, ns, drop_neg=empty)
+                else:
+                    g = None
+            finally:
+                self.todo.pending, self.todo.kinds = saved
+            self.rerendered[key] = f, g
+        g = self.rerendered[key][1]
+        return None if g is None else dc_replace(g)
 
     def run(self) -> tuple[str, str]:
         c = self.c
@@ -556,6 +564,13 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         # the name a parameter's DET writes, where no stored side stands: the
         # derivation of a table the helpers derive, the proposer the plan
         # covers the parameter with, or the one whose domain the DET tests
+        # One decision feeds both interface planning and form emission.
+        # A plan/directive never replaces an authored source derivation.
+        parameter_source = {
+            r.name: "determine" if r.name in det_units and c.determines_parameter(("Determine",), r.name)
+            else "params" if r.name in param_rules else "proposal"
+            for r in params_decls
+        }
         c.proposer_cols = {}
         covered: dict[str, str] = {}   # each parameter the plan covers with a proposer, its proposer
         helper_det: dict[str, tuple[str | None, str | None]] = {}   # each helper table: its derivation and its param
@@ -567,6 +582,10 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     c.rel_name(("Params",), r.name), param_rules.get(r.name, []), helper_rows.get(r.name, []))
                 prop = helper_det[r.name][0]
                 name = libmap.DERIVATIONS[prop] if prop else None
+            elif parameter_source[r.name] != "proposal":
+                # A source derivation supplies its own columns and semantics;
+                # an advisory proposer plan must not replace it.
+                continue
             elif any(d == "derive" for d, _, _ in ds):
                 if r.name in c.cand_params:
                     continue   # a DET_OR_RULE with a body: the columns its body's labels give
@@ -666,13 +685,32 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     forms.append(f)
                     arcdata_params.append(self.keyed_param_line(amp, kt, param_facts, grid_params))
                 continue
-            if derives:
+            if parameter_source[r.name] == "determine":
+                made = [self.clause(u, "DET", ("Determine",), {}, name_scope=("Params",))
+                        for u in det_units.pop(r.name)]
+                forms.extend(made)
+                self.set_param_order(amp, r, made)
+                if derives:
+                    # Keep the declared variant as well as the source DET.
+                    # Existing merge_forms + fold_or_lines combines the source
+                    # clauses and this line: Stored gets the body, Derived its
+                    # proposer. A body gives one value, so no SET is written.
+                    props = self.derive_props[r.name]
+                    forms.append(Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)})"],
+                                      amp, set(), line=r.span.first))
+                    derive_points.append((amp, derives, "Derived", r.name))
+            elif parameter_source[r.name] == "params":
+                made = [self.clause(u, "RULE" if self.derives_from_params(u) else "DET", ("Params",), {})
+                        for u in param_rules[r.name]]
+                forms.extend(made)
+                self.set_param_order(amp, r, made)
+            elif derives:
                 props = self.derive_props[r.name]
                 if r.name in c.cand_params:
-                    # the stored reading: the candidates the examples show, kept by the program's fit
+                    # the stored reading: the candidates the examples show, one of them per model
                     lab = pascal(r.columns[0].name)
-                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}", f"  (ex_input (:Col *{lab})))"],
-                             amp, set(), line=r.span.first)
+                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}", f"  (ex_input (:Col *{lab}))",
+                              "  (ONE))"], amp, set(), line=r.span.first)
                 else:
                     mark = self.set_mark(amp, r, props, param_facts.get(r.name, []), grid_params.get(r.name, []))
                     f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
@@ -686,16 +724,6 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                          line=r.span.first if r.span else 0)
                 f.comments = [f";; {params_to_amp(gloss)}"] if gloss else []
                 forms.append(f)
-            elif r.name in param_rules:
-                made = [self.clause(u, "RULE" if self.derives_from_params(u) else "DET", ("Params",), {})
-                        for u in param_rules[r.name]]
-                forms.extend(made)
-                self.set_param_order(amp, r, made)
-            elif r.name in det_units:
-                made = [self.clause(u, "DET", ("Determine",), {}, name_scope=("Params",))
-                        for u in det_units.pop(r.name)]
-                forms.extend(made)
-                self.set_param_order(amp, r, made)
             elif r.name in c.orders:
                 forms.append(self.order_form(r, amp, gloss))
             else:
@@ -759,8 +787,10 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
             if u.scope.components == ("Determine",):
                 if u.head.relation.instances:
                     det_inst_units[u.head.relation.instances].append(u)
-                elif u.head.relation.name in det_units and u.head.relation.name not in c.skip_rels:
-                    forms.append(self.clause(u, "DET", ("Determine",), {}))
+                elif u.head.relation.name not in c.skip_rels:
+                    parameter = c.determines_parameter(u.scope.components, u.head.relation.name)
+                    if not parameter or u.head.relation.name in det_units:
+                        forms.append(self.clause(u, "DET" if parameter else "RULE", ("Determine",), {}))
 
         # instances and clauses, in program order
         inst_units = defaultdict(list)
@@ -816,7 +846,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 side = "RULE"
             elif sc == ("Determine",):
                 us = det_inst_units.get((name,), [])
-                side = "DET"
+                # Instance ports are inputs/helpers, not declared Params heads.
+                side = "RULE"
             elif sc == ():
                 us = inst_units.get((name,), [])
                 side = "RULE"
@@ -882,6 +913,14 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                         f.claim_slugs = rest.split()
 
         forms = self.settle_sets([f for f in forms if f is not None])
+        # a set `DET` with no body has the stored rows of its parameter as its value
+        bodiless = {f.name for f in forms if f.body is None}
+        for amp in sorted(self.used_sets):
+            if set_name(amp) not in bodiless:
+                continue
+            for i, text in enumerate(arcdata_params):
+                if text.startswith(f"(param {amp} "):
+                    arcdata_params[i] = f"(param {set_name(amp)} " + text[len(f"(param {amp} "):]
         # an open parameter's determination by a proposer, or with no body,
         # and its DET_OR_RULE line end in `(ONE)`, as its clauses do
         for f in forms:

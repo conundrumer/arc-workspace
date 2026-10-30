@@ -97,7 +97,14 @@ impl<'l> Out<'l> {
             }
             None => false,
         };
-        if !placed && !self.text.is_empty() && !self.after_open && text != ")" {
+        // A replacement may be longer than the source token whose layout
+        // it kept (for example `<` -> `>=`). Reaching the next token's old
+        // column then adds no whitespace. Layout must never concatenate
+        // two symbol tokens into a different symbol such as `>=R1`.
+        let symbol_edge = |c: char| !c.is_whitespace() && !matches!(c, '(' | ')' | '"');
+        let joined_symbols = self.text.chars().last().is_some_and(symbol_edge)
+            && text.chars().next().is_some_and(symbol_edge);
+        if joined_symbols || (!placed && !self.text.is_empty() && !self.after_open && text != ")") {
             self.put(" ");
         }
         self.put(text);
@@ -278,6 +285,7 @@ impl<'l> Writer<'l> {
             Form::Instance(instance) => self.instance(instance.value(), path, names, &mut t),
             Form::Choose(choose) => self.choose(choose.value(), path, names, &mut t),
             Form::RigidDet(rigid) => self.rigid_det(rigid.value(), path, names, &mut t),
+            Form::Out(out) => self.out(out.value(), path, names, &mut t),
             Form::Demonstrated(demonstrated) => self.demonstrated(demonstrated.value(), path, names, &mut t),
             Form::Claim(_) | Form::Alts(_) => unreachable!("a claim and an `ALTS` form are written above"),
         }
@@ -569,6 +577,12 @@ impl<'l> Writer<'l> {
         }
     }
 
+    fn out(&mut self, out: &crate::program::Out, path: &NodePath, names: &Names, t: &mut Tokens) {
+        self.put(t, sp::OUT);
+        let body = out.key.body.value();
+        self.conjuncts(body, &ChildPaths::of(path, NodeRef::Out(out)).path(NodeRef::Body(body)), names);
+    }
+
     fn demonstrated(&mut self, demonstrated: &Demonstrated, path: &NodePath, names: &Names, t: &mut Tokens) {
         self.put(t, sp::DEMONSTRATED);
         self.put(t, declared(&demonstrated.name.0));
@@ -599,7 +613,12 @@ impl<'l> Writer<'l> {
         if let Some(text) = &rule.text {
             self.put(&mut t, &quoted(&text.0));
         }
-        self.forms(&rule.forms, &ChildPaths::of(path, NodeRef::DemoRule(rule)), Some(&names));
+        let children = ChildPaths::of(path, NodeRef::DemoRule(rule));
+        for (index, form) in rule.forms.iter().enumerate() {
+            // A form that an `ALT` gave the rule is a label scope of its own.
+            let scope = if rule.forms.from_alt(index) { None } else { Some(&names) };
+            self.form(form, &children.path(NodeRef::from(form)), scope);
+        }
         self.put(&mut t, ")");
     }
 }
@@ -609,4 +628,42 @@ pub(super) fn write(program: &Program, layout: &Layout) -> String {
     writer.program(program);
     let end = writer.tokens(&NodePath::default()).first();
     writer.out.finish(end, SourceFile::Arclog)
+}
+
+/// A display fragment using the ordinary engine writer and caller's lexical
+/// label names. Bodies get a list wrapper; a bare label stays a bare label.
+pub(super) fn snippet(node: NodeRef<'_>, names: &[(LabelId, Box<str>)]) -> Result<String, String> {
+    let layout = Layout::default();
+    let mut writer = Writer {layout: &layout, out: Out::new(&layout, SourceFile::Arclog)};
+    let path = NodePath::default();
+    let names = Names(names);
+    let form = match node {
+        NodeRef::Clause(c) => Some(Form::Clause(Node::new(c.clone()))),
+        NodeRef::Instance(c) => Some(Form::Instance(Node::new(c.clone()))),
+        NodeRef::Choose(c) => Some(Form::Choose(Node::new(c.clone()))),
+        NodeRef::RigidDet(c) => Some(Form::RigidDet(Node::new(c.clone()))),
+        NodeRef::Out(c) => Some(Form::Out(Node::new(c.clone()))),
+        _ => None,
+    };
+    if let Some(form) = form {
+        writer.form(&form, &path, Some(&names));
+    } else {
+        match node {
+            NodeRef::Program(p) => writer.program(p),
+            NodeRef::Body(b) => writer.body_list(b, &path, &names),
+            NodeRef::Conjunct(c) => writer.conjunct(c, &path, &names),
+            NodeRef::Atom(a) => {
+                let mut tokens = writer.tokens(&path);
+                writer.put(&mut tokens, "(");
+                writer.atom(a, &ChildPaths::of(&path, node), &names, &mut tokens);
+                writer.put(&mut tokens, ")");
+            }
+            NodeRef::Site(s) => writer.site(s, &path, &names, false),
+            NodeRef::Label(l) => writer.out.put(&label_use(*l, &names)),
+            NodeRef::KeyClause(k) => writer.key_clause(k, &path, &names),
+            NodeRef::InstanceInput(i) => writer.input(i, &path, &names),
+            _ => return Err(format!("unsupported study snippet node: {node:?}")),
+        }
+    }
+    Ok(writer.out.text.trim().to_owned())
 }

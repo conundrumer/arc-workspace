@@ -66,11 +66,16 @@ def case_ctors(leaves: list["Leaf"], terms: list) -> set[str]:
     return {x for leaf, t in zip(leaves, terms) if leaf.kind == "case" for x in ctor_names(t)}
 
 
-def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
+def site_columns(c: "Converter", cols: list, inst, port: str | None = None) -> list[list[Site]]:
     """For each Souffle column of `cols` (`Converter.resolve`), the `Site`
     of each of its leaves that `kept_leaf` keeps, in order. `ClauseWriter.sites`
     writes its sites with these labels, and `names.column_map` writes
-    them, so a label is chosen here alone."""
+    them, so a label is chosen here alone. `column_map` gives the `port` of
+    the instance's relation, and for the `prediction` of a `DEMONSTRATED`
+    form (`Solver.demonstrated_form`), each leaf of a column after the
+    key and the alternative takes the label its `&prediction` clause holds it
+    at, the label of the `value` head site, with no field, where the head site
+    has a label for each kept leaf."""
     out: list[list[Site]] = []
     for i, (col, leaves) in enumerate(cols):
         kept = [l for l in leaves if kept_leaf(l)]
@@ -102,6 +107,10 @@ def site_columns(c: "Converter", cols: list, inst) -> list[list[Site]]:
                 sites = [Site(l, "E" if l.kind == "example" else l.name if nkeep > 1 else col.name, None)
                          for l in kept]
         out.append(sites)
+    demo = getattr(c, "demo_value_labels", {}).get(inst) if port == "prediction" else None
+    for i, labels in enumerate(demo or [], start=2):
+        if i < len(out) and len(labels) == len(out[i]):
+            out[i] = [Site(site.leaf, label, None) for site, label in zip(out[i], labels)]
     return out
 
 
@@ -129,11 +138,13 @@ class ClauseWriter:
     def label(self, v: str) -> str:
         return self.rename.get(v, v)
 
-    def field_labels(self, v: str, label: str, bound: set[str]) -> dict[str, str]:
-        """The labels of the fields of the record variable `v`, whose own label
-        is `label`, by field name: those the sites made by `split`, and those
-        of `bound` that a record term of variables `<label>_<field>` made."""
-        out = {x[len(label) + 1:]: x for x in bound if x.startswith(label + "_")}
+    def field_labels(self, v: str, bound: set[str]) -> dict[str, str]:
+        """The labels of the fields of the record variable `v`, by field name:
+        those the sites made by `split`, and the labels in `bound` of the
+        variables `<v>_<field>` that a record term made, whatever label the
+        clause's head renames them to."""
+        out = {n[len(v) + 1:]: self.label(n) for n in self.rename.keys() | bound
+               if n.startswith(v + "_") and self.label(n) in bound}
         out.update({f: self.label(n) for f, n in self.fields.get(v, {}).items()})
         return out
 
@@ -294,34 +305,51 @@ class ClauseWriter:
             return lab
         return self.term_text(t)
 
-    def gate(self, l: AtomLiteral) -> None:
-        """An atom of a `skip_rels` relation, such as `impl_choice`, writes no text:
-        the constructors its arguments name at case leaves are the branches the
-        clause stands in, as `sites` gives them for any other atom. A negated atom
-        that names a constructor is no branch, and gives a TODO."""
+    def skips(self, l: AtomLiteral) -> bool:
+        """Whether `l` is an atom of a `skip_rels` relation, such as `impl_choice`,
+        which writes no text."""
+        rel = l.atom.relation
+        return rel.name in self.c.skip_rels and (not rel.instances or rel.instances[0] in ("parse", "ex"))
+
+    def is_gate(self, l: AtomLiteral) -> bool:
+        """Whether `l` is a skipped atom that holds no case set: its arguments
+        fix the case the clause stands in."""
+        return self.skips(l) and l.atom.relation.name not in getattr(self.c, "case_sets", ())
+
+    def gate_ctors(self, l: AtomLiteral) -> set[str] | None:
+        """The constructors that the arguments of the gate atom `l` name at case
+        leaves, or None where the atom's columns do not resolve."""
         _, cols, _, _ = self.c.resolve(l.atom.relation, self.scope, self.sub)
         if cols is None or len(cols) != len(l.atom.args):
-            self.c.todo.add("choice-gate", souffle_term(l.atom))
-            return
+            return None
         ctors: set[str] = set()
         for (_, leaves), arg in zip(cols, l.atom.args):
             ctors |= case_ctors(leaves, self.split(arg, leaves))
-        if l.negated and ctors:
+        return ctors
+
+    def gate(self, l: AtomLiteral) -> None:
+        """A gate atom: the constructors its arguments name at case leaves are
+        the branches the clause stands in, as `sites` gives them for any other
+        atom. A negated atom that names a constructor is no branch, and gives a
+        TODO."""
+        ctors = self.gate_ctors(l)
+        if ctors is None:
+            self.c.todo.add("choice-gate", souffle_term(l.atom))
+        elif l.negated and ctors:
             self.c.todo.add("choice-gate", "!" + souffle_term(l.atom))
         elif not l.negated:
             self.branches |= ctors
 
     def lit(self, l, bound: set[str]) -> list[str]:
         if isinstance(l, AtomLiteral):
-            if l.atom.relation.name in self.c.skip_rels and (not l.atom.relation.instances or
-                                                              l.atom.relation.instances[0] in ("parse", "ex")):
-                if l.atom.relation.name in getattr(self.c, "case_sets", ()):
+            if self.skips(l):
+                if self.is_gate(l):
+                    self.gate(l)
+                else:
                     self.note("%" + l.atom.relation.name, l.negated)
                     self.reads.add("%" + l.atom.relation.name)
                     if "%" + l.atom.relation.name in self.drop_neg and not l.negated:
                         raise Dead
-                else:
-                    self.gate(l)
                 return []
             if l.negated and not l.atom.relation.instances and self.defect(l.atom.relation.name):
                 return self.universal(l.atom, bound)
@@ -341,7 +369,7 @@ class ClauseWriter:
             if l.op.value in ("=", "!=") and isinstance(lhs, Variable) and isinstance(rhs, Variable):
                 a, b = self.label(lhs.name), self.label(rhs.name)
                 if a not in bound and b not in bound:
-                    fa, fb = self.field_labels(lhs.name, a, bound), self.field_labels(rhs.name, b, bound)
+                    fa, fb = self.field_labels(lhs.name, bound), self.field_labels(rhs.name, bound)
                     common = sorted(fa.keys() & fb.keys())
                     if common and fa.keys() == fb.keys():
                         if l.op.value == "=":

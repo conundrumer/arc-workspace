@@ -2,7 +2,7 @@
 //! prefix, and the rule by which a check's refusals of a partial form stand
 //! as refusals of the prefix.
 
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::sync::Arc;
 
 use super::{checks, inference, labels_in_scopes, typed_labels, types, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, Scope, SolverClauses};
@@ -12,7 +12,7 @@ use crate::eval::ir::relation_modes;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
-use crate::program::{Atom, Body, Choose, Clause, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelUse, Negated, Node, Program, RigidDet, Site, SiteArg, SiteValue};
+use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, Out, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
 use crate::resolver::{resolve_last, DependencyKind, ResolvedProgram, Side};
@@ -89,8 +89,12 @@ fn partial_path(form: &Form, at: &NodePath) -> NodePath {
 /// complete, and whose open node is at `open`. `clauses` holds the clauses
 /// of `program`'s solver, or of `program` alone for a synthesized program.
 pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-    with_prefix(program, clauses, registry, None, None, None, open, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
+    with_prefix(program, clauses, registry, None, None, None, open, false, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
 }
+
+/// The checks that read no label type: in mask mode they run before the
+/// prefix's labels are typed, and the later pass skips them.
+const BEFORE_LABELS: [CheckId; 3] = [CheckId::Grammar, CheckId::Scope, CheckId::SiteColumns];
 
 /// The checks of the prefixes of a decode's state, each over a program
 /// whose forms before its last are one set of complete forms: the types of
@@ -106,6 +110,8 @@ pub struct PrefixChecks<'a> {
     /// The labels that the prefixes of a list bind, for the candidates of
     /// the mask.
     bound: BoundCache,
+    /// Whether the checks serve a mask ([`PrefixChecks::prepare_mask`]).
+    lean: Cell<bool>,
 }
 
 /// What a prefix is among the candidates of one mask.
@@ -135,6 +141,8 @@ struct AtomHead {
     /// The path of the open atom of the first candidate, the path of the
     /// open atom of each candidate that shares.
     open: OnceCell<NodePath>,
+    /// Whether the last form of the first candidate's program is an `OUT`.
+    out: OnceCell<bool>,
     types: RefCell<Option<inference::InferredTypes>>,
     labels: OnceCell<Vec<LabelInScope>>,
     results: RefCell<StableHashMap<(CheckId, Shared), PrefixResult>>,
@@ -163,6 +171,9 @@ enum AtomReading {
     /// Through the relation itself, which the candidates whose relations
     /// are of one [`RelationClass`] read alike.
     Relation,
+    /// Through the types of the relation's columns, which no two candidates
+    /// read alike.
+    Columns,
 }
 
 /// What a check's result on an atom-head candidate is shared by: the
@@ -216,6 +227,7 @@ fn shared(registry: &Registry, check: CheckId, relation: Option<&RelationRef>, c
         AtomReading::Ignored => Some(Shared::Ignored),
         AtomReading::Modes => relation.map(|relation| Shared::Modes(relation_modes(registry, relation).into())),
         AtomReading::Relation => class.cloned().map(Shared::Relation),
+        AtomReading::Columns => None,
     }
 }
 
@@ -240,6 +252,7 @@ fn atom_reading(check: CheckId) -> AtomReading {
         | CheckId::InstanceSites
         | CheckId::Picks
         | CheckId::RigidPartsAndProposers => AtomReading::Relation,
+        CheckId::Out => AtomReading::Columns,
     }
 }
 
@@ -249,7 +262,37 @@ impl PrefixChecks<'_> {
     pub fn with<R>(complete: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(complete, &cases);
-        body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default(), bound: BoundCache::default() })
+        body(&PrefixChecks { clauses, registry, inference: &inference, head: AtomHead::default(), bound: BoundCache::default(), lean: Cell::new(false) })
+    }
+
+    /// Puts the checks in mask mode: [`PrefixChecks::check`] runs the checks
+    /// that read no label type before the labels are typed, the labels take
+    /// their types from the inference alone, and the type check builds no
+    /// types of relations.
+    pub(crate) fn prepare_mask(&self) {
+        self.lean.set(true);
+    }
+
+    /// What the result of `check` on an atom-head candidate is shared by, as
+    /// [`shared`] gives it; in mask mode, the `Out` check on a form other than
+    /// `OUT` (`in_out_form` false) is undecided whatever the candidate, so
+    /// it is shared by all.
+    fn shared_by(&self, check: CheckId, in_out_form: bool, relation: Option<&RelationRef>, class: Option<&RelationClass>) -> Option<Shared> {
+        if self.lean.get() && check == CheckId::Out && !in_out_form {
+            return Some(Shared::Ignored);
+        }
+        shared(self.registry, check, relation, class)
+    }
+
+    /// Whether the checks are in mask mode.
+    pub(crate) fn is_mask(&self) -> bool {
+        self.lean.get()
+    }
+
+    /// The scalar type that the finished forms and the registry fix for
+    /// `column` of `relation`, as [`Inference::fixed_column_type`] gives it.
+    pub(crate) fn fixed_column_type(&self, relation: &RelationRef, column: &ColumnName) -> Option<crate::types::ValueType> {
+        self.inference.fixed_column_type(relation, column)
     }
 
     /// Holds the form in progress at the mask's state, `program` with that
@@ -276,8 +319,26 @@ impl PrefixChecks<'_> {
     pub fn check(&self, program: &ResolvedProgram, open: Option<&NodePath>, candidate: Candidate, class: Option<&RelationClass>) -> Option<(CheckId, Box<[Refusal]>)> {
         let same_open = |open: &NodePath| self.head.open.get_or_init(|| open.clone()) == open;
         let head = (candidate == Candidate::AtomHead && open.is_some_and(same_open)).then_some(&self.head);
-        with_prefix(program, self.clauses, self.registry, Some(self.inference), head, Some(&self.bound), open, |prefix| {
-            checks().iter().find_map(|check| match self.check_prefix(*check, prefix, head, class) {
+        let lean = self.lean.get();
+        if let Some(head) = head {
+            head.out.get_or_init(|| matches!(program.program.value().forms.last(), Some(Form::Out(_))));
+        }
+        if lean {
+            // These checks read syntax and resolution, no label type.
+            let (partial, complete) = program.program.value().forms.split_last().expect("a prefix's partial form");
+            let path = NodePath::top(complete.len() as u32);
+            let cases = inference::CaseInferences::new(self.clauses, self.registry);
+            let inference = inference::Inference::layered(program, &cases, self.inference);
+            let scope = Scope { program, registry: self.registry, labels: &[], clauses: self.clauses, inference: &inference, files: None, bound: None };
+            let prefix = Prefix { complete, partial, path: &path, open, scope };
+            for check in checks().iter().filter(|check| BEFORE_LABELS.contains(&check.id())) {
+                if let PrefixResult::Refuse(refusals) = self.check_prefix(*check, &prefix, head, class) {
+                    return Some((check.id(), refusals));
+                }
+            }
+        }
+        with_prefix(program, self.clauses, self.registry, Some(self.inference), head, Some(&self.bound), open, lean, |prefix| {
+            checks().iter().filter(|check| !(lean && BEFORE_LABELS.contains(&check.id()))).find_map(|check| match self.check_prefix(*check, prefix, head, class) {
                 PrefixResult::Refuse(refusals) => Some((check.id(), refusals)),
                 PrefixResult::Undecided => None,
             })
@@ -325,7 +386,7 @@ impl PrefixChecks<'_> {
     fn held_result(&self, relation: &RelationRef, class: Option<&RelationClass>) -> Option<Option<(CheckId, Box<[Refusal]>)>> {
         let results = self.head.results.borrow();
         for check in checks() {
-            let key = (check.id(), shared(self.registry, check.id(), Some(relation), class)?);
+            let key = (check.id(), self.shared_by(check.id(), self.head.out.get() != Some(&false), Some(relation), class)?);
             if let PrefixResult::Refuse(refusals) = results.get(&key)? {
                 return Some(Some((check.id(), refusals.clone())));
             }
@@ -364,7 +425,9 @@ impl PrefixChecks<'_> {
     /// `check` reads nothing of the open atom that the candidates of that
     /// value differ in.
     fn check_prefix(&self, check: &dyn Check, prefix: &Prefix<'_>, head: Option<&AtomHead>, class: Option<&RelationClass>) -> PrefixResult {
-        let key = head.and_then(|head| Some((head, shared(self.registry, check.id(), open_atom(prefix).map(|atom| &atom.relation), class)?)));
+        let key = head.and_then(|head| {
+            Some((head, self.shared_by(check.id(), matches!(prefix.partial, Form::Out(_)), open_atom(prefix).map(|atom| &atom.relation), class)?))
+        });
         let Some((head, key)) = key else { return check.check_prefix(prefix) };
         let key = (check.id(), key);
         if let Some(found) = head.results.borrow().get(&key) {
@@ -394,6 +457,7 @@ fn with_prefix<R>(
     head: Option<&AtomHead>,
     cache: Option<&BoundCache>,
     open: Option<&NodePath>,
+    lean: bool,
     body: impl FnOnce(&Prefix<'_>) -> R,
 ) -> R {
     let (partial, complete) = program.program.value().forms.split_last().expect("a prefix's program holds its partial form");
@@ -402,7 +466,7 @@ fn with_prefix<R>(
     let inference = match earlier {
         Some(earlier) => inference::Inference::layered(program, &cases, earlier),
         None => inference::Inference::new(program, &cases),
-    };
+    }.mask(lean);
     let inference = match head {
         Some(head) => inference.sharing_last(&head.types),
         None => inference,
@@ -415,9 +479,25 @@ fn with_prefix<R>(
         Some(labels) => labels,
         None => {
             order = CanonicalOrder::of(partial, &mut SearchBudget::new());
-            untyped = labels_in_scopes(&order, &|_, _| None);
-            let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
-            computed = typed_labels(&order, &form_types);
+            computed = if lean {
+                // The labels take the inference's types, in the scope order of
+                // `labels_in_scopes`, with the canonical labels in Pose key rows.
+                let mut labels = Vec::new();
+                for (at, members) in order.label_scopes() {
+                    let form = inference.infer(&path.join(&at)).expect("a label scope has an inference");
+                    for &(label, _) in members {
+                        let ty = form.label(label).map(|ty| {
+                            types::try_map_labels(&ty, &|label| Some(LabelId(order.canonical_label(&at, label)))).expect("every key-row label belongs to its scope")
+                        });
+                        labels.push(LabelInScope { scope: at.clone(), label, ty });
+                    }
+                }
+                labels
+            } else {
+                untyped = labels_in_scopes(&order, &|_, _| None);
+                let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
+                typed_labels(&order, &form_types)
+            };
             if let Some(head) = head {
                 head.labels.get_or_init(|| computed.clone());
             }
@@ -493,6 +573,7 @@ fn cut_form(form: &Form, path: &[PathStep]) -> Form {
         }
         Form::Choose(choose) => Form::Choose(Node::new(cut_choose(choose.value(), index, rest))),
         Form::RigidDet(rigid) => Form::RigidDet(Node::new(cut_rigid(rigid.value(), index, rest))),
+        Form::Out(out) => Form::Out(Node::new(Out { key: cut_key_body(&out.value().key, rest) })),
         Form::Claim(_) | Form::Alts(_) | Form::Demonstrated(_) => unreachable!("no prefix ends at a node of a claim, an `ALTS` form or a `DEMONSTRATED` form"),
     }
 }

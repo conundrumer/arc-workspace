@@ -38,6 +38,8 @@ const ARCLOG: &str = "\
        (NOT (&taken P)))
       ((&taken P)
        (&seed (:C Col)))))
+
+(OUT (&output ^P ^Col))
 ";
 
 const ARCDATA: &str = "\
@@ -58,7 +60,7 @@ fn a_panic_in_one_stream_faults_that_stream_alone() {
     let registry = Registry::get();
     let settings = DecodeSettings::default();
     let vocabulary = Vocabulary::new(registry, &settings);
-    let cases = solver_streams(&dir, "tie", WantedCases::Concept, &vocabulary).expect("the solver's streams");
+    let cases = solver_streams(&dir, "tie", WantedCases::Concept, &vocabulary, false).expect("the solver's streams");
     let (task, judged) = read_task_files(&dir, "tie").expect("the task reads");
     std::fs::remove_dir_all(&dir).ok();
     let whole = token_ids(&cases[0].stream.as_ref().expect("a stream").tokens, &vocabulary);
@@ -84,7 +86,7 @@ fn a_panic_in_one_stream_faults_that_stream_alone() {
         &|_| {
             started.fetch_add(1, Ordering::SeqCst);
         },
-        &|_, replay| {
+        &|_, _, replay| {
             ended.fetch_add(1, Ordering::SeqCst);
             replay.record
         },

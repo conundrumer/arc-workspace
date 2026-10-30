@@ -1,9 +1,10 @@
-//! Agreement, Periods and Occurrences: comparisons of valued families
-//! under correspondences. Agreement's comparison is `compare`, and Periods
-//! and Occurrences each test their candidates by it, as Wallpaper of
-//! [`crate::wallpaper`] does, as `docs/lib-spec.md#detectors` gives.
+//! Agreement: the comparison of valued families under correspondences, and
+//! the lib reads the detectors share. Agreement's comparison is `compare`,
+//! and Periods of [`crate::periods`], Occurrences of [`crate::occurrences`]
+//! and Wallpaper of [`crate::wallpaper`] each test their candidates by it,
+//! as `docs/lib-spec.md#detectors` gives.
 //!
-//! Each reads the box algebra and the orientation algebra through
+//! It reads the box algebra and the orientation algebra through
 //! [`arclog::algebra::algebra`], and reads no order of term ids, cells or
 //! rows.
 
@@ -18,8 +19,14 @@ use arclog::relations::{Row, RowSet};
 use arclog::terms::{Term, TermId};
 
 /// The mismatches and conflicts of two valued families under each admitted
-/// D4 element, whose correspondence pairs each source Position with its
-/// image under the element.
+/// D4 element, whose correspondence pairs each source point, a Position or
+/// an Offset, with its image under the element.
+///
+/// - in `source(key, P, v)`, `target(key, P, v)`.
+/// - in `transform(D)`, shared, default all eight.
+/// - out `mismatch(key, D)`: D is in `transform`, and for some source cell P, the cell `apply` of D to P gives is not a target cell of P's value: no target cell is there, or one of another value.
+/// - out `conflict(key, D)`: for some source cell, its image is a target cell of another value. A missing target cell is no conflict.
+/// - A D in `transform` with no `mismatch` row takes the source into the target. Target cells that are no source cell's image are not tested.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Agreement;
 
@@ -53,131 +60,6 @@ impl Construction for Agreement {
             }
         }
         outputs(vec![mismatch, conflict], context.budget)
-    }
-}
-
-/// The translations that fix the group's valued set, the least per axis,
-/// and those read through sparse damage.
-///
-/// A translation is one per axis and magnitude, toward the bottom or the
-/// right edge: the other direction pairs the same cells the other way, and
-/// the cells of a pair compare alike both ways. Each line pair of a translation,
-/// the line of a cell and the line of its image, is one correspondence, and
-/// a line pair is broken where a cell of it conflicts with its image.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Periods;
-
-impl Construction for Periods {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-
-    fn evaluate(
-        &self,
-        group: &GroupInputs<'_>,
-        context: &mut ConstructionContext<'_, '_>,
-    ) -> Result<GroupOutputs, ReachedBound> {
-        let [cell] = group.inputs else { panic!("Periods' one input") };
-        let lib = Lib(context.registry);
-        let cells = Family::of(cell, 1);
-        let mut translations: StableHashSet<(TermId, i32)> = StableHashSet::default();
-        for p in cells.indices() {
-            translations.extend(lib.sub_extents(p[0])?);
-        }
-        let (mut period, mut fundamental, mut approximate) = (RowSet::empty(2), RowSet::empty(2), RowSet::empty(2));
-        let mut least: StableHashMap<TermId, i32> = StableHashMap::default();
-        for (axis, k) in translations {
-            context.budget.charge_work(1)?;
-            let delta = lib.translation(axis, k)?;
-            let mut lines: StableHashMap<TermId, Vec<([TermId; 1], [TermId; 1])>> = StableHashMap::default();
-            for p in cells.indices() {
-                let q = lib.compose(p[0], delta)?;
-                if cells.values(&[q]).is_some() {
-                    lines.entry(lib.line(p[0], axis)?).or_default().push(([p[0]], [q]));
-                }
-            }
-            let witnessed = !lines.is_empty();
-            let mut broken = 0usize;
-            for pairs in lines.values() {
-                broken += usize::from(compare(&cells, &cells, pairs.iter(), context.budget)?.conflict);
-            }
-            let row: Row = [axis, Term::encode_number(k)].into();
-            if broken == 0 {
-                if group.wanted[0] {
-                    period.insert(row.clone());
-                }
-                if witnessed && group.wanted[1] {
-                    let at = least.entry(axis).or_insert(k);
-                    *at = (*at).min(k);
-                }
-            }
-            if broken <= lines.len() - broken && group.wanted[2] {
-                approximate.insert(row);
-            }
-        }
-        for (axis, k) in least {
-            fundamental.insert([axis, Term::encode_number(k)].into());
-        }
-        outputs(vec![period, fundamental, approximate], context.budget)
-    }
-}
-
-/// The placements of each shape under each admitted D4 element, as
-/// candidates and as occurrences.
-///
-/// A placement is the offset that takes the transformed shape onto the
-/// cells, and it is one correspondence: each shape cell with the cell it
-/// lands on.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Occurrences;
-
-impl Construction for Occurrences {
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-
-    fn evaluate(
-        &self,
-        group: &GroupInputs<'_>,
-        context: &mut ConstructionContext<'_, '_>,
-    ) -> Result<GroupOutputs, ReachedBound> {
-        let [cell, shape_rows, transform] = group.inputs else { panic!("Occurrences' three inputs") };
-        let lib = Lib(context.registry);
-        let cells = Family::of(cell, 1);
-        let shape = Family::of(shape_rows, 1);
-        let mut at_value: StableHashMap<&[TermId], Vec<TermId>> = StableHashMap::default();
-        for row in cell.rows() {
-            at_value.entry(&row[1..]).or_default().push(row[0]);
-        }
-        let (mut candidate, mut occurrence) = (RowSet::empty(2), RowSet::empty(2));
-        for d in transform.rows() {
-            let d = d[0];
-            let mut images: Vec<(TermId, TermId)> = Vec::new();
-            for s in shape.indices() {
-                images.push((s[0], lib.apply(d, s[0])?));
-            }
-            let mut placements: StableHashSet<TermId> = StableHashSet::default();
-            for row in shape_rows.rows() {
-                let image = lib.apply(d, row[0])?;
-                for &p in at_value.get(&row[1..]).into_iter().flatten() {
-                    context.budget.charge_work(1)?;
-                    placements.insert(lib.relative(image, p)?);
-                }
-            }
-            for m in placements {
-                let mut pairs = Vec::with_capacity(images.len());
-                for &(s, image) in &images {
-                    pairs.push(([s], [lib.compose(m, image)?]));
-                }
-                if group.wanted[0] {
-                    candidate.insert([d, m].into());
-                }
-                if group.wanted[1] && !compare(&shape, &cells, pairs, context.budget)?.mismatch {
-                    occurrence.insert([d, m].into());
-                }
-            }
-        }
-        outputs(vec![candidate, occurrence], context.budget)
     }
 }
 
@@ -246,7 +128,7 @@ impl Family {
     }
 
     /// Each index of the family.
-    fn indices(&self) -> impl Iterator<Item = &[TermId]> + '_ {
+    pub(crate) fn indices(&self) -> impl Iterator<Item = &[TermId]> + '_ {
         self.by_index.keys().map(|index| &**index)
     }
 }
@@ -318,7 +200,7 @@ impl Lib<'_> {
 
     /// The line of the Position `p` across `axis`: its margins on the edges
     /// of `axis`.
-    fn line(&self, p: TermId, axis: TermId) -> Result<TermId, ReachedBound> {
+    pub(crate) fn line(&self, p: TermId, axis: TermId) -> Result<TermId, ReachedBound> {
         match &self.rows("split", &[Some(p), Some(axis), None, None])?[..] {
             [row] => Ok(row[2]),
             rows => panic!("`split` gives {} rows at a Box and an axis", rows.len()),

@@ -549,7 +549,9 @@ class Rewriter:
             X2 = two(item_s, item_vars)
             m_s2x = {**ident, **{v: Variable(v + "2") for v in only_slot}}
             m_s2x2 = {**m_s2x, **{v: Variable(v + "2") for v in item_vars}}
-            pick.aparts.append((at(ident), at(m_s2x2), at(m_s2x), ne(item_s, X2)))
+            # the first read leaves out the slot-only variables: the third read tests the piece at a cell
+            m_x = {**ident, **{v: Wildcard() for v in only_slot}}
+            pick.aparts.append((at(m_x), at(m_s2x2), at(m_s2x), ne(item_s, X2)))
         if comp == "TiebreakResolutions" and only_slot:
             m2 = {**ident, **{v: Variable(v + "2") for v in only_slot}}
             pick.aparts.append((at(ident), at(m2), ne(slot_s, two(slot_s, only_slot))))

@@ -1,5 +1,7 @@
 //! The decode settings of `docs/engine/synthesis.md#decode-settings`, each
-//! with its default.
+//! with its default. [`DecodeSettings::default`] holds no deadline, the
+//! settings of a replay of the corpus; [`DecodeSettings::synthesis`] gives
+//! the settings of the synthesis decode.
 
 use std::time::Duration;
 
@@ -47,15 +49,30 @@ pub struct DecodeSettings {
     /// construction declare they copy ([`crate::eval::copies`]), and report
     /// the violations to [`crate::decode::Decoder::take_copy_violations`].
     pub check_copies: bool,
+    /// Whether the `END` of a `RULE` clause tests the clause's relation, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it: an observation
+    /// beside the step's other results, which ends no decode and changes no
+    /// mask.
+    pub rule_tests: bool,
+    /// Apply proven local atom pruning while generating decoder offers.
+    pub static_pruning: bool,
 }
 
 impl DecodeSettings {
-    /// The default settings with no deadline, those of a replay of the corpus.
-    pub fn corpus() -> DecodeSettings {
-        DecodeSettings { deadline: None, ..DecodeSettings::default() }
+    /// Begins one caller operation. All nested decoders, queries and packing
+    /// borrow or clone this absolute deadline and cancellation thereafter.
+    pub fn operation_limits(&self)->crate::eval::Limits {
+        crate::eval::Limits::new(self.deadline.map(|duration|std::time::Instant::now()+duration),crate::eval::Cancellation::default())
+    }
+    /// The default settings with the deadline of the synthesis decode, 10 s per
+    /// request.
+    pub fn synthesis() -> DecodeSettings {
+        DecodeSettings { deadline: Some(Duration::from_secs(10)), ..DecodeSettings::default() }
     }
 }
 
+/// The settings of a replay of the corpus: no deadline, so a verdict does not
+/// depend on the machine's load.
 impl Default for DecodeSettings {
     fn default() -> DecodeSettings {
         DecodeSettings {
@@ -63,10 +80,12 @@ impl Default for DecodeSettings {
             type_domain_proposers: true,
             vocabulary: VocabularyCaps::CORPUS,
             caps: Caps::CORPUS,
-            deadline: Some(Duration::from_secs(10)),
+            deadline: None,
             projection_cap: 10_000,
             table_work_cap: 1 << 20,
             check_copies: false,
+            rule_tests: false,
+            static_pruning: false,
         }
     }
 }

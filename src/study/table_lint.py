@@ -58,6 +58,7 @@ from pathlib import Path
 
 from arc.task import TASKS_DIR
 import arclog_convert
+from arclog_convert import plans
 from engine import checkout
 from study.corpus_survey.bodies import (
     FACTS,
@@ -647,10 +648,13 @@ def counts_of(solver: str, text: str) -> str:
                 (programs / entry.name).symlink_to(entry)
         (solvers / f"{solver}.dl").write_text(text)
         plan = gen_dir().parent / "plan" / f"{solver}.txt"
-        digest = hashlib.sha256(text.encode()).hexdigest()
-        if plan.exists() and f"solver file sha256: {digest}" in plan.read_text():
-            (out / "plan").mkdir(parents=True)
-            (out / "plan" / plan.name).write_text(plan.read_text())
+        checkout_solvers = checkout.ROOT / "programs" / "solvers"
+        if plan.exists() and (checkout_solvers / f"{solver}.dl").read_text() == text:
+            was = plans.PLAN_HASH + plans.inputs_hash(solver, checkout_solvers)
+            kept = plan.read_text()
+            if was in kept.splitlines():  # the plan of this text: it records the inputs hash under the scratch solvers directory
+                (out / "plan").mkdir(parents=True)
+                (out / "plan" / plan.name).write_text(kept.replace(was, plans.PLAN_HASH + plans.inputs_hash(solver, solvers)))
         done = subprocess.run([sys.executable, "-m", "arclog_convert.convert", "--out", str(out), solver], cwd=checkout.ROOT,
                               env={**os.environ, "ARCLOG_SOLVERS": str(solvers)}, capture_output=True, text=True)
         if done.returncode != 0:

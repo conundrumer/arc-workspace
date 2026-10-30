@@ -44,8 +44,9 @@ Souffle run derives the rows of each such relation from the solver's own:
   stands in, where a clause of it reads an instance of no component of the text
   or a relation that the text's program does not declare (a relation of the
   signature that `FORMS` gives no form of), or where it needs a type that is an
-  `ADT` of a component. A root relation that no clause of the rewrite's ground
-  program heads has none either, such as a `CHOOSE` relation.
+  `ADT` of a component or a relation that a pick chooses: a `CHOOSE` relation,
+  which no clause of the rewrite's ground program heads, or a relation whose
+  clauses end in `ONE` marks. A root that is such a relation needs it itself.
 """
 
 from __future__ import annotations
@@ -380,7 +381,9 @@ class _Lift:
 
     def reached(self, name: RelationName, scope: tuple[str, ...], path: InstancePath) -> tuple[At, tuple[str, ...]] | None:
         """The node that `name` names, read in a unit of `scope` whose component stands at `path`, and the instances
-        it names inside that node; None for a relation of the lib."""
+        it names inside that node; None for a relation of the lib. A name that ends at a held instance of a
+        component of the solver reaches the relation `name.name` of that component where the rewrite's program
+        declares it, so a relation the rewrite adds there is a node the text does not hold."""
         if not name.instances:
             node = self.ground.find(Kind.RELATION, scope, name.name)
             return None if node is None else (At(node, path if node.scope == scope else ()), ())
@@ -394,6 +397,10 @@ class _Lift:
             if inside is None:
                 return None
             at, rest = At(inside, (*at.path, at.node.name)), rest[1:]
+        if not rest and self.held(at) and (component := self.ground.decls[at.node].component) in self.comps:
+            relation = Node(Kind.RELATION, name.name, (component,))
+            if relation in self.ground.decls:
+                return At(relation, (*at.path, at.node.name)), ()
         return at, tuple(rest)
 
     def type_at(self, t: TypeName, path: InstancePath) -> At | None:
@@ -430,6 +437,11 @@ class _Lift:
         """The text's program declares the relation `name` of the lib, at the top level or in the forms of `FORMS`."""
         return name.instances in ((), (LIB_PATH,)) and (name.name in self.c.lib.top or name.name in top_forms())
 
+    def chosen(self, node: Node) -> bool:
+        """The node is a relation that a pick chooses: no clause of the ground program heads it (a `CHOOSE`), or the converter folds its `ONE` marks into its clauses."""
+        return node.kind is Kind.RELATION and (not self.ground.units.get(node)
+                                               or (node.scope, node.name) in self.c.one_marks)
+
     def closure(self, root: At) -> set[At] | None:
         """Each node the root needs that the solver does not hold; None where one has no place in the text."""
         seen: set[At] = set()
@@ -439,7 +451,8 @@ class _Lift:
             if at in seen or self.held(at):
                 continue
             decl = self.ground.decls[at.node]
-            if at.node.kind is Kind.INSTANCE and self.component(at) is None or isinstance(decl, AdtType):
+            if at.node.kind is Kind.INSTANCE and self.component(at) is None or isinstance(decl, AdtType) \
+                    or self.chosen(at.node):
                 return None
             seen.add(at)
             if (got := self.reads(at)) is None:
@@ -595,8 +608,6 @@ def parity_text(c: Converter, renamed: Callable[[str], str], roots: Iterable[str
     for arc, root in lift.locate(renamed, set(roots)).items():
         needed = lift.closure(root.at)
         if needed is None or (root.at not in needed and not root.at.path):   # a node of the top level that the solver holds has its own relation
-            continue
-        if root.relation is None and root.at in needed and not ground.units.get(root.at.node):   # a relation no clause heads, such as a `CHOOSE`
             continue
         if root.relation is not None:
             comp = lift.component(root.at) if root.at in needed else ground.decls[root.at.node].component

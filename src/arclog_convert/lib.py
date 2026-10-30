@@ -122,6 +122,21 @@ def covered_proposer(verdict: tuple[str, ...] | None, types: list[str]) -> str |
     return domain_proposer(types) if verdict[1] in ("domain", "position-domain") else verdict[1]
 
 
+def require_exact_set(parameter: str, proposers: list[str], verdict: tuple[str, ...] | None) -> None:
+    """A whole-set value needs equality, not coverage or a subset verdict.
+
+    The plan's proposer name supplies a column interface even when its value
+    is only narrowed. It is not evidence for the semantics of a SET mark.
+    """
+    if verdict and len(verdict) >= 3 and verdict[0] == "covered" \
+            and proposers == [verdict[1]] and verdict[2] == "exact":
+        return
+    proof = " ".join(verdict) if verdict else "no exact proposer verdict"
+    raise ValueError(f"{parameter}: multi-row parameter has only proposer coverage ({proof}); "
+                     "a source determination is required; (SET) would select the whole proposal, "
+                     "not the stored value")
+
+
 def plan_proposer(verdict: tuple[str, ...] | None, types: list[str], open_value: bool) -> str | None:
     """The proposer a parameter's DET names by its plan verdict: the one
     `covered_proposer` gives; or, for an open parameter the plan leaves

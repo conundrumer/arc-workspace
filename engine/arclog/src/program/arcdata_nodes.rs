@@ -40,7 +40,10 @@ pub struct Param {
 /// [`crate::types::ValueType`], and the file keeps the name it writes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TypeName {
+    /// Historical source spelling, an alias of Int.
     Number,
+    Int,
+    Nat,
     Color,
     Example,
     Unit,
@@ -66,15 +69,18 @@ impl TypeName {
         crate::read::spelling::parse(crate::read::spelling::TYPE_NAMES, text)
     }
 
-    /// The type the name stands for, `Box` for `Position` and `Offset`.
+    /// The type the name stands for.
     pub fn value_type(self) -> crate::types::ValueType {
         use crate::types::ValueType;
         match self {
-            TypeName::Number => ValueType::Number,
+            TypeName::Number | TypeName::Int => ValueType::Int,
+            TypeName::Nat => ValueType::Nat,
             TypeName::Color => ValueType::Color,
             TypeName::Example => ValueType::Example,
             TypeName::Unit => ValueType::Unit,
-            TypeName::Box | TypeName::Position | TypeName::Offset => ValueType::Box,
+            TypeName::Box => ValueType::Box,
+            TypeName::Position => ValueType::Position,
+            TypeName::Offset => ValueType::Offset,
             TypeName::Ident => ValueType::Ident,
             TypeName::C4 => ValueType::C4,
             TypeName::D4 => ValueType::D4,

@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+# Exhaustive oracle for the admissible workload check, excluded from normal builds.
+admissible-reference = []
+
 [dependencies]
 # The evaluator's thread pool: work stealing over independent entries, whose
 # threads run other tasks while they wait on an entry another thread computes.

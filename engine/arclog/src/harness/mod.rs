@@ -24,4 +24,4 @@ mod solvers;
 
 pub use lint_report::{LintCode, LintError, LintReport, LintReportError};
 pub use run::{corpus_threads, panic_message, print_ended, require_optimized_build, run_on_workers, run_over_corpus, CorpusReport, SolverResult};
-pub use solvers::{corpus_solvers, read_corpus_solver, solver_file_extension, CorpusError, CorpusSolver};
+pub use solvers::{corpus_solvers, read_corpus_solver, read_solver_texts, solver_file_extension, CorpusError, CorpusSolver};

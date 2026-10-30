@@ -11,7 +11,7 @@
 //!   `modes`, for each mode, `mode`, the names of its columns, and `rows`,
 //!   the rows of those columns. A relation with no mode has one mode of no
 //!   column and one empty row.
-//! - a component: `type_arguments`, the type each type parameter takes;
+//! - a component: `type_arguments`, the type each unbounded type parameter takes;
 //!   `inputs`, each input's `port`, `columns` and `rows`; `outputs`, each
 //!   output's `port` and `columns`.
 //!
@@ -175,7 +175,7 @@ impl Element<'_> {
                     .map(|output| json!({ "port": &*output.name.0, "columns": columns_json(&output.columns, &ty) }))
                     .collect();
                 out["kind"] = json!("component");
-                out["type_arguments"] = Value::from(vec![PARAMETER_TYPE.1; component.type_parameters.len()]);
+                out["type_arguments"] = Value::from(vec![PARAMETER_TYPE.1; component.type_parameters.iter().filter(|parameter| parameter.bound.is_none()).count()]);
                 out["inputs"] = Value::from(inputs);
                 out["outputs"] = Value::from(outputs);
             }
@@ -256,11 +256,11 @@ pub(super) fn relation_type(column: &Column) -> ValueType {
     }
 }
 
-/// The type of a component's column, a type parameter taking
-/// [`PARAMETER_TYPE`].
+/// The type of a component's column, a type parameter taking its bound,
+/// or [`PARAMETER_TYPE`] where it has none.
 pub(super) fn component_type(column: &Column) -> ValueType {
     match &column.ty {
-        ColumnType::Parameter(_) => PARAMETER_TYPE.0,
+        ColumnType::Parameter(parameter) => parameter.bound.clone().unwrap_or(PARAMETER_TYPE.0),
         _ => relation_type(column),
     }
 }
@@ -285,7 +285,7 @@ pub(super) fn columns_json(columns: &[Column], ty: &dyn Fn(&Column) -> ValueType
 pub(super) fn value_kind(ty: &ValueType) -> &'static str {
     if is_orientation(ty) {
         "constant"
-    } else if *ty == ValueType::Box {
+    } else if ty.is_box() {
         "box"
     } else {
         "number"
@@ -293,7 +293,7 @@ pub(super) fn value_kind(ty: &ValueType) -> &'static str {
 }
 
 pub(super) fn is_orientation(ty: &ValueType) -> bool {
-    !matches!(ty, ValueType::Number | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Box | ValueType::Ident | ValueType::Record(_))
+    !(ty.is_box() || matches!(ty, ValueType::Int | ValueType::Nat | ValueType::Color | ValueType::Example | ValueType::Unit | ValueType::Ident | ValueType::Record(_)))
 }
 
 pub(super) fn constant_name(id: TermId) -> &'static str {
@@ -342,7 +342,7 @@ impl Random {
     /// from its constants in the order of their names.
     pub(super) fn value(&mut self, ty: &ValueType) -> Value {
         match ty {
-            ValueType::Box => {
+            ty if ty.is_box() => {
                 let cell = self.below(2) == 0;
                 let mut span = |extent: usize| {
                     let near = self.below(extent);

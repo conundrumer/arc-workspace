@@ -66,7 +66,7 @@ fn stream_text(path: &Path, case: Option<&str>) -> Result<String, String> {
     let dir = path.parent().ok_or("the solver path has no directory")?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let wanted = case.map_or(WantedCases::Concept, WantedCases::Named);
-    let streams = solver_streams(dir, id, wanted, &vocabulary)?;
+    let streams = solver_streams(dir, id, wanted, &vocabulary, false)?;
     let [only] = streams.as_slice() else {
         return Err(format!("the solver gives {} streams, not one", streams.len()));
     };
@@ -145,7 +145,7 @@ fn parse_corpus(args: &[String]) -> Option<(String, bool, Vec<String>)> {
 fn stream_lines(corpus: &Path, id: &str, all: bool, streamed: &AtomicUsize, faulted: &AtomicUsize) -> Result<Vec<String>, String> {
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let wanted = if all { WantedCases::All } else { WantedCases::Concept };
-    let lines = solver_streams(corpus, id, wanted, &vocabulary)?
+    let lines = solver_streams(corpus, id, wanted, &vocabulary, false)?
         .into_iter()
         .map(|case| {
             let outcome = match case.stream {

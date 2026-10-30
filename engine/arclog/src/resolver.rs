@@ -25,7 +25,7 @@ pub struct DependencyNode {
 
 /// The kind of a node of the dependency graph: a fact relation, a clause
 /// relation, an instance input or output, a parameter, a chosen relation, a
-/// `RIGID_DET` assembly or a `DEMONSTRATED` relation.
+/// `RIGID_DET` assembly, a `DEMONSTRATED` relation or an `OUT` form.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum DependencyKind {
     Fact(crate::program::FactRelation),
@@ -73,6 +73,9 @@ pub enum DependencyKind {
     /// [`crate::registry::InputPort::reads_outputs`], so the resolver names
     /// no component.
     RecursiveInstance(InstanceName),
+    /// An `OUT` form, by its path: the rows of its two selected columns, per
+    /// input (`docs/arclog/arclog.md#the-out-form`). No atom reads it.
+    Out(NodePath),
 }
 
 /// The side of a node of the dependency graph, as
@@ -422,6 +425,17 @@ impl ResolvedProgram {
         Some(columns.row_names())
     }
 
+    /// The path of each row position of the relation of `node` that a read
+    /// names the columns of, in row order, as `Columns::row_paths` gives it:
+    /// for a fact relation and for an output or an input of an instance, the
+    /// columns its declaration fixes. `None` where they are not known.
+    pub fn read_row_paths(&self, node: GraphNodeIndex) -> Option<Vec<Box<[ColumnName]>>> {
+        let index = node.0 as usize;
+        let fixed = matches!(self.graph.nodes[index].kind, DependencyKind::Fact(_) | DependencyKind::InstanceOutput { .. } | DependencyKind::InstanceInput { .. });
+        let columns = self.names.node_columns_of(index).or_else(|| self.names.fixed_columns_of(index).filter(|_| fixed))?;
+        Some(columns.row_paths())
+    }
+
     /// The path of each row position of the relation of `node`, in row
     /// order, as `Columns::row_paths` gives it: a position keeps its path
     /// where later forms reorder the columns of `node`. `None` where the
@@ -654,6 +668,13 @@ pub fn resolve(
 /// concept program, the result is [`resolve`]'s on `program`.
 pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
     build::resolve_last(earlier, program, registry)
+}
+
+/// Whether a complete-program grammar must insert the lifted Example
+/// column at an open relation. Runs only binding and side analysis; the
+/// completed AST still goes through the full resolver and checker.
+pub(crate) fn grammar_reads_example_column(program: &Node<Program>, read: &NodePath, registry: &Registry) -> bool {
+    build::reads_example_column(program, read, registry)
 }
 
 /// A case of a solver with its resolution and the diagnostics of that

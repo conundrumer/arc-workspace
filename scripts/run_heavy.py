@@ -1,62 +1,55 @@
 #!/usr/bin/python3
-"""Run a command that uses much CPU or memory, within the machine's budget.
+"""Run a command that uses much CPU or memory, and tell the machine's daemon.
 
-Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--need now|soon|idle] [--minutes <m>]
-                                       [--wait <seconds>] <command> [<arg> ...]
+Usage: <checkout>/scripts/run_heavy.py [--cpus <n>] [--need now|soon|idle] <command> [<arg> ...]
        <checkout>/scripts/run_heavy.py --cpus <n> bash -c '<simple command>; ...'
        <checkout>/scripts/run_heavy.py queue
        <checkout>/scripts/run_heavy.py need <pid> now|soon|idle
 
-`--cpus` is the processes or threads the command runs at once (default 1),
-and `--gib`, which older calls give, has no effect. `--minutes`
-is the time it is to run (default 5), and `--need` who waits on its result
-(default `soon`): `now` where someone waits before the next step can start,
-`soon` where the result feeds the next step and nothing sits idle for it,
-`idle` where nothing waits on it. `--wait` is the seconds the call waits for
-its share before it gives up with the expected start.
+`--cpus` is the processes or threads the command runs at once (default 1): the call tells the command
+to use that many, and the daemon tells the session where the command runs at more than twice
+that for a minute. `--gib`, `--minutes` and `--wait`, which older calls give, have no effect. `--need` is who waits on
+the command's result (default `soon`), and sets the nice value of the command, which each process it starts
+inherits: `now` where someone waits before the next step can start, nice value 0; `soon` where the result
+feeds the next step and nothing sits idle for it, 5; `idle` where nothing waits on it, 15. A call that runs
+at a higher nice value keeps it. A job of need `now` that has run `LONG_NOW_SECONDS` seconds becomes `soon`
+(`scripts/heavy_enforcer.py`): the daemon raises the nice value of its processes as `need <pid> soon` does, and tells
+the session once.
 
-The heavy commands that run through this script at one time, in every session
-and checkout of the machine, together hold at most the machine's CPU budget,
-the logical CPUs (`hw.logicalcpu`). A request over the CPUs its need allows is cut
-to them, with one line on stderr. Memory gates no start: the daemon tells a job's session to fix its memory
+A call starts its command at once, whatever else runs. Memory gates no start: the daemon tells a job's session to fix its memory
 use when the job passes `SOFT_GIB`, and kills the job when it passes `HARD_GIB`; and it kills the largest
-job where the memory pressure stays critical, as `scripts/heavy_enforcer.py` gives them.
+job where the memory pressure is critical, as `scripts/heavy_enforcer.py` gives them.
 
-A call asks the resource daemon (`scripts/resource_daemon.py`) for a share of
-the budget, and starts the daemon where none runs. The daemon starts a call
-when it is first of its queue and fits, as `scripts/heavy_scheduler.py` gives
-the rule: a job of at most 5 minutes draws on a reserve that no longer job
-takes, and the others are ordered, and capped in what they hold together, by
-need. `queue` prints each job that holds a share,
-each ungated process of a session that the daemon counts against the budget,
-and each waiting call with its expected start.
+A call registers its command with the resource daemon (`scripts/resource_daemon.py`), and starts the
+daemon where none runs. `queue` prints each running job with its need, and each ungated process of a session
+that the daemon counts.
 
 The call replaces itself with the command by `exec` of `taskpolicy -c utility
-<command>`, once the daemon grants the share. The command runs below the
+<command>`. The command runs below the
 user's interactive applications, as does each process it starts, as the call's
 own process in the call's process group, with the caller's environment as it
-stands, plus `ARC_HEAVY_CPUS` set to the CPUs granted, and `ARCLOG_THREADS`,
-`CARGO_BUILD_JOBS` and `RAYON_NUM_THREADS` set to that number, each at most
-the value the caller set. So a `timeout` around the call, the end of the Bash
+stands, plus `ARC_HEAVY_CPUS` set to `--cpus`, and `ARCLOG_THREADS`,
+`CARGO_BUILD_JOBS`, `RAYON_NUM_THREADS`, `RUST_TEST_THREADS`, `OMP_NUM_THREADS`
+and `VECLIB_MAXIMUM_THREADS` set to that number, each at most the value the
+caller set. So a `timeout` around the call, the end of the Bash
 call and `TaskStop` reach it as they reach the command run without this
-script. The call exits with the command's status. The daemon holds the share
+script. The call exits with the command's status. The daemon counts the job
 until that process ends, and kills the processes the command leaves behind.
 
 A command that runs in this form and itself calls it starts at once:
-`ARC_HEAVY_CPUS` is set, so the call takes no share, waits for nothing, and
-cuts `--cpus` to the share it runs under.
+`ARC_HEAVY_CPUS` is set, so the call registers nothing and cuts `--cpus` to the
+number it runs under.
 
-`queue` and `need` are reserved as the first argument. `need <pid> <tier>` gives the waiting
-call of that pid, which `queue` prints, the need `<tier>`, and the daemon orders the queues
-again at once. It exits 125 where no call of that pid waits or `<tier>` is none of the three.
-
-A call that waits says on stderr what it waits for, once, when the wait
-starts. A call killed while it waits leaves the queue.
+`queue` and `need` are reserved as the first argument. `need <pid> <tier>` gives the processes
+of the running job of that pid, which `queue` prints, the nice value of `<tier>`, or keeps a process's own
+where that is higher. A user cannot lower a nice value, so the call exits 125 where `<tier>` is under the
+job's need, says so, and changes nothing. It exits 125 as well where no job of that pid runs through this
+script or `<tier>` is none of the three.
 
 A failure before the command starts prints `run_heavy.py: <reason>` on
 stderr and exits 125: no command given, a bad option, the daemon (it cannot be
 reached or started, speaks another protocol, or reads no machine load), the
-wait that ran out, `sysctl`, `vm_stat` or `taskpolicy`. A command that is not
+nice value, `sysctl`, `vm_stat` or `taskpolicy`. A command that is not
 found exits 127, and one that cannot be executed 126, as `env` does. A signal
 before the command starts ends the call, and the command has not run.
 
@@ -64,7 +57,6 @@ before the command starts ends the call, and the command has not run.
 
 from __future__ import annotations
 
-import math
 import os
 import shlex
 import shutil
@@ -80,23 +72,23 @@ from heavy_model import Need
 from heavy_protocol import Refusal
 
 SHARE_ENV = "ARC_HEAVY_CPUS"
-POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS")
+# The same names stand in `src/engine/pool.py` and `engine/arclog-py/export_checks.py`, which run under other interpreters.
+POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS",
+             "RUST_TEST_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
 NOT_RUN = 125
 NOT_EXECUTABLE = 126
 NOT_FOUND = 127
-DEFAULT_MINUTES = 5.0
 DEFAULT_NEED = Need.SOON
 QUEUE = "queue"
 NEED = "need"
+IGNORED = ("--gib", "--minutes", "--wait")
+"""The options that older calls give and that have no effect."""
 
 
 @dataclass(frozen=True)
 class Options:
-    cpus: Optional[int]
-    gib: Optional[int]
+    cpus: int
     need: Need
-    minutes: float
-    wait: Optional[int]
     command: List[str]
 
 
@@ -104,16 +96,6 @@ def count(option: str, text: str) -> int:
     if not text.isdigit() or int(text) < 1:
         raise Refusal(f"{option} takes a whole number from 1, not {text!r}")
     return int(text)
-
-
-def minutes(text: str) -> float:
-    try:
-        value = float(text)
-    except ValueError:
-        value = math.nan
-    if not (math.isfinite(value) and value > 0):
-        raise Refusal(f"--minutes takes a number over 0, not {text!r}")
-    return value
 
 
 def need(text: str) -> Need:
@@ -127,7 +109,7 @@ def parse(argv: List[str]) -> Options:
     """The options given, and the command."""
     given: dict[str, str] = {}
     rest = list(argv)
-    while rest and rest[0].partition("=")[0] in ("--cpus", "--gib", "--need", "--minutes", "--wait"):
+    while rest and rest[0].partition("=")[0] in ("--cpus", "--need", *IGNORED):
         option, equals, value = rest.pop(0).partition("=")
         if not equals:
             if not rest:
@@ -135,20 +117,17 @@ def parse(argv: List[str]) -> Options:
             value = rest.pop(0)
         given[option] = value
     return Options(
-        count("--cpus", given["--cpus"]) if "--cpus" in given else None,
-        count("--gib", given["--gib"]) if "--gib" in given else None,
+        count("--cpus", given["--cpus"]) if "--cpus" in given else heavy_protocol.DEFAULT_CPUS,
         need(given["--need"]) if "--need" in given else DEFAULT_NEED,
-        minutes(given["--minutes"]) if "--minutes" in given else DEFAULT_MINUTES,
-        count("--wait", given["--wait"]) if "--wait" in given else None,
         rest)
 
 
-def granted(request: Optional[int], parent: str) -> int:
-    """The CPUs a nested call runs with: its request, at most the share of
+def granted(request: int, parent: str) -> int:
+    """The CPUs a nested call runs with: its request, at most the CPUs of
     the call it runs under."""
     if not parent.isdigit() or int(parent) < 1:
         raise Refusal(f"{SHARE_ENV} is {parent!r}, not a whole number from 1")
-    return min(request or 1, int(parent))
+    return min(request, int(parent))
 
 
 def bounded(given: Optional[str], share: int) -> int:
@@ -166,6 +145,15 @@ def not_started(program: str) -> Optional[int]:
     return NOT_EXECUTABLE if os.sep in program and os.path.exists(program) else NOT_FOUND
 
 
+def set_nice(wanted: Need) -> None:
+    """Give this process the nice value of `wanted`, or keep its own where that is higher, which
+    its children inherit."""
+    try:
+        os.setpriority(os.PRIO_PROCESS, 0, wanted.raised(os.getpriority(os.PRIO_PROCESS, 0)))
+    except OSError as error:
+        raise Refusal(f"nice value {wanted.nice}: {error.strerror}")
+
+
 def say(line: str) -> None:
     print(f"run_heavy.py: {line}", file=sys.stderr)
 
@@ -175,7 +163,7 @@ def show_queue(args: List[str]) -> int:
         raise Refusal(f"{QUEUE} takes no argument, not {args[0]!r}")
     registry = heavy_client.queue(heavy_protocol.heavy_dir())
     if registry is None:
-        print("no daemon runs, so no job holds a share")
+        print("no daemon runs, so no job is counted")
     else:
         print(heavy_client.queue_text(registry, time.time()))
     return 0
@@ -204,14 +192,15 @@ def run(argv: List[str]) -> int:
         return status
     if shutil.which("taskpolicy") is None:
         raise Refusal("taskpolicy is not found")
+    set_nice(options.need)
     parent = os.environ.get(SHARE_ENV)
     if parent is not None:
         cpus = granted(options.cpus, parent)
     else:
-        cpus = heavy_client.acquire(heavy_protocol.heavy_dir(), {
-            "op": "acquire", "version": heavy_protocol.VERSION, "pid": os.getpid(), "cpus": options.cpus,
-            "gib": options.gib, "need": options.need.value, "minutes": options.minutes, "wait": options.wait,
-            "command": shlex.join(command)}, say)
+        cpus = options.cpus
+        heavy_client.acquire(heavy_protocol.heavy_dir(), {
+            "op": "acquire", "pid": os.getpid(), "cpus": cpus, "need": options.need.value,
+            "command": shlex.join(command)})
     os.environ[SHARE_ENV] = str(cpus)
     for name in POOL_ENVS:
         os.environ[name] = str(bounded(os.environ.get(name), cpus))

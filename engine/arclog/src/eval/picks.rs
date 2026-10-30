@@ -284,6 +284,12 @@ fn never_pairs(
     let checked = bodies.driver.evaluation.program;
     let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
     let mut pairs = Vec::new();
+    // Safety gives every never body the CHOOSE row and candidate labels.
+    // Supply their domain as a projected key relation, rather than merging
+    // the option body's local witnesses into the never body's scope.
+    let mut context: Vec<(&Body, NodePath)> = for_body(choose, form).into_iter().collect();
+    context.push((choose.from.value(), form.child(u32::from(choose.rows.is_some()))));
+    let given = [row_labels(choose), candidate_labels(choose)].concat();
     let first_never = u32::from(choose.rows.is_some()) + 1;
     for (never, index) in choose.never.iter().zip(first_never..) {
         let Some((source, sites)) = &shape.candidates else {
@@ -292,7 +298,7 @@ fn never_pairs(
         let body = (never.value(), form.child(index));
         let mut labels: Vec<LabelId> = crate::safety::body_labels(never.value()).into_iter().collect();
         labels.sort_by_key(|label| label.0);
-        let whole = ir::compile_instance_body(checked, form, &[body.clone()], &labels)
+        let whole = ir::compile_ambient_body(checked, form, &context, &given, body.clone(), &labels)
             .map_err(|compile| fault(format!("a `never` body does not compile: {compile:?}")))?;
         let label_of: StableHashMap<ir::Variable, LabelId> = whole.columns.iter().copied().zip(labels.iter().copied()).collect();
         let reads: Vec<&ir::Arguments> = whole
@@ -328,7 +334,7 @@ fn never_pairs(
             read
         };
         let reads = [spec(first), spec(second)];
-        let clause = ir::compile_instance_body(checked, form, &[body], &columns)
+        let clause = ir::compile_ambient_body(checked, form, &context, &given, body, &columns)
             .map_err(|compile| fault(format!("a `never` body does not compile: {compile:?}")))?;
         let found = match rows_of(bodies.driver.evaluation, form, bodies.relation(form, &clause, example)?, columns.len(), &fault)? {
             Ok(rows) => rows,

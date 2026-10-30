@@ -257,7 +257,7 @@ mod tests {
         (RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n\
         (RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n\
         (RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n\
-        (RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+        (RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
 
     /// The types of the labels of the last form of `program`, where `state`,
     /// when given, is the form in progress at the mask's state.

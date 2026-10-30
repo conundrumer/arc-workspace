@@ -67,6 +67,7 @@ fn kind_tag(kind: &DependencyKind) -> u8 {
         DependencyKind::RigidAssembly(_) => 7,
         DependencyKind::Demonstrated(_) => 8,
         DependencyKind::RecursiveInstance(_) => 9,
+        DependencyKind::Out(_) => 10,
     }
 }
 
@@ -392,6 +393,7 @@ fn written_through(node: NodeRef<'_>, atom: Option<&crate::program::Atom>, write
         NodeRef::InstanceInput(value) => value.write_canonical(out_, search, writer),
         NodeRef::Choose(value) => value.write_canonical(out_, search, writer),
         NodeRef::RigidDet(value) => value.write_canonical(out_, search, writer),
+        NodeRef::Out(value) => value.write_canonical(out_, search, writer),
         NodeRef::Demonstrated(_) => unreachable!("a `DEMONSTRATED` form is written by `demonstrated_form`"),
         NodeRef::DemoRule(value) => value.write_canonical(out_, search, writer),
         NodeRef::Alts(value) => value.write_canonical(out_, search, writer),

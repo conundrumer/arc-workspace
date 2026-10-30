@@ -7,8 +7,12 @@
 //! joins the label its own body makes over one its key body makes, a later
 //! branch of an `OR` joins what the first branch makes, and an `IF`'s then
 //! joins what its test makes.
+//!
+//! A body makes each name at one site (`docs/arclog/arclog.md#sites`):
+//! [`LabelScope::repeated`] gives the sites of a body that break that.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 
 use crate::layout::SourcePlace;
 use crate::program::LabelId;
@@ -19,7 +23,7 @@ use super::SExpr;
 /// A site of the scope that makes a label.
 struct Made {
     name: Box<str>,
-    start: u32,
+    place: SourcePlace,
     /// The number of lists of the scope that hold the site.
     depth: u32,
 }
@@ -50,7 +54,7 @@ impl LabelScope {
         match expr {
             SExpr::Symbol { text, place } => {
                 if let Some(name) = text.strip_prefix([FRESH_MARK, KEY_MARK]) {
-                    self.made.push(Made { name: name.into(), start: place.start, depth });
+                    self.made.push(Made { name: name.into(), place: *place, depth });
                 }
             }
             SExpr::String { .. } => {}
@@ -71,7 +75,7 @@ impl LabelScope {
     pub(super) fn made(&self, place: SourcePlace) -> LabelId {
         let index = self
             .made
-            .binary_search_by_key(&place.start, |m| m.start)
+            .binary_search_by_key(&place.start, |m| m.place.start)
             .expect("each `*X` and `^X` of a scope makes a label of it");
         LabelId(index as u32)
     }
@@ -86,12 +90,36 @@ impl LabelScope {
             .enumerate()
             .filter(|(_, m)| &*m.name == name)
             .min_by_key(|(index, m)| {
-                let common = self.common_depth(at, m.start);
+                let common = self.common_depth(at, m.place.start);
                 (u32::MAX - common, m.depth - common, *index)
             })
             .map(|(index, _)| LabelId(index as u32))?;
         self.joins.borrow_mut().push((at, best));
         Some(best)
+    }
+
+    /// The sites of the scope inside `exprs`, a run of adjacent items of one
+    /// list.
+    fn sites_in(&self, exprs: &[SExpr]) -> &[Made] {
+        let (Some(first), Some(last)) = (exprs.first(), exprs.last()) else { return &[] };
+        let (from, to) = (first.place().start, last.place().end);
+        let low = self.made.partition_point(|m| m.place.start < from);
+        let high = self.made.partition_point(|m| m.place.start < to);
+        &self.made[low..high]
+    }
+
+    /// The sites inside `exprs`, a body, that make a name that an earlier site
+    /// inside `exprs` makes or `held` holds, each with its name, in source
+    /// order.
+    pub(super) fn repeated(&self, exprs: &[SExpr], held: &[Box<str>]) -> Vec<(&str, SourcePlace)> {
+        let mut seen: HashSet<&str> = held.iter().map(|name| &**name).collect();
+        let mut repeated = Vec::new();
+        for site in self.sites_in(exprs) {
+            if !seen.insert(&site.name) {
+                repeated.push((&*site.name, site.place));
+            }
+        }
+        repeated
     }
 
     /// The number of lists of the scope that hold both `a` and `b`.

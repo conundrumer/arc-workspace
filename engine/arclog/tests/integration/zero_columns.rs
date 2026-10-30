@@ -6,8 +6,6 @@
 use std::sync::Arc;
 
 use arclog::check::{check_program, check_shared_program, CheckCache, CheckedProgram, SolverClauses};
-use arclog::decode::replay::replay;
-use arclog::decode::Decoder;
 use arclog::eval::instance::{Construction, ConstructionContext, Constructions, GroupInputs, GroupOutputs};
 use arclog::eval::ReachedBound;
 use arclog::relations::RowSet;
@@ -16,10 +14,8 @@ use arclog::eval::{relation_of, Cancellation, Caps, Evaluation, Limits, Paramete
 use arclog::program::{AltsName, Clause, ColumnName, Conjunct, DeclaredName, Form, Instance, Node, Program, ProgramRelation, RelationName};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, resolve_cases, SolverScope};
+use arclog::resolver::{resolve, SolverScope};
 use arclog::session::{SessionBound, TaskSession};
-use arclog::stream::corpus::{case_stream, check_case};
-use arclog::stream::{Control, DecodeSettings, Token, Vocabulary};
 use arclog::solver::{Case, Solver};
 use arclog::task::{Grid, Task, TrainPair};
 use arclog::terms::{Color, Example};
@@ -201,63 +197,4 @@ fn a_label_that_reaches_the_first_label_of_a_constraint_keeps_its_column() {
     assert!(makes_zero(host), "the column keeps its `(= *B 0)`");
     assert!(!instance(alone, "&tint").key.as_ref().expect("a key").value().key.columns.is_empty());
     assert!(checked_alone(alone).is_err(), "the program read alone is refused, so the writer gives no stream");
-}
-
-/// `&host` is `0` in its one clause of the concept program, and `$Box` gives
-/// it the box that the frame of the cells makes.
-const CONSTANT_IN_THE_CONCEPT: &str = "
-(INPUT cells \"every cell lies in a host\"
-  (RULE &host
-    (= *B 0))
-
-  (RULE &cell
-    (&host *B)
-    (input *P *Col)))
-
-(ALTS $frame \"where the host comes from\" $Whole
-  (ALT $Box
-    (INPUT cells \"the host is the box of the cells\"
-      (INIT &frame BoundingBox
-        (cell (P)
-          (input *P)))
-
-      (RULE &host
-        (&frame.box *B)))))
-";
-
-/// The columns of `&host` in the program that the stream of the case of
-/// `alts` decodes to, which names them by slot, and whether the stream holds a `(= *X 0)`.
-fn streamed_host(alts: &[&str]) -> (Vec<String>, bool) {
-    let solver = read_solver("constant", CONSTANT_IN_THE_CONCEPT, "", &|_| None).unwrap_or_else(|error| panic!("{error:?}")).value;
-    let registry = Registry::get();
-    let cases = resolve_cases(&solver, registry);
-    let resolved = if alts.is_empty() {
-        cases.concept()
-    } else {
-        let wanted = case(&solver, alts).name;
-        cases.cases().find(|resolved| resolved.case.name == wanted).expect("a resolved case")
-    };
-    let checked = check_case(resolved, &SolverClauses::of_cases(&cases), &mut CheckCache::default(), "the case").expect("the case checks");
-    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
-    let stream = case_stream(resolved, &checked, &vocabulary).expect("the writer gives a stream");
-    let zero = stream.tokens.iter().any(|(token, _)| matches!(token, Token::Control(Control::Zero | Control::Op(_))));
-    let task = Task { train: Box::new([]), test: Box::new([]) };
-    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-    let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
-    let settings = DecodeSettings::default();
-    let mut decoder = Decoder::new(&task, &session, registry, &constructions, &settings);
-    let replayed = replay(&mut decoder, &stream.tokens, true, &mut |_, _| std::ops::ControlFlow::Continue(())).expect("the stream decodes");
-    assert!(replayed.unfinished().is_none());
-    let host = ProgramRelation::Declared(RelationName(DeclaredName::Written("&host".into())));
-    let slot = stream.relations.iter().position(|relation| *relation == host).expect("the stream declares `&host`");
-    let decoded = ProgramRelation::Declared(RelationName(DeclaredName::Slot(slot as u32)));
-    (spelled(&clause_deriving(decoder.program(), &decoded).columns), zero)
-}
-
-#[test]
-fn the_concept_case_streams_its_program_read_alone_and_an_alt_that_varies_the_column_keeps_it() {
-    let concept = streamed_host(&[]);
-    assert_eq!(concept, (Vec::<String>::new(), false), "the concept case's stream holds no `(= *X 0)` and its program leaves out the column");
-    let boxed = streamed_host(&["$Box"]);
-    assert_eq!(boxed.0, ["slot 0"], "the alt's case keeps the column");
 }

@@ -6,10 +6,11 @@ the report of the relations that differ.
 The command checks the task files of `arclog_convert.out`, or of `--out`,
 with no conversion: the program under `CORPUS`, which is the one under `gen/`
 with the check relations of the relations the converter folds
-(`arclog_convert.checks`), and the name map and the column map; in a linked
+(`arclog_convert.checks`) and the clauses of the relations the projection pass
+removes (`arclog_convert.projections`), and the name map and the column map; in a linked
 worktree it writes no record without
-`--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.convert` runs the same check on the
-solvers it converted. For each task, `arclog-cli row-parity` compares the rows
+`--out` or `ARCLOG_OUT`, and it rewrites no baseline. `arclog_convert.verify` runs the same check on the
+solvers it checks. For each task, `arclog-cli row-parity` compares the rows
 of each relation of the cases the check runs, the concept case and the first
 case that takes each ALT that no case before it takes, with the rows of
 Souffle's run of the solver (`parity.rerun.case_rows`), as
@@ -24,12 +25,17 @@ no arclog relation stands for it. `uncompared`
 is for each other relation the check does not compare: one with no entry in
 the column map, an arclog relation that no Souffle relation of the run
 stands for, a relation that no case it runs has, and a relation that a case
-has and no case it runs reads from `&output`, at any depth (in a case, a
-relation is compared only where its `&output` reads it, or where it is a check
-relation, which the case counts as read). A line's detail gives
+has and no case it runs reads from the `OUT` form, at any depth (in a case, a
+relation is compared only where its `OUT` form reads it, or where it is a check
+relation of a folded relation, which the case counts as read, or where it is a
+relation whose clause the projection pass removes and a form that read it
+derives its relation in the case and the `OUT` form reads that relation, or that
+relation is itself such a removed relation that the case compares:
+`parity.rerun` gives the rule). A line's detail gives
 the reason of a `skip` or an `uncompared`, and the case and the pair of any
 other verdict. An `equal` line proves that the relation's rows in each case
-that derives it and whose `&output` reads it or that is a check relation, at the stored parameters, are Souffle's rows of it over the
+that derives it and whose `OUT` form reads it, that is a check relation of a folded relation, or that the
+projection pass removes and a form that read it derives its relation in, at the stored parameters, are Souffle's rows of it over the
 columns the converter maps (`row_parity.rs` gives the rest). For a relation of
 the converter's Souffle text (`arclog_convert.parity_text`) that is the rows of
 the text's clauses with the solver's program, which says nothing on whether the
@@ -46,17 +52,23 @@ the form of the record (`VERSION`); `sources`, the digest of the engine's
 sources; `binary`, the sha256 of the `arclog-cli` binary the run ran; and `lines`,
 each `[relation, verdict, detail]`. A task is fresh, and runs nothing, by the
 rule of `train_replay.stale_tasks`. The run executes a private copy of the
-`arclog-cli` binary (`train_replay.private_binaries`), so a build in the shared
+`arclog-cli` binary (`train_replay.private_binaries`), so a build in the checkout's
 `engine/target` during the run does not change it.
 
-The stale tasks run on at most `parity.snapshot.RECORDS_WORKERS` processes,
-and at most `engine.pool.pool_size()`, each taking chunks of `CHUNK` tasks:
-for a chunk, the Souffle side of each task, then one `arclog-cli row-parity`
-call on the chunk. Each process runs one chunk and exits, so that none keeps
-the memory of a chunk for the next, and runs bounded to one CPU
-(`engine.pool.share_env`). The Souffle runs go through the run cache. A
-task's rows file is written to disk as it is serialized, and
-`arclog-cli row-parity` reads it one case at a time.
+The stale tasks run in chunks of `CHUNK` tasks, at most
+`parity.snapshot.RECORDS_WORKERS` chunks at once, and at most
+`engine.pool.pool_size()`. A chunk has two phases: the Souffle side of each
+of its tasks, then one `arclog-cli row-parity` call on the chunk. The first
+phase runs in a process of its own that runs that phase alone and exits when
+it returns, so that no process keeps the memory of a chunk's Souffle runs for
+the call or for the next chunk; that process is bound to one CPU
+(`engine.pool.share_env`). The second phase runs in the main process, in the
+thread of the chunk, which waits on the call and writes the records. The
+Souffle runs go through the run cache. The Souffle side holds the runs of one
+case and the entry of one relation at a time, writing a task's rows file as
+each entry is made, and `arclog-cli row-parity` reads it one relation at a time.
+The call's stderr reaches the run's output: for each task that has run 10 s,
+and each further 10 s, a line `row-parity: <task> case <case>: <n> s`.
 
 `row_parity.tsv` is the baseline: a line `<task> <relation> <verdict>
 <ticket or ->` (tab-separated) for each task and relation whose verdict is
@@ -69,8 +81,8 @@ its detail; a line for each relation that the task's previous record gives
 of `skip` and of `uncompared`, and of the lines beyond the baseline. The
 exit status is 1 where a line is beyond the baseline or a relation was
 `equal` and is not now, and 0 otherwise.
-`arclog_convert.convert --accept` rewrites the baseline lines of the solvers
-it converted, keeping the ticket field of each line that stays."""
+`arclog_convert.verify --accept` rewrites the baseline; `arclog_convert.verify`
+gives which lines it rewrites."""
 
 import argparse
 import hashlib
@@ -81,7 +93,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import TASKS_DIR
@@ -97,7 +109,11 @@ VERSION = 5
 CORPUS = "gen_check"
 """The directory beside `gen/` that holds, for each converted task, its
 program with the check relations of the relations it folds
-(`arclog_convert.checks`), which `arclog-cli row-parity` reads as its corpus."""
+(`arclog_convert.checks`) and the clauses of the relations the projection pass
+removes from the program of `gen/` (`arclog_convert.projections`), the latter
+compared in a case only where a form that read the relation derives its relation
+there and the `OUT` form reads it (`parity.rerun`), which
+`arclog-cli row-parity` reads as its corpus."""
 
 FAILING = ("differ", "fault", "uncompared")
 """The verdicts that the baseline holds and that fail the run."""
@@ -147,28 +163,34 @@ def write_record(records: Path, stem: str, files: str, sources: str, binary: str
     (records / f"{stem}.json").write_text(json.dumps(data, indent=1) + "\n")
 
 
-def check_chunk(stems: list[str], corpus: Path, tasks: Path, records: Path, solvers: Path,
-                files: dict[str, str], sources: str, binary: str, tool: Path) -> None:
-    """Write the record of each of `stems`: the Souffle side of each, then
-    one call of the `arclog-cli` binary at `tool`, with the digest `binary`,
-    on those that gave rows."""
+def souffle_side(stems: list[str], work: Path, solvers: Path) -> tuple[dict[str, list[Line]], list[str]]:
+    """Write the rows file of each of `stems` under `work`, and give the
+    fault lines of the stems that have no rows and the stems that have."""
     from parity import rerun
+    faults: dict[str, list[Line]] = {}
+    rows = []
+    for stem in stems:
+        try:
+            got = rerun.case_rows(stem, solvers / f"{stem}.dl", work / f"{stem}.json")
+        except (rerun.NoSuchCase, FileNotFoundError) as e:
+            faults[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
+            continue
+        if got is not None:
+            faults[stem] = [("*", "fault", f"no Souffle rows: {got}")]
+            continue
+        rows.append(stem)
+    return faults, rows
+
+
+def check_chunk(souffle: ProcessPoolExecutor, stems: list[str], corpus: Path, tasks: Path, records: Path,
+                solvers: Path, files: dict[str, str], sources: str, binary: str, tool: Path) -> None:
+    """Write the record of each of `stems`: the Souffle side of each, in a
+    process of `souffle` that exits when it returns, then one call of the
+    `arclog-cli` binary at `tool`, with the digest `binary`, on those that gave
+    rows."""
     work = Path(tempfile.mkdtemp(dir=records))
     try:
-        lines: dict[str, list[Line]] = {}
-        rows = []
-        for stem in stems:
-            try:
-                got = rerun.case_rows(stem, solvers / f"{stem}.dl")
-            except (rerun.NoSuchCase, FileNotFoundError) as e:
-                lines[stem] = [("*", "fault", f"no Souffle rows: {type(e).__name__}: {e}")]
-                continue
-            if not isinstance(got, dict):
-                lines[stem] = [("*", "fault", f"no Souffle rows: {got}")]
-                continue
-            with (work / f"{stem}.json").open("w") as handle:
-                json.dump(got, handle)
-            rows.append(stem)
+        lines, rows = souffle.submit(souffle_side, stems, work, solvers).result()
         if rows:
             command = [str(tool), "row-parity", str(corpus), str(tasks), str(work), *rows]
             done = subprocess.run(command, cwd=checkout.ROOT / "engine", stdout=subprocess.PIPE, text=True,
@@ -213,9 +235,11 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
         if stale:
             tool, built = copy(BINARY)
             records.mkdir(parents=True, exist_ok=True)
-            with ProcessPoolExecutor(min(RECORDS_WORKERS, pool_size()), initializer=bound_to_one_cpu,
-                                     max_tasks_per_child=1) as pool:
-                futures = [pool.submit(check_chunk, chunk, corpus, tasks, records, solvers, files, sources, built, tool)
+            workers = min(RECORDS_WORKERS, pool_size())
+            with (ProcessPoolExecutor(workers, initializer=bound_to_one_cpu, max_tasks_per_child=1) as souffle,
+                  ThreadPoolExecutor(workers) as threads):
+                futures = [threads.submit(check_chunk, souffle, chunk, corpus, tasks, records, solvers, files, sources,
+                                          built, tool)
                            for chunk in chunks(stale, solvers)]
                 for future in futures:
                     future.result()

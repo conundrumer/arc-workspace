@@ -10,7 +10,7 @@ use arclog::decode::corpus::replay_solver;
 use arclog::eval::instance::Constructions;
 use arclog::stream::DecodeSettings;
 
-use crate::tables::{step_tables, Points, Table};
+use crate::tables::{record_step, Points, Table};
 
 /// The tables of one case of a solver, each with the index in the stream of
 /// the token whose step gives it, or the fault that gives none.
@@ -40,7 +40,7 @@ pub struct SolverTables {
 /// left out. The replay computes no token mask.
 pub fn solver_tables(corpus: &Path, tasks: &Path, id: &str, all: bool, points: Points, constructions: &Constructions, settings: &DecodeSettings) -> Result<SolverTables, String> {
     let replayed = replay_solver(corpus, tasks, id, all, constructions, settings, false, &|tables: &mut Vec<(usize, Table)>, decoder, stepped| {
-        tables.extend(step_tables(decoder, points).into_iter().map(|table| (stepped.index, table)));
+        record_step(tables, decoder, stepped.index, points);
     })?;
     let cases = replayed.cases.into_iter().map(|case| CaseTables { case: case.case, concept: case.concept, tables: case.outcome }).collect();
     Ok(SolverTables { train: replayed.train, cases })

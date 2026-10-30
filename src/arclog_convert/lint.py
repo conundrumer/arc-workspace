@@ -10,7 +10,9 @@ With no file, checks every arclog and arcdata file under gen/ of
 of the arclog file of its stem, and an arcscene file reads the arclog and
 arcdata files of its stem under gen/. Prints each
 violation as `file:line: code: message`, four per code over more than 20
-files unless --all, then a count per code.
+files unless --all, then a count per code. The reader of the text
+(`arclog_convert.lint_read`) and the analysis of its alternatives
+(`arclog_convert.lint_alts`) are modules of their own.
 """
 from __future__ import annotations
 
@@ -21,6 +23,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from arclog_convert import libmap, out
+from arclog_convert.lint_alts import (
+    CLAIMS, DECL_HEADS, Placed, alt_blocks, alt_repeats, alts_map, claims_of, placements, reads, restated_outs, unstated_combinations)
+from arclog_convert.lint_read import L, Str, Sym, flat, leaves, read, walk
 from arclog_convert.lib import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
 GEN = out() / "gen"
@@ -28,62 +33,7 @@ FACTS = {"input": ["P", "Col"], "ex_input": ["E", "P", "Col"], "ex_output": ["E"
 OPS = {"=", "!=", "<", "<=", ">", ">="}
 FORMS = {"OR", "IF", "ALL", "NOT"}
 SCENE_BUILTINS = {"ex": ["E"], "color": ["C"], "number": ["N"], "ident": ["Id"]}
-CLAIMS = {"INPUT", "OUTPUT"}
 MARKS = {"ONE", "SET"}   # the marks a clause ends in
-
-
-# ---------------------------------------------------------------- reader
-
-@dataclass
-class Sym:
-    text: str
-    line: int
-    pos: int = -1
-    bare: bool = False   # a site or a record's field elided to its label
-
-
-@dataclass
-class Str:
-    text: str
-    line: int
-
-
-@dataclass
-class L:
-    items: list
-    line: int
-    start: int = -1
-    end: int = -1
-
-    @property
-    def head(self):
-        return self.items[0].text if self.items and isinstance(self.items[0], Sym) else None
-
-
-def read(text: str) -> list:
-    toks = re.finditer(r'"(?:[^"\\]|\\.)*"|;;[^\n]*|[()]|[^\s()";]+|\n', text)
-    stack: list[L] = [L([], 0)]
-    line = 1
-    for m in toks:
-        t = m.group()
-        if t == "\n":
-            line += 1
-        elif t.startswith(";;"):
-            continue
-        elif t == "(":
-            stack.append(L([], line, m.start()))
-        elif t == ")":
-            done = stack.pop()
-            done.end = m.end()
-            stack[-1].items.append(done)
-        elif t.startswith('"'):
-            stack[-1].items.append(Str(t, line))
-            line += t.count("\n")
-        else:
-            stack[-1].items.append(Sym(t, line, m.start()))
-    if len(stack) != 1:
-        raise SyntaxError("unbalanced parens")
-    return stack[0].items
 
 
 # ---------------------------------------------------------------- relations
@@ -233,8 +183,6 @@ class Linter:
                 self.err(0, "scene-arclog", f"no arclog file {arclog.name} under gen/")
         self.prescan(forms)
         self.forms(forms, alt=False)
-        if "&output" not in self.declared and not self.scene:
-            self.err(0, "no-output", "no &output relation")
         self.records(forms)
         structure(self, forms)
         if not self.scene:
@@ -379,6 +327,8 @@ class Linter:
             self.choose(f, alt)
         elif h == "RIGID_DET":
             self.rigid(f, alt)
+        elif h == "OUT":
+            self.out(f, alt)
         elif h == "DEMONSTRATED":
             self.demonstrated(f, alt)
         elif h == "DEMO_RULE":
@@ -826,6 +776,18 @@ class Linter:
         self.stored.update(f"{name}.{x}" for x in names)
         self.declared[name] = ("rigid", None)
 
+    def out(self, f: L, alt: bool) -> None:
+        """`(OUT <atom> [<atom>])`: the atoms of a key body, whose two `^` labels select the Position column and the
+        Color column of the output (`docs/arclog/arclog.md#the-out-form`)."""
+        atoms = f.items[1:]
+        if not atoms or len(atoms) > 2 or not all(isinstance(a, L) and a.head and a.head not in FORMS | OPS for a in atoms):
+            self.err(f.line, "key-form", "(OUT <atom> [<atom>]): one or two atoms")
+            return
+        scope = Scope(None, key_mode=True, kind="key")
+        Ctx(self, "RULE", alt, own=None, self_name="").body(atoms, scope)
+        if len(scope.keys) != 2:
+            self.err(f.line, "key-form", f"OUT marks {len(scope.keys)} labels ^, and selects two columns")
+
     def parse_clause(self, c: L, alt: bool, name: str) -> None:
         """`(parse (<head sites>) <body>)`: a determination over the task
         side, whose head sites name the declaration's columns."""
@@ -1134,12 +1096,9 @@ class Ctx:
         if len(brs) < 2 or not all(isinstance(b, L) for b in brs):
             self.err(a.line, "or", "OR holds two or more branches")
             return
-        for i, bi in enumerate(brs):
-            j = next((j for j, bj in enumerate(brs) if j != i and implies(bi.items, bj.items)
-                      and not (implies(bj.items, bi.items) and j > i)), None)
-            if j is not None:
-                self.err(bi.line, "or-implied", f"OR branch {i + 1} holds only where branch {j + 1} holds, "
-                         "so it adds no rows")
+        for i, j in implied_branches([b.items for b in brs]):
+            self.err(brs[i].line, "or-implied", f"OR branch {i + 1} holds only where branch {j + 1} holds, "
+                     "so it adds no rows")
         first = Scope(scope, kind="first", union=getattr(self, "whole_or", False))
         self.whole_or = False
         self.body(brs[0].items, first)
@@ -1484,6 +1443,21 @@ def implies(bi: list, bj: list) -> bool:
     return True
 
 
+def implied_branches(branches: list[list]) -> list[tuple[int, int]]:
+    """Each branch of an `OR` that holds only where another branch holds (`implies`), by index, with the branch it
+    holds only where, in order of the branches: of two branches that hold only where each other holds, the later is
+    implied, and a branch already implied is no implying branch."""
+    out: list[tuple[int, int]] = []
+    gone: set[int] = set()
+    for i, bi in enumerate(branches):
+        j = next((j for j, bj in enumerate(branches) if j != i and j not in gone and implies(bi, bj)
+                  and not (implies(bj, bi) and j > i)), None)
+        if j is not None:
+            out.append((i, j))
+            gone.add(i)
+    return out
+
+
 def one_states(f: L) -> bool:
     """A CHOOSE whose every never is two atoms of the candidate relation
     that agree on some of the pick's columns, with the rest different: a
@@ -1532,21 +1506,6 @@ def e_site(a: L) -> bool:
                for x in a.items[1:])
 
 
-def walk(t):
-    yield t
-    if isinstance(t, L):
-        for i in t.items:
-            yield from walk(i)
-
-
-def leaves(t):
-    if isinstance(t, Sym):
-        return [t]
-    if isinstance(t, L):
-        return [x for i in t.items[1:] for x in leaves(i)]
-    return []
-
-
 def root_labels(s: Scope) -> list[str]:
     out = []
     while s:
@@ -1571,219 +1530,34 @@ def key_scope(s: Scope) -> Scope | None:
     return None
 
 
-def flat(x) -> str:
-    if isinstance(x, L):
-        return "(" + " ".join(flat(i) for i in x.items) + ")"
-    return x.text
-
-
 # ---------------------------------------------------------------- structure
 
-DECL_HEADS = {"RULE", "DET", "INIT", "CHOOSE", "RIGID_DET", "RIGID", "DEMONSTRATED", "DET_OR_RULE", "RULE_OR_DET"}
 SLUG = r"[a-z0-9]+(-[a-z0-9]+)*"
 
 
-@dataclass
-class Placed:
-    """A form with the claim block, the alt path and the RIGID it stands in."""
-    form: L
-    name: str | None
-    slug: str | None
-    claim: str | None
-    alts: tuple
-    rigid: str | None
-
-
-def placements(forms, slug=None, claim=None, alts=(), rigid=None, out=None) -> list[Placed]:
-    out = [] if out is None else out
-    for f in forms:
-        if not isinstance(f, L):
-            continue
-        h = f.head
-        nm = f.items[1].text if len(f.items) > 1 and isinstance(f.items[1], Sym) else None
-        if h in CLAIMS:
-            placements(f.items[2:], nm, h, alts, rigid, out)
-        elif h == "ALTS":
-            placements(f.items[2:], slug, claim, alts, rigid, out)
-        elif h == "ALT":
-            placements(f.items[2:], None, None, alts + (nm,), rigid, out)
-        elif h == "RIGID":
-            out.append(Placed(f, nm, slug, claim, alts, rigid))
-            placements(f.items[2:], slug, claim, alts, nm, out)
-        else:
-            out.append(Placed(f, nm if h in DECL_HEADS else None, slug, claim, alts, rigid))
-    return out
-
-
-def reads(f: L, own: str | None = None) -> set[str]:
-    """The declared relations a form reads, by base name."""
-    out = set()
-    for a in walk(f):
-        if isinstance(a, L) and a.head and a.head.startswith("&"):
-            b = a.head.partition(".")[0]
-            if b != own:
-                out.add(b)
-    return out
-
-
-def claims_of(forms) -> list[L]:
-    return [f for f in forms if isinstance(f, L) and f.head in CLAIMS]
-
-
-def alts_map(forms) -> dict[str, set[str]]:
-    """Each ALTS form's name and the names of the ALT forms under it, nested
-    ones included."""
-    out: dict[str, set[str]] = {}
-    for f in forms:
-        for a in walk(f):
-            if isinstance(a, L) and a.head == "ALTS" and len(a.items) > 1 and isinstance(a.items[1], Sym):
-                out.setdefault(a.items[1].text, set()).update(
-                    x.items[1].text for x in walk(a) if isinstance(x, L) and x.head == "ALT"
-                    and len(x.items) > 1 and isinstance(x.items[1], Sym))
-    return out
-
-
-def alt_repeats(pl: list[Placed]) -> list[tuple[str, Placed, Placed, tuple]]:
-    """The forms that another place of the file states with the same
-    meaning, where one statement serves every case that reads them, each
-    as (kind, form, the form it repeats, the block that states it once).
-
-    A block's place is its alt path. A case reads a relation from the
-    deepest blocks whose alts it holds that derive it. A form's meaning in a
-    case is its text and the meaning of each relation it reads in that case;
-    a DET reads in its own block's case. Two kinds are redundant:
-    - "enclosing": a form that the blocks around its own derive with the
-      same meaning;
-    - "shared": one form in several alts with the same meaning, where every other
-      block of the case derives no relation of its name and every form that
-      reads the relation stands in one of those alts, so that one form in
-      the block the alts share states it.
-    Equal text that reads a relation the alts derive each in its own way,
-    or whose shared block derives the relation in another way, is no
-    repeat."""
-    defs: dict[str, dict[tuple, Placed]] = defaultdict(dict)
+def output_forms(lt: Linter, forms, pl: list[Placed]) -> None:
+    """The checks of the `OUT` forms of an arclog file (`docs/arclog/arclog.md#the-out-form`): the tail holds one, a
+    block holds at most one, each stands under no claim block, in the tail after every other form and in an `ALT`
+    block after each form other than its `ALT` blocks and `ALTS` forms, and none restates the `OUT` form its cases
+    take without it (`restated_outs`)."""
+    err = lt.err
     for p in pl:
-        if p.name and p.name.startswith("&") and p.rigid is None:
-            defs[p.name.partition(".")[0]].setdefault(p.alts, p)
-    readers: dict[str, list[Placed]] = defaultdict(list)
-    for p in pl:
-        for r in reads(p.form, p.name.partition(".")[0] if p.name else None):
-            readers[r].append(p)
-
-    def resolve(case: tuple, n: str, skip: tuple | None = None) -> list[tuple]:
-        qs = [q for q in defs.get(n, {}) if set(q) <= set(case) and q != skip]
-        return [q for q in qs if not any(set(q) < set(r) for r in qs)]
-
-    ids: dict = {}
-    memo: dict = {}
-
-    def meaning(p: Placed, case: tuple, at: tuple | None = None) -> int:
-        if p.form.head == "DET":
-            case = p.alts if at is None else at
-        key = (id(p), case)
-        if key in memo:
-            return memo[key] if memo[key] is not None else -1
-        memo[key] = None
-        own = (p.name or "").partition(".")[0]
-        m = (flat(p.form), tuple(sorted(
-            (r, frozenset(meaning(defs[r][q], case) for q in resolve(case, r)))
-            for r in reads(p.form, own) if r in defs)))
-        memo[key] = ids.setdefault(m, len(ids))
-        return memo[key]
-
-    out = []
-    for n, at in defs.items():
-        for path, p in at.items():
-            inh = resolve(path, n, skip=path) if path else []
-            if inh and all(meaning(at[q], path) == meaning(p, path) for q in inh):
-                out.append(("enclosing", p, at[inh[0]], inh[0]))
-        if len(at) < 2:
-            continue
-        texts = {flat(p.form) for p in at.values()}
-        if len(texts) != 1:
-            continue   # another block derives the relation in another way
-        paths = list(at)
-        if any(set(a) < set(b) for a in paths for b in paths):
-            continue
-        shared: tuple = ()
-        for i in range(min(map(len, paths))):
-            if len({q[i] for q in paths}) != 1:
-                break
-            shared += (paths[0][i],)
-        first = at[paths[0]]
-        same = {meaning(p, path) for path, p in at.items()}
-        if first.form.head == "DET":
-            same.add(meaning(first, shared, shared))   # a DET in the shared block reads in its case
-        if len(same) != 1:
-            continue
-        if not all(any(set(q) <= set(r.alts) for q in paths) for r in readers.get(n, [])):
-            continue   # a case that none of the alts holds reads the relation
-        for path in paths[1:]:
-            out.append(("shared", at[path], first, shared))
-    return out
-
-
-def alt_points(forms) -> tuple[dict[str, str], dict[str, str | None]]:
-    """Each alt's point, the ALTS form whose ALT block it is, and each
-    point's alt that its ALTS form stands under, or None at the top level."""
-    point: dict[str, str] = {}
-    under: dict[str, str | None] = {}
-
-    def go(xs, alt: str | None) -> None:
-        for f in xs:
-            if not isinstance(f, L):
-                continue
-            nm = f.items[1].text if len(f.items) > 1 and isinstance(f.items[1], Sym) else None
-            if f.head == "ALTS" and nm:
-                under.setdefault(nm, alt)
-                for a in f.items[2:]:
-                    if isinstance(a, L) and a.head == "ALT" and len(a.items) > 1 and isinstance(a.items[1], Sym):
-                        point.setdefault(a.items[1].text, nm)
-                        go(a.items[2:], a.items[1].text)
-            elif f.head in CLAIMS:
-                go(f.items[2:], alt)
-    go(forms, None)
-    return point, under
-
-
-def unstated_combinations(pl: list[Placed], forms, excluded: tuple[frozenset, ...] | list[frozenset] = ()
-                          ) -> list[tuple[str, frozenset, list[Placed]]]:
-    """The relations that a case reads from several blocks, none of which
-    holds the others' alts: alts of different points each rederive the
-    relation, and no nested ALT states what their combination derives. A
-    combination that `excluded`, the arcdata file's excludes, leaves out is
-    no case. Each is (relation, the case, the blocks' first forms)."""
-    point, under = alt_points(forms)
-    defs: dict[str, dict[frozenset, list[Placed]]] = defaultdict(dict)
-    for p in pl:
-        if p.name and p.name.startswith("&") and p.rigid is None and p.alts and all(a in point for a in p.alts):
-            defs[p.name.partition(".")[0]].setdefault(frozenset(p.alts), []).append(p)
-
-    def is_case(c: frozenset) -> bool:
-        pts = [point[a] for a in c]
-        if len(set(pts)) != len(pts):
-            return False   # two alts of one point
-        return all(under[pt] is None or under[pt] in c for pt in pts) and not any(x <= c for x in excluded)
-
-    out = []
-    for n, at in defs.items():
-        if len(at) < 2:
-            continue
-        cases = {frozenset()}
-        for q in at:
-            cases |= {c | q for c in cases if is_case(c | q)}
-        seen: set[frozenset] = set()
-        for c in sorted(cases, key=len):
-            qs = [q for q in at if q <= c]
-            deep = [q for q in qs if not any(q < r for r in qs)]
-            if len(deep) < 2 or len({tuple(flat(p.form) for p in at[q]) for q in deep}) < 2:
-                continue
-            key = frozenset(deep)
-            if any(k <= key for k in seen):
-                continue   # a smaller case with these blocks is reported
-            seen.add(key)
-            out.append((n, c, [at[q][0] for q in deep]))
-    return out
+        if p.form.head == "OUT" and p.slug is not None:
+            err(p.form.line, "output-place", "an OUT form stands under no claim block")
+    blocks = [(forms, False), *((block.items[2:], True) for _, block in alt_blocks(forms))]
+    for items, in_alt in blocks:
+        outs = [i for i, f in enumerate(items) if isinstance(f, L) and f.head == "OUT"]
+        if not in_alt and not outs:
+            err(0, "no-output", "no OUT form in the tail")
+        for i in outs[1:]:
+            err(items[i].line, "no-output", "a second OUT form in its block")
+        for i in outs:
+            if any(isinstance(g, L) and not (in_alt and g.head in ("ALT", "ALTS")) for g in items[i + 1:]):
+                err(items[i].line, "output-place", "an OUT form stands after every other form of its block"
+                    + (", other than its ALT blocks and ALTS forms" if in_alt else ""))
+    for p in restated_outs(pl):
+        err(p.form.line, "output-restated", "an OUT form equal to the OUT form its cases take without it: the block "
+            "holds no such form")
 
 
 def structure(lt: Linter, forms) -> None:
@@ -1927,7 +1701,7 @@ def structure(lt: Linter, forms) -> None:
             if p.form.head == "RENDER" and p.slug is not None:
                 err(p.form.line, "render-place", "a RENDER stands at the tail, under no claim block")
 
-    # -- APPROXIMATED and &output
+    # -- APPROXIMATED and OUT
     for f in forms:
         for c in walk(f):
             if not (isinstance(c, L) and c.head in CLAIMS):
@@ -1939,9 +1713,7 @@ def structure(lt: Linter, forms) -> None:
                 if x.head == "APPROXIMATED" and not (len(x.items) == 2 and isinstance(x.items[1], Str)):
                     err(x.line, "approximated", "(APPROXIMATED \"<the rule the program runs>\")")
     if not lt.scene:
-        for p in pl:
-            if p.name == "&output" and p.slug is not None:
-                err(p.form.line, "output-tail", "&output stands in the tail, under no claim block")
+        output_forms(lt, forms, pl)
 
     # -- where a relation stands
     concept_pl = [p for p in pl if not p.alts]
@@ -1972,18 +1744,19 @@ def structure(lt: Linter, forms) -> None:
                 err(p.form.line, "stands-under", f"{p.name} stands under {p.slug}, and the first claim that reads it "
                     f"is {first}")
 
-    # -- an ALT's forms
-    for f in (forms if top_claims else []):
-        for a in walk(f):
-            if not (isinstance(a, L) and a.head == "ALT"):
-                continue
+    # -- an ALT's forms: outside its claim blocks, a form derives a relation of the concept's tail, or one that an OUT
+    # form of the block, or of a block that holds it, reads: that form is the output of the block's cases
+    if top_claims:
+        for path, a in alt_blocks(forms):
+            output_reads = {r for o in pl if o.form.head == "OUT" and set(o.alts) <= set(path) for r in reads(o.form)}
             for x in a.items[2:]:
-                if not isinstance(x, L) or x.head in CLAIMS | {"ALT", "ALTS", "RENDER", "ALL"}:
+                if not isinstance(x, L) or x.head in CLAIMS | {"ALT", "ALTS", "RENDER", "ALL", "OUT"}:
                     continue
                 nm = x.items[1].text if len(x.items) > 1 and isinstance(x.items[1], Sym) else None
-                if nm not in tail:
+                if nm not in tail and nm not in output_reads:
                     err(x.line, "alt-tail", f"{nm} stands in {flat(a.items[1])} outside a claim block, so it is a "
-                        "tail form the alt rederives, and the concept's tail has none of this name")
+                        "tail form the alt rederives or the relation an OUT form of its block reads, and the "
+                        "concept's tail has none of this name")
 
     # -- a relation under NOT is derived in every case that reads it
     derived: dict[tuple, set[str]] = defaultdict(set)

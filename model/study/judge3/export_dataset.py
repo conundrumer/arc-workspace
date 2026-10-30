@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""Export complete pair data through the shared evaluator's TRAIN surfaces."""
+from copy import deepcopy
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import time
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from study_paths import CODE_ROOT, DATA_ROOT
+sys.path.insert(0, str(CODE_ROOT / 'judgetool'))
+from dataset_format import FORMAT, table_packet, table_summary, pair_packet, write_json
+from nonrender_metadata import MetadataProducer
+
+
+def grouped(packet):
+    """Value-only transport to the canonical comparator; no equality here."""
+    result = {}
+    for entry in packet['entries']:
+        key = (entry['assignment'], 1, entry['example_index'])
+        rows = frozenset(tuple(tuple(cell['value']) for cell in row) for row in entry['rows'])
+        result.setdefault(key, set()).add(rows)
+    return dict(groups=result, required={tuple(k) for k in packet['required']},
+                missing=[tuple(k) for k in packet['missing']])
+
+
+cache_repairs = []
+
+
+def _quarantine(path, error):
+    damaged = path.parent.parent / 'case-cache-damaged'
+    damaged.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(path, damaged / f'{path.name}.{int(time.time())}')
+    except FileNotFoundError:  # another reader already moved it
+        pass
+    cache_repairs.append(path.name)
+    print(f'case cache {path.name} damaged ({type(error).__name__}); '
+          'moved to case-cache-damaged and recomputed', file=sys.stderr, flush=True)
+
+
+def _case(ev, record, context, ntrain, ntest, cache):
+    from evaluator import sha, read_json
+    from evaluator_train import acquire_case_train, dependency_receipt
+    if not Path(cache).resolve().is_relative_to(DATA_ROOT.resolve()):
+        raise ValueError('case cache must stay under the study data root')
+    kept = context.get('kept_assignments')
+    if kept is None:
+        kept = (context.get('reference') or {}).get('evaluation', {}).get('kept_assignments')
+    if kept is None and context['name'] == record['case']:
+        kept = record['evaluation']['kept_assignments']
+    program = context.get('source_program')
+    if program is None and context['name'] == record['case']:
+        program = record['gold_sexp']
+    catalogue = Path(context['catalogue_path'])
+    identity = dict(task=record['task'], case=context['name'], program=program, kept=kept,
+                    catalogue_sha256=hashlib.sha256(catalogue.read_bytes()).hexdigest(),
+                    relation_source_names=context.get('relation_source_names'),
+                    runtime=ev.receipt, adapter=dependency_receipt(), ntrain=ntrain, ntest=ntest)
+    path = cache / (sha(identity) + '.json')
+    if path.exists():
+        try:
+            return read_json(path), False
+        except ValueError as error:
+            _quarantine(path, error)
+    print(f"case {context['name']}: fresh gold replay", file=sys.stderr, flush=True)
+    case_context = dict(context, catalogue_path=context.get('catalogue_path'))
+    value = acquire_case_train(ev, record, case_context, ntrain, ntest)
+    # Cache failed/bounded acquisitions too: an exporter retry is explicit.
+    write_json(path, value)
+    return value, True
+
+
+
+def _case_table_count(ev, record, context):
+    """Exact native original-table count for numbering, without acquiring rows."""
+    from case_collector import case_program
+    from evaluator import sha
+    from native_correspondence import Correspondence
+    case, text, _names = case_program(ev, record, context)
+    key = ('original-table-inventory-v1', record['task'], case, sha(text), sha(ev.receipt))
+    if key not in ev.target_cache:
+        program = ev.arclog.StudyProgram.from_sexp(text, ev.settings)
+        export = json.loads(ev.arclog.study_program_export_json(program))
+        inventory = Correspondence(export, program_sexp=export['program_sexp'],
+            source_program_sexp=export['program_sexp']).inventory()
+        count = inventory['table_count']
+        if (type(count) is not int or count < 0 or
+                count != inventory['evidence_table_count'] + inventory['relation_table_count']):
+            raise ValueError('native original-table inventory count is incomplete')
+        ev.target_cache[key] = dict(table_count=count, receipt=dict(
+            schema='evaluator-original-table-count-v1', task=record['task'], case=case,
+            source_program_sha256=sha(text), native_program_sha256=sha(export['program_sexp']),
+            native_inventory_sha256=sha(inventory), settings=ev.receipt,
+            acquisition='native compile-only materialized-table inventory; no kept/FITS/replay'))
+    return ev.target_cache[key]['table_count']
+
+
+def source_bundle(pair_id, record, target, *, private, origin):
+    """Persist the full judge command's private source, even without a renderer.
+
+    A human-readable origin (for example "base label store: ID") is not a
+    manifest locator. Freeze the actual supplied record and adapter together;
+    do not regenerate metadata or execute a replay in this writer.
+    """
+    from evaluator import sha
+    private = Path(private).resolve()
+    if not private.is_relative_to(DATA_ROOT.resolve()):
+        raise ValueError('private dataset source must stay under the study data root')
+    identity = sha(dict(pair_id=pair_id, record=record, adapter=target['adapter'], origin=str(origin)))
+    directory = private / 'dataset-sources' / pair_id / identity
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.source-', dir=directory.parent))
+    try:
+        write_json(stage / 'record.json', record)
+        adapter = deepcopy(target['adapter'])
+        adapter['source'].update(record_path=str(directory / 'record.json'),
+            record_sha256=hashlib.sha256((stage / 'record.json').read_bytes()).hexdigest())
+        write_json(stage / 'manifest.json', dict(schema='judge-source-manifest-v1',
+            pair_id=pair_id, source_sha256=sha(record), origin=str(origin), adapter=adapter))
+        if directory.exists():
+            for name in ('record.json', 'manifest.json'):
+                if (directory / name).read_bytes() != (stage / name).read_bytes():
+                    raise ValueError('private dataset source identity conflict')
+        else:
+            try:
+                stage.rename(directory)
+            except OSError:
+                # A concurrent identical export may have published first.
+                if not directory.is_dir():
+                    raise
+                for name in ('record.json', 'manifest.json'):
+                    if (directory / name).read_bytes() != (stage / name).read_bytes():
+                        raise ValueError('private dataset source identity conflict')
+        return directory
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+
+
+def export_pair(ev, source_pair, output, cache):
+    from judge_tool import load_pair
+    manifest, record, target = load_pair(source_pair)
+    return export_target(ev, manifest['pair_id'], record, target, output, cache,
+                         source=str(Path(source_pair).resolve()))
+
+
+def export_target(ev, pair_id, record, target, output, cache, *, source,
+                  private=DATA_ROOT / 'judgetool', features=None,current_native_names=False):
+    """Write one pair directory from a source record and its target (adapter, ntrain, ntest).
+
+    `source` names where the target came from; `private` receives the contexts
+    and receipts that the judge clause commands read.
+
+    `features` is a point directory. With it, the pair directory holds X, the
+    mutant program and pair.json, and the point directory holds G, the available
+    tables, train.json, the gold program and libraries.json, written by the
+    first pair of the point. The other targets, the comparisons, the readers
+    and the private files are not computed.
+    """
+    from runtime_compat import require_exporter
+    require_exporter(ev.arclog)
+    if type(current_native_names) is not bool or (current_native_names and features is None):
+        raise ValueError('CURRENT native names require explicit FEATURES mode')
+    if features is not None:
+        from feature_payload import require_feature_api
+        require_feature_api(ev.arclog)
+    from evaluator import read_json, sha
+    from tables import TargetStore
+    from evaluator_train import acquire_train_point
+    from case_collector import compare_target
+    from definition_binding import definition_node
+    adapter = target['adapter']
+    destination = Path(output)
+    if not destination.resolve().is_relative_to(DATA_ROOT.resolve()):
+        raise ValueError('dataset output must stay under the study data root')
+    if destination.exists():
+        raise ValueError('dataset output must be a new directory: ' + str(output))
+    # An interrupted acquisition never publishes a partial public pair.
+    output = destination.with_name(destination.name + '.building')
+    if output.exists():
+        output.rename(output.with_name(output.name + '-' + str(time.time_ns())))
+    shared = None  # the point directory under construction
+    if features is not None and not (features / 'point.json').exists():
+        shared = features.with_name(features.name + '.building-' + str(os.getpid()))
+        shutil.rmtree(shared, ignore_errors=True)
+    if adapter['input']['binding']['kind'] == 'Det':
+        if features is None:
+            raise ValueError('DET pairs are not judged')
+        if (adapter.get('scope') != 'TRAIN_features_only_noncallable'
+                or any(binding.get('callable') is not False or binding.get('callable_template') is not None
+                       for binding in adapter['bindings'].values())):
+            raise ValueError('DET features require the certified noncallable adapter')
+        # acquire_train_point validates the complete source-bound reader/header
+        # certificate before reading X/G. No judge callable is introduced.
+    store = TargetStore(ev.legacy, CODE_ROOT)
+    producer = MetadataProducer(engine=ev.arclog,
+        read_native=lambda ref, base: store.snapshot(ref, base)['_native_reader'],
+        corpus=Path(adapter['source']['native_base']).parent, settings=ev.settings,
+        case_inventory=adapter['all_case_targets'])
+    if current_native_names:
+        adapter=producer.current_native_adapter(record,adapter)
+    point_export = producer._export(record['gold_sexp'], record)
+    point_view = next(v for v in point_export['body_views'] if v['body_path'] == record['point'])
+    point_name = producer.point_source_name(point_export, point_view)
+    index = []; shared_index = []; comparisons = []; provenance = []; target_bindings = []
+    def write_public(path, value):
+        write_json(path, value, compact=features is not None)
+    def add(packet, table_id, name, case, roles, atom=None, **metadata):
+        path = 'tables/' + table_id + '.json'
+        public = table_packet(packet, table_id=table_id, source_name=name, case=case,
+                              roles=roles, callable_atom=atom, copy_rows=features is None,
+                              sort_rows=features is not None)
+        public.update(metadata)
+        where, listing = (shared, shared_index) if features is not None and table_id != 'X' else (output, index)
+        write_public(where / path, public)
+        listing.append(table_summary(public,path))
+        return public
+    x = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='mutant',
+                            copy_rows=features is None, include_projected_flows=features is not None)
+    public_x = add(x, 'X', point_name, record['case'], ['input'], adapter['input']['binding']['callable_template'], side='mutant')
+    feature_x_meta = None
+    receipt_packet=receipt_public=None
+    if current_native_names:
+        receipt_packet=dict(x,entries=[dict(assignment=e['assignment'],example_index=e['example_index'],
+            model=e['model'],row_count=len(e['rows'])) for e in x['entries']])
+        receipt_public=dict(public_x,entries=[{k:v for k,v in e.items() if k!='rows'} for e in public_x['entries']])
+    if features is not None:
+        feature_x_meta = dict(projection=list(x['projection']), source_schema=x['source_schema'],
+                              fields=x['fields'], public_fields_sha256=sha(public_x['fields']),
+                              projected_flows=x['receipt'].get('projected_flows'))
+        public_x = None
+        x = None  # synchronous write is finished; feature mode never compares X
+    if features is None or shared:
+        g = acquire_train_point(ev, record, adapter, target['ntrain'], target['ntest'], side='gold', copy_rows=features is None)
+        add(g, 'G', point_name, record['case'], ['target'], side='gold')
+        if features is not None:
+            g = None
+    # Feature export never compares candidate values. Avoid constructing an
+    # unused second in-memory copy of large assignment/model row families.
+    candidate = grouped(x) if features is None else None
+    columns = ([(f.get('field_name', f.get('name')), f['type']) for f in x['fields']]
+               if features is None else None)
+    def comparison(packet, fields, ref):
+        value = compare_target(candidate['groups'], columns, grouped(packet), fields, ref)
+        # The public pair contains TRAIN evidence only. A comparator invoked
+        # with no TEST keys must not advertise vacuous "test: equal" evidence.
+        value.pop('test', None)
+        value['scope'] = 'train'
+        comparisons.append(dict(target_id=ref['target_id'], comparison=value))
+    if features is None:
+        comparison(g, g['fields'], dict(target_id='G', role='point'))
+    main_export = None
+    count = 0
+    fresh_cases = {}
+    repairs_before = len(cache_repairs)
+    facts = set()
+    contexts = adapter['all_case_targets']['cases']
+    own_seen = False
+    for context in contexts:
+        if features is not None and not shared and context['name'] != record['case']:
+            continue  # the point directory exists: this pair needs only the export of its own case
+        context = dict(context, catalogue_path=adapter['all_case_targets']['catalogue_path'])
+        if features is not None and context['name'] != record['case']:
+            if not own_seen:
+                count += _case_table_count(ev, record, context)
+            continue  # later other cases cannot affect an already assigned public Tn
+        own_seen = own_seen or context['name'] == record['case']
+        bundle, fresh_cases[context['name']] = _case(ev, record, context, target['ntrain'], target['ntest'], cache)
+        if not bundle['native_table_inventory_complete']:
+            # Preserve the real replay refusal/bound instead of presenting it
+            # as a missing-table catalogue. Never publish an incomplete case.
+            from tables import Incomplete
+            observation=bundle.get('receipt',{}).get('observation',{})
+            reasons=[g['reason'] for g in bundle.get('gaps',[])
+                     if g.get('kind')=='replay' and g.get('reason')]
+            error=Incomplete('fresh case replay incomplete: '+context['name']+'; '
+                + ('; '.join(reasons) or observation.get('engine','native capture unavailable'))
+                + '; artifact='+str(observation.get('artifact')))
+            error.receipt=bundle.get('receipt')
+            raise error
+        export = bundle['export']; same = bundle['case'] == record['case']
+        if same:
+            main_export = export
+        if features is not None and not shared:
+            break
+        provenance.append(bundle['receipt'])
+        for item in bundle['tables']:
+            meta = producer.case_table_metadata(export, item)
+            eligible = not same
+            if same:
+                ts = {k: [v] for k, v in item['selector'].items()}
+                eligible = producer.selectors['same_case_after'](
+                    ts, 0, adapter['comparison_target']['binding'], export)
+                if eligible is None:
+                    raise ValueError('canonical same-case source order unavailable: ' + item['table_id'])
+            allowed = False
+            if same:
+                allowed = item['selector']['fact'] in ('ex_input', 'ex_output')
+                independent = adapter['availability']['independent_nodes']
+                for definition in meta['definitions']:
+                    if definition_node(export, definition) in independent:
+                        allowed = True
+            if not eligible and not allowed:
+                continue
+            roles = (['target'] if eligible else []) + (['available'] if allowed else [])
+            table_id = 'T' + str(count); count += 1
+            # Feature consumers require only canonically available tables.
+            # Preserve target numbering without decoding later target rows.
+            if features is not None and not allowed:
+                continue
+            if item['table'] is None:
+                raise ValueError('fresh table unavailable: ' + str(item.get('reason')))
+            fields = [dict(field, field_name=bound['display_name'])
+                      for field, bound in zip(item['table']['fields'], meta['schema'])]
+            if len(fields) != len(item['table']['fields']):
+                raise ValueError('canonical metadata schema width differs')
+            packet = dict(item['table'], fields=fields)
+            atom = meta['callable_atom'] if allowed else None
+            if features is None or allowed:
+                add(packet, table_id, meta['source_name'], bundle['case'], roles, atom,
+                    **{k: meta[k] for k in ('body_path', 'body_kind') if k in meta})
+            if eligible and features is None:
+                ref = dict(target_id=table_id, role='later' if same else 'other_case', case=bundle['case'])
+                compared_fields = fields if same else [dict(f, field_name=None) for f in fields]
+                comparison(packet, compared_fields, ref)
+                target_bindings.append(dict(id=table_id,case=bundle['case'],
+                    native_selector=item['selector'],
+                    legacy_target_id=bundle['case']+': '+item['source_name']))
+            if allowed and item['selector']['fact']:
+                facts.add(item['selector']['fact'])
+            if same and item['input'] is not None:
+                inp = item['input']
+                # Native fact input schema is retained; no own projection.
+                add(inp, 'input', 'input', bundle['case'], ['available'],
+                    producer.policy['Document'].callable_atom(
+                        object(), [dict(f, display_name=f['name']) for f in inp['fields']], 'input'))
+                facts.add('input')
+        if features is not None and same:
+            break  # the cases after the pair's case add no available table
+    if (features is None or shared) and not {'input', 'ex_input', 'ex_output'} <= facts:
+        raise ValueError('fresh dataset lacks required available input facts')
+    if main_export is None:
+        raise ValueError('pair case missing from fresh case catalogue')
+    names = producer.policy['Names'](main_export)
+    programs = {}
+    for side in ('gold', 'mutant'):
+        programs[side] = side + '.arclog'
+        if features is not None and side == 'gold' and not shared:
+            continue
+        export = producer._export(record[side + '_sexp'], record if side == 'gold' else None,
+                                  mutant_record=record if side == 'mutant' else None,
+                                  current_native_names=current_native_names and side=='mutant')
+        side_names = producer.policy['Names'](export) if side == 'gold' else names
+        where = shared if features is not None and side == 'gold' else output
+        text=side_names.text(export['program_sexp']) if current_native_names and side=='mutant' else side_names.text(record[side + '_sexp'])
+        (where / programs[side]).write_text(text + '\n')
+    nodes = {tuple(n['path']): n for n in main_export['nodes']}
+    change = dict(point=record['point'], kind=adapter['input']['binding']['kind'],
+                  gold=names.text(nodes[tuple(record['point'])]['sexp']))
+    mutant_export = producer._export(record['mutant_sexp'],mutant_record=record,current_native_names=current_native_names)
+    mutant_nodes = {tuple(n['path']): n for n in mutant_export['nodes']}
+    mutant_path=adapter['input']['binding']['body_path'] if current_native_names else record['point']
+    change['mutant'] = (names.text(mutant_nodes[tuple(mutant_path)]['sexp']) if current_native_names
+                        else names.text(mutant_nodes[tuple(mutant_path)]['sexp']))
+    readers = {}
+    for side, export in (() if features is not None else (('gold', main_export), ('mutant', mutant_export))):
+        nodes = {tuple(n['path']): n for n in export['nodes']}
+        variables = {(tuple(v['scope_path']),v['label_id']):v
+                     for v in export['typed_sites']['variables']}
+        readers[side] = []
+        for reader in export['definitions']['readers']:
+            path = reader['reader_path']
+            arguments = []
+            for a in export['typed_sites']['arguments']:
+                if a['path'][:len(path)] != path:
+                    continue
+                variable = variables.get((tuple(a['scope_path']),a['label_id']))
+                arguments.append(dict(site=names.text(nodes[tuple(a['site_path'])]['sexp']),
+                    variable=None if variable is None else variable['label_spelling'],
+                    type=a['column_type'], frame=a['frame'], literal=a['literal']))
+            readers[side].append(dict(path=path, owner=reader.get('reader_owner_path'),
+                atom=names.text(nodes[tuple(path)]['sexp']), arguments=arguments))
+    if features is not None:
+        from feature_payload import payload, point_payload
+        available_paths = [shared / item['path'] for item in shared_index if 'available' in item['roles'] and 'target' not in item['roles']] if shared else [features / item['path'] for item in read_json(features / 'point.json')['tables'] if 'available' in item['roles'] and 'target' not in item['roles']]
+        feature_program = producer.programs.load(record['mutant_sexp'], mutant_record=record)[0]
+        feature_payload = payload(ev, record, adapter, feature_x_meta, output / 'tables/X.json', available_paths, feature_program)
+        if shared:
+            task = read_json(adapter['source']['task_path'])
+            write_public(shared / 'train.json', task['train'])
+            write_public(shared / 'libraries.json', ev.registry_interfaces(record)['entries'])
+            write_public(shared / 'point.json', dict(format=FORMAT, kind='features-point', task=record['task'],
+                case=record['case'], point=record['point'], tables=shared_index,
+                programs=dict(gold=programs['gold']), train='train.json', libraries='libraries.json', **point_payload(feature_payload)))
+            try:
+                shared.rename(features)
+            except OSError:  # another process published the same point first
+                shutil.rmtree(shared)
+        write_public(output / 'pair.json', dict(format=FORMAT, kind='features-pair', pair_id=pair_id,
+            task=record['task'], case=record['case'], change=change, tables=index,
+            programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination), **feature_payload))
+        result_receipt={}
+        if current_native_names:
+            from current_native_names import write_receipt
+            result_receipt['current_native_names_receipt']=write_receipt(ev,pair_id,record,target,adapter,
+                receipt_packet,receipt_public,output,private)
+        output.rename(destination)
+        return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
+                    fresh_cases=fresh_cases, cache_repaired=len(cache_repairs) - repairs_before,**result_receipt)
+    task = read_json(adapter['source']['task_path'])
+    write_public(output / 'train.json', task['train'])
+    write_public(output / 'readers.json', readers)
+    write_public(output / 'libraries.json', ev.registry_interfaces(record)['entries'])
+    write_public(output / 'comparisons.json', comparisons)
+    write_public(output / 'pair.json', pair_packet(pair_id=pair_id, task=record['task'], case=record['case'],
+        change=change, tables=index, programs=programs, libraries='libraries.json'))
+    frozen_source = source_bundle(pair_id, record, target, private=private, origin=source)
+    write_json(private / 'dataset-contexts' / (pair_id + '.json'),
+               dict(source_pair=str(frozen_source), source_sha256=sha(record),
+                    targets=target_bindings))
+    write_json(private / 'dataset-export-receipts' / (pair_id + '.json'),
+               dict(source_sha256=sha(record), runtime=ev.receipt, cases=provenance,
+                    implementation={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest()
+                        for p in (Path(__file__), Path(__file__).with_name('dataset_format.py'),
+                                  Path(__file__).with_name('nonrender_metadata.py'))}))
+    output.rename(destination)
+    return dict(pair_id=pair_id, tables=len(index), output=str(destination), fresh_cases=fresh_cases,
+                cache_repaired=len(cache_repairs) - repairs_before)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--pair', action='append', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--cache', type=Path, default=DATA_ROOT / 'judgetool/dataset-case-cache')
+    parser.add_argument('--deadline', type=float, default=30)
+    args = parser.parse_args()
+    from evaluator import ReplayEvaluator
+    ev = ReplayEvaluator(deadline=args.deadline)
+    start = time.monotonic()
+    try:
+        for i, pair in enumerate(args.pair):
+            print(json.dumps(export_pair(ev, pair, args.output / pair.name, args.cache)), flush=True)
+            elapsed = time.monotonic() - start
+            print(f'{i+1}/{len(args.pair)} elapsed={elapsed:.1f}s ETA={elapsed/(i+1)*(len(args.pair)-i-1):.1f}s',
+                  file=sys.stderr, flush=True)
+    finally:
+        ev.close()
+
+
+if __name__ == '__main__':
+    main()

@@ -31,6 +31,31 @@ if TYPE_CHECKING:
     from arclog_convert.solver import Claim
 
 
+OR_LINE = re.compile(r"\((?:RULE_OR_DET|DET_OR_RULE) ")
+"""The start of a `RULE_OR_DET` or `DET_OR_RULE` line."""
+
+
+def or_line(f: Form) -> bool:
+    """Whether `f` is a `RULE_OR_DET` or `DET_OR_RULE` line, which is no
+    clause of its relation."""
+    return f.src is None and f.src_inst is None and OR_LINE.match(f.lines[0]) is not None
+
+
+def holds_at(f: Form, at: dict[str, str], concept: set[str], field_of: dict[str, str]) -> bool:
+    """Whether `f` holds in the case that takes the constructor `at` gives
+    for each point it names, and the concept's constructor at each other
+    point: each constructor of `f.branches` is the case's at its point. A
+    `DET` form also holds at a constructor that is the concept's, whatever
+    constructor the case takes there: Souffle's `Determine` runs once, so a
+    constructor that it names in a read selects that branch's rows, which in
+    the converter's cases are the concept case's."""
+    def holds(b: str) -> bool:
+        if f.side == "DET" and b in concept:
+            return True
+        return at[field_of[b]] == b if field_of[b] in at else b in concept
+    return all(holds(b) for b in f.branches)
+
+
 PROPOSED = re.compile(r'\((?:DET|DET_OR_RULE|RULE_OR_DET) (&\w+)(?: "(?:[^"\\]|\\.)*")? [A-Z]')
 """The line of a relation that a proposer determines: its name, then the
 proposer's, after a gloss where the line has one."""
@@ -44,13 +69,27 @@ class RenderMixin:
     def render(self, forms: list[Form], claims: list[Claim], points, concept, all_ctors) -> str:
         slugs = [cl.slug for cl in claims]
         idx = {s: i for i, s in enumerate(slugs)}
-        # An instance whose inputs fix the constructors of several cases
-        # stands in the concept with the inputs the concept's case admits.
+        # An instance form whose branches hold the concept's constructor at
+        # each point it names stands in the concept with its branches cut to
+        # the concept's. An instance whose inputs fix the constructors of
+        # several cases stands in the concept with the inputs the concept's
+        # case admits, unless the concept already holds a form of the instance.
         extra: list[Form] = []
         for f in forms:
             if f.src_inst is None or not (set(f.branches) - concept):
                 continue
             inst, us, side = f.src_inst
+            if any(h.src_inst is not None and h.src_inst[0] == inst and not (set(h.branches) - concept)
+                   for h in forms):
+                continue   # the concept has a form of the instance
+
+            at_points: dict[str, set[str]] = defaultdict(set)
+            for b in f.branches:
+                at_points[all_ctors[b]].add(b)
+            if all(bs & concept for bs in at_points.values()):
+                # the form holds at the concept's constructor of each point it names
+                extra.append(dc_replace(f, branches=tuple(sorted(set(f.branches) & concept))))
+                continue
 
             def unit_ctors(u) -> set[str]:
                 args = list(u.head.args) + [a for l in u.body or () if isinstance(l, AtomLiteral) and not l.negated
@@ -259,11 +298,17 @@ class RenderMixin:
         return self.state_combinations("\n".join(out).rstrip() + "\n", points)
 
     def state_combinations(self, text: str, points) -> str:
-        """The text with a nested ALT for each combination of alts of
-        different points that each rederive a relation: the nested ALT
-        states the relation as the combination's case derives it."""
-        from arclog_convert.lint import L as LintL, Sym as LintSym, alt_points, flat, placements, read as lint_read, \
-            unstated_combinations
+        """The text with a nested ALT for each case that combines alts of
+        different points, that no exclude leaves out, that defines `&output`,
+        and whose program has a form that `&output` reads at any depth, in
+        text that differs from the form of that name in the deepest blocks
+        the case sees: the nested ALT states each such form as the case
+        derives it. This holds also where no two of the case's alts rederive
+        one relation. The cases tried are the pairs of alts, and a larger
+        combination only where one of its pairs got a block."""
+        from arclog_convert.lint import form_reads
+        from arclog_convert.lint_alts import alt_points, is_case, placements, unstated_combinations
+        from arclog_convert.lint_read import L as LintL, Sym as LintSym, flat, read as lint_read
         branch_forms, concept, _, main = self.render_args
         main_text: dict[str, list] = defaultdict(list)
         for f in main:
@@ -276,15 +321,141 @@ class RenderMixin:
                     for x in excludes if (m := re.match(r"\(exclude \(([^)]*)\)", x))]
         tail_names = getattr(self, "tail_names", set()) | {"&out"}
         done: set[frozenset] = set()
+        point, under = alt_points(lint_read(text))
+
+        def ancestors_of(a: str) -> set[str]:
+            got, pt = set(), point[a]
+            while (up := under.get(pt)) is not None:
+                got.add(up)
+                pt = point[up]
+            return got
+        cases = {frozenset()}
+        for q in {frozenset({a}) | ancestors_of(a) for a in point}:
+            cases |= {c | q for c in cases if is_case(c | q, point, under, excluded)}
+
+        def chosen(case: frozenset) -> frozenset:
+            """The alts of the case that are no concept constructor: those the case chooses."""
+            return frozenset(a for a in case if a[1:] not in concept)
+        combined = sorted((c for c in cases if len(chosen(c)) > 1), key=lambda c: (len(c), sorted(c)))
+        written: set[frozenset] = set()
+
+        def probed_case(case: frozenset) -> bool:
+            """Whether the case chooses a pair of alts, or a larger combination one of whose pairs got a block."""
+            return len(chosen(case)) == 2 or any(len(chosen(w)) == 2 and chosen(w) <= chosen(case) for w in written)
+        probed: dict[frozenset, tuple[list[Form], list[str], Counter[str], dict, set[str]]] = {}
+
+        def case_forms(case: frozenset) -> tuple[list[Form], list[str]]:
+            """The forms of the case and the TODO lines of its program. The case
+            counts its TODO kinds in `self.todo`, records its writings in the
+            column map and its relations in `self.alt_derived`, only where `counted` says so, since a case that gets
+            no block writes no TODO line and no forms."""
+            if case not in probed:
+                todo_out: list[str] = []
+                had = Counter(self.todo.kinds)
+                writings = {name: dict(by) for name, by in self.c.writings.items()}
+                derived = set(self.alt_derived)
+                fs, _ = self.alt_case([(point[a][1:], a[1:]) for a in sorted(chosen(case))], branch_forms, concept, main,
+                                      main_text, todo_out)
+                made = {(name, within): rec for name, by in self.c.writings.items() for within, rec in by.items()
+                        if writings.get(name, {}).get(within) != rec}
+                probed[case] = fs, todo_out, self.todo.kinds - had, made, self.alt_derived - derived
+                self.todo.kinds = had
+                self.c.writings = writings
+                self.alt_derived = derived
+            return probed[case][:2]
+
+        def counted(case: frozenset) -> None:
+            self.todo.kinds += probed[case][2]
+            for (name, within), rec in probed[case][3].items():
+                self.c.writings.setdefault(name, {})[within] = rec
+            self.alt_derived |= probed[case][4]
+
+        def deepest_text(pl, case: frozenset) -> dict[str, set[str]]:
+            """The text of each form of the deepest blocks of each relation that the case sees."""
+            by_name: dict[str, list] = defaultdict(list)
+            for p in pl:
+                if p.name and set(p.alts) <= case:
+                    by_name[p.name.partition(".")[0]].append(p)
+            return {name: {flat(p.form) for p in ps if len(p.alts) == max(len(q.alts) for q in ps)}
+                    for name, ps in by_name.items()}
+
+        merged: dict[tuple, set[str]] = {}
+
+        def merged_texts(group: list[Form]) -> set[str]:
+            """The text of the clauses `group` of a relation, merged as the text states them."""
+            key = tuple((g.side, tuple(g.cols), tuple(g.lines), None if g.body is None else tuple(g.body),
+                         repr(g.comments), tuple(g.marks)) for g in group)
+            if key not in merged:
+                saved = Counter(MERGES), list(MERGES_UNMERGED)
+                merged[key] = {flat(lint_read("\n".join(g.lines))[0]) for g in merge_forms(group)}
+                MERGES.clear()
+                MERGES.update(saved[0])
+                MERGES_UNMERGED[:] = saved[1]
+            return merged[key]
+
+        def stated_otherwise(name: str, texts: set[str], seen: dict[str, set[str]]) -> bool:
+            return name not in seen or not texts <= seen[name]
+
+        reads_in: dict[tuple, set[str]] = {}
+
+        def written_reads(g: Form) -> set[str]:
+            """The relations that the text of the form `g` reads, by base name: a clause
+            of a case that a dead branch leaves out reads less than its `reads` give."""
+            key = tuple(g.lines)
+            if key not in reads_in:
+                reads_in[key] = form_reads(lint_read("\n".join(g.lines))[0], g.name.partition(".")[0])
+            return reads_in[key]
+
+        def clause_heads(g: Form) -> set[str]:
+            """The heads of the input clauses of the instance form `g`, which stand in its `key` clause."""
+            init = lint_read("\n".join(g.lines))[0]
+            return {c.head for k in init.items[3:] if isinstance(k, LintL) and k.head == "key"
+                    for c in k.items[2:] if isinstance(c, LintL)}
+
+        concept_inputs = {f.name: clause_heads(f.concept_form or f) for f in main if f.lines[0].startswith("(INIT ")}
+
+        def whole(g: Form) -> bool:
+            """Whether the form `g` is no instance with an input that the case's
+            rewrite drops: an instance with an input less derives other rows
+            (a `Walk` with no `succ` holds no `walk`), so the block leaves it to
+            the concept's instance."""
+            return g.name not in concept_inputs or concept_inputs[g.name] <= clause_heads(g)
+
+        reads_of: dict[frozenset, dict[str, set[str]]] = {}
+
+        def output_reads(case: frozenset) -> dict[str, set[str]]:
+            """The text of each relation of the case's program that `&output` reads at any depth."""
+            if case not in reads_of:
+                fs, _ = case_forms(case)
+                own = {g.name for g in fs}
+                program: dict[str, list[Form]] = defaultdict(list)
+                for g in fs + [f.concept_form or f for f in main if f.name not in own and not f.concept_dead]:
+                    program[g.name].append(g)
+                reached, todo = set(), ["&out"]
+                while todo:
+                    if (name := todo.pop()) not in reached:
+                        reached.add(name)
+                        todo.extend(r for g in program.get(name, ()) for r in written_reads(g))
+                reads_of[case] = {n: merged_texts(program[n]) for n in sorted(reached) if n in program}
+            return reads_of[case]
+
+        otherwise: dict[frozenset, set[str]] = {}
+
+        def read_otherwise(case: frozenset, pl) -> set[str]:
+            """The relations of the case's program that `&output` reads at any depth, stated otherwise.
+            The result stands until a block of alts within the case gets written."""
+            if case not in otherwise:
+                seen = deepest_text(pl, case)
+                otherwise[case] = {n for n, texts in output_reads(case).items() if stated_otherwise(n, texts, seen)}
+            return otherwise[case]
+
+        def block_written(case: frozenset) -> None:
+            written.add(case)
+            for c in [c for c in otherwise if case <= c]:
+                del otherwise[c]
         while True:
             forms = lint_read(text)
-            point, under = alt_points(forms)
-            sites: dict[frozenset, set[str]] = defaultdict(set)
-            for n, case, _ in unstated_combinations(placements(forms), forms, excluded):
-                if case not in done:
-                    sites[case].add(n)
-            if not sites:
-                return text
+            pl = placements(forms)
             # each alt's own block, a direct child of its ALTS form
             top: dict[str, LintL] = {}
 
@@ -298,24 +469,26 @@ class RenderMixin:
                                 top.setdefault(a.items[1].text, a)
                     find(f.items)
             find(forms)
+            sites: dict[frozenset, set[str]] = defaultdict(set)
+            for n, case, _ in unstated_combinations(pl, forms, excluded):
+                if case not in done:
+                    sites[case].add(n)
+            for case in combined:
+                if case not in done and all(a in top for a in case) and probed_case(case) \
+                        and not case_forms(case)[1] and (got := read_otherwise(case, pl)):
+                    sites[case] |= got
+            if not sites:
+                return text
             # the combinations in the order of their alts' blocks
             case = min(sites, key=lambda c: (len(c), sorted(top[a].start if a in top else -1 for a in c)))
             done.add(case)
             if not all(a in top for a in case):
                 continue
-
-            def ancestors_of(a: str) -> set[str]:
-                got, pt = set(), point[a]
-                while (up := under.get(pt)) is not None:
-                    got.add(up)
-                    pt = point[up]
-                return got
             implied = set().union(*(ancestors_of(a) for a in case))
             first = min((a for a in case if a not in implied), key=lambda a: top[a].start)
             chain = sorted(case - {first} - ancestors_of(first), key=lambda a: top[a].start)
-            alts = [(point[a][1:], a[1:]) for a in case]
-            todo_out: list[str] = []
-            fs, _ = self.alt_case(alts, branch_forms, concept, main, main_text, todo_out)
+            fs, todo_out = case_forms(case)
+            counted(case)
             rels = sites[case]
             new = [f for f in fs if f.name in rels]
             new += [f for f in main if f.name in rels - {g.name for g in fs} and not f.concept_dead]
@@ -324,20 +497,20 @@ class RenderMixin:
             # a form of the case that the new forms read, directly or through
             # other such forms, joins them where no block the case sees states
             # it, or the deepest such block states it in other text
-            visible = [p for p in placements(forms) if p.name and set(p.alts) <= case]
-            seen: dict[str, set[str]] = {}
-            for p in visible:
-                name = p.name.partition(".")[0]
-                deepest = max(len(q.alts) for q in visible if q.name.partition(".")[0] == name)
-                if len(p.alts) == deepest:
-                    seen.setdefault(name, set()).add(flat(p.form))
-
-            def stated_otherwise(g: Form) -> bool:
-                return g.name not in seen or flat(lint_read("\n".join(g.lines))[0]) not in seen[g.name]
-            want = set().union(*(f.reads for f in new))
-            while more := [g for g in fs if g.name in want and stated_otherwise(g) and not any(g is h for h in new)]:
+            seen = deepest_text(pl, case)
+            by_name = defaultdict(list)
+            for g in fs:
+                by_name[g.name].append(g)
+            # the file's block of the combination states its relations: the
+            # block keeps them, and the new forms are no second statement
+            stated = {p.name.partition(".")[0] for p in pl if p.name and set(p.alts) == case}
+            new = [g for g in new if whole(g) and g.name not in stated]
+            want = set().union(*(written_reads(f) for f in new))
+            while more := [g for g in fs if g.name in want and whole(g) and g.name not in stated
+                           and stated_otherwise(g.name, merged_texts(by_name[g.name]), seen)
+                           and not any(g is h for h in new)]:
                 new += more
-                want |= set().union(*(g.reads for g in more))
+                want |= set().union(*(written_reads(g) for g in more))
             # the deepest block of the chain that the file holds
             block, rest = top[first], list(chain)
             while rest:
@@ -372,6 +545,7 @@ class RenderMixin:
                     edits.append((nm.pos + len(nm.text), lines))
                 for at, lines in sorted(edits, reverse=True):
                     text = text[:at] + "\n" + "\n".join(lines) + text[at:]
+                block_written(case)
                 continue
             lines = []
             for b in rest:
@@ -386,6 +560,7 @@ class RenderMixin:
             close(lines, ")" * len(rest))
             at = block.end - 1
             text = text[:at] + "\n" + "\n".join(lines) + text[at:]
+            block_written(case)
 
     def sink_demo(self, main: list[Form], branch_forms: list[Form], claims) -> list[Form]:
         """Each form that only one DEMO_RULE reads, moved into it."""
@@ -526,10 +701,13 @@ class RenderMixin:
                     changed = True
         if not moved:
             return main, branch_forms
-        # a concept form that the branch derives again is read nowhere
-        dead = {n for n, k in moved.items()
-                if any(g.name == n and k == set(g.branches) - concept for g in branch_forms)}
-        main = [f for f in main if f.name not in dead]
+        # a concept form that the branch derives again from the same Souffle
+        # clause is read nowhere; a branch clause from another clause adds rows
+        def derived_again(f: Form) -> bool:
+            return f.name in moved and any(
+                g.name == f.name and moved[f.name] == set(g.branches) - concept
+                and (f.src is None or g.src is None or g.src[0] is f.src[0]) for g in branch_forms)
+        main = [f for f in main if not derived_again(f)]
         for f in main:
             if f.name in moved:
                 f.branches = tuple(sorted(set(f.branches) | moved[f.name]))
@@ -673,6 +851,12 @@ class RenderMixin:
                     self.todo.kinds["combination"] += 1
                     out.extend(render_forms([f], "    "))
             for others, cfs in combos.items():
+                # a case set that holds no row of the combination's case is
+                # empty in it: a form that reads one is written again without
+                # that read
+                rowless = self.rowless_sets(dict(self.ancestors(fname)) | {fname: k.name}
+                                            | {field_of[b]: b for b in others})
+                cfs = [g for g in (self.without_reads(g, rowless) for g in cfs) if g is not None]
                 # a relation the combination derives as the other branch
                 # alone does is no rederivation
                 alone: dict[str, list] = defaultdict(list)
@@ -715,99 +899,102 @@ class RenderMixin:
         out.append("")
         return out
 
+    def rowless_sets(self, at: dict[str, str]) -> set[str]:
+        """The case sets (`%name`) that hold no row of the case that takes
+        the constructor `at` gives for each of its points: they are empty in
+        it. A set whose values hold no value of a point holds in the case as
+        it holds in the concept's."""
+        return {"%" + name for name, rows in self.case_set_rows.items()
+                if not any(all(row.get(f_, ck) == ck for f_, ck in at.items())
+                           and all(row.get(f_, v) == v for f_, v in self.concept_of.items() if f_ not in at)
+                           for row in rows)}
+
+    def without_reads(self, f: "Form", gone: set[str] | frozenset[str]) -> "Form | None":
+        """`f` written again without each read of `gone`, with its comments,
+        claim slugs and branches; `f` itself where it reads none of them or
+        has no clause to write again; `None` where nothing is left."""
+        gone = frozenset((f.top_pos | f.top_neg | f.nested | f.reads) & gone)
+        if not gone or (f.src is None and f.src_inst is None):
+            return f
+        g = self.written_without(f, gone)
+        if g is not None:
+            g.comments, g.claim_slugs, g.branches = f.comments, f.claim_slugs, f.branches
+        return g
+
     def alt_case(self, alts: list[tuple[str, str]], branch_forms, concept, main, main_text, out: list[str]
                  ) -> tuple[list["Form"], dict[str, list]]:
         """The forms of the case that takes each (point, constructor) of
-        `alts`, where they differ from `main_text`, and each relation's lines
-        as that case derives them."""
+        `alts`, and the constructor of each point they stand under, where
+        they differ from `main_text`, and each relation's lines as that case
+        derives them. A form holds in the case where `holds_at` says so. A
+        relation the case leaves empty is one that no form of the case
+        derives, or that `dead_clauses` puts in `empty` because each of its
+        concept clauses holds in no case row; each form of the alt's own
+        that reads one is written again without that read."""
         adts = dict(self.c.point_fields())
         field_of = {kk.name: f_ for f_, a_ in adts.items() for kk in a_.constructors}
-        pts = {f_ for f_, _ in alts}
-        ks = {k for _, k in alts}
-        anc = list(dict.fromkeys(a for f_, _ in alts for a in self.ancestors(f_)))
-        anc_ctors = {ck for _, ck in anc}
-        sib = {kk.name for f_ in pts for kk in adts[f_].constructors} | anc_ctors
+        at = dict(a for f_, _ in alts for a in self.ancestors(f_)) | dict(alts)
 
         def holds(f: "Form") -> bool:
-            # a form names its points' constructors as alternatives, and each
-            # point of the case that it names takes the case's constructor
-            bs = set(f.branches)
-            return bool(bs & ks) and not (bs - concept - sib) and all(
-                k in bs or not bs & {kk.name for kk in adts[f_].constructors} for f_, k in alts)
-        fs = [f for f in branch_forms if holds(f)]
-        fs = topo(fs)
+            return holds_at(f, at, concept, field_of)
+        fs = topo([f for f in branch_forms if holds(f)])
         # drop forms identical to the concept's
-        all_mine = {f.name for f in fs}
+        mine = {f.name for f in fs}
         mine_text: dict[str, list] = defaultdict(list)
         for f in fs:
             mine_text[f.name].append(f.lines)
         fs = [f for f in fs if main_text.get(f.name) != mine_text[f.name]]
-        mine = all_mine | {f.name for f in branch_forms if set(f.branches) & ks}
-        # what a point this one stands under derives, its alt's case derives
-        mine |= {f.name for f in branch_forms if set(f.branches) - concept
-                 and set(f.branches) - concept <= anc_ctors}
+        inherited = mine - {f.name for f in fs}
+        clauses = [f for f in main if not or_line(f)]
 
-        def fixed(f: "Form") -> bool:
-            return any(b in concept and field_of.get(b) in pts for b in f.branches)
-        fixed_names = defaultdict(list)
-        for f in main:
-            fixed_names[f.name].append(fixed(f))
-        # a determination runs once, under the concept's case, so a
-        # relation it derives holds in every branch
-        empty = {f.name for f in main
-                 if all(fixed_names[f.name]) and f.name not in mine and f.side != "DET" and fixed(f)}
-        at = dict(anc) | dict(alts)
-        for name, rows in self.case_set_rows.items():
-            # a set whose values hold no value of a point holds in the
-            # alt's case as it holds in the concept's
-            if not any(all(row.get(f_, ck) == ck for f_, ck in at.items())
-                       and all(row.get(f_, v) == v for f_, v in self.concept_of.items() if f_ not in at)
-                       for row in rows):
-                empty.add("%" + name)
-        # a concept clause whose head fixes another constructor of this
-        # point, or of a point this one stands under, holds no row here
-        others_k = {kk.name for f_, ck in at.items() for kk in adts[f_].constructors if kk.name != ck}
-        # a concept clause that fixes no constructor of the case's points
-        # holds beside the case's own clauses of its relation
+        fixed_only = {f.name for f in clauses} - {f.name for f in clauses if holds(f)}
+        instances = {f.name for f in main if all(g.src_inst is not None for g in main if g.name == f.name)}
+
+        def derived_without(gone: set[str]) -> set[str]:
+            # a branch form derives in the case where it holds, and keeps a
+            # clause once it is written again without the relations `gone`
+            return {f.name for f in branch_forms if holds(f) and self.without_reads(f, gone) is not None}
+        rowless = self.rowless_sets(at)
+        empty = (fixed_only - derived_without(rowless)) | rowless
+        # a concept clause that holds in the case holds beside the case's own
+        # clauses of its relation
         reps = getattr(self, "concept_repeats", {})
         adds = {f.name for f in fs if f.side == "RULE" and f.lines[0].startswith("(RULE ") and f.name not in reps
                 and all(g.side == "RULE" and g.lines[0].startswith("(RULE ") and g.cols == f.cols
-                        for g in main if g.name == f.name)}
-        redo = self.dead_clauses(main, empty, mine, out, others_k, adds)
+                        for g in clauses if g.name == f.name)}
+        while True:
+            redo = self.dead_clauses(main, empty, mine, holds, adds)
+            # an instance whose branch forms all read a relation that
+            # `dead_clauses` put in `empty` is empty too
+            lapsed = (fixed_only & instances) - empty - derived_without(empty)
+            if not lapsed:
+                break
+            empty |= lapsed
+            mine -= lapsed
+        if "&out" in empty:
+            out.append("    ;; TODO alt-undefined: every &output clause reads a relation this alt leaves empty")
+            self.todo.kinds["alt-undefined"] += 1
         fs = fs + redo
         reread = self.reading_determinations(fs, main)
         fs = fs + reread
-        # a relation that no form of this case derives is empty in it: a
-        # form of the alt that reads one is written again without it
-        in_case = concept | ks | anc_ctors
+        # a relation that no form of this case derives is empty in it, and so
+        # is each that `dead_clauses` put in `empty`: a form of the alt that
+        # reads one is written again without it
         known = {f.name for f in main} | {f.name for f in branch_forms}
         fs2 = fs
         dropped_any = True
         while dropped_any:
             fs = fs2
-            here_names = {f.name for f in main if not f.concept_dead} | {f.name for f in fs} | \
-                {f.name for f in branch_forms if set(f.branches) <= in_case and f.name not in all_mine}
+            here_names = {f.name for f in main if not f.concept_dead} | {f.name for f in fs} | inherited
+            here_names -= empty
             dropped_any = False
             fs2 = []
             for f in fs:
-                gone = (f.top_pos | f.top_neg | f.nested | f.reads) & (known - here_names)
-                if gone and (f.src is not None or f.src_inst is not None):
-                    saved = list(self.todo.pending), Counter(self.todo.kinds)
-                    if f.src is not None:
-                        u_, side_, scope_, sub_, ns_ = f.src
-                        g = self.clause(u_, side_, scope_, sub_, ns_, drop_neg=frozenset(gone))
-                    else:
-                        inst_, us_, side_ = f.src_inst
-                        gs_ = self.instance(inst_, us_, side_, frozenset(gone))
-                        g = gs_[0] if gs_ else None
-                    self.todo.pending, self.todo.kinds = saved
-                    if g is None:
-                        dropped_any = True
-                        continue
-                    g.comments, g.claim_slugs, g.branches = f.comments, f.claim_slugs, f.branches
-                    fs2.append(g)
+                g = self.without_reads(f, known - here_names)
+                if g is None:
+                    dropped_any = True
                 else:
-                    fs2.append(f)
+                    fs2.append(g)
         fs = fs2
         # a form written again without an empty relation can come out as the
         # concept's, and so can the clauses of a relation, merged into one
@@ -836,6 +1023,6 @@ class RenderMixin:
         for name in {f.name for f in fs}:
             case_text[name] = [f.lines for f in fs if f.name == name]
         beside = [f.concept_form or f for f in main if f.name in adds and not f.concept_dead]
-        self.c.note_writing(fs + beside, frozenset(in_case - concept))
+        self.c.note_writing(fs + beside, frozenset(at.values()) - concept)
         return fs, case_text
 

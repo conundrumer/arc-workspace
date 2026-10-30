@@ -25,15 +25,20 @@ pub struct CanonicalOrder {
 /// The write of `form` under [`AsWritten`] that its node keeps, made on the
 /// first call for the node.
 fn written(form: &Form) -> &(CanonicalOrder, CanonicalForm, bool) {
-    super::form::cache(form).order.get_or_init(|| {
-        let mut own = SearchBudget::new();
-        let mut cx = Context::new(&mut own, &AsWritten);
-        cx.order = Some(Recorded::default());
-        let mut out = CanonicalWriter::default();
-        form_root(&mut cx, &mut out, form);
-        let recorded = cx.order.take().expect("the order is recorded");
-        (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish(), own.reached)
-    })
+    super::form::cache(form).order.get_or_init(|| write_order(form, false))
+}
+
+/// Both policies use the same walk, labeling search and path recording.
+/// Feature writes are never stored in the production form cache.
+fn write_order(form: &Form, feature_sites: bool) -> (CanonicalOrder, CanonicalForm, bool) {
+    let mut own = SearchBudget::new();
+    let mut cx = Context::new(&mut own, &AsWritten);
+    cx.feature_sites = feature_sites;
+    cx.order = Some(Recorded::default());
+    let mut out = CanonicalWriter::default();
+    form_root(&mut cx, &mut out, form);
+    let recorded = cx.order.take().expect("the order is recorded");
+    (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish(), own.reached)
 }
 
 /// The orders a write records for [`CanonicalOrder`]: each sorted list's,
@@ -62,6 +67,15 @@ impl CanonicalOrder {
         let (order, canonical, reached) = written(form);
         search.reached |= *reached;
         (order.clone(), canonical.clone())
+    }
+
+    /// An independent feature write that normalizes named site order. This
+    /// never reads or writes the form's production canonical-order cache:
+    /// those labels also define callable relation column order.
+    pub fn for_features(form: &Form, search: &mut SearchBudget) -> (Self, CanonicalForm) {
+        let (order, canonical, reached) = write_order(form, true);
+        search.reached |= reached;
+        (order, canonical)
     }
 
     /// The labels of the scope of `form`, in the order of their canonical

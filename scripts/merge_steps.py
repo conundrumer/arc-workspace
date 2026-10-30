@@ -1,6 +1,7 @@
-"""The checks `merge_change.py` runs on the top of its stack, and the steps
-it runs in the main tree after the fast-forward, run in the tree this
-script is run in.
+"""The checks `merge_change.py` runs on the top of its stack, before the
+fast-forward under its `--block` and on the landed commit otherwise, and
+the steps it runs in the main tree after the fast-forward, run in the tree
+this script is run in.
 
     uv run python scripts/merge_steps.py checks [--engine-passed <commit>] <base> [<gate-out>]
     uv run python scripts/merge_steps.py after [<gate-out>]
@@ -215,7 +216,8 @@ def checks(tree: Path, base: str, engine_passed: str | None = None) -> list[str]
     the crates `tested` gives, and a `tree` that holds an `engine/` edit
     outside its `HEAD` fails the check `ENGINE_EDITS`, with no cargo run."""
     engine = engine_runs(tree, base, engine_passed)
-    common = list(map(Check, DOCUMENT_CHECKS))
+    common = [*map(Check, DOCUMENT_CHECKS),
+              Check(("uv", "run", "python", "scripts/generate_study_meanings.py", "--check"))]
     with contextlib.redirect_stdout(sys.stderr):
         if not engine:
             return failures(tree, common)

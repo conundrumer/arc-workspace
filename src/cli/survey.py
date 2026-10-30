@@ -9,6 +9,7 @@ from collections import defaultdict
 from checker import Runs
 from checker.deletions import DeletionReport, survey_deletions
 from checker.derived_constant import survey_derived_constant
+from checker.determination_plan import survey_determination_plan
 from checker.drop_one import survey_drop_one
 from checker.judged import parse_failure
 from checker.lint.form.header import (
@@ -22,6 +23,7 @@ from checker.render import header_line, keywords
 from checker.render.surveys import (
     render_deletions,
     render_derived_constant,
+    render_determination_plan,
     render_drop_one,
     render_sweep,
 )
@@ -109,16 +111,32 @@ def cmd_derived_constant(arg: str) -> int:
     return 0
 
 
-def cmd_determination_plan(arg: str, verdicts: bool = False) -> int:
+def plan_output(arg: str, verdicts: bool = False, moves: bool = True
+                ) -> tuple[int, list[str]]:
+    """The exit status and the stdout lines of the determination plan of the
+    solver the argument names: the lines where the keys are off
+    (`keys_off_lines`), status 1, else the rendered plan, status 0. Status 2
+    and no lines where no solver or task file stands there (`_runs`). The
+    plan is kept in `plan_cache` under `moves`, and made outside it without
+    them."""
     runs = _runs(arg, task=True)
     if runs is None:
-        return 2
+        return 2, []
     off = keys_off_lines(runs)
     if off:
-        print("\n".join(off))
-        return 1
-    print("\n".join(plan_lines(runs, solver_path(arg), stamp(), verdicts)))
-    return 0
+        return 1, off
+    if moves:
+        return 0, plan_lines(runs, solver_path(arg), stamp(), verdicts)
+    return 0, render_determination_plan(
+        runs.solver, survey_determination_plan(runs.solver, runs, moves=False),
+        verdicts)
+
+
+def cmd_determination_plan(arg: str, verdicts: bool = False) -> int:
+    code, lines = plan_output(arg, verdicts)
+    if lines:
+        print("\n".join(lines))
+    return code
 
 
 # `size`

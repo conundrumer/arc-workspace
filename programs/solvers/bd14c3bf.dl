@@ -61,7 +61,7 @@
 
 .type Choice = [shape: ShapeMatch, adj: Adjacency, cand: Candidates, ref: RefSource]
 
-// A shape: a component under one adjacency.
+// A shape tested against the reference: a component under one adjacency.
 .type Fig = [adj: Adjacency, id: Ident]
 
 // A line of a shape's box, across axis a.
@@ -69,8 +69,13 @@
 
 .type FigAxis = [f: Fig, a: Axis]
 
-// A reference shape under one transform.
-.type Pattern = [f: Fig, d: D4]
+// A line of a 4-connected shape's box, across axis a.
+.type Line4 = [id: Ident, a: Axis, l: Position]
+
+.type IdAxis = [id: Ident, a: Axis]
+
+// A 4-connected shape under one transform.
+.type Pattern = [id: Ident, d: D4]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -128,11 +133,9 @@ candidates_choice($MarkColor()). candidates_choice($AnyColor()).
 .init shape4 = Components<Color>
 shape4.node(C, P) :- in(P, C).
 
-figure([$Adjacency4(), Id], C, P) :- shape4.label(C, P, Id).
-
-// The reference shapes.
-.decl ref_fig(r: RefSource, f: Fig)
-ref_fig(R, [$Adjacency4(), Id]) :- ref_color(R, C), shape4.label(C, _, Id).
+// The reference shapes: the 4-connected shapes of the reference color.
+.decl ref_fig(r: RefSource, id: Ident)
+ref_fig(R, Id) :- ref_color(R, C), shape4.label(C, _, Id).
 
 // The shapes tested against the reference.
 .decl cand_fig(s: Candidates, r: RefSource, f: Fig)
@@ -154,6 +157,18 @@ box_cell(F, P, P_rel) :- bbox.box(F, B), in(P, _), crop(P, B, P_rel).
 // A box cell the shape holds.
 .decl held(f: Fig, p_rel: Position)
 held(F, P_rel) :- figure(F, _, P), box_cell(F, P, P_rel).
+
+// @claim stretch-match
+.init bbox4 = Bbox<Ident>
+bbox4.cell(Id, P) :- shape4.label(_, P, Id).
+
+// Each cell of a 4-connected shape's box, in the box's frame.
+.decl box_cell4(id: Ident, p: Position, p_rel: Position)
+box_cell4(Id, P, P_rel) :- bbox4.box(Id, B), in(P, _), crop(P, B, P_rel).
+
+// A box cell the 4-connected shape holds.
+.decl held4(id: Ident, p_rel: Position)
+held4(Id, P_rel) :- shape4.label(_, P, Id), box_cell4(Id, P, P_rel).
 
 // A candidate that matches a reference under each case.
 .decl matched(ch: Choice, id: Ident)
@@ -206,22 +221,51 @@ reduced(F, P, P_red) :-
     line_of(F, A2, P, L2), run.id([F, A2, L2], R2), runs.pos([F, A2], R2, Q2),
     compose(Q, Q2, P_red).
 
-// The reduced shape.
-.decl reduced_held(f: Fig, p_red: Position)
-reduced_held(F, P_red) :- held(F, P), reduced(F, P, P_red).
+// The line of a 4-connected shape's box cell across axis a: its component on a.
+.decl line_of4(id: Ident, a: Axis, p_rel: Position, l: Position)
+line_of4(Id, A, P, L) :- box_cell4(Id, _, P), axis_elem(A), split(P, A, L, _).
+
+// Adjacent lines l and l2 of a 4-connected shape's box, where l holds a cell
+// that l2 lacks.
+.decl differ4(id: Ident, a: Axis, l: Position, l2: Position)
+differ4(Id, A, L, L2) :-
+    held4(Id, P), neighbor(P, D, Q), axis_of(D, A), !held4(Id, Q),
+    line_of4(Id, A, P, L), line_of4(Id, A, Q, L2).
+
+// The runs of identical adjacent lines of a 4-connected shape's box.
+.init run4 = Canon<Line4>
+run4.edge([Id, A, L], [Id, A, L]) :- line_of4(Id, A, _, L).
+run4.edge([Id, A, L], [Id, A, L2]) :-
+    line_of4(Id, A, P, L), neighbor(P, _, Q), line_of4(Id, A, Q, L2),
+    !differ4(Id, A, L, L2), !differ4(Id, A, L2, L).
+
+// Each run's line in the reduced 4-connected shape.
+// @claim stretch-match
+.init runs4 = OrderFrame<IdAxis, Ident>
+runs4.axis([Id, A], A) :- line_of4(Id, A, _, _).
+runs4.member([Id, A], R, L) :- run4.id([Id, A, L], R).
+
+// The cell of the reduced 4-connected shape that box cell p falls in.
+.decl reduced4(id: Ident, p_rel: Position, p_red: Position)
+reduced4(Id, P, P_red) :-
+    line_of4(Id, A, P, L), run4.id([Id, A, L], R), runs4.pos([Id, A], R, Q),
+    perp(A, A2),
+    line_of4(Id, A2, P, L2), run4.id([Id, A2, L2], R2),
+    runs4.pos([Id, A2], R2, Q2),
+    compose(Q, Q2, P_red).
 
 // The shapes equal to a transform of a 4-connected shape, after reduction.
 // @claim stretch-match
 .init same = KeyedSetCompare<Fig, Pattern, Position>
-same.pattern_member([[$Adjacency4(), Id], D], P_img) :-
-    reduced_held([$Adjacency4(), Id], P), d4_elem(D), apply(D, P, P_img).
-same.observed_member(F, P) :- reduced_held(F, P).
+same.pattern_member([Id, D], P_img) :-
+    held4(Id, P), reduced4(Id, P, P_red), d4_elem(D), apply(D, P_red, P_img).
+same.observed_member(F, P_red) :- held(F, P), reduced(F, P, P_red).
 
 // A candidate that matches a reference under group g.
 .decl group_match(ch: Choice, id: Ident, g: Sym)
 group_match([$Stretch(), A, S, R], Id, G) :-
-    cand_fig(S, R, [A, Id]), ref_fig(R, F_ref),
-    same.equals([A, Id], [F_ref, D]), params.match_group(G), sym_member(G, D).
+    cand_fig(S, R, [A, Id]), ref_fig(R, Id_ref),
+    same.equals([A, Id], [Id_ref, D]), params.match_group(G), sym_member(G, D).
 
 matched(Ch, Id) :- group_match(Ch, Id, _).
 
@@ -248,10 +292,33 @@ open_parts.domain(F) :- bbox.box(F, _).
 closed_parts.item(F, Id) :- parts.label(F, _, Id), !open_part(F, Id).
 closed_parts.domain(F) :- bbox.box(F, _).
 
+// The background parts of each 4-connected shape's box.
+// @claim stretch-match
+.init parts4 = Components<Ident>
+parts4.node(Id, P) :- box_cell4(Id, P, P_rel), !held4(Id, P_rel).
+
+// A part of a 4-connected shape's box that reaches the box edge.
+.decl open_part4(id: Ident, part: Ident)
+open_part4(Id, Part) :-
+    parts4.label(Id, P, Part), box_cell4(Id, P, P_rel), !interior(P_rel, ZERO).
+
+// @claim stretch-match
+.init open_parts4 = Tally<Ident, Ident>
+open_parts4.item(Id, Part) :- open_part4(Id, Part).
+open_parts4.domain(Id) :- bbox4.box(Id, _).
+
+// @claim stretch-match
+.init closed_parts4 = Tally<Ident, Ident>
+closed_parts4.item(Id, Part) :- parts4.label(Id, _, Part), !open_part4(Id, Part).
+closed_parts4.domain(Id) :- bbox4.box(Id, _).
+
 matched([$Topology(), A, S, R], Id) :-
-    cand_fig(S, R, [A, Id]), ref_fig(R, F_ref),
-    open_parts.tally([A, Id], N1), open_parts.tally(F_ref, N1),
-    closed_parts.tally([A, Id], N2), closed_parts.tally(F_ref, N2).
+    cand_fig(S, R, [A, Id]), ref_fig(R, Id_ref),
+    open_parts.tally([A, Id], N1), open_parts4.tally(Id_ref, N1),
+    closed_parts.tally([A, Id], N2), closed_parts4.tally(Id_ref, N2).
+
+// --- $Adjacency4 ---
+figure([$Adjacency4(), Id], C, P) :- shape4.label(C, P, Id).
 
 // --- $Adjacency8 ---
 // The 8-connected shapes of each color.

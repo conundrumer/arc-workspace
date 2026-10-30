@@ -4,18 +4,20 @@
 //! over a lib component.
 
 use std::cell::RefCell;
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Instant;
 
 use super::examples::{self, ExampleScope};
 use super::ir::{self, Argument, Arguments, AtomSource, ClauseIr, CompiledBody, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::Domain;
-use super::{cache, instance, plan, proposers, rigid};
-use super::{Evaluation, Outcome, ParameterSource, RelationValue, RunFault, Stop};
+use super::{cache, init_form, instance, plan, proposers, rigid};
+use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, ProgramRelation};
+use crate::program::{Clause, ClauseKeyword, ParamValue, ProgramRelation, RelationRef};
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::resolver::ResolvedContent;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -99,7 +101,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         match &program.graph.nodes[relation.node.0 as usize].kind {
             DependencyKind::Clause(_) => self.clauses(relation.node, example),
-            DependencyKind::InstanceInput { input, .. } => instance::evaluate_input(evaluation, &self.bodies(), form, input, example),
+            DependencyKind::InstanceInput { input, .. } => instance::evaluate_input(evaluation, &self.bodies(), form, relation, input, example),
             DependencyKind::Parameter(name) => self.parameter(relation, name),
             DependencyKind::InstanceOutput { .. } => instance::evaluate_instance(evaluation, &self.bodies(), form, example, relation, &mut budget),
             DependencyKind::RigidAssembly(_) => {
@@ -110,8 +112,18 @@ impl<'e, 'a> Driver<'e, 'a> {
             DependencyKind::RecursiveInstance(_) => models::walk_value(self, relation, example),
             DependencyKind::Chosen(_) => models::pick_value(self, relation, example),
             DependencyKind::Demonstrated(_) => models::demonstrated_value(self, relation, example),
+            DependencyKind::Out(_) => self.out(form, example),
             DependencyKind::Fact(_) => unreachable!("an atom reads a fact relation from the task"),
         }
+    }
+
+    /// The relation of the `OUT` form at `form` on `example`: the rows of its
+    /// body at its `^` labels, which are its two selected columns.
+    fn out(&self, form: &NodePath, example: Option<Example>) -> Outcome<RelationValue> {
+        let Some(NodeRef::Out(out)) = node_at(NodeRef::Program(self.program().program.value()), form) else { panic!("an `OUT` form at the form of an `OUT` node") };
+        let (clause, _, _) = init_form::out_clause(self.evaluation.program, form, out)
+            .map_err(|fault| RunFault { message: format!("the body of the `OUT` form does not compile: {fault:?}").into(), form: form.clone() })?;
+        self.bodies().relation(form, &clause, example)
     }
 
     /// The rows of the `DET` relation `name`: the stored rows of its `assign`
@@ -125,16 +137,25 @@ impl<'e, 'a> Driver<'e, 'a> {
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
         let value = match evaluation.parameters.source() {
-            ParameterSource::Stored { records, assigns } => {
-                let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
-                match assigns.get(name).or(record) {
-                    Some(value) => value,
-                    None => return self.one_value(relation),
-                }
-            }
+            ParameterSource::Stored { .. } => match self.stored_value(relation, name) {
+                Some(value) => value,
+                None => return self.one_value(relation),
+            },
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
-                    Some(rows) => Ok(RelationValue::Rows(rows.clone())),
+                    Some(rows) => {
+                        // Held interventions use this program's checked row
+                        // schema. A mutation can remove a globally unused
+                        // column, so an original assignment is not necessarily
+                        // a value of the mutant parameter. Never silently zip
+                        // or truncate its cells into that new schema.
+                        let types = evaluation.program.types.columns(relation)
+                            .ok_or_else(|| fault("the parameter's columns have no types".into()))?;
+                        if usize::from(rows.arity()) != types.len() {
+                            return Err(fault(format!("determined parameter {name:?} has native arity {}, but its checked schema has {} columns", rows.arity(), types.len())));
+                        }
+                        Ok(RelationValue::Rows(rows.clone()))
+                    },
                     None => self.one_value(relation),
                 };
             }
@@ -148,6 +169,30 @@ impl<'e, 'a> Driver<'e, 'a> {
             set.insert(row);
         }
         Ok(RelationValue::Rows(Arc::new(join::one_part(set))))
+    }
+
+    /// The written rows that the stored records give the `DET` relation
+    /// `name`: its `assign`, or else its record, which a `DET` by its clauses
+    /// ([`Driver::is_by_clauses`]) does not read. `None` where neither gives
+    /// it, and at values determined from the evidence.
+    fn stored_value(&self, relation: &GraphRelation, name: &ProgramRelation) -> Option<&'a ParamValue> {
+        let ParameterSource::Stored { records, assigns } = self.evaluation.parameters.source() else { return None };
+        let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
+        assigns.get(name).or(record)
+    }
+
+    /// Whether the stored records leave the relation `read` with no source of
+    /// rows: it is a `DET` that is no `DET` by its clauses, and neither an
+    /// `assign` nor a record gives it rows, so that [`Driver::parameter`]
+    /// would take its one value, or fault where its domain holds several.
+    /// False at values determined from the evidence.
+    pub(super) fn lacks_stored_rows(&self, read: &RelationRef) -> bool {
+        let (ParameterSource::Stored { .. }, RelationRef::Declared(name)) = (self.evaluation.parameters.source(), read) else { return false };
+        let name = ProgramRelation::Declared(name.clone());
+        let nodes = &self.program().graph.nodes;
+        let Some(node) = nodes.iter().position(|node| matches!(&node.kind, DependencyKind::Parameter(found) if *found == name)) else { return false };
+        let relation = GraphRelation { node: GraphNodeIndex(node as u32), output: None };
+        !self.is_by_clauses(&relation) && self.stored_value(&relation, &name).is_none()
     }
 
     /// Whether the node of `relation` is a `DET` by its clauses: each of its
@@ -295,14 +340,16 @@ impl<'e, 'a> Driver<'e, 'a> {
             return value;
         }
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        let rows = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
-            Some(rows) => rows,
-            None => join::search(&body.clause, &part.nodes, &[], part.order(order, &[]), &[], inputs, evaluation.registry, &entry.columns, &mut budget),
-        };
-        let value = match rows {
-            Ok(rows) => RelationValue::Rows(Arc::new(join::one_part(rows))),
-            Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-        };
+        let Ok(value) = self.holding_stops::<Infallible>(&request, || {
+            let rows = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
+                Some(rows) => rows,
+                None => join::search(&body.clause, &part.nodes, &[], part.order(order, &[]), &[], inputs, evaluation.registry, &entry.columns, &mut budget),
+            };
+            Ok(match rows {
+                Ok(rows) => RelationValue::Rows(Arc::new(join::one_part(rows))),
+                Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+            })
+        });
         record_whole(&budget, [&value]);
         cache::store(evaluation.session, &request, &value);
         value
@@ -454,7 +501,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             // A computation that ended since the lookup above stored the entry.
             let value = match cache::lookup(session, request, form) {
                 Some(value) => Ok(value),
-                None => compute().inspect(|value| cache::store(session, request, value)),
+                None => self.holding_stops(request, compute).inspect(|value| cache::store(session, request, value)),
             };
             let shared = value.as_ref().ok().and_then(cache::cached);
             own = Some(value);
@@ -464,6 +511,52 @@ impl<'e, 'a> Driver<'e, 'a> {
             let shared = shared.expect("a value from the computation another thread ended");
             Ok(shared.map_stop(|bound| Stop { bound, form: form.clone() }))
         })
+    }
+
+    /// The value of `compute`, the evaluation of the entry `request`, where
+    /// the evaluation runs for a decode, with the stops that the decode holds
+    /// ([`super::values::HeldStops`]). The stop held for the entry is taken
+    /// at the form that stopped, in place of an evaluation that tries
+    /// bindings, where one of these holds:
+    ///
+    /// - the evaluation runs for a table, and the stop is at the table work
+    ///   cap;
+    /// - the evaluation has a deadline, and the stop is at the deadline,
+    ///   with at most [`super::values::DEADLINE_STOP_REUSE`] times the time
+    ///   its evaluation ran left to the deadline.
+    ///
+    /// Otherwise the stop of `compute` is held: a stop at the table work cap
+    /// where the evaluation began within the cap, which an evaluation that
+    /// begins past the cap does not reach, and a stop at the deadline with
+    /// the time from the start of `compute`, where the evaluation has a
+    /// deadline.
+    fn holding_stops<E>(&self, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Result<RelationValue, E>) -> Result<RelationValue, E> {
+        let session = self.evaluation.session;
+        let limits = self.evaluation.limits;
+        let Some(held) = &limits.held_stops else { return compute() };
+        if limits.table_work.is_none() && limits.deadline.is_none() {
+            return compute();
+        }
+        let entry_key = || cache::key(session, request);
+        if !held.is_empty() {
+            let key = entry_key();
+            let table_work = limits.table_work.as_ref().and_then(|_| held.table_work_stop(&key));
+            let deadline = || limits.deadline.and_then(|deadline| held.deadline_stop(&key, deadline.saturating_duration_since(Instant::now())));
+            if let Some(stop) = table_work.or_else(deadline) {
+                return Ok(RelationValue::Stopped(stop));
+            }
+        }
+        let began_within_cap = limits.table_work.as_ref().is_some_and(|work| !work.is_past_cap());
+        let began = limits.deadline.map(|_| Instant::now());
+        let value = compute()?;
+        if let RelationValue::Stopped(stop) = &value {
+            match (stop.bound, began) {
+                (ReachedBound::TableWork { .. }, _) if began_within_cap => held.hold_table_work(entry_key(), stop.clone()),
+                (ReachedBound::Deadline, Some(began)) => held.hold_deadline(entry_key(), stop.clone(), began.elapsed()),
+                _ => {}
+            }
+        }
+        Ok(value)
     }
 
     /// The relation of `clause`, at `form`, that derives by its proposer at
@@ -662,9 +755,21 @@ impl FormBodies<'_> {
         if let Some(value) = cache::lookup(session, &request, form) {
             return Ok(value);
         }
-        let value = driver.join(form, clause, &inputs);
+        let Ok(value) = driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs)));
         cache::store(session, &request, &value);
         Ok(value)
+    }
+
+    /// A state-local body query at explicit key/cursor bindings. These
+    /// bindings are part of the request, so it uses the bound native join
+    /// rather than a cache key for an unbound body.
+    pub(super) fn bound_relation(&self,form:&NodePath,clause:&ClauseIr,example:Option<Example>,bound:&[(ir::Variable,crate::terms::TermId)])->Outcome<RelationValue> {
+        let inputs=match self.driver.inputs(clause,scope_at(example),example)? {Ok(inputs)=>inputs,Err(value)=>return Ok(value)};
+        let evaluation=self.driver.evaluation;
+        let order=plan::variable_order(clause,&join::sizes(&inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
+        let mut budget=Budget::new(evaluation.limits,evaluation.session);
+        let value=match join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget) {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
+        record_whole(&budget,[&value]);Ok(value)
     }
 
     /// The value the result cache holds for `request`, made at `form`, or,

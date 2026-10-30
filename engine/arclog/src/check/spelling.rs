@@ -37,9 +37,13 @@ impl Check for SpellingCheck {
     ///   the same body, but where a later branch of an `OR` or an `IF`'s
     ///   else makes a label of the first branch or the then, and but for
     ///   the row's and the candidate's labels in a `never` clause.
+    ///
+    /// The two rules that read the file's text apply to a form the file
+    /// writes as the case program holds it ([`CaseFiles::writes`]), not to
+    /// a form that the case's reading of a line makes or rewrites.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let mut refused = field_case(input);
-        if let Some(spelled) = input.scope.files {
+        if let Some(spelled) = input.scope.files.filter(|spelled| spelled.writes(input.path)) {
             refused.extend(elided(input, spelled));
             for form_body in form_bodies(input.form) {
                 names(input, spelled, &form_body, &mut refused);

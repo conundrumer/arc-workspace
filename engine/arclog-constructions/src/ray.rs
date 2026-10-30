@@ -23,6 +23,12 @@ use arclog::terms::{Margins, Term, TermId};
 /// node on, a cast reaches only nodes. A source that a grid holds and that is
 /// no node crosses nothing, since a step that leaves its grid lowers a margin
 /// below 0.
+///
+/// - in `source(key, P)`: where each path starts. A source on the grid and outside `node` gives only its own row at K = 0.
+/// - in `node(key, P)`: the cells a path may step onto. A path stops before its first step off them.
+/// - in `dir(key, D)`, from the key: the directions.
+/// - out `ray(key, P, D, K, Origin)`: P is K steps from Origin toward D. Each source is on its own path at K = 0.
+/// - out `end(key, P, D, K, Origin)`: the path's last cell.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ray;
 
@@ -70,6 +76,10 @@ impl Construction for Ray {
 ///
 /// A start is a member with a successor. Each start is its own walk at
 /// count 0, and the walks run to the greatest count of `steps`.
+///
+/// - in `successor(key, p, p_next)`.
+/// - in `steps(key, N)`: the step counts to walk.
+/// - out `walk(key, p0, N, p)`: N steps from p0 reach p, for every N from 0 to the greatest N of `steps`. A walk starts only at a member that has a successor, and a walk that runs out of successors has no row past its end.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Walk;
 
@@ -116,6 +126,11 @@ impl Construction for Walk {
 
 /// The cells of the group's set with nothing of the set one step toward a
 /// direction.
+///
+/// - in `cell(key, P)`.
+/// - in `dir(D)`, shared, default the four edges: the directions tested.
+/// - out `exposed(key, P, D)`: no cell of the set lies one step from P toward D. Off the grid counts as no cell.
+/// - out `boundary(key, P)`: P is exposed toward some direction.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Boundary;
 
@@ -156,6 +171,9 @@ impl Construction for Boundary {
 ///
 /// A rectangle spans at least two cells on each axis, and its interior may
 /// hold any cells.
+///
+/// - in `node(key, P)`.
+/// - out `box(key, B)`: every cell of B's outline is in the set. B is at least two cells long on each axis, and its interior may hold any cells.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Outlines;
 

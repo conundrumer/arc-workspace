@@ -53,7 +53,7 @@ fn check_of(code: LintCode) -> Option<CheckId> {
         AltClaim | AltCols | AltCombination | AltSame | AltTail | Alts | AltsEmpty | Approximated | ArcdataHead | ArcdataName | ArcdataOrder |
         Assign | BareInit | Claim | ClaimText | ConceptEmpty | Count | CountPlace | Cycle | DemoRule |
         DetOrRule | EmptyGloss | Exclude | GridLayout | HeadSite | Input | Instance | KeyForm | KeyLocal | NoOutput | NotUndefined |
-        OrImplied | OrLineTwice | Order | OutputTail | Param | ParamGrid | ParamTypes | Parse | ParseHead | RecordField |
+        OrImplied | OrLineTwice | Order | OutputPlace | OutputRestated | Param | ParamGrid | ParamTypes | Parse | ParseHead | RecordField |
         RecordPosition | Render | RenderHead | RenderPlace | RepeatForm | Representative | SceneAlts | SceneArclog | SceneBlock |
         SceneClaim | SceneForm | SceneParse | ScenePick | SceneTaskSide | SharedCols | Spelling | StandsUnder | TopOrder | Unbound | Witness |
         WitnessId | WitnessNoInput | WitnessNoSeparates | WitnessOther | WitnessRef => return None,

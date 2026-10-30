@@ -10,11 +10,15 @@ pub(super) struct WrittenRelation {
     pub(super) place: SourcePlace,
     pub(super) columns: LabelColumns,
     pub(super) definition: Node<Body>,
+    /// The items of the `(frames ...)` form of a macro, none for a proposer.
+    pub(super) frames: Box<[SExpr]>,
+    /// The rules of the `(types ...)` form of a macro, none for a proposer.
+    pub(super) rules: Box<[TypeRule]>,
 }
 
 /// Each column of a form, with the label of the form's body that the
-/// column stands for.
-pub(super) type LabelColumns = Box<[(ColumnName, LabelId)]>;
+/// column stands for and the type the form declares for it, where it does.
+pub(super) type LabelColumns = Box<[LabelColumn]>;
 
 /// A `component` form's name, kind, type parameters and inputs, and the
 /// items of its `outputs` form.

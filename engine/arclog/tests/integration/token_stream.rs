@@ -73,13 +73,17 @@ fn a_rule_gives_its_atoms_its_constraint_and_its_declaration() {
 }
 
 #[test]
-fn an_instance_gives_its_input_names_its_projection_and_its_outputs() {
+fn an_instance_gives_its_outputs_its_input_names_and_its_projection() {
     let program = format!("{BG}{FG}");
     let prefix = length(&program);
     let got = stream(&format!("{program}(INIT &comps Connectivity (node ((:P P)) (&fg *P)))\n"));
     let mut want = vec![
         (control(Control::Init), M),
         (Token::Lib(LibName("Connectivity".into())), M),
+        (Token::Relation(2), E),
+        (Token::Relation(3), E),
+        (Token::Relation(4), E),
+        (Token::Relation(5), E),
         (Token::Column(0), E),
         (control(Control::Skip), M),
         (Token::Column(1), E),
@@ -97,8 +101,24 @@ fn an_instance_gives_its_input_names_its_projection_and_its_outputs() {
         (Token::Column(2), E),
         (control(Control::Skip), M),
     ]);
-    want.extend((2..6).map(|slot| (Token::Relation(slot), E)));
     assert_eq!(after(&got, prefix), &want[..]);
+}
+
+/// An `Unfold` instance whose `step` input reads the instance's own
+/// output `take`.
+const WALK: &str = "(INIT &walk Unfold
+  (start ((:t B)) (&bg (:C *B)))
+  (initial_taken ((:item B)) (&bg (:C *B)))
+  (initial_untaken ((:item B)) (&bg (:C *B)))
+  (step ((:t B) (:t2 X)) (&bg (:C *B)) (&bg (:C *X)) (&walk.take (:t B) (:item X))))
+";
+
+#[test]
+fn an_input_that_reads_its_instances_output_reads_a_relation_the_stream_declared() {
+    let got = stream(&format!("{BG}{WALK}"));
+    let declared: Vec<usize> = got.iter().enumerate().filter(|(_, (token, emitter))| matches!(token, Token::Relation(_)) && *emitter == E).map(|(at, _)| at).collect();
+    let read = got.iter().rposition(|(token, emitter)| matches!(token, Token::Relation(_)) && *emitter == M).expect("the step reads an output");
+    assert!(declared.iter().all(|at| *at < read), "every declaration stands before the read: {declared:?} and {read}");
 }
 
 #[test]

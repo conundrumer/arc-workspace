@@ -1,7 +1,8 @@
 //! The decoder reads the token stream of a program into a program of the
 //! same content, with each token the language model emits in its mask and
 //! each token the engine emits among the tokens it forces, refuses a token
-//! outside the mask, and forks a decode that leaves its source as it was.
+//! outside the mask, gives the tokens it forces after a token, with no step,
+//! and forks a decode that leaves its source as it was.
 //! Each prefix that the checks cut from a decoded form is the partial
 //! program that the decode shows at the token of its stream that ends the
 //! prefix's node.
@@ -152,8 +153,8 @@ fn the_programs_of_the_trace_form_decode_to_their_content() {
 
 #[test]
 fn a_negation_an_if_an_all_and_a_constraint_on_zero_decode_to_their_content() {
-    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
-    same_content(&format!("{BG}{FG}{lists}"));
+    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+    same_content(&format!("{BG}{FG}{AXIS}{lists}"));
 }
 
 #[test]
@@ -171,12 +172,6 @@ fn an_or_after_a_conjunct_of_a_branch_decodes_to_its_content() {
     same_content(&format!("{BG}{FG}(RULE &nested (input *P *Col) (OR ((&bg (:C Col)) (OR ((&fg P)) ((&fg (:Col Col))))) ((&fg P))))\n"));
 }
 
-#[test]
-fn a_choose_of_two_never_clauses_decodes_to_its_stream() {
-    let pick = "(CHOOSE &pick (from (&fg *P *Col)) (never (&fg *P *Col) (&fg (:P *P2) Col) (!= P P2) (&bg (:C Col))) (never (&fg *P *Col) (&fg P (:Col *C2)) (!= Col C2)))\n";
-    round_trip(&format!("{BG}{FG}{pick}"));
-}
-
 /// The names of a key's columns are a part of the content of its instance,
 /// and a decoded program names them by slot, so the decode of a keyed
 /// instance gives its stream again and not its content.
@@ -184,6 +179,14 @@ fn a_choose_of_two_never_clauses_decodes_to_its_stream() {
 fn a_keyed_instance_decodes_to_its_stream() {
     let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
     round_trip(&format!("{BG}{FG}{COMPS}{boxes}"));
+}
+
+/// An input that reads its instance's own output reads a relation that the
+/// stream has declared, so the decode steps the stream.
+#[test]
+fn an_instance_whose_input_reads_its_own_output_decodes_to_its_stream() {
+    let walk = "(INIT &walk Unfold (start ((:t B)) (&bg (:C *B))) (initial_taken ((:item B)) (&bg (:C *B))) (initial_untaken ((:item B)) (&bg (:C *B))) (step ((:t B) (:t2 X)) (&bg (:C *B)) (&bg (:C *X)) (&walk.take (:t B) (:item X))))\n";
+    round_trip(&format!("{BG}{walk}"));
 }
 
 /// A decode stepped through the stream of `arclog`.
@@ -375,9 +378,9 @@ fn a_retargeted_resolution_is_what_resolve_last_gives() {
 /// forms before it as well.
 #[test]
 fn a_retargeted_resolution_of_a_clause_is_what_resolve_last_gives() {
-    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (= *K 0))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
+    let lists = "(RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
     let det = "(DET &arr_dim ScaleRatio)\n";
-    for program in [format!("{BG}{FG}{lists}"), format!("{BG}{FG}{AXIS}{PRIOR}"), format!("{BG}{FG}{det}(RULE &cell (input *P *Col) (&fg P) (&bg (:C Col)) (&arr_dim))\n")] {
+    for program in [format!("{BG}{FG}{AXIS}{lists}"), format!("{BG}{FG}{AXIS}{PRIOR}"), format!("{BG}{FG}{det}(RULE &cell (input *P *Col) (&fg P) (&bg (:C Col)) (&arr_dim))\n")] {
         let counts = compare_retargets(&program);
         assert!(counts.to_node > 0 && counts.from_node > 0, "{} retargets to a node, {} from one, of {} candidates", counts.to_node, counts.from_node, counts.compared);
     }
@@ -408,4 +411,89 @@ fn a_step_after_the_mask_is_the_step_with_no_mask() {
         assert_eq!(format!("{:?}", decoder.partial()), format!("{:?}", bare.partial()), "{token:?}");
         assert_eq!(decoder.program(), bare.program(), "{token:?}");
     }
+}
+
+/// At a state where `END` ends a `RULE` clause, `forced` of a token gives
+/// the tokens that the step of the token on a fork gives as forced, whether
+/// the decode holds the mask of its state or not, leaves the decode's trace
+/// and program as they were, and refuses a token outside the mask as the
+/// step does.
+#[test]
+fn forced_is_the_forced_of_the_step_and_leaves_the_decode_as_it_was() {
+    let inputs = inputs();
+    let mut at = decoded(&inputs, BG);
+    for token in [Token::Control(Control::Rule), Token::Relation(0), Token::Column(0), Token::Control(Control::Fresh)] {
+        at.step(token).expect("a clause that reads `&bg`");
+    }
+    let closer = Token::Control(Control::End);
+    let outside = Token::Control(Control::Rule);
+    let expected = at.fork().step(closer.clone()).expect("the closer is in the mask").forced.to_vec();
+    let refused = at.fork().step(outside.clone()).expect_err("a `RULE` inside a clause is outside the mask");
+    let trace = at.trace().len();
+    let program = at.program().clone();
+    for held in [false, true] {
+        if held {
+            let id = at.vocabulary().id(&closer).expect("a token of the vocabulary");
+            assert!(at.admissible().contains(id));
+        }
+        assert_eq!(at.forced(&closer), Ok(expected.clone()), "mask held: {held}");
+        assert_eq!(at.forced(&outside), Err(refused.clone()), "mask held: {held}");
+        assert_eq!(at.trace().len(), trace, "mask held: {held}");
+        assert_eq!(&program, at.program(), "mask held: {held}");
+    }
+}
+
+/// Source-only regression fixtures for the static-pruning grammar boundary.
+/// These use the native stream and checker; they perform no task evaluation.
+fn static_refusal(arclog: &str) -> Option<Token> {
+    let mut settings = DecodeSettings::default();
+    settings.static_pruning = true;
+    let vocabulary = Vocabulary::new(Registry::get(), &settings);
+    let stream = token_stream(&checked(arclog), &vocabulary).expect("checked fixture stream");
+    let inputs = inputs();
+    let mut decoder = Decoder::new(&inputs.task, &inputs.session, Registry::get(), &inputs.constructions, &settings);
+    for (token, emitter) in stream {
+        if emitter == Emitter::Engine { continue; }
+        match decoder.step_untested(token.clone()) {
+            Ok(_) => {},
+            Err(Refusal::Grammar(reason)) if reason.starts_with("static prune:") => return Some(token),
+            Err(error) => panic!("unexpected refusal of {token:?}: {error:?}"),
+        }
+    }
+    None
+}
+
+#[test]
+fn static_prune_review_atom_closed_by_next_relation() {
+    assert_eq!(static_refusal("(RULE &x (input *P) (inside (:A P) (:B P)) (input P (:Col *C)))"),
+        Some(Token::Fact(FactRelation::Input)));
+}
+
+#[test]
+fn static_prune_review_atom_closed_by_clause_end() {
+    assert_eq!(static_refusal("(RULE &x (input *P) (inside (:A P) (:B P)))"),
+        Some(Token::Control(Control::End)));
+}
+
+#[test]
+fn static_prune_review_wider_orientation_keeps_filter() {
+    assert_eq!(static_refusal("(RULE &x (dir8_elem (:D *D)) (input *P) (same_dist (:D D) (:P1 P) (:P2 P)))"), None);
+}
+
+#[test]
+fn static_prune_review_unadmitted_zero_equality_keeps_atom() {
+    assert_eq!(static_refusal("(RULE &x (uniform_inset (:K 0) (:B *B)))"), None);
+}
+
+#[test]
+fn static_prune_review_equal_interface_alias_uses_equality() {
+    assert_eq!(static_refusal("(RULE &x (uniform_inset (:K 0) (:B *A)) (compose (:A A) (:B 0) (:C *C)))"),
+        Some(Token::Control(Control::End)));
+}
+
+#[test]
+fn static_prune_review_changed_interface_keeps_alias_atom() {
+    // A literal zero does not satisfy compose's Offset-labelled type-rule
+    // premise. Its output is Box, whereas equality to input.P is Position.
+    assert_eq!(static_refusal("(RULE &x (input *P) (compose (:A P) (:B 0) (:C *Q)))"), None);
 }

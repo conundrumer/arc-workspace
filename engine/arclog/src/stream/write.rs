@@ -11,10 +11,10 @@
 //! component, and the inputs after the key clause follow them, one name per
 //! input that the key clause does not write. An instance declares each
 //! output of its component, then each input whose name no output shares,
-//! written or not. A `RIGID_DET` form's `key` and `instance` are named at 0
-//! and 1, its parts follow them and end with `END`, and it declares its
-//! outputs in the order `crate::resolver::form_columns::rigid_outputs`
-//! gives. A projection gives one column
+//! written or not, right after its component token. A `RIGID_DET` form's
+//! `key` and `instance` are named at 0 and 1, its parts follow them and end
+//! with `END`, and it declares its outputs in the order
+//! `crate::resolver::form_columns::rigid_outputs` gives. A projection gives one column
 //! name per column of the input, each followed by the head site's arguments
 //! at that column and `END`.
 
@@ -24,7 +24,7 @@ use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintLabel, Form, Instance, InstanceInput, LabelId, LabelUse, Negated,
-    Operand, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
+    Operand, Out, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
 };
 use crate::program::Atom;
 use crate::registry::{Component, InputPort, LibEntry, Registry};
@@ -52,21 +52,40 @@ pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result
 }
 
 /// The token stream of [`token_stream`] with the relation that the program
-/// declares at each slot.
+/// declares at each slot and the labels of each form.
 #[derive(Clone, Debug)]
 pub struct WrittenStream {
     pub tokens: Vec<(Token, Emitter)>,
+    /// Source-order AST path at each token, from the same writer run.
+    pub paths: Vec<NodePath>,
     /// The relation declared at each slot, in slot order.
     pub relations: Vec<ProgramRelation>,
+    /// Each form of the stream, in the order of the stream.
+    pub forms: Vec<WrittenForm>,
 }
 
-/// The stream of [`token_stream`] with the relations its slots name, from
-/// one run of the writer.
+/// A form that the stream writes, a form of the program that holds no form.
+#[derive(Clone, Debug)]
+pub struct WrittenForm {
+    /// Half-open token span and relation-slot span emitted by this form.
+    pub tokens: std::ops::Range<usize>,
+    pub relations: std::ops::Range<usize>,
+    /// Readable relation slots: outputs and written inputs, excluding SKIP reservations.
+    pub readable: Vec<usize>,
+    /// The form's path in the program.
+    pub path: NodePath,
+    /// The program's label at each label slot of the form, in slot order.
+    pub labels: Vec<LabelId>,
+}
+
+/// The stream of [`token_stream`] with the relations its slots name and the
+/// labels of its forms, from one run of the writer.
 pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, Diagnostic> {
-    let (stream, declared) = write_program(program, vocabulary)?;
+    let WriterOutput { stream, declared, forms } = write_program(program, vocabulary)?;
     let mut relations: Vec<(u32, ProgramRelation)> = declared.into_iter().map(|(relation, declared)| (declared.slot, relation)).collect();
     relations.sort_by_key(|(slot, _)| *slot);
-    Ok(WrittenStream { tokens: stream.into_iter().map(|(token, emitter, _)| (token, emitter)).collect(), relations: relations.into_iter().map(|(_, relation)| relation).collect() })
+    let (tokens,paths)=stream.into_iter().map(|(token,emitter,path)|((token,emitter),path)).unzip();
+    Ok(WrittenStream { tokens, paths, relations: relations.into_iter().map(|(_, relation)| relation).collect(), forms })
 }
 
 /// The token stream of [`token_stream`], each token with the path in
@@ -77,11 +96,20 @@ pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Resu
 /// body's path, and a clause's proposers stand at its body's path, which
 /// they precede.
 pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter, NodePath)>, Diagnostic> {
-    Ok(write_program(program, vocabulary)?.0)
+    let written=written_stream(program,vocabulary)?;
+    Ok(written.tokens.into_iter().zip(written.paths).map(|((token,emitter),path)|(token,emitter,path)).collect())
 }
 
-/// The tokens of `program` with their paths, and the relations the writer declared.
-fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(Vec<(Token, Emitter, NodePath)>, StableHashMap<ProgramRelation, Declared>), Diagnostic> {
+/// What one run of the writer gives: the tokens with their paths, the
+/// relations declared, and the forms written.
+struct WriterOutput {
+    stream: Vec<(Token, Emitter, NodePath)>,
+    declared: StableHashMap<ProgramRelation, Declared>,
+    forms: Vec<WrittenForm>,
+}
+
+/// The tokens of `program` with their paths, the relations the writer declared, and the forms it wrote.
+fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WriterOutput, Diagnostic> {
     let mut writer = Writer {
         vocabulary,
         registry: vocabulary.registry(),
@@ -89,9 +117,10 @@ fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<(V
         declared: StableHashMap::default(),
         labels: StableHashMap::default(),
         stream: Vec::new(),
+        written: Vec::new(),
     };
     writer.forms(&program.program.program.value().forms)?;
-    Ok((writer.stream, writer.declared))
+    Ok(WriterOutput { stream: writer.stream, declared: writer.declared, forms: writer.written })
 }
 
 /// The forms of `forms` that hold no form, each with its path under `path`,
@@ -153,7 +182,7 @@ fn declarations(registry: &Registry, form: &Form) -> Vec<ProgramRelation> {
             component(registry, &instance.component).map_or_else(Vec::new, |component| instance_outputs(component, instance).into_iter().map(|(relation, _)| relation).collect())
         }
         Form::RigidDet(rigid) => rigid_det_outputs(rigid.value()).into_iter().map(|(relation, _)| relation).collect(),
-        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) => Vec::new(),
+        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => Vec::new(),
     }
 }
 
@@ -216,6 +245,8 @@ struct Writer<'w> {
     /// The slot of each label of the current top-level form.
     labels: StableHashMap<LabelId, u32>,
     stream: Vec<(Token, Emitter, NodePath)>,
+    /// The forms written so far.
+    written: Vec<WrittenForm>,
 }
 
 impl Writer<'_> {
@@ -252,6 +283,8 @@ impl Writer<'_> {
         leaf_forms(forms, &NodePath::default(), &mut leaves);
         for index in write_order(self.registry, &leaves) {
             let (form, at) = &leaves[index];
+            let token_start=self.stream.len();
+            let relation_start=self.declared.len();
             self.labels.clear();
             match form {
                 Form::Claim(_) => unreachable!("leaf forms hold no claim"),
@@ -259,9 +292,24 @@ impl Writer<'_> {
                 Form::Instance(instance) => self.instance(instance.value(), at)?,
                 Form::Choose(choose) => self.choose(choose.value(), at)?,
                 Form::RigidDet(rigid) => self.rigid_det(rigid.value(), at)?,
+                Form::Out(out) => self.out(out.value(), at)?,
                 Form::Demonstrated(_) => return Err(no_form("a `DEMONSTRATED` form", at)),
                 Form::Alts(_) => return Err(no_form("an `ALTS` form", at)),
             }
+            let mut labels: Vec<(u32, LabelId)> = self.labels.iter().map(|(id, slot)| (*slot, *id)).collect();
+            labels.sort_by_key(|(slot, _)| *slot);
+            let readable = match form {
+                Form::Instance(instance) => {
+                    let instance = instance.value();
+                    let written = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).map(|input| &input.name).collect::<Vec<_>>();
+                    component(self.registry, &instance.component).expect("checked component")
+                        .relation_ports(&written)
+                        .map(|port| ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.name.clone()), path: [OutputStep::Port(port.name.clone())].into() }))
+                        .map(|relation| self.declared[&relation].slot as usize).collect()
+                }
+                _ => (relation_start..self.declared.len()).collect(),
+            };
+            self.written.push(WrittenForm { tokens:token_start..self.stream.len(),relations:relation_start..self.declared.len(),readable,path: at.clone(), labels: labels.into_iter().map(|(_, id)| id).collect() });
         }
         Ok(())
     }
@@ -479,6 +527,9 @@ impl Writer<'_> {
         let component = component(self.registry, &instance.component).ok_or_else(|| run_fault(format!("the lib names no component `{}`", instance.component.0), path))?;
         let keyed: &[_] = instance.key.as_ref().map_or(&[], |key| &key.value().inputs);
         let outputs: Vec<u32> = instance_outputs(component, instance).into_iter().map(|(relation, columns)| self.reserve(relation, columns, path)).collect::<Result<_, _>>()?;
+        for slot in outputs {
+            self.push(Token::Relation(slot), Emitter::Engine, path)?;
+        }
         self.push(Token::Column(0), Emitter::Engine, path)?;
         match &instance.key {
             None => self.model(Control::Skip, path)?,
@@ -491,11 +542,7 @@ impl Writer<'_> {
             }
         }
         let written_in_key = |port: &InputPort| keyed.iter().any(|input| input.value().name == port.port.name);
-        self.inputs(component, &instance.inputs, |port| !written_in_key(port), path, u32::from(instance.key.is_some()))?;
-        for slot in outputs {
-            self.push(Token::Relation(slot), Emitter::Engine, path)?;
-        }
-        Ok(())
+        self.inputs(component, &instance.inputs, |port| !written_in_key(port), path, u32::from(instance.key.is_some()))
     }
 
     /// The name of each input of `component` that `named` takes, each
@@ -595,6 +642,14 @@ impl Writer<'_> {
             self.declare(relation, columns, path)?;
         }
         Ok(())
+    }
+
+    /// Emits the `OUT` form: its atoms as the body of a key clause, then
+    /// `END`. It declares nothing.
+    fn out(&mut self, out: &Out, path: &NodePath) -> Written {
+        self.model(Control::Out, path)?;
+        self.body(out.key.body.value(), &path.child(Out::BODY))?;
+        self.model(Control::End, path)
     }
 
     fn choose(&mut self, choose: &Choose, path: &NodePath) -> Written {

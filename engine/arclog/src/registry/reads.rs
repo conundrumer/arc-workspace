@@ -39,7 +39,7 @@ impl FileReader {
             RelationRef::Fact(fact) => self.facts.get(fact).map(|c| names(c)).ok_or_else(|| "reads a fact relation that no `fact` form declares".to_string()),
             RelationRef::Lib(name) => {
                 if let Some(m) = self.written_relations().find(|m| m.name == *name) {
-                    return Ok(m.columns.iter().map(|(c, _)| c.clone()).collect());
+                    return Ok(m.columns.iter().map(|column| column.name.clone()).collect());
                 }
                 match self.entries.get(name) {
                     Some(LibEntry::Relation(relation)) => Ok(names(&relation.columns)),

@@ -9,6 +9,7 @@ use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section};
 use arclog::registry::Registry;
 use arclog::stream::Token;
+use arclog::task::Task;
 use arclog::terms::Example;
 use arclog::trace::render::{trace_form, TraceFormOptions};
 use arclog::trace::{Stop, TopK};
@@ -28,6 +29,11 @@ fn pool() -> &'static Pool {
     POOL.get_or_init(|| Pool::new(None))
 }
 
+/// What `Decoder.step` gives: the ids of the tokens the engine emits, the
+/// consistency of the `OUT` form that the token ends, and the consistency of
+/// the `RULE` clause that it ends, where the decode settings run the rule tests.
+type StepResult = (Vec<u32>, Option<PyConsistency>, Option<PyConsistency>);
+
 /// A decode over a task in a session.
 ///
 /// The decode borrows the data of its session, which the struct holds in an
@@ -35,7 +41,7 @@ fn pool() -> &'static Pool {
 /// it drops first, and the `'static` of its type stands for the lifetime of
 /// that `Arc`. `decoder` is `None` only inside [`step_batch`]'s call.
 #[pyclass(name = "Decoder", module = "arclog")]
-pub(crate) struct PyDecoder {
+pub struct PyDecoder {
     decoder: Option<Decoder<'static>>,
     data: Arc<SessionData>,
 }
@@ -52,8 +58,14 @@ impl PyDecoder {
         Ok(PyDecoder { decoder: Some(decoder), data: Arc::clone(data) })
     }
 
-    fn decoder(&self) -> &Decoder<'static> {
+    /// The decode, for a crate that reads it as the engine's own value.
+    pub fn decoder(&self) -> &Decoder<'static> {
         self.decoder.as_ref().expect("a decode outside a batch step")
+    }
+
+    /// The task that the decode runs on.
+    pub fn task(&self) -> &Task {
+        &self.data.task.task
     }
 
     fn decoder_mut(&mut self) -> &mut Decoder<'static> {
@@ -64,16 +76,23 @@ impl PyDecoder {
         self.decoder().vocabulary().token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))
     }
 
-    fn step_result(&self, result: arclog::decode::StepResult) -> PyResult<(Vec<u32>, Option<PyConsistency>)> {
+    /// The ids of the tokens `forced`, which the engine emits.
+    fn forced_ids(&self, forced: &[Token]) -> Vec<u32> {
+        let vocabulary = self.decoder().vocabulary();
+        forced.iter().map(|token| vocabulary.id(token).expect("a forced token is in the vocabulary")).collect()
+    }
+
+    fn step_result(&self, result: arclog::decode::StepResult) -> PyResult<StepResult> {
         match result {
-            Ok(step) => {
-                let vocabulary = self.decoder().vocabulary();
-                let forced = step.forced.iter().map(|token| vocabulary.id(token).expect("a forced token is in the vocabulary")).collect();
-                Ok((forced, step.consistency.as_ref().map(PyConsistency::of)))
-            }
-            Err(refusal) => Err(Refusal::new_err(format!("{refusal:?}"))),
+            Ok(step) => Ok((self.forced_ids(&step.forced), step.consistency.as_ref().map(PyConsistency::of), step.rule_test.as_ref().map(PyConsistency::of))),
+            Err(refusal) => Err(refusal_error(&refusal)),
         }
     }
+}
+
+/// The `Refusal` that Python raises for a decode's `refusal`.
+fn refusal_error(refusal: &arclog::decode::Refusal) -> PyErr {
+    Refusal::new_err(format!("{refusal:?}"))
 }
 
 /// The bytes of `mask` over a vocabulary of `len` tokens: bit `id % 8` of
@@ -95,7 +114,7 @@ impl PyDecoder {
         PyVocabulary::of(self.decoder().vocabulary())
     }
 
-    /// Whether the decode has ended at a consistent relation.
+    /// Whether the decode has ended at a consistent `OUT` form.
     #[getter]
     fn ended(&self) -> bool {
         self.decoder().output().is_some()
@@ -109,17 +128,28 @@ impl PyDecoder {
     }
 
     /// Advances the decode by the token with id `id`, and gives the ids of
-    /// the tokens the engine emits after it, with the consistency of a
-    /// `RULE` clause that the token ends, or `None`. Raises `Refusal` for a
-    /// token outside the mask, and leaves the decode as it was.
-    fn step(&mut self, id: u32) -> PyResult<(Vec<u32>, Option<PyConsistency>)> {
+    /// the tokens the engine emits after it, with the consistency of the
+    /// `OUT` form that the token ends, or `None`, and the consistency of the
+    /// `RULE` clause that it ends under the rule tests, or `None`. Raises
+    /// `Refusal` for a token outside the mask, and leaves the decode as it was.
+    fn step(&mut self, id: u32) -> PyResult<StepResult> {
         let token = self.token(id)?;
         let result = self.decoder_mut().step(token);
         self.step_result(result)
     }
 
+    /// The ids of the tokens the engine emits after the token with id `id`,
+    /// as `step` gives them, with no consistency test, and leaves the decode
+    /// as it was. Where `admissible` has computed the mask at this state,
+    /// it reads them from the mask. Raises `Refusal` for a token outside the
+    /// mask, as `step` does.
+    fn forced(&self, id: u32) -> PyResult<Vec<u32>> {
+        let token = self.token(id)?;
+        self.decoder().forced(&token).map(|forced| self.forced_ids(&forced)).map_err(|refusal| refusal_error(&refusal))
+    }
+
     /// A second decode from the same state, which shares this one's caches.
-    fn fork(&self) -> PyDecoder {
+    pub(crate) fn fork(&self) -> PyDecoder {
         PyDecoder { decoder: Some(self.decoder().fork()), data: Arc::clone(&self.data) }
     }
 

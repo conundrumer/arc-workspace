@@ -32,6 +32,13 @@ use crate::domain;
 ///
 /// A group outside its domain of [`crate::domain`], with two periods on one
 /// axis or a period that is not positive, is undefined.
+///
+/// - in `transform(D)`, shared, no default: the D4 elements to test.
+/// - in `cell(key, P, v)`: the pattern's cells.
+/// - in `grid(key, P)`: the frame's cells.
+/// - in `period(key, A, K)`: the pattern's period along A, at most one per axis, more than 0. An axis with no row has none. A key with two periods on an axis, or a period of 0, has no output.
+/// - out `symmetry(key, D, Delta)`: the admitted D4 element and each shift represented by a surviving coset. The comparison must move at least one valued cell to a different valued cell.
+/// - out `action(key, P, Q)`: frame-cell pairs supplied by surviving symmetries, together with distinct frame cells in one period class.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Wallpaper;
 

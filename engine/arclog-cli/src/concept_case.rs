@@ -36,14 +36,17 @@ const CONCEPT: &str = "concept";
 pub(crate) struct ConceptCase<'a> {
     pub(crate) evaluation: Evaluation<'a>,
     pub(crate) judged: &'a JudgedTask,
+    /// The name of the alt that the case takes at each `ALTS` form it reaches
+    /// (`CaseName`), as the arclog file writes it.
+    pub(crate) alts: Vec<String>,
 }
 
 impl ConceptCase<'_> {
-    /// The judged run of `&output` on the task, closed-world, with the full
+    /// The judged run of the `OUT` form's relation on the task, closed-world, with the full
     /// output set on each pair, and the run's seconds.
     pub(crate) fn run(&self) -> (Outcome<JudgedRun>, f64) {
         let start = Instant::now();
-        let output = output_relation(self.evaluation.program).expect("a checked case program derives `&output`");
+        let output = output_relation(self.evaluation.program).expect("a checked case program holds an `OUT` form");
         let run = judged_run(&self.evaluation, &output, self.judged, World::Closed, Depth::Full);
         (run, start.elapsed().as_secs_f64())
     }
@@ -69,23 +72,22 @@ pub(crate) fn with_case<T>(corpus: &Path, tasks: &Path, id: &str, name: &str, bo
     let registry = Registry::get();
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
-    let concept_alts = solver.concept_alts();
-    let chosen = if name == CONCEPT { Some(cases.concept()) } else { cases.resolved().find(|case| names_case(name, &case.case.name, &concept_alts)) };
+    let chosen = if name == CONCEPT { Some(cases.concept()) } else { cases.resolved().find(|case| names_case(name, &solver.departures(&case.case.name))) };
     let chosen = chosen.ok_or_else(|| format!("the solver has no case named `{name}`"))?;
     let mut cache = CheckCache::default();
-    let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
+    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case", false)?;
     let own;
     let program = if name == CONCEPT {
         &concept
     } else {
-        own = check_case(chosen, &clauses, &mut cache, &format!("the case `{name}`"))?;
+        own = check_case(&solver, chosen, &clauses, &mut cache, &format!("the case `{name}`"), false)?;
         &own
     };
     let parameters = ParameterValues::stored(solver.arcdata.value());
     let session = corpus_session();
     let limits = corpus_limits();
     let determined = DeterminedCase { name: &chosen.case.name, program, concept: &concept, task: &task, session: &session, registry, constructions: constructions()?, limits: &limits };
-    body(&ConceptCase { evaluation: determined.evaluation(&parameters), judged: &judged })
+    body(&ConceptCase { evaluation: determined.evaluation(&parameters), judged: &judged, alts: chosen.case.name.0.iter().map(|alt| alt.0.to_string()).collect() })
 }
 
 /// The cases of `programs` as the determination takes them, on the task

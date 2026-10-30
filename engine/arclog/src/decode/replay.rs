@@ -20,8 +20,11 @@ pub struct Stepped<'a> {
     /// The tokens that were admissible before the step, where the replay
     /// computes the mask.
     pub mask: Option<Masked<'a>>,
-    /// The consistency the step gives, if it ends a `RULE` clause.
+    /// The consistency the step gives, if it ends an `OUT` form.
     pub consistency: Option<Consistency>,
+    /// The consistency of the relation of the `RULE` clause the step ends,
+    /// where the settings run the rule tests.
+    pub rule_test: Option<Consistency>,
     /// The seconds of the step.
     pub step_seconds: f64,
 }
@@ -51,7 +54,7 @@ pub struct Replayed {
 impl Replayed {
     /// The index in the stream where the program the decode reads ends: the
     /// index of the first token the model emits after the decode has ended
-    /// at its `&output`, or the stream's length where the replay reads the
+    /// at its `OUT` form, or the stream's length where the replay reads the
     /// whole stream. Where `after` broke the replay, the index after the
     /// token it broke at.
     pub fn end(&self) -> usize {
@@ -75,25 +78,28 @@ impl Replayed {
 /// early where `after` gives [`ControlFlow::Break`]. Gives the line of the
 /// first token the decoder refuses, or that the engine emits against the
 /// tokens the step before forced. The replay ends with no refusal at the
-/// first token the model emits after the decode has ended at its `&output`,
+/// first token the model emits after the decode has ended at its `OUT` form,
 /// once the engine forces no token there, and the tokens from there on are no
 /// part of the program the decode reads ([`Replayed::end`]). A token the mask refuses is a token the
 /// step refuses, so a replay with no mask refuses the same tokens.
 pub fn replay(decoder: &mut Decoder<'_>, stream: &[(Token, Emitter)], masked: bool, after: &mut dyn FnMut(&Decoder<'_>, Stepped<'_>) -> ControlFlow<()>) -> Result<Replayed, String> {
-    replay_from(decoder, stream, masked, 0, Vec::new(), after).map_err(|refused| refused.message)
+    replay_from(decoder, stream, masked, 0, Vec::new(), None, after).map_err(|refused| refused.message)
 }
 
 /// As [`replay`], from the token at position `start` of `stream`, where
 /// `decoder` has stepped the tokens before it and the engine still forces
 /// `forced` there. The indices that `after` and the faults give are those
 /// of `stream`, and the refusal gives the index of its token. The replay ends
-/// as [`replay`] gives.
+/// as [`replay`] gives. The step of the token at the index `untested` of
+/// `stream`, a token the model emits, is [`Decoder::step_untested`]: the
+/// caller's `consistency` and `rule_test` there are `None`.
 pub fn replay_from(
     decoder: &mut Decoder<'_>,
     stream: &[(Token, Emitter)],
     masked: bool,
     start: usize,
     forced: Vec<Token>,
+    untested: Option<usize>,
     after: &mut dyn FnMut(&Decoder<'_>, Stepped<'_>) -> ControlFlow<()>,
 ) -> Result<Replayed, Refused> {
     let mut forced = forced;
@@ -120,7 +126,7 @@ pub fn replay_from(
                 });
                 let admitted = mask.as_ref().is_none_or(|(mask, _)| decoder.vocabulary().id(token).is_some_and(|id| mask.contains(id)));
                 let start = Instant::now();
-                let stepped = decoder.step(token.clone());
+                let stepped = if untested == Some(index) { decoder.step_untested(token.clone()) } else { decoder.step(token.clone()) };
                 let step_seconds = start.elapsed().as_secs_f64();
                 let step = match stepped {
                     Ok(step) if admitted => step,
@@ -128,8 +134,9 @@ pub fn replay_from(
                     Err(refusal) => return Err(Refused { index, message: format!("token {index} {token:?}: {refusal:?}") }),
                 };
                 forced = step.forced.into();
+                let (consistency, rule_test) = (step.consistency, step.rule_test);
                 let mask = mask.as_ref().map(|(mask, seconds)| Masked { mask, seconds: *seconds });
-                if after(decoder, Stepped { index, token, mask, consistency: step.consistency, step_seconds }).is_break() {
+                if after(decoder, Stepped { index, token, mask, consistency, rule_test, step_seconds }).is_break() {
                     return Ok(Replayed { forced, end: index + 1 });
                 }
             }

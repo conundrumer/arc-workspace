@@ -34,7 +34,7 @@ from arclog_convert.open_orders import keys_retyped as order_keys_retyped, order
 from arclog_convert.picks import rewrite as rewrite_picks
 from arclog_convert.libmap import box as libmap_box, rewrite as libmap_rewrite
 from arclog_convert.libmap.instances import LIB_PATH, Placement
-from arclog_convert import paths
+from arclog_convert import libmap, paths
 
 from arclog_convert.checks import Fold, with_checks
 from arclog_convert.clauses import ClauseWriter
@@ -121,6 +121,7 @@ class ParseNodes:
         self.rels = {r.name: r for r in prog.relations if r.scope.components == ("Parse",)}
         self.insts = {i.name: i for i in prog.instances if i.scope.components == ("Parse",)}
         self.units = [u for u in prog.units if u.scope.components == ("Parse",)]
+        self.types = {t.name: t for t in prog.types if t.scope.components == ("Parse",)}
         self.deps: dict[str, set[str]] = defaultdict(set)
         """The nodes whose relations the clauses of each node read."""
         for u in self.units:
@@ -151,6 +152,45 @@ class ParseNodes:
         lr = next((r for r in rels if r.name == rn.name), None)
         keyed = {p for p, a in zip(tparams, inst.type_args) if a.name == "Key"}
         return next((i for i, c_ in enumerate(lr.cols) if c_.type in keyed), None) if lr else None
+
+    def key_path(self, type_name: str) -> tuple[int, ...] | None:
+        """The fields that lead from a type of the component to its `Key`: none
+        for the `Key` itself; None for a type with no `Key`."""
+        if type_name == "Key":
+            return ()
+        decl = self.types.get(type_name)
+        if isinstance(decl, AliasType):
+            return self.key_path(decl.target.name)
+        for i, f_ in enumerate(decl.fields if isinstance(decl, RecordType) else ()):
+            if (path := self.key_path(f_.type.name)) is not None:
+                return (i,) + path
+        return None
+
+    def example_site(self, rn: RelationName) -> tuple[int, tuple[int, ...]] | None:
+        """The column of a relation `rn` that a clause reads through an
+        instance of the component, which holds the example, and the fields in
+        it that lead to the example; None where it has none."""
+        inner = RelationName(rn.instances[1:], rn.name)
+        if not inner.instances:
+            r = self.rels.get(inner.name)
+            return next(((i, p) for i, c_ in enumerate(r.columns if r else ())
+                         if (p := self.key_path(c_.type.name)) is not None), None)
+        inst = self.insts.get(inner.instances[0])
+        if inst is None or len(inner.instances) > 1 or inst.component not in self.lib.comps:
+            i = self.instance_key_at(inner)
+            return None if i is None else (i, ())
+        tparams, rels = self.lib.relations(inst.component)
+        lr = next((r for r in rels if r.name == inner.name), None)
+        paths = {p_: self.key_path(a.name) for p_, a in zip(tparams, inst.type_args)}
+        return next(((i, paths[c_.type]) for i, c_ in enumerate(lr.cols if lr else ())
+                     if paths.get(c_.type) is not None), None)
+
+    def columns(self, rn: RelationName):
+        """The columns of a relation `rn` of the component that a clause reads
+        through an instance of it, where none is of a type of the component;
+        None otherwise."""
+        r = self.rels.get(rn.name) if len(rn.instances) == 1 else None
+        return r.columns if r and not any(c_.type.name in self.types for c_ in r.columns) else None
 
     def read_through(self, units: Iterable[Unit], instance: str) -> Iterator[str]:
         """The node of each relation that a body of `units` reads through the
@@ -824,6 +864,49 @@ class Converter:
         return dc_replace(prog, units=tuple(u for u in units if u.head.relation.name not in dropped
                                             or u.head.relation.instances))
 
+    def candidate_fields(self, prog) -> tuple[set[str], dict[str, dict[int, str]]]:
+        """The parameters that the determination's instances of the program's
+        parse run candidates of, and, for each such instance with a record
+        key, the key fields that hold a candidate (field index -> parameter):
+        a clause of the determination feeds an input of the instance, which
+        the program fills from a parameter, and does not read that parameter
+        in its body."""
+        det = ("Determine",)
+        comp_insts = {n: i for (sc, n), i in self.insts.items() if sc == det and i.component in self.comps}
+        prog_inst = {i.component: n for (sc, n), i in self.insts.items() if sc == () and i.component in self.comps}
+        cand_params: set[str] = set()
+        # each Parse input the program fills from a parameter: name -> params
+        fed: dict[tuple[str, str], set[str]] = defaultdict(set)
+        for u in prog.units:
+            rn = u.head.relation
+            if u.scope.components == () and len(rn.instances) == 1 and rn.instances[0] in prog_inst.values():
+                comp = self.insts[((), rn.instances[0])].component
+                for a in self._atoms(u.body or ()):
+                    if a.relation.instances == ("params",):
+                        fed[(comp, rn.name)].add(a.relation.name)
+        cand_fields: dict[str, dict[int, str]] = {}   # instance -> key field index -> parameter
+        for n, inst in comp_insts.items():
+            for u in prog.units:
+                rn = u.head.relation
+                if u.scope.components != det or rn.instances != (n,) or (inst.component, rn.name) not in fed:
+                    continue
+                read = {a.relation.name for a in self._atoms(u.body or ())
+                        if not a.relation.instances or a.relation.instances == ("params",)}
+                for p_ in fed[(inst.component, rn.name)]:
+                    if p_ not in read:
+                        cand_params.add(p_)
+                        # the key field that holds the candidate
+                        k = u.head.args[0] if u.head.args else None
+                        if isinstance(k, RecordTerm):
+                            pu = next((x for x in prog.units if x.scope.components == () and
+                                       x.head.relation == RelationName((prog_inst[inst.component],), rn.name)), None)
+                            for j, (hk, ha) in enumerate(zip(u.head.args[1:], pu.head.args[1:] if pu else ())):
+                                if isinstance(hk, Variable):
+                                    for fi, f_ in enumerate(k.args):
+                                        if f_ == hk and isinstance(ha, Variable):
+                                            cand_fields.setdefault(n, {})[fi] = p_
+        return cand_params, cand_fields
+
     def candidate_parse(self, prog):
         """A determination that runs the program's parse at each candidate
         value of a parameter and keeps the values a test of its own passes:
@@ -839,50 +922,8 @@ class Converter:
         comp_insts = {n: i for (sc, n), i in self.insts.items() if sc == det and i.component in self.comps}
         if not comp_insts:
             return prog
-        prog_inst = {i.component: n for (sc, n), i in self.insts.items() if sc == () and i.component in self.comps}
-
-        def atoms(lits):
-            for l in lits:
-                if isinstance(l, AtomLiteral):
-                    yield l.atom
-                elif isinstance(l, Disjunction):
-                    for b in l.branches:
-                        yield from atoms(b)
-                elif isinstance(l, Comparison):
-                    for t in (l.lhs, l.rhs):
-                        if isinstance(t, Aggregate):
-                            yield from atoms(t.body)
         params = {r.name for r in prog.relations if r.scope.components == ("Params",)}
-        # each Parse input the program fills from a parameter: name -> params
-        fed: dict[tuple[str, str], set[str]] = defaultdict(set)
-        for u in prog.units:
-            rn = u.head.relation
-            if u.scope.components == () and len(rn.instances) == 1 and rn.instances[0] in prog_inst.values():
-                comp = self.insts[((), rn.instances[0])].component
-                for a in atoms(u.body or ()):
-                    if a.relation.instances == ("params",):
-                        fed[(comp, rn.name)].add(a.relation.name)
-        cand_fields: dict[str, dict[int, str]] = {}   # instance -> key field index -> parameter
-        for n, inst in comp_insts.items():
-            for u in prog.units:
-                rn = u.head.relation
-                if u.scope.components != det or rn.instances != (n,) or (inst.component, rn.name) not in fed:
-                    continue
-                read = {a.relation.name for a in atoms(u.body or ())
-                        if not a.relation.instances or a.relation.instances == ("params",)}
-                for p_ in fed[(inst.component, rn.name)]:
-                    if p_ not in read:
-                        self.cand_params.add(p_)
-                        # the key field that holds the candidate
-                        k = u.head.args[0] if u.head.args else None
-                        if isinstance(k, RecordTerm):
-                            pu = next((x for x in prog.units if x.scope.components == () and
-                                       x.head.relation == RelationName((prog_inst[inst.component],), rn.name)), None)
-                            for j, (hk, ha) in enumerate(zip(u.head.args[1:], pu.head.args[1:] if pu else ())):
-                                if isinstance(hk, Variable):
-                                    for fi, f_ in enumerate(k.args):
-                                        if f_ == hk and isinstance(ha, Variable):
-                                            cand_fields.setdefault(n, {})[fi] = p_
+        self.cand_params, cand_fields = self.candidate_fields(prog)
         if not self.cand_params:
             return prog
         # a candidate stands where the parameter's determination refutes it:
@@ -902,7 +943,7 @@ class Converter:
             got = any(a.relation.instances[:1] and a.relation.instances[0] in comp_insts
                       or (not a.relation.instances and a.relation.name in dheads
                           and reads(a.relation.name, seen | {x}))
-                      for u in dheads.get(x, ()) for a in atoms(u.body or ()))
+                      for u in dheads.get(x, ()) for a in self._atoms(u.body or ()))
             reads_parse[x] = got
             return got
 
@@ -922,7 +963,7 @@ class Converter:
         rules = defaultdict(set)
         for u in prog.units:
             if u.scope.components == ("Params",) and u.body:
-                rules[u.head.relation.name] |= {a.relation.name for a in atoms(u.body)
+                rules[u.head.relation.name] |= {a.relation.name for a in self._atoms(u.body)
                                                 if not a.relation.instances and a.relation.name in params}
         todo = list(self.cand_params)
         self.cand_params = set()
@@ -969,7 +1010,7 @@ class Converter:
                 continue
             need.add(x)
             for u in heads.get(x, ()):
-                for a in atoms(u.body or ()):
+                for a in self._atoms(u.body or ()):
                     rn = a.relation
                     y = rn.instances[0] if rn.instances else rn.name
                     if y in heads and y not in need and not (y in params and y in self.cand_params):
@@ -986,7 +1027,7 @@ class Converter:
                     continue
                 # a read of the candidate parse binds its candidate to the parameter
                 extra = []
-                for a in atoms(u.body or ()):
+                for a in self._atoms(u.body or ()):
                     fs = cand_fields.get(a.relation.instances[0] if a.relation.instances else "")
                     key = a.args[0] if a.args else None
                     while isinstance(key, RecordTerm) and fs and len(key.args) and isinstance(key.args[0], RecordTerm):
@@ -1412,9 +1453,15 @@ class Converter:
         determination drops the atoms that only test: the example's input
         or output exists, a relation of the determination that holds the
         trained examples, a read of the instance's input relation at the
-        example with wildcards. A case relation of the parse, whose columns
-        but its Key are case types, is the program's where the determination
-        feeds it the concept fact alone. A read of a nested instance of the
+        example with wildcards. Where such a feed drops an `ex_out` atom or a
+        relation that holds the trained examples, the test examples are held
+        out of the determination's instance of the parse, and each read of it
+        that a clause of the determination makes, in a `DET` or in an input
+        of one of its instances, reads the train examples alone: its body
+        holds an `ex_out` atom at the read's example (`train_guarded`). A
+        case relation of the parse, whose columns but its Key are case types,
+        is the program's where the determination feeds it the concept fact
+        alone. A read of a nested instance of the
         program's parse at the literal key of the concept case is a read at
         the example. A read of a relation that the concept case derives from
         one parameter alone, such as `wall` from `params.frame_color`, at the
@@ -1430,7 +1477,12 @@ class Converter:
         case's clauses alone, so that no alt rederives what such a `DET`
         reads. An input whose program feed reads a relation of the program
         that `det_program_copies` copies is fed otherwise too: the
-        determination's feed of it reads no relation an alt rederives."""
+        determination's feed of it reads no relation an alt rederives. A
+        determination's instance of the parse keyed on a type other than
+        Example, which `candidate_parse` does not take (`candidate_fields`
+        gives none of its key's fields a candidate), is written as copies of
+        the nodes the determination reads through it (`copy_read_through`),
+        keyed on its key type, with its own input clauses as their input."""
         from engine.program import Column, DeclId, Scope, Span, TypeName, UnitId
         det = ("Determine",)
         concept = set(self.concept_of().values())
@@ -1444,6 +1496,7 @@ class Converter:
         nodes = ParseNodes(prog, self.lib)
         parse_rels, parse_insts, parse_units = nodes.rels, nodes.insts, nodes.units
         node, key_at, instance_key_at = nodes.node, nodes.key_at, nodes.instance_key_at
+        example_site, parse_columns = nodes.example_site, nodes.columns
         E = Variable("@E")
 
         def canon(u: Unit) -> str:
@@ -1578,12 +1631,14 @@ class Converter:
                             return dc_replace(u, body=tuple(neg if m is l else m for m in u.body if m is not read))
             return u
 
-        def feed(u: Unit, iname: str, det_side: bool, case_key: bool = False) -> tuple[str, Unit]:
+        def feed(u: Unit, iname: str, det_side: bool, case_key: bool = False) -> tuple[str, Unit, bool]:
             # the clause as the lifted parse reads it: the example at each
             # key column of the parse, `in` that example's input, and no atom
             # that only tests that the example or the case exists; in the
             # determination, a relation of a parameter's name is the
-            # parameter's determination; and the clause with those atoms dropped
+            # parameter's determination; the clause with those atoms dropped;
+            # and whether an atom dropped holds the test examples out: a
+            # positive `ex_out` atom or a relation that holds the trained examples
             def fix(x):
                 if isinstance(x, Atom):
                     rn = x.relation
@@ -1644,8 +1699,12 @@ class Converter:
                 return a.relation.name in case_rels and all(
                     isinstance(t, Wildcard) or isinstance(t, Variable) and (uses[t.name] == 1 or t.name == kn and case_key)
                     for t in a.args)
-            u = dc_replace(u, body=tuple(l for l in u.body or () if not test_only(l)))
-            return canon(subst(u, {kn: E.name}) if kn else u), u
+            dropped = [l for l in u.body or () if test_only(l)]
+            holds_out = any(not l.atom.relation.instances and (l.atom.relation.name == "ex_out"
+                                                              or det_side and l.atom.relation.name in trained_rels)
+                            for l in dropped)
+            u = dc_replace(u, body=tuple(l for l in u.body or () if l not in dropped))
+            return canon(subst(u, {kn: E.name}) if kn else u), u, holds_out
 
         def concept_feed(x: str, clauses: list[Unit]) -> bool:
             # the determination feeds the case relation x the concept fact alone
@@ -1666,10 +1725,14 @@ class Converter:
             names = {m for f_ in facts for t in f_.head.args for m in ctor_names(t)}
             return len(facts) == 1 and facts[0].body is None and bool(names) and names <= concept
 
+        trained: set[str] = set()   # the determination's instances of the parse whose feed holds the test examples out
+        cand_fields = self.candidate_fields(prog)[1]
         for inst in [i for i in prog.instances if i.scope.components == det and i.component in prog_inst]:
             comp = self.comps[inst.component]
             tsub = {p: a.name for p, a in zip(comp.type_params, inst.type_args)}
             if tsub.get("Key") != "Example":
+                if inst.name not in cand_fields:
+                    prog = self.copy_read_through(prog, nodes, det, inst, [u for u in prog.units if u.scope.components == det])
                 continue
             n, pname = inst.name, prog_inst[inst.component]
             pinst = next(i for i in prog.instances if i.scope.components == () and i.name == pname)
@@ -1685,6 +1748,8 @@ class Converter:
                     fed = feed(u, n, True)
                     feeds[rn.name][1].append(fed[0])
                     det_feeds[rn.name].append(fed[1])
+                    if fed[2]:
+                        trained.add(n)
             rederived: set[str] = set()
             for x, clauses in prog_clauses.items():
                 dropped = alternates(clauses)
@@ -1726,7 +1791,7 @@ class Converter:
             prog = self.copy_parse(prog, nodes, det, n, tsub, copy,
                                    [u for u in parse_units if node(u.head.relation) in copy and not (
                                        alternate_ctors[id(u)] and (("Parse",), node(u.head.relation)) in self.own_copies)])
-        return prog
+        return self.train_guarded(prog, trained, example_site, parse_columns) if trained else prog
 
     def parse_instance_copies(self, prog):
         """Each top-level instance of the solver's `Parse` after the first
@@ -1746,9 +1811,7 @@ class Converter:
             named_in = {u.scope.components for u in prog.units
                         for a in (u.head, *self._atoms(u.body or ())) if a.relation.instances[:1] == (n,)}
             if named_in <= {()}:
-                copy = nodes.closure(nodes.read_through((u for u in prog.units if u.scope.components == ()), n))
-                prog = self.copy_parse(prog, nodes, (), n, {p: a.name for p, a in zip(self.comps["Parse"].type_params, inst.type_args)},
-                                       copy, [u for u in nodes.units if nodes.node(u.head.relation) in copy])
+                prog = self.copy_read_through(prog, nodes, (), inst, [u for u in prog.units if u.scope.components == ()])
             else:
                 self.todo.add("parse-instance", f"{n}: a clause outside the top level names the instance of the "
                               f"{inst.component} component, which is written as copies in the top level")
@@ -1757,6 +1820,16 @@ class Converter:
                                           if not (u.scope.components == () and u.head.relation.instances[:1] == (n,))))
             self.insts.pop(((), n), None)
         return prog
+
+    def copy_read_through(self, prog, nodes: ParseNodes, scope: tuple[str, ...], inst, readers: list[Unit]):
+        """`prog` with the nodes of the parse that the clauses `readers` of
+        `scope` read through the instance `inst` of `scope`, and the nodes
+        those read, written as copies (`copy_parse`) keyed on the instance's
+        key type, with the instance's input clauses as the copies' input."""
+        copy = nodes.closure(nodes.read_through(readers, inst.name))
+        tsub = {p: a.name for p, a in zip(self.comps[inst.component].type_params, inst.type_args)}
+        return self.copy_parse(prog, nodes, scope, inst.name, tsub, copy,
+                               [u for u in nodes.units if nodes.node(u.head.relation) in copy])
 
     def copy_parse(self, prog, nodes: ParseNodes, scope: tuple[str, ...], n: str, tsub: dict[str, str],
                    copy: set[str], clauses: list[Unit]):
@@ -1798,7 +1871,7 @@ class Converter:
                 return to_copy(RelationName(rn.instances[1:], rn.name), True)
             return rn
         # the parse's types the copies read, each a copy keyed as the instance is
-        parse_types = {t.name: t for t in prog.types if t.scope.components == ("Parse",)}
+        parse_types = nodes.types
         scope_types = {t.name for t in prog.types if t.scope.components == scope}
 
         def type_refs(x, out: set[str]) -> None:
@@ -1899,6 +1972,143 @@ class Converter:
             self.types[(scope, t.name)] = t
         self.rels = {(r.scope.components, r.name): r for r in prog.relations}
         return prog
+
+    def train_guarded(self, prog, trained: set[str], example_site, parse_columns):
+        """`prog` with each read that a clause of the determination makes of a
+        relation of an instance in `trained` followed by a positive `ex_out`
+        atom at the read's example, unless that body, or a body around it,
+        holds one at that example: the read then reads the train examples
+        alone. A read of a relation of the parse with `_` at its example,
+        whose other columns are variables or constants of global types, reads
+        a helper relation of the determination in its place, which holds the
+        read's variables at the train examples and not the example (one helper
+        per distinct read); any other positive read with `_` at its example
+        takes a fresh variable there. A read in an aggregate is guarded in the
+        aggregate's body. `example_site` gives the column of the relation that
+        holds the example, and the fields in it that lead to the example, and
+        `parse_columns` the columns of a relation of the parse that no
+        instance holds. A clause that feeds an instance of `trained` is left
+        as it is. A read whose example is no variable that a positive atom of
+        its body or of a body around it binds, other than a `_` the above
+        covers, is left as it is and noted as a `train-guard` TODO. A read of
+        a relation with no example column is left as it is."""
+        from engine.program import Column, DeclId, RelationDecl, Scope, UnitId
+        det = ("Determine",)
+        ex_out = RelationName((), "ex_out")
+        taken_rels = {r.name for r in prog.relations if r.scope.components == det} | \
+                     {i.name for i in prog.instances if i.scope.components == det}
+        helpers: dict[tuple, tuple[str, list[str]]] = {}   # a pooled read, canonical -> its helper and the helper's variables
+        new_rels: list[RelationDecl] = []
+        new_units: list[Unit] = []
+
+        def reads_trained(a: Atom) -> bool:
+            return bool(a.relation.instances) and a.relation.instances[0] in trained
+
+        def example_term(a: Atom):
+            site = example_site(a.relation)
+            t = a.args[site[0]] if site is not None and site[0] < len(a.args) else None
+            for j in site[1] if site is not None else ():
+                t = t.args[j] if isinstance(t, RecordTerm) and j < len(t.args) else None
+            return t
+
+        def with_example(a: Atom, v: Variable) -> Atom:
+            col, path = example_site(a.relation)
+
+            def put(t, path):
+                return v if not path else RecordTerm(tuple(put(x, path[1:]) if i == path[0] else x
+                                                           for i, x in enumerate(t.args)))
+            return dc_replace(a, args=tuple(put(x, path) if i == col else x for i, x in enumerate(a.args)))
+
+        def names_in(l) -> set[str]:
+            out: set[str] = set()
+            collect_vars([l], out)
+            return out
+
+        def pooled(a: Atom) -> Atom | None:
+            # the read `a`, which has `_` at its example, as a read of a helper
+            # of the determination that holds the read's variables at the train examples
+            col, path = example_site(a.relation)
+            cols = parse_columns(a.relation)
+            args = [x for i, x in enumerate(a.args) if i != col]
+            names: list[str] = []
+            for x in args:
+                if isinstance(x, Variable) and x.name not in names:
+                    names.append(x.name)
+            if cols is None or path or len(cols) != len(a.args) or not names or not all(
+                    isinstance(x, (Variable, Wildcard)) or not names_in(AtomLiteral(Atom(a.relation, (x,), 0), False))
+                    for x in args):
+                return None
+            key = (a.relation, tuple(names.index(x.name) if isinstance(x, Variable) else str(x)
+                                     for x in args))
+            if key not in helpers:
+                name, k = f"{a.relation.name}_train", 2
+                while name in taken_rels:
+                    name, k = f"{a.relation.name}_train{k}", k + 1
+                taken_rels.add(name)
+                helpers[key] = (name, names)
+                column_of = {x.name: cols[i if i < col else i + 1] for i, x in enumerate(args)
+                             if isinstance(x, Variable)}
+                x_ = Variable("E_train" if "E_train" not in names else "E_train_")
+                read = dc_replace(a, args=tuple(x_ if i == col else x for i, x in enumerate(a.args)))
+                new_rels.append(RelationDecl(DeclId(prog.next_decl_index() + len(new_rels)), name, Scope(det),
+                                             tuple(Column(column_of[n].name, column_of[n].type) for n in names),
+                                             (), (), None))
+                new_units.append(Unit(UnitId(prog.next_unit_index() + len(new_units)), Scope(det),
+                                      Atom(RelationName((), name), tuple(Variable(n) for n in names), a.line),
+                                      (AtomLiteral(read, False),
+                                       AtomLiteral(Atom(ex_out, (x_, Wildcard(), Wildcard()), a.line), False)),
+                                      None, None))
+            return Atom(RelationName((), helpers[key][0]), tuple(Variable(n) for n in names), a.line)
+
+        def guarded(body, held: frozenset[str], bound: frozenset[str], taken: set[str]):
+            def fresh() -> Variable:
+                n, k = "E_train", 2
+                while n in taken:
+                    n, k = f"E_train{k}", k + 1
+                taken.add(n)
+                return Variable(n)
+            held = held | {l.atom.args[0].name for l in body if isinstance(l, AtomLiteral) and not l.negated
+                           and l.atom.relation == ex_out and isinstance(l.atom.args[0], Variable)}
+            bound = bound.union(*(names_in(l) for l in body if isinstance(l, AtomLiteral) and not l.negated))
+            need: dict[str, int] = {}   # the example variable of a read -> the line of its first read
+            out = []
+            for l in body:
+                if isinstance(l, AtomLiteral) and reads_trained(l.atom) and example_site(l.atom.relation) is not None:
+                    t = example_term(l.atom)
+                    if isinstance(t, Wildcard) and (h := pooled(l.atom)) is not None:
+                        out.append(AtomLiteral(h, l.negated))
+                        continue
+                    if isinstance(t, Wildcard) and not l.negated:
+                        v = fresh()
+                        l = AtomLiteral(with_example(l.atom, v), False)
+                        bound, t = bound | {v.name}, v
+                    if not isinstance(t, Variable) or t.name not in bound:
+                        self.todo.add("train-guard", f"{l.atom.relation.text}: its example is no variable that an atom binds")
+                    elif t.name not in held:
+                        need.setdefault(t.name, l.atom.line)
+                elif isinstance(l, Comparison):
+                    l = dc_replace(l, **{f_: dc_replace(x, body=guarded(x.body, held, bound, taken))
+                                         for f_ in ("lhs", "rhs") if isinstance(x := getattr(l, f_), Aggregate)})
+                out.append(l)
+            held = held | set(need)
+            for v, line in need.items():
+                # after the first atom that holds the example's variable
+                site = next((i for i, l in enumerate(out)
+                             if isinstance(l, AtomLiteral) and not l.negated and v in names_in(l)), -1)
+                out.insert(site + 1, AtomLiteral(Atom(ex_out, (Variable(v), Wildcard(), Wildcard()), line), False))
+            return tuple(dc_replace(l, branches=tuple(guarded(b, held, bound, taken) for b in l.branches))
+                         if isinstance(l, Disjunction) else l for l in out)
+
+        def reads(u: Unit) -> bool:
+            # a clause of the determination, other than a feed of an instance of `trained`
+            return u.scope.components == ("Determine",) and u.body is not None \
+                and not (u.head.relation.instances and u.head.relation.instances[0] in trained)
+
+        def clause(u: Unit) -> Unit:
+            taken = names_in(AtomLiteral(u.head, False)) | names_in(Disjunction((tuple(u.body),), 0))
+            return dc_replace(u, body=guarded(u.body, frozenset(), frozenset(), taken))
+        units = tuple(clause(u) if reads(u) else u for u in prog.units)
+        return dc_replace(prog, relations=prog.relations + tuple(new_rels), units=units + tuple(new_units))
 
     @staticmethod
     def without_empty(units, det: tuple[str, ...], copies: set[str]):
@@ -2125,6 +2335,17 @@ class Converter:
             return (("Params",), name)   # the determination of the parameter
         return key
 
+    def determines_parameter(self, scope: tuple[str, ...], name: str,
+                             instances: tuple[str, ...] = ()) -> bool:
+        """Whether this source head determines a declared stored parameter.
+
+        Relation identity, including explicit name and instance overrides, is
+        owned by rel_key. A Determine scope alone does not make a helper or
+        an instance port a parameter.
+        """
+        return scope == ("Determine",) and not instances and \
+            self.rel_key(scope, name) == (("Params",), name)
+
     def rel_name(self, scope: tuple[str, ...], name: str) -> str:
         key = self.rel_key(scope, name)
         if key not in self.names:
@@ -2279,8 +2500,22 @@ class Converter:
         for c in lr.cols:
             cols.append((c, self.leaves(c.name, c.type, c.tparam, inst.scope.components, isub, outer=sub)))
         iname = self.rel_name(inst.scope.components, inst.name)
-        return (self.wrote(f"{iname}.{name}", *self.souffle_of(inst.scope.components, f"{inst.name}.{name}", False)),
+        return (self.wrote(f"{iname}.{name}", *self.instance_relation_souffle(inst, name)),
                 cols, "inst", (inst.scope.components, inst.name))
+
+    def instance_relation_souffle(self, inst, name: str) -> tuple[Written, ...]:
+        """What the relation `name` of the instance `inst` of a lib component
+        stands for in the Souffle program (`souffle_of`), except where the
+        Souffle instance's component is one that `libmap.COMP` renames and
+        renames the relation `name` of that component to another name: the
+        Souffle component's relation of that name is then another relation
+        than `name`, and `name` stands for what the pass made it for, none
+        where it made it for none."""
+        scope, relation = inst.scope.components, f"{inst.name}.{name}"
+        renamed = libmap.COMP.get(self.souffle_components.get((scope, inst.name), ""))
+        if renamed is not None and renamed.parts.get(name, name) != name:
+            return self.made.get((scope, relation), ())
+        return self.souffle_of(scope, relation, False)
 
     def leaf_type(self, type_name: str, path: tuple[int, ...], scope: tuple[str, ...], sub: dict[str, str]) -> str:
         """The type of the leaf at `path` of a column of `type_name`, as

@@ -35,8 +35,9 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 142ca369: each marker launches a diagonal ray. A marker is an L-triomino with a cell the ray leaves from and the diagonal it heads along, and the markers of one input stand in different orientations. The determination reads one representative marker: `&pick` takes one launch cell that the training outputs show, and `&bbox` is the box of that marker's cells.
 
 - The `DET` forms are tables over the observed data that read the representative marker, with its cells in the frame of its box.
-- Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`.
+- Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`. A part that reads `input`, `ex_input`, `ex_output` or a lib relation has no output.
 - A form with no `instance` clause has one instance. Its parts read no instance label, and each part's `DET` table is that one instance's reading.
+- In a form with an `instance` clause, a part whose atom holds no label of that clause is a frame part: no instance's reading holds it, and the other parts place it, as [Semantics](#semantics) gives.
 
 ```
 (DET &member
@@ -56,17 +57,19 @@ The `RIGID_DET` form, a rigid determination, is the arclog form for parameters t
 
 A form may also hold an `instance` clause, and a `key` clause:
 
-- `instance` is written as a [key clause](arclog.md#instance) is, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels.
-- `key` is a key clause with the meaning it has in an `INIT`: each key row is an independent assembly, aligned on its own and posed on its own. A form with no `key` has one assembly. The outputs hold the key's columns first, as an instance's outputs do.
+- `instance` is written as a [key clause](arclog.md#instance) is, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels, other than a frame part. Each other label of the part, one that neither the instance clause nor the key gives, is the part's own, made at a site of the part's atom.
+- `key` is a key clause with the meaning it has in an `INIT`: each key row is an independent assembly, aligned on its own and posed on its own, other than where a key column holds the assembly's own Idents, as [Semantics](#semantics) gives. A form with no `key` has one assembly. The outputs hold the key's columns first, as an instance's outputs do.
 - Where a form has a `key` clause, the rest of the form stands inside it, after its body: the `instance` clause where the form has one, and the parts otherwise. The key's labels are in scope there, as they are in the keyed inputs of an `INIT`.
 
 ## Semantics
 
-An instance's reading is, for each part, the part's rows at that instance. A model of one assembly is a common reading, one set of rows per part, together with, for each instance, the D4 elements that, each with one one-to-one renaming of the assembly's own Idents, take the common reading onto the instance's reading. One element and one renaming act on every part of an instance at once.
+An instance's reading is, for each part that reads an instance label, the part's rows at that instance. A model of one assembly is a common reading, one set of rows per part, together with, for each instance, the D4 elements that, each with one one-to-one renaming of the assembly's own Idents, take the common reading of those parts onto the instance's reading. One element and one renaming act on every part of an instance at once. The common reading also holds the rows of each frame part, in the frame of the assembly, and `&marker.<part>` gives their image at each pose as it does for any part.
 
 An element acts by type. A `Box`, `Position` or `Offset` goes through `apply`, and a `Dir`, `DiagDir` or `Dir8` goes through the direction actions. An `Axis` or `DiagAxis` goes through the swap the element induces on its directions, and a reflection reverses a `Sense`. A renaming moves the assembly's own Idents. Every other type is left as it is.
 
-An `Ident` column of a part is the assembly's own where no label at it stands at an `Ident` site outside the assembly's parts and the relations that take their types from them, other than a site in the body of a determination relation that an `instance` clause of the assembly reads. That body gives each instance its reading, which the model takes up to the renaming. Every other `Ident` column is a plain `Ident`, and a renaming leaves it as it is.
+An `Ident` column of a part or of the key is the assembly's own where no label at it stands at an `Ident` site outside the assembly's parts and key and the relations that take their types from them, other than a site in the body of a determination relation that a `key` or `instance` clause of the assembly reads, or in the body of a determination relation that one of those reads, at any depth. Those bodies give each instance its reading and its key, which the model takes up to the renaming. Every other `Ident` column is a plain `Ident`, and a renaming leaves it as it is.
+
+Where a key column holds the assembly's own Idents, the renaming of an instance also takes the key of the common reading onto the instance's key. Two instances whose readings are images of each other under one D4 element and one renaming that takes the key of the one onto the key of the other stand at one key: the form has one assembly per class of such instances, and each output gives that assembly one key, the key of the class's instance whose reading is least by content. Where instances of two classes stand at one key row, the assembly has no value.
 
 If the instances of an assembly admit no common reading, the assembly has no value. Where a common reading `R` exists, every image of `R` under D4 is one too. The choice among them is the assembly's frame. Nothing in the task makes that choice, and the outputs are defined so that no read observes it.
 
@@ -83,7 +86,7 @@ A change of frame relabels every pose of an assembly in the same way, by composi
 - A column of a derived relation, of an instance's key or of an instance's input, which then takes the type.
 - `=` and `!=`.
 - `d4_elem`, whose column takes the type of its label, since every D4 element is a pose.
-- `pose_difference(a, b, d)`, where d is the element that takes the placement at pose a onto the placement at pose b. It is the same in every frame, a D4 value in the grid frame, and it is the one way from a Pose to a D4 value.
+- `pose_difference(a, b, d)`, where d is the element that takes the placement at pose a onto the placement at pose b. It is the same in every frame, a D4 value in the grid frame, and it is the one way from a Pose to a D4 value. A label of no type at a or b takes the Pose type of the other labels at a and b, where their types meet in a Pose type. A label at a or b that has a type other than a Pose type is refused, and so is a label that has no type once its form is complete.
 
 Under a `key` clause each key row is an assembly of its own, and the Pose type of a pose read is that assembly's at the key labels the read gives, so two pose reads meet only where they read the same key labels. A pose of a keyed assembly that reaches a column of a derived relation, of an instance's key or of an instance's input takes the Pose type at the key that another column of the same relation holds, where the pose label stands at the pose column and the key's label at that other column. A read that binds a label at the key column and another at the pose column gives the second the Pose type at the first. A join of poses at two different key labels is refused.
 
@@ -116,7 +119,7 @@ A placement is kept where its difference from a training instance's pose is a ro
 
 ## What it replaces
 
-- The Souffle `RIGID` block, with its placed names `<block>_<rel>` and the lint category that keeps them out of reach.
+- The Souffle `RIGID` block, with its placed names `<block>_<rel>` and the lint category that keeps them out of reach. A stored part that the block's determination does not write is a frame part.
 - The runner's comparison of a chart instance with the stored value up to pose. With an `instance` clause, the form also replaces the determination that picks one instance as the chart.
 
 ## Evidence

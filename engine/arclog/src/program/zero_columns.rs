@@ -652,7 +652,7 @@ impl<'a> Pass<'a> {
     fn zero_stands(&self, atom: &Atom, site: &Site) -> bool {
         let Some(columns) = typed_columns(self.lowering.registry, &atom.relation) else { return false };
         let ty = columns.iter().find(|column| column.name == site.column).and_then(|column| column.ty.fixed());
-        site.value.args.len() == 1 && matches!(ty, Some(ValueType::Number | ValueType::Box))
+        site.value.args.len() == 1 && ty.is_some_and(ValueType::has_zero)
     }
 
     /// The site on the dropped column `column` holds only `0`s: each of its

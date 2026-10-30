@@ -29,7 +29,8 @@ pub struct SolverText {
 /// layout elides as its bare label. A token whose node has no layout stands
 /// one space after the token before it. Each name and column of `program`
 /// is written as a file writes it, and each label is named in the layout of
-/// its scope; a slot of a decode is a fault.
+/// its scope, a form that an `ALT` gave to a `DEMO_RULE` form a scope of its
+/// own; a slot of a decode is a fault.
 pub fn write_arclog(program: &Node<Program>, layout: &Layout) -> String {
     arclog::write(program.value(), layout)
 }
@@ -77,10 +78,76 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// and reads back as two labels.
 ///
 /// A relation slot `n` is written `&rn`. The writer prints each form a decode
-/// builds, `RULE`, `DET`, `INIT`, `CHOOSE` and `RIGID_DET`, and refuses a
-/// record site.
+/// builds, `RULE`, `DET`, `INIT`, `CHOOSE`, `RIGID_DET` and `OUT`, including
+/// explicit record-field sites. It writes a site of an `OUT` form that is a column of one
+/// label as `^<column>`, with the column's name whatever the other labels of
+/// the form are named, since no label of an `OUT` is read again.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
-    synthesized::write(program, registry)
+    synthesized::write(program, registry, None)
+}
+
+/// A mutation's display namespace, keyed by the unchanged native LabelIds.
+/// It has no part in checked AST equality, stream identity or evaluation.
+pub type LabelNames = Vec<Vec<(crate::program::LabelId, Box<str>)>>;
+
+pub(crate) fn write_synthesized_named(program: &Node<Program>, registry: &Registry,
+    preferred: Option<&LabelNames>) -> String {
+    synthesized::write(program, registry, preferred)
+}
+
+pub(crate) fn label_names_named(program: &Node<Program>, registry: &Registry,
+    preferred: Option<&LabelNames>) -> LabelNames {
+    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names)| names).collect()
+}
+
+/// The name of each label of each form of `program`, in form order, as
+/// [`write_synthesized`] names them: the form's reserved names, then its
+/// other labels in the order of their ids. It refuses the programs that
+/// `write_synthesized` refuses.
+pub fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(crate::program::LabelId, Box<str>)>> {
+    label_names_named(program, registry, None)
+}
+
+/// Engine-written display text keyed by the ORIGINAL AST paths. Synthesized
+/// named-record field wrappers are presentation only, never new source paths.
+pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, registry: &Registry, preferred: Option<&LabelNames>)
+    -> Result<std::collections::BTreeMap<crate::program::path::NodePath, String>, String>
+{
+    use crate::program::path::{NodePath,NodeRef};
+    use crate::program::LabelId;
+    let named = match layout {
+        Some(layout) => program.value().forms.iter().enumerate().map(|(i,f)| {
+            let names = layout.node(crate::layout::SourceFile::Arclog,&NodePath::top(i as u32))
+                .map(|n|n.label_names.to_vec()).unwrap_or_default();
+            (f.clone(),names)
+        }).collect(),
+        None => synthesized::named_forms(program,registry,preferred),
+    };
+    fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath,
+        names: &[(LabelId,Box<str>)], out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
+        // NamedLabel at a decoded record field is printed as (:field LABEL).
+        // Its source node is still LABEL, at the original argument path.
+        if matches!(original,NodeRef::Label(_)) && matches!(display,NodeRef::Site(_)) {
+            let children = display.children();
+            if children.len()!=1 {return Err(format!("display field shape mismatch at {at:?}"));}
+            display=children[0];
+        }
+        out.insert(at.clone(),arclog::snippet(display,names)?);
+        let original_children=original.children();let display_children=display.children();
+        if original_children.len()!=display_children.len() {
+            return Err(format!("display child count mismatch at {at:?}"));
+        }
+        for (i,(original,display)) in original_children.into_iter().zip(display_children).enumerate() {
+            walk(original,display,&at.child(i as u32),names,out)?;
+        }
+        Ok(())
+    }
+    let mut out=std::collections::BTreeMap::new();
+    for (i,(original,(display,names))) in program.value().forms.iter().zip(named).enumerate() {
+        walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),&names,&mut out)?;
+    }
+    out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized_named(program,registry,preferred)});
+    Ok(out)
 }
 
 /// The numbers a writer gives the Idents it writes, private to the crate's
@@ -107,6 +174,19 @@ impl IdentNumbering {
     }
 }
 
+/// Marks in `layout` each site of the atoms of `out`, the `OUT` form at
+/// `form`, that is a column of one label, as written elided: `^<column>`.
+pub(crate) fn elide_out_sites(out: &crate::program::Out, form: &crate::program::path::NodePath, layout: &mut Layout) {
+    use crate::layout::SourceFile;
+    use crate::program::SiteArg;
+    let body = form.child(crate::program::Out::BODY);
+    for (index, conjunct) in out.key.body.value().conjuncts.iter().enumerate() {
+        let Some(atom) = conjunct.atom() else { continue };
+        let elided = atom.value().sites.iter().enumerate().filter(|(_, site)| matches!(&site.value.args[..], [SiteArg::Label(_)])).map(|(at, _)| at as u32);
+        layout.nodes.entry((SourceFile::Arclog, body.child(index as u32))).or_default().elided_sites = elided.collect();
+    }
+}
+
 /// The program form of a decoded program: its slots named, its labels named
 /// in the scope of each form, and the program written with that layout.
 mod synthesized {
@@ -116,22 +196,59 @@ mod synthesized {
     use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
     use crate::program::path::NodePath;
     use crate::program::*;
-    use crate::registry::Registry;
+    use crate::registry::{Registry, ColumnType, ParameterSite, TypeParameter, binding_sites};
+    use crate::resolver::columns::projection;
     use crate::resolver::form_columns::rigid_outputs;
     use crate::resolver::registry_columns::{component, proposer_columns};
-    use crate::trace::render::label_name;
+    use crate::trace::label_names::label_name;
 
-    pub(super) fn write(program: &Node<Program>, registry: &Registry) -> String {
-        let mut synth = Synthesizer { registry, columns: StableHashMap::default() };
+    /// Each form of `program` as written, with the name of each of its labels.
+    pub(super) fn named_forms(
+        program: &Node<Program>,
+        registry: &Registry,
+        preferred: Option<&super::LabelNames>,
+    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {
+        let mut synth = Synthesizer {
+            registry,
+            columns: StableHashMap::default(),
+            records: StableHashMap::default(),
+        };
+        let mut named = Vec::new();
+        for (index, form) in program.value().forms.iter().enumerate() {
+            let generated = synth.label_names(form);
+            // Existing labels keep gold's spellings, including names no longer
+            // used after a deletion. Only genuinely new IDs allocate a name.
+            // Keep the canonical site's field spelling: the ordinary writer
+            // emits an explicit field wrapper when its label differs.
+            let names = match preferred.and_then(|all| all.get(index)) {
+                None => generated,
+                Some(gold) => {
+                    let mut held = gold.clone();
+                    for (id, name) in generated {
+                        if held.iter().any(|(label, _)| *label == id) { continue; }
+                        let fresh = label_name(&name, |candidate| held.iter().any(|(_, name)| &**name == candidate));
+                        held.push((id, fresh.into()));
+                    }
+                    held
+                }
+            };
+            let written = synth.form(form, &Names(&names));
+            named.push((written, names));
+        }
+        named
+    }
+
+    pub(super) fn write(program: &Node<Program>, registry: &Registry, preferred: Option<&super::LabelNames>) -> String {
         let mut forms = Vec::new();
         let mut layout = Layout::default();
-        for (index, form) in program.value().forms.iter().enumerate() {
-            let names = synth.label_names(form);
-            let lookup = Names(&names);
-            forms.push(synth.form(form, &lookup));
+        for (index, (form, names)) in named_forms(program, registry, preferred).into_iter().enumerate() {
             let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
             let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
             layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
+            if let Form::Out(out) = &form {
+                super::elide_out_sites(out.value(), &NodePath::top(index as u32), &mut layout);
+            }
+            forms.push(form);
         }
         super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
     }
@@ -149,6 +266,9 @@ mod synthesized {
         /// The written names of the columns of each relation a form before
         /// the current one declares, by the position of the column.
         columns: StableHashMap<ProgramRelation, Vec<String>>,
+        /// Record field names belong to the parameter's binding, not to the
+        /// label a later read happens to use for the field's value.
+        records: StableHashMap<(ProgramRelation, ColumnName), Vec<(ColumnName, ColumnName)>>,
     }
 
     fn slot_text(slot: u32) -> String {
@@ -223,10 +343,16 @@ mod synthesized {
         }
 
         /// The name of each label of `form`: the reserved names, then the
-        /// other labels in the order of their ids.
+        /// other labels in the order of their ids. A label of an `OUT` form
+        /// takes the name of the column of its site whatever other label
+        /// takes it, since the form writes each such site as `^<column>`.
         fn label_names(&self, form: &Form) -> Vec<(LabelId, Box<str>)> {
             let mut uses = Uses::default();
             self.form_uses(form, &mut uses);
+            if matches!(form, Form::Out(_)) {
+                let made = uses.made.iter().filter(|(label, _)| !uses.reserved.iter().any(|(id, _)| id == label));
+                return uses.reserved.iter().cloned().chain(made.map(|(label, column)| (*label, column.as_str().into()))).collect();
+            }
             let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
             let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
             names.dedup_by_key(|(id, _)| *id);
@@ -266,7 +392,8 @@ mod synthesized {
                         part.sites.iter().for_each(|site| self.site_uses(Some(&part.relation), site, uses));
                     }
                 }
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE and RIGID_DET"),
+                Form::Out(out) => self.body_uses(out.value().key.body.value(), uses),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE, RIGID_DET and OUT"),
             }
         }
 
@@ -309,7 +436,13 @@ mod synthesized {
                         None => uses.made.push((*id, column.clone())),
                     },
                     SiteArg::NamedLabel { label: LabelUse::Zero, .. } => {}
-                    SiteArg::Field(_) => panic!("write_synthesized writes no record site"),
+                    SiteArg::Field(field) => {
+                        let mut field = field.clone();
+                        if let Some(to) = self.record_field(relation, &site.column, &field.column) {
+                            field.column = to.clone();
+                        }
+                        self.site_uses(None, &field, uses);
+                    },
                 }
             }
         }
@@ -320,7 +453,8 @@ mod synthesized {
                 Form::Instance(instance) => Form::Instance(Node::new(self.instance(instance.value(), names))),
                 Form::Choose(choose) => Form::Choose(Node::new(self.choose(choose.value(), names))),
                 Form::RigidDet(rigid) => Form::RigidDet(Node::new(self.rigid_det(rigid.value(), names))),
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE and RIGID_DET"),
+                Form::Out(out) => Form::Out(Node::new(Out { key: self.key_body(&out.value().key, names) })),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE, RIGID_DET and OUT"),
             }
         }
 
@@ -335,19 +469,87 @@ mod synthesized {
         }
 
         fn instance(&mut self, instance: &Instance, names: &Names) -> Instance {
-            let component_ports = component(self.registry, &instance.component).expect("the lib names the component");
-            let written_inputs: Vec<_> = component_ports.inputs.iter().map(|input| &input.port.name).collect();
+            let component_ports =
+                component(self.registry, &instance.component).expect("the lib names the component");
+            let mut fields: StableHashMap<TypeParameter, Vec<(ColumnName, ColumnName)>> =
+                StableHashMap::default();
+            for sites in binding_sites(instance, &component_ports.inputs) {
+                let names_of_fields = match sites.binding {
+                    ParameterSite::Key(key) => key
+                        .key
+                        .columns
+                        .iter()
+                        .map(|column| {
+                            (
+                                column.name.clone(),
+                                ColumnName::Written(names.get(column.label).into()),
+                            )
+                        })
+                        .collect(),
+                    ParameterSite::Head { site, .. } => {
+                        let old = projection(site);
+                        let written = self.site(None, site, names);
+                        old.zip(projection(&written))
+                            .map(|(old, new)| {
+                                old.iter().cloned().zip(new.iter().cloned()).collect()
+                            })
+                            .unwrap_or_default()
+                    }
+                };
+                fields.insert(sites.parameter.clone(), names_of_fields);
+            }
+            let written_inputs: Vec<_> = component_ports
+                .inputs
+                .iter()
+                .map(|input| &input.port.name)
+                .collect();
             for port in component_ports.relation_ports(&written_inputs) {
-                let name = OutputName { of: OutputOwner::Instance(instance.name.clone()), path: Arc::from([OutputStep::Port(port.name.clone())]) };
-                self.columns.insert(ProgramRelation::Output(name), port.columns.iter().filter_map(|column| written(&column.name).map(str::to_owned)).collect());
+                let name = OutputName {
+                    of: OutputOwner::Instance(instance.name.clone()),
+                    path: Arc::from([OutputStep::Port(port.name.clone())]),
+                };
+                let relation = ProgramRelation::Output(name);
+                for column in port.columns.iter() {
+                    if let ColumnType::Parameter(parameter) = &column.ty {
+                        if let Some(fields) = fields.get(parameter) {
+                            self.records
+                                .insert((relation.clone(), column.name.clone()), fields.clone());
+                        }
+                    }
+                }
+                self.columns.insert(
+                    relation,
+                    port.columns
+                        .iter()
+                        .filter_map(|column| written(&column.name).map(str::to_owned))
+                        .collect(),
+                );
             }
             let key = instance.key.as_ref().map(|key| {
                 let value = key.value();
-                let inputs = value.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
-                Node::new(KeyClause { key: self.key_body(&value.key, names), inputs })
+                let inputs = value
+                    .inputs
+                    .iter()
+                    .map(|input| {
+                        Node::new(self.input(input.value(), names, component_ports, &fields))
+                    })
+                    .collect();
+                Node::new(KeyClause {
+                    key: self.key_body(&value.key, names),
+                    inputs,
+                })
             });
-            let inputs = instance.inputs.iter().map(|input| Node::new(self.input(input.value(), names))).collect();
-            Instance { name: InstanceName(declared(&instance.name.0)), component: instance.component.clone(), key, inputs }
+            let inputs = instance
+                .inputs
+                .iter()
+                .map(|input| Node::new(self.input(input.value(), names, component_ports, &fields)))
+                .collect();
+            Instance {
+                name: InstanceName(declared(&instance.name.0)),
+                component: instance.component.clone(),
+                key,
+                inputs,
+            }
         }
 
         fn choose(&mut self, choose: &Choose, names: &Names) -> Choose {
@@ -372,6 +574,11 @@ mod synthesized {
             // with, which is not its position.
             for ((path, columns), (_, written_columns)) in rigid_outputs(rigid).into_iter().zip(rigid_outputs(&value)) {
                 let output = OutputName { of: OutputOwner::RigidDet(rigid.name.clone()), path };
+                if let (Some(old), Some(new)) = (&rigid.key, &value.key) {
+                    let fields = old.columns.iter().zip(new.columns.iter())
+                        .map(|(old,new)|(old.name.clone(),new.name.clone())).collect();
+                    self.records.insert((ProgramRelation::Output(output.clone()), crate::resolver::columns::key()), fields);
+                }
                 let mut texts: Vec<String> = Vec::new();
                 for (column, text) in columns.names().zip(written_columns.names()) {
                     let ColumnName::Slot(slot) = column else { continue };
@@ -387,8 +594,34 @@ mod synthesized {
             KeyBody { body: self.body(&key.body, names), columns: named_columns(&key.columns, names) }
         }
 
-        fn input(&self, input: &InstanceInput, names: &Names) -> InstanceInput {
-            InstanceInput { name: input.name.clone(), head: input.head.iter().map(|site| self.site(None, site, names)).collect(), body: self.body(&input.body, names) }
+        fn input(
+            &self,
+            input: &InstanceInput,
+            names: &Names,
+            component: &crate::registry::Component,
+            fields: &StableHashMap<TypeParameter, Vec<(ColumnName, ColumnName)>>,
+        ) -> InstanceInput {
+            let head = input
+                .head
+                .iter()
+                .map(|site| {
+                    let parameter = component
+                        .inputs
+                        .iter()
+                        .find(|port| port.port.name == input.name)
+                        .and_then(|port| port.port.columns.iter().find(|c| c.name == site.column))
+                        .and_then(|c| match &c.ty {
+                            ColumnType::Parameter(p) => fields.get(p),
+                            _ => None,
+                        });
+                    self.site_with_fields(None, site, names, parameter.map(Vec::as_slice))
+                })
+                .collect();
+            InstanceInput {
+                name: input.name.clone(),
+                head,
+                body: self.body(&input.body, names),
+            }
         }
 
         fn body(&self, body: &Node<Body>, names: &Names) -> Node<Body> {
@@ -414,11 +647,68 @@ mod synthesized {
         }
 
         fn site(&self, relation: Option<&RelationRef>, site: &Site, names: &Names) -> Site {
+            let fields = relation
+                .and_then(read_relation)
+                .and_then(|r| self.records.get(&(r, site.column.clone())));
+            self.site_with_fields(relation, site, names, fields.map(Vec::as_slice))
+        }
+
+        fn record_field(&self, relation: Option<&RelationRef>, column: &ColumnName, field: &ColumnName) -> Option<&ColumnName> {
+            let fields = self.records.get(&(relation.and_then(read_relation)?, column.clone()))?;
+            fields.iter().find(|(from,_)| from == field).map(|(_,to)|to)
+        }
+
+        fn site_with_fields(
+            &self,
+            relation: Option<&RelationRef>,
+            site: &Site,
+            names: &Names,
+            fields: Option<&[(ColumnName, ColumnName)]>,
+        ) -> Site {
             let args = site.value.args.iter().map(|arg| match arg {
-                SiteArg::NamedLabel { name: ColumnName::Slot(_), label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => SiteArg::NamedLabel { name: ColumnName::Written(names.get(*id).into()), label: *label },
+                SiteArg::NamedLabel { name, label: LabelUse::Zero } => {
+                    let field = fields.and_then(|fields| fields.iter().find(|(from,_)|from == name)).map(|(_,to)|to.clone())
+                        .or_else(|| matches!(name, ColumnName::Written(_)).then(||name.clone()))
+                        .expect("a zero at a record field has the binding's field name");
+                    SiteArg::Field(Site { column: field, value: SiteValue { args: Arc::from([SiteArg::Label(LabelUse::Zero)]) } })
+                },
+                SiteArg::NamedLabel {
+                    name: old @ ColumnName::Slot(_),
+                    label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)),
+                } => {
+                    let field = fields
+                        .and_then(|fields| fields.iter().find(|(from, _)| from == old))
+                        .map(|(_, to)| to.clone())
+                        .unwrap_or_else(|| ColumnName::Written(names.get(*id).into()));
+                    if written(&field) == Some(names.get(*id)) {
+                        SiteArg::NamedLabel {
+                            name: field,
+                            label: *label,
+                        }
+                    } else {
+                        SiteArg::Field(Site {
+                            column: field,
+                            value: SiteValue {
+                                args: Arc::from([SiteArg::Label(*label)]),
+                            },
+                        })
+                    }
+                }
+                SiteArg::Field(field) => {
+                    let mut field = field.clone();
+                    if let Some(to) = fields.and_then(|fields|fields.iter().find(|(from,_)|from == &field.column)).map(|(_,to)|to) {
+                        field.column = to.clone();
+                    }
+                    SiteArg::Field(self.site_with_fields(None, &field, names, None))
+                },
                 other => other.clone(),
             });
-            Site { column: ColumnName::Written(self.column_text(relation, &site.column).into()), value: SiteValue { args: args.collect() } }
+            Site {
+                column: ColumnName::Written(self.column_text(relation, &site.column).into()),
+                value: SiteValue {
+                    args: args.collect(),
+                },
+            }
         }
     }
 

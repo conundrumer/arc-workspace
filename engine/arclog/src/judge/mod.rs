@@ -2,8 +2,8 @@
 //! candidates, as `docs/engine/cases.md#judge` gives: the candidates of a
 //! pair in [`candidates`], and the output set of a case on a pair, the
 //! solves test and the enumeration's stops in [`solves`], and the judged
-//! run of a case, its grid columns and its output set on each pair, in
-//! [`run`]. [`determination`] gives the values of a solver's `DET`s from
+//! run of a case, its output set on each pair, and the test of a relation
+//! against the train pairs, in [`run`]. [`determination`] gives the values of a solver's `DET`s from
 //! the train pairs that its base cases solve.
 
 pub mod attempts;

@@ -67,6 +67,49 @@ DET_HEAD = re.compile(r"\((?:DET|DET_OR_RULE) (&\w+)(?=[\s)]|$)")
 """The head of a determination, and the relation it derives."""
 
 
+def fresh(base: str, taken: set[str]) -> str:
+    """`base`, or `base` with the least number from 2 that makes it a label
+    outside `taken`; the label joins `taken`."""
+    lab, n = base, 2
+    while lab in taken:
+        lab, n = f"{base}{n}", n + 1
+    taken.add(lab)
+    return lab
+
+
+FRAME_2D = "Frame2D"
+"""The component whose `cell` holds a key's cells only where `extent` has that
+key on each of two perpendicular axes."""
+
+
+def perpendicular_join(body: list[str], axis: str, knames: list[str]) -> list[str]:
+    """The key clause `body`, which makes the label `axis` as the axis of a key's
+    extent row, joined with a copy of itself on the key labels `knames`, whose
+    other labels are renamed, at an axis perpendicular to `axis`: the keys that
+    `body` gives on each of two perpendicular axes."""
+    taken = label_names(body) | set(knames)
+    ren = {x: fresh(x, taken) for x in sorted(label_names(body) - set(knames))}
+    copy = relabel(body, lambda mark, x: x if x in knames else mark + ren[x])
+    sites = [lab if lab == col else f"(:{col} {lab})" for col, lab in (("A", axis), ("A2", ren.get(axis, axis)))]
+    return [*body, *copy, f"(perp {' '.join(sites)})"]
+
+
+def extent_axis(gens: list[Unit], kren, knames: list[str]) -> str:
+    """The label of the axis of the extent row in the key clause of every
+    generator in `gens`: the label they share where it is no key label, else a
+    label that no generator holds. `kren` gives a generator's renames of its
+    key variables."""
+    held = {kren(u).get(u.head.args[1].name, u.head.args[1].name) for u in gens}
+    if len(held) == 1 and not held & set(knames):
+        return next(iter(held))
+    taken = set(knames)
+    for u in gens:
+        vs: set[str] = set()
+        collect_vars(list(u.body) + [AtomLiteral(u.head, False)], vs)
+        taken |= {kren(u).get(v, v) for v in vs}
+    return fresh("A", taken)
+
+
 def line_reads(f: Form) -> set[str]:
     """The relations a form's lines read."""
     return {m.group(1) for l in f.lines for m in READ.finditer(l)}
@@ -145,7 +188,8 @@ class InstancesMixin:
                 if not set(ctor_names(t)) & c.select_ctors:
                     self.todo.add("head-term", f"{colname} = {souffle_term(t)}")
                 extra.append(f"(= {colname} {souffle_term(t)})")
-        # avoid capturing: a body variable whose name a head column took
+        # avoid capturing: a body variable whose name a head column took; a
+        # variable that an equation unified into it takes its new label too
         targets = set(rename.values())
         vars_ = set()
         collect_vars(body, vars_)
@@ -155,6 +199,9 @@ class InstancesMixin:
                 while f"{v}{n}" in targets or f"{v}{n}" in vars_:
                     n += 1
                 rename[v] = f"{v}{n}"
+                for k, val in eqmap.items():
+                    if val == v and rename[k] == v:
+                        rename[k] = rename[v]
         w = ClauseWriter(c, scope, sub, rename)
         w.drop_neg = frozenset(drop_neg)
         bound: set[str] = set()
@@ -251,7 +298,9 @@ class InstancesMixin:
         """`forms`, with each open parameter that a `DET` body reads written in
         two determinations: the Souffle determination as a `DET` of `set_name`
         with no `ONE` mark, and a `DET` that picks one row of that set. Each
-        read of the parameter in a `DET` body reads the set."""
+        read of the parameter in a `DET` body reads the set. Where the set's
+        `DET` has no body, the parameter's stored rows are the set's value,
+        and the `param` form of the rows names the set."""
         names = {self.c.rel_name(("Params",), n): n for n in self.c.open_params}
         determined = {m.group(1) for f in forms if (m := DET_HEAD.match(f.lines[0])) and m.group(1) in names}
         self.used_sets = frozenset(determined & {r for f in forms if self.det_side(f) for r in line_reads(f)})
@@ -303,17 +352,48 @@ class InstancesMixin:
 
     def instance(self, inst, us: list[Unit], side: str, empty: frozenset[str] = frozenset(),
                  split: frozenset[str] = frozenset()) -> list[Form]:
+        """The forms of an instance of the lib component, from its input clauses
+        `us`. Input clauses that fix branches of one point make one instance per
+        branch, which holds that branch's clauses and the clauses that fix no
+        branch of the point. The form at the branches no clause fixes holds the
+        clauses that fix no branch of the point and, for each input that none
+        of those writes, the clauses of that input that fix the point's first
+        constructor through a constructor of a column and through no
+        `impl_choice` atom, as an alt reads from the concept an input that it
+        does not write. A clause fixes a branch through a constructor of its
+        head, or through the constructors its body fixes as the clause writer
+        records the branches of any clause, and it fixes the branch of each
+        point that the branch's point is nested under. Where clauses fix
+        branches of two points, a form stands at the branches of both points,
+        each its own or the branches no clause fixes."""
         c = self.c
-        # input clauses whose heads name branches of one point: one instance
-        # per named branch, which holds that branch's clauses and the clauses
-        # that name no branch of the point, and one of the latter alone for
-        # the branches no clause names
         points = list(c.point_fields())
         point_of = {k.name: f_ for f_, adt_ in points for k in adt_.constructors}
-        _, lrs = c.lib.relations(inst.component) if inst.component in c.lib.comps else (None, [])
-        keyed = {lr.name for lr in lrs if lr.cols and lr.cols[0].name == "key"}
-        named = [{k for k in ctor_names(u.head.args[0]) if k in point_of}
-                 if u.head.args and u.head.relation.name in keyed else set() for u in us]
+        scope = inst.scope.components
+        sub = c.parse_sub if scope == ("Parse",) else {}
+
+        def fixed(u: Unit) -> set[str]:
+            """The constructors of a point that the clause `u` fixes: those the
+            clause writer records for its body and those of its head, each with
+            the constructors of the points that the constructor's point stands
+            under."""
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            w = ClauseWriter(c, scope, sub, {})
+            w.lits(list(u.body or []), set())
+            self.todo.pending, self.todo.kinds = saved
+            ctors = (w.branches | {k for a in u.head.args for k in ctor_names(a)}) & point_of.keys()
+            return ctors | {k for x in ctors for _, k in self.ancestors(point_of[x])}
+
+        def gated_on(u: Unit, ctor: str) -> bool:
+            """Whether a positive `impl_choice` atom in the body of the clause `u` fixes
+            the constructor `ctor`."""
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            w = ClauseWriter(c, scope, sub, {})
+            gated = any(isinstance(l, AtomLiteral) and not l.negated and w.is_gate(l) and ctor in (w.gate_ctors(l) or ())
+                        for l in u.body or [])
+            self.todo.pending, self.todo.kinds = saved
+            return gated
+        named = [fixed(u) for u in us]
         for f_, adt_ in points:
             if f_ in split:
                 continue   # split already
@@ -335,17 +415,35 @@ class InstancesMixin:
             gen = [u for u in free if u.body is None or not any(
                 isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,) for l in u.body)]
             if gen and rest:
-                gs = self.instance(inst, free, side, empty, split | {f_})
-                if c0 in ks:
+                # an alt reads a relation that it does not derive from the concept,
+                # and so an input that no clause of `free` writes: the form at
+                # `rest` holds the clauses of that input that fix the first
+                # constructor through a column and through no `impl_choice` atom
+                written = {u.head.relation.name for u in free}
+                inherited = [u for u, ns in zip(us, named)
+                             if c0 in ns and not any(point_of[x] == f_ and x != c0 for x in ns)
+                             and u.head.relation.name not in written and not gated_on(u, c0)]
+                gs = self.instance(inst, free + inherited, side, empty, split | {f_})
+                # where another point is also fixed, the forms of the clauses that fix
+                # nothing at this point stand at the point's other branches, so that
+                # a case that takes a branch of both points has one form of the relation
+                fixes_other = bool(split) or any(point_of[x] != f_ for ns in named for x in ns)
+                if c0 in ks or fixes_other:
                     for g in gs:
                         g.branches = tuple(sorted(set(g.branches) | rest))
                 out.extend(gs)
             # a form that writes what a form of fewer branches writes repeats
             # it: the latter holds wherever the former does
+            def holds_where(h: Form, g: Form) -> bool:
+                """Whether `h` holds in each case `g` holds: at each point, `h` names
+                no constructor of the point or each one that `g` names."""
+                return all(not (hs := {b for b in h.branches if point_of.get(b) == p})
+                           or {b for b in g.branches if point_of.get(b) == p} <= hs
+                           for p, _ in points)
             concept = {adt.constructors[0].name for _, adt in points}
             kept: list[Form] = []
             for g in sorted(out, key=lambda g: len(set(g.branches) - concept)):
-                if not any(h.lines == g.lines and set(h.branches) - concept <= set(g.branches) for h in kept):
+                if not any(h.lines == g.lines and holds_where(h, g) for h in kept):
                     kept.append(g)
             return [g for g in out if any(g is h for h in kept)]
         c.cur_empty = empty
@@ -417,7 +515,10 @@ class InstancesMixin:
         has_key = any(l.kind in ("keep", "example") for l in key_leaves)
         # the key clause: the atoms over key labels alone, where every input
         # clause shares them; else the union of the generators' bodies, which is
-        # also the key clause of a Cardinality with no domain clause
+        # also the key clause of a Cardinality with no domain clause. A Frame2D
+        # holds the keys that `extent` gives on each of two perpendicular axes:
+        # the join of the generators' union with a copy of itself at a
+        # perpendicular axis, in place of the union
         residual: dict[int, list] = {}
         key_body: list[str] | None = None
         blocks: list[list[str]] = []
@@ -472,7 +573,8 @@ class InstancesMixin:
             # which then holds only the keys that some member has
             renamed = libmap.COMP.get(inst.component)
             counts_members_only = renamed is not None and renamed.name == "Cardinality" and "domain" not in written
-            if gens and not counts_members_only and all(id(u) in groups for u in gens):
+            two_axes = inst.component == FRAME_2D
+            if gens and not counts_members_only and not two_axes and all(id(u) in groups for u in gens):
                 cands = {tuple(groups[id(u)][0]) for u in gens}
                 if len(cands) == 1:
                     shared = list(next(iter(cands)))
@@ -485,24 +587,40 @@ class InstancesMixin:
                         reads |= g[2].reads
                         branches |= g[2].branches
             elif gens:
+                axis = extent_axis(gens, kren, knames) if two_axes else None
                 uniq = []
                 for u in gens:
                     ren = kren(u)
+                    key_axis = None
+                    if axis is not None:
+                        # a generator whose axis is a key label makes the axis label equal to it
+                        v = u.head.args[1].name
+                        if ren.get(v, v) in knames:
+                            key_axis = ren.get(v, v)
+                        else:
+                            ren = {**ren, v: axis}
                     w = ClauseWriter(c, scope, lsub, ren, own_inst=key)
                     ls = mark_key(w.lits(list(u.body), set()), knames)
+                    if key_axis is not None:
+                        ls.append(f"(= *{axis} {key_axis})")
                     reads |= w.reads
                     branches |= w.branches
                     if ls not in uniq:
                         uniq.append(ls)
                 uniq = drop_implied(uniq)
                 key_body = list(uniq[0] if len(uniq) == 1 else wrap("(OR ", share_labels(uniq)))
+                if axis is not None:
+                    key_body = perpendicular_join(key_body, axis, knames)
+        def column_leaves(lr):
+            """Each non-key column of the input, with its leaves."""
+            return [(col, c.leaves(col.name, col.type, col.tparam, scope, sub, outer=lsub))
+                    for i, col in enumerate(lr.cols) if not (i == 0 and col.name == "key")]
+
         def head_terms(u, lr, ren):
             """Each non-key column of the input's head: (col, [(leaf, term)])."""
             out = []
-            for i, (col, arg) in enumerate(zip(lr.cols, u.head.args)):
-                if i == 0 and col.name == "key":
-                    continue
-                leaves = c.leaves(col.name, col.type, col.tparam, scope, sub, outer=lsub)
+            keyed = bool(lr.cols) and lr.cols[0].name == "key"
+            for (col, leaves), arg in zip(column_leaves(lr), u.head.args[int(keyed):]):
                 terms = ClauseWriter(c, scope, lsub, ren).split(arg, leaves)
                 for l, t in zip(leaves, terms):
                     if l.kind == "case":
@@ -536,13 +654,6 @@ class InstancesMixin:
                 return labs[0]
             return f"(:{col.name} {' '.join(labs)})"
 
-        def fresh(base: str, taken: set[str]) -> str:
-            lab, n = base, 2
-            while lab in taken:
-                lab, n = f"{base}{n}", n + 1
-            taken.add(lab)
-            return lab
-
         def zero_sites(hts, ren, taken: set[str]) -> tuple[list[str], list[str]]:
             """The head sites, each zero term a label named after its leaf,
             and the `(= *X 0)` that makes each such label."""
@@ -571,29 +682,52 @@ class InstancesMixin:
             self.todo.add("input-fact", souffle_term(u.head))
             return [f"  ;; TODO input-fact: {souffle_term(u.head)}"]
 
-        def skipped(u, lr) -> bool:
-            """An input clause the engine fills from the key: the registry marks the
-            input `from-key`, and for each kept leaf of the head the key has exactly
-            one label of the leaf's type, which is the head's label at that leaf (the
-            engine's `key_fill`). Two type names are one type where each alias and
-            subtype they name, followed to its end, gives one name. A leaf or a key
-            label with no type keeps the clause."""
-            ren = kren(u)
-            saved = list(self.todo.pending), Counter(self.todo.kinds)
-            leaf_labs = [(l, lab_of(t, ren)) for _, kept in head_terms(u, lr, ren) for l, t in kept]
-            self.todo.pending, self.todo.kinds = saved
+        key_ls = [l for l in key_leaves if l.kind in ("keep", "example")]
+        key_typed = len(key_ls) == len(knames) and all(l.type for l in key_ls)
+
+        def key_label(leaf) -> str | None:
+            """The key's one label of the leaf's type (the engine's `key_fill`), or
+            None where the key has none or several of that type. Two type names are
+            one type where each alias and subtype they name, followed to its end,
+            gives one name. A leaf or a key label with no type gives None."""
+            if not (key_typed and leaf.type):
+                return None
+            labs = [n for n, k in zip(knames, key_ls) if c.type_root(k.type, scope) == c.type_root(leaf.type, scope)]
+            return labs[0] if len(labs) == 1 else None
+
+        def from_key(lr) -> bool:
+            """Whether the registry marks the input `from-key`."""
             ren_ = libmap.COMP.get(inst.component)
             target = ren_.name if ren_ else inst.component
             port = ren_.parts.get(lr.name, lr.name) if ren_ else lr.name
-            key_ls = [l for l in key_leaves if l.kind in ("keep", "example")]
-            root = lambda l: c.type_root(l.type, scope)
-            filled = len(key_ls) == len(knames) and all(l.type for l in key_ls) and all(
-                leaf.type and [n for n, k in zip(knames, key_ls) if root(k) == root(leaf)] == [lab]
-                for leaf, lab in leaf_labs)
-            skip = port in FROM_KEY.get(target, ()) and filled
+            return port in FROM_KEY.get(target, ())
+
+        def skipped(u, lr) -> bool:
+            """An input clause the engine fills from the key whatever the types: the
+            registry marks the input `from-key`, the input has no kept leaf beside
+            the key, and the clause only reads the instance's own key. A written
+            input gets no fill from the engine, so the clauses of an input are left
+            out only where this holds for each of them. The converse is `unfilled`."""
             own_read = any(isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,)
                            for l in u.body)
-            return skip and ((own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
+            beside_key = any(l.kind in ("keep", "example") for _, leaves in column_leaves(lr) for l in leaves)
+            return from_key(lr) and not beside_key and (
+                (own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
+
+        def unfilled(lr) -> list[str] | None:
+            """A clause of the input that no solver clause writes, which derives no row,
+            where the engine would fill the input from the key: the registry marks the
+            input `from-key`, it has a kept leaf beside the key, and for each such leaf
+            the key has exactly one label of its type. The clause's head sites are
+            those labels, and its body is false at each of them. None elsewhere. The
+            Souffle input holds no row, and the fill would add one per key."""
+            hts = [(col, [l for l in leaves if l.kind in ("keep", "example")]) for col, leaves in column_leaves(lr)]
+            hts = [(col, kept) for col, kept in hts if kept]
+            labs = [[key_label(l) for l in kept] for _, kept in hts]
+            if not (hts and from_key(lr) and all(lab for ls in labs for lab in ls)):
+                return None
+            sites_ = [site_text(col, ls, kept) for (col, kept), ls in zip(hts, labs)]
+            return [f"  ({lr.name} ({' '.join(sites_)})", f"    (!= {labs[0][0]} {labs[0][0]}))"]
 
         def without_grounding(u, lr, ren) -> list:
             """The clause's body, less each positive atom that shares no variable
@@ -741,11 +875,14 @@ class InstancesMixin:
 
         broadcast: set[int] = set()
         for lr in rels:
+            if lr.is_input and lr.name not in by_rel and lr.name not in unkeyed and (block := unfilled(lr)):
+                blocks.append(block)
             if not lr.is_input or lr.name not in by_rel:
                 continue
             kn = [] if lr.name in unkeyed else knames
             first = len(blocks)
-            us_ = [u for u in by_rel[lr.name] if u.body is None or not skipped(u, lr)]
+            filled = all(u.body is not None and skipped(u, lr) for u in by_rel[lr.name])
+            us_ = [] if filled else list(by_rel[lr.name])
             facts = [u for u in us_ if u.body is None]
             if len(us_) > 1:
                 block = merged(us_, lr)
@@ -778,7 +915,9 @@ class InstancesMixin:
         """A DemonstrationConsistency instance as a DEMONSTRATED form: its
         `value` and `demonstration` inputs as an instance's, then a DEMO_RULE
         per rule, whose `&prediction` clause has the columns the `value`
-        head names."""
+        head names. It records on the converter (`demo_value_labels`), by the
+        instance's key, the labels of each leaf of each `value` head site, which
+        `site_columns` gives the leaves of the instance's `prediction`."""
         c = self.c
         preds = [u for u in us if u.head.relation.name == "prediction"]
         gs = self._instance(inst, [u for u in us if u not in preds], side, frozenset())
@@ -822,6 +961,7 @@ class InstancesMixin:
                     return out
             return []
         vlabs = head_labels("value")
+        c.demo_value_labels = {**getattr(c, "demo_value_labels", {}), key: vlabs}
         flat_v = [x for ls in vlabs for x in ls]
         # the rules, in the order the type declares them
         order = []
@@ -996,7 +1136,6 @@ class InstancesMixin:
                    and list(ren.values()).count(b) == 1}
             if ren:
                 item = relabel(item, lambda mark, x: mark + ren.get(x, x))
-                item = [re.sub(r"\(:([A-Z]\w*) (\*?)\1\)", r"\2\1", l) for l in item]
         lines.extend(nest_keyed(slot if heads else None, [["  (@@in " + " ".join(item) + ")"]],
                                 sorted(heads), "for"))
         for body in p.aparts:

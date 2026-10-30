@@ -14,25 +14,32 @@ the case holds only the tables of the steps at or after token `n`, numbered from
 first tables. `check_case` checks the own tables, entries, runs and values of such a case, with the base's tables below `k` as the earlier tables its flow and
 copy checks read, and checks no base table again; a `bases` row whose base is absent, has a base or does not hold `k` tables before token `n`, is a violation.
 
-`--streams <dir>` also reads `cases.npz` of the streams export (`lm/export.py`) in that directory and checks
+`--streams <dir>` also reads `cases.npz` of the streams export (`model/export.py`) in that directory and checks
 that each table of the export other than an evidence table has a token inside its case's stream at a step the
 model writes, that the stream's mask admits each model-written token, and that each case of the streams export
 has tables. The number of cases with tables and no stream is printed and is no violation.
 """
 import collections, concurrent.futures, glob, heapq, json, multiprocessing, os, random, sys
 from typing import NamedTuple
+from unittest import mock
 import numpy as np
 import pandas as pd
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + "/../.."
+POOL_ENVS = ("ARCLOG_THREADS", "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS", "RUST_TEST_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
+# The variables in which `scripts/run_heavy.py` bounds the threads of the tools it runs; `scripts/run_heavy.py` and `src/engine/pool.py`,
+# which run under other interpreters, hold the same names.
 TASKS = f"{ROOT}/data/tasks"
 ROWS, COUNT = 0, 1      # the `kind` of an entry
 COPY, COMPUTED, CONSTANT, LIB_NAME = 0, 1, 2, 3     # the `kind` of a flow
 EVIDENCE = 2            # the `point` of an evidence table
 
 
+BOX_TYPES = ("Box", "Position", "Offset")   # the types of a value that is four margins
+
+
 def width_of(ty):
-    return 4 if ty == "Box" else 1
+    return 4 if ty in BOX_TYPES else 1
 
 
 def orientation_sets(types):
@@ -50,11 +57,23 @@ def cells_of(ty, types):
 
 
 def copy_keeps_type(ty, source, types):
-    """Whether a column of type `ty` may copy a column of type `source`: equal types, or orientation types whose cells of either lie within the other's."""
-    if ty == source:
+    """Whether a column of type `ty` may copy a column of type `source`: equal types, a type of a box and Box, or orientation types whose cells of either lie within the other's."""
+    if ty == source or ("Box" in (ty, source) and ty in BOX_TYPES and source in BOX_TYPES):
         return True
     mine, theirs = cells_of(ty, types), cells_of(source, types)
     return mine is not None and theirs is not None and (mine <= theirs or theirs <= mine)
+
+
+EXTENT_COLUMNS = ("extent_offset",)     # the columns of the entries and the projection rows that an export written before the extents lacks
+
+
+def with_extents(df, name):
+    """`df`, the rows of the part `name`, with the columns of the extents where an export written before them lacks them: no extent columns in `tables`, and extent offset -1 in `entries` and `projection_rows`."""
+    if name == "tables" and "extent_columns" not in df:
+        df = df.assign(extent_columns=[[] for _ in range(len(df))])
+    if name in ("entries", "projection_rows") and "extent_offset" not in df:
+        df = df.assign(extent_offset=-1)
+    return df
 
 
 def rows_of(df):
@@ -149,11 +168,16 @@ def check_case(frames, values, task, orientation_types, size=None, base=None):
         if t.width != sum(width_of(x) for x in t.column_types):
             bad("tables-width", f"table {i} has width {t.width} for types {list(t.column_types)}")
         nc = len(t.column_types)
+        extent_columns = [int(c) for c in t.extent_columns]
+        if extent_columns != sorted(set(extent_columns)) or any(not 0 <= c < nc or t.column_types[c] != "Box" or "@" not in t.column_frames[c] for c in extent_columns):
+            bad("tables-extent-columns", f"table {i} has extent columns {extent_columns} for types {list(t.column_types)} and frames {list(t.column_frames)}")
+        if any(ty == "Box" and "@" in fr and c not in extent_columns for c, (ty, fr) in enumerate(zip(t.column_types, t.column_frames))):
+            bad("tables-extent-columns", f"table {i} lists the extent columns {extent_columns}, and a Box column with a made frame is no extent column: types {list(t.column_types)}, frames {list(t.column_frames)}")
         if any(not 0 <= c < nc for k in t.keys for c in k):
             bad("tables-key-columns", f"table {i} has keys {[list(k) for k in t.keys]} for {nc} columns")
-        for column, ty, name in ((t.output_position, "Box", "output_position"), (t.output_color, "Color", "output_color")):
-            if column >= 0 and not (column < nc and t.column_types[column] == ty):
-                bad("tables-output-columns", f"table {i} gives {name} {column}, not a {ty} column of {nc}")
+        for column, tys, name in ((t.output_position, ("Position", "Box"), "output_position"), (t.output_color, ("Color",), "output_color")):
+            if column >= 0 and not (column < nc and t.column_types[column] in tys):
+                bad("tables-output-columns", f"table {i} gives {name} {column}, not a {' or '.join(tys)} column of {nc}")
     if (tabs.output_position >= 0).sum() > 1:
         bad("tables-output-columns", f"tables {list(np.flatnonzero(tabs.output_position >= 0))} give output_position")
     # flows
@@ -213,6 +237,13 @@ def check_case(frames, values, task, orientation_types, size=None, base=None):
         if r.example_kind == 0 and r.example_index != 0 or r.example_kind == 1 and r.example_index >= ntrain or \
                 r.example_kind == 2 and r.example_index >= ntest or r.example_kind > 2:
             bad("entries-example", f"entry {r.Index} of table {r.table} has example {r.example_kind}/{r.example_index} for {ntrain} train and {ntest} test")
+        if r.extent_offset >= 0:
+            if r.kind != ROWS or not r.rows or not len(t.extent_columns):
+                bad("entries-extent", f"entry {r.Index} of table {r.table} has extent offset {r.extent_offset} with kind {r.kind}, rows {r.rows} and {len(t.extent_columns)} extent columns")
+            else:
+                runs.setdefault((int(r.extent_offset), int(r.rows) * 2 * len(t.extent_columns)), "extent")
+        elif r.extent_offset != -1:
+            bad("entries-extent", f"entry {r.Index} of table {r.table} has extent offset {r.extent_offset}")
         if r.kind == ROWS:
             if t.projections != 0:
                 bad("entries-kind", f"entry {r.Index} is a Rows entry of table {r.table}, which has projections")
@@ -236,11 +267,20 @@ def check_case(frames, values, task, orientation_types, size=None, base=None):
             runs.setdefault((int(r.offset), int(r.rows) * int(t.det_widths[r.det])), "assigned")
     projections = frames.get("projections")
     pwidth = list(projections.width) if projections is not None and len(projections) else []
+    pextent = [len(set(map(int, cols)) & set(map(int, tl[tab].extent_columns))) if tab < n else 0 for tab, cols in zip(projections["table"], projections["columns"])] if pwidth else []
     for r in rows_of(frames.get("projection_rows")):
         if r.projection >= len(pwidth):
             bad("entries-projection", f"projection row of projection {r.projection} of {len(pwidth)}")
-        elif r.defined and r.rows:
+            continue
+        if r.defined and r.rows:
             runs.setdefault((int(r.offset), int(r.rows) * int(pwidth[r.projection])), "projection")
+        if r.extent_offset >= 0:
+            if not (r.defined and r.rows and pextent[r.projection]):
+                bad("entries-extent", f"projection row {r.Index} of projection {r.projection} has extent offset {r.extent_offset} with defined {r.defined}, rows {r.rows} and {pextent[r.projection]} extent columns")
+            else:
+                runs.setdefault((int(r.extent_offset), int(r.rows) * 2 * pextent[r.projection]), "extent")
+        elif r.extent_offset != -1:
+            bad("entries-extent", f"projection row {r.Index} of projection {r.projection} has extent offset {r.extent_offset}")
     pos = 0
     for (off, length), what in sorted(runs.items()):
         if off != pos:
@@ -252,8 +292,56 @@ def check_case(frames, values, task, orientation_types, size=None, base=None):
             bad("runs-tile", f"the runs end at {pos}, the values at {size}")
     if values is None or any(l.startswith("runs-tile") for l in out):
         return out
+    _check_extents(frames, values, tl, en, bad)
     _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, base)
     return out
+
+
+def _extent_violation(margins, extent):
+    """The rows of `margins` (top, bottom, left, right) for which the extent `extent` (V, H) of the frame is no extent of a frame that the Box covers with an own size of at least (1, 1): V < 1 or H < 1, or V < top + bottom + 1 or H < left + right + 1. The pair `-1 -1` is no extent and is none."""
+    none = (extent == -1).all(1)
+    small = (extent < 1).any(1)
+    short = (extent[:, 0] < margins[:, 0] + margins[:, 1] + 1) | (extent[:, 1] < margins[:, 2] + margins[:, 3] + 1)
+    return (small | short) & ~none
+
+
+def _check_extents(frames, values, tl, en, bad):
+    """`extents-size`: each pair of an extent run that is not `-1 -1` holds the extent (V, H) of a frame that its row's Box value covers with an own size of at least (1, 1)
+    (V >= top + bottom + 1 and H >= left + right + 1), and no cell of the pair is below 1, and a column of the extent columns is a `Box`; the same of the projection rows' extent runs."""
+    for r in en:
+        if r.extent_offset < 0 or r.kind != ROWS or not r.rows:
+            continue
+        t = tl[r.table]
+        ecols = [int(c) for c in t.extent_columns]
+        starts = np.cumsum([0] + [width_of(x) for x in t.column_types])
+        w = int(starts[-1])
+        block = values[int(r.offset):int(r.offset) + int(r.rows) * w].reshape(int(r.rows), w)
+        run = values[int(r.extent_offset):int(r.extent_offset) + int(r.rows) * 2 * len(ecols)].reshape(int(r.rows), len(ecols), 2)
+        for k, c in enumerate(ecols):
+            if t.column_types[c] != "Box":
+                continue
+            wrong = _extent_violation(block[:, starts[c]:starts[c] + 4], run[:, k, :])
+            if wrong.any():
+                i = int(np.flatnonzero(wrong)[0])
+                bad("extents-size", f"entry {r.Index} of table {r.table} column {c} row {i}: the Box {block[i, starts[c]:starts[c] + 4].tolist()} has the frame extent {run[i, k, :].tolist()}")
+    projections = frames.get("projections")
+    if projections is None or not len(projections):
+        return
+    for r in rows_of(frames.get("projection_rows")):
+        if r.extent_offset < 0 or not r.defined or not r.rows:
+            continue
+        t = tl[projections["table"].iloc[r.projection]]
+        columns = [int(c) for c in projections["columns"].iloc[r.projection]]
+        held = [c for c in columns if c in set(map(int, t.extent_columns))]
+        starts = np.cumsum([0] + [width_of(t.column_types[c]) for c in columns])
+        block = values[int(r.offset):int(r.offset) + int(r.rows) * int(starts[-1])].reshape(int(r.rows), int(starts[-1]))
+        run = values[int(r.extent_offset):int(r.extent_offset) + int(r.rows) * 2 * len(held)].reshape(int(r.rows), len(held), 2)
+        for k, c in enumerate(held):
+            at = int(starts[columns.index(c)])
+            wrong = _extent_violation(block[:, at:at + 4], run[:, k, :])
+            if wrong.any():
+                i = int(np.flatnonzero(wrong)[0])
+                bad("extents-size", f"projection row {r.Index} of projection {r.projection} column {c} row {i}: the Box {block[i, at:at + 4].tolist()} has the frame extent {run[i, k, :].tolist()}")
 
 
 def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest, bad, base=None):
@@ -359,7 +447,7 @@ def _check_values(frames, values, task, orientation_types, tl, en, ntrain, ntest
                 bad("values-key", f"table {ti} key {[int(c) for c in k]}: {int(dup.sum())} repeated rows, first in entry {e[1:][dup][0]}")
     # the evidence tables, which a cut case's base holds
     for g, fact in ((0, "input"), (1, "output")):
-        if not cut and len(tl) > g and tl[g].fact == f"ex_{fact}" and list(tl[g].column_types) == ["Example", "Box", "Color"]:
+        if not cut and len(tl) > g and tl[g].fact == f"ex_{fact}" and list(tl[g].column_types) == ["Example", "Position", "Color"]:
             got = np.concatenate([b for _, _, b in blocks[g]]).astype(np.int64) if blocks[g] else np.zeros((0, 6), np.int64)
             got, want = np.unique(got, axis=0), _evidence_cells(task, fact)
             if got.shape != want.shape or (got != want).any():
@@ -500,18 +588,22 @@ def _check_cases(dir, cases, chosen, orientation, part=None):
         path = f"{dir}/{name}.parquet" if part is None else f"{dir}/parts/{part:05d}.{name}.parquet"
         if name in ("copies", "bases") and not os.path.exists(path):      # an export written before the part existed has none
             return pd.DataFrame(columns=["task", "case", "detail"] if name == "copies" else BASES_COLUMNS)
+        if columns is not None:     # the columns of an export written before the extents has no `extent_offset`
+            import pyarrow.parquet as pq
+            columns = columns + [c for c in EXTENT_COLUMNS if c in pq.read_schema(path).names]
         if part is None:
             df = pd.read_parquet(path, columns=columns, filters=[("task", "in", tasks)])
         else:       # a part file is small, and a filter on the `task` of an empty one, whatever its type, can fail
             df = pd.read_parquet(path, columns=columns)
             df = df[df.task.isin(tasks)] if len(df) else df
-        return df[pd.MultiIndex.from_frame(df[["task", "case"]]).isin(wanted)] if len(df) else df
+        df = df[pd.MultiIndex.from_frame(df[["task", "case"]]).isin(wanted)] if len(df) else df
+        return with_extents(df, name)
     bases = read("bases")
     cut = {(r.task, r.case): r for r in bases.itertuples()}
     wanted |= {(r.task, r.base) for r in bases.itertuples()}        # the base of a cut case is read as well
     if part is None:
         tables = read("tables")
-        entries = read("index", ["task", "case", "entry", "table", "example_kind", "example_index", "kind", "rows", "offset"])
+        entries = with_extents(read("index", ["task", "case", "entry", "table", "example_kind", "example_index", "kind", "rows", "offset"]), "entries")
     else:
         tables, entries = read("tables"), read("entries")
         number_rows(tables, entries, bases)
@@ -582,9 +674,15 @@ def check_part(out, k, cases):
     return [f"{task} {case}: {inv}: {detail}" for (task, case), inv, detail in found]
 
 
+def one_thread_env():
+    """The variables of `POOL_ENVS`, each set to 1: the environment of a worker process of a pool that is sized to the CPUs the command may use."""
+    return {name: "1" for name in POOL_ENVS}
+
+
 def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=None):
     """Checks the export in `dir` and prints a report; `sample` is the number of cases whose values are checked, None for every case.
     `jobs` is the number of worker processes, `ARCLOG_THREADS` where it is None and set, and `os.cpu_count()` where it is neither; the report does not depend on it.
+    Each worker process runs with every variable of `POOL_ENVS` at 1.
     Returns the Counter of violations by invariant."""
     bases = read_bases(dir)
     valued = [tuple(f[len(f"{dir}/values/"):-len(".i32")].split("/", 1)) for f in glob.glob(f"{dir}/values/*/*.i32")]
@@ -607,7 +705,8 @@ def check_export(dir, sample=100, seed=0, streams=None, out=sys.stdout, jobs=Non
         results = [_check_cases(dir, cases, chosen, orientation)]
     else:
         cut = shares(dir, cases, chosen, jobs)
-        with concurrent.futures.ProcessPoolExecutor(len(cut), mp_context=multiprocessing.get_context("spawn")) as pool:
+        with mock.patch.dict(os.environ, one_thread_env()), \
+                concurrent.futures.ProcessPoolExecutor(len(cut), mp_context=multiprocessing.get_context("spawn")) as pool:
             futures = [pool.submit(_check_cases, dir, share, chosen & set(share), orientation) for share in cut]
             results = [f.result() for f in futures]
     position = {key: i for i, key in enumerate(cases)}

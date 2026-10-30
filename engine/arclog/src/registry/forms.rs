@@ -1,10 +1,12 @@
 //! The reader of the registry file's forms other than its macro forms:
 //! `relation`, `component`, `proposer`, `constants` and
-//! `fact`, with the columns and the types they write.
+//! `fact`, with the columns and the types they write, and the `frames` forms
+//! of a relation, a macro and an output.
 
 use super::reader::*;
 use super::records::{ArclogProposer, ComponentHead};
 use super::spellings::*;
+use crate::program::column_spelled;
 use super::*;
 
 impl FileReader {
@@ -53,11 +55,34 @@ impl FileReader {
         match text {
             POSE => Some((ColumnType::Pose, None)),
             SHARED_POSE => Some((ColumnType::SharedPose, None)),
-            _ => match parameters.iter().find(|p| &*p.0 == text) {
+            _ => match parameters.iter().find(|p| &*p.name == text) {
                 Some(parameter) => Some((ColumnType::Parameter(parameter.clone()), None)),
                 None => self.refuse(format!("`{text}` is no type and no type parameter of the component"), expr.place()),
             },
         }
+    }
+
+    /// The type that `expr`, a type name, writes. `what` names the type.
+    pub(super) fn value_type(&mut self, expr: &SExpr, what: &str) -> Option<ValueType> {
+        let text = self.symbol(Some(expr), what, expr.place())?;
+        match spelling::parse(spelling::TYPE_NAMES, text) {
+            Some(name) => Some(name.value_type()),
+            None => self.refuse(format!("`{text}` is no type name"), expr.place()),
+        }
+    }
+
+    /// The type parameter that `expr`, `<name>` or `(<name> <type>)`, writes.
+    fn type_parameter(&mut self, expr: &SExpr, at: SourcePlace) -> Option<TypeParameter> {
+        let SExpr::List { items, .. } = expr else {
+            let name = self.symbol(Some(expr), "a type parameter", at)?;
+            return Some(TypeParameter { name: name.into(), bound: None });
+        };
+        let [name, bound] = &items[..] else {
+            return self.refuse("a type parameter is a name or a list of its name and its bound", expr.place());
+        };
+        let name = self.symbol(Some(name), "the type parameter's name", at)?;
+        let bound = self.value_type(bound, "a type parameter's bound")?;
+        Some(TypeParameter { name: name.into(), bound: Some(bound) })
     }
 
     /// The column that `expr`, `(<Column> <type>)`, writes.
@@ -80,19 +105,173 @@ impl FileReader {
         columns.map(Into::into)
     }
 
-    /// `(relation <name> (columns ...) [(modes ...)])`, after its head.
+    /// `(relation <name> (columns ...) [(modes ...)] [(frames ...)] [(types ...)])`, after its head.
     fn relation(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
         let name = LibName(self.symbol(rest.first(), "the relation's name", place)?.into());
         let columns = self.columns(rest.get(1), COLUMNS, &[], place)?;
-        let modes = match rest.get(2) {
-            Some(expr) => self.modes(expr, &columns, place)?,
+        let mut at = 2;
+        let modes = match rest.get(at).filter(|expr| headed(expr, MODES).is_some()) {
+            Some(expr) => {
+                at += 1;
+                self.modes(expr, &columns, place)?
+            }
             None => Box::default(),
         };
-        self.no_more(rest.get(3..).unwrap_or_default())?;
+        let frames = match rest.get(at).and_then(|expr| headed(expr, FRAMES)) {
+            Some(items) => {
+                at += 1;
+                self.relation_frames(items, &columns, &format!("the relation `{}`", name.0))?
+            }
+            None => Box::default(),
+        };
+        let rules = match rest.get(at).and_then(|expr| headed(expr, TYPES)) {
+            Some(items) => {
+                at += 1;
+                self.type_rules(items)?
+            }
+            None => Box::default(),
+        };
+        self.no_more(rest.get(at..).unwrap_or_default())?;
         if self.declare(&name, place) {
-            self.entries.insert(name, LibEntry::Relation(AlgebraRelation { columns, modes }));
+            self.entries.insert(name, LibEntry::Relation(AlgebraRelation { columns, modes, frames, rules }));
         }
         Some(())
+    }
+
+    /// The rules that `items`, the items of a `(frames ...)` form of a relation or a
+    /// macro named by `what`, write for its `columns`, each rule naming columns of them.
+    pub(super) fn relation_frames(&mut self, items: &[SExpr], columns: &[Column], what: &str) -> Option<Box<[(ColumnName, FrameRule)]>> {
+        let refer = |text: &str| columns.iter().find(|own| own.name == ColumnName::Written(text.into())).map(|own| FrameColumn { input: None, column: own.name.clone() });
+        self.frame_rules(items, columns, &[], what, &refer)
+    }
+
+    /// The rules that `items`, the items of a `(frames ...)` form of the output
+    /// `what` with `columns`, write, each rule naming `<input>.<column>` of
+    /// the component's `inputs`; `mapped` are the columns a `copies` row maps.
+    fn output_frames(&mut self, items: &[SExpr], columns: &[Column], mapped: &[ColumnName], inputs: &[InputPort], what: &str) -> Option<Box<[(ColumnName, FrameRule)]>> {
+        let refer = |text: &str| {
+            let (input, column) = text.split_once('.')?;
+            let input = inputs.iter().find(|own| &*own.port.name.0 == input)?;
+            let column = input.port.columns.iter().find(|own| own.name == ColumnName::Written(column.into()))?;
+            Some(FrameColumn { input: Some(input.port.name.clone()), column: column.name.clone() })
+        };
+        self.frame_rules(items, columns, mapped, what, &refer)
+    }
+
+    /// The rules that `items`, the items of a `(frames (<column> <rule>) ...)`
+    /// form, write for columns of `columns`, which `what` names: each column
+    /// once, of type `Position` or `Box`, and none of `mapped`. `refer` gives the
+    /// column that a name in a rule's `(of ...)` stands for.
+    fn frame_rules(&mut self, items: &[SExpr], columns: &[Column], mapped: &[ColumnName], what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<Box<[(ColumnName, FrameRule)]>> {
+        let mut rules: Vec<(ColumnName, FrameRule)> = Vec::new();
+        for item in items {
+            let SExpr::List { items: pair, .. } = item else {
+                return self.refuse("a rule of a `frames` form is a list of a column and its rule", item.place());
+            };
+            let [column, rule] = &pair[..] else {
+                return self.refuse("a rule of a `frames` form is a list of a column and its rule", item.place());
+            };
+            let text = self.symbol(Some(column), "the rule's column", item.place())?;
+            let name = ColumnName::Written(text.into());
+            let Some(own) = columns.iter().find(|own| own.name == name) else {
+                return self.refuse(format!("`{text}` is no column of {what}"), column.place());
+            };
+            let rule = self.frame_rule(rule, what, refer)?;
+            if let Some(by) = rule.size.as_ref().and_then(|size| size.by.as_ref()) {
+                if by.input.is_some() {
+                    return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what} takes no `({BY} <column>)` form: a rule of a component's output names no element"), item.place());
+                }
+                if columns.iter().find(|own| own.name == by.column).and_then(|own| own.ty.fixed()) != Some(&ValueType::D4) {
+                    return self.refuse(format!("the `({BY} <column>)` form of the `{NEW}` rule of the column `{text}` of {what} names a column of type `D4`"), item.place());
+                }
+            }
+            match (own.ty.fixed(), &rule.size) {
+                (Some(ValueType::Box), None) if rule.makes => {
+                    return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what}, of type `Box`, names the column whose values have the made values' own size, in a `({SIZE} <column>)` form"), item.place());
+                }
+                (Some(ValueType::Position), Some(_)) => {
+                    return self.refuse(format!("the `{NEW}` rule of the column `{text}` of {what}, of type `Position`, takes no `({SIZE} <column>)` form: a Position's margins give its frame's extent"), item.place());
+                }
+                _ => {}
+            }
+            if !own.has_frame() {
+                self.fault(CheckId::Scope, format!("the column `{text}` of {what} is no `Position` or `Box`, so a rule gives it no frame"), item.place());
+                continue;
+            }
+            if mapped.contains(&name) {
+                self.fault(CheckId::Scope, format!("the column `{text}` of {what} is mapped by a `copies` row, so it has the frame of the column it copies and takes no rule"), item.place());
+                continue;
+            }
+            let earlier: Vec<String> = rules.iter().map(|(column, _)| column_spelled(column)).collect();
+            if self.named_once(earlier.iter().map(String::as_str), text, &format!("a `frames` form of {what}"), item.place()) {
+                rules.push((name, rule));
+            }
+        }
+        Some(rules.into())
+    }
+
+    /// The rule that `expr` writes: `new`, `(of <column> ...)`, or `(new [(of <column> ...)] [(size <column> [(by <column>)])])`.
+    fn frame_rule(&mut self, expr: &SExpr, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameRule> {
+        if matches!(expr, SExpr::Symbol { text, .. } if &**text == NEW) {
+            return Some(FrameRule { makes: true, of: Box::default(), size: None });
+        }
+        if let Some(named) = headed(expr, OF) {
+            return Some(FrameRule { makes: false, of: self.frame_columns(named, expr.place(), what, refer)?, size: None });
+        }
+        if let Some(items) = headed(expr, NEW)
+            && !items.is_empty()
+        {
+            let (of, rest) = match items.first().and_then(|item| headed(item, OF).map(|named| (item, named))) {
+                Some((item, named)) => (self.frame_columns(named, item.place(), what, refer)?, &items[1..]),
+                None => (Box::default(), items),
+            };
+            let size = match rest {
+                [] => None,
+                [item] => Some(self.frame_size_form(item, what, refer)?),
+                [_, extra, ..] => return self.refuse(format!("a `{NEW}` rule ends in its `({SIZE} <column> [({BY} <column>)])` form"), extra.place()),
+            };
+            return Some(FrameRule { makes: true, of, size });
+        }
+        self.refuse(format!("a rule is `{NEW}`, `({OF} <column> ...)` or `({NEW} [({OF} <column> ...)] [({SIZE} <column> [({BY} <column>)])])`"), expr.place())
+    }
+
+    /// The `(size <column> [(by <column>)])` form that `item` writes.
+    fn frame_size_form(&mut self, item: &SExpr, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameSize> {
+        let (column, by) = match headed(item, SIZE) {
+            Some([column]) => (column, None),
+            Some([column, by]) => match headed(by, BY) {
+                Some([element]) => (column, Some(element)),
+                _ => return self.refuse(format!("the second part of a `({SIZE} ...)` form is a `({BY} <column>)` form"), by.place()),
+            },
+            _ => return self.refuse(format!("a `({SIZE} <column> [({BY} <column>)])` form names a column and, after it, may have a `({BY} <column>)` form"), item.place()),
+        };
+        let column = self.frame_column(column, item.place(), what, refer)?;
+        let by = match by {
+            Some(element) => Some(self.frame_column(element, item.place(), what, refer)?),
+            None => None,
+        };
+        Some(FrameSize { column, by })
+    }
+
+    /// The column that `item`, the column a rule names, stands for.
+    fn frame_column(&mut self, item: &SExpr, place: SourcePlace, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<FrameColumn> {
+        Some(self.frame_columns(std::slice::from_ref(item), place, what, refer)?[0].clone())
+    }
+
+    /// The columns that `items`, the items of an `(of ...)` form, name, at least one.
+    fn frame_columns(&mut self, items: &[SExpr], place: SourcePlace, what: &str, refer: &dyn Fn(&str) -> Option<FrameColumn>) -> Option<Box<[FrameColumn]>> {
+        if items.is_empty() {
+            return self.refuse(format!("an `({OF} ...)` form names a column"), place);
+        }
+        let mut named = Vec::new();
+        for item in items {
+            let text = self.symbol(Some(item), "a column a rule names", place)?;
+            let Some(column) = refer(text) else {
+                return self.refuse(format!("`{text}` is no column that a rule of {what} can name"), item.place());
+            };
+            named.push(column);
+        }
+        Some(named.into())
     }
 
     /// `(modes (<Column> ...) ...)`, each mode a nonempty list of columns of
@@ -130,8 +309,7 @@ impl FileReader {
             return self.refuse(format!("`{kind_text}` is no kind of component"), rest[1].place());
         };
         let parameters = self.headed(rest.get(2), TYPE_PARAMETERS, place)?;
-        let parameters: Option<Vec<TypeParameter>> =
-            parameters.iter().map(|p| self.symbol(Some(p), "a type parameter", place).map(|t| TypeParameter(t.into()))).collect();
+        let parameters: Option<Vec<TypeParameter>> = parameters.iter().map(|p| self.type_parameter(p, place)).collect();
         let type_parameters: Box<[TypeParameter]> = parameters?.into();
         let inputs = self.headed(rest.get(3), INPUTS, place)?;
         let inputs: Option<Vec<InputPort>> = inputs.iter().map(|input| self.input(input, &type_parameters)).collect();
@@ -157,6 +335,10 @@ impl FileReader {
         };
         let name = PortName(self.symbol(items.first(), "the port's name", *place)?.into());
         let mut rest = &items[1..];
+        let frames = rest.last().and_then(|last| headed(last, FRAMES));
+        if frames.is_some() {
+            rest = &rest[..rest.len() - 1];
+        }
         let copies = rest.last().and_then(|last| headed(last, COPIES));
         if copies.is_some() {
             rest = &rest[..rest.len() - 1];
@@ -164,7 +346,9 @@ impl FileReader {
         let columns: Option<Vec<Column>> = rest.iter().map(|item| self.column(item, parameters).map(|(c, _)| c)).collect();
         let columns: Box<[Column]> = columns?.into();
         let copies = self.copied_rows(copies.unwrap_or_default(), inputs, &name, &columns)?;
-        Some(Port { name, columns, copies })
+        let mapped: Vec<ColumnName> = copies.iter().flat_map(|row| row.alternatives.iter()).flat_map(|from| from.columns.iter()).map(|&(_, output)| columns[output].name.clone()).collect();
+        let frames = self.output_frames(frames.unwrap_or_default(), &columns, &mapped, inputs, &format!("the output `{}`", name.0))?;
+        Some(Port { name, columns, copies, frames })
     }
 
     /// The declared rows that `rows`, the items of a `(copies ...)` form of the output
@@ -262,7 +446,7 @@ impl FileReader {
             Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
             None => None,
         };
-        Some(InputPort { port: Port { name, columns: columns.into(), copies: Box::default() }, default, reads_outputs, from_key })
+        Some(InputPort { port: Port { name, columns: columns.into(), copies: Box::default(), frames: Box::default() }, default, reads_outputs, from_key })
     }
 
     /// `(proposer <name> native [domain] (columns ...))` or

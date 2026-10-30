@@ -20,6 +20,11 @@ use arclog::types::ValueType;
 
 /// The connected components of the group's nodes under its steps, the
 /// cardinals by default.
+///
+/// - in `node(key, P)`: the cells.
+/// - in `step(Delta)`, shared, default the four cardinal steps: the steps that join two cells. To join cells that touch at a corner too, the clause gives all eight steps.
+/// - out `component(key, P, Id)`: P's piece.
+/// - out `adjacent(key, P, Q)`: Q is one step from P, both in the set.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Connectivity;
 
@@ -45,6 +50,11 @@ impl Construction for Connectivity {
 /// One class id per equivalence class of the closure of `equivalent` and
 /// `edge`, each id the Ident of its class, so no member is a
 /// representative.
+///
+/// - in `equivalent(a, b)`, shared: a and b are in one class.
+/// - in `edge(a, b)`, shared: a and b are in one class.
+/// - The classes are closed over chains of both inputs.
+/// - out `class(a, Id)`: a's class. An element in neither input has no class, and `equivalent(a, a)` gives it a class of its own.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Quotient;
 
@@ -75,6 +85,11 @@ impl Construction for Quotient {
 
 /// Forward chaining from the sources over `edge` and `join` to a
 /// fixpoint.
+///
+/// - in `source(key, n)`, from the key: the nodes reached at the start.
+/// - in `edge(key, a, b)`: b is reached once a is.
+/// - in `join(key, a, b, c)`: c is reached once a and b both are.
+/// - out `reached(key, n)`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Propagation;
 
@@ -136,6 +151,9 @@ impl Construction for Propagation {
 /// both the walk from them and the parts take the cardinal steps, as
 /// `docs/lib-spec.md#cell-instances` gives Enclosure: Flood, then
 /// Connectivity, over the cell set alone.
+///
+/// - in `cell(key, P)`: the cells a walk may cross.
+/// - out `enclosed(key, P, Id)`: each enclosed part under its own label.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Enclosure;
 
@@ -168,6 +186,9 @@ impl Construction for Enclosure {
 
 /// The nodes a walk from a source reaches by steps inside the set, the
 /// cardinals by default.
+///
+/// - in `node(key, P)`, `source(key, P)` (from the key), `step(Delta)` (shared, default the four cardinal steps).
+/// - out `reached(key, P)`. A source outside `node` reaches nothing.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Flood;
 

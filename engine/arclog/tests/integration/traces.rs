@@ -25,7 +25,8 @@ use arclog::program::{Node, Program};
 use arclog::resolver::SolverScope;
 use arclog::terms::{Color, Example};
 use arclog::write::write_synthesized;
-use arclog::trace::render::{stop_shares, trace_form, TraceFormOptions};
+use arclog::trace::render::{trace_form, TraceFormOptions};
+use arclog::trace::stop_shares::stop_shares;
 use arclog::trace::{DecodeTrace, RunTrace, Stop, TopK};
 
 const BG: &str = "(RULE &bg (input (:Col *C)))\n";
@@ -139,13 +140,13 @@ fn a_decode_renders_the_trace_form_of_an_instance() {
     let instance: Vec<&str> = text.lines().skip(8).collect();
     let expected = "\
 (INIT Connectivity
+  [&comps.component &comps.adjacent &comps.node &comps.step]
   [key] SKIP
   [node]
   ((&fg (:P *[P])) END
    [node key] (END)
    [node P] (P END))
-  [step] SKIP
-  [&comps.component &comps.adjacent &comps.node &comps.step])";
+  [step] SKIP)";
     assert_eq!(instance.join("\n"), expected);
 }
 
@@ -189,12 +190,13 @@ fn a_forked_decode_keeps_its_own_observations() {
 }
 
 /// The trace of a decode of one `RULE` clause over a task, which the row cap
-/// of `caps` stops after the clause's last atom where it is `1`, and which is
-/// cancelled before the clause's `END` where `cancel` says so.
+/// of `caps` stops after the clause's last atom where it is `1`, and, with the
+/// `OUT` form that reads the clause, which is cancelled before that form's
+/// `END` where `cancel` says so.
 fn stopped_decode(caps: Caps, cancel: bool) -> DecodeTrace {
     let inputs = inputs(&[1, 2], caps);
     let mut decoder = decoder(&inputs);
-    let tokens = model_tokens("(RULE &output (input *P *Col))\n");
+    let tokens = model_tokens(if cancel { "(RULE &output (input *P *Col))\n(OUT (&output ^P ^Col))\n" } else { "(RULE &output (input *P *Col))\n" });
     let (end, prefix) = tokens.split_last().expect("a stream");
     walk(&mut decoder, prefix);
     if cancel {
@@ -237,7 +239,7 @@ fn evaluating<T>(program: &CheckedProgram, task: &Task, caps: Caps, run: impl Fn
 
 #[test]
 fn a_run_with_a_trace_records_each_relation_it_evaluates_and_a_run_without_one_none() {
-    let solver = read_solver("runs", "(RULE &a (input *P *Col))\n(RULE &b (&a *P *Col) (!= Col 0))\n", "", &|_| None).expect("the file reads").value;
+    let solver = read_solver("runs", "(RULE &a (input *P *Col))\n(RULE &b (&a *P *Col))\n", "", &|_| None).expect("the file reads").value;
     let registry = Registry::get();
     let program = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
     let program = check_program(program, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default()).expect("every check passes");

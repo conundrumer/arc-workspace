@@ -60,20 +60,25 @@ pub fn solver_file_extension(file: crate::layout::SourceFile) -> Option<&'static
 
 /// The solver of `task_id` read from its two files in `dir`, each solver a
 /// `representative` line names read the same way. `Err` where a file does
-/// not read, as `<path>: <io error>`, or where the read is refused or has a
-/// diagnostic of [`crate::diagnostic::Severity::Error`]: each such
-/// diagnostic as `<task_id>.<extension>:<line>: <message>` per place, or the
-/// message alone at a path, joined by `; `. A solver whose `representative`
-/// line names a solver that does not read gives the scope diagnostic of
-/// [`crate::read::read_solver`].
+/// not read, as `<path>: <io error>`, or as [`read_solver_texts`] gives.
 pub fn read_corpus_solver(dir: &Path, task_id: &str) -> Result<std::sync::Arc<crate::solver::Solver>, String> {
-    use crate::diagnostic::{Diagnostic, Location, Severity};
     let read_file = |extension: &str| {
         let path = dir.join(format!("{task_id}.{extension}"));
         std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
     };
-    let arclog = read_file("arclog")?;
-    let arcdata = read_file("arcdata")?;
+    read_solver_texts(dir, task_id, &read_file("arclog")?, &read_file("arcdata")?)
+}
+
+/// The solver of `task_id` from the texts of its two files, each solver a
+/// `representative` line names read from `dir` by [`read_corpus_solver`].
+/// `Err` where the read is refused or has a diagnostic of
+/// [`crate::diagnostic::Severity::Error`]: each such diagnostic as
+/// `<task_id>.<extension>:<line>: <message>` per place, or the message alone
+/// at a path, joined by `; `. A solver whose `representative` line names a
+/// solver that does not read gives the scope diagnostic of
+/// [`crate::read::read_solver`].
+pub fn read_solver_texts(dir: &Path, task_id: &str, arclog: &str, arcdata: &str) -> Result<std::sync::Arc<crate::solver::Solver>, String> {
+    use crate::diagnostic::{Diagnostic, Location, Severity};
     let describe = |diagnostics: &[Diagnostic]| {
         let mut lines = Vec::new();
         for d in diagnostics.iter().filter(|d| d.severity == Severity::Error) {
@@ -90,7 +95,7 @@ pub fn read_corpus_solver(dir: &Path, task_id: &str) -> Result<std::sync::Arc<cr
         }
         lines.join("; ")
     };
-    let read = crate::read::read_solver(task_id, &arclog, &arcdata, &|id| read_corpus_solver(dir, id).ok()).map_err(|d| describe(&d))?;
+    let read = crate::read::read_solver(task_id, arclog, arcdata, &|id| read_corpus_solver(dir, id).ok()).map_err(|d| describe(&d))?;
     if read.diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(describe(&read.diagnostics));
     }

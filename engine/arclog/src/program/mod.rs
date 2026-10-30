@@ -37,6 +37,7 @@ pub mod canonical;
 pub mod edit;
 mod names;
 pub mod path;
+pub mod static_prune;
 pub(crate) mod zero_columns;
 
 pub use arcdata_nodes::*;

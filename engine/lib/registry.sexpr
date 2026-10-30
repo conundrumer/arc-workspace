@@ -1,64 +1,134 @@
+;; Generated catalogue: uv run python scripts/generate_study_meanings.py
+;; Item prose uses ;;; comments. @doc reuses the doc comment of a definition.
+
+;;; @general_contract
+;;; The catalogue describes the native arclog library. Relation columns, binding modes, component ports and defaults are declared in the registry beside these contracts. `needs` names the columns that earlier atoms must bind.
+;;;
+;;; Each component key selects an independent group. A port without a key column is shared across groups. Omitting an input clause uses its declared default, or fills a `from-key` input from uniquely typed key columns; an explicit clause replaces that fill. Other omitted inputs are empty. Input clauses follow the registry's port order.
+;;; @end
+
+;;; @proposer_context
+;;; A proposer supplies the columns declared by its registry entry. Input-only claims use train and test inputs; output-dependent claims use train pairs.
+;;;
+;;; In a DET, a domain or a single-column proposer contributes one row per candidate assignment. A different multi-column proposer contributes its complete table as one value. Training outputs determine which assignments survive.
+;;;
+;;; A domain in a RULE reads the current input and returns all its domain rows together. A domain in a DET reads train inputs, train outputs and test inputs. Domains are named as clause proposers rather than called as body atoms.
+;;; @end
+
 ;; The lib registry of the arclog engine. Its forms and their meaning: the
 ;; module comment of engine/arclog/src/registry.rs.
 
 ;; Relations: the modes of programs/lib/box.dl.
-(relation compose (columns (A Box) (B Box) (C Box)) (modes (A B)))
-(relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)))
-(relation edge_inset (columns (D Dir) (K number) (B Box)) (modes (K)))
-(relation margin (columns (B Box) (D Dir) (K number)) (modes (B)))
-(relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P)))
-(relation corner_dist (columns (P Box) (Diag DiagDir) (K number)) (modes (P)))
-(relation frame_extent (columns (P Position) (A Axis) (N number)) (modes (P)))
+;;; @doc programs/lib/box.dl#compose
+(relation compose (columns (A Box) (B Box) (C Box)) (modes (A B))
+  (types
+    (when ((A Position) (B Offset)) (C Position))
+    (when ((A Offset) (B Position)) (C Position))
+    (when ((A Offset) (B Offset)) (C Offset))))
+;;; @doc programs/lib/box.dl#relative
+(relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base) (size X))))
+  (types
+    (when ((Base Offset) (X Offset)) (X_rel Offset))
+    (when ((Base Offset) (X Position)) (X_rel Position))
+    (when ((Base Position) (X Position) (same-frame Base X)) (X_rel Offset))))
+;;; @doc programs/lib/box.dl#edge_inset
+(relation edge_inset (columns (D Dir) (K Int) (B Box)) (modes (K)))
+;;; B's margin at edge D, measured in cells.
+(relation margin (columns (B Box) (D Dir) (K Int)) (modes (B)))
+;;; @doc programs/lib/box.dl#apply
+(relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P)) (frames (P_out (new (size P (by D)))))
+  (types
+    (when ((P Offset)) (P_out Offset))))
+;;; @doc programs/lib/box.dl#corner_dist
+(relation corner_dist (columns (P Box) (Diag DiagDir) (K Int)) (modes (P)))
+;;; @doc programs/lib/box.dl#axis_dim
+(relation frame_extent (columns (P Position) (A Axis) (N Int)) (modes (P)))
+;;; - `step_offset(D: Dir8, V: Offset)`: V is one step toward D.
 (relation step_offset (columns (D Dir8) (V Offset)))
-(relation sub_extent (columns (P Position) (A Axis) (K number)) (modes (P)))
-(relation gap (columns (D Dir8) (P Position) (Q Position) (K number)) (modes (P Q)))
-(relation divide (columns (T number) (Side number) (Gap number) (Part number) (Remainder number)) (modes (T Side Gap)))
+;;; @doc programs/lib/box.dl#sub_extent
+(relation sub_extent (columns (P Position) (A Axis) (K Nat)) (modes (P)))
+;;; - `gap(D: Dir8, P: Position, Q: Position, K: Nat)`, needs P Q: Q is ahead of P toward D, on P's line, with K cells strictly between them.
+(relation gap (columns (D Dir8) (P Position) (Q Position) (K Nat)) (modes (P Q)))
+;;; The part and within-part offset of a nonnegative coordinate among parts of Side cells separated by Gap cells. A coordinate in a gap, or a nonpositive Side + Gap, gives no row. No upper frame boundary is imposed.
+(relation divide (columns (T Nat) (Side Nat) (Gap Int) (Part Nat) (Remainder Nat)) (modes (T Side Gap)))
+;;; Enumerates every value of Dir.
 (relation dir_elem (columns (D Dir)))
+;;; Enumerates every value of Axis.
 (relation axis_elem (columns (A Axis)))
+;;; Enumerates every value of DiagDir.
 (relation diag_dir_elem (columns (D DiagDir)))
+;;; Enumerates every value of DiagAxis.
 (relation diag_axis_elem (columns (Da DiagAxis)))
+;;; Enumerates every value of D4.
 (relation d4_elem (columns (D (pose-or D4))))
+;;; Enumerates every value of C4.
 (relation c4_elem (columns (D C4)))
+;;; Enumerates every value of Sense.
 (relation sense_elem (columns (S Sense)))
+;;; Enumerates every value of Sym.
 (relation sym_elem (columns (S Sym)))
+;;; Enumerates every value of Dir8.
 (relation dir8_elem (columns (D Dir8)))
+;;; Enumerates every value of Axis4.
 (relation axis4_elem (columns (A Axis4)))
+;;; - `sym_member(S: Sym, D: D4)`: D is an element of group S.
 (relation sym_member (columns (S Sym) (D D4)))
+;;; - `axis_of(D: Dir, A: Axis)`: edge D lies on axis A.
 (relation axis_of (columns (D Dir) (A Axis)))
+;;; - `diag_axis_of(D: DiagDir, Da: DiagAxis)`: corner D lies on diagonal Da.
 (relation diag_axis_of (columns (D DiagDir) (Da DiagAxis)))
+;;; - `axis4_of(D: Dir8, A: Axis4)`: D lies on A.
 (relation axis4_of (columns (D Dir8) (A Axis4)))
+;;; @doc programs/lib/orientation.dl#dir_of
 (relation corner_dir (columns (C DiagDir) (A Axis) (D Dir)))
+;;; The edge opposite D.
 (relation opposite (columns (D Dir) (Opp Dir)))
+;;; The corner opposite D.
 (relation diag_opposite (columns (D DiagDir) (Opp DiagDir)))
+;;; The edge or corner opposite D.
 (relation dir8_opposite (columns (D Dir8) (D2 Dir8)))
+;;; The other cardinal axis.
 (relation perp (columns (A Axis) (A2 Axis)))
+;;; The other diagonal axis.
 (relation diag_perp (columns (Da DiagAxis) (Da2 DiagAxis)))
+;;; @doc programs/lib/orientation.dl#turn
 (relation turn (columns (S Sense) (D Dir) (D2 Dir)))
+;;; @doc programs/lib/orientation.dl#rotation
 (relation c4_turn (columns (S Sense) (T C4)))
+;;; - `reflection(A: Axis4, T: D4)`: T reflects across a line along A, and fixes that line: V gives LR, H gives TB, DG gives DG, AD gives AD.
 (relation reflection (columns (A Axis4) (T D4)))
+;;; - `axis_inversion(A: Axis4, T: D4)`: T reverses axis A, swapping its two directions: V gives TB, H gives LR, DG gives AD, AD gives DG.
 (relation axis_inversion (columns (A Axis4) (T D4)))
+;;; @doc programs/lib/orientation.dl#d4_compose
 (relation d4_compose (columns (A D4) (B D4) (C D4)))
+;;; - `d4_inverse(D: D4, D_inv: D4)`: D_inv undoes D.
 (relation d4_inverse (columns (D D4) (D_inv D4)))
+;;; - `d4_identity(D: D4)`: the identity.
 (relation d4_identity (columns (D D4)))
+;;; - `pose_difference(A: Pose, B: Pose, D: D4)`: D takes the placement of a `RIGID_DET` shape at pose A onto its placement at pose B. A and B are poses of one shape.
 (relation pose_difference (columns (A shared-pose) (B shared-pose) (D D4)))
 
 ;; Components.
+;;; @doc engine/arclog-constructions/src/order.rs#Cardinality
 (component Cardinality construction (type-parameters Key Member)
   (inputs (member (key Key) (m Member))
     (domain (key Key) from-key))
-  (outputs (size (key Key) (N number)
+  (outputs (size (key Key) (N Nat)
     (copies (either (member) (domain))))))
+;;; @doc engine/arclog-constructions/src/order.rs#Excess
 (component Excess construction (type-parameters Key Member)
   (inputs (plus (key Key) (m Member))
     (minus (key Key) (m Member)))
-  (outputs (excess (key Key) (N number)
+  (outputs (excess (key Key) (N Nat)
     (copies (plus)))))
+;;; @doc engine/arclog-constructions/src/order.rs#Singleton
 (component Singleton construction (type-parameters Key Val)
   (inputs (member (key Key) (v Val)))
   (outputs (value (key Key) (v Val)
       (copies (member (v v))))
     (plural (key Key)
       (copies (member)))))
+;;; @doc engine/arclog-constructions/src/order.rs#Inclusion
 (component Inclusion construction (type-parameters Key Pat Member)
   (inputs (pattern (pattern Pat) (m Member))
     (observed (observed Key) (m Member)))
@@ -66,20 +136,22 @@
       (copies (observed (observed observed)) (pattern (pattern pattern))))
     (equal (observed Key) (pattern Pat)
       (copies (observed (observed observed)) (pattern (pattern pattern))))))
+;;; @doc engine/arclog-constructions/src/connectivity.rs#Quotient
 (component Quotient construction (type-parameters T)
   (inputs (equivalent (a T) (b T))
     (edge (a T) (b T)))
   (outputs (class (a T) (Id Ident)
     (copies (either (equivalent (a a)) (equivalent (b a)) (edge (a a)) (edge (b a)))))))
+;;; @doc engine/arclog-constructions/src/order.rs#Order
 (component Order construction (type-parameters Key T)
   (inputs (member (key Key) (t T))
     (before (key Key) (a T) (b T))
-    (score (key Key) (t T) (S number))
-    (secondary_score (key Key) (t T) (S number))
+    (score (key Key) (t T) (S Int))
+    (secondary_score (key Key) (t T) (S Int))
     (probe (key Key) (t T)))
-  (outputs (rank (key Key) (t T) (R number)
+  (outputs (rank (key Key) (t T) (R Nat)
       (copies (either (member (t t)) (probe (t t)))))
-    (dual_rank (key Key) (t T) (R number)
+    (dual_rank (key Key) (t T) (R Nat)
       (copies (either (member (t t)) (probe (t t)))))
     (minimal (key Key) (t T)
       (copies (member (t t))))
@@ -89,17 +161,25 @@
       (copies (member (t a)) (member (t b))))
     (cyclic_successor (key Key) (a T) (b T)
       (copies (member (t a)) (member (t b))))))
+;;; @doc engine/arclog-constructions/src/ray.rs#Walk
 (component Walk construction (type-parameters Key T)
   (inputs (successor (key Key) (p T) (p_next T))
-    (steps (key Key) (N number)))
-  (outputs (walk (key Key) (p0 T) (N number) (p T)
+    (steps (key Key) (N Int)))
+  (outputs (walk (key Key) (p0 T) (N Nat) (p T)
     (copies (successor (p p0)) (either (successor (p p)) (successor (p_next p)))))))
+;;; - **Unfold**: the items taken and left at each state of a walk over states.
+;;;   - in `start(key, t)`, `initial_taken(key, item)`, `initial_untaken(key, item)`.
+;;;   - in `conflict(key, item, item2)`: when item is taken, item2 leaves the untaken items without being taken.
+;;;   - in `score(key, t, item, S)`: with a score, the item taken at a state is the untaken item of least score.
+;;;   - in `step(key, t, t2)`: a step from t to t2 takes one item. `skip(key, t, t2)`: a step that takes none. `take(key, t, item)`: the item taken at t. These three may read the outputs.
+;;;   - out `taken(key, t, item)`, `untaken(key, t, item)`, `excluded(key, t, item)`, and `take` where `score` gives it.
+;;;   - With `score`, a tie forks the walk. An item taken on one branch and left on another is in both `taken` and `untaken` at a state both branches reach.
 (component Unfold construction (type-parameters Key T Item)
   (inputs (start (key Key) (t T))
     (initial_taken (key Key) (item Item))
     (initial_untaken (key Key) (item Item))
     (conflict (key Key) (item Item) (item2 Item))
-    (score (key Key) (t T) (item Item) (S number))
+    (score (key Key) (t T) (item Item) (S Int))
     (step (key Key) (t T) (t2 T) reads-outputs)
     (skip (key Key) (t T) (t2 T) reads-outputs)
     (take (key Key) (t T) (item Item) reads-outputs))
@@ -107,25 +187,29 @@
     (untaken (key Key) (t T) (item Item))
     (excluded (key Key) (t T) (item Item))
     (take (key Key) (t T) (item Item))))
+;;; @doc engine/arclog-constructions/src/connectivity.rs#Propagation
 (component Propagation construction (type-parameters Key Node)
   (inputs (source (key Key) (n Node) from-key)
     (edge (key Key) (a Node) (b Node))
     (join (key Key) (a Node) (b Node) (c Node)))
   (outputs (reached (key Key) (n Node)
     (copies (either (source (n n)) (edge (b n)) (join (c n)))))))
+;;; @doc engine/arclog-constructions/src/distance.rs#Distance
 (component Distance construction (type-parameters Key Node)
   (inputs (edge (key Key) (a Node) (b Node))
-    (weight (key Key) (a Node) (b Node) (W number))
+    (weight (key Key) (a Node) (b Node) (W Int))
     (source (key Key) (n Node) from-key)
-    (source_distance (key Key) (n Node) (K number)))
-  (outputs (distance (key Key) (n Node) (K number)
+    (source_distance (key Key) (n Node) (K Int)))
+  (outputs (distance (key Key) (n Node) (K Int)
       (copies (either (source (n n)) (source_distance (n n)) (edge (b n)) (weight (b n)))))
     (predecessor (key Key) (b Node) (a Node)
       (copies (either (edge (a a) (b b)) (weight (a a) (b b)))))))
+;;; @doc engine/arclog-constructions/src/connectivity.rs#Enclosure
 (component Enclosure construction (type-parameters Key)
   (inputs (cell (key Key) (P Position)))
   (outputs (enclosed (key Key) (P Position) (Id Ident)
     (copies (cell (P P))))))
+;;; @doc engine/arclog-constructions/src/ray.rs#Boundary
 (component Boundary construction (type-parameters Key)
   (inputs (cell (key Key) (P Position))
     (dir (D Dir8) (default (DIR_T) (DIR_B) (DIR_L) (DIR_R))))
@@ -133,60 +217,80 @@
       (copies (cell (P P))))
     (exposed (key Key) (P Position) (D Dir8)
       (copies (cell (P P)) (dir (D D))))))
-(component BoundingBox construction (type-parameters Key)
-  (inputs (cell (key Key) (P Box) from-key))
+;;; @doc engine/arclog-constructions/src/order.rs#BoundingBox
+(component BoundingBox construction (type-parameters Key (Point Box))
+  (inputs (cell (key Key) (P Point) from-key))
   (outputs (box (key Key) (B Box)
     (copies (cell)))))
+;;; @doc engine/arclog-constructions/src/agreement.rs#Agreement
 (component Agreement construction (type-parameters Key Val)
-  (inputs (source (key Key) (P Position) (v Val))
-    (target (key Key) (P Position) (v Val))
+  (inputs (source (key Key) (P Box) (v Val))
+    (target (key Key) (P Box) (v Val))
     (transform (D D4) (default (D4_ID) (D4_CW) (D4_HT) (D4_CC) (D4_LR) (D4_TB) (D4_DG) (D4_AD))))
   (outputs (mismatch (key Key) (D D4)
       (copies (transform (D D)) (source)))
     (conflict (key Key) (D D4)
       (copies (transform (D D)) (source) (target)))))
+;;; @doc engine/arclog-constructions/src/division.rs#Tiling
 (component Tiling construction (type-parameters Key)
   (inputs (outer (key Key) (P Position))
     (inner (key Key) (P Position))
-    (gap (key Key) (A Axis) (G number)))
+    (gap (key Key) (A Axis) (G Int)))
   (outputs (cell (key Key) (P_outer Position) (P_inner Position) (P Position)
-    (copies (outer (P P_outer)) (inner (P P_inner))))))
+    (copies (outer (P P_outer)) (inner (P P_inner)))
+    (frames (P new)))))
+;;; @doc engine/arclog-constructions/src/division.rs#Frame
 (component Frame construction (type-parameters Key)
-  (inputs (extent (key Key) (A Axis) (N number) from-key))
-  (outputs (cell (key Key) (P Position))))
+  (inputs (extent (key Key) (A Axis) (N Int) from-key))
+  (outputs (cell (key Key) (P Position)
+    (frames (P new)))))
+;;; @doc engine/arclog-constructions/src/ray.rs#Outlines
 (component Outlines detector (type-parameters Key)
   (inputs (node (key Key) (P Position)))
   (outputs (box (key Key) (B Box)
     (copies (node)))))
+;;; @doc engine/arclog-constructions/src/occurrences.rs#Occurrences
 (component Occurrences detector (type-parameters Key Val)
   (inputs (cell (key Key) (P Position) (v Val))
-    (shape (key Key) (P Position) (v Val))
+    (shape (key Key) (P Box) (v Val))
     (transform (D D4) (default (D4_ID))))
-  (outputs (candidate (key Key) (D D4) (P Position)
-      (copies (transform (D D)) (cell) (shape)))
-    (occurrence (key Key) (D D4) (P Position)
-      (copies (transform (D D)) (cell) (shape)))))
+  (outputs (candidate (key Key) (D D4) (P Box)
+      (copies (transform (D D)) (cell) (shape))
+      (frames (P (of cell.P))))
+    (occurrence (key Key) (D D4) (P Box)
+      (copies (transform (D D)) (cell) (shape))
+      (frames (P (of cell.P))))))
+;;; @doc engine/arclog-constructions/src/periods.rs#Periods
 (component Periods detector (type-parameters Key Val)
   (inputs (cell (key Key) (P Position) (v Val)))
-  (outputs (period (key Key) (A Axis) (K number)
+  (outputs (period (key Key) (A Axis) (K Nat)
       (copies (cell)))
-    (fundamental_period (key Key) (A Axis) (K number)
+    (fundamental_period (key Key) (A Axis) (K Nat)
       (copies (cell)))
-    (approximate_period (key Key) (A Axis) (K number)
+    (approximate_period (key Key) (A Axis) (K Nat)
       (copies (cell)))))
+;;; @doc engine/arclog-constructions/src/division.rs#ExtentDivisions
 (component ExtentDivisions detector (type-parameters Key)
   (inputs (frame (key Key) (P Position)))
-  (outputs (division (key Key) (A Axis) (N number) (K number) (G number)
+  (outputs (division (key Key) (A Axis) (N Nat) (K Nat) (G Int)
     (copies (frame)))))
+;;; @doc engine/arclog-constructions/src/wallpaper.rs#Wallpaper
 (component Wallpaper detector (type-parameters Key Val)
   (inputs (transform (D D4))
     (cell (key Key) (P Position) (v Val))
     (grid (key Key) (P Position))
-    (period (key Key) (A Axis) (K number)))
+    (period (key Key) (A Axis) (K Int)))
   (outputs (symmetry (key Key) (D D4) (Delta Offset)
       (copies (transform (D D)) (cell)))
     (action (key Key) (P Position) (Q Position)
       (copies (grid (P P)) (grid (P Q))))))
+;;; - **DemonstrationConsistency**: the rules a demonstrated pair confirms. An input of a nested task holds pairs that demonstrate a rule, and an object that the same rule completes.
+;;;   - in `value(key, o, i, v)`: object o holds v at index i.
+;;;   - in `prediction(key, c, o, i, v)`: rule c predicts that the object paired with o holds v at i.
+;;;   - in `demonstration(key, o, o2)`: a demonstrated pair, o and its partner o2.
+;;;   - out `consistent(key, c, o, o2)`: c's prediction for o is o2. `counterexample(key, c, o, o2)`: it is not.
+;;;   - A prediction holds every index of the object it predicts. An index it leaves out counts as one that object lacks.
+;;;   - out `confirmed(key, c)`: c predicts every demonstrated pair. `unconfirmed(key, c)`: it fails some pair. A rule that predicts nothing for any object is in neither.
 (component DemonstrationConsistency task-structure (type-parameters Key Demonstrated Object Index Value)
   (inputs (value (key Key) (o Object) (i Index) (v Value))
     (prediction (key Key) (c Demonstrated) (o Object) (i Index) (v Value))
@@ -195,6 +299,7 @@
     (consistent (key Key) (c Demonstrated) (o Object) (o2 Object))
     (unconfirmed (key Key) (c Demonstrated))
     (confirmed (key Key) (c Demonstrated))))
+;;; @doc engine/arclog-constructions/src/connectivity.rs#Flood
 (component Flood construction (type-parameters Key)
   (inputs (node (key Key) (P Position))
     (source (key Key) (P Position) from-key)
@@ -204,6 +309,7 @@
         (_ 1 _)))))
   (outputs (reached (key Key) (P Position)
     (copies (node (P P))))))
+;;; @doc engine/arclog-constructions/src/distance.rs#CellDistance
 (component CellDistance construction (type-parameters Key)
   (inputs (node (key Key) (P Position))
     (source (key Key) (P Position))
@@ -211,10 +317,11 @@
         (_ 1 _)
         (1 @_ 1)
         (_ 1 _)))))
-  (outputs (distance (key Key) (P Position) (K number)
+  (outputs (distance (key Key) (P Position) (K Nat)
       (copies (either (node (P P)) (source (P P)))))
     (predecessor (key Key) (Q Position) (P Position)
       (copies (node (P Q)) (node (P P))))))
+;;; @doc engine/arclog-constructions/src/connectivity.rs#Connectivity
 (component Connectivity construction (type-parameters Key)
   (inputs (node (key Key) (P Position))
     (step (Delta Offset) (default (grid
@@ -225,21 +332,24 @@
       (copies (node (P P))))
     (adjacent (key Key) (P Position) (Q Position)
       (copies (node (P P)) (node (P Q))))))
-(component Ray construction (type-parameters Key)
-  (inputs (source (key Key) (P Position))
-    (node (key Key) (P Position))
+;;; @doc engine/arclog-constructions/src/ray.rs#Ray
+(component Ray construction (type-parameters Key (Point Box))
+  (inputs (source (key Key) (P Point))
+    (node (key Key) (P Point))
     (dir (key Key) (D Dir8) from-key))
-  (outputs (ray (key Key) (P Position) (D Dir8) (K number) (Origin Position)
+  (outputs (ray (key Key) (P Point) (D Dir8) (K Nat) (Origin Point)
       (copies (dir (D D)) (source (P Origin))))
-    (end (key Key) (P Position) (D Dir8) (K number) (Origin Position)
+    (end (key Key) (P Point) (D Dir8) (K Nat) (Origin Point)
       (copies (dir (D D)) (source (P Origin))))))
+;;; @doc engine/arclog-constructions/src/division.rs#Division
 (component Division construction (type-parameters Key)
   (inputs (cell (key Key) (P Position))
-    (parts (key Key) (A Axis) (N number))
-    (side (key Key) (A Axis) (K number))
-    (gap (key Key) (A Axis) (G number)))
+    (parts (key Key) (A Axis) (N Int))
+    (side (key Key) (A Axis) (K Int))
+    (gap (key Key) (A Axis) (G Int)))
   (outputs (tile (key Key) (P Position) (P_outer Position) (P_inner Position)
-    (copies (cell (P P))))))
+    (copies (cell (P P)))
+    (frames (P_outer new) (P_inner (new (of cell.P)))))))
 
 ;; Constants: the #define lines of programs/lib/orientation.dl, in their order within each type, and the C4 constants of its c4_elem facts.
 (constants Dir DIR_T DIR_B DIR_L DIR_R)
@@ -252,11 +362,15 @@
 (constants C4 D4_ID D4_CW D4_HT D4_CC)
 
 ;; Facts: docs/arclog/arclog.md#program.
+;;; - `input(P: Position, Col: Color)`: each cell of the input and its color.
 (fact input (columns (P Position) (Col Color)))
+;;; - `ex_input(E: Example, P: Position, Col: Color)`: each cell of each example's input, train and test. DET only.
 (fact ex_input (columns (E Example) (P Position) (Col Color)))
+;;; - `ex_output(E: Example, P: Position, Col: Color)`: each cell of each train output. DET only.
 (fact ex_output (columns (E Example) (P Position) (Col Color)))
 
 ;; Macros, in the names of the lib.
+;;; @doc programs/lib/box.dl#inside
 (macro inside (columns (A A) (B B))
   (relative (:Base *B) (:X *A) (:X_rel *R))
   (axis_of (:D *D1) (:A *A1))
@@ -272,6 +386,7 @@
   (>= K3 0)
   (margin (:B R) (:D O2) (:K *K4))
   (>= K4 0))
+;;; @doc programs/lib/box.dl#interior
 (macro interior (columns (A A) (B B))
   (relative (:Base *B) (:X *A) (:X_rel *R))
   (axis_of (:D *D1) (:A *A1))
@@ -287,11 +402,14 @@
   (> K3 0)
   (margin (:B R) (:D O2) (:K *K4))
   (> K4 0))
+;;; @doc programs/lib/box.dl#same_dist
 (macro same_dist (columns (D D) (P1 P1) (P2 P2))
   (margin (:B *P1) *D *K)
   (margin (:B *P2) D K))
+;;; @doc programs/lib/box.dl#same_line
 (macro same_line (columns (A A) (P P) (Q Q))
   (OR ((perp *A *A2) (axis_of *D (:A A2)) (margin (:B *P) D *K) (margin (:B *Q) D K)) ((diag_perp (:Da A) (:Da2 A2)) (diag_axis_of D (:Da A2)) (corner_dist P (:Diag D) K) (corner_dist (:P Q) (:Diag D) K))))
+;;; @doc programs/lib/box.dl#corner_anchor
 (macro same_corner (columns (D Diag) (P1 P1) (P2 P2))
   (corner_dir (:C *Diag) *A (:D *D1))
   (perp A *A2)
@@ -300,6 +418,7 @@
   (margin (:B *P2) (:D D1) (:K K1))
   (margin (:B P1) (:D D2) (:K *K2))
   (margin (:B P2) (:D D2) (:K K2)))
+;;; @doc programs/lib/box.dl#slab_anchor
 (macro same_slab (columns (D D) (P1 P1) (P2 P2))
   (margin (:B *P1) *D *K)
   (margin (:B *P2) D K)
@@ -311,8 +430,10 @@
   (margin (:B P2) (:D E) (:K K1))
   (margin (:B P1) (:D E2) (:K *K2))
   (margin (:B P2) (:D E2) (:K K2)))
+;;; - `nearer(D: Dir8, P: Box, Q: Box)`, needs P Q: P is strictly nearer edge D than Q is. For a corner, the distances compared are `corner_dist`.
 (macro nearer (columns (D D) (P P) (Q Q))
   (OR ((dir_elem *D) (margin (:B *P) D (:K *K1)) (margin (:B *Q) D (:K *K2)) (< K1 K2)) ((diag_dir_elem D) (corner_dist P (:Diag D) (:K K1)) (corner_dist (:P Q) (:Diag D) (:K K2)) (< K1 K2))))
+;;; @doc programs/lib/box.dl#centered
 (macro centered (columns (P P))
   (axis_of (:D *D1) (:A *A1))
   (opposite (:D D1) (:Opp *O1))
@@ -323,27 +444,33 @@
   (margin (:B P) (:D O1) (:K K1))
   (margin (:B P) (:D D2) (:K *K2))
   (margin (:B P) (:D O2) (:K K2)))
+;;; @doc programs/lib/box.dl#dist_pair
 (macro dist_pair (columns (P P) (D D) (K K) (K2 K2))
   (opposite *D (:Opp *O))
   (margin (:B *P) D *K)
   (margin (:B P) (:D O) (:K *K2)))
+;;; @doc programs/lib/box.dl#diag_dist
 (macro diag_dist (columns (P P) (Diag Diag) (A A) (K1 K1) (K2 K2))
   (diag_dirs (:D *Diag) *A *D1 *D2)
   (margin (:B *P) (:D D1) (:K *K1))
   (margin (:B P) (:D D2) (:K *K2)))
+;;; @doc programs/lib/box.dl#axis_dims
 (macro axis_extents (columns (P P) (A A) (N1 N1) (N2 N2))
   (perp *A *A2)
   (frame_extent *P A (:N *N1))
   (frame_extent P (:A A2) (:N *N2)))
-(macro box_extent (columns (B B) (P P) (A A) (N N))
+;;; @doc programs/lib/box.dl#box_extent
+(macro box_extent (columns (B B) (P P Position) (A A) (N N))
   (axis_elem *A)
   (relative (:Base *B) (:X *P) (:X_rel *R))
   (frame_extent (:P R) A *N))
+;;; @doc programs/lib/box.dl#axis_inset
 (macro axis_inset (columns (D D) (K1 K1) (K2 K2) (B B))
   (opposite *D (:Opp *O))
   (edge_inset D (:K *K1) (:B *B1))
   (edge_inset (:D O) (:K *K2) (:B *B2))
   (compose (:A B1) (:B B2) (:C *B)))
+;;; @doc programs/lib/box.dl#uniform_inset
 (macro uniform_inset (columns (K K) (B B))
   (axis_of (:D *D1) (:A *A1))
   (perp (:A A1) *A2)
@@ -351,6 +478,7 @@
   (axis_inset (:D D1) (:K1 *K) (:K2 K) (:B *B1))
   (axis_inset (:D D2) (:K1 K) (:K2 K) (:B *B2))
   (compose (:A B1) (:B B2) (:C *B)))
+;;; - `corner_inset(Diag: DiagDir, K: number, B: Box)`, needs K: the grid with K lines cut from each edge of corner Diag.
 (macro corner_inset (columns (Diag Diag) (K K) (B B))
   (corner_dir (:C *Diag) *A (:D *D1))
   (perp A *A2)
@@ -358,46 +486,62 @@
   (edge_inset (:D D1) *K (:B *B1))
   (edge_inset (:D D2) K (:B *B2))
   (compose (:A B1) (:B B2) (:C *B)))
+;;; @doc programs/lib/box.dl#edge_outset
 (macro edge_outset (columns (D D) (K K) (B B))
   (edge_inset *D *K (:B *I))
   (relative (:Base I) (:X 0) (:X_rel *B)))
+;;; - `corner_outset(Diag: DiagDir, K: number, B: Box)`, needs K: the grid with K lines added past each edge of corner Diag.
 (macro corner_outset (columns (Diag Diag) (K K) (B B))
   (corner_inset *Diag *K (:B *I))
   (relative (:Base I) (:X 0) (:X_rel *B)))
+;;; @doc programs/lib/box.dl#axis_outset
 (macro axis_outset (columns (D D) (K1 K1) (K2 K2) (B B))
   (axis_inset *D *K1 *K2 (:B *I))
   (relative (:Base I) (:X 0) (:X_rel *B)))
+;;; @doc programs/lib/box.dl#uniform_outset
 (macro uniform_outset (columns (K K) (B B))
   (uniform_inset *K (:B *I))
   (relative (:Base I) (:X 0) (:X_rel *B)))
+;;; - `jump(P: Box, D: Dir8, K: number, Q: Box)`, needs P K: Q is K steps from P toward D. Q can lie off the grid.
 (macro jump (columns (P P) (D D) (K K) (Q Q))
   (jump_offset *D *K *V)
   (compose (:A *P) (:B V) (:C *Q)))
-(macro jump_offset (columns (D D) (K K) (V V))
+;;; - `jump_offset(D: Dir8, K: number, V: Offset)`, needs K: V is K steps toward D.
+(macro jump_offset (columns (D D) (K K) (V V Offset))
   (OR ((dir_elem *D) (opposite D (:Opp *O)) (edge_inset (:D O) *K (:B *I)) (edge_outset D K (:B *U)) (compose (:A I) (:B U) (:C *V)))
     ((diag_dir_elem D) (diag_opposite D (:Opp O)) (corner_inset (:Diag O) K (:B I)) (corner_outset (:Diag D) K (:B U)) (compose (:A I) (:B U) (:C V)))))
+;;; - `frame_offset(P: Position, A: Axis, K: number, V: Offset)`, needs P: V is K steps along A, for each K that `sub_extent` gives. Each K has two rows, one toward each edge of A.
 (macro frame_offset (columns (P P) (A A) (K K) (V V))
   (sub_extent *P *A *K)
   (axis_of *D A)
   (jump_offset D K *V))
+;;; - `neighbor(P: Box, D: Dir8, Q: Box)`, needs P: Q is one step from P toward D. Q can lie off the grid, with a margin below 0. Such a Q matches no `input` row.
 (macro neighbor (columns (P P) (D D) (Q Q))
   (step_offset *D *V)
   (compose (:A *P) (:B V) (:C *Q)))
+;;; `Along` keeps P's margins on A and sets the other margins to zero. `Across` is P relative to Along: it keeps the perpendicular margins and has zero margins on A.
 (macro split (columns (P P) (A A) (Along Along) (Across Across))
+  (frames (Across (new (of P) (size P))))
+  (types
+    (when ((P Position)) (Across Position))
+    (when ((P Offset)) (Across Offset)))
   (axis_of *D *A)
   (opposite D (:Opp *O))
   (margin (:B *P) D (:K *K1))
   (margin (:B P) (:D O) (:K *K2))
   (axis_inset D K1 K2 (:B *Along))
   (relative (:Base Along) (:X P) (:X_rel *Across)))
+;;; @doc programs/lib/orientation.dl#perp_dir
 (macro perp_dir (columns (D D) (D2 D2))
   (axis_of *D *A)
   (perp A *A2)
   (axis_of (:D *D2) (:A A2)))
+;;; @doc programs/lib/orientation.dl#diag_dirs
 (macro diag_dirs (columns (D Diag) (A A) (D1 D1) (D2 D2))
   (corner_dir (:C *Diag) *A (:D *D1))
   (perp A *A2)
   (corner_dir (:C Diag) (:A A2) (:D *D2)))
+;;; @doc programs/lib/box.dl#apply_dir
 (macro apply_dir (columns (D T) (Dir D) (Dir_out D2))
   (d4_elem (:D *T))
   (dir_elem *D)
@@ -405,6 +549,7 @@
   (step_offset D (:V *S))
   (apply (:D T) (:P S) (:P_out *S2))
   (step_offset (:D D2) (:V S2)))
+;;; The corner obtained by applying D to Dir.
 (macro apply_diag_dir (columns (D T) (Dir D) (Dir_out D2))
   (d4_elem (:D *T))
   (diag_dir_elem *D)
@@ -412,6 +557,7 @@
   (step_offset D (:V *S))
   (apply (:D T) (:P S) (:P_out *S2))
   (step_offset (:D D2) (:V S2)))
+;;; The edge or corner obtained by applying D to Dir.
 (macro apply_dir8 (columns (D T) (Dir D) (Dir_out D2))
   (d4_elem (:D *T))
   (dir8_elem *D)
@@ -421,45 +567,87 @@
   (step_offset (:D D2) (:V S2)))
 
 ;; Proposers: the type-domain proposers of docs/arclog/arclog.md#program, then the components of programs/proposers.dl, each with the columns of its propose relation, apart from PanelCombine, whose columns are those of a set-keyed table, one row for each panel of each entry: the entry's id, the entry's output color, the panel's place in the arrangement's frame, and the color of the panel's cell.
+;;; - `AxisDomain(A)`: each axis, V and H.
 (proposer AxisDomain native domain (columns (A Axis)))
+;;; - `ColorDomain(C)`: each color of the grids it reads.
 (proposer ColorDomain native domain (columns (C Color)))
+;;; - `D4Domain(D)`: each of the eight symmetries.
 (proposer D4Domain native domain (columns (D D4)))
+;;; - `DiagAxisDomain(Da)`: each diagonal axis, DG and AD.
 (proposer DiagAxisDomain native domain (columns (Da DiagAxis)))
+;;; - `DiagDirDomain(D)`: each corner, TL TR BL BR.
 (proposer DiagDirDomain native domain (columns (D DiagDir)))
+;;; - `DirDomain(D)`: each edge, T B L R.
 (proposer DirDomain native domain (columns (D Dir)))
-(proposer NumberDomain native domain (columns (N number)))
+;;; - `NumberDomain(N)`: each number from 0 to the largest extent of the grids it reads.
+(proposer NumberDomain native domain (columns (N Nat)))
+;;; - `SenseDomain(S)`: CW and CC.
 (proposer SenseDomain native domain (columns (S Sense)))
+;;; - `SymDomain(S)`: each symmetry group that `Sym` lists.
 (proposer SymDomain native domain (columns (S Sym)))
+;;; Every ordered pair of colors present in the grids read by the domain.
 (proposer ColorColorDomain native domain (columns (C_from Color) (C_to Color)))
+;;; Every pair of a corner and a cardinal axis.
 (proposer DiagDirAxisDomain native domain (columns (D DiagDir) (A Axis)))
-(proposer NumberDirDomain native domain (columns (N number) (D Dir)))
+;;; Every pair of a number admitted by NumberDomain and a cardinal edge.
+(proposer NumberDirDomain native domain (columns (N Nat) (D Dir)))
+;;; @doc programs/proposers.dl#SharedColor
 (proposer SharedColor arclog (columns C))
+;;; @doc programs/proposers.dl#DominantColor
 (proposer DominantColor native (columns (C Color)))
+;;; @doc programs/proposers.dl#RarestColor
 (proposer RarestColor native (columns (C Color)))
+;;; @doc programs/proposers.dl#OutNewColor
 (proposer OutNewColor arclog (columns C))
+;;; @doc programs/proposers.dl#AnyOutNewColor
 (proposer AnyOutNewColor arclog (columns C))
+;;; @doc programs/proposers.dl#VanishedColor
 (proposer VanishedColor arclog (columns C))
+;;; @doc programs/proposers.dl#ChangedColor
 (proposer ChangedColor arclog (columns C))
+;;; @doc programs/proposers.dl#UnchangedColor
 (proposer UnchangedColor arclog (columns C))
+;;; @doc programs/proposers.dl#ChangedPairs
 (proposer ChangedPairs arclog (columns C_from C_to))
+;;; @doc programs/proposers.dl#VanishedNewPairs
 (proposer VanishedNewPairs arclog (columns C_from C_to))
-(proposer ScaleRatio native (columns (K number)))
-(proposer ScaleRatioAxis native (columns (A Axis) (K number)))
-(proposer DivisorRatio native (columns (K number)))
-(proposer DivisorRatioAxis native (columns (A Axis) (K number)))
-(proposer DimDiff native (columns (D number)))
+;;; @doc programs/proposers.dl#ScaleRatio
+(proposer ScaleRatio native (columns (K Nat)))
+;;; @doc programs/proposers.dl#ScaleRatioAxis
+(proposer ScaleRatioAxis native (columns (A Axis) (K Nat)))
+;;; @doc programs/proposers.dl#DivisorRatio
+(proposer DivisorRatio native (columns (K Nat)))
+;;; @doc programs/proposers.dl#DivisorRatioAxis
+(proposer DivisorRatioAxis native (columns (A Axis) (K Nat)))
+;;; @doc programs/proposers.dl#DimDiff
+(proposer DimDiff native (columns (D Nat)))
+;;; @doc programs/proposers.dl#ConstInDim
 (proposer ConstInDim arclog (columns N))
+;;; @doc programs/proposers.dl#ConstInDimAxis
 (proposer ConstInDimAxis arclog (columns A N))
+;;; @doc programs/proposers.dl#ConstOutDim
 (proposer ConstOutDim arclog (columns N))
+;;; @doc programs/proposers.dl#ConstOutDimAxis
 (proposer ConstOutDimAxis arclog (columns A N))
-(proposer TileCount native (columns (N number)))
-(proposer TileDim native (columns (D number)))
-(proposer Period native (columns (K number)))
-(proposer SepTileCount native (columns (N number)))
-(proposer SepTileCountAxis native (columns (A Axis) (N number)))
-(proposer SepTileDim native (columns (D number)))
-(proposer SepThickness native (columns (G number)))
-(proposer CountRankAsc native (columns (C Color) (R number)))
-(proposer CountRankDesc native (columns (C Color) (R number)))
+;;; @doc programs/proposers.dl#TileCount
+(proposer TileCount native (columns (N Nat)))
+;;; @doc programs/proposers.dl#TileDim
+(proposer TileDim native (columns (D Nat)))
+;;; @doc programs/proposers.dl#Period
+(proposer Period native (columns (K Nat)))
+;;; @doc programs/proposers.dl#SepTileCount
+(proposer SepTileCount native (columns (N Nat)))
+;;; @doc programs/proposers.dl#SepTileCountAxis
+(proposer SepTileCountAxis native (columns (A Axis) (N Nat)))
+;;; @doc programs/proposers.dl#SepTileDim
+(proposer SepTileDim native (columns (D Nat)))
+;;; @doc programs/proposers.dl#SepThickness
+(proposer SepThickness native (columns (G Nat)))
+;;; @doc programs/proposers.dl#CountRankAsc
+(proposer CountRankAsc native (columns (C Color) (R Nat)))
+;;; @doc programs/proposers.dl#CountRankDesc
+(proposer CountRankDesc native (columns (C Color) (R Nat)))
+;;; @doc programs/proposers.dl#TileD4
 (proposer TileD4 native (columns (Pt Position) (T D4)))
+;;; - `PanelCombine(Id, C_out, P, C)`: the input is two panels of the output's size along one axis, with any number of separator lines between. Each output cell has the cell at the same place in each panel. An entry Id has two rows, one per panel, that share C_out: P is the panel's place as a cell of the frame of two parts along that axis, C is the color of that panel's cell, and C_out is the output cell's color. There is one entry per combination of the two panel colors and the output color in the train pairs.
 (proposer PanelCombine native (columns (Id Ident) (C_out Color) (P Position) (C Color)))

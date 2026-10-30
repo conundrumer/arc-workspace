@@ -388,7 +388,9 @@ pub fn relation_modes<'r>(registry: &'r Registry, relation: &RelationRef) -> &'r
 /// The path of the form whose label scope holds the labels of the form at
 /// `path`: the innermost label scope of the canonical labeling,
 /// [`CanonicalOrder::label_scopes`], whose form holds it.
-fn scope_of(program: &CheckedProgram, path: &NodePath) -> NodePath {
+/// The native innermost label scope of a nonempty checked program-form path.
+/// Metadata consumers share the same lookup as IR compilation.
+pub(crate) fn scope_of(program: &CheckedProgram, path: &NodePath) -> NodePath {
     let (first, within) = path.0.split_first().expect("the path of a form of the program");
     let top = &program.program.program.value().forms[first.0 as usize];
     let order = CanonicalOrder::of(top, &mut SearchBudget::new());
@@ -504,6 +506,27 @@ pub fn compile_keyed_body(
     compile_instance_conjuncts(program, instance, Some(key), &[body], columns)
 }
 
+/// Compile a body in a context that supplies its ambient `given` labels.
+/// The context is a separate relation projected to exactly those labels:
+/// its local witnesses must not become bindings in the nested body. A
+/// body that mentions no ambient label needs no context read.
+pub fn compile_ambient_body(
+    program: &CheckedProgram,
+    form: &NodePath,
+    context: &[(&Body, NodePath)],
+    given: &[LabelId],
+    body: (&Body, NodePath),
+    columns: &[LabelId],
+) -> Result<ClauseIr, CompileFault> {
+    let used = crate::safety::body_labels(body.0);
+    if !given.iter().any(|label| used.contains(label)) {
+        return compile_instance_body(program, form, &[body], columns);
+    }
+    let (clause, paths) = compile_instance_pathed(program, form, context, given)?;
+    let key = KeyRead { form: form.clone(), clause };
+    compile_keyed_body(program, form, (key, paths, given), body, columns).map(|(clause, _)| clause)
+}
+
 /// The IR of the instance bodies `bodies`, as [`compile_instance_body`] and
 /// [`compile_keyed_body`] give it.
 fn compile_instance_conjuncts(
@@ -517,7 +540,7 @@ fn compile_instance_conjuncts(
         .iter()
         .flat_map(|(body, path)| body.conjuncts.iter().zip(0u32..).map(|(conjunct, index)| (conjunct, path.child(index))))
         .collect();
-    compile_mapped(program, instance, key, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
+    compile_query(program, instance, key, conjuncts, columns)
 }
 
 /// The types of the labels of the scope that holds the labels of the form
@@ -535,7 +558,19 @@ pub fn compile_safe(
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
 ) -> Result<(ClauseIr, IrPaths), CompileFault> {
-    compile_mapped(program, form, None, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
+    compile_query(program, form, None, conjuncts, columns)
+}
+
+/// Compile native-path query conjuncts with an optional projected INIT key.
+/// Body views and ordinary safe queries share the binding/type compiler.
+pub fn compile_query(
+    program: &CheckedProgram,
+    form: &NodePath,
+    key: Option<(KeyRead, IrPaths, &[LabelId])>,
+    conjuncts: Vec<(&Conjunct, NodePath)>,
+    columns: &[LabelId],
+) -> Result<(ClauseIr, IrPaths), CompileFault> {
+    compile_mapped(program, form, key, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
 }
 
 /// What [`compile_mapped`] gives.

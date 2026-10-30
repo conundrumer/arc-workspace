@@ -73,9 +73,11 @@ Both are stored as s-expressions, read by one fixed reader. An infix view of the
   (IF ((&painted P))
       ((&fill_color (:C *Col)))
       ((= Col C_in))))
+
+(OUT (&output ^P ^Col))
 ```
 
-A program is `INPUT` and `OUTPUT` blocks in dependency order, then `ALTS` forms, then the tail. A block is a claim: its slug, its text, then the forms that serve it. A relation stands under the first claim that reads it, and a parameter under the first claim whose text names it, as `&background` or `&fill_color`, or under the first claim that reads it where that claim comes earlier: 9bebae7a's erase claim names `&bg`, and the arms claim before it reads `&bg`. A block with nothing after its text is a claim with no relations of its own. Where the program runs an approximation in place of an output claim, an `APPROXIMATED` form after the claim's text gives the rule the program runs, as in 1da012fc's `place` claim. The tail holds the relations that every output claim ends in. `&output` is the output relation.
+A program is `INPUT` and `OUTPUT` blocks in dependency order, then `ALTS` forms, then the tail. A block is a claim: its slug, its text, then the forms that serve it. A relation stands under the first claim that reads it, and a parameter under the first claim whose text names it, as `&background` or `&fill_color`, or under the first claim that reads it where that claim comes earlier: 9bebae7a's erase claim names `&bg`, and the arms claim before it reads `&bg`. A block with nothing after its text is a claim with no relations of its own. Where the program runs an approximation in place of an output claim, an `APPROXIMATED` form after the claim's text gives the rule the program runs, as in 1da012fc's `place` claim. The tail holds the relations that every output claim ends in, then the `OUT` form, which states the output ([The `OUT` form](#the-out-form)).
 
 A clause reads only relations that earlier forms declared, the fact relations, and the lib's relations, so a program is a DAG of relations, and local recursion does not exist: closures come from lib components. One component, `Unfold`, has inputs that read its outputs, under the rule [Instance](#instance) states. A choice among candidates is a [`ONE`](constraints.md#one) mark or a [`CHOOSE`](constraints.md#choose), and a `DET` reads a chosen relation only where that relation has one model.
 
@@ -104,11 +106,11 @@ A clause form is its keyword, then the relation's name, then its body:
   (!= Col Col_in))
 ```
 
-A proposer's name, `DominantColor`, stands for its derivation, defined once beside the lib. The proposers stand apart from the lib because a proposer reads the task's grids directly, where a lib component is abstract over its inputs. A proposer of one column gives a `DET` with no body a domain of one value per row of its rows over the task, each of one row, and the determination keeps the values of that domain at which the program solves every train pair; a type-domain proposer gives every value of the parameter's type that the task admits. A `DET` by a one-column proposer that ends in `(SET)` has a domain of one value, the proposer's whole set of rows. A proposer of several columns that the registry does not mark `domain` gives its `DET` a domain of one value, the whole set of its rows. So a parameter whose value holds several rows names no type-domain proposer, and its `DET` states a body or ends in `(SET)`. A frame of cells, or a frame cut into equal tiles, is an instance of a construction of the lib, such as `Frame` or `Division`, and each of its fields, such as an extent or a tile count, comes from a `DET` that the program states, by a proposer or a body, in a solver and in a decoded program alike. No field is a stored value. The type-domain proposers are `AxisDomain`, `ColorDomain`, `D4Domain`, `DiagAxisDomain`, `DiagDirDomain`, `DirDomain`, `NumberDomain`, `SenseDomain` and `SymDomain`, one per type, and `ColorColorDomain`, `DiagDirAxisDomain` and `NumberDirDomain`, one per pair of types, for a parameter of two columns.
+A proposer's name, `DominantColor`, stands for its derivation, defined once beside the lib. The proposers stand apart from the lib because a proposer reads the task's grids directly, where a lib component is abstract over its inputs. A `DET` that names a proposer has no body, and a proposer of one column gives it a domain of one value per row of its rows over the task, each of one row, and the determination keeps the values of that domain at which the program solves every train pair; a type-domain proposer gives every value of the parameter's type that the task admits. A `DET` by a one-column proposer that ends in `(SET)` has a domain of one value, the proposer's whole set of rows. A proposer of several columns that the registry does not mark `domain` gives its `DET` a domain of one value, the whole set of its rows. So a parameter whose value holds several rows names no type-domain proposer, and its `DET` states a body or ends in `(SET)`. A frame of cells, or a frame cut into equal tiles, is an instance of a construction of the lib, such as `Frame` or `Division`, and each of its fields, such as an extent or a tile count, comes from a `DET` that the program states, by a proposer or a body, in a solver and in a decoded program alike. No field is a stored value. The type-domain proposers are `AxisDomain`, `ColorDomain`, `D4Domain`, `DiagAxisDomain`, `DiagDirDomain`, `DirDomain`, `NumberDomain`, `SenseDomain` and `SymDomain`, one per type, and `ColorColorDomain`, `DiagDirAxisDomain` and `NumberDirDomain`, one per pair of types, for a parameter of two columns.
 
 An `INIT` form is per input where its input bodies read as a `RULE` clause does, and task-wide where they read as a `DET` clause does. A determination becomes task-wide through a pooled read, or through an instance whose key holds no Example label, which pools over the examples, and its outputs then have no Example column. 009d5c81's `&key_out` holds the color of each class of examples whose keys share a pattern, at the example that shows it, and `&output` reads it pooled, `(&key_out Id (:C *Col))`, so `&key_out` has no Example column: `&output` reads it with no `E`.
 
-The engine finds the [grid columns](constraints.md#the-output-set) of `&output` by testing every pair of one Position column and one Color column against `ex_output` over the train examples, and a case's output on an input is a set of grids, one per model of the program's `ONE` marks, `CHOOSE` forms and `DEMONSTRATED` forms, as [Constraints](constraints.md#the-output-set) gives. In synthesis, the engine tests each `RULE` relation that way, and the first one that solves every train pair is `&output` and ends the program.
+The `OUT` form states the program's output, and a case's output on an input is a set of grids, one per model of the program's `ONE` marks, `CHOOSE` forms and `DEMONSTRATED` forms, as [Constraints](constraints.md#the-output-set) gives.
 
 ## Clause
 
@@ -125,7 +127,7 @@ A body is a sequence of atoms, one per line. An atom is a list whose head is a r
 
 A site is a list whose head is the column's name with a leading colon, followed by labels: `(:C *V)`, `(:key Col)`, `(:key E Id)`. The colon marks the head as a column; the head of any other list, a form's, a clause's or an atom's relation, is bare. A column of a fixed type takes one label. A column of a type parameter takes one label, or a site on each field of its record that the site reads, as [Instance](#instance) gives.
 
-A label marked `*` is fresh: the site introduces the variable, and the engine echoes the label it assigns. A bare label joins an existing variable. Each label is fresh at one site and joins at any number of others, so the marks show where each variable enters, and the order of sites and atoms carries no scoping.
+A label marked `*` is fresh: the site introduces the variable, and the engine echoes the label it assigns. A bare label joins an existing variable. A label is made at one site per body and joins at any number of others, so the marks show where each variable enters, and the order of sites and atoms carries no scoping. A `RIGID_DET` part is a body of its own. The reader refuses a `*X` or `^X` that makes a name another site of its body makes, the lists of the body's `OR`, `IF` and `ALL` forms included, and one that makes, in a keyed input, a `CHOOSE`'s `from`, a `RIGID_DET` part or a clause of a `DEMO_RULE`, a name that a label in scope there holds: a `^` label of the key, a label of the `for` clause, of the `instance` or `key` clause, or a field of the `DEMO_RULE`. A bare `X` joins the label of the first site, and a label local to a later branch of an `OR` or to an `IF`'s else takes a name of its own.
 
 A site of one label elides to the bare label when the label is the column's name: `*P` is `(:P *P)`, and `Col` is `(:Col Col)`. A site that renames keeps the list, `(:Col *Col1)`. A column of a fixed type is PascalCase, in fact, lib, instance and derived relations alike, so a site on it elides whenever its label is the column's name. A column of a type parameter is lowercase, and its site always keeps the head: `(&line_color.value (:key *A *L) (:v *Col))`.
 
@@ -140,17 +142,17 @@ A derived relation's columns are the labels of its clause, as written, so `&open
 A constraint is an operator over two labels: `(= A B)`, `(!= A B)`, `(< A B)`, `(<= A B)`, `(> A B)`, `(>= A B)`. `=` may make its first label, and has these rules:
 
 - `(= *X Y)` makes X equal to Y, and `(= *X 0)` makes X equal to `0`. X is bound through the `=` class. Only the first label is made: `(= Y *X)` is a second spelling, and the decoder blocks it.
-- `=` makes a label in the first branch of an `OR` or in the then of an `IF`, and only a label that the form exports, so every later branch names X, as [Disjunction](#disjunction) gives. In a later branch, an else, a test, a list of an `ALL` form, or the top level of a body, `(= *X Y)` would only rename Y, so the decoder blocks it there, and it blocks a `=`-made label that the form does not export.
+- `=` makes a label in the first branch of an `OR` or in the then of an `IF`, and only a label that the form exports, so every later branch names X, as [Disjunction](#disjunction) gives. In a later branch, an else, a test, or a list of an `ALL` form, `(= *X Y)` would only rename Y, so the decoder blocks it there, and it blocks a `=`-made label that the form does not export.
 - At the top level of a body, `(= *X 0)` makes a column whose value is `0` in that clause. It stands in an input of an instance, whose columns the component fixes, and in a clause of a relation that another clause, in its block or in another block of the solver, gives a varying value at that column.
 - The decoder reads a case's program alone, and there a column that is `0` in every clause of its relation is dropped, with each `(= *X 0)` that made it. Each read of the relation leaves out its site on the column and reads `0` at each other site of that site's label, and a head column whose label is then `0` in every clause drops in turn. Where the dropped site's label is a `^` label of a key clause, the instance's key drops that column, and each read of an output of the instance leaves out the key's field of that column. A relation left with no column and no atom is true, and the reads of it leave out its atom. A column stays, with its `(= *X 0)`, where `0` may not stand at a site that reads its label: an input's head site, the first label of a constraint, a `ONE` mark, a site on a column that is not a number or a Box of a fact or a lib relation, a read under an `OR`, `NOT`, `IF` or `ALL` that does not force the label, a read in `CHOOSE`, `DEMONSTRATED` or `RIGID_DET`, or a clause of a port. A key column stays where the engine fills an input from the key and the instance writes no clause for it. The decoder blocks each top-level `(= *X 0)` of a `RULE` or a `DET`, so a case that keeps such a column gets no stream. It blocks `(= *X 0)` in a later branch, an else, a test and a list of an `ALL` form, as it blocks `(= *X Y)`.
-- Y in `(= *X Y)` is not a label that a site of the same list made. That site could have made X. In a branch of a union, X may be a label the `OR` exports where Y is made in that branch, since no site there can make X.
+- In the first branch of an `OR` and the then of an `IF`, Y in `(= *X Y)` is not a label that a site of the same list made. That site could have made X. In a branch of a union, X may be a label the `OR` exports where Y is made in that branch, since no site there can make X.
 - The first label of a `=` that makes nothing is not one that a site of the same list made. That site could have named its partner, so `=` on such a label is a second spelling and the decoder blocks it. A label made in an enclosing list, or an export of an earlier branch, passes.
 
-`0` is a reserved label usable as the second label of a constraint. Its type comes from the first label: the number zero, or the zero box for a Box.
+`0` is a reserved label usable as the second label of a constraint. Its type comes from the first label: the number zero, or the zero box for a Box, a Position or an Offset.
 
 `0` also stands as a site's label, on a column of a number, a `Box`, a `Position` or an `Offset`, and its type is the column's. The site joins the column to zero, as `dist(P, D, 0)` does in the Souffle solvers, where a `0` counts nothing that is present: `(margin (:B P) D (:K 0))` reads a cell with no cell between it and edge D, and `(same_corner (:D C) (:P1 P) (:P2 0))` a cell at corner C of the whole frame. `(= K 0)` on a label that a site of the same list made is then a second spelling, and the decoder blocks it, as the rules above give. `0` is never made, so no site holds `*0` or `^0`, and no head site holds it.
 
-A clause ends once it is safe. The safety condition is that each label's class holds a site with a positive atom, or `0`, where `=` spreads binding both ways.
+A clause ends once it is safe. The safety condition is that each label is of an orientation type, or its class holds a site with a positive atom, or `0`, where `=` spreads binding both ways.
 
 ### Disjunction
 
@@ -238,7 +240,7 @@ An `INIT` form is the instance's name, the component, then its key clause where 
 
 The key clause is `(key (<body>) <inputs>)`. A label marked `^` in its body is a column of the key, and the key's columns are those labels in order of appearance. A key is a record of those labels, a key of one label as well, so a site names its fields by projection: on the key `^Col`, `(:key Col)` reads the field as `Col`, and `(:key (:Col Col1))` reads it as `Col1`; a label in the body with no mark is local to the body. A key clause with no `^` label gives one key of no column where its body holds, and its inputs stand after it. The inputs inside the key clause are keyed, and the key's labels are in scope in them. An input that reads no key label and no output of its instance holds for every key, a broadcast, and stands after the key clause. Each group keeps the component's declared order. The engine fills from the key an input that the instance writes no clause for, only where the component marks that input `from-key`: the fill gives one row per key, holding the key's label of each column's type, and applies only where the key has one label of each such type, so the solver writes the clause where the key has two labels of one type. Each other input with no clause holds its default rows, or no row where it has no default. An instance with no key clause has no key, and its relations have no key column.
 
-An input is a list whose head is the input's name, then one list of its head sites, then its body. The body is a sequence of atoms under the clause's safety condition. A head site projects labels the body or the key made onto a column of the input, so no head site carries `*`, and no head site holds `0`: where the column's value is `0`, the body makes the site's label with `(= *X 0)`, as `(gap (G) (= *G 0))` does. A label on no head site is existential. An input with no clause holds the lib's rows alone, and an input whose clause a stored reading takes holds the `DET`'s rows.
+An input is a list whose head is the input's name, then one list of its head sites, then its body. The body is a sequence of atoms under the clause's safety condition. A head site projects labels the body or the key made onto a column of the input, so no head site carries `*`, and no head site holds `0`: where the column's value is `0`, the body makes the site's label with `(= *X 0)`, as `(gap (G) (= *G 0))` does. Each column of the input other than `key` has a head site, other than a column of a type parameter that no site binds and its component gives no bound. A label on no head site is existential. An input with no clause holds the lib's rows alone, and an input whose clause a stored reading takes holds the `DET`'s rows.
 
 ```
 (INIT &bbox BoundingBox
@@ -262,7 +264,7 @@ An input is a list whose head is the input's name, then one list of its head sit
 
 A read at the key in scope writes the key site, as the key site of an `&obj2.component` read above does: a read of a relation keyed by `C` and `A` writes `(:key C A)`, and a read with no key site is not at that key. Inside `&claim`, keyed by `C` and `A`, `(&claim_order.minimal (:key C A) (:t *B))` reads `&claim_order` at that key.
 
-The first projection onto a type parameter binds it. A projection of one label binds the parameter to that label's type, and every site on the parameter takes one label. A projection of several sites binds it to a record with one field per site, named by the site's head, or by its label where the site is elided, and typed by its label. Every later site on the parameter names the fields it reads by projection, as [Sites](#sites) gives. `Key` is a type parameter like the others, bound by the key clause, whose `^` labels name its fields. An instance with no key clause binds `Key` to no column. A type parameter other than `Key` that no site binds is `Unit`, and a head writes no site on its columns.
+The first projection onto a type parameter binds it. A type parameter that its component bounds binds to the join of the types that every projection onto it gives, and projections with no join are refused. A projection of one label gives the parameter that label's type, and every site on the parameter takes one label. A projection of several sites gives it a record with one field per site, named by the site's head, or by its label where the site is elided, and typed by its label. A binding of a type parameter that its component bounds to a type that is neither the bound nor under it is refused. Every later site on the parameter names the fields it reads by projection, as [Sites](#sites) gives. `Key` is a type parameter like the others, bound by the key clause, whose `^` labels name its fields. An instance with no key clause binds `Key` to no column. A type parameter other than `Key` that no site binds takes the bound its component gives it, and is an empty record where the component gives none. An empty parameter contributes zero row positions, and a head writes no site on it. The successful relation of zero positions contains one empty tuple; it remains distinct from an empty relation.
 
 An instance is per example when its key holds an Example label. Otherwise it is per input when its bodies read `input`, or read without its Example column a relation that the case's reading derives by a `RULE` clause or an instance that is per input, and it pools over the examples in every other case. An `Unfold` instance's reads of its own outputs count toward neither kind.
 
@@ -304,6 +306,22 @@ The instance's outputs are read as `<name>.<output>`, with the key's columns fir
 ```
 
 A clause may end in `ONE` marks, each naming key columns of its relation, and a model keeps one row of the relation for each value of each key. A `CHOOSE` form chooses one candidate for each row of its `for` clause, with the pairs that are never chosen together. The program reads a chosen relation like any other. [Constraints](constraints.md) gives the two forms, which pick each writes, their models and the output set.
+
+## The `OUT` form
+
+```
+(OUT (&fill ^P ^Col))
+
+(OUT (&bar.cell ^P) (&on ^Col))
+```
+
+An `OUT` form states the program's output. It is `(OUT <atom>)`, whose atom holds two sites, or `(OUT <atom> <atom>)`, whose atoms hold one site each. Each atom is in parentheses and reads `input` or a relation the program declares, as a `RULE` body reads it. Each site selects one column, or one field of a record column, with one label marked `^` and nothing else: no `*`, no label with no mark, no `0`. The first site in written order selects a column of type Position or Box and the second a column of type Color. The checker refuses an `OUT` form that breaks one of these rules.
+
+An `OUT` form writes each site elided, as `^<name>` with `<name>` the name of the column or of the field: `(OUT (&r ^C_out ^Col))` selects the columns `C_out` and `Col` of `&r`, and `(:t ^V)` selects the field `V` of the record column `t`. No site gives a label of its own, and no later form reads the labels of an `OUT` form, which are its two key columns, as [Instance](#instance) gives a key's.
+
+The rows of an `OUT` form are the rows of its two selected columns, Position then Color: the projection of its one atom's relation, or the product of the projections of its two atoms' relations. A case's output on an input is the set of grids those rows give, one per model, as [The output set](constraints.md#the-output-set) gives a grid. A two-atom `OUT` form whose second relation holds two colors on an input gives no grid there.
+
+Every program has an `OUT` form. The tail of a solver file holds one, after every other form, under no claim, and an `ALT` block may hold one, after each of its forms other than its `ALT` blocks and `ALTS` forms, under no claim, as [Alts](#alts) gives. An `OUT` form reads each relation in each case as that case derives it. A solver file whose tail holds no `OUT` form, a block that holds two, or an `OUT` form under a claim or at another place in its block is refused. No program's output is inferred from a relation. An `OUT` form holds where its output set solves every train pair, as [Solves](../engine/cases.md#solves) gives; the decode ends at the first `OUT` form that holds, as [Synthesis](../engine/synthesis.md#decode-interface) gives.
 
 ## Rigid
 
@@ -360,9 +378,11 @@ Alts represent an ARC task's cases, and a solver session writes them. The langua
       ...)))
 ```
 
-An `ALTS` form stands after the concept program: its name, its gloss, the concept case's name, then an `ALT` block per alt. An `ALT` block holds an `INPUT` or `OUTPUT` block for each claim the alt reads differently, with the alt's reading of the claim as its text, a block under a slug of its own for each claim the alt adds, as 9f27f097's `$Solid` adds `sole`, and the tail forms that the alt rederives; every relation it does not mention is the concept program's. An `ALT` inside an `ALT` holds what the combination of the two alts rederives. Where alts of two `ALTS` forms each rederive a relation, the nested `ALT` of their combination rederives it too, as the combination derives it. An `ALTS` form that exists only with the concept branch of another `ALTS` form stands in an `ALT` block of that concept branch's name, which holds only its `ALTS` form, as a5313dff's `$e` stands under `$FourPath`.
+An `ALTS` form stands after the concept program: its name, its gloss, the concept case's name, then an `ALT` block per alt. An `ALT` block holds an `INPUT` or `OUTPUT` block for each claim the alt reads differently, with the alt's reading of the claim as its text, a block under a slug of its own for each claim the alt adds, as 9f27f097's `$Solid` adds `sole`, the tail forms that the alt rederives, the `OUT` form among them, and the forms that derive the relation an `OUT` form of the block, or of a block that holds it, reads, which is the output relation of the block's cases as the tail's is of the concept case; every relation it does not mention is the concept program's. An `ALT` inside an `ALT` holds what the combination of the two alts rederives. Where alts of two `ALTS` forms each rederive a relation, the nested `ALT` of their combination rederives it too, as the combination derives it. An `ALTS` form that exists only with the concept branch of another `ALTS` form stands in an `ALT` block of that concept branch's name, which holds only its `ALTS` form, as a5313dff's `$e` stands under `$FourPath`.
 
 In an alt's cases, each form reads a relation that the alt rederives as the alt derives it: 351d6448's `$StepFromFirstTwo` rederives `&checked`, and in its cases the concept program's `&shift_defect` reads that `&checked`. A `DET` in the concept program reads the concept program's derivation in every case, since a parameter that the cases share has one determination: a09f6c25's `$Conn4` rederives `&member`, and the concept program's `DET` of `&kept` reads the concept program's `&member` in every case. A case has one deriving form for each relation: the forms of the blocks of greatest depth, a `DET` as a `RULE`. So a `DET` that an alt rederives replaces the concept program's `DET` of that relation in the alt's cases, and blocks of equal depth from different `ALTS` forms each keep their forms. No alt rederives a relation that a `DET` of the concept program reads, directly or through other relations: where the solver's determination reads its own derivation of a relation that an alt rederives, as c803e39c's `&background` determination reads the divider color that `$DividerByLines` derives from `&background`, the concept program holds that derivation under names of its own (`&x2` for `&x`), which the `DET` reads. A case where such a read stands gets no stream. A relation that no block of a case derives is undefined in that case, and a relation under `NOT` is derived in every case that reads it.
+
+A case takes the `OUT` form of its most specific blocks that hold one: each such block of the case, the tail included as the block of no alt, whose alts no other such block of the case holds with more. Equal forms of those blocks are one. Where those blocks hold different `OUT` forms, the case is refused and gets no stream, unless a combination block holds an `OUT` form of its own. An `ALT` block holds no `OUT` form equal to the `OUT` form of each most specific block whose alts it holds, the tail included, since its cases take that form without it. In a680ac02 the tail's `(OUT (&laid ^P ^Col))` is the output of every case that takes no `$AxisSpread`, and `$AxisSpread`, which derives `&output` with `(RULE &output ...)` where the concept's tail derives none, holds `(OUT (&output ^P ^Col))`, which reads its own `&output`.
 
 A relation of the concept program other than a `DET`'s has only the columns that the concept case reads. Where an alt's derivation of the relation has more columns, the alt rederives, in its own block, the first form that reads the relation, and that form reads the alt's columns. In 9f8de559 the concept case paints the exit cell in the field color, so the concept program's `&paint_of` has no color column. `$StoredPaint` rederives `&paint_of` with a `Col` column and rederives `&output`, which reads it. An alt of another point that rederives `&output`, as `$NearestBody` does, reads the concept program's `&paint_of`, and the combination of the two alts rederives `&output` with the `Col` column.
 
@@ -463,14 +483,14 @@ A session records a value as open where another task in the family of the case's
 
 The language model emits tokens from these sets, each a closed set of ids:
 
-- control: `RULE` `DET` `INIT` `ONE` `SET` `CHOOSE` `RIGID_DET` `OR` `IF` `ALL` `END` `SKIP` `ALSO` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, and a `RIGID_DET`'s `instance` and `key`, and the engine echoes the label after it as after `*`.
+- control: `RULE` `DET` `INIT` `ONE` `SET` `CHOOSE` `RIGID_DET` `OUT` `OR` `IF` `ALL` `END` `SKIP` `ALSO` `NOT` `*` `^` `0` and the constraint operators. `^` marks a label of a key clause's body as a column of the key, as [Instance](#instance) gives, in an instance's `key`, a `CHOOSE`'s `for`, a `RIGID_DET`'s `instance` and `key`, and an `OUT`'s atoms, and the engine echoes the label after it as after `*`.
 - lib relations and components, one token each; proposers, one token each
 - fact relations: `input` `ex_input` `ex_output`
 - derived relations: the index the engine assigned at the declaration
 - column tokens: a relation's columns, which for a derived relation are the labels of its clause; the fields of a site on a record-valued column, by their position in the record; and the names the engine emits for a form's inputs and named clauses, by position: an instance's `key` at 0 and its component's input k at 1 + k, a `CHOOSE`'s `for`, `from` and `never` at 0, 1 and 2, and a `RIGID_DET`'s `key` and `instance` at 0 and 1; in an `INIT`, `CHOOSE` or `RIGID_DET` form, a read of a derived relation that is per input and is no relation of the form itself gives the Example column the column token 0 whether or not the read is lifted, and the relation's own columns follow it
 - labels: the variables of the current clause, in order of creation
 
-The engine emits the declaration of each derived relation, the declarations at each instance or `CHOOSE` form, the name of each input, each column name of a projection, and the label echo after each `*` and `^`. The declarations at an instance are each output, then each input whose name no output shares, written or not. The engine names each input of the component, an unwritten one too, and the language model declines an unwritten one by `SKIP`. In a keyed instance, the key clause names each input, and after the key clause the engine names each input that the key clause did not write. A projection names each column of the input, and an empty one is answered by `END`. It emits the name of each named clause of a form as it emits the names of an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
+The engine emits the declaration of each derived relation, the declarations at each instance or `CHOOSE` form, the name of each input, each column name of a projection, and the label echo after each `*` and `^`. The declarations at an instance follow its component token: each output, then each input whose name no output shares, written or not. The engine names each input of the component, an unwritten one too, and the language model declines an unwritten one by `SKIP`. In a keyed instance, the key clause names each input, and after the key clause the engine names each input that the key clause did not write. A projection names each column of the input, and an empty one is answered by `END`. It emits the name of each named clause of a form as it emits the names of an instance's inputs: an instance's `key`, a `CHOOSE`'s `for`, `from` and `never`, and a `RIGID_DET`'s `instance` and `key`. The language model never emits a label it has not seen echoed, and never names a relation or a column with text.
 
 The token sets are disjoint, so an atom's site list ends at the first token that is not a column token, and no separator exists. Every site opens with its column token, an elided one too.
 
@@ -479,6 +499,8 @@ The language model emits `END` where a decision to stop exists: at the end of a 
 The language model emits `SKIP` after the name of an optional clause or input, to decline it. After the name of a required clause, and after the last name of a required input in the form, the decoder refuses `SKIP`, so no form lacks a required input and then waits on a decline that the decoder never admits.
 
 A `RIGID_DET` is written as `RIGID_DET`, then the `key` name and its body and `END`, or `SKIP`, then the `instance` name and its body and `END`, or `SKIP`, then its parts, each an atom, then `END`; the engine then declares the form's outputs.
+
+An `OUT` form is written as `OUT`, then each atom as an atom of a key clause's body is written, a relation, then each site's column token, `^` and the engine's echo of the label, then `END`; the engine declares nothing after it, and the program's last form is its `OUT` form.
 
 A clause that may repeat, such as `never`, is written as its first instance, then `ALSO` and the next instance, for each further repeat. The next name the engine emits, or the `END` that closes the enclosing form, ends the run, so the repetition has no token of its own at its end. A `CHOOSE` form whose `never` clause is written closes with `END` after its last `never` clause, and the engine then declares the form's relation.
 
@@ -501,7 +523,7 @@ Each kind of name has its own spelling:
 
 | kind | spelling |
 | --- | --- |
-| keyword | `RULE` `INIT` `CHOOSE` `OUTPUT` `DEMO_RULE` `DET_OR_RULE` |
+| keyword | `RULE` `INIT` `CHOOSE` `OUT` `OUTPUT` `DEMO_RULE` `DET_OR_RULE` |
 | fact relation | `input` `ex_input` `ex_output` |
 | lib relation, proposer | `margin` `inside` `DominantColor` |
 | instance | `&comps` |
@@ -526,13 +548,13 @@ The trace form is the program's tree with the engine's forced tokens in brackets
 [&fg]
 
 (INIT Connectivity
+  [&comps.component &comps.adjacent &comps.node &comps.step]
   [key] SKIP
   [node]
   ((&fg (:P *[P])) END
    [node key] (END)
    [node P] (P END))
-  [step] SKIP
-  [&comps.component &comps.adjacent &comps.node &comps.step])
+  [step] SKIP)
 
 (RULE (&axis_len (:B *[B]) (:N *[N]))
       (&axis_len (:B *[B2]) (:N *[N2]))
@@ -548,12 +570,12 @@ The trace form is the program's tree with the engine's forced tokens in brackets
 The bracket's content says which kind of forced token it holds:
 
 - a relation after a clause's `END` is its declaration, `[&fg]`
-- the declarations after an instance's last input, each output and then each input whose name no output shares, `[&comps.component &comps.adjacent &comps.node &comps.step]`
+- the declarations after an instance's component, each output and then each input whose name no output shares, `[&comps.component &comps.adjacent &comps.node &comps.step]`
 - an input's name alone, before its body or its `SKIP`, is the input name, `[node]`, `[key]`
 - an input's name with a column is the column name, `[node P]`, and the list that follows is the language model's answer, `(END)` for an empty projection
 - a label after `*` is its echo, `[P]`
 
-A clause's `END` is the language model's, and its declaration follows it as a sibling. An instance has no `END` from the language model: it ends when the engine has emitted the name of each input, and its declaration sits inside it.
+A clause's `END` is the language model's, and its declaration follows it as a sibling. An instance has no `END` from the language model: it ends when the engine has emitted the name of each input, and its declarations sit inside it, after its component.
 
 A renderer flag adds the language model's top-k tokens after a symbol, in braces, each with its probability. The braces attach to the symbol whose decision they show:
 
@@ -642,6 +664,8 @@ A task where each object's bounding box fills with the object's color under a fi
       ((&obj_col Id (:Col *Col1))
        (&recolor.value (:key (:Col Col1)) (:v *Col)))
       ((= Col C_in))))
+
+(OUT (&output ^P ^Col))
 ```
 
 `&pair` reads `&fg` lifted, so it has the Example column `E`. `&recolor` keys on `Col` alone, so it pools over the examples, and `&recolor.value` has no Example column and is read by a `RULE` clause. `&comps` has no key clause, so its relations have no key column.

@@ -24,7 +24,7 @@ READ = re.compile(r"^(\^|\*)?(&[a-z_0-9]+)\.([a-z_0-9]+)(.*)$")
 
 def instances(text: str) -> dict[str, str]:
     """Each instance the text's `INIT` forms make, with its component."""
-    from arclog_convert.lint import L, Sym, read
+    from arclog_convert.lint_read import L, Sym, read
     out: dict[str, str] = {}
 
     def scan(xs):
@@ -64,7 +64,7 @@ def rename(text: str, insts: dict[str, str]) -> str:
     """The text with the renames applied; `insts` gives each instance the
     text may read with its present component, and holds only those the
     renames apply to."""
-    from arclog_convert.lint import L, Sym, read
+    from arclog_convert.lint_read import L, Sym, read
     edits: list[tuple[int, int, str]] = []
 
     def inputs(y, top: bool, parts: dict[str, str]) -> None:

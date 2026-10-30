@@ -19,6 +19,14 @@ pub(super) const DEFAULT: &str = "default";
 pub(super) const READS_OUTPUTS: &str = "reads-outputs";
 pub(super) const FROM_KEY: &str = "from-key";
 pub(super) const COPIES: &str = "copies";
+pub(super) const FRAMES: &str = "frames";
+pub(super) const TYPES: &str = "types";
+pub(super) const WHEN: &str = "when";
+pub(super) const SAME_FRAME: &str = "same-frame";
+pub(super) const OF: &str = "of";
+pub(super) const NEW: &str = "new";
+pub(super) const SIZE: &str = "size";
+pub(super) const BY: &str = "by";
 pub(super) const EITHER: &str = "either";
 pub(super) const NATIVE: &str = "native";
 pub(super) const DOMAIN: &str = "domain";
@@ -46,6 +54,8 @@ pub(super) fn orientation_type(name: TypeName) -> Option<OrientationType> {
         TypeName::Sym => Some(OrientationType::Sym),
         TypeName::Sense => Some(OrientationType::Sense),
         TypeName::Number
+        | TypeName::Int
+        | TypeName::Nat
         | TypeName::Color
         | TypeName::Example
         | TypeName::Unit

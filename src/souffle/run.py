@@ -174,7 +174,7 @@ def _running() -> threading.BoundedSemaphore:
     performance core however many threads start them, and at most
     `pool_size()`: a run on an efficiency core spends more CPU seconds for
     the same work, and the CPU limit counts them; under
-    `scripts/run_heavy.py` the grant bounds them."""
+    `scripts/run_heavy.py` its `--cpus` bounds them."""
     with _RUNNING_LOCK:
         if not _RUNNING:
             _RUNNING.append(threading.BoundedSemaphore(
@@ -198,10 +198,17 @@ def _cpu_limit_key(key: str, cpu: int) -> str:
     return f"{key}-cpu{cpu}"
 
 
+@cache
+def _shown_from(path: Path, root: Path) -> str:
+    return str(checkout.shown(path, root))
+
+
 def _from_root(path: Path) -> str:
     """`path` from the checkout's root (`checkout.shown`) where it stands
-    under it, else its absolute path."""
-    return str(checkout.shown(path, checkout.ROOT))
+    under it, else its absolute path. Kept per path and root for the life of
+    the process: a file's place under a root does not change while the
+    process runs, and `study.deck_runs.at_root` changes the root."""
+    return _shown_from(path, checkout.ROOT)
 
 
 _STATEMENTS: ByIdentity[Program, tuple[list[tuple[str, int | None]], str]] \

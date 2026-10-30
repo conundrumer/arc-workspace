@@ -1,6 +1,6 @@
 + document-size-budget: 15345
 * comment: when editing this doc
-    - The coordinator loads Making a change, Merging a change and A denied merge by the links of its Changes section, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
+    - The coordinator loads Making a change, Merging a change and A denied merge by the links of the [Changes](prompts/agents/notes/ops.md#changes) section of Ops, at the steps they give; the decision analyst loads Findings an editor leaves by a link of [An editor's findings](prompts/agents/decision-analyst/findings.md), where its brief gives findings an editor left.
     - Acts, each with its section:
         - Having an editor write a change, and taking it through its review and checks: [Making a change](#making-a-change).
         - Judging the findings and items an editor leaves: [Findings an editor leaves](#findings-an-editor-leaves).
@@ -72,8 +72,11 @@
 - Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or applies that decision's default, merges the change.
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
     + xref: scripts/merge_change.py:merge_main
+- Give `--block` after `merge_change.py` where the change has an active risk of a silent change: it alters existing data or outputs without failing, and a live consumer reads them now. With `--block` the script runs its checks before it merges and refuses the change when one fails. Without it, the script merges first and then runs the checks.
+- Give `--keep` after `merge_change.py` where a job will run from the merged code, and run that job from the kept worktree. The script then leaves each landed worktree at the landed commit, as `merge_change.py --help` gives.
+- Where that script exits with status 3, it merged the change and a check failed on the merged commit. File that failure as a `bug` ticket on the change, and treat the change as merged.
 - Where that script does not merge the change, act on what it reports:
-    - Where it reports that the rebase conflicts and that it moved the branch onto `master`, or a failed check, send what it reports to the change's editor as a finding of its checks.
+    - Where it reports that the rebase conflicts and that it moved the branch onto `master`, or, under `--block`, a failed check, send what it reports to the change's editor as a finding of its checks.
     - Where it reports that the rebase conflicts and that the worktree is as it was, put the change in its worktree yourself onto what it rebased it onto, resolving each conflict, then run that script again.
         * comment: Decision a3fdafaa399f0c20c on 6-1429, from the user's words on 6-1417: "it gets sent to you and you handle it". Trial afa894d8d289e9d58 took it as the case below.
     - Where it reports anything else, give the worktree and the script's message in your reply.

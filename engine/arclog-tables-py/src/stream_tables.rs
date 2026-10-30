@@ -10,7 +10,8 @@ use arclog::registry::Registry;
 use arclog::stream::corpus::fault_line;
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
 use arclog_bindings::{constructions, PyDecodeSettings};
-use arclog_tables::columns::{case_columns, cut_case_columns};
+use arclog_tables::columns::{case_columns_in,cut_case_columns_in};
+use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, Points};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -99,7 +100,7 @@ fn check_bases(bases: Option<Vec<Option<usize>>>, streams: usize) -> PyResult<Ve
 pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Vec<(Vec<u32>, Vec<u8>)>, names: Option<Vec<String>>, settings: Option<PyDecodeSettings>, bodies: bool, step_cap: Option<usize>, copies: bool, bases: Option<Vec<Option<usize>>>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let settings = match settings {
         Some(settings) => settings.engine()?,
-        None => DecodeSettings::default(),
+        None => DecodeSettings::synthesis(),
     };
     let settings = DecodeSettings { check_copies: copies, ..settings };
     let vocabulary = Vocabulary::new(Registry::get(), &settings);
@@ -154,7 +155,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
             &steps,
             &|record: &mut StreamRecord, decoder, stepped| record.step(decoder, stepped, points),
             &|_| {},
-            &|_, replay| replay,
+            &|_, _, replay| replay,
             &|_| {},
             step_cap,
         )
@@ -173,12 +174,16 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
     let mut built = py
         .detach(|| {
             run_on_workers(&jobs, corpus_threads(), |&(replay, cut)| {
+                let limits=settings.operation_limits();
+                let empty_session=arclog::session::TaskSession::new(arclog::session::SessionBound {bytes:arclog::session::SESSION_BYTES},settings.caps);
+                let session=replay.record.session.as_ref().unwrap_or(&empty_session);
+                let materializer=Materializer::new(session,&limits);
                 catch_unwind(AssertUnwindSafe(|| match cut {
                     Some((base, tokens)) => {
-                        let (columns, tables) = cut_case_columns(&evidence, &replay.record.tables, tokens, train);
+                        let (columns, tables) = cut_case_columns_in(&materializer,&evidence, &replay.record.tables, tokens, train, None);
                         (columns.with_copies(&replay.record.copies), Some((base, tokens, tables)))
                     }
-                    None => (case_columns(&evidence, &replay.record.tables, train).with_copies(&replay.record.copies), None),
+                    None => (case_columns_in(&materializer,&evidence, &replay.record.tables, train, None).with_copies(&replay.record.copies), None),
                 }))
                 .map_err(|payload| replay_panic(&*payload))
             })
@@ -190,6 +195,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
             Ok(replay) => match built.next().expect("columns for each stream that was replayed") {
                 Ok((columns, cut)) => {
                     let base = cut.map(|(base, tokens, count)| Base { case: names[base].clone(), tokens, tables: count });
+                    if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {case}: native packing stopped {:?} at {:?}",stop.bound,stop.form));}
                     tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, &columns, None, base)?);
                     ended.push(match replay.record.ended {
                         Some(at) => at.line(task, case),

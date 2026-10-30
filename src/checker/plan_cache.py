@@ -30,7 +30,7 @@ def plan_lines(runs: Runs, source: Path, stamp: str, verdicts: bool
     of the code and the Souffle sources the run loads
     (`cli.common.stamp`)."""
     def made() -> tuple[list[str], bool]:
-        result = survey_determination_plan(runs.solver, runs)
+        result = survey_determination_plan(runs.solver, runs, moves=True)
         return (render_determination_plan(runs.solver, result, verdicts),
                 not reaches_wall(result))
 

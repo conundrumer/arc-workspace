@@ -3,7 +3,7 @@
 //!
 //! Each run evaluates the concept case of each solver at its stored `param`
 //! records, in one task session, with the entries of the case, each
-//! relation that `&output` reads on each example it holds rows on, on a
+//! relation that the `OUT` form reads on each example it holds rows on, on a
 //! [`Pool`] of the run's threads. The rows of the two runs are compared
 //! with Idents up to one renaming per solver, since the Ident a session
 //! gives an entity depends on the order of its interning.
@@ -103,8 +103,8 @@ enum Observed {
     Other(String),
 }
 
-/// One entry of a case: a relation that `&output` reads, on an example or
-/// task-wide.
+/// One entry of a case: a relation that the `OUT` form reads, or its own,
+/// on an example or task-wide.
 type Entry = (GraphRelation, Option<Example>);
 
 /// The line of the first difference between the run of the solver `id` at
@@ -131,7 +131,7 @@ fn observe(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<
 }
 
 /// The entries of `evaluation`'s case: each relation of a clause that
-/// `&output` reads, at any depth, `&output` too, by graph order, on each
+/// `OUT` form reads, at any depth, the `OUT` form's own too, by graph order, on each
 /// example of the task for a relation per example, and task-wide for
 /// another.
 fn entries(evaluation: &Evaluation<'_>) -> Vec<Entry> {
@@ -147,7 +147,7 @@ fn entries(evaluation: &Evaluation<'_>) -> Vec<Entry> {
             }
         }
     }
-    let clauses = reached.into_iter().map(GraphNodeIndex).filter(|node| matches!(graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_)));
+    let clauses = reached.into_iter().map(GraphNodeIndex).filter(|node| matches!(graph.nodes[node.0 as usize].kind, DependencyKind::Clause(_) | DependencyKind::Out(_)));
     clauses
         .flat_map(|node| {
             let relation = GraphRelation { node, output: None };

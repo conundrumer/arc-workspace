@@ -276,10 +276,11 @@ class Plan:
     (`_differing`); the run's failure where it gives no result."""
     types: tuple[tuple[PlanValue, tuple[str, ...]], ...]
     joint: Joint | TimedOut | None
-    moved: "tuple[Moved, ...] | RunFailure"
+    moved: "tuple[Moved, ...] | RunFailure | None"
     """The witnesses whose pair moves a determined value that the concept
     case reads (`_moved_by_witnesses`); the failure of a determination run
-    where one gives no result."""
+    where one gives no result; None where the survey ran without the
+    moves."""
 
 
 @dataclass(frozen=True)
@@ -464,7 +465,8 @@ def classify(results: Sequence[ProbeResult], determined: frozenset[str],
 @quotes("procedure.md", "Determine",
         "Run the plan (`uv run python scripts/run_dl.py determination-plan "
         "<task_id>`).")
-def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
+def survey_determination_plan(solver: Solver, runs: Runs, moves: bool
+                              ) -> PlanResult:
     """The plan: each fact parameter's stored value against each proposer of
     its type, a set-keyed relation's table against each proposer of its row
     type, and a single-fact enumerable parameter's own domain; then, where
@@ -472,7 +474,10 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     the enumeration limit, the joint assignments that reproduce every train
     pair. A parameter that stores a value per case gives a subject per
     case, its value there (`AtCase`). A solver with no task file raises
-    `ValueError`; the command refuses it first."""
+    `ValueError`; the command refuses it first. Under `moves`, the plan
+    holds the witnesses that move a determined value
+    (`_moved_by_witnesses`), whose runs are most of a plan's cost; without
+    it, `Plan.moved` is None."""
     engine, limits = runs.engine, runs.limits
     task = solver.given_task
     proposals = probe(engine, task, limits)
@@ -538,7 +543,8 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     all_types = tuple((n, t) for n, (t, _) in fact.items())
     joint = _joint(solver, runs, results, determined, differing, fact)
     return Plan(tuple(results), tuple(embedded), determined, differing,
-                all_types, joint, _moved_by_witnesses(solver, runs))
+                all_types, joint,
+                _moved_by_witnesses(solver, runs) if moves else None)
 
 
 @dataclass(frozen=True)

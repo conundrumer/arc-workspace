@@ -100,3 +100,18 @@ lit_cell(P, Ch) :-
 
 out(P, Col, Ch) :- lit_cell(P, Ch), params.lit(Col).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !lit_cell(P, Ch), params.bg(Col).
+
+.comp Determine {
+    .type Obj = [e: Example, id: Ident]
+
+    .init objs = Components<Example>
+    objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    // The body is the bulk of an object, in its commonest color.
+    .init body = Mode<Obj, Color, Position>
+    body.item([E, Id], Col, P) :- objs.label(E, P, Id), ex_in(E, P, Col).
+
+    // The ports are the cells of an object in any other color.
+    .decl port(col: Color)
+    port(Col) :- body.item(O, Col, _), !body.mode(O, Col).
+}

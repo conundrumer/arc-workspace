@@ -34,7 +34,7 @@ impl Check for TypesCheck {
         let input = super::super::prefix::whole(prefix);
         let order = CanonicalOrder::of(prefix.partial, &mut SearchBudget::new());
         let complete = prefix.open.is_none();
-        let (result, _) = infer_form_where(&input, &order, &|form, label| complete || !form.is_given(label));
+        let (result, _) = infer_form_where(&input, &order, &|form, label| complete || !form.is_given(label), !input.scope.inference.is_mask());
         super::super::prefix::settled_result(prefix, result)
     }
 }
@@ -55,24 +55,28 @@ pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
 /// give it a Pose type and another type is the pose rule's, which
 /// [`crate::check::pose`] refuses.
 pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
-    infer_form_where(input, order, &|_, _| true)
+    infer_form_where(input, order, &|_, _| true, true)
 }
 
 /// [`infer_form`], with a refusal of a label only where `refuses` holds
-/// for the label in its scope's inference.
-fn infer_form_where(input: &CheckInput<'_>, order: &CanonicalOrder, refuses: &dyn Fn(&FormInference<'_>, LabelId) -> bool) -> (CheckResult, ScopeTypes) {
+/// for the label in its scope's inference, and the types of the scopes
+/// only where `collect_types` holds: a prefix in mask mode reads the
+/// refusals alone.
+fn infer_form_where(input: &CheckInput<'_>, order: &CanonicalOrder, refuses: &dyn Fn(&FormInference<'_>, LabelId) -> bool, collect_types: bool) -> (CheckResult, ScopeTypes) {
     let inference = input.scope.inference;
     let mut found = Vec::new();
     let mut scopes = Vec::new();
     for source in inferred_scopes(order) {
         let form = inference.infer(&input.path.join(&source)).expect(SCOPE_FORM);
         found.extend(refusals(&form, order, &source, refuses));
-        let relations = scope_forms_within(input.form, &source).into_iter().flat_map(|(at, form)| {
-            let relations = inference.form_relations(&input.path.join(&at), form);
-            let canonical = order.canonical_path(&at);
-            relations.into_iter().map(move |(output, columns)| (FormRelation { form: canonical.clone(), output }, columns))
-        });
-        scopes.push((order.canonical_path(&source), scope_types(&form, order, &source, relations.collect::<Vec<_>>())));
+        if collect_types {
+            let relations = scope_forms_within(input.form, &source).into_iter().flat_map(|(at, form)| {
+                let relations = inference.form_relations(&input.path.join(&at), form);
+                let canonical = order.canonical_path(&at);
+                relations.into_iter().map(move |(output, columns)| (FormRelation { form: canonical.clone(), output }, columns))
+            });
+            scopes.push((order.canonical_path(&source), scope_types(&form, order, &source, relations.collect::<Vec<_>>())));
+        }
     }
     if let (Form::Clause(clause), Some(form)) = (input.form, inference.infer(input.path)) {
         found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
@@ -113,6 +117,9 @@ fn refusals(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath, 
             fault => format!("the label here {}", label_fault_message(fault.clone())),
         };
         refusals.push(Refusal { message: message.into(), at: place(form.walk.first_use(*label)) });
+    }
+    for (at, message) in form.bound_faults() {
+        refusals.push(Refusal { message: message.into(), at: place(&at) });
     }
     for (at, constraint) in &form.walk.constraints {
         if !matches!(constraint.op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge) {

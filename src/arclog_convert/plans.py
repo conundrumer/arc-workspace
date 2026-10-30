@@ -1,30 +1,43 @@
 """The determination plan files under `plan/` of `arclog_convert.out`: one
-per solver, from `scripts/run_dl.py determination-plan`, with the hash of the
-solver file and the runner and lib stamp it was written under. The plans are
+per solver, with the hash of the inputs it was written from (`inputs_hash`:
+the solver file, its task file and its witness file) and the runner and lib
+stamp it was written under. A plan file holds the sections of
+`scripts/run_dl.py determination-plan` other than the one for the moved
+witnesses (`Plan.moved`), which the converter does not read. The plans are
 also kept in `store()`, one file per solver, runner and lib state, which every
 `--out` directory and every worktree shares; a missing or stale plan file is
 restored from there, and an up-to-date one under `plan/` seeds the store. The
-converter reruns a plan that neither holds, on at most
-`engine.pool.pool_size()` threads, each running its command bounded to one
-CPU."""
+converter reruns the plans that neither holds in worker processes, at most
+`engine.pool.pool_size()` at once, each bound to one CPU and taking a chunk of
+at most `CHUNK` solvers, then exiting so that none keeps the memory of a
+chunk."""
 
 import hashlib
-import subprocess
-import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from arclog_convert import paths
-from engine import checkout
+from arclog_convert.row_parity import bound_to_one_cpu
+from checker.plan_cache import hash_solver_files
+from engine import checkout, rwlock
 from engine.memo import write_whole
-from engine.pool import pool_size, share_env
+from engine.pool import pool_size
 
 
-PLAN_HASH = "solver file sha256: "
+PLAN_HASH = "inputs sha256: "
+
+CHUNK = 16
+"""The most solvers one worker process takes before it exits. A process
+that made 32 plans, the largest among them, peaked at 0.44 GiB."""
 
 
-def solver_hash(stem: str) -> str:
-    return hashlib.sha256((paths.SOLVERS / f"{stem}.dl").read_bytes()).hexdigest()
+def inputs_hash(stem: str, solvers: Path) -> str:
+    """The hash of the files the plan of the solver `stem` is made from: its
+    solver file in the directory `solvers`, its task file and its witness
+    file."""
+    h = hashlib.sha256()
+    hash_solver_files(h, solvers / f"{stem}.dl", stem)
+    return h.hexdigest()
 
 
 def store() -> Path:
@@ -34,13 +47,13 @@ def store() -> Path:
 
 def kept_file(stem: str, digest: str, lib_line: str) -> Path:
     """The file in `store()` that holds the plan of the solver `stem` whose
-    file hash is `digest`, under the runner and lib line `lib_line`."""
+    inputs hash is `digest`, under the runner and lib line `lib_line`."""
     key = hashlib.sha256(f"{digest}\0{lib_line}".encode()).hexdigest()[:16]
     return store() / f"{stem}-{key}"
 
 
 def is_current(text: str, digest: str, lib_line: str) -> bool:
-    """Whether the plan `text` records the solver file hash `digest` and the
+    """Whether the plan `text` records the inputs hash `digest` and the
     runner and lib line `lib_line`."""
     lines = text.splitlines()
     return PLAN_HASH + digest in lines and lib_line in lines
@@ -60,7 +73,7 @@ def restore_plans(stems: list[str], lib_line: str) -> list[str]:
     written whole or not at all."""
     missing = []
     for stem in stems:
-        digest = solver_hash(stem)
+        digest = inputs_hash(stem, paths.SOLVERS)
         mine = paths.PLANS / f"{stem}.txt"
         kept = kept_file(stem, digest, lib_line)
         if mine.exists() and is_current(mine.read_text(), digest, lib_line):
@@ -81,21 +94,45 @@ def keep(kept: Path, data: bytes) -> None:
 
 
 def write_plan(stem: str, lib_line: str) -> str | None:
-    """Run the determination plan of one solver and write its output, with
-    the solver file's hash, to its file in `store()` (under the runner and
-    lib line `lib_line`) and to its plan file; None, or the error."""
-    digest = solver_hash(stem)
-    r = subprocess.run([sys.executable, str(paths.ROOT / "scripts" / "run_dl.py"), "determination-plan", stem],
-                       cwd=paths.ROOT, capture_output=True, text=True, env=share_env(1))
-    if r.returncode != 0:
-        lines = (r.stderr or r.stdout).strip().splitlines()
-        return lines[-1] if lines else f"exit {r.returncode}"
-    text = r.stdout + r.stderr
-    data = (text + ("" if text.endswith("\n") else "\n") + PLAN_HASH + digest + "\n").encode()
+    """Make the determination plan of one solver, without the moved
+    witnesses (`cli.survey.plan_output`), and write its lines, the runner and
+    lib line `lib_line` and the inputs hash to its file in `store()` and to
+    its plan file; None, or the error."""
+    from cli.survey import plan_output
+    digest = inputs_hash(stem, paths.SOLVERS)
+    try:
+        code, lines = plan_output(stem, moves=False)
+    except Exception as e:  # noqa: BLE001
+        return f"{type(e).__name__}: {e}"
+    if code != 0:
+        return lines[-1] if lines else f"exit {code}"
+    data = "".join(f"{line}\n" for line in [*lines, lib_line, PLAN_HASH + digest]).encode()
     keep(kept_file(stem, digest, lib_line), data)
     paths.PLANS.mkdir(parents=True, exist_ok=True)
     write_whole(paths.PLANS / f"{stem}.txt", data)
     return None
+
+
+def write_chunk(stems: list[str], lib_line: str) -> list[tuple[str, str]]:
+    """`write_plan` for each of `stems`, under the shared hold of the heavy
+    commands' lock; the stem and error of each plan that failed."""
+    with rwlock.held(rwlock.Hold.SHARED):
+        failed = []
+        for stem in stems:
+            err = write_plan(stem, lib_line)
+            if err is not None:
+                failed.append((stem, err))
+        return failed
+
+
+def chunks(stems: list[str]) -> list[list[str]]:
+    """`stems` in chunks of at most `CHUNK`, and of no more than the stems
+    per worker that `pool_size()` workers share, so that every worker has
+    a chunk; the largest solver files first, so that no long chunk starts
+    last."""
+    order = sorted(stems, key=lambda stem: -(paths.SOLVERS / f"{stem}.dl").stat().st_size)
+    size = min(CHUNK, -(-len(order) // pool_size()))
+    return [order[i:i + size] for i in range(0, len(order), size)]
 
 
 def refresh_plans(stems: list[str]) -> None:
@@ -104,7 +141,8 @@ def refresh_plans(stems: list[str]) -> None:
     if not stale:
         return
     print(f"rerunning the determination plan of {len(stale)} solvers")
-    with ThreadPoolExecutor(max_workers=pool_size()) as pool:
-        for stem, err in zip(stale, pool.map(lambda stem: write_plan(stem, line), stale)):
-            if err is not None:
-                print(f"  {stem}: the plan failed: {err}")
+    with ProcessPoolExecutor(pool_size(), initializer=bound_to_one_cpu, max_tasks_per_child=1) as pool:
+        futures = [pool.submit(write_chunk, chunk, line) for chunk in chunks(stale)]
+        failed = [pair for future in futures for pair in future.result()]
+    for stem, err in sorted(failed):
+        print(f"  {stem}: the plan failed: {err}")

@@ -16,6 +16,12 @@ use arclog::terms::{Margins, Term, TermId};
 use arclog::types::ValueType;
 
 /// Equal parts per axis, by count or by side, with a gap.
+///
+/// - in `cell(key, P)`: the cells to cut.
+/// - in `parts(key, A, N)`: N parts along A. Or `side(key, A, K)`: parts of K cells along A. An axis with neither is one part.
+/// - in `gap(key, A, G)`: G cells between each two parts along A. An axis with no row has gap 0.
+/// - out `tile(key, P, P_outer, P_inner)`: P is the cell P_inner of the part at P_outer. P_outer is a cell of the frame of parts.
+/// - A cell is reported only when its distances from both ends place it in a complete part of the requested size; gap cells and inconsistent extents give no row.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Division;
 
@@ -35,7 +41,6 @@ impl Construction for Division {
             parts: axis.numbers(parts),
             sides: axis.numbers(side),
             gaps: axis.gaps(gap),
-            extents: cells.iter().map(|&p| axis.extent(p)).collect(),
             axis,
         });
         let mut tile = RowSet::empty(3);
@@ -55,14 +60,12 @@ impl Construction for Division {
     }
 }
 
-/// One axis of a Division's key group: its counts, sides and gaps, and the
-/// extents of its cells on the axis.
+/// One axis of a Division's key group: its counts, sides and gaps.
 struct AxisParts {
     axis: Axis,
     parts: Vec<i32>,
     sides: Vec<i32>,
     gaps: Vec<i32>,
-    extents: StableHashSet<i32>,
 }
 
 impl AxisParts {
@@ -80,15 +83,14 @@ impl AxisParts {
                 split.extend(axis.stride(p, k, g));
             }
             for &n in &self.parts {
-                // The count gives the side, read off the extents of the
-                // key's cells, as ExtentDivisions gives it.
-                for &extent in &self.extents {
-                    if let Some(k) = side_of(extent, n, g) {
-                        split.extend(axis.stride(p, k, g));
-                    }
+                // The count gives the side that `n` parts fill the extent of
+                // `p` alone with, as `divide` of `programs/lib/box.dl` gives
+                // it. A cell that no side of `n` parts fills gets no part.
+                let whole = axis.extent(p);
+                if let Some(k) = side_of(whole, n, g) {
+                    split.extend(axis.stride(p, k, g));
                 }
                 // One part spans the extent.
-                let whole = axis.extent(p);
                 split.extend(axis.stride(p, whole, g).filter(|&(outer, _)| axis.extent(outer) == n));
             }
         }
@@ -111,6 +113,11 @@ fn side_of(extent: i32, n: i32, g: i32) -> Option<i32> {
 
 /// The cells of a frame tiled by an inner frame at the outer positions,
 /// with a gap per axis.
+///
+/// - in `outer(key, P)`: the frame of copies.
+/// - in `inner(key, P)`: the frame of one copy.
+/// - in `gap(key, A, G)`: G cells between each two copies along A. An axis with no row has gap 0.
+/// - out `cell(key, P_outer, P_inner, P)`: P is the cell P_inner of the copy at P_outer.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Tiling;
 
@@ -148,6 +155,9 @@ impl Construction for Tiling {
 }
 
 /// The cells of a frame from its extent on each axis.
+///
+/// - in `extent(key, A, N)`, from the key: N cells along A. An axis with no row has extent 1.
+/// - out `cell(key, P)`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Frame;
 
@@ -182,6 +192,9 @@ impl Construction for Frame {
 }
 
 /// The divisions that a frame's extent admits on each axis.
+///
+/// - in `frame(key, P)`: the frame's cells.
+/// - out `division(key, A, N, K, G)`: along A, N parts of K cells with G cells between each two fill the extent exactly. N is 2 or more and K is 1 or more. G can be less than 0, down to 1 less K: then two neighboring parts share that many lines.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ExtentDivisions;
 
@@ -308,4 +321,29 @@ const ZERO: Margins = Margins { top: 0, bottom: 0, left: 0, right: 0 };
 /// outside a byte.
 fn encode_row(positions: &[Margins]) -> Result<Box<[TermId]>, ReachedBound> {
     positions.iter().map(|&p| Term::Box(p).encode().map_err(ReachedBound::Margin)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The inner extents of the parts of `p` on `axis` that a count of 3
+    /// with gap 0 gives.
+    fn inner_extents_of_three_parts(axis: Axis, p: Margins) -> Vec<i32> {
+        let parts = AxisParts { axis, parts: vec![3], sides: vec![], gaps: vec![0] };
+        parts.split(p).into_iter().map(|(_, inner)| axis.extent(inner)).collect()
+    }
+
+    /// A count cuts a cell by the side that its own extent gives, as `divide`
+    /// does: a cell of extent 6 gets parts of side 2 whatever the other cells
+    /// of its key are, and a cell of extent 7, which 3 parts do not fill, gets
+    /// no part.
+    #[test]
+    fn a_count_cuts_each_cell_by_the_side_of_its_own_extent() {
+        let [axis, _] = Axis::pair();
+        let cell = |extent: i32| axis.only(0, extent - 1);
+        assert_eq!(inner_extents_of_three_parts(axis, cell(6)), [2]);
+        assert_eq!(inner_extents_of_three_parts(axis, cell(9)), [3]);
+        assert!(inner_extents_of_three_parts(axis, cell(7)).is_empty());
+    }
 }

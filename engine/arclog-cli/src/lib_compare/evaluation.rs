@@ -163,7 +163,7 @@ pub(super) fn mode_columns(relation: &AlgebraRelation, mode: &Value) -> Vec<usiz
 /// The term id of an inputs file's `value` at type `ty`.
 pub(super) fn term_id(value: &Value, ty: &ValueType) -> Result<TermId, String> {
     let term = match (ty, value) {
-        (ValueType::Box, Value::Array(m)) => {
+        (ty, Value::Array(m)) if ty.is_box() => {
             let margin = |i: usize| m.get(i).and_then(Value::as_i64).map(|n| n as i32).ok_or_else(|| format!("{value} is no Box"));
             Term::Box(Margins { top: margin(0)?, bottom: margin(1)?, left: margin(2)?, right: margin(3)? })
         }

@@ -1,0 +1,251 @@
+//! Checked body views preserve lexical types, keys, aliases and source paths.
+//! They are evaluation queries over the original program, never new public
+//! clauses to be resolved or checked under a different language contract.
+use super::examples::ExampleScope;
+use super::ir::{self, Argument, AtomSource, ClauseIr, IrNode, IrPaths, KeyRead, NodePaths, Variable};
+use super::{Outcome, RunFault};
+use crate::check::CheckedProgram;
+use crate::program::path::{node_at,NodePath,NodeRef};
+use crate::program::{ChoosePart,Conjunct,Form,LabelId,RigidDetPart};
+use crate::resolver::Side;
+
+const MAX_DERIVATIONS:usize=32;
+
+#[derive(Clone)]
+pub struct BodyView {
+    pub form:NodePath,
+    pub clause:ClauseIr,
+    pub paths:IrPaths,
+    pub scope:ExampleScope,
+    pub input:Option<crate::program::PortName>,
+}
+impl BodyView {
+    /// Whether this query reads the recursive owner's state in addition to its
+    /// literal clause. Both evaluation and completed-model reuse use this
+    /// boundary; unknown inputs retain the native evaluation fault.
+    pub fn uses_owner_context(&self, program:&CheckedProgram, registry:&crate::registry::Registry)->Outcome<bool> {
+        let fault=|message:&str| RunFault {message:message.into(),form:self.form.clone()};
+        let Some(port)=&self.input else {return Ok(false)};
+        let Some(NodeRef::Instance(instance))=node_at(NodeRef::Program(program.program.program.value()),&self.form) else {
+            return Err(fault("input query owner is not an instance"));
+        };
+        let component=crate::resolver::registry_columns::component(registry,&instance.component)
+            .ok_or_else(||fault("body component is absent"))?;
+        let declared=component.inputs.iter().find(|input|input.port.name==*port)
+            .ok_or_else(||fault("body input is absent"))?;
+        Ok(declared.reads_outputs)
+    }
+    pub fn column_of(&self,label:LabelId)->Option<usize> {
+        self.clause.columns.iter().position(|v|self.paths.labels[v.0 as usize]==label)
+    }
+    /// Compile the exact body in its original checked form and key context.
+    pub fn at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
+        let root=NodeRef::Program(program.program.program.value());
+        // A branch's lexical bindings include the outer body's prefix.
+        // Use the same query for a whole branch and its completed prefix.
+        let nested=(1..at.0.len()).any(|end|matches!(node_at(root,&NodePath(at.0[..end].into())),Some(NodeRef::Body(_))));
+        let prefix=if nested {
+            match node_at(root,at) {Some(NodeRef::Body(body))=>Some(body.conjuncts.len()),_=>None}
+        } else {None};
+        Self::compile_at(program,at,false,prefix)
+    }
+
+    /// Query the full physical rows derived by an input. A broadcast input
+    /// contributes its body rows at every native key group, just as
+    /// init_form::grouped does. Keep the key projected so key-local witnesses
+    /// do not multiply the input's derivations. Source BODY queries use at.
+    pub fn derivation_at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
+        Self::compile_at(program,at,true,None)
+    }
+
+    /// A completed-conjunct prefix in the original checked scope. An OR
+    /// branch includes the conjuncts preceding that OR in its outer bodies;
+    /// sibling branches are never unioned into the observation. INIT inputs
+    /// retain their projected key relation and recursive owner context.
+    /// Partially written sites are not accepted by this query.
+    pub fn prefix_at(program:&CheckedProgram,at:&NodePath,conjuncts:usize)->Outcome<Self> {
+        Self::compile_at(program,at,false,Some(conjuncts))
+    }
+
+    fn compile_at(program:&CheckedProgram,at:&NodePath,physical_input:bool,prefix:Option<usize>)->Outcome<Self> {
+        let fault=|message:String|RunFault {message:message.into(),form:at.clone()};
+        let top=at.0.first().ok_or_else(||fault("body path has no form".into()))?.0;
+        let form=NodePath::top(top);
+        let root=NodeRef::Program(program.program.program.value());
+        let Some(NodeRef::Body(body))=node_at(root,at) else {return Err(fault("path is not a body".into()))};
+        let input=if prefix.is_some() {
+            (1..at.0.len()).rev().find_map(|end|match node_at(root,&NodePath(at.0[..end].into())) {
+                Some(NodeRef::InstanceInput(input))=>Some(input.name.clone()),_=>None,
+            })
+        } else {
+            let parent=NodePath(at.0[..at.0.len()-1].into());
+            match node_at(root,&parent) {Some(NodeRef::InstanceInput(input))=>Some(input.name.clone()),_=>None}
+        };
+        let selected=prefix.map(|count| {
+            if count>body.conjuncts.len() {return Err(fault("prefix exceeds the BODY conjunct count".into()))}
+            Ok(crate::program::Body {conjuncts:body.conjuncts[..count].into()})
+        }).transpose()?;
+        let body=selected.as_ref().unwrap_or(body);
+        let owner=&program.program.program.value().forms[top as usize];
+        let relative=NodePath(at.0[1..].into());
+        let mut bodies=Vec::new();
+        let mut key=None;
+        match owner {
+            Form::Instance(instance)=>{
+                if let Some(held)=&instance.value().key {
+                    if (physical_input && input.is_some()) || (relative.0.len()>2 && relative.0[0].0==0 && relative.0[1].0>0) {
+                        let key_at=form.child(0).child(0);
+                        let labels=crate::read::columns::key_labels(&held.value().key.body.value());
+                        let (clause,paths,_)=super::init_form::key_clause_memo(program,&form,&(held.value().key.body.value(),key_at),&labels).map_err(|e|fault(format!("checked key body compile: {e:?}")))?;
+                        key=Some((KeyRead {form:form.clone(),clause:(*clause).clone()},(*paths).clone(),labels));
+                    }
+                }
+            }
+            Form::Choose(choose)=>{
+                let choose=choose.value();
+                let part=choose.parts().nth(relative.0[0].0 as usize).ok_or_else(||fault("CHOOSE body part is absent".into()))?;
+                if matches!(part,ChoosePart::From) && choose.from_inside_for || matches!(part,ChoosePart::Never(_)) {
+                    if let Some(rows)=&choose.rows {bodies.push((rows.body.value(),form.child(0)));}
+                }
+                if matches!(part,ChoosePart::Never(_)) {bodies.push((choose.from.value(),form.child(if choose.rows.is_some(){1}else{0})));}
+            }
+            Form::RigidDet(rigid)=>{
+                if rigid.value().instance.is_some() && relative.0[0].0==rigid.value().position(RigidDetPart::Instance) {
+                    if let Some(key)=&rigid.value().key {bodies.push((key.body.value(),form.child(rigid.value().position(RigidDetPart::Key))));}
+                }
+            }
+            _=>{}
+        }
+        if prefix.is_some() {
+            // Walk native paths, retaining only preceding outer conjuncts.
+            // Crossing IF/ALL/NOT needs its own conditional query contract.
+            for end in 1..at.0.len() {
+                let parent=NodePath(at.0[..end].into());
+                if let Some(NodeRef::Body(outer))=node_at(root,&parent) {
+                    let index=at.0[end].0 as usize;
+                    let nested=outer.conjuncts.get(index);
+                    if !matches!(nested,Some(Conjunct::Or(_))) {
+                        return Err(fault("prefix traversal supports OR branches; IF/ALL/NOT contexts are unavailable".into()));
+                    }
+                    // Keep the original body and native node paths; the
+                    // selected range is applied at the shared compile boundary.
+                    bodies.push((outer,parent));
+                }
+            }
+        }
+        bodies.push((body,at.clone()));
+        let mut columns=Vec::new();
+        if let Some((_,_,labels))=&key {columns.extend(labels.iter().copied());}
+        let conjuncts=bodies.iter().flat_map(|(body,path)| {
+            let count=if prefix.is_some() && path!=at && at.0.starts_with(&path.0) {
+                at.0[path.0.len()].0 as usize
+            } else {body.conjuncts.len()};
+            body.conjuncts[..count].iter().enumerate().map(|(i,c)|(c,path.child(i as u32)))
+        }).collect::<Vec<_>>();
+        if prefix.is_some() {
+            for (conjunct,_) in &conjuncts {
+                let mut add=|label| {if !columns.contains(&label) {columns.push(label);}};
+                match conjunct {
+                    // A selected branch can join labels whose first spelling
+                    // was in another branch. The checked scalar sites already
+                    // identify those labels; freshness is not their identity.
+                    Conjunct::Atom(_) | Conjunct::Constraint(_)=>
+                        crate::safety::site_label_uses(conjunct,&mut |use_| {
+                            if let Some(label)=crate::types::use_label(use_) {add(label);}
+                        }),
+                    // Keep the language's exported interface for an intact OR
+                    // or IF. Its private orientation labels must not become
+                    // query outputs through their finite native domains.
+                    _=>for label in crate::read::columns::made_labels(&crate::program::Body {conjuncts:vec![(*conjunct).clone()].into()}) {add(label)},
+                }
+            }
+        } else {
+            for (body,_) in &bodies {for label in crate::read::columns::made_labels(body) {if !columns.contains(&label) {columns.push(label);}}}
+        }
+        // A label mentioned in each branch need not be bound by each branch.
+        let given = key.as_ref().map(|(_,_,labels)|labels.iter().copied().collect()).unwrap_or_default();
+        let outside = columns.iter().copied().collect();
+        let types = ir::label_types(program,&form);
+        let bound = crate::safety::bound_labels(&conjuncts.iter().map(|(c,_)|*c).collect::<Vec<_>>(),&given,&outside,
+            &|atom|ir::atom_modes(crate::registry::Registry::get(),atom),
+            &|label|types.label(label).cloned());
+        columns.retain(|label|bound.contains(label));
+        let (clause,paths)=ir::compile_query(program,&form,key.as_ref().map(|(read,paths,labels)|(read.clone(),paths.clone(),labels.as_slice())),conjuncts,&columns)
+            .map_err(|e|fault(format!("checked body compile: {e:?}")))?;
+        let scope=match program.program.form_side(&form) {
+            Some(Side::PerInput)=>ExampleScope::PerExample,
+            Some(Side::TaskWide)=>ExampleScope::TaskWide,
+            None=>return Err(fault("body owner has no checked evaluation scope".into())),
+        };
+        Ok(Self {form,clause,paths,scope,input})
+    }
+
+    /// The checked option relation that a CHOOSE selects rows from: its
+    /// for rows with their from candidates. Never constraints and picking
+    /// select a subset; they do not create the selected cells' frames.
+    pub fn choose_options(program:&CheckedProgram,form:&NodePath)->Outcome<Self> {
+        let fault=|message:String|RunFault {message:message.into(),form:form.clone()};
+        let root=NodeRef::Program(program.program.program.value());
+        let Some(NodeRef::Choose(choose))=node_at(root,form) else {
+            return Err(fault("choice derivation owner is not CHOOSE".into()));
+        };
+        let mut bodies=Vec::new();
+        if let Some(rows)=&choose.rows {bodies.push((rows.body.value(),form.child(choose.position(ChoosePart::For))));}
+        bodies.push((choose.from.value(),form.child(choose.position(ChoosePart::From))));
+        let columns=ir::relation_columns(&program.program,form,NodeRef::Choose(choose));
+        let (clause,paths)=ir::compile_instance_pathed(program,form,&bodies,&columns)
+            .map_err(|e|fault(format!("checked CHOOSE option compile: {e:?}")))?;
+        let scope=match program.program.form_side(form) {
+            Some(Side::PerInput)=>ExampleScope::PerExample,
+            Some(Side::TaskWide)=>ExampleScope::TaskWide,
+            None=>return Err(fault("CHOOSE owner has no checked evaluation scope".into())),
+        };
+        Ok(Self {form:form.clone(),clause,paths,scope,input:None})
+    }
+
+    /// The compiled native key queries read by this body. They retain their
+    /// own projection and scope; deriving key-local evidence separately avoids
+    /// joining every key witness with every input witness.
+    pub fn key_views(&self)->Vec<Self> {
+        self.clause.nodes.iter().zip(self.paths.nodes.iter()).filter_map(|(node,paths)| {
+            let (IrNode::Atom(atom),NodePaths::Key(paths))=(node,paths) else {return None};
+            let AtomSource::Key(key)=&atom.source else {return None};
+            Some(Self {form:self.form.clone(),clause:key.clause.clone(),paths:(**paths).clone(),scope:self.scope,input:None})
+        }).collect()
+    }
+
+    /// Derivation queries retain native projected KeyRead nodes. Key-local
+    /// frame evidence is queried separately with key_views, never multiplied
+    /// into the input query's witness domain.
+    /// Choose union alternatives in already typed IR,
+    /// expose their positive locals, and keep all original result columns.
+    /// Native equality nodes bind aliases without public AST normalization.
+    pub fn widened(&self)->Outcome<Vec<Self>> {
+        fn expand(mut clause:ClauseIr,paths:IrPaths,out:&mut Vec<(ClauseIr,IrPaths)>)->bool {
+            if out.len()>=MAX_DERIVATIONS {return false;}
+            for i in 0..clause.nodes.len() {
+                if let (IrNode::Or(union),NodePaths::Branches(branch_paths))=(&clause.nodes[i],&paths.nodes[i]) {
+                    for (branch,branch_paths) in union.branches.iter().zip(branch_paths.iter()) {
+                        let mut next=clause.clone();let mut at=paths.clone();
+                        next.nodes=clause.nodes[..i].iter().chain(branch.nodes.iter()).chain(clause.nodes[i+1..].iter()).cloned().collect();
+                        at.nodes=paths.nodes[..i].iter().chain(branch_paths.nodes.iter()).chain(paths.nodes[i+1..].iter()).cloned().collect();
+                        if !expand(next,at,out) {return false;}
+                    }
+                    return true;
+                }
+            }
+            let mut columns=clause.columns.to_vec();
+            let mut add=|v:Variable|{if !columns.contains(&v) {columns.push(v);}};
+            for node in clause.nodes.iter() {match node {
+                IrNode::Atom(atom)=>for (_,a) in atom.arguments.0.iter() {if let Argument::Variable(v)=a {add(*v)}},
+                IrNode::Lib(atom)=>for (_,a) in atom.arguments.0.iter() {if let Argument::Variable(v)=a {add(*v)}},
+                IrNode::Comparison(c) if c.op==crate::program::ConstraintOp::Eq=>{add(c.first);if let ir::Operand::Variable(v)=c.second {add(v)}},
+                _=>{}
+            }}
+            clause.columns=columns.into();out.push((clause,paths));true
+        }
+        let mut out=Vec::new();
+        if !expand(self.clause.clone(),self.paths.clone(),&mut out) {return Err(RunFault {message:format!("the checked body widens to more than {} derivations",MAX_DERIVATIONS).into(),form:self.form.clone()});}
+        Ok(out.into_iter().map(|(clause,paths)|Self {form:self.form.clone(),clause,paths,scope:self.scope,input:self.input.clone()}).collect())
+    }
+}

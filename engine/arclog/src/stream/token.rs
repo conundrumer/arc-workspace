@@ -79,6 +79,8 @@ pub enum Control {
     Set,
     Choose,
     RigidDet,
+    /// `OUT`, the keyword of the form that selects the output's two columns.
+    Out,
     Or,
     If,
     All,
@@ -120,6 +122,7 @@ impl Control {
             Control::Set => "SET",
             Control::Choose => "CHOOSE",
             Control::RigidDet => "RIGID_DET",
+            Control::Out => "OUT",
             Control::Or => "OR",
             Control::If => "IF",
             Control::All => "ALL",
@@ -135,7 +138,7 @@ impl Control {
     }
 
     /// Every control token, in the order of the vocabulary's slots.
-    pub const ALL: [Control; 23] = [
+    pub const ALL: [Control; 24] = [
         Control::Rule,
         Control::Det,
         Control::Init,
@@ -143,6 +146,7 @@ impl Control {
         Control::Set,
         Control::Choose,
         Control::RigidDet,
+        Control::Out,
         Control::Or,
         Control::If,
         Control::All,

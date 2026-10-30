@@ -5,10 +5,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 use arclog::eval::join::each_row;
 use arclog::eval::models::ModelsEnd;
 use arclog::eval::{input_relation, relation_of, Evaluation, RelationValue};
+use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::program::{DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
 use arclog::relations::Relation;
 use arclog::resolver::Side;
@@ -141,17 +143,36 @@ const SEVERAL_FORMS: &str = "several forms of the program derive the name";
 /// instance, else its input of that port; the reason for a skip where more
 /// than one node holds the name.
 pub(crate) fn named_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<Result<GraphRelation, String>> {
+    let relation = found_relation(program, name)?;
+    Some(if holders_of(program, &relation).len() > 1 { Err(SEVERAL_FORMS.to_owned()) } else { Ok(relation) })
+}
+
+/// The indices of the nodes of `program`'s graph that hold `name`: those whose
+/// kind is that of the node `named_relation` finds for it, one per
+/// `DEMO_RULE`; none where it finds none.
+pub(crate) fn holders(program: &arclog::check::CheckedProgram, name: &str) -> Vec<usize> {
+    found_relation(program, name).map_or_else(Vec::new, |relation| holders_of(program, &relation))
+}
+
+/// The relation that `name` finds in `program`, as `named_relation` gives
+/// it, before the check for several holders.
+fn found_relation(program: &arclog::check::CheckedProgram, name: &str) -> Option<GraphRelation> {
     let declared = ProgramRelation::Declared(RelationName(DeclaredName::Written(name.into())));
-    let relation = relation_of(program, &declared).or_else(|| {
+    relation_of(program, &declared).or_else(|| {
         let (instance, port) = name.split_once('.')?;
         let instance = InstanceName(DeclaredName::Written(instance.into()));
         let port = PortName(port.into());
         let output = OutputName { of: OutputOwner::Instance(instance.clone()), path: [OutputStep::Port(port.clone())].into() };
         relation_of(program, &ProgramRelation::Output(output)).or_else(|| input_relation(program, &instance, &port))
-    })?;
+    })
+}
+
+/// The indices of the nodes of `program`'s graph whose kind is that of the
+/// node of `relation`.
+fn holders_of(program: &arclog::check::CheckedProgram, relation: &GraphRelation) -> Vec<usize> {
     let nodes = &program.program.graph.nodes;
-    let holders = nodes.iter().filter(|node| node.kind == nodes[relation.node.0 as usize].kind).count();
-    Some(if holders > 1 { Err(SEVERAL_FORMS.to_owned()) } else { Ok(relation) })
+    let kind = &nodes[relation.node.0 as usize].kind;
+    nodes.iter().enumerate().filter(|(_, node)| node.kind == *kind).map(|(index, _)| index).collect()
 }
 
 /// One row position of the engine's relation, by its name.
@@ -292,7 +313,8 @@ fn models_of(
 }
 
 /// The leaves of the rows of one model's value of a relation of column
-/// types `types`.
+/// types `types`. The text of each Ident a lib relation mints is made once,
+/// and its rows share it.
 pub(crate) fn model_leaves(
     evaluation: &Evaluation<'_>,
     rows: &Relation,
@@ -302,9 +324,10 @@ pub(crate) fn model_leaves(
 ) -> Result<Vec<Vec<EngineLeaf>>, String> {
     let mut written = Vec::new();
     let mut faults = BTreeSet::new();
+    let mut texts: StableHashMap<Ident, Arc<str>> = StableHashMap::default();
     each_row(rows, &mut |row| {
         let leaves = row.iter().zip(types).map(|(&id, ty)| term_leaves(Term::decode(id, ty), evaluation.registry, &|name| souffle_number(name, constants))).collect::<Result<Vec<_>, _>>();
-        match leaves.and_then(|leaves| projected(evaluation, leaves, constants, projection)) {
+        match leaves.and_then(|leaves| projected(evaluation, leaves, constants, projection, &mut texts)) {
             Ok(leaves) => written.push(leaves),
             Err(text) => {
                 faults.insert(text);
@@ -315,16 +338,30 @@ pub(crate) fn model_leaves(
 }
 
 /// The leaves of one row, whose positions hold `leaves`, as `projection`
-/// reads them.
-fn projected(evaluation: &Evaluation<'_>, leaves: Vec<Vec<EngineLeaf>>, constants: &BTreeMap<String, i64>, projection: Projection<'_>) -> Result<Vec<EngineLeaf>, String> {
+/// reads them; `texts` holds the text of each Ident made so far.
+fn projected(
+    evaluation: &Evaluation<'_>,
+    leaves: Vec<Vec<EngineLeaf>>,
+    constants: &BTreeMap<String, i64>,
+    projection: Projection<'_>,
+    texts: &mut StableHashMap<Ident, Arc<str>>,
+) -> Result<Vec<EngineLeaf>, String> {
     let Projection::Positions(columns) = projection else { return Ok(leaves.concat()) };
     let mut row = Vec::new();
     for column in columns {
         for leaf in &leaves[column.position] {
             match leaf {
                 EngineLeaf::Ident(ident) if column.minted => {
-                    let table = evaluation.session.intern.read().expect("an intern table that no panic poisoned");
-                    row.push(EngineLeaf::Written(Leaf::Other(ident_text(&table, evaluation.registry, *ident, constants)?.into())));
+                    let text = match texts.get(ident) {
+                        Some(text) => Arc::clone(text),
+                        None => {
+                            let table = evaluation.session.intern.read().expect("an intern table that no panic poisoned");
+                            let text: Arc<str> = ident_text(&table, evaluation.registry, *ident, constants)?.into();
+                            texts.insert(*ident, Arc::clone(&text));
+                            text
+                        }
+                    };
+                    row.push(EngineLeaf::Written(Leaf::Other(text)));
                 }
                 other => row.push(other.clone()),
             }
@@ -380,5 +417,8 @@ pub(crate) fn souffle_number(name: &str, constants: &BTreeMap<String, i64>) -> R
 
 /// Whether `a` and `b` hold the same rows, each row once.
 pub(crate) fn same_rows(a: &[Vec<EngineLeaf>], b: &[Vec<EngineLeaf>]) -> bool {
-    a.iter().all(|row| b.contains(row)) && b.iter().all(|row| a.contains(row))
+    fn set(side: &[Vec<EngineLeaf>]) -> StableHashSet<&Vec<EngineLeaf>> {
+        side.iter().collect()
+    }
+    set(a) == set(b)
 }

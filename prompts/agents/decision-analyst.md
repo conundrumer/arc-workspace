@@ -55,6 +55,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Commands
 * inline: notes/commands.md#commands
-- When you launch an agent, read [Background agents](prompts/agents/notes/commands.md#background-agents).
+- When you launch an agent, read [Launching](prompts/agents/notes/launching.md#launching) and [Background agents](prompts/agents/notes/commands.md#background-agents).
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report

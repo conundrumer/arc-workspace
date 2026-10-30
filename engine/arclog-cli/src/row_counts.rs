@@ -312,6 +312,7 @@ fn names(evaluation: &Evaluation<'_>, node: GraphNodeIndex, kind: &DependencyKin
         DependencyKind::Clause(name) | DependencyKind::Parameter(name) => declared(name.clone()),
         DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => declared(ProgramRelation::Declared(name.clone())),
         DependencyKind::InstanceInput { instance, input: port } | DependencyKind::InstanceOutput { instance, output: port } => declared(ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })),
+        DependencyKind::Out(_) => Ok(Vec::new()),
         DependencyKind::RecursiveInstance(_) | DependencyKind::RigidAssembly(_) => {
             let program = &evaluation.program.program;
             let form = node_at(NodeRef::Program(program.program.value()), program.form_of(node)).ok_or("the graph node has no form")?;

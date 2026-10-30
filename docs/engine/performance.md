@@ -40,8 +40,8 @@ Each entry gives its evidence, or says that it is provisional.
 
 ### The grid columns at each clause's end
 
-- In synthesis, the engine tests each `RULE` relation's pairs of a Position column and a Color column against the train outputs, as [Program](../../docs/arclog/arclog.md#program) gives.
-- **Cost:** one test per pair of such columns per clause, each over the relation's rows on every train example.
+- Where the rule tests of [Decode settings](synthesis.md#decode-settings) are on, the engine tests each `RULE` relation's pairs of a Position column and a Color column against the train outputs. With them off, the default, no `RULE` end runs it, and an `OUT` form reads its two columns with no search.
+- **Cost:** with the rule tests on, one test per pair of such columns per clause, each over the relation's rows on every train example.
 - **Evidence:** none measured.
 
 ### Models of `ONE`, `CHOOSE` and `DEMONSTRATED`, and determination by the train pairs

@@ -255,11 +255,11 @@ impl Term {
             Term::Constant(Constant::Orientation(OrientationConstant::decode(bits, admitted)))
         };
         match ty {
-            ValueType::Number => Term::Number(Number(Term::decode_number(id))),
+            ValueType::Int | ValueType::Nat => Term::Number(Number(Term::decode_number(id))),
             ValueType::Color => Term::Constant(Constant::Color(Color(bits as u8))),
             ValueType::Example => Term::Constant(Constant::Example(Example(bits as u16))),
             ValueType::Unit => Term::Constant(Constant::Unit),
-            ValueType::Box => Term::Box(Term::decode_box(id)),
+            ty if ty.is_box() => Term::Box(Term::decode_box(id)),
             ValueType::Ident => Term::Ident(Ident(bits)),
             ValueType::Pose(_) => Term::decode(id, &ValueType::D4),
             ValueType::Record(_) => panic!("a record's value takes one column per field"),
@@ -498,7 +498,8 @@ pub fn encode_data_value(
             }
             Ok(ids.into())
         }
-        (ValueType::Number, DataValue::Integer(n)) => one(Term::Number(Number(*n))),
+        (ValueType::Nat, DataValue::Integer(n)) if *n >= 0 => one(Term::Number(Number(*n))),
+        (ValueType::Int, DataValue::Integer(n)) => one(Term::Number(Number(*n))),
         (ValueType::Color, DataValue::Integer(n)) => {
             let color = u8::try_from(*n).ok().and_then(Color::from_digit).ok_or_else(not_of_type)?;
             one(Term::Constant(Constant::Color(color)))
@@ -507,7 +508,7 @@ pub fn encode_data_value(
             let index = u16::try_from(*n).map_err(|_| not_of_type())?;
             one(Term::Constant(Constant::Example(Example::at(index))))
         }
-        (ValueType::Box, DataValue::List(margins)) => match &margins[..] {
+        (ty, DataValue::List(margins)) if ty.is_box() => match &margins[..] {
             [DataValue::Integer(top), DataValue::Integer(bottom), DataValue::Integer(left), DataValue::Integer(right)] => {
                 one(Term::Box(Margins { top: *top, bottom: *bottom, left: *left, right: *right }))
             }
@@ -564,7 +565,7 @@ pub fn encode_param_value(
             for grid in grids.iter() {
                 let at = grid.before.len();
                 let (before, rest) = types.split_at(at.min(types.len()));
-                let Some((ValueType::Box, after)) = rest.split_first() else {
+                let Some((_, after)) = rest.split_first().filter(|(ty, _)| ty.is_box()) else {
                     return Err(DataValueError::NotOfType { value: DataValue::List(grid.before.clone()), ty: row_type(types) });
                 };
                 let before = values(&grid.before, before, table)?;
@@ -582,7 +583,7 @@ pub fn encode_param_value(
                         let position = Term::Box(margins).encode().map_err(DataValueError::MarginBound)?;
                         let value = match (after, cell) {
                             ([], DataValue::Integer(1)) => Vec::new(),
-                            ([], _) => return Err(DataValueError::NotOfType { value: cell.clone(), ty: ValueType::Number }),
+                            ([], _) => return Err(DataValueError::NotOfType { value: cell.clone(), ty: ValueType::Int }),
                             ([ty], _) => encode_data_value(cell, ty, registry, table)?.into_vec(),
                             (_, DataValue::List(cell)) => values(cell, after, table)?,
                             (_, _) => return Err(DataValueError::NotOfType { value: cell.clone(), ty: row_type(after) }),

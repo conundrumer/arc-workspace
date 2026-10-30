@@ -131,7 +131,7 @@
 - Principles: "keep a merge's checks under a minute", in [The user's preferences](prompts/agents/notes/decisions.md#the-users-preferences).
     + xref: prompts/agents/notes/decisions.md#the-users-preferences
 - Outcomes:
-    - Each merge passes the checks of [merge_change.py](scripts/merge_change.py).
+    - Each merge runs the checks of [merge_change.py](scripts/merge_change.py) on the landed commit, and before it lands only where the change has an active risk of a silent change. A check that fails after the landing does not undo the merge.
         + xref: scripts/merge_change.py:merge_main
     - A hotfix, a change merged with no ticket review or no review of the change, gets both after it merges.
     - A merge that fails or is denied reaches an agent that acts on it.

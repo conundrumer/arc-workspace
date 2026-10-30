@@ -6,14 +6,19 @@ that the rows are the case's own; the JSON form of that rerun; and
 the kept JSON of a rerun that gave rows, which stands while each input of
 the rerun is unchanged (`kept_json`); and the rows of the cases the row
 parity check runs on each pair, projected onto the columns the converter
-maps, with the relations the check leaves out (`case_rows`); and the rows of
-the relations of `Determine` at the run of its component over the task's
-examples (`determination_entry`).
+maps, with the relations the check leaves out (`case_rows`); and, for each of
+those cases, the rows of the relations of `Determine` at the run of its
+component over the task's examples, on the program from which each clause of a
+branch that neither that case nor the concept case takes is dropped
+(`determination_entry`).
+
+`case_rows` writes those rows to a file (`write_json`) as each relation's entry
+is made, so that it holds at once the runs of one case and the entry of one
+relation, whose rows are held as their JSON texts (`JsonText`).
 
 The check (`arclog_convert.row_parity`) runs the concept case and, for each
 `Choice` constructor (an ALT) that no case run before takes, the first case
-of `Loaded.every` that takes it (`cases_to_run`), so that each ALT's
-relations are compared on a case that has them; `Loaded.every` holds no case
+of `Loaded.every` that takes it (`cases_to_run`); `Loaded.every` holds no case
 that an `exclude` form leaves out. Each relation of the program that a run
 outputs (`every_relation`) is compared, or has a line of its own, by the
 first of these that holds (`classify`):
@@ -56,6 +61,19 @@ of such a relation proves that the converter's translation of the relation's
 clauses derives Souffle's rows of it; the fold of those clauses into the
 relations that read them is checked by those relations' own lines.
 
+An arclog relation whose clause `arclog_convert.projections` removes from the
+program of `gen/` keeps the clause in the corpus, under its own name, as a
+relation that no relation reads; the relations that read it there read the
+relation it projects. The name map gives, for such a relation P, the forms that
+held an atom on P before the pass redirected it (`NameMap.removed`), each with
+the relation it derives, the ALT names of its block, and the ALT names of the
+block of each form of that relation that stands deeper. In a case, the check
+compares P only where some reader of P derives its relation there, which holds
+where the case holds the ALT names of the reader's block and all the ALT names
+of no deeper block, and where that relation is `&output`, or the `OUT` form reads it
+at any depth, or it is itself such a relation P' that the check compares in the
+case. In any other case nothing reads P, so its rows say nothing of the case.
+
 Each arclog relation with `&` of the name map (`relations` and `unmapped`)
 that no relation of the run maps to (`relation_names`), and that is no relation of
 `Determine` the check compares (`determined_relations`), is `skip`, "each Souffle
@@ -66,13 +84,16 @@ several arclog relations hold, and an arclog relation that holds several
 relations of the run, are compared once for each pair. `arclog-cli row-parity` gives the rest
 of the verdicts, and `uncompared` "no case's program has a relation of that
 name" for a relation that no case it runs has, and "no case the check runs
-reads it from `&output`" for one that a case has and no case's `&output`
+reads it from the `OUT` form" for one that a case has and no case's `OUT` form
 reads, at any depth. In a case the check compares a relation only where the
-case's `&output` reads it or is it, or where it is a check relation
-(`NameMap.checks`), which the case counts as read though nothing reads it
-(`case_rows` gives their names as `check_relations`). An `equal` line proves that
-the relation's rows in each case that derives it and whose `&output` reads
-it, or that is a check relation, at the stored parameters, are these rows over the columns the converter maps
+case's `OUT` form reads it or is it, or where it is a check relation of a folded
+Souffle relation (`NameMap.checks`), which the case counts as read though nothing
+reads it (`case_rows` writes their names as `check_relations`), or where it is a
+relation whose clause the projection pass removes and a reader of it derives its
+relation in the case as above (`NameMap.removed`, which `case_rows` writes as
+`removed_relations`). An `equal` line proves that
+the relation's rows in each case that derives it and whose `OUT` form reads
+it, or that is a check relation of a folded relation, or whose reader derives its relation there, at the stored parameters, are these rows over the columns the converter maps
 (`engine/arclog-cli/src/row_parity.rs` gives the rest). Where the relation is
 one of the converter's Souffle text, the rows are those the text's clauses
 derive with the solver's program, which says nothing on whether those clauses
@@ -81,22 +102,28 @@ that read them.
 
 A relation of `Determine` that the name map gives an arclog name and the
 column map an entry is compared as well with Souffle's rows of it at the run
-of the `Determine` component, the program of `solver.determine.run_program`
-over `Loaded.determination`, over the task's examples, which
-`solver.determine.determine` makes, once for the task (`determination_entry`):
-a relation with an Example leaf in its column map per train pair, and any
-other once for the task. So is a relation of the converter's text of the
+of the `Determine` component over the task's examples, once for the task
+(`determination_entry`), as `solver.determine.determine` makes it, on the
+program of `solver.determine.run_program` over `Loaded.determination` from which
+each clause of a branch that neither that case nor the concept case takes is
+dropped (`taken_program`), for each case the check runs (Souffle's one
+`Determine` run reads the concept case's rows where a clause names a
+constructor of the concept): a relation with an Example leaf in its column map
+per train pair, and any other once for the task. The check compares a relation at the first case it
+runs whose program has a relation of that name, with the rows of that case's
+entry (a `DET` inside an `ALT` is in the program of the cases that take the
+branch). So is a relation of the converter's text of the
 determination run: the name map gives it the component `Determine` and its path
 from the top level of that program, and any other relation of `Determine` its
 path under the instance of `Determine`."""
 
 import hashlib
 import json
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from arc.task import Example
 from cli.common import LIMITS, engine, solver_path
@@ -107,6 +134,7 @@ from engine.program import (AtomLiteral, BodyLiteral, Comparison, ComparisonOper
                             ConstructorTerm, Disjunction, Qualifier, Term, Unit, Value, as_grid,
                             own, subterms)
 from arclog_convert.parity_text import FORMS
+from arclog_convert.projections import readers_json
 from parity import (PARAMS_COMPONENT, Entry, NameMap, case_name, column_entry, columns_path,
                     determination_text_path, name_map, relation_names, snapshot, text_path)
 from parity.idents import (Ambiguous, IdentSources, Minted, NoMembers, Source, Unresolved, Writer, ident_sources,
@@ -190,10 +218,11 @@ class Loaded:
         return ex
 
     def taking(self, chosen: Case) -> Solver:
-        """The solver with the program of `taken_program` for `chosen`, to
-        run `chosen` on each pair (`run`); the program is built once, so that
-        the caches keyed by it serve every pair."""
-        return replace(self.solver, program=taken_program(self.solver, chosen.base))
+        """The solver with the program of `taken_program` that drops the
+        constructors `chosen` does not take (`untaken`), to run `chosen` on
+        each pair (`run`); the program is built once, so that the caches keyed
+        by it serve every pair."""
+        return taking(self.solver, untaken(self.solver, chosen.base))
 
     def run(self, taken: Solver, chosen: Case, ex: Example, rels: list[RelationName]
             ) -> Mapping[RelationName, Rows] | Undefined | RunFailure:
@@ -201,6 +230,11 @@ class Loaded:
         on `taken`, which `taking(chosen)` gave, so that they are the case's
         own."""
         return relations_at(self.eng, taken, chosen, as_grid(ex.input), rels, Assignment(()), LIMITS)
+
+
+def taking(solver: Solver, dropped: frozenset[str]) -> Solver:
+    """`solver` with the program of `taken_program` for `dropped`."""
+    return replace(solver, program=taken_program(solver, dropped))
 
 
 def with_text(eng: Engine, solver: Solver, text: str) -> Solver:
@@ -412,25 +446,31 @@ def inline(names: NameMap | None, graph: Graph, name: str) -> bool:
     return bool(found) and all(f is not None and Qualifier.INLINE in f[0].qualifiers for f in found)
 
 
-def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunFailure:
-    """The rows of the cases `cases_to_run` gives for the solver of `stem`,
-    read from `solver_file`, each on every train and test pair, for each
-    relation `classify` compares, each row projected onto the columns the
+def case_rows(stem: str, solver_file: Path, path: Path) -> Undefined | RunFailure | None:
+    """Write to the file `path` the rows of the cases `cases_to_run` give for
+    the solver of `stem`, read from `solver_file`, each on every train and
+    test pair, for each relation `classify` compares, each row projected onto the columns the
     column map (`columns_path`) gives it, which leave out each Example leaf:
     for each, the leaves of the value at its `leaf` in its Souffle column. A
     relation's rows are a set. The form: `{"orientation_constants": {...},
-    "check_relations": [<arclog name>, ...], "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
+    "check_relations": [<arclog name>, ...], "removed_relations": {<arclog name>: [{"relation": <arclog name>, "alts":
+    [<ALT name>, ...], "deeper": [[<ALT name>, ...], ...]}, ...]}, "cases": [{"case": <arclog name>, "pairs": [{"pair": "train 0",
     "relations": [{"name": "&x", "columns": [[label, field], ...],
     "idents": [kind, ...], "unread": [[label, field], ...],
     "unresolved": [[label, field, reason], ...], "rows": [[[leaves of column 1], ...], ...],
     "by_open": {...}, "fault": text}]}]}], "not_compared": [{"name",
-    "verdict", "reason"}], "determination": {"pairs": [{"pair": "train 0" or
-    "task", "relations": [...]}]}}`, with the keys in that order, which `arclog-cli row-parity`
-    reads one case at a time; a case whose run gives no rows has `"failure":
-    text` in place of `pairs`, and so has `determination`; the entries of its
-    relations are a case's. `determination` is there where the check compares
-    a relation of `Determine`; a relation with an Example leaf in its column map has an entry
-    for each train pair, with the rows of that example, and any other relation
+    "verdict", "reason"}]}`, with the keys in that order, which `arclog-cli row-parity`
+    reads one relation at a time; a case whose run gives no rows has `"failure":
+    text` in place of `pairs`. A case's entry has as well `"determination":
+    {"pairs": [{"pair": "train 0" or "task", "relations": [...]}]}`, where the
+    check compares a relation of `Determine`, with `"failure": text` in place of
+    `pairs` where its run gives no rows; the entries of its
+    relations are a case's. It holds the rows of the run of the case's
+    program of `Loaded.determination` from which each clause of a branch that
+    neither the case nor the concept case takes is dropped (`taken_program`),
+    so that the check compares a relation at the first case whose engine
+    program has it, with that case's rows; a relation with an Example leaf in
+    its column map has an entry for each train pair, with the rows of that example, and any other relation
     one under the pair `task`, with the rows of the run. A relation whose entry has no column to
     compare has an empty `columns`, and its rows are `[]` where it has a row.
     A column of
@@ -452,40 +492,62 @@ def case_rows(stem: str, solver_file: Path) -> dict[str, Any] | Undefined | RunF
     the relation's rows under it (a list as `rows` is, the union of them all
     being `rows`) and, for each open parameter whose field of that value is
     not `nil`, the rows of the parameter's arclog relation that the value
-    gives, over the columns that `picks` lists for it. The concept case's undefined outcome or a run's failure
-    where it gives no rows. Raises `NoSuchCase` where the solver has no concept case,
-    and `FileNotFoundError` where the column map is missing."""
+    gives, over the columns that `picks` lists for it. The file holds that
+    form as `json.dumps` writes it with its default separators, written
+    (`write_json`) as each relation's entry (`relation_entry`) is made, so that
+    the function holds at once the runs of one case (`case_entry`) and the entry
+    of one relation, and no entry it has written. It gives None, or the concept
+    case's undefined outcome or a run's failure where it gives no rows; where
+    it gives one or raises, no file stays at `path`. Raises `NoSuchCase` where
+    the solver has no concept case, and `FileNotFoundError` where the column
+    map is missing."""
+    path.unlink(missing_ok=True)
     loaded = load_once(stem, solver_file)
     if not isinstance(loaded, Loaded):
         return loaded
     chosen = cases_to_run(loaded)
     columns: dict[str, dict[str, Entry | dict[str, Any]]] = json.loads(columns_path(stem).read_text())
-    run = run_program(loaded.determination)
-    determined = determined_relations(loaded, columns, run)
+    concept_untaken = untaken(loaded.determination, chosen[0].base)
+    concept_run = run_program(taking(loaded.determination, concept_untaken))
+    determined = determined_relations(loaded, columns, concept_run)
     read = [] if loaded.names is None else loaded.names.read
     mapped, not_compared = classify(loaded, columns, [n for n in read if n not in {at.name for at in determined}])
-    entries = []
-    for i, case in enumerate(chosen):
-        name = case_name(loaded.solver, case, loaded.names)
-        got = case_entry(loaded, case, columns, mapped)
-        if isinstance(got, list):
-            entries.append({"case": name, "pairs": got})
-        elif i == 0:
-            return got
-        else:
-            entries.append({"case": name, "failure": str(got)})
-    out = {"orientation_constants": orientation_constants(loaded.solver.lib),
-           "check_relations": [] if loaded.names is None else list(loaded.names.checks),
-           "cases": entries, "not_compared": not_compared}
-    if determined:
-        out["determination"] = determination_entry(loaded, run, columns, determined)
-    return out
+    first = case_entry(loaded, chosen[0], columns, mapped)
+    if not isinstance(first, Iterator):
+        return first
+
+    def cases() -> Iterator[dict[str, Any]]:
+        for i, case in enumerate(chosen):
+            got = first if i == 0 else case_entry(loaded, case, columns, mapped)
+            entry: dict[str, Any] = {"case": case_name(loaded.solver, case, loaded.names)}
+            if isinstance(got, Iterator):
+                entry["pairs"] = got
+            else:
+                entry["failure"] = str(got)
+            if determined:
+                run = concept_run if i == 0 else run_program(
+                    taking(loaded.determination, untaken(loaded.determination, case.base) & concept_untaken))
+                entry["determination"] = determination_entry(loaded, run, columns, determined)
+            yield entry
+
+    try:
+        with path.open("w") as handle:
+            write_json(handle, {"orientation_constants": orientation_constants(loaded.solver.lib),
+                                "check_relations": [] if loaded.names is None else list(loaded.names.checks),
+                                "removed_relations": {} if loaded.names is None else readers_json(loaded.names.removed),
+                                "cases": cases(), "not_compared": not_compared})
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return None
 
 
 def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, Any]],
-               mapped: Sequence[Pairing]) -> list[dict[str, Any]] | Undefined | RunFailure:
-    """The `pairs` of the entry of `chosen` in `case_rows`' form, or the
-    case's undefined outcome or a run's failure. A relation of the run that
+               mapped: Sequence[Pairing]) -> Iterator[dict[str, Any]] | Undefined | RunFailure:
+    """The case's undefined outcome or a run's failure, or, once each run of
+    `chosen` gives rows, its `pairs` in `case_rows`' form as an iterator, which
+    makes each relation's entry (`relation_entry`) when it is consumed and
+    holds the case's runs until it ends. A relation of the run that
     several arclog relations hold has an entry for each. Each relation's
     columns are those of the writing the case takes (`column_entry`)."""
     taken = loaded.taking(chosen)
@@ -498,8 +560,11 @@ def case_entry(loaded: Loaded, chosen: Case, columns: Mapping[str, Mapping[str, 
             return got
         runs.append((p.text, got))
     unread = projection.unread([got for _, got in runs])
-    return [{"pair": pair, "relations": [projection.entry(at, got[at.relation], got, unread) for at in mapped]}
-            for pair, got in runs]
+
+    def pairs() -> Iterator[dict[str, Any]]:
+        for pair, got in runs:
+            yield {"pair": pair, "relations": projection.entries([(at, got[at.relation]) for at in mapped], got, unread)}
+    return pairs()
 
 
 def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]], run: RunProgram
@@ -525,8 +590,11 @@ def determined_relations(loaded: Loaded, columns: Mapping[str, Mapping[str, Any]
 
 def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, Mapping[str, Any]],
                         mapped: Sequence[Pairing]) -> dict[str, Any]:
-    """The `determination` entry of `case_rows`' form for the relations
-    `mapped`: the program of `run` over the task's examples, as
+    """The `determination` entry of a case in `case_rows`' form, its `pairs` an
+    iterator that makes each relation's entry when it is consumed, for the relations
+    `mapped`: the program of `run`, which `case_rows` gives the cut of the
+    branches that neither the case nor the concept case takes
+    (`taken_program`), over the task's examples, as
     `solver.determine.determine` runs it, once, each relation projected
     as in a case's `pairs`. A relation with an Example leaf in its column
     map has its rows of each train example under the pair `train <i>`, those
@@ -543,15 +611,15 @@ def determination_entry(loaded: Loaded, run: RunProgram, columns: Mapping[str, M
     unread = projection.unread([rows])
     per_input = {p: leaf for p in mapped
                  if (leaf := _example_leaf(column_entry(columns[p.name][p.key], frozenset()))) is not None}
-    pairs = []
-    for i in range(len(task.train) if per_input else 0):
-        pairs.append({"pair": f"train {i}", "relations": [
-            projection.entry(p, _of_example(rows[p.relation], leaf, i), rows, unread) for p, leaf in per_input.items()]})
     alone = [p for p in mapped if p not in per_input]
-    if alone:
-        pairs.append({"pair": "task", "relations": [
-            projection.entry(p, rows[p.relation], rows, unread) for p in alone]})
-    return {"pairs": pairs}
+
+    def pairs() -> Iterator[dict[str, Any]]:
+        for i in range(len(task.train) if per_input else 0):
+            yield {"pair": f"train {i}", "relations": projection.entries(
+                [(p, _of_example(rows[p.relation], leaf, i)) for p, leaf in per_input.items()], rows, unread)}
+        if alone:
+            yield {"pair": "task", "relations": projection.entries([(p, rows[p.relation]) for p in alone], rows, unread)}
+    return {"pairs": pairs()}
 
 
 def _example_leaf(column_map: list[list[dict[str, Any]]]) -> tuple[int, tuple[int, ...]] | None:
@@ -702,12 +770,46 @@ class Projection:
                                                 for got in runs for row in got[at.relation])]
                 for at, ls in self.leaves_of.items()}
 
-    def entry(self, at: Pairing, rows: Rows, got: Mapping[RelationName, Rows],
-              unread: Mapping[Pairing, list[MappedLeaf]]) -> dict[str, Any]:
-        """The entry (`relation_entry`) of the pairing `at`, from its
-        `rows`, with the rows `got` of a run for the minted ids."""
-        return relation_entry(at.name, rows, self.leaves_of[at], unread[at], self.opens[at],
-                              self.picks, Writer(self.sources, got))
+    def entries(self, held: Sequence[tuple[Pairing, Rows]], got: Mapping[RelationName, Rows],
+                unread: Mapping[Pairing, list[MappedLeaf]]) -> Iterator[dict[str, Any]]:
+        """The entry (`relation_entry`) of each pairing of `held`, from its
+        rows, with the rows `got` of a run for the minted ids; each is made when
+        it is consumed."""
+        for at, rows in held:
+            yield relation_entry(at.name, rows, self.leaves_of[at], unread[at], self.opens[at],
+                                 self.picks, Writer(self.sources, got))
+
+
+@dataclass(frozen=True, slots=True)
+class JsonText:
+    """A value in its JSON text, which `write_json` writes as it stands."""
+
+    text: str
+
+
+def write_json(handle: TextIO, value: Any) -> None:
+    """Write `value` to `handle` as `json.dumps` writes it, with its default
+    separators: a dict (its keys strings) and a list or other iterable piece by
+    piece, an iterable consumed once, and a `JsonText` as it stands."""
+    if isinstance(value, JsonText):
+        handle.write(value.text)
+    elif isinstance(value, Mapping):
+        handle.write("{")
+        for i, (key, item) in enumerate(value.items()):
+            if not isinstance(key, str):
+                raise TypeError(f"the key {key!r} is no string")
+            handle.write(f"{', ' if i else ''}{json.dumps(key)}: ")
+            write_json(handle, item)
+        handle.write("}")
+    elif isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+        handle.write("[")
+        for i, item in enumerate(value):
+            if i:
+                handle.write(", ")
+            write_json(handle, item)
+        handle.write("]")
+    else:
+        handle.write(json.dumps(value))
 
 
 def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list[MappedLeaf],
@@ -715,7 +817,9 @@ def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list
     """The entry of the relation `name` for one pair in `case_rows`' form,
     from its `rows` on the pair, its `mapped` leaves, those of them that are
     `unread`, the columns of type `OpenValue` that it holds (`opens`), the
-    open `picks` of the solver, and the `writer` of the minted ids."""
+    open `picks` of the solver, and the `writer` of the minted ids. The `rows`
+    of the entry, and of each `by_open` value, are the sorted JSON texts
+    (`JsonText`) of the distinct rows over the columns it keeps."""
     unresolved = {leaf: leaf.source.reason for leaf in mapped
                   if leaf not in unread and isinstance(leaf.source, Unresolved)}
     read = [leaf for leaf in mapped if leaf not in unread and leaf not in unresolved]
@@ -741,8 +845,8 @@ def relation_entry(name: str, rows: Rows, mapped: list[MappedLeaf], unread: list
     unresolved.update((read[i], reason) for i, reason in ambiguous.items())
     fault = [text for i, text in faults if i in kept]
 
-    def distinct(cells: list[list[list[int | float | str]]]) -> list[Any]:
-        return [json.loads(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in cells})]
+    def distinct(cells: list[list[list[int | float | str]]]) -> list[JsonText]:
+        return [JsonText(cell) for cell in sorted({json.dumps([c[i] for i in kept]) for c in cells})]
 
     entry: dict[str, Any] = {
         "name": name, "columns": [[read[i].label, read[i].field] for i in kept],
@@ -795,17 +899,18 @@ def untaken(solver: Solver, base: Base | None) -> frozenset[str]:
     return frozenset(c.name for p in choice.points for c in p.constructors) - taken
 
 
-def taken_program(solver: Solver, base: Base | None) -> Program:
-    """The program of `solver` with each clause of a branch the case of `base`
-    does not take (`untaken`) dropped. A clause is of such a branch where one of
-    its constructors stands in its head, or in a positive atom or a `=`
+def taken_program(solver: Solver, dropped: frozenset[str]) -> Program:
+    """The program of `solver` with each clause of a branch whose constructor
+    is in `dropped` dropped: the constructors a case does not take
+    (`untaken`), or, for a determination run, those that neither the case nor
+    the concept case takes. A clause is of such a branch where one of its
+    constructors stands in its head, or in a positive atom or a `=`
     comparison of its body, outside a negation and an aggregate: a disjunct of the
     body that holds one is dropped from its disjunction, and the clause with
     it where no disjunct is left. A fact is dropped by its head alone."""
-    names = untaken(solver, base)
-    if not names:
+    if not dropped:
         return solver.program
-    units = tuple(u for u in (_taken_unit(u, names) for u in solver.program.units) if u is not None)
+    units = tuple(u for u in (_taken_unit(u, dropped) for u in solver.program.units) if u is not None)
     return replace(solver.program, units=units)
 
 

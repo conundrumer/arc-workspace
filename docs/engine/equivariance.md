@@ -108,7 +108,7 @@ Where the instances admit a common reading, each of its D4 images is one too, an
 - A Pose label may stand at a `:Pose` column of the same assembly, at a column of a derived relation or of an instance's input, which then takes the type, in `=` and `!=`, and in `d4_elem`, whose column takes the type of its label, since every D4 element is a pose.
 - The lib relation `pose_difference(a, b, d)` gives the D4 element that takes the placement at pose a onto the placement at pose b. It is the one way from a Pose to a D4 value, and Γ moves it by conjugation, as the action above gives.
 - The checker refuses a Pose label at any other site. So `(d4_identity D)` and `(c4_elem D)` on a pose are type errors.
-- The frame's own Idents, a part's `Ident` columns that [The pose](../../docs/arclog/rigid.md#the-pose) gives as the assembly's own, are as unobservable as the pose, by the rule that section gives.
+- The frame's own Idents, the `Ident` columns of a part or of the key that [The pose](../../docs/arclog/rigid.md#the-pose) gives as the assembly's own, are as unobservable as the pose, by the rule that section gives.
 
 The rule is the rule of [The pose](../../docs/arclog/rigid.md#the-pose). It costs one type check per site, and nothing at run time. In `gen/`, every clause that reads a `RIGID_DET` passes the rule. 142ca369 and 269e22fb use `d4_elem` in a `RIGID_DET`. No clause reads `.pose`.
 

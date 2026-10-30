@@ -1,6 +1,6 @@
 + document-size-budget: 10703
 * comment: when editing this doc
-    - The coordinator loads each section by a link: Routes before it acts on a user's message that asks for work, Running a change from the `direct` and `hotfix` lines of Routes, and Tickets, The user's words on a ticket and Waiting on a ticket at the triggers its document gives.
+    - The coordinator loads each section by a link of [Ops](prompts/agents/notes/ops.md): Routes before it acts on a user's message that asks for work, Running a change from the `direct` and `hotfix` lines of Routes, and Tickets, The user's words on a ticket and Waiting on a ticket at the triggers Ops gives.
     - Acts, each with its section:
         - Routing a user's request for work: [Routes](#routes).
         - Taking, running and closing out a change the coordinator runs itself: [Running a change](#running-a-change).
@@ -9,7 +9,7 @@
         - Waiting on a ticket's close: [Waiting on a ticket](#waiting-on-a-ticket).
 
 # Request notes
-- The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers its document gives.
+- The statements on the user's requests for work and on the tickets the coordinator files and tracks, that the coordinator reads at the triggers Ops gives.
 
 ## Routes
 - A user's message may open or end with a route directive: `direct`, `op send`, `hotfix`, `expedite <number>`, `op scope: own`, `op scope: all`, `op pause`, `op resume`, `defer <number>`, `op context bound <tokens>`, `op context bound default`, `op file`, `op draft`, `scratch`, or `re <number>`, a follow-up on that `request`.
@@ -47,8 +47,8 @@
 ## Running a change
 - Before you act, take each ticket the change would settle that waits on no `change`.
 - Where a ticket the change would settle waits on a `change` or its take is refused, do not act: move each ticket you took to `tickets/released/` and the `request` to wait on that `change`, or else to `tickets/released/`.
-- Make and merge the change as [Changes](prompts/agents/notes/coordinator.md#changes) gives.
-    + xref: prompts/agents/notes/coordinator.md#changes
+- Make and merge the change as [Changes](prompts/agents/notes/ops.md#changes) gives.
+    + xref: prompts/agents/notes/ops.md#changes
 - Once a change you run is on `master`, write a line in its `request`'s log that gives its commit and the number of each ticket it settles, move the `request` and each ticket you took that is no `change` to `tickets/released/`, and leave held each `change` you took.
 
 ## Tickets

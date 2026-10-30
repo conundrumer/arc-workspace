@@ -152,21 +152,21 @@ fn an_atom_with_a_site_is_the_atom_of_the_text_with_that_site() {
 }
 
 #[test]
-fn two_locals_of_sibling_branches_take_one_name() {
+fn two_locals_of_sibling_branches_take_names_of_their_own() {
     let before = read("(RULE &a (input *P *C) (OR ((input P (:key *X))) ((input P))))");
-    let after = read("(RULE &a (input *P *C) (OR ((input P (:key *X))) ((input P (:key *X)))))");
+    let after = read("(RULE &a (input *P *C) (OR ((input P (:key *X))) ((input P (:key *Y)))))");
     let edit = Edit::AddSite { node: path(&[0, 0, 1, 1, 0]), index: 1, site: site(&after, &[0, 0, 1, 1, 0, 1]) };
     assert!(before.apply(&edit).expect("the edit applies") == after);
 }
 
 #[test]
 fn a_join_that_the_join_rule_gives_another_label_is_refused() {
-    let program = read("(RULE &a (input *P (:key *X)) (OR ((input P (:t *X))) ((input P))))");
+    let program = read("(CHOOSE &a (for ((input (:t *X))) (from (input (:t *X)))))");
     let join = |label: u32| Site {
         column: ColumnName::Written("key".into()),
         value: SiteValue { args: Arc::new([SiteArg::NamedLabel { name: ColumnName::Written("X".into()), label: LabelUse::Join(LabelId(label)) }]) },
     };
-    let edit = |label| Edit::AddSite { node: path(&[0, 0, 1, 0, 0]), index: 2, site: join(label) };
-    assert!(matches!(program.apply(&edit(1)), Err(EditError::BareLabel { .. })));
-    assert!(program.apply(&edit(2)).is_ok());
+    let edit = |label| Edit::AddSite { node: path(&[0, 1, 0]), index: 1, site: join(label) };
+    assert!(matches!(program.apply(&edit(0)), Err(EditError::BareLabel { .. })));
+    assert!(program.apply(&edit(1)).is_ok());
 }

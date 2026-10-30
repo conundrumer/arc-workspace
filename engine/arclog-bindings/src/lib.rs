@@ -1,7 +1,7 @@
 //! The Python bindings of the arclog engine that the streams export runs:
-//! the task, the session, the decoder, the vocabulary, the replay progress
-//! and the streams of a corpus. [`register`] adds their names to the module
-//! that `arclog-py` builds.
+//! the task, the session, the decoder, the vocabulary, the replay progress,
+//! the streams of a corpus and the files of a solver's cases. [`register`]
+//! adds their names to the module that `arclog-py` builds.
 //!
 //! Each class wraps a value of the core crate and restates no rule of it. A
 //! task session owns the data that its decoders borrow, so a `PyDecoder`
@@ -12,9 +12,10 @@
 //! sources of this crate and of the crates it depends on, so a call from
 //! here into the tables code would not compile. `arclog-tables-py` takes
 //! these items of this crate, which are `pub`: [`Names`], [`PyDecodeSettings`],
-//! [`PyReplayProgress`], [`Progress`], [`walk_corpus`], [`PyConsistencyKind`]
-//! and [`constructions`].
+//! [`PyReplayProgress`], [`Progress`], [`walk_corpus`], [`PyConsistencyKind`],
+//! [`PyDecoder`] and [`constructions`].
 
+mod case_files;
 mod corpus;
 mod decoder;
 mod errors;
@@ -23,13 +24,18 @@ mod results;
 mod session;
 mod settings;
 mod streams;
+mod study;
+mod mutation;
 mod task;
 mod vocabulary;
 
 pub use corpus::{walk_corpus, Progress, PyReplayProgress};
+pub use decoder::PyDecoder;
 pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
+pub use study::PyStudyProgram;
+pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;
 use pyo3::exceptions::PyRuntimeError;
@@ -48,6 +54,10 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<PyDecodeSettings>()?;
     names.class::<vocabulary::PyVocabulary>()?;
     names.class::<session::PySession>()?;
+    names.class::<study::PyStudyProgram>()?;
+    names.class::<mutation::PyMutationPoint>()?;
+    names.class::<mutation::PyMutationSpec>()?;
+    names.class::<mutation::PyValidMutant>()?;
     names.class::<decoder::PyDecoder>()?;
     names.class::<results::PyStopKind>()?;
     names.class::<PyConsistencyKind>()?;
@@ -58,9 +68,12 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<results::PyProjection>()?;
     names.class::<results::PyProjections>()?;
     names.class::<streams::PyCaseStream>()?;
+    names.class::<case_files::PyCaseFiles>()?;
     names.value("Refusal", module.py().get_type::<errors::Refusal>().into_any())?;
+    names.value("RecordedIdentityError", module.py().get_type::<errors::RecordedIdentityError>().into_any())?;
     names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.class::<PyReplayProgress>()?;
-    names.function(wrap_pyfunction!(streams::corpus_streams, module)?)
+    names.function(wrap_pyfunction!(streams::corpus_streams, module)?)?;
+    names.function(wrap_pyfunction!(case_files::case_files, module)?)
 }

@@ -15,11 +15,13 @@ impl FileReader {
     pub(super) fn declare_macros(&mut self) {
         let mut lib: StableHashMap<LibName, Box<[Column]>> = StableHashMap::default();
         let mut modes: StableHashMap<LibName, Box<[Mode]>> = StableHashMap::default();
+        let mut rules: StableHashMap<LibName, Box<[TypeRule]>> = StableHashMap::default();
         for (name, entry) in &self.entries {
             match entry {
                 LibEntry::Relation(relation) => {
                     lib.insert(name.clone(), relation.columns.clone());
                     modes.insert(name.clone(), relation.modes.clone());
+                    rules.insert(name.clone(), relation.rules.clone());
                 }
                 LibEntry::Proposer(proposer) => {
                     lib.insert(name.clone(), proposer.columns.clone());
@@ -29,14 +31,16 @@ impl FileReader {
         }
         let macros: Vec<RelationMacro<'_>> = self
             .written_relations()
-            .map(|m| RelationMacro { name: &m.name, place: m.place, columns: &m.columns, definition: m.definition.value() })
+            .map(|m| RelationMacro { name: &m.name, place: m.place, columns: &m.columns, definition: m.definition.value(), rules: &m.rules })
             .collect();
-        let declarations = macro_column_types(&macros, &lib, &modes, &self.facts);
+        let declarations = macro_column_types(&macros, &lib, &modes, &rules, &self.facts);
         match declarations {
             Ok(mut declarations) => {
                 for m in std::mem::take(&mut self.relation_macros) {
-                    let relation = declarations.relations.remove(&m.name).expect("each relation macro takes a declaration");
-                    let labels = m.columns.iter().map(|(_, label)| *label).collect();
+                    let mut relation = declarations.relations.remove(&m.name).expect("each relation macro takes a declaration");
+                    let what = format!("the macro `{}`", m.name.0);
+                    relation.frames = self.relation_frames(&m.frames, &relation.columns, &what).unwrap_or_default();
+                    let labels = m.columns.iter().map(|column| column.label).collect();
                     self.entries.insert(m.name, LibEntry::Macro(Macro::Relation { relation, labels, definition: m.definition }));
                 }
                 for p in std::mem::take(&mut self.proposer_clauses) {

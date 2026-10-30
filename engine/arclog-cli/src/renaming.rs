@@ -6,6 +6,7 @@
 //! [`arclog::eval::rigid::renaming`].
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use arclog::eval::rigid::renaming::{renaming_between, IdentRows, IdentRowsBuilder};
 use arclog::registry::Registry;
@@ -14,11 +15,12 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 /// One leaf of a row of a record: an integer, or another value by its
-/// text, as `scripts/souffle_parity.py rerun --json` writes a row.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// text, as `scripts/souffle_parity.py rerun --json` writes a row. The text is
+/// shared, so that rows which hold one text hold one allocation of it.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) enum Leaf {
     Number(i64),
-    Other(Box<str>),
+    Other(Arc<str>),
 }
 
 impl Leaf {
@@ -43,7 +45,7 @@ impl<'de> Deserialize<'de> for Leaf {
 /// One leaf of a row of the engine: a leaf as a record writes it, or an
 /// Ident, which stands for the record's number of the same entity under a
 /// renaming that [`renaming_exists`] looks for.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum EngineLeaf {
     Written(Leaf),
     Ident(Ident),
@@ -51,10 +53,10 @@ pub(crate) enum EngineLeaf {
 
 /// The engine's side of `relations`, for [`renaming_exists`]: each row with
 /// its Idents left out of its leaves, and its Idents.
-fn engine_rows(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> IdentRows<Leaf> {
+fn engine_rows<R: AsRef<[Vec<EngineLeaf>]>>(relations: &[(&BTreeSet<Vec<Leaf>>, R)]) -> IdentRows<Leaf> {
     let mut builder: IdentRowsBuilder<Leaf, Ident> = IdentRowsBuilder::default();
     for (relation, (_, engine)) in relations.iter().enumerate() {
-        for row in engine {
+        for row in engine.as_ref() {
             let leaves = row
                 .iter()
                 .map(|leaf| match leaf {
@@ -75,9 +77,10 @@ fn engine_rows(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> Id
 /// The record's side of `relations`, for [`renaming_exists`]: each leaf at
 /// the place of an Ident in the engine's rows of the relation is an Ident,
 /// `None` where one such leaf is no number.
-fn record_rows(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> Option<IdentRows<Leaf>> {
+fn record_rows<R: AsRef<[Vec<EngineLeaf>]>>(relations: &[(&BTreeSet<Vec<Leaf>>, R)]) -> Option<IdentRows<Leaf>> {
     let mut builder: IdentRowsBuilder<Leaf, i64> = IdentRowsBuilder::default();
     for (relation, (record, engine)) in relations.iter().enumerate() {
+        let engine = engine.as_ref();
         let places: Vec<bool> = engine.first().map_or_else(Vec::new, |row| row.iter().map(|leaf| matches!(leaf, EngineLeaf::Ident(_))).collect());
         for row in record.iter() {
             let mut idents = Vec::new();
@@ -101,7 +104,7 @@ fn record_rows(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> Op
 /// the record's numbers, maps the engine's rows of each relation of
 /// `relations` one to one onto the record's, as
 /// [`arclog::eval::rigid::renaming::renaming_between`] gives.
-pub(crate) fn renaming_exists(relations: &[(&BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>)]) -> bool {
+pub(crate) fn renaming_exists<R: AsRef<[Vec<EngineLeaf>]>>(relations: &[(&BTreeSet<Vec<Leaf>>, R)]) -> bool {
     let Some(record) = record_rows(relations) else { return false };
     renaming_between(&engine_rows(relations), &record)
 }
@@ -126,19 +129,25 @@ pub(crate) fn term_leaves(term: Term, registry: &Registry, orientation: &dyn Fn(
 /// Whether `engine` and `record` hold rows of equal leaves at each place
 /// that holds no Ident in the engine's row, each row once.
 pub(crate) fn same_without_idents(engine: &[Vec<EngineLeaf>], record: &BTreeSet<Vec<Leaf>>) -> bool {
-    let masked = |row: &[EngineLeaf]| row.iter().map(|leaf| match leaf {
-        EngineLeaf::Written(leaf) => Some(leaf.clone()),
-        EngineLeaf::Ident(_) => None,
-    }).collect::<Vec<_>>();
-    let mut engine_masked: Vec<Vec<Option<Leaf>>> = engine.iter().map(|row| masked(row)).collect();
-    engine_masked.sort();
     let Some(first) = engine.first() else { return record.is_empty() };
     if record.iter().any(|row| row.len() != first.len()) {
         return false;
     }
-    let mut record_masked: Vec<Vec<Option<Leaf>>> = record
+    let mut engine_masked: Vec<Vec<Option<&Leaf>>> = engine
         .iter()
-        .map(|row| row.iter().zip(first).map(|(leaf, at)| matches!(at, EngineLeaf::Written(_)).then(|| leaf.clone())).collect())
+        .map(|row| {
+            row.iter()
+                .map(|leaf| match leaf {
+                    EngineLeaf::Written(leaf) => Some(leaf),
+                    EngineLeaf::Ident(_) => None,
+                })
+                .collect()
+        })
+        .collect();
+    engine_masked.sort();
+    let mut record_masked: Vec<Vec<Option<&Leaf>>> = record
+        .iter()
+        .map(|row| row.iter().zip(first).map(|(leaf, at)| matches!(at, EngineLeaf::Written(_)).then_some(leaf)).collect())
         .collect();
     record_masked.sort();
     engine_masked == record_masked

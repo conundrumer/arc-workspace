@@ -4,13 +4,15 @@
 //! flag that cancels evaluations. The driver and the parts of [`super`]
 //! share them.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
+use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::relations::Relation;
-use crate::session::ReachedSessionBound;
+use crate::session::{ReachedSessionBound, ResultKey};
 use crate::solver::CaseName;
 use crate::task::Grid;
 use crate::terms::ReachedMarginBound;
@@ -100,8 +102,9 @@ impl ReachedBound {
     /// request of its entry. A stop at the session's byte bound, at the
     /// deadline or by a cancellation depends on the machine or the
     /// session's history, and is stored nowhere. A stop at the model cap,
-    /// the node cap, the assignment cap or the table work cap is stored
-    /// nowhere either.
+    /// the node cap or the assignment cap is stored nowhere either. A stop
+    /// at the table work cap, and a stop at the deadline, are held for the
+    /// requests of one decode alone, in [`HeldStops`].
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
@@ -237,7 +240,7 @@ impl BodyValue {
 /// The outcome of a request: a value, or a fault of the run.
 pub type Outcome<T> = Result<T, RunFault>;
 
-/// The grid of `&output` on one example: the grid, `undefined`, or a stop. A
+/// The grid of the `OUT` form's relation on one example: the grid, `undefined`, or a stop. A
 /// grid is undefined where the relation is, and where
 /// `docs/arclog/constraints.md#the-output-set` gives.
 #[derive(Clone, Debug)]
@@ -266,9 +269,87 @@ impl Cancellation {
     }
 }
 
+/// The stops of the evaluations of a decode and its forks, each held by the
+/// result-cache key of its entry, of two kinds, each with its own rule of
+/// use. A stop at the table work cap is held for the tables of one case: a
+/// table whose evaluation needs a held evaluation takes its stop, at the
+/// form that stopped, and tries no binding for it. A stop at the deadline is
+/// held with the time its evaluation ran: a later request takes it, at the
+/// form that stopped, where the request has at most [`DEADLINE_STOP_REUSE`]
+/// times that time left to its own deadline.
+#[derive(Debug, Default)]
+pub struct HeldStops {
+    table_work: Mutex<StableHashMap<ResultKey, Stop>>,
+    /// Shared with the snapshots: a stop at the deadline depends on the
+    /// machine, so no fork's result depends on its history alone.
+    deadline: Arc<Mutex<StableHashMap<ResultKey, DeadlineStop>>>,
+}
+
+/// The factor of the time a held stop at the deadline ran that a request's
+/// time left may reach for the request to take the stop. Provisional: a
+/// later request reaches the entry sooner than the first, whose upstream
+/// entries it evaluated first and the later one finds in the result cache,
+/// so a stop held at the time the first run had would rarely be taken.
+pub const DEADLINE_STOP_REUSE: f64 = 1.1;
+
+/// A stop at the deadline, with the time the evaluation that reached it ran.
+#[derive(Clone, Debug)]
+struct DeadlineStop {
+    stop: Stop,
+    ran: Duration,
+}
+
+impl HeldStops {
+    /// The stop at the table work cap held for the entry `key`, if any.
+    pub fn table_work_stop(&self, key: &ResultKey) -> Option<Stop> {
+        self.table_work.lock().expect(UNPOISONED).get(key).cloned()
+    }
+
+    /// Holds `stop`, at the table work cap, for the entry `key`. The first
+    /// stop held for a key stands.
+    pub fn hold_table_work(&self, key: ResultKey, stop: Stop) {
+        self.table_work.lock().expect(UNPOISONED).entry(key).or_insert(stop);
+    }
+
+    /// The stop at the deadline held for the entry `key`, where the request
+    /// has `left` to its deadline and that is at most
+    /// [`DEADLINE_STOP_REUSE`] times the time the stop's evaluation ran.
+    pub fn deadline_stop(&self, key: &ResultKey, left: Duration) -> Option<Stop> {
+        let held = self.deadline.lock().expect(UNPOISONED);
+        let held = held.get(key)?;
+        (left <= held.ran.mul_f64(DEADLINE_STOP_REUSE)).then(|| held.stop.clone())
+    }
+
+    /// Holds `stop`, at the deadline, for the entry `key`, with the time
+    /// `ran` its evaluation ran. Where a stop is held for the key, the one
+    /// with the larger time stands.
+    pub fn hold_deadline(&self, key: ResultKey, stop: Stop, ran: Duration) {
+        let mut held = self.deadline.lock().expect(UNPOISONED);
+        if held.get(&key).is_none_or(|held| held.ran < ran) {
+            held.insert(key, DeadlineStop { stop, ran });
+        }
+    }
+
+    /// Whether no stop is held.
+    pub fn is_empty(&self) -> bool {
+        self.table_work.lock().expect(UNPOISONED).is_empty() && self.deadline.lock().expect(UNPOISONED).is_empty()
+    }
+
+    /// A store for a fork of a decode: it holds the stops at the table work
+    /// cap that this one holds now, in a map of its own, so the tables of the
+    /// fork depend on the fork's own history, and shares this one's stops at
+    /// the deadline.
+    pub fn snapshot(&self) -> HeldStops {
+        HeldStops { table_work: Mutex::new(self.table_work.lock().expect(UNPOISONED).clone()), deadline: Arc::clone(&self.deadline) }
+    }
+}
+
+const UNPOISONED: &str = "a store that no panic poisoned";
+
 /// The bindings that the evaluations of one table try, counted over all its
-/// examples, assignments, models and projections, and the cap on the count.
-/// Clones share one count.
+/// examples, assignments, models and projections, and the rows that the
+/// derivation of its extents visits, and the cap on the count. Clones share one
+/// count.
 #[derive(Clone, Debug)]
 pub struct TableWork {
     count: Arc<AtomicU64>,
@@ -290,19 +371,28 @@ impl TableWork {
         let count = before.saturating_add(bindings);
         if count > self.cap { Err(ReachedBound::TableWork { cap: self.cap }) } else { Ok(()) }
     }
+
+    /// Whether the count is past the cap: each batch of an evaluation that
+    /// begins now stops at once.
+    pub fn is_past_cap(&self) -> bool {
+        self.count.load(Ordering::Relaxed) > self.cap
+    }
 }
 
 /// The bounds of one evaluation that differ between the evaluations of a
 /// session: the deadline where it has one, its cancellation, the work
-/// count of its table where it runs for a table, and whether it checks the
-/// declared rows of the outputs it builds. The caps stand in the
-/// [`crate::session::TaskSession`].
+/// count of its table where it runs for a table, the stops held by the decode
+/// it runs for, and whether it checks the declared rows of the outputs it
+/// builds. The caps stand in the [`crate::session::TaskSession`].
 #[derive(Clone, Debug)]
 pub struct Limits {
     pub deadline: Option<std::time::Instant>,
     pub cancellation: Cancellation,
     /// The count that the evaluation's batches of bindings are added to.
     pub table_work: Option<TableWork>,
+    /// The stops that the evaluations of the decode hold; none where the
+    /// evaluation runs for no decode.
+    pub held_stops: Option<Arc<HeldStops>>,
     /// Where the evaluation reports the declared rows that a construction's
     /// outputs break ([`crate::eval::copies`]); the evaluation checks none
     /// where this is `None`.
@@ -310,9 +400,9 @@ pub struct Limits {
 }
 
 impl Limits {
-    /// The limits of an evaluation outside a table.
+    /// The limits of an evaluation outside a table and outside a decode.
     pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None, copies: None }
+        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None }
     }
 
     /// These limits with the evaluation checking the declared rows of the
@@ -324,5 +414,10 @@ impl Limits {
     /// These limits with the evaluation counted in `work`.
     pub fn counted_in(self, work: TableWork) -> Self {
         Limits { table_work: Some(work), ..self }
+    }
+
+    /// These limits with the evaluation taking and holding stops in `stops`.
+    pub fn holding_in(self, stops: Arc<HeldStops>) -> Self {
+        Limits { held_stops: Some(stops), ..self }
     }
 }

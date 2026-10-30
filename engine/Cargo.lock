@@ -52,6 +52,8 @@ name = "arclog-tables"
 version = "0.1.0"
 dependencies = [
  "arclog",
+ "arclog-constructions",
+ "serde_json",
 ]
 
 [[package]]
@@ -62,6 +64,7 @@ dependencies = [
  "arclog-bindings",
  "arclog-tables",
  "pyo3",
+ "serde_json",
 ]
 
 [[package]]

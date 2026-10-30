@@ -147,6 +147,19 @@ fn score_ranking<'r>(
 /// `score` or `secondary_score` rows, or an element with several scores or
 /// several `secondary_score` rows, which `docs/lib-spec.md#the-constructions`
 /// does not cover, is undefined.
+///
+/// - in `member(key, t)`: the members.
+/// - in `before(key, a, b)`: a comes before b. `before` holds every such pair, not only neighbors, and never a before a.
+/// - in `score(key, t, S)`: a number per member. A lower score comes first, and equal scores tie.
+/// - in `secondary_score(key, t, S)`: a number that orders the members within each tie of `score`. A member with a `score` and no `secondary_score` comes before the members of its tie that have one.
+/// - Give `before`, or `score` with `secondary_score`, not both. A key with both, or with two `score` rows or two `secondary_score` rows for one member, has no output.
+/// - A member with no `score` row is related to no member: it has rank 0 and dual rank 0, and it is minimal and maximal.
+/// - in `probe(key, t)`: an element ranked against the members, and not counted among them. It takes its place from its own `score` or `before` rows.
+/// - out `rank(key, t, R)`: R members come before t, so the first has rank 0. Ties share a rank, and the next rank counts every tied member: scores 1, 1, 2 give ranks 0, 0, 2.
+/// - out `dual_rank(key, t, R)`: R members come after t.
+/// - out `minimal(key, t)`, `maximal(key, t)`: the members nothing comes before, or after. Under a tie, every tied member.
+/// - out `successor(key, a, b)`: b comes next after a. Under ties, each member of one score level is followed by each member of the next, and tied members don't follow each other.
+/// - out `cyclic_successor(key, a, b)`: `successor`, with the first after the last.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Order;
 
@@ -217,6 +230,9 @@ impl Construction for Order {
 }
 
 /// The least box that holds the group's cells, a minimum over margins.
+///
+/// - in `cell(key, P)`, from the key.
+/// - out `box(key, B)`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BoundingBox;
 
@@ -247,6 +263,10 @@ impl Construction for BoundingBox {
 }
 
 /// The count of the group's members, 0 for a key of the domain with none.
+///
+/// - in `member(key, m)`: the members.
+/// - in `domain(key)`, from the key: the keys to count. A key with no member counts 0.
+/// - out `size(key, N)`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Cardinality;
 
@@ -270,6 +290,9 @@ impl Construction for Cardinality {
 }
 
 /// The amount by which the group's plus set outnumbers its minus set.
+///
+/// - in `plus(key, m)`, `minus(key, m)`.
+/// - out `excess(key, N)`: the plus count less the minus count, where that is more than 0.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Excess;
 
@@ -294,6 +317,10 @@ impl Construction for Excess {
 
 /// The one value of the group's members, and the keys whose members
 /// disagree.
+///
+/// - in `member(key, v)`.
+/// - out `value(key, v)`: the value, where every member has it.
+/// - out `plural(key)`: the members have more than one value.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Singleton;
 
@@ -342,6 +369,12 @@ fn sets<'r>(group: &GroupInputs<'_>, input: usize, rows: &'r RowSet) -> StableHa
 /// share a member: an observed set is a superset of each pattern whose
 /// every member it holds, and equals each of those whose count of members
 /// is its own.
+///
+/// - in `pattern(pattern, m)`, shared: the members of each pattern.
+/// - in `observed(observed, m)`: the members of each observed set.
+/// - out `superset(observed, pattern)`: the observed set holds every member of the pattern.
+/// - out `equal(observed, pattern)`: the two sets have the same members.
+/// - A pair of sets that share no member has no row.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Inclusion;
 

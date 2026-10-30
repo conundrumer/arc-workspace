@@ -31,10 +31,9 @@ use arclog::eval::determinations::{det_node, relation_spelled};
 use arclog::eval::{output_relation, Evaluation};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
-use arclog::judge::run::{judged_run, Depth, Found, JudgedRun};
+use arclog::judge::run::{judged_run, Depth, JudgedRun};
 use arclog::judge::solves::OutputSet;
 use arclog::program::AltsName;
-use arclog::solver::CaseName;
 use arclog::task::Grid;
 use arclog::terms::Example;
 use serde_json::Value;
@@ -90,17 +89,16 @@ fn compare_solver(arguments: &Arguments, solver: &CorpusSolver) -> SolverResult 
 /// one proposer names the proposer, which the case's name does not.
 const DERIVED: &str = "=$Derived";
 
-/// Whether the snapshot's key `key` names the case `name`, where `concept`
-/// holds the alts that depart from the concept case in no way
-/// (`Solver::concept_alts`; `case_name` of `src/parity/__init__.py`): the
-/// key joins with ` & `, in the snapshot's order, each alt of the case that
-/// is not in `concept`, a line's stored reading
+/// Whether the snapshot's key `key` names the case whose departures from the
+/// concept case are `departures` (`Solver::departures`; `case_name` of
+/// `src/parity/__init__.py`): the key joins with ` & `, in the snapshot's
+/// order, each departure, a line's stored reading
 /// `<relation>=$Stored` as `<relation>=stored` and its derived reading by
 /// its one proposer as `<relation>=<proposer>`, and is `concept` where
 /// there is none.
-pub(crate) fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bool {
+pub(crate) fn names_case(key: &str, departures: &[AltsName]) -> bool {
     let mut parts: BTreeSet<&str> = if key == "concept" { BTreeSet::new() } else { key.split(" & ").collect() };
-    for alt in name.0.iter().filter(|alt| !concept.contains(alt)) {
+    for alt in departures {
         let found = if let Some(relation) = alt.0.strip_suffix(DERIVED) {
             parts.iter().find(|part| part.strip_prefix(relation).is_some_and(|rest| rest.starts_with('=') && rest != "=stored")).copied()
         } else {
@@ -117,11 +115,12 @@ pub(crate) fn names_case(key: &str, name: &CaseName, concept: &[AltsName]) -> bo
     parts.is_empty()
 }
 
-/// The record of the case `name` in a solver's snapshot record, with its
-/// key there (`names_case`).
-fn case_record<'r>(record: &'r Value, name: &CaseName, concept: &[AltsName]) -> Option<(&'r str, &'r Value)> {
+/// The record of the case whose departures from the concept case are
+/// `departures`, in a solver's snapshot record, with its key there
+/// (`names_case`).
+fn case_record<'r>(record: &'r Value, departures: &[AltsName]) -> Option<(&'r str, &'r Value)> {
     let cases = record.get("cases")?.as_object()?;
-    cases.iter().find(|(key, _)| names_case(key, name, concept)).map(|(key, value)| (key.as_str(), value))
+    cases.iter().find(|(key, _)| names_case(key, departures)).map(|(key, value)| (key.as_str(), value))
 }
 
 /// Each line of the comparison of the solver `corpus`: the findings of its
@@ -141,7 +140,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
     let mut keys: BTreeSet<&str> = BTreeSet::new();
     for case in setup.cases() {
         let spelled = case_spelled(case.name);
-        let Some((key, case_record)) = case_record(&record, case.name, &setup.concept_alts) else {
+        let Some((key, case_record)) = case_record(&record, &setup.solver.departures(case.name)) else {
             lines.push(format!("{spelled}: the engine has the case, and the snapshot has no record of it"));
             continue;
         };
@@ -157,7 +156,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
             }
         };
         let evaluation = case.evaluation(&values);
-        let output = output_relation(case.program).expect("a checked case program derives `&output`");
+        let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
         let run = judged_run(&evaluation, &output, &setup.judged, World::Closed, Depth::Full);
         let run = match run {
             Ok(run) => run,
@@ -198,7 +197,7 @@ fn compare_case(id: &str, key: &str, case_record: &Value, evaluation: &Evaluatio
         if agrees(got, expected) {
             continue;
         }
-        let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(run, got), expected.map_or("no outcome".to_owned(), Value::to_string));
+        let mut line = format!("{key}, {pair}: the engine gives {}, Souffle {}", describe(got), expected.map_or("no outcome".to_owned(), Value::to_string));
         if matches!(got, OutputSet::Grids(grids) if grids.len() > 1) {
             lines.push(line);
             continue;
@@ -247,16 +246,13 @@ fn grid_json(grid: &Grid) -> Value {
     Value::from(grid.rows().iter().map(|row| Value::from(row.iter().map(|&c| Value::from(c.digit())).collect::<Vec<_>>())).collect::<Vec<_>>())
 }
 
-/// What the engine gives on a pair, `got` of `run`, for a mismatch line.
-fn describe(run: &JudgedRun, got: &OutputSet) -> String {
-    let stop = |stop: &arclog::eval::Stop| format!("a stop at {:?} at the form {:?}", stop.bound, stop.form);
-    match (&run.columns, got) {
-        (Found::None, _) => "no grid columns of `&output`, so `undefined`".to_owned(),
-        (Found::Stopped(at), _) => format!("no grid columns of `&output`, by {}", stop(at)),
-        (_, OutputSet::Grids(grids)) => Value::from(grids.iter().map(grid_json).collect::<Vec<_>>()).to_string(),
-        (_, OutputSet::Undefined) => "undefined".to_owned(),
-        (_, OutputSet::Outside) => "outside".to_owned(),
-        (_, OutputSet::Stopped(at)) => stop(at),
+/// What the engine gives on a pair, `got`, for a mismatch line.
+fn describe(got: &OutputSet) -> String {
+    match got {
+        OutputSet::Grids(grids) => Value::from(grids.iter().map(grid_json).collect::<Vec<_>>()).to_string(),
+        OutputSet::Undefined => "undefined".to_owned(),
+        OutputSet::Outside => "outside".to_owned(),
+        OutputSet::Stopped(at) => format!("a stop at {:?} at the form {:?}", at.bound, at.form),
     }
 }
 
@@ -412,18 +408,12 @@ mod tests {
     #[test]
     fn names_a_case_by_the_snapshots_key() {
         use arclog::program::AltsName;
-        let name = |alts: &[&str]| CaseName(alts.iter().map(|alt| AltsName((*alt).into())).collect());
-        let concept = name(&["&background=$Stored", "&floor_cell=$Derived", "$Clash"]);
-        let case = name(&["&background=$Derived", "&floor_cell=$Stored", "$LargerOnTop"]);
-        let concept = &concept.0;
-        assert!(names_case("$LargerOnTop & &background=DominantColor & &floor_cell=stored", &case, concept));
-        assert!(!names_case("$LargerOnTop & &background=stored & &floor_cell=stored", &case, concept));
-        assert!(!names_case("$LargerOnTop & &background=DominantColor", &case, concept));
-        assert!(names_case("concept", &CaseName(concept.clone()), concept));
-        // A line that only a nested base reads is absent from the concept case's name, and its first reading names no departure from it.
-        let under_alt = name(&["&background=$Stored", "&floor_cell=$Derived", "&margin=$Stored", "$LargerOnTop"]);
-        let with_margin: Vec<AltsName> = concept.iter().cloned().chain([AltsName("&margin=$Stored".into())]).collect();
-        assert!(names_case("$LargerOnTop", &under_alt, &with_margin));
-        assert!(!names_case("$LargerOnTop", &under_alt, concept));
+        let departures = |alts: &[&str]| -> Vec<AltsName> { alts.iter().map(|alt| AltsName((*alt).into())).collect() };
+        let case = departures(&["&background=$Derived", "&floor_cell=$Stored", "$LargerOnTop"]);
+        assert!(names_case("$LargerOnTop & &background=DominantColor & &floor_cell=stored", &case));
+        assert!(!names_case("$LargerOnTop & &background=stored & &floor_cell=stored", &case));
+        assert!(!names_case("$LargerOnTop & &background=DominantColor", &case));
+        assert!(names_case("concept", &[]));
+        assert!(!names_case("$LargerOnTop", &[]));
     }
 }

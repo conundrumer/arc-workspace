@@ -2,11 +2,14 @@
 //! program of the corpus that holds no `DEMONSTRATED` form, as
 //! `docs/engine/synthesis.md#synthesis` gives the end checks of the step: the
 //! decoder admits the stream, closed-world; the consistency result at the
-//! `END` of its `&output` equals the case's solves outcome at the values
+//! `END` of its `OUT` form equals the case's solves outcome at the values
 //! the determination determines; and the rows of each prefix equal the rows
 //! of a decode in a task session of its own. A difference prints by solver,
 //! with the first of each kind. With `--no-rows` the decode builds no second
 //! session and checks no rows, and the report says the rows are not checked.
+//! The stream of a case is the one `arclog::stream::corpus::corpus_case_stream`
+//! gives: that of the case's files under `cases/<task id>/` of the corpus
+//! where they stand.
 //!
 //! It prints, for each solver, one line with its counts of cases decoded,
 //! refused, differing in consistency, differing in rows and stopped at a
@@ -44,7 +47,7 @@ use arclog::solver::CaseName;
 use arclog::task::{JudgedTask, Task};
 use arclog::terms::{Example, TermId};
 
-use arclog::stream::corpus::{case_spelled, case_stream, check_case, check_cases, decoded_cases};
+use arclog::stream::corpus::{case_spelled, check_case, check_cases, corpus_case_stream, decoded_cases};
 use arclog::decode::corpus::{corpus_session, read_corpus_task, CorpusTask};
 use crate::concept_case::{corpus_limits, determined_cases};
 use arclog_constructions::shared as constructions;
@@ -231,10 +234,10 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
     let cases = resolve_cases(&solver, registry);
     let clauses = SolverClauses::of_cases(&cases);
     let mut cache = CheckCache::default();
-    let concept = check_case(cases.concept(), &clauses, &mut cache, "the concept case")?;
+    let concept = check_case(&solver, cases.concept(), &clauses, &mut cache, "the concept case", false)?;
     let bases = solver.base_case_names(Exclusion::WithoutExcluded);
     let decoded = decoded_cases(&cases, all);
-    let programs = check_cases(&cases, &clauses, &mut cache, &|name| bases.contains(name) || decoded.contains(name))?;
+    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| bases.contains(name) || decoded.contains(name), false)?;
     let session = corpus_session();
     let limits = corpus_limits();
     let constructions = constructions()?;
@@ -247,7 +250,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
             continue;
         }
         let expected = expected_solves(case, &determination, &judged);
-        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(resolved_case(&cases, case.name), case.program, expected, &task, &judged, rows, gathered)))
+        let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(corpus, id, resolved_case(&cases, case.name), case.program, expected, &task, &judged, rows, gathered)))
             .unwrap_or_else(|payload| vec![(Kind::Refused, format!("the decoder panicked: {}", panic_message(&*payload)))]);
         let mut found = BTreeSet::new();
         for (kind, line) in case_run {
@@ -270,7 +273,7 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
 fn expected_solves(case: &DeterminedCase<'_>, determination: &Determination, judged: &JudgedTask) -> Result<bool, String> {
     let values = determination.case_values(case)?;
     let evaluation = case.evaluation(&values);
-    let output = output_relation(case.program).expect("a checked case program derives `&output`");
+    let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
     let run = judged_run(&evaluation, &output, judged, World::Closed, Depth::Full).map_err(|fault| format!("the judged run faults at {:?}: {}", fault.form, fault.message))?;
     Ok(run.pairs[..judged.train.len()].iter().all(|pair| pair.solved))
 }
@@ -282,7 +285,7 @@ fn resolved_case<'a>(cases: &'a ResolvedCases, name: &CaseName) -> &'a ResolvedC
 
 /// The findings of the decode of `program`'s token stream, and the time of
 /// each token into `gathered`.
-fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
+fn decode_case(corpus: &Path, id: &str, case: &ResolvedCase, program: &CheckedProgram, expected: Result<bool, String>, task: &Task, judged: &JudgedTask, rows: RowsMode, gathered: &mut Totals) -> Vec<(Kind, String)> {
     let mut findings: Vec<(Kind, String)> = Vec::new();
     let constructions = constructions().expect("the table of constructions built for the determination");
     let registry = Registry::get();
@@ -292,14 +295,14 @@ fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<b
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let mut decoder = Decoder::new(task, &session, registry, constructions, &settings).judging(train);
     let mut mirror = mirror_session.as_ref().map(|session| Decoder::new(task, session, registry, constructions, &settings));
-    let stream = match case_stream(case, program, decoder.vocabulary()) {
+    let stream = match corpus_case_stream(corpus, id, case, program, decoder.vocabulary(), false) {
         Ok(stream) => stream,
         Err(fault) => return vec![(Kind::Refused, fault)],
     };
     let mut consistency = None;
     let mut rows_found = false;
     let replayed = replay(&mut decoder, &stream.tokens, true, &mut |decoder, stepped| {
-        let Stepped { index, token, consistency: result, mask, step_seconds } = stepped;
+        let Stepped { index, token, consistency: result, mask, step_seconds, .. } = stepped;
         let mask_seconds = mask.expect("the replay computes the mask").seconds;
         gathered.mask.push(mask_seconds);
         gathered.step.push(step_seconds);
@@ -345,7 +348,7 @@ fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<b
             None
         }
         Some(other) => {
-            findings.push((Kind::Consistency, format!("the consistency at the last END is {other:?}")));
+            findings.push((Kind::Consistency, format!("the consistency at the last `OUT` END is {other:?}")));
             None
         }
         None => {
@@ -356,7 +359,7 @@ fn decode_case(case: &ResolvedCase, program: &CheckedProgram, expected: Result<b
     match (actual, expected) {
         (_, Err(why)) => findings.push((Kind::Unjudged, why)),
         (Some(actual), Ok(solves)) if actual != solves => {
-            findings.push((Kind::Consistency, format!("the consistency at the last END is {}, and the case {} the train pairs", if actual { "consistent" } else { "not consistent" }, if solves { "solves" } else { "does not solve" })));
+            findings.push((Kind::Consistency, format!("the consistency at the last `OUT` END is {}, and the case {} the train pairs", if actual { "consistent" } else { "not consistent" }, if solves { "solves" } else { "does not solve" })));
         }
         _ => {}
     }

@@ -3,12 +3,12 @@
 //! prints one tab-separated line per case,
 //! `<task>\t<case>\t<concept 0|1>\t<verdict>\t<token index or ->\t<detail>`.
 //!
-//! The verdict is the consistency of the last `RULE` clause the stream ends
+//! The verdict is the consistency of the last `OUT` form the stream ends
 //! (`Consistent`, `NotConsistent`, `SeveralValues`, `Fault`, `Stopped`),
-//! `NoRule` where it ends none, `Refused` where the decoder refuses the
+//! `NoOut` where it ends none, `Refused` where the decoder refuses the
 //! stream, `NoStream` where the writer gives the case no stream, and
 //! `Unread` (case `-`) for a solver whose files or task do not read. The
-//! token index is that of the last `RULE` clause's end. The detail is the
+//! token index is that of the last `OUT` form's end. The detail is the
 //! bound for `Stopped`, the message for `Fault`, `Refused`, `NoStream` and
 //! `Unread`, the relation (`&x`) whose several values keep every train pair
 //! consistent for `SeveralValues`, and empty otherwise. The cases are the
@@ -82,7 +82,7 @@ fn verdicts_solver(corpus: &Path, tasks: &Path, id: &str) -> SolverResult {
                     Verdict::SeveralValues(relation) => ("SeveralValues", relation),
                     Verdict::Fault(message) => ("Fault", message),
                     Verdict::Stopped(stop) => ("Stopped", format!("{stop:?}")),
-                    Verdict::NoRule => ("NoRule", String::new()),
+                    Verdict::NoOut => ("NoOut", String::new()),
                     Verdict::Refused(message) => ("Refused", message),
                     Verdict::NoStream(message) => ("NoStream", message),
                 };

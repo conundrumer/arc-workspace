@@ -8,7 +8,6 @@ A sentence a tool prints stands in an `mctx` call where the tool prints it.
 """
 
 import argparse
-import json
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -76,16 +75,15 @@ def case_rows(stems: list[str], out: Path, solvers: Path | None) -> int:
     for stem in stems:
         file = (solvers / f"{stem}.dl") if solvers else solver_path(stem)
         try:
-            got = rerun.case_rows(stem, file)
+            got = rerun.case_rows(stem, file, out / f"{stem}.json")
         except rerun.NoSuchCase:
             print(mctx("No concept case of {stem}.").format(stem=stem), file=sys.stderr)
             status = 1
             continue
-        if not isinstance(got, dict):
+        if got is not None:
             print(mctx("{stem}: the run gives no rows: {got}").format(stem=stem, got=got), file=sys.stderr)
             status = 1
             continue
-        (out / f"{stem}.json").write_text(json.dumps(got))
         print(out / f"{stem}.json")
     return status
 

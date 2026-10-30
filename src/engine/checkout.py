@@ -1,7 +1,7 @@
-"""The checkout's root, the directories under it, and the directories of
+"""The checkout's root, the directories under it (among them
+`engine_target`, which `cargo_env` gives cargo), and the directories of
 the main worktree that every worktree of the repository shares, which
-every package reads (among them `engine_target`, which `cargo_env` gives
-cargo). Each directory is computed from `ROOT` when asked, so
+every package reads. Each directory is computed from `ROOT` when asked, so
 a checkout that sets `ROOT` moves every one of them. Git runs in a tree through
 `git`, `changed_paths` lists what a tree changes against a commit,
 `worktree_list` gives the worktrees of the repository, a `uv run` in
@@ -353,9 +353,9 @@ def work() -> Path:
 
 
 def engine_target() -> Path:
-    """`engine/target/` in the main worktree, which every worktree of the
-    repository builds the engine into and reads its tool binaries from."""
-    return _shared(ROOT) / "engine" / "target"
+    """`engine/target/` of the checkout, which it builds the engine into and
+    reads its tool binaries from; no other checkout builds into it."""
+    return ROOT / "engine" / "target"
 
 
 def cargo_env() -> dict[str, str]:

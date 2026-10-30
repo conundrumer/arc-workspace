@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, UnitSolver};
+use arclog::decode::corpus::{read_task_files, replay_units_untested_ends, ReplayProgress, UnitSolver};
 use arclog::eval::instance::Constructions;
 use arclog::harness::corpus_threads;
 use arclog::registry::Registry;
@@ -30,7 +30,7 @@ use crate::decoder::mask_bytes;
 /// `numpy.frombuffer(masks, numpy.uint8).reshape(-1, (len(vocabulary) + 7) // 8)`
 /// has one row for each token the model writes. Otherwise it is `None`, and
 /// `mask_fault` is `None` where `tasks` is `None` and else the reason the
-/// case gives no masks. Where the decode of the case ends at its `&output`
+/// case gives no masks. Where the decode of the case ends at its `OUT` form
 /// before the stream does, `ids` and `model` hold the tokens before the first
 /// token the model writes after that end, and `masks` has one row for each
 /// model token among them.
@@ -60,9 +60,18 @@ struct IdStream {
 /// case or, with `all_cases`, every case, over the solvers whose task ids
 /// `task_ids` gives, or every solver where it is `None`, in the order of the
 /// task ids and then of the cases, with the ids of the vocabulary under the
-/// default settings. The second value holds a line for each case that gives no
-/// stream and each solver that gives none, in the form the report of
-/// `arclog-cli stream --corpus` prints it, in the order of the task ids.
+/// default settings. A case whose files `cases/<task id>/<file>.arclog` and
+/// `<file>.arcdata` stand in `corpus`, with `<file>` as `CaseFiles.file` gives
+/// it, takes the stream of the solver those two files make. The second value
+/// holds a line for each case that gives no stream and each solver that gives
+/// none, in the form the report of `arclog-cli stream --corpus` prints it, in
+/// the order of the task ids.
+/// With `prefix`, each solver's files hold a prefix of a solver, whole forms
+/// that later forms may follow: each case takes every check but the refusal
+/// of a case program that holds no `OUT` form, and its stream ends with the
+/// last token of its last form. With `tasks`, a prefix's replay gives the
+/// mask before each of its model tokens, and its decode ends at no `OUT`
+/// form, as `replay` gives for a stream that ends before one.
 /// Where `tasks`, the directory of the task files, is given, each stream is
 /// also replayed on its task under the default settings, judging the train
 /// pairs in the closed world, and the stream's `masks` are the engine's
@@ -90,15 +99,15 @@ struct IdStream {
 /// second phase: its `total` is set once the groups are cut and its `done`
 /// grows while they replay.
 #[pyfunction]
-#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None, step_cap=None))]
-pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
+#[pyo3(signature = (corpus, all_cases=false, task_ids=None, tasks=None, started=None, ended=None, progress=None, step_cap=None, prefix=false))]
+pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task_ids: Option<Vec<String>>, tasks: Option<&str>, started: Option<Py<PyAny>>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, prefix: bool) -> PyResult<(Vec<PyCaseStream>, Vec<String>)> {
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let reads: Mutex<HashMap<String, Result<(Task, JudgedTask), String>>> = Mutex::new(HashMap::new());
     let mut found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut streams, mut faults) = (Vec::new(), Vec::new());
-        match solver_streams(Path::new(corpus), id, wanted, &vocabulary) {
+        match solver_streams(Path::new(corpus), id, wanted, &vocabulary, prefix) {
             Ok(cases) => {
                 for case in cases {
                     match case.stream {
@@ -149,7 +158,7 @@ pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task
 }
 
 /// Replays the streams of `found` whose masks are due, which are those with
-/// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units`] does, and
+/// `Ok(None)`, on the tasks that `reads` holds, as [`replay_units_untested_ends`] does, and
 /// sets each stream's `masks`. A solver whose task did not read, gives each of its streams that fault.
 fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &HashMap<String, Result<(Task, JudgedTask), String>>, constructions: &'static Constructions, steps: &ReplayProgress, started: Option<&Py<PyAny>>, ended: Option<&Py<PyAny>>, step_cap: Option<usize>) {
     let mut faults: HashMap<usize, String> = HashMap::new();
@@ -176,10 +185,10 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
         })
         .collect();
     let progress = Progress::new(started, ended, due.iter().map(|(solver, _, _)| found[*solver].0.as_str()).collect(), due.iter().map(|(_, wanted, _)| wanted.len()).collect());
-    let results = replay_units(
+    let results = replay_units_untested_ends(
         &solvers,
         constructions,
-        &DecodeSettings::corpus(),
+        &DecodeSettings::default(),
         true,
         corpus_threads(),
         steps,
@@ -189,7 +198,7 @@ fn replay_masks(found: &mut [(String, Vec<IdStream>, Vec<String>)], reads: &Hash
             masks.extend(mask_bytes(masked.mask, decoder.vocabulary().len()));
         },
         &|solver| progress.start(solver),
-        &|_, replay| replay.into_result(),
+        &|_, _, replay| replay.into_result(),
         &|solver| progress.settle(solver),
         step_cap,
     );

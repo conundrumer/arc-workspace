@@ -77,7 +77,7 @@ A `DET` reads a chosen relation only where the pick has one model, as 1a244afd's
 
 ## The output set
 
-A case's output on an input is a set of grids. The engine finds the grid columns of `&output` by testing every pair of one Position column and one Color column against the train pairs' candidates, model by model: the **grid columns** are the pair under which the output solves every train pair. One grid is read per model, from the rows at that model, with every other column of `&output` projected away, and equal grids are one. A grid is undefined where a cell has no color or two.
+A case's output on an input is a set of grids. The rows of the program's [`OUT` form](arclog.md#the-out-form) are the rows of the Position column and the Color column that it selects, so no column of any relation is searched for. One grid is read per model, from the rows at that model, and equal grids are one. A grid is undefined where a cell has no color or two.
 
 Whether a case solves a pair compares the set with the pair's accepted outputs: one grid for a plain pair, several for a pair with a `tiebreak` alt. A train pair stops enumeration at the first grid outside its accepted set or past its count. On a test input, the output is the set of distinct grids over the case's models, as on any input. A test pair is solved where that set holds at most 2 grids, one of them in the pair's candidate, as [solves](../handbook/principles.md#models-and-tasks), the handbook's fit, gives: ARC-AGI scores two attempts per test output. That limit is a term of the solves relation and not of the output, and not a claim of the solver, so the arclog file never states it.
 
@@ -99,4 +99,4 @@ Across the 17 solvers that use the two components and the 4 that use `TiebreakRe
 
 ## Implementation
 
-Souffle cannot search, but it can enumerate. A `Choose` component runs `UnitPropagation` first, which fixes what propagation fixes, and enumerates the residual as `TiebreakResolutions` enumerates assignments, filtered by `never`, under a cap that turns a residual too large into undefined. On every corpus input the residual is empty. The grid read, the dedup, the cull and the search for the grid columns are the runner's in any backend. A backend with search, an answer-set solver, runs the same semantics with no cap.
+Souffle cannot search, but it can enumerate. A `Choose` component runs `UnitPropagation` first, which fixes what propagation fixes, and enumerates the residual as `TiebreakResolutions` enumerates assignments, filtered by `never`, under a cap that turns a residual too large into undefined. On every corpus input the residual is empty. The grid read, the dedup and the cull are the runner's in any backend. A backend with search, an answer-set solver, runs the same semantics with no cap.

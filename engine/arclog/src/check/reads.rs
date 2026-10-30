@@ -135,7 +135,7 @@ fn side_is_final(prefix: &Prefix<'_>, form: &NodePath) -> bool {
                 return true;
             }
         }
-        Some(NodeRef::RigidDet(_)) => return true,
+        Some(NodeRef::RigidDet(_) | NodeRef::Out(_)) => return true,
         _ => within,
     };
     !prefix.is_open(&deciding)
@@ -236,7 +236,7 @@ pub(super) fn forms_within(form: &Form) -> Vec<(NodePath, NodeRef<'_>)> {
 
 /// Whether `node` is a form whose reads take its own side.
 fn is_form(node: NodeRef<'_>) -> bool {
-    matches!(node, NodeRef::Clause(_) | NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) | NodeRef::Demonstrated(_))
+    matches!(node, NodeRef::Clause(_) | NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) | NodeRef::Out(_) | NodeRef::Demonstrated(_))
 }
 
 /// The relations of `program` that have an Example column: `ex_input`,

@@ -16,6 +16,8 @@ const ARCLOG: &str = "\
     (RULE &extra (input *P *Col)))
   (ALT $Kept
     (RULE &extra (input *P *Col))))
+
+(OUT (&output ^P ^Col))
 ";
 
 const ARCDATA: &str = "\
@@ -46,7 +48,8 @@ const SEVERAL: &str = "\
 ;; pick
 
 (DET &c ColorDomain)
-(RULE &output (input *P *Col) (&c (:C *Col)))
+(RULE &output (input *P *Col) (&c (:C *Color)))
+(OUT (&output ^P ^Col))
 ";
 
 #[test]

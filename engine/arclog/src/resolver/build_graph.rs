@@ -210,20 +210,38 @@ impl<'a> Builder<'a> {
                 }
             }
             Form::Instance(instance) => self.declare_instance(instance.value(), path, scope),
+            Form::Out(out) => {
+                let node = self.node(DependencyKind::Out(path.clone()), scope, Some(&path));
+                self.form_node.insert(path.clone(), node);
+                self.relate(node, &path, None, form_columns::form_listing(NodeRef::Out(out.value())));
+            }
         }
     }
 
     /// Declares the nodes of an `INIT` form: one node for an instance
     /// whose inputs read its outputs, and otherwise a node per input it
-    /// writes and per output, each output reading every input.
+    /// writes and per output, each output reading every input. A form
+    /// whose name an earlier `INIT` form of the scope declared gives a
+    /// diagnostic and declares nothing.
     pub(super) fn declare_instance(&mut self, instance: &'a Instance, path: NodePath, scope: &NameScope) {
         let Some(component) = registry_columns::component(self.registry, &instance.component) else {
             let resolution = self.unresolved(&path, &instance.component.0);
             self.resolutions.insert(path, resolution);
             return;
         };
-        self.resolutions.insert(path.clone(), Resolution::Lib(instance.component.clone()));
         let name = &instance.name;
+        if self.instances.contains_key(&(scope.clone(), name.clone())) {
+            self.diagnostics.push(Diagnostic {
+                kind: DiagnosticKind::Check(crate::check::CheckId::Scope),
+                severity: Severity::Error,
+                message: format!("`{}` is declared by an earlier `INIT` form in this scope", crate::program::declared_spelled(&name.0)).into(),
+                location: Location::Path(path.clone()),
+                cases: Box::default(),
+            });
+            self.resolutions.insert(path, Resolution::Unresolved);
+            return;
+        }
+        self.resolutions.insert(path.clone(), Resolution::Lib(instance.component.clone()));
         let written: Vec<_> = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).collect();
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
@@ -258,6 +276,15 @@ impl<'a> Builder<'a> {
             let listing = form_columns::port_columns(output, &bindings, keyed);
             port_columns.insert(port.clone(), listing.columns());
             self.relate(*node, &path, Some(Arc::from([OutputStep::Port(port.clone())])), listing);
+        }
+        if component.reads_outputs() {
+            let node=inputs.first().map(|(_,node)|*node).or_else(||outputs.first().map(|(_,node)|*node)).expect("recursive instance node");
+            for input in &written {
+                if component.outputs.iter().any(|p|p.name==input.name) {continue;}
+                let port=&component.inputs.iter().find(|p|p.port.name==input.name).expect("checked input port").port;
+                let listing=form_columns::input_columns(port,&bindings,keyed,instance,input);
+                self.relate(node,&path,Some(Arc::from([OutputStep::Port(input.name.clone())])),listing);
+            }
         }
         let written: Vec<&PortName> = written.iter().map(|input| &input.name).collect();
         for port in component.relation_ports(&written) {
@@ -296,7 +323,7 @@ impl<'a> Builder<'a> {
             }
             Form::Instance(instance) => {
                 let instance = instance.value();
-                let Some(nodes) = self.instances.get(&(scope.clone(), instance.name.clone())) else { return };
+                let Some(nodes) = self.instances.get(&(scope.clone(), instance.name.clone())).filter(|nodes| nodes.form == path) else { return };
                 let every = nodes.every();
                 let reader = |input: &PortName| nodes.input(input).expect("a node of each input the form writes");
                 let mut readers: Vec<(NodeRef<'a>, NodePath, Vec<GraphNodeIndex>)> = Vec::new();
@@ -317,7 +344,7 @@ impl<'a> Builder<'a> {
                     self.read_below(node, at, scope, &readers, &path);
                 }
             }
-            Form::Choose(_) | Form::RigidDet(_) => {
+            Form::Choose(_) | Form::RigidDet(_) | Form::Out(_) => {
                 let node = self.form_node[&path];
                 self.read_below(NodeRef::from(form), path.clone(), scope, &[node], &path);
             }

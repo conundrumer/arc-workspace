@@ -29,7 +29,7 @@ fn second_form(program: &Node<Program>) -> ResolvedContent {
 fn a_shared_form_takes_the_content_of_the_names_it_reads_in_each_program() {
     let reads = "(RULE &reads (&read *Col))\n";
     let first = read(&format!("(RULE &read (input *P *Col))\n{reads}"));
-    let second_alone = read(&format!("(RULE &read (input *P *Col) (= *Col 0))\n{reads}"));
+    let second_alone = read(&format!("(RULE &read (input *P *Q) (= *Col 0))\n{reads}"));
     let shared = Node::new(Program { forms: Arc::from([second_alone.value().forms[0].clone(), first.value().forms[1].clone()]) });
     let in_first = second_form(&first);
     let in_shared = second_form(&shared);

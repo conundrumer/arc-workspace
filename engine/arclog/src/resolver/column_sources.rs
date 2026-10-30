@@ -6,7 +6,7 @@ use super::columns::{self, key_fields, Columns, Slot};
 use crate::program::path::{child_index, NodePath, NodeRef};
 use crate::program::{
     Choose, ChoosePart, ColumnName, Demonstrated, DemonstratedPart, Instance, InstanceInput, InstanceInputPart, InstancePart, KeyBody, KeyClause,
-    KeyClausePart, LabelId, Node, RigidDet, RigidDetPart, Site,
+    KeyClausePart, LabelId, Node, Out, RigidDet, RigidDetPart, Site,
 };
 use crate::registry::ColumnType;
 use crate::types::{each_site_label, use_label};
@@ -68,8 +68,9 @@ pub(super) fn site_sources(site: &Site, whole: bool, body: &NodePath) -> Vec<Sou
 
 /// The key clause of the form `form`, with the path below the form of
 /// the body whose `^` labels are its columns: the `key` of an `INIT`, a
-/// `DEMONSTRATED` or a `RIGID_DET` form, or the `for` of a `CHOOSE`
-/// form; none where the form has no key clause.
+/// `DEMONSTRATED` or a `RIGID_DET` form, the `for` of a `CHOOSE`
+/// form, or the atoms of an `OUT` form; none where the form has no key
+/// clause.
 pub(crate) fn key_clause(form: NodeRef<'_>) -> Option<(&KeyBody, NodePath)> {
     /// The body of `clause`, the child at `position` of the form, with its path.
     fn clause(clause: &Node<KeyClause>, position: u32) -> (&KeyBody, NodePath) {
@@ -81,6 +82,7 @@ pub(crate) fn key_clause(form: NodeRef<'_>) -> Option<(&KeyBody, NodePath)> {
         NodeRef::Demonstrated(demonstrated @ Demonstrated { key: Some(key), .. }) => Some(clause(key, demonstrated.position(DemonstratedPart::Key))),
         NodeRef::RigidDet(rigid @ RigidDet { key: Some(key), .. }) => Some((key, at.child(rigid.position(RigidDetPart::Key)))),
         NodeRef::Choose(choose @ Choose { rows: Some(rows), .. }) => Some((rows, at.child(choose.position(ChoosePart::For)))),
+        NodeRef::Out(out) => Some((&out.key, at.child(Out::BODY))),
         _ => None,
     }
 }

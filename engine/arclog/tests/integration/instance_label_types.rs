@@ -37,7 +37,7 @@ fn scope_types(arclog: &str, keep: &dyn Fn(&Form) -> bool) -> Vec<Vec<ValueType>
 }
 
 const FIELD_ARCLOG: &str = "
-(RULE &halt (dir_elem (:D *Delta)) (dir_elem (:D *Delta2)))
+(RULE &halt (input (:P *Delta)) (input (:P *Delta2)))
 
 (INIT &journey Propagation
   (source ((:n N))
@@ -49,7 +49,7 @@ const FIELD_ARCLOG: &str = "
 #[test]
 fn a_zero_made_label_of_a_first_projection_takes_the_type_of_the_later_sites() {
     let types = scope_types(FIELD_ARCLOG, &|form| matches!(form, Form::Instance(_)));
-    assert_eq!(types, vec![vec![ValueType::Dir; 3]]);
+    assert_eq!(types, vec![vec![ValueType::Position; 3]]);
 }
 
 const KEY_ARCLOG: &str = "
@@ -94,5 +94,5 @@ const PORT_ARCLOG: &str = "
 #[test]
 fn a_read_of_an_input_port_with_no_clause_takes_the_port_types() {
     let types = scope_types(PORT_ARCLOG, &|form| matches!(form, Form::Clause(clause) if clause.value().columns.len() == 1));
-    assert_eq!(types.last(), Some(&vec![ValueType::Box]));
+    assert_eq!(types.last(), Some(&vec![ValueType::Offset]));
 }

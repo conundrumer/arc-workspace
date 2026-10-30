@@ -4,4 +4,4 @@ description: Make this session the load watch session. It keeps the load monitor
 ---
 
 # Load watch
-- This session is now the load watch session: act by the line of your context on `/load-watch`.
+- This session is now the load watch session: read [Load watch](prompts/agents/notes/load-watch.md) whole, and act by it from then on.

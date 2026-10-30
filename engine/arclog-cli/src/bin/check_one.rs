@@ -74,7 +74,7 @@ fn check(corpus: &Path, task_id: &str) -> Vec<String> {
     }
     let mut cache = CheckCache::default();
     for (case, program) in programs {
-        let files = CaseFiles { solver: &solver, case: &case };
+        let files = CaseFiles { solver: &solver, case: &case, prefix: false };
         if let Err(diagnostics) = check_program_of_files(program, &clauses, registry, &mut cache, Some(&files)) {
             lines.extend(diagnostics.iter().map(line));
         }
