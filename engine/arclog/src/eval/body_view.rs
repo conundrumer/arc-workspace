@@ -150,7 +150,7 @@ impl BodyView {
                     // was in another branch. The checked scalar sites already
                     // identify those labels; freshness is not their identity.
                     Conjunct::Atom(_) | Conjunct::Constraint(_)=>
-                        crate::read::columns::site_label_uses(conjunct,&mut |use_| {
+                        crate::safety::site_label_uses(conjunct,&mut |use_| {
                             if let Some(label)=crate::types::use_label(use_) {add(label);}
                         }),
                     // Keep the language's exported interface for an intact OR
