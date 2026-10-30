@@ -119,10 +119,19 @@ pub fn relation_tables_checked(checked:&Arc<CheckedProgram>,origin:&Arc<CheckedP
 /// A common prefix owns one receipt for relation tables and BODY extents.
 pub(crate) fn relation_tables_with_receipt(checked:&Arc<CheckedProgram>,decoder:&Decoder<'_>,receipt:&Arc<HeldAssignments>,
     limits:&arclog::eval::Limits,work:&TableWork,budget:&mut Budget<'_>)->RelationTables {
+    relation_tables_with_receipt_where(checked,decoder,receipt,limits,work,budget,&mut |_,_|true)
+}
+
+/// Prefix collection uses the same materializer with a native source-boundary
+/// inventory predicate. Whole-program collectors admit the entire inventory.
+pub(crate) fn relation_tables_with_receipt_where(checked:&Arc<CheckedProgram>,decoder:&Decoder<'_>,receipt:&Arc<HeldAssignments>,
+    limits:&arclog::eval::Limits,work:&TableWork,budget:&mut Budget<'_>,
+    include:&mut dyn FnMut(&NodePath,&ProgramRelation)->bool)->RelationTables {
     let mut tables=Vec::new();
     let collected=(|| ->Result<(),End> {
     let written=arclog::stream::written_stream(checked,decoder.vocabulary()).map_err(|d|End::Fault(fault(d.message,&NodePath::default())))?;
     for form in &written.forms {for slot in materialized_slots(checked.program.program.value(),&written,form) {
+        if !include(&form.path,&written.relations[slot]) {continue;}
         budget.charge_work(0).map_err(|bound|End::Stop(arclog::eval::Stop {bound,form:form.path.clone()}))?;
         let declared=&written.relations[slot];
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||End::Fault(fault("no native graph for continuation relation",&form.path)))?;

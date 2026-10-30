@@ -25,6 +25,7 @@ pub struct Universe {
     receipt: Arc<HeldAssignments>,
     pub report: Value,
     available: Option<component_tables::RelationTables>,
+    available_exclusions: Vec<Value>,
     _allocation: Arc<arclog::session::SessionAllocation>,
 }
 
@@ -100,7 +101,7 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
         "model_contract":"parents task-wide; models local to table/example; no ordinal or Ident cross-family alignment",
         "raw_reuse":{"status":"unproven","reason":"no stored snapshot authenticated; dependency membership or observed counts alone do not prove coverage","requires_fresh_row_evaluation":null}});
     let receipt=HeldAssignments::new(Arc::clone(&frontier),Arc::clone(&frontier),&parents).map_err(|f|f.message.to_string())?;
-    Ok(Universe {source:source.clone(),point:point.clone(),frontier,receipt,report,available:None,_allocation:allocation})
+    Ok(Universe {source:source.clone(),point:point.clone(),frontier,receipt,report,available:None,available_exclusions:Vec::new(),_allocation:allocation})
 }
 
 fn coverage(tables:&[(usize,Table)],parent_count:usize,train_count:usize)->Value {
@@ -132,6 +133,23 @@ fn coverage(tables:&[(usize,Table)],parent_count:usize,train_count:usize)->Value
     }).collect::<Vec<_>>())
 }
 
+/// An INIT still being written has no completed output definition. Its
+/// already written input ports remain eligible, unless they alias a recursive
+/// output. This source boundary applies to every component and input shape;
+/// type availability alone cannot establish that an output is already defined.
+fn available_before_point(checked:&CheckedProgram,point:&NodePath,form:&NodePath,relation:&ProgramRelation,registry:&Registry)->bool {
+    let Some(owner)=point.0.first() else {return false};
+    if form.0.first().is_some_and(|at|at.0<owner.0) {return true;}
+    if *form!=NodePath::top(owner.0) {return false;}
+    let Some(NodeRef::Instance(instance))=node_at(NodeRef::Program(checked.program.program.value()),form) else {return false};
+    let ProgramRelation::Output(output)=relation else {return false};
+    let [OutputStep::Port(port)]=&output.path[..] else {return false};
+    if output.of!=OutputOwner::Instance(instance.name.clone()) {return false;}
+    let Some(component)=component(registry,&instance.component) else {return false};
+    !component.outputs.iter().any(|output|output.name==*port)
+        && arclog::program::written_inputs(instance.key.as_ref(),&instance.inputs).any(|input|input.name==*port)
+}
+
 /// Shared native held materializer; the one universe receipt also owns all
 /// annotation lookups. A candidate's empty result never deletes a parent.
 pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,session:&TaskSession,
@@ -151,8 +169,17 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
     let cached=universe.available.is_some();
     if !cached {
         let work=decoder.table_work();let mut budget=Budget::new(&limits,session);
-        let tables=component_tables::relation_tables_with_receipt(&universe.frontier,&decoder,&universe.receipt,&limits,&work,&mut budget);
+        let mut excluded=Vec::new();
+        let tables=component_tables::relation_tables_with_receipt_where(&universe.frontier,&decoder,&universe.receipt,&limits,&work,&mut budget,
+            &mut |form,relation| {
+                let include=available_before_point(&universe.frontier,&universe.point,form,relation,decoder.registry());
+                if !include {excluded.push(json!({"form_path":arclog::mutation::path_json(form),
+                    "relation":arclog::study::render::program_relation(relation),
+                    "reason":"output of the open INIT is not defined before its remaining inputs and END"}));}
+                include
+            });
         universe.available=Some(tables);
+        universe.available_exclusions=excluded;
     }
     let available_seconds=available_start.elapsed().as_secs_f64();
     let available=universe.available.as_ref().unwrap();
@@ -162,6 +189,8 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
         return Ok(Acquisition {report,tables:Vec::new(),limits});
     }
     report["available_status"]=available.status();report["available_cached"]=json!(cached);
+    report["available_inventory"]=json!({"scope":"completed forms and written input ports of the open INIT; its outputs are not yet available",
+        "excluded":universe.available_exclusions});
     let source=candidate.map(|m|m.program()).unwrap_or(&universe.source);
     if candidate.is_some_and(|m|!Arc::ptr_eq(m.gold(),universe.source.checked())) {
         return Err("candidate belongs to another original gold handle".into());
