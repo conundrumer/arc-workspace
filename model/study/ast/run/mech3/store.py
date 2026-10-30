@@ -4,10 +4,10 @@ import gzip
 from pathlib import Path
 import sqlite3
 if __package__:
-    from .common import canonical,digest
+    from .common import canonical,digest,ONE_SHOT
     from . import raw_store
 else:
-    from common import canonical,digest
+    from common import canonical,digest,ONE_SHOT
     import raw_store
 
 
@@ -100,12 +100,12 @@ class Store:
     def close(self):self.db.close()
 
 
-def _load_legacy_step4(database,pair_id,*,source_sha256,base_result_sha256,task_sha256=None):
+def _load_legacy_step4(database,pair_id,*,source_sha256,base_result_sha256,task_sha256=None,reads=ONE_SHOT):
     """Read-only consumer: done valid Unknown is distinct from open/stale."""
     from mech.read_grades import file_hash
     db=None
     try:
-        db=sqlite3.connect(Path(database).resolve().as_uri()+'?mode=ro',uri=True)
+        db=reads.open(database)
         row=db.execute('SELECT result_sha256,record_json FROM records WHERE pair_id=?',(pair_id,)).fetchone()
         if not row:return dict(status='open',valid=False,reason='no step 4 record')
         value=json.loads(row[1])
@@ -123,9 +123,9 @@ def _load_legacy_step4(database,pair_id,*,source_sha256,base_result_sha256,task_
             reference=dict(database=str(Path(database).resolve()),table='records',pair_id=pair_id,result_sha256=row[0]))
     except Exception as error:return dict(status='open',valid=False,reason=str(error))
     finally:
-        if db is not None:db.close()
+        if db is not None:reads.done(db)
 
 
-def load_step4(database,pair_id,*,source_sha256,base_result_sha256,task_sha256=None):
+def load_step4(database,pair_id,*,source_sha256,base_result_sha256,task_sha256=None,reads=ONE_SHOT):
     return raw_store.load_step4(database,pair_id,source_sha256=source_sha256,
-        base_result_sha256=base_result_sha256,task_sha256=task_sha256,legacy_loader=_load_legacy_step4)
+        base_result_sha256=base_result_sha256,task_sha256=task_sha256,legacy_loader=_load_legacy_step4,reads=reads)

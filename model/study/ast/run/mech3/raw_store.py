@@ -4,9 +4,9 @@ from pathlib import Path
 import sqlite3
 
 if __package__:
-    from .common import canonical,digest
+    from .common import canonical,digest,ONE_SHOT
 else:
-    from common import canonical,digest
+    from common import canonical,digest,ONE_SHOT
 
 
 def initialize(db,manifest,config):
@@ -152,15 +152,15 @@ def load_normalized(db,row,database,task_sha256=None):
                        code_sha256=code,config_sha256=config),test_reference=test_ref)
 
 
-def load_step4(database,pair_id,*,source_sha256,base_result_sha256,legacy_loader,task_sha256=None):
+def load_step4(database,pair_id,*,source_sha256,base_result_sha256,legacy_loader,task_sha256=None,reads=ONE_SHOT):
     db=None
     try:
-        path=Path(database).resolve();db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True);db.execute('BEGIN')
+        path=Path(database).resolve();db=reads.open(path);db.execute('BEGIN')
         row=db.execute('SELECT pair_id,source_sha256,base_result_sha256,code_sha256,config_sha256,result_sha256,record_json FROM records WHERE pair_id=?',(pair_id,)).fetchone()
         if row is None:return dict(status='open',valid=False,reason='no reader fact')
         if row[1:3]!=(source_sha256,base_result_sha256):raise ValueError('reader source/base changed')
         if json.loads(row[6]).get('schema')=='mech3-reader-fact-v2':return load_normalized(db,row,path,task_sha256)
-        old=legacy_loader(database,pair_id,source_sha256=source_sha256,base_result_sha256=base_result_sha256,task_sha256=task_sha256)
+        old=legacy_loader(database,pair_id,source_sha256=source_sha256,base_result_sha256=base_result_sha256,task_sha256=task_sha256,reads=reads)
         if old.get('valid') is True:
             prior=old['record'];old=dict(old,facts=prior,record=raw_legacy(prior))
             if prior.get('program',{}).get('test_check') or type(prior.get('program',{}).get('fits_test')) is bool:
@@ -168,4 +168,4 @@ def load_step4(database,pair_id,*,source_sha256,base_result_sha256,legacy_loader
         return old
     except Exception as error:return dict(status='open',valid=False,reason=str(error))
     finally:
-        if db is not None:db.close()
+        if db is not None:reads.done(db)

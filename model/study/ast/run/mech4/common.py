@@ -14,7 +14,7 @@ import hashlib
 import json
 import sqlite3
 import zlib
-from run import canonical,digest,pair_key
+from run import canonical,digest,pair_key,ONE_SHOT
 
 
 def readonly(path):

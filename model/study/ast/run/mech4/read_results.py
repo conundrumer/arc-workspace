@@ -1,5 +1,5 @@
 """Read-only lib facts and read-time normalization, including legacy journals."""
-from .common import readonly,digest,decode_payload,resolve,pair_key
+from .common import readonly,digest,decode_payload,resolve,pair_key,ONE_SHOT
 from pathlib import Path
 import gzip
 import json
@@ -67,7 +67,7 @@ def _observation_valid(db,path,reference):
         hashlib.sha256(row[3]).hexdigest())
 
 
-def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_record=None):
+def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_record=None,reads=ONE_SHOT):
     """Join owned facts and derive checked clauses; never persist grades.
 
     Original producer/configuration/evidence hashes are retained across storage
@@ -76,7 +76,7 @@ def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_recor
     """
     db=None
     try:
-        path=Path(database).resolve();db=readonly(path);db.execute('BEGIN')
+        path=Path(database).resolve();db=reads.open(path);db.execute('BEGIN')
         key=digest(dict(pair=pair_id,target='G'))
         row=db.execute('SELECT code_sha256,config_sha256,result_sha256,payload FROM records WHERE kind=? AND key=?',
                        ('pair',key)).fetchone()
@@ -128,4 +128,4 @@ def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_recor
             mechanical_clauses=clauses,found_recovery=found,search_status=status,admission_authenticated=False)
     except Exception as error:return dict(status='open',valid=False,reason=str(error),error_type=type(error).__name__)
     finally:
-        if db is not None:db.close()
+        if db is not None:reads.done(db)

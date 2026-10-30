@@ -1,5 +1,24 @@
 """Read-time target evidence views over authoritative journal facts."""
+from collections import OrderedDict
+import copy
 from run import digest
+
+_GROUPS=OrderedDict()
+
+
+def decoded_groups(grouped,view):
+    """decode_grouped(view), where view is grouped with its own required and missing.
+
+    The decoded groups of one grouped table are kept (the table with them), as
+    every pair of its case decodes the same table.
+    """
+    from case_collector import decode_grouped
+    hit=_GROUPS.get(id(grouped))
+    if hit is None or hit[0] is not grouped:
+        hit=_GROUPS[id(grouped)]=grouped,decode_grouped(dict(grouped,required=[],missing=[]))['groups']
+        while len(_GROUPS)>128:_GROUPS.popitem(last=False)
+    _GROUPS.move_to_end(id(grouped))
+    return dict(decode_grouped(dict(view,groups=[])),groups=hit[1])
 
 
 def checked_clause(raw,base,ref,axis):
@@ -80,7 +99,6 @@ def pair_view(facts,base,resolve,*,source_groups=None):
     if legacy and facts.get('no_recovery_certificate'):view['no_recovery_certificate']=facts['no_recovery_certificate']
     if source_groups is not None:
         from .certificates import no_x_rows
-        from case_collector import decode_grouped
         targets=[]
         if not cases:cases=[resolve(r) for r in view['case_refs']]
         for link in refs:
@@ -96,7 +114,7 @@ def pair_view(facts,base,resolve,*,source_groups=None):
                     if expected is not None:
                         present={tuple(v['context']) for v in g['groups']}
                         g.update(required=expected,missing=[k for k in expected if tuple(k) not in present])
-                    targets.append((decode_grouped(g),[],target,item.get('receipt',{})))
+                    targets.append((decoded_groups(item['grouped'],g),[],target,copy.deepcopy(item.get('receipt',{}))))
         # Consumers with canonical X groups may derive the conservative empty
         # certificate without storing a duplicate of the source table.
         view['no_recovery_certificate']=no_x_rows(source_groups,targets,complete=view['complete'],

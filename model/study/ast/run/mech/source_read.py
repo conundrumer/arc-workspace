@@ -36,11 +36,13 @@ class SourceReader:
     def groups(self,base,record=None):
         record=self.record(base) if record is None else record
         if digest(record)!=base['source_sha256']:raise ValueError('original source input differs')
-        import sys
-        sys.path.insert(0,str(self.code_root/'judgetool'))
-        from evaluator import legacy_helpers
-        from tables import TargetStore,kept_groups
-        if self.store is None:self.store=TargetStore(legacy_helpers(),self.code_root)
+        if self.store is None:
+            import sys
+            sys.path.insert(0,str(self.code_root/'judgetool'))
+            from evaluator import legacy_helpers
+            from tables import TargetStore
+            self.store=TargetStore(legacy_helpers(),self.code_root)
+        from tables import kept_groups
         corpus=Path(base['source']['corpus']).resolve();task=base['task']
         key=(str(corpus),task)
         if key not in self.tasks:

@@ -60,6 +60,41 @@ def pair_key(rec):
         'edits': rec['identity']['edits']}
 
 
+class Reads:
+    """Read-only connections that one reader opens once and reuses for every call.
+
+    A loader given none uses ONE_SHOT: it opens its own connection and closes it.
+    """
+
+    def __init__(self, keep=True):
+        self.keep = keep
+        self.databases = {}
+
+    def open(self, path, **options):
+        path = Path(path).resolve()
+        db = self.databases.get(path)
+        if db is None:
+            db = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, **options)
+            if self.keep:
+                db.execute('PRAGMA cache_size=-32768')
+                self.databases[path] = db
+        return db
+
+    def done(self, db):
+        if not self.keep:
+            db.close()
+        elif db.in_transaction:
+            db.rollback()
+
+    def close(self):
+        for db in self.databases.values():
+            db.close()
+        self.databases.clear()
+
+
+ONE_SHOT = Reads(keep=False)
+
+
 def connect(path):
     db = sqlite3.connect(path, timeout=120)
     db.execute('PRAGMA busy_timeout=120000')
