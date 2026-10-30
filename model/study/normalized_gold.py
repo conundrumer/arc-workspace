@@ -4,6 +4,8 @@ The current whole-gold-kept row policy is explicit. No prefix-row safety or
 normalization row-equivalence is asserted. Original X/ValidMutant stay untouched.
 """
 from copy import deepcopy
+import ast
+from collections import Counter, OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
 import gzip
@@ -20,10 +22,20 @@ POLICY='normalized-gold-view-v1'
 ROW_POLICY='whole-gold-kept-v1'
 SUPERSEDED_MANIFEST='a2b1f8abebe27e207714d7f917061ee74dce24f9fba9989a94e69648da9ff03f'
 _CACHE={}
+_CASES=OrderedDict()
+_PERFORMANCE=Counter()
+_PRIOR_RECEIPTS={}
+_ACQUISITION_PREDECESSORS=(
+    '3ac800acaa7f0bdb47046e5a369a82a732a9ccee0bb262eb1276745e64651a03',
+    'ef420d27f50c70fa252dd797bdda26fce1ea7cd77cccf057df21d93912c4cbe3')
 _MANIFESTS={}
 _SOURCES={}
 _BUILDS={}
 _DECODER_BINDINGS={}
+
+
+def publication_performance():
+    return dict(_PERFORMANCE)
 
 
 def _sha(value):
@@ -78,10 +90,17 @@ def _manifest(ref):
         if any(manifest['artifacts'].get(str(q))!=h for q,h in
                 ((evidence_path,evidence_ref['sha256']),(programs_path,programs_ref['sha256']))):
             raise ValueError('enabled-decoder files are not bound in manifest artifacts')
+        # These authenticated frozen artifacts are referenced more than once.
+        # Share their read-only decoded objects instead of decoding duplicates.
+        loaded={evidence_path:evidence,programs_path:decoder_rows}
         for name,wanted in manifest['artifacts'].items():
             file=path.parent/name
             if _file(file)['sha256']!=wanted:raise ValueError('normalization manifest artifact differs: '+name)
-            files[name]=_read(file) if file.suffix=='.json' else [json.loads(line) for line in file.read_text().splitlines() if line]
+            resolved=file.resolve()
+            if resolved not in loaded:
+                _PERFORMANCE['frozen_artifact_decodes']+=1
+                loaded[resolved]=_read(file) if file.suffix=='.json' else [json.loads(line) for line in file.read_text().splitlines() if line]
+            files[name]=loaded[resolved]
         for name in ('programs','points','pairs','overlays'):
             selected=Path(manifest[name+'_path']).resolve() if name+'_path' in manifest else (path.parent/(name+('.json' if name=='programs' else '.jsonl'))).resolve()
             keys=[k for k in manifest['artifacts'] if (path.parent/k).resolve()==selected]
@@ -91,6 +110,11 @@ def _manifest(ref):
             rows=decoder_rows,source_receipt=source_receipt,source_receipt_file=_file(path.parent/'source-receipt.json'))
         _MANIFESTS[key]=(manifest,files)
     return _MANIFESTS[key]
+
+
+def publication_operations(manifest_ref):
+    """Read-only authenticated operations shared with the process driver."""
+    return _manifest(manifest_ref)[1]['points.jsonl']
 
 
 def _decoder_stream_binding(engine, settings, program, actual_stream, observed, *, runtime_sha256):
@@ -244,7 +268,56 @@ def _normalized_export(ev,view,original_export):
         None if naming is None else json.dumps(naming),source_program=view.program))
 
 
+def _prior_receipt(ev,provider_sha):
+    """Reproduce a compatible predecessor's exact existing code-closure hash.
+
+    Keep the canonical evaluator's dependency list as the sole list. Verify
+    the live closure before substituting only this provider's known previous
+    bytes; every other setting/code digest must still match a saved cache key.
+    """
+    key=(_sha(ev.receipt),provider_sha)
+    if key in _PRIOR_RECEIPTS:return _PRIOR_RECEIPTS[key]
+    import evaluator
+    source=Path(evaluator.__file__).resolve()
+    tree=ast.parse(source.read_text(),str(source))
+    init=next(n for c in tree.body if isinstance(c,ast.ClassDef) and c.name=='ReplayEvaluator'
+        for n in c.body if isinstance(n,ast.FunctionDef) and n.name=='__init__')
+    receipt=next(n.value for n in ast.walk(init) if isinstance(n,ast.Assign)
+        and any(isinstance(t,ast.Attribute) and isinstance(t.value,ast.Name)
+                and t.value.id=='self' and t.attr=='receipt' for t in n.targets))
+    expression=next(k.value for k in receipt.keywords if k.arg=='implementation_sha256')
+    names=ast.literal_eval(expression.args[0].generators[0].iter)
+    hashes={name:_file(source.parent/name)['sha256'] for name in names}
+    if _sha(hashes)!=ev.receipt['implementation_sha256']:
+        raise ValueError('live evaluator implementation closure differs from receipt')
+    hashes['../normalized_gold.py']=provider_sha
+    prior=dict(ev.receipt,implementation_sha256=_sha(hashes))
+    _PRIOR_RECEIPTS[key]=prior
+    if len(_PRIOR_RECEIPTS)>16:_PRIOR_RECEIPTS.clear()
+    return prior
+
+
 def _case(ev,files,task,case,cache):
+    """Reuse immutable handles/exports/decoded packets, not just gzip bytes.
+
+    Retain both identity owners so Python id reuse cannot alias another
+    evaluator or manifest. Bound the cache to four cases in one task; callers
+    format/copy these packets without mutating their acquisition evidence.
+    """
+    key=(id(ev),id(files),task,case,str(Path(cache).resolve()))
+    if key in _CASES:
+        _PERFORMANCE['case_bundle_hits']+=1
+        _CASES.move_to_end(key)
+        return _CASES[key][2]
+    if _CASES and next(iter(_CASES))[2]!=task:_CASES.clear()
+    _PERFORMANCE['case_bundle_misses']+=1
+    result=_acquire_case(ev,files,task,case,cache)
+    _CASES[key]=(ev,files,result)
+    while len(_CASES)>4:_CASES.popitem(last=False)
+    return result
+
+
+def _acquire_case(ev,files,task,case,cache):
     """One normalized case acquisition, shared across affected point artifacts."""
     from evaluator import canonical
     from evaluator_train import acquire_train_table,select_train_full_rows,_input_train
@@ -294,13 +367,15 @@ def _case(ev,files,task,case,cache):
     folder=Path(cache)/'normalized-gold';folder.mkdir(parents=True,exist_ok=True)
     saved=folder/(digest+'.json.gz');saved_key=key
     if not saved.exists():
-        # 597e5a8a has identical case acquisition. This fix only adapts the
-        # later cached BODY projection: reuse its authenticated case values,
-        # retaining the actual old key/provenance rather than relabeling it.
-        prior_key=deepcopy(key)
-        prior_key['implementation']['normalized_gold.py']='ef420d27f50c70fa252dd797bdda26fce1ea7cd77cccf057df21d93912c4cbe3'
-        prior=folder/(_sha(prior_key)+'.json.gz')
-        if prior.exists():saved=prior;saved_key=prior_key
+        # Only formatting/cache-reuse changed in these exact predecessors.
+        # Reuse their actual acquisition keys/provenance without relabeling.
+        for prior_sha in _ACQUISITION_PREDECESSORS:
+            prior_key=deepcopy(key)
+            prior_key['implementation']['normalized_gold.py']=prior_sha
+            prior_key['settings']=_prior_receipt(ev,prior_sha)
+            prior=folder/(_sha(prior_key)+'.json.gz')
+            if prior.exists():
+                saved=prior;saved_key=prior_key;break
     if saved.exists():
         with gzip.open(saved,'rt') as stream:bundle=json.load(stream)
         if bundle.get('key')!=saved_key:raise ValueError('normalized acquisition cache identity differs')
@@ -389,10 +464,16 @@ def _body(ev,bundle,body_path,full_det,cache):
         task_input=_file(Path(ev.cfg['tasks'])/(record['task']+'.json')),runtime_settings=ev.receipt,
         transport='full-physical-body-shared-layouts-v2',enabled_decoder_evidence=bundle['key']['enabled_decoder_evidence'])
     saved=Path(cache)/'normalized-gold/bodies'/(_sha(cache_key)+'.json.gz')
+    saved_key=cache_key
+    if not saved.exists():
+        for prior_sha in _ACQUISITION_PREDECESSORS:
+            prior_key=dict(cache_key,runtime_settings=_prior_receipt(ev,prior_sha))
+            prior=Path(cache)/'normalized-gold/bodies'/(_sha(prior_key)+'.json.gz')
+            if prior.exists():saved=prior;saved_key=prior_key;break
     if saved.exists():
         with gzip.open(saved,'rt') as stream:stored=json.load(stream)
         claimed=stored.pop('content_sha256',None)
-        if stored.get('key')!=cache_key or claimed!=_json_digest(stored):
+        if stored.get('key')!=saved_key or claimed!=_json_digest(stored):
             raise ValueError('normalized BODY cache key/content differs')
         return _body_layout(ev,record,program,stored,full_det)
     task=_read(Path(ev.cfg['tasks'])/(record['task']+'.json'));ntrain=len(task['train'])
