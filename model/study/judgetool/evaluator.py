@@ -488,12 +488,14 @@ class ReplayEvaluator:
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
 
-    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None,assignment_mode='kept',artifact_mode='entries'):
+    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None,assignment_mode='kept',artifact_mode='entries',checked_program=None):
         """Canonical low-level API for tool and n-mech, no copied evaluator.
 
         Caller supplies the whole generated program including OUT and the
         inserted table's form index. Returns all matched groups; stores ALL
         returned tables/assignments internally. No policy/target claim implied.
+        checked_program may reuse an exact native handle from this same task;
+        its serialized program must match program exactly before execution.
         """
         if artifact_mode not in ('entries','metadata'):
             raise ValueError('artifact_mode must be entries or metadata')
@@ -520,7 +522,12 @@ class ReplayEvaluator:
         if artifact_mode=='metadata':result['artifact_mode']='metadata'
         if retain_forms is not None:result['retain_forms']=retain_forms
         try:
-            checked = self.arclog.StudyProgram.from_sexp(program, self.settings)
+            if checked_program is None:
+                checked = self.arclog.StudyProgram.from_sexp(program, self.settings)
+            else:
+                if checked_program.sexp()!=program:
+                    raise ValueError('reused native program differs from exact replay text')
+                checked = checked_program
         except Exception as error:
             result.update(engine='refused', reason=f'{type(error).__name__}: {error}')
         else:

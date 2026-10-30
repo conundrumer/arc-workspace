@@ -142,7 +142,7 @@ def _assignment_tests(ev, record, program, native_ev, report, task, folder, oper
         train_fit_choices_sha256=sha(choices),test_selects_assignments=False,axes=axis_receipt)
 
 
-def _relation_snapshot(ev,record,text,side,base,operations,folder):
+def _relation_snapshot(ev,record,text,side,base,operations,folder,*,checked_program=None):
     # Native program loader authenticates original source names and the exact
     # stored mutation identity. It supplies names only; no stored cells read.
     producer=ev._derived_fit_setup['producer']
@@ -155,7 +155,8 @@ def _relation_snapshot(ev,record,text,side,base,operations,folder):
     replay=_operation(ev,operations,side+'.relations.Search',folder/(side+'-relations.json'),
         lambda:ev.replay_program(record,text,int(record['point'][0]),
             candidate=dict(kind='derived-later-relations',side=side),retain_all=True,
-            full_rows=True,assignment_mode='derived',artifact_mode='metadata'))
+            full_rows=True,assignment_mode='derived',artifact_mode='metadata',
+            checked_program=checked_program))
     _write(folder/(side+'-relations.json'),replay)
     if replay['engine']!='ran':raise Incomplete(side+' relations: '+replay.get('reason','incomplete'))
     native=ev.captures[-1]['native']
@@ -212,7 +213,7 @@ def _relation_value(ev,record,snapshot,definition,side,metrics):
         artifact=snapshot['artifact'],source_export=snapshot['source_export'],native_selector=selector)
 
 
-def _later(ev,record,task,base,operations,folder,key,metrics):
+def _later(ev,record,task,base,operations,folder,key,metrics,mutant_program):
     cached=getattr(ev,'_derived_fit_gold',None)
     if cached is None or cached[0]!=key:
         try:gold=_relation_snapshot(ev,record,record['gold_sexp'],'gold',base,operations,folder)
@@ -222,7 +223,10 @@ def _later(ev,record,task,base,operations,folder,key,metrics):
     else:
         if cached[2] is not None:raise Incomplete('cached gold relation evidence unavailable: '+cached[2])
         gold=cached[1]
-    mutant=_relation_snapshot(ev,record,record['mutant_sexp'],'mutant',base,operations,folder)
+    # Native PairCache is keyed by checked-program handle. Reuse the handle
+    # whose TRAIN walk just ran, so activate() does not clear those results.
+    mutant=_relation_snapshot(ev,record,record['mutant_sexp'],'mutant',base,operations,folder,
+        checked_program=mutant_program)
     gold_defs=_later_definitions(gold,int(record['point'][0]))
     mutant_defs=_later_definitions(mutant,int(record['point'][0]))
     if set(gold_defs)!=set(mutant_defs):raise Incomplete('gold/mutant later declaration inventory differs')
@@ -329,7 +333,7 @@ def check(ev,record,*,native_base):
             metrics=dict(relations_considered=0,**{side+suffix:0 for side in ('gold','mutant') for suffix in
                 ('_cache_hits','_decoded_tables','_decoded_entries','_decode_seconds')})
             result['receipt']['diagnostic_work']=metrics
-            try:result['first_later_difference']=_later(ev,own,task,base,operations,folder,setup['gold_key'],metrics)
+            try:result['first_later_difference']=_later(ev,own,task,base,operations,folder,setup['gold_key'],metrics,program)
             except (ValueError,KeyError,IndexError,TypeError) as error:result['receipt']['diagnostic_unavailable']=str(error)
             phases['later_diagnostics']=time.monotonic()-phase
         if result['fits_train'] is False:
