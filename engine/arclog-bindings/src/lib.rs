@@ -35,6 +35,7 @@ pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
 pub use study::PyStudyProgram;
+pub use errors::RecordedIdentityError;
 pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;

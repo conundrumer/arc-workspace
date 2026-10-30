@@ -29,6 +29,27 @@ pub struct Universe {
     _allocation: Arc<arclog::session::SessionAllocation>,
 }
 
+impl Universe {
+    /// Rehydrate against this receipt's source/point and prior held schema.
+    /// The current DET and later declarations are not carried parameters.
+    pub fn rehydrate_recorded_identity(&self,identity:&Value,stored:&StudyProgram,registry:&Registry,
+        settings:&DecodeSettings)->Result<(ValidMutant,Value),arclog::mutation::RecordedIdentityFailure> {
+        if self.report["status"]!="complete" || self.report["coverage"]["enumeration_complete"]!=true
+            || self.report["coverage"]["assignment_values_complete"]!=true {
+            return Err(arclog::mutation::RecordedIdentityFailure{stage:"prefix_scope",
+                message:"recorded prefix admission requires a complete carried universe".into()});
+        }
+        let (valid,mut certificate)=self.source.rehydrate_recorded_prefix_identity(identity,stored,registry,settings,
+            &self.frontier,&self.point)?;
+        certificate["universe_ref"]=self.report["universe_ref"].clone();
+        certificate["held_scope"]["universe_ref"]=self.report["universe_ref"].clone();
+        certificate["held_scope"]["parameters"]=self.report["parameters"].clone();
+        certificate["held_scope"]["frontier"]=self.report["frontier"].clone();
+        certificate["held_scope"]["coverage"]=self.report["coverage"].clone();
+        Ok((valid,certificate))
+    }
+}
+
 pub struct Acquisition {
     pub report: Value,
     pub tables: Vec<(usize,Table)>,

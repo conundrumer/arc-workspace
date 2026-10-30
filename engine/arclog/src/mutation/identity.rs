@@ -228,11 +228,11 @@ impl StudyProgram {
         registry: &Registry,
         settings: &DecodeSettings,
     ) -> Result<ValidMutant, String> {
-        self.admit_identity_at_source(identity,registry,settings,true)
+        self.admit_identity_at_source(identity,registry,settings,true,None)
     }
 
     fn admit_identity_at_source(&self,identity:&Value,registry:&Registry,settings:&DecodeSettings,
-        generation_membership:bool)->Result<ValidMutant,String> {
+        generation_membership:bool,held_prefix:Option<(&CheckedProgram,&NodePath)>)->Result<ValidMutant,String> {
         let point = self
             .mutation_points()
             .into_iter()
@@ -320,7 +320,15 @@ impl StudyProgram {
         let certified =
             StudyProgram::from_program(ast, edit::layout(self.layout(), &edits), registry)?
                 .preserve_gold_names(self, registry);
-        self.checked().check_held_det_interfaces(certified.checked()).map_err(|e| e.to_string())?;
+        if let Some((frontier,point))=held_prefix {
+            if crate::study::features::frontier(&certified,point)?!=frontier.program.program {
+                return Err("identity: candidate changes the carried prefix frontier".into());
+            }
+            let query=crate::study::features::checked_universe_prefix(&certified,point,registry)?;
+            frontier.check_held_det_interfaces(&query).map_err(|e|e.to_string())?;
+        } else {
+            self.checked().check_held_det_interfaces(certified.checked()).map_err(|e| e.to_string())?;
+        }
         certified.decode_stream(registry, settings)?;
         let mut names_cache = CheckCache::over(self.mutation_check_base(registry)?);
         certified.check_preserved_name_binding(registry, settings, &mut names_cache)?;
@@ -339,8 +347,31 @@ impl StudyProgram {
 
     pub fn rehydrate_recorded_identity(&self,identity:&Value,stored:&StudyProgram,
         registry:&Registry,settings:&DecodeSettings)->Result<(ValidMutant,Value),RecordedIdentityFailure> {
+        self.rehydrate_recorded_identity_in(identity,stored,registry,settings,None)
+    }
+
+    /// Recorded admission for the actual carried prior-DET frontier. The
+    /// original source and candidate still pass the ordinary whole checker;
+    /// only the held-interface scope changes. No domain or task is evaluated.
+    pub fn rehydrate_recorded_prefix_identity(&self,identity:&Value,stored:&StudyProgram,
+        registry:&Registry,settings:&DecodeSettings,frontier:&CheckedProgram,point:&NodePath)
+        ->Result<(ValidMutant,Value),RecordedIdentityFailure> {
+        let failure=|message:String|RecordedIdentityFailure{stage:"prefix_scope",message};
+        if identity["body"]!=path_json(point) {
+            return Err(failure("recorded identity belongs to another prefix point".into()));
+        }
+        let original=crate::study::features::frontier(self,point).map_err(failure)?;
+        if original!=frontier.program.program {
+            return Err(failure("held prefix is not the original source frontier".into()));
+        }
+        self.rehydrate_recorded_identity_in(identity,stored,registry,settings,Some((frontier,point)))
+    }
+
+    fn rehydrate_recorded_identity_in(&self,identity:&Value,stored:&StudyProgram,
+        registry:&Registry,settings:&DecodeSettings,held_prefix:Option<(&CheckedProgram,&NodePath)>)
+        ->Result<(ValidMutant,Value),RecordedIdentityFailure> {
         let attempt=|gold:&StudyProgram| -> Result<(ValidMutant,Value),RecordedIdentityFailure> {
-            let valid=gold.admit_identity_at_source(identity,registry,settings,false)
+            let valid=gold.admit_identity_at_source(identity,registry,settings,false,held_prefix)
                 .map_err(|message|RecordedIdentityFailure{stage:"identity_admission",message})?;
             let audit=valid.audit().map_err(|message|RecordedIdentityFailure{stage:"identity_admission",message})?;
             let stream=valid.program().representation_certificate(stored,registry,settings)
@@ -348,7 +379,7 @@ impl StudyProgram {
             if stream["status"]!="complete" {
                 return Err(RecordedIdentityFailure{stage:"stored_representation",message:stream.to_string()})
             }
-            let certificate=json!({"schema":"arclog-recorded-identity-certificate-v1","status":"complete",
+            let mut certificate=json!({"schema":if held_prefix.is_some(){"arclog-prefix-recorded-identity-certificate-v1"}else{"arclog-recorded-identity-certificate-v1"},"status":"complete",
                 "identity":valid.identity(),"gold_program_sexp":self.sexp(registry),
                 "current_program_sexp":valid.program().sexp(registry),"stored_program_sexp":stored.sexp(registry),
                 "generation_membership_checked":false,"admission_checks":{
@@ -356,10 +387,16 @@ impl StudyProgram {
                     "interfaces":true,"makers":true,"names":true,"whole_program_check":true,
                     "held_det_interfaces":true,"vocabulary":true,"unchanged_outside_edits":true,"stored_representation":true},
                 "audit":audit,"stream_path_certificate":stream});
+            if let Some((_,point))=held_prefix {
+                certificate["whole_held_admission"]=false.into();
+                certificate["held_scope"]=json!({"kind":"prefix_carried","body_path":path_json(point)});
+            }
             Ok((valid,certificate))
         };
         let original=attempt(self);
-        if original.is_ok() || self.layout().is_none() {return original}
+        // A prefix receipt belongs to this exact source handle. Decoding into
+        // another gold owner cannot silently move its existing assignments.
+        if original.is_ok() || self.layout().is_none() || held_prefix.is_some() {return original}
         let decoded=self.decode_source(registry,settings)
             .map_err(|message|RecordedIdentityFailure{stage:"identity_admission",message})?;
         attempt(&decoded)

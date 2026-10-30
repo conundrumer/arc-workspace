@@ -155,6 +155,31 @@ impl PyStudyTaskEvaluator {
             session:std::sync::Arc::clone(&self.session),ident_namespace:self.ident_namespace.clone()}))
     }
 
+    /// Recorded edit admission under this opaque universe's carried prior DETs.
+    /// No new domain walk, table acquisition or OUT/FITS search is performed.
+    fn rehydrate_prefix_identity(&self,py:Python<'_>,universe:&PyStudyPrefixUniverse,identity_json:&str,
+        stored_program:&PyStudyProgram)->PyResult<(PyValidMutant,String)> {
+        if !std::sync::Arc::ptr_eq(&self.session,&universe.session) || self.ident_namespace!=universe.ident_namespace {
+            return Err(arclog_bindings::RecordedIdentityError::new_err(("prefix_scope","prefix universe belongs to another task session")));
+        }
+        if stored_program.settings!=self.settings {
+            return Err(arclog_bindings::RecordedIdentityError::new_err(("settings","prefix evaluator and stored program settings differ")));
+        }
+        let identity=arclog::study::render::parse_json(identity_json)
+            .map_err(|e|arclog_bindings::RecordedIdentityError::new_err(("identity_admission",e)))?;
+        let (inner,mut certificate)=py.detach(|| {
+            let guard=universe.inner.lock().map_err(|_|arclog::mutation::RecordedIdentityFailure{
+                stage:"prefix_scope",message:"prefix receipt was poisoned".into()})?;
+            let inner=guard.as_ref().ok_or_else(||arclog::mutation::RecordedIdentityFailure{
+                stage:"prefix_scope",message:"prefix receipt is unavailable or closed".into()})?;
+            inner.rehydrate_recorded_identity(&identity,&stored_program.program,Registry::get(),&self.settings)
+        }).map_err(|error|arclog_bindings::RecordedIdentityError::new_err((error.stage,error.message)))?;
+        certificate["ident_namespace"]=self.ident_namespace.clone().into();
+        certificate["task"]=self.task_name.clone().into();
+        certificate["settings"]=format!("{:?}",self.settings).into();
+        Ok((PyValidMutant{inner,settings:self.settings},certificate.to_string()))
+    }
+
     /// Materialize canonical full native rows against this exact parent receipt.
     #[pyo3(signature=(universe,*,mutant=None,include_available=true))]
     fn prefix_tables(&self,py:Python<'_>,universe:&PyStudyPrefixUniverse,mutant:Option<&PyValidMutant>,include_available:bool)
