@@ -36,9 +36,13 @@ def repository_module(name, path):
         if Path(existing.__file__).resolve()!=path:
             raise RuntimeError(f'{name} already loaded from retired/foreign source: {existing.__file__}')
         return existing
-    # Keep retired study directories out of all transitive import lookups.
+    # Only these retired source roots can shadow the repository modules.
+    # Runtime virtualenv site-packages may also live under DATA_ROOT.
+    retired = {DATA_ROOT.resolve(), (DATA_ROOT/'ast/run').resolve(),
+               (DATA_ROOT/'ast/run/mech').resolve(),
+               (DATA_ROOT/'ast/run/mech2').resolve()}
     sys.path[:]=[str(CODE_ROOT),str(RUN/'mech'),str(RUN),str(REPO_ROOT/'model')]+[
-        p for p in sys.path if not Path(p or '.').resolve().is_relative_to(DATA_ROOT)]
+        p for p in sys.path if Path(p or '.').resolve() not in retired]
     spec=importlib.util.spec_from_file_location(name,path)
     module=importlib.util.module_from_spec(spec)
     sys.modules[name]=module
