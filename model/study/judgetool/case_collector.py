@@ -337,16 +337,18 @@ def _project_body(ev,bundle,record,adapter):
     return grouped,binding['projected_schema'],ref,receipt
 
 
-def select_pair(casebundle,record,adapter,*,ev):
+def select_pair(casebundle,record,adapter,*,ev,point_only=False):
     """No replay: select point G + later same-case/all-other-case actual tables.
 
     casebundle is one bundle or a sequence of case bundles. ev supplies ONLY
     the existing lossless projector's namespace; no engine method is called.
     Returns grouped Python sets for canonical checker/comparator consumers.
-    JSON transport remains in the unscoped bundles.
+    JSON transport remains in the unscoped bundles. point_only leaves table
+    values in that transport when the caller consumes only the projected G.
     """
     bundles=[casebundle] if isinstance(casebundle,dict) else list(casebundle)
-    point=None;targets=[];available=[];gaps=[];receipts=[];policy=_policy()
+    point=None;targets=[];available=[];gaps=[];receipts=[]
+    policy=None if point_only else _policy()
     own=[b for b in bundles if b['case']==record['case'] and b['task']==record['task']]
     if len(own)!=1:raise Incomplete('selection requires exactly one own-case bundle')
     if own[0]['program_sha256']!=sha(record['gold_sexp']) or own[0]['kept_context_sha256']!=sha(record['evaluation']['kept_assignments']):
@@ -360,6 +362,7 @@ def select_pair(casebundle,record,adapter,*,ev):
         # Unsupported unrelated BODY observers do not invalidate actual table
         # values. Missing point projection is separately required above.
         gaps.extend(g for g in bundle['gaps'] if g.get('kind')=='replay')
+        if point_only:continue
         for item in bundle['tables']:
             grouped=decode_grouped(item['grouped']);fields=deepcopy(item['fields'])
             ref=dict(target_id=bundle['case']+': '+item['source_name'],case=bundle['case'],
@@ -383,9 +386,15 @@ def select_pair(casebundle,record,adapter,*,ev):
     expected={c['name'] for c in adapter.get('all_case_targets',{}).get('cases',[])}
     missing_cases=expected-{b['case'] for b in bundles}
     gaps.extend(dict(case=c,kind='case',reason='case bundle not supplied') for c in sorted(missing_cases))
-    return dict(schema='judge-pair-selection-v1',point=point,targets=targets,available=available,gaps=gaps,
+    selection=dict(schema='judge-pair-selection-v1',point=point,targets=targets,available=available,gaps=gaps,
         complete=not gaps and point is not None,case_receipts=receipts,source_sha256=sha(record),
         adapter_sha256=sha(adapter),ntrain=own[0]['ntrain'],ntest=own[0]['ntest'],collector=_code_receipt())
+    if point_only:
+        # Omitted relations are unrequested values, never complete empty tables.
+        selection.update(selection_mode='point_only',requested_relations=['point'],
+            omitted_values=['targets','available'],complete=False)
+        selection['collector']=dict(selection['collector'],selection_mode='point_only')
+    return selection
 
 
 def compare_target(candidate,columns,grouped,fields,reference,*,relation='equal',explicit=None,seconds=10):

@@ -68,7 +68,8 @@ class Contexts:
         inputs=dict(task=record['task'],case=record['case'],program_sha256=digest(record['gold_sexp']),
             kept_context_sha256=digest(record['evaluation']['kept_assignments']),ntrain=ntrain,ntest=ntest,
             task_inputs_sha256=digest(task))
-        case_key=digest(inputs);bundle=self.cache.get(case_key)
+        case_key=digest(inputs);cached=self.cache.get(case_key)
+        bundle=cached[0] if cached is not None else None
         if bundle is None:
             bundle=self.journal.get('gold_case',case_key,inputs)
             if bundle is None:
@@ -84,15 +85,16 @@ class Contexts:
             # The caller owns the bounded cache; never retain a second growing
             # per-evaluator cache of every task/case in the study.
             clear_cache(self.gold);self.gold.finish_case();self.gold.captures=[]
-            self.cache[case_key]=bundle
+            gold_ref=self.journal.ref('gold_case',case_key,bundle)
+            self.cache[case_key]=(bundle,gold_ref)
             while len(self.cache)>self.config['case_cache_entries']:self.cache.popitem(last=False)
         else:
             self.cache.move_to_end(case_key);self.stats['gold_memory_hits']+=1
-        gold_ref=self.journal.ref('gold_case',case_key,bundle)
+            gold_ref=cached[1]
         # AST export is recomputed by the canonical metadata producer, never
         # copied into the observation store. This performs no table replay.
         selected_bundle=dict(bundle,export=self.producers[key]._export(record['gold_sexp'],record))
-        selection=select_pair(selected_bundle,record,adapter,ev=self.screen)
+        selection=select_pair(selected_bundle,record,adapter,ev=self.screen,point_only=True)
         require_axes(selection,record,ntrain,ntest)
         from judge3.catalog import matches
         bindings=[];binding_gaps=[]
