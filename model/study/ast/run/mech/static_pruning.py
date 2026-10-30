@@ -68,7 +68,6 @@ class Pruner:
             receipt=json.loads(receipt_path(self.cache_path).read_text())
             if receipt['policy']!=POLICY or file_sha(self.cache_path)!=receipt['sha256']:
                 raise ValueError('static pruning cache receipt differs')
-            if receipt['reader_sha256']!=file_sha(__file__):raise ValueError('static pruning cache reader changed')
             for row in iter_json(self.cache_path):
                 key=row['pair_id']
                 if key in self.cache:raise ValueError('duplicate static pruning acquisition')
@@ -126,7 +125,10 @@ class Pruner:
         try:
             row=self.cache.get(base['pair_id'])
             if row is not None:
-                if any(row.get(k)!=v for k,v in identity.items()):raise ValueError('static acquisition source/result changed')
+                from source_bindings import legacy_identity
+                old_source,old_result=legacy_identity(base['pair_id'],base['source_sha256'],base_sha,'normal_program')
+                expected=dict(identity,source_sha256=old_source,base_result_sha256=old_result)
+                if any(row.get(k)!=v for k,v in expected.items()):raise ValueError('static acquisition source/result changed')
                 result={k:row[k] for k in ('status','matches')}
                 if result['status'] not in ('matched','unmatched'):raise ValueError('cached static acquisition is unavailable')
             else:

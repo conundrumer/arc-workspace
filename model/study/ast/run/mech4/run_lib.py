@@ -27,14 +27,8 @@ class Sources:
     """One forward scan per source, with framed seek and legacy format support."""
     def __init__(self):self.path=None;self.reader=None;self.stream=None;self.line=0;self.record=None
     def get(self,job):
-        locator=job['source'];path=Path(locator['corpus'])/locator['file'];line=locator['line']
-        if self.path!=path or line<self.line:
-            self.close();self.reader=JsonlReader(path)
-            self.stream=self.reader.iter_lines(start_line=line);self.path=path;self.line=line-1
-        while self.line<line:
-            raw=next(self.stream);self.line+=1
-            if self.line==line:self.record=json.loads(raw)
-        record=self.record
+        from source_bindings import locator_record
+        record=locator_record(job['source'],job['source_sha256'])
         if digest(record)!=job['source_sha256'] or digest(pair_key(record))!=job['pair_id']:
             raise ValueError('current source record differs from immutable base receipt')
         return record

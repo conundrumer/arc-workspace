@@ -10,13 +10,13 @@ output=${3:-"$data_root/ast/run/mech/labels.sqlite3"}
 case "$mode" in
   pilot)
     for source in kept recovered; do
-      python3 "$mech_dir/run.py" "$data_root/ast/run/corpus-v11" "$output" \
+      python3 "$mech_dir/run.py" "$data_root/ast/run/corpus-v12-body-full" "$output" \
         --workers "$workers" --tasks 00576224 007bbfb7 009d5c81 \
         --sources "$source" --limit-per-task 3
     done
     ;;
   full)
-    exec python3 "$mech_dir/run.py" "$data_root/ast/run/corpus-v11" "$output" --workers "$workers"
+    exec python3 "$mech_dir/run.py" "$data_root/ast/run/corpus-v12-body-full" "$output" --workers "$workers"
     ;;
   *) echo 'usage: bash launch.sh pilot|full [workers=4] [output=labels.sqlite3]' >&2; exit 2 ;;
 esac

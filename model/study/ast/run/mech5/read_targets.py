@@ -61,7 +61,7 @@ _PRODUCERS={}
 _KNOWN=set()
 
 
-def load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source_groups=None,derive=True,reads=ONE_SHOT):
+def _load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source_groups=None,derive=True,reads=ONE_SHOT):
     """Join pair_id to source-bound facts using one read-only WAL snapshot.
 
     facts/reference/result_sha256 bind the stored payload. record is a derived
@@ -159,11 +159,12 @@ def load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source
                        or DATA_ROOT/'ast/run/mech/labels.sqlite3').resolve()
         base_db=reads.open(base_path);base_db.execute('BEGIN')
         prior=base_db.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair_id,)).fetchone()
-        if not prior or prior[0]!=source_sha256 or digest(json.loads(prior[2]))!=prior[1]:
+        from source_bindings import scope_equal,compatible_base,receipt_base
+        if not prior or not scope_equal(pair_id,prior[0],source_sha256,'targets') or digest(json.loads(prior[2]))!=prior[1]:
             raise ValueError('canonical base input/result receipt differs')
-        if base_result_sha256 is not None and prior[1]!=base_result_sha256:
+        if base_result_sha256 is not None and not compatible_base(pair_id,prior[1],base_result_sha256,'targets'):
             raise ValueError('caller base result is no longer current')
-        base=json.loads(prior[2])
+        base=receipt_base(json.loads(prior[2]),'targets',source_sha=source_sha256)
         def resolve(child):
             token=(child['kind'],child['key'],child['result_sha256'])
             if token not in resolved:entry(child['kind'],child['key'],child)
@@ -185,3 +186,21 @@ def load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source
     finally:
         if base_db is not None:reads.done(base_db)
         if db is not None:reads.done(db)
+
+
+def load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source_groups=None,derive=True,reads=ONE_SHOT):
+    from source_bindings import legacy_identity,binding_reference
+    old,base=legacy_identity(pair_id,source_sha256,base_result_sha256,'targets')
+    loaded=_load_targets(database,pair_id,source_sha256=old,base_result_sha256=base,source_groups=source_groups,derive=derive,reads=reads)
+    if not loaded.get('valid') and (old,base)!=(source_sha256,base_result_sha256):
+        loaded=_load_targets(database,pair_id,source_sha256=source_sha256,base_result_sha256=base_result_sha256,source_groups=source_groups,derive=derive,reads=reads)
+    if loaded.get('valid') and (old,base)!=(source_sha256,base_result_sha256):
+        import copy
+        result=copy.deepcopy(loaded['record']);ref=binding_reference(pair_id)
+        result['source_sha256']=source_sha256;result['base_result_sha256']=base_result_sha256
+        result['source_binding_ref']=ref
+        if result.get('no_recovery_certificate'):
+            result['no_recovery_certificate']['inputs'].update(source_sha256=source_sha256,base_result_sha256=base_result_sha256)
+            result['no_recovery_certificate']['source_binding_ref']=ref
+        loaded=dict(loaded,record=result,source_binding_ref=ref)
+    return loaded

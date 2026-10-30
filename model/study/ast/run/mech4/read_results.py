@@ -8,14 +8,8 @@ from functools import lru_cache
 
 
 def _source(locator,expected):
-    path=Path(locator['corpus'])/locator['file']
-    try:
-        with JsonlReader(path) as reader:
-            value=json.loads(reader.read_line(locator['line']))
-    except IndexError as error:
-        raise ValueError('source locator line absent') from error
-    if digest(value)!=expected:raise ValueError('source record changed')
-    return value
+    from source_bindings import locator_record
+    return locator_record(locator,expected)
 
 
 def _producer(db,code,config,legacy=None):
@@ -67,7 +61,7 @@ def _observation_valid(db,path,reference):
         hashlib.sha256(row[3]).hexdigest())
 
 
-def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_record=None,reads=ONE_SHOT):
+def _load_result(database,pair_id,*,source_sha256,base_result_sha256,source_record=None,reads=ONE_SHOT):
     """Join owned facts and derive checked clauses; never persist grades.
 
     Original producer/configuration/evidence hashes are retained across storage
@@ -129,3 +123,14 @@ def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_recor
     except Exception as error:return dict(status='open',valid=False,reason=str(error),error_type=type(error).__name__)
     finally:
         if db is not None:reads.done(db)
+
+
+def load_result(database,pair_id,*,source_sha256,base_result_sha256,source_record=None,reads=ONE_SHOT):
+    from source_bindings import legacy_identity,binding_reference
+    prior,base=legacy_identity(pair_id,source_sha256,base_result_sha256,'lib')
+    if prior!=source_sha256:source_record=None
+    loaded=_load_result(database,pair_id,source_sha256=prior,base_result_sha256=base,source_record=source_record,reads=reads)
+    if not loaded.get('valid') and (prior,base)!=(source_sha256,base_result_sha256):
+        loaded=_load_result(database,pair_id,source_sha256=source_sha256,base_result_sha256=base_result_sha256,source_record=source_record,reads=reads)
+    if loaded.get('valid') and (prior,base)!=(source_sha256,base_result_sha256):loaded=dict(loaded,source_binding_ref=binding_reference(pair_id))
+    return loaded

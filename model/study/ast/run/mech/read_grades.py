@@ -110,7 +110,7 @@ class StudyReader:
             if not row:return loaded
             value=json.loads(row[1])
             loaded=dict(loaded,record=value)  # inspectable even if stale
-            if (digest(value)!=row[0] or value['source_sha256']!=base['source_sha256']
+            if (digest(value)!=row[0] or not __import__('source_bindings').scope_equal(base['pair_id'],value['source_sha256'],base['source_sha256'],'fits')
                     ):raise ValueError('fit source/result changed')
             if digest(value['code_manifest'])!=value['code_sha256'] or digest(value['config'])!=value['config_sha256']:
                 raise ValueError('fit producer receipt changed')
@@ -132,8 +132,11 @@ class StudyReader:
             rows=db.execute('SELECT assignment,witness_sha256,source_sha256,base_result_sha256,result_sha256,payload FROM witness_tests WHERE pair_id=?',(base['pair_id'],))
             for assignment,witness,source,prior,result,payload in rows:
                 packed=json.loads(payload)
-                if (assignment not in items or witness!=digest(items[assignment]['witness'])
-                        or source!=base['source_sha256'] or digest(packed)!=result):
+                from source_bindings import witness_source,scope_equal
+                oldbase,olditem=witness_source(base,items[assignment]) if assignment in items else (base,None)
+                applications={(base['source_sha256'],digest(items[assignment]['witness']))} if assignment in items else set()
+                if olditem is not None:applications.add((oldbase['source_sha256'],digest(olditem['witness'])))
+                if ((source,witness) not in applications or digest(packed)!=result):
                     issues.append('stale witness assignment '+str(assignment));continue
                 value=unpack(db,packed)
                 if value.get('input_sha256') and value['input_sha256']!=witness_inputs(base,items[assignment]):
@@ -158,25 +161,29 @@ class StudyReader:
                     try:
                         item=json.loads(payload)
                         if digest(item)!=session_sha:raise ValueError('legacy judge reference integrity differs')
-                        if item['source_sha256']!=base['source_sha256']:continue
+                        from source_bindings import scope_equal
+                        if not scope_equal(base['pair_id'],item['source_sha256'],base['source_sha256'],'judge'):continue
                         final_path=Path(item['final_path']);manifest_path=Path(item['manifest_path']);record_path=Path(item['record_path'])
                         for p,h in ((final_path,item['final_sha256']),(manifest_path,item['manifest_sha256']),(record_path,item['record_sha256'])):
                             if file_hash(p)!=h:raise ValueError('judge artifact changed: '+str(p))
                         final=json.loads(final_path.read_text());manifest=json.loads(manifest_path.read_text())
                         import gzip
                         with (gzip.open(record_path,'rt') if record_path.suffix=='.gz' else record_path.open()) as stream:record=json.load(stream)
-                        if digest(record)!=base['source_sha256']:raise ValueError('judge source differs')
+                        if not scope_equal(base['pair_id'],digest(record),base['source_sha256'],'judge'):raise ValueError('judge source differs')
+                        from source_bindings import receipt_base
+                        judge_base=receipt_base(base,'judge',source_sha=digest(record))
                         from judge_merge import merge_final
                         from step1_reduce import adapt
                         target=dict(adapter=manifest['adapter'],ntrain=item['ntrain'],ntest=item['ntest'])
-                        merged=merge_final(record,manifest,target,adapt(base,dict(result_sha256=sha)),final,
+                        merged=merge_final(record,manifest,target,adapt(judge_base,dict(result_sha256=digest(judge_base))),final,
                             dict(path=str(final_path),sha256=item['final_sha256']))
                         out.append(dict(clauses=merged['clauses'],judge_run=merged['judge_run']))
                     except Exception as error:issues.append('legacy judge unavailable: '+str(error))
             if 'judge_submissions' in tables:
                 from judge_submission import load_submission_reference
                 for source,artifact,artifact_sha in db.execute('SELECT source_sha256,path,sha256 FROM judge_submissions WHERE pair_id=?',(base['pair_id'],)):
-                    if source!=base['source_sha256']:continue
+                    from source_bindings import scope_equal
+                    if not scope_equal(base['pair_id'],source,base['source_sha256'],'judge'):continue
                     loaded=load_submission_reference(dict(path=artifact,sha256=artifact_sha),base)
                     if loaded.get('status')=='available':out.append(loaded)
                     else:issues.append('judge submission unavailable: '+loaded.get('reason','unknown'))

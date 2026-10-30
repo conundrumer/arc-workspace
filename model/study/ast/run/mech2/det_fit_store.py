@@ -19,6 +19,10 @@ def digest(value):
 def inputs(source_sha256, task_sha256):
     # The evaluator consumes the complete original record and task evidence.
     # This key can be checked before reopening the source gzip on resume.
+    from mech.source_bindings import source_entry, receipt_source
+    entry = source_entry(source_sha256)
+    if entry is not None:
+        source_sha256 = receipt_source(entry['pair_id'], source_sha256, 'det_fit')
     return dict(mode=SCHEMA, source_sha256=source_sha256, task_sha256=task_sha256)
 
 

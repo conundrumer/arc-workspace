@@ -21,6 +21,14 @@ def _digest(value):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _source_compatible(pair_id, stored, current, outcome):
+    if stored == current:
+        return True
+    from mech.source_bindings import scope_equal
+    return scope_equal(pair_id, stored, current,
+                       'normal_program' if outcome.get('row_independent') else 'normal')
+
+
 def _default_database(area, name):
     study = str(Path(__file__).resolve().parents[3])
     if study not in sys.path:
@@ -133,7 +141,7 @@ class NormalReader:
         if row is None:
             return _open('normal receipt absent')
         facts.validate('pairs', row)
-        if row[1] != source_sha256:
+        if not _source_compatible(pair_id, row[1], source_sha256, facts.outcome(row)):
             return _open('normal source binding stale')
         gold = db.execute('SELECT * FROM gold_points WHERE point_id=?', (row[3],)).fetchone()
         if gold is None:
@@ -148,9 +156,10 @@ class NormalReader:
             if _digest(manifest) != producer:
                 return _open('normal producer receipt invalid')
         origin = self._bindings(gold[1])
-        if origin is None or origin[0] != gold[2]:
-            return _open('gold normal source binding stale')
+        gold_current = origin is not None and _source_compatible(gold[1], gold[2], origin[0], facts.outcome(gold))
         mutant = facts.outcome(row); gold_result = facts.outcome(gold)
+        if not gold_current:
+            gold_result = dict(normal=None, writer_pass=None, reason='gold normal inputs changed in v12')
         value = mutant['normal']
         reference = dict(database=str(self.database), table='pairs', pair_id=pair_id,
                          result_sha256=row[6], source_sha256=row[1], code_sha256=row[2],
@@ -190,7 +199,7 @@ class NormalReader:
                     return _open('normal receipt absent')
                 source, base, code, result, normal, text = row
                 record = json.loads(text)
-            if (source != source_sha256 or _digest(record) != result or
+            if (not _source_compatible(pair_id, source, source_sha256, record['mutant']) or _digest(record) != result or
                     record['pair_id'] != pair_id or
                     record['source_sha256'] != source or
                     record['base_result_sha256'] != base or
@@ -206,7 +215,8 @@ class NormalReader:
                 absence_reason=None if value is True else
                     'non_normal' if value is False else 'normal_unavailable',
                 writer_pass=record['mutant'].get('writer_pass'),
-                gold=record['gold'], gold_point_id=record['gold_point_id'],
+                gold=(record['gold'] if _source_compatible(pair_id, source, source_sha256, record['gold'])
+                      else dict(normal=None, writer_pass=None, reason='gold normal inputs changed in v12')), gold_point_id=record['gold_point_id'],
                 reference=dict(database=str(self.database), table='pairs',
                                pair_id=pair_id, result_sha256=result,
                                source_sha256=source, base_result_sha256=base,

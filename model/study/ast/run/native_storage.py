@@ -178,13 +178,26 @@ class NativeStore:
         return ref
 
 
-def read_block(ref,base):
+def _compressed_block(ref,base):
+    # Resolve old physical references before opening a file. The moved bytes
+    # retain the ORIGINAL compressed SHA; no unequal-row alias is permitted.
+    import sys
+    run=Path(__file__).resolve().parent
+    for entry in (str(run),str(run/'mech')):
+        if entry not in sys.path:sys.path.insert(0,entry)
+    from source_bindings import read_native_bytes
+    data=read_native_bytes(ref,base)
     path=Path(base)/ref['path']
-    with path.open('rb') as src:
-        src.seek(ref['offset']);data=src.read(ref['bytes'])
+    if data is None:
+        with path.open('rb') as src:
+            src.seek(ref['offset']);data=src.read(ref['bytes'])
     if len(data)!=ref['bytes'] or hashlib.sha256(data).hexdigest()!=ref['sha256']:
         raise ValueError('native pack digest mismatch: '+str(path))
-    return binary_decode(zlib.decompress(data))
+    return data
+
+
+def read_block(ref,base):
+    return binary_decode(zlib.decompress(_compressed_block(ref,base)))
 
 
 def read_block_metadata(ref,base,*,fields,declared_only=(),max_header_bytes=64*1024*1024,
@@ -196,11 +209,7 @@ def read_block_metadata(ref,base,*,fields,declared_only=(),max_header_bytes=64*1
     are declarations, not proof of tail presence, valid rows or zlib EOF.
     The ordinary read_block/load_native validation contract is unchanged.
     """
-    path=Path(base)/ref['path']
-    with path.open('rb') as src:
-        src.seek(ref['offset']);data=src.read(ref['bytes'])
-    if len(data)!=ref['bytes'] or hashlib.sha256(data).hexdigest()!=ref['sha256']:
-        raise ValueError('native pack digest mismatch: '+str(path))
+    data=_compressed_block(ref,base)
     decoder=zlib.decompressobj()
     prefix=decoder.decompress(data,16)
     if len(prefix)!=16 or prefix[:8]!=MAGIC:raise ValueError('bad native pack block magic')

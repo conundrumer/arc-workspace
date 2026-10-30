@@ -25,10 +25,12 @@ from run import canonical,digest,pair_key,SCHEMA
 
 def intact(row,source):
     """Input-bound completed diagnostics are facts too; retries are explicit."""
-    if not row or row[0]!=source:return False
+    if not row:return False
     try:
         value=json.loads(row[2])
-        return digest(value)==row[1] and value['source_sha256']==source and value['schema']==SCHEMA
+        if digest(value)!=row[1] or value['source_sha256']!=row[0] or value['schema']!=SCHEMA:return False
+        from source_bindings import scope_equal
+        return scope_equal(value['pair_id'],row[0],source,'base')
     except (ValueError,KeyError,TypeError):return False
 
 
@@ -104,14 +106,8 @@ def candidates(population,stream):
 
 
 def read_source(locator):
-    path=Path(locator['corpus'])/locator['task']/locator['file']
-    with gzip.open(path,'rt') as stream:
-        for line,raw in enumerate(stream,1):
-            if line==locator['line']:
-                rec=json.loads(raw)
-                if digest(rec)!=locator['source_sha256']:raise ValueError('population source changed')
-                return rec
-    raise ValueError('population source absent')
+    from source_bindings import locator_record
+    return locator_record(locator,locator['source_sha256'])
 
 
 def observation(db,pair):
@@ -370,7 +366,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('phase',choices=['plan','materialize','label']);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--population',type=Path);p.add_argument('--candidate-stream',type=Path)
     p.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
-    p.add_argument('--corpus',type=Path,nargs='*',default=[DATA_ROOT/'ast/run/corpus-v11',DATA_ROOT/'ast/run/corpus-v12-body-full'])
+    p.add_argument('--corpus',type=Path,nargs='*',default=[DATA_ROOT/'ast/run/corpus-v12-body-full'])
     p.add_argument('--tasks',type=Path,required=True);p.add_argument('--seconds',type=float,default=1);p.add_argument('--work-cap',type=int,default=67108864);p.add_argument('--session-mib',type=int,default=2048);p.add_argument('--retry-failures',action='store_true')
     a=p.parse_args();a.output=a.output.resolve();a.output.parent.mkdir(parents=True,exist_ok=True)
     if a.phase=='plan' and not (a.population or a.candidate_stream):p.error('plan requires --population or --candidate-stream')

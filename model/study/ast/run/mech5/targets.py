@@ -440,7 +440,8 @@ class Pass:
             for done,row in enumerate(self.base.execute(sql),after+1):
                 if STOP:return False
                 base=valid_base(row);inputs=self.pair_inputs(base);self.done=done
-                if selected and self.a.selection[base['pair_id']]!=base['source_sha256']:
+                from source_bindings import scope_equal
+                if selected and not scope_equal(base['pair_id'],self.a.selection[base['pair_id']],base['source_sha256'],'targets'):
                     raise ValueError('selected pair input changed: '+base['pair_id'])
                 if self.a.task and base['task'] not in self.a.task:continue
                 from .preflight import det_available
@@ -467,20 +468,11 @@ class Pass:
                     self.case_cache.clear();self.case_refs.clear();self.resolved_case_programs.clear()
                     self.case_failures.clear();self.producers.clear();self.current_task=base['task']
                 self.set_phase('source_record')
-                src=base['source'];current=Path(src['corpus']).resolve()/base['task']/src['file'];wanted=src['line']
-                if current!=path:
-                    if stream is not None:stream.close()
-                    path=current;lineno=0;record=None;failed=None;stream=None
-                    try:stream=gzip.open(current,'rt')
-                    except OSError as error:failed=error
-                if failed is None:
-                    try:
-                        while lineno<wanted:
-                            line=next(stream);lineno+=1
-                            if lineno==wanted:record=json.loads(line)
-                        if lineno!=wanted:raise ValueError('source line order differs')
-                    except (OSError,EOFError,StopIteration,ValueError) as error:
-                        failed=ValueError(f'{path}: near line {lineno}, wanted {wanted}: {type(error).__name__}: {error}')
+                from source_read import SourceReader
+                if not hasattr(self,'moved_sources'):self.moved_sources=SourceReader(CODE_ROOT)
+                failed=None
+                try:record=self.moved_sources.record(base)
+                except (OSError,ValueError,KeyError,StopIteration) as error:failed=error
                 try:
                     if failed:raise failed
                     result=self.process(base,record)
@@ -500,6 +492,7 @@ class Pass:
             self.progress(self.done,force=True)
             return not bool(self.a.task or self.a.limit)
         finally:
+            if hasattr(self,'moved_sources'):self.moved_sources.close()
             if stream is not None:stream.close()
 
 

@@ -53,7 +53,7 @@ class Pass:
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
         self.base.execute('BEGIN')
         files=set(HERE/n for n in ('step2_check.py','witness_test.py','fact_objects.py',
-            'grade_store.py','run.py'))
+            'grade_store.py','run.py','source_read.py','source_bindings.py'))
         files.update(STUDY/'judgetool'/n for n in ('evaluator.py','raw_body.py','tables.py',
             'checks.py','surface.py','case_collector.py','catalog.py'))
         files.add(STUDY/'ast/check_stage1_all.py')
@@ -62,6 +62,7 @@ class Pass:
             'ast/run/recovery.py','ast/run/native_storage.py','ast/run/native_tables.py',
             'ref/progsynth-relabel/engine_verify.py','ref/progsynth-relabel/verify_recovery.py'))
         files.add(CODE_ROOT / 'study_paths.py')
+        files.add(CODE_ROOT / 'judge3/framed_jsonl.py')
         files.add(Path(ev.runtime['binary']))
         self.manifest={str(p.resolve()):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
         self.file_stats={name:self.signature(Path(name)) for name in self.manifest}
@@ -133,7 +134,11 @@ class Pass:
         expected=(digest(item['witness']),base['source_sha256'],self.base_sha(base),self.store.code,self.store.config_hash)
         result=None
         packed=json.loads(row[6]) if row else None
-        if row and tuple(row[:2])==expected[:2] and digest(packed)==row[5]:
+        from source_bindings import witness_source
+        prior_base,prior_item=witness_source(base,item)
+        expected_witness=digest(prior_item['witness'])
+        applications={(expected_witness,prior_base['source_sha256']),(digest(item['witness']),base['source_sha256'])}
+        if row and tuple(row[:2]) in applications and digest(packed)==row[5]:
             # Resume needs the fact and its actual application inputs, not
             # the full native report/comparison trees. Those remain stored
             # and are authenticated by the analysis reader when consumed.
@@ -262,31 +267,20 @@ class Pass:
         # separately for every selected pair. Only queued lines are JSON-decoded.
         work=sorted(self.work,key=lambda row:(row[1],row[2],row[3],row[0]))
         self.phase='missing-tests';self.phase_start=time.monotonic()
-        stream=None;path=None;lineno=0;failed=None;last_record=None
+        from source_read import SourceReader
+        sources=SourceReader(self.ev.run.parent.parent if hasattr(self, 'ev') else CODE_ROOT)
         try:
             for done,(pair,corpus,filename,wanted) in enumerate(work,1):
                 if STOP:return False
-                current=Path(corpus)/filename
-                if current!=path:
-                    if stream is not None:stream.close()
-                    stream=None;path=current;lineno=0;failed=None;last_record=None
-                    try:stream=gzip.open(current,'rt')
-                    except (OSError,ValueError) as exc:failed=exc
-                if failed is None:
-                    try:
-                        while lineno<wanted:
-                            line=next(stream);lineno+=1
-                            if lineno==wanted:last_record=json.loads(line)
-                        if lineno!=wanted:raise ValueError('source line order differs')
-                    except (OSError,EOFError,ValueError,StopIteration) as exc:
-                        failed=ValueError(f'{current}: source line {lineno}, wanted {wanted}: {type(exc).__name__}: {exc}')
-                        last_record=None
+                row=self.base.execute('SELECT record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
+                failed=None;last_record=None
+                try:last_record=sources.record(json.loads(row[0]))
+                except (OSError,EOFError,ValueError,KeyError,StopIteration) as exc:failed=exc
                 if not self.evaluate_pair(pair,last_record,failed):return False
                 self.progress('missing-tests',done,len(work))
             self.progress('missing-tests',len(work),len(work),True)
             return True
-        finally:
-            if stream is not None:stream.close()
+        finally:sources.close()
 
     def summary(self,complete):
         # Only transient own-work statistics. Grade counts belong to analysis.

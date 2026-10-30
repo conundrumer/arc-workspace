@@ -63,7 +63,7 @@ class Worker:
         self.args=args;self.start=time.monotonic();self.last=0;self.counts=Counter();self.reader_counts=Counter()
         self.events=events;self.worker_id=worker_id;self.stop_event=stop_event
         self.tasks={};self.current=None;self.producer=None;self.producer_class=MetadataProducer;self.group_cache={};self.reader_cache={}
-        self.cfg=json.loads((DATA_ROOT/'ast/run/corpus-v11/run.json').read_text())
+        self.cfg=json.loads((DATA_ROOT/'ast/run/corpus-v12-body-full/run.json').read_text())
         self.ev=ReplayEvaluator(run=CODE_ROOT/'ast/run',deadline=args.deadline,
             artifacts=DATA_ROOT/'judgetool/mech3-fit-replays',reference=CODE_ROOT/'ref/progsynth-relabel')
         self.legacy=self.ev.legacy;self.settings=self.ev.settings
@@ -74,7 +74,8 @@ class Worker:
         files=list(HERE.glob('*.py'))
         files.extend(CODE_ROOT/p for p in ('study_paths.py','ast/run/mech/algorithm.py','ast/run/mech/run.py',
             'ast/run/mech/step2_check.py','ast/run/mech/witness_test.py','ast/run/mech/grades.py',
-            'ast/run/mech/read_grades.py','ast/run/next_revision/family_recovery.py',
+            'ast/run/mech/read_grades.py','ast/run/mech/source_read.py','ast/run/mech/source_bindings.py',
+            'judge3/framed_jsonl.py','ast/run/next_revision/family_recovery.py',
             'ast/run/filters.py','ast/run/native_tables.py','ast/run/native_storage.py','ast/run/recovery.py',
             'judgetool/evaluator.py','judgetool/tables.py','judgetool/raw_body.py',
             'judge3/nonrender_metadata.py','judge3/definition_binding.py','judge3/render_pair.py','judge3/catalog.py',
@@ -207,6 +208,8 @@ class Worker:
         rows=self.base.execute("SELECT pair_id,source_sha256,code_sha256,config_sha256,result_sha256,record_json FROM pairs "
             'WHERE '+self.scope+" ORDER BY json_extract(record_json,'$.task'),"
             "json_extract(record_json,'$.source.corpus'),json_extract(record_json,'$.source.file'),json_extract(record_json,'$.source.line')",self.scope_params)
+        from source_read import SourceReader
+        sources=SourceReader(CODE_ROOT)
         stream=None;path=None;line_number=0;record=None;failed=None
         try:
             for done,row in enumerate(rows,1):
@@ -222,20 +225,9 @@ class Worker:
                 if saved is not None:
                     value=saved;self.counts['resumed']+=1
                 else:
-                    source=base['source'];current=Path(source['corpus']).resolve()/base['task']/source['file'];wanted=source['line']
-                    if path!=current or wanted<line_number:
-                        if stream is not None:stream.close()
-                        path=current;stream=None;line_number=0;failed=None
-                        try:stream=gzip.open(current,'rt')
-                        except OSError as error:failed=error
-                    if failed is None:
-                        try:
-                            while line_number<wanted:
-                                line=next(stream);line_number+=1
-                                if line_number==wanted:record=json.loads(line)
-                            if line_number!=wanted:raise ValueError('source line order differs')
-                        except (OSError,EOFError,ValueError,StopIteration) as error:
-                            failed=ValueError(f'{path}: wanted line {wanted}, reached {line_number}: {type(error).__name__}: {error}')
+                    failed=None
+                    try:record=sources.record(base)
+                    except (OSError,ValueError,KeyError,StopIteration) as error:failed=error
                     try:
                         if failed:raise failed
                         value=self.process(base,record,existing)
@@ -255,6 +247,7 @@ class Worker:
                 self.progress(done)
             return True
         finally:
+            sources.close()
             if stream is not None:stream.close()
 
     def finish(self):

@@ -47,7 +47,7 @@ def _worker(args,events,control,inherited_lock):
     try:
         lock_fd=inherited_lock
         ev=ReplayEvaluator(run=targets.CODE_ROOT/'ast/run',
-            config=targets.DATA_ROOT/'ast/run/corpus-v11/run.json',
+            config=targets.DATA_ROOT/'ast/run/corpus-v12-body-full/run.json',
             deadline=args.deadline,artifacts=targets.DATA/'replays')
         worker=targets.Pass(args,ev,event=events.send)
         events.send(dict(event='producer',code=worker.journal.code,config=worker.journal.config))

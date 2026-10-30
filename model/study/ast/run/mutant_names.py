@@ -112,7 +112,7 @@ def differences(gold,spans,mutant,edits):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--corpora',type=Path,nargs='+',default=[DATA_ROOT/'ast/run/corpus-v11',DATA_ROOT/'ast/run/corpus-v12-body-full'])
+    p.add_argument('--corpora',type=Path,nargs='+',default=[DATA_ROOT/'ast/run/corpus-v12-body-full'])
     p.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--tasks',nargs='*',help='explicit bounded qualification scope; omitted means all published tasks')

@@ -88,7 +88,8 @@ class MetadataProducer:
     """
     def __init__(self, *, engine, read_native, corpus, settings=None, case_inventory=None, legacy_body_metadata=None):
         self.engine, self.read_native = engine, read_native
-        self.corpus = Path(corpus).resolve()
+        from mech.source_bindings import current_corpus
+        self.corpus = current_corpus(corpus)
         self.inventory_provider = case_inventory
         from legacy_body_metadata import LegacyBodyMetadata
         self.legacy_body_metadata = (legacy_body_metadata if legacy_body_metadata is not None

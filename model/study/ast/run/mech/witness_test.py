@@ -33,6 +33,8 @@ def stored_result(record,item):
 
 def witness_inputs(base,item):
     """Code-independent identity of the actual stored witness application."""
+    from source_bindings import witness_source
+    base,item=witness_source(base,item)
     witness=item['witness']
     atoms=[a for branch in witness.get('selection_any',[witness.get('selection',[])]) for a in branch]
     used=sorted({a['available'] for a in atoms if a['kind'] in ('semijoin','antijoin')})

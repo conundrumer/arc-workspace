@@ -114,15 +114,17 @@ def load_submission_reference(reference,base):
     Availability is deliberately false until the runner's read-only loader is
     deployed. Producer hashes/current source files never invalidate executions.
     """
+    from source_bindings import receipt_base
     unavailable=dict(status='unavailable',clauses=[],judge_run={})
     try:
         path=data_file(reference['path'])
         if submission_reference(path)!=reference:raise ValueError('submission artifact identity differs')
-        loaded=submission_loader()(path,expected_pair_id=base['pair_id'],
-                                   expected_source_sha256=base['source_sha256'])
+        loaded=submission_loader()(path,expected_pair_id=base['pair_id'])
         if loaded.get('status')!='available':
             raise ValueError(loaded.get('reason','host submission unavailable'))
-        value=loaded['submission'];selected=value.get('selected_results')
+        value=loaded['submission']
+        base=receipt_base(base,'judge',source_sha=value.get('source_sha256'))
+        selected=value.get('selected_results')
         if (value.get('schema')!='judge-submission-v1'
                 or value.get('pair_id')!=base['pair_id']
                 or value.get('source_sha256')!=base['source_sha256']

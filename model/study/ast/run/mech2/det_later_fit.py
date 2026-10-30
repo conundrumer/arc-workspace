@@ -79,7 +79,7 @@ def main():
     parser.add_argument('--evaluator-code-root', type=Path, default=_backend)
     parser.add_argument('--base', type=Path, default=DATA_ROOT / 'ast/run/mech/labels.sqlite3')
     parser.add_argument('--output', type=Path, default=OUTPUT / 'results.sqlite3')
-    parser.add_argument('--config', type=Path, default=DATA_ROOT / 'ast/run/corpus-v11/run.json')
+    parser.add_argument('--config', type=Path, default=DATA_ROOT / 'ast/run/corpus-v12-body-full/run.json')
     parser.add_argument('--scope', choices=('smoke', 'figure', 'points', 'all'), default='smoke')
     parser.add_argument('--point-file', type=Path, default=DATA_ROOT / 'feat-exp/study/round-6/det-points.json')
     parser.add_argument('--deadline', type=float, default=30)

@@ -49,7 +49,8 @@ def apply(evidence,result,reference):
     remain governed by the same reducer. This function never writes a database.
     """
     out=deepcopy(evidence)
-    if out['pair_id']!=result['pair_id'] or out['source_sha256']!=result['source_sha256']:
+    from source_bindings import scope_equal
+    if out['pair_id']!=result['pair_id'] or not scope_equal(out['pair_id'],out['source_sha256'],result['source_sha256'],'fits'):
         raise ValueError('step 4 source/pair differs')
     if out['base_result_ref']['result_sha256']!=result['base_result_sha256']:
         raise ValueError('step 4 base receipt differs')

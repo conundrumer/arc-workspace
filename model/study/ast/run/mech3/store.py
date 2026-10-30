@@ -82,14 +82,15 @@ class Store:
 
     def compatible_program(self,pair,source,settings,task_receipt):
         """Reuse a TEST proof stored under another cache key, matched by source and task input."""
+        from source_bindings import scope_equal
         try:normalized=raw_store.load_test(self.db,pair)
         except (OSError,ValueError):normalized=None
-        if (normalized is not None and normalized['source_sha256']==source
+        if (normalized is not None and scope_equal(pair,normalized['source_sha256'],source,'program')
                 and normalized['receipt']['task'].get('sha256')==task_receipt['sha256']):return normalized
         for sha,text in self.db.execute('SELECT result_sha256,record_json FROM program_checks WHERE pair_id=? ORDER BY rowid DESC',(pair,)):
             value=json.loads(text);receipt=value.get('receipt',{})
             if digest(value)!=sha:raise ValueError('TEST replay cache payload differs')
-            if (value.get('source_sha256')!=source or receipt.get('source_sha256')!=source
+            if (not scope_equal(pair,value.get('source_sha256'),source,'program') or not scope_equal(pair,receipt.get('source_sha256'),source,'program')
                     or receipt.get('task',{}).get('sha256')!=task_receipt['sha256']):continue
             try:
                 if not evidence_current(dict(program=dict(test_check=value))):continue
@@ -127,5 +128,12 @@ def _load_legacy_step4(database,pair_id,*,source_sha256,base_result_sha256,task_
 
 
 def load_step4(database,pair_id,*,source_sha256,base_result_sha256,task_sha256=None,reads=ONE_SHOT):
-    return raw_store.load_step4(database,pair_id,source_sha256=source_sha256,
-        base_result_sha256=base_result_sha256,task_sha256=task_sha256,legacy_loader=_load_legacy_step4,reads=reads)
+    from source_bindings import legacy_identity,binding_reference
+    source,base=legacy_identity(pair_id,source_sha256,base_result_sha256,'fits')
+    result=raw_store.load_step4(database,pair_id,source_sha256=source,
+        base_result_sha256=base,task_sha256=task_sha256,legacy_loader=_load_legacy_step4,reads=reads)
+    if not result.get('valid') and (source,base)!=(source_sha256,base_result_sha256):
+        result=raw_store.load_step4(database,pair_id,source_sha256=source_sha256,
+            base_result_sha256=base_result_sha256,task_sha256=task_sha256,legacy_loader=_load_legacy_step4,reads=reads)
+    if result.get('valid') and (source,base)!=(source_sha256,base_result_sha256):result=dict(result,source_binding_ref=binding_reference(pair_id))
+    return result

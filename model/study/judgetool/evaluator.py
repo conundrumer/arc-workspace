@@ -106,7 +106,7 @@ class ReplayEvaluator:
     def __init__(self, *, run=S/'ast/run', config=None, deadline=30,
                  artifacts=DATA_ROOT / 'judgetool/replays', reference=P):
         self.run, self.reference = Path(run), Path(reference)
-        self.cfg = read_json(config or DATA_ROOT/'ast/run/corpus-v11/run.json')
+        self.cfg = read_json(config or DATA_ROOT/'ast/run/corpus-v12-body-full/run.json')
         self.cfg['tasks'] = str(Path(self.cfg['tasks']).resolve())
         self.legacy = legacy_helpers(self.run, self.reference)
         self.arclog = self.legacy.arclog
