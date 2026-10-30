@@ -149,8 +149,46 @@ pub fn checked_frontier(program: &StudyProgram, point: &NodePath, registry: &Reg
     check_prefix_syntax(frontier(program, point)?, registry, false)
 }
 
+/// Resolve a common-universe query with every declared field of prior DETs.
+/// Read-based DET column pruning is useful for synthesis, but a receipt must
+/// carry fields that a later candidate body may read as well.
+pub fn checked_universe_prefix(program: &StudyProgram, point: &NodePath, registry: &Registry)
+    -> Result<CheckedProgram, String> {
+    let syntax = prefix(program, point)?;
+    let open = matches!(syntax.value().forms.last(), Some(Form::Choose(_)));
+    let scope = prior_det_scope(&syntax, point);
+    check_prefix_syntax_in(syntax, registry, open, &scope)
+}
+
+pub fn checked_universe_frontier(program: &StudyProgram, point: &NodePath, registry: &Registry)
+    -> Result<CheckedProgram, String> {
+    let syntax = frontier(program, point)?;
+    let scope = prior_det_scope(&syntax, point);
+    check_prefix_syntax_in(syntax, registry, false, &scope)
+}
+
+fn prior_det_scope(prefix: &Node<Program>, point: &NodePath) -> SolverScope {
+    let mut scope = SolverScope::default();
+    let before = point.0.first().map_or(0, |step| step.0 as usize);
+    for form in prefix.value().forms.iter().take(before) {
+        if let Form::Clause(clause) = form {
+            let clause = clause.value();
+            if clause.keyword == ClauseKeyword::Det && !clause.columns.is_empty() {
+                crate::resolver::add_columns(scope.read_columns.entry(clause.derives.clone()).or_default(),
+                    clause.columns.iter().map(|column| &column.name));
+            }
+        }
+    }
+    scope
+}
+
 fn check_prefix_syntax(prefix: Node<Program>, registry: &Registry, open: bool) -> Result<CheckedProgram, String> {
-    let resolved = resolve(&prefix, None, &SolverScope::default(), registry);
+    check_prefix_syntax_in(prefix, registry, open, &SolverScope::default())
+}
+
+fn check_prefix_syntax_in(prefix: Node<Program>, registry: &Registry, open: bool, scope: &SolverScope)
+    -> Result<CheckedProgram, String> {
+    let resolved = resolve(&prefix, None, scope, registry);
     if resolved
         .diagnostics
         .iter()

@@ -54,7 +54,7 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
     if max_assignments!=assignment_cap {return Err("prefix assignment cap must be the native task session cap".into());}
     if assignment_cap==0 {return Err("native session assignment cap must be positive".into());}
     let start=Instant::now();
-    let frontier=Arc::new(features::checked_frontier(source,point,Registry::get())?);
+    let frontier=Arc::new(features::checked_universe_frontier(source,point,Registry::get())?);
     let frontier_seconds=start.elapsed().as_secs_f64();
     let limits=settings.operation_limits();
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits.clone());
@@ -95,6 +95,7 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
             "parent_count":parents.len(),"zero":complete && parents.is_empty(),"terminal":terminal},
         "fanout":{"max_assignments":assignment_cap,"max_models_per_parent_example":session.caps.models,
             "max_parent_models_per_table_example":assignment_cap.saturating_mul(session.caps.models)},
+        "parameter_column_contract":"all declared fields of prior DETs, retained through native resolver scope; no candidate/later-reader pruning",
         "admission":"all prior assignable DETs at independently checked frontier; no candidate domain, OUT/FITS, later forms or gold kept selection",
         "model_contract":"parents task-wide; models local to table/example; no ordinal or Ident cross-family alignment",
         "raw_reuse":{"status":"unproven","reason":"no stored snapshot authenticated; dependency membership or observed counts alone do not prove coverage","requires_fresh_row_evaluation":null}});
@@ -165,7 +166,7 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
     if candidate.is_some_and(|m|!Arc::ptr_eq(m.gold(),universe.source.checked())) {
         return Err("candidate belongs to another original gold handle".into());
     }
-    let checked=Arc::new(features::checked_prefix(source,&universe.point,Registry::get())?);
+    let checked=Arc::new(features::checked_universe_prefix(source,&universe.point,Registry::get())?);
     let frontier=features::frontier(source,&universe.point)?;
     if frontier!=universe.frontier.program.program ||
         arclog::write::write_synthesized(&frontier,Registry::get())!=arclog::write::write_synthesized(&universe.frontier.program.program,Registry::get()) {
