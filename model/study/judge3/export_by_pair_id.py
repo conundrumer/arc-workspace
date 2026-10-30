@@ -118,6 +118,8 @@ def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_d
                                   tables=done['tables'], output=done['output'], cache_repaired=done['cache_repaired'],
                                   cases_new=sorted(c for c, new in fresh.items() if new),
                                   cases_cached=sorted(c for c, new in fresh.items() if not new))
+                    if 'current_native_names_receipt' in done:
+                        result['current_native_names_receipt'] = done['current_native_names_receipt']
             except Exception as error:
                 shutil.rmtree(destination.with_name(destination.name + '.building'), ignore_errors=True)
                 if points is not None:
