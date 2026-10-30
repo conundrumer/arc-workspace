@@ -1,13 +1,13 @@
 # Synthesized sample labels
 
-`sample_label.py label` gives synthesized samples the labels that corpus pairs get. A sample is a task, a gold point and a candidate program, for example a mutant of a gold program. The driver writes one label line per sample as soon as that sample is done, and a restart skips the samples that already have a line.
+`sample_label.py label` gives synthesized samples the labels that corpus pairs get. A sample is a task, a gold point and a candidate program, for example a mutant of a gold program. The driver writes one label line per sample as soon as that sample is done, and a restart skips the samples that already have a line. The producer can append samples while the driver runs; a later run labels the lines that a run did not reach.
 
 ```sh
 scripts/run_heavy.py --cpus 1 <runtime python> -B model/study/ast/run/sample_label.py label \
   --samples DIR/samples.jsonl.zst --golds DIR/golds.jsonl.zst --root ROOT --tasks <task directory>
 ```
 
-Use one `--root` per sample population. `--limit N` reads only the first N sample lines. `--retry-unavailable` processes again the samples whose last line has status `unavailable`, for example after a constructor for their candidate kind exists. Progress with rate and ETA goes to stdout. The progress of the population phases goes to `ROOT/stages.log`.
+Use one `--root` per sample population. `--limit N` reads only the first N sample lines. `--retry-unavailable` processes again the samples whose last line has status `unavailable`, for example after a constructor for their candidate kind exists. `--no-reuse-base` evaluates a mutant again even where the historical base has an intact label for it. Progress with rate and ETA goes to stdout. Output of the stages goes to `ROOT/stages.log`.
 
 `sample_label.py from-population --population DRAWS.sqlite3 --tasks DIR --out DIR --limit N` writes sample records for the first N candidates of a substitute population.
 
@@ -35,11 +35,26 @@ A candidate has one of these kinds:
 
 ## Stages
 
-Each sample becomes a member of `ROOT/population.sqlite3`, the population store that [population_consume.md](population_consume.md) describes. Samples of one gold that come one after another, up to `--batch`, share one evaluator session. The driver runs the `materialize` and `label` phases of `population_consume.py` on them, and reads the joined result through `mech.population_read.PopulationReader`. That result includes read-time static pruning and the grade. Follow-up passes (witness tests, normal form, reader and TEST fits, lib search, all-target comparison, model judge) stay in `missing_steps` until they have written results for the population.
+Each sample becomes a member of `ROOT/population.sqlite3`, the population store that [population_consume.md](population_consume.md) describes. The driver runs these stages on each sample, in order. Each stage resumes its own stored result, and a stage that fails is recorded in the label line.
+
+| Stage | Entry point |
+| --- | --- |
+| `reuse` | binds the historical observation of a mutant whose historical base label is intact |
+| `materialize` | `population_consume.materialize_one` |
+| `label` | `population_consume.label_one` |
+| `normal` | `mech2.classify_normal.label_pair` |
+| `witness_tests` | `mech.step2_check.WitnessTestSession` |
+| `fit_split` | `mech3.pair_api.PairLabeler` |
+
+`normal`, `witness_tests` and `fit_split` run only on base results of this root; a reused mutant keeps the results of the historical passes. Samples of one gold share one evaluator session. Lib search, all-target comparison and the model judge stay in `missing_steps`.
+
+The pass stores and replay artifacts are in `DATA_ROOT/population_passes/<root name>-<hash of the root path>`, because the evaluator writes artifacts only under `DATA_ROOT`. `ROOT/evaluator.json` is the corpus-v12 evaluator configuration with this root's task directory.
+
+The runtime must have the `arclog` wheel that the checkout's native code needs. The driver appends `work/lm/.venv` site-packages after the runtime's own, for zstandard, numpy and pyarrow.
 
 ## Output
 
-`ROOT/labels.jsonl.zst` has one line per sample per run that processed it. The last line for a `sample_id` is the current one. A line has schema `study-sample-label-v1`, with `sample_id`, `pair_id` and the fields of the joined read: `status`, `valid`, `grade`, `grade_reason`, `filter_class`, `normal`, `judge_eligible`, `missing_steps`, `attributes`, `facts`, `reason`, `attempt`, `filters`, `source_sha256` and `base_result_sha256`. `base_label` is the base mechanical label. `results` gives the status of each pass result.
+`ROOT/labels.jsonl.zst` has one line per sample per run that processed it. The last line for a `sample_id` is the current one. A line has schema `study-sample-label-v1`, with `sample_id`, `pair_id` and the fields of the joined read: `status`, `valid`, `grade`, `grade_reason`, `filter_class`, `normal`, `judge_eligible`, `missing_steps`, `attributes`, `facts`, `reason`, `attempt`, `filters`, `source_sha256` and `base_result_sha256`. `base_label` is the base mechanical label. `results` gives the status of each pass result. `stages` gives the outcome of each stage that ran.
 
 | `status` | Meaning |
 | --- | --- |
@@ -50,4 +65,4 @@ Each sample becomes a member of `ROOT/population.sqlite3`, the population store 
 | `unavailable` | the observation could not be made; `attempt` gives the reason |
 | `rejected` | the sample line failed validation; `reason` gives the cause |
 
-The label lines are a copy for consumers that read as the driver writes. `PopulationReader(paths={"population": "ROOT/population.sqlite3"})` reads the current joined result of any member.
+The label lines are a copy for consumers that read as the driver writes. `sample_label.reader(ROOT)` gives the population reader with this root's pass stores; its `read_pair(pair_id)` and `read_pairs()` give the current joined result of members.

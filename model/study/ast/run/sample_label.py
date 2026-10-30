@@ -9,7 +9,6 @@ from collections import Counter
 import contextlib
 import fcntl
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -19,11 +18,11 @@ import time
 
 HERE=Path(__file__).resolve().parent
 sys.path[:0]=[str(HERE/'mech'),str(HERE),str(HERE.parents[1])]
-from study_paths import DATA_ROOT,MAIN_ROOT
-# Some study runtimes lack zstandard. Append it after the runtime's own packages,
-# so the runtime's native wheel keeps precedence.
-if importlib.util.find_spec('zstandard') is None:
-    sys.path.append(str(MAIN_ROOT/'.venv/lib/python3.12/site-packages'))
+from study_paths import CODE_ROOT,DATA_ROOT,MAIN_ROOT
+# Append the study environment after the runtime's own packages, so the runtime's native wheel keeps precedence.
+# Some study runtimes lack zstandard. The normal-form pass also drops every sys.path entry under DATA_ROOT, which
+# holds the study runtimes, and then imports numpy and pyarrow from this entry.
+sys.path.append(str(MAIN_ROOT/'work/lm/.venv/lib/python3.12/site-packages'))
 from judge3.framed_jsonl import JsonlWriter,iter_json,iter_lines
 from run import canonical,digest,pair_key
 
@@ -109,16 +108,6 @@ def admit(db,pair,value):
     with db:db.execute('INSERT OR IGNORE INTO members VALUES (?,?,?)',(pair,sha,canonical(value)))
 
 
-def only(db,pairs):
-    """An in-memory observations table holding only `pairs`, so that the label phase reads no other member."""
-    view=sqlite3.connect(':memory:')
-    view.execute('CREATE TABLE observations(pair_id TEXT PRIMARY KEY,source_sha256 TEXT,locator TEXT)')
-    for pair in pairs:
-        row=db.execute('SELECT pair_id,source_sha256,locator FROM observations WHERE pair_id=?',(pair,)).fetchone()
-        if row:view.execute('INSERT OR IGNORE INTO observations VALUES (?,?,?)',row)
-    return view
-
-
 def label_line(record,pair,joined):
     line=dict(schema=LABEL,sample_id=record['sample_id'],pair_id=pair,labeled_at=time.time())
     if joined is None:return line
@@ -131,25 +120,108 @@ def label_line(record,pair,joined):
     return line
 
 
-def batches(a,done):
-    """Consecutive pending samples of one (task, case, gold), at most a.batch per batch."""
-    batch,key,seen=[],None,0
+def passes_dir(root):
+    """Pass stores and replay artifacts of a sample root. Evaluator artifacts must lie under DATA_ROOT/population_passes."""
+    return DATA_ROOT/'population_passes'/(root.name+'-'+hashlib.sha256(str(root).encode()).hexdigest()[:12])
+
+
+def pass_paths(root):
+    passes=passes_dir(root)
+    return dict(witness_tests=passes/'witness-tests.sqlite3',normal=passes/'normal.sqlite3',fit_split=passes/'fits.sqlite3')
+
+
+def reader(root):
+    """The joined read of a sample root's members."""
+    from population_read import PopulationReader
+    return PopulationReader(paths=dict(population=str(Path(root).resolve()/'population.sqlite3'),population_passes=pass_paths(Path(root).resolve())))
+
+
+def evaluator_config(a):
+    """The corpus evaluator settings, with this root's task directory."""
+    config=json.loads((DATA_ROOT/'ast/run/corpus-v12-body-full/run.json').read_text());config['tasks']=str(a.tasks)
+    path=a.root/'evaluator.json'
+    if not path.exists() or json.loads(path.read_text())!=config:
+        tmp=path.with_suffix('.tmp');tmp.write_text(canonical(config));os.replace(tmp,path)
+    return path
+
+
+def reuse(db,old,sources,pair,value):
+    """Bind a historical observation with an intact base label to the member, without evaluation."""
+    from population_consume import accept,intact,observation
+    if not value.get('identity') or observation(db,pair) is not None:return False
+    row=old.execute('SELECT source_sha256,result_sha256,record_json FROM pairs WHERE pair_id=?',(pair,)).fetchone()
+    if not row or not intact(row,row[0]):return False
+    result=json.loads(row[2]);src=result['source']
+    return accept(db,pair,value,sources.record(result),dict(corpus=src['corpus'],file=src['file'],line=src['line'],stream=src.get('stream','kept')))
+
+
+class Stages:
+    """Per-sample labeling stages. Each stage resumes its own stored result; a stage failure is a fact of the sample."""
+    def __init__(self,a,db,log):
+        import population_consume as pc
+        from source_read import SourceReader
+        self.a,self.db,self.log,self.pc=a,db,log,pc
+        self.sources=SourceReader(CODE_ROOT);self.old=pc.ro(a.base)
+        self.materializer=pc.MaterializeSession(a,db);self.labeler=pc.LabelSession(a,db)
+        self.passes=passes_dir(a.root);self.passes.mkdir(parents=True,exist_ok=True)
+        self.labels=a.root/'labels.sqlite3';self.config=evaluator_config(a)
+        self.witness=self.fits=None;self.contexts={}
+
+    def close(self):
+        for s in (self.witness,self.fits,self.materializer,self.labeler):
+            if s is not None:s.close()
+        self.sources.close();self.old.close()
+
+    def run(self,pair,value):
+        out={}
+        def stage(name,call):
+            try:
+                with contextlib.redirect_stdout(self.log):result=call()
+                out[name]=result.get('status','done') if isinstance(result,dict) else 'done'
+                return result
+            except Exception as error:  # noqa: BLE001
+                out[name]=dict(error=type(error).__name__,reason=str(error))
+                return None
+        if self.a.reuse_base:stage('reuse',lambda:dict(status='reused' if reuse(self.db,self.old,self.sources,pair,value) else 'none'))
+        stage('materialize',lambda:self.pc.materialize_one(value,self.materializer,pair_id=pair))
+        base=stage('label',lambda:self.pc.label_one(pair,self.labeler))
+        if not base or base.get('status') not in ('label_members','resumed_own'):return out
+        # Follow-up passes run on this root's own base results; reused pairs keep the historical passes' results.
+        stage('normal',lambda:self.normal(pair))
+        stage('witness_tests',lambda:self.witness_tests(pair))
+        stage('fit_split',lambda:self.fit_split(pair))
+        return out
+
+    def normal(self,pair):
+        if str(HERE/'mech2') not in sys.path:sys.path.append(str(HERE/'mech2'))  # classify_normal imports its siblings by bare name
+        import classify_normal
+        return classify_normal.label_pair(pair,base=self.labels,output=self.passes/'normal.sqlite3',source_reader=self.sources,contexts=self.contexts)
+
+    def witness_tests(self,pair):
+        if self.witness is None:
+            from step2_check import WitnessTestSession
+            self.witness=WitnessTestSession(base=self.labels,population_passes=self.passes,config=self.config,source_reader=self.sources,artifacts=self.passes/'witness-artifacts')
+        return self.witness.check_pair(pair)
+
+    def fit_split(self,pair):
+        if self.fits is None:
+            from mech3.pair_api import PairLabeler
+            self.fits=PairLabeler(base=self.labels,population_passes=self.passes,config=self.config,source_reader=self.sources,artifacts=self.passes/'fit-artifacts')
+        return self.fits.label_pair(pair)
+
+
+def pending(a,done):
+    seen=0
     for record in iter_json(a.samples):
         seen+=1
         if a.limit and seen>a.limit:break
         status=done.get(record.get('sample_id'))
         if status is not None and not (a.retry_unavailable and status=='unavailable'):continue
-        k=(record.get('task'),record.get('case'),record.get('gold_ref'))
-        if batch and (k!=key or len(batch)>=a.batch):
-            yield batch;batch=[]
-        batch.append(record);key=k
-    if batch:yield batch
+        yield record
 
 
 def label(a):
     import population_consume as pc
-    from population_read import PopulationReader
-    a.root.mkdir(parents=True,exist_ok=True)
     a.output=a.root/'population.sqlite3';a.retry_failures=a.retry_unavailable
     out=a.root/'labels.jsonl.zst'
     done={}
@@ -159,45 +231,38 @@ def label(a):
     if a.limit:total=min(total,a.limit)
     db=pc.connect(a.output)
     with db:
-        for k,v in dict(base=str(a.base.resolve()),labels=str(a.root/'labels.sqlite3'),tasks=str(a.tasks.resolve())).items():
+        for k,v in dict(base=str(a.base.resolve()),labels=str(a.root/'labels.sqlite3'),tasks=str(a.tasks),passes=str(passes_dir(a.root))).items():
             old=db.execute('SELECT value FROM metadata WHERE key=?',(k,)).fetchone()
             if old and old[0]!=v:raise ValueError('population input location changed: '+k)
             db.execute('INSERT OR IGNORE INTO metadata VALUES (?,?)',(k,v))
-    golds=Golds(a.golds);reader=None;counts=Counter();start=time.monotonic()
-    resumed=sum(1 for s in done.values() if not (a.retry_unavailable and s=='unavailable'))
-    finished=min(resumed,total);counts['resumed']=finished
-    stages=open(a.root/'stages.log','a')
+    golds=Golds(a.golds);joined_reader=None;counts=Counter();start=time.monotonic()
+    resumed=min(sum(1 for s in done.values() if not (a.retry_unavailable and s=='unavailable')),total)
+    finished=resumed;counts['resumed']=resumed
+    log=open(a.root/'stages.log','a');stages=None
     try:
+        stages=Stages(a,db,log)
         with JsonlWriter(out) as writer:
-            for batch in batches(a,done):
-                admitted=[]
-                for record in batch:
-                    try:
-                        pair,value=member(a,record,golds.get(record.get('gold_ref')))
-                        admit(db,pair,value);admitted.append((record,pair))
-                    except (ValueError,KeyError,TypeError) as error:
-                        writer.write(label_line(record,None,None)|dict(status='rejected',reason=str(error)));writer.flush()
-                        counts['rejected']+=1;finished+=1
-                if admitted:
-                    pairs=[pair for _,pair in admitted]
-                    # The population phases print their own progress; it goes to stages.log.
-                    with contextlib.redirect_stdout(stages):
-                        pc.materialize(a,db)
-                        pc.label(a,only(db,pairs))
-                    stages.flush()
-                    if reader is None:reader=PopulationReader(paths=dict(population=str(a.output)))
-                    for record,pair in admitted:
-                        joined=reader.read_pair(pair)
-                        line=label_line(record,pair,joined)
-                        if joined.get('reason')=='observation missing':line['status']='unavailable'
-                        writer.write(line);writer.flush()
-                        counts[line.get('status')]+=1;finished+=1
+            for record in pending(a,done):
+                try:
+                    pair,value=member(a,record,golds.get(record.get('gold_ref')))
+                    admit(db,pair,value)
+                except (ValueError,KeyError,TypeError) as error:
+                    line=label_line(record,None,None)|dict(status='rejected',reason=str(error))
+                else:
+                    ran=stages.run(pair,value);log.flush()
+                    if joined_reader is None:joined_reader=reader(a.root)
+                    joined=joined_reader.read_pair(pair)
+                    line=label_line(record,pair,joined)|dict(stages=ran)
+                    if joined.get('reason')=='observation missing':line['status']='unavailable'
+                writer.write(line);writer.flush()
+                counts[line.get('status')]+=1;finished+=1
                 elapsed=time.monotonic()-start;rate=(finished-resumed)/max(elapsed,.001)
                 print(f'done={finished}/{total} elapsed={elapsed:.1f}s rate={rate:.3f}/s ETA={(total-finished)/rate if rate else 0:.1f}s '+canonical(counts),flush=True)
+        if finished==resumed:print(f'done={finished}/{total} nothing pending '+canonical(counts),flush=True)
     finally:
-        stages.close()
-        if reader:reader.close()
-        db.close()
+        if stages:stages.close()
+        if joined_reader:joined_reader.close()
+        log.close();db.close()
 
 
 def from_population(a):
@@ -228,7 +293,7 @@ def main():
     l.add_argument('--root',type=Path,required=True,help='output directory; one per sample population')
     l.add_argument('--tasks',type=Path,required=True);l.add_argument('--base',type=Path,default=DATA_ROOT/'ast/run/mech/labels.sqlite3')
     l.add_argument('--seconds',type=float,default=1);l.add_argument('--work-cap',type=int,default=67108864);l.add_argument('--session-mib',type=int,default=2048)
-    l.add_argument('--batch',type=int,default=8,help='most samples of one gold that share one evaluator session')
+    l.add_argument('--no-reuse-base',dest='reuse_base',action='store_false',help='evaluate a mutant again even where the historical base has an intact label for it')
     l.add_argument('--limit',type=int,default=0,help='read at most this many sample lines')
     l.add_argument('--retry-unavailable',action='store_true',help='process again the samples whose last line is unavailable')
     e=sub.add_parser('from-population',help='write study-sample-v1 records for candidates of a substitute population')
@@ -236,7 +301,7 @@ def main():
     e.add_argument('--out',type=Path,required=True);e.add_argument('--limit',type=int,required=True)
     a=p.parse_args()
     if a.command=='from-population':return from_population(a)
-    if a.seconds<=0 or a.work_cap<=0 or a.session_mib<=0 or a.batch<=0:p.error('limits must be positive')
+    if a.seconds<=0 or a.work_cap<=0 or a.session_mib<=0:p.error('limits must be positive')
     a.root=a.root.resolve();a.tasks=a.tasks.resolve();a.root.mkdir(parents=True,exist_ok=True)
     with open(a.root/'sample_label.lock','a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
