@@ -20,6 +20,7 @@ import sys
 import time
 
 from ._paths import HERE,CODE_ROOT,DATA_ROOT,DATA
+from judge3.framed_jsonl import JsonlReader
 from .metadata import produce
 from .fact_codec import expand_case,target_identity
 from .read_targets import load_targets,file_hash
@@ -52,8 +53,8 @@ def read_selection(path):
     """Explicit pair inputs to retry; neither code nor result hashes are keys."""
     if path is None:return None
     result={}
-    with Path(path).open() as stream:
-        for number,line in enumerate(stream,1):
+    with JsonlReader(path) as stream:
+        for number,line in enumerate(stream.iter_lines(),1):
             if not line.strip():continue
             value=json.loads(line);pair=value['pair_id'];source=value['source_sha256']
             if any(not isinstance(v,str) or len(v)!=64 or any(c not in '0123456789abcdef' for c in v)
