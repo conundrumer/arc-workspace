@@ -11,6 +11,8 @@ from .fact_codec import compact
 
 class Journal:
     def __init__(self,path,code,config,*,counters=None):
+        from .paused_archive import ensure_database
+        ensure_database(path)
         self.path=Path(path).resolve();self.path.parent.mkdir(parents=True,exist_ok=True)
         self.code=code;self.config=config;self.counters=counters;self._transaction=False;self._producers={}
         self.db=sqlite3.connect(self.path)

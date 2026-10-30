@@ -88,11 +88,12 @@ class Pass:
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True)
         self.base.execute('PRAGMA temp_store=MEMORY');self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
-            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','negative.py','target_index.py','runtime_cache.py','supervisor.py'))
+            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','negative.py','target_index.py','runtime_cache.py','supervisor.py','paused_archive.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
         files.update((CODE_ROOT/'judge3').glob('*.py'))
         files.update(CODE_ROOT/'ast/run/mech'/n for n in ('algorithm.py','step2_check.py','run.py','clause_evidence.py','outcomes.py','grades.py'))
         files.add(CODE_ROOT/'study_paths.py')
+        files.add(CODE_ROOT/'ast/run/mech4/paused_archive.py')
         files.update((CODE_ROOT/'judge2/render2').glob('*.py'))
         files.update(CODE_ROOT/n for n in ('judge3/nonrender_metadata.py','judge3/render_pair.py','judge3/catalog.py',
             'judge2/render2/headers.py','judge2/render2/body.py','judge2/render2/column_paths.py',

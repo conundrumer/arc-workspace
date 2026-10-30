@@ -71,6 +71,8 @@ def load_targets(database,pair_id,*,source_sha256,base_result_sha256=None,source
     """
     db=None;base_db=None
     try:
+        from .paused_archive import ensure_database
+        ensure_database(database)
         path=Path(database).resolve()
         db=reads.open(path);db.execute('BEGIN')
         resolved={};seen=set();inside={};rows={}
