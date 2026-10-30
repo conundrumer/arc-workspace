@@ -231,3 +231,60 @@ class AtomicPacked:
             packing_ref=self._value['packing_ref'], program_sexp=self._value['program_sexp'],
             side=self._value['side'], report_sha256=report_sha256, source_sha256=source_sha256,
             runtime=deepcopy(runtime), payload_ref=live_payload_digest(payload))
+
+
+def _native_stream(program):
+    """Read all three native stream coordinates; no sexp/text normalization."""
+    raw = program.decode_stream()
+    if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+        raise Unavailable('native program stream must contain ids, model flags and paths')
+    ids, model, paths = raw
+    if (len(ids) != len(model) or len(ids) != len(paths)
+            or any(type(n) is not int or n < 0 for n in ids)
+            or any(type(n) not in (int, bool) or not 0 <= n <= 255 for n in model)):
+        raise Unavailable('native program stream coordinates are incomplete')
+    return dict(ids=list(ids), model=list(map(int, model)),
+                paths=[list(_path(path)) for path in paths])
+
+
+def certify_stored_representation(rehydrated, stored, *, requested_text,
+        rehydrated_export, stored_export, mutation_identity,
+        alternate_programs=(), recorded_stream=None):
+    """Certify an exact stored writer representation of one native mutation.
+
+    Both handles and their metadata must be from the same native runtime.
+    This binds complete native token/model/path streams, never text edits or a
+    guessed node-path map. Each returned export keeps its own node identities.
+    It does not certify historical payloads, rows, kept contexts or old types.
+    """
+    import hashlib
+    import json
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False,
+            sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    for program, export in ((rehydrated, rehydrated_export), (stored, stored_export)):
+        if (export.get('schema') != 'arclog-study-render-v1'
+                or export.get('parts', {}).get('nodes') != 'complete'
+                or export.get('program_sexp') != program.sexp()):
+            raise Unavailable('native representation export/handle binding differs')
+    if rehydrated_export.get('mutation_identity') != mutation_identity:
+        raise Unavailable('native rehydrated mutation identity differs from record')
+    if not isinstance(requested_text, str) or stored_export['program_sexp'] != requested_text:
+        raise Unavailable('stored native writer representation differs from exact record text')
+    expected = _native_stream(rehydrated)
+    compared = [stored, *alternate_programs]
+    if any(_native_stream(program) != expected for program in compared):
+        raise Unavailable('native stored/rehydrated ids, model flags or paths differ')
+    if recorded_stream is not None and recorded_stream != expected:
+        raise Unavailable('recorded native stream differs from exact rehydrated stream')
+    return dict(schema='native-stored-representation-v1',
+        mutation_identity=deepcopy(mutation_identity),
+        rehydrated_program_sexp=rehydrated_export['program_sexp'],
+        stored_program_sexp=requested_text,
+        rehydrated_export_sha256=digest(rehydrated_export),
+        stored_export_sha256=digest(stored_export),
+        stream_sha256=digest(expected), stream_coordinates=['ids', 'model', 'paths'],
+        stream_length=len(expected['ids']), compared_programs=1+len(compared),
+        recorded_stream_checked=recorded_stream is not None,
+        node_mapping='none; each representation uses its own native export',
+        historical_payload_authority=False)
