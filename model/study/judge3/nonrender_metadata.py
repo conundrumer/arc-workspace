@@ -255,8 +255,11 @@ class MetadataProducer:
             # In particular, None is reserved for a native inserted Unit; it
             # must not stand in for an absent, non-Unit key scalar.
             export=ctx.gexport if side=='gold' else ctx.mexport
-            view=next(v for v in export['body_views'] if v['owner_path']==ctx.owner
-                      and v['kind']==ctx.body['kind'] and v['input_port']==ctx.body['input_port'])
+            views=[v for v in export['body_views'] if v['body_path']==r['point']
+                   and v['owner_path']==ctx.owner and v['kind']==ctx.body['kind']
+                   and v['input_port']==ctx.body['input_port']]
+            _require(len(views)==1,'exact target projection body is missing or ambiguous: '+side)
+            view=views[0]
             present={c['ast_label_id'] for c in raw}
             missing=[label for label in view['group_key_label_ids'] if label not in present]
             if missing:

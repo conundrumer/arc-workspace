@@ -59,7 +59,11 @@ def render2_stored_page(directory, output):
     for side in ('gold', 'mutant'):
         reader = doc.readers[side]
         export = doc.gexport if side == 'gold' else doc.mexport
-        view = next(v for v in export['body_views'] if v['owner_path']==doc.owner and v['kind']==doc.body['kind'] and v['input_port']==doc.body['input_port'])
+        views = [v for v in export['body_views'] if v['body_path']==record['point']
+                 and v['owner_path']==doc.owner and v['kind']==doc.body['kind']
+                 and v['input_port']==doc.body['input_port']]
+        require(len(views)==1, 'exact review body path is missing or ambiguous: '+side)
+        view = views[0]
         views[side] = view
         t = record['evaluation']['table_indices'][side+'_kept']
         schema = [dict(c) for c in reader.schema(t)]

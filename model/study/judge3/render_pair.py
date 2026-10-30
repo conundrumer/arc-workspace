@@ -416,8 +416,13 @@ class Document:
     def target_projection(self, reader, schema, decoded):
         side = 'gold' if reader is self.readers['gold'] else 'mutant'
         export = self.gexport if side == 'gold' else self.mexport
-        view = next(v for v in export['body_views'] if v['owner_path'] == self.owner
-                    and v['kind'] == self.body['kind'] and v['input_port'] == self.body['input_port'])
+        # A CHOOSE owner has multiple bodies with the same kind/port and
+        # native point ordinal. Only the exact source body path identifies X.
+        views = [v for v in export['body_views'] if v['body_path'] == self.body['body_path']
+                 and v['owner_path'] == self.owner
+                 and v['kind'] == self.body['kind'] and v['input_port'] == self.body['input_port']]
+        require(len(views) == 1, 'exact target projection body is missing or ambiguous')
+        view = views[0]
         by_label = {c['ast_label_id']: c for c in schema}
         selected = []
         if view['kind'] == 'INIT key':
