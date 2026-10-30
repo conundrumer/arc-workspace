@@ -7,8 +7,8 @@ use crate::registry::Registry;
 use serde_json::{Value, json};
 
 pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, String> {
-    let text = crate::write::node_texts(program.program(), program.layout(), registry)?;
-    let names = crate::write::label_names(program.program(), registry);
+    let text = program.node_texts(registry)?;
+    let names = program.label_names(registry);
     let mut bodies = Vec::new();
     for point in program.mutation_points() {
         let view = crate::eval::body_view::BodyView::at(program.checked(), &point.body)

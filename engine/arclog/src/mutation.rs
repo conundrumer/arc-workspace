@@ -192,7 +192,7 @@ impl StudyProgram {
             point, k, count, seed, operation, origin, settings, registry, true,
         )?;
         Ok(json!({"before_policy":"complete-domain-without-replacement-v5",
-            "after_policy":"complete-domain-without-replacement-v6",
+            "after_policy":"complete-domain-unique-text-gold-names-v7",
             "before":before.json(), "after":after.json()}))
     }
 
@@ -282,6 +282,7 @@ impl StudyProgram {
             cache: CheckCache::over(self.mutation_check_base(registry)?),
             stats,
             output: Vec::new(),
+            texts: StableHashSet::default(),
             requested: count,
             deletion_only: operation == "delete",
             expanded,
@@ -311,7 +312,8 @@ impl StudyProgram {
 
 /// A randomized ordering of the finite completion domain. Site subsets have
 /// one canonical traversal and each site's values are unique; consequently a
-/// returned assignment can never be drawn twice. Search exclusions are domain
+/// returned text can never be drawn twice; distinct edits that write one text
+/// are one candidate. Search exclusions are domain
 /// constraints, recorded separately from construction failures (which are bugs).
 struct CompletionDomain<'a> {
     gold: &'a StudyProgram,
@@ -323,6 +325,9 @@ struct CompletionDomain<'a> {
     cache: CheckCache,
     stats: DrawStats,
     output: Vec<MutationSpec>,
+    /// Exact written candidates, not hashes, edits or paths. Discarding one
+    /// does not fill the requested count: traversal continues for a new text.
+    texts: StableHashSet<String>,
     requested: usize,
     deletion_only: bool,
     expanded: bool,
@@ -471,11 +476,7 @@ impl CompletionDomain<'_> {
                 .count("domain_declaration_excluded:missing_maker");
             return Ok(());
         }
-        if !named_bindings_hold(
-            &ast.value().forms[top],
-            &NodePath::top(top as u32),
-            self.gold.layout(),
-        ) {
+        if !named_bindings_hold(&ast.value().forms[top], &NodePath::top(top as u32), self.gold.layout()) {
             self.stats.count("domain_binding_excluded:shadowed_name");
             return Ok(());
         }
@@ -496,12 +497,21 @@ impl CompletionDomain<'_> {
                 return Ok(());
             }
         };
+        let checked = checked.preserve_gold_names(self.gold, self.registry);
         if let Err(error) = self.gold.checked().check_held_det_interfaces(checked.checked()) {
             self.stats.refusal("domain_held_det_excluded", &error.to_string());
             return Ok(());
         }
         if let Err(error) = checked.decode_stream(self.registry, self.settings) {
             self.stats.refusal("domain_stream_excluded", &error);
+            return Ok(());
+        }
+        if let Err(error) = checked.check_preserved_name_binding(self.registry, self.settings, &mut self.cache) {
+            self.stats.refusal("domain_written_binding_excluded", &error);
+            return Ok(());
+        }
+        if !self.texts.insert(checked.sexp(self.registry)) {
+            self.stats.count("domain_text_duplicate_excluded");
             return Ok(());
         }
         // Only now does an assignment belong to the selectable domain.

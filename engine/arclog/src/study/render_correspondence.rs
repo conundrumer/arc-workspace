@@ -192,7 +192,7 @@ pub fn export(
     } else {
         mapping = bridge_paths;
     }
-    let names = crate::write::label_names(source.program(), registry);
+    let names = source.label_names(registry);
     let canonical = |form: &NodePath, id: LabelId| -> Value {
         let identity = BTreeSet::from([(form.clone(), id.0)]);
         let candidates = if same && gold.is_none() {
@@ -434,7 +434,7 @@ pub fn export(
     }
     // Candidate syntax/layout links contain no source/gold identities or
     // later-port inventory. Feature type/frame safety is a separate export.
-    let point_names = crate::write::label_names(program.program(), registry);
+    let point_names = program.label_names(registry);
     let mut feature_points = Vec::new();
     for point in program.mutation_points() {
         let view = crate::eval::body_view::BodyView::at(checked, &point.body)

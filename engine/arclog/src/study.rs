@@ -32,6 +32,8 @@ use crate::stream::{DecodeSettings, Emitter, Vocabulary, WrittenStream};
 pub struct StudyProgram {
     checked: Arc<CheckedProgram>,
     layout: Option<Layout>,
+    display_names: Option<Arc<crate::write::LabelNames>>,
+    display_names_cache: Arc<OnceLock<(usize, Arc<crate::write::LabelNames>)>>,
     render_cache: Arc<OnceLock<(usize, Result<serde_json::Value,String>)>>,
     source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
     stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,String>)>>,
@@ -141,6 +143,8 @@ impl StudyProgram {
         Ok(Self {
             checked: Arc::new(checked),
             layout,
+            display_names: None,
+            display_names_cache: Arc::new(OnceLock::new()),
             render_cache:Arc::new(OnceLock::new()),
             source_cache:Arc::new(OnceLock::new()),
             stream_cache:Arc::new(OnceLock::new()),
@@ -150,11 +154,66 @@ impl StudyProgram {
         })
     }
 
+    /// The single display namespace for text, body schemas and typed metadata.
+    /// Authored programs retain their layout; decoded mutants inherit gold's
+    /// native LabelId names without changing the checked AST or its streams.
+    pub fn label_names(&self, registry: &Registry) -> Arc<crate::write::LabelNames> {
+        let key = registry as *const Registry as usize;
+        let names = || Arc::new(match &self.layout {
+            Some(layout) => self.program().value().forms.iter().enumerate().map(|(index, _)| {
+                layout.node(SourceFile::Arclog, &NodePath::top(index as u32))
+                    .map(|node| node.label_names.to_vec()).unwrap_or_default()
+            }).collect(),
+            None => crate::write::label_names_named(self.program(), registry, self.display_names.as_deref()),
+        });
+        let cached = self.display_names_cache.get_or_init(|| (key, names()));
+        if cached.0 == key { Arc::clone(&cached.1) } else { names() }
+    }
+
+    pub(crate) fn preserve_gold_names(mut self, gold: &Self, registry: &Registry) -> Self {
+        if self.layout.is_none() {
+            self.display_names = Some(gold.label_names(registry));
+        }
+        self
+    }
+
+    /// A gold namespace can contain distinct branch-local IDs with one spelling.
+    /// If the edit exposes such a spelling, only the ordinary reader/binder can
+    /// decide it. Never approximate OR/IF/key scopes by a global name collision.
+    pub(crate) fn check_preserved_name_binding(&self, registry: &Registry,
+        settings: &DecodeSettings, cache: &mut CheckCache) -> Result<(), String> {
+        let Some(names) = &self.display_names else { return Ok(()); };
+        let ambiguous = self.program().value().forms.iter().enumerate().any(|(i, form)| {
+            let mut present = crate::hash::StableHashSet::default();
+            crate::safety::each_label_use_at(crate::program::path::NodeRef::from(form),
+                &NodePath::top(i as u32), &mut |_, used| {
+                    if let Some(id) = crate::types::use_label(used) { present.insert(id); }
+                });
+            let mut held: crate::hash::StableHashMap<&str, crate::program::LabelId> = crate::hash::StableHashMap::default();
+            names[i].iter().filter(|(id, _)| present.contains(id)).any(|(id, name)| {
+                held.insert(name.as_ref(), *id).is_some_and(|other| other != *id)
+            })
+        });
+        if !ambiguous { return Ok(()); }
+        let read = Self::from_sexp_cached(&self.sexp(registry), registry, cache)?;
+        let before = self.decode_stream(registry, settings)?;
+        let after = read.decode_source(registry, settings)?.decode_stream(registry, settings)?;
+        if before.ids != after.ids || before.model != after.model {
+            return Err("gold display names would change native bindings after the edit".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn node_texts(&self, registry: &Registry)
+        -> Result<std::collections::BTreeMap<NodePath, String>, String> {
+        crate::write::node_texts(self.program(), self.layout(), registry, self.display_names.as_deref())
+    }
+
     /// Renderer and mutation share one native inference traversal on this
     /// exact checked handle. New checked programs get fresh caches.
     pub(crate) fn typed_sites(&self, registry: &Registry) -> Result<Arc<crate::check::render_sites::TypedSiteExport>, String> {
         let key = registry as *const Registry as usize;
-        let read = || crate::check::render_sites::export_typed(self.checked(), registry).map(Arc::new);
+        let read = || crate::check::render_sites::export_typed_named(self.checked(), registry, &self.label_names(registry)).map(Arc::new);
         let cached = self.typed_sites_cache.get_or_init(|| (key, read()));
         if cached.0 == key { cached.1.clone() } else { read() }
     }
@@ -202,7 +261,7 @@ impl StudyProgram {
     pub fn sexp(&self, registry: &Registry) -> String {
         match &self.layout {
             Some(layout) => crate::write::write_arclog(self.program(), layout),
-            None => crate::write::write_synthesized(self.program(), registry),
+            None => crate::write::write_synthesized_named(self.program(), registry, self.display_names.as_deref()),
         }
     }
 

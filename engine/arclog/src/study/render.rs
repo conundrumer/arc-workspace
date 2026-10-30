@@ -21,7 +21,7 @@ impl StudyProgram {
     }
 
     fn render_uncached(&self, registry: &Registry) -> Result<Value, String> {
-        let text = crate::write::node_texts(self.program(), self.layout(), registry)?;
+        let text = self.node_texts(registry)?;
         fn walk(
             node: NodeRef<'_>,
             at: &NodePath,

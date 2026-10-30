@@ -29,7 +29,24 @@ pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, St
     Ok(export_typed(checked, registry)?.json)
 }
 
+/// Presentation names for an exact checked prefix; inference is performed only
+/// on `checked`. Callers bind each form/LabelId to that prefix, never by name.
+/// Unused names do not add variables: only inferred native IDs are looked up.
+pub fn export_with_names(checked: &CheckedProgram, registry: &Registry,
+    names: &crate::write::LabelNames) -> Result<Value, String> {
+    if names.len() != checked.program.program.value().forms.len() {
+        return Err("display namespace does not cover this exact checked prefix".into());
+    }
+    Ok(export_typed_named(checked, registry, names)?.json)
+}
+
 pub(crate) fn export_typed(checked: &CheckedProgram, registry: &Registry) -> Result<TypedSiteExport, String> {
+    let names = crate::write::label_names(&checked.program.program, registry);
+    export_typed_named(checked, registry, &names)
+}
+
+pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
+    names: &crate::write::LabelNames) -> Result<TypedSiteExport, String> {
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&checked.program));
     let cases = CaseInferences::new(&clauses, registry);
     let inference = Inference::new(&checked.program, &cases);
@@ -38,7 +55,6 @@ pub(crate) fn export_typed(checked: &CheckedProgram, registry: &Registry) -> Res
     let mut variables = Vec::new();
     let mut scopes = Vec::new();
     let mut column_types = BTreeMap::new();
-    let names = crate::write::label_names(&checked.program.program, registry);
     fn frame(ty: &ValueType, label: Option<LabelId>, grids: &FormGrids<'_, '_>) -> Value {
         if !crate::registry::has_frame(ty) {
             return json!({"status":"not_applicable"});

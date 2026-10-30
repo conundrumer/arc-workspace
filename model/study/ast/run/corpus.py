@@ -328,6 +328,9 @@ def worker(args):
                         # memory does not grow as points x program-prefix size.
                         gold_filter_tables={}
                         gold_payload_cache={}
+                        # Native draws are unique within a bucket. Keep the
+                        # point unique across K/operation requests as well.
+                        point_texts=set()
                         for k in (1,2,3):
                             for op in ('substitute','delete'):
                                 ctx=dict(task=task,case=case,point=list(point.body_path),clause=list(point.clause_path),kind=point.kind,K=k,operation=op)
@@ -341,10 +344,17 @@ def worker(args):
                                     phase_timings={}
                                     row=dict(type='pair',record_format=RECORD_FORMAT,engine_commit=args._provenance['engine_commit'],wheel_sha256=args._provenance['wheel_sha256'],native_binary_sha256=args._provenance['native_binary_sha256'],**ctx,identity=json.loads(spec.identity_json),relation_source_names=relation_source_names,programs=dict(gold=sexp,mutant=None),gold_sexp=sexp,mutant_sexp=None,mutant_stream=None,code_label=None,judge_eligible=False,code_label_evidence=None)
                                     try:
-                                        mutant=gold.construct(spec);ms=mutant.decode_stream()
+                                        mutant=gold.construct(spec)
+                                        mutant_text=mutant.sexp()
+                                        if mutant_text in point_texts:
+                                            counts['totals']['duplicate_text_excluded']+=1
+                                            write(events,dict(event='duplicate_mutant_text',**ctx,identity=json.loads(spec.identity_json)))
+                                            continue
+                                        point_texts.add(mutant_text)
+                                        ms=mutant.decode_stream()
                                         audit=json.loads(mutant.audit_json())
                                         if audit['changed_atoms']!=k:raise ValueError('constructed mutant does not have exact K edits')
-                                        row.update(mutant_sexp=mutant.sexp(),mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit)
+                                        row.update(mutant_sexp=mutant_text,mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit)
                                         row['programs']['mutant']=row['mutant_sexp']
                                         phase_timings['construct']=time.monotonic()-tick
                                         evaluate_started=time.monotonic()
@@ -435,8 +445,8 @@ def worker(args):
                  storage=directory_bytes(final if complete else temp))
 
 def require_evaluator(arclog):
-    if arclog.StudyProgram.mutation_policy()!='complete-domain-without-replacement-v6':
-        raise RuntimeError('corpus requires the reviewed v6 mutation policy')
+    if arclog.StudyProgram.mutation_policy()!='complete-domain-unique-text-gold-names-v7':
+        raise RuntimeError('corpus requires the reviewed v7 unique-text/gold-names mutation policy')
     if not hasattr(arclog.StudyProgram,'relation_source_names_json') or not hasattr(arclog,'study_component_tables'):
         raise RuntimeError('fresh runtime with source names, kept maps and component tables required')
     cls=getattr(arclog,'StudyTaskEvaluator',None)

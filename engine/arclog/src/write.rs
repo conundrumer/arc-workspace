@@ -83,7 +83,21 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// label as `^<column>`, with the column's name whatever the other labels of
 /// the form are named, since no label of an `OUT` is read again.
 pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String {
-    synthesized::write(program, registry)
+    synthesized::write(program, registry, None)
+}
+
+/// A mutation's display namespace, keyed by the unchanged native LabelIds.
+/// It has no part in checked AST equality, stream identity or evaluation.
+pub type LabelNames = Vec<Vec<(crate::program::LabelId, Box<str>)>>;
+
+pub(crate) fn write_synthesized_named(program: &Node<Program>, registry: &Registry,
+    preferred: Option<&LabelNames>) -> String {
+    synthesized::write(program, registry, preferred)
+}
+
+pub(crate) fn label_names_named(program: &Node<Program>, registry: &Registry,
+    preferred: Option<&LabelNames>) -> LabelNames {
+    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names)| names).collect()
 }
 
 /// The name of each label of each form of `program`, in form order, as
@@ -91,12 +105,12 @@ pub fn write_synthesized(program: &Node<Program>, registry: &Registry) -> String
 /// other labels in the order of their ids. It refuses the programs that
 /// `write_synthesized` refuses.
 pub fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(crate::program::LabelId, Box<str>)>> {
-    synthesized::label_names(program, registry)
+    label_names_named(program, registry, None)
 }
 
 /// Engine-written display text keyed by the ORIGINAL AST paths. Synthesized
 /// named-record field wrappers are presentation only, never new source paths.
-pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, registry: &Registry)
+pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, registry: &Registry, preferred: Option<&LabelNames>)
     -> Result<std::collections::BTreeMap<crate::program::path::NodePath, String>, String>
 {
     use crate::program::path::{NodePath,NodeRef};
@@ -107,7 +121,7 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
                 .map(|n|n.label_names.to_vec()).unwrap_or_default();
             (f.clone(),names)
         }).collect(),
-        None => synthesized::named_forms(program,registry),
+        None => synthesized::named_forms(program,registry,preferred),
     };
     fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath,
         names: &[(LabelId,Box<str>)], out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
@@ -132,7 +146,7 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
     for (i,(original,(display,names))) in program.value().forms.iter().zip(named).enumerate() {
         walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),&names,&mut out)?;
     }
-    out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized(program,registry)});
+    out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized_named(program,registry,preferred)});
     Ok(out)
 }
 
@@ -192,6 +206,7 @@ mod synthesized {
     pub(super) fn named_forms(
         program: &Node<Program>,
         registry: &Registry,
+        preferred: Option<&super::LabelNames>,
     ) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {
         let mut synth = Synthesizer {
             registry,
@@ -199,22 +214,34 @@ mod synthesized {
             records: StableHashMap::default(),
         };
         let mut named = Vec::new();
-        for form in program.value().forms.iter() {
-            let names = synth.label_names(form);
+        for (index, form) in program.value().forms.iter().enumerate() {
+            let generated = synth.label_names(form);
+            // Existing labels keep gold's spellings, including names no longer
+            // used after a deletion. Only genuinely new IDs allocate a name.
+            // Keep the canonical site's field spelling: the ordinary writer
+            // emits an explicit field wrapper when its label differs.
+            let names = match preferred.and_then(|all| all.get(index)) {
+                None => generated,
+                Some(gold) => {
+                    let mut held = gold.clone();
+                    for (id, name) in generated {
+                        if held.iter().any(|(label, _)| *label == id) { continue; }
+                        let fresh = label_name(&name, |candidate| held.iter().any(|(_, name)| &**name == candidate));
+                        held.push((id, fresh.into()));
+                    }
+                    held
+                }
+            };
             let written = synth.form(form, &Names(&names));
             named.push((written, names));
         }
         named
     }
 
-    pub(super) fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(LabelId, Box<str>)>> {
-        named_forms(program, registry).into_iter().map(|(_, names)| names).collect()
-    }
-
-    pub(super) fn write(program: &Node<Program>, registry: &Registry) -> String {
+    pub(super) fn write(program: &Node<Program>, registry: &Registry, preferred: Option<&super::LabelNames>) -> String {
         let mut forms = Vec::new();
         let mut layout = Layout::default();
-        for (index, (form, names)) in named_forms(program, registry).into_iter().enumerate() {
+        for (index, (form, names)) in named_forms(program, registry, preferred).into_iter().enumerate() {
             let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
             let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
             layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);

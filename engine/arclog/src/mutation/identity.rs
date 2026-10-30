@@ -261,10 +261,17 @@ impl StudyProgram {
         if !declared_in_scopes(NodeRef::Program(ast.value())) {
             return Err("identity: deleted declaration still used".into());
         }
+        let top = point.body.0[0].0 as usize;
+        if !named_bindings_hold(&ast.value().forms[top], &NodePath::top(top as u32), self.layout()) {
+            return Err("identity: edit would shadow an unchanged gold name".into());
+        }
         let certified =
-            StudyProgram::from_program(ast, edit::layout(self.layout(), &edits), registry)?;
+            StudyProgram::from_program(ast, edit::layout(self.layout(), &edits), registry)?
+                .preserve_gold_names(self, registry);
         self.checked().check_held_det_interfaces(certified.checked()).map_err(|e| e.to_string())?;
         certified.decode_stream(registry, settings)?;
+        let mut names_cache = CheckCache::over(self.mutation_check_base(registry)?);
+        certified.check_preserved_name_binding(registry, settings, &mut names_cache)?;
         let spec = MutationSpec {
             source: Arc::clone(self.checked()),
             point,
