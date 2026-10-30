@@ -110,12 +110,17 @@ class Worker:
             self.producer=self.producer_class(engine=self.legacy.arclog,
                 read_native=lambda ref,base:self.snapshot(ref,base)['_native_reader'],
                 corpus=corpus,settings=self.settings,case_inventory=dict(cases=[]))
-        exports={s:self.producer.programs.load(record[s+'_sexp'],record if s=='gold' else None)[1]
+        program_record=dict(record)
+        program_record.setdefault('programs',{s:record[s+'_sexp'] for s in ('gold','mutant')})
+        exports={s:self.producer.programs.load(record[s+'_sexp'],program_record if s=='gold' else None,
+                    mutant_record=program_record if s=='mutant' else None)[1]
                  for s in ('gold','mutant')}
         kind=next(v['kind'] for v in exports['gold']['body_views'] if v['body_path']==record['point'])
         if kind.casefold()=='det':raise ValueError('DET uses the separate table-only target pass')
         adapter=self.producer.produce(record,native_base=corpus/record['task'])
         bindings=adapter['bindings'];policies=adapter['policies']
+        if any(binding['body_path']!=record['point'] for binding in bindings.values()):
+            raise ValueError('canonical metadata selected a different BODY path')
         projection=pair_readers(record,exports,bindings,side_cache=self.reader_cache)
         projection['metadata_policies']=policies
         projection['source_selectors']={s:bindings[s]['native_selector'] for s in bindings}
