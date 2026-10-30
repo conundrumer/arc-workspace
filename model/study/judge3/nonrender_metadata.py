@@ -64,7 +64,7 @@ def _policy():
     project, p3 = _extract(paths/'body.py', functions=('project_entries',), namespace=ns)
     ns.update(bind_body_schema=headers['bind_body_schema'], project_entries=project['project_entries'])
     renderer, p4 = _extract(ROOT/'render_pair.py', functions=('under','real_paths'), classes=('Names',),
-        methods={'Document':('body_view','schema','target_projection','callable_atom','dependency_scope','definition_node')},
+        methods={'Document':('schema','target_projection','callable_atom','dependency_scope','definition_node')},
         namespace=dict(ns, S=STUDY, DATA_ROOT=DATA_ROOT, MAIN_ROOT=MAIN_ROOT))
     # dependency_scope uses the exact renderer under() helper.
     renderer['Document'].dependency_scope.__globals__['under'] = renderer['under']
@@ -255,7 +255,8 @@ class MetadataProducer:
             # In particular, None is reserved for a native inserted Unit; it
             # must not stand in for an absent, non-Unit key scalar.
             export=ctx.gexport if side=='gold' else ctx.mexport
-            view=ctx.body_view(export)
+            view=next(v for v in export['body_views'] if v['owner_path']==ctx.owner
+                      and v['kind']==ctx.body['kind'] and v['input_port']==ctx.body['input_port'])
             present={c['ast_label_id'] for c in raw}
             missing=[label for label in view['group_key_label_ids'] if label not in present]
             if missing:
