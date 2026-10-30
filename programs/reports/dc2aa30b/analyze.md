@@ -24,13 +24,13 @@
 - `tie-order` & `tile-layout`, `tie-order` & `divider-color-source`, `tie-order` & `counted-color-source`, `tile-layout` & `counted-color-source`, `divider-color-source` & `counted-color-source`: the two branches' changes applied together
 
 ## Open parameters
-- `counted_color` with `order_corner`: (1, bottom-left) and (2, top-right). The two parameters change together: ranking by the count of 2 from the top-right slot gives the same order as ranking by the count of 1 from the bottom-left slot wherever every tile cell is 1 or 2. The two assignments part only where a tile holds a third color, which breaks `two-color-tiles`. No other color, corner and `fill_axis` fits every train pair.
+- none
 
 ## Not formed
-- A slot order that fills columns first, or that turns back at each row: train0 separates them, and of the sixteen assignments of color, corner and `fill_axis`, only the two open values fit.
+- A slot order that fills columns first, or that turns back at each row: train0 separates them, and of the sixteen assignments of color, corner and `fill_axis`, only the two assignments (1, bottom-left) and (2, top-right) of `counted_color` with `order_corner` fit. The concept case runs both assignments and is undefined on an input where those values give different outputs.
 - Placing a tile at the slot its count gives rather than its rank: train0 counts 0 to 8 and train1 counts 1 to 9, and both fill the slots in one order. Ten counts also cannot map onto nine slots.
 - A tile changed as it is placed: every tile of every output is an unchanged copy of an input tile.
-- Ranking by the count of cells that are not `other_color`: it is the open value (2, top-right), whose model ranks by the count of 2.
+- Ranking by the count of cells that are not `other_color`: it is the assignment (2, top-right) of `counted_color` with `order_corner`, which the concept case runs with (1, bottom-left) and which ranks by the count of 2; the case is undefined on an input where those values give different outputs.
 - A stored permutation of tile positions: each pair moves its tiles by a different permutation, so no one permutation fits the train pairs.
 - A derived `order_corner` or `fill_axis`: no proposer gives an orientation value.
 - A tile layout derived by `SepTileCount`, `SepTileDim` and `SepThickness`: it reads the tiling of uniform lines with no reading of their color, which is the model of `divider_color=SharedColor`.

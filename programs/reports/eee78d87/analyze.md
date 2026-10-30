@@ -21,9 +21,6 @@
 - `window-place`
     - `concept`: the window is centered.
     - `$WindowOffsetStored`: replaces the centering in `center-window`. Parameter `window_offset`, (5,5). Undefined where the window leaves the canvas. It fits every pair. Witness `off-center-window` (train0 input) at the assignment `window_offset` = (2,2) recolors rows 2–7, cols 2–7. It breaks no scene claim. Plausibility `variant`: the input breaks no invariant of the inputs, and the reassignment moves the window, which every output centers. Verdict `$WindowOffsetStored`.
-- `tiling-phase`
-    - `concept`: copies sit symmetric about the canvas center, with copy centers on rows and cols where 2r ≡ `canvas_size` − 1 (mod period).
-    - `$PhaseFromCorner`: replaces the phase in `stencil-tiling`, putting a copy's center on the row and column of a stored canvas corner. It reads the open parameter `anchor_corner`. It fits every pair, since all four corners give one grid at 16. Witness `canvas-off-period` (train0 input) at the assignment `canvas_size` = 18 gives four grids (copy centers 0,3,…,15 or 2,5,…,17 on each axis) against the concept's centers 1,4,…,16. It breaks no scene claim. Plausibility `variant`: no invariant of the inputs breaks, and every output's canvas is 16. Verdict `concept`.
 - `stencil-reading`
     - `concept`: each output cell reads one stencil cell, the stencil tiled cell by cell.
     - `$LatticeElements`: replaces `stencil-tiling`'s cell reading. The output is a lattice of 1-wide lines every period. A crossing takes the stencil's center cell. A run between crossings takes the two side cells on its axis. A block takes the four corner cells. A run or block is a hole when any of its stencil cells is held. Undefined off a 3×3 stencil. It fits every pair. Witness `asymmetric-stencil` (an L-shaped stencil) at the stored assignment gives runs and blocks whole where the concept splits them. It breaks no scene claim. Plausibility `variant`, breaking the invariant that every shape is symmetric under both mirror flips. Verdict `concept`.
@@ -47,10 +44,10 @@
 - `window-color`
     - `concept`: `window_color` stored, 9.
     - `window_color=<Proposer>`, for each proposer: no proposer that reads one input alone gives 9, and those that read outputs give nothing. All fail Fit at train0.
-- `canvas-extent`, `window-extent`, `window-place`, `tiling-phase`, `stencil-reading`, `lattice-combine`, `stencil-polarity`, `period`, `field-color`, `hole-color`, `window-color`, each pair of them: the two branches' changes applied together.
+- `canvas-extent`, `window-extent`, `window-place`, `stencil-reading`, `lattice-combine`, `stencil-polarity`, `period`, `field-color`, `hole-color`, `window-color`, each pair of them: the two branches' changes applied together.
 
 ## Open parameters
-- `anchor_corner`: TL, TR, BL, BR, under `$PhaseFromCorner`
+- none
 
 ## Not formed
 - The stencil box located other than by the shape's bounding box (a fixed frame, or a frame around a marked cell): no input marks a frame, every shape's box is 3×3, and no source of step 1 gives such a frame.

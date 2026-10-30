@@ -16,7 +16,7 @@
 ## Parameters
 - `mask_color`: 1
 - `symmetry`: SYM_BOX, SYM_D4
-    - the symmetry group about the grid's center that the restoration reads; every input holds under both, and the pairs do not separate them
+    - the symmetry group about the grid's center that the restoration reads; every input holds under both, and the pairs do not separate them; the case runs every value and is undefined on an input where those values give different outputs
 
 ## Scene parameters
 - `mask_size`: 5×5

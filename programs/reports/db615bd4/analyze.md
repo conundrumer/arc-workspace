@@ -22,8 +22,7 @@
     - `$CrossFromSide`: across the stack, the blocks sit `margin` cells from a stored side of the frame. It fails Fit at train1: the output blocks fill cols 8–10, and a stored side gives cols 7–9 or 9–11.
 - `along-placement`
     - `concept`: the stack is centered along its axis, and `margin` follows from `exact-fit`.
-    - `$AnchorStack`: replaces the along-axis centering of `stack-blocks`: the stack starts `margin` cells from the frame edge that `anchor` gives on the stack axis. It reads `margin` (1) and the open parameter `anchor`, and it is undefined where the stack does not fit after that margin. It fits every pair. Witness `slack-along`: it breaks `exact-fit`, at the stored assignment; plausibility `borderline`; verdict `concept`; the invariant it breaks is that the stack fills the interior along its axis less one cell at each end in every input.
-    - `$GapFromFit`: derives `gap` in place of storing it, and replaces the along-axis centering of `stack-blocks`: the stack runs from `margin` after one end to `margin` before the other, with gap = (interior extent − 2·`margin` − the blocks' extents) / (blocks − 1). It reads `margin` (1), and it is undefined where that gap is not a whole number ≥ 0, or where there is one piece. It fits every pair. Witness `slack-along`: it breaks `exact-fit`, at the stored assignment; plausibility `borderline`; verdict `concept`; the invariant it breaks is the same as for `$AnchorStack`.
+    - `$GapFromFit`: derives `gap` in place of storing it, and replaces the along-axis centering of `stack-blocks`: the stack runs from `margin` after one end to `margin` before the other, with gap = (interior extent − 2·`margin` − the blocks' extents) / (blocks − 1). It reads `margin` (1), and it is undefined where that gap is not a whole number ≥ 0, or where there is one piece. It fits every pair. Witness `slack-along`: it breaks `exact-fit`, at the stored assignment; plausibility `borderline`; verdict `concept`; the invariant it breaks is that the stack fills the interior along its axis less one cell at each end in every input.
 - `frame-parse`
     - `concept`: the frame is the one color, other than the dot color, whose cells all lie on the dot class. It is undefined where there is no such color or more than one.
     - `$FrameLargest`: replaces how `frame` identifies the frame: the frame is the color, other than the background and the dot color, with the most cells. It is undefined where two colors tie. It fits every pair. Witness `frame-off-dot-class`: it breaks `frame`, at the stored assignment; plausibility `borderline`; verdict `$FrameLargest`; the invariant it breaks is that the frame's dots lie on the dot class in every input.
@@ -45,7 +44,7 @@
     - `$RoomAxis` & `$GapFromFit`: the blocks line up along the one axis on which they fit, one cell apart, in the interior less `margin` at each end. Along that axis, the gap is derived so that the stack runs from `margin` after one end to `margin` before the other. The model is undefined where the blocks fit on both axes or on neither.
 
 ## Open parameters
-- `anchor`: DIAG_TL, DIAG_TR, DIAG_BL, DIAG_BR, under `$AnchorStack`. Only the corner's edge on the stack axis acts, so the output holds the stack set at each end.
+- none
 
 ## Not formed
 - `gap` as the dot class's period less one: no source gives it. Every pair's period is 2, no proposer reads a dot period (`Period` needs inputs that repeat), and no solver header or lib component ties a gap to a dot period.

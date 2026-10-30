@@ -16,7 +16,6 @@
 - `arrangement`
     - `concept`: each band moves to its mirror image within the stack's span (`reverse-order`).
     - `$FrameMirror`: replaces `reverse-order`, so each band moves to its mirror image across the frame's middle line along `stack_axis`. Parameters `background` and `stack_axis`. Undefined where the concept is undefined. Fits every pair, because every stack in them is centered. Witness `off-center`, which breaks no scene claim. Plausibility `variant`, verdict `concept`. Invariant broken: the stack has one background line above it and one below it.
-    - `$ClosedGaps`: replaces `reverse-order`, so the layers come in reverse order, packed against one edge of the span with no empty line between them. Parameters `background`, `stack_axis` and `pack_side`. Undefined where the concept is undefined. Fits every pair. Witness `gap`, which breaks the scene claim `packed-stack`. Plausibility `variant`, verdict `concept`. Invariant broken: no empty line stands inside the stack.
     - `$StoredColorOrder`: replaces `reverse-order`, so the layers come in the order that a stored ranking of the colors gives, packed in the span. Parameters `background`, `stack_axis` and `color_order`. Undefined where a layer's color has no rank. Fails Fit at train1: train0 needs 1 before 3 and train1 needs 3 before 1, so no ranking fits both.
 - `background`
     - `concept`: the stored value 0.
@@ -27,7 +26,7 @@
 - `layer-unit` & `layer-content`, `layer-unit` & `arrangement`, `layer-unit` & `background`, `layer-unit` & `stack_axis`, `layer-content` & `arrangement`, `layer-content` & `background`, `layer-content` & `stack_axis`, `arrangement` & `background`, `arrangement` & `stack_axis`, `background` & `stack_axis`: the two branches' changes applied together
 
 ## Open parameters
-- `pack_side`: T, B, under `$ClosedGaps`
+- none
 
 ## Not formed
 - A layer drawn in more than one color: every layer touches the next one, so without color no reading of the pairs separates two neighboring layers.
