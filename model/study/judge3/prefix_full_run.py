@@ -205,9 +205,45 @@ def valid_saved(saved,key):
 def persist_pair(options,operation,root,pair,value):
     destination=root/'pairs'/(pair+'.json')
     write(destination,value)
-    # Small streamed discovery; available/G are context refs, not duplicated rows.
+    publish_pair_reference(options,operation,pair,value,destination)
+
+
+def publish_pair_reference(options,operation,pair,value,path):
+    # Never rewrite predecessor results, rows, contexts or native namespaces.
     write(Path(options['output'])/'published-pairs'/(pair+'.json'),dict(schema=SCHEMA,
-        point_id=operation['point_id'],pair_id=pair,status=value['status'],result=ref(destination)))
+        point_id=operation['point_id'],pair_id=pair,status=value['status'],result=ref(path)))
+
+
+def saved_pair(options,operation,pair,source):
+    output=Path(options['output'])
+    for scope in (options['scope'],*options.get('predecessor_scopes',())):
+        path=output/'points'/operation['point_id']/point_key(scope,operation)/'pairs'/(pair+'.json')
+        saved=read(path)
+        if (isinstance(saved,dict) and saved.get('scope')==scope
+                and saved.get('pair_id')==pair and saved.get('point_id')==operation['point_id']
+                and saved.get('source_sha256')==source['source_sha256']
+                and valid_saved(saved,pair_key(scope,operation,source))):
+            return saved,path
+    return None,None
+
+
+def predecessor_scopes(scope,output):
+    # The shared helper owns exact, source-authenticated storage transitions.
+    # A runtime/settings/semantic change cannot pass by ignoring its hash.
+    from case_cache_keys import prefix_predecessor_scopes
+    import evaluator
+    result=[]
+    for value in prefix_predecessor_scopes(scope,code_root=CODE_ROOT,
+            evaluator_path=Path(evaluator.__file__),digest=digest):
+        previous=value['scope'];key=digest(previous)
+        path=output/'operator'/('scope-'+key+'.json')
+        recorded=read(path)
+        if not recorded:continue
+        actual={k:v for k,v in recorded['scope'].items() if k!='worker_implementation'}
+        if actual!=previous or digest(actual)!=key:
+            raise ValueError('stored predecessor scope differs from exact storage certificate')
+        result.append(dict(scope=key,scope_receipt=ref(path),proof=value['proof']))
+    return result
 
 
 def dev_match(options,operation,sources,ev):
@@ -319,9 +355,12 @@ def _run_point(operation):
     pairs=sorted([(p,base(p)) for p in operation['pair_ids']],key=lambda item:(str(item[1]['source']['corpus']),item[1]['source']['file'],item[1]['source']['line']))
     counts=Counter();pending=[];results=[]
     for pair,source in pairs:
-        key=pair_key(scope,operation,source);path=root/'pairs'/(pair+'.json');saved=read(path)
-        if valid_saved(saved,key):
-            counts['reused']+=1;counts[saved['status']]+=1;results.append(dict(pair_id=pair,status=saved['status'],reason=saved.get('reason'),
+        key=pair_key(scope,operation,source);saved,path=saved_pair(options,operation,pair,source)
+        if saved is not None:
+            publish_pair_reference(options,operation,pair,saved,path)
+            counts['reused']+=1;counts[saved['status']]+=1
+            if saved['scope']!=scope:counts['reused_predecessor']+=1
+            results.append(dict(pair_id=pair,status=saved['status'],reason=saved.get('reason'),
                 reason_class=saved.get('reason_class'),gold_problem=saved.get('gold_problem'),result=ref(path)))
         else:pending.append((pair,source,key))
     if not pending:return finish_point(options,operation,root,counts,results,started)
@@ -505,6 +544,10 @@ def main():
             stop.rename(stop.with_name(stop.stem+'-continued-'+str(time.time_ns())+'.json'))
         write(args.output/'operator'/('scope-'+scope_key+'.json'),dict(scope=scope,
             selection=ref(args.selection),workers=args.workers,repeat_limit=args.repeat_limit))
+        reuse=predecessor_scopes(key_scope,args.output)
+        options['predecessor_scopes']=[row['scope'] for row in reuse]
+        write(args.output/'operator'/('reuse-scopes-'+scope_key+'.json'),dict(
+            current_scope=scope_key,predecessors=reuse,policy='exact shared storage transition; original result refs'))
         seen={};reason_counts=Counter();results=[];progress=Counter();cursor={};active={}
         interrupted=False
         def halt(signum,frame):
