@@ -37,6 +37,48 @@ fn verdict(class: Class, rule: &'static str) -> Verdict {
     }
 }
 
+/// Exact positive-read idempotence. The earlier occurrence may bind a label;
+/// the later one must only read it. Context/lift compatibility is the caller's
+/// premise. See "Repeated positive atoms" in the accompanying proof.
+pub fn repeated_atom(earlier: &Atom, later: &Atom) -> Option<Verdict> {
+    fn label(a: LabelUse, b: LabelUse) -> bool {
+        match (a, b) {
+            (LabelUse::Zero, LabelUse::Zero) => true,
+            (LabelUse::Fresh(a) | LabelUse::Join(a) | LabelUse::Key(a), LabelUse::Join(b)) => a == b,
+            _ => false,
+        }
+    }
+    fn arg(a: &SiteArg, b: &SiteArg) -> bool {
+        match (a, b) {
+            (SiteArg::Label(a), SiteArg::Label(b)) => label(*a, *b),
+            (SiteArg::NamedLabel { name: a, label: x }, SiteArg::NamedLabel { name: b, label: y }) => a == b && label(*x, *y),
+            (SiteArg::Field(a), SiteArg::Field(b)) => site(a, b),
+            _ => false,
+        }
+    }
+    fn unordered<T>(a: &[T], b: &[T], equal: impl Fn(&T, &T) -> bool) -> bool {
+        if a.len() != b.len() { return false; }
+        let mut used = vec![false; a.len()];
+        b.iter().all(|b| {
+            let Some(i) = a.iter().enumerate().position(|(i,a)| !used[i] && equal(a,b)) else { return false; };
+            used[i] = true;
+            true
+        })
+    }
+    fn site(a: &Site, b: &Site) -> bool {
+        if a.column != b.column || a.value.args.len() != b.value.args.len() { return false; }
+        // Named record fields are unordered; positional labels are ordered.
+        if a.value.args.iter().chain(b.value.args.iter()).all(|x| !matches!(x, SiteArg::Label(_))) {
+            unordered(&a.value.args, &b.value.args, arg)
+        } else {
+            a.value.args.iter().zip(b.value.args.iter()).all(|(a,b)| arg(a,b))
+        }
+    }
+    (earlier.relation == later.relation && earlier.sites.len() == later.sites.len()
+        && unordered(&earlier.sites, &later.sites, site))
+        .then(|| verdict(Class::Valid, "atom.repeated"))
+}
+
 /// Types of labels already bound in this lexical scope. This must not be
 /// populated with the candidate's inferred meet, or with a later use's type.
 /// Key labels use the key's binding column, not an input port's narrowing.
@@ -414,7 +456,13 @@ pub fn classify_prefix(
             }
         }
     }
-    classify(last, &|id| bound.get(&id).cloned())
+    classify(last, &|id| bound.get(&id).cloned()).or_else(|| {
+        let Conjunct::Atom(last) = last else { return None; };
+        earlier.iter().find_map(|prior| match prior {
+            Conjunct::Atom(prior) => repeated_atom(prior.value(), last.value()),
+            _ => None,
+        })
+    })
 }
 
 #[cfg(test)]

@@ -175,3 +175,57 @@ therefore keeps searching the same bucket for a replacement until quota,
 exhaustion, or its existing deadline. Search-node/attempt counters still count
 the work. Unknown classifier evidence is not a proved rejection. The Decoder
 and its opt-in legal-mask behavior are unchanged.
+
+## Repeated positive atoms (`atom.repeated`)
+
+`IrBuilder::atom`, `IrBuilder::site` and `IrBuilder::argument` compile a positive
+read to a relation and its column-to-variable/zero arguments. Fresh, Join and
+Key for the same LabelId compile to the same variable; Fresh is a binding
+instruction to the checker, not a different runtime value. Thus after
+`R(:C *C)` has bound C, another `R(:C C)` tests the very same tuple membership.
+The second read binds nothing. The first read, including its Fresh binder,
+is kept. A second Fresh or Key occurrence is not a deletion candidate.
+
+`driver::inputs`, `driver::read` and `join::join_at` evaluate relation reads and
+join their restrictions using the shared variable bindings. Relation/RowSet
+rows are sets, not bag multiplicities. For each incoming row already satisfying
+R with exactly these arguments, testing R again neither removes it nor creates
+a new binding. The rule compares the native relation identity and every site's
+column/field name and label/zero structurally, ignoring only the first read's
+binding marks and unordered named-site order. It does not equate different
+columns, aliases, permutations of positional fields, or different source names.
+
+`filters::compile_union` preserves the enclosing variables in each OR branch;
+its union is joined with the outer conjuncts. Consequently every row surviving
+an enclosing positive R also satisfies R when a branch tests those same labels.
+Removing that branch-local read preserves its result on every enclosing row,
+then preserves the union and enclosing join. Facts proved only in a branch
+never enter a sibling or the enclosing continuation. The same substitution of
+a true repeated test is valid inside the existing IF, ALL and negated-form
+probes: `compile_if` uses test/then and negated-test/else; `compile_all` tests
+counterexamples and domain nonemptiness, and `compile_not` tests existence.
+No test/domain fact is assumed in another sibling body. Independent clauses,
+INIT keys and INIT inputs start separate repetition environments; key values
+alone do not prove all of the key body's earlier tuple memberships.
+
+A lifted read can use train examples only. `reads_train_examples` and
+`driver::read` decide this per occurrence; the checked-program matcher requires
+that flag to agree before using an enclosing read as evidence. The Decoder's
+flat-prefix case uses only earlier reads in the same conjunction, so the same
+labels on both reads have the same positive ex_output provenance. No inference
+from a relation's spelling or decoded cells substitutes for this condition.
+In addition, a positive `ex_output` occurrence is a compiler certificate for
+other reads' train-only lifting. An enclosing occurrence does not substitute
+for a nested conjunction's own certificate. Such an `ex_output` repeat is
+therefore deleted only when the prior occurrence belongs to the SAME body;
+it then leaves the certificate in that same conjunction. Cross-body
+`ex_output` repeats are deliberately outside this rule, even if their row
+predicate is implied. This preserves definedness on test-only dependencies.
+
+Only later positive atoms with no Fresh/Key site are removed. Relations that
+are undefined remain undefined through the retained earlier read. Limits may
+stop either evaluation sooner; a stop is not claimed equal to a completed row
+set. Native whole-program re-resolution/checking, original declared interfaces
+and editor provenance are retained. Therefore deletion cannot drop the only
+binder, change a key header, or silently rebind a later use. This extends the
+existing valid-class normalizer; it is not a second text-cleanup pass.

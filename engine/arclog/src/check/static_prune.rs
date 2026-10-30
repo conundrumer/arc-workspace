@@ -254,11 +254,19 @@ fn fresh_atom(
         fresh_at(site, &at.child(i as u32), columns, bindings);
     }
 }
+#[derive(Clone, Default)]
+struct Context {
+    types: HashMap<LabelId, ValueType>,
+    // Only earlier positive reads of this conjunction and its ancestors.
+    // The bool is the native lifted train-example selection at that read.
+    reads: Vec<(Atom, bool, NodePath)>,
+}
 fn walk_body(
     body: NodeRef<'_>,
+    checked: &CheckedProgram,
     at: &NodePath,
     columns: &std::collections::BTreeMap<NodePath, render_sites::SiteColumnType>,
-    bindings: &mut HashMap<LabelId, ValueType>,
+    bindings: &mut Context,
     out: &mut Vec<Match>,
 ) {
     let NodeRef::Body(body) = body else {
@@ -266,12 +274,25 @@ fn walk_body(
     };
     for (i, conjunct) in body.conjuncts.iter().enumerate() {
         let path = at.child(i as u32);
-        let lookup = |id| bindings.get(&id).cloned();
-        if let Some(found) = static_prune::classify(conjunct, &lookup) {
+        let lookup = |id| bindings.types.get(&id).cloned();
+        let train_only = checked.program.reads_train_examples(&path);
+        if let Some(found) = static_prune::classify(conjunct, &lookup).or_else(|| {
+            let Conjunct::Atom(atom) = conjunct else { return None; };
+            bindings.reads.iter().find_map(|(earlier, prior_train_only, body)| {
+                // ex_output also certifies train-only lifts in its own
+                // conjunction. Do not erase a nested body's only certificate
+                // merely because an ancestor already tests the same Example.
+                let same_guard = !matches!(atom.value().relation, RelationRef::Fact(crate::program::FactRelation::ExOutput)) || body == at;
+                (same_guard && *prior_train_only == train_only).then(|| static_prune::repeated_atom(earlier, atom.value())).flatten()
+            })
+        }) {
             out.push(Match { path: path.clone(), verdict: found });
         }
         match conjunct {
-            Conjunct::Atom(atom) => fresh_atom(atom.value(), &path, columns, bindings),
+            Conjunct::Atom(atom) => {
+                fresh_atom(atom.value(), &path, columns, &mut bindings.types);
+                bindings.reads.push((atom.value().clone(), train_only, at.clone()));
+            }
             Conjunct::Or(_)
             | Conjunct::If { .. }
             | Conjunct::All { .. }
@@ -284,7 +305,7 @@ fn walk_body(
                     .enumerate()
                 {
                     let mut local = bindings.clone();
-                    walk_any(child, &path.child(j as u32), columns, &mut local, out);
+                    walk_any(child, checked, &path.child(j as u32), columns, &mut local, out);
                 }
             }
             _ => {}
@@ -293,34 +314,37 @@ fn walk_body(
 }
 fn walk_any(
     node: NodeRef<'_>,
+    checked: &CheckedProgram,
     at: &NodePath,
     columns: &std::collections::BTreeMap<NodePath, render_sites::SiteColumnType>,
-    bindings: &mut HashMap<LabelId, ValueType>,
+    bindings: &mut Context,
     out: &mut Vec<Match>,
 ) {
     match node {
-        NodeRef::Body(_) => walk_body(node, at, columns, bindings, out),
+        NodeRef::Body(_) => walk_body(node, checked, at, columns, bindings, out),
         NodeRef::Instance(instance) => {
-            let mut key = HashMap::new();
+            let mut key = Context::default();
             if let Some(key_clause) = &instance.key {
                 let path = at.child(0);
-                let mut all = HashMap::new();
+                let mut all = Context::default();
                 walk_body(
                     NodeRef::Body(key_clause.value().key.body.value()),
+                    checked,
                     &path.child(0),
                     columns,
                     &mut all,
                     out,
                 );
                 for column in key_clause.value().key.columns.iter() {
-                    if let Some(ty) = all.get(&column.label) {
-                        key.insert(column.label, ty.clone());
+                    if let Some(ty) = all.types.get(&column.label) {
+                        key.types.insert(column.label, ty.clone());
                     }
                 }
                 for (child, input) in key_clause.value().inputs.iter().enumerate() {
                     let mut local = key.clone();
                     walk_any(
                         NodeRef::InstanceInput(input.value()),
+                        checked,
                         &path.child((child + 1) as u32),
                         columns,
                         &mut local,
@@ -333,35 +357,38 @@ fn walk_any(
                     continue;
                 }
                 let mut local = key.clone();
-                walk_any(child, &at.child(j as u32), columns, &mut local, out);
+                walk_any(child, checked, &at.child(j as u32), columns, &mut local, out);
             }
         }
         NodeRef::KeyClause(clause) => {
             // Keyed inputs see only the already bound key columns.
-            let mut key = HashMap::new();
+            let mut key = Context::default();
             walk_body(
                 NodeRef::Body(clause.key.body.value()),
+                checked,
                 &at.child(0),
                 columns,
                 &mut key,
                 out,
             );
-            key.retain(|label, _| {
+            key.types.retain(|label, _| {
                 clause
                     .key
                     .columns
                     .iter()
                     .any(|column| column.label == *label)
             });
+            key.reads.clear();
             for (j, child) in node.children().into_iter().enumerate().skip(1) {
                 let mut local = key.clone();
-                walk_any(child, &at.child(j as u32), columns, &mut local, out);
+                walk_any(child, checked, &at.child(j as u32), columns, &mut local, out);
             }
         }
         NodeRef::InstanceInput(input) => {
             let body = at.child(input.head.len() as u32);
             walk_body(
                 NodeRef::Body(input.body.value()),
+                checked,
                 &body,
                 columns,
                 bindings,
@@ -373,7 +400,7 @@ fn walk_any(
                 // Each child body is its own scope unless its owner explicitly
                 // carries a key above. Claim/ALT forms are independent as well.
                 let mut local = bindings.clone();
-                walk_any(child, &at.child(j as u32), columns, &mut local, out);
+                walk_any(child, checked, &at.child(j as u32), columns, &mut local, out);
             }
         }
     }
@@ -390,9 +417,10 @@ pub(crate) fn matches(checked: &CheckedProgram, registry: &Registry) -> Result<V
     let columns = binding_columns(checked, registry, &native.columns);
     let mut matches = Vec::new();
     for (i, form) in checked.program.program.value().forms.iter().enumerate() {
-        let mut bindings = HashMap::new();
+        let mut bindings = Context::default();
         walk_any(
             NodeRef::from(form),
+            checked,
             &NodePath::top(i as u32),
             &columns,
             &mut bindings,
@@ -412,7 +440,7 @@ pub(crate) fn report(matches: &[Match]) -> Value {
         "replacement":m.verdict.replacement.clone().map(|c|crate::mutation::conjunct_json(&Conjunct::Constraint(c)))
     })).collect();
     json!({"schema":"arclog-static-prune-v1","matches":matches,
-        "binding_contract":"first registry-fixed scalar binding column or earlier declared relation column; current-form parameters and conditional narrowing supply no premise; branch-local bindings stay local"})
+        "binding_contract":"first registry-fixed scalar binding column or earlier declared relation column; current-form parameters and conditional narrowing supply no premise; branch-local bindings stay local; atom.repeated uses only prior positive exact reads with equal lifted example selection, preserves binders and conjunction-local ex_output certificates"})
 }
 
 
