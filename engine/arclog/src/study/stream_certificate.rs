@@ -7,7 +7,7 @@ use crate::program::{
     path::{NodePath, NodeRef, node_at},
 };
 use crate::registry::Registry;
-use crate::stream::{Control, DecodeSettings, Token, Vocabulary, WrittenStream};
+use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary, WrittenStream};
 use serde_json::{Value, json};
 
 fn path(v: &Value) -> Result<NodePath, String> {
@@ -52,37 +52,6 @@ fn scalar(
     };
     let site = path(&argument["site_path"])?;
     let scope = path(&argument["scope_path"])?;
-    let occurrence = (0..at.0.len())
-        .rev()
-        .map(|n| NodePath(at.0[..n].into()))
-        .find(|p| node_at(root, p).and_then(|n| n.atom()).is_some())
-        .ok_or("scalar has no enclosing native atom read")?;
-    let (input, lifted, column, source) = super::render_correspondence::scalar_read_coordinates(
-        program.checked(),
-        at,
-        &site,
-        &occurrence,
-    );
-    let Some(SourceColumn::Position(header)) = source else {
-        return Err("scalar requires unsupported or entry-axis read coordinates".into());
-    };
-    let scalar_column = column.ok_or("native scalar column is unresolved")?;
-    let reads = written
-        .tokens
-        .iter()
-        .enumerate()
-        .filter(|(i, (token, _))| {
-            written.paths.get(*i) == Some(&occurrence)
-                && matches!(
-                    token,
-                    Token::Relation(_) | Token::Fact(_) | Token::Lib(_) | Token::Proposer(_)
-                )
-        })
-        .map(|(i, _)| i)
-        .collect::<Vec<_>>();
-    let [read] = reads.as_slice() else {
-        return Err("scalar atom has no unique native relation emission".into());
-    };
     let forms = written
         .forms
         .iter()
@@ -133,10 +102,189 @@ fn scalar(
     if role == "zero" && argument["literal"].is_null() {
         return Err("native zero lacks typed literal meaning".into());
     }
+    let occurrence = (0..at.0.len())
+        .rev()
+        .map(|n| NodePath(at.0[..n].into()))
+        .find(|p| node_at(root, p).and_then(|n| n.atom()).is_some());
+    let coordinates = if let Some(occurrence) = occurrence {
+        let (input, lifted, column, source) = super::render_correspondence::scalar_read_coordinates(
+            program.checked(),
+            at,
+            &site,
+            &occurrence,
+        );
+        let Some(SourceColumn::Position(header)) = source else {
+            return Err("scalar requires unsupported or entry-axis read coordinates".into());
+        };
+        let scalar_column = column.ok_or("native scalar column is unresolved")?;
+        let reads = written
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(i, (token, _))| {
+                written.paths.get(*i) == Some(&occurrence)
+                    && matches!(
+                        token,
+                        Token::Relation(_) | Token::Fact(_) | Token::Lib(_) | Token::Proposer(_)
+                    )
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        let [read] = reads.as_slice() else {
+            return Err("scalar atom has no unique native relation emission".into());
+        };
+        json!({"binding_kind":"atom_read","binding_path":path_json(&occurrence),
+            "atom_path":path_json(&occurrence),"atom_token_index":read,"scalar_column":scalar_column,
+            "header_column":header,"input":input,"lifted":lifted,"header_binding":null})
+    } else {
+        header_coordinates(program, registry, written, index, at, argument, form)?
+    };
+    let mut proof =
+        json!({"argument":argument,"scope_path":path_json(&scope),"role":role,"label_slot":slot});
+    proof
+        .as_object_mut()
+        .ok_or("scalar proof is not an object")?
+        .extend(
+            coordinates
+                .as_object()
+                .ok_or("scalar coordinates are not an object")?
+                .clone(),
+        );
+    Ok(proof)
+}
+
+/// INIT heads are bindings, not atom reads. Resolve their fields through the
+/// same native port projection used by body/table metadata, then authenticate
+/// the port and logical-column emissions of this exact writer run.
+fn header_coordinates(
+    program: &StudyProgram,
+    registry: &Registry,
+    written: &WrittenStream,
+    index: usize,
+    at: &NodePath,
+    argument: &Value,
+    form: &crate::stream::write::WrittenForm,
+) -> Result<Value, String> {
+    let root = NodeRef::Program(program.program().value());
+    let input_at = (0..at.0.len())
+        .rev()
+        .map(|n| NodePath(at.0[..n].into()))
+        .find(|p| matches!(node_at(root, p), Some(NodeRef::InstanceInput(_))))
+        .ok_or("scalar has neither an enclosing atom nor an INIT input header")?;
+    let Some(NodeRef::InstanceInput(input)) = node_at(root, &input_at) else {
+        return Err("native INIT input is absent".into());
+    };
+    let head_index =
+        at.0.get(input_at.0.len())
+            .ok_or("INIT scalar has no head site")?
+            .0 as usize;
+    let head = input
+        .head
+        .get(head_index)
+        .ok_or("INIT scalar is outside its header")?;
+    let owner = NodePath(at.0.iter().take(1).copied().collect());
+    let Some(NodeRef::Instance(instance)) = node_at(root, &owner) else {
+        return Err("INIT header has no instance owner".into());
+    };
+    let Some(crate::registry::LibEntry::Component(component)) = registry.entry(&instance.component)
+    else {
+        return Err("INIT header component is absent".into());
+    };
+    let port = component
+        .inputs
+        .iter()
+        .position(|p| p.port.name == input.name)
+        .ok_or("INIT header port is absent")?;
+    let (labels, types, key, columns) = crate::eval::init_form::render_metadata::input_projection(
+        program.checked(),
+        &owner,
+        input,
+        registry,
+    )?;
+    let column_path = argument["column_path"]
+        .as_array()
+        .ok_or("INIT typed field path is absent")?;
+    if column_path.first() != Some(&super::render::column(&head.column)) {
+        return Err("INIT typed field is outside its head column".into());
+    }
+    let found = columns
+        .iter()
+        .filter(|c| !c.key && super::render::column(&c.name) == column_path[0])
+        .collect::<Vec<_>>();
+    let [logical] = found.as_slice() else {
+        return Err("INIT header has no unique logical port column".into());
+    };
+    let field = match &logical.fields {
+        None if column_path.len() == 1 && logical.width == 1 => 0,
+        Some(fields) if column_path.len() == 2 => fields
+            .iter()
+            .position(|f| super::render::column(f) == column_path[1])
+            .ok_or("INIT header field is absent from native binding")?,
+        _ => return Err("INIT header scalar field shape is unsupported".into()),
+    };
+    if field >= logical.width {
+        return Err("INIT header field exceeds its native width".into());
+    }
+    let physical = logical.row_start + field;
+    let label = labels
+        .get(physical)
+        .ok_or("INIT header physical column is absent")?;
+    if label.map(|v| json!(v.0)) != Some(argument["label_id"].clone()) {
+        return Err("INIT header scalar label differs from native projection".into());
+    }
+    let ty = types
+        .get(physical)
+        .ok_or("INIT header physical type is absent")?;
+    let container = NodePath(input_at.0[..input_at.0.len() - 1].into());
+    let emission = |path: &NodePath, column: u32| -> Result<usize, String> {
+        let positions = written
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(i, (token, emitter))| {
+                *emitter == Emitter::Engine
+                    && *token == Token::Column(column)
+                    && written.paths.get(*i) == Some(path)
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        let [position] = positions.as_slice() else {
+            return Err("INIT header has no unique engine column emission".into());
+        };
+        if !form.tokens.contains(position) || *position >= index {
+            return Err("INIT header engine column does not precede its scalar".into());
+        }
+        Ok(*position)
+    };
+    let port_token = emission(&container, 1 + port as u32)?;
+    let column_token = emission(&input_at, logical.ordinal as u32)?;
+    if port_token >= column_token {
+        return Err("INIT header port/column writer order differs".into());
+    }
+    let key_slots = key
+        .iter()
+        .map(|id| {
+            let slots = form
+                .labels
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| *v == id)
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
+            match slots.as_slice() {
+                [slot] => Ok(*slot),
+                _ => Err("INIT group key has no unique writer label slot".to_string()),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(
-        json!({"argument":argument,"scope_path":path_json(&scope),"role":role,"label_slot":slot,
-        "atom_path":path_json(&occurrence),"atom_token_index":read,"scalar_column":scalar_column,
-        "header_column":header,"input":input,"lifted":lifted}),
+        json!({"binding_kind":"init_header","binding_path":path_json(&input_at),
+        "atom_path":null,"atom_token_index":null,"scalar_column":physical,"header_column":key.len()+physical,
+        "input":false,"lifted":false,"header_binding":{"component":instance.component.0,"port":input.name.0,
+            "port_index":port,"port_token_index":port_token,"logical_column":logical.ordinal,
+            "logical_column_name":super::render::column(&logical.name),"logical_column_token_index":column_token,
+            "field":logical.fields.as_ref().and_then(|v|v.get(field)).map(super::render::column),
+            "physical_type":super::render_correspondence::type_json(ty),"group_key_label_slots":key_slots}}),
     )
 }
 
@@ -192,7 +340,18 @@ impl StudyProgram {
                         "native scalar scopes lack a unique writer-trace correspondence".into(),
                     );
                 }
+                if now["binding_kind"] == "init_header" {
+                    let binding = path(&now["binding_path"])?;
+                    let prior_binding = path(&prior["binding_path"])?;
+                    if map.get(&binding) != Some(&prior_binding) {
+                        return Err(
+                            "native INIT headers lack a unique writer-trace correspondence".into(),
+                        );
+                    }
+                }
                 for key in [
+                    "binding_kind",
+                    "header_binding",
                     "role",
                     "label_slot",
                     "atom_token_index",
