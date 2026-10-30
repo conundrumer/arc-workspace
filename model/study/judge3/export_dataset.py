@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import tempfile
 import time
 
 sys.dont_write_bytecode = True
@@ -56,6 +57,49 @@ def _case(ev, record, context, ntrain, ntest, cache):
     # Cache failed/bounded acquisitions too: an exporter retry is explicit.
     write_json(path, value)
     return value, True
+
+
+
+def source_bundle(pair_id, record, target, *, private, origin):
+    """Persist the full judge command's private source, even without a renderer.
+
+    A human-readable origin (for example "base label store: ID") is not a
+    manifest locator. Freeze the actual supplied record and adapter together;
+    do not regenerate metadata or execute a replay in this writer.
+    """
+    from evaluator import sha
+    private = Path(private).resolve()
+    if not private.is_relative_to(DATA_ROOT.resolve()):
+        raise ValueError('private dataset source must stay under the study data root')
+    identity = sha(dict(pair_id=pair_id, record=record, adapter=target['adapter'], origin=str(origin)))
+    directory = private / 'dataset-sources' / pair_id / identity
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.source-', dir=directory.parent))
+    try:
+        write_json(stage / 'record.json', record)
+        adapter = deepcopy(target['adapter'])
+        adapter['source'].update(record_path=str(directory / 'record.json'),
+            record_sha256=hashlib.sha256((stage / 'record.json').read_bytes()).hexdigest())
+        write_json(stage / 'manifest.json', dict(schema='judge-source-manifest-v1',
+            pair_id=pair_id, source_sha256=sha(record), origin=str(origin), adapter=adapter))
+        if directory.exists():
+            for name in ('record.json', 'manifest.json'):
+                if (directory / name).read_bytes() != (stage / name).read_bytes():
+                    raise ValueError('private dataset source identity conflict')
+        else:
+            try:
+                stage.rename(directory)
+            except OSError:
+                # A concurrent identical export may have published first.
+                if not directory.is_dir():
+                    raise
+                for name in ('record.json', 'manifest.json'):
+                    if (directory / name).read_bytes() != (stage / name).read_bytes():
+                        raise ValueError('private dataset source identity conflict')
+        return directory
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
 
 
 def export_pair(ev, source_pair, output, cache):
@@ -299,8 +343,9 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     write_public(output / 'comparisons.json', comparisons)
     write_public(output / 'pair.json', pair_packet(pair_id=pair_id, task=record['task'], case=record['case'],
         change=change, tables=index, programs=programs, libraries='libraries.json'))
+    frozen_source = source_bundle(pair_id, record, target, private=private, origin=source)
     write_json(private / 'dataset-contexts' / (pair_id + '.json'),
-               dict(source_pair=source, source_sha256=sha(record),
+               dict(source_pair=str(frozen_source), source_sha256=sha(record),
                     targets=target_bindings))
     write_json(private / 'dataset-export-receipts' / (pair_id + '.json'),
                dict(source_sha256=sha(record), runtime=ev.receipt, cases=provenance,
