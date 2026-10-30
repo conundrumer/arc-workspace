@@ -595,6 +595,59 @@ def validate_recorded_admission(certificate, gold, identity, program, stored):
     return deepcopy(certificate)
 
 
+
+def validate_prefix_recorded_admission(certificate, gold, identity, program, stored, opening):
+    """Only the native live-U admission; never certify all-gold held DETs.
+
+    Scope coordinates are copied from the original native universe report.
+    No Python prior-slot selection or interface/type relaxation occurs here.
+    """
+    required_checks = ('original_point', 'canonical_identity', 'edit_kind', 'atomic_edit',
+        'interfaces', 'makers', 'names', 'whole_program_check', 'held_det_interfaces',
+        'vocabulary', 'unchanged_outside_edits', 'stored_representation')
+    if not isinstance(certificate,dict) or not isinstance(opening,dict):
+        raise Unavailable('native prefix admission certificate/opening is not an object')
+    checks = certificate.get('admission_checks')
+    scope = certificate.get('held_scope')
+    if (opening.get('schema') != 'arclog-study-prefix-universe-v1'
+            or opening.get('status') != 'complete'
+            or opening.get('source_program_sexp') != gold.sexp()
+            or opening.get('coverage',{}).get('enumeration_complete') is not True
+            or opening['coverage'].get('assignment_values_complete') is not True
+            or not opening.get('universe_ref') or not opening.get('ident_namespace')
+            or certificate.get('schema') != 'arclog-prefix-recorded-identity-certificate-v1'
+            or certificate.get('status') != 'complete'
+            or certificate.get('whole_held_admission') is not False
+            or certificate.get('identity') != identity
+            or certificate.get('gold_program_sexp') != gold.sexp()
+            or certificate.get('current_program_sexp') != program.sexp()
+            or certificate.get('stored_program_sexp') != stored.sexp()
+            or certificate.get('generation_membership_checked') is not False
+            or certificate.get('universe_ref') != opening['universe_ref']
+            or certificate.get('ident_namespace') != opening['ident_namespace']
+            or not isinstance(scope,dict) or scope.get('kind') != 'prefix_carried'
+            or any(key not in scope or key not in opening for key in
+                ('body_path','parameters','frontier','coverage','universe_ref'))
+            or any(scope.get(key) != opening.get(key) for key in
+                ('body_path','parameters','frontier','coverage','universe_ref'))
+            or not isinstance(checks,dict)
+            or any(checks.get(name) is not True for name in required_checks)):
+        raise Unavailable('native prefix recorded-identity admission or live carried scope incomplete')
+    validate_stream_path_certificate(certificate.get('stream_path_certificate'),program,stored)
+    return deepcopy(certificate)
+
+
+def rehydrate_prefix_mutation(native, universe, gold, identity, stored, opening):
+    """Return the real native ValidMutant admitted on this exact live universe."""
+    import json
+    method=getattr(native,'rehydrate_prefix_identity',None)
+    if not callable(method):
+        raise Unavailable('runtime lacks rehydrate_prefix_identity; prefix admission has no whole-held fallback')
+    program,raw=method(universe,json.dumps(identity),stored)
+    certificate=json.loads(raw)
+    return program,validate_prefix_recorded_admission(certificate,gold,identity,program,stored,opening)
+
+
 def native_vocabulary(program):
     """Return the native ID-indexed spellings/kinds without interpreting tokens."""
     vocabulary = program.vocabulary

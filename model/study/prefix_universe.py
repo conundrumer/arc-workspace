@@ -152,8 +152,10 @@ class PrefixPoint:
             if self.max_assignments is not None and self.max_assignments!=session_cap:
                 raise ValueError('max_assignments must equal the native session assignment cap '+str(session_cap)+'; omit the override')
             self.max_assignments=session_cap
-            if not callable(getattr(self.native,'prefix_universe',None)) or not callable(getattr(self.native,'prefix_tables',None)):
-                raise Unavailable('runtime lacks native prefix-universe acquisition; build the fixed prefix runtime')
+            missing=[name for name in ('prefix_universe','prefix_tables','rehydrate_prefix_identity')
+                if not callable(getattr(self.native,name,None))]
+            if missing:
+                raise Unavailable('runtime lacks prefix API '+', '.join(missing)+'; build the prefix-held admission runtime')
             self.program=stored_metadata_program(self.ev.arclog,self.record['programs']['gold'],self.isolated.settings)
             task_path=Path(self.isolated.cfg['tasks'])/(self.record['task']+'.json')
             task=json.loads(task_path.read_text());self.ntrain=len(task['train'])
@@ -196,17 +198,19 @@ class PrefixPoint:
                 receipt=dict(opening_ref=self.opening_ref,source_ref=self.source_ref,
                     cached_available_terminal=self._available_terminal,skipped_native_query=True,
                     candidate_sha256=None if mutant_record is None else _sha(mutant_record)))
-        from native_correspondence import rehydrate_stored_mutation,stored_metadata_program
-        candidate_sha=None
+        from native_correspondence import rehydrate_prefix_mutation,stored_metadata_program
+        candidate_sha=None;admission=None
         if mutant_record is not None:
             record=source_program_record(mutant_record)
             if any(record[k]!=self.record[k] for k in ('task','case','point')) or record['programs']['gold']!=self.record['programs']['gold']:
                 raise ValueError('candidate belongs to another original point/source')
             stored=stored_metadata_program(self.ev.arclog,record['programs']['mutant'],self.isolated.settings)
-            mutant,admission=rehydrate_stored_mutation(self.ev.arclog,self.program,record['identity'],stored)
+            mutant,admission=rehydrate_prefix_mutation(self.native,self.universe,self.program,
+                record['identity'],stored,self.report)
             candidate_sha=_sha(mutant_record)
         started=time.monotonic();side='mutant' if mutant is not None else 'gold'
         self.sequence+=1;folder=self.artifacts/('acquisition-'+str(self.sequence).zfill(5));folder.mkdir(parents=True,exist_ok=True)
+        admission_ref=_write(folder/'prefix-admission.json',admission) if admission is not None else None
         native_started=time.monotonic()
         raw,payload=self.native.prefix_tables(self.universe,mutant=mutant,include_available=True)
         native_seconds=time.monotonic()-native_started
@@ -218,6 +222,9 @@ class PrefixPoint:
             source_sha256=self.source_sha256,candidate_sha256=candidate_sha,runtime=self.isolated.receipt,
             raw_reuse=deepcopy(report.get('raw_reuse')),test_cells=False,gold_kept_used=False,
             native_seconds=native_seconds,native_timings=deepcopy(report.get('timings')),implementation=dependency_receipt())
+        if admission_ref is not None:
+            receipt['prefix_admission_ref']=admission_ref
+            receipt['held_admission_scope']='actual native prefix-carried DETs only; not all gold DETs'
         result=dict(schema='evaluator-prefix-acquisition-v1',policy=POLICY,side=side,
             status=report.get('status','unavailable'),complete=False,reason=report.get('reason'),
             body_table=report.get('body_table'),tables=[],receipt=receipt,report_ref=report_ref)
