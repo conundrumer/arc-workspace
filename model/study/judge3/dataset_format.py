@@ -26,6 +26,8 @@ def write_json(path, value, *, compact=False):
                 options['separators'] = (',', ':')
             json.dump(value, stream, **options)
             stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
         temporary.replace(path)
     except BaseException:
         temporary.unlink(missing_ok=True)

@@ -113,7 +113,7 @@ def export_pairs(ev, pair_ids, output, cache, private, points=None, *, include_d
                                          features=None if points is None else point_directory(points, record))
                     fresh = done.pop('fresh_cases')
                     result.update(status='exported', label=base['label'], kind=base['kind'],
-                                  tables=done['tables'], output=done['output'],
+                                  tables=done['tables'], output=done['output'], cache_repaired=done['cache_repaired'],
                                   cases_new=sorted(c for c, new in fresh.items() if new),
                                   cases_cached=sorted(c for c, new in fresh.items() if not new))
             except Exception as error:

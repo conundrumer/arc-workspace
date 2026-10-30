@@ -30,6 +30,21 @@ def grouped(packet):
                 missing=[tuple(k) for k in packet['missing']])
 
 
+cache_repairs = []
+
+
+def _quarantine(path, error):
+    damaged = path.parent.parent / 'case-cache-damaged'
+    damaged.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(path, damaged / f'{path.name}.{int(time.time())}')
+    except FileNotFoundError:  # another reader already moved it
+        pass
+    cache_repairs.append(path.name)
+    print(f'case cache {path.name} damaged ({type(error).__name__}); '
+          'moved to case-cache-damaged and recomputed', file=sys.stderr, flush=True)
+
+
 def _case(ev, record, context, ntrain, ntest, cache):
     from evaluator import sha, read_json
     from evaluator_train import acquire_case_train, dependency_receipt
@@ -50,7 +65,10 @@ def _case(ev, record, context, ntrain, ntest, cache):
                     runtime=ev.receipt, adapter=dependency_receipt(), ntrain=ntrain, ntest=ntest)
     path = cache / (sha(identity) + '.json')
     if path.exists():
-        return read_json(path), False
+        try:
+            return read_json(path), False
+        except ValueError as error:
+            _quarantine(path, error)
     print(f"case {context['name']}: fresh gold replay", file=sys.stderr, flush=True)
     case_context = dict(context, catalogue_path=context.get('catalogue_path'))
     value = acquire_case_train(ev, record, case_context, ntrain, ntest)
@@ -232,6 +250,7 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
     main_export = None
     count = 0
     fresh_cases = {}
+    repairs_before = len(cache_repairs)
     facts = set()
     contexts = adapter['all_case_targets']['cases']
     own_seen = False
@@ -376,7 +395,7 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
             programs=dict(mutant=programs['mutant']), point=os.path.relpath(features, destination), **feature_payload))
         output.rename(destination)
         return dict(pair_id=pair_id, tables=len(index) + len(shared_index), output=str(destination),
-                    fresh_cases=fresh_cases)
+                    fresh_cases=fresh_cases, cache_repaired=len(cache_repairs) - repairs_before)
     task = read_json(adapter['source']['task_path'])
     write_public(output / 'train.json', task['train'])
     write_public(output / 'readers.json', readers)
@@ -394,7 +413,8 @@ def export_target(ev, pair_id, record, target, output, cache, *, source,
                         for p in (Path(__file__), Path(__file__).with_name('dataset_format.py'),
                                   Path(__file__).with_name('nonrender_metadata.py'))}))
     output.rename(destination)
-    return dict(pair_id=pair_id, tables=len(index), output=str(destination), fresh_cases=fresh_cases)
+    return dict(pair_id=pair_id, tables=len(index), output=str(destination), fresh_cases=fresh_cases,
+                cache_repaired=len(cache_repairs) - repairs_before)
 
 
 def main():
