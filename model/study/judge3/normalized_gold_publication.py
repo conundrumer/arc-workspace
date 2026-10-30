@@ -53,7 +53,11 @@ def main():
     if manifest.get('schema') != 'normalized-gold-publication-dependencies-v1':
         raise ValueError('unsupported dependency manifest schema')
     for filename, wanted in manifest['artifacts'].items():
-        if file_sha(inside(args.manifest.parent / filename, args.manifest.parent)) != wanted:
+        # Frozen evidence may live elsewhere under DATA_ROOT. Relative keys
+        # remain relative to this manifest; both forms retain exact SHA checks.
+        candidate = Path(filename)
+        path = candidate if candidate.is_absolute() else args.manifest.parent / candidate
+        if file_sha(inside(path, DATA_ROOT)) != wanted:
             raise ValueError('mapper dependency bytes changed: ' + filename)
     runtime = read(args.runtime / 'ready.json')
     manifest_ref = dict(path=str(args.manifest.resolve()), sha256=args.manifest_sha256)
