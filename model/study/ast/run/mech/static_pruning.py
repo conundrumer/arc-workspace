@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 import sys
 from run import digest
+from judge3.framed_jsonl import JsonlReader, JsonlWriter, iter_json
+from prune_jsonl import receipt_path
 
 POLICY='native-stored-edited-sites-v2'
 CLASSES=frozenset(('unsatisfiable','valid','alias','constant'))
@@ -26,7 +28,28 @@ class Pruner:
         self.cache_path=Path(cache_path);self.runtime_path=Path(runtime) if runtime else None
         self.cache=None;self.cache_error=None;self.gold=OrderedDict();self.arclog=None
         self.counts=Counter();self.rules=Counter();self.primary_rules=Counter();self.kinds=Counter();self.unavailable=Counter()
-        self.audit=Path(audit_path).open('w') if audit_path else None
+        self.audit=None;self.audit_rows={}
+        if audit_path:
+            audit_path=Path(audit_path)
+            if not str(audit_path).endswith('.jsonl.zst'):raise ValueError('new pruning audit requires a .jsonl.zst output; keep old runs unchanged')
+            try:
+                with JsonlReader(self.cache_path) as source:self.cache_path=source.path
+            except FileNotFoundError:pass
+            identity=dict(policy=POLICY,runtime_ready_sha256=file_sha(self.runtime_path) if self.runtime_path else None,
+                cache_path=str(self.cache_path.resolve()),
+                cache_sha256=file_sha(self.cache_path) if self.cache_path.is_file() else None)
+            source_path=Path(str(audit_path)+'.source.json')
+            self.audit=JsonlWriter(audit_path)
+            if source_path.exists():
+                if json.loads(source_path.read_text())!=identity:
+                    self.audit.close();raise ValueError('pruning audit source/config changed; use a new output')
+            elif self.audit.committed_lines:
+                self.audit.close();raise ValueError('committed pruning audit lacks its source/config receipt')
+            else:source_path.write_text(json.dumps(identity,sort_keys=True)+'\n')
+            with JsonlReader(audit_path) as source:
+                for raw in source.iter_lines(stop_line=self.audit.committed_lines+1):
+                    row=json.loads(raw)
+                    self.audit_rows[tuple(row[k] for k in ('pair_id','source_sha256','base_result_sha256'))]=row
         self.runtime=None;self.survey=survey;self.survey_counts=Counter();self.seen_text={};self.seen_canonical={}
 
     def close(self):
@@ -36,14 +59,18 @@ class Pruner:
     def _cache(self):
         if self.cache is not None:return
         self.cache={}
-        if not self.cache_path.exists():return
         try:
-            receipt=json.loads(self.cache_path.with_suffix('.receipt.json').read_text())
+            with JsonlReader(self.cache_path) as source:self.cache_path=source.path
+        except FileNotFoundError:return
+        except Exception as error:
+            self.cache_error=str(error);return
+        try:
+            receipt=json.loads(receipt_path(self.cache_path).read_text())
             if receipt['policy']!=POLICY or file_sha(self.cache_path)!=receipt['sha256']:
                 raise ValueError('static pruning cache receipt differs')
             if receipt['reader_sha256']!=file_sha(__file__):raise ValueError('static pruning cache reader changed')
-            for raw in self.cache_path.read_text().splitlines():
-                row=json.loads(raw);key=row['pair_id']
+            for row in iter_json(self.cache_path):
+                key=row['pair_id']
                 if key in self.cache:raise ValueError('duplicate static pruning acquisition')
                 self.cache[key]=row
             if len(self.cache)!=receipt['rows']:raise ValueError('static pruning acquisition coverage differs')
@@ -119,6 +146,7 @@ class Pruner:
         self.kinds[(str(base['kind']),result['status'])]+=1
         for rule in {m['rule'] for m in result['matches']}:self.rules[rule]+=1
         if result['matches']:self.primary_rules[result['matches'][0]['rule']]+=1
-        if self.audit:
-            self.audit.write(json.dumps(dict(identity,**result),sort_keys=True,separators=(',',':'))+'\n');self.audit.flush()
+        if self.audit and tuple(identity[k] for k in ('pair_id','source_sha256','base_result_sha256')) not in self.audit_rows:
+            row=dict(identity,**result);self.audit.write(row)
+            self.audit_rows[tuple(identity[k] for k in ('pair_id','source_sha256','base_result_sha256'))]=row
         return result

@@ -11,8 +11,77 @@ use arclog::session::{SessionBound, TaskSession, same_rows};
 use arclog::stream::{DecodeSettings, Vocabulary, written_stream};
 use arclog::study::StudyProgram;
 use serde_json::{Value, json};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Instant;
+
+/// Only the shared Python JsonlWriter owns persistent records. Native stdout
+/// pipes are a transport; acquisition keys and comparison policy stay native.
+struct FramedJournal {
+    child: Child,
+    input: Option<ChildStdin>,
+    replies: BufReader<ChildStdout>,
+    committed: u64,
+}
+impl FramedJournal {
+    fn reply(&mut self) -> Result<Value, String> {
+        let mut line = String::new();
+        if self.replies.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
+            return Err("framed normalization journal closed unexpectedly".into());
+        }
+        serde_json::from_str(&line).map_err(|e| e.to_string())
+    }
+    fn open(output: &str) -> Result<(Self, Vec<Value>), String> {
+        if !output.ends_with(".jsonl.zst") {
+            return Err("next normalization audit requires a NEW .jsonl.zst output; do not change an existing run's format".into());
+        }
+        let python = std::env::var("GOLD_PRUNE_PYTHON")
+            .map_err(|_| "set GOLD_PRUNE_PYTHON to the interpreter with study's framed-JSONL dependency")?;
+        let helper = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../model/study/ast/run/mech/gold_normalization_journal.py");
+        let mut child = Command::new(python).args(["-B"])
+            .arg(helper).arg(output).stdin(Stdio::piped()).stdout(Stdio::piped())
+            .stderr(Stdio::inherit()).spawn().map_err(|e| e.to_string())?;
+        let input = child.stdin.take();
+        let replies = BufReader::new(child.stdout.take().ok_or("journal stdout missing")?);
+        let mut journal = Self { child, input, replies, committed: 0 };
+        let opened = journal.reply()?;
+        if opened["event"] != "opened" { return Err("journal open protocol differs".into()); }
+        journal.committed = opened["committed_lines"].as_u64().ok_or("journal committed count missing")?;
+        let mut previous = Vec::new();
+        let mut own_rows = 0u64;
+        loop {
+            let message = journal.reply()?;
+            match message["event"].as_str() {
+                Some("previous") => { own_rows += 1; previous.push(message["row"].clone()); },
+                Some("previous_external") => previous.push(message["row"].clone()),
+                Some("ready") => break,
+                _ => return Err("journal resume protocol differs".into()),
+            }
+        }
+        if own_rows != journal.committed {
+            return Err("journal resume count differs from committed_lines".into());
+        }
+        Ok((journal, previous))
+    }
+    fn append(&mut self, row: &Value) -> Result<(), String> {
+        let input = self.input.as_mut().ok_or("closed journal")?;
+        writeln!(input, "{row}").map_err(|e| e.to_string())?;
+        input.flush().map_err(|e| e.to_string())?;
+        let message = self.reply()?;
+        if message["event"] != "committed" || message["committed_lines"].as_u64() != Some(self.committed + 1) {
+            return Err("journal commit acknowledgement differs".into());
+        }
+        self.committed += 1;
+        Ok(())
+    }
+    fn close(mut self) -> Result<(), String> {
+        drop(self.input.take());
+        let status = self.child.wait().map_err(|e| e.to_string())?;
+        if !status.success() { return Err(format!("framed normalization journal failed: {status}")); }
+        Ok(())
+    }
+}
 
 fn models_same(a: &[RelationValue], b: &[RelationValue]) -> bool {
     let mut used = vec![false; b.len()];
@@ -290,17 +359,13 @@ fn gold_normalization_audit() {
     let expected_changed=items.iter().filter(|v|!v["expected_matches"].as_array().unwrap().is_empty()).count();
     let acquisition_code=std::env::var("GOLD_PRUNE_ACQUISITION_KEY").ok();
     let scope=std::env::var("GOLD_PRUNE_SCOPE").unwrap_or_else(|_|"all".into());
+    let (mut writer, committed_rows) = FramedJournal::open(&output).expect("open framed normalization audit");
     let mut previous=std::collections::BTreeMap::new();
     if acquisition_code.is_some() {
-        if let Ok(text)=std::fs::read_to_string(&output) {
-            for line in text.lines() {
-                if let Ok(row)=serde_json::from_str::<Value>(line) {
-                    if let Some(key)=row.get("acquisition_key") {previous.insert(key.to_string(),row);}
-                }
-            }
+        for row in committed_rows {
+            if let Some(key)=row.get("acquisition_key") {previous.insert(key.to_string(),row);}
         }
     }
-    let mut writer=std::fs::OpenOptions::new().create(true).append(true).open(output).unwrap();
     let start = Instant::now();
     let mut errors = 0;
     let mut removed = 0;
@@ -318,7 +383,7 @@ fn gold_normalization_audit() {
             };
             let row=json!({"task":item["task"],"case":item["case"],"program_sha256":item["program_sha256"],
                 "seconds":now.elapsed().as_secs_f64(),"outcome":result,"normalization":normalization,"acquisition_key":key});
-            writeln!(writer,"{row}").unwrap();writer.flush().unwrap();row
+            writer.append(&row).expect("commit framed normalization result");row
         };
         if let Some(n)=row["normalization"]["removed"].as_u64() {removed+=n;changed+=usize::from(n>0);}
         if row["outcome"]["status"]!="complete" {errors+=1;}
@@ -331,5 +396,6 @@ fn gold_normalization_audit() {
             errors
         );
     }
+    writer.close().expect("close framed normalization journal");
     assert_eq!((errors, removed, changed), (0, expected_removed as u64, expected_changed));
 }
