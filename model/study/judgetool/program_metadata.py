@@ -17,52 +17,42 @@ def _indexed(export):
 
 
 def type_identity(ev, record, name):
-    """Native decoded identity for a parsed nominal Pose type, never a regex.
+    """Canonical decoded nominal identity from native source-column proofs.
 
-    Canonical-form bytes include native names and column layouts too. Pair the
-    exact parsed/decode_source exports by declaration identity and physical
-    header index; retain the whole native decoded assembly/key type unchanged.
-    An unproven nominal correspondence is unavailable, never a type mismatch.
+    The native export certifies physical permutations and all aliases. A
+    missing/ambiguous mapping is unavailable; unrelated unsupported columns do
+    not establish a negative or force ordinal pairing.
     """
     if not name.startswith('Pose(') or 'Written(' not in name:
         return name, None
     from evaluator import sha
     from tables import Incomplete
+    from native_correspondence import Correspondence, Unavailable
     for text in dict.fromkeys(record[k] for k in ('gold_sexp','mutant_sexp') if record.get(k)):
-        key=('native-nominal-type-identity',record['task'],sha(text),sha(ev.receipt))
+        key=('native-correspondence-nominal-v1',record['task'],sha(text),sha(ev.receipt))
         if key not in ev.target_cache:
             program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
+            decoded_program=program.decode_source()
             parsed=json.loads(ev.arclog.study_program_export_json(program))
-            decoded=json.loads(ev.arclog.study_program_export_json(program.decode_source()))
-            old,new=_indexed(decoded),_indexed(parsed)
-            if set(old)!=set(new):
-                raise Incomplete('nominal type decoding changed native declaration population')
-            aliases={}
+            decoded=json.loads(ev.arclog.study_program_export_json(decoded_program,source_program=program))
+            try:
+                correspondence=Correspondence(decoded,program_sexp=decoded['program_sexp'],
+                    source_program_sexp=parsed['program_sexp'])
+                aliases={}
+                for pair in correspondence.nominal_pairs():
+                    aliases.setdefault(pair['source_type']['type'],set()).add(pair['physical_type']['type'])
+            except Unavailable as error:
+                raise Incomplete(str(error)) from error
             proof=dict(source_program_sha256=sha(text),parsed_export_sha256=sha(parsed),
-                       decoded_export_sha256=sha(decoded),
-                       mapping='native decode_source; exact declaration and physical header index')
-            for slot,before in old.items():
-                after=new[slot]
-                if (before['definition_path']!=after['definition_path']
-                        or before['native_selector']!=after['native_selector']):
-                    raise Incomplete('nominal type decoding changed original declaration identity')
-                a,b=before.get('column_witnesses',[]),after.get('column_witnesses',[])
-                if (before.get('column_witness_status')!='complete'
-                        or after.get('column_witness_status')!='complete'):
-                    continue
-                if len(a)!=len(b) or any(x['physical_column']!=y['physical_column'] for x,y in zip(a,b)):
-                    raise Incomplete('nominal type decoding changed physical header layout')
-                for x,y in zip(a,b):
-                    if not y['type'].startswith('Pose('):continue
-                    if not x['type'].startswith('Pose('):
-                        raise Incomplete('nominal type decoding changed physical field kind')
-                    if y['type'] in aliases and aliases[y['type']]!=x['type']:
-                        raise Incomplete('nominal type has ambiguous native decoded identity')
-                    aliases[y['type']]=x['type']
+                decoded_export_sha256=sha(decoded),
+                correspondence_sha256=sha(decoded['correspondence']),
+                mapping='native correspondence source_columns; explicit physical permutation and aliases')
             ev.target_cache[key]=(aliases,proof)
         aliases,proof=ev.target_cache[key]
         if name in aliases:
-            return aliases[name],proof
+            if len(aliases[name])!=1:
+                raise Incomplete('nominal type has ambiguous native decoded identity')
+            return next(iter(aliases[name])),proof
     raise Incomplete('Pose type has no authenticated native decoded source identity')
 
 

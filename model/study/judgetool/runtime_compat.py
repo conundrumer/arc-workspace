@@ -22,10 +22,11 @@ NATIVE_CALLS = {
     'StudyProgram.decode_rows_json': (),
     'StudyProgram.construct_identity': (),
     'StudyProgram.out_bindings_json': (),
-    'study_program_export_json': ('relation_source_names_json',),
+    'study_program_export_json': ('relation_source_names_json', 'source_program'),
 }
 RENDER_SCHEMA = {
     'schema': 'arclog-study-render-v1',
+    'correspondence.schema': 'arclog-study-correspondence-v1',
     'parts.body_views': 'complete',
     'parts.definitions_readers': 'complete',
     'parts.types_frames': 'complete',

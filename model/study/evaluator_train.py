@@ -26,7 +26,7 @@ def dependency_receipt():
     import gold_body
     paths = (Path(__file__), Path(tables.__file__), Path(checks.__file__),
              Path(surface.__file__), Path(case_collector.__file__),
-             Path(program_metadata.__file__), Path(raw_body.__file__), Path(gold_body.__file__), CODE_ROOT / 'study_paths.py',
+             Path(program_metadata.__file__), Path(raw_body.__file__), Path(gold_body.__file__), CODE_ROOT / 'study_paths.py', CODE_ROOT / 'native_correspondence.py',
              CODE_ROOT / 'judge2/render2/body.py', CODE_ROOT / 'judge2/render2/headers.py',
              CODE_ROOT / 'judge3/render_pair.py')
     return {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
