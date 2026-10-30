@@ -448,3 +448,34 @@ def certify_legacy_body_projection(source_correspondence, *, body_path,
         source_physical_type=deepcopy(source_type), current_physical_type=deepcopy(fresh_type),
         source_correspondence_sha256=digest(source_correspondence._value),
         native_inverse_sha256=digest(current_column))
+
+
+def legacy_projection_field(field, *, projection, physical_column):
+    """Construct a field from an already certified native projection edge.
+
+    This is used at the original-gold acquisition boundary, before the ordinary
+    TRAIN validator. The historical physical descriptor stays as evidence;
+    the declared type is taken verbatim from the native checked source, never
+    rewritten by a nominal-string rule. Caller schemas are not mutated.
+    """
+    binding = field['native_legacy_binding']
+    old_type = _type(binding['legacy_physical_type'])
+    source_type = _type(projection['source_physical_type'])
+    fresh_type = _type(projection['current_physical_type'])
+    if (projection.get('schema') != 'native-legacy-body-projection-v1'
+            or projection['current_column'] != physical_column
+            or projection['source_column'] != field['source_body_column']
+            or projection['legacy_physical_type'] != old_type
+            or projection['acquisition_receipt'] != binding['binding_receipt']
+            or projection['acquisition_receipt'].get('source_local') is not True
+            or source_type != binding['physical_type']
+            or field['type'] != old_type['type']
+            or fresh_type['wire_type'] != source_type['wire_type']
+            or fresh_type['cell_width'] != source_type['cell_width']
+            or fresh_type['nominal'] != source_type['nominal']):
+        raise Unavailable('historical projection field lacks a matching certified native edge')
+    result = deepcopy(field)
+    result['legacy_physical_type'] = deepcopy(old_type)
+    result['type'] = source_type['type']
+    result['native_type_projection'] = deepcopy(projection)
+    return result

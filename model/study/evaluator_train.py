@@ -661,11 +661,12 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, co
 
 def _acquire_original_gold_train(ev, record, binding, ntrain, *, source=None, copy_rows=True):
     from tables import Incomplete
-    from gold_body import capture,projection
+    from gold_body import capture,projection,projection_fields
     with capture(ev,record) as body:
         indices=projection(body,record,binding)
+        fields=projection_fields(body,binding,indices)
         packet=acquire_train_table(body['ev'],body['native'],body['table'],record,ntrain=ntrain,
-            fields=binding['projected_schema'],projection=indices,
+            fields=fields,projection=indices,
             held_entries=body['held_entries'],source=dict(source or {},side='gold',observation=body['receipt']),
             copy_rows=copy_rows)
         if packet['missing']:

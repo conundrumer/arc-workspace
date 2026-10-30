@@ -199,3 +199,25 @@ def projection(body,record,binding):
             raise Incomplete('original BODY physical field type differs')
         indices.append(index)
     return indices
+
+
+def projection_fields(body, binding, indices):
+    """Canonical declared fields for the already certified fresh projection."""
+    from native_correspondence import legacy_projection_field
+    fields=binding['projected_schema']
+    if len(fields)!=len(indices):
+        raise Incomplete('original BODY projected fields and indices differ')
+    result=[]
+    for field,index in zip(fields,indices):
+        if 'native_legacy_binding' not in field:
+            result.append(deepcopy(field));continue
+        proofs={sha(p):p for p in body['receipt'].get('legacy_projection_bindings',[])
+                if p['source_column']==field['source_body_column'] and p['current_column']==index}
+        if len(proofs)!=1:
+            raise Incomplete('original BODY field lacks one exact historical projection proof')
+        try:
+            result.append(legacy_projection_field(field,projection=next(iter(proofs.values())),
+                physical_column=index))
+        except (Unavailable,KeyError,TypeError) as error:
+            raise Incomplete('original BODY canonical projection field: '+str(error)) from error
+    return result
