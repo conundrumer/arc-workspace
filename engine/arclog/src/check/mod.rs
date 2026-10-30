@@ -585,6 +585,22 @@ pub fn check_program_of_files(
     cache: &mut CheckCache,
     files: Option<&CaseFiles<'_>>,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
+    check_program_with_open(program, clauses, registry, cache, files, None)
+}
+
+/// Check and type an unfinished contextual query with the decoder's prefix checks.
+/// Earlier forms are complete; `open` is relative to the final form.
+pub fn check_shared_open_program(
+    program: Arc<ResolvedProgram>, clauses: &SolverClauses, registry: &Registry,
+    cache: &mut CheckCache, open: &NodePath,
+) -> Result<CheckedProgram, Vec<Diagnostic>> {
+    check_program_with_open(program, clauses, registry, cache, None, Some(open))
+}
+
+fn check_program_with_open(
+    program: Arc<ResolvedProgram>, clauses: &SolverClauses, registry: &Registry,
+    cache: &mut CheckCache, files: Option<&CaseFiles<'_>>, open: Option<&NodePath>,
+) -> Result<CheckedProgram, Vec<Diagnostic>> {
     let mut refused = Vec::new();
     let cycles_key = CheckCacheKey { check: CheckId::Cycles, canonical_form: graph_form(&program), signatures: Box::new([]) };
     if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
@@ -639,12 +655,15 @@ pub fn check_program_of_files(
                         }
                     },
                 };
-                at.report(refused, CheckId::Types, &result);
+                if open.is_none() || at.path != NodePath::top(forms.len() as u32 - 1) {
+                    at.report(refused, CheckId::Types, &result);
+                }
                 types
             })
             .collect();
         let labels: Vec<Vec<LabelInScope>> = forms.iter().zip(&form_types).map(|(at, types)| typed_labels(&at.order, types)).collect();
         for ((at, labels), refused) in forms.iter().zip(&labels).zip(&mut refused_by_form) {
+            if open.is_some() && at.path == NodePath::top(forms.len() as u32 - 1) { continue; }
             let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
             for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
                 let result = match check.cache_key(&at.key_input(clauses)) {
@@ -657,6 +676,15 @@ pub fn check_program_of_files(
         form_types
     };
     refused.extend(refused_by_form.into_iter().flatten());
+    if let Some(open) = open {
+        let path = NodePath::top(forms.len() as u32 - 1);
+        for (check, result) in prefix::check_prefix(&program, clauses, registry, Some(open)) {
+            if let PrefixResult::Refuse(refusals) = result {
+                refused.extend(refusals.iter().map(|r| diagnostic(
+                    DiagnosticKind::Check(check), Severity::Error, r.message.clone(), path.join(&r.at))));
+            }
+        }
+    }
     let form_types: Vec<(NodePath, Arc<types::ScopeTypes>, CanonicalOrder)> = forms.into_iter().zip(form_types).map(|(at, types)| (at.path, types, at.order)).collect();
     if !refused.is_empty() {
         return Err(refused);

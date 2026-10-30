@@ -1,6 +1,6 @@
 //! Search-point metadata from a separately resolved prefix and candidate.
 use super::StudyProgram;
-use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
+use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program, check_shared_open_program};
 use crate::diagnostic::Severity;
 use crate::mutation::{path_json, relation_json};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
@@ -32,8 +32,21 @@ fn candidate_form(
     form: &Form,
     relative: &[crate::program::path::PathStep],
 ) -> Result<Form, String> {
-    if matches!(form, Form::Choose(_) | Form::RigidDet(_)) {
-        return Err("prefix-only contextual CHOOSE/RIGID_DET typing is not yet supported".into());
+    if let Form::Choose(choose) = form {
+        let mut choose = choose.value().clone();
+        let part = relative.first().and_then(|step| choose.parts().nth(step.0 as usize))
+            .ok_or("CHOOSE candidate part is absent")?;
+        if relative.len() != 1 { return Err("nested CHOOSE candidate BODY scope is unsupported".into()); }
+        choose.candidate_columns = Arc::from([]);
+        match part {
+            ChoosePart::For => { choose.from = Node::new(Body { conjuncts: Arc::from([]) }); choose.never = Arc::from([]); }
+            ChoosePart::From => { choose.never = Arc::from([]); }
+            ChoosePart::Never(index) => { choose.never = choose.never[..=index].to_vec().into(); }
+        }
+        return Ok(Form::Choose(Node::new(choose)));
+    }
+    if matches!(form, Form::RigidDet(_)) {
+        return Err("prefix-only contextual RIGID_DET typing is not yet supported".into());
     }
     let Form::Instance(instance) = form else {
         return match form {
@@ -47,7 +60,9 @@ fn candidate_form(
     };
     if first == 0 && instance.key.is_some() {
         if !((relative.len() == 2 && relative[1].0 == 0)
-            || (relative.len() == 3 && relative[1].0 > 0 && relative[2].0 == 1))
+            || (relative.len() == 3 && relative[1].0 > 0
+                && instance.key.as_ref().unwrap().value().inputs.get(relative[1].0 as usize - 1)
+                    .is_some_and(|input| relative[2].0 == input.value().position(InstanceInputPart::Body))))
         {
             return Err("nested INIT candidate BODY scope is unsupported".into());
         }
@@ -63,13 +78,11 @@ fn candidate_form(
         instance.key = Some(Node::new(key));
         instance.inputs = Arc::from([]);
     } else {
-        if relative.len() != 2 || relative[1].0 != 1 {
-            return Err("nested INIT candidate BODY scope is unsupported".into());
-        }
         let index = first
             .checked_sub(usize::from(instance.key.is_some()))
             .ok_or("candidate input path is absent")?;
-        if index >= instance.inputs.len() {
+        if relative.len() != 2 || !instance.inputs.get(index).is_some_and(|input|
+            relative[1].0 == input.value().position(InstanceInputPart::Body)) {
             return Err("candidate input is absent".into());
         }
         instance.inputs = instance.inputs[..=index].to_vec().into();
@@ -98,7 +111,9 @@ pub fn checked_prefix(
     point: &NodePath,
     registry: &Registry,
 ) -> Result<CheckedProgram, String> {
-    check_prefix_syntax(prefix(program, point)?, registry)
+    let syntax = prefix(program, point)?;
+    let open = matches!(syntax.value().forms.last(), Some(Form::Choose(_)));
+    check_prefix_syntax(syntax, registry, open)
 }
 
 /// Exact source frontier before the selected clause. INIT retains its key and
@@ -131,10 +146,10 @@ pub fn frontier(program: &StudyProgram, point: &NodePath) -> Result<Node<Program
 
 pub fn checked_frontier(program: &StudyProgram, point: &NodePath, registry: &Registry)
     -> Result<CheckedProgram, String> {
-    check_prefix_syntax(frontier(program, point)?, registry)
+    check_prefix_syntax(frontier(program, point)?, registry, false)
 }
 
-fn check_prefix_syntax(prefix: Node<Program>, registry: &Registry) -> Result<CheckedProgram, String> {
+fn check_prefix_syntax(prefix: Node<Program>, registry: &Registry, open: bool) -> Result<CheckedProgram, String> {
     let resolved = resolve(&prefix, None, &SolverScope::default(), registry);
     if resolved
         .diagnostics
@@ -145,8 +160,12 @@ fn check_prefix_syntax(prefix: Node<Program>, registry: &Registry) -> Result<Che
     }
     let resolved = Arc::new(resolved.value);
     let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
-    check_shared_program(resolved, &clauses, registry, &mut CheckCache::default())
-        .map_err(|d| super::diagnostics_text(&d))
+    let checked = if open {
+        check_shared_open_program(resolved, &clauses, registry, &mut CheckCache::default(), &NodePath::default())
+    } else {
+        check_shared_program(resolved, &clauses, registry, &mut CheckCache::default())
+    };
+    checked.map_err(|d| super::diagnostics_text(&d))
 }
 
 /// Restrict the program's one presentation namespace to the actual native

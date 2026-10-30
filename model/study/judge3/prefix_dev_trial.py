@@ -65,7 +65,7 @@ def worker(args):
             mutant = point.acquire(mutant_record=record)
             mutant_seconds = time.monotonic() - begin
             write_json(args.point_output / 'mutant.json', mutant)
-            result = dict(status='measured', opening=opening,
+            result = dict(status='measured' if point._opening_complete() else 'unavailable', opening=opening,
                 gold=gold_summary, mutant=summarize(mutant),
                 gold_seconds=gold_seconds, mutant_seconds=mutant_seconds,
                 acquisition_seconds=time.monotonic() - started,
