@@ -29,7 +29,7 @@ sys.path[:0]=[str(CODE_ROOT/'judge3'),str(CODE_ROOT/'judgetool'),
     str(CODE_ROOT/'ast/run'),str(CODE_ROOT/'ast/run/mech')]
 from dataset_format import write_json
 from det_full_body_run import digest, file_sha, read, exclusive
-from paused_storage import write_gzip_json, compress_file
+from paused_storage import _write_gzip_chunks, compress_file
 from prefix_dev_trial import opening_summary
 
 POLICY='prefix-full-all-candidates-v1'
@@ -127,8 +127,42 @@ def event(path,value):
         stream.write(json.dumps(value,separators=(',',':'))+'\n');stream.flush()
 
 
+def packet_json_chunks(value):
+    """C-encode bounded row batches; never Python-walk individual cells."""
+    encode=json.JSONEncoder(ensure_ascii=False,allow_nan=False,separators=(',',':')).encode
+    yield from packet_object_chunks(value,encode)
+    yield '\n'
+
+
+def packet_object_chunks(value,encode):
+    if not isinstance(value,dict):
+        yield encode(value);return
+    yield '{'
+    for index,(key,item) in enumerate(value.items()):
+        if index:yield ','
+        yield encode(key);yield ':'
+        if key in ('tables','entries') and isinstance(item,(list,tuple)):
+            yield '['
+            for offset,part in enumerate(item):
+                if offset:yield ','
+                yield from packet_object_chunks(part,encode)
+            yield ']'
+        elif key=='rows' and isinstance(item,(list,tuple)):
+            yield '['
+            for start in range(0,len(item),256):
+                if start:yield ','
+                # A shallow slice only. C JSON handles nested cells/scalars;
+                # output is exactly the old compact JSON order/encoding.
+                yield encode(item[start:start+256])[1:-1]
+            yield ']'
+        else:yield encode(item)
+    yield '}'
+
+
 def packet(path,value):
-    write_gzip_json(path,value)
+    # Reuse the sole atomic gzip/SHA/verification codec; codec source and every
+    # declared acquisition dependency remain unchanged for stored-result reuse.
+    _write_gzip_chunks(path,packet_json_chunks(value))
     return ref(path)
 
 
@@ -213,12 +247,47 @@ def dev_match(options,operation,sources,ev):
     return None,'no exact complete source/runtime/implementation receipt'
 
 
+def start_point_profile(operation, pending_count):
+    """Profile one small *new* point while doing required work, never a replay."""
+    options=_GLOBAL['options'];claim=options.get('profile_claim')
+    if not claim or pending_count>8:return
+    path=Path(claim);path.parent.mkdir(parents=True,exist_ok=True)
+    try:fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    except FileExistsError:return
+    with os.fdopen(fd,'w') as stream:stream.write(operation['point_id']+'\n')
+    import cProfile,resource
+    _GLOBAL['point_profile']=dict(profiler=cProfile.Profile(),point_id=operation['point_id'],
+        pending_pairs=pending_count,path=path.with_suffix(''),wall=time.monotonic(),
+        cpu=time.process_time(),usage=resource.getrusage(resource.RUSAGE_SELF))
+    _GLOBAL['point_profile']['profiler'].enable()
+
+
+def finish_point_profile():
+    active=_GLOBAL.pop('point_profile',None)
+    if active is None:return
+    import resource,io,pstats
+    profiler=active['profiler'];profiler.disable()
+    wall=time.monotonic()-active['wall'];cpu=time.process_time()-active['cpu']
+    usage=resource.getrusage(resource.RUSAGE_SELF);before=active['usage']
+    path=active['path'];profiler.dump_stats(str(path)+'.pstats')
+    view=io.StringIO();pstats.Stats(profiler,stream=view).sort_stats('cumulative').print_stats(60)
+    path.with_suffix('.txt').write_text(view.getvalue())
+    write(path.with_suffix('.json'),dict(schema='prefix-point-profile-v1',point_id=active['point_id'],
+        pending_pairs=active['pending_pairs'],wall_seconds=wall,process_cpu_seconds=cpu,
+        cpu_wall_ratio=cpu/wall,voluntary_context_switches=usage.ru_nvcsw-before.ru_nvcsw,
+        involuntary_context_switches=usage.ru_nivcsw-before.ru_nivcsw,
+        profile=str(path)+'.pstats',scope='one new point in the actual run; no extra evaluation; boundary GC excluded'))
+
+
 def run_point(operation):
     result=None
     try:
         result=_run_point(operation)
         return result
     finally:
+        try:finish_point_profile()
+        except Exception as error:
+            print(json.dumps(dict(stage='profile_write_failed',reason=f'{type(error).__name__}: {error}')),file=sys.stderr,flush=True)
         started=time.monotonic()
         collected=gc.collect()
         if result is not None:
@@ -241,6 +310,7 @@ def _run_point(operation):
         else:pending.append((pair,source,key))
     if not pending:return finish_point(options,operation,root,counts,results,started)
     if stop.exists():return dict(point_id=operation['point_id'],status='interrupted',counts=dict(counts))
+    start_point_profile(operation,len(pending))
     from evaluator import ReplayEvaluator
     from prefix_universe import PrefixPoint
     from provenance import load_build
@@ -376,6 +446,7 @@ def main():
     p.add_argument('--max-assignments',type=int,default=None)
     p.add_argument('--repeat-limit',type=int,default=3)
     p.add_argument('--continue-after-stop',action='store_true',help='explicit operator continuation after diagnosed repeated class')
+    p.add_argument('--profile-one-new-point',action='store_true',help='cProfile one new point with at most8 pending pairs during normal work')
     args=p.parse_args();native_environment();started=time.monotonic()
     granted=int(os.environ.get('ARC_HEAVY_CPUS',str(args.workers)))
     if not 1<=args.workers<=granted:raise ValueError('workers must fit the run_heavy CPU grant')
@@ -405,7 +476,9 @@ def main():
     # Driver storage/provenance is retained but does not invalidate acquisitions.
     key_scope={k:v for k,v in scope.items() if k!='worker_implementation'};scope_key=digest(key_scope)
     options=dict(scope=scope_key,build=build,output=str(args.output),labels=str(args.labels),
-        deadline=args.deadline,max_assignments=args.max_assignments,dev=str(args.dev))
+        deadline=args.deadline,max_assignments=args.max_assignments,dev=str(args.dev),
+        profile_claim=str(args.output/'operator'/'profiles'/(scope_key+'-'+str(time.time_ns())+'.claim'))
+            if args.profile_one_new_point else None)
     operations.sort(key=lambda v:(v['task'],v['case'],v['body_path']))
     args.output.mkdir(parents=True,exist_ok=True)
     stop=args.output/'operator'/('stop-'+scope_key+'.json')
