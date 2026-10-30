@@ -99,9 +99,12 @@ const PREFIX_BYTES: usize = 8 * 1024 * 1024;
 /// The check verdicts of the prefixes at an open node, by the key of
 /// `prefix_key`, for one set of finished forms. A key holds the complete
 /// source of its prefix.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum PrefixKind { Check, DetAdmission }
+
 #[derive(Debug, Default)]
 struct PrefixMemo {
-    entries: crate::hash::StableHashMap<Vec<u8>, Result<(), super::Refusal>>,
+    entries: crate::hash::StableHashMap<(PrefixKind, Vec<u8>), Result<(), super::Refusal>>,
     bytes: usize,
 }
 
@@ -367,6 +370,15 @@ impl State {
     /// the prefix's source, its open path and the finished forms, which the
     /// key and the cache's lifetime fix.
     pub(super) fn cached_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        self.cached_verdict(PrefixKind::Check, key, compute)
+    }
+
+    pub(super) fn cached_det_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        self.cached_verdict(PrefixKind::DetAdmission, key, compute)
+    }
+
+    fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        let key = (kind, key);
         {
             let memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
             if let Some(verdict) = memo.entries.get(&key).cloned() {
@@ -374,16 +386,40 @@ impl State {
             }
         }
         let verdict = compute();
-        if key.len() <= PREFIX_KEY_BYTES {
+        if key.1.len() <= PREFIX_KEY_BYTES {
             let mut memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
-            if memo.entries.len() >= PREFIX_ENTRIES || memo.bytes + key.len() > PREFIX_BYTES {
+            if memo.entries.len() >= PREFIX_ENTRIES || memo.bytes + key.1.len() > PREFIX_BYTES {
                 memo.entries.clear();
                 memo.bytes = 0;
             }
-            memo.bytes += key.len();
+            memo.bytes += key.1.len();
             memo.entries.insert(key, verdict.clone());
         }
         verdict
+    }
+
+    /// Complete a written mark through the same grammar that closes a clause.
+    /// An open model-pick key can change the model family, so it is checked
+    /// when its END arrives. Proposers cannot take keys; their ONE is settled now.
+    pub(super) fn det_admission_state(&self, before: &State, context: &Context<'_>) -> Option<State> {
+        if self.program.value().forms.len() > before.program.value().forms.len() {
+            let written = match self.program.value().forms.last() {
+                Some(Form::Clause(c)) => c.value().keyword == ClauseKeyword::Det,
+                Some(Form::RigidDet(_)) => true,
+                _ => false,
+            };
+            return written.then(|| self.clone());
+        }
+        let ends = match self.stack.as_slice() {
+            [Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, stage: ClauseStage::Marks { .. }, .. })] => 1,
+            [Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, proposers, stage: ClauseStage::Marks { .. } }), Frame::One(_)] if !proposers.is_empty() => 2,
+            _ => return None,
+        };
+        let mut state = self.clone();
+        for _ in 0..ends {
+            state = state.step(context, &Token::Control(Control::End), &|_, _, _| false).ok()?.0;
+        }
+        Some(state)
     }
 
     /// The finished forms.

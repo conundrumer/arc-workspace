@@ -226,8 +226,12 @@ pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<D
 
 /// All assignable DETs, without a relation-specific dependency traversal.
 pub(crate) fn held_dets(program: &CheckedProgram) -> Vec<Det> {
-    determinations(program).into_iter().map(|node| det(program, node))
-        .filter(|det| !det.pick).collect()
+    written_dets(program).into_iter().filter(|det| !det.pick).collect()
+}
+
+/// Every written DET, including model picks that the held-parameter walk leaves unassigned.
+pub(crate) fn written_dets(program: &CheckedProgram) -> Vec<Det> {
+    determinations(program).into_iter().map(|node| det(program, node)).collect()
 }
 
 fn det(program: &CheckedProgram, node: GraphNodeIndex) -> Det {

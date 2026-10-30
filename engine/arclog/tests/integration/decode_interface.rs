@@ -207,16 +207,15 @@ fn a_prefix_that_reads_no_det_of_several_values_gives_one_entry() {
 }
 
 #[test]
-fn a_prefix_past_the_assignment_cap_gives_the_stop() {
+fn det_admission_refuses_the_assignment_cap_before_a_later_read() {
     let caps = Caps { assignments: 1, ..Caps::CORPUS };
     let inputs = inputs(&[3, 3], caps);
-    let tokens = model_tokens("(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n");
-    let (_, prefix) = tokens.split_last().expect("a stream");
     let mut decoder = decoder(&inputs);
+    let tokens = model_tokens("(DET &c ColorDomain)\n");
+    let (end, prefix) = tokens.split_last().expect("a stream");
     walk(&mut decoder, prefix);
-    let rows = decoder.rows(Some(Example::at(0))).expect("a clause in progress").expect("the sub-body checks");
-    assert_eq!(rows.at.len(), 1);
-    assert_eq!(rows.stop.expect("a stop").bound, ReachedBound::Assignments { cap: 1 });
+    assert_eq!(*end, Token::Control(Control::End));
+    assert_eq!(decoder.step(end.clone()).unwrap_err(), Refusal::DetAdmission(arclog::decode::DetRefusal::Bound(ReachedBound::Assignments { cap: 1 })));
 }
 
 #[test]
@@ -286,4 +285,94 @@ fn a_body_under_the_projection_cap_is_its_one_projection_with_the_rows_of_the_bo
     let [(_, Some(projected))] = &projected_example.at[..] else { panic!("one projection: {projected_example:?}") };
     assert_eq!((projected.arity(), projected.len()), (body.arity(), body.len()));
     assert!(self::decoder(&inputs).projections().is_none(), "no clause is in progress before the first token");
+}
+
+/// The same refusal must protect callers that bypass mask construction or OUT tests.
+fn det_admission_refusal(source: &str, inputs: &Inputs) -> Refusal {
+    let mut decoder = decoder(inputs);
+    let tokens = model_tokens(source);
+    for token in tokens {
+        let before = decoder.state().program().clone();
+        if let Err(refusal) = decoder.forced(&token) {
+            assert!(matches!(refusal, Refusal::DetAdmission(_)), "{token:?}: {refusal:?}");
+            let id = decoder.vocabulary().id(&token).expect("a token");
+            assert!(!decoder.admissible().contains(id));
+            assert_eq!(decoder.step_untested(token.clone()).unwrap_err(), refusal);
+            assert_eq!(decoder.step(token).unwrap_err(), refusal);
+            assert_eq!(decoder.state().program(), &before);
+            return refusal;
+        }
+        decoder.step_untested(token).expect("an admitted token");
+    }
+    panic!("a DET was expected to be refused");
+}
+
+#[test]
+fn det_admission_refuses_an_empty_proposer_domain_and_allows_its_empty_set_value() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    assert_eq!(det_admission_refusal("(DET &c UnchangedColor)\n", &inputs), Refusal::DetAdmission(arclog::decode::DetRefusal::NoLiveAssignment));
+    let mut decoder = decoder(&inputs);
+    walk(&mut decoder, &model_tokens("(DET &c UnchangedColor (SET))\n"));
+}
+
+#[test]
+fn det_admission_refuses_a_native_fault() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let mut missing = decoder(&inputs);
+    missing.step(Token::Control(Control::Det)).expect("DET opens");
+    assert!(matches!(missing.step(Token::Control(Control::End)), Err(Refusal::DetAdmission(arclog::decode::DetRefusal::Fault(_)))));
+    assert!(matches!(det_admission_refusal("(RULE &pick (input *P *Col) (ONE))\n(DET &x (&pick *P *Col))\n", &inputs), Refusal::DetAdmission(arclog::decode::DetRefusal::Fault(_))));
+}
+
+#[test]
+fn det_admission_checks_unread_dets_at_the_default_product_cap() {
+    let inputs = inputs(INPUT, Caps::CORPUS);
+    let source = (0..9).map(|i| format!("(DET &c{i} ColorDomain)\n")).collect::<String>();
+    assert_eq!(det_admission_refusal(&source, &inputs), Refusal::DetAdmission(arclog::decode::DetRefusal::Bound(ReachedBound::Assignments { cap: 256 })));
+}
+
+#[test]
+fn det_admission_ignores_an_expired_deadline() {
+    let mut inputs = inputs(INPUT, Caps::CORPUS);
+    inputs.settings.deadline = Some(std::time::Duration::ZERO);
+    let mut decoder = decoder(&inputs);
+    // The deterministic admission is still live even with an already-expired operation.
+    walk(&mut decoder, &model_tokens("(DET &c ColorDomain)\n"));
+}
+
+#[test]
+fn det_admission_checks_a_proposer_one_before_accepting_the_mark() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    let tokens = model_tokens("(DET &c UnchangedColor (ONE))\n");
+    for token in tokens {
+        if token == Token::Control(Control::One) {
+            assert_eq!(decoder.step(token).unwrap_err(), Refusal::DetAdmission(arclog::decode::DetRefusal::NoLiveAssignment));
+            return;
+        }
+        decoder.step(token).expect("the proposer opens");
+    }
+    panic!("the ONE mark was expected");
+}
+
+#[test]
+fn det_admission_keeps_a_keyed_model_pick_available() {
+    let inputs = inputs(INPUT, Caps { models: 1, ..Caps::CORPUS });
+    // The unkeyed ONE would have two models. Its open key must stay writable.
+    let mut decoder = decoder(&inputs);
+    walk(&mut decoder, &model_tokens("(DET &pick (ex_input *E *P *Col) (ONE E P))\n"));
+}
+
+#[test]
+fn det_admission_masks_are_deadline_independent() {
+    let normal = inputs(INPUT, Caps::CORPUS);
+    let mut expired = inputs(INPUT, Caps::CORPUS);
+    expired.settings.deadline = Some(std::time::Duration::ZERO);
+    let tokens = model_tokens("(DET &c ColorDomain)\n");
+    let (_, prefix) = tokens.split_last().unwrap();
+    let mut a = decoder(&normal);
+    let mut b = decoder(&expired);
+    walk(&mut a, prefix);
+    walk(&mut b, prefix);
+    assert_eq!(a.admissible(), b.admissible());
 }

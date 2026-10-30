@@ -37,6 +37,7 @@
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
 mod batch;
+mod det_admission;
 pub mod corpus;
 mod interface;
 pub mod replay;
@@ -46,6 +47,7 @@ mod prefix_key;
 mod projections;
 
 pub use batch::step_batch;
+pub use det_admission::DetRefusal;
 pub use interface::{BodyWidening, derived_at, open_clause, held_dets, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
 pub use projections::{projections, Projection, Projections};
 pub use state::State;
@@ -146,6 +148,8 @@ pub enum Refusal {
     /// The grammar of the stream gives no such token at the state, or a token
     /// that the engine would emit after it is outside the vocabulary.
     Grammar(&'static str),
+    /// The written DETs have no complete live assignment, or their native walk failed.
+    DetAdmission(DetRefusal),
     /// A check refuses the prefix that the token gives, at each of its
     /// refusals.
     Check { check: CheckId, refusals: Box<[crate::check::Refusal]> },
@@ -566,6 +570,7 @@ impl<'a> Decoder<'a> {
             // A site of one argument first: the sets of labels it can hold are many, and one label passes where any does.
             self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
         }
+        self.admit_written_dets(token, &state)?;
         Ok((state, forced))
     }
 
