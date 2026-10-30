@@ -176,6 +176,31 @@ def pair_readers(record,exports,bindings,*,side_cache=None):
                 policy='per-reader joint projection; never union fields from unrelated reader atoms')
 
 
+def reader_header_union(readers):
+    """Select actual reader-named native headers, retaining distinct aliases."""
+    chosen={}
+    for reader in readers:
+        for field in reader['fields']:
+            proof=field['proof'];header=proof.get('header')
+            require(header is not None,'read field lacks its complete native header identity')
+            key=row_path(header['row_path'])
+            column=dict(row_path=header['row_path'],header_physical_column=header['physical_column'],
+                source_body_column=field['physical_index'],type=header['type'],native_header=header,
+                scoped_binding=proof.get('binding'),body_field=proof.get('body_field'),
+                unit_projection_certificate=proof.get('unit_projection_certificate'))
+            if key in chosen:
+                require({k:v for k,v in chosen[key].items() if k!='reader_paths'}==column,
+                        'reader aliases disagree on one native header binding')
+            else:
+                chosen[key]=dict(column,reader_paths=[])
+            chosen[key]['reader_paths'].append(reader['reader_path'])
+    require(chosen or not readers,'empty DET projection has readers but no certified named scalar fields')
+    columns=sorted(chosen.values(),key=lambda f:f['header_physical_column'])
+    require(len({c['header_physical_column'] for c in columns})==len(columns),
+            'native header physical identity has distinct public paths')
+    return columns
+
+
 def det_transport(record,exports,bindings):
     """Canonical DET target selection receipt for MetadataProducer consumers.
 
@@ -186,32 +211,14 @@ def det_transport(record,exports,bindings):
     """
     require(bindings['gold']['kind'].casefold()=='det','DET transport requested for another point kind')
     projection=pair_readers(record,exports,bindings)
-    chosen={}
-    for reader in projection['readers']:
-        for field in reader['fields']:
-            key=tuple(tuple(v) for v in field['row_path'])
-            if key not in chosen:chosen[key]=dict(field,reader_paths=[])
-            chosen[key]['reader_paths'].append(reader['reader_path'])
-    require(chosen or not projection['readers'],'empty DET projection has readers but no certified named scalar fields')
     sides={}
     for side in ('gold','mutant'):
-        columns=[]
-        for key,field in chosen.items():
-            proof=field[side+'_proof'];header=proof['header'] if 'header' in proof else None
-            if header is None:
-                require(proof.get('type')=='Unit','implicit column lacks native Unit proof')
-                raise Unavailable('read Unit needs complete native header identity as well as its insertion proof')
-            columns.append(dict(row_path=header['row_path'],header_physical_column=header['physical_column'],
-                source_body_column=field[side],type=header['type'],native_header=header,
-                scoped_binding=proof.get('binding'),body_field=proof.get('body_field'),
-                unit_projection_certificate=proof.get('unit_projection_certificate'),
-                reader_paths=field['reader_paths']))
-        columns.sort(key=lambda f:f['header_physical_column'])
+        columns=reader_header_union([r[side+'_receipt'] for r in projection['readers']])
         sides[side]=dict(raw_binding=bindings[side],columns=columns,
             program_sha256=digest(record[side+'_sexp']),export_sha256=digest(exports[side]))
     return dict(schema='mech3-det-header-projection-v1',source_sha256=digest(record),
         complete=True,body_path=record['point'],sides=sides,
         no_readers_proof=dict(complete=True,count=len(projection['readers']),
-                              exports_complete=True) if not chosen else None,
+                              exports_complete=True) if not projection['readers'] else None,
         reader_projection=projection,
         policy='union of reader-named declared header identities; distinct aliases retained; private/unread columns excluded')

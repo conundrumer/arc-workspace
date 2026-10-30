@@ -12,8 +12,6 @@ def bind_adapter(producer, record, adapter):
     """Keep the source record and execution mutant; compose presentation only."""
     from evaluator import sha
     stored_binding=adapter['bindings']['mutant']
-    if stored_binding['kind']=='Det':
-        raise Unavailable('CURRENT-name DET reader projection requires a native current reader/header bridge')
     valid,current,_=producer.programs.load(record['programs']['mutant'],mutant_record=record,
                                           current_native_names=True)
     evidence=current['current_native_names']
@@ -46,12 +44,18 @@ def bind_adapter(producer, record, adapter):
         raise Unavailable('CURRENT BODY physical layout is not dense')
     ctx=producer.policy['Document'].__new__(producer.policy['Document'])
     ctx.readers={'mutant':reader};ctx.mexport=own;ctx.body=view;ctx.owner=view['owner_path']
-    projected,_,_=ctx.target_projection(reader,current_schema,{},body_side='mutant')
+    det_receipt=None
+    if stored_binding['kind']=='Det':
+        projected,det_receipt=_current_det_projection(producer,record,adapter,own,view,current_schema)
+    else:
+        projected,_,_=ctx.target_projection(reader,current_schema,{},body_side='mutant')
     fields=[];storage_fields=[];columns=[];storage_projection=[]
     for c in projected:
         index=c['source_body_column']
         if index is None:
-            if c['type']!='Unit' or c['source_projection'].get('inserted_constant',{}).get('kind')!='unit':
+            unit=c['source_projection'].get('unit_projection_certificate')
+            if c['type']!='Unit' or (c['source_projection'].get('inserted_constant',{}).get('kind')!='unit'
+                    and not (det_receipt is not None and unit is not None)):
                 raise Unavailable('CURRENT projection has an uncertified virtual field')
             storage=None;old=deepcopy(c);link=dict(inserted_constant=deepcopy(c['source_projection']))
         else:
@@ -59,7 +63,7 @@ def bind_adapter(producer, record, adapter):
             candidates=[f for f in stored_binding['projected_schema'] if f['source_body_column']==storage]
             if not candidates:raise Unavailable('CURRENT projection adds a field absent from the stored target')
             old=deepcopy(candidates[0])
-            if any(f.get('native_legacy_binding')!=old.get('native_legacy_binding') or f['type']!=old['type'] for f in candidates):
+            if det_receipt is None and any(f.get('native_legacy_binding')!=old.get('native_legacy_binding') or f['type']!=old['type'] for f in candidates):
                 raise Unavailable('stored target aliases disagree on native storage authority')
         field=dict(physical_index=c['index'],field_name=c['display_name'],native_name=c['name'],
             native_label_identity=deepcopy(c['native_label_identity']),type=c['type'],frame=c['frame'],
@@ -68,37 +72,118 @@ def bind_adapter(producer, record, adapter):
         fields.append(field);storage_fields.append(old);storage_projection.append(storage);columns.append(deepcopy(link))
     if Counter(storage_projection)!=Counter(f['source_body_column'] for f in stored_binding['projected_schema']):
         raise Unavailable('CURRENT and stored native target projections differ in field coverage')
-    atom=ctx.callable_atom(projected,'&X')
+    atom=None if det_receipt is not None else ctx.callable_atom(projected,'&X')
     binding=dict(stored_binding,body_path=view['body_path'],owner_path=view['owner_path'],
         native_selector=deepcopy(view['native_table_selector']),source_body_schema=current_schema,
         fields=fields,projected_schema=fields,callable_template=atom)
+    if det_receipt is not None:
+        # The stored certificate remains authoritative only for the untouched
+        # stored binding used below. Do not attach it to the CURRENT fields.
+        binding.pop('det_projection_receipt',None)
+        binding['current_det_reader_receipt']=det_receipt
+        binding['callable']=False
     result=dict(adapter,bindings=dict(adapter['bindings'],mutant=binding),
         input=dict(adapter['input'],binding=binding,fields=fields,callable_template=atom))
     result['_current_native_names']=dict(evidence,stored_binding=stored_binding,storage_fields=storage_fields,
         storage_projection=storage_projection,current_binding=binding,columns=columns,legacy_binding=legacy,
-        current_schema=current_schema,current_physical_schema=deepcopy(view['columns']),source_record_sha256=sha(record))
+        current_schema=current_schema,current_physical_schema=deepcopy(view['columns']),source_record_sha256=sha(record),
+        current_det_reader_receipt=det_receipt)
     return result
 
+
+
+def _current_det_projection(producer,record,adapter,export,view,schema):
+    """Recompute the public reader/header union in the CURRENT native scope."""
+    from evaluator import sha
+    from study_paths import CODE_ROOT
+    import sys
+    sys.path.insert(0,str(CODE_ROOT/'ast/run'))
+    from mech3.det_receipt import side_receipt
+    from mech3.reader_projection import reader_header_union
+    from judge3.det_metadata import project_header_union
+    stored=adapter['bindings']['mutant']
+    transport=adapter.get('det_projection_receipt',{})
+    if (stored.get('callable') is not False or stored.get('callable_template') is not None
+            or adapter.get('scope')!='TRAIN_features_only_noncallable'
+            or transport.get('complete') is not True
+            or transport.get('source_sha256')!=sha(record)):
+        raise Unavailable('CURRENT DET requires the original certified noncallable transport')
+    raw=dict(kind='Det',body_path=view['body_path'],owner_path=view['owner_path'],
+        source_body_schema=deepcopy(schema),projected_schema=[dict(c,source_body_column=c['index']) for c in schema])
+    readers=side_receipt(export,raw,view['body_path'])
+    columns=reader_header_union(list(readers['readers'].values()))
+    projected=project_header_union(schema,columns,body_path=view['body_path'],
+        column_text=producer.policy['column_text'])
+    receipt=dict(schema='study-current-det-reader-header-v1',source_sha256=sha(record),side='mutant',
+        scope='TRAIN_features_only_noncallable',callable=False,
+        original_transport_sha256=sha(transport),stored_binding_sha256=sha(stored),
+        current_program_sha256=hashlib.sha256(export['program_sexp'].encode()).hexdigest(),
+        current_export_sha256=sha(export),body_path=view['body_path'],owner_path=view['owner_path'],
+        raw_binding_sha256=sha(raw),reader_receipt=readers,columns=deepcopy(columns),
+        projected_fields_sha256=sha(projected),
+        policy='actual CURRENT reader-named native header union; aliases retained; no raw BODY substitution')
+    return projected,receipt
+
+
+def _det_packet_columns(stored_binding,storage_projection):
+    """Select among already validated columns with identical storage authority."""
+    original=[f['source_body_column'] for f in stored_binding['projected_schema']]
+    if Counter(original)!=Counter(storage_projection):
+        raise Unavailable('CURRENT DET selected storage coverage or alias multiplicity differs')
+    # Repeated public aliases of one storage cell are equal by the canonical
+    # original projection. This selects a representative, never an identity join.
+    positions={}
+    for index,storage in enumerate(original):
+        positions.setdefault(storage,index)
+    return [positions[storage] for storage in storage_projection]
+
+
+def _project_det_packet(packet,indices):
+    from evaluator_train import _projector
+    projected=[];cache={}
+    for entry in packet['entries']:
+        key=id(entry['rows']);prior=cache.get(key)
+        if prior is not None and prior[0] is entry['rows']:
+            rows=prior[1]
+        else:
+            rows=_projector()(dict(entries=[dict(entry,example=entry['example_index'],choice=None)]),indices)[0]['rows']
+            if len(rows)!=len(entry['rows']):
+                raise Unavailable('CURRENT DET alias projection changed row multiplicity')
+            cache[key]=(entry['rows'],rows)
+        projected.append(dict(entry,rows=rows))
+    return dict(packet,entries=projected)
 
 def acquire_point(ev, record, adapter, ntrain, ntest, *, copy_rows, include_projected_flows):
     """Decode only the certified storage indices through the ordinary evaluator."""
     from evaluator_train import acquire_train_point
-    info=adapter['_current_native_names'];old=dict(info['stored_binding'],projected_schema=info['storage_fields'])
-    for field,index in zip(old['projected_schema'],info['storage_projection']):
-        if field['source_body_column']!=index:
-            raise Unavailable('storage TRAIN field differs from admitted native projection')
+    info=adapter['_current_native_names'];det=info.get('current_det_reader_receipt')
+    if det is not None:
+        old=info['stored_binding']  # every original DET certificate hash stays intact
+    else:
+        old=dict(info['stored_binding'],projected_schema=info['storage_fields'])
+        for field,index in zip(old['projected_schema'],info['storage_projection']):
+            if field['source_body_column']!=index:
+                raise Unavailable('storage TRAIN field differs from admitted native projection')
     ordinary=dict(adapter,bindings=dict(adapter['bindings'],mutant=old),
         input=dict(adapter['input'],binding=old,fields=old['projected_schema']))
     ordinary.pop('_current_native_names')
     packet=acquire_train_point(ev,record,ordinary,ntrain,ntest,side='mutant',copy_rows=copy_rows,
                                include_projected_flows=include_projected_flows)
     if packet['missing']:raise Unavailable('CURRENT namespace X acquisition has missing TRAIN axes')
-    if packet['projection']!=info['storage_projection']:
+    acquired_projection=list(packet['projection']);packet_columns=None
+    if det is not None:
+        if acquired_projection!=[f['source_body_column'] for f in old['projected_schema']]:
+            raise Unavailable('stored DET acquisition changed its certified projection')
+        packet_columns=_det_packet_columns(old,info['storage_projection'])
+        packet=_project_det_packet(packet,packet_columns)
+    elif packet['projection']!=info['storage_projection']:
         raise Unavailable('actual TRAIN storage projection differs from native namespace proof')
     return dict(packet,fields=deepcopy(info['current_binding']['projected_schema']),
         source_schema=deepcopy(info['current_schema']),
         projection=[c['source_body_column'] for c in info['current_binding']['projected_schema']],
-        current_native_names_acquisition=dict(storage_projection=packet['projection'],
+        current_native_names_acquisition=dict(storage_projection=info['storage_projection'],
+            acquired_storage_projection=acquired_projection,packet_projection=packet_columns,
+            current_det_reader_receipt=deepcopy(det),
             storage_schema=packet['source_schema'],columns=info['columns'],legacy_binding=info['legacy_binding']))
 
 
@@ -144,12 +229,17 @@ def write_receipt(ev, pair_id, record, target, adapter, packet, public, output, 
         entries=entries,complete=True,complete_rows=True)
     files={name:save(name,value) for name,value in dict(source_record=record,current_export=info['current_export'],
         stored_export=info['stored_export'],namespace_correspondence=info['namespace_correspondence'],acquisition=acquisition).items()}
+    if info.get('current_det_reader_receipt') is not None:
+        files['current_det_reader_receipt']=save('current_det_reader_receipt',info['current_det_reader_receipt'])
     raw=lambda text:hashlib.sha256(text.encode()).hexdigest()
     producer={k:record[k] for k in ('engine_commit','wheel_sha256','native_binary_sha256')}
     storage_schema=packet['current_native_names_acquisition']['storage_schema']
     public_x=dict(path='tables/X.json',**file_digest(Path(output)/'tables/X.json'),fields_sha256=sha(public['fields']),
         required=deepcopy(public['required']),missing=[],entries=entries)
     implementation=dependency_receipt()
+    if info.get('current_det_reader_receipt') is not None:
+        from evaluator_train import det_dependency_receipt
+        implementation.update(det_dependency_receipt())
     from study_paths import CODE_ROOT
     for name in ('judge2/render2/structured.py','judge3/nonrender_metadata.py','judge3/export_dataset.py',
                  'judge3/export_by_pair_id.py','judge3/feature_payload.py','judge3/dataset_format.py',

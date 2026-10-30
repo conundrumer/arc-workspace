@@ -193,37 +193,8 @@ class MetadataProducer(base.MetadataProducer):
         for a, b in zip(raw, schema):
             require(all(a.get(k) == b.get(k) for k in ('index', 'type', 'slot', 'ast_label_id', 'frame')),
                     'native BODY schema differs from transport: ' + side)
-        projected = []
-        for index, column in enumerate(own['columns']):
-            source_index = column['source_body_column']
-            witness = column['native_header']
-            if source_index is None:
-                cert = column.get('unit_projection_certificate') or {}
-                require(column['type'] == 'Unit' and witness.get('status') == 'declared_without_local_label'
-                        and witness.get('proof') in ('declared_layout', 'resolved_row_path'), 'uncertified implicit Unit')
-                require(cert.get('schema') == 'mech3-native-unit-projection-v1'
-                        and cert.get('native_header') == witness and cert.get('source_body_column') is None
-                        and cert.get('proof') == witness['proof']
-                        and cert.get('projection_helper') == 'judge2/render2/body.py:project_entries', 'Unit certificate differs')
-                source = dict(type='Unit', frame='', name=witness.get('native_name') or '', label='', slot=-1,
-                    native_label_identity=dict(kind='implicit_unit', label_id=None, certificate=cert))
-            else:
-                require(type(source_index) is int and 0 <= source_index < len(schema), 'BODY index outside schema')
-                source = copy.deepcopy(schema[source_index])
-                proof = column.get('scoped_binding')
-                require(proof in witness.get('bindings', []) and proof.get('status') == 'resolved'
-                        and proof['body_path'] == ctx.r['point'], 'header lacks resolved changed-BODY binding')
-                identity = source['native_label_identity']
-                require(proof['scope_path'] == identity['scope_path'] and proof['label_id'] == identity['label_id']
-                        and proof['field_type'] == canonical_bound_field_type(source), 'header/BODY scoped label differs')
-            path = copy.deepcopy(column['row_path'])
-            if canonical_bound_field_type(source)!=source['type']:
-                source['native_type']=source['type']
-            projected.append(dict(source, index=index, type=column['type'], source_body_column=source_index,
-                callable_row_path=path, display_name=self.policy['column_text'](path, 'role'),
-                source_label='@column:' + str(index), source_projection=dict(role='det_reader_header',
-                    header_physical_column=column['header_physical_column'], native_header=witness,
-                    scoped_binding=column.get('scoped_binding'), unit_projection_certificate=column.get('unit_projection_certificate'))))
+        projected = project_header_union(schema,own['columns'],body_path=ctx.r['point'],
+            column_text=self.policy['column_text'])
         indices = [c['source_body_column'] for c in projected]
         result = {e: dict(entry, rows=self.policy['project_entries'](dict(entries=[dict(entry, choice=None)]), indices)[0]['rows'])
                   for e, entry in decoded.items()}
@@ -240,3 +211,40 @@ class MetadataProducer(base.MetadataProducer):
                 'DET binding differs from its projection receipt')
         return self.policy['project_entries'](dict(entries=entries),
             [field['source_body_column'] for field in binding['projected_schema']])
+
+
+def project_header_union(schema, columns, *, body_path, column_text):
+    """Canonical DET public field layout from certified native header columns."""
+    from native_correspondence import canonical_bound_field_type
+    projected = []
+    for index, column in enumerate(columns):
+        source_index = column['source_body_column']
+        witness = column['native_header']
+        if source_index is None:
+            cert = column.get('unit_projection_certificate') or {}
+            require(column['type'] == 'Unit' and witness.get('status') == 'declared_without_local_label'
+                    and witness.get('proof') in ('declared_layout', 'resolved_row_path'), 'uncertified implicit Unit')
+            require(cert.get('schema') == 'mech3-native-unit-projection-v1'
+                    and cert.get('native_header') == witness and cert.get('source_body_column') is None
+                    and cert.get('proof') == witness['proof']
+                    and cert.get('projection_helper') == 'judge2/render2/body.py:project_entries', 'Unit certificate differs')
+            source = dict(type='Unit', frame='', name=witness.get('native_name') or '', label='', slot=-1,
+                native_label_identity=dict(kind='implicit_unit', label_id=None, certificate=cert))
+        else:
+            require(type(source_index) is int and 0 <= source_index < len(schema), 'BODY index outside schema')
+            source = copy.deepcopy(schema[source_index])
+            proof = column.get('scoped_binding')
+            require(proof in witness.get('bindings', []) and proof.get('status') == 'resolved'
+                    and proof['body_path'] == body_path, 'header lacks resolved changed-BODY binding')
+            identity = source['native_label_identity']
+            require(proof['scope_path'] == identity['scope_path'] and proof['label_id'] == identity['label_id']
+                    and proof['field_type'] == canonical_bound_field_type(source), 'header/BODY scoped label differs')
+        path = copy.deepcopy(column['row_path'])
+        if canonical_bound_field_type(source)!=source['type']:
+            source['native_type']=source['type']
+        projected.append(dict(source, index=index, type=column['type'], source_body_column=source_index,
+            callable_row_path=path, display_name=column_text(path, 'role'),
+            source_label='@column:' + str(index), source_projection=dict(role='det_reader_header',
+                header_physical_column=column['header_physical_column'], native_header=witness,
+                scoped_binding=column.get('scoped_binding'), unit_projection_certificate=column.get('unit_projection_certificate'))))
+    return projected
