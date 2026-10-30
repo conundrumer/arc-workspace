@@ -280,6 +280,46 @@ def draw_incrementally(args,gold,point,k,operation,task,case,ctx,events,counts):
         requested=min(args.draws,max(requested+1,requested*2))
 
 
+def observe_constructed(row, evaluator, gold, point, mutant, ntrain, dep, gold_relations,
+                        native_store, gold_observations, gold_filter_tables, gold_payload_cache):
+    """Canonical observation/filter path, also used by stored populations.
+
+    Caller owns certified construction and durable storage. No drawing or quota.
+    """
+    phase_timings={}
+    evaluate_started=time.monotonic()
+    text,gobj,mobj=evaluator.evaluate_pair(gold,point,mutant)
+    phase_timings['evaluate']=time.monotonic()-evaluate_started
+    decode_started=time.monotonic()
+    report=gold_observations.expand(json.loads(text))
+    phase_timings['report_expand']=time.monotonic()-decode_started
+    capture_started=time.monotonic()
+    gold_payload,mutant_payload=raw_native(gobj),raw_native(mobj)
+    phase_timings['native_capture']=time.monotonic()-capture_started
+    store_started=time.monotonic()
+    row.update(evaluation=report,native=dict(gold=native_store.put_raw(gold_payload,gold_payload_cache),mutant=native_store.put_raw(mutant_payload)))
+    phase_timings['native_store']=time.monotonic()-store_started
+    view_started=time.monotonic()
+    body_key=tuple(point.body_path)
+    if body_key not in gold_filter_tables:gold_filter_tables[body_key]=native(gold_payload)
+    g,m=gold_filter_tables[body_key],native(mutant_payload)
+    phase_timings['native_filter_view']=time.monotonic()-view_started
+    phase_timings['native_decode']=time.monotonic()-decode_started
+    filter_started=time.monotonic()
+    fs,full=apply_filters(point,dep,report,g,m,ntrain,gold_relations,mutant)
+    phase_timings['filters']=time.monotonic()-filter_started
+    row.update(full_replay=full,filters=fs)
+    reasons=[name for name in FILTERS if fs[name]['reject']]
+    unknown=[name for name in FILTERS if name!='recoverable_gold' and fs[name]['status']!='complete']
+    if report['status']!='complete':reasons.insert(0,'evaluation_'+report['status'])
+    if report.get('gold_fits') is not True:reasons.append('gold_not_fits' if report.get('gold_fits') is False else 'gold_fits_unknown')
+    if unknown:reasons.append('filter_unknown')
+    survivor=not reasons
+    row.update(status=report['status'],retained=survivor,post_filter_survivor=survivor,rejection_reasons=reasons)
+    row.update(classification_fields(fs['recoverable_gold'],survivor))
+    return row, phase_timings, unknown
+
+
 def worker(args):
     for key in ('ARCLOG_THREADS','RAYON_NUM_THREADS','OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','VECLIB_MAXIMUM_THREADS'):os.environ[key]='1'
     global ACTIVE_GUARD
@@ -357,39 +397,14 @@ def worker(args):
                                         row.update(mutant_sexp=mutant_text,mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit)
                                         row['programs']['mutant']=row['mutant_sexp']
                                         phase_timings['construct']=time.monotonic()-tick
-                                        evaluate_started=time.monotonic()
-                                        text,gobj,mobj=evaluator.evaluate_pair(gold,point,mutant)
-                                        phase_timings['evaluate']=time.monotonic()-evaluate_started
-                                        decode_started=time.monotonic()
-                                        report=gold_observations.expand(json.loads(text))
-                                        phase_timings['report_expand']=time.monotonic()-decode_started
-                                        capture_started=time.monotonic()
-                                        gold_payload,mutant_payload=raw_native(gobj),raw_native(mobj)
-                                        phase_timings['native_capture']=time.monotonic()-capture_started
-                                        store_started=time.monotonic()
-                                        row.update(evaluation=report,native=dict(gold=native_store.put_raw(gold_payload,gold_payload_cache),mutant=native_store.put_raw(mutant_payload)))
-                                        phase_timings['native_store']=time.monotonic()-store_started
-                                        view_started=time.monotonic()
-                                        body_key=tuple(point.body_path)
-                                        if body_key not in gold_filter_tables:gold_filter_tables[body_key]=native(gold_payload)
-                                        g,m=gold_filter_tables[body_key],native(mutant_payload)
-                                        phase_timings['native_filter_view']=time.monotonic()-view_started
-                                        phase_timings['native_decode']=time.monotonic()-decode_started
-                                        filter_started=time.monotonic()
-                                        state['cursor']=dict(**ctx,phase='filters')
-                                        fs,full=apply_filters(point,dep,report,g,m,ntrain,gold_relations,mutant)
-                                        phase_timings['filters']=time.monotonic()-filter_started
-                                        row.update(full_replay=full,filters=fs)
-                                        reasons=[name for name in FILTERS if fs[name]['reject']]
-                                        unknown=[name for name in FILTERS if name!='recoverable_gold' and fs[name]['status']!='complete']
-                                        if report['status']!='complete':reasons.insert(0,'evaluation_'+report['status'])
-                                        if report.get('gold_fits') is not True:reasons.append('gold_not_fits' if report.get('gold_fits') is False else 'gold_fits_unknown')
-                                        if unknown:reasons.append('filter_unknown')
-                                        survivor=not reasons
+                                        row,new_timings,unknown=observe_constructed(row,evaluator,gold,point,mutant,ntrain,dep,gold_relations,native_store,gold_observations,gold_filter_tables,gold_payload_cache)
+                                        phase_timings.update(new_timings)
+                                        report=row['evaluation'];fs=row['filters'];survivor=row['post_filter_survivor']
+                                        reasons=row['rejection_reasons']
                                         if survivor and retained>=args.quota:reasons.append('post_filter_quota')
                                         keep=not reasons
                                         if keep:retained+=1
-                                        row.update(status=report['status'],retained=keep,post_filter_survivor=survivor,rejection_reasons=reasons)
+                                        row.update(retained=keep)
                                         row.update(classification_fields(fs['recoverable_gold'],keep))
                                         if row['code_label']:counts['code_labels'][row['code_label']]+=1
                                         counts['statuses'][report['status']]+=1

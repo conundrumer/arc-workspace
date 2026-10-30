@@ -49,6 +49,12 @@ def _open(path):
 
 
 class StudyReader:
+    def __new__(cls,*,paths=None):
+        if cls is StudyReader and paths and paths.get('population'):
+            from population_read import PopulationReader
+            return PopulationReader(paths=paths)
+        return super().__new__(cls)
+
     def __init__(self,*,paths=None):
         self.paths=default_paths();self.paths.update(paths or {})
         self.base=_open(self.paths['base']);self.normal_reader=None

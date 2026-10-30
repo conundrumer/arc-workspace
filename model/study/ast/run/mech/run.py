@@ -180,6 +180,33 @@ def valid(row, source_hash):
         return False
 
 
+def label_record(rec,base,source,filename,lineno):
+    """Label one stored source through the same input-valid runner path."""
+    key=pair_key(rec);pair_id=digest(key);source_hash=digest(rec)
+    row = DB.execute('SELECT source_sha256, result_sha256, record_json '
+                     'FROM pairs WHERE pair_id=?', (pair_id,)).fetchone()
+    if not RELABEL and valid(row, source_hash):
+        EVENTS.put(('skip', 1))
+    else:
+        result = ALGORITHM.one_pair(rec, str(base), CONFIG['seconds'], CONFIG['baseline_seconds'])
+        result.update(key)
+        result.update(schema=SCHEMA, pair_id=pair_id, source_sha256=source_hash,
+                      pool_pair_id=hashlib.sha256(json.dumps(rec['identity'], ensure_ascii=False,
+                                                            separators=(',', ':')).encode()).hexdigest(),
+                      code_sha256=CODE_HASH, code_manifest=MANIFEST, config=CONFIG,
+                      config_sha256=CONFIG_HASH, runner_sha256=RUNNER_HASH,
+                      source=dict(corpus=str(base.parent), stream=source, file=filename, line=lineno),
+                      kind=rec['kind'], old=rec.get('code_label'), reasons=rec['rejection_reasons'],
+                      retained=rec.get('retained'), completed_at=time.time(), reused_from=None)
+        # Errors are durable diagnostics, retried on the next start. Bounded
+        # unknown is a valid completed search outcome and is resumed normally.
+        payload = canonical(result)
+        with DB:
+            DB.execute('INSERT OR REPLACE INTO pairs VALUES (?,?,?,?,?,?)',
+                       (pair_id, source_hash, CODE_HASH, CONFIG_HASH, digest(result), payload))
+        EVENTS.put(('error' if result.get('error') else 'write', 1))
+
+
 def task_job(job):
     base, sources, limit = job; base = Path(base)
     seen = {}; processed = 0
@@ -194,28 +221,7 @@ def task_job(job):
         seen[pair_id] = source_hash
         if rec['task'] != base.name:
             raise ValueError(f'task identity differs from directory: {base}')
-        row = DB.execute('SELECT source_sha256, result_sha256, record_json '
-                         'FROM pairs WHERE pair_id=?', (pair_id,)).fetchone()
-        if not RELABEL and valid(row, source_hash):
-            EVENTS.put(('skip', 1))
-        else:
-            result = ALGORITHM.one_pair(rec, str(base), CONFIG['seconds'], CONFIG['baseline_seconds'])
-            result.update(key)
-            result.update(schema=SCHEMA, pair_id=pair_id, source_sha256=source_hash,
-                          pool_pair_id=hashlib.sha256(json.dumps(rec['identity'], ensure_ascii=False,
-                                                                separators=(',', ':')).encode()).hexdigest(),
-                          code_sha256=CODE_HASH, code_manifest=MANIFEST, config=CONFIG,
-                          config_sha256=CONFIG_HASH, runner_sha256=RUNNER_HASH,
-                          source=dict(corpus=str(base.parent), stream=source, file=filename, line=lineno),
-                          kind=rec['kind'], old=rec.get('code_label'), reasons=rec['rejection_reasons'],
-                          retained=rec.get('retained'), completed_at=time.time(), reused_from=None)
-            # Errors are durable diagnostics, retried on the next start. Bounded
-            # unknown is a valid completed search outcome and is resumed normally.
-            payload = canonical(result)
-            with DB:
-                DB.execute('INSERT OR REPLACE INTO pairs VALUES (?,?,?,?,?,?)',
-                           (pair_id, source_hash, CODE_HASH, CONFIG_HASH, digest(result), payload))
-            EVENTS.put(('error' if result.get('error') else 'write', 1))
+        label_record(rec,base,source,filename,lineno)
         processed += 1
         if limit and processed >= limit:
             break
