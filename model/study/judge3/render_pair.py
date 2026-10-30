@@ -330,17 +330,28 @@ class Document:
         require(len(matches) == 1, 'callable relation lacks unique resolver node: ' + definition['source_name'])
         return matches[0]
 
+    def body_view(self, export):
+        """Select the exact scoped source body, including CHOOSE sub-bodies.
+
+        An owner may have several bodies with the same kind and input port.
+        Their native table point ordinal is not their source body identity.
+        """
+        views = [v for v in export['body_views']
+                 if v['body_path'] == self.body['body_path']
+                 and v['owner_path'] == self.owner
+                 and v['kind'] == self.body['kind']
+                 and v['input_port'] == self.body['input_port']]
+        require(len(views) == 1, 'exact target body path is missing or ambiguous')
+        return views[0]
+
     def schema(self, reader, table, *, body=False, definition=None):
         schema = [dict(c) for c in reader.schema(table)]
         if body:
             side = 'gold' if reader is self.readers['gold'] else 'mutant'
             export = self.gexport if side == 'gold' else self.mexport
-            views = [v for v in export['body_views'] if v['owner_path'] == self.owner
-                     and v['body_path'] == self.body['body_path']
-                     and v['kind'] == self.body['kind'] and v['input_port'] == self.body['input_port']
-                     and v['native_table_selector']['form'] == reader.tables['form'][table]]
-            require(len(views) == 1, 'target body binding is missing or ambiguous: ' + side)
-            view = views[0]
+            view = self.body_view(export)
+            require(view['native_table_selector']['form'] == reader.tables['form'][table],
+                    'body form selector differs: ' + side)
             require(reader.tables['point'][table] == view['native_table_selector']['point'], 'body selector differs')
             for c in schema:
                 c['native_source_label'] = c['source_label']
@@ -416,8 +427,7 @@ class Document:
     def target_projection(self, reader, schema, decoded):
         side = 'gold' if reader is self.readers['gold'] else 'mutant'
         export = self.gexport if side == 'gold' else self.mexport
-        view = next(v for v in export['body_views'] if v['owner_path'] == self.owner
-                    and v['kind'] == self.body['kind'] and v['input_port'] == self.body['input_port'])
+        view = self.body_view(export)
         by_label = {c['ast_label_id']: c for c in schema}
         selected = []
         if view['kind'] == 'INIT key':
