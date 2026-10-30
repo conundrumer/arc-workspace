@@ -20,6 +20,14 @@ fn same_stream(
     Ok(a.ids == b.ids && a.model == b.model && a.paths == b.paths)
 }
 
+/// File layout retains byte/line positions after an edit. Compare the
+/// native writer's fixed-layout text with each handle's own scoped names;
+/// stale parentheses positions must not become an outside-BODY difference.
+fn named_source_text(program: &StudyProgram, registry: &Registry) -> String {
+    let names = program.label_names(registry);
+    crate::write::write_synthesized_named(program.program(), registry, Some(names.as_ref()))
+}
+
 impl StudyProgram {
     /// Certify a synthesized BODY without sampling the current atom domain.
     /// The origin belongs to the caller's source record, not to this handle.
@@ -59,15 +67,17 @@ impl StudyProgram {
         let candidate = StudyProgram::from_program(ast, Some(layout), registry)
             .map_err(|e| format!("body_replacement:whole_program_check: {e}"))?;
         let replacement = body_at(&candidate, at)?;
-        // Restoring just this BODY must restore the complete original writer
-        // and token/path artifact. This also checks INIT heads and later ports.
+        // Restoring just this BODY must restore the named source-order
+        // program and token/path artifact. Ignore original byte positions,
+        // while retaining native names, INIT heads and later ports.
         let restored = edit::replace_body(candidate.program(), at, &body_at(self, at)?)?;
         let restored = StudyProgram::from_program(restored, candidate.layout().cloned(), registry)
             .map_err(|e| format!("body_replacement:outside_body_changed: {e}"))?;
-        if restored.sexp(registry) != self.sexp(registry)
-            || !same_stream(self, &restored, registry, settings)?
-        {
-            return Err("body_replacement:outside_body_changed: restoring BODY does not restore gold writer and full stream".into());
+        if !same_stream(self, &restored, registry, settings)? {
+            return Err("body_replacement:outside_body_changed: restored full ids/model/paths differ from gold".into());
+        }
+        if named_source_text(&restored, registry) != named_source_text(self, registry) {
+            return Err("body_replacement:outside_body_changed: restored native named source differs from gold".into());
         }
         let valid = self.admit_body_replacement(point, replacement, origin, registry, settings)?;
         if !same_stream(valid.program(), &candidate, registry, settings)? {
