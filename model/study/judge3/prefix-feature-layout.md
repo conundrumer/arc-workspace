@@ -34,16 +34,22 @@ row packet or feature-payload verdict is copied. The checked prefix/candidate
 syntax and actual fields/frames are the metadata on this layout; no native
 nf4f computation is fabricated from old kept packets.
 
-Publication currently authenticates the f6428307 fixed declared-prior-DET scope
-runtime against its exact wheel/native binary. A complete ee2431d7 packet is
-not a proof of this universe: it remains untouched and is refused for real
-publication. Old DEV readbacks require `--preview`; they write only below
-`preview-only/`, with `recorded-prefix-universe-preview-v1` and explicit
-unproven coverage. Preview output is not a production layout. The cancelled
-compile-only compatibility request is not used. New fixed-runtime results can
-be joined directly. Later native runtime scope fixes require an explicit update
-to the accepted native revision; unsupported runtime provenance never triggers
-an acquisition.
+Publication authenticates the explicit f6428307 and 5f01bf6b fixed runtimes
+against their exact wheels/native binaries. Repeat `--runtime-ready` for the
+ready receipts in a mixed store. Each X/G packet selects its own matching
+binary/build; a default or first runtime is never grafted onto another context.
+If equal binaries make a build ambiguous, only the packet's actual installed
+native path can disambiguate it. All supplied ready refs participate in resume
+keys. Existing exact f642 publications are retained through the pinned source
+predecessor bridge: only the small discovery index advances, never the row
+files, original private receipt, runtime, universe or Ident namespace.
+
+A complete ee2431d7 packet is not a proof of this universe: it remains untouched
+and is refused for real publication. Old DEV readbacks require `--preview`;
+they write only below `preview-only/`, with
+`recorded-prefix-universe-preview-v1` and explicit unproven coverage. Preview
+output is not a production layout. The cancelled compile-only compatibility
+request is not used. New native results are joined directly, without replay.
 
 All large public packets use the canonical lossless `paused_storage` compact
 JSON/gzip codec. Existing validated pair output is reused by exact acquisition,

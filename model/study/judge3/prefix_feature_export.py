@@ -24,7 +24,10 @@ from judge3.dataset_format import write_json
 
 LAYOUT = 'prefix-u-full-body-train-v1'
 POLICY = 'native-prefix-parent-universe-v1'
-FIXED_RUNTIME_REVISION = 'f642830734cca0d1003004d1ec07e2ac0b52b358'
+FIXED_RUNTIME_REVISIONS = frozenset(('f642830734cca0d1003004d1ec07e2ac0b52b358',
+    '5f01bf6beec9430bd7f47868da95a0f2fe8fad52'))
+# Exact storage-only predecessor; its fixed-f642 input/policy checks are unchanged.
+PREDECESSOR_IMPLEMENTATION = '26236cb536b828e27521eb79ce023d8cdcabb1712671a91e8fa4af898c6bdc25'
 PREVIEW_LAYOUT = 'recorded-prefix-universe-preview-v1'
 
 
@@ -263,20 +266,40 @@ def wheel_binaries(path, device, inode, size, mtime, ctime):
     return tuple(matches)
 
 
-def runtime_authority(receipt, ready_path, *, preview):
+def ready_references(paths):
+    if paths is None:return []
+    if isinstance(paths,(str,Path)):paths=[paths]
+    refs=[]
+    for path in sorted({confined(p) for p in paths}):
+        if read_json(path).get('revision') not in FIXED_RUNTIME_REVISIONS:
+            raise ValueError('runtime ready revision is not explicitly accepted')
+        refs.append(reference(path))
+    return refs
+
+
+def runtime_authority(receipt, ready_paths, *, preview):
     if preview:
         return dict(status='preview_only',runtime=receipt['runtime'],
             declared_full_prefix_coverage='unproven; old complete status is insufficient')
-    if ready_path is None:raise ValueError('publication requires the fixed native runtime ready.json')
-    ready_path=confined(ready_path); ready=read_json(ready_path)
-    if ready.get('revision')!=FIXED_RUNTIME_REVISION:
-        raise ValueError('runtime lacks the authenticated declared-prior-DET universe fix; native per-context certificate required')
-    wanted=receipt['runtime']['runtime']['binary_sha256']
-    wheel=confined(ready['wheel']);st=wheel.stat()
-    matches=wheel_binaries(str(wheel),st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns)
-    if wanted not in matches:raise ValueError('packet native binary does not match fixed runtime wheel')
-    return dict(status='fixed_native_runtime',ready=reference(ready_path),
-        revision=ready['revision'],native_binary_sha256=wanted)
+    refs=ready_references(ready_paths)
+    if not refs:raise ValueError('publication requires explicit fixed native runtime ready.json refs')
+    wanted=receipt['runtime']['runtime']['binary_sha256'];matches=[]
+    for ref in refs:
+        ready_path=Path(ref['path']);ready=read_json(ready_path)
+        if ready.get('revision') not in FIXED_RUNTIME_REVISIONS:
+            raise ValueError('runtime lacks an explicitly accepted declared-prior-DET universe revision')
+        wheel=confined(ready['wheel']);st=wheel.stat()
+        binaries=wheel_binaries(str(wheel),st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns)
+        if wanted in binaries:
+            matches.append(dict(status='fixed_native_runtime',ready=ref,
+                revision=ready['revision'],native_binary_sha256=wanted))
+    if len(matches)>1:
+        # Equal binaries cannot silently select the first/default build. The
+        # receipt's actual installed path can disambiguate its original build.
+        installed=Path(receipt['runtime']['runtime']['binary']).resolve()
+        matches=[r for r in matches if installed.is_relative_to(Path(r['ready']['path']).parent)]
+    if len(matches)!=1:raise ValueError('packet native binary has no unique matching explicit runtime ready')
+    return matches[0]
 
 
 
@@ -288,14 +311,34 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     if preview: output = output/'preview-only'
     # Raw ref + join source key permits metadata-only resume before JSON loads.
     key = sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
-                   layout=layout,ready=reference(runtime_ready) if runtime_ready else None,
+                   layout=layout,ready=ready_references(runtime_ready),
                    implementation=file_sha(__file__)))
     index = output/'published-pairs'/(pair_id+'.json')
     if index.exists():
         old = read_json(index)
-        if old.get('key') == key and old.get('public_files') and all(valid_ref(r)
-                for r in [*old['public_files'],old['label'],old['receipt']]):
+        files_valid=old.get('public_files') and all(valid_ref(r)
+                for r in [*old['public_files'],old['label'],old['receipt']])
+        if old.get('key') == key and files_valid:
             return dict(status='reused',pair_id=pair_id,key=key)
+        # Preserve prior validated f642 publications. Only the small index is
+        # advanced: same exact acquisition/G/context/result and original ready,
+        # same layout, same semantic checks, exact predecessor source hash.
+        ready_refs=ready_references(runtime_ready)
+        authority=old.get('coverage_authority',{})
+        original_ready=authority.get('ready')
+        if files_valid and authority.get('revision') in FIXED_RUNTIME_REVISIONS and original_ready in ready_refs:
+            predecessor=sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
+                layout=layout,ready=original_ready,implementation=PREDECESSOR_IMPLEMENTATION))
+            previous_list=old.get('runtime_readies')
+            current_predecessor=(sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
+                layout=layout,ready=previous_list,implementation=file_sha(__file__)))
+                if isinstance(previous_list,list) else None)
+            if old.get('key') in (predecessor,current_predecessor):
+                storage_key=old.get('storage_key',old['key'])
+                old.update(key=key,storage_key=storage_key,runtime_readies=ready_refs,
+                    reuse_reason='exact publication inputs/implementation; runtime provider list only, no row changes')
+                write_json(index,old,compact=True)
+                return dict(status='reused',pair_id=pair_id,key=key,storage_key=storage_key)
     if result_ref:
         result = evidence.read(result_ref)
         if result.get('pair_id') != pair_id or result.get('point_id') != point_id:
@@ -333,6 +376,8 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     if set(tables) != set(admitted + [report['body_table']]):
         raise ValueError('candidate omits native available inventory or BODY')
     if gold is not None:
+        if gold['receipt']['runtime']!=value['receipt']['runtime']:
+            raise ValueError('X/G retain different native runtime contexts')
         # A G-only failure cannot suppress a usable X; complete G, when present,
         # must still bind this exact U/namespace. Its rows are written label-only.
         gold_open = evidence.read(gold['receipt']['opening_ref'])
@@ -399,7 +444,7 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     receipt_ref = write_packet(private_dir/'receipt.json.gz',receipt)
     index_value = dict(schema='prefix-feature-index-v1',key=key,pair_id=pair_id,point_id=point_id,
         context=context_id,pair=public_refs[-1],public_files=public_refs,receipt=receipt_ref,
-        label=label_ref,row_universe=layout,coverage_authority=authority)
+        label=label_ref,row_universe=layout,coverage_authority=authority,runtime_readies=ready_references(runtime_ready))
     index.parent.mkdir(parents=True,exist_ok=True);write_json(index,index_value,compact=True)
     return dict(status='published',pair_id=pair_id,key=key,label_status=label['status'])
 
@@ -420,7 +465,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--store',type=Path,default=DATA_ROOT/'judgetool/prefix-full-v1')
     parser.add_argument('--output',type=Path,default=DATA_ROOT/'feat-exp/prefix-u-v1')
-    parser.add_argument('--runtime-ready',type=Path,help='fixed native runtime ready.json; required for publication')
+    parser.add_argument('--runtime-ready',type=Path,action='append',help='repeat for explicit fixed runtime ready.json refs; each packet selects its matching native binary')
     parser.add_argument('--preview',action='store_true',help='DEV readback only; old-U coverage remains unproven, output isolated')
     parser.add_argument('--pair-id',action='append',default=[])
     parser.add_argument('--dev',type=Path,help='one stored DEV point folder with gold/mutant packets and operation.json')
@@ -439,7 +484,7 @@ def main():
     for path in files:
         operator=output/'operator'/(path.stem+'.json')
         resume_key=sha(dict(discovery=reference(path),implementation=file_sha(__file__),
-            ready=reference(args.runtime_ready) if args.runtime_ready else None,preview=args.preview))
+            ready=ready_references(args.runtime_ready),preview=args.preview))
         if operator.exists():
             previous=read_json(operator)
             if previous.get('resume_key')==resume_key and previous.get('result',{}).get('status')=='unavailable':
