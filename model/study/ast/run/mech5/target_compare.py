@@ -1,4 +1,4 @@
-"""Shared equality/containment observations; no negative recovery certificate."""
+"""Shared TRAIN containment and TRAIN+TEST equality observations."""
 
 
 def train_only(grouped):

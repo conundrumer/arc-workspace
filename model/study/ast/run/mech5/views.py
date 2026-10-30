@@ -38,10 +38,11 @@ def pair_view(facts,base,resolve,*,source_groups=None):
     if axis is None and own:
         axis=next((i['grouped']['required'] for i in own[0]['tables']+own[0]['bodies'] if i.get('grouped')),[])
     axis=axis or []
-    contains=[]
+    contains=[];observations=[]
     if refs:
         for item in refs:
             ref=item['reference'];value=resolve(ref);target=value.get('target',item.get('target',{}))
+            observations.append((target,value))
             eq=value['equality'];include=value['containment'];equal=eq['status']=='equal'
             view['grade_comparisons'].append(dict(target_id=target.get('target_id',target.get('table_id','G')),
                 equal=equal,train=equal,test=equal,complete=equal,kept_contexts_complete=equal,
@@ -68,8 +69,12 @@ def pair_view(facts,base,resolve,*,source_groups=None):
         if search.get('status')=='unknown':view['gaps'].append(dict(stage='search',reason=search.get('reason','unavailable search')))
     if legacy and not view['mechanical_clauses']:
         view['mechanical_clauses']=facts.get('mechanical_clauses',[])
-    view['complete']=bool(cases) and bool(view['grade_comparisons']) and not view['gaps']
-    view['support']=dict(complete=view['complete'],all_targets_lossy=None,any_target_contains='contains' in contains)
+    from .negative import derive_support
+    catalog,support=derive_support(facts,base,observations,resolve)
+    view['catalog_complete']=catalog['complete']
+    view['catalog_gaps']=catalog['gaps']
+    view['complete']=catalog['complete'] and not view['gaps']
+    view['support']=support
     view['missing_steps']=[]
     if not view['complete']:view['missing_steps'].append('step_3_incomplete_target_catalog_or_comparison')
     if legacy and facts.get('no_recovery_certificate'):view['no_recovery_certificate']=facts['no_recovery_certificate']

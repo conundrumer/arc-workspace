@@ -179,8 +179,31 @@ emits this proof; the reducer does not implement a second evaluator.
 Certified `comparisons.X_empty` (complete, empty, train, test,
 kept_contexts_complete, durable receipt reference) grades/filter-classifies
 `empty`, below valid grades. A missing model family is not empty. Raw row counts
-or failed containment are not settled-space negatives. Bounds and missing
-entries never prove absence. Attributes do not change a grade.
+or an isolated failed containment do not prove the all-target negative. Bounds
+and missing entries never prove absence. Attributes do not change a grade.
+
+The all-target negative has one read-time consumer,
+`grades.all_targets_lossy(evidence)`. The target owner's `load_targets` and
+`apply_targets` supply `target_catalog.complete=true` with a durable
+`receipt_ref`, and `comparisons.recovery_support` with `complete=true`,
+`all_targets_lossy=true`, and its durable `receipt_ref`. The target producer
+derives this at read time from authenticated stored canonical containment
+comparisons: True when the complete catalog includes G, every later table of
+the pair's case and every table of every other case, and every target's TRAIN
+containment status is `mismatch`; False if any target is `contains`; null for
+an incomplete catalog or missing/bounded comparisons. Catalog completeness is
+independent of TEST-only equality or search gaps. This is a mechanical TRAIN
+row-absence result, not a claim of exhausted library/union search. The reducer
+performs no comparison or replay. False, null, missing or incomplete support
+never establishes a negative. A legacy base `lossy` label against G alone is
+insufficient. Positive target equality still needs complete TRAIN+TEST checks.
+
+After the stronger equality, verified recovery/partial, and complete program-fit
+outcomes, that complete all-target negative grades `Reject`, without requiring
+a judge, program nonfit receipt, or exhausted search. It also closes the judge
+route through the same predicate. Globally empty X retains its earlier `empty`
+filter grade. The negative and grade are derived when read; no store schema,
+completed result, or current-code validity rule changes.
 
 `clause_evidence_from_identity(result, source_sha256, kept_count, receipt_ref,
 *, purpose='answer', role='recovery', ntrain, ntest)` normalizes compact native

@@ -62,7 +62,7 @@ class Pass:
         self.source_store=TaskNativeStore(ev.legacy,CODE_ROOT,counters=self.counts)
         self.base=sqlite3.connect(args.base.resolve().as_uri()+'?mode=ro',uri=True);self.base.execute('BEGIN')
         files=set(HERE/n for n in ('targets.py','target_store.py','target_compare.py','target_search.py','metadata.py',
-            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','target_index.py','runtime_cache.py'))
+            'read_targets.py','evidence.py','_paths.py','certificates.py','preflight.py','fact_codec.py','views.py','negative.py','target_index.py','runtime_cache.py'))
         files.update((CODE_ROOT/'judgetool').glob('*.py'))
         files.update((CODE_ROOT/'judge3').glob('*.py'))
         files.update(CODE_ROOT/'ast/run/mech'/n for n in ('algorithm.py','step2_check.py','run.py','clause_evidence.py','outcomes.py','grades.py'))
@@ -294,7 +294,7 @@ class Pass:
         selection['complete']&=not (gaps or failures)
         targets=([selection['point']] if selection['point'] is not None else [])+selection['targets']
         result.update(complete=selection['complete'],gaps=selection['gaps'],case_refs=refs)
-        comparisons=[];possible=[];computed=False
+        comparisons=[];possible=[]
         # One durable transaction for this pair's cheap table observations;
         # expensive candidate results still commit separately as soon as done.
         with self.journal.transaction():
@@ -320,17 +320,10 @@ class Pass:
                     kept_contexts_complete=not source['missing'] and not grouped['missing'],
                     test_target='gold_full_replay',receipt_ref=proof_ref,comparison=eq))
                 if include['status']=='contains' and reference.get('role')!='point':possible.append((target,inputs))
-                if include['status']=='mismatch':computed=True
                 if reference.get('role')=='point':
                     result['point']=dict(complete=include['status']!='unknown',
                         X_holds_every_gold_row=True if include['status']=='contains' else False if include['status']=='mismatch' else None,
                         receipt_ref=proof_ref,comparison=include)
-        complete=selection['complete'] and bool(comparisons)
-        result['support']=dict(complete=complete,all_targets_lossy=None,
-            raw_all_targets_lack_rows=complete and all(c['containment']['status']=='mismatch' for t,c,r in comparisons),
-            
-            any_target_contains=any(c['containment']['status']=='contains' for t,c,r in comparisons),
-            requires_computed_columns=computed,negative_policy='raw/count misses are diagnostic only; computed libs and needed-row unions remain')
         if any(c['equality']['status']=='unknown' or c['containment']['status']=='unknown' for t,c,r in comparisons):
             result['gaps'].append(dict(stage='comparison',reason='missing or bounded target comparison'))
         # A native equality is already the strongest possible target outcome.

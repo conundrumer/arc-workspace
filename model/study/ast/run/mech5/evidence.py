@@ -46,15 +46,17 @@ def apply_targets(evidence,loaded):
         raise ValueError('target overlay source/base binding differs')
     out=copy.deepcopy(evidence)
     out['target_pass_ref']=ref
-    out['target_catalog']=dict(complete=result.get('complete') is True,receipt_ref=ref,gaps=result.get('gaps',[]))
+    out['target_catalog']=dict(complete=result.get('catalog_complete',result.get('complete')) is True,
+        receipt_ref=ref,gaps=result.get('catalog_gaps',result.get('gaps',[])))
     comparisons=out.setdefault('comparisons',{})
     if certified_empty(result):
         comparisons['X_empty']=dict(complete=True,empty=True,train=True,test=True,
             kept_contexts_complete=True,receipt_ref=ref)
     comparisons['targets']=copy.deepcopy(result.get('grade_comparisons',[]))
     if 'point' in result:comparisons['point']=copy.deepcopy(result['point'])
-    # Raw containment/count diagnostics do not cover computed libraries/unions.
-    comparisons['recovery_support']=dict(result.get('support',{}),receipt_ref=ref,all_targets_lossy=None)
+    # The settled negative is complete TRAIN row absence against every target.
+    # It is derived from authenticated comparisons, not a search-exhaustion claim.
+    comparisons['recovery_support']=dict(result.get('support',{}),receipt_ref=ref)
     out['mechanical_clauses']=[c for c in out.get('mechanical_clauses',[]) if c.get('producer')!='mech5']
     out['mechanical_clauses'].extend(dict(copy.deepcopy(c),producer='mech5') for c in result.get('mechanical_clauses',[]))
     # Keep an independently authenticated settled-space result if already held.

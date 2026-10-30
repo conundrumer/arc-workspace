@@ -30,6 +30,22 @@ def contributed_rows(provenance,required):
             and proof.get('required_train_test_contexts')==required)
 
 
+def all_targets_lossy(evidence):
+    """Consume the target owner's authenticated, complete all-target negative.
+
+    The target owner derives this from canonical TRAIN containment mismatches
+    for G, all later same-case tables and every other-case table. A base label,
+    row count or incomplete comparison list is insufficient. TEST-only gaps do
+    not block this TRAIN negative; positive equality still requires TRAIN+TEST.
+    False/null or incomplete catalog/support cannot establish Reject.
+    """
+    catalog=evidence.get('target_catalog', {})
+    support=evidence.get('comparisons', {}).get('recovery_support', {})
+    return (catalog.get('complete') is True and bool(catalog.get('receipt_ref'))
+            and support.get('complete') is True and bool(support.get('receipt_ref'))
+            and support.get('all_targets_lossy') is True)
+
+
 def reduce_grade(evidence):
     if evidence.get('schema') != SCHEMA:
         raise ValueError('expected ' + SCHEMA)
@@ -105,12 +121,8 @@ def reduce_grade(evidence):
             grade, reason = 'Refused', 'mutant program refused by engine'
         else:
             nonfit = is_det or program_nonfit(program)
-            # Lossy needs the settled projected point comparison, never a legacy
-            # label against a different body/target or an incomplete family.
-            support = comparisons.get('recovery_support', {})
-            lossy = (catalog_complete and support.get('complete') is True
-                     and bool(support.get('receipt_ref'))
-                     and support.get('all_targets_lossy') is True)
+            # Only the target owner's complete all-target proof is a negative.
+            lossy = all_targets_lossy(evidence)
             search = evidence.get('search', {})
             exhausted = (catalog_complete and search.get('status') == 'covered_space_no_recovery'
                          and search.get('complete') is True and search.get('unvisited') == 0
@@ -163,7 +175,7 @@ def judge_candidate(evidence):
                  and point.get('X_holds_every_gold_row') is True)
                 or (support.get('any_target_contains') is True and bool(support.get('receipt_ref'))))
     return (possible
-            and support.get('all_targets_lossy') is not True
+            and not all_targets_lossy(evidence)
             and search.get('status') in ('bound_unknown', 'not_covered')
             and bool(search.get('receipt_ref')))
 
