@@ -291,7 +291,8 @@ def certify_stored_representation(rehydrated, stored, *, requested_text,
 
 
 def bind_legacy_body_schema(current, current_program, *, legacy_export,
-        legacy_stream, legacy_schema, body_path, legacy_cell_width, provenance):
+        legacy_stream, legacy_schema, body_path, legacy_cell_width, provenance,
+        source_local=False):
     """Bind an authenticated historical BODY using its own native descriptor.
 
     The acquisition owner authenticates the legacy payload/file/runtime/source
@@ -319,6 +320,13 @@ def bind_legacy_body_schema(current, current_program, *, legacy_export,
     old = Correspondence(legacy_export,
         program_sexp=legacy_export['program_sexp'],
         source_program_sexp=legacy_export['correspondence']['source_program_sexp'])
+    if type(source_local) is not bool:
+        raise Unavailable('source_local must be boolean')
+    if source_local and any(
+            value['source_program_sexp'] != value['program_sexp']
+            or value['source_bridge_status'] != 'same_checked_representation'
+            for value in (old._value, current._value)):
+        raise Unavailable('legacy/current BODY descriptors must both bind their own checked representation')
     before, after = old.body(body_path), current.body(body_path)
     # Native scope+LabelId is the key. Physical positions are asserted against
     # the old layout, rather than zipped against a newly emitted header.
@@ -370,5 +378,8 @@ def bind_legacy_body_schema(current, current_program, *, legacy_export,
             stream_sha256=digest(legacy_stream),
             legacy_correspondence_sha256=digest(old._value),
             current_correspondence_sha256=digest(current._value),
+            source_local=source_local,
+            legacy_source_program_sha256=hashlib.sha256(old._value['source_program_sexp'].encode()).hexdigest(),
+            current_source_program_sha256=hashlib.sha256(current._value['source_program_sexp'].encode()).hexdigest(),
             mapping='native scoped LabelId under exact program and full-stream equality',
             nominal_strings='retained verbatim; never parsed or normalized', rows_checked=False))
