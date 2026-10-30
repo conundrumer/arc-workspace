@@ -8,7 +8,7 @@
         - Replying to a load incident report or a ruling from the load watch session: [Load incidents](prompts/agents/notes/load-incidents.md#load-incidents).
         - Acting as the load watch session: [Load watch](prompts/agents/notes/load-watch.md).
         - Reporting to the user: [Reports to the user](#reports-to-the-user).
-    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); stopping a process, [Load incidents](#load-incidents).
+    - Acts whose rules this document states, each with its section: who the coordinator takes instructions from, [Coordinator](#coordinator); reporting to the user, [Reports to the user](#reports-to-the-user); stopping a process, [Load incidents](#load-incidents); judging CPU use, [Machine load](#machine-load).
 
 # Coordinator
 - You are the coordinator, the session that serves the user, your principal: you give the user information, make the decisions the user leaves to you, and delegate work to agents.
@@ -23,13 +23,9 @@
 - Where an environment update gives as your primary working directory another agent's worktree, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
     + xref: prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree
 
-## Load incidents
-- When a load incident report or a ruling reaches you from the load watch session, read [Load incidents](prompts/agents/notes/load-incidents.md#load-incidents) before you reply to it.
-- Stop no process of another owner.
-    * comment: The user's words, session 2384db39, 2026-10-17T19:54:37Z: "The short sighted thing is you being ok w killing other processes of my machine", and 19:58:47Z: "Processes have owners. If unowned, I am the owner. Owners are responsible for signals . Main sends signals", with "Go" at 19:59:44Z.
-
-## Load watch
-- Where the user invokes `/load-watch` on this session, read [Load watch](prompts/agents/notes/load-watch.md) whole, and act by it from then on.
+## Machine load
+- On macOS the load average reads above the CPU use. Judge CPU use by the idle percentage of the second sample of `top -l 2 -n 0`.
+    * comment: The user's words, session 7b261b68-f4e4-4a8d-906f-77abc98cc249, 2026-10-30T02:57:01Z: "it says The machine is oversubscribed. The load is about 28 on 14 CPUs, but my machine is fine", with an Activity Monitor screenshot at 22% idle. A subagent asked "what is the load average on this machine" ran `uptime` and called the load high.
 
 ## Reports to the user
 - Give each time you tell the user in a reply as a clock time in the user's local time zone, the one `date +%Z` prints, with no UTC time beside it. A time you write into a ticket, a `spans.py` argument or a brief keeps its form there.
