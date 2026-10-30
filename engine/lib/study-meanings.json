@@ -105,8 +105,8 @@
     },
     "lib:gap": {
       "status": "authored_contract",
-      "summary": "`gap(D: Dir8, P: Position, Q: Position, K: number)`, needs P Q: Q is ahead of P toward D, on P's line, with K cells strictly between them.",
-      "contract_markdown": "- `gap(D: Dir8, P: Position, Q: Position, K: number)`, needs P Q: Q is ahead of P toward D, on P's line, with K cells strictly between them.",
+      "summary": "`gap(D: Dir8, P: Position, Q: Position, K: Nat)`, needs P Q: Q is ahead of P toward D, on P's line, with K cells strictly between them.",
+      "contract_markdown": "- `gap(D: Dir8, P: Position, Q: Position, K: Nat)`, needs P Q: Q is ahead of P toward D, on P's line, with K cells strictly between them.",
       "source": {
         "document": "engine/lib/registry.sexpr",
         "start_line": 50,
