@@ -13,11 +13,11 @@ import uuid
 FORMAT = 'judge-dataset-v1'
 
 
-def write_json(path, value, *, compact=False):
+def write_json(path, value, *, compact=False, parent_ready=False):
     if type(compact) is not bool:
         raise ValueError("compact must be boolean")
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if not parent_ready:path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f'{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp')
     try:
         with temporary.open('w', encoding='utf-8') as stream:

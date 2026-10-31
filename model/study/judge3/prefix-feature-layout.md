@@ -99,3 +99,12 @@ rewrite. Changed discovery/source/context still retries only that changed item.
 Switch by stopping the old publisher at a completed-pair boundary and restarting
 the same command against patched source and the same output root. Do not run
 two publishers against the same output. No native replay or acquisition occurs.
+
+The offline publisher pins resolved DATA_ROOT paths for one invocation; file
+bytes are still SHA checked and cached digests still require matching file
+stamps. Shared output resume digests have a separate bounded context cache, so
+unique candidate files cannot evict them. Unique X and private receipts remain
+fully checked. Runtime ready JSON is cached only under its exact file stamp.
+Directory creation is remembered in a bounded metadata cache; atomic JSON/gzip
+writers skip only their redundant mkdir when that caller has prepared it.
+Compression, verification, fsync, replacement and serialized bytes are unchanged.

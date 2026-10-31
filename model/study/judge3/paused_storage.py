@@ -145,9 +145,10 @@ def read_gzip_json(path, *, expected_sha256=None):
     return value
 
 
-def _write_gzip_chunks(path, chunks, *, compresslevel=6):
+def _write_gzip_chunks(path, chunks, *, compresslevel=6, parent_ready=False):
     """The one atomic streaming gzip/original-SHA codec for text and JSON."""
-    path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
+    path = Path(path)
+    if not parent_ready:path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
     h = hashlib.sha256(); size = 0
     try:
@@ -173,7 +174,7 @@ def _write_gzip_chunks(path, chunks, *, compresslevel=6):
 
 
 
-def write_gzip_json(path, value, *, json_options=None, compresslevel=6, return_sha=False):
+def write_gzip_json(path, value, *, json_options=None, compresslevel=6, return_sha=False, parent_ready=False):
     """Stream JSON directly; existing callers keep compact level-6 bytes/None.
 
     Options permit exact legacy JSON formatting without a second codec. The
@@ -182,7 +183,7 @@ def write_gzip_json(path, value, *, json_options=None, compresslevel=6, return_s
     options=dict(ensure_ascii=False,allow_nan=False,separators=(',',':'))
     if json_options is not None:options.update(json_options)
     chunks=itertools.chain(json.JSONEncoder(**options).iterencode(value), ('\n',))
-    digest=_write_gzip_chunks(path,chunks,compresslevel=compresslevel)
+    digest=_write_gzip_chunks(path,chunks,compresslevel=compresslevel,parent_ready=parent_ready)
     if return_sha:return digest
 
 

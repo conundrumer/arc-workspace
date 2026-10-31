@@ -57,6 +57,11 @@ def implementation_names(path, file_signature):
 # The evaluator transition additionally removes its one newly declared framed
 # storage dependency when reconstructing the old implementation aggregate.
 STORAGE_TRANSITIONS = [
+    # Exact opt-in prepared-parent publication only; default codec bytes and
+    # acquisition behavior unchanged. prefix-feature-join/performance-r2/source.json.
+    ({'judge3/paused_storage.py': ('e03605ba81eff6763973e37976951f1bfd60f1109f22a5104c21d5f3ab90fa59', '166d8cf47427bc8c36e485e5a3b9a44631194c825da64ae06b664a2bb16a4b82')}, {}),
+    ({'judge3/dataset_format.py': ('1870226b0a0c2e243346c12bb6bdeece6e92b1e1de91a5e02e6eb90bc2915078', 'e6fafd17402e18f917a697ece3f62c8656d78fab98a39f94a26ce35a2736df28')}, {}),
+
     # Prefix private report gzip + stat-invalidated source receipt cache only.
     # Exact source proof: codex-adm/n-eval2-prefix-storage/source.json.
     ({'prefix_universe.py': (

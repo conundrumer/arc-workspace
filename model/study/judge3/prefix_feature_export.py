@@ -21,7 +21,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from study_paths import DATA_ROOT
 from judge3.paused_storage import read_json, write_gzip_json, sidecar
-from judge3.dataset_format import write_json
+from judge3.dataset_format import write_json as dataset_write_json
 
 LAYOUT = 'prefix-u-full-body-train-v1'
 POLICY = 'native-prefix-parent-universe-v1'
@@ -31,13 +31,15 @@ FIXED_RUNTIME_REVISIONS = frozenset(('f642830734cca0d1003004d1ec07e2ac0b52b358',
 # Exact storage-only predecessor; its fixed-f642 input/policy checks are unchanged.
 PREDECESSOR_IMPLEMENTATION = '26236cb536b828e27521eb79ce023d8cdcabb1712671a91e8fa4af898c6bdc25'
 # Adding one explicitly accepted native build does not rewrite earlier tables.
-PERFORMANCE_PREDECESSOR = '6cb202265757dca8cc0a3789b41c86dacff294a4a0dc5c851a3376031f287f27'
+PERFORMANCE_PREDECESSOR = 'd48ee50952d914e6fd67ac5c1ce0683d0f3817d11cf144bdd8361c9b4076fafa'
+ROUND_ONE_PREDECESSOR = '6cb202265757dca8cc0a3789b41c86dacff294a4a0dc5c851a3376031f287f27'
 LIST_READY_PREDECESSORS = ('e2d3a5c44f036ce9a2329985db2712ae3bffed0c61c2c5c898eaf8fd5115a19c',
-    PERFORMANCE_PREDECESSOR)
+    ROUND_ONE_PREDECESSOR, PERFORMANCE_PREDECESSOR)
 PREVIEW_LAYOUT = 'recorded-prefix-universe-preview-v1'
 
 
 _SESSION=None
+_DATA_ROOT_RESOLVED=DATA_ROOT.resolve()
 
 
 def stamp(path):
@@ -57,18 +59,19 @@ class JoinSession:
         if _SESSION is not None:raise ValueError('nested prefix join sessions')
         self.gc_enabled=gc.isenabled();gc.disable();self.context=None
         self.shared={};self.validated={};self.common_files={};self.gold_checks={};self.source_checks={}
-        self.stats=Counter();_SESSION=self;return self
+        self.verified_refs={};self.directories=set();self.stats=Counter();_SESSION=self;return self
 
     def activate(self, context):
         if context!=self.context:
             self.shared.clear();self.validated.clear();self.common_files.clear()
-            self.gold_checks.clear();self.source_checks.clear();self.context=context
+            self.gold_checks.clear();self.source_checks.clear();self.verified_refs.clear();self.context=context
             gc.collect();self.stats['context_boundaries']+=1
 
     def __exit__(self,*unused):
         global _SESSION
         self.shared.clear();self.validated.clear();self.common_files.clear()
-        self.gold_checks.clear();self.source_checks.clear();_SESSION=None
+        self.gold_checks.clear();self.source_checks.clear();self.verified_refs.clear();_SESSION=None
+        resolved_path.cache_clear();self.directories.clear()
         gc.collect()
         if self.gc_enabled:gc.enable()
 
@@ -99,11 +102,35 @@ def file_sha(path):
     path=Path(path);return _file_sha(str(path),stamp(path))
 
 
-def confined(path):
-    path = Path(path).resolve()
-    if not path.is_relative_to(DATA_ROOT.resolve()):
+@lru_cache(maxsize=8192)
+def resolved_path(path):
+    # Pin the resolved, confined address for this invocation, not an unresolved
+    # symlink spelling. Actual bytes remain SHA-checked and stat-invalidated.
+    resolved=Path(path).resolve()
+    if not resolved.is_relative_to(_DATA_ROOT_RESOLVED):
         raise ValueError('prefix publication path escapes DATA_ROOT')
-    return path
+    return resolved
+
+
+def confined(path):
+    return resolved_path(str(path))
+
+
+def ensure_directory(path):
+    path=Path(path)
+    if _SESSION is None:
+        path.mkdir(parents=True,exist_ok=True);return
+    if path in _SESSION.directories:return
+    if path.parent!=path:ensure_directory(path.parent)
+    path.mkdir(exist_ok=True)
+    # Bound metadata only; evicting it merely repeats mkdir, never drops data.
+    if len(_SESSION.directories)>=8192:_SESSION.directories.clear()
+    _SESSION.directories.add(path)
+
+
+def write_json(path,value,*,compact=False):
+    ensure_directory(Path(path).parent)
+    return dataset_write_json(path,value,compact=compact,parent_ready=True)
 
 
 class Evidence:
@@ -127,9 +154,11 @@ class Evidence:
                 _SESSION.stats['shared_json_hits']+=1
                 return value
         if path.exists():
-            if ('bytes' in ref and path.stat().st_size != ref['bytes']) or file_sha(path) != ref['sha256']:
-                raise ValueError('prefix evidence file SHA/size differs: ' + str(path))
+            if 'bytes' in ref and before[0][3] != ref['bytes']:
+                raise ValueError('prefix evidence file size differs: ' + str(path))
             if path.suffix == '.gz':
+                if file_sha(path) != ref['sha256']:
+                    raise ValueError('prefix evidence file SHA differs: '+str(path))
                 checksum = sidecar(path)
                 if not checksum.is_file(): raise ValueError('gzip evidence lacks original SHA sidecar')
                 if ref.get('original_sha_ref'):
@@ -366,17 +395,25 @@ def checked_table(table, report, opening):
 
 
 
-def valid_ref(ref):
+def valid_ref(ref, *, shared=False):
     try:
         path=confined(ref['path'])
-        return (path.is_file() and path.stat().st_size==ref['bytes']
-            and file_sha(path)==ref['sha256']
-            and ('original_sha_ref' not in ref or valid_ref(ref['original_sha_ref'])))
+        signature=ref_stamp(ref)
+        key=sha(ref)
+        if shared and _SESSION is not None and _SESSION.verified_refs.get(key)==signature:
+            _SESSION.stats['shared_resume_digest_hits']+=1;return True
+        valid=(signature[0][3]==ref['bytes'] and file_sha(path)==ref['sha256']
+            and ('original_sha_ref' not in ref or valid_ref(ref['original_sha_ref'],shared=shared)))
+        if valid and shared and _SESSION is not None:
+            if len(_SESSION.verified_refs)>=8192:_SESSION.verified_refs.clear()
+            _SESSION.verified_refs[key]=signature
+        return valid
     except (OSError,KeyError,ValueError,TypeError):return False
 
 
 def write_packet(path, value):
-    write_gzip_json(path, value)
+    ensure_directory(Path(path).parent)
+    write_gzip_json(path, value,parent_ready=True)
     return reference(path)
 
 
@@ -396,12 +433,19 @@ def wheel_binaries(path, device, inode, size, mtime, ctime):
     return tuple(matches)
 
 
+@lru_cache(maxsize=16)
+def ready_metadata(path,signature):
+    value=read_json(path)
+    if stamp(path)!=signature:raise ValueError('runtime ready changed while reading')
+    return value
+
+
 def ready_references(paths):
     if paths is None:return []
     if isinstance(paths,(str,Path)):paths=[paths]
     refs=[]
     for path in sorted({confined(p) for p in paths}):
-        if read_json(path).get('revision') not in FIXED_RUNTIME_REVISIONS:
+        if ready_metadata(str(path),stamp(path)).get('revision') not in FIXED_RUNTIME_REVISIONS:
             raise ValueError('runtime ready revision is not explicitly accepted')
         refs.append(reference(path))
     return refs
@@ -415,7 +459,7 @@ def runtime_authority(receipt, ready_paths, *, preview):
     if not refs:raise ValueError('publication requires explicit fixed native runtime ready.json refs')
     wanted=receipt['runtime']['runtime']['binary_sha256'];matches=[]
     for ref in refs:
-        ready_path=Path(ref['path']);ready=read_json(ready_path)
+        ready_path=Path(ref['path']);ready=ready_metadata(str(ready_path),stamp(ready_path))
         if ready.get('revision') not in FIXED_RUNTIME_REVISIONS:
             raise ValueError('runtime lacks an explicitly accepted declared-prior-DET universe revision')
         wheel=confined(ready['wheel']);st=wheel.stat()
@@ -443,11 +487,13 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     key = sha(dict(X=acquisition_ref,G=gold_ref,result=result_ref,context=context_ref,
                    layout=layout,ready=ready_references(runtime_ready),
                    implementation=file_sha(__file__)))
+    if _SESSION is not None:_SESSION.activate(sha(dict(context=context_ref,gold=gold_ref,point=point_id,layout=layout)))
     index = output/'published-pairs'/(pair_id+'.json')
     if index.exists():
         old = read_json(index)
-        files_valid=old.get('public_files') and all(valid_ref(r)
-                for r in [*old['public_files'],old['label'],old['receipt']])
+        files_valid=(old.get('public_files') and
+            all(valid_ref(r,shared=True) for r in [*old['public_files'][:-2],old['label']]) and
+            all(valid_ref(r) for r in [*old['public_files'][-2:],old['receipt']]))
         if old.get('key') == key and files_valid:
             return dict(status='reused',pair_id=pair_id,key=key)
         # Preserve prior validated f642 publications. Only the small index is
@@ -574,7 +620,7 @@ def publish(acquisition_ref, gold_ref, *, pair_id, point_id, output, result_ref=
     index_value = dict(schema='prefix-feature-index-v1',key=key,pair_id=pair_id,point_id=point_id,
         context=context_id,pair=public_refs[-1],public_files=public_refs,receipt=receipt_ref,
         label=label_ref,row_universe=layout,coverage_authority=authority,runtime_readies=ready_references(runtime_ready))
-    index.parent.mkdir(parents=True,exist_ok=True);write_json(index,index_value,compact=True)
+    write_json(index,index_value,compact=True)
     return dict(status='published',pair_id=pair_id,key=key,label_status=label['status'])
 
 
@@ -635,9 +681,10 @@ def _main():
             ready=ready_references(args.runtime_ready),preview=args.preview))
         if operator.exists():
             previous=read_json(operator)
-            predecessor_key=sha(dict(discovery=reference(path),implementation=PERFORMANCE_PREDECESSOR,
+            predecessor_keys={sha(dict(discovery=reference(path),implementation=impl,
                 ready=ready_references(args.runtime_ready),preview=args.preview))
-            if previous.get('resume_key') in (resume_key,predecessor_key) and previous.get('result',{}).get('status')=='unavailable':
+                for impl in LIST_READY_PREDECESSORS}
+            if previous.get('resume_key') in {resume_key,*predecessor_keys} and previous.get('result',{}).get('status')=='unavailable':
                 result=dict(previous['result'],stored=True);counts['stored_unavailable']+=1
                 print(json.dumps(result),flush=True);continue
         try:result=publish_discovery(path,output,runtime_ready=args.runtime_ready,preview=args.preview)
