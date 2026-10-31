@@ -42,6 +42,14 @@ def init_ports(form):
     return keyed, {p[0] for p in (parts[0][2:] if keyed else parts) if isinstance(p, list) and p}
 
 
+def outside_ports(form):
+    """The ports of an INIT form that follow its key group: a port that reads no key. Each is (name, head), as port_heads gives."""
+    parts = [p for p in form[3:] if isinstance(p, list) and p]
+    if not parts or parts[0][0] != 'key':
+        return []
+    return [(p[0], {h[0][1:]: len(h) - 1 for h in p[1] if isinstance(h, list)}) for p in parts[1:]]
+
+
 def walk_counts(tasks):
     """The counts of a draw's walk: 'after' maps a state, the capped clause counts of WALK_KINDS, to the next kind or 'stop' -> counts."""
     rng, after = random.Random(0), collections.defaultdict(collections.Counter)
@@ -151,6 +159,7 @@ def fit():
     keyed, ports = collections.Counter(), collections.Counter()  # component -> INITs with a key group; (component, key group, port) -> uses
     heads = collections.Counter()  # (component, port, column) -> uses of the port whose head names the column
     head_labels = collections.defaultdict(collections.Counter)  # (component, port, column) -> count of labels at that head site -> uses
+    outside, heads_out = collections.Counter(), collections.Counter()  # (component, port) -> uses after a key group; (component, port, column) -> those whose head names the column
     for t in tasks:
         prev, n = '^', 0
         lengths[sum(f[0] != 'OUT' for f in S.corpus_forms(t))] += 1
@@ -176,6 +185,9 @@ def fit():
                     heads.update((f[2], p, col) for col in head)
                     for col, n in head.items():
                         head_labels[f[2], p, col][n] += 1
+                for p, head in outside_ports(f):
+                    outside[f[2], p] += 1
+                    heads_out.update((f[2], p, col) for col in head)
     bodies = {k: S.gold_bodies(tasks, k) for k in ('RULE', 'DET')}
     bodies['INIT'] = S.gold_port_bodies(tasks)
     regcols = S.registry_columns()
@@ -190,7 +202,7 @@ def fit():
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)

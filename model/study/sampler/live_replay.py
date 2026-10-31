@@ -255,15 +255,24 @@ class Walk:
             f, nlab = g, len(carets)
             types = run.label_types(dr, dr.drawn)
             keys = {run.ff0.label_tok[n]: types.get('L%d' % n) for n in where}
+        left = []
         for pname, cols in ports:
             if t[self.i] == SKIP_TOK:
                 f = f.fork()
                 f.step(SKIP_TOK)
                 self.i += 1
+                left.append((pname, cols))
                 continue
             if t[self.i] in KIND_TOK.values() or t[self.i] == OUT_TOK:
                 break
             f, nlab = self.port(f, name, pname, cols, params, nlab, keys, fields)
+        for pname, cols in left if keys else ():  # the ports outside the key group
+            if t[self.i] == SKIP_TOK:
+                f = f.fork()
+                f.step(SKIP_TOK)
+                self.i += 1
+            elif t[self.i] not in (*KIND_TOK.values(), OUT_TOK, *HEADS):
+                f, nlab = self.port(f, name, pname, cols, params, nlab, {}, fields)
         while t[self.i] == SKIP_TOK:
             f = f.fork()
             f.step(SKIP_TOK)

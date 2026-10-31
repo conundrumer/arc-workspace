@@ -22,7 +22,8 @@ counts them over random dependency orders of gold). A RULE's atoms and a DET's c
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
 alone, and other labels stay in their branch. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
-each key, or stops with chance 1 - KEY_ALL. A head column of a type parameter may take a record of several labels, its count from the
+each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
+priors' counts of those: such a port reads no key, so it holds for every key. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
 sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. The decoder gives every read of the task: its checks, and tables through step_tables;
 this module reads no gold and no path but the priors.
@@ -728,14 +729,25 @@ class Run:
             f = f.fork()
             f.step(SKIP_TOK)
         uses = pri['keyed'][comp] if keyed else pri['comps'][comp] - pri['keyed'][comp]
+        left = []  # the ports that the key group skipped
         for name, cols in ports:
             p = (pri['ports'][comp, keyed, name] + 0.1) / (uses + 0.5)
             if rng.random() >= p and f.admits([SKIP_TOK])[0]:
                 f = f.fork()
                 f.step(SKIP_TOK)
+                left.append((name, cols))
                 continue
             f, nlab = self.port(pg, f, comp, name, cols, params, nlab, keys, fields)
-        for _ in ports:  # a key group's ports come again after it, for a port that reads no key
+        for name, cols in left if keyed else ():  # a key group's ports come again after it: a port that reads no key goes here, and is read for every key
+            if f.admits([RULE_TOK])[0]:
+                break
+            p = (pri['outside'].get((comp, name), 0) + 0.1) / (uses - pri['ports'][comp, True, name] + 0.5) if 'outside' in pri else 0.0
+            f = f.fork()
+            if rng.random() >= p and f.admits([SKIP_TOK])[0]:
+                f.step(SKIP_TOK)
+                continue
+            f, nlab = self.port(pg, f, comp, name, cols, params, nlab, {}, fields, True)
+        for _ in ports:
             if f.admits([RULE_TOK])[0]:
                 break
             f = f.fork()
@@ -773,12 +785,13 @@ class Run:
             f.step(M.END)
         return f, got
 
-    def port(self, pg, f, comp, name, cols, params, nlab, keys, fields):
+    def port(self, pg, f, comp, name, cols, params, nlab, keys, fields, outside=False):
         """The decoder after port name's body and head at f, with the labels of the INIT so far. fields has each type parameter's label
-        types so far, and gets those of the columns that this head binds first."""
+        types so far, and gets those of the columns that this head binds first. outside says that the port follows the key group."""
         pri, rng = self.pri, self.rng
-        uses = sum(pri['ports'][comp, k, name] for k in (False, True))
-        bound = [(c, t) for c, t in cols if rng.random() < (pri['heads'][comp, name, c] + 0.1) / (uses + 0.2)]
+        uses = pri.get('outside', {}).get((comp, name), 0) if outside else sum(pri['ports'][comp, k, name] for k in (False, True))
+        heads = pri.get('heads_out', {}) if outside else pri['heads']
+        bound = [(c, t) for c, t in cols if rng.random() < (heads.get((comp, name, c), 0) + 0.1) / (uses + 0.2)]
         need = self.head_need(bound, params, fields)
         sizes = {}  # a type -> the count of labels that a head column of it takes
         for c, t in bound:
