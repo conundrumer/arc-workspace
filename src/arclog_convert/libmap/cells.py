@@ -180,8 +180,8 @@ def _rim_dir(ex, inst) -> str:
 def slide(inst, ex):
     rim_dir = "rim_dir" in ex.reads_of(inst)
     return Spec(".init {x} = Ray<{Key}>" + ("\n.init {x}_rim = Rim<{Key}>" if rim_dir else ""), {},
-                {"rest(Ky, P, D, Q)": "{x}.end(Ky, Q, D, _, P)", "run(Ky, P, D, Q)": "{x}.ray(Ky, Q, D, N, P), N > 0",
-                 "halt(Ky, P, D, Q)": "{x}.end(Ky, Q, D, N, P), N > 0",
+                {"rest(Ky, P, D, Q)": "{x}.end(Ky, Q, D, _, P)", "run(Ky, P, D, Q)": "{x}.ray(Ky, Q, D, N, P), N != 0",
+                 "halt(Ky, P, D, Q)": "{x}.end(Ky, Q, D, N, P), N != 0",
                  "rim_dir(Ky, P, D)": "{x}_rim.rim_dir(Ky, P, D), in_dir(Ky, D)",
                  "node(Ky, P)": "in_node(Ky, P)", "dir(Ky, D)": "in_dir(Ky, D)"},
                 "{x}.source(Ky, P) :- in_node(Ky, P).\n{x}.node(Ky, P) :- in_node(Ky, P).\n"
