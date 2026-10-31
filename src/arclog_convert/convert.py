@@ -3,7 +3,7 @@ files under gen/ of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives; in a linked worktree, `--out` is
 required (or `ARCLOG_OUT`).
 
-    uv run python -m arclog_convert.convert [--out <dir>] [--require-current-lib] [<stem> ...]
+    uv run python -m arclog_convert.convert [--out <dir>] [--require-current-lib] [--require-current-code] [<stem> ...]
 
 Each run writes the output for the solvers, every solver where no
 stem is given, and prints its summary; the run exits with status 1
@@ -64,13 +64,17 @@ passes (`convert_cases`): `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with 
 names the file of the case. A case whose program the passes leave as `arclog.case_files` gives it, and a case of
 which it gives a fault, have no files. The passes read Souffle's rows of the whole program
 (`pull_up.Rows.single`). After a solver's case files stand, `case_records/` beside `gen/` holds a file `<stem>.sha256`
-with the hash of everything the files are made from: the texts of the cases as `arclog.case_files` gives them, the
-column map and the name map and the Souffle texts of the solver, the answers of `Rows.single` that `convert_one`
-gives, the files of the solver, its task and its witnesses, and the code and the data the passes read
-(`_cases_code_digest`). Where the hash equals the record's, the run keeps the solver's case files; otherwise it
-removes the record and `gen/cases/<stem>/`, and writes the files again, over the pool in parts of the solver's cases,
-and writes the record once every part ends with no error. A solver that is not converted, or that has no answers,
-has neither the directory nor the record.
+with two lines: `inputs <hash>`, the inputs hash of the solver (`plans.inputs_hash`: its solver file, task file and
+witness file), and `code <hash>`, the hash of the code and the data the passes read (`_cases_code_digest`). A record is
+current where its inputs hash is the solver's, whatever its code hash, so that a change in the converter or the lib
+leaves the case files of a solver whose files are the same; with `--require-current-code`, a record is current also
+only where its code hash is the current one. The run keeps the case files of a solver whose record is current;
+otherwise it removes the record and `gen/cases/<stem>/`, and writes the files again, over the pool in parts of the
+solver's cases, and writes the record once every part ends with no error. Where the files cannot be made and the
+error is a `ValueError` or a `Fault`, the run removes `gen/cases/<stem>/` and the record gets a third line
+`error <JSON string>`; that record is current only where its code hash is the current one, with or without the flag, and
+the run reports its error without making the files again. A solver that is not converted, or that has no answers, has
+neither the directory nor the record.
 As each phase it runs ends (`plans`, `conversion`, `cases`), the run prints a line `<phase>: <seconds> s` with that phase's
 wall time. Under `scripts/run_heavy.py --cpus <n>`, the processes and threads
 the run has going at once, Souffle processes included, are at most `n`.
@@ -85,6 +89,7 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Executor, Future, wait
+from functools import cache
 from pathlib import Path
 from typing import NamedTuple
 from engine import checkout
@@ -390,6 +395,7 @@ def _module_files(roots: Sequence[str]) -> set[Path]:
     return set(files.values())
 
 
+@cache
 def _cases_code_digest() -> str:
     """The hash of the code and the data the case phase reads besides the solvers' texts: the modules that the
     pull-up pass, the projection pass and the implied-atom pass import, followed through their imports under `src/`, this file, the sources
@@ -408,56 +414,83 @@ type CaseTexts = list[tuple[str, str, str]]
 """The file name, the arclog text and the arcdata text of each case, as `arclog.case_files` gives them."""
 
 
-def _inputs_digest(stem: str, code: str, answers: Answers, cases: CaseTexts) -> str:
-    """The hash of what the case files of `stem` are made from: `code` (`_cases_code_digest`), the maps and the
-    Souffle texts that `convert_one` wrote for it, its solver file, task file and witness file, `answers`, and the
-    texts of its `cases`."""
-    root = paths.OUT_DIR.parent
-    digest = hashlib.sha256(f"{code}\0{inputs_hash(stem, paths.SOLVERS)}\0".encode())
-    hash_files(digest, ((str(path.relative_to(root)), path) for path in (
-        paths.COLUMNS_DIR / f"{stem}.json", paths.NAMES_DIR / f"{stem}.json", paths.NAMES_DIR / f"{stem}.dl",
-        paths.NAMES_DIR / f"{stem}.determination.dl")))
-    digest.update(json.dumps(sorted((relation, sorted(read), answer) for (relation, read), answer in answers.items())).encode())
-    for file, arclog, arcdata in cases:
-        digest.update(f"\0{file}\0{arclog}\0{arcdata}".encode())
-    return digest.hexdigest()
+class Record(NamedTuple):
+    """The content of `case_records/<stem>.sha256`."""
+
+    inputs: str
+    """The inputs hash of the solver (`plans.inputs_hash`) that the case files were made from."""
+    code: str
+    """The hash of the code the case files were made with (`_cases_code_digest`)."""
+    error: str | None
+    """The error that stopped the case files of the solver, where one did and `REPEATABLE` holds it."""
+
+
+REPEATABLE = ("ValueError", "Fault")
+"""The names of the errors of the case files that the same inputs and the same code give again. The record of a
+solver that stopped with one holds it; any other error (a full disk, a killed process) leaves no record."""
+
+
+def _read_record(stem: str) -> Record | None:
+    """The record of `stem` in `case_records/`; none where there is no file, or it is not in the form of
+    `_write_record`."""
+    try:
+        lines = (paths.CASE_RECORDS / f"{stem}.sha256").read_text().splitlines()
+        fields = dict(line.split(" ", 1) for line in lines)
+        error = json.loads(fields["error"]) if "error" in fields else None
+        return Record(fields["inputs"], fields["code"], error)
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _write_record(stem: str, inputs: str, error: str | None = None) -> None:
+    """Write the record of `stem` whole: its inputs hash `inputs`, the current code hash, and `error` where one is
+    given."""
+    lines = [f"inputs {inputs}", f"code {_cases_code_digest()}", *([f"error {json.dumps(error)}"] if error else [])]
+    paths.CASE_RECORDS.mkdir(parents=True, exist_ok=True)
+    write_whole(paths.CASE_RECORDS / f"{stem}.sha256", ("\n".join(lines) + "\n").encode())
+
+
+def _standing(stem: str, inputs: str, require_current_code: bool) -> "Cased | None":
+    """The outcome of `stem` that its record gives without a run, with `inputs` its inputs hash: that its case files
+    stand, where the record is current (see the head of this file), or the error that stopped them, where the record
+    holds one and the code hash is the current one; none where the solver's case files are to be made."""
+    record = _read_record(stem)
+    if record is None or record.inputs != inputs:
+        return None
+    if record.error is not None:
+        return Cased(stem, 0, False, record.error) if record.code == _cases_code_digest() else None
+    if require_current_code and record.code != _cases_code_digest():
+        return None
+    return Cased(stem, 0, True, None)
 
 
 class Prepared(NamedTuple):
     """What `_prepare_cases` gives for one solver."""
 
     stem: str
-    digest: str
-    """The hash of the inputs of the solver's case files."""
     answers: Answers
     """The answers of `Rows.single` to every question that the pull-up pass puts on the cases."""
     cases: CaseTexts | None
-    """The cases to write the files of; none where the solver's case files stand as the record says, or `error` is
-    set."""
+    """The cases to write the files of; none where `error` is set."""
     error: str | None
 
 
-def _prepare_cases(stem: str, answers: Answers, code: str) -> Prepared:
-    """The first round of the case phase for the solver `stem`: read the texts of its cases and compare the hash of
-    its inputs (`_inputs_digest`) with the record. Where they differ, remove the record and the solver's case
-    files, and ask Souffle's rows the questions of the pull-up pass on every case, once. `answers` are those
-    `convert_one` found."""
+def _prepare_cases(stem: str, answers: Answers) -> Prepared:
+    """The first round of the case phase for the solver `stem`, whose record is not current: read the texts of its
+    cases, remove the record and the solver's case files, and ask Souffle's rows the questions of the pull-up pass on
+    every case, once. `answers` are those `convert_one` found."""
     from arclog import case_files
     try:
         gen = paths.OUT_DIR
         texts = (gen / f"{stem}.arclog").read_text(), (gen / f"{stem}.arcdata").read_text()
         cases = [(f.file, f.arclog, f.arcdata) for f in case_files(stem, *texts, str(gen)) if f.fault is None]
-        digest = _inputs_digest(stem, code, answers, cases)
-        record = paths.CASE_RECORDS / f"{stem}.sha256"
-        if record.is_file() and record.read_text() == digest:
-            return Prepared(stem, digest, answers, None, None)
         _drop_cases(stem)
         rows = Rows(stem, json.loads((paths.COLUMNS_DIR / f"{stem}.json").read_text()))
         rows.answers.update(answers)
         _ask_all(rows, [(arclog, arcdata) for _, arclog, arcdata in cases])
-        return Prepared(stem, digest, rows.answers, cases, None)
+        return Prepared(stem, rows.answers, cases, None)
     except Exception as e:  # noqa: BLE001
-        return Prepared(stem, "", {}, None, f"{type(e).__name__}: {e}")
+        return Prepared(stem, {}, None, f"{type(e).__name__}: {e}")
 
 
 def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int, str | None]:
@@ -521,7 +554,8 @@ def _submit[**P, R](pool: Executor | None, fn: Callable[P, R], *args: P.args, **
     return done
 
 
-def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answers]) -> list[Cased]:
+def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answers],
+                  require_current_code: bool = False) -> list[Cased]:
     """Write the files of the cases of the solvers `asked` names, whose normal form differs from the case as `gen/`
     gives it, `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files` gives it. `asked`
     gives, by solver, the answers of `Rows.single` that `convert_one` found. A case of which `arclog.case_files`
@@ -529,27 +563,34 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
     `convert_one` and the run wrote, so it runs after every solver is converted, and it writes nothing but those files
     and the records of `case_records/`.
 
-    A solver whose inputs are those its record holds (`_inputs_digest`) keeps its case files. For the others the
-    pool runs two rounds, the second of a solver beginning as its first ends: `_prepare_cases` per solver, and
-    `_write_cases` per part of its cases, `workers` times `PARTS_PER_WORKER` parts at most. The record of a solver is
-    written once each of its parts ends with no error.
+    A solver whose record is current (`_standing`) keeps its case files, or, where the record holds an error, gives
+    that error, with no work in a worker; the code hash is read only where the flag `require_current_code` is set or a
+    record holds an error. For the others the pool runs two rounds, the second of a solver beginning as its first
+    ends: `_prepare_cases` per solver, and `_write_cases` per part of its cases, `workers` times `PARTS_PER_WORKER`
+    parts at most. The record of a solver is written once each of its parts ends, with the error where one of them
+    stopped with a `REPEATABLE` one.
 
     Gives the outcome of each solver, the largest solver file first."""
-    code = _cases_code_digest()
     order = sorted(asked, key=lambda t: -(paths.SOLVERS / f"{t}.dl").stat().st_size)
-    preparing = {_submit(pool, _prepare_cases, stem, asked[stem], code) for stem in order}
+    inputs = {stem: inputs_hash(stem, paths.SOLVERS) for stem in order}
+    outcomes: dict[str, Cased] = {}
+    for stem in order:
+        if (standing := _standing(stem, inputs[stem], require_current_code)) is not None:
+            outcomes[stem] = standing
+    preparing = {_submit(pool, _prepare_cases, stem, asked[stem]) for stem in order if stem not in outcomes}
     pending: set[Future] = set(preparing)
-    digests: dict[str, str] = {}
     left: Counter[str] = Counter()
     written: Counter[str] = Counter()
     errors: dict[str, str] = {}
-    outcomes: dict[str, Cased] = {}
 
     def finish(stem: str) -> None:
-        if stem not in errors:
-            paths.CASE_RECORDS.mkdir(parents=True, exist_ok=True)
-            write_whole(paths.CASE_RECORDS / f"{stem}.sha256", digests[stem].encode())
-        outcomes[stem] = Cased(stem, written[stem], False, errors.get(stem))
+        error = errors.get(stem)
+        if error is None:
+            _write_record(stem, inputs[stem])
+        elif error.partition(":")[0] in REPEATABLE:
+            shutil.rmtree(paths.OUT_DIR / CASES / stem, ignore_errors=True)
+            _write_record(stem, inputs[stem], error)
+        outcomes[stem] = Cased(stem, written[stem], False, error)
 
     while pending:
         done, pending = wait(pending, return_when=FIRST_COMPLETED)
@@ -557,17 +598,15 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
             if future in preparing:
                 prepared = future.result()
                 stem = prepared.stem
-                if prepared.error is not None:
-                    outcomes[stem] = Cased(stem, 0, False, prepared.error)
-                elif prepared.cases is None:
-                    outcomes[stem] = Cased(stem, 0, True, None)
+                if prepared.error is not None or not prepared.cases:
+                    if prepared.error is not None:
+                        errors[stem] = prepared.error
+                    finish(stem)
                 else:
                     size = max(PART_CASES, -(-len(prepared.cases) // (workers * PARTS_PER_WORKER)))
                     parts = [prepared.cases[i:i + size] for i in range(0, len(prepared.cases), size)]
-                    digests[stem], left[stem] = prepared.digest, len(parts)
+                    left[stem] = len(parts)
                     pending |= {_submit(pool, _write_cases, stem, prepared.answers, part) for part in parts}
-                    if not parts:
-                        finish(stem)
             else:
                 stem, count, error = future.result()
                 written[stem] += count
@@ -584,6 +623,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("--require-current-lib", action="store_true", help="rerun the determination plan of each solver whose plan file records another runner and lib stamp than the current one; otherwise a plan is current where its inputs hash matches")
+    parser.add_argument("--require-current-code", action="store_true", help="make the case files again of each solver whose case record holds another converter code hash than the current one; otherwise a case record is current where its inputs hash matches")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
     use_out(args.out)
@@ -592,13 +632,14 @@ def main(argv: list[str]) -> int:
         refresh_plans(stems, args.require_current_lib)
     print(f"{paths.OUT_DIR}:")
     with phase("conversion"):
-        converted = convert_into(stems, paths.OUT_DIR)
+        converted = convert_into(stems, paths.OUT_DIR, args.require_current_code)
     return int(len(converted) < len(stems))
 
 
-def convert_into(stems: list[str], out: Path) -> list[str]:
+def convert_into(stems: list[str], out: Path, require_current_code: bool = False) -> list[str]:
     """Convert `stems` into `out` over a process pool, print the
-    summary, and give the stems it converted."""
+    summary, and give the stems it converted. `require_current_code` is
+    that of `convert_cases`."""
     from concurrent.futures import ProcessPoolExecutor
     from arclog_convert.row_parity import CORPUS
     out.mkdir(parents=True, exist_ok=True)
@@ -643,7 +684,7 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
             clean += 1
     # the files of a case read the files of the solvers its solver names, so they are written once all stand
     with phase("cases"):
-        cased = convert_cases(pool, workers, asked)
+        cased = convert_cases(pool, workers, asked, require_current_code)
     for stem, _, _, err in cased:
         if err is not None:
             failed.append((stem, f"the case files: {err}"))
