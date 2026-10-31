@@ -311,8 +311,10 @@ class ParamsMixin:
         the forms `made` write: the order of the first `*` mark of each
         column's labels in the body, as the engine makes the `DET`'s columns.
         A parameter none of whose forms is a `DET` keeps the relation's
-        order."""
-        orders = [self.column_order(r, f) for f in made if f.side == "DET"]
+        order, and so does a form that holds an unresolved atom, which the
+        text writes as the source reads it, with no mark at its columns."""
+        orders = [self.column_order(r, f) for f in made
+                  if f.side == "DET" and not any(c.startswith(";; TODO unresolved:") for c in f.comments)]
         if not orders:
             return
         if any(o != orders[0] for o in orders):
