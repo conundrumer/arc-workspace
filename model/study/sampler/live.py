@@ -4,6 +4,7 @@
     sampler = Sampler(models_dir)            # loads the frozen priors (live_priors.py) once
     for result in sampler.draws(session, seed, deadline, task, **limits): ...
     clause = sampler.clause(session, seed, deadline, task, forms, kind, **limits)
+    search = sampler.search(session, seed, deadline, task, forms, kind, **limits)   # distinct clauses in about descending q (search.py)
 
 The worker makes the arclog.Session and passes it in; a session on Kaggle data is World.Open, and draws make no second
 session. task is the task's JSON as a dict, with no test outputs. deadline is a time.monotonic() value. limits are Limits' fields. A Result is yielded as soon as it exists: a decoder
@@ -336,6 +337,7 @@ class Clause:
     text: str  # the clause, reading the scope by the names of forms; its head is a name forms do not use
     decoder: object  # the decoder at the clause's end; its slots are the scope's
     tables: object  # arclog.step_tables' result at that decoder
+    logq: float = None  # from Sampler.search: the log of the clause's chance in q, as the search counts it
 
 
 class Drop(Exception):
@@ -442,6 +444,7 @@ class Sampler:
             self.pri = pickle.load(f)
         gc.set_threshold(100000, 50, 100)  # as S: the data is long-lived and holds few cycles
         self.run = None  # the Run of the last clause call, kept for the next call on its session
+        self.searches = {}  # (session, forms, kind, limits) -> search.Search
 
     def draws(self, session, seed, deadline, task, **limits):
         run = Run(self.pri, session, seed, deadline, task, Limits(**limits))
@@ -457,9 +460,18 @@ class Sampler:
             self.run = Run(self.pri, session, seed, deadline, task, lim)
         return self.run.clause(seed, deadline, forms, kind)
 
+    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, **limits):
+        """search.Search over the scope forms: iterating it gives distinct Clauses in about descending q until the deadline. A call
+        with the same session, forms, kind and limits gives that Search again with the new deadline, and it goes on where it
+        stopped. The search draws nothing at random, so seed has no effect."""
+        import search
+        return search.search(self, session, deadline, task, forms, kind, Limits(**limits), frontier_cap)
+
 
 class Run:
     """One task's draws."""
+
+    drawer_class = LiveDrawer
 
     def __init__(self, pri, session, seed, deadline, task, limits):
         self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
@@ -525,6 +537,10 @@ class Run:
             self.failed(e)
             return None
         self.c['forms'] += 1
+        return self.clause_of(forms, pg, f)
+
+    def clause_of(self, forms, pg, f):
+        """The Clause that decoder f ends, over the scope forms."""
         line = f.program_form().split('\n')[len(forms)]
         head, used = head_of(line), set(pg.written.values())
         free = next(x for x in itertools.chain([head], ('&r%d' % i for i in itertools.count())) if x not in used)
@@ -847,7 +863,7 @@ class Run:
         ff.starts = set(ff.starts_list)
         ff.arity, ff.record_col, ff.root, ff.created = pg.arity, pg.record_cols[kind], None, 0
         self.fill_columns(pg, dec, kind)
-        dr = LiveDrawer(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
+        dr = self.drawer_class(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
         dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmaps[kind], self.jc[kind]
         dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
         dr.place, dr.example_read = place or kind, EXAMPLE_READ.get(kind, 1.0)

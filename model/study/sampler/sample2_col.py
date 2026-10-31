@@ -1257,6 +1257,7 @@ class Logs:
 
 class Drawer:
     root_cap, node_cap = ROOT_CAP, NODE_CAP
+    cache_cap = 4096  # entries of rel_cache and of choice_cache, at which each is emptied
 
     def __init__(self, V, counts, rng, regcols, fr, regtypes):
         self.V, self.c, self.rng, self.reg, self.fr, self.types = V, counts, rng, regcols, fr, regtypes
@@ -1774,7 +1775,7 @@ class Drawer:
                 except Exception as e_:  # noqa: BLE001
                     print('STEER_CHOICE: scoring failed: %s: %s' % (type(e_).__name__, str(e_)[:200]), file=sys.stderr, flush=True)
                 self.choice_stats['s_score'] += time.process_time() - c1
-            if len(self.choice_cache) >= 4096:
+            if len(self.choice_cache) >= self.cache_cap:
                 self.choice_cache.clear()
             self.choice_cache[ck] = got
         return got
@@ -1812,7 +1813,7 @@ class Drawer:
                 except Exception as e_:  # noqa: BLE001
                     print('STEER_CHOICE: scoring failed: %s: %s' % (type(e_).__name__, str(e_)[:200]), file=sys.stderr, flush=True)
                 self.choice_stats['s_score'] += time.process_time() - c1
-            if len(self.choice_cache) >= 4096:
+            if len(self.choice_cache) >= self.cache_cap:
                 self.choice_cache.clear()
             self.choice_cache[ck] = got
         return got
@@ -2115,7 +2116,7 @@ class Drawer:
                 except Exception as e:  # noqa: BLE001
                     print('STEER_REL: scoring failed: %s: %s' % (type(e).__name__, str(e)[:200]), file=sys.stderr, flush=True)
                 self.rel_stats['s_score'] += time.process_time() - c2 - dt
-            if len(self.rel_cache) >= 4096:
+            if len(self.rel_cache) >= self.cache_cap:
                 self.rel_cache.clear()
             self.rel_cache[ck] = got
         return got
