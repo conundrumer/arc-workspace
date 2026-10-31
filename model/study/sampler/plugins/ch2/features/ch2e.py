@@ -28,10 +28,11 @@ Column pick of a derived relation after at least one named column
       types that fit scope labels (STOP 51, 37, 20, 20 percent for 0, 1, 2, 3+ fitting columns).
       keys e6_left_n, e6_left_in, e6_left_unread_fit, e6_left_unread_fit_ge1
 """
+import os
 import re
 import sys
 
-_S = '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/sampler'
+_S = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if _S not in sys.path:
     sys.path.insert(0, _S)
 import choicefeat as cf  # noqa: E402

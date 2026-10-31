@@ -16,6 +16,7 @@ Hypotheses (key prefix b<n>_):
   B7  In a NOT atom every value is a label that is already bound (no fresh, no column without a label in scope).  (cols, val)
   B9  A comparison compares two labels of one type, one of them the newest label.  (op)
 """
+import os
 import re
 import sys
 import collections
@@ -23,7 +24,7 @@ import collections
 try:
     import choicefeat as cf
 except ImportError:
-    sys.path.insert(0, '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/sampler')
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
     import choicefeat as cf
 
 import relfeat

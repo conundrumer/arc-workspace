@@ -21,7 +21,7 @@ import os
 import re
 import sys
 
-_S = '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/sampler'
+_S = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if _S not in sys.path:
     sys.path.insert(0, _S)
 import choicefeat as cf  # noqa: E402

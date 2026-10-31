@@ -13,13 +13,14 @@ A3  A derived relation of 4 or more columns has its last column named in about 2
     undervalues it); the first column is named about as often as any other.
     keys: a3_arity, a3_from_end, a3_is_last, a3_last_open, a3_arity_ge4_last, a3_last_arity
 """
+import os
 import re
 import sys
 
 try:
     import choicefeat as cf
 except ImportError:  # the sampler directory is not on the path
-    sys.path.insert(0, '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/sampler')
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
     import choicefeat as cf
 
 _TOK = re.compile(r'\(|\)|[^\s()]+')

@@ -28,10 +28,11 @@ F7  Cols (needs the field prior_uses): a derived relation used again in a LATER 
     row['prior_uses'] is the list of earlier uses that ch2d.py defines.  Keys: f7_in_last_prior, f7_in_any_prior, f7_n_prior, f7_stop_at_prior_len, f7_stop_below_prior_len.
     Absent field: no keys.
 """
+import os
 import re
 import sys
 
-_S = '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/sampler'
+_S = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if _S not in sys.path:
     sys.path.insert(0, _S)
 import choicefeat as cf  # noqa: E402

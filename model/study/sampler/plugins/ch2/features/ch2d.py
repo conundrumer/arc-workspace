@@ -29,10 +29,11 @@ D7  A relation that an earlier clause (or an earlier atom of this clause) used a
     keys: e7_has, e7_col_in_last, e7_col_in_any, e7_col_frac, e7_stop_left, e7_stop_done, e7_stop_count_eq, e7_kind_last,
           e7_kind_frac.
 """
+import os
 import re
 import sys
 
-_S = '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/sampler'
+_S = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if _S not in sys.path:
     sys.path.insert(0, _S)
 import choicefeat as cf  # noqa: E402
