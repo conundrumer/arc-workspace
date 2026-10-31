@@ -325,13 +325,6 @@ fn det_admission_refuses_a_native_fault() {
 }
 
 #[test]
-fn det_admission_checks_unread_dets_at_the_default_product_cap() {
-    let inputs = inputs(INPUT, Caps::CORPUS);
-    let source = (0..9).map(|i| format!("(DET &c{i} ColorDomain)\n")).collect::<String>();
-    assert_eq!(det_admission_refusal(&source, &inputs), Refusal::DetAdmission(arclog::decode::DetRefusal::Bound(ReachedBound::Assignments { cap: 256 })));
-}
-
-#[test]
 fn det_admission_ignores_an_expired_deadline() {
     let mut inputs = inputs(INPUT, Caps::CORPUS);
     inputs.settings.deadline = Some(std::time::Duration::ZERO);

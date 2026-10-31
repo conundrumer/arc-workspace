@@ -60,8 +60,41 @@ impl Decoder<'_> {
             .map_err(|fault| DetRefusal::Fault(format!("{fault:?}")))?;
         let written = written_dets(program);
         let Some(root) = written.last().map(|det| det.node) else { return Ok(()) };
+        if self.live_past_cap(program, &written, root) {
+            return Ok(());
+        }
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
+        self.walked(program, &dets, &picks, root).map(|_| ())
+    }
+
+    /// Whether the joint walk of `written`, the `DET`s of `program`, has
+    /// more leaves than the assignment cap, and one of them is live.
+    ///
+    /// The parts of [`independent_parts`] read none of each other's values,
+    /// so the leaves of the joint walk are the product of the leaves of the
+    /// parts, and a live leaf of each part together make a live leaf of the
+    /// joint walk. A joint walk with more leaves than the cap reaches no
+    /// verdict but a refusal, so this gives `true` only for a program whose
+    /// joint walk is refused, and every other program takes the verdict of
+    /// the joint walk.
+    fn live_past_cap(&self, program: &CheckedProgram, written: &[Det], root: GraphNodeIndex) -> bool {
+        let parts = independent_parts(program, written);
+        if parts.len() < 2 {
+            return false;
+        }
+        let mut leaves: u64 = 1;
+        for (dets, _) in &parts {
+            let Ok(count) = self.walked(program, dets, &[], root) else { return false };
+            leaves = leaves.saturating_mul(count);
+        }
+        leaves > self.context.settings.caps.assignments
+            && parts.iter().all(|(dets, picks)| picks.is_empty() || self.walked(program, dets, picks, root).is_ok())
+    }
+
+    /// The leaves of the walk of `dets`, with a live leaf among them, as
+    /// [`Self::live`] gives them.
+    fn walked(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex) -> Result<u64, DetRefusal> {
         // Keep this probe independent of prior cache contents, byte reservations,
         // cancellation, held stops and elapsed time. Its values never escape.
         // The probes of the task session share an intern table and the domains
@@ -70,21 +103,21 @@ impl Decoder<'_> {
         let scope = self.det_scope();
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         if let Some(probe) = memo.probe(scope, self.session) {
-            let domains = probe.domains(program, &dets);
-            let verdict = self.live(program, &dets, &picks, root, &probe.session, Some(&domains));
+            let domains = probe.domains(program, dets);
+            let verdict = self.live(program, dets, picks, root, &probe.session, Some(&domains));
             if !probe.session.results.evicted() && !matches!(verdict, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
                 return verdict;
             }
         }
         let session = TaskSession::new(self.session.bound, self.session.caps);
-        self.live(program, &dets, &picks, root, &session, None)
+        self.live(program, dets, picks, root, &session, None)
     }
 
-    /// Whether some leaf of the walk of `dets` in `session` gives each of
-    /// them a value and each of `picks` a model, with the domains from
-    /// `domains` where it is given.
+    /// The leaves of the walk of `dets` in `session`, where some leaf gives
+    /// each of them a value and each of `picks` a model, with the domains
+    /// from `domains` where it is given.
     #[allow(clippy::too_many_arguments)]
-    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>) -> Result<(), DetRefusal> {
+    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>) -> Result<u64, DetRefusal> {
         let limits = Limits::new(None, Cancellation::default())
             .counted_in(TableWork::new(self.context.settings.table_work_cap));
         let inputs = EvaluationInputs {
@@ -92,10 +125,12 @@ impl Decoder<'_> {
             registry: self.context.registry, constructions: self.constructions, limits: &limits,
         };
         let mut live = false;
+        let mut leaves = 0;
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[_]| {
             // Undefined domains remain visible in the canonical walker as missing
             // bindings. A partial leaf cannot certify that the written DETs live.
             stats::units(Phase::DetLiveness, 1);
+            leaves += 1;
             if assigned.len() != dets.len() { return Ok(()); }
             for pick in picks {
                 let mut found = false;
@@ -119,8 +154,34 @@ impl Decoder<'_> {
         match descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains).1 {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
             Err(End::Stop(stop)) => Err(DetRefusal::Bound(stop.bound)),
-            Ok(()) if live => Ok(()),
+            Ok(()) if live => Ok(leaves),
             Ok(()) => Err(DetRefusal::NoLiveAssignment),
         }
     }
+}
+
+/// `written`, the `DET`s of `program`, in parts, each with its `DET`s to walk
+/// and its picks, in the order of `written`. Two `DET`s stand in one part
+/// where one reads the other at any depth, so no `DET` of a part reads a
+/// `DET` of another.
+fn independent_parts(program: &CheckedProgram, written: &[Det]) -> Vec<(Vec<Det>, Vec<Det>)> {
+    let mut part: Vec<usize> = (0..written.len()).collect();
+    for (at, det) in written.iter().enumerate() {
+        let reached = program.program.graph.reached(det.node);
+        for (other, read) in written.iter().enumerate() {
+            let (kept, merged) = (part[at], part[other]);
+            if reached[read.node.0 as usize] && kept != merged {
+                part.iter_mut().filter(|held| **held == merged).for_each(|held| *held = kept);
+            }
+        }
+    }
+    let mut parts: Vec<(usize, Vec<Det>, Vec<Det>)> = Vec::new();
+    for (det, id) in written.iter().zip(part) {
+        let at = parts.iter().position(|held| held.0 == id).unwrap_or_else(|| {
+            parts.push((id, Vec::new(), Vec::new()));
+            parts.len() - 1
+        });
+        if det.pick { parts[at].2.push(det.clone()) } else { parts[at].1.push(det.clone()) }
+    }
+    parts.into_iter().map(|(_, dets, picks)| (dets, picks)).collect()
 }
