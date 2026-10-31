@@ -87,7 +87,7 @@ def main():
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
          built[0], numpy, "zstandard==0.23.0", "pandas==3.1.0", "pyarrow==26.0.0",
          "python-dateutil==3.0.0", "six==1.17.0",
-         "scikit-learn==1.9.1", "scipy==1.18.1", "joblib==1.6.0", "threadpoolctl==3.7.0",
+         "scikit-learn==1.9.1", "scipy==1.18.1", "joblib==1.6.0", "cloudpickle==3.1.2", "threadpoolctl==3.7.0",
          "narwhals==2.28.0"],
         "install private wheel and study readers")
     verify = (
