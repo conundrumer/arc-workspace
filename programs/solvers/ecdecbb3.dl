@@ -1,0 +1,311 @@
+// ecdecbb3
+// @draft
+// @keywords: lines cast stamp
+// @scene walls: one or more full-length straight lines of params.line_color,
+//  all on one axis, which differs between pairs, crossing a field of
+//  background 0
+// @scene dots: single cells of params.mark_color, each off every wall and at
+//  least 3 cells from it, with a wall on at least one side of it across the
+//  wall axis
+// @rule keep-input: every cell the rules below do not paint keeps its input
+//  color
+// @rule beam: from each dot, toward each of the two directions across the
+//  wall axis that has a wall, the cells from the dot up to the nearest wall in
+//  that direction take params.mark_color; a beam does not pass that wall
+// @rule hit-cell: the wall cell a beam hits takes params.mark_color
+// @rule bracket: the cells within params.ring_radius (Chebyshev) of the hit
+//  cell, other than the hit cell itself, take params.line_color, over the beam
+
+// what stops a beam
+.type WallParse =
+    // @claim beam
+    FullLine {}
+    // @rule beam: a beam stops at the first params.line_color cell on its
+    //  path, full line or not
+    // @rule hit-cell: that first params.line_color cell is the hit cell and
+    //  takes params.mark_color
+    // @witness partial-wall: borderline $StopAtLineCell
+  | StopAtLineCell {}
+
+// the layer of a hit cell against another hit's bracket
+.type HitLayer =
+    // @claim bracket
+    BracketOverHits {}
+    // @rule bracket: as the concept's, and every hit cell keeps
+    //  params.mark_color over every bracket
+    // @witness adjacent-hits: borderline $CenterOnTop
+  | CenterOnTop {}
+
+// the layer of a dot against a bracket
+.type DotLayer =
+    // @claim bracket
+    BracketOverDot {}
+    // @rule bracket: as the concept's, and every dot keeps its color over
+    //  every bracket
+    // @witness dot-beside-wall: borderline concept
+    //     @relaxed dots
+  | DotOnTop {}
+
+// a bracket that reaches past the grid
+.type BracketEdge =
+    // @claim bracket
+    ClippedBracket {}
+    // @rule bracket: as the concept's, drawn only where every cell of the
+    //  square lies in the grid
+    // @witness bracket-past-edge: ordinary concept
+  | WholeBracketOnly {}
+
+// where a dot's color comes from
+.type MarkSource =
+    // @claim dots
+    StoredMark {}
+    // @scene dots: single cells of any color other than params.background
+    //  and the wall color
+    // @rule beam: as the concept's, in the dot's own color
+    // @rule hit-cell: the wall cell a beam hits takes the dot's color
+    // @witness dots-other-color: variant $BeamInDotColor
+    //     @relaxed dots
+  | BeamInDotColor {}
+
+// where the wall color comes from
+.type LineSource =
+    // @claim walls
+    StoredLine {}
+    // @scene walls: one or more full-length straight lines, each of one color
+    //  other than params.background, all on one axis
+    // @rule beam: as the concept's, with every such line a wall
+    // @rule bracket: as the concept's, in the color of the hit wall
+    // @witness walls-other-color: variant $LineColorFromLines
+    //     @relaxed walls
+  | LineColorFromLines {}
+
+.type Choice = [
+    wall: WallParse, hit: HitLayer, dot: DotLayer, edge: BracketEdge,
+    mark: MarkSource, line: LineSource
+]
+
+// The choices the beams depend on, the key of the cast.
+.type Reading = [wall: WallParse, mark: MarkSource, line: LineSource]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl ring_radius(k: number) ring_radius(1).
+
+    // --- $StoredMark ---
+    // @derive RarestColor: borderline concept
+    .decl mark_color(c: Color) mark_color(2).
+
+    // --- $StoredLine ---
+    .decl line_color(c: Color) line_color(8).
+
+    // --- $BeamInDotColor, $LineColorFromLines ---
+    // @derive DominantColor: variant concept
+    //     @relaxed walls
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl wall_parse_choice(w: WallParse)
+wall_parse_choice($FullLine()). wall_parse_choice($StopAtLineCell()).
+
+.decl hit_layer_choice(h: HitLayer)
+hit_layer_choice($BracketOverHits()). hit_layer_choice($CenterOnTop()).
+
+.decl dot_layer_choice(d: DotLayer)
+dot_layer_choice($BracketOverDot()). dot_layer_choice($DotOnTop()).
+
+.decl bracket_edge_choice(e: BracketEdge)
+bracket_edge_choice($ClippedBracket()). bracket_edge_choice($WholeBracketOnly()).
+
+.decl mark_source_choice(m: MarkSource)
+mark_source_choice($StoredMark()). mark_source_choice($BeamInDotColor()).
+
+.decl line_source_choice(l: LineSource)
+line_source_choice($StoredLine()). line_source_choice($LineColorFromLines()).
+
+.decl reading(r: Reading)
+reading([W, M, L]) :- wall_parse_choice(W), mark_source_choice(M), line_source_choice(L).
+
+.decl impl_choice(ch: Choice)
+impl_choice([W, H, D, E, M, L]) :-
+    wall_parse_choice(W), hit_layer_choice(H), dot_layer_choice(D),
+    bracket_edge_choice(E), mark_source_choice(M), line_source_choice(L).
+
+// The full-length lines of one color.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // A cell whose line on axis A holds another color.
+    .decl line_defect(key: Key, a: Axis, p: Position)
+    line_defect(K, A, P) :-
+        cell(K, P, Col), axis_elem(A), same_line(A, P, Q), cell(K, Q, Col2), Col != Col2.
+
+    // A cell on a full-length line of its own color, on axis A.
+    .decl full_line(key: Key, a: Axis, p: Position, col: Color)
+    full_line(K, A, P, Col) :- cell(K, P, Col), axis_elem(A), !line_defect(K, A, P).
+}
+
+// @claim walls
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The wall colors.
+.decl line_col(l: LineSource, col: Color)
+
+// A direction across the walls.
+.decl across(l: LineSource, d: Dir)
+across(L, D) :- parse.full_line($U(), A, _, Col), line_col(L, Col), perp(A, A2), axis_of(D, A2).
+
+// A cell that stops a beam.
+.decl blocker(w: WallParse, l: LineSource, p: Position)
+
+// A dot and the color its beam takes.
+.decl dot(r: Reading, p: Position, col: Color)
+
+// @claim beam hit-cell
+.init beam = Ray<Reading>
+beam.dir([W, M, L], D) :- reading([W, M, L]), across(L, D).
+beam.cell(R, P) :- reading(R), in(P, _).
+beam.mark(R, P) :- dot(R, P, _).
+beam.blocked([W, M, L], P) :- blocker(W, L, P), mark_source_choice(M).
+
+// The cell a dot's beam hits, in the dot's color.
+.decl hit(r: Reading, p: Position, col: Color)
+hit(R, P, Col) :- beam.stop(R, P, _, _, Src), dot(R, Src, Col).
+
+// A beam cell or a hit cell, in its dot's color.
+.decl marked(r: Reading, p: Position, col: Color)
+marked(R, P, Col) :-
+    beam.clear(R, P, D, _, Src), beam.stop(R, _, D, _, Src),   // a beam that meets a wall
+    dot(R, Src, Col).
+marked(R, P, Col) :- hit(R, P, Col).
+
+// The square of cells within ring_radius of a hit cell.
+.decl square(r: Reading, p_hit: Position, b: Box)
+square(R, H, B) :-
+    hit(R, H, _), params.ring_radius(K), uniform_outset(K, B_out), compose(H, B_out, B).
+
+// A square a bracket is drawn in.
+.decl drawn_square(e: BracketEdge, r: Reading, p_hit: Position, b: Box)
+
+// A cell a bracket leaves to the layer below.
+.decl hit_exempt(h: HitLayer, r: Reading, p: Position)
+.decl dot_exempt(d: DotLayer, r: Reading, p: Position)
+
+// A bracket cell, in the color of the wall cell it surrounds.
+.decl bracket(ch: Choice, p: Position, col: Color)
+bracket([W, H, D, E, M, L], Q, Col) :-
+    drawn_square(E, [W, M, L], P_hit, B), in(P_hit, Col),
+    in(Q, _), inside(Q, B), Q != P_hit,
+    hit_layer_choice(H), !hit_exempt(H, [W, M, L], Q),
+    dot_layer_choice(D), !dot_exempt(D, [W, M, L], Q).
+
+out(P, Col, Ch) :- bracket(Ch, P, Col).
+out(P, Col, [W, H, D, E, M, L]) :-
+    marked([W, M, L], P, Col), impl_choice([W, H, D, E, M, L]),
+    !bracket([W, H, D, E, M, L], P, _).
+out(P, Col, [W, H, D, E, M, L]) :-
+    in(P, Col), impl_choice([W, H, D, E, M, L]),
+    !marked([W, M, L], P, _), !bracket([W, H, D, E, M, L], P, _).
+
+// --- $StoredLine ---
+line_col($StoredLine(), Col) :- params.line_color(Col).
+
+// --- $LineColorFromLines ---
+line_col($LineColorFromLines(), Col) :- parse.full_line($U(), _, _, Col), !params.background(Col).
+
+// --- $FullLine ---
+blocker($FullLine(), L, P) :- parse.full_line($U(), _, P, Col), line_col(L, Col).   // a wall cell
+
+// --- $StopAtLineCell ---
+blocker($StopAtLineCell(), L, P) :- in(P, Col), line_col(L, Col).
+
+// --- $StoredMark ---
+dot([W, $StoredMark(), L], P, Col) :-
+    in(P, Col), params.mark_color(Col), wall_parse_choice(W), line_source_choice(L).
+
+// --- $BeamInDotColor ---
+dot([W, $BeamInDotColor(), L], P, Col) :-
+    in(P, Col), !params.background(Col), wall_parse_choice(W), line_source_choice(L),
+    !line_col(L, Col).
+
+// --- $ClippedBracket ---
+drawn_square($ClippedBracket(), R, H, B) :- square(R, H, B).
+
+// --- $WholeBracketOnly ---
+drawn_square($WholeBracketOnly(), R, H, B) :- square(R, H, B), inside(B, ZERO).
+
+// --- $CenterOnTop ---
+hit_exempt($CenterOnTop(), R, P) :- hit(R, P, _).
+
+// --- $DotOnTop ---
+dot_exempt($DotOnTop(), R, P) :- dot(R, P, _).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init in_mode = Mode<Example, Color, Position>
+    in_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl background_gap(c: Color)
+    background_gap(Col) :- in_mode.mode(_, Col), ex_out(E, _, _), !in_mode.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- in_mode.mode(_, Col), !background_gap(Col).
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A color other than the background that fills a full-length line.
+    .decl line(e: Example, c: Color)
+    line(E, Col) :- parse.full_line(E, _, _, Col), !background(Col).
+
+    .decl line_gap(c: Color)
+    line_gap(Col) :- line(_, Col), ex_out(E, _, _), !line(E, Col).
+
+    .decl line_color(c: Color)
+    line_color(Col) :- line(_, Col), !line_gap(Col).
+
+    // A color other than the background and the wall color.
+    .decl mark(e: Example, c: Color)
+    mark(E, Col) :- ex_in(E, _, Col), !background(Col), !line_color(Col).
+
+    .decl mark_gap(c: Color)
+    mark_gap(Col) :- mark(_, Col), ex_out(E, _, _), !mark(E, Col).
+
+    .decl mark_color(c: Color)
+    mark_color(Col) :- mark(_, Col), !mark_gap(Col).
+
+    // A wall cell that turns to the mark color: a hit cell.
+    .decl hit(e: Example, p: Position)
+    hit(E, P) :-
+        ex_in(E, P, C_line), line_color(C_line), ex_out(E, P, C_mark), mark_color(C_mark).
+
+    // A hit cell together with the cells that turn to the wall color.
+    .init ring = Components<Example>
+    ring.node(E, P) :- hit(E, P).
+    ring.node(E, P) :- ex_out(E, P, Col), line_color(Col), !ex_in(E, P, Col).
+
+    .init ring_box = Bbox<Ident>
+    ring_box.cell(Id, P) :- ring.label(_, P, Id).
+
+    // The box of a bracket, with its hit cell in the frame of that box.
+    .decl hit_in_box(e: Example, b: Box, p_rel: Position)
+    hit_in_box(E, B, P_rel) :-
+        hit(E, P), ring.label(E, P, Id), ring_box.box(Id, B), relative(B, P, P_rel).
+
+    // The distance from a hit cell to a side of the box of its bracket.
+    .decl reach(k: number)
+    reach(K) :- hit_in_box(_, _, P_rel), dir_elem(D), dist(P_rel, D, K).
+
+    // A distance that some hit cell of a train pair does not reach on a side
+    // where the grid does not clip its bracket.
+    .decl ring_gap(k: number)
+    ring_gap(K) :-
+        reach(K), hit_in_box(E, B, P_rel), ex_out(E, _, _),
+        dir_elem(D), !dist(B, D, 0), !dist(P_rel, D, K).
+
+    .decl ring_radius(k: number)
+    ring_radius(K) :- reach(K), !ring_gap(K).
+}

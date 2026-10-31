@@ -1,0 +1,285 @@
+// e12f9a14
+// @draft
+// @keywords: objects cast walk rank
+// @scene background: the commonest color fills the field.
+// @scene boxes: each box is a `core-side` × `core-side` core (2) of one color, inside a ring one cell
+//  wide of the wall color; every box in a grid has the same wall color, and no core has it.
+// @scene gaps: some cells of a box's ring, on a side or at a corner, are background, and a box may
+//  run past the grid edge.
+// @scene clear-paths: no ray's path enters another box.
+// @scene single-meetings: each ray meets at most one other ray, and a pair that a meeting makes
+//  meets no other ray.
+// @rule rays: each gap paints a ray of its box's core color, from the gap cell out to the grid edge:
+//  a gap on a side goes straight out, at a right angle to that side, and a gap at a corner goes out
+//  diagonally from that corner.
+// @rule meeting: where the straight paths of two rays would cross, at a cell or between two diagonal
+//  steps, and neither ray has bent before that crossing, each ray stops at its last cell before the
+//  crossing, and from there both go on in the sum of their two directions, side by side. Two
+//  cardinal directions sum to a diagonal, two diagonals sum to a cardinal, and a cardinal and a
+//  diagonal sum to a line of two cardinal steps for each step across, drawn as cardinal and diagonal
+//  steps in turn, the cardinal step first.
+// @rule keep: every other cell keeps its input color.
+
+// What a ray does at a box in its path
+.type Block =
+    // @claim rays
+    OverBox {}
+    // @rule rays: a ray stops at its last cell before a non-background cell of another box.
+    // @witness ray-hits-box: variant $StopAtBox
+    //     @relaxed clear-paths
+  | StopAtBox {}
+    // @rule rays: a ray paints only the background cells of its path, and runs on past a box to
+    //  the grid edge.
+    // @witness ray-hits-box: variant $StopAtBox
+  | PassUnderBox {}
+
+// The side of a box's core
+.type CoreSize =
+    // @claim boxes
+    StoredSide {}
+    // @scene boxes: each box's core is a square of one color, of any side; it reads no `core-side`.
+    // @witness three-core: variant $CoreSizePerBox
+    //     @relaxed boxes
+  | CoreSizePerBox {}
+
+.type Choice = [b: Block, s: CoreSize]
+
+// A ray of a case, by its gap cell.
+.type RayKey = [ch: Choice, g: Position]
+
+// A straight path of a ray: the cell it starts at and its direction.
+.type PathKey = [ch: Choice, g: Position, s: Position, d: Dir8]
+
+// A stop of a ray's walk on one of its straight paths: the cell before a crossing, or the path's
+// last cell.
+.type Stop = [s: Position, d: Dir8, at: Position]
+
+// A core of an example's input.
+.type CoreKey = [e: Example, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredSide ---
+    // @derive TileCount: variant derived
+    //     @relaxed boxes
+    .decl core_side(n: number) core_side(2).
+}
+
+.init params = Params
+
+.decl block_choice(b: Block)
+block_choice($OverBox()). block_choice($StopAtBox()). block_choice($PassUnderBox()).
+
+.decl core_size_choice(s: CoreSize)
+core_size_choice($StoredSide()). core_size_choice($CoreSizePerBox()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([B, S]) :- block_choice(B), core_size_choice(S).
+
+// The background, the wall color and the core cells of each input.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // @claim background
+    .init bg_mode = Mode<Key, Color, Position>
+    bg_mode.item(Ky, Col, P) :- cell(Ky, P, Col).
+
+    // The wall color: the commonest color besides the background.
+    // @claim boxes
+    .init wall_mode = Mode<Key, Color, Position>
+    wall_mode.item(Ky, Col, P) :- cell(Ky, P, Col), !bg_mode.mode(Ky, Col).
+
+    .decl core_cell(key: Key, p: Position, col: Color)
+    core_cell(Ky, P, Col) :- cell(Ky, P, Col), !bg_mode.mode(Ky, Col), !wall_mode.mode(Ky, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl bg(c: Color)
+bg(Col) :- parse.bg_mode.mode($U(), Col).
+
+// A core is a one-color piece of core cells.
+// @claim boxes
+.init cores = Components<Color>
+cores.node(Col, P) :- parse.core_cell($U(), P, Col).
+
+// @claim boxes
+.init core_box = Bbox<Ident>
+core_box.cell(Id, P) :- cores.label(_, P, Id).
+
+// A cell beside a core cell along a cardinal: a side cell of the ring.
+.decl side_cell(id: Ident, p: Position)
+side_cell(Id, P) :- cores.label(_, Q, Id), dir_elem(D), neighbor(Q, D, P).
+
+// Each gap of a box, with the direction of its ray and the core's color.
+.decl gap(s: CoreSize, g: Position, d: Dir8, col: Color)
+gap(S, G, D, Col) :-
+    core(S, Id), cores.label(Col, Q, Id), neighbor(Q, D, G), in(G, C0), bg(C0),
+    ( dir_elem(D)                                                 // side gap: straight out
+    ; diag_dir_elem(D), !side_cell(Id, G)                         // corner gap: diagonal out
+    ).
+
+// @claim rays clear-paths
+.init rays = Ray<Dir8>
+rays.dir(D, D) :- gap(_, _, D, _).
+rays.mark(D, G) :- gap(_, G, D, _).
+rays.blocked(D, P) :- gap(_, _, D, _), in(P, Col), !bg(Col).
+
+// Each ray's straight path from its gap, k cells from the gap.
+.decl path(ch: Choice, g: Position, d: Dir8, p: Position, k: number)
+
+// Two directions that cross: neither equal nor opposite.
+.decl transverse(d1: Dir8, d2: Dir8)
+transverse(D1, D2) :- dir8_elem(D1), dir8_elem(D2), D1 != D2, !dir8_opposite(D1, D2).
+
+// A step from a1 toward d1 crosses a step from a2 toward d2: both enter one cell, or they are the
+// two diagonals of one 2 × 2 square.
+.decl steps_cross(a1: Position, d1: Dir8, a2: Position, d2: Dir8)
+steps_cross(A1, D1, A2, D2) :-
+    in(A1, _), neighbor(A1, D1, X), transverse(D1, D2),
+    ( dir8_opposite(D2, O2), neighbor(X, O2, A2)                  // at a shared cell
+    ; dir_elem(C), neighbor(A1, C, A2), opposite(C, C_opp),       // between two diagonal steps
+      neighbor(X, C_opp, B2), neighbor(A2, D2, B2)
+    ).
+
+// The straight path each ray runs along, where it can meet a ray: the path from its gap, k cells
+// from the start s.
+// @ignore: head-repeat — the path from the gap starts at the gap
+.decl seg_path(ch: Choice, g: Position, s: Position, d: Dir8, p: Position, k: number)
+seg_path(Ch, G, G, D, P, K) :- path(Ch, G, D, P, K).
+
+// A step of one of those paths: from a, its k-th cell, to the next cell along d.
+.decl seg_step(ch: Choice, g: Position, s: Position, d: Dir8, a: Position, k: number)
+seg_step(Ch, G, S, D, A, K) :-
+    seg_path(Ch, G, S, D, A, K), neighbor(A, D, B), seg_path(Ch, G, S, D, B, _).
+
+// Path (s1, d1) of ray g1 would cross path (s2, d2) of ray g2 just past a1, its k1-th cell.
+.decl cross(ch: Choice, g1: Position, s1: Position, d1: Dir8, a1: Position, k1: number,
+            g2: Position, s2: Position, d2: Dir8)
+cross(Ch, G1, S1, D1, A1, K1, G2, S2, D2) :-
+    seg_step(Ch, G1, S1, D1, A1, K1), steps_cross(A1, D1, A2, D2), seg_step(Ch, G2, S2, D2, A2, _),
+    G1 != G2.
+
+// The stops of each path, in order along it: its crossings and its last cell.
+// @claim meeting
+.init along = Order<PathKey, Position>
+along.elem([Ch, G, S, D], A) :- along.score([Ch, G, S, D], A, _).
+along.score([Ch, G, S, D], A, K) :-
+    ( cross(Ch, G, S, D, A, K, _, _, _)
+    ; seg_path(Ch, G, S, D, A, K), !seg_step(Ch, G, S, D, A, K)   // the last cell
+    ).
+
+// Each ray walks the stops of its path from the gap in order. At a crossing it meets the other ray
+// when the other ray's walk reaches that crossing too. It walks on past a crossing whose other ray
+// met a ray before it on its path.
+// @claim meeting
+.init walk = Take<RayKey, Stop, Stop>
+walk.start([[B, S], G], [G, D, A]), walk.init_taken([[B, S], G], [G, D, A]) :-
+    gap(S, G, D, _), along.first([[B, S], G, G, D], A).
+walk.take([Ch, G1], [S1, D1, A1], [S1, D1, A1]) :-
+    cross(Ch, G1, S1, D1, A1, _, G2, S2, D2), cross(Ch, G2, S2, D2, A2, _, G1, S1, D1),
+    walk.taken([Ch, G1], [S1, D1, A1], _), walk.taken([Ch, G2], [S2, D2, A2], _).
+walk.skip([Ch, G1], [S1, D1, A1], [S1, D1, A]) :-
+    along.next([Ch, G1, S1, D1], A1, A), walk.taken([Ch, G1], [S1, D1, A1], _),
+    cross(Ch, G1, S1, D1, A1, _, G2, S2, D2), cross(Ch, G2, S2, D2, A2, K2, G1, S1, D1),
+    walk.take([Ch, G2], [S2, D2, A3], _),                           // it met before the crossing
+    cross(Ch, G2, S2, D2, A3, K3, _, _, _), K3 < K2.
+
+// A walk that stops at a crossing it neither meets at nor walks past: the rays' crossings depend on
+// one another in a cycle, and the rule decides none of them.
+.decl stuck(ch: Choice)
+stuck(Ch) :-
+    walk.taken([Ch, G], [S, D, A], _), cross(Ch, G, S, D, A, _, _, _, _),
+    !walk.take([Ch, G], [S, D, A], _), !walk.skip([Ch, G], [S, D, A], _).
+
+// Ray g meets a ray on path (s, d) and stops at a1, its k1-th cell; the other ray's direction is d2.
+.decl meeting(ch: Choice, g: Position, s: Position, d: Dir8, a1: Position, k1: number, d2: Dir8)
+meeting(Ch, G, S, D, A1, K1, D2) :-
+    walk.take([Ch, G], [S, D, A1], _), cross(Ch, G, S, D, A1, K1, _, _, D2).
+
+// The sum of two directions, where it is one of the eight.
+.decl dir_sum(d1: Dir8, d2: Dir8, e: Dir8)
+dir_sum(D1, D2, G) :- diag_dirs(G, _, D1, D2).                    // two cardinals
+dir_sum(G1, G2, C) :- dir_of(G1, A, C), dir_of(G2, A, C), G1 != G2. // two diagonals
+dir_sum(D1, D2, C2) :-                                              // a cardinal against a diagonal
+    opposite(C, C_opp), diag_dirs(G, _, C_opp, C2),
+    ( D1 = C, D2 = G ; D1 = G, D2 = C ).
+
+.decl bend_dir(ch: Choice, g: Position, s1: Position, e: Dir8)
+bend_dir(Ch, G, A1, E) :- meeting(Ch, G, _, D1, A1, _, D2), dir_sum(D1, D2, E).
+
+// The sum of a cardinal c and a diagonal gd that shares it: c and gd in turn.
+.decl bend_slope(ch: Choice, g: Position, s1: Position, c: Dir, gd: DiagDir)
+bend_slope(Ch, G, A1, C, Gd) :-
+    meeting(Ch, G, _, D1, A1, _, D2), dir_of(Gd, _, C),
+    ( D1 = C, D2 = Gd ; D1 = Gd, D2 = C ).
+
+// @claim meeting
+.init bent = Ray<Dir8>
+bent.dir(E, E) :- bend_dir(_, _, _, E).
+bent.mark(E, A1) :- bend_dir(_, _, A1, E).
+bent.dir(Gd, Gd) :- bend_slope(_, _, _, _, Gd).
+bent.mark(Gd, A1) :- bend_slope(_, _, A1, _, Gd).
+
+// The cells each ray paints, in its core's color.
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([B, S], P, Col) :-                                            // each path it walks, up to where it meets
+    walk.taken([[B, S], G], [S1, D, _], _), seg_path([B, S], G, S1, D, P, K), gap(S, G, _, Col),
+    ( !meeting([B, S], G, S1, D, _, _, _)
+    ; meeting([B, S], G, S1, D, _, K1, _), K <= K1
+    ).
+paint([B, S], P, Col) :-                                            // a bend that meets no ray
+    bend_dir([B, S], G, A1, E), gap(S, G, _, Col),
+    bent.cast(E, P, E, _, A1).
+paint([B, S], P, Col) :-
+    bend_slope([B, S], G, A1, C, Gd), gap(S, G, _, Col),
+    bent.cast(Gd, Q, Gd, K, A1), jump(Q, C, K, L),                  // k cardinal and k diagonal steps
+    ( P = L ; neighbor(L, C, P) ), in(P, _).                        // and one more cardinal step
+
+.decl shown(ch: Choice, p: Position, col: Color)
+
+out(P, Col, Ch) :- shown(Ch, P, Col), !stuck(Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shown(Ch, P, _), !stuck(Ch).
+
+// --- $OverBox ---
+path([$OverBox(), S], G, D, P, K) :- gap(S, G, D, _), rays.cast(D, P, D, K, G).
+shown([$OverBox(), S], P, Col) :- paint([$OverBox(), S], P, Col).
+
+// --- $StopAtBox ---
+path([$StopAtBox(), S], G, D, P, K) :- gap(S, G, D, _), rays.clear_cast(D, P, D, K, G).
+shown([$StopAtBox(), S], P, Col) :- paint([$StopAtBox(), S], P, Col).
+
+// --- $PassUnderBox ---
+path([$PassUnderBox(), S], G, D, P, K) :- gap(S, G, D, _), rays.cast(D, P, D, K, G).
+shown([$PassUnderBox(), S], P, Col) :- paint([$PassUnderBox(), S], P, Col), in(P, C0), bg(C0).
+
+// --- $StoredSide ---
+// A core's box is other than params.core_side wide on some axis.
+.decl side_defect(id: Ident)
+side_defect(Id) :-
+    core_box.box(Id, B), cores.label(_, P, Id), box_extent(B, P, _, M), !params.core_side(M).
+
+.decl core(s: CoreSize, id: Ident)
+core($StoredSide(), Id) :- core_box.box(Id, _), !side_defect(Id).
+
+// --- $CoreSizePerBox ---
+core($CoreSizePerBox(), Id) :-
+    core_box.box(Id, B), cores.label(_, P, Id),
+    box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N).   // a square core
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .init cores = Components<Example>
+    cores.node(E, P) :- parse.core_cell(E, P, _).
+
+    .init core_box = Bbox<CoreKey>
+    core_box.cell([E, Id], P) :- cores.label(E, P, Id).
+
+    // The side of each core.
+    .decl core_side(n: number)
+    core_side(N) :- core_box.box([E, Id], B), cores.label(E, P, Id), box_extent(B, P, _, N).
+}

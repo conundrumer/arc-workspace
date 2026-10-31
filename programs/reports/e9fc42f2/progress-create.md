@@ -1,0 +1,4 @@
+# e9fc42f2 create: progress notes
+
+- delay: `uv run python scripts/run_dl.py e9fc42f2` took 32 s, and `deletions` took 75 s. The cost is the `asm` Propagation: its edges range over every translation between two cells of the frame, for each origin and, under `$NoOverlapJoin`, each direction resolution. Because the pairs run took 30 s or more, the pass ran it once more only, after the last edit, and did not run `store` in Develop.
+- interference: [Program](docs/handbook/solver-file.md#program), "A relation kept despite a hint has `// @ignore: <category> — <reason>`". The lint's `typed-order` is a finding, and an `@ignore` line does not dismiss it. Its advice, "store the order as a parameter", does not fit an order that only picks one of two equivalent descriptions. It cost one lint round and a redesign of the `$NoOverlapJoin` resolutions, which now use a GraphDistance tree from the origin. The output is right now.

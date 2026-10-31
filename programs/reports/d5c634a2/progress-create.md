@@ -1,0 +1,4 @@
+# d5c634a2 create: progress notes
+
+- delay: [Determine](#determine) "Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`)": the sweep ran past the 240 s foreground timeout over a solver of 48 cases with three stored tables (`count_table`, `dir_count_table`, `shape_table`), and had to be rerun in the background; cost about four minutes of a lost foreground run.
+- interference: [Commands](#commands) "Loop on the completion where you can observe it": the PreToolUse hook blocked an until-loop that polled the background sweep's output file (`unsupported executable construct 'for'`), so the wait fell back to a fixed `sleep`; and because the sweep's output was piped through `grep`, the output file stayed empty until the end. Cost one blocked call and about four minutes of waiting. The sweep's result was right; nothing in the output is still wrong.

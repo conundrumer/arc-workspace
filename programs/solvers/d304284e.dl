@@ -1,0 +1,471 @@
+// d304284e
+// @draft
+// @keywords: objects cast count rank
+// @scene one-shape: every input holds one 8-connected shape of color 7 on a
+//  field of params.background, and nothing else
+// @scene room-ahead: the shape lies clear of the edges toward params.march_dir
+//  and params.branch_dir, with room for more than one copy toward
+//  params.march_dir
+// @rule march: copies of the shape repeat from it toward params.march_dir, each
+//  one params.gap cells past the one before, up to the grid edge; a copy the
+//  edge cuts is drawn in part
+// @rule mark-every-period: numbering the run from the shape as copy 1, each
+//  copy whose number is a multiple of params.period is drawn in
+//  params.mark_color, and every other copy keeps the shape's colors
+// @rule branch: from each marked copy, copies in params.mark_color repeat
+//  toward params.branch_dir, each one params.gap cells past the one before, up
+//  to the grid edge, drawn in part where the edge cuts them
+// @rule keep-rest: every other cell keeps its input color
+
+// which way the run goes
+.type MarchDir =
+    // @claim march
+    StoredMarch {}
+    // @rule march: copies of the shape repeat from it toward each way in which
+    //  the shape's bounding box has the most cells to the grid edge, each one
+    //  params.gap cells past the one before, up to the grid edge; undefined
+    //  where such a way lies on the axis of params.branch_dir
+    // @witness march-to-room: borderline $MarchToRoom
+    //     @relaxed room-ahead
+  | MarchToRoom {}
+
+// which way the marked copies repeat
+.type BranchDir =
+    // @claim branch
+    StoredBranch {}
+    // @rule branch: from each marked copy, copies in params.mark_color repeat
+    //  across the run toward the way with more cells between the shape's
+    //  bounding box and the grid edge, both ways on a tie
+    // @witness branch-to-room: variant concept
+  | BranchToRoom {}
+    // @rule branch: from each marked copy, copies in params.mark_color repeat
+    //  toward the way a quarter turn in params.branch_sense takes the run's
+    //  way to
+    // @witness turn-sense: variant concept
+    //     @reassigned march_dir
+  | TurnSense {}
+
+// what sets the step along the run
+.type MarchStep =
+    // @claim march
+    SharedGap {}
+    // @rule march: each copy is params.march_gap cells past the one before,
+    //  and params.gap is read on the drop axis alone
+    // @witness march-gap: ordinary $MarchGap
+    //     @reassigned march_gap
+  | MarchGap {}
+    // @rule march: each copy is params.march_stride cells on from the one
+    //  before, and params.gap is read on the drop axis alone
+    // @witness stored-stride: variant concept
+  | StoredStride {}
+
+// which copies are marked
+.type Marked =
+    // @claim mark-every-period
+    EveryPeriod {}
+    // @rule mark-every-period: a copy is marked when its number is congruent
+    //  to params.mark_phase modulo params.period
+    // @witness mark-phase: ordinary $MarkPhase
+    //     @reassigned mark_phase
+  | MarkPhase {}
+    // @rule mark-every-period: a copy is marked when its number is in
+    //  params.marked_numbers
+    // @witness mark-set: variant concept
+  | MarkSet {}
+
+// what is copied as one unit
+.type Grouping =
+    // @claim march
+    WholeInk {}
+    // @rule march: each 8-connected object runs, is numbered, is marked and
+    //  drops on its own, with its own extents; undefined where two objects'
+    //  copies put different colors on one cell
+    // @witness per-object: borderline $PerObject
+    //     @relaxed one-shape
+  | PerObject {}
+
+// which cells of a marked copy and its drops take the mark color
+.type MarkPaint =
+    // @claim mark-every-period
+    PaintAll {}
+    // @rule mark-every-period: only the cells of color params.shape_color take
+    //  params.mark_color, and every other cell keeps its color
+    // @witness recolor-shape-color: borderline concept
+    //     @relaxed one-shape
+  | RecolorShapeColor {}
+
+.type Choice = [m: MarchDir, b: BranchDir, s: MarchStep, k: Marked, u: Grouping,
+                c: MarkPaint]
+
+// A unit of the ink, under one grouping.
+.type UnitKey = [u: Grouping, id: Ident]
+
+// A unit and a way out from it.
+.type UnitDir = [k: UnitKey, d: Dir]
+
+// One run: a unit's copies toward one way, at one step reading.
+.type Run = [m: MarchDir, s: MarchStep, k: UnitKey, d: Dir]
+
+// A copy of a run, by the count of copies before it.
+.type Copy = [r: Run, n: number]
+
+// The marked copies of a run, and the way they drop.
+.type Drop = [r: Run, k: Marked, b: BranchDir]
+
+// A copy of the input ink in a train output.
+.type ExCopy = [e: Example, v: Offset]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    //     @relaxed room-ahead
+    .decl background(col: Color) background(0).
+    // The background cells between two consecutive copies.
+    .decl gap(k: number) gap(1).
+    .decl mark_color(col: Color) mark_color(6).
+
+    // --- $StoredMarch ---
+    .decl march_dir(d: Dir) march_dir(DIR_R).
+
+    // --- $StoredBranch ---
+    .decl branch_dir(d: Dir) branch_dir(DIR_B).
+
+    // --- $TurnSense ---
+    .decl branch_sense(s: Sense) branch_sense(SENSE_CW).
+
+    // --- $MarchGap ---
+    .decl march_gap(k: number) march_gap(1).
+
+    // --- $StoredStride ---
+    .decl march_stride(k: number) march_stride(4).
+
+    // --- $EveryPeriod, $MarkPhase ---
+    .decl period(k: number) period(3).
+
+    // --- $MarkPhase ---
+    .decl mark_phase(k: number) mark_phase(0).
+
+    // --- $MarkSet ---
+    .decl marked_numbers(n: number) marked_numbers(3). marked_numbers(6).
+
+    // --- $RecolorShapeColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed one-shape
+    // @ignore: derive SharedColor — fails Equivalence: on an input alone it
+    //  gives every input color, so every ink cell takes the mark color, as
+    //  under $PaintAll
+    // @ignore: derive VanishedColor — fails Equivalence: on an input alone,
+    //  with no train output, it gives every input color, so every ink cell
+    //  takes the mark color, as under $PaintAll
+    .decl shape_color(col: Color) shape_color(7).
+}
+
+.init params = Params
+
+.decl march_dir_choice(m: MarchDir)
+march_dir_choice($StoredMarch()). march_dir_choice($MarchToRoom()).
+
+.decl branch_dir_choice(b: BranchDir)
+branch_dir_choice($StoredBranch()). branch_dir_choice($BranchToRoom()).
+branch_dir_choice($TurnSense()).
+
+.decl march_step_choice(s: MarchStep)
+march_step_choice($SharedGap()). march_step_choice($MarchGap()).
+march_step_choice($StoredStride()).
+
+.decl marked_choice(k: Marked)
+marked_choice($EveryPeriod()). marked_choice($MarkPhase()). marked_choice($MarkSet()).
+
+.decl grouping_choice(u: Grouping)
+grouping_choice($WholeInk()). grouping_choice($PerObject()).
+
+.decl mark_paint_choice(c: MarkPaint)
+mark_paint_choice($PaintAll()). mark_paint_choice($RecolorShapeColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, B, S, K, U, C]) :-
+    march_dir_choice(M), branch_dir_choice(B), march_step_choice(S),
+    marked_choice(K), grouping_choice(U), mark_paint_choice(C).
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // The cells off the background.
+    .decl ink(key: Key, p: Position)
+    ink(Ky, P) :- grid(Ky, P, Col), !params.background(Col).
+}
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// The ink cells of each unit.
+.decl member(k: UnitKey, p: Position)
+
+// @claim march
+.init bbox = Bbox<UnitKey>
+bbox.cell(K, P) :- member(K, P).
+
+// A unit's extent along axis a.
+.decl extent(k: UnitKey, a: Axis, n: number)
+extent(K, A, N) :- bbox.box(K, B), member(K, P), axis_elem(A), box_extent(B, P, A, N).
+
+// The way each unit's run goes.
+.decl march(m: MarchDir, k: UnitKey, d: Dir)
+
+// The way the drops go from a run toward d_march.
+.decl branch(m: MarchDir, b: BranchDir, k: UnitKey, d_march: Dir, d: Dir)
+
+// A run with no way across it: the case is undefined.
+.decl stalled(m: MarchDir, b: BranchDir, u: Grouping)
+stalled(M, B, U) :-
+    march(M, [U, Id], D), branch_dir_choice(B), !branch(M, B, [U, Id], D, _).
+
+// The copies of a run are w cells long with g cells between.
+// @ignore: head-zero — the stored stride reads no gap, and the zero is that
+//  absent gap in the period `stride` reads
+.decl pitch(r: Run, w: number, g: number)
+
+// The cells in line with each unit's cells, toward every way.
+// @claim march
+.init ray = Ray<UnitKey>
+ray.dir(K, D) :- bbox.box(K, _), dir_elem(D).
+ray.cell(K, P) :- bbox.box(K, _), in(P, _).
+ray.mark(K, P) :- member(K, P).
+
+// Cell p of copy n of a run, repeating the unit's cell src.
+.decl copy(r: Run, n: number, p: Position, src: Position)
+copy([M, S, K, D], N, P, Src) :-
+    pitch([M, S, K, D], W, G), ray.ray(K, P, D, J, Src),
+    stride(J, W, G, N, 0).                                // a whole number of steps
+
+// The copy's number, the unit itself being copy 1: the copies up to it.
+// @claim mark-every-period
+.init number = Tally<Copy, number>
+number.item([R, N], N2) :- copy(R, N, _, _), copy(R, N2, _, _), N2 <= N.
+
+.decl marked(r: Run, k: Marked, n: number)
+
+// Cell p of a marked copy, repeating the unit's cell src.
+.decl marked_cell(d: Drop, p: Position, src: Position)
+marked_cell([R, K, B], P, Src) :- copy(R, N, P, Src), marked(R, K, N), branch_dir_choice(B).
+
+// The cells in line with each marked copy, toward the way it drops.
+// @claim branch
+.init drop = Ray<Drop>
+drop.dir([[M, S, K, D_march], Mk, B], D) :-
+    marked_cell([[M, S, K, D_march], Mk, B], _, _), branch(M, B, K, D_march, D).
+drop.cell(Dr, P) :- marked_cell(Dr, _, _), in(P, _).
+drop.mark(Dr, P) :- marked_cell(Dr, P, _).
+
+// Cell p of a drop, repeating the unit's cell src.
+.decl dropped(d: Drop, p: Position, src: Position)
+dropped([[M, S, K, D_march], Mk, B], P, Src) :-
+    drop.ray([[M, S, K, D_march], Mk, B], P, D, J, Q), J > 0,
+    axis_of(D, A), extent(K, A, W), params.gap(G),
+    stride(J, W, G, _, 0),                                // a whole number of steps
+    marked_cell([[M, S, K, D_march], Mk, B], Q, Src).
+
+// The color a marked cell of color col_in takes.
+// @store: borderline concept
+//     @relaxed one-shape
+.decl paint(c: MarkPaint, col_in: Color, col: Color)
+
+.decl painted(ch: Choice, p: Position, col: Color)
+painted([M, B, S, Mk, U, Pc], P, Col) :-
+    impl_choice([M, B, S, Mk, U, Pc]),
+    ( copy([M, S, [U, Id], D], N, P, Src), in(Src, Col_in),
+      ( !marked([M, S, [U, Id], D], Mk, N), Col = Col_in                // a plain copy
+      ; marked([M, S, [U, Id], D], Mk, N), paint(Pc, Col_in, Col) )     // a marked copy
+    ; dropped([[M, S, [U, _], _], Mk, B], P, Src), in(Src, Col_in), paint(Pc, Col_in, Col) ).
+
+out(P, Col, [M, B, S, Mk, U, Pc]) :-
+    impl_choice([M, B, S, Mk, U, Pc]), !stalled(M, B, U),
+    ( painted([M, B, S, Mk, U, Pc], P, Col)
+    ; in(P, Col), !painted([M, B, S, Mk, U, Pc], P, _) ).
+
+// --- $StoredMarch ---
+march($StoredMarch(), K, D) :- bbox.box(K, _), params.march_dir(D).
+
+// --- $MarchToRoom ---
+// @claim march
+.init room = ArgExtremes<UnitKey, Dir>
+room.cand(K, D, N) :- bbox.box(K, B), dir_elem(D), dist(B, D, N).
+
+march($MarchToRoom(), K, D) :- room.high(K, D, _).
+
+// --- $StoredBranch ---
+branch(M, $StoredBranch(), K, D_march, D) :-
+    march(M, K, D_march), params.branch_dir(D), perp_dir(D_march, D).
+
+// --- $BranchToRoom ---
+// @claim branch
+.init across = ArgExtremes<UnitDir, Dir>
+across.cand([K, D_march], D, N) :-
+    bbox.box(K, B), dir_elem(D_march), perp_dir(D_march, D), dist(B, D, N).
+
+branch(M, $BranchToRoom(), K, D_march, D) :- march(M, K, D_march), across.high([K, D_march], D, _).
+
+// --- $TurnSense ---
+branch(M, $TurnSense(), K, D_march, D) :-
+    march(M, K, D_march), params.branch_sense(S), turn(S, D_march, D).
+
+// --- $SharedGap ---
+pitch([M, $SharedGap(), K, D], W, G) :-
+    march(M, K, D), axis_of(D, A), extent(K, A, W), params.gap(G).
+
+// --- $MarchGap ---
+pitch([M, $MarchGap(), K, D], W, G) :-
+    march(M, K, D), axis_of(D, A), extent(K, A, W), params.march_gap(G).
+
+// --- $StoredStride ---
+pitch([M, $StoredStride(), K, D], W, 0) :- march(M, K, D), params.march_stride(W).
+
+// --- $EveryPeriod ---
+marked(R, $EveryPeriod(), N) :-
+    number.tally([R, N], C), params.period(Period), stride(C, Period, 0, _, 0).
+
+// --- $MarkPhase ---
+marked(R, $MarkPhase(), N) :-
+    number.tally([R, N], C), params.period(Period), params.mark_phase(Phase),
+    stride(C, Period, 0, _, Phase).
+
+// --- $MarkSet ---
+marked(R, $MarkSet(), N) :- number.tally([R, N], C), params.marked_numbers(C).
+
+// --- $WholeInk ---
+.init whole = Canon<Position>
+whole.equiv(P, Q) :- parse.ink($U(), P), parse.ink($U(), Q).
+
+member([$WholeInk(), Id], P) :- whole.id(P, Id).
+
+// --- $PerObject ---
+// @claim march
+.init objects = Components8<Unit>
+objects.node($U(), P) :- parse.ink($U(), P).
+
+member([$PerObject(), Id], P) :- objects.label($U(), P, Id).
+
+// --- $PaintAll ---
+paint($PaintAll(), Col_in, Col) :- parse.ink($U(), P), in(P, Col_in), params.mark_color(Col).
+
+// --- $RecolorShapeColor ---
+paint($RecolorShapeColor(), Col_in, Col) :-
+    parse.ink($U(), P), in(P, Col_in),
+    ( params.shape_color(Col_in), params.mark_color(Col)
+    ; !params.shape_color(Col_in), Col = Col_in ).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    // The output cells off the background.
+    .decl ink_out(e: Example, p: Position)
+    ink_out(E, P) :- ex_out(E, P, Col), !params.background(Col).
+
+    .decl ink_color(e: Example, col: Color)
+    ink_color(E, Col) :- ex.ink(E, P), ex.grid(E, P, Col).
+
+    // Some train input has no ink of color col.
+    .decl color_defect(col: Color)
+    color_defect(Col) :- ink_color(_, Col), train(E), !ink_color(E, Col).
+
+    .decl shape_color(col: Color)
+    shape_color(Col) :- ink_color(_, Col), !color_defect(Col).
+
+    // The whole copies of the input ink in each output, as offsets from it:
+    // in the ink's own colors, and with every cell in the mark color.
+    .init plain = Occurrences<Example, Color>
+    plain.cell(E, P, Col) :- ex_out(E, P, Col).
+    plain.shape(E, P, Col) :- ex.ink(E, P), ex.grid(E, P, Col).
+
+    .init marked = Occurrences<Example, Color>
+    marked.cell(E, P, Col) :- ex_out(E, P, Col).
+    marked.shape(E, P, Col) :- ex.ink(E, P), params.mark_color(Col).
+
+    .decl copy(e: Example, v: Offset)
+    copy(E, V) :- plain.occurrence(E, V).
+    copy(E, V) :- marked.occurrence(E, V).
+
+    // A copy k cells from the input ink toward d; the ink itself is at 0
+    // toward every way.
+    .decl in_line(e: Example, d: Dir, v: Offset, k: number)
+    in_line(E, D, V, K) :-
+        copy(E, V),
+        opposite(D, D_back), dist(V, D_back, K), K >= 0,      // k cells on toward d
+        perp_dir(D, D_across), dist(V, D_across, 0).           // none across
+
+    // The run's way: the way copies lie in line with the ink.
+    .decl run_way(e: Example, d: Dir)
+    run_way(E, D) :- in_line(E, D, _, K), K > 0.
+
+    // The run's nearest copy.
+    .init nearest = Extremes<Example>
+    nearest.cand(E, K) :- in_line(E, _, _, K), K > 0.
+
+    .decl march_stride(k: number)
+    march_stride(K) :- nearest.low(_, K).
+
+    // A copy's number, the ink itself being copy 1: the run's copies up to it.
+    .init number = Tally<ExCopy, Offset>
+    number.item([E, V], V2) :- in_line(E, D, V, K), in_line(E, D, V2, K2), K2 <= K.
+
+    // The numbers of the marked copies of each train output's run.
+    .decl marks(e: Example, n: number)
+    marks(E, N) :- marked.occurrence(E, V), number.tally([E, V], N).
+
+    .decl marked_numbers(n: number)
+    marked_numbers(N) :- marks(_, N).
+
+    // The first marked copy.
+    .init first_mark = Extremes<Example>
+    first_mark.cand(E, N) :- marks(E, N).
+
+    .decl period(k: number)
+    period(N) :- first_mark.low(_, N).
+
+    .decl mark_phase(k: number)
+    mark_phase(Phase) :- marked_numbers(N), period(Period), stride(N, Period, 0, _, Phase).
+
+    // The ink's bounding box.
+    .init box = Bbox<Example>
+    box.cell(E, P) :- ex.ink(E, P).
+
+    // The cell just past a copy's box toward d, beside an ink cell on the box's
+    // d edge.
+    .decl past(e: Example, v: Offset, d: Dir, q: Position)
+    past(E, V, D, Q) :-
+        copy(E, V), box.box(E, B), compose(V, B, B_copy),     // the copy's box
+        dir_elem(D), box_edge(P, B_copy, D), ink_out(E, P),    // an ink cell on its d edge
+        neighbor(P, D, Q).
+
+    // The background run from each such cell up to the next ink.
+    .init clear = Ray<Example>
+    clear.dir(E, D) :- train(E), dir_elem(D).
+    clear.mark(E, Q) :- past(E, _, _, Q).
+    clear.blocked(E, P) :- ink_out(E, P).
+
+    .decl march_gap(k: number)
+    march_gap(G) :- run_way(E, D), past(E, ZERO, D, Q), clear.stop(E, _, D, G, Q).
+
+    // The background run of g cells toward d, across the run, from a marked
+    // copy of the run to its drop.
+    .decl drop_gap(e: Example, d: Dir, g: number)
+    drop_gap(E, D, G) :-
+        run_way(E, D_run), in_line(E, D_run, V, _), marked.occurrence(E, V),
+        perp_dir(D_run, D), past(E, V, D, Q), clear.stop(E, _, D, G, Q).
+
+    .decl gap(k: number)
+    gap(G) :- drop_gap(_, _, G).
+
+    .decl march_dir(d: Dir)
+    march_dir(D) :- run_way(_, D).
+
+    .decl branch_dir(d: Dir)
+    branch_dir(D) :- drop_gap(_, D, _).
+
+    .decl branch_sense(s: Sense)
+    branch_sense(S) :- march_dir(D_march), branch_dir(D), turn(S, D_march, D).
+}

@@ -5,7 +5,6 @@
 - (create) `$SizeBoxKey`'s table is stored as `box_key_size`, `box_key_extent` (one fact per axis) and `box_key_color`, keyed by an `Ident`, in place of the report's (count, height, width) → color. Rests on the D4 action: an `Axis` column transforms under the group, and fixed height and width columns would not.
 - (create) The witness file adds these witnesses beside the Analyze file's five:
     - `plus-majority`: shows `bg=stored` defined and differing from `bg=DominantColor`.
-    - `horizontal-domino`: shows that removing `SYM_1` changes the output.
     - `s-tetromino`: shows that removing `SYM_D4` changes the output.
     - `box-0-v` through `box-5-h`: one per `box_key_extent` fact. The seven facts that the piece's count and other extent fix under 4-adjacency use an `assign` of `box_key_size` that holds the one key alone.
 

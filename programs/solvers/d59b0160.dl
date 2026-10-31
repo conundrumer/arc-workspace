@@ -1,0 +1,326 @@
+// d59b0160
+// @draft
+// @keywords: objects markers select count bbox
+// @scene background: the grid is filled with params.background
+// @scene legend-corner: a box at corner params.key_corner, walled off from the
+//  rest of the grid by a 1-wide L of params.divider cells, holds a few single
+//  cells of distinct colors on params.background: the legend
+// @scene panels: away from the legend, rectangles of color 0, each separated
+//  from the others and from the legend by params.background, hold scattered
+//  single cells of other colors
+// @rule legend-colors: the legend colors are the colors in the legend box
+//  other than params.background
+// @rule erase-full-panel: a panel whose cells hold every legend color becomes
+//  params.background
+// @rule keep-rest: every other cell keeps its input color
+
+// which panels are erased
+.type Erase =
+    // @claim erase-full-panel
+    EveryColor {}
+    // @rule erase-full-panel: a panel is erased when it holds at least as many
+    //  cells of each legend color as the legend does; undefined where the
+    //  concept is
+    // @witness legend-repeat: borderline concept
+    //     @relaxed legend-corner
+  | LegendMultiset {}
+    // @rule erase-full-panel: a panel is erased when it holds at least
+    //  params.legend_need distinct legend colors; undefined where the concept
+    //  is
+    // @witness four-color-legend: variant concept
+  | StoredLegendCount {}
+
+// which cells join one panel
+.type Adjacency =
+    // @claim panels
+    Adjacency4 {}
+    // @scene panels: a panel is an 8-connected piece of non-background cells,
+    //  so panels that touch at a corner are one panel; undefined where the
+    //  concept is
+    // @witness diagonal-touch: borderline concept
+    //     @relaxed panels
+  | Adjacency8 {}
+
+// which cells an erased panel covers
+.type Extent =
+    // @claim erase-full-panel
+    PanelCells {}
+    // @rule erase-full-panel: an erased panel's bounding box becomes
+    //  params.background; undefined where the concept is
+    // @witness l-shaped-panel: borderline concept
+    //     @relaxed panels
+  | PanelBbox {}
+
+// where the legend stands
+.type Place =
+    // @claim legend-corner
+    StoredCorner {}
+    // @scene legend-corner: the legend's corner is the one corner at which a
+    //  divider L walls off a box; undefined where no corner, or more than one,
+    //  has such an L
+    // @witness legend-other-corner: variant $LegendAnyCorner
+    //     @relaxed legend-corner
+  | LegendAnyCorner {}
+
+.type Choice = [erase: Erase, adj: Adjacency, extent: Extent, place: Place]
+
+.type PanelKey = [pl: Place, adj: Adjacency, id: Ident]
+.type PanelColor = [k: PanelKey, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl background(c: Color) background(7).
+    // The color of the L that walls off the legend.
+    .decl divider(c: Color) divider(3).
+
+    // --- $StoredCorner ---
+    // The corner of the grid that holds the legend.
+    .decl key_corner(d: DiagDir) key_corner(DIAG_TL).
+
+    // --- $StoredLegendCount ---
+    // The count of distinct legend colors that erases a panel.
+    .decl legend_need(n: number) legend_need(3).
+}
+
+.init params = Params
+
+.decl erase_choice(e: Erase)
+erase_choice($EveryColor()). erase_choice($LegendMultiset()). erase_choice($StoredLegendCount()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+.decl extent_choice(x: Extent)
+extent_choice($PanelCells()). extent_choice($PanelBbox()).
+
+.decl place_choice(pl: Place)
+place_choice($StoredCorner()). place_choice($LegendAnyCorner()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Er, Adj, Ext, Pl]) :-
+    erase_choice(Er), adjacency_choice(Adj), extent_choice(Ext), place_choice(Pl).
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+    .decl divider(k: Key, col: Color)
+    // The corner the legend is read at.
+    .decl corner(k: Key, d: DiagDir)
+
+    // The cell at each corner of the grid.
+    .decl corner_cell(k: Key, d: DiagDir, p: Position)
+    corner_cell(K, D, P) :- cell(K, P, _), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+    // @claim legend-corner
+    .init wall_ray = Ray<Key>
+    wall_ray.dir(K, D) :- divider(K, _), dir_elem(D).
+    wall_ray.mark(K, P) :- corner_cell(K, _, P).
+    wall_ray.blocked(K, P) :- cell(K, P, Col), divider(K, Col).
+
+    // The first divider cell inward from corner D along axis A lies N cells
+    // from the corner.
+    .decl wall_reach(k: Key, d: DiagDir, a: Axis, n: number)
+    wall_reach(K, D, A, N) :-
+        corner_cell(K, D, P), dir_of(D, A, E), opposite(E, D_in),
+        wall_ray.stop(K, _, D_in, N, P).
+
+    // A cell of the L that walls off corner D's box: on one axis at the
+    // wall's distance from the corner's edge, on the other no farther than the
+    // wall.
+    .decl wall_cell(k: Key, d: DiagDir, p: Position)
+    wall_cell(K, D, P) :-
+        diag_dirs(D, A1, E1, E2), perp(A1, A2),
+        wall_reach(K, D, A1, N1), wall_reach(K, D, A2, N2),
+        cell(K, P, _), dist(P, E1, N1), dist(P, E2, J), J <= N2.
+
+    .decl wall_gap(k: Key, d: DiagDir)
+    wall_gap(K, D) :- wall_cell(K, D, P), cell(K, P, Col), !divider(K, Col).
+
+    // A divider L walls off a box at corner D.
+    .decl walled(k: Key, d: DiagDir)
+    walled(K, D) :- wall_cell(K, D, _), !wall_gap(K, D).
+
+    // The legend box's extent on each axis: the cells between the corner's
+    // edge and the divider L.
+    .decl legend_extent(k: Key, a: Axis, n: number)
+    legend_extent(K, A, N) :- corner(K, D), walled(K, D), wall_reach(K, D, A, N).
+
+    // The legend box with its wall: no farther from the corner's two edges
+    // than the legend's extent on each axis.
+    .decl legend_area(k: Key, p: Position)
+    legend_area(K, P) :-
+        corner(K, D), diag_dirs(D, A1, E1, E2), perp(A1, A2),
+        legend_extent(K, A1, N1), legend_extent(K, A2, N2),
+        cell(K, P, _), dist(P, E1, J1), J1 <= N1, dist(P, E2, J2), J2 <= N2.
+
+    // The wall: the area's cells at the extent on some axis.
+    .decl legend_wall(k: Key, p: Position)
+    legend_wall(K, P) :-
+        legend_area(K, P), corner(K, D), dir_of(D, A, E), legend_extent(K, A, N),
+        dist(P, E, N).
+
+    .decl legend_cell(k: Key, p: Position)
+    legend_cell(K, P) :- legend_area(K, P), !legend_wall(K, P).
+
+    // @claim legend-colors
+    .decl legend_color(k: Key, col: Color)
+    legend_color(K, Col) :- legend_cell(K, P), cell(K, P, Col), !params.background(Col).
+}
+
+// @store legend_extent: variant concept
+// @store legend_area: variant $LegendAnyCorner
+//     @relaxed legend-corner
+.init parse = Parse<Place>
+parse.cell(Pl, P, Col) :- place_choice(Pl), in(P, Col).
+parse.divider(Pl, Col) :- place_choice(Pl), params.divider(Col).
+
+// The legend's corner holds a legend box; where none does, the case is
+// undefined.
+.decl legend_found(pl: Place)
+legend_found(Pl) :- parse.legend_area(Pl, _).
+
+.decl panel_node(pl: Place, p: Position)
+panel_node(Pl, P) :-
+    legend_found(Pl), in(P, Col), !params.background(Col), !parse.legend_area(Pl, P).
+
+.decl panel(pl: Place, adj: Adjacency, p: Position, id: Ident)
+
+.decl panel_color(k: PanelKey, col: Color)
+panel_color([Pl, Adj, Id], Col) :- panel(Pl, Adj, P, Id), in(P, Col).
+
+// The panels each erase test erases.
+.decl erased(k: PanelKey, er: Erase)
+
+// The cells that become background.
+.decl erased_cell(ch: Choice, p: Position)
+
+out(P, Col, Ch) :- erased_cell(Ch, P), params.background(Col).
+out(P, Col, [Er, Adj, Ext, Pl]) :-
+    impl_choice([Er, Adj, Ext, Pl]), legend_found(Pl),
+    in(P, Col), !erased_cell([Er, Adj, Ext, Pl], P).
+
+// --- $StoredCorner ---
+parse.corner($StoredCorner(), D) :- params.key_corner(D).
+
+// --- $LegendAnyCorner ---
+.decl corner_tie()
+corner_tie() :-
+    parse.walled($LegendAnyCorner(), D1), parse.walled($LegendAnyCorner(), D2), D1 != D2.
+
+parse.corner($LegendAnyCorner(), D) :- parse.walled($LegendAnyCorner(), D), !corner_tie().
+
+// --- $Adjacency4 ---
+// @claim panels
+.init panel4 = Components<Place>
+panel4.node(Pl, P) :- panel_node(Pl, P).
+
+panel(Pl, $Adjacency4(), P, Id) :- panel4.label(Pl, P, Id).
+
+// --- $Adjacency8 ---
+// @claim panels
+.init panel8 = Components8<Place>
+panel8.node(Pl, P) :- panel_node(Pl, P).
+
+panel(Pl, $Adjacency8(), P, Id) :- panel8.label(Pl, P, Id).
+
+// --- $EveryColor ---
+// A panel lacks some legend color.
+.decl lacks(k: PanelKey)
+lacks([Pl, Adj, Id]) :-
+    panel(Pl, Adj, _, Id), parse.legend_color(Pl, Col), !panel_color([Pl, Adj, Id], Col).
+
+erased(K, $EveryColor()) :- panel_color(K, _), !lacks(K).
+
+// --- $LegendMultiset ---
+// The legend's cells of a color outnumber the panel's.
+// @claim erase-full-panel
+.init shortfall = Excess<PanelColor, Position>
+shortfall.plus([[Pl, Adj, Id], Col], Q) :-
+    panel(Pl, Adj, _, Id), parse.legend_cell(Pl, Q), in(Q, Col), parse.legend_color(Pl, Col).
+shortfall.minus([[Pl, Adj, Id], Col], P) :-
+    panel(Pl, Adj, P, Id), in(P, Col).
+
+.decl short(k: PanelKey)
+short(K) :- shortfall.excess([K, _], _).
+
+erased(K, $LegendMultiset()) :- panel_color(K, _), !short(K).
+
+// --- $StoredLegendCount ---
+// @claim erase-full-panel
+.init legend_hits = Tally<PanelKey, Color>
+legend_hits.item([Pl, Adj, Id], Col) :-
+    panel_color([Pl, Adj, Id], Col), parse.legend_color(Pl, Col).
+
+erased(K, $StoredLegendCount()) :-
+    legend_hits.tally(K, N), params.legend_need(Need), N >= Need.
+
+// --- $PanelCells ---
+erased_cell([Er, Adj, $PanelCells(), Pl], P) :- erased([Pl, Adj, Id], Er), panel(Pl, Adj, P, Id).
+
+// --- $PanelBbox ---
+// @claim erase-full-panel
+.init panel_box = Bbox<PanelKey>
+panel_box.cell([Pl, Adj, Id], P) :- panel(Pl, Adj, P, Id).
+
+erased_cell([Er, Adj, $PanelBbox(), Pl], P) :-
+    erased([Pl, Adj, Id], Er), panel_box.box([Pl, Adj, Id], B), in(P, _), inside(P, B).
+
+.comp Determine {
+    // Each color of an input, tried as the divider.
+    .type Cand = [e: Example, col: Color]
+
+    // @ignore divider: head-repeat — the key names the candidate so that each
+    //  candidate's parse stands apart, and the input gives the parse that
+    //  candidate as the color it blocks on
+    .init parse = Parse<Cand>
+    parse.cell([E, Div], P, Col) :- ex_in(E, P, Col), ex_in(E, _, Div).
+    parse.divider([E, Div], Div) :- ex_in(E, _, Div).
+    parse.corner([E, Div], D) :- ex_in(E, _, Div), params.key_corner(D).
+
+    // --- background: the color every changed cell becomes ---
+
+    .decl changed_to(e: Example, col: Color)
+    changed_to(E, Col) :- ex_in(E, P, C), ex_out(E, P, Col), C != Col.
+
+    .decl background_defect(c: Color)
+    background_defect(Col) :- changed_to(_, Col), changed_to(_, C), C != Col.
+
+    .decl background(c: Color)
+    background(Col) :- changed_to(_, Col), !background_defect(Col).
+
+    // --- divider: the color whose L walls off key_corner in every input ---
+
+    .decl divider_defect(c: Color)
+    divider_defect(Div) :-
+        ex_in(_, _, Div), ex_in(E, _, _), params.key_corner(D), !parse.walled([E, Div], D).
+
+    .decl divider(c: Color)
+    divider(Div) :- ex_in(_, _, Div), !divider_defect(Div).
+
+    // --- key_corner: the corner an L of one color walls off in every input ---
+
+    .decl walled(e: Example, d: DiagDir)
+    walled(E, D) :- parse.walled([E, Div], D), !params.background(Div).
+
+    .decl key_corner_defect(d: DiagDir)
+    key_corner_defect(D) :- diag_dir_elem(D), ex_in(E, _, _), !walled(E, D).
+
+    .decl key_corner(d: DiagDir)
+    key_corner(D) :- diag_dir_elem(D), !key_corner_defect(D).
+
+    // --- legend_need: the count of legend colors, the same in every input ---
+
+    // The parse at the stored divider, in each input whose legend it finds.
+    .decl legend_key(k: Cand)
+    legend_key([E, Div]) :- parse.legend_area([E, Div], _), params.divider(Div).
+
+    .init legend_size = Tally<Cand, Color>
+    legend_size.item(K, Col) :- legend_key(K), parse.legend_color(K, Col).
+    legend_size.domain(K) :- legend_key(K).
+
+    .init need = Unanimous<Unit, number>
+    need.item($U(), N) :- legend_size.tally(_, N).
+
+    .decl legend_need(n: number)
+    legend_need(N) :- need.value($U(), N).
+}

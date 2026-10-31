@@ -1,0 +1,371 @@
+// e734a0e8
+// @draft
+// @keywords: decompose markers stamp
+// @scene divider-tiling: full rows and full columns of params.divider_color,
+//  each one cell wide, cut the grid into equal square tiles, with a tile at
+//  each end of each axis.
+// @scene blank-tiles: each tile is filled with params.background_color, apart
+//  from the cells the other scene claims name.
+// @scene one-source: exactly one tile, the source, holds cells of a color
+//  other than params.background_color and params.divider_color, and those
+//  cells all have one color, the drawing color.
+// @scene center-markers: each marked tile holds exactly one cell of
+//  params.divider_color, at the tile's center, and no other cell that is not
+//  params.background_color.
+// @scene source-unmarked: the source tile holds no cell of
+//  params.divider_color.
+// @rule stamp-marked: each marked tile takes, at each cell, the color of the
+//  cell at the same place in the source tile.
+// @rule keep-rest: each other cell keeps its input color.
+
+// where the divider color comes from
+.type DividerSource =
+    // @claim divider-tiling
+    StoredDivider {}
+    // @scene divider-tiling: the divider color is the one color, other than
+    //  params.background_color, that fills a full row or a full column; it
+    //  is undefined where no such line exists or the lines have more than
+    //  one color.
+    // @witness lines-5: variant $DividerFromLines
+    //     @relaxed divider-tiling
+  | DividerFromLines {}
+
+// which color marks a tile
+.type MarkerHue =
+    // @claim center-markers
+    DividerMarker {}
+    // @scene center-markers: the marker cell has params.marker_color.
+    // @scene one-source: the source holds a color other than
+    //  params.background_color, params.divider_color and
+    //  params.marker_color.
+    // @witness marker-color: variant $MarkerColor
+    //     @relaxed center-markers
+    //     @relaxed one-source
+    //     @reassigned marker_color
+  | MarkerColor {}
+
+// which marker cells mark a tile, and where the copy lands
+.type MarkerPlace =
+    // @claim stamp-marked
+    AnyCell {}
+    // @rule stamp-marked: a tile is marked when its center cell has the
+    //  marker color; undefined where a tile has an even side.
+    // @witness off-center-marker: borderline concept
+    //     @relaxed center-markers
+  | MarkerAtCenter {}
+    // @rule stamp-marked: the copy shifts so that the source tile's center
+    //  lands on the marker cell, clipped to the marked tile; undefined where
+    //  a marked tile holds more than one marker cell, or where the source
+    //  tile has an even side.
+    // @witness off-center-marker: borderline concept
+  | MarkerAnchors {}
+
+// what the copy takes from the source tile
+.type CopyContent =
+    // @claim stamp-marked
+    WholeTile {}
+    // @rule stamp-marked: each marked tile takes the source's cells, and
+    //  each divider-colored cell of the source arrives as
+    //  params.background_color.
+    // @witness divider-cell-in-source: borderline $OverlayDrawing
+    //     @relaxed source-unmarked
+  | OverlayDrawing {}
+
+// which tile is the source
+.type SourcePick =
+    // @claim one-source
+    OneDrawn {}
+    // @scene one-source: of the tiles that hold a drawn color, the source
+    //  is the one with the most drawn cells; undefined where two of those
+    //  tiles tie.
+    // @witness second-drawn-tile: borderline $SourceByCount
+    //     @relaxed one-source
+  | SourceByCount {}
+
+.type Choice = [dv: DividerSource, mk: MarkerHue, pl: MarkerPlace, cp: CopyContent, sr: SourcePick]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed blank-tiles
+    //     @relaxed one-source
+    .decl background_color(c: Color) background_color(7).
+
+    // --- $StoredDivider ---
+    .decl divider_color(c: Color) divider_color(0).
+
+    // --- $MarkerColor ---
+    .decl marker_color(c: Color) marker_color(0).
+}
+
+.init params = Params
+
+.decl divider_source_choice(dv: DividerSource)
+divider_source_choice($StoredDivider()). divider_source_choice($DividerFromLines()).
+
+.decl marker_hue_choice(mk: MarkerHue)
+marker_hue_choice($DividerMarker()). marker_hue_choice($MarkerColor()).
+
+.decl marker_place_choice(pl: MarkerPlace)
+marker_place_choice($AnyCell()). marker_place_choice($MarkerAtCenter()). marker_place_choice($MarkerAnchors()).
+
+.decl copy_content_choice(cp: CopyContent)
+copy_content_choice($WholeTile()). copy_content_choice($OverlayDrawing()).
+
+.decl source_pick_choice(sr: SourcePick)
+source_pick_choice($OneDrawn()). source_pick_choice($SourceByCount()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Dv, Mk, Pl, Cp, Sr]) :-
+    divider_source_choice(Dv), marker_hue_choice(Mk), marker_place_choice(Pl),
+    copy_content_choice(Cp), source_pick_choice(Sr).
+
+// The lines that one color fills.
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // A line, axis-only on a, that holds a cell of col.
+    .decl line_color(k: Key, a: Axis, l: Position, col: Color)
+    line_color(K, A, L, Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // A line that holds two colors.
+    .decl mixed_line(k: Key, a: Axis, l: Position)
+    mixed_line(K, A, L) :- line_color(K, A, L, Col), line_color(K, A, L, Col2), Col != Col2.
+
+    .decl full_line(k: Key, a: Axis, l: Position, col: Color)
+    full_line(K, A, L, Col) :- line_color(K, A, L, Col), !mixed_line(K, A, L).
+}
+
+// @ignore full_line: store — a full line is a divider when its color is the
+//  divider color, so a stored color here would be a second divider color
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- the divider lines and the tiles ---
+
+// The divider color of each case.
+.decl divider(dv: DividerSource, col: Color)
+
+// @claim divider-tiling
+.init tiling = DividerTiles<DividerSource>
+tiling.cell(Dv, P) :- divider_source_choice(Dv), in(P, _).
+tiling.divider(Dv, A, L) :- divider(Dv, Col), parse.full_line($U(), A, L, Col).
+
+.type TileKey = [dv: DividerSource, p_tile: Position]
+
+// @claim stamp-marked
+.init tile_box = Bbox<TileKey>
+tile_box.cell([Dv, P_tile], P) :- tiling.tile_of(Dv, P, P_tile).
+
+// A cell of a tile, with its place in the tile's frame.
+.decl tile_cell(dv: DividerSource, p_tile: Position, p: Position, p_intile: Position)
+tile_cell(Dv, P_tile, P, P_intile) :-
+    tiling.tile_of(Dv, P, P_tile), tile_box.box([Dv, P_tile], B), crop(P, B, P_intile).
+
+// The center cell of a tile.
+.decl tile_center(dv: DividerSource, p_tile: Position, p: Position)
+tile_center(Dv, P_tile, P) :- tile_cell(Dv, P_tile, P, P_intile), centered(P_intile).
+
+// --- $StoredDivider ---
+divider($StoredDivider(), Col) :- params.divider_color(Col).
+
+// --- $DividerFromLines ---
+// @claim divider-tiling
+// @ignore item: store — a stored line color is a stored divider color, which
+//  is the model of $StoredDivider
+// @ignore value: store — a stored line color is a stored divider color, which
+//  is the model of $StoredDivider
+.init line_hue = Unanimous<Unit, Color>
+line_hue.item($U(), Col) :-
+    parse.full_line($U(), _, _, Col), !params.background_color(Col).
+
+divider($DividerFromLines(), Col) :- line_hue.value($U(), Col).
+
+// --- the marker color ---
+
+.decl marker(ch: Choice, col: Color)
+
+// --- $DividerMarker ---
+marker(Ch, Col) :- impl_choice(Ch), Ch = [Dv, $DividerMarker(), _, _, _], divider(Dv, Col).
+
+// --- $MarkerColor ---
+marker(Ch, Col) :-
+    impl_choice(Ch), Ch = [Dv, $MarkerColor(), _, _, _], divider(Dv, _),
+    params.marker_color(Col).
+
+// --- the drawn cells ---
+
+// A color that draws nothing: the background, the dividers and the marker.
+// @ignore: store — it is built from the background, divider and marker colors,
+//  so a stored value would repeat those parameters
+.decl plain(ch: Choice, col: Color)
+plain(Ch, Col) :- marker(Ch, _), params.background_color(Col).
+plain(Ch, Col) :- marker(Ch, _), Ch = [Dv, _, _, _, _], divider(Dv, Col).
+plain(Ch, Col) :- marker(Ch, Col).
+
+// A drawn cell of a tile.
+.decl drawn_cell(ch: Choice, p_tile: Position, p: Position)
+drawn_cell(Ch, P_tile, P) :-
+    marker(Ch, _), Ch = [Dv, _, _, _, _], tiling.tile_of(Dv, P, P_tile),
+    in(P, Col), !plain(Ch, Col).
+
+.decl drawn(ch: Choice, p_tile: Position)
+drawn(Ch, P_tile) :- drawn_cell(Ch, P_tile, _).
+
+// --- the source ---
+
+// A tile the case takes for the source.
+.decl source_cand(ch: Choice, p_tile: Position)
+
+// Two tiles the case takes for the source.
+.decl rival(ch: Choice)
+rival(Ch) :- source_cand(Ch, P_tile), source_cand(Ch, P_tile2), P_tile != P_tile2.
+
+.decl source(ch: Choice, p_tile: Position)
+source(Ch, P_tile) :- source_cand(Ch, P_tile), !rival(Ch).
+
+// --- $OneDrawn ---
+source_cand(Ch, P_tile) :- drawn(Ch, P_tile), Ch = [_, _, _, _, $OneDrawn()].
+
+// --- $SourceByCount ---
+.type SourceKey = [ch: Choice, p_tile: Position]
+
+// @claim one-source
+.init size = Tally<SourceKey, Position>
+size.item([Ch, P_tile], P) :- drawn_cell(Ch, P_tile, P), Ch = [_, _, _, _, $SourceByCount()].
+size.domain([Ch, P_tile]) :- drawn(Ch, P_tile), Ch = [_, _, _, _, $SourceByCount()].
+
+// @claim one-source
+.init most = ArgExtremes<Choice, Position>
+most.cand(Ch, P_tile, N) :- size.tally([Ch, P_tile], N).
+
+source_cand(Ch, P_tile) :- most.high(Ch, P_tile, _).
+
+// --- the source's colors ---
+
+// The color a source cell gives its copies.
+.decl source_color(ch: Choice, p: Position, col: Color)
+
+// --- $WholeTile ---
+source_color(Ch, P, Col) :-
+    source(Ch, P_tile), Ch = [Dv, _, _, $WholeTile(), _], tiling.tile_of(Dv, P, P_tile),
+    in(P, Col).
+
+// --- $OverlayDrawing ---
+source_color(Ch, P, Col) :-
+    source(Ch, P_tile), Ch = [Dv, _, _, $OverlayDrawing(), _], tiling.tile_of(Dv, P, P_tile),
+    in(P, Col_in),
+    ( !divider(Dv, Col_in), Col = Col_in                   // a drawing cell
+    ; divider(Dv, Col_in), params.background_color(Col)    // a divider-colored cell
+    ).
+
+// --- the marked tiles ---
+
+// A cell of the marker color in a tile.
+.decl marker_cell(ch: Choice, p_tile: Position, p: Position)
+marker_cell(Ch, P_tile, P) :-
+    marker(Ch, Col), Ch = [Dv, _, _, _, _], tiling.tile_of(Dv, P, P_tile), in(P, Col).
+
+// The cell that marks its tile.
+.decl mark(ch: Choice, p_tile: Position, p: Position)
+
+.decl marked(ch: Choice, p_tile: Position)
+marked(Ch, P_tile) :- mark(Ch, P_tile, _), !drawn(Ch, P_tile).
+
+// A cell of a marked tile.
+.decl in_marked(ch: Choice, p: Position)
+in_marked(Ch, P) :- marked(Ch, P_tile), Ch = [Dv, _, _, _, _], tiling.tile_of(Dv, P, P_tile).
+
+// The copy each marked tile takes.
+.decl copy(ch: Choice, p: Position, col: Color)
+
+// The case gives an output.
+.decl defined(ch: Choice)
+
+// --- $AnyCell, $MarkerAtCenter ---
+
+// A copy over the whole tile, each cell from the source cell at its place.
+.decl tile_copy(ch: Choice, p: Position, col: Color)
+tile_copy(Ch, P, Col) :-
+    marked(Ch, P_tile), Ch = [Dv, _, _, _, _], tile_cell(Dv, P_tile, P, P_intile),
+    tile_cell(Dv, _, Q, P_intile), source_color(Ch, Q, Col).
+
+// --- $AnyCell ---
+mark(Ch, P_tile, P) :- marker_cell(Ch, P_tile, P), Ch = [_, _, $AnyCell(), _, _].
+copy(Ch, P, Col) :- tile_copy(Ch, P, Col), Ch = [_, _, $AnyCell(), _, _].
+defined(Ch) :- source(Ch, _), Ch = [_, _, $AnyCell(), _, _].
+
+// --- $MarkerAtCenter ---
+
+// A tile with no center cell.
+.decl centerless(dv: DividerSource)
+centerless(Dv) :- tile_box.box([Dv, P_tile], _), !tile_center(Dv, P_tile, _).
+
+mark(Ch, P_tile, P) :-
+    marker_cell(Ch, P_tile, P), Ch = [Dv, _, $MarkerAtCenter(), _, _],
+    tile_center(Dv, P_tile, P).
+copy(Ch, P, Col) :- tile_copy(Ch, P, Col), Ch = [_, _, $MarkerAtCenter(), _, _].
+defined(Ch) :- source(Ch, _), Ch = [Dv, _, $MarkerAtCenter(), _, _], !centerless(Dv).
+
+// --- $MarkerAnchors ---
+mark(Ch, P_tile, P) :- marker_cell(Ch, P_tile, P), Ch = [_, _, $MarkerAnchors(), _, _].
+
+// A marked tile with two marker cells.
+.decl multi_marker(ch: Choice)
+multi_marker(Ch) :- marked(Ch, P_tile), mark(Ch, P_tile, P), mark(Ch, P_tile, P2), P != P2.
+
+copy(Ch, P, Col) :-
+    marked(Ch, P_tile), mark(Ch, P_tile, M), Ch = [Dv, _, $MarkerAnchors(), _, _],
+    source(Ch, P_src), tile_center(Dv, P_src, C),
+    source_color(Ch, Q, Col), relative(C, Q, V), compose(M, V, P),  // the source center onto the mark
+    tiling.tile_of(Dv, P, P_tile).                                   // clipped to the marked tile
+defined(Ch) :-
+    source(Ch, P_src), Ch = [Dv, _, $MarkerAnchors(), _, _], tile_center(Dv, P_src, _),
+    !multi_marker(Ch).
+
+out(P, Col, Ch) :-
+    defined(Ch), Ch = [_, _, $MarkerAnchors(), _, _], in_marked(Ch, P), in(P, Col),
+    !copy(Ch, P, _).                                 // a marked cell the clipped copy misses
+
+// --- output ---
+
+out(P, Col, Ch) :- defined(Ch), copy(Ch, P, Col).
+out(P, Col, Ch) :- defined(Ch), in(P, Col), !in_marked(Ch, P).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    .decl background_color(c: Color)
+    background_color(Col) :- commonest.mode(_, Col), !rare(Col).
+
+    // An input where the color is not the commonest.
+    .decl rare(col: Color)
+    rare(Col) :- commonest.mode(_, Col), ex_out(E, _, _), !commonest.mode(E, Col).
+
+    .init ex_parse = Parse<Example>
+    ex_parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // A color filling a full line in every input.
+    .decl divider_color(c: Color)
+    divider_color(Col) :- ex_parse.full_line(_, _, _, Col), !lineless(Col).
+
+    // An input where no full line has the color.
+    .decl lineless(col: Color)
+    lineless(Col) :-
+        ex_parse.full_line(_, _, _, Col), ex_out(E, _, _), !ex_parse.full_line(E, _, _, Col).
+
+    // A color, other than the background, that the output overwrites in every
+    // pair: the marker that the copy covers.
+    .decl changed(e: Example, col: Color)
+    changed(E, Col) :- ex_in(E, P, Col), ex_out(E, P, Col_out), Col != Col_out.
+
+    .decl marker_color(c: Color)
+    marker_color(Col) :- changed(_, Col), !params.background_color(Col), !unchanged(Col).
+
+    // A pair where the color is never overwritten.
+    .decl unchanged(col: Color)
+    unchanged(Col) :- changed(_, Col), ex_out(E, _, _), !changed(E, Col).
+}

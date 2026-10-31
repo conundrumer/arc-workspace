@@ -1,0 +1,140 @@
+// e50d258f
+// @draft
+// @keywords: objects crop count rank select
+// @scene rect-patches: each input holds two or more solid rectangles of non-0 cells on a field of 0, and no two
+//  rectangles touch, diagonals included.
+// @scene unique-max: one patch holds strictly more cells of color 2 than every other patch.
+// @rule pick-most: the selected patch is the one with the most cells of params.count_color.
+// @rule crop: the output is the selected patch's bounding box, cell for cell.
+
+// what ranks the patches
+.type Score =
+    // @claim pick-most
+    MostMark {}
+    // @rule pick-most: the selected patch is the one whose count of count_color cells less its count of
+    //  params.minus_color cells is highest; undefined where the concept is.
+    // @witness mark-excess-differs: ordinary concept
+  | ExcessOverMark {}
+
+// which neighbors join cells into one patch
+.type Adjacency =
+    // @claim rect-patches
+    Cardinal {}
+    // @scene rect-patches: a patch is an 8-connected component of non-0 cells.
+    // @witness corner-touching-patches: borderline concept
+    //     @relaxed rect-patches
+  | DiagJoined {}
+
+// what fills the output box
+.type Content =
+    // @claim crop
+    WholeBox {}
+    // @rule crop: the output is the selected patch's own cells, with params.bg on every other cell of its box.
+    // @witness cell-in-patch-box: foreign any
+    //     @relaxed rect-patches
+  | CropOwnCells {}
+
+.type Choice = [s: Score, a: Adjacency, c: Content]
+
+// a patch found under one adjacency
+.type Patch = [a: Adjacency, id: Ident]
+
+// an ordered pair of patches found under one adjacency
+.type Rival = [a: Adjacency, x: Ident, y: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl count_color(c: Color) count_color(2).
+
+    // --- $ExcessOverMark ---
+    .decl minus_color(c: Color) minus_color(1).
+}
+
+.init params = Params
+
+// The patches under each adjacency.
+.decl patch(a: Adjacency, p: Position, id: Ident)
+
+// The selected patch.
+.decl chosen(s: Score, a: Adjacency, id: Ident)
+
+// @claim crop
+.init patch_box = Bbox<Patch>
+patch_box.cell([A, Id], P) :- patch(A, P, Id).
+
+// --- $Cardinal ---
+// @claim rect-patches
+.init comps4 = Components<Unit>
+comps4.node($U(), P) :- in(P, Col), !params.bg(Col).
+patch($Cardinal(), P, Id) :- comps4.label($U(), P, Id).
+
+// --- $DiagJoined ---
+// @claim rect-patches
+.init comps8 = Components8<Unit>
+comps8.node($U(), P) :- in(P, Col), !params.bg(Col).
+patch($DiagJoined(), P, Id) :- comps8.label($U(), P, Id).
+
+// --- $MostMark ---
+// @claim pick-most
+.init most = Mode<Adjacency, Ident, Position>
+most.item(A, Id, P) :- patch(A, P, Id), in(P, Col), params.count_color(Col).
+chosen($MostMark(), A, Id) :- most.mode(A, Id).
+
+// --- $ExcessOverMark ---
+// Two patches under one adjacency.
+.decl rival(a: Adjacency, x: Ident, y: Ident)
+rival(A, X, Y) :- patch(A, _, X), patch(A, _, Y), X != Y.
+
+// x's score beats y's: x's count_color cells with y's minus_color cells
+// outnumber y's count_color cells with x's minus_color cells.
+// @claim pick-most
+.init beats = Excess<Rival, Position>
+beats.plus([A, X, Y], P) :-
+    rival(A, X, Y), in(P, Col),
+    ( patch(A, P, X), params.count_color(Col)
+    ; patch(A, P, Y), params.minus_color(Col)
+    ).
+beats.minus([A, X, Y], P) :-
+    rival(A, X, Y), in(P, Col),
+    ( patch(A, P, Y), params.count_color(Col)
+    ; patch(A, P, X), params.minus_color(Col)
+    ).
+
+.decl beaten(a: Adjacency, x: Ident)
+beaten(A, X) :- rival(A, X, Y), !beats.excess([A, X, Y], _).
+chosen($ExcessOverMark(), A, Id) :- patch(A, _, Id), !beaten(A, Id).
+
+// --- $WholeBox ---
+out(P_inner, Col, [S, A, $WholeBox()]) :-
+    chosen(S, A, Id), patch_box.box([A, Id], B),
+    in(P, Col), crop(P, B, P_inner).
+
+// --- $CropOwnCells ---
+out(P_inner, Col, [S, A, $CropOwnCells()]) :-
+    chosen(S, A, Id), patch_box.box([A, Id], B),
+    in(P, _), crop(P, B, P_inner),
+    ( patch(A, P, Id), in(P, Col)              // a cell of the patch
+    ; !patch(A, P, Id), params.bg(Col)         // another cell of its box
+    ).
+
+.comp Determine {
+    // Cell p's line along axis a holds a color other than p's.
+    .decl broken(e: Example, p: Position, a: Axis)
+    broken(E, P, A) :-
+        ex_in(E, P, C), axis_elem(A), same_line(A, P, Q),
+        ex_in(E, Q, C2), C2 != C.
+
+    // Input e has a whole row or column of color c.
+    .decl full_line(e: Example, c: Color)
+    full_line(E, C) :- ex_in(E, P, C), axis_elem(A), !broken(E, P, A).
+
+    // Some input has no whole line of color c.
+    .decl lacks(c: Color)
+    lacks(C) :- full_line(_, C), ex_in(E, _, _), !full_line(E, C).
+
+    // The field color: a color that fills a whole line of every input.
+    .decl bg(c: Color)
+    bg(C) :- full_line(_, C), !lacks(C).
+}

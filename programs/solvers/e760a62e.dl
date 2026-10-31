@@ -1,0 +1,387 @@
+// e760a62e
+// @draft
+// @keywords: decompose markers match span lookup
+// @scene divider-tiling: full rows and full columns of divider_color cut the
+//  grid into rooms of one size, with a gap of one line between each two; the
+//  last row of rooms and the last column of rooms can be cut short by the
+//  bottom and right edges.
+// @scene background-rooms: every room cell that holds no dot is background.
+// @scene one-dot-per-room: a marked room holds exactly one dot cell, and the
+//  rest of that room is background.
+// @scene dot-offset: every dot sits at one place within its room, the same
+//  place for every dot of the input.
+// @scene two-dot-colors: each dot has one of the two colors of cross_color's
+//  key.
+// @rule join-aligned-dots: for each two dots of one color in one row of rooms,
+//  or in one column of rooms, every room from the room of one dot to the room
+//  of the other, both included, fills whole with that color.
+// @rule cross-mix: a room that bars of both dot colors fill takes cross_color.
+// @rule keep-rest: the dividers and every room that no bar fills stay as in
+//  the input.
+
+// which two dots count as aligned
+.type Alignment =
+    // @claim join-aligned-dots
+    RoomAligned {}
+    // @rule join-aligned-dots: two dots join only where they also share a grid
+    //  row or a grid column of cells; the bar fills every room on its run.
+    // @witness offset-dots: variant concept
+    //     @relaxed dot-offset
+  | CellAligned {}
+
+// the line families along which dots join
+.type JoinLines =
+    // @claim join-aligned-dots
+    RowsCols {}
+    // @rule join-aligned-dots: two dots of one color on one diagonal of rooms
+    //  join too, and their bar fills the rooms on that diagonal.
+    // @witness diagonal-dots: ordinary concept
+  | DiagonalJoin {}
+
+// which two same-colored dots on one room line join
+.type WhichPairs =
+    // @claim join-aligned-dots
+    EveryPair {}
+    // @rule join-aligned-dots: the dots of one color on a room line join only
+    //  when that line holds exactly two of them.
+    // @witness three-in-line: ordinary concept
+  | ExactlyTwo {}
+    // @rule join-aligned-dots: two dots join only when no room strictly between
+    //  them holds a dot of any color.
+    // @witness dot-in-other-bar: ordinary concept
+  | NoPassThroughDot {}
+
+// what the dot cell of a room becomes where a bar fills the room
+.type DotCell =
+    // @claim join-aligned-dots
+    DotCellFills {}
+    // @rule join-aligned-dots: a dot cell keeps its own color, and the rest of
+    //  its room takes the fill.
+    // @witness dot-in-other-bar: ordinary concept
+  | DotCellKeeps {}
+
+// what color a room takes where bars of two colors cross
+.type CrossColor =
+    // @claim cross-mix
+    KeyedCross {}
+    // @rule cross-mix: one stored color, one_cross_color, fills every room that
+    //  bars of two or more colors fill, whatever the colors are.
+    // @witness third-color: borderline $OneCrossColor
+    //     @relaxed two-dot-colors
+  | OneCrossColor {}
+
+// where the background comes from
+.type BackgroundSource =
+    // @claim background-rooms
+    StoredBackground {}
+    // @scene background-rooms: the background is the commonest color among
+    //  the cells off the divider lines; undefined on a tie.
+    // @witness other-background: variant $DerivedBackground
+    //     @relaxed background-rooms
+  | DerivedBackground {}
+
+// whether the cut-short strips at the bottom and right edges are rooms
+.type CutRooms =
+    // @claim divider-tiling
+    CutRoomsJoin {}
+    // @scene divider-tiling: a room narrower than the other rooms of its axis
+    //  is no room: a dot there joins nothing and stays, and no bar fills it.
+    // @witness dot-in-cut-room: ordinary concept
+  | CutRoomsInert {}
+
+.type Choice = [al: Alignment, ln: JoinLines, pr: WhichPairs, dt: DotCell,
+                cr: CrossColor, bg: BackgroundSource, ct: CutRooms]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive SharedColor: variant derived
+    //     @relaxed divider-tiling
+    // @ignore: derive VanishedColor — on one input with no train output it gives every
+    //  color of the input, as SharedColor does
+    .decl divider_color(col: Color) divider_color(8).
+
+    // --- $StoredBackground ---
+    .decl background(col: Color) background(0).
+
+    // --- $KeyedCross ---
+    // The crossing color of each pair of bar colors: cross_color_key holds
+    // the pair, cross_color the color its crossing takes.
+    .decl cross_color_key(id: Ident, col: Color)
+    cross_color_key(0, 2). cross_color_key(0, 3).
+    .decl cross_color(id: Ident, col: Color) cross_color(0, 6).
+
+    // --- $OneCrossColor ---
+    .decl one_cross_color(col: Color) one_cross_color(6).
+}
+
+.init params = Params
+
+.decl alignment_choice(al: Alignment)
+alignment_choice($RoomAligned()). alignment_choice($CellAligned()).
+
+.decl join_lines_choice(ln: JoinLines)
+join_lines_choice($RowsCols()). join_lines_choice($DiagonalJoin()).
+
+.decl which_pairs_choice(pr: WhichPairs)
+which_pairs_choice($EveryPair()). which_pairs_choice($ExactlyTwo()). which_pairs_choice($NoPassThroughDot()).
+
+.decl dot_cell_choice(dt: DotCell)
+dot_cell_choice($DotCellFills()). dot_cell_choice($DotCellKeeps()).
+
+.decl cross_color_choice(cr: CrossColor)
+cross_color_choice($KeyedCross()). cross_color_choice($OneCrossColor()).
+
+.decl background_source_choice(bg: BackgroundSource)
+background_source_choice($StoredBackground()). background_source_choice($DerivedBackground()).
+
+.decl cut_rooms_choice(ct: CutRooms)
+cut_rooms_choice($CutRoomsJoin()). cut_rooms_choice($CutRoomsInert()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Al, Ln, Pr, Dt, Cr, Bg, Ct]) :-
+    alignment_choice(Al), join_lines_choice(Ln), which_pairs_choice(Pr), dot_cell_choice(Dt),
+    cross_color_choice(Cr), background_source_choice(Bg),
+    cut_rooms_choice(Ct).
+
+// A full row or column, by its axis and its place on that axis.
+.type Line = [a: Axis, l: Position]
+
+// The one color of each line that holds one color alone.
+// @claim divider-tiling
+// @ignore value: store — the color of a full line is the divider color only
+//  where divider_color stores it, so storing it duplicates divider_color
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// @claim divider-tiling
+.init rooms = DividerTiles<Unit>
+rooms.cell($U(), P) :- in(P, _).
+rooms.divider($U(), A, L) :- params.divider_color(Col), line_color.value([A, L], Col).
+
+.decl bg_color(col: Color, bg: BackgroundSource)
+
+// --- $StoredBackground ---
+bg_color(Col, $StoredBackground()) :- params.background(Col).
+
+// --- $DerivedBackground ---
+// @claim background-rooms
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- rooms.tile_of($U(), P, _), in(P, Col).
+
+// The commonest color, absent on a tie.
+// @claim background-rooms
+.init bg_pick = Unanimous<Unit, Color>
+bg_pick.item($U(), Col) :- bg_mode.mode($U(), Col).
+
+bg_color(Col, $DerivedBackground()) :- bg_pick.value($U(), Col).
+
+// --- $StoredBackground, $DerivedBackground ---
+// The tile of each room cell, among the tiles that are rooms.
+.decl room_of(p_grid: Position, p_tile: Position, ct: CutRooms)
+
+// --- $CutRoomsJoin ---
+room_of(P_grid, P_tile, $CutRoomsJoin()) :- rooms.tile_of($U(), P_grid, P_tile).
+
+// --- $CutRoomsInert ---
+// A part of an axis, between two dividers or a divider and an edge.
+.type Part = [a: Axis, part: Position]
+
+// The lines each part spans.
+// @claim divider-tiling
+.init part_size = Tally<Part, Position>
+part_size.item([A, P_part], L) :- rooms.part_of($U(), P, A, P_part), split(P, A, L, _).
+part_size.domain([A, P_part]) :- rooms.part_of($U(), _, A, P_part).
+
+// A part narrower than another part of its axis.
+.decl cut_part(a: Axis, p_part: Position)
+cut_part(A, P_part) :-
+    part_size.tally([A, P_part], N1), part_size.tally([A, _], N2), N1 < N2.
+
+// A tile with a cut part on some axis.
+.decl cut_tile(p_tile: Position)
+cut_tile(P_tile) :-
+    rooms.tile_of($U(), P, P_tile), rooms.part_of($U(), P, A, P_part), cut_part(A, P_part).
+
+room_of(P_grid, P_tile, $CutRoomsInert()) :-
+    rooms.tile_of($U(), P_grid, P_tile), !cut_tile(P_tile).
+
+// --- $CutRoomsJoin, $CutRoomsInert ---
+.decl room(p_tile: Position, ct: CutRooms)
+room(P_tile, Ct) :- room_of(_, P_tile, Ct).
+
+// A room cell that is not background.
+.decl ink(p_tile: Position, p_grid: Position, col: Color,
+          bg: BackgroundSource, ct: CutRooms)
+ink(P_tile, P_grid, Col, Bg, Ct) :-
+    room_of(P_grid, P_tile, Ct), in(P_grid, Col),
+    bg_color(_, Bg), !bg_color(Col, Bg).
+
+// A room with more than one such cell.
+.decl crowded(p_tile: Position, bg: BackgroundSource, ct: CutRooms)
+crowded(P_tile, Bg, Ct) :-
+    ink(P_tile, P1, _, Bg, Ct), ink(P_tile, P2, _, Bg, Ct), P1 != P2.
+
+.decl crowded_cell(p_grid: Position, bg: BackgroundSource, ct: CutRooms)
+crowded_cell(P_grid, Bg, Ct) :- crowded(P_tile, Bg, Ct), room_of(P_grid, P_tile, Ct).
+
+// @claim one-dot-per-room
+.decl dot(p_tile: Position, p_grid: Position, col: Color,
+          bg: BackgroundSource, ct: CutRooms)
+dot(P_tile, P_grid, Col, Bg, Ct) :-
+    ink(P_tile, P_grid, Col, Bg, Ct), !crowded(P_tile, Bg, Ct).
+
+// A room on the line of family a through two rooms, past one of the two.
+.decl past(p_tile: Position, p_tile1: Position, p_tile2: Position, a: Axis4,
+           ct: CutRooms)
+past(P_tile, P_tile1, P_tile2, A, Ct) :-
+    room(P_tile1, Ct), room(P_tile2, Ct), room(P_tile, Ct),
+    axis4_elem(A), same_line(A, P_tile1, P_tile2), same_line(A, P_tile1, P_tile),
+    nearer(D, P_tile, P_tile1), nearer(D, P_tile, P_tile2).
+
+// The rooms on that line from one of the two to the other, both included.
+.decl span(p_tile: Position, p_tile1: Position, p_tile2: Position, a: Axis4,
+           ct: CutRooms)
+span(P_tile, P_tile1, P_tile2, A, Ct) :-
+    room(P_tile1, Ct), room(P_tile2, Ct), room(P_tile, Ct),
+    axis4_elem(A), same_line(A, P_tile1, P_tile2), same_line(A, P_tile1, P_tile),
+    !past(P_tile, P_tile1, P_tile2, A, Ct).
+
+// The line families along which dots join.
+.decl line_family(a: Axis4, ln: JoinLines)
+
+// --- $RowsCols ---
+line_family(A, $RowsCols()) :- axis_elem(A).
+
+// --- $DiagonalJoin ---
+line_family(A, $DiagonalJoin()) :- axis4_elem(A).
+
+// --- $RowsCols, $DiagonalJoin ---
+// Two dots of one color that align on a line of family a.
+.decl aligned(p_tile1: Position, p_tile2: Position, a: Axis4, col: Color,
+              al: Alignment, ln: JoinLines, bg: BackgroundSource, ct: CutRooms)
+
+// --- $RoomAligned ---
+aligned(P_tile1, P_tile2, A, Col, $RoomAligned(), Ln, Bg, Ct) :-
+    dot(P_tile1, _, Col, Bg, Ct), dot(P_tile2, _, Col, Bg, Ct), P_tile1 != P_tile2,
+    line_family(A, Ln), same_line(A, P_tile1, P_tile2).
+
+// --- $CellAligned ---
+aligned(P_tile1, P_tile2, A, Col, $CellAligned(), Ln, Bg, Ct) :-
+    dot(P_tile1, P1, Col, Bg, Ct), dot(P_tile2, P2, Col, Bg, Ct), P_tile1 != P_tile2,
+    line_family(A, Ln), same_line(A, P_tile1, P_tile2),
+    same_line(A, P1, P2).                                   // the dot cells share a grid line too
+
+// --- $RoomAligned, $CellAligned ---
+// The aligned pairs that join.
+.decl joined(p_tile1: Position, p_tile2: Position, a: Axis4, col: Color,
+             al: Alignment, ln: JoinLines, pr: WhichPairs,
+             bg: BackgroundSource, ct: CutRooms)
+
+// --- $EveryPair ---
+joined(P_tile1, P_tile2, A, Col, Al, Ln, $EveryPair(), Bg, Ct) :-
+    aligned(P_tile1, P_tile2, A, Col, Al, Ln, Bg, Ct).
+
+// --- $ExactlyTwo ---
+// A third dot of the pair's color on the pair's line.
+.decl third(p_tile1: Position, p_tile2: Position, a: Axis4, col: Color,
+            al: Alignment, ln: JoinLines, bg: BackgroundSource, ct: CutRooms)
+third(P_tile1, P_tile2, A, Col, Al, Ln, Bg, Ct) :-
+    aligned(P_tile1, P_tile2, A, Col, Al, Ln, Bg, Ct),
+    aligned(P_tile1, P_tile3, A, Col, Al, Ln, Bg, Ct), P_tile3 != P_tile2.
+
+joined(P_tile1, P_tile2, A, Col, Al, Ln, $ExactlyTwo(), Bg, Ct) :-
+    aligned(P_tile1, P_tile2, A, Col, Al, Ln, Bg, Ct),
+    !third(P_tile1, P_tile2, A, Col, Al, Ln, Bg, Ct).
+
+// --- $NoPassThroughDot ---
+// A dot of any color in a room strictly between the pair's rooms.
+.decl passed(p_tile1: Position, p_tile2: Position, a: Axis4,
+             bg: BackgroundSource, ct: CutRooms)
+passed(P_tile1, P_tile2, A, Bg, Ct) :-
+    span(P_tile, P_tile1, P_tile2, A, Ct), P_tile != P_tile1, P_tile != P_tile2,
+    dot(P_tile, _, _, Bg, Ct).
+
+joined(P_tile1, P_tile2, A, Col, Al, Ln, $NoPassThroughDot(), Bg, Ct) :-
+    aligned(P_tile1, P_tile2, A, Col, Al, Ln, Bg, Ct),
+    !passed(P_tile1, P_tile2, A, Bg, Ct).
+
+// --- $EveryPair, $ExactlyTwo, $NoPassThroughDot ---
+// A room under one case.
+.type RoomCase = [p_tile: Position, ch: Choice]
+
+// The bar colors that fill each room, and the one color where there is one.
+// @claim join-aligned-dots
+.init fills = Unanimous<RoomCase, Color>
+fills.item([P_tile, [Al, Ln, Pr, Dt, Cr, Bg, Ct]], Col) :-
+    impl_choice([Al, Ln, Pr, Dt, Cr, Bg, Ct]),
+    joined(P_tile1, P_tile2, A, Col, Al, Ln, Pr, Bg, Ct),
+    span(P_tile, P_tile1, P_tile2, A, Ct).
+
+.decl room_color(p_tile: Position, col: Color, ch: Choice)
+room_color(P_tile, Col, Ch) :- fills.value([P_tile, Ch], Col).
+
+// --- $KeyedCross ---
+// @claim cross-mix
+.init cross = KeyedSetCompare<RoomCase, Ident, Color>
+cross.pattern_member(Id, Col) :- params.cross_color_key(Id, Col).
+cross.observed_member([P_tile, [Al, Ln, Pr, Dt, $KeyedCross(), Bg, Ct]], Col) :-
+    fills.item([P_tile, [Al, Ln, Pr, Dt, $KeyedCross(), Bg, Ct]], Col).
+
+room_color(P_tile, Col, Ch) :- cross.equals([P_tile, Ch], Id), params.cross_color(Id, Col).
+
+// --- $OneCrossColor ---
+room_color(P_tile, Col, [Al, Ln, Pr, Dt, $OneCrossColor(), Bg, Ct]) :-
+    fills.clash([P_tile, [Al, Ln, Pr, Dt, $OneCrossColor(), Bg, Ct]]),
+    params.one_cross_color(Col).
+
+// --- $KeyedCross, $OneCrossColor ---
+.decl painted(p_grid: Position, col: Color, ch: Choice)
+
+// --- $DotCellFills ---
+painted(P_grid, Col, [Al, Ln, Pr, $DotCellFills(), Cr, Bg, Ct]) :-
+    room_color(P_tile, Col, [Al, Ln, Pr, $DotCellFills(), Cr, Bg, Ct]),
+    room_of(P_grid, P_tile, Ct).
+
+// --- $DotCellKeeps ---
+painted(P_grid, Col, [Al, Ln, Pr, $DotCellKeeps(), Cr, Bg, Ct]) :-
+    room_color(P_tile, Col_fill, [Al, Ln, Pr, $DotCellKeeps(), Cr, Bg, Ct]),
+    room_of(P_grid, P_tile, Ct),
+    ( dot(P_tile, P_grid, Col, Bg, Ct)                         // the dot cell keeps its color
+    ; !dot(P_tile, P_grid, _, Bg, Ct), Col = Col_fill          // the rest takes the fill
+    ).
+
+// --- $DotCellFills, $DotCellKeeps ---
+// A cell of a room that some bar fills.
+.decl filled(p_grid: Position, ch: Choice)
+filled(P_grid, [Al, Ln, Pr, Dt, Cr, Bg, Ct]) :-
+    fills.item([P_tile, [Al, Ln, Pr, Dt, Cr, Bg, Ct]], _), room_of(P_grid, P_tile, Ct).
+
+// @claim keep-rest
+out(P_grid, Col, [Al, Ln, Pr, Dt, Cr, Bg, Ct]) :-
+    impl_choice([Al, Ln, Pr, Dt, Cr, Bg, Ct]), in(P_grid, Col_in),
+    bg_color(_, Bg),                                           // a background color
+    !crowded_cell(P_grid, Bg, Ct),                             // in no room with two dot cells
+    ( painted(P_grid, Col, [Al, Ln, Pr, Dt, Cr, Bg, Ct])
+    ; !filled(P_grid, [Al, Ln, Pr, Dt, Cr, Bg, Ct]), Col = Col_in
+    ).
+
+.comp Determine {
+    // A color an output gives a cell whose input holds another color.
+    .decl painted_color(c: Color)
+    painted_color(C) :- ex_out(E, P, C), ex_in(E, P, C0), C0 != C.
+
+    .decl in_color(c: Color)
+    in_color(C) :- ex_in(_, _, C).
+
+    // The crossing color: painted, and in no input.
+    .init ids = IdentOf<Color>
+    ids.value(C) :- painted_color(C), !in_color(C).
+
+    .decl cross_color(id: Ident, col: Color)
+    cross_color(Id, C) :- ids.id(C, Id).
+
+    // The bar colors: painted, and in some input.
+    .decl cross_color_key(id: Ident, col: Color)
+    cross_color_key(Id, K) :- ids.id(_, Id), painted_color(K), in_color(K).
+}

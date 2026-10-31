@@ -1,0 +1,30 @@
+{
+  "id": "ecb67b6d",
+  "witnesses": [{
+    "id": "mark_color=RarestColor",
+    "separates": "mark_color cells outnumber background cells, so the rarest color is the background 7: the stored mark color 5 recolors the one clump of 5, which holds the diagonal run (0,0)-(3,3), to 8; the derived mark color 7 recolors instead the clump of 7 that holds the run (0,3), (1,2), (2,1) and leaves the 5s",
+    "input": [
+      [5,5,5,7,5],
+      [5,5,7,5,5],
+      [5,7,5,5,5],
+      [5,5,5,5,7]
+    ],
+    "output": [{
+      "cases": ["mark_color=stored"],
+      "grid": [
+        [8,8,8,7,8],
+        [8,8,7,8,8],
+        [8,7,8,8,8],
+        [8,8,8,8,7]
+      ]
+    }, {
+      "cases": ["mark_color=RarestColor"],
+      "grid": [
+        [5,5,5,8,5],
+        [5,5,8,5,5],
+        [5,8,5,5,5],
+        [5,5,5,5,7]
+      ]
+    }]
+  }]
+}

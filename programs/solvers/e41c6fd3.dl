@@ -1,0 +1,228 @@
+// e41c6fd3
+// @draft
+// @keywords: objects color-class markers move
+// @scene copies-of-one-shape: on a field of the background color, the cells
+//  of each other color form one copy, and all copies are translates of one
+//  shape.
+// @scene one-anchor: one copy has the anchor color.
+// @scene disjoint-columns: no two copies share a column.
+// @rule align-to-anchor: each copy slides along align_axis, with its place
+//  across that axis kept, until its line on an edge of align_axis meets the
+//  anchor copy's line on that edge; the anchor copy stays where it is. The
+//  rule runs both edges of align_axis and is undefined on an input where the
+//  two edges give different outputs.
+// @rule clear-rest: every cell that no moved copy covers is the background
+//  color.
+
+// what one copy is
+.type CopyReading =
+    // @claim copies-of-one-shape
+    ColorClass {}
+    // @scene copies-of-one-shape: each connected component of one color is a
+    //  copy; undefined where the anchor color has more than one component.
+    // @witness two-copies-one-color: variant $ObjectComponents
+    //     @relaxed copies-of-one-shape
+  | ObjectComponents {adjacency: Adjacency}
+
+// which neighbors join a component
+.type Adjacency =
+    // @claim copies-of-one-shape
+    Adjacency4 {}
+    // @scene copies-of-one-shape: components join at corners as well.
+    // @witness diagonal-shape: variant $Adjacency8
+  | Adjacency8 {}
+
+// what of a copy's span meets the anchor's span
+.type AlignmentReference =
+    // @claim align-to-anchor
+    AlignEdges {}
+    // @rule align-to-anchor: the copy's span on the slide axis and the
+    //  anchor's span have one center; undefined where the two spans differ in
+    //  length by an odd count.
+    // @witness taller-copy: borderline any
+    //     @relaxed copies-of-one-shape
+  | AlignCenter {}
+
+// where the slide axis comes from
+.type SlideAxis =
+    // @claim align-to-anchor
+    StoredAxis {}
+    // @rule align-to-anchor: the slide axis is the one whose cross axis has
+    //  the copies' spans pairwise disjoint; undefined where the spans are
+    //  pairwise disjoint on both axes or on neither.
+    // @witness stacked-copies: variant $AxisFromLayout
+    //     @relaxed disjoint-columns
+  | AxisFromLayout {}
+
+.type Choice = [r: CopyReading, a: AlignmentReference, s: SlideAxis]
+
+// A copy under one reading: the reading and the copy's id, a color under
+// ColorClass and a component id under ObjectComponents.
+.type CopyKey = [r: CopyReading, k: number]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    // the color of the copy that keeps its place
+    // @ignore: derive — every derivation fails Fit at train0
+    .decl anchor(c: Color) anchor(8).
+
+    // --- $StoredAxis ---
+    .decl align_axis(a: Axis) align_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl copy_reading_choice(r: CopyReading)
+copy_reading_choice($ColorClass()).
+copy_reading_choice($ObjectComponents($Adjacency4())).
+copy_reading_choice($ObjectComponents($Adjacency8())).
+
+.decl alignment_reference_choice(a: AlignmentReference)
+alignment_reference_choice($AlignEdges()). alignment_reference_choice($AlignCenter()).
+
+.decl slide_axis_choice(s: SlideAxis)
+slide_axis_choice($StoredAxis()). slide_axis_choice($AxisFromLayout()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, A, S]) :-
+    copy_reading_choice(R), alignment_reference_choice(A), slide_axis_choice(S).
+
+// The cells of each copy.
+.decl copy(key: CopyKey, p: Position)
+
+// @claim align-to-anchor
+.init copy_box = Bbox<CopyKey>
+copy_box.cell(Ky, P) :- copy(Ky, P).
+
+// The anchor copy of each reading.
+.decl anchor_copy(r: CopyReading, k: number)
+anchor_copy(R, K) :- copy([R, K], P), in(P, Col), params.anchor(Col).
+
+// A reading that finds more than one anchor copy.
+.decl anchor_split(r: CopyReading)
+anchor_split(R) :- anchor_copy(R, K1), anchor_copy(R, K2), K1 != K2.
+
+// The slide axis of each reading.
+.decl slide_axis(r: CopyReading, s: SlideAxis, a: Axis)
+
+// A copy's line on edge d of the slide axis, as an axis-only position.
+.decl edge_line(r: CopyReading, s: SlideAxis, k: number, d: Dir, l: Position)
+edge_line(R, S, K, D, L) :-
+    slide_axis(R, S, A), axis_of(D, A),
+    copy_box.box([R, K], B), copy([R, K], P), box_edge(P, B, D),   // a copy cell on its box's d edge
+    split(P, A, L, _).
+
+// The translation of each copy along the slide axis, found at edge d.
+.decl moved(r: CopyReading, a: AlignmentReference, s: SlideAxis, k: number, d: Dir, v: Offset)
+
+// The edges of each case's slide axis.
+.decl slide_edge(ch: Choice, d: Dir)
+slide_edge([R, Ref, S], D) :- impl_choice([R, Ref, S]), slide_axis(R, S, A), axis_of(D, A).
+
+// The cells the copies cover after the slide found at edge d.
+.decl placed(ch: Choice, d: Dir, p: Position, col: Color)
+placed([R, Ref, S], D, Q, Col) :-
+    moved(R, Ref, S, K, D, V), copy([R, K], P), in(P, Col), compose(P, V, Q).
+
+// The grid the slide gives at edge d.
+.decl landed(ch: Choice, d: Dir, p: Position, col: Color)
+landed(Ch, D, P, Col) :- placed(Ch, D, P, Col).
+landed(Ch, D, P, Col) :-
+    slide_edge(Ch, D), in(P, _), !placed(Ch, D, P, _), params.background(Col).
+
+// A case whose slide fails: a copy with no translation at some edge, or two
+// edges that give different grids.
+.decl failed(ch: Choice)
+failed([R, Ref, S]) :- slide_edge([R, Ref, S], D), copy([R, K], _), !moved(R, Ref, S, K, D, _).
+failed(Ch) :- landed(Ch, D, P, Col), opposite(D, D2), !landed(Ch, D2, P, Col).
+
+out(P, Col, [R, Ref, S]) :-
+    landed([R, Ref, S], _, P, Col), !failed([R, Ref, S]), !anchor_split(R).
+
+// --- $ColorClass ---
+copy([$ColorClass(), Col], P) :- in(P, Col), !params.background(Col).
+
+// --- $Adjacency4 ---
+// @claim copies-of-one-shape
+.init comp4 = Components<Color>
+comp4.node(Col, P) :- in(P, Col), !params.background(Col).
+copy([$ObjectComponents($Adjacency4()), Id], P) :- comp4.label(Col, P, Id).
+
+// --- $Adjacency8 ---
+// @claim copies-of-one-shape
+.init comp8 = Components8<Color>
+comp8.node(Col, P) :- in(P, Col), !params.background(Col).
+copy([$ObjectComponents($Adjacency8()), Id], P) :- comp8.label(Col, P, Id).
+
+// --- $AlignEdges ---
+moved(R, $AlignEdges(), S, K, D, V) :-
+    edge_line(R, S, K, D, L), anchor_copy(R, K_a), edge_line(R, S, K_a, D, L_a),
+    relative(L, L_a, V).
+
+// --- $AlignCenter, $AxisFromLayout ---
+// The lines along each axis.
+.decl line(a: Axis, l: Position)
+line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+// --- $AlignCenter ---
+moved(R, $AlignCenter(), S, K, D, V) :-
+    edge_line(R, S, K, D, L_c), axis_of(D, A), line(A, L),
+    relative(L_c, L, V),                                    // a slide along the axis
+    copy_box.box([R, K], B), compose(B, V, B_t),            // the copy's box after it
+    anchor_copy(R, K_a), copy_box.box([R, K_a], B_a), relative(B_a, B_t, X),
+    dist_pair(X, D, N, N).                                  // equal margins on both edges
+
+// --- $StoredAxis ---
+slide_axis(R, $StoredAxis(), A) :- copy_reading_choice(R), params.align_axis(A).
+
+// --- $AxisFromLayout ---
+// Two copies' spans along axis a share a line.
+.decl span_overlap(r: CopyReading, a: Axis)
+span_overlap(R, A) :-
+    line(A, L),
+    copy_box.box([R, K1], B1), split(B1, A, B1_along, _), inside(L, B1_along),
+    copy_box.box([R, K2], B2), split(B2, A, B2_along, _), inside(L, B2_along),
+    K1 != K2.
+
+slide_axis(R, $AxisFromLayout(), A) :-
+    span_overlap(R, A), perp(A, A2), !span_overlap(R, A2).
+
+.comp Determine {
+    // A color that some changed cell holds on neither side.
+    .decl change_without(c: Color)
+    change_without(C) :-
+        ex_in(_, _, C), ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2, C1 != C, C2 != C.
+
+    // Every changed cell turns from or to the background.
+    // @ignore: determine prediction — the vacated and covered cells of a train pair are the evidence the background is read from
+    .decl background(c: Color)
+    background(C) :- ex_in(_, _, C), !change_without(C).
+
+    // A color some train input lacks, or some of whose cells change.
+    .decl not_kept(c: Color)
+    not_kept(C) :- ex_in(_, _, C), ex_out(E, _, _), !ex_in(E, _, C).
+    not_kept(C) :- ex_in(E, P, C), ex_out(E, _, _), !ex_out(E, P, C).
+
+    // The one color of every train input whose cells all keep their place.
+    // @ignore: determine prediction — the anchor is the copy a train pair leaves in place, which takes an input and its output together
+    .decl anchor(c: Color)
+    anchor(C) :- ex_in(_, _, C), !not_kept(C).
+
+    // The input holds color c on p's line of axis a.
+    .decl line_holds(e: Example, a: Axis, p: Position, c: Color)
+    line_holds(E, A, P, C) :-
+        ex_out(E, P, C), axis_elem(A), ex_in(E, Q, C), same_line(A, P, Q).
+
+    // An axis along which some output cell has no input cell of its color on
+    // its line.
+    .decl off_line(a: Axis)
+    off_line(A) :-
+        ex_out(E, P, C), axis_elem(A), !line_holds(E, A, P, C).
+
+    // @ignore: determine prediction — the slide axis is the line a copy cell keeps between a train input and its output
+    .decl align_axis(a: Axis)
+    align_axis(A) :- axis_elem(A), !off_line(A).
+}

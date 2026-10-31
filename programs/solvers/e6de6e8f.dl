@@ -1,0 +1,581 @@
+// e6de6e8f
+// @draft
+// @keywords: objects lookup walk
+// @scene pieces-in-a-strip: the input is a strip of 2 rows holding pieces of
+//  params.pipe_color on params.bg, with one blank column between each two
+//  pieces
+// @scene three-glyphs: each piece is one of the glyphs of the
+//  params.piece_glyph table: a bar one column wide and 2 rows high, or a
+//  two-column L whose top row is blank on one side
+// @scene pipe-fits-frame: the pipe the pieces make stays inside an output
+//  frame of params.out_dims
+// @rule source-mark: the output is a frame of params.out_dims filled with
+//  params.bg, and the cell at params.source_at on the edge opposite
+//  params.flow_dir takes params.source_color
+// @rule read-order: the pieces are taken in order from the input edge
+//  params.read_from
+// @rule lay-segments: the first piece starts at the cell next to the source
+//  toward params.flow_dir; each piece paints the offsets its table entry gives
+//  in params.piece_paint, relative to its start, in params.pipe_color, and the
+//  next piece starts at the entry's params.piece_exit offset
+
+// how a glyph gives the cells its piece paints and the next piece's start
+.type Segment =
+    // @claim lay-segments
+    TableSegments {}
+    // @rule lay-segments: no table: a bar (one column, every cell filled)
+    //  paints a run along params.flow_dir; an L (one full column at one end, a
+    //  full row on the params.flow_dir side, nothing else) paints a run across,
+    //  toward the side away from its full column; the next piece starts one
+    //  step along params.flow_dir from the run's end; undefined on a glyph that
+    //  is neither
+    // @witness wide-step: variant $DerivedSegments
+    //     @relaxed three-glyphs
+  | DerivedSegments {len: RunLength}
+
+// the length of the run a glyph paints
+.type RunLength =
+    // @claim lay-segments
+    GlyphExtent {}
+    // @rule lay-segments: every run is params.run_length long, whatever the
+    //  glyph's extent
+    // @witness wide-step: variant $DerivedSegments
+  | FixedLengths {}
+
+// what a piece is
+.type PieceParse =
+    // @claim read-order
+    ColumnRuns {}
+    // @rule read-order: a piece is a 4-connected component of
+    //  params.pipe_color, ordered by its columns, and its glyph is its bounding
+    //  box
+    // @witness diagonal-contact: foreign $ComponentPieces
+    //     @relaxed three-glyphs
+    //     @reassigned piece_glyph
+    //     @reassigned piece_paint
+    //     @reassigned piece_exit
+    // @witness diagonal-strip: foreign $ComponentPieces
+    //     @relaxed three-glyphs
+    //     @reassigned piece_glyph
+    //     @reassigned piece_paint
+    //     @reassigned piece_exit
+    // @witness rare-cell: foreign $ComponentPieces
+    //     @relaxed pieces-in-a-strip
+    //     @relaxed three-glyphs
+  | ComponentPieces {}
+    // @rule read-order: as $ComponentPieces, with 8-connected components
+    // @witness gapped-column: foreign $Components8
+    //     @relaxed pieces-in-a-strip
+    //     @relaxed three-glyphs
+    //     @reassigned piece_glyph
+    //     @reassigned piece_paint
+    //     @reassigned piece_exit
+    // @witness gapped-block: foreign $Components8
+    //     @relaxed pieces-in-a-strip
+    //     @relaxed three-glyphs
+    //     @reassigned piece_glyph
+    //     @reassigned piece_paint
+    //     @reassigned piece_exit
+  | Components8 {}
+
+// the output's row count
+.type OutHeight =
+    // @claim source-mark
+    StoredHeight {}
+    // @rule source-mark: the row count is one more than the pipe's total drop
+    //  along params.flow_dir
+    // @witness short-drop: variant $HeightFromPipe
+  | HeightFromPipe {}
+    // @rule source-mark: the row count is params.height_ratio times the
+    //  input's
+    // @witness tall-strip: variant $HeightFromPipe
+    //     @relaxed pieces-in-a-strip
+    //     @reassigned piece_glyph
+    //     @reassigned piece_paint
+    //     @reassigned piece_exit
+  | HeightFromInput {}
+    // @rule source-mark: the row count is the input's plus params.height_gap
+    // @witness tall-strip: variant $HeightFromPipe
+  | HeightFromInputDiff {}
+
+// the output's column count
+.type OutWidth =
+    // @claim source-mark
+    StoredWidth {}
+    // @rule source-mark: the column count is one more than twice the total
+    //  sideways run of the pipe's segments; undefined where params.source_at
+    //  falls outside it
+    // @witness five-steps: variant concept
+  | WidthFromSteps {}
+    // @rule source-mark: the column count is the input's less
+    //  params.width_gap; undefined where it is below 1 or params.source_at
+    //  falls outside it
+    // @witness five-steps: variant concept
+  | WidthFromInputDiff {}
+
+// the source's column
+.type SourcePlace =
+    // @claim source-mark
+    StoredSource {}
+    // @rule source-mark: the source is at the frame's center column;
+    //  undefined on a frame of even width
+    // @witness wide-frame: variant $SourceCentered
+    //     @reassigned out_dims
+  | SourceCentered {}
+
+.type Choice = [seg: Segment, parse: PieceParse, height: OutHeight,
+                width: OutWidth, source: SourcePlace]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant concept
+    .decl bg(c: Color) bg(0).
+    // @derive DominantColor: variant derived
+    //     @relaxed pieces-in-a-strip
+    // the color of the input pieces and of the output pipe
+    .decl pipe_color(c: Color) pipe_color(2).
+    .decl source_color(c: Color) source_color(3).
+    // the input edge the pieces are read from
+    .decl read_from(d: Dir) read_from(DIR_L).
+    // the direction the pipe runs from the source
+    .decl flow_dir(d: Dir) flow_dir(DIR_B).
+
+    // --- $StoredHeight, $StoredWidth ---
+    .decl out_dims(a: Axis, n: number) out_dims(AXIS_V, 8). out_dims(AXIS_H, 7).
+
+    // --- $StoredSource ---
+    // the source's distance from an edge across params.flow_dir
+    .decl source_at(d: Dir, k: number) source_at(DIR_L, 3).
+
+    // --- $TableSegments ---
+    // the glyph of each table entry, the offsets from its piece's start that
+    // it paints, and the offset of the next piece's start
+    .decl piece_glyph(id: Ident, p: Position)
+    .decl piece_paint(id: Ident, v: Offset)
+    .decl piece_exit(id: Ident, v: Offset)
+
+    GRID_MASK_2x1(piece_glyph, 0,
+        1,
+        1)
+    GRID_STAMP_3x1(piece_paint, 0,
+        @1,
+        1,
+        _)
+    GRID_STAMP_3x1(piece_exit, 0,
+        @_,
+        _,
+        1)
+
+    GRID_MASK_2x2(piece_glyph, 1,
+        1, _,
+        1, 1)
+    GRID_STAMP_2x2(piece_paint, 1,
+        @1, 1,
+        _, _)
+    GRID_STAMP_2x2(piece_exit, 1,
+        @_, _,
+        _, 1)
+
+    GRID_MASK_2x2(piece_glyph, 2,
+        _, 1,
+        1, 1)
+    GRID_STAMP_2x2(piece_paint, 2,
+        1, @1,
+        _, _)
+    GRID_STAMP_2x2(piece_exit, 2,
+        _, @_,
+        1, _)
+
+    // --- $FixedLengths ---
+    .decl run_length(k: number) run_length(2).
+
+    // --- $HeightFromInput ---
+    .decl height_ratio(k: number) height_ratio(4).
+
+    // --- $HeightFromInputDiff ---
+    .decl height_gap(k: number) height_gap(6).
+
+    // --- $WidthFromInputDiff ---
+    .decl width_gap(k: number) width_gap(5).
+}
+
+.init params = Params
+
+.decl segment_choice(s: Segment)
+segment_choice($TableSegments()).
+segment_choice($DerivedSegments($GlyphExtent())).
+segment_choice($DerivedSegments($FixedLengths())).
+
+.decl piece_parse_choice(pp: PieceParse)
+piece_parse_choice($ColumnRuns()). piece_parse_choice($ComponentPieces()).
+piece_parse_choice($Components8()).
+
+.decl out_height_choice(h: OutHeight)
+out_height_choice($StoredHeight()). out_height_choice($HeightFromPipe()).
+out_height_choice($HeightFromInput()). out_height_choice($HeightFromInputDiff()).
+
+.decl out_width_choice(w: OutWidth)
+out_width_choice($StoredWidth()). out_width_choice($WidthFromSteps()).
+out_width_choice($WidthFromInputDiff()).
+
+.decl source_place_choice(sp: SourcePlace)
+source_place_choice($StoredSource()). source_place_choice($SourceCentered()).
+
+// The segment and parse pairs that are not cases: where a derived segment is
+// defined, each column run is one 4-component and one 8-component, so the
+// component parses give its output and are defined on more inputs.
+.decl excluded_pair(sg: Segment, pp: PieceParse)
+excluded_pair($DerivedSegments(L), $ColumnRuns()) :- segment_choice($DerivedSegments(L)).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Sg, Pp, H, W, Sp]) :-
+    segment_choice(Sg), piece_parse_choice(Pp), !excluded_pair(Sg, Pp),
+    out_height_choice(H), out_width_choice(W), source_place_choice(Sp).
+
+// The pieces of a strip, in reading order, and the table entry of each piece's
+// glyph.
+.type KT = [k: PieceParse, t: Ident]
+
+.decl strip_cell(k: PieceParse, p: Position, col: Color)
+strip_cell(Pp, P, Col) :- in(P, Col), piece_parse_choice(Pp).
+
+// The cells whose box is the piece's glyph frame, supplied per parse.
+.decl piece_cell(k: PieceParse, t: Ident, p: Position)
+
+.decl piece(k: PieceParse, t: Ident)
+piece(K, T) :- piece_cell(K, T, _).
+
+// @claim three-glyphs
+.init piece_box = Bbox<KT>
+piece_box.cell([K, T], P) :- piece_cell(K, T, P).
+
+// A cell of the glyph frame, and the cells of it that hold the pipe color.
+.decl frame_cell(k: PieceParse, t: Ident, q: Position)
+frame_cell(K, T, Q) :- piece_cell(K, T, P), piece_box.box([K, T], B), crop(P, B, Q).
+
+.decl glyph_cell(k: PieceParse, t: Ident, q: Position)
+glyph_cell(K, T, Q) :-
+    piece_cell(K, T, P), strip_cell(K, P, Col), params.pipe_color(Col),
+    piece_box.box([K, T], B), crop(P, B, Q).
+
+// @claim read-order
+.init piece_order = OrderFrame<PieceParse, Ident>
+piece_order.axis(K, A) :- piece(K, _), params.read_from(D), axis_of(D, A).
+piece_order.member(K, T, L) :-
+    piece_cell(K, T, P), params.read_from(D), axis_of(D, A), split(P, A, L, _).
+
+.decl last_piece(k: PieceParse, t: Ident)
+last_piece(K, T) :-
+    piece_order.pos(K, T, P), params.read_from(D), opposite(D, D2), dist(P, D2, 0).
+
+// @claim lay-segments
+.init glyph_table = KeyedSetCompare<KT, Ident, Position>
+glyph_table.pattern_member(Id, Q) :- params.piece_glyph(Id, Q).
+glyph_table.observed_member([K, T], Q) :- glyph_cell(K, T, Q).
+
+.decl entry(k: PieceParse, t: Ident, id: Ident)
+entry(K, T, Id) :- glyph_table.equals([K, T], Id).
+
+// --- $ColumnRuns ---
+
+// A run of lines across params.read_from that hold the pipe color.
+// @claim read-order
+.init runs = Components<Unit>
+runs.node($U(), L) :-
+    in(P, Col), params.pipe_color(Col),
+    params.read_from(D), axis_of(D, A), split(P, A, L, _).
+
+piece_cell($ColumnRuns(), T, P) :-
+    in(P, _), params.read_from(D), axis_of(D, A), split(P, A, L, _),
+    runs.label($U(), L, T).
+
+// --- $ComponentPieces ---
+
+// @claim read-order
+.init comps4 = Components<Unit>
+comps4.node($U(), P) :- in(P, Col), params.pipe_color(Col).
+
+piece_cell($ComponentPieces(), T, P) :- comps4.label($U(), P, T).
+
+// --- $Components8 ---
+
+// @claim read-order
+.init comps8 = Components8<Unit>
+comps8.node($U(), P) :- in(P, Col), params.pipe_color(Col).
+
+piece_cell($Components8(), T, P) :- comps8.label($U(), P, T).
+
+// --- the segment each piece lays ---
+
+// A piece parse with a segment reading: the pieces and their segments.
+.type Walk = [seg: Segment, parse: PieceParse]
+
+.decl walk_choice(kw: Walk)
+walk_choice([Sg, Pp]) :- segment_choice(Sg), piece_parse_choice(Pp).
+
+// The offsets from its start that a piece paints, and the offset of the next
+// piece's start.
+.decl paint(kw: Walk, t: Ident, v: Offset)
+.decl exit(kw: Walk, t: Ident, v: Offset)
+
+// --- $TableSegments ---
+
+paint([$TableSegments(), Pp], T, V) :- entry(Pp, T, Id), params.piece_paint(Id, V).
+exit([$TableSegments(), Pp], T, V) :- entry(Pp, T, Id), params.piece_exit(Id, V).
+
+// --- $DerivedSegments ---
+
+// The two edges on the read axis.
+.decl read_edge(e: Dir)
+read_edge(E) :- params.read_from(D), axis_of(D, A), axis_of(E, A).
+
+// A glyph frame cell off the line of an edge on the read axis.
+.decl wide(pp: PieceParse, t: Ident)
+wide(Pp, T) :- frame_cell(Pp, T, Q), read_edge(E), !dist(Q, E, 0).
+
+// A glyph frame cell that does not hold the pipe color.
+.decl blank(pp: PieceParse, t: Ident)
+blank(Pp, T) :- frame_cell(Pp, T, Q), !glyph_cell(Pp, T, Q).
+
+// One line wide on the read axis, every cell filled.
+.decl bar(pp: PieceParse, t: Ident)
+bar(Pp, T) :- piece(Pp, T), !wide(Pp, T), !blank(Pp, T).
+
+// A frame cell that breaks the L with its full line on side E: a filled cell
+// off that line and off the row on the flow side, or a blank cell on either.
+.decl ell_defect(pp: PieceParse, t: Ident, e: Dir)
+ell_defect(Pp, T, E) :-
+    frame_cell(Pp, T, Q), read_edge(E), params.flow_dir(F),
+    ( glyph_cell(Pp, T, Q), !dist(Q, E, 0), !dist(Q, F, 0)
+    ; !glyph_cell(Pp, T, Q), dist(Q, E, 0)
+    ; !glyph_cell(Pp, T, Q), dist(Q, F, 0)
+    ).
+
+// An L whose full line is on side E.
+.decl ell(pp: PieceParse, t: Ident, e: Dir)
+ell(Pp, T, E) :-
+    piece(Pp, T), wide(Pp, T), read_edge(E), !ell_defect(Pp, T, E).
+
+// The direction a piece's run takes: a bar's along the flow, an L's away from
+// its full line.
+.decl run_dir(pp: PieceParse, t: Ident, r: Dir)
+run_dir(Pp, T, F) :- bar(Pp, T), params.flow_dir(F).
+run_dir(Pp, T, R) :- ell(Pp, T, E), opposite(E, R).
+
+// The run's cells by index from its start, and the index of its end.
+.decl run(kw: Walk, t: Ident, k: number)
+.decl run_last(kw: Walk, t: Ident, k: number)
+
+paint([$DerivedSegments(L), Pp], T, V) :-
+    run([$DerivedSegments(L), Pp], T, K), run_dir(Pp, T, R), jump_offset(R, K, V).
+exit([$DerivedSegments(L), Pp], T, V) :-
+    run_last([$DerivedSegments(L), Pp], T, K), run_dir(Pp, T, R),
+    jump_offset(R, K, V1),                                // the run's end
+    params.flow_dir(F), step_offset(F, V2), compose(V1, V2, V).
+
+// --- $GlyphExtent ---
+
+// The glyph cells the run copies: a bar's every cell, an L's flow-side row.
+.decl run_cell(pp: PieceParse, t: Ident, q: Position)
+run_cell(Pp, T, Q) :- bar(Pp, T), glyph_cell(Pp, T, Q).
+run_cell(Pp, T, Q) :- ell(Pp, T, _), glyph_cell(Pp, T, Q), params.flow_dir(F), dist(Q, F, 0).
+
+run([$DerivedSegments($GlyphExtent()), Pp], T, K) :-
+    run_cell(Pp, T, Q), run_dir(Pp, T, R), opposite(R, R0), dist(Q, R0, K).
+run_last([$DerivedSegments($GlyphExtent()), Pp], T, K) :-
+    run_cell(Pp, T, Q), run_dir(Pp, T, R), dist(Q, R, 0), opposite(R, R0), dist(Q, R0, K).
+
+// --- $FixedLengths ---
+
+.init fixed = AxisFrame<Unit>
+fixed.extent($U(), A, N) :- params.run_length(N), params.flow_dir(F), axis_of(F, A).
+
+// The indices of a run of params.run_length, and its end.
+.decl fixed_index(k: number)
+fixed_index(K) :- fixed.cell($U(), _, C), params.flow_dir(F), dist(C, F, K).
+
+// @ignore: common-subexpr — the run's end is one of its indices
+.decl fixed_last(k: number)
+fixed_last(K) :-
+    fixed.cell($U(), _, C), params.flow_dir(F), dist(C, F, K), opposite(F, F0), dist(C, F0, 0).
+
+run([$DerivedSegments($FixedLengths()), Pp], T, K) :- run_dir(Pp, T, _), fixed_index(K).
+run_last([$DerivedSegments($FixedLengths()), Pp], T, K) :- run_dir(Pp, T, _), fixed_last(K).
+
+// --- the walk ---
+
+// A piece with no segment leaves the pipe undefined.
+.decl broken(kw: Walk)
+broken([Sg, Pp]) :- walk_choice([Sg, Pp]), piece(Pp, T), !exit([Sg, Pp], T, _).
+
+// The cells of each piece's exit toward each edge it moves toward.
+.type StepKey = [kw: Walk, t: Ident, d: Dir]
+
+.init exit_steps = AxisFrame<StepKey>
+exit_steps.extent([Kw, T, D], A, K) :-
+    exit(Kw, T, X), dir_elem(D), opposite(D, D0), dist(X, D0, K), K > 0, axis_of(D, A).
+
+.type StepUnit = [t: Ident, c: Position]
+
+// The exit steps toward each edge of the pieces before a piece.
+// @claim lay-segments
+.init pen_steps = Tally<StepKey, StepUnit>
+pen_steps.item([[Sg, Pp], T2, D], [T, C]) :-
+    exit_steps.cell([[Sg, Pp], T, D], _, C),
+    params.read_from(R), piece_order.nearer(Pp, R, T, T2).
+pen_steps.domain([[Sg, Pp], T, D]) :- segment_choice(Sg), piece(Pp, T), dir_elem(D).
+
+.decl pen_move(kw: Walk, t: Ident, d: Dir, v: Offset)
+pen_move(Kw, T, D, V) :- pen_steps.tally([Kw, T, D], N), jump_offset(D, N, V).
+
+// A piece's start, as an offset from the source: one step along the flow,
+// then the exits of the pieces before it.
+.decl pen(kw: Walk, t: Ident, v: Offset)
+pen(Kw, T, V) :-
+    params.flow_dir(F), opposite(F, F0), perp_dir(F, D), opposite(D, D0),
+    pen_move(Kw, T, F, V1), pen_move(Kw, T, F0, V2),
+    pen_move(Kw, T, D, V3), pen_move(Kw, T, D0, V4),
+    neighbor(V1, F, W1), compose(W1, V2, W2), compose(W2, V3, W3), compose(W3, V4, V).
+
+// The pipe's cells, as offsets from the source.
+.decl pipe(kw: Walk, v: Offset)
+pipe(Kw, W) :- pen(Kw, T, V), paint(Kw, T, Y), compose(V, Y, W).
+
+// --- the frame ---
+
+// The frame's extent along the flow, and across it.
+.decl height(kw: Walk, h: OutHeight, n: number)
+.decl width(kw: Walk, w: OutWidth, n: number)
+
+// --- $StoredHeight ---
+height(Kw, $StoredHeight(), N) :-
+    walk_choice(Kw), params.flow_dir(F), axis_of(F, A), params.out_dims(A, N).
+
+// --- $HeightFromPipe ---
+
+// Where the pen stands after the last piece: past the last piece's exit, or
+// at the first start where there is no piece.
+.decl pen_end(kw: Walk, v: Offset)
+pen_end([Sg, Pp], V) :-
+    pen([Sg, Pp], T, V0), last_piece(Pp, T),
+    exit([Sg, Pp], T, X), compose(V0, X, V).
+pen_end([Sg, Pp], V) :-
+    walk_choice([Sg, Pp]), !piece(Pp, _), params.flow_dir(F), step_offset(F, V).
+
+height(Kw, $HeightFromPipe(), N) :-
+    pen_end(Kw, V), params.flow_dir(F), opposite(F, F0), dist(V, F0, N).
+
+// --- $HeightFromInput ---
+
+.init ratio = AxisFrame<Unit>
+ratio.extent($U(), A, N) :- params.height_ratio(N), params.flow_dir(F), axis_of(F, A).
+
+// Each input line along the flow, cut into params.height_ratio lines.
+height(Kw, $HeightFromInput(), N) :-
+    walk_choice(Kw), in(P, _), params.flow_dir(F), axis_of(F, A), split(P, A, L, _),
+    ratio.cell($U(), A, C), concat(L, C, A, 0, P_grid), axis_dim(P_grid, A, N).
+
+// --- $HeightFromInputDiff ---
+height(Kw, $HeightFromInputDiff(), N) :-
+    walk_choice(Kw), in(P, _), params.flow_dir(F), axis_of(F, A),
+    params.height_gap(G), edge_outset(F, G, B), box_extent(B, P, A, N).
+
+// --- $StoredWidth ---
+width(Kw, $StoredWidth(), N) :-
+    walk_choice(Kw), params.flow_dir(F), perp_dir(F, D), axis_of(D, A), params.out_dims(A, N).
+
+// --- $WidthFromSteps ---
+
+// A piece with the key of its sideways run.
+.type WalkPiece = [kw: Walk, t: Ident]
+
+// The cells of each piece's sideways run.
+.init sideways = AxisFrame<WalkPiece>
+sideways.extent([Kw, T], A, K) :-
+    exit(Kw, T, X), params.flow_dir(F), perp_dir(F, D), dist(X, D, K), K > 0, axis_of(D, A).
+
+// @claim source-mark
+.init steps = Tally<Walk, StepUnit>
+steps.item(Kw, [T, C]) :- sideways.cell([Kw, T], _, C).
+steps.domain(Kw) :- walk_choice(Kw).
+
+// A line along the flow, widened by the total sideways run on each side.
+width(Kw, $WidthFromSteps(), N) :-
+    steps.tally(Kw, S), in(P, _), params.flow_dir(F), axis_of(F, A), split(P, A, L, _),
+    perp_dir(F, D), axis_outset(D, S, S, B), axis_of(D, A2), box_extent(B, L, A2, N).
+
+// --- $WidthFromInputDiff ---
+width(Kw, $WidthFromInputDiff(), N) :-
+    walk_choice(Kw), in(P, _), params.flow_dir(F), perp_dir(F, D), axis_of(D, A),
+    params.width_gap(G), edge_inset(D, G, B), box_extent(B, P, A, N).
+
+// --- every case ---
+
+.init frame = Frame2D<Choice>
+frame.extent([Sg, Pp, H, W, Sp], A, N) :-
+    impl_choice([Sg, Pp, H, W, Sp]), height([Sg, Pp], H, N),
+    params.flow_dir(F), axis_of(F, A).
+frame.extent([Sg, Pp, H, W, Sp], A, N) :-
+    impl_choice([Sg, Pp, H, W, Sp]), width([Sg, Pp], W, N),
+    params.flow_dir(F), perp_dir(F, D), axis_of(D, A).
+
+// The source: on the frame edge opposite the flow.
+.decl source(ch: Choice, p: Position)
+
+// --- $StoredSource ---
+source([Sg, Pp, H, W, $StoredSource()], P) :-
+    frame.cell([Sg, Pp, H, W, $StoredSource()], P),
+    params.flow_dir(F), opposite(F, F0), dist(P, F0, 0),
+    params.source_at(D, K), dist(P, D, K).
+
+// --- $SourceCentered ---
+source([Sg, Pp, H, W, $SourceCentered()], P) :-
+    frame.cell([Sg, Pp, H, W, $SourceCentered()], P),
+    params.flow_dir(F), opposite(F, F0), dist(P, F0, 0),
+    perp_dir(F, D), dist_pair(P, D, K, K).
+
+// --- every case ---
+
+out(P, Col, [Sg, Pp, H, W, Sp]) :-
+    frame.cell([Sg, Pp, H, W, Sp], P), source([Sg, Pp, H, W, Sp], S),
+    !broken([Sg, Pp]), relative(S, P, V),
+    ( P = S, params.source_color(Col)
+    ; P != S, pipe([Sg, Pp], V), params.pipe_color(Col)
+    ; P != S, !pipe([Sg, Pp], V), params.bg(Col)
+    ).
+
+.comp Determine {
+    .decl drawn(e: Example)
+    drawn(E) :- ex_out(E, _, _).
+
+    .decl source_cell(e: Example, p: Position)
+    source_cell(E, P) :- ex_out(E, P, Col), params.source_color(Col).
+
+    // --- flow_dir: the source's neighbor in the pipe color ---
+
+    .decl flow_ok(e: Example, d: Dir)
+    flow_ok(E, D) :-
+        source_cell(E, P), dir_elem(D), neighbor(P, D, Q),
+        ex_out(E, Q, Col), params.pipe_color(Col).
+
+    .decl flow_defect(d: Dir)
+    flow_defect(D) :- dir_elem(D), drawn(E), !flow_ok(E, D).
+
+    .decl flow_dir(d: Dir)
+    flow_dir(D) :- dir_elem(D), !flow_defect(D).
+
+    // --- source_at: the source's distance from an edge across the flow ---
+
+    .decl source_cand(d: Dir, k: number)
+    source_cand(D, K) :-
+        source_cell(_, P), flow_dir(F), perp_dir(F, D),
+        params.read_from(D),                                  // measured from the read edge
+        dist(P, D, K).
+
+    .decl source_defect(d: Dir, k: number)
+    source_defect(D, K) :- source_cand(D, K), source_cell(E, P), !dist(P, D, K), drawn(E).
+
+    .decl source_at(d: Dir, k: number)
+    source_at(D, K) :- source_cand(D, K), !source_defect(D, K).
+}

@@ -28,10 +28,7 @@
     // @witness short-anti-shift: variant concept
   | LeastPeriodDiagonal {}
 
-.type AnchorEdgeValue = [d: Dir]
-.type OpenValue = [anchor_edge: AnchorEdgeValue]
-
-.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -41,8 +38,7 @@
     .decl scale(n: number) scale(2).
 
     // The output edge the input touches.
-    // @open
-    .decl anchor_edge(d: Dir) anchor_edge(DIR_T). anchor_edge(DIR_L).
+    .decl anchor_edge(d: Dir) anchor_edge(DIR_T).
 }
 
 .init params = Params
@@ -77,7 +73,7 @@ period.cand(DA, K) :- shift(K), diag_axis_elem(DA), !mismatch(DA, K).
 // The diagonal each case takes as the band's.
 .decl band_axis(ch: Choice, da: DiagAxis)
 
-// The output corner the input sits at, for each anchor edge, with the
+// The output corner the input sits at, on the anchor edge, with the
 // band's period.
 .decl course(ch: Choice, e: Dir, c: DiagDir, k: number)
 course(Ch, E, C, K) :-
@@ -99,7 +95,7 @@ reach(Ch, E, Q, Col) :-
     dist(P, E, S), stride(S, K, 0, _, R),            // p's place within the period
     dist(Q, E, T), S <= T, stride(T, K, 0, _, R).    // q at that place, no nearer the corner
 
-out(Q, Col, Ch, [[E]]) :-
+out(Q, Col, Ch) :-
     course(Ch, E, _, _), out_cell(Q),
     ( reach(Ch, E, Q, Col)
     ; !reach(Ch, E, Q, _), params.background(Col)

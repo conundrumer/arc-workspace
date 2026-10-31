@@ -13,7 +13,6 @@
     - `$SquareFigureFrame`: replaces `output-is-largest-box`. The output is the bounding box of the largest figure whose bounding box is a square, and marks that fall outside it are dropped. It has no parameters. It is undefined where no figure's bounding box is a square, and where the concept is undefined. It fits every pair. Witness `rectangle-outgrows-square`: it breaks `largest-figure-is-square`, and it stands at the stored assignment. Plausibility `borderline`, verdict `$UnionFrame`. It breaks the invariant that the square figure is at least as wide and as tall as every other figure.
 - `background`
     - `concept`: the background is the most common color of the input.
-    - `$CornerBackground`: replaces how `plain-background` finds the background color. The background is the color of the top-left cell. It has no parameters, and it is undefined where the concept is. It fits every pair. Witness `mark-on-corner`: it breaks no scene claim, and it stands at the stored assignment. Plausibility `ordinary`, verdict `concept`.
     - `$StoredBackground`: replaces how `plain-background` finds the background color. A stored parameter gives the background color. It fails Fit at train1, whose background is 1, while train0's background is 3.
 - `output-frame` & `background`: the two branches' changes applied together
 

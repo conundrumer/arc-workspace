@@ -15,9 +15,9 @@
     CenterRings {}
     // @scene square-odd: the grid may have any shape, and its rings are the
     //  cells at each distance from the nearest grid edge
-    // @witness wide-grid: borderline $DepthRings & $EmptyBg & $ScanLast
+    // @witness wide-grid: borderline $DepthRings & $EmptyBg
     //     @relaxed square-odd
-    // @witness long-grid: borderline $DepthRings & $EmptyBg & $ScanLast
+    // @witness long-grid: borderline $DepthRings & $EmptyBg
     //     @relaxed square-odd
   | DepthRings {}
 
@@ -35,48 +35,19 @@
     // @witness empty-ring: borderline $EmptyBg
   | RankRings {}
 
-// what a ring with two marks gets
-.type Shared =
-    // @claim one-mark-per-ring
-    OneMark {}
-    // @rule fill-ring: a ring takes the color of its mark that comes last in
-    //  the scan from the corner of a params.scan_order along its axis first.
-    //  Each open scan order gives its own output.
-    // @witness shared-color: borderline $ScanLast
-    //     @relaxed one-mark-per-ring
-    // @witness mixed-ring: borderline $ScanLast
-    //     @relaxed one-mark-per-ring
-    //     @reassigned scan_order
-  | ScanLast {}
+.type Choice = [rings: Rings, unmarked: Unmarked]
 
-.type Choice = [rings: Rings, unmarked: Unmarked, shared: Shared]
-
-// A ring under one geometry.
-.type Ring = [g: Rings, k: number]
-
-// A ring under one scan order.
-.type Scan = [ring: Ring, c: DiagDir, a: Axis]
-
-.type ScanOrderValue = [d: DiagDir, a: Axis]
-.type OpenValue = [scan_order: ScanOrderValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
     //     @relaxed one-mark-per-ring
     // @ignore: derive concept — wherever it is defined, it gives the output of
-    //  the EmptyBg & ScanLast copy
+    //  the $EmptyBg case
+    // @ignore: derive $EmptyBg — it is equivalent to $EmptyBg with the stored
+    //  bg: on a square odd grid where the stored bg gives an output, the stored
+    //  bg is the dominant color, and a 1x1 grid gives one output under both
     .decl bg(c: Color) bg(7).
-
-    // --- $ScanLast ---
-    // the scan starts at this corner and runs along this axis first
-    // @open
-    .decl scan_order(d: DiagDir, a: Axis)
-    scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
-    scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).
-    scan_order(DIAG_BL, AXIS_V). scan_order(DIAG_BL, AXIS_H).
-    scan_order(DIAG_BR, AXIS_V). scan_order(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
@@ -87,18 +58,10 @@ rings_choice($CenterRings()). rings_choice($DepthRings()).
 .decl unmarked_choice(u: Unmarked)
 unmarked_choice($EmptyBg()). unmarked_choice($RankRings()).
 
-// The concept case, and the combinations no other case subsumes. Each
-// non-concept case with NeedsMark gives its EmptyBg twin's output wherever
-// it is defined, and with OneMark its ScanLast twin's.
+// The concept case, and each geometry with each non-concept unmarked branch.
 .decl impl_choice(ch: Choice)
-impl_choice([$CenterRings(), $NeedsMark(), $OneMark()]).
-impl_choice([G, U, $ScanLast()]) :- rings_choice(G), unmarked_choice(U).
-
-.decl shared_choice(s: Shared)
-shared_choice($OneMark()). shared_choice($ScanLast()).
-
-.decl mark(p: Position, col: Color)
-mark(P, Col) :- in(P, Col), !params.bg(Col).
+impl_choice([$CenterRings(), $NeedsMark()]).
+impl_choice([G, U]) :- rings_choice(G), unmarked_choice(U).
 
 .decl ring(g: Rings, p: Position, k: number)
 
@@ -117,51 +80,31 @@ ring($DepthRings(), P, K) :-
 
 // --- shared ---
 .decl mark_ring(g: Rings, k: number, p: Position, col: Color)
-mark_ring(G, K, P, Col) :- mark(P, Col), ring(G, P, K).
+mark_ring(G, K, P, Col) :- in(P, Col), !params.bg(Col), ring(G, P, K).  // a mark: a cell not of params.bg
 
 .decl marked(g: Rings, k: number)
 marked(G, K) :- mark_ring(G, K, _, _).
 
-// The color of ring K under shared reading S, at open value V.
-.decl ring_color(g: Rings, s: Shared, k: number, v: OpenValue, col: Color)
-
-// The open values shared reading S reads.
-.decl open_value(s: Shared, v: OpenValue)
-
-// --- $OneMark ---
 .decl crowded(g: Rings, k: number)
 crowded(G, K) :- mark_ring(G, K, P, _), mark_ring(G, K, Q, _), P != Q.
 
-ring_color(G, $OneMark(), K, [nil], Col) :- mark_ring(G, K, _, Col), !crowded(G, K).
-open_value($OneMark(), [nil]).
+// The color of ring K: the color of its one mark.
+.decl ring_color(g: Rings, k: number, col: Color)
+ring_color(G, K, Col) :- mark_ring(G, K, _, Col), !crowded(G, K).
 
-// --- $ScanLast ---
-// @claim fill-ring
-// @ignore rank: store — the program reads only the last mark of the scan, not the ranks
-.init scan = LexOrder<Scan>
-scan.cell([[G, K], C, A], P) :-
-    mark_ring(G, K, P, _), params.scan_order(C, A).
-scan.corner([Ri, C, A], C) :- scan.cell([Ri, C, A], _).
-scan.axis([Ri, C, A], A) :- scan.cell([Ri, C, A], _).
-
-// The last mark's color under each open scan order.
-ring_color(G, $ScanLast(), K, [[C, A]], Col) :- scan.last([[G, K], C, A], P), mark(P, Col).
-open_value($ScanLast(), [[C, A]]) :- params.scan_order(C, A).
-
-// --- shared ---
 // The output under one geometry, and the cells its frame holds.
-.decl draw(g: Rings, u: Unmarked, s: Shared, v: OpenValue, p: Position, col: Color)
+.decl draw(g: Rings, u: Unmarked, p: Position, col: Color)
 .decl frame(g: Rings, u: Unmarked, p: Position)
 
 // --- $NeedsMark ---
-draw(G, $NeedsMark(), S, V, P, Col) :- ring(G, P, K), ring_color(G, S, K, V, Col).
+draw(G, $NeedsMark(), P, Col) :- ring(G, P, K), ring_color(G, K, Col).
 frame(G, $NeedsMark(), P) :- ring(G, P, _).
 
 // --- $EmptyBg ---
-draw(G, $EmptyBg(), S, V, P, Col) :-
-    ring(G, P, K), shared_choice(S),
-    ( ring_color(G, S, K, V, Col)
-    ; !marked(G, K), params.bg(Col), V = [nil] ).
+draw(G, $EmptyBg(), P, Col) :-
+    ring(G, P, K),
+    ( ring_color(G, K, Col)
+    ; !marked(G, K), params.bg(Col) ).
 frame(G, $EmptyBg(), P) :- ring(G, P, _).
 
 // --- $RankRings ---
@@ -201,18 +144,15 @@ canvas(G, P) :-
     axis_of(D1, A), perp(A, A2), axis_of(D2, A2),
     jump(C, D1, K1, Q), jump(Q, D2, K2, P).
 
-draw(G, $RankRings(), S, V, P, Col) :-
+draw(G, $RankRings(), P, Col) :-
     canvas(G, P),
     outer_rank(G, K, J), uniform_inset(J, B), box_edge(P, B, _),  // on the Jth ring from outside
-    ring_color(G, S, K, V, Col).
+    ring_color(G, K, Col).
 frame(G, $RankRings(), P) :- canvas(G, P).
 
 // --- shared ---
-// The geometry leaves a cell of its frame without a color at some open
-// value.
-.decl blank(g: Rings, u: Unmarked, s: Shared)
-blank(G, U, S) :-
-    frame(G, U, P), open_value(S, V),
-    !draw(G, U, S, V, P, _), !draw(G, U, S, [nil], P, _).
+// The geometry leaves a cell of its frame without a color.
+.decl blank(g: Rings, u: Unmarked)
+blank(G, U) :- frame(G, U, P), !draw(G, U, P, _).
 
-out(P, Col, [G, U, S], V) :- impl_choice([G, U, S]), draw(G, U, S, V, P, Col), !blank(G, U, S).
+out(P, Col, [G, U]) :- impl_choice([G, U]), draw(G, U, P, Col), !blank(G, U).

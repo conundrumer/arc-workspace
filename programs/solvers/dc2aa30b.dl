@@ -1,0 +1,142 @@
+// dc2aa30b
+// @draft
+// @keywords: decompose count rank tile-arrangement
+// @scene divider-board: full rows and columns of params.divider_color (0),
+//  each one cell wide, cut the grid into 3 × 3 tiles of 3 × 3 cells
+// @scene distinct-counts: no two tiles hold the same number of
+//  params.counted_color cells
+// @rule keep-dividers: the divider lines stay where they are in the output
+// @rule rank-by-count: each tile is ranked by its number of
+//  params.counted_color cells, from fewest to most
+// @rule place-by-rank: the tile of each rank is copied whole, unchanged, into
+//  the slot of the same rank in the slot order, which starts at the
+//  params.order_corner slot and runs along params.fill_axis first, then steps
+//  to the next line of slots away from that corner
+
+// the output where two tiles hold one count of params.counted_color
+.type Choice =
+    // @claim distinct-counts
+    TieUndefined {}
+    // @rule rank-by-count: tiles that tie take their run of rank slots in
+    //  every order, and the output holds the grid of each order
+    // @witness tied-counts: borderline $TieAnyOrder
+    //     @relaxed distinct-counts
+  | TieAnyOrder {}
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Position, item: Position, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive SharedColor: variant derived
+    //     @relaxed divider-board
+    // @ignore: derive VanishedColor — in a run on one input it derives every
+    //  color of that input, as SharedColor does, so its model is equivalent
+    .decl divider_color(c: Color) divider_color(0).
+    .decl counted_color(c: Color) counted_color(1).
+
+    // The slot that takes the tile with the fewest counted cells.
+    .decl order_corner(d: DiagDir) order_corner(DIAG_BL).
+
+    // The axis the slot order runs along within one line of slots, before it
+    // steps to the next line.
+    .decl fill_axis(a: Axis) fill_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($TieUndefined()). impl_choice($TieAnyOrder()).
+
+// --- the board ---
+
+// The color of each line that holds one color alone.
+.comp Parse<Key> {
+    // A full line of the grid: its axis, and its place on that axis.
+    .type Line = [key: Key, a: Axis, l: Position]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // @ignore value: store — params.divider_color is the stored value this
+    //  color is compared with
+    // @claim divider-board
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// @store divider: variant stored
+//     @relaxed divider-board
+// @claim divider-board keep-dividers
+.init tiling = DividerTiles<Unit>
+tiling.cell($U(), P) :- in(P, _).
+tiling.divider($U(), A, L) :- parse.line_color.value([$U(), A, L], Col), params.divider_color(Col).
+
+// @claim place-by-rank
+.init tile_box = Bbox<Position>
+tile_box.cell(P_tile, P) :- tiling.tile_of($U(), P, P_tile).
+
+// A tile cell, with its tile and its place in that tile's frame.
+.decl tile_cell(p_tile: Position, p: Position, p_intile: Position)
+tile_cell(P_tile, P, P_intile) :-
+    tiling.tile_of($U(), P, P_tile), tile_box.box(P_tile, B), crop(P, B, P_intile).
+
+// --- the ranks ---
+
+// @claim rank-by-count
+.init counted = Tally<Position, Position>
+counted.item(P_tile, P) :- tiling.tile_of($U(), P, P_tile), in(P, Col), params.counted_color(Col).
+counted.domain(P_tile) :- tile_box.box(P_tile, _).
+
+// @claim rank-by-count
+.init by_count = Order<Unit, Position>
+by_count.elem($U(), P_tile) :- counted.tally(P_tile, _).
+by_count.score($U(), P_tile, N) :- counted.tally(P_tile, N).
+
+// @claim place-by-rank
+.init slots = LexOrder<Unit>
+slots.corner($U(), D) :- params.order_corner(D).
+slots.axis($U(), A2) :- params.fill_axis(A), perp(A, A2).
+slots.cell($U(), P_tile) :- tile_box.box(P_tile, _).
+
+// The tile each slot takes, under each resolution of a tie.
+.init ties = TiebreakResolutions<Choice, Position, Position>
+
+out(P, Col, Ch, Res) :- ties.resolution(Ch, Res), in(P, Col), tiling.on_divider($U(), P, _).
+out(P, Col, Ch, Res) :-
+    tile_cell(S, P, P_intile), ties.assign(Ch, Res, S, T),   // slot S takes tile T
+    tile_cell(T, Q, P_intile), in(Q, Col).
+
+// --- $TieUndefined ---
+
+// A slot takes the tile of its rank. Where two tiles share a rank, a slot
+// takes none, and the output is not total.
+ties.cand($TieUndefined(), S, T) :-
+    slots.rank($U(), S, R), by_count.rank($U(), T, R).
+
+// --- $TieAnyOrder ---
+
+// A slot takes each tile that has no more tiles before it than the slot has,
+// and no more after it.
+ties.cand($TieAnyOrder(), S, T) :-
+    slots.rank($U(), S, R1), by_count.rank($U(), T, R2), R2 <= R1,
+    slots.rank_desc($U(), S, K1), by_count.rank_desc($U(), T, K2), K2 <= K1.
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The colors that fill some full line of an example input.
+    .decl lined(e: Example, col: Color)
+    lined(E, Col) :- ex.line_color.value([E, _, _], Col), ex_out(E, _, _).
+
+    // A color that fills no full line of some example input.
+    .decl unlined(col: Color)
+    unlined(Col) :- lined(_, Col), ex_out(E, _, _), !lined(E, Col).
+
+    .decl divider_color(c: Color)
+    divider_color(Col) :- lined(_, Col), !unlined(Col).
+}

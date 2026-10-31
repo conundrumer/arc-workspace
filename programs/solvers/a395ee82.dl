@@ -438,7 +438,6 @@ out(P, Col, Ch) :-
     ).
 
 .comp Determine {
-    // @workaround: no determination of stamp_gap, so that a proposer and the fit give it, once the joint enumeration of stamp_gap and dot_step is within the plan's limit
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
@@ -467,6 +466,8 @@ out(P, Col, Ch) :-
     .decl gap_defect(g: number)
     gap_defect(G) :- ex_out(E, Q, S), shape_cell(E, _, S), gap(E, G), !covered(E, G, Q).
 
+    // @ignore: determine prediction — the gap is the spacing of the output's copies
+    //  of the input's shape, so no fact of one side gives it
     .decl stamp_gap(k: number)
     stamp_gap(G) :- gap(E, G), ex_out(E, _, _), !gap_defect(G).
 }

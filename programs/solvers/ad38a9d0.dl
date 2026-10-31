@@ -4,10 +4,10 @@
 // @scene field: a field of 7 holds separate pieces of fg, each a 4-connected
 //  component of fg
 // @scene known-shapes: each piece's shape, read up to translation and an
-//  element of shape_sym, is a key of shape_color
+//  element of each value of shape_sym, is a key of shape_color
 // @rule recolor-by-shape: each fg cell takes the color shape_color gives the
-//  key its piece's shape matches under shape_sym; every other cell keeps its
-//  color
+//  key its piece's shape matches under each value of shape_sym; every other
+//  cell keeps its color; undefined where the values of shape_sym disagree
 
 // which cells make up a piece
 .type Cells =
@@ -16,8 +16,9 @@
     // @scene field: a field of bg holds separate pieces, each a 4-connected
     //  component of the cells other than bg, whatever their color
     // @rule recolor-by-shape: each cell other than bg takes the color
-    //  shape_color gives the key its piece's shape matches under shape_sym;
-    //  every bg cell keeps its color
+    //  shape_color gives the key its piece's shape matches under each value of
+    //  shape_sym; every bg cell keeps its color; undefined where the values of
+    //  shape_sym disagree
     // @witness other-color-piece: borderline $NonBgCells
     //     @relaxed field
   | NonBgCells {split: Split}
@@ -37,9 +38,10 @@
     // @claim known-shapes
     ShapeKey {}
     // @scene known-shapes: each piece's cell count and bounding-box extents,
-    //  read up to an element of shape_sym, are a key of box_key
+    //  read up to an element of each value of shape_sym, are a key of box_key
     // @rule recolor-by-shape: each piece's cells take the color box_key_color
-    //  gives the key its count and extents match under shape_sym
+    //  gives the key its count and extents match under each value of
+    //  shape_sym; undefined where the values of shape_sym disagree
     // @witness t-tetromino: borderline concept
     //     @relaxed known-shapes
   | SizeBoxKey {}
@@ -50,21 +52,18 @@
     KeyedOnly {}
     // @scene known-shapes: dropped; a piece may match no key
     // @rule recolor-by-shape: a piece that matches no key keeps its color;
-    //  undefined where keys of two colors match one piece
+    //  undefined where keys of two colors match one piece, or where the values
+    //  of shape_sym disagree
     // @witness t-tetromino: borderline concept
   | KeepUnknown {}
 
 .type Choice = [cells: Cells, key: KeyForm, unknown: Unknown]
 
-.type SymValue = [s: Sym]
-.type OpenValue = [shape_sym: SymValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // The subgroup of D4 under which a piece's shape matches a key. The pairs
-    // separate none of these values.
-    // @open
+    // The subgroups of D4 under which a piece's shape matches a key. A case
+    // reads each of them.
     .decl shape_sym(s: Sym)
     shape_sym(SYM_1). shape_sym(SYM_C4). shape_sym(SYM_D4).
 
@@ -213,12 +212,16 @@ impl_choice([S, K, $KeepUnknown()]) :- cells_choice(S), key_form_choice(K).
 paint(Sym, P, Col, [S, K, U]) :-
     parse.piece(S, Id, P), keyed(Sym, S, Id, Col, K), impl_choice([S, K, U]).
 
-// A piece cell takes the color each value of shape_sym paints it.
-out(P, Col, Ch, [[Sym]]) :- paint(Sym, P, Col, Ch).
+// Some value of shape_sym paints a piece cell a color another value does not.
+.decl disagree(ch: Choice)
+disagree(Ch) :- paint(Sym, P, Col, Ch), params.shape_sym(Sym2), !paint(Sym2, P, Col, Ch).
+
+// A piece cell takes the color every value of shape_sym paints it.
+out(P, Col, Ch) :- paint(_, P, Col, Ch), !disagree(Ch).
 
 // Every other cell keeps its color.
-out(P, Col, [S, K, U], [[Sym]]) :-
-    in(P, Col), impl_choice([S, K, U]), !parse.piece(S, _, P), params.shape_sym(Sym).
+out(P, Col, [S, K, U]) :-
+    in(P, Col), impl_choice([S, K, U]), !parse.piece(S, _, P), !disagree([S, K, U]).
 
 // --- $FgPieces ---
 

@@ -1,0 +1,227 @@
+// ce602527
+// @draft
+// @keywords: color-class scale crop select match
+// @scene background: one color, the commonest, fills the grid around the
+//  shapes
+// @scene color-shapes: each other color is one shape: the cells of that color,
+//  which need not be connected
+// @scene three-shapes: there are three shapes
+// @scene enlarged-copy: one shape is a copy of one of the other two, each cell
+//  scaled to a `scale` × `scale` block, in the same orientation
+// @scene edge-cut: the grid edge cuts the enlarged copy, so only part of it
+//  shows
+// @scene small-whole: the two small shapes lie whole inside the grid
+// @scene one-match: the visible part of the enlarged copy agrees with the
+//  enlarged form of one small shape only
+// @rule pick-shown-shape: the shown shape is the small shape whose enlarged
+//  form, at some placement, has the large shape's cells as the part of it
+//  inside the grid
+// @rule crop-shown-shape: the output is the bounding box of the shown shape,
+//  its cells in its color and the other cells in the background color
+
+// Where the enlargement factor comes from.
+.type ScaleSource =
+    // @claim enlarged-copy
+    Stored {}
+    // @scene enlarged-copy: the factor is each k ≥ 2 at which a small shape's
+    //  enlarged form has another shape's cells as its visible part; undefined
+    //  where there is no such k
+    // @witness scale-three-copy: variant $ScaleDerived
+    //     @relaxed enlarged-copy
+  | ScaleDerived {}
+
+// Which shape is the copy.
+.type CopyIdentity =
+    // @claim pick-shown-shape
+    AnyShape {}
+    // @rule copy-largest: the copy is the shape with the most cells; undefined
+    //  where no other shape's enlarged form shows as that shape
+    // @witness thin-copy-strip: borderline concept
+  | LargeByCount {}
+    // @rule copy-at-edge: the copy is a shape that touches the grid edge;
+    //  undefined where no such shape is the visible part of another's
+    //  enlarged form
+    // @witness whole-copy: variant concept
+    //     @relaxed edge-cut
+  | LargeByEdge {}
+
+.type Choice = [s: ScaleSource, c: CopyIdentity]
+
+// Where two shapes show, each is one output.
+.type TiebreakResolution = [shown: Color]
+
+// A block of k along axis a and k2 across.
+.type Scale = [a: Axis, k: number, k2: number]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // --- $Stored ---
+    // @derive TileCount: variant derived
+    //     @relaxed enlarged-copy
+    // @derive TileDim: variant derived
+    //     @relaxed enlarged-copy
+    // @ignore: case section — the match is keyed by scale and shared; each case reads it only at its own scales
+    .decl scale(k: number) scale(2).
+}
+
+.init params = Params
+
+.decl scale_source_choice(s: ScaleSource)
+scale_source_choice($Stored()). scale_source_choice($ScaleDerived()).
+
+.decl copy_identity_choice(c: CopyIdentity)
+copy_identity_choice($AnyShape()). copy_identity_choice($LargeByCount()).
+copy_identity_choice($LargeByEdge()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, C]) :-
+    scale_source_choice(S), copy_identity_choice(C).
+
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, s: Color]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The scales to try on each candidate copy.
+    .decl try(k: Key, l: Color, sc: Scale)
+
+    // @claim background
+    .init bg_mode = Mode<Key, Color, Position>
+    bg_mode.item(K, Col, P) :- cell(K, P, Col).
+
+    // A shape is named by its color.
+    .decl shape_cell(k: Key, s: Color, p: Position)
+    shape_cell(K, S, P) :- cell(K, P, S), !bg_mode.mode(K, S).
+
+    // @claim crop-shown-shape
+    .init sbox = Bbox<KeyColor>
+    sbox.cell([K, S], P) :- shape_cell(K, S, P).
+
+    // Each shape's cells in its box's frame.
+    .decl shape_form(k: Key, s: Color, p_inner: Position)
+    shape_form(K, S, P_inner) :- shape_cell(K, S, P), sbox.box([K, S], B), crop(P, B, P_inner).
+
+    // The lengths a block may span along each axis.
+    // @workaround: the lengths run up to the grid's extent; the copy's own
+    //  extent bounds them here to keep the match search small
+    .decl span(k: Key, l: Color, a: Axis, n: number)
+    span(K, L, A, N) :-
+        shape_form(K, L, P_inner), axis_elem(A),
+        ( axis_dim(P_inner, A, N) ; sub_extent(P_inner, A, N) ).
+
+    .init block_line = AxisFrame<number>
+    block_line.extent(N, A, N) :- span(_, _, A, N).
+
+    // A length that enlarges: its line holds a cell past its first.
+    .decl enlarging(k: Key, l: Color, a: Axis, n: number)
+    enlarging(K, L, A, N) :-
+        span(K, L, A, N), block_line.cell(N, A, P), axis_of(D, A), dist(P, D, N2), N2 > 0.
+
+    .init block = Frame2D<Scale>
+    block.extent(Sc, A, N) :- try(_, _, Sc), Sc = [A, N, _].
+    block.extent(Sc, A2, N2) :- try(_, _, Sc), Sc = [A, _, N2], perp(A, A2).
+
+    // Small shape s against copy l at scale sc.
+    .decl pairing(k: Key, sc: Scale, s: Color, l: Color)
+    pairing(K, Sc, S, L) :- try(K, L, Sc), shape_cell(K, S, _), S != L.
+
+    // The enlarged form: each cell of the shape's box becomes a block.
+    .decl enlarged(k: Key, sc: Scale, s: Color, p_inner: Position)
+    enlarged(K, Sc, S, P_inner) :-
+        shape_form(K, S, P_tile), block.cell(Sc, P_intile),
+        concat_2d(P_tile, P_intile, 0, P_inner).
+
+    // The box the enlarged form's frame takes in the grid when its cell
+    // P_inner lands on the copy's cell P.
+    .decl placement(k: Key, sc: Scale, s: Color, l: Color, b: Box)
+    placement(K, Sc, S, L, B) :-
+        pairing(K, Sc, S, L), enlarged(K, Sc, S, P_inner), shape_cell(K, L, P),
+        relative(P_inner, P, B).
+
+    // A cell of the copy that the placed form leaves uncovered.
+    .decl uncovered(k: Key, sc: Scale, s: Color, l: Color, b: Box)
+    uncovered(K, Sc, S, L, B) :-
+        placement(K, Sc, S, L, B), shape_cell(K, L, P), relative(B, P, P_inner),
+        !enlarged(K, Sc, S, P_inner).
+
+    // A cell of the placed form inside the grid that is not the copy's,
+    // checked only where the form covers the copy.
+    .decl stray(k: Key, sc: Scale, s: Color, l: Color, b: Box)
+    stray(K, Sc, S, L, B) :-
+        placement(K, Sc, S, L, B), !uncovered(K, Sc, S, L, B),
+        cell(K, P, _), !shape_cell(K, L, P), relative(B, P, P_inner),
+        enlarged(K, Sc, S, P_inner).
+
+    // The copy's cells are the part of s's enlarged form inside the grid.
+    .decl shows(k: Key, sc: Scale, s: Color, l: Color)
+    shows(K, Sc, S, L) :-
+        placement(K, Sc, S, L, B), !uncovered(K, Sc, S, L, B), !stray(K, Sc, S, L, B).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.try($U(), L, Sc) :- factor(_, L, Sc).
+
+.decl shape_cell(s: Color, p: Position)
+shape_cell(S, P) :- parse.shape_cell($U(), S, P).
+
+// The shapes each case takes as a candidate copy, with the scales it tries
+// on each.
+.decl copy(ch: Choice, l: Color)
+// @ignore: case section — the match is keyed by scale and shared; each case reads it only at its own scales
+.decl factor(ch: Choice, l: Color, sc: Scale)
+
+out(P_inner, Col, Ch, [S]) :-
+    factor(Ch, L, Sc), parse.shows($U(), Sc, S, L),                // the shown shape
+    parse.sbox.box([$U(), S], B), in(P, _), crop(P, B, P_inner),   // a cell of its box
+    ( shape_cell(S, P), Col = S                                    // its own, in its color
+    ; !shape_cell(S, P), parse.bg_mode.mode($U(), Col)             // any other, background
+    ).
+
+// --- $AnyShape ---
+copy([F, $AnyShape()], L) :- impl_choice([F, $AnyShape()]), shape_cell(L, _).
+
+// --- $LargeByCount ---
+
+// @claim copy-largest
+.init size = Tally<Color, Position>
+size.item(S, P) :- shape_cell(S, P).
+
+// @claim copy-largest
+.init largest = ArgExtremes<Unit, Color>
+largest.cand($U(), S, N) :- size.tally(S, N).
+
+copy([F, $LargeByCount()], L) :-
+    impl_choice([F, $LargeByCount()]), largest.high($U(), L, _).
+
+// --- $LargeByEdge ---
+copy([F, $LargeByEdge()], L) :-
+    impl_choice([F, $LargeByEdge()]), shape_cell(L, P), dir_elem(D), dist(P, D, 0).
+
+// --- $Stored ---
+factor([$Stored(), C], L, [A, K, K]) :-
+    copy([$Stored(), C], L), params.scale(K), axis_elem(A).
+
+// --- $ScaleDerived ---
+factor([$ScaleDerived(), C], L, [A, K, K]) :-
+    copy([$ScaleDerived(), C], L),
+    parse.enlarging($U(), L, A, K), perp(A, A2), parse.enlarging($U(), L, A2, K).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.try(E, L, [A, K, K]) :-
+        parse.enlarging(E, L, A, K), perp(A, A2), parse.enlarging(E, L, A2, K).
+
+    // A factor at which some shape shows as the cut enlarged form of another.
+    .decl shown_at(e: Example, k: number)
+    shown_at(E, K) :- parse.shows(E, [_, K, K], _, _).
+
+    // A train example where it does not.
+    .decl missed(k: number)
+    missed(K) :- shown_at(_, K), ex_out(E, _, _), !shown_at(E, K).
+
+    .decl scale(k: number)
+    scale(K) :- shown_at(_, K), !missed(K).
+}

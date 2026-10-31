@@ -1,0 +1,4 @@
+# db118e2a create progress
+
+- interference: `uv run python scripts/run_dl.py audit db118e2a`, relabelings check. It reports "line 274: `copy_span` is not one value on every input at the case values the cases that take its `@store` branch hold; it differs on train 1", while `relation db118e2a copy_span` on train 1's input gives the same value at every case as on the other inputs, and `store` reports the value as one value on every input. The report names no relabeling, so the cause stays unknown. Cost: two audit runs and one relation run. The finding still stands.
+- delay: [Determine](prompts/agents/create.md#determine), "Run the sweep": `uv run python scripts/run_dl.py sweep db118e2a` stopped at its 120 s timeout with no output. The solver has 28 cases and the pairs run takes 1 s. Cost: 2 min of the Determine budget. It was not rerun.

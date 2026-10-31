@@ -1,0 +1,251 @@
+// d37a1ef5
+// @draft
+// @keywords: enclose bbox
+// @scene background: the grid is params.background (0) outside the frame and
+//  in the frame's empty interior cells
+// @scene one-frame: one 1-wide rectangle outline in params.frame_color (2),
+//  with an interior at least one cell wide on each axis
+// @scene marks-inside: one or more cells of mark_color (5) lie in the frame's
+//  interior, and no other interior cell is non-background
+// @rule fill-outside-box: each interior cell of the frame outside the
+//  bounding box of the marks becomes params.frame_color
+// @rule keep-box: each cell inside the bounding box of the marks keeps its
+//  input color, marks and background cells alike
+// @rule keep-rest: the frame and every cell outside it keep their input color
+
+// which interior cells are marks
+.type MarkSet =
+    // @claim marks-inside
+    NonBackgroundMarks {}
+    // @scene marks-inside: the marks are the interior cells of
+    //  params.mark_color (5); other interior cells are filled over
+    // @witness other-color-mark: borderline concept
+    //     @relaxed marks-inside
+  | MarkColorStored {}
+
+// which marks the box bounds
+.type MarkScope =
+    // @claim marks-inside fill-outside-box
+    InteriorMarks {}
+    // @scene marks-inside: the marks are the non-background,
+    //  non-params.frame_color cells of the whole grid
+    // @rule fill-outside-box: one box bounds every mark of the grid, and each
+    //  interior cell outside that box becomes params.frame_color
+    // @witness stray-mark-outside: borderline concept
+    //     @relaxed background
+  | GlobalMarksBox {}
+
+// which cells form the interior
+.type Interior =
+    // @claim one-frame
+    EnclosedInterior {}
+    // @scene one-frame: the interior is every non-params.frame_color cell
+    //  strictly inside the bounding box of the params.frame_color cells,
+    //  whether or not the outline is closed
+    // @witness broken-outline: foreign $InteriorByFrameBox
+    //     @relaxed one-frame
+  | InteriorByFrameBox {}
+
+// what an interior with no mark does
+.type EmptyFrame =
+    // @claim fill-outside-box
+    EmptyFrameFilled {}
+    // @rule fill-outside-box: an interior that holds no mark keeps its input
+    // @witness empty-frame: borderline concept
+    //     @relaxed marks-inside
+  | EmptyFrameKept {}
+
+// how the frame color is found
+.type FrameColor =
+    // @claim one-frame
+    StoredFrameColor {}
+    // @scene one-frame: the frame color is each color, other than a grid
+    //  corner's color, whose cells close cells off from the grid edge;
+    //  undefined where no color does
+    // @witness recolored-frame: variant $FrameColorFromOutline
+    //     @relaxed one-frame
+  | FrameColorFromOutline {}
+
+.type Choice = [marks: MarkSet, scope: MarkScope, interior: Interior, empty: EmptyFrame, frame: FrameColor]
+
+// A candidate frame color, under one reading of the frame color.
+.type Wall = [f: FrameColor, c: Color]
+
+// An interior, under one reading of the interior, walled by one color.
+.type Region = [i: Interior, w: Wall, id: Ident]
+
+// The box one region keeps, under one reading of the marks and their scope.
+.type BoxKey = [m: MarkSet, s: MarkScope, r: Region]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $NonBackgroundMarks ---
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // --- $StoredFrameColor ---
+    // @derive SharedColor: variant derived
+    //     @relaxed one-frame
+    // @ignore: derive $MarkColorStored — fails Fit at train0: the background
+    //  color 0 closes the frame off from the grid edge, and the fill at 0
+    //  erases the frame
+    // @ignore: derive $InteriorByFrameBox — fails Fit at train2: the box of
+    //  the 5 cells holds (5,5), which the fill at 5 turns to 5
+    // @ignore: derive VanishedColor — on one input with no train output it
+    //  takes every color of the input, as SharedColor does, so the two models
+    //  are equivalent
+    .decl frame_color(c: Color) frame_color(2).
+
+    // --- $MarkColorStored ---
+    // @derive RarestColor: borderline concept
+    //     @relaxed background
+    .decl mark_color(c: Color) mark_color(5).
+}
+
+.init params = Params
+
+.decl mark_set_choice(m: MarkSet)
+mark_set_choice($NonBackgroundMarks()). mark_set_choice($MarkColorStored()).
+
+.decl mark_scope_choice(s: MarkScope)
+mark_scope_choice($InteriorMarks()). mark_scope_choice($GlobalMarksBox()).
+
+.decl interior_choice(i: Interior)
+interior_choice($EnclosedInterior()). interior_choice($InteriorByFrameBox()).
+
+.decl empty_frame_choice(e: EmptyFrame)
+empty_frame_choice($EmptyFrameFilled()). empty_frame_choice($EmptyFrameKept()).
+
+.decl frame_color_choice(f: FrameColor)
+frame_color_choice($StoredFrameColor()). frame_color_choice($FrameColorFromOutline()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, S, I, E, F]) :-
+    mark_set_choice(M), mark_scope_choice(S), interior_choice(I),
+    empty_frame_choice(E), frame_color_choice(F).
+
+// The colors whose cells may wall an interior.
+.decl wall(w: Wall)
+
+// The frame color under each reading.
+.decl frame(w: Wall)
+
+// --- $StoredFrameColor ---
+frame([$StoredFrameColor(), C]) :- params.frame_color(C).
+
+// --- $StoredFrameColor & $EnclosedInterior ---
+wall([$StoredFrameColor(), C]) :- params.frame_color(C).
+
+// --- $EnclosedInterior, $FrameColorFromOutline ---
+// The cells each candidate color closes off from the grid edge.
+// @claim one-frame
+.init enclosed = Closed<Wall>
+enclosed.cell([F, C], P) :- wall([F, C]), in(P, Col), Col != C.
+
+// --- $FrameColorFromOutline ---
+// The color of each grid corner.
+.decl corner_color(c: Color)
+corner_color(Col) :- in(P, Col), box_corner(P, ZERO, _).
+
+wall([$FrameColorFromOutline(), C]) :- in(_, C), !corner_color(C).
+
+frame([$FrameColorFromOutline(), C]) :- enclosed.region([$FrameColorFromOutline(), C], _, _).
+
+// --- shared ---
+// The cells of each interior.
+.decl region_cell(r: Region, p: Position)
+
+// --- $EnclosedInterior ---
+region_cell([$EnclosedInterior(), W, Id], P) :- enclosed.region(W, P, Id).
+
+// --- $InteriorByFrameBox ---
+// @claim one-frame
+.init frame_box = Bbox<Wall>
+frame_box.cell([F, C], P) :- frame([F, C]), in(P, C).
+
+// The one interior inside each frame box.
+// @claim one-frame
+.init frame_box_id = IdentOf<Box>
+frame_box_id.value(B) :- frame_box.box(_, B).
+
+region_cell([$InteriorByFrameBox(), [F, C], Id], P) :-
+    frame_box.box([F, C], B), frame_box_id.id(B, Id),
+    in(P, Col), Col != C, interior(P, B).
+
+// --- shared ---
+// The marks under each reading, for each frame color.
+.decl mark(m: MarkSet, w: Wall, p: Position)
+
+// --- $NonBackgroundMarks ---
+mark($NonBackgroundMarks(), [F, C], P) :-
+    frame([F, C]), in(P, Col), !params.background(Col), Col != C.
+
+// --- $MarkColorStored ---
+mark($MarkColorStored(), W, P) :- frame(W), in(P, Col), params.mark_color(Col).
+
+// --- shared ---
+// The box each interior keeps open.
+// @claim fill-outside-box keep-box
+.init kept = Bbox<BoxKey>
+
+// --- $InteriorMarks ---
+kept.cell([M, $InteriorMarks(), [I, W, Id]], P) :- region_cell([I, W, Id], P), mark(M, W, P).
+
+// --- $GlobalMarksBox ---
+kept.cell([M, $GlobalMarksBox(), [I, W, Id]], P) :- region_cell([I, W, Id], _), mark(M, W, P).
+
+// --- shared ---
+// An interior cell inside its kept box.
+.decl in_box(k: BoxKey, p: Position)
+in_box([M, S, R], P) :- kept.box([M, S, R], B), region_cell(R, P), inside(P, B).
+
+// The interiors that fill outside their box.
+.decl fillable(e: EmptyFrame, m: MarkSet, r: Region)
+
+// --- $EmptyFrameFilled ---
+fillable($EmptyFrameFilled(), M, R) :- mark_set_choice(M), region_cell(R, _).
+
+// --- $EmptyFrameKept ---
+fillable($EmptyFrameKept(), M, [I, W, Id]) :- region_cell([I, W, Id], P), mark(M, W, P).
+
+// --- shared ---
+.decl filled(ch: Choice, p: Position, col: Color)
+filled([M, S, I, E, F], P, C) :-
+    impl_choice([M, S, I, E, F]),
+    fillable(E, M, [I, [F, C], Id]), region_cell([I, [F, C], Id], P),
+    !in_box([M, S, [I, [F, C], Id]], P).
+
+out(P, C, Ch) :- filled(Ch, P, C).
+out(P, Col, [M, S, I, E, F]) :-
+    impl_choice([M, S, I, E, F]), frame([F, _]),      // a frame color is found
+    in(P, Col), !filled([M, S, I, E, F], P, _).
+
+.comp Determine {
+    // A cell a train pair changes: an empty interior cell the fill covers.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    // The input color of the cells the fill covers.
+    .decl background(c: Color)
+    background(Col) :- changed(E, P), ex_in(E, P, Col).
+
+    // The color the fill takes.
+    .decl frame_color(c: Color)
+    frame_color(Col) :- changed(E, P), ex_out(E, P, Col).
+
+    // The color of a mark: a kept cell in a color that is neither the
+    // filled cells' old color nor their new one.
+    .decl kept_mark(e: Example, c: Color)
+    kept_mark(E, Col) :-
+        changed(E, P), ex_in(E, P, Bg), ex_out(E, P, Fill),
+        ex_in(E, Q, Col), ex_out(E, Q, Col), Col != Bg, Col != Fill.
+
+    // A train pair that has marks, none of them of the color.
+    .decl unmarked(c: Color)
+    unmarked(Col) :- kept_mark(_, Col), kept_mark(E, _), !kept_mark(E, Col).
+
+    // The mark color of every train pair that has marks.
+    .decl mark_color(c: Color)
+    mark_color(Col) :- kept_mark(_, Col), !unmarked(Col).
+}

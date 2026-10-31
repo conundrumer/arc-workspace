@@ -1,0 +1,4 @@
+# ed98d772 — create progress
+
+- interference: `uv run python scripts/run_dl.py determination-plan ed98d772` listed `quadrant_transform` as undecided with "where such clauses exist, its parameter needs a determination relation". A Determine comp that keeps each D4 element no train pair contradicts then drew the `determine prediction` hint, because its test reads inputs and outputs together. The comp and a `Parse` comp written for it were removed. Cost: one edit and one run, about 0.5 min. The plan's wording still invites that relation.
+- interference: [Develop](#develop) step 4 holds `$StoredFrame` as a stored branch because `analyze.md` gives it a witness, while `uv run python scripts/run_dl.py store ed98d772` printed "side: no witness" and no line to add, and the last bullet of Develop says to mark such a value `@workaround`. A hand-written `@store` line on `side` ran, so it was kept and no `@workaround` was added. Cost: little. The two lines still conflict.

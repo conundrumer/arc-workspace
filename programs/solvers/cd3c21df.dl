@@ -1,0 +1,210 @@
+// cd3c21df
+// @draft
+// @keywords: objects crop select match congruent
+// @scene objects-on-background: the input holds objects, each a 4-connected
+//  group of cells not of color background (0), and no two objects touch, even
+//  at a corner
+// @scene one-unique-object: exactly one object has no other object of the same
+//  shape and colors, up to translation
+// @scene others-repeat: each other object has at least one other object of the
+//  same shape and colors, up to translation
+// @rule crop-unique: the output is the bounding box of the unique object, with
+//  its cells in their colors and the other cells of the box in color background
+
+// which object is the odd one
+.type Odd =
+    // @claim one-unique-object others-repeat
+    Unmatched {copy: Match}
+    // @scene one-unique-object: exactly one object holds a color no other
+    //  object holds; undefined where no object or more than one does
+    // @scene others-repeat: the other objects need no copies
+    // @witness shared-color-odd: foreign any
+    //     @relaxed one-unique-object
+    // @witness two-color-odd: ordinary concept
+    // @witness own-color-dot: foreign any
+    //     @relaxed one-unique-object
+  | OwnColor {}
+
+// what makes two objects copies
+.type Match =
+    // @claim one-unique-object others-repeat
+    Translate {}
+    // @scene one-unique-object: copies are the same shape and colors up to a
+    //  D4 transform; undefined where no object or more than one object is
+    //  unmatched
+    // @witness rotated-copy: variant any
+    //     @relaxed one-unique-object
+    //     @relaxed others-repeat
+  | CongruentCopy {}
+    // @scene one-unique-object: copies hold the same set of colors, whatever
+    //  the shape; undefined where no object or more than one object is
+    //  unmatched
+    // @witness shared-color-odd: foreign any
+    // @witness shape-differs: ordinary concept
+  | ColorSetCopy {}
+    // @scene one-unique-object: copies are the same shape with the same color
+    //  pattern up to a renaming of colors; undefined where no object or more
+    //  than one object is unmatched
+    // @witness recolored-copy: variant any
+    //     @relaxed one-unique-object
+    //     @relaxed others-repeat
+  | RecolorCopy {}
+
+// how objects connect
+.type Adjacency =
+    // @claim objects-on-background
+    Adjacency4 {}
+    // @scene objects-on-background: objects are 8-connected groups
+    // @witness diagonal-object: variant $Adjacency8
+    //     @relaxed objects-on-background
+    //     @relaxed one-unique-object
+  | Adjacency8 {}
+
+// what fills the box cells outside the object
+.type BoxFill =
+    // @claim crop-unique
+    FillBackground {}
+    // @rule crop-unique: the output is the input's cells under the unique
+    //  object's bounding box
+    // @witness nested-in-box: borderline concept
+  | CropInput {}
+
+.type Choice = [odd: Odd, adj: Adjacency, fill: BoxFill]
+
+// An object, under the adjacency that found it.
+.type Obj = [adj: Adjacency, id: Ident]
+
+// A cell of an object, in its box frame.
+.type Cell = [p: Position, col: Color]
+
+// An object turned by a D4 transform.
+.type Turn = [o: Obj, d: D4]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(col: Color) background(0).
+}
+
+.init params = Params
+
+.decl match_choice(m: Match)
+match_choice($Translate()). match_choice($CongruentCopy()).
+match_choice($ColorSetCopy()). match_choice($RecolorCopy()).
+
+.decl obj(o: Obj, p: Position, col: Color)
+
+// --- $Adjacency4 ---
+// @claim objects-on-background
+.init comp4 = Components<Unit>
+comp4.node($U(), P) :- in(P, Col), !params.background(Col).
+
+obj([$Adjacency4(), Id], P, Col) :- comp4.label($U(), P, Id), in(P, Col).
+
+// --- $Adjacency8 ---
+// @claim objects-on-background
+.init comp8 = Components8<Unit>
+comp8.node($U(), P) :- in(P, Col), !params.background(Col).
+
+obj([$Adjacency8(), Id], P, Col) :- comp8.label($U(), P, Id), in(P, Col).
+
+// --- shared ---
+
+// Two distinct objects of one parse.
+.decl peer(o: Obj, o2: Obj)
+peer(O, O2) :- obj(O, _, _), obj(O2, _, _), O = [A, _], O2 = [A, _], O != O2.
+
+// @claim crop-unique
+.init box = Bbox<Obj>
+box.cell(O, P) :- obj(O, P, _).
+
+.decl shape(o: Obj, p: Position, col: Color)
+shape(O, P_inner, Col) :- obj(O, P, Col), box.box(O, B), crop(P, B, P_inner).
+
+// o2 is a copy of o.
+.decl copy(m: Match, o: Obj, o2: Obj)
+
+// --- $Translate ---
+// @claim one-unique-object others-repeat
+.init same = KeyedSetCompare<Obj, Obj, Cell>
+same.pattern_member(O, [P, Col]) :- shape(O, P, Col).
+same.observed_member(O, [P, Col]) :- shape(O, P, Col).
+
+copy($Translate(), O, O2) :- same.equals(O, O2), peer(O, O2).
+
+// --- $CongruentCopy ---
+// @claim one-unique-object others-repeat
+.init turned = KeyedSetCompare<Turn, Obj, Cell>
+turned.pattern_member(O, [P, Col]) :- shape(O, P, Col).
+turned.observed_member([O, D], [Q, Col]) :- shape(O, P, Col), d4_elem(D), apply(D, P, Q).
+
+copy($CongruentCopy(), O, O2) :- turned.equals([O, _], O2), peer(O, O2).
+
+// --- $ColorSetCopy ---
+// @claim one-unique-object others-repeat
+.init palette = KeyedSetCompare<Obj, Obj, Color>
+palette.pattern_member(O, Col) :- obj(O, _, Col).
+palette.observed_member(O, Col) :- obj(O, _, Col).
+
+copy($ColorSetCopy(), O, O2) :- palette.equals(O, O2), peer(O, O2).
+
+// --- $RecolorCopy ---
+// @claim one-unique-object others-repeat
+.init footprint = KeyedSetCompare<Obj, Obj, Position>
+footprint.pattern_member(O, P) :- shape(O, P, _).
+footprint.observed_member(O, P) :- shape(O, P, _).
+
+// Two cells that one object colors alike and the other does not.
+.decl recolor_clash(o: Obj, o2: Obj)
+recolor_clash(O, O2) :-
+    shape(O, P, C), shape(O2, P, C2),
+    ( shape(O, Q, C), shape(O2, Q, C3), C3 != C2      // alike in o, not in o2
+    ; shape(O2, Q, C2), shape(O, Q, C3), C3 != C      // alike in o2, not in o
+    ).
+
+copy($RecolorCopy(), O, O2) :- footprint.equals(O, O2), peer(O, O2), !recolor_clash(O, O2).
+
+// --- $Unmatched ---
+
+// The objects each odd-object branch could pick.
+.decl candidate(k: Odd, o: Obj)
+candidate($Unmatched(M), O) :- match_choice(M), obj(O, _, _), !copy(M, O, _).
+
+// --- $OwnColor ---
+.decl shared_color(o: Obj, col: Color)
+shared_color([A, I], Col) :- peer([A, I], [A, I2]), obj([A, I2], _, Col).
+
+candidate($OwnColor(), [A, I]) :- obj([A, I], _, Col), !shared_color([A, I], Col).
+
+// --- shared ---
+
+// Another object is a candidate too.
+.decl rival(k: Odd, o: Obj)
+rival(K, O) :- candidate(K, O), peer(O, O2), candidate(K, O2).
+
+.decl odd(k: Odd, o: Obj)
+odd(K, O) :- candidate(K, O), !rival(K, O).
+
+// --- $FillBackground ---
+out(P_inner, Col, [K, A, $FillBackground()]) :-
+    odd(K, [A, I]), box.box([A, I], B), in(P, _), crop(P, B, P_inner),
+    ( obj([A, I], P, Col)                           // the object's own cell
+    ; !obj([A, I], P, _), params.background(Col)    // any other cell of its box
+    ).
+
+// --- $CropInput ---
+out(P_inner, Col, [K, A, $CropInput()]) :-
+    odd(K, [A, I]), box.box([A, I], B), in(P, Col), crop(P, B, P_inner).
+
+.comp Determine {
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that some train input does not hold most.
+    .decl outvoted(col: Color)
+    outvoted(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !palette.mode(E, Col).
+
+    .decl background(col: Color)
+    background(Col) :- ex_in(_, _, Col), !outvoted(Col).
+}

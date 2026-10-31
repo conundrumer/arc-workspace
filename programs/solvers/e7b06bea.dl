@@ -1,0 +1,274 @@
+// e7b06bea
+// @draft
+// @keywords: lines markers count
+// @scene background-field: every cell that is not in the bar or in a stripe is `background` (0).
+// @scene corner-bar: one bar of color 5 lies along the left edge, starts at the corner of that
+//  edge with the `start_edge` edge, and is shorter than that edge.
+// @scene edge-stripes: two or more adjacent full-length lines parallel to the `stripe_edge` edge
+//  fill the grid up to that edge; each stripe is one color, the stripe colors are different from
+//  each other, and none is `background` or the bar's color.
+// @scene stripe-gap: at least one line of `background` stands between the bar and the line next
+//  to the stripes on the bar side.
+// @rule keep-bar: the bar stays as it is.
+// @rule clear-stripes: each stripe cell becomes `background`.
+// @rule folded-line: the line next to the stripe block on the bar side takes the stripe colors in
+//  turn, starting with the stripe nearest to it and moving toward the `stripe_edge` edge, then
+//  starting again; each color fills a run of cells as long as the bar, and the runs start at the
+//  `start_edge` edge.
+
+// where the runs start
+.type Start =
+    // @claim corner-bar
+    StoredStart {}
+    // @scene corner-bar: the bar starts at the corner of its edge with the edge perpendicular to
+    //  the stripe edge that it touches; undefined where the bar touches both or neither of those
+    //  edges.
+    // @rule folded-line: the runs start at that edge.
+    // @witness bar-at-bottom: variant $DerivedStart
+    //     @relaxed corner-bar
+  | DerivedStart {}
+
+// where the run count starts
+.type Phase =
+    // @claim folded-line
+    EdgePhase {}
+    // @rule folded-line: the first run covers the bar's first cell and runs on from there, and
+    //  the cells before the bar take the cycle backward.
+    // @witness bar-off-corner: borderline $BarPhase
+    //     @relaxed corner-bar
+  | BarPhase {}
+
+// which edge the stripes fill up to
+.type StripeEdge =
+    // @claim edge-stripes
+    StoredStripeEdge {}
+    // @scene edge-stripes: the stripes fill up to the one edge whose line is a full-length line
+    //  of one non-background color; undefined where no edge, or more than one edge, has such a
+    //  line.
+    // @witness stripes-at-left: variant $DerivedStripeEdge
+    //     @relaxed edge-stripes
+  | DerivedStripeEdge {}
+
+// what one stripe of the cycle is
+.type StripeUnit =
+    // @claim folded-line
+    LineStripes {}
+    // @rule folded-line: each maximal block of adjacent lines of one color is one stripe of the
+    //  cycle.
+    // @witness repeated-stripe-color: borderline $BandStripes
+    //     @relaxed edge-stripes
+  | BandStripes {}
+
+.type Choice = [s: Start, ph: Phase, e: StripeEdge, u: StripeUnit]
+
+// A line of the grid: the axis it runs across and its axis-only position.
+.type Line = [a: Axis, l: Position]
+// A stripe line of one stripe edge and stripe unit.
+.type UnitLine = [e: StripeEdge, u: StripeUnit, l: Position]
+// The stripe edge and stripe unit a cycle of stripes is read under.
+.type Stripes = [e: StripeEdge, u: StripeUnit]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(0).
+
+    // --- $StoredStripeEdge ---
+    .decl stripe_edge(d: Dir) stripe_edge(DIR_R).
+
+    // --- $StoredStart ---
+    .decl start_edge(d: Dir) start_edge(DIR_T).
+}
+
+.init params = Params
+
+.decl start_choice(s: Start)
+start_choice($StoredStart()). start_choice($DerivedStart()).
+
+.decl phase_choice(ph: Phase)
+phase_choice($EdgePhase()). phase_choice($BarPhase()).
+
+.decl stripe_edge_choice(e: StripeEdge)
+stripe_edge_choice($StoredStripeEdge()). stripe_edge_choice($DerivedStripeEdge()).
+
+.decl stripe_unit_choice(u: StripeUnit)
+stripe_unit_choice($LineStripes()). stripe_unit_choice($BandStripes()).
+
+// Under a derived start edge the bar starts at that edge, so the bar's phase adds nothing.
+.decl impl_choice(ch: Choice)
+impl_choice([S, Ph, E, U]) :-
+    start_choice(S), phase_choice(Ph), stripe_edge_choice(E), stripe_unit_choice(U),
+    ( S = $StoredStart() ; Ph = $EdgePhase() ).
+
+// Full-length lines of one non-background color.
+// @claim edge-stripes
+.init uniform = Unanimous<Line, Color>
+uniform.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.decl ink_line(a: Axis, l: Position, col: Color)
+ink_line(A, L, Col) :- uniform.value([A, L], Col), !params.background(Col).
+
+.decl stripe_dir(e: StripeEdge, d: Dir)
+
+// The stripe block: the ink lines reached from the stripe edge's line, line by line.
+// @claim edge-stripes
+.init block = Slide<StripeEdge>
+block.node(E, L) :- stripe_dir(E, D), axis_of(D, A), ink_line(A, L, _).
+block.dir(E, D_in) :- stripe_dir(E, D), opposite(D, D_in).
+
+.decl stripe_line(e: StripeEdge, l: Position)
+stripe_line(E, L) :-
+    block.node(E, L0), stripe_dir(E, D), dist(L0, D, 0),     // the edge's line
+    ( L = L0
+    ; block.run(E, L0, _, L)
+    ).
+
+// The folded line: next to the stripe block on the bar side.
+.decl fold_line(e: StripeEdge, l: Position)
+fold_line(E, F) :-
+    stripe_line(E, L), stripe_dir(E, D), opposite(D, D_in),
+    neighbor(L, D_in, F), !stripe_line(E, F).
+
+.decl line_cell(e: StripeEdge, l: Position, p: Position)
+line_cell(E, L, P) :- stripe_dir(E, D), axis_of(D, A), in(P, _), split(P, A, L, _).
+
+.decl stripe_cell(e: StripeEdge, p: Position)
+stripe_cell(E, P) :- stripe_line(E, L), line_cell(E, L, P).
+
+.decl fold_cell(e: StripeEdge, p: Position)
+fold_cell(E, P) :- fold_line(E, L), line_cell(E, L, P).
+
+// The bar: the non-background cells outside the stripe block.
+.decl bar(e: StripeEdge, p: Position)
+bar(E, P) :- stripe_dir(E, _), in(P, Col), !params.background(Col), !stripe_cell(E, P).
+
+// The run length.
+// @claim folded-line
+.init bar_len = Tally<StripeEdge, Position>
+bar_len.item(E, P) :- bar(E, P).
+
+.decl start_dir(s: Start, e: StripeEdge, d: Dir)
+
+// The stripes of the cycle, each a class of stripe lines.
+.init units = Canon<UnitLine>
+units.equiv([E, U, L], [E, U, L]) :- stripe_line(E, L), stripe_unit_choice(U).
+
+.decl unit_of(k: Stripes, l: Position, id: Ident)
+unit_of([E, U], L, Id) :- units.id([E, U, L], Id).
+
+.decl unit_color(k: Stripes, id: Ident, col: Color)
+unit_color([E, U], Id, Col) :-
+    unit_of([E, U], L, Id), stripe_dir(E, D), axis_of(D, A), ink_line(A, L, Col).
+
+// The stripe next to the folded line starts the cycle.
+.decl first_unit(k: Stripes, id: Ident)
+first_unit([E, U], Id) :-
+    fold_line(E, F), stripe_dir(E, D), neighbor(F, D, L), unit_of([E, U], L, Id).
+
+// The stripe at the edge ends it.
+.decl edge_unit(k: Stripes, id: Ident)
+edge_unit([E, U], Id) :- unit_of([E, U], L, Id), stripe_dir(E, D), dist(L, D, 0).
+
+// The next stripe toward the edge, and the first again after the edge's stripe.
+// @ignore: common-subexpr — the shared atoms step from a line toward the edge, from the fold line in `first_unit` and from a stripe line here
+.decl unit_next(k: Stripes, id: Ident, id2: Ident)
+unit_next([E, U], I1, I2) :-
+    unit_of([E, U], L1, I1), stripe_dir(E, D), neighbor(L1, D, L2),
+    unit_of([E, U], L2, I2), I1 != I2.
+unit_next(K, I1, I2) :- edge_unit(K, I1), first_unit(K, I2).
+
+// Runs counted from the start of the count, with the stripes in turn.
+.decl run_index(ch: Choice, p: Position, n: number)
+
+// @claim folded-line
+.init cycle = CycleWalk<Stripes, Ident>
+cycle.succ(K, I1, I2) :- unit_next(K, I1, I2).
+cycle.step([E, U], N) :- run_index([_, _, E, U], _, N).
+
+.decl fold_color(ch: Choice, p: Position, col: Color)
+fold_color([S, Ph, E, U], P, Col) :-
+    run_index([S, Ph, E, U], P, N),
+    first_unit([E, U], I0), cycle.walk([E, U], I0, N, I), unit_color([E, U], I, Col).
+
+out(P, Col, Ch) :- fold_color(Ch, P, Col).
+out(P, Col, [S, Ph, E, U]) :-
+    impl_choice([S, Ph, E, U]), fold_cell(E, _), start_dir(S, E, _), in(P, Col0),
+    ( stripe_cell(E, P), params.background(Col)                    // a stripe cell clears
+    ; bar(E, P), Col = Col0                                        // the bar stays
+    ; !stripe_cell(E, P), !bar(E, P), !fold_cell(E, P), Col = Col0 // so does the background
+    ).
+
+// --- $StoredStripeEdge ---
+stripe_dir($StoredStripeEdge(), D) :- params.stripe_edge(D).
+
+// --- $DerivedStripeEdge ---
+
+// The edges whose line is an ink line.
+// @claim edge-stripes
+.init edge_line = Unanimous<Unit, Dir>
+edge_line.item($U(), D) :- dir_elem(D), axis_of(D, A), ink_line(A, L, _), dist(L, D, 0).
+
+stripe_dir($DerivedStripeEdge(), D) :- edge_line.value($U(), D).
+
+// --- $StoredStart ---
+start_dir($StoredStart(), E, D) :- stripe_dir(E, _), params.start_edge(D).
+
+// --- $DerivedStart ---
+
+// The edges across the stripe edge that the bar touches.
+// @claim corner-bar
+// @ignore item: store — a stored start edge is the concept branch $StoredStart, so this branch fails Equivalence with it
+// @ignore value: store — a stored start edge is the concept branch $StoredStart, so this branch fails Equivalence with it
+.init bar_end = Unanimous<StripeEdge, Dir>
+bar_end.item(E, D) :- stripe_dir(E, D_s), perp_dir(D_s, D), bar(E, P), dist(P, D, 0).
+
+start_dir($DerivedStart(), E, D) :- bar_end.value(E, D).
+
+// --- $BandStripes ---
+units.edge([E, $BandStripes(), L1], [E, $BandStripes(), L2]) :-
+    stripe_line(E, L1), stripe_dir(E, D), neighbor(L1, D, L2), stripe_line(E, L2),
+    axis_of(D, A), ink_line(A, L1, Col), ink_line(A, L2, Col).    // adjacent, one color
+
+// --- $EdgePhase ---
+run_index([S, $EdgePhase(), E, U], P, N) :-
+    impl_choice([S, $EdgePhase(), E, U]), fold_cell(E, P),
+    start_dir(S, E, D), dist(P, D, T),                    // cells from the start edge
+    bar_len.tally(E, Len), stride(T, Len, 0, N, _).
+
+// --- $BarPhase ---
+
+// The bar's first cell from the start edge.
+.decl anchor(s: Start, e: StripeEdge, p: Position)
+anchor(S, E, A) :- bar(E, A), start_dir(S, E, D), neighbor(A, D, Q), !bar(E, Q).
+
+// From the bar's first cell on.
+run_index([S, $BarPhase(), E, U], P, N) :-
+    impl_choice([S, $BarPhase(), E, U]), fold_cell(E, P),
+    anchor(S, E, A), start_dir(S, E, D), relative(A, P, R), dist(R, D, T),
+    bar_len.tally(E, Len), stride(T, Len, 0, N, _).
+
+// Before the bar, counted backward from the cell before its first cell.
+// @ignore: common-subexpr — the shared atoms place a fold cell against the bar; the two relations count in opposite directions from different cells
+.decl back_index(ch: Choice, p: Position, n: number)
+back_index([S, $BarPhase(), E, U], P, N) :-
+    impl_choice([S, $BarPhase(), E, U]), fold_cell(E, P),
+    anchor(S, E, A), start_dir(S, E, D), neighbor(A, D, Q),
+    relative(Q, P, R), opposite(D, D_back), dist(R, D_back, T),
+    bar_len.tally(E, Len), stride(T, Len, 0, N, _).
+
+// @claim folded-line
+.init back = CycleWalk<Stripes, Ident>
+back.succ(K, I2, I1) :- unit_next(K, I1, I2).
+back.step([E, U], N) :- back_index([_, _, E, U], _, N).
+
+fold_color([S, Ph, E, U], P, Col) :-
+    back_index([S, Ph, E, U], P, N),
+    edge_unit([E, U], I0), back.walk([E, U], I0, N, I), unit_color([E, U], I, Col).
+
+.comp Determine {
+    // The stripes clear to the background, so the output's line at the stripe edge holds it.
+    .decl background(c: Color)
+    background(Col) :- ex_out(_, P, Col), params.stripe_edge(D), dist(P, D, 0).
+}

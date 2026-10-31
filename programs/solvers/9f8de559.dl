@@ -1,6 +1,6 @@
 // 9f8de559
 // @draft
-// @keywords: markers cast bbox rank
+// @keywords: markers cast bbox
 // @scene field: a solid rectangle of params.field_color sits inside the grid
 //  and does not touch the grid edge
 // @scene pointer: inside the field, a straight line of params.body_color cells
@@ -15,35 +15,12 @@
 .type Direction =
     // @claim ray
     Adjacent {}
-    // @rule ray: the ray steps from the head away from the body cell nearest
-    //  the head (taxicab distance), along the sign of each axis; among nearest
-    //  body cells, the first in the order params.tie_order gives
-    // @witness gap-head: borderline $NearestBody
-    //     @relaxed pointer
-    // @witness tied-body: foreign any
-    //     @relaxed pointer
-  | NearestBody {}
     // @rule ray: the ray steps from the head along the axis on which body
     //  cells touch, away from the body; undefined when body cells touch on
     //  two axes or lie on both sides of the head
     // @witness bent-head: foreign any
     //     @relaxed pointer
   | BodyAxis {}
-
-// which head cells cast
-.type Source =
-    // @claim ray
-    EveryHead {}
-    // @rule ray: only the head cell that comes first in the order
-    //  params.head_order gives casts
-    // @witness two-heads: borderline concept
-    //     @relaxed pointer
-    // @witness stray-head: borderline $ScanHead
-    //     @relaxed pointer
-    //     @reassigned head_order
-    // @witness frame-pointer: foreign any
-    //     @relaxed pointer
-  | ScanHead {}
 
 // which cell the ray paints
 .type Stop =
@@ -92,7 +69,7 @@
     //     @relaxed pointer
   | DerivedPointer {}
 
-.type Choice = [direction: Direction, source: Source, stop: Stop, paint: Paint,
+.type Choice = [direction: Direction, stop: Stop, paint: Paint,
                 field: FieldColor, pointer: PointerColors]
 
 .type Pointer = [head: Color, body: Color]
@@ -103,11 +80,7 @@
 // pointer.
 .type Cast = [ds: Direction, stop: Stop, field: Color, ptr: Pointer]
 
-.type TieOrder = [c: DiagDir, a: Axis]
-.type HeadOrder = [c: DiagDir, a: Axis]
-.type OpenValue = [tie_order: TieOrder, head_order: HeadOrder]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $StoredField ---
@@ -126,75 +99,9 @@
     // @ignore: derive field_color=DominantColor — the derived paint color is then
     //  the field color, as in the FieldPaint case
     .decl paint_color(c: Color) paint_color(7).
-
-    // --- $NearestBody ---
-    // The order that breaks a tie among nearest body cells. The pairs hold
-    // no tie, so every value stays open.
-    // @open
-    .decl tie_order(c: DiagDir, a: Axis)
-    tie_order(DIAG_TL, AXIS_V). tie_order(DIAG_TL, AXIS_H).
-    tie_order(DIAG_TR, AXIS_V). tie_order(DIAG_TR, AXIS_H).
-    tie_order(DIAG_BL, AXIS_V). tie_order(DIAG_BL, AXIS_H).
-    tie_order(DIAG_BR, AXIS_V). tie_order(DIAG_BR, AXIS_H).
-
-    // --- $ScanHead ---
-    // The order whose first head cell casts. The pairs hold one head cell
-    // each, so every value stays open.
-    // @open
-    .decl head_order(c: DiagDir, a: Axis)
-    head_order(DIAG_TL, AXIS_V). head_order(DIAG_TL, AXIS_H).
-    head_order(DIAG_TR, AXIS_V). head_order(DIAG_TR, AXIS_H).
-    head_order(DIAG_BL, AXIS_V). head_order(DIAG_BL, AXIS_H).
-    head_order(DIAG_BR, AXIS_V). head_order(DIAG_BR, AXIS_H).
 }
 
 .init params = Params
-
-// The scan orders over a pointer's head cells, and the step each order's
-// first nearest body cell gives a head cell. A scan order runs from a corner
-// along a primary axis.
-.comp Parse<Key> {
-    .type Scan = [ky: Key, corner: DiagDir, axis: Axis]
-    .type HeadKey = [ky: Key, p: Position]
-    .type HeadScan = [ky: Key, p: Position, corner: DiagDir, axis: Axis]
-
-    .decl head(ky: Key, p: Position)
-    .decl body(ky: Key, p: Position)
-
-    // @claim ray
-    .init scan = LexOrder<Scan>
-    scan.corner([Ky, C, A], C) :- scan.cell([Ky, C, A], _).
-    scan.axis([Ky, C, A], A) :- scan.cell([Ky, C, A], _).
-    scan.cell([Ky, C, A], P) :- head(Ky, P), diag_dir_elem(C), axis_elem(A).
-
-    // The body cells nearest each head cell, by taxicab distance.
-    // @claim ray
-    .init near = ArgExtremes<HeadKey, Position>
-    near.cand([Ky, P], Q, N) :-
-        head(Ky, P), body(Ky, Q), relative(P, Q, V),
-        diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,     // the corner facing away from Q
-        corner_dist(V, Diag, N).
-
-    // @claim ray
-    .init tie = LexOrder<HeadScan>
-    tie.corner([Ky, P, C, A], C) :- tie.cell([Ky, P, C, A], _).
-    tie.axis([Ky, P, C, A], A) :- tie.cell([Ky, P, C, A], _).
-    tie.cell([Ky, P, C, A], Q) :- near.low([Ky, P], Q, _), diag_dir_elem(C), axis_elem(A).
-
-    // The step from the first nearest body cell Q toward head cell P, along
-    // the sign of each axis.
-    .decl tie_step(ky: Key, p: Position, c: DiagDir, a: Axis, d: Dir8)
-    tie_step(Ky, P, C, A, D) :-
-        tie.first([Ky, P, C, A], Q),
-        ( perp_dir(D, D2), nearer(D, P, Q), same_dist(D2, P, Q)
-        ; diag_dirs(D, _, D1, D2), nearer(D1, P, Q), nearer(D2, P, Q) ).
-}
-
-// @ignore tie_step: store — the order columns run over every scan order, and
-//  the program reads the stored orders from params.tie_order
-.init parse = Parse<Pointer>
-parse.head(Ptr, P) :- head(Ptr, P).
-parse.body(Ptr, P) :- body(Ptr, P).
 
 .decl stop_choice(s: Stop)
 stop_choice($FieldExit()). stop_choice($FirstNonfield()).
@@ -220,17 +127,8 @@ head([H, B], P) :- pointer_of(_, [H, B]), in(P, H).
 .decl body(ptr: Pointer, p: Position)
 body([H, B], P) :- pointer_of(_, [H, B]), in(P, B).
 
-// The step from the body to each head cell under a direction reading that
-// reads no tie order.
+// The step from the body to each head cell under each direction reading.
 .decl heading(ds: Direction, ptr: Pointer, p: Position, d: Dir8)
-
-// The step from the body to each head cell under NearestBody, at tie order
-// (c, a).
-.decl tie_heading(ptr: Pointer, c: DiagDir, a: Axis, p: Position, d: Dir8)
-
-// The head cell that casts under ScanHead, at head order (c, a); under
-// EveryHead, every head cell casts.
-.decl scan_source(ptr: Pointer, c: DiagDir, a: Axis, p: Position)
 
 // The cast from each head cell toward its step.
 // @claim ray exit
@@ -245,7 +143,7 @@ ray.mark([Ds, St, F, Ptr], P) :- stop_choice(St), palette(_, _, F, Ptr), heading
 // @ignore: head-repeat — under FieldPaint the exit color is the field color
 .decl paint_of(pt: Paint, f: Color, col: Color)
 
-// --- $Adjacent & $EveryHead, $BodyAxis & $EveryHead ---
+// --- $Adjacent, $BodyAxis ---
 // Some head cell has no step.
 .decl unaimed(ds: Direction, ptr: Pointer)
 unaimed(Ds, Ptr) :- heading(Ds, Ptr, _, _), head(Ptr, P), !heading(Ds, Ptr, P, _).
@@ -257,64 +155,12 @@ exit(Ds, St, Fs, Ps, P) :-
     palette(Fs, Ps, F, Ptr), heading(Ds, Ptr, Src, D), head(Ptr, Src),
     ray.stop([Ds, St, F, Ptr], P, D, _, Src).
 
-// One grid, read at every order.
-out(P, Col, [Ds, $EveryHead(), St, Pt, Fs, Ps], [nil, nil]) :-
+// One grid.
+out(P, Col, [Ds, St, Pt, Fs, Ps]) :-
     palette(Fs, Ps, F, Ptr), heading(Ds, Ptr, _, _), !unaimed(Ds, Ptr),
     framed(St, F), paint_of(Pt, F, C),
     ( exit(Ds, St, Fs, Ps, P), Col = C
     ; in(P, Col), !exit(Ds, St, Fs, Ps, P) ).
-
-// --- $NearestBody & $EveryHead ---
-.decl tie_unaimed(ptr: Pointer, c: DiagDir, a: Axis)
-tie_unaimed(Ptr, C, A) :- params.tie_order(C, A), head(Ptr, P), !tie_heading(Ptr, C, A, P, _).
-
-.decl tie_exit(st: Stop, fs: FieldColor, ps: PointerColors, c: DiagDir, a: Axis, p: Position)
-tie_exit(St, Fs, Ps, C, A, P) :-
-    palette(Fs, Ps, F, Ptr), tie_heading(Ptr, C, A, Src, D), head(Ptr, Src),
-    ray.stop([$NearestBody(), St, F, Ptr], P, D, _, Src).
-
-// One grid per tie order, read at every head order.
-out(P, Col, [$NearestBody(), $EveryHead(), St, Pt, Fs, Ps], [[Tc, Ta], nil]) :-
-    palette(Fs, Ps, F, Ptr), head(Ptr, _), params.tie_order(Tc, Ta), !tie_unaimed(Ptr, Tc, Ta),
-    framed(St, F), paint_of(Pt, F, C),
-    ( tie_exit(St, Fs, Ps, Tc, Ta, P), Col = C
-    ; in(P, Col), !tie_exit(St, Fs, Ps, Tc, Ta, P) ).
-
-// --- $Adjacent & $ScanHead, $BodyAxis & $ScanHead ---
-.decl head_unaimed(ds: Direction, ptr: Pointer, c: DiagDir, a: Axis)
-head_unaimed(Ds, Ptr, C, A) :-
-    heading(Ds, Ptr, _, _), scan_source(Ptr, C, A, P), !heading(Ds, Ptr, P, _).
-
-.decl head_exit(ds: Direction, st: Stop, fs: FieldColor, ps: PointerColors, c: DiagDir, a: Axis,
-                p: Position)
-head_exit(Ds, St, Fs, Ps, C, A, P) :-
-    palette(Fs, Ps, F, Ptr), scan_source(Ptr, C, A, Src), heading(Ds, Ptr, Src, D),
-    ray.stop([Ds, St, F, Ptr], P, D, _, Src).
-
-// One grid per head order, read at every tie order.
-out(P, Col, [Ds, $ScanHead(), St, Pt, Fs, Ps], [nil, [Hc, Ha]]) :-
-    palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, _), heading(Ds, Ptr, _, _),
-    !head_unaimed(Ds, Ptr, Hc, Ha), framed(St, F), paint_of(Pt, F, C),
-    ( head_exit(Ds, St, Fs, Ps, Hc, Ha, P), Col = C
-    ; in(P, Col), !head_exit(Ds, St, Fs, Ps, Hc, Ha, P) ).
-
-// --- $NearestBody & $ScanHead ---
-.decl tie_head_unaimed(ptr: Pointer, tc: DiagDir, ta: Axis, hc: DiagDir, ha: Axis)
-tie_head_unaimed(Ptr, Tc, Ta, Hc, Ha) :-
-    params.tie_order(Tc, Ta), scan_source(Ptr, Hc, Ha, P), !tie_heading(Ptr, Tc, Ta, P, _).
-
-.decl tie_head_exit(st: Stop, fs: FieldColor, ps: PointerColors, tc: DiagDir, ta: Axis,
-                    hc: DiagDir, ha: Axis, p: Position)
-tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P) :-
-    palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, Src), tie_heading(Ptr, Tc, Ta, Src, D),
-    ray.stop([$NearestBody(), St, F, Ptr], P, D, _, Src).
-
-// One grid per pair of orders.
-out(P, Col, [$NearestBody(), $ScanHead(), St, Pt, Fs, Ps], [[Tc, Ta], [Hc, Ha]]) :-
-    palette(Fs, Ps, F, Ptr), scan_source(Ptr, Hc, Ha, _), params.tie_order(Tc, Ta),
-    !tie_head_unaimed(Ptr, Tc, Ta, Hc, Ha), framed(St, F), paint_of(Pt, F, C),
-    ( tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P), Col = C
-    ; in(P, Col), !tie_head_exit(St, Fs, Ps, Tc, Ta, Hc, Ha, P) ).
 
 // --- $Adjacent ---
 // The step from each body cell next to a head cell.
@@ -323,14 +169,6 @@ out(P, Col, [$NearestBody(), $ScanHead(), St, Pt, Fs, Ps], [[Tc, Ta], [Hc, Ha]])
 touch.item([Ptr, P], D) :- head(Ptr, P), body(Ptr, Q), neighbor(Q, D, P).
 
 heading($Adjacent(), Ptr, P, D) :- touch.value([Ptr, P], D).
-
-// --- $NearestBody ---
-tie_heading(Ptr, C, A, P, D) :- parse.tie_step(Ptr, P, C, A, D), params.tie_order(C, A).
-
-ray.dir([$NearestBody(), St, F, Ptr], D) :-
-    stop_choice(St), palette(_, _, F, Ptr), tie_heading(Ptr, _, _, _, D).
-ray.mark([$NearestBody(), St, F, Ptr], P) :-
-    stop_choice(St), palette(_, _, F, Ptr), tie_heading(Ptr, _, _, P, _).
 
 // --- $BodyAxis ---
 // The axis on which body cells touch.
@@ -345,9 +183,6 @@ away.item([Ptr, P], D) :-
     head(Ptr, P), aligned.value(Ptr, A), axis4_of(D, A), body(Ptr, Q), nearer(D, P, Q).
 
 heading($BodyAxis(), Ptr, P, D) :- away.value([Ptr, P], D).
-
-// --- $ScanHead ---
-scan_source(Ptr, C, A, P) :- parse.scan.first([Ptr, C, A], P), params.head_order(C, A).
 
 // --- $FieldExit ---
 framed($FieldExit(), F) :- field.box(F, _).
@@ -410,42 +245,3 @@ derived_pointer(F, [H, B]) :-
 pointer_of($DerivedPointer(), Ptr) :- derived_pointer(_, Ptr).
 
 palette(Fs, $DerivedPointer(), F, Ptr) :- derived_pointer(F, Ptr), field_of(Fs, Ptr, F).
-
-.comp Determine {
-    .init parse = Parse<Example>
-    parse.head(E, P) :- ex_in(E, P, Col), params.head_color(Col).
-    parse.body(E, P) :- ex_in(E, P, Col), params.body_color(Col).
-
-    .decl changed(e: Example, q: Position)
-    changed(E, Q) :- ex_in(E, Q, C_in), ex_out(E, Q, C_out), C_in != C_out.
-
-    // A changed cell lies on the line from head cell P toward D.
-    .decl cast(e: Example, p: Position, d: Dir8)
-    cast(E, P, D) :-
-        parse.head(E, P), changed(E, Q), same_line(A, P, Q), axis4_of(D, A), nearer(D, Q, P).
-
-    // The orders whose first head cell is one that casts, per pair.
-    .decl head_first(e: Example, c: DiagDir, a: Axis)
-    head_first(E, C, A) :- cast(E, P, _), parse.scan.first([E, C, A], P).
-
-    // An order whose first head cell casts in one pair and not in another.
-    .decl head_missed(c: DiagDir, a: Axis)
-    head_missed(C, A) :- head_first(_, C, A), ex_out(E, _, _), !head_first(E, C, A).
-
-    .decl head_order(c: DiagDir, a: Axis)
-    head_order(C, A) :- head_first(_, C, A), !head_missed(C, A).
-
-    // The orders under which a head cell's step is a direction it casts.
-    .decl tie_cast(e: Example, p: Position, c: DiagDir, a: Axis)
-    tie_cast(E, P, C, A) :- cast(E, P, D), parse.tie_step(E, P, C, A, D).
-
-    // An order under which some head cell's step casts nowhere.
-    .decl tie_missed(c: DiagDir, a: Axis)
-    tie_missed(C, A) :-
-        tie_cast(_, _, C, A),                               // an order some step casts under
-        parse.tie_step(E, P, C, A, _), ex_out(E, _, _),     // a head cell's step under it
-        !tie_cast(E, P, C, A).                              // that casts nowhere
-
-    .decl tie_order(c: DiagDir, a: Axis)
-    tie_order(C, A) :- tie_cast(_, _, C, A), !tie_missed(C, A).
-}

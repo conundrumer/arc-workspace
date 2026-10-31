@@ -68,11 +68,7 @@
 // An ink cell counted under a lane.
 .type LaneCell = [lane: Lane, p: Position]
 
-.type StartEdgeValue = [d: Dir]
-
-.type OpenValue = [start_edge: StartEdgeValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -90,10 +86,8 @@
     .decl line_dir(d: DiagDir) line_dir(DIAG_BR).
 
     // --- $DerivedAxis ---
-    // A line's count starts at its end nearer this edge. The pairs leave the
-    // top and the left edge open.
-    // @open
-    .decl start_edge(d: Dir) start_edge(DIR_T). start_edge(DIR_L).
+    // A line's count starts at its end nearer this edge.
+    .decl start_edge(d: Dir) start_edge(DIR_T).
 
     // --- $ColumnParity ---
     .decl parity_edge(d: Dir) parity_edge(DIR_L).
@@ -123,11 +117,11 @@ ink(P) :- in(P, Col), !params.bg(Col).
 .init touch = Unanimous<Unit, DiagAxis>
 touch.item($U(), Da) :- ink(P), neighbor(P, D, Q), ink(Q), diag_axis_of(D, Da).
 
-// The line direction under heading H, at open value V.
-.decl heading(h: Heading, v: OpenValue, d: DiagDir)
+// The line direction under heading H.
+.decl heading(h: Heading, d: DiagDir)
 
 .decl lane(l: Lane)
-lane([S, D]) :- color_split_choice(S), heading(_, _, D).
+lane([S, D]) :- color_split_choice(S), heading(_, D).
 
 // The count of ink cell P in its unit under origin O along D.
 .decl pos(o: Origin, d: DiagDir, p: Position, k: number)
@@ -136,16 +130,16 @@ lane([S, D]) :- color_split_choice(S), heading(_, _, D).
 marked(O, D, P) :-
     pos(O, D, P, K), params.period(W), stride(K, W, 0, _, R), params.mark_phase(R).
 
-out(P, Col, [O, H], V) :-
-    impl_choice([O, H]), heading(H, V, D),
+out(P, Col, [O, H]) :-
+    impl_choice([O, H]), heading(H, D),
     ( marked(O, D, P), params.mark(Col)
     ; in(P, Col), !marked(O, D, P) ).
 
 // --- $StoredStep ---
-heading($StoredStep(), [nil], D) :- params.line_dir(D).
+heading($StoredStep(), D) :- params.line_dir(D).
 
 // --- $DerivedAxis ---
-heading($DerivedAxis(), [[E]], D) :-
+heading($DerivedAxis(), D) :-
     touch.value($U(), Da), diag_axis_of(D, Da),
     params.start_edge(E), opposite(E, E_far), dir_of(D, _, E_far).  // leads away from the start edge
 
@@ -176,12 +170,12 @@ pos($LineStart($Run(), S), D, P, K) :- run.clear([S, D], P, D, K, _).
 
 // --- $DiagonalClass, $GridDiagonal ---
 // Each grid diagonal along D, cast from its cell on the grid edge.
-// @store ray: variant other
+// @store ray: variant $DerivedAxis
 //     @relaxed diagonal-lines
 // @claim alternate-from-start
 .init diagonal = Ray<DiagDir>
-diagonal.dir(D, D) :- heading(_, _, D).
-diagonal.cell(D, P) :- heading(_, _, D), in(P, _).
+diagonal.dir(D, D) :- heading(_, D).
+diagonal.cell(D, P) :- heading(_, D), in(P, _).
 diagonal.mark(D, P) :- in(P, _), diag_opposite(D, O), dir_of(O, _, E), dist(P, E, 0).
 
 // --- $DiagonalClass ---
@@ -199,4 +193,4 @@ pos($GridDiagonal(), D, P, K) :- diagonal.ray(D, P, D, K, _), ink(P).
 
 // --- $ColumnParity ---
 pos($ColumnParity(), D, P, K) :-
-    heading(_, _, D), ink(P), params.parity_edge(E), dist(P, E, K).
+    heading(_, D), ink(P), params.parity_edge(E), dist(P, E, K).

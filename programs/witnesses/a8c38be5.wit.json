@@ -1,42 +1,6 @@
 {
   "id": "a8c38be5",
   "witnesses": [{
-    "id": "aligned-strip",
-    "separates": "$TileParse from the concept: two pieces stand side by side on the same rows, so bg-free windows cross them.",
-    "input": [
-      [6,6,5,0,0,2,2,2,5,1,1,0,0,0],
-      [6,5,5,0,0,5,2,5,5,5,1,0,0,0],
-      [5,5,5,0,0,5,5,5,5,5,5,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,2,5,5,0,0,5,5,5,0,5,5,3,0],
-      [0,2,2,5,0,0,5,5,5,0,5,3,3,0],
-      [0,2,5,5,0,0,5,5,5,0,5,5,3,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [5,5,5,0,0,0,0,0,0,0,0,5,5,5],
-      [8,5,5,0,0,5,5,5,0,0,0,5,5,9],
-      [8,8,5,0,0,5,4,5,0,0,0,5,9,9],
-      [0,0,0,0,0,4,4,4,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": ["$WindowParse"],
-      "grid": null
-    }, {
-      "cases": ["$TileParse"],
-      "grid": [
-        [6,6,5,2,2,2,5,1,1],
-        [6,5,5,5,2,5,5,5,1],
-        [5,5,5,5,5,5,5,5,5],
-        [2,5,5,5,5,5,5,5,3],
-        [2,2,5,5,5,5,5,3,3],
-        [2,5,5,5,5,5,5,5,3],
-        [5,5,5,5,5,5,5,5,5],
-        [8,5,5,5,4,5,5,5,9],
-        [8,8,5,4,4,4,5,9,9]
-      ]
-    }]
-  }, {
     "id": "no-center",
     "separates": "$FillDefault and $BgDefault from the concept: the input has no mark-free piece, so no piece points to the center block.",
     "input": [
@@ -629,13 +593,12 @@
     "output": [{
       "cases": [
         "concept",
-        "$TileParse",
         "$FillFreeCenter & $BgDefault & $SizeDerived",
         "$FillFreeCenter & $StoredFill & $SizeDerived"
       ],
       "grid": null
     }, {
-      "cases": ["$WindowParse & $BgDefault & $StoredSize"],
+      "cases": ["$BgDefault & $StoredSize"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0],
@@ -669,7 +632,7 @@
         [2,2,2]
       ]
     }, {
-      "cases": ["$WindowParse & $FillDefault & $StoredFill & $StoredSize"],
+      "cases": ["$FillDefault & $StoredFill & $StoredSize"],
       "grid": [
         [5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5],
@@ -821,7 +784,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$WindowParse & $StoredSize"],
+      "cases": ["$StoredSize"],
       "grid": [
         [6,6,5,2,2,2,5,1,1],
         [6,5,5,5,2,5,5,5,1],
@@ -833,9 +796,6 @@
         [8,5,5,5,4,5,5,5,9],
         [8,8,5,4,4,4,5,9,9]
       ]
-    }, {
-      "cases": ["$TileParse"],
-      "grid": null
     }, {
       "cases": ["$BgDefault & $SizeDerived"],
       "grid": [
@@ -871,7 +831,7 @@
     }]
   }, {
     "id": "aligned-block",
-    "separates": "$TileParse from the concept, and $SizeDerived from the stored size under $TileParse: four pieces stand as an aligned 2x2 block. The tile cut reads the four pieces; the bg-free squares crossing them break the window parse, and the derived size is 6.",
+    "separates": "$SizeDerived from the stored size: four pieces stand as an aligned 2x2 block. The bg-free squares crossing them break the window parse at the stored size, and the derived size is 6.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,6,6,5,2,2,2,0,0,5,1,1,0,0,0,0,0,5,5,3,0,0,0,0,0],
@@ -892,21 +852,8 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$WindowParse & $StoredSize"],
+      "cases": ["$StoredSize"],
       "grid": null
-    }, {
-      "cases": ["$TileParse"],
-      "grid": [
-        [6,6,5,2,2,2,5,1,1],
-        [6,5,5,5,2,5,5,5,1],
-        [5,5,5,5,5,5,5,5,5],
-        [2,5,5,5,5,5,5,5,3],
-        [2,2,5,5,5,5,5,3,3],
-        [2,5,5,5,5,5,5,5,3],
-        [5,5,5,5,5,5,5,5,5],
-        [8,5,5,5,4,5,5,5,9],
-        [8,8,5,4,4,4,5,9,9]
-      ]
     }, {
       "cases": [
         "$BboxCenter & $BgDefault & $SizeDerived",
@@ -1044,7 +991,7 @@
     }]
   }, {
     "id": "four-square-wide",
-    "separates": "$SizeDerived from the stored size under $TileParse, at the derived bg: four-square on a wider field of 0, so that 0 is the most frequent color.",
+    "separates": "$SizeDerived from the stored size, at the derived bg: four-square on a wider field of 0, so that 0 is the most frequent color.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],

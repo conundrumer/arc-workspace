@@ -1,0 +1,383 @@
+// e8dc4411
+// @draft
+// @keywords: objects markers cast
+// @scene background: the most common color fills the grid.
+// @scene template-shape: the cells of color shape_color (0) form one shape,
+//  the template.
+// @scene single-marker: one cell has a color that is neither the background
+//  nor shape_color. That cell is the marker.
+// @scene marker-past-diagonal-tip: the marker is diagonally adjacent to a
+//  template cell, and it lies past every template cell along that diagonal
+//  direction.
+// @rule direction: the direction of the copies is the diagonal direction from
+//  the template to the marker.
+// @rule step: the step is the translation along the direction by the
+//  template's extent along that diagonal, so that the first copy's cells
+//  nearest the template are one diagonal step past the template's cells
+//  nearest the marker.
+// @rule repeat: copies stand at one, two, three and more steps from the
+//  template, until a copy is fully outside the grid. Cells of a copy that
+//  fall outside the grid are dropped.
+// @rule paint: each copy paints its cells in the marker color. All other
+//  cells keep their input color.
+
+// how far each copy moves along the diagonal
+.type Step =
+    // @claim step
+    SpanStep {}
+    // @rule step: the step is the least k at which the template translated
+    //  by k diagonal steps shares no cell with the template.
+    // @witness bar-template: variant $NoOverlapStep
+  | NoOverlapStep {}
+    // @rule step: the step is the largest k at which the template translated
+    //  by k diagonal steps holds the marker.
+    // @witness bar-template: variant $NoOverlapStep
+  | MarkerInCopyStep {}
+
+// what each copy is, relative to the copy before it
+.type CopyForm =
+    // @claim step
+    Translated {}
+    // @rule step: each copy is the previous copy reflected across the
+    //  diagonal line, perpendicular to the direction, that lies one cell past
+    //  it.
+    // @witness asymmetric-template: variant concept
+  | MirroredCopies {}
+    // @rule step: each copy is the previous copy turned a half turn in its
+    //  bounding box, then moved one step.
+    // @witness asymmetric-template: variant concept
+  | RotatedCopies {}
+
+// how the template's color is found
+.type TemplateColor =
+    // @claim template-shape
+    StoredShapeColor {}
+    // @scene template-shape: the template's color is the one color other
+    //  than the background that has more than one cell; undefined where the
+    //  number of such colors is not one.
+    // @scene single-marker: the marker is a cell of any other color.
+    // @witness template-in-other-color: variant $TemplateByCount
+    //     @relaxed template-shape
+  | TemplateByCount {}
+
+// which cells of the template's color make up the template
+.type Extent =
+    // @claim template-shape
+    AllShapeCells {}
+    // @scene template-shape: the template is the 8-connected component of
+    //  template-colored cells that holds the cell diagonally next to the
+    //  marker; undefined where the marker is diagonally next to cells of more
+    //  than one component, or of none.
+    // @witness second-blob: borderline $TouchingComponentTemplate
+    //     @relaxed template-shape
+  | TouchingComponentTemplate {}
+
+// how many markers
+.type Markers =
+    // @claim single-marker
+    OneMarker {}
+    // @scene single-marker: each cell of a color other than the background
+    //  and the template's color is a marker, and each marker gets its own
+    //  line of copies in its color; undefined where some marker has no
+    //  direction, and where two lines of different colors share a cell.
+    // @witness two-markers: borderline $EachMarker
+    //     @relaxed single-marker
+  | EachMarker {}
+
+// how the diagonal direction is found
+.type Direction =
+    // @claim direction
+    PastTipDirection {}
+    // @rule direction: the direction is the diagonal from the one template
+    //  cell that is diagonally next to the marker, whether or not the marker
+    //  lies past the template; undefined where the marker is diagonally next
+    //  to more than one template cell, or to none.
+    // @witness notch-marker: foreign $AdjacentCellDirection
+    //     @relaxed marker-past-diagonal-tip
+  | AdjacentCellDirection {}
+
+.type Choice = [st: Step, cf: CopyForm, tc: TemplateColor, ex: Extent, mk: Markers, dr: Direction]
+
+// one line of copies: a case and the marker the line runs toward
+.type LineKey = [ch: Choice, m: Position]
+
+// a template cell of one line
+.type CellKey = [ky: LineKey, t: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredShapeColor ---
+    // the color of the template's cells
+    .decl shape_color(col: Color) shape_color(0).
+}
+
+.init params = Params
+
+.decl step_choice(s: Step)
+step_choice($SpanStep()). step_choice($NoOverlapStep()). step_choice($MarkerInCopyStep()).
+
+.decl copy_form_choice(c: CopyForm)
+copy_form_choice($Translated()). copy_form_choice($MirroredCopies()). copy_form_choice($RotatedCopies()).
+
+.decl template_color_choice(t: TemplateColor)
+template_color_choice($StoredShapeColor()). template_color_choice($TemplateByCount()).
+
+.decl extent_choice(e: Extent)
+extent_choice($AllShapeCells()). extent_choice($TouchingComponentTemplate()).
+
+.decl markers_choice(m: Markers)
+markers_choice($OneMarker()). markers_choice($EachMarker()).
+
+// Wherever the past-tip direction is defined, the adjacent-cell direction
+// gives the same direction, so the past-tip direction stays only where the
+// step and the copies take the branches no witnessed adjacent-cell case shares.
+.decl impl_choice(ch: Choice)
+impl_choice([S, Cf, Tc, Ex, Mk, $AdjacentCellDirection()]) :-
+    step_choice(S), copy_form_choice(Cf), template_color_choice(Tc),
+    extent_choice(Ex), markers_choice(Mk).
+impl_choice([$SpanStep(), $Translated(), Tc, Ex, Mk, $PastTipDirection()]) :-
+    template_color_choice(Tc), extent_choice(Ex), markers_choice(Mk).
+impl_choice([$NoOverlapStep(), $Translated(), Tc, Ex, Mk, $PastTipDirection()]) :-
+    template_color_choice(Tc), extent_choice(Ex), markers_choice(Mk).
+
+// The background: the most common color.
+// @claim background
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// Step lengths the grid admits.
+.decl span(k: number)
+span(K) :- in(P, _), axis_elem(A), sub_extent(P, A, K).
+
+// The template's color.
+.decl template_color(tc: TemplateColor, col: Color)
+
+// The cells that are neither background nor the template's color.
+.decl marker(tc: TemplateColor, m: Position, col: Color)
+marker(Tc, M, Col) :-
+    template_color(Tc, _), in(M, Col), !commonest.mode($U(), Col), !template_color(Tc, Col).
+
+// The markers a line of copies runs toward, with their colors.
+.decl lead(ch: Choice, m: Position, col: Color)
+
+// The cells of one line's template.
+.decl template(ky: LineKey, p: Position)
+
+// The diagonal direction of one line.
+.decl direction(ky: LineKey, d: DiagDir)
+
+// The step of one line, in diagonal cells.
+.decl step(ky: LineKey, k: number)
+
+// Template cells cast along the direction.
+// @claim repeat
+.init march = Ray<LineKey>
+march.dir(Ky, D) :- direction(Ky, D).
+march.cell(Ky, P) :- step(Ky, _), in(P, _).
+march.mark(Ky, T) :- direction(Ky, _), template(Ky, T).
+
+// The cells the copies paint.
+.decl copy(ky: LineKey, p: Position)
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint(Ch, P, Col) :- copy([Ch, M], P), lead(Ch, M, Col).
+
+// Some marker leads no line.
+.decl stuck(ch: Choice)
+stuck(Ch) :- lead(Ch, M, _), !step([Ch, M], _).
+
+// Two lines of different colors share a cell.
+.decl clash(ch: Choice)
+clash(Ch) :- paint(Ch, P, Col1), paint(Ch, P, Col2), Col1 != Col2.
+
+.decl defined(ch: Choice)
+defined(Ch) :- lead(Ch, _, _), !stuck(Ch), !clash(Ch).
+
+out(P, Col, Ch) :- defined(Ch), paint(Ch, P, Col).
+out(P, Col, Ch) :- defined(Ch), in(P, Col), !paint(Ch, P, _).
+
+// --- $StoredShapeColor ---
+template_color($StoredShapeColor(), Col) :- params.shape_color(Col).
+
+// --- $TemplateByCount ---
+// Colors other than the background with more than one cell.
+.decl multi_cell(col: Color)
+multi_cell(Col) :- in(P, Col), in(Q, Col), P != Q, !commonest.mode($U(), Col).
+
+// @claim template-shape
+.init multi = Unanimous<Unit, Color>
+multi.item($U(), Col) :- multi_cell(Col).
+
+template_color($TemplateByCount(), Col) :- multi.value($U(), Col).
+
+// --- $OneMarker ---
+// @claim single-marker
+.init lone = Unanimous<TemplateColor, Position>
+lone.item(Tc, M) :- marker(Tc, M, _).
+
+lead([S, Cf, Tc, Ex, $OneMarker(), Dr], M, Col) :-
+    impl_choice([S, Cf, Tc, Ex, $OneMarker(), Dr]), lone.value(Tc, M), marker(Tc, M, Col).
+
+// --- $EachMarker ---
+lead([S, Cf, Tc, Ex, $EachMarker(), Dr], M, Col) :-
+    impl_choice([S, Cf, Tc, Ex, $EachMarker(), Dr]), marker(Tc, M, Col).
+
+// --- $AllShapeCells ---
+template([[S, Cf, Tc, $AllShapeCells(), Mk, Dr], M], P) :-
+    lead([S, Cf, Tc, $AllShapeCells(), Mk, Dr], M, _),
+    template_color(Tc, Col), in(P, Col).
+
+// --- $TouchingComponentTemplate ---
+// @claim template-shape
+.init blobs = Components8<TemplateColor>
+blobs.node(Tc, P) :- template_color(Tc, Col), in(P, Col).
+
+// The component diagonally next to the marker.
+// @claim template-shape
+.init touched = Unanimous<LineKey, Ident>
+touched.item([[S, Cf, Tc, $TouchingComponentTemplate(), Mk, Dr], M], Id) :-
+    lead([S, Cf, Tc, $TouchingComponentTemplate(), Mk, Dr], M, _),
+    diag_dir_elem(D), neighbor(M, D, P), blobs.label(Tc, P, Id).
+
+template([[S, Cf, Tc, $TouchingComponentTemplate(), Mk, Dr], M], P) :-
+    touched.value([[S, Cf, Tc, $TouchingComponentTemplate(), Mk, Dr], M], Id),
+    blobs.label(Tc, P, Id).
+
+// --- $PastTipDirection ---
+// Some template cell is not behind the marker along d.
+.decl short_of(ky: LineKey, d: DiagDir)
+short_of([Ch, M], D) :- template([Ch, M], T), diag_dir_elem(D), !nearer(D, M, T).
+
+// @claim direction marker-past-diagonal-tip
+.init past_tip = Unanimous<LineKey, DiagDir>
+past_tip.item([[S, Cf, Tc, Ex, Mk, $PastTipDirection()], M], D) :-
+    template([[S, Cf, Tc, Ex, Mk, $PastTipDirection()], M], F),
+    diag_dir_elem(D), neighbor(F, D, M),                           // diagonally next to a template cell
+    !short_of([[S, Cf, Tc, Ex, Mk, $PastTipDirection()], M], D).  // and past every one
+
+direction(Ky, D) :- past_tip.value(Ky, D).
+
+// --- $AdjacentCellDirection ---
+// @claim direction
+.init touching = Unanimous<LineKey, Position>
+touching.item([[S, Cf, Tc, Ex, Mk, $AdjacentCellDirection()], M], F) :-
+    template([[S, Cf, Tc, Ex, Mk, $AdjacentCellDirection()], M], F),
+    diag_dir_elem(D), neighbor(F, D, M).
+
+direction([Ch, M], D) :- touching.value([Ch, M], F), diag_dir_elem(D), neighbor(F, D, M).
+
+// --- $SpanStep, $MirroredCopies ---
+// The template's cells nearest the marker: no template cell lies nearer the
+// direction.
+.decl short_of_front(ky: LineKey, p: Position)
+short_of_front(Ky, P) :- direction(Ky, D), template(Ky, P), template(Ky, T), nearer(D, T, P).
+
+.decl front(ky: LineKey, p: Position)
+front(Ky, P) :- template(Ky, P), !short_of_front(Ky, P).
+
+// --- $SpanStep ---
+// A template cell that lies nearer the direction than some other one.
+.decl ahead_of_back(ky: LineKey, p: Position)
+ahead_of_back(Ky, P) :- direction(Ky, D), template(Ky, P), template(Ky, T), nearer(D, P, T).
+
+// The step that carries the template's back line to the line one diagonal
+// step past its front line.
+step([[$SpanStep(), Cf, Tc, Ex, Mk, Dr], M], K) :-
+    direction([[$SpanStep(), Cf, Tc, Ex, Mk, Dr], M], D),
+    front([[$SpanStep(), Cf, Tc, Ex, Mk, Dr], M], F), neighbor(F, D, F1),   // one step past the front
+    template([[$SpanStep(), Cf, Tc, Ex, Mk, Dr], M], B),                     // a back cell
+    !ahead_of_back([[$SpanStep(), Cf, Tc, Ex, Mk, Dr], M], B),
+    span(K), jump(B, D, K, Q),
+    corner_dist(Q, D, N), corner_dist(F1, D, N).                           // the back lands on that line
+
+// --- $NoOverlapStep ---
+// The template translated by k diagonal steps shares a cell with itself.
+.decl overlap(ky: LineKey, k: number)
+overlap(Ky, K) :- direction(Ky, D), template(Ky, T), span(K), jump(T, D, K, Q), template(Ky, Q).
+
+// @claim step
+.init clear_step = Extremes<LineKey>
+clear_step.cand([[$NoOverlapStep(), Cf, Tc, Ex, Mk, Dr], M], K) :-
+    direction([[$NoOverlapStep(), Cf, Tc, Ex, Mk, Dr], M], _), span(K),
+    !overlap([[$NoOverlapStep(), Cf, Tc, Ex, Mk, Dr], M], K).
+
+step(Ky, K) :- clear_step.low(Ky, K).
+
+// --- $MarkerInCopyStep ---
+// @claim step
+.init holding = Extremes<LineKey>
+holding.cand([[$MarkerInCopyStep(), Cf, Tc, Ex, Mk, Dr], M], K) :-
+    direction([[$MarkerInCopyStep(), Cf, Tc, Ex, Mk, Dr], M], D),
+    template([[$MarkerInCopyStep(), Cf, Tc, Ex, Mk, Dr], M], T),
+    span(K), jump(T, D, K, M).                           // the translated template holds the marker
+
+step(Ky, K) :- holding.high(Ky, K).
+
+// --- $Translated ---
+// A whole number of steps on from a template cell.
+copy([[S, $Translated(), Tc, Ex, Mk, Dr], M], P) :-
+    step([[S, $Translated(), Tc, Ex, Mk, Dr], M], K),
+    march.ray([[S, $Translated(), Tc, Ex, Mk, Dr], M], P, _, J, _), J > 0,
+    stride(J, K, 0, _, 0).
+
+// --- $MirroredCopies, $RotatedCopies ---
+// The first copy, which the odd copies repeat.
+.decl first_odd(ky: LineKey, p: Position)
+
+// The odd copies cast along the direction from the first one.
+// @claim repeat
+.init odd_march = Ray<LineKey>
+odd_march.dir(Ky, D) :- direction(Ky, D).
+odd_march.cell(Ky, P) :- first_odd(Ky, _), in(P, _).
+odd_march.mark(Ky, P) :- first_odd(Ky, P).
+
+// The even copies: every second step on from a template cell.
+copy([[S, Cf, Tc, Ex, Mk, Dr], M], P) :-
+    first_odd([[S, Cf, Tc, Ex, Mk, Dr], M], _),
+    step([[S, Cf, Tc, Ex, Mk, Dr], M], K),
+    march.ray([[S, Cf, Tc, Ex, Mk, Dr], M], P, _, J, _), J > 0,
+    stride(J, K, K, _, 0).
+
+// The odd copies: every second step on from a cell of the first copy.
+copy(Ky, P) :- step(Ky, K), odd_march.ray(Ky, P, _, J, _), stride(J, K, K, _, 0).
+
+// --- $MirroredCopies ---
+// The diagonal lines from the template's front line to each template cell's
+// line, both included.
+// @claim step
+.init lines_to = Tally<CellKey, number>
+lines_to.item([[[S, $MirroredCopies(), Tc, Ex, Mk, Dr], M], T], N) :-
+    direction([[S, $MirroredCopies(), Tc, Ex, Mk, Dr], M], D),
+    template([[S, $MirroredCopies(), Tc, Ex, Mk, Dr], M], T),
+    front([[S, $MirroredCopies(), Tc, Ex, Mk, Dr], M], F),
+    corner_dist(F, D, N_front), corner_dist(T, D, N_t),
+    in(P, _), corner_dist(P, D, N), N_front <= N, N <= N_t.
+
+// The mirror image of a template cell across the line one cell past the
+// front: as many diagonal steps on as there are lines from the front to it.
+first_odd([Ch, M], P) :-
+    lines_to.tally([[Ch, M], T], J), direction([Ch, M], D), jump(T, D, J, P).
+
+// --- $RotatedCopies ---
+// @claim step
+.init tbox = Bbox<LineKey>
+tbox.cell([[S, $RotatedCopies(), Tc, Ex, Mk, Dr], M], T) :-
+    template([[S, $RotatedCopies(), Tc, Ex, Mk, Dr], M], T).
+
+// The template turned a half turn in its box, then moved one step.
+first_odd(Ky, P) :-
+    tbox.box(Ky, B), template(Ky, T), crop(T, B, P_rel),
+    rotation(_, R), d4_compose(R, R, H),                 // a quarter turn twice
+    apply(H, P_rel, Q_rel), compose(B, Q_rel, Q),
+    step(Ky, K), direction(Ky, D), jump(Q, D, K, P).
+
+.comp Determine {
+    // A color that some example input lacks.
+    .decl missing(col: Color)
+    missing(Col) :- ex_in(_, _, Col), ex_in(E, _, _), !ex_in(E, _, Col).
+
+    // The color every example input holds.
+    .decl shape_color(col: Color)
+    shape_color(Col) :- ex_in(_, _, Col), !missing(Col).
+}

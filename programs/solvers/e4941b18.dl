@@ -1,0 +1,206 @@
+// e4941b18
+// @draft
+// @keywords: markers move bbox
+// @scene background: every cell that is not of the block or a mark has the
+//  color `background`
+// @scene block: one solid rectangle of the color `block_color`, whose side
+//  toward `gravity` lies on the grid edge toward `gravity`
+// @scene marks-on-top: one cell of `pusher_color` and one cell of
+//  `pushed_color` stand in the line next to the block on its side away from
+//  `gravity`, both within the block's extent across `gravity`
+// @scene room-to-fall: the line next to the block's side toward which the
+//  pusher pushes lies inside the grid
+// @rule pusher-takes-place: the pusher's cell becomes `background`, and the
+//  pushed mark's cell becomes `pusher_color`
+// @rule pushed-falls-off: the pushed mark moves in the direction from the
+//  pusher toward it, to the first cell past the end of the block, then falls
+//  toward `gravity` to the grid edge, where its cell becomes `pushed_color`
+// @rule rest-kept: every other cell keeps its input color
+
+// what the block is
+.type Find =
+    // @claim block
+    BlockByColor {}
+    // @scene block: the bounding box of the cells whose color is none of
+    //  `background`, `pusher_color` and `pushed_color`
+    // @witness stray-cell-beyond-block: borderline concept
+    //     @relaxed background
+  | BlockAsNonBackground {}
+
+// where the pushed mark stops falling
+.type Stop =
+    // @claim pushed-falls-off
+    FallToEdge {}
+    // @rule pushed-falls-off: the pushed mark moves in the direction from the
+    //  pusher toward it, to the first cell past the end of the block, then
+    //  lands in the line of the block's side toward `gravity`
+    // @witness block-above-floor: variant concept
+    //     @relaxed block
+  | LandOnBlockBase {}
+    // @rule pushed-falls-off: the pushed mark moves in the direction from the
+    //  pusher toward it, to the first cell past the end of the block, then
+    //  falls toward `gravity` until the next cell is off the grid or not
+    //  `background`
+    // @witness cell-in-fall-column: borderline $FallUntilBlocked
+    //     @relaxed background
+  | FallUntilBlocked {}
+
+// where gravity comes from
+.type Pull =
+    // @claim block marks-on-top
+    StoredGravity {}
+    // @scene block: gravity is the direction from the marks' line toward the
+    //  block; undefined where the marks stand on no side of the block
+    // @scene marks-on-top: the marks stand in the line next to one side of
+    //  the block, within the block's extent along that side
+    // @witness marks-beside-block: variant $GravityFromMarks
+    //     @relaxed block
+    //     @relaxed marks-on-top
+  | GravityFromMarks {}
+
+// what the block is, crossed with where the pushed mark stops falling and
+// where gravity comes from
+.type Choice = [f: Find, s: Stop, g: Pull]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: ordinary concept
+    .decl background(col: Color) background(7).
+    .decl pusher_color(col: Color) pusher_color(2).
+    .decl pushed_color(col: Color) pushed_color(8).
+
+    // --- $BlockByColor ---
+    .decl block_color(col: Color) block_color(5).
+
+    // --- $StoredGravity ---
+    // the direction the pushed mark falls in
+    .decl gravity(d: Dir) gravity(DIR_B).
+}
+
+.init params = Params
+
+.decl find_choice(f: Find)
+find_choice($BlockByColor()). find_choice($BlockAsNonBackground()).
+
+.decl stop_choice(s: Stop)
+stop_choice($FallToEdge()). stop_choice($LandOnBlockBase()). stop_choice($FallUntilBlocked()).
+
+.decl pull_choice(g: Pull)
+pull_choice($StoredGravity()). pull_choice($GravityFromMarks()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, S, G]) :- find_choice(F), stop_choice(S), pull_choice(G).
+
+.decl pusher(p: Position)
+pusher(P) :- in(P, Col), params.pusher_color(Col).
+
+.decl pushed(p: Position)
+pushed(P) :- in(P, Col), params.pushed_color(Col).
+
+// The block, as the bounding box of the cells each Find branch takes.
+// @claim block
+.init block = Bbox<Find>
+
+.decl block_cell(p: Position, f: Find)
+block_cell(P, F) :- block.box(F, B), in(P, _), crop(P, B, _).
+
+// A cell with a block cell one step toward Down.
+.decl perch(p: Position, d: Dir, f: Find)
+perch(P, Down, F) :- in(P, _), dir_elem(Down), neighbor(P, Down, Q), block_cell(Q, F).
+
+// The direction the pushed mark falls in.
+.decl down(d: Dir, f: Find, g: Pull)
+
+// The pusher P1 and the pushed mark P2 on top of the block, and the push
+// direction, from P1 toward P2.
+.decl push(p1: Position, p2: Position, d: Dir, f: Find, g: Pull)
+push(P1, P2, Push, F, G) :-
+    down(Down, F, G), pusher(P1), perch(P1, Down, F), pushed(P2), perch(P2, Down, F),
+    perp_dir(Down, Push), nearer(Push, P2, P1).
+
+// The cell just past the block's end in the push direction, in the marks' line.
+.decl past(p: Position, down: Dir, push: Dir, f: Find, g: Pull)
+past(T, Down, Push, F, G) :-
+    push(_, _, Push, F, G), down(Down, F, G), opposite(Down, Up),
+    diag_dirs(Diag, _, Up, Push), block.box(F, B),
+    in(Q, _), box_corner(Q, B, Diag), neighbor(Q, Diag, T).   // diagonal from the block's far top corner
+
+// Where the pushed mark lands.
+.decl landing(p: Position, ch: Choice)
+
+// The cells the push changes.
+.decl moved(p: Position, col: Color, ch: Choice)
+moved(P1, Col, [F, S, G]) :- landing(_, [F, S, G]), push(P1, _, _, F, G), params.background(Col).
+moved(P2, Col, [F, S, G]) :- landing(_, [F, S, G]), push(_, P2, _, F, G), params.pusher_color(Col).
+moved(L, Col, Ch) :- landing(L, Ch), params.pushed_color(Col).
+
+out(P, Col, Ch) :- moved(P, Col, Ch).
+out(P, Col, Ch) :- landing(_, Ch), in(P, Col), !moved(P, _, Ch).
+
+// --- $BlockByColor ---
+block.cell($BlockByColor(), P) :- in(P, Col), params.block_color(Col).
+
+// --- $BlockAsNonBackground ---
+block.cell($BlockAsNonBackground(), P) :-
+    in(P, Col), !params.background(Col), !params.pusher_color(Col), !params.pushed_color(Col).
+
+// --- $StoredGravity ---
+down(Down, F, $StoredGravity()) :- find_choice(F), params.gravity(Down).
+
+// --- $GravityFromMarks ---
+// the direction from the marks toward the block
+down(Down, F, $GravityFromMarks()) :-
+    pusher(P1), perch(P1, Down, F), pushed(P2), perch(P2, Down, F).
+
+// --- $FallToEdge ---
+landing(L, [F, $FallToEdge(), G]) :-
+    past(T, Down, Push, F, G),
+    in(L, _), same_dist(Push, T, L), dist(L, Down, 0).    // T's line, on the edge toward Down
+
+// --- $LandOnBlockBase ---
+landing(L, [F, $LandOnBlockBase(), G]) :-
+    push(_, _, Push, F, G), down(Down, F, G), diag_dirs(Diag, _, Down, Push), block.box(F, B),
+    in(Q, _), box_corner(Q, B, Diag), neighbor(Q, Push, L), in(L, _).   // beside the block's far base corner
+
+// --- $FallUntilBlocked ---
+// @claim pushed-falls-off
+.init fall = Slide<Choice>
+fall.node([F, $FallUntilBlocked(), G], P) :-
+    impl_choice([F, $FallUntilBlocked(), G]), in(P, Col), params.background(Col).
+fall.dir([F, $FallUntilBlocked(), G], Down) :- down(Down, F, G).
+
+landing(L, [F, $FallUntilBlocked(), G]) :-
+    past(T, Down, _, F, G), fall.rest([F, $FallUntilBlocked(), G], T, Down, L).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl background(col: Color)
+    background(Col) :- common.mode(_, Col).
+
+    // The input color under the pushed mark.
+    .decl block_color(col: Color)
+    block_color(Col) :-
+        ex_in(E, P, C2), params.pushed_color(C2), params.gravity(Down),
+        neighbor(P, Down, Q), ex_in(E, Q, Col).
+
+    // The input color of a cell the output turns to background.
+    .decl pusher_color(col: Color)
+    pusher_color(Col) :-
+        ex_in(E, P, Col), ex_out(E, P, Bg), params.background(Bg), !params.background(Col).
+
+    // The output color of a background cell the output changes.
+    .decl pushed_color(col: Color)
+    pushed_color(Col) :-
+        ex_in(E, P, Bg), params.background(Bg), ex_out(E, P, Col), !params.background(Col).
+
+    // An edge some output's pushed mark does not lie on.
+    .decl off_edge(d: Dir)
+    off_edge(D) :- dir_elem(D), ex_out(_, P, Col), params.pushed_color(Col), !dist(P, D, 0).
+
+    .decl gravity(d: Dir)
+    gravity(D) :- dir_elem(D), !off_edge(D).
+}

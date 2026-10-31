@@ -1,0 +1,169 @@
+{
+  "id": "d89b689b",
+  "witnesses": [{
+    "id": "marker-past-grid-midline",
+    "separates": "A marker lies below and left of the block but above the grid's middle row, so it shares a grid quadrant with the marker above-left of the block: the block-corner reading moves each marker into its block corner, and the grid-quadrant reading sends two markers to one cell and is undefined.",
+    "input": [
+      [0,0,0,1,0,0,0,0,0,4],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,8,0,0,0],
+      [0,0,0,0,0,8,8,0,0,0],
+      [0,0,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,6],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$BlockCorner","$NearestBlockCell"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,4,0,0,0],
+        [0,0,0,0,0,3,6,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GridQuadrant"],
+      "grid": null
+    }]
+  }, {
+    "id": "marker-in-block-column",
+    "separates": "A marker lies directly above the block's left column: the nearest-cell reading moves it into the block's top-left cell, and the block-corner reading, which needs it off a corner, is undefined.",
+    "input": [
+      [0,0,0,0,0,1,0,0,0,4],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,8,0,0,0],
+      [0,0,0,0,0,8,8,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,6],
+      [0,0,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$BlockCorner","$GridQuadrant"],
+      "grid": null
+    }, {
+      "cases": ["$NearestBlockCell"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,4,0,0,0],
+        [0,0,0,0,0,3,6,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "block-other-color",
+    "separates": "The 2\u00d72 block is of color 3 in place of 8: the shape reading finds it and moves the markers in, and each reading that finds the block by the stored color 8 finds none and is undefined.",
+    "input": [
+      [0,0,0,0,0,0,0,0,7,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,6,0,0,0,0,0,0,0,0],
+      [0,0,0,0,3,3,0,0,0,0],
+      [0,0,0,0,3,3,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,9]
+    ],
+    "output": [{
+      "cases": ["$ByColor"],
+      "grid": null
+    }, {
+      "cases": ["$BlockByShape"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,6,7,0,0,0,0],
+        [0,0,0,0,4,9,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "The field is 1 in place of 0: the derived background reads the field as 1 and moves the markers onto a field of 1, and the stored background 0 reads every field cell as a marker and is undefined.",
+    "input": [
+      [1,1,1,1,1,1,1,1,7,1],
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,6,1,1,1,1,1,1,1,1],
+      [1,1,1,1,8,8,1,1,1,1],
+      [1,1,1,1,8,8,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1],
+      [1,4,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,9]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": null
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,6,7,1,1,1,1],
+        [1,1,1,1,4,9,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1]
+      ]
+    }]
+  }, {
+    "id": "marker-in-right-half-column",
+    "separates": "The marker 4 lies directly above the block's left column, in the grid's right half, beside the marker 1 off the block's top-left corner: the grid-quadrant reading moves 1 into the top-left block cell and 4 into the top-right one; the nearest-cell reading sends both to the top-left cell, and the block-corner reading, which needs 4 off a corner, leaves the top-right cell empty, so both are undefined.",
+    "input": [
+      [0,0,0,1,0,4,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,8,0,0,0],
+      [0,0,0,0,0,8,8,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,6],
+      [0,0,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$BlockCorner","$NearestBlockCell"],
+      "grid": null
+    }, {
+      "cases": ["$GridQuadrant"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,4,0,0,0],
+        [0,0,0,0,0,3,6,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

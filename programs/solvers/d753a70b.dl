@@ -1,0 +1,211 @@
+// d753a70b
+// @draft
+// @keywords: objects rings lookup
+// @scene background: every cell that is not part of a shape has the
+//  background color
+// @scene diamond-outlines: each shape is one color, and its cells are the
+//  cells inside the frame at one taxicab distance r ≥ 0 from a center cell
+//  inside the frame; a diamond of radius 0 is a single cell; of the diamonds
+//  a shape fits, it is the one of least radius
+// @scene diamonds-apart: two diamonds of one color share no cell and do not
+//  touch, also at a corner
+// @rule shrink: a diamond of the shrink color becomes the diamond of radius
+//  r − 1 around the same center, clipped by the frame
+// @rule grow: a diamond of the grow color becomes the diamond of radius r + 1
+//  around the same center, clipped by the frame
+// @rule keep: a diamond of any other color stays unchanged
+// @rule size: the output has the input's size, and every cell that no output
+//  diamond takes has the background color
+
+// how a shape's color sets its radius change
+.type Keying =
+    // @claim shrink grow keep
+    ColorPair {}
+    // @rule shrink: a stored table maps each shape color to its radius
+    //  change, and replaces shrink, grow and keep; undefined on a shape color
+    //  the table lacks
+    // @witness third-color-grows: borderline $ChangeTable
+    //     @reassigned radius_change
+  | ChangeTable {}
+
+// what shrinking a single cell gives
+.type Floor =
+    // @claim shrink
+    Vanish {}
+    // @rule shrink: the new radius is r − 1 but at least 0, so a single cell
+    //  of the shrink color stays
+    // @witness shrink-single-cell: ordinary concept
+  | ShrinkFloor {}
+
+.type Choice = [k: Keying, f: Floor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(7).
+
+    // --- $ColorPair ---
+    .decl shrink_color(c: Color) shrink_color(2).
+    .decl grow_color(c: Color) grow_color(5).
+
+    // --- $ChangeTable ---
+    // The steps a shape's radius changes by, per shape color.
+    .decl radius_change(c: Color, k: number)
+    radius_change(2, -1).
+    radius_change(5, 1).
+    radius_change(8, 0).
+    radius_change(9, 0).
+}
+
+.init params = Params
+
+.decl keying_choice(k: Keying)
+keying_choice($ColorPair()). keying_choice($ChangeTable()).
+
+.decl floor_choice(f: Floor)
+floor_choice($Vanish()). floor_choice($ShrinkFloor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([K, F]) :- keying_choice(K), floor_choice(F).
+
+// The taxicab distance from cell C to box P, measured to the corner of C's
+// frame that P lies beyond on both axes.
+.decl taxicab(c: Position, p: Box, k: number) inline
+taxicab(C, P, K) :-
+    relative(C, P, V),
+    diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,
+    corner_dist(V, Diag, K).
+
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, col: Color]
+
+    .decl grid(ky: Key, p: Position, col: Color)
+
+    // Cell P lies at taxicab distance K from cell C, both inside the frame:
+    // the clipped diamond of radius K around C.
+    .decl ring(ky: Key, c: Position, p: Position, k: number)
+    ring(Ky, C, P, K) :- grid(Ky, C, _), grid(Ky, P, _), taxicab(C, P, K).
+
+    // A shape: the cells of one color joined with their diagonals.
+    // @claim diamond-outlines diamonds-apart
+    .init shapes = Components8<KeyColor>
+    shapes.node([Ky, Col], P) :- grid(Ky, P, Col), !params.background(Col).
+
+    .decl shape_cell(ky: Key, id: Ident, p: Position, col: Color)
+    shape_cell(Ky, Id, P, Col) :- shapes.label([Ky, Col], P, Id).
+
+    // A center and radius that one of the shape's cells lies at.
+    .decl cand(ky: Key, id: Ident, c: Position, k: number)
+    cand(Ky, Id, C, K) :- shape_cell(Ky, Id, P, _), ring(Ky, C, P, K).
+
+    // A shape cell off the candidate ring.
+    .decl stray(ky: Key, id: Ident, c: Position, k: number)
+    stray(Ky, Id, C, K) :-
+        cand(Ky, Id, C, K), shape_cell(Ky, Id, Q, _), ring(Ky, C, Q, K2), K2 != K.
+
+    // A ring cell outside the shape.
+    .decl gap(ky: Key, id: Ident, c: Position, k: number)
+    gap(Ky, Id, C, K) :- cand(Ky, Id, C, K), ring(Ky, C, Q, K), !shape_cell(Ky, Id, Q, _).
+
+    // The diamonds the shape fits: its cells are the ring's.
+    .decl fit(ky: Key, id: Ident, c: Position, k: number)
+    fit(Ky, Id, C, K) :- cand(Ky, Id, C, K), !stray(Ky, Id, C, K), !gap(Ky, Id, C, K).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// @claim diamond-outlines
+.init least = Extremes<Ident>
+least.cand(Id, K) :- parse.fit($U(), Id, _, K).
+
+// The diamond a shape is read as: the one of least radius it fits, with
+// the shape's color.
+.decl diamond(id: Ident, c: Position, k: number, col: Color)
+diamond(Id, C, K, Col) :-
+    parse.fit($U(), Id, C, K), least.low(Id, K), parse.shape_cell($U(), Id, _, Col).
+
+// The diamond's vertex toward D: the cell K steps from its center, inside
+// the frame or past it.
+.decl vertex(id: Ident, dir: Dir, a: Box)
+vertex(Id, D, A) :- diamond(Id, C, K, _), dir_elem(D), jump(C, D, K, A).
+
+// The new diamond's vertex toward D.
+.decl new_vertex(k: Keying, id: Ident, dir: Dir, b: Box)
+
+// --- $ColorPair ---
+
+new_vertex($ColorPair(), Id, D, B) :-
+    vertex(Id, D, A), diamond(Id, _, _, Col),
+    ( params.shrink_color(Col), opposite(D, O), neighbor(A, O, B)      // one step in
+    ; params.grow_color(Col), neighbor(A, D, B)                       // one step out
+    ; !params.shrink_color(Col), !params.grow_color(Col), B = A       // stays
+    ).
+
+// --- $ChangeTable ---
+
+new_vertex($ChangeTable(), Id, D, B) :-
+    vertex(Id, D, A), diamond(Id, _, _, Col),
+    params.radius_change(Col, K), jump(A, D, K, B).                   // K steps out
+
+// --- shared ---
+
+// The new diamond's radius: the steps from the center to its vertex.
+.decl new_radius(k: Keying, id: Ident, r: number)
+new_radius(Kc, Id, R) :-
+    new_vertex(Kc, Id, D, B), diamond(Id, C, _, _), opposite(D, O),
+    !nearer(O, B, C), relative(C, B, V), dist(V, O, R).
+
+// A cell of a shape the case reads no new diamond for: no diamond fits it,
+// or the change table lacks its color. It takes no color, so the case is
+// undefined on the input.
+.decl unread(ch: Choice, p: Position)
+unread([Kc, F], P) :-
+    impl_choice([Kc, F]), parse.shape_cell($U(), Id, P, _), !new_vertex(Kc, Id, _, _).
+
+.decl drawn(ch: Choice, p: Position, col: Color)
+drawn([Kc, F], P, Col) :-
+    impl_choice([Kc, F]), new_radius(Kc, Id, R),
+    diamond(Id, C, _, Col), parse.ring($U(), C, P, R).
+
+// --- $ShrinkFloor ---
+
+// A diamond whose new vertex lies past its center stays as the center cell.
+drawn([Kc, $ShrinkFloor()], C, Col) :-
+    impl_choice([Kc, $ShrinkFloor()]),
+    new_vertex(Kc, Id, _, _), !new_radius(Kc, Id, _),     // past the center
+    diamond(Id, C, _, Col).
+
+// --- shared ---
+
+out(P, Col, Ch) :- drawn(Ch, P, Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _), !drawn(Ch, P, _), !unread(Ch, P),
+    params.background(Col).
+
+.comp Determine {
+    // No two cells of a diamond touch along a side, so a color with two
+    // cells that do is the background.
+    .decl background(c: Color)
+    background(Col) :- ex_in(E, P, Col), dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col).
+
+    .init ex_in_parse = Parse<Example>
+    ex_in_parse.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .init ex_out_parse = Parse<Example>
+    ex_out_parse.grid(E, P, Col) :- ex_out(E, P, Col).
+
+    // A train input's diamond of color Col and radius K, and the radius K2
+    // of its output diamond around the same center.
+    .decl resized(col: Color, k: number, k2: number)
+    resized(Col, K, K2) :-
+        ex_in_parse.fit(E, Id, C, K), ex_in_parse.shape_cell(E, Id, _, Col),
+        ex_out_parse.fit(E, Id2, C, K2), ex_out_parse.shape_cell(E, Id2, _, Col).
+
+    .decl shrink_color(c: Color)
+    shrink_color(Col) :- resized(Col, K, K2), K2 < K.
+
+    .decl grow_color(c: Color)
+    grow_color(Col) :- resized(Col, K, K2), K2 > K.
+}

@@ -1,7 +1,7 @@
 # cad67732
 
 ## Concept
-- The concept fits every pair at both open values of `anchor-edge`. The probe `work/task/cad67732/probe.py` gives each train output, and on the test it gives one grid, which is the test output.
+- The concept fits every pair at `anchor-edge` = `T`. The probe `work/task/cad67732/probe.py` gives each train output, and on the test it gives one grid, which is the test output.
 - The concept reads the band's diagonal in `diagonal-band` as the diagonal whose two corner cells are not `background`, and the period in `least-period` as the least positive shift along that diagonal under which the input agrees with itself where both cells lie in the grid.
 - Every claim has a relational form, and the concept case has no witness with verdict `other`.
 
@@ -28,7 +28,7 @@
 - `band diagonal` & `period`, `band diagonal` & `anchor`, `band diagonal` & `background`, `band diagonal` & `scale`, `period` & `anchor`, `period` & `background`, `period` & `scale`, `anchor` & `background`, `anchor` & `scale`, `background` & `scale`: the two branches' changes applied together
 
 ## Open parameters
-- `anchor-edge`: `T`, `L`
+- none
 
 ## Not formed
 - An anchor stored as a corner for each diagonal (a `DiagAxis` to `DiagDir` table, the corner on that diagonal): its four assignments agree with the four values of `anchor-edge`, so its model is equivalent to the concept's.

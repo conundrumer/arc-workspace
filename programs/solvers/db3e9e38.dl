@@ -1,0 +1,269 @@
+// db3e9e38
+// @draft
+// @keywords: cast parity objects
+// @scene hanging-line: the only non-background cells form one straight line
+//  of the line color 7, perpendicular to the anchor edge and touching that
+//  edge, on a field of the background color
+// @rule staircase-length: a column at distance d from the line, on either
+//  side, is filled along the line's rows, from the line's end nearest the
+//  anchor edge, for L - d cells, with L the line's length; a column with
+//  L - d <= 0 stays background, and the grid edge clips the staircase
+// @rule alternating-color: a filled column at even distance d takes the
+//  line's color, and one at odd d takes the stripe color
+// @rule keep-rest: every other cell keeps its input color
+
+// how far each column of the staircase reaches along the line
+.type Extent =
+    // @claim staircase-length
+    LineRows {}
+    // @rule staircase-length: the column at distance d, the line's column
+    //  included, fills from the anchor edge to d cells short of the line's
+    //  far end
+    // @witness floating-line: borderline concept
+    //     @relaxed hanging-line
+  | ToEdge {}
+    // @rule staircase-length: the column at distance d, the line's column
+    //  included, fills L - d cells from the anchor edge, wherever the line lies
+    // @witness floating-line: borderline concept
+  | EdgeAligned {}
+
+// which edge the staircase hangs from
+.type Anchor =
+    // @claim hanging-line
+    StoredEdge {e: Extent}
+    // @scene hanging-line: the anchor edge is the edge the line's end
+    //  touches, the line vertical or horizontal; undefined where the line
+    //  touches no edge or two edges
+    // @witness line-from-bottom: variant $EdgeFromLine
+    //     @relaxed hanging-line
+  | EdgeFromLine {}
+
+// the color of the columns at even distance
+.type EvenColor =
+    // @claim alternating-color
+    LineColor {}
+    // @rule alternating-color: a column at even distance takes a stored color
+    // @witness recolored-line: variant concept
+    //     @relaxed hanging-line
+  | StoredEvenColor {}
+
+// the color of the columns at odd distance
+.type StripeColor =
+    // @claim alternating-color
+    StoredStripe {}
+    // @rule alternating-color: a column at odd distance takes the color a
+    //  table gives for the line's color; undefined where the line's color is
+    //  no key of that table
+    // @witness recolored-line-keyed: variant concept
+    //     @relaxed hanging-line
+    //     @reassigned stripe_of_line
+  | StripeByLineColor {}
+
+// how many lines the input holds
+.type LineCount =
+    // @claim hanging-line
+    OneLine {}
+    // @scene hanging-line: each line grows its own staircase; undefined
+    //  where two staircases give one cell different colors
+    // @witness two-lines: variant $PerLine
+    //     @relaxed hanging-line
+  | PerLine {}
+
+.type Choice = [a: Anchor, v: EvenColor, s: StripeColor, n: LineCount]
+
+// a line, and the edge it hangs from
+.type Hang = [x: Ident, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed hanging-line
+    .decl background(c: Color) background(0).
+    // the columns in each run of one color
+    .decl run(k: number) run(1).
+
+    // --- $StoredEdge ---
+    // @ignore: case section — only the stored edge's clause reads it
+    .decl anchor_edge(d: Dir) anchor_edge(DIR_T).
+
+    // --- $StoredStripe ---
+    .decl stripe_color(c: Color) stripe_color(8).
+
+    // --- $StoredEvenColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed hanging-line
+    .decl even_color(c: Color) even_color(7).
+
+    // --- $StripeByLineColor ---
+    .decl stripe_of_line(c_line: Color, c_stripe: Color)
+    stripe_of_line(7, 8).
+}
+
+.init params = Params
+
+.decl anchor_choice(a: Anchor)
+anchor_choice($StoredEdge($LineRows())). anchor_choice($StoredEdge($ToEdge())).
+anchor_choice($StoredEdge($EdgeAligned())). anchor_choice($EdgeFromLine()).
+
+.decl even_color_choice(v: EvenColor)
+even_color_choice($LineColor()). even_color_choice($StoredEvenColor()).
+
+.decl stripe_color_choice(s: StripeColor)
+stripe_color_choice($StoredStripe()). stripe_color_choice($StripeByLineColor()).
+
+.decl line_count_choice(n: LineCount)
+line_count_choice($OneLine()). line_count_choice($PerLine()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, V, S, N]) :- anchor_choice(A), even_color_choice(V), stripe_color_choice(S), line_count_choice(N).
+
+// @claim hanging-line
+.init lines = Components<Unit>
+lines.node($U(), P) :- in(P, Col), !params.background(Col).
+
+.decl line(x: Ident)
+line(X) :- lines.label($U(), _, X).
+
+.decl line_color(x: Ident, col: Color)
+line_color(X, Col) :- lines.label($U(), P, X), in(P, Col).
+
+// Some two cells of the line lie on different lines of axis a.
+.decl bent(x: Ident, a: Axis)
+bent(X, A) :-
+    lines.label($U(), P, X), lines.label($U(), Q, X),
+    axis_elem(A), perp(A, A_across), axis_of(D, A_across), !same_dist(D, P, Q).   // apart across the axis
+
+.decl straight(x: Ident, a: Axis)
+straight(X, A) :- line(X), axis_elem(A), !bent(X, A).
+
+// The lines each case finds, each with the edge it hangs from.
+// @ignore: case section — each branch's clause derives facts at its own anchor alone
+.decl hang(a: Anchor, x: Ident, d: Dir)
+
+// The staircase extent each case takes.
+// @ignore: head-repeat — the stored edge's extent is its own field
+.decl extent_of(a: Anchor, e: Extent)
+
+// The line's far end: the end away from its edge.
+.decl far_end(h: Hang, p: Position)
+far_end([X, D], P) :-
+    hang(_, X, D), lines.label($U(), P, X),
+    opposite(D, D_far), neighbor(P, D_far, Q), !lines.label($U(), Q, X).
+
+// From the far end back toward the edge: the line's column, each cell at its
+// distance from the far end.
+// @claim staircase-length
+.init up = Ray<Hang>
+up.dir([X, D], D) :- hang(_, X, D).
+up.mark(H, P) :- far_end(H, P).
+up.cell([X, D], P) :- hang(_, X, D), in(P, _).
+
+// From each cell of that column out to both sides.
+// @claim staircase-length
+.init side = Ray<Hang>
+side.dir([X, D], S) :- hang(_, X, D), perp_dir(D, S).
+side.mark(H, P) :- up.ray(H, P, _, _, _).
+side.cell([X, D], P) :- hang(_, X, D), in(P, _).
+
+// The cells each column's extent counts from, each at its distance from the
+// far end.
+// @ignore: case section — each branch's clause derives facts at its own extent alone
+.decl spine(h: Hang, e: Extent, p: Position, k: number)
+spine([X, D], $LineRows(), P, K) :- up.ray([X, D], P, _, K, _), lines.label($U(), P, X).
+
+// A staircase cell of line x, off the line, at distance k from the line's column.
+.decl stair(a: Anchor, x: Ident, q: Position, k: number)
+stair(A, X, Q, K) :-
+    hang(A, X, D), extent_of(A, E), spine([X, D], E, P, K_far),
+    side.ray([X, D], Q, _, K, P), K <= K_far,          // no farther out than this row lies from the far end
+    !lines.label($U(), Q, X).
+
+// A distance in a run of the line's color.
+.decl even_step(k: number)
+even_step(K) :- stair(_, _, _, K), params.run(W), stride(K, W, W, _, _).
+
+.decl even_paint(v: EvenColor, x: Ident, col: Color)
+.decl stripe_paint(s: StripeColor, x: Ident, col: Color)
+
+.decl paint(a: Anchor, v: EvenColor, s: StripeColor, q: Position, col: Color)
+paint(A, V, S, Q, Col) :-
+    stair(A, X, Q, K), even_color_choice(V), stripe_color_choice(S),
+    ( even_step(K), even_paint(V, X, Col)
+    ; !even_step(K), stripe_paint(S, X, Col)
+    ).
+
+// A line that the case finds no edge for.
+.decl stray(a: Anchor, x: Ident)
+stray(A, X) :- anchor_choice(A), line(X), !hang(A, X, _).
+
+// A line that the case finds two edges for.
+.decl clash(a: Anchor, x: Ident)
+clash(A, X) :- hang(A, X, D1), hang(A, X, D2), D1 != D2.
+
+.decl undefined(a: Anchor, n: LineCount)
+undefined(A, N) :- line_count_choice(N), ( stray(A, _) ; clash(A, _) ).
+
+out(Q, Col, [A, V, S, N]) :-
+    impl_choice([A, V, S, N]), !undefined(A, N), in(Q, C0),
+    ( paint(A, V, S, Q, Col)
+    ; !stair(A, _, Q, _), Col = C0
+    ).
+
+// --- $StoredEdge ---
+hang($StoredEdge(E), X, D) :-
+    anchor_choice($StoredEdge(E)), params.anchor_edge(D), axis_of(D, A_line), straight(X, A_line).
+extent_of($StoredEdge(E), E) :- anchor_choice($StoredEdge(E)).
+
+// --- $EdgeFromLine ---
+// The edge one end of the line touches.
+hang($EdgeFromLine(), X, D) :-
+    lines.label($U(), P, X), dir_elem(D), dist(P, D, 0), axis_of(D, A_line), straight(X, A_line).
+extent_of($EdgeFromLine(), $LineRows()).
+
+// --- $ToEdge ---
+spine(H, $ToEdge(), P, K) :- up.ray(H, P, _, K, _).
+
+// --- $EdgeAligned ---
+// The line moved along its column until its near end touches its edge.
+spine([X, D], $EdgeAligned(), P, K) :-
+    up.ray([X, D], P0, _, K, _), lines.label($U(), P0, X),
+    lines.label($U(), P_near, X), neighbor(P_near, D, Q), !lines.label($U(), Q, X),   // the near end
+    dist(P_near, D, G), jump(P0, D, G, P).
+
+// --- $OneLine ---
+.decl many()
+many() :- line(X), line(Y), X != Y.
+
+undefined(A, $OneLine()) :- anchor_choice(A), ( many() ; !line(_) ).
+
+// --- $LineColor ---
+even_paint($LineColor(), X, Col) :- line_color(X, Col).
+
+// --- $StoredEvenColor ---
+even_paint($StoredEvenColor(), X, Col) :- line(X), params.even_color(Col).
+
+// --- $StoredStripe ---
+stripe_paint($StoredStripe(), X, Col) :- line(X), params.stripe_color(Col).
+
+// --- $StripeByLineColor ---
+stripe_paint($StripeByLineColor(), X, Col) :- line_color(X, C), params.stripe_of_line(C, Col).
+
+.comp Determine {
+    // The commonest color of each input, its field.
+    .init field = Mode<Example, Color, Position>
+    field.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .init ink_box = Bbox<Example>
+    ink_box.cell(E, P) :- ex_in(E, P, Col), !field.mode(E, Col).
+
+    // The line's width: the lesser extent of its box.
+    .init extent = Extremes<Example>
+    extent.cand(E, N) :- ink_box.box(E, B), ex_in(E, P, _), axis_elem(A), box_extent(B, P, A, N).
+
+    .init width = Unanimous<Unit, number>
+    width.item($U(), N) :- extent.low(E, N), ex_out(E, _, _).
+
+    .decl run(k: number)
+    run(N) :- width.value($U(), N).
+}

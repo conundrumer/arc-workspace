@@ -1,0 +1,224 @@
+// e9614598
+// @draft
+// @keywords: markers stamp
+// @scene background: every cell other than the marks holds params.background
+// @scene two-marks: the input holds exactly two non-background cells, both of
+//  color 1
+// @scene marks-aligned: the two marks share a row or a column
+// @scene even-separation: the distance between the two marks along their line
+//  is even, so one cell lies equally far from each
+// @scene plus-clear: the plus drawn at that cell lies inside the grid and
+//  covers no mark
+// @rule keep-input: every input cell is kept, except where the plus is drawn
+// @rule midpoint: the center is the cell on the line between the two marks at
+//  equal distance from each
+// @rule plus: the center and each cell params.arm_length or fewer steps from
+//  it in each of the four cardinal directions take params.plus_color
+
+// which cells are the marks
+.type Marks =
+    // @claim two-marks
+    NonBackground {}
+    // @scene two-marks: the marks are the cells of params.mark_color, and other
+    //  cells keep their color; undefined where the input holds other than two
+    //  cells of that color
+    // @witness mark-color: borderline $MarkColor
+    //     @relaxed two-marks
+  | MarkColor {}
+
+// where the center lies
+.type Center =
+    // @claim midpoint
+    Midpoint {}
+    // @rule midpoint: the center is the cell whose row is at equal distance
+    //  from the two marks' rows and whose column is at equal distance from
+    //  their columns, whether or not the marks share a row or a column;
+    //  undefined where the marks are at an odd distance on either axis
+    // @witness box-center: borderline $BoxCenter
+    //     @relaxed marks-aligned
+  | BoxCenter {}
+
+// how many pluses are drawn
+.type Pairing =
+    // @claim two-marks
+    OnePair {}
+    // @rule midpoint: a plus is drawn at the center of each two marks that the
+    //  center rule accepts, and an input with no such pair is kept unchanged;
+    //  defined on every input
+    // @witness every-pair: borderline $EveryPair
+    //     @relaxed two-marks
+  | EveryPair {}
+
+// what shows where the plus covers a mark
+.type Overlap =
+    // @claim keep-input
+    PlusOnTop {}
+    // @rule keep-input: a mark under the plus keeps its color
+    // @witness marks-on-top: borderline $MarksOnTop
+    //     @relaxed plus-clear
+  | MarksOnTop {}
+
+.type Choice = [m: Marks, c: Center, p: Pairing, o: Overlap]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl plus_color(col: Color) plus_color(3).
+
+    // The number of cells each arm of the plus reaches from the center.
+    .decl arm_length(k: number) arm_length(1).
+
+    // --- $NonBackground ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    // @ignore: derive concept — fails Subsumption: where the input holds two
+    //  cells off its commonest color, $MarkColor & $EveryPair with
+    //  mark_color=RarestColor takes the same two cells as marks
+    .decl background(col: Color) background(0).
+
+    // --- $MarkColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed two-marks
+    .decl mark_color(col: Color) mark_color(1).
+}
+
+.init params = Params
+
+.decl marks_choice(m: Marks)
+marks_choice($NonBackground()). marks_choice($MarkColor()).
+
+.decl center_choice(c: Center)
+center_choice($Midpoint()). center_choice($BoxCenter()).
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($PlusOnTop()). overlap_choice($MarksOnTop()).
+
+.decl impl_choice(ch: Choice)
+// Where a case that draws one plus is defined, the same case with $EveryPair
+// gives its output, so $OnePair stays only beside the concept branch at each
+// other point.
+impl_choice([$NonBackground(), $Midpoint(), $OnePair(), $PlusOnTop()]).
+impl_choice([M, C, $EveryPair(), O]) :-
+    marks_choice(M), center_choice(C), overlap_choice(O).
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    .decl mark(key: Key, m: Marks, p: Position)
+
+    // The cell P with the same offset from M1 as M2 has from P.
+    .decl center(key: Key, m: Marks, c: Center, p: Position)
+
+    // --- $NonBackground ---
+    mark(Ky, $NonBackground(), P) :- grid(Ky, P, Col), !params.background(Col).
+
+    // --- $MarkColor ---
+    mark(Ky, $MarkColor(), P) :- grid(Ky, P, Col), params.mark_color(Col).
+
+    // --- $Midpoint ---
+    center(Ky, M, $Midpoint(), P) :-
+        mark(Ky, M, M1), mark(Ky, M, M2), M1 != M2,
+        axis_elem(A), same_line(A, M1, M2),                                  // two marks on one row or column
+        grid(Ky, P, _), relative(M1, P, V), relative(P, M2, V).              // equally far from each
+
+    // --- $BoxCenter ---
+    center(Ky, M, $BoxCenter(), P) :-
+        mark(Ky, M, M1), mark(Ky, M, M2), M1 != M2,
+        grid(Ky, P, _), relative(M1, P, V), relative(P, M2, V).              // equally far from each
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+// The centers the plus is drawn at.
+.decl drawn_center(m: Marks, c: Center, pa: Pairing, p: Position)
+
+// The cells the plus covers.
+.decl plus_cell(ch: Choice, p: Position)
+
+// The cells that take the plus color.
+.decl paint(ch: Choice, p: Position)
+
+// The cases that give an output.
+.decl defined(ch: Choice)
+
+out(P, Col, Ch) :-
+    defined(Ch), in(P, Col_in),
+    ( paint(Ch, P), params.plus_color(Col)
+    ; !paint(Ch, P), Col = Col_in ).
+
+// --- $OnePair ---
+
+// A third mark: the case is undefined.
+.decl crowded(m: Marks)
+crowded(M) :-
+    parse.mark($U(), M, A), parse.mark($U(), M, B), parse.mark($U(), M, C), A != B, A != C, B != C.
+
+drawn_center(M, C, $OnePair(), P) :- parse.center($U(), M, C, P), !crowded(M).
+
+defined(Ch) :-
+    impl_choice(Ch), Ch = [M, C, $OnePair(), _], drawn_center(M, C, $OnePair(), _).
+
+// --- $EveryPair ---
+drawn_center(M, C, $EveryPair(), P) :- parse.center($U(), M, C, P).
+
+defined(Ch) :- impl_choice(Ch), Ch = [_, _, $EveryPair(), _].
+
+// @claim plus
+.init arms = Ray<Choice>
+arms.dir(Ch, D) :- impl_choice(Ch), dir_elem(D).
+arms.cell(Ch, P) :- impl_choice(Ch), in(P, _).
+arms.mark(Ch, Q) :- impl_choice(Ch), Ch = [M, C, Pa, _], drawn_center(M, C, Pa, Q).
+
+plus_cell(Ch, P) :- arms.ray(Ch, P, _, K, _), params.arm_length(L), K <= L.
+
+// --- $PlusOnTop ---
+paint(Ch, P) :- plus_cell(Ch, P), Ch = [_, _, _, $PlusOnTop()].
+
+// --- $MarksOnTop ---
+paint(Ch, P) :- plus_cell(Ch, P), Ch = [M, _, _, $MarksOnTop()], !parse.mark($U(), M, P).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    // The output cells that differ from the input, with their color.
+    .decl drawn(e: Example, p: Position, col: Color)
+    drawn(E, P, Col) :- ex_out(E, P, Col), ex_in(E, P, Col_in), Col != Col_in.
+
+    .decl plus_color(col: Color)
+    plus_color(Col) :- drawn(_, _, Col).
+
+    // B leaves some input with other than two cells of another color.
+    .decl background_defect(col: Color)
+    background_defect(B) :-
+        ex_in(_, _, B), ex_in(E, _, _),
+        ( !two_others(E, B)
+        ; ex_in(E, P1, C1), ex_in(E, P2, C2), ex_in(E, P3, C3), C1 != B, C2 != B, C3 != B,
+          P1 != P2, P1 != P3, P2 != P3 ).
+
+    // Input E holds two cells of a color other than B.
+    .decl two_others(e: Example, col: Color)
+    two_others(E, B) :-
+        ex_in(_, _, B), ex_in(E, P1, C1), ex_in(E, P2, C2), P1 != P2, C1 != B, C2 != B.
+
+    .decl background(col: Color)
+    background(B) :- ex_in(_, _, B), !background_defect(B).
+
+    // The color of the cells of another color than the background.
+    .decl mark_color(col: Color)
+    mark_color(Col) :- background(B), ex_in(_, _, Col), Col != B.
+
+    // The cells in line with each center.
+    .init arms = Ray<Example>
+    arms.dir(E, D) :- ex_out(E, _, _), dir_elem(D).
+    arms.cell(E, P) :- ex_out(E, P, _).
+    arms.mark(E, Q) :- ex_out(E, _, _), ex.center(E, $NonBackground(), $Midpoint(), Q).
+
+    // The farthest drawn cell from the center along a cardinal line.
+    .init reach = Extremes<Example>
+    reach.cand(E, K) :- arms.ray(E, P, _, K, _), drawn(E, P, _).
+
+    .decl arm_length(k: number)
+    arm_length(K) :- reach.high(_, K).
+}

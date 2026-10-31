@@ -1,0 +1,4 @@
+# d22278a0 create: progress notes
+
+- interference: `uv run python scripts/run_dl.py determination-plan d22278a0` lists `ring_period (SepTileCount narrowed(2))` under "write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from". The inputs have no separator, and ring spacing is not a separator tile count, so the line does not say whether a determination relation is owed or what it should read. It cost one extra plan run and a look into `programs/proposers.dl`. The entry is still listed; the solver has no determination relation for `ring_period`.
+- interference: [Commands](CLAUDE.md) and the PreToolUse hook: a shell `for` loop that scanned approved solvers for a `Determine` example was blocked ("unsupported executable construct 'for'"). It cost one retry through Grep. Nothing was wrong in any output.

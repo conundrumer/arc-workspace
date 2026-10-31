@@ -1,0 +1,103 @@
+{
+  "id": "e50d258f",
+  "witnesses": [{
+    "id": "mark-excess-differs",
+    "separates": "the patch with the most 2 cells also holds more 1 cells than 2 cells, while another patch holds fewer 2 cells and no 1 cell; the concept crops the first patch, $ExcessOverMark crops the second",
+    "input": [
+      [2,1,2,8,0,0,0,0,0,0],
+      [1,8,1,8,0,0,0,0,0,0],
+      [2,1,8,1,0,0,0,0,0,0],
+      [8,8,8,8,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,8,2,8,8],
+      [0,0,0,0,0,8,8,8,8,8],
+      [0,0,0,0,0,8,2,8,8,8],
+      [0,0,0,0,0,8,8,8,8,8],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$MostMark"],
+      "grid": [
+        [2,1,2,8],
+        [1,8,1,8],
+        [2,1,8,1],
+        [8,8,8,8]
+      ]
+    }, {
+      "cases": ["$ExcessOverMark"],
+      "grid": [
+        [8,8,2,8,8],
+        [8,8,8,8,8],
+        [8,2,8,8,8],
+        [8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "corner-touching-patches",
+    "separates": "two patches touch at one corner; the concept keeps them apart and crops the patch with three 2 cells, $DiagJoined joins them into one patch and crops the box of both, background cells included",
+    "input": [
+      [2,8,2,0,0,0,0,2,8,1],
+      [8,2,8,0,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,8,2,8],
+      [0,0,0,8,8,8,0,0,0,0],
+      [0,0,0,8,2,8,0,0,0,0],
+      [0,0,0,8,1,8,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [1,8,8,0,0,0,0,0,0,0],
+      [8,8,8,0,0,0,0,0,0,0],
+      [8,8,1,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Cardinal"],
+      "grid": [
+        [2,8,2],
+        [8,2,8],
+        [8,8,8]
+      ]
+    }, {
+      "cases": ["$DiagJoined"],
+      "grid": [
+        [2,8,2,0,0,0],
+        [8,2,8,0,0,0],
+        [8,8,8,0,0,0],
+        [0,0,0,8,8,8],
+        [0,0,0,8,2,8],
+        [0,0,0,8,1,8]
+      ]
+    }]
+  }, {
+    "id": "cell-in-patch-box",
+    "separates": "a separate 1 cell lies inside the box of a ring-shaped patch; the concept copies the whole box, the 1 cell included, $CropOwnCells paints only the ring's own cells and leaves that cell background",
+    "input": [
+      [8,2,8,2,8,0,0,0,0,0],
+      [8,0,0,0,8,0,0,0,0,0],
+      [8,0,1,0,8,0,0,0,0,0],
+      [8,0,0,0,8,0,0,0,0,0],
+      [8,2,8,8,8,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,8,8,8,8],
+      [0,0,0,0,0,8,1,8,2,8],
+      [0,0,0,0,0,8,8,8,8,8],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$WholeBox"],
+      "grid": [
+        [8,2,8,2,8],
+        [8,0,0,0,8],
+        [8,0,1,0,8],
+        [8,0,0,0,8],
+        [8,2,8,8,8]
+      ]
+    }, {
+      "cases": ["$CropOwnCells"],
+      "grid": [
+        [8,2,8,2,8],
+        [8,0,0,0,8],
+        [8,0,0,0,8],
+        [8,0,0,0,8],
+        [8,2,8,8,8]
+      ]
+    }]
+  }]
+}

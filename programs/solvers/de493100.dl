@@ -1,0 +1,407 @@
+// de493100
+// @draft
+// @keywords: symmetry decompose crop repair latent-canvas occlude
+// @scene square-picture: the grid shows the corner `picture_corner` (top-left)
+//  of a square picture of side `picture_size` (32), which the grid crops at
+//  the other two edges.
+// @scene tiled-picture: the picture cuts into `tile_size` × `tile_size`
+//  tiles, and each tile of the quarter at `picture_corner`, with its images
+//  in the other quarters, carries the group of the picture's mirrors and
+//  turns that `tile_groups` gives it.
+// @scene side-mirrors: every tile's group holds the mirrors across the
+//  picture's vertical and horizontal center lines.
+// @scene diagonal-mirrors: a tile off the quarter's diagonal also holds the
+//  mirrors across the picture's two diagonals.
+// @scene mask-block: one solid rectangle of `mask_color` covers part of the
+//  picture, and `mask_color` occurs nowhere else.
+// @scene mask-recoverable: each masked cell has an image, under a member of
+//  its tile's group, that is in the grid and outside the mask.
+// @rule crop-to-mask: the output is the mask's bounding box.
+// @rule fill-from-mirror: each output cell takes the color of an image of
+//  its masked cell, under a member of its tile's group, that is in the grid
+//  and outside the mask.
+
+// The mirrors that restore a hidden cell
+.type Tiles =
+    // @claim tiled-picture
+    StoredGroups {}
+    // @scene tiled-picture: no tiles; the picture holds the side mirrors
+    //  everywhere and the diagonal mirrors and turns where they serve.
+    // @rule fill-from-mirror: a hidden cell takes the color of a visible
+    //  side-mirror image, and where it has none, of a visible image under
+    //  the diagonal mirrors and turns; undefined where it has no visible
+    //  image, or where its images differ.
+    // @witness hidden-diagonal-block-corner: borderline other
+    //     @relaxed mask-recoverable
+    // @witness symmetric-diagonal-block: variant $DerivedTileGroups
+  | DiagonalFallback {}
+    // @scene tiled-picture: each tile's group is the members of D4 about
+    //  the picture's center that hold on the tile's visible cells in that
+    //  input; undefined where a hidden cell has no visible image under that
+    //  group, or where its images differ.
+    // @witness symmetric-diagonal-block: variant $DerivedTileGroups
+    //     @relaxed tiled-picture
+    //     @relaxed mask-recoverable
+    // @witness broken-side-mirror: foreign $DerivedTileGroups
+    //     @relaxed side-mirrors
+  | DerivedTileGroups {}
+
+// Where the picture's center lines sit
+.type Axes =
+    // @claim square-picture
+    StoredCorner {}
+    // @scene square-picture: on each axis, the center line is the one,
+    //  among the placements of a `picture_size` picture that holds the grid,
+    //  at which no visible pair of side-mirror images disagrees and the most
+    //  visible pairs stand; undefined where no such line exists.
+    // @witness shifted-picture: variant $FoundAxes
+    //     @relaxed square-picture
+  | FoundAxes {}
+
+// The color of the mask
+.type Mask =
+    // @claim mask-block
+    StoredMask {}
+    // @scene mask-block: the mask's color is the one color that a cell of
+    //  every side-mirror mismatch carries; undefined where more than one
+    //  color, or none, qualifies.
+    // @witness recolored-mask: variant $MaskFromAsymmetry
+    //     @relaxed mask-block
+    // @witness stray-cell: foreign concept
+    //     @relaxed side-mirrors
+  | MaskFromAsymmetry {}
+    // @scene mask-block: the mask's color is the one color whose cells form
+    //  one solid rectangle; undefined where no color, or more than one,
+    //  qualifies.
+    // @witness recolored-mask: variant $MaskFromAsymmetry
+    // @witness centered-block-color: borderline concept
+  | MaskByShape {}
+
+.type Choice = [t: Tiles, a: Axes, m: Mask]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl picture_size(n: number) picture_size(32).
+
+    // --- $StoredCorner, $StoredGroups ---
+    // The picture's corner that the grid shows; the tile table describes
+    // the quarter at it.
+    .decl picture_corner(d: DiagDir) picture_corner(DIAG_TL).
+
+    // --- $StoredGroups, $DiagonalFallback ---
+    // The group of the mirrors across the picture's center lines.
+    .decl side_group(s: Sym) side_group(SYM_BOX).
+
+    // --- $StoredGroups, $DerivedTileGroups ---
+    // @ignore: derive TileDim — on a 30-wide input it gives several sizes at
+    //  once; with the derived groups the tiles conflict at train0 (Fit), and
+    //  with the stored groups no input shows an output other than the
+    //  concept's (Subsumption)
+    .decl tile_size(k: number) tile_size(8).
+
+    // --- $StoredGroups ---
+    // Per tile of the quarter at picture_corner, its group.
+    .decl tile_groups(p_tile: Position, s: Sym)
+    GRID_2x2(tile_groups,
+        SYM_BOX, SYM_D4,
+        SYM_D4,  SYM_BOX)
+
+    // --- $StoredMask ---
+    .decl mask_color(c: Color) mask_color(7).
+}
+
+.init params = Params
+
+.decl tiles_choice(t: Tiles)
+tiles_choice($StoredGroups()). tiles_choice($DiagonalFallback()). tiles_choice($DerivedTileGroups()).
+
+.decl axes_choice(a: Axes)
+axes_choice($StoredCorner()). axes_choice($FoundAxes()).
+
+.decl mask_choice(m: Mask)
+mask_choice($StoredMask()). mask_choice($MaskFromAsymmetry()). mask_choice($MaskByShape()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, A, M]) :- tiles_choice(T), axes_choice(A), mask_choice(M).
+
+// A candidate mask color of a Mask branch, with an axis.
+.type ColorAxis = [m: Mask, c: Color, a: Axis]
+// A candidate mask color of a Mask branch, with an axis and a placement on it.
+.type LineCand = [m: Mask, c: Color, a: Axis, b: Box]
+
+// The axis lines of the grid and of the picture.
+.decl grid_line(a: Axis, l: Position)
+grid_line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+.init picture_line = AxisFrame<Unit>
+picture_line.extent($U(), A, N) :- axis_elem(A), params.picture_size(N).
+
+// The placements of the picture on axis a that hold the grid: the picture's
+// margins around the grid on that axis.
+.decl margin_cand(a: Axis, b: Box)
+margin_cand(A, B) :-
+    grid_line(A, L), picture_line.cell($U(), A, Lp),
+    relative(L, Lp, B), inside(B, ZERO).
+
+// The picture's margins around the grid on both axes, per Axes branch and
+// candidate mask color.
+// @ignore: store — under $StoredCorner, picture_size and picture_corner
+//  already store it, and no witnessed case takes a stored-margin branch
+.decl margin(ax: Axes, m: Mask, c: Color, b: Box)
+
+// The colors each Mask branch considers, per Axes branch.
+.decl mask_cand(ax: Axes, m: Mask, c: Color)
+
+// The mask's color.
+.decl mask_color(ax: Axes, m: Mask, c: Color)
+
+// The bounding box of each color's cells.
+// @claim mask-block crop-to-mask
+.init color_box = Bbox<Color>
+color_box.cell(C, P) :- in(P, C).
+
+// --- $StoredCorner ---
+// The placement that puts picture_corner at the grid's corner.
+.decl stored_margin(a: Axis, b: Box)
+stored_margin(A, B) :-
+    margin_cand(A, B), params.picture_corner(Cr), dir_of(Cr, A, D), dist(B, D, 0).
+
+margin($StoredCorner(), M, C, B) :-
+    mask_cand($StoredCorner(), M, C),
+    stored_margin(A1, B1), perp(A1, A2), stored_margin(A2, B2), compose(B1, B2, B).
+
+// --- $FoundAxes, $MaskFromAsymmetry ---
+// Two cells, not of color c, that the side mirror on axis a maps onto each
+// other at the placement b.
+.decl axis_pair(m: Mask, c: Color, a: Axis, b: Box, p: Position, q: Position)
+axis_pair(M, C, A, B, P, Q) :-
+    mask_cand(_, M, C), margin_cand(A, B), flip_of(A, F),
+    in(P, Col), Col != C, compose(P, B, Pm),       // picture cell
+    apply(F, Pm, Qm), relative(B, Qm, Q),          // its mirror, in the grid
+    in(Q, Col2), Col2 != C, P != Q.
+
+// The side mirror on axis a maps a cell onto one of another color, neither
+// of color c.
+.decl axis_mismatch(m: Mask, c: Color, a: Axis, b: Box)
+axis_mismatch(M, C, A, B) :- axis_pair(M, C, A, B, P, Q), in(P, Col), in(Q, Col2), Col != Col2.
+
+// --- $FoundAxes ---
+// @claim square-picture
+.init pair_tally = Tally<LineCand, Position>
+pair_tally.domain([M, C, A, B]) :- mask_cand($FoundAxes(), M, C), margin_cand(A, B).
+pair_tally.item([M, C, A, B], P) :- axis_pair(M, C, A, B, P, _).
+
+// Per mask color and axis, the unbroken placement with the most pairs.
+// @claim square-picture
+.init found = ArgExtremes<ColorAxis, Box>
+found.cand([M, C, A], B, N) :- pair_tally.tally([M, C, A, B], N), !axis_mismatch(M, C, A, B).
+
+margin($FoundAxes(), M, C, B) :-
+    found.high([M, C, A1], B1, _), perp(A1, A2), found.high([M, C, A2], B2, _),
+    compose(B1, B2, B).
+
+// --- $StoredMask ---
+mask_cand(Ax, $StoredMask(), C) :- axes_choice(Ax), params.mask_color(C).
+mask_color(Ax, $StoredMask(), C) :- axes_choice(Ax), params.mask_color(C).
+
+// --- $MaskFromAsymmetry ---
+mask_cand(Ax, $MaskFromAsymmetry(), C) :- axes_choice(Ax), in(_, C).
+
+// A side-mirror mismatch at the placement that no cell of color c is in.
+.decl mismatch_outside(ax: Axes, c: Color)
+mismatch_outside(Ax, C) :-
+    margin(Ax, $MaskFromAsymmetry(), C, B), axis_elem(A), margin_cand(A, B_a),
+    split(B, A, B_a, _), axis_mismatch($MaskFromAsymmetry(), C, A, B_a).
+
+// The colors that a cell of every side-mirror mismatch carries.
+// @claim mask-block
+.init asym_color = Unanimous<Axes, Color>
+asym_color.item(Ax, C) :- margin(Ax, $MaskFromAsymmetry(), C, _), !mismatch_outside(Ax, C).
+
+mask_color(Ax, $MaskFromAsymmetry(), C) :- asym_color.value(Ax, C).
+
+// --- $MaskByShape ---
+// A cell of another color inside the color's bounding box.
+.decl gap(c: Color)
+gap(C) :- color_box.box(C, B), in(P, C2), C2 != C, crop(P, B, _).
+
+// @claim mask-block
+.init shape_color = Unanimous<Unit, Color>
+shape_color.item($U(), C) :- color_box.box(C, _), !gap(C).
+
+mask_cand(Ax, $MaskByShape(), C) :- axes_choice(Ax), shape_color.value($U(), C).
+mask_color(Ax, $MaskByShape(), C) :- axes_choice(Ax), shape_color.value($U(), C).
+
+// --- $StoredGroups, $DiagonalFallback, $DerivedTileGroups ---
+// The cells of the picture, per Axes and Mask branch: visible, and hidden
+// with their grid cell.
+.decl visible(ax: Axes, m: Mask, q: Position, col: Color)
+visible(Ax, M, Q, Col) :-
+    mask_color(Ax, M, C), margin(Ax, M, C, B), in(P, Col), Col != C, compose(P, B, Q).
+
+.decl hidden(ax: Axes, m: Mask, q: Position, p: Position)
+hidden(Ax, M, Q, P) :-
+    mask_color(Ax, M, C), margin(Ax, M, C, B), in(P, C), compose(P, B, Q).
+
+// The color of the image of hidden cell q under d.
+.decl image(ax: Axes, m: Mask, q: Position, d: D4, col: Color)
+image(Ax, M, Q, D, Col) :-
+    hidden(Ax, M, Q, _), d4_elem(D), apply(D, Q, Q2), visible(Ax, M, Q2, Col).
+
+// The masked cell's restored color, per Tiles branch.
+.decl fill(t: Tiles, ax: Axes, m: Mask, p: Position, col: Color)
+
+out(P_inner, Col, [T, Ax, M]) :-
+    impl_choice([T, Ax, M]), fill(T, Ax, M, P, Col),
+    mask_color(Ax, M, C), color_box.box(C, B), crop(P, B, P_inner).
+
+// --- $StoredGroups, $DerivedTileGroups ---
+.decl tile(ax: Axes, m: Mask, q: Position, p_tile: Position)
+tile(Ax, M, Q, T) :-
+    ( visible(Ax, M, Q, _) ; hidden(Ax, M, Q, _) ),
+    params.tile_size(K), divide_by_size_2d(Q, K, 0, T, _).
+
+// --- $StoredGroups ---
+// The quarter's tile that a picture tile is an image of.
+.decl tile_key(p_tile: Position, k: Position)
+tile_key(T, K) :-
+    tile(_, _, _, T), params.side_group(S), sym_member(S, D), apply(D, T, T2),
+    params.picture_corner(Cr), params.tile_groups(K, _), corner_anchor(Cr, T2, K).
+
+fill($StoredGroups(), Ax, M, P, Col) :-
+    hidden(Ax, M, Q, P), tile(Ax, M, Q, T), tile_key(T, K),
+    params.tile_groups(K, S), sym_member(S, D), image(Ax, M, Q, D, Col).
+
+// --- $DiagonalFallback ---
+.decl side_image(ax: Axes, m: Mask, q: Position, col: Color)
+side_image(Ax, M, Q, Col) :-
+    image(Ax, M, Q, D, Col), params.side_group(S), sym_member(S, D).
+
+fill($DiagonalFallback(), Ax, M, P, Col) :-
+    hidden(Ax, M, Q, P),
+    ( side_image(Ax, M, Q, Col)
+    ; !side_image(Ax, M, Q, _), image(Ax, M, Q, D, Col),        // no side image
+      params.side_group(S), !sym_member(S, D)                     // a diagonal or a turn
+    ).
+
+// --- $DerivedTileGroups ---
+// A member of D4 that maps a visible cell of the tile onto a visible cell
+// of another color.
+// @ignore: comp-idiom — the visible cells of each tile map to those of the
+//  whole picture, which D4Map's one key set does not state
+.decl tile_broken(ax: Axes, m: Mask, p_tile: Position, d: D4)
+tile_broken(Ax, M, T, D) :-
+    tile(Ax, M, Q, T), visible(Ax, M, Q, Col), d4_elem(D), apply(D, Q, Q2),
+    visible(Ax, M, Q2, Col2), Col2 != Col.
+
+fill($DerivedTileGroups(), Ax, M, P, Col) :-
+    hidden(Ax, M, Q, P), tile(Ax, M, Q, T),
+    image(Ax, M, Q, D, Col), !tile_broken(Ax, M, T, D).
+
+.comp Determine {
+    // A color some input lacks.
+    .decl not_in_every(c: Color)
+    not_in_every(C) :- ex_in(_, _, C), ex_in(E, _, _), !ex_in(E, _, C).
+
+    // The color in every input and in no output.
+    .decl mask_color(c: Color)
+    mask_color(C) :- ex_in(_, _, C), !not_in_every(C), !ex_out(_, _, C).
+
+    .decl cell(e: Example, p: Position, col: Color)
+    cell(E, P, Col) :- ex_in(E, P, Col), !mask_color(Col).
+
+    // The axis lines the inputs occupy.
+    .decl apos(a: Axis, l: Position)
+    apos(A, L) :- ex_in(_, P, _), axis_elem(A), split(P, A, L, _).
+
+    // One-sided extensions of the grid, k lines past edge d.
+    .decl ext_cand(a: Axis, d: Dir, b: Box)
+    ext_cand(A, D, B) :- apos(A, L), sub_extent(L, A, K), axis_of(D, A), edge_inset(D, K, B).
+
+    // The extension's mirror, as a map on axis lines.
+    .decl ext_map(a: Axis, d: Dir, b: Box, l: Position, l2: Position)
+    ext_map(A, D, B, L, L2) :-
+        ext_cand(A, D, B), apos(A, L), flip_of(A, F),
+        compose(L, B, Lm), apply(F, Lm, Li), relative(B, Li, L2), apos(A, L2).
+
+    .decl ext_mismatch(a: Axis, d: Dir, b: Box)
+    ext_mismatch(A, D, B) :-
+        ext_map(A, D, B, L1, L2),
+        cell(E, P1, C1), split(P1, A, L1, X), cell(E, P2, C2), split(P2, A, L2, X), C1 != C2.
+
+    .decl ext_pair(a: Axis, d: Dir, b: Box)
+    ext_pair(A, D, B) :-
+        ext_map(A, D, B, L1, L2), L1 != L2,
+        cell(E, P1, _), split(P1, A, L1, X), cell(E, P2, _), split(P2, A, L2, X).
+
+    .decl axis_ext(a: Axis, d: Dir, b: Box)
+    axis_ext(A, D, B) :- ext_pair(A, D, B), !ext_mismatch(A, D, B).
+
+    .decl picture_size(n: number)
+    picture_size(N) :- axis_ext(A, _, B), apos(A, L), compose(L, B, Lm), axis_dim(Lm, A, N).
+
+    // The corner away from both extensions.
+    .decl picture_corner(d: DiagDir)
+    picture_corner(C) :-
+        axis_ext(A1, D1, _), perp(A1, A2), axis_ext(A2, D2, _),
+        opposite(D1, O1), opposite(D2, O2), diag_dirs(C, A1, O1, O2).
+
+    // The visible cells in the picture's frame.
+    .decl pcell(e: Example, q: Position, col: Color)
+    pcell(E, Q, Col) :-
+        cell(E, P, Col), axis_ext(A1, _, B1), perp(A1, A2), axis_ext(A2, _, B2),
+        compose(B1, B2, B), compose(P, B, Q).
+
+    // A member of D4 maps the cell onto a visible cell of another color.
+    // @ignore: comp-idiom — the cell with its example is what the tile
+    //  groups read, which D4Map's per-key verdict does not keep
+    .decl broken(e: Example, q: Position, d: D4)
+    broken(E, Q, D) :- pcell(E, Q, V), d4_elem(D), apply(D, Q, Q2), pcell(E, Q2, V2), V2 != V.
+
+    // The group that holds on the whole picture.
+    .init whole = KeyedSetCompare<Unit, Sym, D4>
+    whole.pattern_member(S, D) :- sym_member(S, D).
+    whole.observed_member($U(), D) :- d4_elem(D), !broken(_, _, D).
+
+    .decl side_group(s: Sym)
+    side_group(S) :- whole.equals($U(), S).
+
+    // Each picture cell's tile at every candidate tile size.
+    .decl cand_size(k: number)
+    cand_size(K) :- pcell(_, Q, _), axis_elem(A), sub_extent(Q, A, K).
+
+    .decl cand_tile(k: number, q: Position, p_tile: Position)
+    cand_tile(K, Q, T) :- pcell(_, Q, _), cand_size(K), divide_by_size_2d(Q, K, 0, T, _).
+
+    .decl cand_broken(k: number, p_tile: Position, d: D4)
+    cand_broken(K, T, D) :- cand_tile(K, Q, T), broken(_, Q, D).
+
+    .decl cand_sym(k: number, p_tile: Position, d: D4)
+    cand_sym(K, T, D) :- cand_tile(K, _, T), d4_elem(D), !cand_broken(K, T, D).
+
+    // The tile size is the largest at which the tiles' groups differ.
+    .init nonuniform = Extremes<Unit>
+    nonuniform.cand($U(), K) :- cand_sym(K, T1, D), cand_tile(K, _, T2), !cand_sym(K, T2, D).
+
+    .decl tile_size(k: number)
+    tile_size(K) :- nonuniform.high($U(), K).
+
+    .init symid = KeyedSetCompare<Position, Sym, D4>
+    symid.pattern_member(S, D) :- sym_member(S, D).
+    symid.observed_member(T, D) :- tile_size(K), cand_sym(K, T, D).
+
+    // The tiles of the quarter at picture_corner: nearer both of its edges
+    // than the opposite ones.
+    .decl quarter_tile(p_tile: Position)
+    quarter_tile(T) :-
+        tile_size(K), cand_tile(K, _, T), picture_corner(C), diag_dirs(C, _, D1, D2),
+        dist_pair(T, D1, K1, K2), K1 < K2, dist_pair(T, D2, K3, K4), K3 < K4.
+
+    .init quarter = Bbox<Unit>
+    quarter.cell($U(), T) :- quarter_tile(T).
+
+    .decl tile_groups(p_tile: Position, s: Sym)
+    tile_groups(Kp, S) :-
+        quarter_tile(T), quarter.box($U(), B), crop(T, B, Kp), symid.equals(T, S).
+}

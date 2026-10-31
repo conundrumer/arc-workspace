@@ -4,14 +4,10 @@
 // @rule settle: The water settles under gravity as the first open cells of
 //  one fill order, as many as there are water cells. The water falls and
 //  slides to the cup it reaches, a cup fills by level from its bottom, and
-//  water that rises over a rim pours into the next cup, in the pour sense
-//  first.
+//  water that rises over a rim pours into the next cup. Undefined where the
+//  sense the water pours in first changes the output.
 
-// One grid per open pour sense.
-.type PourSense = [s: Sense]
-.type OpenValue = [pour_sense: PourSense]
-
-.decl out(p: Position, col: Color, v: OpenValue)
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -19,12 +15,6 @@
     .decl water(col: Color) water(1).
 
     .decl gravity(d: Dir) gravity(DIR_B).
-
-    // The sense the water pours in. The pairs fix neither, so both stay open.
-    // @open
-    .decl pour_sense(s: Sense)
-    pour_sense(SENSE_CW).
-    pour_sense(SENSE_CC).
 }
 
 .init params = Params
@@ -35,7 +25,7 @@ lateral(L) :- params.gravity(D), perp_dir(D, L).
 .decl up(d: Dir)
 up(U) :- params.gravity(D), opposite(D, U).
 
-// The settled water under each pour sense.
+// The settled water under each sense the water could pour in first.
 
 // A cell under one pour sense.
 .type SenseCell = [s: Sense, p: Position]
@@ -49,7 +39,7 @@ up(U) :- params.gravity(D), opposite(D, U).
 
 // The direction the water pours in first, per sense.
 .decl pour(s: Sense, d: Dir)
-pour(S, L) :- params.pour_sense(S), params.gravity(D), turn(S, D, L).
+pour(S, L) :- sense_elem(S), params.gravity(D), turn(S, D, L).
 
 .decl wall(p: Position)
 wall(P) :- in(P, Col), !params.bg(Col), !params.water(Col).
@@ -81,7 +71,7 @@ drains(P, L) :- lateral(L), run.run($U(), P, L, Q), hangs(Q).
 // toward a drain, the pour direction first.
 .decl step(s: Sense, p: Position, q: Position)
 step(S, P, Q) :-
-    params.pour_sense(S), open(P),
+    sense_elem(S), open(P),
     ( hangs(P), params.gravity(D), neighbor(P, D, Q)
     ; !hangs(P), pour(S, L), drains(P, L), neighbor(P, L, Q)
     ; !hangs(P), pour(S, L), !drains(P, L),
@@ -95,7 +85,7 @@ rest(P) :- open(P), !hangs(P), !drains(P, _).
 // The cells whose water comes to rest at r, by the steps back from r.
 // @claim settle
 .init sink = GraphDistance<SenseCell, Position>
-sink.seed([S, R], R) :- params.pour_sense(S), rest(R).
+sink.seed([S, R], R) :- sense_elem(S), rest(R).
 sink.edge([S, R], Q, P) :- rest(R), step(S, P, Q).
 
 .decl lands(s: Sense, p: Position, r: Position)
@@ -105,7 +95,7 @@ lands(S, P, R) :- sink.distance([S, R], P, _).
 // gravity's far edge, in the pour direction.
 // @claim settle
 .init lex = LexOrder<Sense>
-lex.axis(S, A) :- in(_, _), params.pour_sense(S), params.gravity(D), axis_of(D, A).
+lex.axis(S, A) :- in(_, _), sense_elem(S), params.gravity(D), axis_of(D, A).
 lex.corner(S, Diag) :-
     in(_, _), pour(S, L), params.gravity(D), diag_dirs(Diag, _, D, L).
 lex.cell(S, R) :- parcel(P), lands(S, P, R).
@@ -146,7 +136,7 @@ away(Yp, Cp, R, Yc, C, L) :-
 descent.seed(S, [Y, C, R]) :-
     lex.first(S, R), cup.label(Y, R, C), up(U), dist(Y, U, 0).
 descent.edge(S, [Yp, Cp, R], [Yc, C, R]) :-
-    params.pour_sense(S), rest(R), inner(Yc, C, Yp, Cp), cup.label(Yc, R, C).
+    sense_elem(S), rest(R), inner(Yc, C, Yp, Cp), cup.label(Yc, R, C).
 descent.edge(S, [Yp, Cp, R], [Yc, C, R2]) :-
     away(Yp, Cp, R, Yc, C, L), opposite(L, L2),
     mouth(Yc, C, M), !shadowed(Yc, C, L2, M), lands(S, M, R2).
@@ -192,7 +182,7 @@ amount.domain($U()) :- in(_, _).
 // The settled grid under each pour sense.
 .decl settled(s: Sense, p: Position, col: Color)
 settled(S, P, Col) :-
-    in(P, C0), params.pour_sense(S),
+    in(P, C0), sense_elem(S),
     ( wall(P), Col = C0                                             // a wall keeps its color
     ; level(P, Y, C), filled.tally([S, Y, C], N1), amount.tally($U(), N), N1 <= N,
       params.water(Col)                                             // within the water's amount
@@ -202,5 +192,8 @@ settled(S, P, Col) :-
     ; level(P, Y, C), !upto(S, Y, C, P), params.bg(Col)             // out of the water's reach
     ).
 
+// Some cell the two senses settle differently.
+.decl disputed()
+disputed() :- settled(S1, P, Col1), settled(S2, P, Col2), S1 != S2, Col1 != Col2.
 
-out(P, Col, [[S]]) :- settled(S, P, Col).
+out(P, Col) :- settled(_, P, Col), !disputed().

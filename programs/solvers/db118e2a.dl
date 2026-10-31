@@ -1,0 +1,295 @@
+// db118e2a
+// @draft
+// @keywords: crop bbox border tile-arrangement rings
+// @scene framed-panel: the whole input is one panel: a border 1 cell thick (`frame_width`) of one frame
+//  color runs along the grid's edges, the four corner cells are 7 (`bg`), and the rest of the panel is
+//  7 with some marks of any colors, the frame color included.
+// @scene content-extent: the marks inside the frame have a 3 × 3 bounding box.
+// @rule crop-content: the picture is the bounding box of the marks inside the frame, cut from the
+//  input as it stands.
+// @rule snug-frame: the picture is wrapped in a border `frame_width` cells thick of the input's frame
+//  color, with the four corner cells `bg`.
+// @rule two-copies: the output is a `canvas_size` grid of `bg`, and the framed picture is drawn at each
+//  of the two corners on the diagonal `copy_axis`, inset `corner_inset` cells from both edges of that
+//  corner. Where a copy leaves the canvas, the output is undefined.
+
+// where the two copies go on a stored canvas
+.type Places =
+    // @claim two-copies
+    Corners {}
+    // @rule two-copies: the copies sit on either side of the canvas center line across `copy_axis`,
+    //  with one line between them. Undefined where a copy leaves the canvas or a canvas extent is even.
+    // @witness smaller-picture: variant concept
+    //     @relaxed content-extent
+  | CenterGap {}
+    // @rule two-copies: the copies take their `copy_anchor` corner to the stored cells (2,2) and (8,8).
+    //  Undefined where a copy leaves the canvas or the two copies paint one cell with two colors.
+    // @witness smaller-picture: variant concept
+  | FixedAnchors {}
+    // @rule two-copies: the first copy is `corner_inset` in from the corner `chain_corner`, and the
+    //  second follows it along the diagonal with `copy_gap` cells between them. Undefined where a copy
+    //  leaves the canvas.
+    // @witness smaller-picture: variant concept
+  | ChainFromCorner {}
+
+// how the canvas size is set
+.type Canvas =
+    // @claim two-copies
+    StoredCanvas {p: Places}
+    // @rule two-copies: the canvas extent on each axis is `corner_inset` + copy + `copy_gap` + copy +
+    //  `corner_inset`, and the copies sit as in the concept.
+    // @witness smaller-picture: variant concept
+  | FitCanvas {}
+
+// where the background color comes from
+.type Background =
+    // @claim framed-panel
+    StoredBg {}
+    // @scene framed-panel: the background, in every claim, is the color of the input's four corner
+    //  cells. Undefined where those cells disagree.
+    // @witness recolored-field: variant $BgFromCorner
+    //     @relaxed framed-panel
+  | BgFromCorner {}
+
+// how thick the frame is
+.type Width =
+    // @claim framed-panel
+    StoredWidth {}
+    // @scene framed-panel: the frame width, in every claim, is the number of full rings of the frame
+    //  color in from the grid edge, the grid corners left out of each ring.
+    // @witness thick-frame: variant $ReadFrameWidth
+    //     @relaxed framed-panel
+    //     @relaxed content-extent
+  | ReadFrameWidth {}
+
+.type Choice = [c: Canvas, b: Background, w: Width]
+
+// The picture's key: the branches it depends on.
+.type Pic = [b: Background, w: Width]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredBg ---
+    // @ignore: case section — read only through the program's `bg` row of `$StoredBg`
+    .decl bg(c: Color) bg(7).
+
+    // --- $StoredWidth ---
+    .decl frame_width(k: number) frame_width(1).
+
+    // --- $StoredCanvas ---
+    .decl canvas_size(a: Axis, n: number) canvas_size(AXIS_V, 15). canvas_size(AXIS_H, 15).
+
+    // --- $Corners, $FitCanvas, $CenterGap ---
+    // The diagonal whose two corners each get a copy.
+    .decl copy_axis(da: DiagAxis) copy_axis(DAXIS_DG).
+
+    // --- $Corners, $FitCanvas, $ChainFromCorner ---
+    // The gap between a copy and each of the two edges of its corner.
+    .decl corner_inset(k: number) corner_inset(2).
+
+    // --- $FitCanvas, $ChainFromCorner ---
+    // The lines between the two copies.
+    .decl copy_gap(k: number) copy_gap(1).
+
+    // --- $FixedAnchors ---
+    // The canvas cell each copy's corner d sits on.
+    .decl copy_anchor(d: DiagDir, p: Position)
+    copy_anchor(DIAG_TL, [2, 12, 2, 12]). copy_anchor(DIAG_TL, [8, 6, 8, 6]).
+
+    // --- $ChainFromCorner ---
+    // The corner the chain of copies starts from.
+    .decl chain_corner(d: DiagDir) chain_corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl places_choice(p: Places)
+places_choice($Corners()). places_choice($CenterGap()). places_choice($FixedAnchors()).
+places_choice($ChainFromCorner()).
+
+.decl canvas_choice(c: Canvas)
+canvas_choice($StoredCanvas(P)) :- places_choice(P).
+canvas_choice($FitCanvas()).
+
+.decl background_choice(b: Background)
+background_choice($StoredBg()). background_choice($BgFromCorner()).
+
+.decl width_choice(w: Width)
+width_choice($StoredWidth()). width_choice($ReadFrameWidth()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, B, W]) :- canvas_choice(C), background_choice(B), width_choice(W).
+
+// --- shared: the panel ---
+
+.decl grid_corner(p: Position)
+grid_corner(P) :- in(P, _), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+// The frame color: the edge cells other than the grid corners.
+.decl frame_col(col: Color)
+frame_col(Col) :- in(P, Col), dir_elem(D), dist(P, D, 0), !grid_corner(P).
+
+// The background color under each branch.
+// @ignore: case section — keyed by its Background column, so each case reads the row of its own branch
+.decl bg(b: Background, col: Color)
+.decl width(w: Width, k: number)
+
+// --- $StoredBg ---
+bg($StoredBg(), Col) :- params.bg(Col).
+
+// --- $BgFromCorner ---
+bg($BgFromCorner(), Col) :- grid_corner(P), in(P, Col).
+
+// --- $StoredWidth ---
+width($StoredWidth(), N) :- params.frame_width(N).
+
+// --- $ReadFrameWidth ---
+// The rings of the grid, from the edge inward.
+// @claim framed-panel
+.init ring = Rim<Unit>
+ring.cell($U(), P) :- in(P, _).
+
+// The first ring with a cell off the frame color, the grid corners aside.
+// @claim framed-panel
+.init broken = Extremes<Unit>
+broken.cand($U(), N) :- ring.depth($U(), P, N), in(P, Col), !frame_col(Col), !grid_corner(P).
+
+width($ReadFrameWidth(), N) :- broken.low($U(), N).
+
+// --- shared: the framed picture ---
+
+// The marks: the cells inside the frame that are not bg.
+.decl mark(k: Pic, p: Position)
+mark([B, W], P) :-
+    width(W, N), uniform_inset(N, Inner), in(P, Col), inside(P, Inner),   // inside the frame
+    bg(B, _), !bg(B, Col).
+
+// @claim crop-content
+.init pic = Bbox<Pic>
+pic.cell(K, P) :- mark(K, P).
+
+// The picture's box grown by the frame width.
+.decl framed_box(k: Pic, b: Box)
+framed_box([B, W], Bf) :-
+    pic.box([B, W], Bp), width(W, N), uniform_outset(N, O), compose(Bp, O, Bf).
+
+.decl copy_corner(k: Pic, p: Position)
+copy_corner(K, P) :- framed_box(K, Bf), in(P, _), diag_dir_elem(D), box_corner(P, Bf, D).
+
+// The framed picture, in its own frame.
+.decl framed(k: Pic, r: Position, col: Color)
+framed(K, R, Col) :-
+    pic.box(K, Bp), framed_box(K, Bf), in(P, Col_in), crop(P, Bf, R),
+    ( inside(P, Bp), Col = Col_in                              // the picture, as it stands
+    ; !inside(P, Bp), !copy_corner(K, P), frame_col(Col)       // the frame
+    ; copy_corner(K, P), K = [B, _], bg(B, Col)                // its corners
+    ).
+
+// Each cell of the framed picture, as its offset from the picture's corner d.
+.decl copy_cell(k: Pic, d: DiagDir, v: Offset, col: Color)
+copy_cell(K, D, V, Col) :-
+    framed(K, R0, _), diag_dir_elem(D), box_corner(R0, ZERO, D),
+    framed(K, R, Col), relative(R0, R, V).
+
+// --- shared: drawing ---
+
+.decl canvas(ch: Choice, p: Position)
+
+// The canvas cell that each copy's corner d sits on.
+// @ignore: store — a stored anchor set is the model of $FixedAnchors
+.decl anchor(ch: Choice, d: DiagDir, a: Position)
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([C, B, W], Q, Col) :-
+    anchor([C, B, W], D, A), copy_cell([B, W], D, V, Col), compose(A, V, Q).
+
+// Some copy cell falls off the canvas.
+.decl spills(ch: Choice)
+spills(Ch) :- paint(Ch, Q, _), !canvas(Ch, Q).
+
+.decl drawn(ch: Choice)
+drawn(Ch) :- paint(Ch, _, _), !spills(Ch).
+
+out(Q, Col, Ch) :- drawn(Ch), paint(Ch, Q, Col).
+out(Q, Col, Ch) :- drawn(Ch), canvas(Ch, Q), !paint(Ch, Q, _), Ch = [_, B, _], bg(B, Col).
+
+// --- $StoredCanvas ---
+.init stored_canvas = Frame2D<Unit>
+stored_canvas.extent($U(), A, N) :- params.canvas_size(A, N).
+
+canvas([$StoredCanvas(Pl), B, W], P) :-
+    impl_choice([$StoredCanvas(Pl), B, W]), stored_canvas.cell($U(), P).
+
+// --- $FitCanvas ---
+// @store: variant $BgFromCorner
+//     @relaxed framed-panel
+.decl copy_extent(k: Pic, a: Axis, n: number)
+copy_extent(K, A, N) :- framed_box(K, Bf), in(P, _), axis_elem(A), box_extent(Bf, P, A, N).
+
+// A copy cell in the canvas that holds the copy: corner_inset on every side, and copy_gap and the
+// other copy past the copy's far corner. Every corner gives the same canvas.
+.decl fit_cell(k: Pic, q: Position)
+fit_cell(K, Q) :-
+    framed(K, R, _), diag_dirs(Od, A1, D1, D2), perp(A1, A2),           // past the far corner Od
+    copy_extent(K, A1, N1), copy_extent(K, A2, N2),
+    edge_inset(D1, N1, Y1), edge_inset(D2, N2, Y2), compose(Y1, Y2, Y),   // the other copy
+    params.copy_gap(G), edge_inset(Od, G, Gb),                            // the gap
+    params.corner_inset(I), uniform_inset(I, Ib),                         // the inset
+    compose(Ib, Gb, T1), compose(T1, Y, T2), compose(T2, R, Q).
+
+.init fit = Frame2D<Pic>
+fit.extent(K, A, N) :- fit_cell(K, Q), axis_elem(A), axis_dim(Q, A, N).
+
+canvas([$FitCanvas(), B, W], P) :- fit.cell([B, W], P).
+
+// --- $Corners, $FitCanvas ---
+.decl corner_rule(c: Canvas)
+corner_rule($StoredCanvas($Corners())). corner_rule($FitCanvas()).
+
+anchor([C, B, W], Diag, A) :-
+    corner_rule(C), canvas([C, B, W], A),
+    params.copy_axis(Da), diag_axis_of(Diag, Da),
+    params.corner_inset(I), edge_inset(Diag, I, Bx), box_corner(A, Bx, Diag).
+
+// --- $CenterGap ---
+// Each copy's far corner sits one diagonal step from the canvas center toward its own corner.
+anchor([$StoredCanvas($CenterGap()), B, W], Od, A) :-
+    impl_choice([$StoredCanvas($CenterGap()), B, W]), stored_canvas.cell($U(), Z), centered(Z),
+    params.copy_axis(Da), diag_axis_of(Diag, Da), diag_opposite(Diag, Od), neighbor(Z, Diag, A).
+
+// --- $FixedAnchors ---
+anchor([$StoredCanvas($FixedAnchors()), B, W], D, A) :-
+    impl_choice([$StoredCanvas($FixedAnchors()), B, W]), params.copy_anchor(D, A).
+
+// --- $ChainFromCorner ---
+// The first copy's corner cell, corner_inset in from chain_corner.
+.decl chain_start(a: Position)
+chain_start(A) :-
+    params.chain_corner(Diag), params.corner_inset(I), edge_inset(Diag, I, Bx),
+    stored_canvas.cell($U(), A), box_corner(A, Bx, Diag).
+
+// The offset from the framed picture's chain_corner corner to its opposite corner.
+// @store: variant $BgFromCorner
+//     @relaxed framed-panel
+.decl copy_span(k: Pic, v: Offset)
+copy_span(K, V) :-
+    params.chain_corner(D), framed(K, R0, _), box_corner(R0, ZERO, D),
+    diag_opposite(D, Od), framed(K, R1, _), box_corner(R1, ZERO, Od), relative(R0, R1, V).
+
+anchor([$StoredCanvas($ChainFromCorner()), B, W], Diag, A2) :-
+    impl_choice([$StoredCanvas($ChainFromCorner()), B, W]), params.chain_corner(Diag), chain_start(A),
+    ( A2 = A                                                                  // the first copy
+    ; copy_span([B, W], V), compose(A, V, C1),                          // its far corner
+      diag_opposite(Diag, Od), params.copy_gap(G), jump(C1, Od, G, X),        // across the gap
+      neighbor(X, Od, A2)                                                     // the second copy
+    ).
+
+.comp Determine {
+    // The color of the output's corner cells.
+    .decl bg(c: Color)
+    bg(Col) :- ex_out(_, P, Col), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+    .decl canvas_size(a: Axis, n: number)
+    canvas_size(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+}

@@ -67,7 +67,6 @@
       "concept",
       "$RowRuns",
       "$FrameMirror",
-      "$ClosedGaps",
       "background=DominantColor",
       "$AxisFromInput"
      ],
@@ -247,7 +246,6 @@
      "cases": [
       "concept",
       "$FrameMirror",
-      "$ClosedGaps",
       "background=DominantColor",
       "$AxisFromInput"
      ],
@@ -383,7 +381,6 @@
       "concept",
       "$ColorComponent8",
       "$RowRuns",
-      "$ClosedGaps",
       "background=DominantColor",
       "$AxisFromInput"
      ],
@@ -526,290 +523,6 @@
    ]
   },
   {
-   "id": "gap",
-   "separates": "An empty line stands between two layers of the stack. The concept mirrors each band within the stack's span, so the gap stays between the same two layers; $ClosedGaps packs the reversed layers with no gap, against the span's top or bottom edge, one grid each.",
-   "input": [
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     1,
-     1,
-     1,
-     1,
-     1,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     2,
-     2,
-     2,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     2,
-     2,
-     2,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     3,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ]
-   ],
-   "assign": {},
-   "output": [
-    {
-     "cases": [
-      "concept",
-      "$ColorComponent8",
-      "$RowRuns",
-      "$FrameMirror",
-      "background=DominantColor",
-      "$AxisFromInput"
-     ],
-     "grid": [
-      [
-       0,
-       0,
-       0,
-       0,
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0,
-       3,
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       2,
-       2,
-       2,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       2,
-       2,
-       2,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0,
-       0,
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       1,
-       1,
-       1,
-       1,
-       1,
-       0
-      ],
-      [
-       0,
-       0,
-       0,
-       0,
-       0,
-       0,
-       0
-      ]
-     ]
-    },
-    {
-     "cases": [
-      "$ClosedGaps"
-     ],
-     "grid": [
-      [
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        3,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        2,
-        2,
-        2,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        2,
-        2,
-        2,
-        0,
-        0
-       ],
-       [
-        0,
-        1,
-        1,
-        1,
-        1,
-        1,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ]
-      ],
-      [
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        3,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        2,
-        2,
-        2,
-        0,
-        0
-       ],
-       [
-        0,
-        0,
-        2,
-        2,
-        2,
-        0,
-        0
-       ],
-       [
-        0,
-        1,
-        1,
-        1,
-        1,
-        1,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ]
-      ]
-     ]
-    }
-   ]
-  },
-  {
    "id": "background=DominantColor",
    "separates": "A layer of color 1 has more cells than color 0. The concept keeps 0 as background and reverses layers 1 and 2; background=DominantColor takes 1 as background, reads the 0 line and the 2 line as the layers, and swaps them.",
    "input": [
@@ -856,7 +569,6 @@
       "concept",
       "$ColorComponent8",
       "$RowRuns",
-      "$ClosedGaps",
       "$AxisFromInput"
      ],
      "grid": [
@@ -1003,7 +715,6 @@
       "$ColorComponent8",
       "$RowRuns",
       "$FrameMirror",
-      "$ClosedGaps",
       "background=DominantColor"
      ],
      "grid": [

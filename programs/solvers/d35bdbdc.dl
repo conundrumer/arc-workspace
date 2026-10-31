@@ -1,0 +1,171 @@
+// d35bdbdc
+// @draft
+// @keywords: objects markers select match
+// @scene boxes: separate shapes on a field of params.background, each a 3×3
+//  ring or a plus of 5 cells around one center cell, and possibly cut off by
+//  the grid edge; the outer cells of a box are one color, and no two boxes
+//  have the same outer color
+// @scene wire: one line of params.wire_color, of cells joined at sides or
+//  corners, that overlaps no box and has two ends; each end is next to the
+//  middle cell of one side of a box
+// @rule linked-boxes: a box is linked when one of the wire's two ends, its
+//  first and last drawn cells, is next to the middle cell of one of its sides,
+//  and its center color is the outer color of another box
+//     @approximated: a box is linked when a wire end is next to the middle
+//      cell of one of its sides, and its center color is the outer color of
+//      another box; a wire end is a wire cell with at most one neighbor in
+//      the wire, where two wire cells that touch at a corner are neighbors
+//      only when no wire cell touches both of them by a side
+//     @witness hooked-wire-end: variant other
+//         @relaxed wire
+// @rule center-lookup: a linked box's center takes the center color of the box
+//  whose outer color equals the linked box's center color
+// @rule erase-others: every cell of a box that is not linked becomes
+//  params.background
+// @rule keep-rest: the wire and the outer cells of the linked boxes stay as
+//  they are
+
+// which boxes the lookup of a box at a wire end may return
+.type Choice =
+    // @claim linked-boxes
+    OtherBox {}
+    // @rule linked-boxes: the lookup may return the box itself, so a box at a
+    //  wire end whose center color is its own outer color is linked and keeps
+    //  its center
+    // @witness self-named-box: borderline $SelfLookup
+  | SelfLookup {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    .decl wire_color(c: Color) wire_color(5).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($OtherBox()). impl_choice($SelfLookup()).
+
+.decl wire(p: Position)
+wire(P) :- in(P, Col), params.wire_color(Col).
+
+// Two wire cells are neighbors in the wire: they touch by a side, or at a
+// corner that no wire cell bridges by sides.
+.decl wire_link(p: Position, q: Position)
+wire_link(P, Q) :-
+    wire(P), dir8_elem(D), neighbor(P, D, Q), wire(Q),
+    ( dir_elem(D)                                                          // a side
+    ; diag_dirs(D, _, D1, D2),                                             // a corner
+      neighbor(P, D1, R1), !wire(R1), neighbor(P, D2, R2), !wire(R2)       // no bridge
+    ).
+
+// A wire cell with two neighbors in the wire.
+.decl wire_through(p: Position)
+wire_through(P) :- wire_link(P, Q1), wire_link(P, Q2), Q1 != Q2.
+
+// The wire end the approximation of linked-boxes reads.
+// @ignore: single-consumer — the wire end is what the @approximated line
+//  names, the relation the hooked-wire-end witness turns on
+.decl wire_end(p: Position)
+wire_end(P) :- wire(P), !wire_through(P).
+
+// @claim boxes
+// The pieces of one color: a box's outer cells are one piece, joined at
+// sides or corners.
+.init piece = Components8<Color>
+piece.node(Col, P) :- in(P, Col), !params.background(Col), !params.wire_color(Col).
+
+// A grid cell that is a cell of a piece or touches one.
+.decl cand(id: Ident, c: Position)
+cand(Id, C) :-
+    piece.label(_, P, Id), in(C, _),
+    ( C = P
+    ; dir8_elem(D), neighbor(P, D, C)
+    ).
+
+// Cell p touches cell c at a side or a corner.
+.decl adjacent(c: Position, p: Position)
+adjacent(C, P) :- cand(_, C), dir8_elem(D), neighbor(C, D, P).
+
+// Cell c has a side, inside the grid, that is no cell of piece id.
+.decl open_side(id: Ident, c: Position)
+open_side(Id, C) :- cand(Id, C), dir_elem(D), neighbor(C, D, Q), in(Q, _), !piece.label(_, Q, Id).
+
+// Some other cell of piece id does not touch cell c.
+.decl far(id: Ident, c: Position)
+far(Id, C) :- cand(Id, C), piece.label(_, P, Id), P != C, !adjacent(C, P).
+
+// The center of the box whose outer cells are piece id: every cell of the
+// piece touches it, and each of its sides inside the grid is a cell of the
+// piece.
+.decl center(id: Ident, c: Position)
+center(Id, C) :- cand(Id, C), !open_side(Id, C), !far(Id, C).
+
+.decl center_color(id: Ident, col: Color)
+center_color(Id, Col) :- center(Id, C), in(C, Col).
+
+.decl outer_color(id: Ident, col: Color)
+outer_color(Id, Col) :- piece.label(Col, _, Id).
+
+// A wire end is next to the middle cell of one of the box's sides, outside it.
+.decl touched(id: Ident)
+touched(Id) :-
+    center(Id, C), dir_elem(D), neighbor(C, D, M),   // side middle
+    neighbor(M, D, E), wire_end(E).
+
+// A linked box and the color its center takes.
+.decl linked(ch: Choice, id: Ident, col: Color)
+
+// The cells that change: linked centers, and the cells of unlinked boxes.
+.decl changed(ch: Choice, p: Position, col: Color)
+changed(Ch, C, Col) :- linked(Ch, Id, Col), center(Id, C).
+changed(Ch, P, Bg) :-
+    impl_choice(Ch), center(Id, C), !linked(Ch, Id, _), params.background(Bg),
+    ( P = C
+    ; piece.label(_, P, Id)
+    ).
+
+out(P, Col, Ch) :- changed(Ch, P, Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !changed(Ch, P, _).
+
+// --- $OtherBox ---
+linked($OtherBox(), Id, Col) :-
+    touched(Id), center_color(Id, C),
+    outer_color(Id2, C), Id2 != Id, center_color(Id2, Col).   // another box named by the center
+
+// --- $SelfLookup ---
+linked($SelfLookup(), Id, Col) :-
+    touched(Id), center_color(Id, C),
+    outer_color(Id2, C), center_color(Id2, Col).
+
+.comp Determine {
+    // A train cell that the pair changes to col.
+    .decl recolored(e: Example, p: Position, col: Color)
+    recolored(E, P, Col) :- ex_in(E, P, C), ex_out(E, P, Col), C != Col.
+
+    // Two neighboring cells that change to one color: cells of an erased box.
+    .decl background(c: Color)
+    background(Col) :- recolored(E, P, Col), neighbor(P, _, Q), recolored(E, Q, Col).
+
+    // A train cell whose color the pair keeps.
+    .decl kept(e: Example, p: Position)
+    kept(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col).
+
+    // The center of a linked box: a cell the pair changes while it keeps the
+    // cell's four sides.
+    .decl linked_center(e: Example, c: Position)
+    linked_center(E, C) :-
+        recolored(E, C, _),
+        perp_dir(D1, D2), opposite(D1, D3), opposite(D2, D4),     // the four sides
+        neighbor(C, D1, Q1), kept(E, Q1), neighbor(C, D2, Q2), kept(E, Q2),
+        neighbor(C, D3, Q3), kept(E, Q3), neighbor(C, D4, Q4), kept(E, Q4).
+
+    // The wire: the cell beyond the middle of a linked box's side, where it is
+    // not the background.
+    .decl wire_color(c: Color)
+    wire_color(Col) :-
+        linked_center(E, C), dir_elem(D), neighbor(C, D, M), neighbor(M, D, Q),
+        ex_in(E, Q, Col), background(Bg), Col != Bg.
+}

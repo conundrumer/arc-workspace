@@ -1,0 +1,169 @@
+// f8cc533f
+// @draft
+// @keywords: color-class overlay symmetry repair rank
+// @scene background: one color fills every cell no figure holds.
+// @scene one-color-per-copy: each non-background color holds the cells of
+//  exactly one copy, and no two copies share a color.
+// @scene copies-of-one-pattern: each copy is the common pattern, placed
+//  somewhere in the grid, with some of its cells missing and no cell added.
+// @scene pattern-is-union: overlaying the copies, each aligned so that it
+//  lies inside the pattern, and closing that overlay under the symmetry
+//  group `pattern_sym` about the center of the pattern box, gives every cell
+//  of the pattern; undefined where an image of an overlay cell under the
+//  group lies outside the pattern box.
+// @rule restore-copy: each copy's color fills every cell of the pattern at
+//  that copy's placement. The pattern box takes the largest copy extents on
+//  each axis. Each copy sits where its cells lie inside that box, and each
+//  two copies sit at a relative placement at which they share the most
+//  cells; undefined where this leaves a copy no placement or more than one.
+// @rule keep-rest: every other cell keeps its input color.
+
+// how the pattern comes from the aligned copies
+.type Choice =
+    // @claim pattern-is-union
+    SymmetricClosure {}
+    // @scene pattern-is-union: the pattern is the overlay of the aligned
+    //  copies alone, closed under no symmetry.
+    // @witness asymmetric-overlay: ordinary $Union
+  | Union {}
+
+// A copy at one candidate placement.
+.type CopyBox = [c: Color, f: Box]
+// Two copies, each at one candidate placement.
+.type CopyBoxPair = [a: CopyBox, b: CopyBox]
+// Two copies.
+.type ColorPair = [c1: Color, c2: Color]
+// A copy of one example.
+.type ExampleColor = [e: Example, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $SymmetricClosure ---
+    .decl pattern_sym(s: Sym) pattern_sym(SYM_D4).
+}
+
+.init params = Params
+
+// The commonest color.
+// @claim background
+.init bg_mode = Mode<Unit, Color, Position>
+bg_mode.item($U(), Col, P) :- in(P, Col).
+
+// The cells of each copy: one per non-background color.
+.decl copy_cell(c: Color, p: Position)
+copy_cell(C, P) :- in(P, C), !bg_mode.mode($U(), C).
+
+// @claim copies-of-one-pattern
+.init copy_box = Bbox<Color>
+copy_box.cell(C, P) :- copy_cell(C, P).
+
+// The pattern box's extent on each axis: the largest copy extent.
+// @claim copies-of-one-pattern
+.init pattern_extent = Extremes<Axis>
+pattern_extent.cand(A, N) :- copy_box.box(C, B), copy_cell(C, P), box_extent(B, P, A, N).
+
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- pattern_extent.high(A, N).
+
+// A full box F of the pattern's extent that holds copy C's box.
+.decl cand_box(c: Color, f: Box)
+cand_box(C, F) :-
+    copy_cell(C, P), frame.cell($U(), Q), relative(Q, P, F),   // P at pattern cell Q
+    copy_box.box(C, B), inside(B, F).
+
+// Copy C, in full box F, holds pattern cell P_pat.
+.decl placed(c: Color, f: Box, p_pat: Position)
+placed(C, F, P_pat) :- cand_box(C, F), copy_cell(C, P), crop(P, F, P_pat).
+
+// Copy C at its placement in the full box F.
+.decl place(c: Color, f: Box)
+
+// Copy C holds pattern cell P.
+.decl held(p: Position, c: Color)
+held(P, C) :- place(C, F), placed(C, F, P).
+
+// The pattern, per case.
+.decl pattern(ch: Choice, p: Position)
+
+// Each copy's color on the pattern at its placement.
+.decl restored(ch: Choice, p: Position, c: Color)
+restored(Ch, P, C) :- pattern(Ch, P_pat), place(C, F), compose(F, P_pat, P).
+
+out(P, C, Ch) :- restored(Ch, P, C).
+out(P, Col, Ch) :- pattern(Ch, _), in(P, Col), !restored(Ch, P, _).
+
+// The cells that copy C1 at full box F1 and copy C2 at full box F2 both hold.
+// @claim restore-copy
+.init shared = Tally<CopyBoxPair, Position>
+shared.domain([[C1, F1], [C2, F2]]) :- cand_box(C1, F1), cand_box(C2, F2), C1 != C2.
+shared.item([[C1, F1], [C2, F2]], P) :- placed(C1, F1, P), placed(C2, F2, P), C1 != C2.
+
+// The placements of each two copies that share the most cells.
+// @claim restore-copy
+.init most_shared = ArgExtremes<ColorPair, CopyBoxPair>
+most_shared.cand([C1, C2], [[C1, F1], [C2, F2]], N) :- shared.tally([[C1, F1], [C2, F2]], N).
+
+// The placements that a joint placement of the copies can hold, where each
+// two copies share the most cells.
+// @claim restore-copy
+.init joint = PlacementPruning<Unit, CopyBox, Color>
+joint.cand($U(), [C, F], C) :- cand_box(C, F).
+joint.conflict($U(), [C1, F1], [C2, F2]) :-
+    shared.tally([[C1, F1], [C2, F2]], _),
+    !most_shared.high([C1, C2], [[C1, F1], [C2, F2]], _).
+
+// A copy left no placement or more than one.
+.decl unplaced(c: Color)
+unplaced(C) :- copy_cell(C, _), !joint.alive($U(), _, C).
+unplaced(C) :- joint.alive($U(), [C, F1], C), joint.alive($U(), [C, F2], C), F1 != F2.
+
+place(C, F) :- joint.alive($U(), [C, F], C), !unplaced(_).
+
+// --- $SymmetricClosure ---
+
+// Some image of a held cell under the group lies outside the pattern box.
+.decl off_frame()
+off_frame() :-
+    held(P, _), params.pattern_sym(S), sym_member(S, D), apply(D, P, Q),
+    !frame.cell($U(), Q).
+
+pattern($SymmetricClosure(), Q) :-
+    held(P, _), params.pattern_sym(S), !off_frame(),
+    sym_member(S, D), apply(D, P, Q).
+
+// --- $Union ---
+
+pattern($Union(), P) :- held(P, _).
+
+.comp Determine {
+    // The commonest color of each output.
+    .init bg_mode = Mode<Example, Color, Position>
+    bg_mode.item(E, Col, P) :- ex_out(E, P, Col).
+
+    // Each copy's pattern box: the box of its color in the output.
+    .init full_box = Bbox<ExampleColor>
+    full_box.cell([E, C], P) :- ex_out(E, P, C), !bg_mode.mode(E, C).
+
+    // The transforms under which each output copy, in its pattern box, is
+    // invariant about the box's center.
+    .init box_sym = D4Map<ExampleColor, Color>
+    box_sym.src([E, C], P_pat, Col) :-
+        full_box.box([E, C], F), ex_out(E, P, Col), crop(P, F, P_pat).
+    box_sym.dst(K, P, Col) :- box_sym.src(K, P, Col).
+
+    // A transform under which some output copy is not invariant.
+    .decl broken(d: D4)
+    broken(D) :- box_sym.mismatch(_, D).
+
+    // A group that holds a broken transform, or lacks a transform no copy
+    // breaks.
+    .decl other_group(s: Sym)
+    other_group(S) :- sym_member(S, D), broken(D).
+    other_group(S) :- sym_elem(S), d4_elem(D), !broken(D), !sym_member(S, D).
+
+    // The group of every transform under which every output copy is
+    // invariant.
+    .decl pattern_sym(s: Sym)
+    pattern_sym(S) :- sym_elem(S), !other_group(S).
+}

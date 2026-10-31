@@ -240,7 +240,6 @@
       "$StepFromFirstTwo",
       "$StepPerLine",
       "$DividerColorFromLines",
-      "$PanelAxisFromLines",
       "$DividerWidthFromLines",
       "$AnyPanelCount"
      ],
@@ -584,7 +583,6 @@
       "$StepFromFirstTwo",
       "$StepPerLine",
       "$DividerColorFromLines",
-      "$PanelAxisFromLines",
       "$DividerWidthFromLines",
       "$AnyPanelCount"
      ],
@@ -1383,7 +1381,6 @@
       "$StepFromFirstTwo",
       "$ObjectMotion",
       "$DividerColorFromLines",
-      "$PanelAxisFromLines",
       "$DividerWidthFromLines",
       "$AnyPanelCount"
      ],
@@ -1712,7 +1709,6 @@
       "$StepFromFirstTwo",
       "$StepPerLine",
       "$ObjectMotion",
-      "$PanelAxisFromLines",
       "$DividerWidthFromLines",
       "$AnyPanelCount"
      ],
@@ -1764,321 +1760,6 @@
        0,
        0,
        0,
-       0,
-       0,
-       0
-      ]
-     ]
-    }
-   ]
-  },
-  {
-   "id": "side-by-side",
-   "separates": "train0 transposed, the panels side by side; the concept finds no full row of 5 and is undefined, $PanelAxisFromLines cuts at the full columns",
-   "input": [
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     2,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     2,
-     0,
-     5,
-     0,
-     2,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     3,
-     0,
-     5,
-     0,
-     2,
-     0,
-     5,
-     0,
-     2,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     3,
-     0,
-     5,
-     0,
-     2,
-     0,
-     5,
-     0,
-     2,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     3,
-     0,
-     5,
-     0,
-     2,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     3,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0,
-     5,
-     0,
-     0,
-     0
-    ]
-   ],
-   "assign": {},
-   "output": [
-    {
-     "cases": [
-      "concept",
-      "$StoredDirection",
-      "$StepFromFirstTwo",
-      "$StepPerLine",
-      "$ObjectMotion",
-      "$DividerColorFromLines",
-      "$DividerWidthFromLines",
-      "$AnyPanelCount"
-     ],
-     "grid": null
-    },
-    {
-     "cases": [
-      "$PanelAxisFromLines"
-     ],
-     "grid": [
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       2,
-       0
-      ],
-      [
-       0,
-       2,
-       0
-      ],
-      [
-       0,
-       3,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
-       0,
-       0,
-       0
-      ],
-      [
        0,
        0,
        0
@@ -2372,7 +2053,6 @@
       "$StepPerLine",
       "$ObjectMotion",
       "$DividerColorFromLines",
-      "$PanelAxisFromLines",
       "$AnyPanelCount"
      ],
      "grid": null
@@ -2731,7 +2411,6 @@
       "$StepPerLine",
       "$ObjectMotion",
       "$DividerColorFromLines",
-      "$PanelAxisFromLines",
       "$DividerWidthFromLines"
      ],
      "grid": null

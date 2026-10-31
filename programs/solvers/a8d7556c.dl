@@ -37,11 +37,7 @@
 
 .type Choice = [overlap: Overlap, qualify: Qualify]
 
-.type StartCornerValue = [d: DiagDir]
-
-.type OpenValue = [start_corner: StartCornerValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive RarestColor: variant derived
@@ -50,16 +46,23 @@
     .decl fill(c: Color) fill(2).
     .decl min_side(k: number) min_side(2).
 
-    // --- $AxisFirst, $AxisFirst & $ThicknessTwo ---
+    // --- $AxisFirst ---
     .decl first_axis(a: Axis) first_axis(AXIS_V).
-
-    // --- $AxisFirst & $ThicknessTwo ---
-    // The corner at which a strip across the first axis starts.
-    // @open
-    .decl start_corner(d: DiagDir) start_corner(DIAG_TL). start_corner(DIAG_BL).
 }
 
 .init params = Params
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($LargestFirst()). overlap_choice($DropDominated()). overlap_choice($AxisFirst()).
+
+.decl qualify_choice(q: Qualify)
+qualify_choice($AnyRect()). qualify_choice($ThicknessTwo()).
+
+.decl excluded_choice(ch: Choice)
+excluded_choice([$AxisFirst(), $ThicknessTwo()]).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, Q]) :- overlap_choice(O), qualify_choice(Q), !excluded_choice([O, Q]).
 
 // The rectangles the hole cells span, and the claims made along a claim
 // order under every scan.
@@ -99,7 +102,7 @@ area.item(B, P) :- rect_cell(B, P).
 .decl corner_cell(b: Box, d: DiagDir, p: Position)
 corner_cell(B, D, P) :- rect_cell(B, P), box_corner(P, B, D).
 
-// --- $ThicknessTwo, $DropDominated & $ThicknessTwo, $AxisFirst & $ThicknessTwo ---
+// --- $ThicknessTwo ---
 
 // Another rectangle holds b and is longer than b only along axis a.
 .decl thicker(b: Box, a: Axis)
@@ -108,20 +111,17 @@ thicker(B, A) :-
     perp(A, A2), axis_of(D, A2), opposite(D, D2),
     same_dist(D, B, B2), same_dist(D2, B, B2).
 
-// A rectangle whose extent along axis a is params.min_side, and that no
-// rectangle extends along a.
-.decl strip(b: Box, a: Axis)
-strip(B, A) :-
-    rect_cell(B, P), box_extent(B, P, A, K), params.min_side(K),
-    !thicker(B, A).
-
 // --- concept, $ThicknessTwo, $AxisFirst, $DropDominated, $DropDominated & $ThicknessTwo ---
 
 .decl cand(q: Qualify, b: Box)
 cand($AnyRect(), B) :- rect(B).
-cand($ThicknessTwo(), B) :- strip(B, _).
+// A rectangle whose extent along some axis is params.min_side, and that no
+// rectangle extends along that axis.
+cand($ThicknessTwo(), B) :-
+    rect_cell(B, P), box_extent(B, P, A, K), params.min_side(K),
+    !thicker(B, A).
 
-// --- concept, $ThicknessTwo, $AxisFirst, $AxisFirst & $ThicknessTwo ---
+// --- concept, $ThicknessTwo, $AxisFirst ---
 
 // The scans: from corner c along primary axis a.
 .decl scan(c: DiagDir, a: Axis)
@@ -202,48 +202,17 @@ by_size.elem($AxisFirst(), B) :- rect(B).
 by_size.score($AxisFirst(), B, N) :- axis_len(B, N).
 by_size.secondary_score($AxisFirst(), B, N) :- area.tally(B, N).
 
-// --- $AxisFirst & $ThicknessTwo ---
-
-// The cells of the strips that run along the first axis.
-.decl along_cell(p: Position)
-along_cell(P) :-
-    params.first_axis(A), perp(A, A2), strip(B, A2), rect_cell(B, P).
-
-// The strips across the first axis claim in the order of their cell at
-// corner c, the longer first at a shared cell. A strip whose cell at c the
-// first pass fills takes no part, and a claim takes out each strip whose
-// cell at c it fills.
-claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B) :-
-    params.first_axis(A), strip(B, A), corner_cell(B, C, P), !along_cell(P).
-claim_order.score([[$AxisFirst(), $ThicknessTwo()], C, A], B, R) :-
-    claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B),
-    corner_cell(B, C, P), lex.rank([C, A], P, R).
-claim_order.secondary_score([[$AxisFirst(), $ThicknessTwo()], C, A], B, R) :-
-    claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B),
-    by_size.rank_desc($AxisFirst(), B, R).    // strips of one length: the larger first
-blocks([[$AxisFirst(), $ThicknessTwo()], C, A], B, B2) :-
-    claim_order.elem([[$AxisFirst(), $ThicknessTwo()], C, A], B), rect_cell(B, P),
-    corner_cell(B2, C, P).
-
-// The cells the strip reading fills under start corner c.
-.decl strip_fill(c: DiagDir, p: Position)
-strip_fill(C, P) :- diag_dir_elem(C), along_cell(P).
-strip_fill(C, P) :- claimed_cell([$AxisFirst(), $ThicknessTwo()], C, _, P).
-
 // --- concept, $ThicknessTwo, $AxisFirst ---
 
 // Every scan's claims fill, so a cell two scans claim differently takes two
 // colors.
-out(P, Col, Ch, [nil]) :-
+out(P, Col, Ch) :-
     in(P, C), greedy(Ch), scan(D, A),
     ( claimed_cell(Ch, D, A, P), params.fill(Col)
     ; !claimed_cell(Ch, D, A, P), Col = C
     ).
 
 // --- $DropDominated, $DropDominated & $ThicknessTwo ---
-
-.decl qualify_choice(q: Qualify)
-qualify_choice($AnyRect()). qualify_choice($ThicknessTwo()).
 
 .decl contained(q: Qualify, b: Box)
 contained(Q, B) :- cand(Q, B), cand(Q, B2), B != B2, inside(B, B2).
@@ -259,16 +228,8 @@ dominated(Q, B) :-
 .decl kept_cell(q: Qualify, p: Position)
 kept_cell(Q, P) :- maximal(Q, B), !dominated(Q, B), rect_cell(B, P).
 
-out(P, Col, [$DropDominated(), Q], [nil]) :-
+out(P, Col, [$DropDominated(), Q]) :-
     in(P, C), qualify_choice(Q),
     ( kept_cell(Q, P), params.fill(Col)
     ; !kept_cell(Q, P), Col = C
-    ).
-
-// --- $AxisFirst & $ThicknessTwo ---
-
-out(P, Col, [$AxisFirst(), $ThicknessTwo()], [[D]]) :-
-    in(P, C), params.start_corner(D),
-    ( strip_fill(D, P), params.fill(Col)
-    ; !strip_fill(D, P), Col = C
     ).

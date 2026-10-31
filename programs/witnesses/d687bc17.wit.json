@@ -1,0 +1,143 @@
+{
+  "id": "d687bc17",
+  "witnesses": [{
+    "id": "same-line-clash",
+    "separates": "two dots of the top wall's color share a column: the concept puts both on the one cell next to the wall, $Stack piles the second one under the first",
+    "input": [
+      [0,4,4,4,4,4,0],
+      [2,0,0,0,0,0,3],
+      [2,0,0,0,0,0,3],
+      [2,0,0,4,0,0,3],
+      [2,0,0,0,0,0,3],
+      [2,0,0,4,0,0,3],
+      [0,8,8,8,8,8,0]
+    ],
+    "output": [{
+      "cases": ["$Merge"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,0,4,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }, {
+      "cases": ["$Stack"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,0,4,0,0,3],
+        [2,0,0,4,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }]
+  }, {
+    "id": "bent-object",
+    "separates": "a three-cell object of the top wall's color with a gap above one cell: the concept moves each cell to the wall row alone, $MoveObjects moves the object rigidly until it touches the wall, $Stack piles the cells of each column against the wall",
+    "input": [
+      [0,4,4,4,4,4,0],
+      [2,0,0,0,0,0,3],
+      [2,0,0,0,0,0,3],
+      [2,0,4,0,0,0,3],
+      [2,0,4,4,0,0,3],
+      [2,0,0,0,0,0,3],
+      [0,8,8,8,8,8,0]
+    ],
+    "output": [{
+      "cases": ["$Merge & $Dots"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,4,4,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }, {
+      "cases": ["$MoveObjects"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,4,0,0,0,3],
+        [2,0,4,4,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }, {
+      "cases": ["$Stack"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,4,4,0,0,3],
+        [2,0,4,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }]
+  }, {
+    "id": "two-walls-one-color",
+    "separates": "the top and bottom walls share the dot's color: the concept sends a copy of the dot to each wall, $NearerWall sends it to the nearer one",
+    "input": [
+      [0,4,4,4,4,4,0],
+      [2,0,0,0,0,0,3],
+      [2,0,0,4,0,0,3],
+      [2,0,0,0,0,0,3],
+      [2,0,0,0,0,0,3],
+      [2,0,0,0,0,0,3],
+      [0,4,4,4,4,4,0]
+    ],
+    "output": [{
+      "cases": ["$EveryWall"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,0,4,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,4,0,0,3],
+        [0,4,4,4,4,4,0]
+      ]
+    }, {
+      "cases": ["$NearerWall"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,0,0,4,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [2,0,0,0,0,0,3],
+        [0,4,4,4,4,4,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "a three-row grid whose top wall color outnumbers 0: the stored background 0 keeps the dots, the derived background is 4, so the 0 cells read as dots of no wall's color and become 4",
+    "input": [
+      [0,4,4,4,4,4,0],
+      [2,4,0,4,0,4,3],
+      [0,8,8,8,8,8,0]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,4,0,4,0,4,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [0,4,4,4,4,4,0],
+        [2,4,4,4,4,4,3],
+        [0,8,8,8,8,8,0]
+      ]
+    }]
+  }]
+}

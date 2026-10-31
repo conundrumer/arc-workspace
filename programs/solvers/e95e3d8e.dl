@@ -1,0 +1,183 @@
+// e95e3d8e
+// @draft
+// @keywords: wallpaper repair symmetry rank
+// @scene periodic-tiling: the input is a tile repeated on both axes, with some cells covered by holes; on each axis the cells outside the holes repeat with one period, the least such period, and the period differs from input to input.
+// @scene hole-patches: the holes are solid rectangles of `hole_color`, and `hole_color` appears nowhere in the tile.
+// @scene every-residue-visible: each cell of the tile, by its row and column residue under the periods, shows outside the holes somewhere in the input.
+// @rule fill-from-period: each hole cell takes the color that the generator's tile has at that cell's place; every other cell keeps its color.
+//     @approximated: each hole cell takes the color of an uncovered cell in the same row residue and the same column residue under the periods, each the least shift on its axis that no pair of uncovered cells contradicts; every other cell keeps its color.
+//     @witness hidden-tile-color: borderline other
+
+// how each axis's period is found
+.type PeriodShape =
+    // @claim periodic-tiling
+    AxisPeriods {}
+    // @scene periodic-tiling: one period that both axes share, the least shift that no pair of uncovered cells contradicts on either axis.
+    // @witness unequal-periods: variant concept
+  | SquarePeriod {}
+
+// which cells a hole cell takes its color from
+.type FillSource =
+    // @claim fill-from-period
+    PeriodClass {}
+    // @rule fill-from-period: the period classes merge under each D4 transform, with a translation modulo the periods, that some pair of uncovered classes witnesses and none contradicts; undefined where a hole cell's orbit holds no uncovered cell, or holds two colors.
+    // @witness single-copy-cell: variant $IsometryOrbits
+    //     @relaxed every-residue-visible
+  | IsometryOrbits {}
+
+// how the uncovered cells of a class settle the fill color
+.type Agreement =
+    // @claim fill-from-period
+    OneColor {}
+    // @rule fill-from-period: the hole cell takes the commonest color among its class's uncovered cells; undefined on a tie.
+    // @witness hidden-period-evidence: borderline other
+    //     @relaxed periodic-tiling
+  | ModalClass {}
+
+// where the hole color comes from
+.type HoleSource =
+    // @claim hole-patches
+    StoredHole {}
+    // @scene hole-patches: the hole color is the color whose cells, read as holes, leave the least sum of the two periods; undefined where two colors tie and give different outputs.
+    // @witness holes-of-another-color: borderline $DerivedHoleColor
+    //     @relaxed periodic-tiling
+    //     @relaxed hole-patches
+  | DerivedHoleColor {}
+
+.type Choice = [s: PeriodShape, f: FillSource, g: Agreement, h: HoleSource]
+
+// The periods read with one hole color.
+.type PeriodKey = [s: PeriodShape, c: Color]
+.type Cell = [f: FillSource, k: PeriodKey, p: Position]
+.type Residue = [a: Axis, r: number]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl hole_color(c: Color) hole_color(0).
+}
+
+.init params = Params
+
+.decl period_shape_choice(s: PeriodShape)
+period_shape_choice($AxisPeriods()). period_shape_choice($SquarePeriod()).
+
+.decl fill_source_choice(f: FillSource)
+fill_source_choice($PeriodClass()). fill_source_choice($IsometryOrbits()).
+
+.decl agreement_choice(g: Agreement)
+agreement_choice($OneColor()). agreement_choice($ModalClass()).
+
+.decl hole_source_choice(h: HoleSource)
+hole_source_choice($StoredHole()). hole_source_choice($DerivedHoleColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, F, G, H]) :-
+    period_shape_choice(S), fill_source_choice(F), agreement_choice(G), hole_source_choice(H).
+
+// The colors read as holes.
+// @ignore: case section — keyed by hole color; each case reads only the color its hole source selects
+.decl hole_cand(c: Color)
+hole_cand(C) :- params.hole_color(C).
+
+// The cells left when color c is read as holes.
+.decl intact(c: Color, p: Position, col: Color)
+intact(C, P, Col) :- hole_cand(C), in(P, Col), Col != C.
+
+// @claim periodic-tiling
+.init si = OffsetInvariance<Color, Color>
+si.cell(C, P, Col) :- intact(C, P, Col).
+
+// Each axis's period under each period shape and hole color.
+.decl period(k: PeriodKey, a: Axis, n: number)
+
+// The hole color and period shape each case reads.
+// @ignore: case section — keyed by hole source; each case's `out` clause reads its own row
+.decl hole(h: HoleSource, k: PeriodKey)
+
+// The period classes, or their orbits, of the frame positions.
+.init cls = Canon<Cell>
+cls.equiv(X, X) :- hole(_, K), fill_source_choice(F), in(P, _), X = [F, K, P].
+
+// The fill color of each class.
+.decl class_color(g: Agreement, id: Ident, col: Color)
+
+// The grid each hole color a case reads gives.
+.decl fill(ch: Choice, c: Color, p: Position, col: Color)
+fill([S, F, G, H], C, P, Col) :-
+    impl_choice([S, F, G, H]), hole(H, [S, C]),
+    ( intact(C, P, Col)                                                  // uncovered: keeps its color
+    ; in(P, C), cls.id([F, [S, C], P], Id), class_color(G, Id, Col)       // hole: its class's fill color
+    ).
+
+// Some hole color the case reads gives no `col` at p.
+.decl lacks(ch: Choice, p: Position, col: Color)
+lacks([S, F, G, H], P, Col) :-
+    fill([S, F, G, H], _, P, Col), hole(H, [S, C]), !fill([S, F, G, H], C, P, Col).
+
+// A cell takes the color that every hole color the case reads gives it.
+out(P, Col, Ch) :- fill(Ch, _, P, Col), !lacks(Ch, P, Col).
+
+// --- $AxisPeriods ---
+period([$AxisPeriods(), C], A, N) :- si.min_period(C, A, N).
+
+// --- $SquarePeriod ---
+// The shifts some uncovered pair witnesses and no uncovered pair contradicts on either axis.
+// @claim periodic-tiling
+.init square = Extremes<Color>
+square.cand(C, K) :- si.pair(C, _, K, _, _), !si.mismatch(C, _, K).
+
+period([$SquarePeriod(), C], A, K) :- square.low(C, K), axis_elem(A).
+
+// --- $PeriodClass ---
+// One period step joins two cells of a class.
+cls.edge([$PeriodClass(), K, P], [$PeriodClass(), K, Q]) :-
+    hole(_, K), period(K, A, N), axis_of(D, A), in(P, _), jump(P, D, N, Q), in(Q, _).
+
+// --- $IsometryOrbits ---
+// @claim fill-from-period
+.init wp = Wallpaper<PeriodKey, Color>
+wp.transform(D) :- d4_elem(D).
+wp.cell([S, C], P, Col) :- hole(_, [S, C]), intact(C, P, Col).
+wp.grid(K, P) :- hole(_, K), in(P, _).
+wp.period(K, A, N) :- hole(_, K), period(K, A, N).
+
+cls.edge([$IsometryOrbits(), K, P], [$IsometryOrbits(), K, Q]) :- wp.action(K, P, Q).
+
+// --- $OneColor ---
+class_color($OneColor(), Id, Col) :- cls.id([_, [_, C], Q], Id), intact(C, Q, Col).
+
+// --- $ModalClass ---
+// @claim fill-from-period
+.init commonest = Mode<Ident, Color, Position>
+commonest.item(Id, Col, Q) :- cls.id([_, [_, C], Q], Id), intact(C, Q, Col).
+
+class_color($ModalClass(), Id, Col) :- commonest.mode(Id, Col).
+
+// --- $StoredHole ---
+hole($StoredHole(), [S, C]) :- period_shape_choice(S), params.hole_color(C).
+
+// --- $DerivedHoleColor ---
+hole_cand(C) :- in(_, C).
+
+// The residue classes on both axes: the sum of the two periods.
+// @claim hole-patches
+// @ignore: case section — keyed by period shape and hole color; the stored hole color reads none of it
+.init residues = Tally<PeriodKey, Residue>
+residues.domain(K) :- period(K, A, _), period(K, A2, _), perp(A, A2).
+residues.item(K, [A, R]) :-
+    residues.domain(K), period(K, A, N), axis_of(D, A), in(P, _), dist(P, D, T),
+    stride(T, N, 0, _, R).
+
+// @claim hole-patches
+// @ignore: case section — keyed by period shape; the stored hole color reads none of it
+.init fewest = ArgExtremes<PeriodShape, Color>
+fewest.cand(S, C, N) :- residues.tally([S, C], N), in(_, C).
+
+hole($DerivedHoleColor(), [S, C]) :- fewest.low(S, C, _).
+
+.comp Determine {
+    // The color of the cells the output changes.
+    .decl hole_color(c: Color)
+    hole_color(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+}

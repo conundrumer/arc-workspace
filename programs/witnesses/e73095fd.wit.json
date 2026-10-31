@@ -1,0 +1,301 @@
+{
+  "id": "e73095fd",
+  "witnesses": [{
+    "id": "band-between-lines",
+    "separates": "two wire lines run edge to edge with only background between them, and no corner of that band shows: the concept and every branch but $CornerShown and $SideShown fill the band as a box the grid edge cuts on two sides, and $CornerShown and $SideShown leave it; $OutlineBox also fills the regions a line splits under the lower line",
+    "input": [
+      [0,0,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,0,0,5,0,0,0,0,0,0],
+      [0,0,5,5,5,5,0,0,0,0,0,0],
+      [0,0,0,5,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,5,0,0,0,0,0,0,0],
+      [0,0,0,0,5,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$AnyPart & $BackgroundOnly"],
+      "grid": [
+        [0,0,5,5,5,5,0,0,0,0,0,0],
+        [0,0,5,4,4,5,0,0,0,0,0,0],
+        [0,0,5,5,5,5,0,0,0,0,0,0],
+        [0,0,0,5,0,0,0,0,0,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [4,4,4,4,4,4,4,4,4,4,4,4],
+        [4,4,4,4,4,4,4,4,4,4,4,4],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [0,0,0,0,5,0,0,0,0,0,0,0],
+        [0,0,0,0,5,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$OutlineBox"],
+      "grid": [
+        [0,0,5,5,5,5,0,0,0,0,0,0],
+        [0,0,5,4,4,5,0,0,0,0,0,0],
+        [0,0,5,5,5,5,0,0,0,0,0,0],
+        [0,0,0,5,0,0,0,0,0,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [4,4,4,4,4,4,4,4,4,4,4,4],
+        [4,4,4,4,4,4,4,4,4,4,4,4],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [4,4,4,4,5,4,4,4,4,4,4,4],
+        [4,4,4,4,5,4,4,4,4,4,4,4]
+      ]
+    }, {
+      "cases": ["$CornerShown","$SideShown"],
+      "grid": [
+        [0,0,5,5,5,5,0,0,0,0,0,0],
+        [0,0,5,4,4,5,0,0,0,0,0,0],
+        [0,0,5,5,5,5,0,0,0,0,0,0],
+        [0,0,0,5,0,0,0,0,0,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [0,0,0,0,5,0,0,0,0,0,0,0],
+        [0,0,0,0,5,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "grid-corner-box",
+    "separates": "an L of wire cuts off the grid's top-left corner, a box that two grid edges cut, with one corner on the grid: the concept fills it, $SideShown leaves it as it shows no whole side, and $LinkedBox leaves it as no line meets it",
+    "input": [
+      [0,0,0,5,0,0,0,0,0,0],
+      [0,0,0,5,0,0,0,0,0,0],
+      [5,5,5,5,0,0,0,0,0,0],
+      [0,0,0,0,0,5,5,5,5,0],
+      [0,0,0,0,0,5,0,0,5,5],
+      [0,0,0,0,0,5,5,5,5,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$AnyPart & $EveryBox","$CornerShown"],
+      "grid": [
+        [4,4,4,5,0,0,0,0,0,0],
+        [4,4,4,5,0,0,0,0,0,0],
+        [5,5,5,5,0,0,0,0,0,0],
+        [0,0,0,0,0,5,5,5,5,0],
+        [0,0,0,0,0,5,4,4,5,5],
+        [0,0,0,0,0,5,5,5,5,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$LinkedBox","$SideShown"],
+      "grid": [
+        [0,0,0,5,0,0,0,0,0,0],
+        [0,0,0,5,0,0,0,0,0,0],
+        [5,5,5,5,0,0,0,0,0,0],
+        [0,0,0,0,0,5,5,5,5,0],
+        [0,0,0,0,0,5,4,4,5,5],
+        [0,0,0,0,0,5,5,5,5,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "side-continues-past-corner",
+    "separates": "a box's top side continues as a line past its top-right corner: the concept leaves the box, since that corner is a junction, and $SomeTrueCorner fills it, since its other corners are true corners",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,5,5,5,5,5,5,5,5,5],
+      [0,5,0,0,5,0,0,0,0,0],
+      [0,5,0,0,5,0,0,0,0,0],
+      [0,5,5,5,5,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$EveryTrueCorner"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,5,5,5,5,5,5,5,5,5],
+        [0,5,0,0,5,0,0,0,0,0],
+        [0,5,0,0,5,0,0,0,0,0],
+        [0,5,5,5,5,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SomeTrueCorner"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,5,5,5,5,5,5,5,5,5],
+        [0,5,4,4,5,0,0,0,0,0],
+        [0,5,4,4,5,0,0,0,0,0],
+        [0,5,5,5,5,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "box-with-no-line",
+    "separates": "one box has no line that meets it: the concept fills it and $LinkedBox leaves it",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,5,5,5,5,0,0,0,5,0],
+      [0,5,0,0,5,0,0,0,5,0],
+      [0,5,5,5,5,0,5,5,5,5],
+      [0,0,0,0,0,0,5,0,0,5],
+      [0,0,0,0,0,0,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryBox"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,5,5,5,5,0,0,0,5,0],
+        [0,5,4,4,5,0,0,0,5,0],
+        [0,5,5,5,5,0,5,5,5,5],
+        [0,0,0,0,0,0,5,4,4,5],
+        [0,0,0,0,0,0,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LinkedBox"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,5,5,5,5,0,0,0,5,0],
+        [0,5,0,0,5,0,0,0,5,0],
+        [0,5,5,5,5,0,5,5,5,5],
+        [0,0,0,0,0,0,5,4,4,5],
+        [0,0,0,0,0,0,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "line-through-box",
+    "separates": "a line crosses a box from its top side to its bottom side and splits its inside in two: the concept leaves both halves, whose corners at the line are junctions, and $OutlineBox and $SomeTrueCorner fill both",
+    "input": [
+      [0,0,0,5,0,0,0],
+      [0,5,5,5,5,5,0],
+      [0,5,0,5,0,5,0],
+      [0,5,0,5,0,5,0],
+      [0,5,5,5,5,5,0],
+      [0,0,0,5,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$EveryTrueCorner & $BackgroundOnly"],
+      "grid": [
+        [0,0,0,5,0,0,0],
+        [0,5,5,5,5,5,0],
+        [0,5,0,5,0,5,0],
+        [0,5,0,5,0,5,0],
+        [0,5,5,5,5,5,0],
+        [0,0,0,5,0,0,0]
+      ]
+    }, {
+      "cases": ["$OutlineBox","$SomeTrueCorner"],
+      "grid": [
+        [0,0,0,5,0,0,0],
+        [0,5,5,5,5,5,0],
+        [0,5,4,5,4,5,0],
+        [0,5,4,5,4,5,0],
+        [0,5,5,5,5,5,0],
+        [0,0,0,5,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "wire outnumbers background: the derivation gives 5 as the background, so no box is found and the input stays; the concept fills the box",
+    "input": [
+      [5,5,5,5,5,0],
+      [5,0,0,0,5,0],
+      [5,0,0,0,5,5],
+      [5,0,0,0,5,0],
+      [5,5,5,5,5,0]
+    ],
+    "output": [{
+      "cases": ["$BackgroundOnly & background=stored & wire=stored"],
+      "grid": [
+        [5,5,5,5,5,0],
+        [5,4,4,4,5,0],
+        [5,4,4,4,5,5],
+        [5,4,4,4,5,0],
+        [5,5,5,5,5,0]
+      ]
+    }, {
+      "cases": ["wire=RarestColor","background=DominantColor"],
+      "grid": [
+        [5,5,5,5,5,0],
+        [5,0,0,0,5,0],
+        [5,0,0,0,5,5],
+        [5,0,0,0,5,0],
+        [5,5,5,5,5,0]
+      ]
+    }, {
+      "cases": ["$OutlineBox"],
+      "grid": [
+        [5,5,5,5,5,4],
+        [5,4,4,4,5,4],
+        [5,4,4,4,5,5],
+        [5,4,4,4,5,4],
+        [5,5,5,5,5,4]
+      ]
+    }]
+  }, {
+    "id": "wire=RarestColor",
+    "separates": "wire outnumbers background: the derivation gives 0 as the wire, so no box is found and the input stays; the concept fills the box",
+    "input": [
+      [5,5,5,5,5,0],
+      [5,0,0,0,5,0],
+      [5,0,0,0,5,5],
+      [5,0,0,0,5,0],
+      [5,5,5,5,5,0]
+    ],
+    "output": [{
+      "cases": ["$BackgroundOnly & background=stored & wire=stored"],
+      "grid": [
+        [5,5,5,5,5,0],
+        [5,4,4,4,5,0],
+        [5,4,4,4,5,5],
+        [5,4,4,4,5,0],
+        [5,5,5,5,5,0]
+      ]
+    }, {
+      "cases": ["wire=RarestColor","background=DominantColor"],
+      "grid": [
+        [5,5,5,5,5,0],
+        [5,0,0,0,5,0],
+        [5,0,0,0,5,5],
+        [5,0,0,0,5,0],
+        [5,5,5,5,5,0]
+      ]
+    }, {
+      "cases": ["$OutlineBox"],
+      "grid": [
+        [5,5,5,5,5,4],
+        [5,4,4,4,5,4],
+        [5,4,4,4,5,5],
+        [5,4,4,4,5,4],
+        [5,5,5,5,5,4]
+      ]
+    }]
+  }, {
+    "id": "third-color",
+    "separates": "a third color shows in one cell, rarer than wire: the rarest color is that color, so wire=RarestColor finds no wire ring and leaves the box; the dominant color is still the background, so background=DominantColor fills the box as the concept does",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,5,5,5,5,0,0],
+      [0,5,0,0,5,5,5],
+      [0,5,0,0,5,0,0],
+      [0,5,5,5,5,0,3],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["wire=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,5,5,5,5,0,0],
+        [0,5,4,4,5,5,5],
+        [0,5,4,4,5,0,0],
+        [0,5,5,5,5,0,3],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["wire=RarestColor"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,5,5,5,5,0,0],
+        [0,5,0,0,5,5,5],
+        [0,5,0,0,5,0,0],
+        [0,5,5,5,5,0,3],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

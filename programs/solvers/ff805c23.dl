@@ -1,0 +1,221 @@
+// ff805c23
+// @draft
+// @keywords: symmetry crop repair occlude latent-canvas
+// @scene square-grid: the input is a square grid of size 24×24.
+// @scene symmetric-pattern: the input, apart from the masked cells, is a
+//  pattern unchanged under each element of the group `symmetry` about the
+//  grid's center.
+// @scene solid-mask: one solid rectangle of color `mask_color` (1), of size
+//  5×5, covers part of the pattern; `mask_color` occurs nowhere else.
+// @scene mask-recoverable: each masked cell has an image under `symmetry`
+//  that the mask does not cover.
+// @rule crop-mask: the output is the mask's bounding box.
+// @rule restore-by-symmetry: each output cell takes the color of the images
+//  of its cell under `symmetry` that the mask does not cover.
+
+// how the mask color is determined
+.type MaskSource =
+    // @claim solid-mask
+    StoredColor {}
+    // @scene solid-mask: the mask color is each color whose cells form one
+    //  solid rectangle; undefined where no color's cells form one.
+    // @witness mask-recolored-sparse-pattern: variant $MaskBySolidBlock
+    //     @relaxed solid-mask
+  | MaskBySolidBlock {}
+
+// how a masked cell's content follows from its images
+.type Restoration =
+    // @claim restore-by-symmetry
+    CellImages {}
+    // @rule restore-by-symmetry: the output is each image of the mask's box,
+    //  under an element of `symmetry`, that holds no mask cell, read back
+    //  through that element; undefined where every image box holds one.
+    // @witness broken-symmetry-two-copies: foreign $ModeImage
+    //     @relaxed symmetric-pattern
+  | BlockImage {}
+    // @rule restore-by-symmetry: each masked cell takes the commonest color
+    //  among its visible images; undefined where a masked cell has no visible
+    //  image, or where two colors tie as commonest.
+    // @witness broken-symmetry-two-copies: foreign $ModeImage
+  | ModeImage {}
+
+// the center the group acts about
+.type Center =
+    // @claim symmetric-pattern
+    GridCenter {}
+    // @scene symmetric-pattern: the center is each center of a square frame
+    //  in the grid that holds the mask, at which the visible cells of that
+    //  frame agree with their visible images and every masked cell has one,
+    //  and the output holds each center's restoration; undefined where no
+    //  center qualifies.
+    // @witness off-center-pattern: foreign $FoundCenter
+    //     @relaxed square-grid
+    //     @relaxed symmetric-pattern
+  | FoundCenter {}
+
+.type Choice = [m: MaskSource, r: Restoration, c: Center]
+
+// The center the restoration reads, as the square frame it is the center
+// of, and for the block image, the element the image is taken under.
+.type TiebreakResolution = About {b: Box} | Through {b: Box, d: D4}
+
+// A candidate frame of a mask.
+.type FrameKey = [m: MaskSource, b: Box]
+
+// A masked cell under one case, group and center.
+.type ModeKey = [m: MaskSource, c: Center, s: Sym, b: Box, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice, tr: TiebreakResolution)
+
+.comp Params {
+    // the symmetry group about the center that the restoration reads
+    .decl symmetry(s: Sym) symmetry(SYM_BOX). symmetry(SYM_D4).
+
+    // --- $StoredColor ---
+    // @derive RarestColor: variant mask_color=RarestColor
+    //     @relaxed solid-mask
+    .decl mask_color(c: Color) mask_color(1).
+}
+
+.init params = Params
+
+.decl mask_source_choice(m: MaskSource)
+mask_source_choice($StoredColor()). mask_source_choice($MaskBySolidBlock()).
+
+// The cells of each mask, and the cells it leaves visible.
+.decl masked(m: MaskSource, p: Position)
+.decl visible(m: MaskSource, p: Position, col: Color)
+visible(M, P, Col) :- mask_source_choice(M), in(P, Col), !masked(M, P).
+
+// --- $StoredColor ---
+
+masked($StoredColor(), P) :- in(P, Col), params.mask_color(Col).
+
+// --- $MaskBySolidBlock ---
+
+// Each color's cells, and their bounding box.
+// @claim solid-mask
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- in(P, Col).
+
+// A color whose bounding box holds a cell of another color.
+.decl color_gap(col: Color)
+color_gap(Col) :- color_box.box(Col, B), in(P, Col2), Col2 != Col, crop(P, B, _).
+
+masked($MaskBySolidBlock(), P) :- in(P, Col), !color_gap(Col).
+
+// --- $StoredColor, $MaskBySolidBlock ---
+
+// The output frame: the mask's bounding box.
+// @claim crop-mask
+.init hole = Bbox<MaskSource>
+hole.cell(M, P) :- masked(M, P).
+
+// Each masked cell, in the hole's frame.
+.decl hole_cell(m: MaskSource, p: Position, p_inner: Position)
+hole_cell(M, P, P_inner) :- masked(M, P), hole.box(M, B), crop(P, B, P_inner).
+
+// The center each case reads, as a square frame centered on it.
+// @ignore: head-zero — the grid center's frame is the grid itself, which no relation measures
+.decl center(m: MaskSource, c: Center, s: Sym, b: Box)
+
+// The image of a masked cell under an element of the group, about a center.
+.decl image(m: MaskSource, c: Center, s: Sym, b: Box, p: Position, d: D4, p2: Position)
+image(M, C, S, B, P, D, P2) :-
+    center(M, C, S, B), masked(M, P), sym_member(S, D),
+    crop(P, B, P_rel), apply(D, P_rel, P2_rel), compose(B, P2_rel, P2).
+
+// A masked cell's image that the mask leaves visible, with its color.
+.decl visible_image(m: MaskSource, c: Center, s: Sym, b: Box, p: Position, d: D4, p2: Position, col: Color)
+visible_image(M, C, S, B, P, D, P2, Col) :- image(M, C, S, B, P, D, P2), visible(M, P2, Col).
+
+// --- $GridCenter ---
+
+center(M, $GridCenter(), S, ZERO) :- mask_source_choice(M), params.symmetry(S).
+
+// --- $FoundCenter ---
+
+// The distances a frame's margin can take.
+.decl margin(k: number)
+margin(K) :- in(P, _), dir_elem(D), dist(P, D, K).
+
+// A corner cell, to measure a frame's extent from.
+.decl corner_cell(p: Position)
+corner_cell(P) :- in(P, _), diag_dir_elem(Dg), corner_dist(P, Dg, 0).
+
+// Square frames in the grid that hold the hole.
+.decl cand_frame(m: MaskSource, b: Box)
+cand_frame(M, B) :-
+    hole.box(M, HB), dir_elem(D), opposite(D, D_o), perp_dir(D, D2), opposite(D2, D2_o),
+    dist(HB, D, H1), dist(HB, D_o, H2), dist(HB, D2, H3), dist(HB, D2_o, H4),
+    margin(K1), K1 <= H1, margin(K2), K2 <= H2,      // margins on D's axis
+    margin(K3), K3 <= H3, margin(K4), K4 <= H4,      // margins on the other axis
+    axis_inset(D, K1, K2, B1), axis_inset(D2, K3, K4, B2), compose(B1, B2, B),
+    corner_cell(P), perp(A, A2),
+    box_extent(B, P, A, N), box_extent(B, P, A2, N).  // square
+
+// The visible cells of each candidate frame, in that frame.
+.decl frame_cell(m: MaskSource, b: Box, p_rel: Position, col: Color)
+frame_cell(M, B, P_rel, Col) :- cand_frame(M, B), visible(M, P, Col), crop(P, B, P_rel).
+
+// The symmetries of each candidate frame's visible cells.
+// @claim symmetric-pattern
+.init frame_sym = D4Map<FrameKey, Color>
+frame_sym.src([M, B], P_rel, Col) :- frame_cell(M, B, P_rel, Col).
+frame_sym.dst([M, B], P_rel, Col) :- frame_cell(M, B, P_rel, Col).
+
+// A frame whose visible cells some element of the group contradicts.
+.decl frame_break(m: MaskSource, s: Sym, b: Box)
+frame_break(M, S, B) :-
+    cand_frame(M, B), params.symmetry(S), sym_member(S, D), frame_sym.conflict([M, B], D).
+
+// The images of the masked cells under a candidate center.
+.decl cand_image(m: MaskSource, s: Sym, b: Box, p: Position)
+cand_image(M, S, B, P) :-
+    cand_frame(M, B), params.symmetry(S), masked(M, P), sym_member(S, D),
+    crop(P, B, P_rel), apply(D, P_rel, P2_rel), compose(B, P2_rel, P2), visible(M, P2, _).
+
+// A frame with a masked cell that has no visible image.
+.decl frame_blind(m: MaskSource, s: Sym, b: Box)
+frame_blind(M, S, B) :-
+    cand_frame(M, B), params.symmetry(S), masked(M, P), !cand_image(M, S, B, P).
+
+center(M, $FoundCenter(), S, B) :-
+    cand_frame(M, B), params.symmetry(S), !frame_break(M, S, B), !frame_blind(M, S, B).
+
+// --- $CellImages ---
+
+out(P_inner, Col, [M, $CellImages(), C], $About(B)) :-
+    visible_image(M, C, S, B, P, _, _, Col), hole_cell(M, P, P_inner).
+
+// --- $BlockImage ---
+
+// An element under which some masked cell's image is not visible.
+.decl block_hidden(m: MaskSource, c: Center, s: Sym, b: Box, d: D4)
+block_hidden(M, C, S, B, D) :-
+    center(M, C, S, B), masked(M, P), sym_member(S, D), !visible_image(M, C, S, B, P, D, _, _).
+
+out(P_inner, Col, [M, $BlockImage(), C], $Through(B, D)) :-
+    visible_image(M, C, S, B, P, D, _, Col), hole_cell(M, P, P_inner),
+    !block_hidden(M, C, S, B, D).
+
+// --- $ModeImage ---
+
+// @claim restore-by-symmetry
+.init commonest = Mode<ModeKey, Color, Position>
+commonest.item([M, C, S, B, P], Col, P2) :- visible_image(M, C, S, B, P, _, P2, Col).
+
+out(P_inner, Col, [M, $ModeImage(), C], $About(B)) :-
+    commonest.mode([M, C, S, B, P], Col), hole_cell(M, P, P_inner).
+
+.comp Determine {
+    // The mask color: a color of every input that no train output holds.
+    .decl in_color(e: Example, col: Color)
+    in_color(E, Col) :- ex_in(E, _, Col).
+
+    .decl missing_color(col: Color)
+    missing_color(Col) :- in_color(_, Col), in_color(E, _), !in_color(E, Col).
+
+    .decl mask_color(c: Color)
+    mask_color(Col) :- in_color(_, Col), !missing_color(Col), !ex_out(_, _, Col).
+}

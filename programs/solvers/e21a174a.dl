@@ -1,0 +1,180 @@
+// e21a174a
+// @draft
+// @keywords: color-class lines permutation move
+// @scene color-layers: the cells of each non-background color form one layer,
+//  and that layer may be disconnected.
+// @scene disjoint-bands: along `stack_axis`, each layer spans a band of lines,
+//  and no line holds cells of two layers.
+// @rule reverse-order: each layer's band moves to its mirror image within the
+//  span the stack holds along `stack_axis`, so the layers come in reverse order
+//  and the stack keeps its place.
+// @rule layer-kept: each layer keeps its own picture unchanged, with no flip,
+//  and keeps its place on the other axis.
+// @rule rest-background: every other cell of the output is `background`.
+
+// what a layer is
+.type LayerUnit =
+    // @claim color-layers
+    ColorClass {}
+    // @scene color-layers: each 8-connected piece of one color is a layer;
+    //  undefined where the bands of two pieces overlap along `stack_axis`.
+    // @witness split-layer: variant concept
+  | ColorComponent8 {}
+    // @scene color-layers: a layer is a maximal run of consecutive lines whose
+    //  non-background cells all have one color; undefined where a line holds
+    //  two non-background colors.
+    // @witness repeated-color: variant $RowRuns
+    //     @relaxed disjoint-bands
+  | RowRuns {}
+
+// what the bands mirror across
+.type Arrangement =
+    // @claim reverse-order
+    SpanMirror {}
+    // @rule reverse-order: each band moves to its mirror image across the
+    //  frame's middle line along `stack_axis`.
+    // @witness off-center: variant concept
+  | FrameMirror {}
+
+// where the stack axis comes from
+.type AxisSource =
+    // @claim disjoint-bands
+    StoredAxis {}
+    // @scene disjoint-bands: the stack axis is each axis along which the
+    //  layers' bands are disjoint; undefined where no axis has disjoint bands.
+    // @witness diagonal-stack: variant concept
+  | AxisFromInput {}
+
+.type Choice = [unit: LayerUnit, arrangement: Arrangement, axis: AxisSource]
+
+// the stack axis a grid is derived at
+.type TiebreakResolution = [stack_axis: Axis]
+
+// a layer under one reading, at one stack axis
+.type LayerKey = [u: LayerUnit, a: Axis, id: Ident]
+
+// the lines of one color along one axis
+.type LineKey = [a: Axis, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // --- $StoredAxis ---
+    .decl stack_axis(a: Axis) stack_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl layer_unit_choice(u: LayerUnit)
+layer_unit_choice($ColorClass()). layer_unit_choice($ColorComponent8()). layer_unit_choice($RowRuns()).
+
+.decl arrangement_choice(r: Arrangement)
+arrangement_choice($SpanMirror()). arrangement_choice($FrameMirror()).
+
+.decl axis_source_choice(x: AxisSource)
+axis_source_choice($StoredAxis()). axis_source_choice($AxisFromInput()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([U, R, X]) :- layer_unit_choice(U), arrangement_choice(R), axis_source_choice(X).
+
+// a non-background cell
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// The cells of each layer.
+.decl layer(u: LayerUnit, a: Axis, id: Ident, p: Position)
+
+// @claim disjoint-bands reverse-order
+.init bands = Bbox<LayerKey>
+bands.cell([U, A, Id], P) :- layer(U, A, Id, P).
+
+// cell P lies on a line outside layer K's band
+.decl off_band(k: LayerKey, p: Position)
+off_band(K, P) :-
+    bands.box(K, B), K = [_, A, _], ink(P, _),
+    axis_of(D, A), dist(P, D, N), dist(B, D, M), N < M.
+
+// The layers of reading U at axis A are not stacked along A.
+// @store: variant $AxisFromInput
+//     @relaxed disjoint-bands
+.decl unstacked(u: LayerUnit, a: Axis)
+unstacked(U, A) :-
+    layer(U, A, Id, P), bands.box([U, A, Id2], _), Id != Id2,   // a cell of another layer
+    !off_band([U, A, Id2], P).                                    // inside that layer's band
+
+// The stack axis of each reading.
+.decl stack(u: LayerUnit, x: AxisSource, a: Axis)
+
+// The box the bands mirror within.
+// @ignore: head-zero — ZERO is the frame itself, the box $FrameMirror mirrors within
+.decl span(r: Arrangement, s: Box)
+
+// Each layer cell at its place once the layer's band is mirrored within S.
+.decl moved(u: LayerUnit, r: Arrangement, a: Axis, q: Position, col: Color)
+moved(U, R, A, Q, Col) :-
+    layer(U, A, Id, P), in(P, Col), bands.box([U, A, Id], B), span(R, S),
+    relative(S, B, B_rel), flip_of(A, D), apply(D, B_rel, B_flip),   // the band mirrored in S
+    compose(S, B_flip, B_new), crop(P, B, P_rel), compose(B_new, P_rel, Q).
+
+out(P, Col, [U, R, X], [A]) :-
+    impl_choice([U, R, X]), stack(U, X, A),
+    ( moved(U, R, A, P, Col)                                     // a layer cell
+    ; in(P, _), !moved(U, R, A, P, _), params.background(Col)    // every other cell
+    ).
+
+// --- $ColorClass ---
+// @claim color-layers
+.init colors = IdentOf<Color>
+colors.value(Col) :- ink(_, Col).
+
+layer($ColorClass(), A, Id, P) :- ink(P, Col), colors.id(Col, Id), axis_elem(A).
+
+// --- $ColorComponent8 ---
+// @claim color-layers
+.init pieces = Components8<Color>
+pieces.node(Col, P) :- ink(P, Col).
+
+layer($ColorComponent8(), A, Id, P) :- pieces.label(_, P, Id), axis_elem(A).
+
+// --- $RowRuns ---
+// the color of each line along axis A that holds ink
+.decl line_color(a: Axis, l: Position, col: Color)
+line_color(A, L, Col) :- ink(P, Col), axis_elem(A), split(P, A, L, _).
+
+// @claim color-layers
+.init runs = Components<LineKey>
+runs.node([A, Col], L) :- line_color(A, L, Col).
+
+layer($RowRuns(), A, Id, P) :- ink(P, Col), split(P, A, L, _), runs.label([A, Col], L, Id).
+unstacked($RowRuns(), A) :- line_color(A, L, Col1), line_color(A, L, Col2), Col1 != Col2.   // a line of two colors
+
+// --- $SpanMirror ---
+// @claim reverse-order
+.init stack_box = Bbox<Unit>
+stack_box.cell($U(), P) :- ink(P, _).
+
+span($SpanMirror(), S) :- stack_box.box($U(), S).
+
+// --- $FrameMirror ---
+span($FrameMirror(), ZERO).
+
+// --- $StoredAxis ---
+stack(U, $StoredAxis(), A) :- layer_unit_choice(U), params.stack_axis(A), !unstacked(U, A).
+
+// --- $AxisFromInput ---
+stack(U, $AxisFromInput(), A) :- layer_unit_choice(U), axis_elem(A), !unstacked(U, A).
+
+.comp Determine {
+    .init counts = Mode<Example, Color, Position>
+    counts.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // an example whose input's commonest color is not Col
+    .decl not_mode(col: Color)
+    not_mode(Col) :- counts.mode(_, Col), counts.tally(E, _, _), !counts.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- counts.mode(_, Col), !not_mode(Col).
+}

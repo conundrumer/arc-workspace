@@ -1,0 +1,69 @@
+// e7639916
+// @draft
+// @keywords: markers bbox border
+// @scene scattered-marks: on a field of 0, the input holds 3 single cells of 8, and no two of them touch.
+// @rule bbox-outline: each cell on the edge of the bounding box of the marks, the cells that are not background, that is not a mark becomes `outline-color`.
+// @rule keep-rest: every other cell keeps its input color, so the marks stay on the outline and the inside of the box stays background.
+
+// Which cells are the marks whose box is outlined
+.type Choice =
+    // @claim bbox-outline
+    NonBg {}
+    // @rule bbox-outline: the marks are the cells of a stored `mark-color`, and the background is not read; on an input with no cell of that color the input returns.
+    // @witness mark-color-other: variant concept
+    //     @relaxed scattered-marks
+  | MarkColorStored {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl outline_color(c: Color) outline_color(1).
+
+    // --- $NonBg ---
+    // @derive DominantColor: variant derived
+    //     @relaxed scattered-marks
+    .decl bg(c: Color) bg(0).
+
+    // --- $MarkColorStored ---
+    // @derive RarestColor: borderline $MarkColorStored
+    //     @relaxed scattered-marks
+    .decl mark_color(c: Color) mark_color(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($NonBg()). impl_choice($MarkColorStored()).
+
+// The marks of each case.
+.decl mark(ch: Choice, p: Position)
+
+// @claim bbox-outline
+.init marks_box = Bbox<Choice>
+marks_box.cell(Ch, P) :- mark(Ch, P).
+
+// A cell on the edge of the marks' box that is not a mark.
+.decl outline(ch: Choice, p: Position)
+outline(Ch, P) :- marks_box.box(Ch, B), in(P, _), box_edge(P, B, _), !mark(Ch, P).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col0),
+    ( outline(Ch, P), params.outline_color(Col)
+    ; !outline(Ch, P), Col = Col0
+    ).
+
+// --- $NonBg ---
+mark($NonBg(), P) :- in(P, Col), !params.bg(Col).
+
+// --- $MarkColorStored ---
+mark($MarkColorStored(), P) :- in(P, Col), params.mark_color(Col).
+
+.comp Determine {
+    // The color the outline paints: the color of every changed cell.
+    .decl outline_color(c: Color)
+    outline_color(Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    // The color of every cell that is not background.
+    .decl mark_color(c: Color)
+    mark_color(Col) :- ex_in(_, _, Col), !params.bg(Col).
+}

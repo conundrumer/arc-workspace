@@ -1,0 +1,182 @@
+// ff2825db
+// @draft
+// @keywords: color-class rank bbox border
+// @scene palette-strip: the line of the grid at params.strip_side (top) is
+//  the strip 1 1 2 2 3 3 4 4 5 5, identical in every input
+// @scene frame: past the strip, a 1-wide frame of one color runs around the
+//  rest of the grid, and encloses the box
+// @scene scattered-cells: inside the frame the box is params.background,
+//  with scattered cells of exactly 2 other colors, neither of them the
+//  frame's color
+// @scene distinct-counts: the two scattered colors have different cell
+//  counts
+// @rule winner: the winner is the scattered color with the most cells in
+//  the box
+// @rule keep-strip: the palette strip is copied unchanged
+// @rule recolor-frame: every frame cell takes the winner's color
+// @rule bbox-outline: the cells on the edge of the bounding box of the
+//  winner's cells take the winner's color
+// @rule clear-rest: every other cell inside the frame is params.background
+
+// how the program locates the palette strip, and so the frame and the box
+.type StripSide =
+    // @claim palette-strip
+    StripSideStored {}
+    // @scene palette-strip: the strip is the edge line that holds the most
+    //  colors; undefined where two edge lines tie for the most
+    // @witness strip-left: variant $StripSideDerived
+    //     @relaxed palette-strip
+  | StripSideDerived {}
+
+// what the plurality gives when two colors tie for the most cells
+.type Tie =
+    // @claim distinct-counts
+    TieUndefined {}
+    // @scene distinct-counts: two scattered colors may tie for the most
+    //  cells; undefined where more than two tie
+    // @rule winner: each color tied for the most cells is a winner, and
+    //  gives one output grid
+    // @witness tied-counts: borderline any
+    //     @relaxed distinct-counts
+  | TieBoth {}
+
+// which cells the winner count reads
+.type CountRegion =
+    // @claim winner
+    CountBox {}
+    // @rule winner: the count reads the strip's cells as well as the box's
+    // @witness color-off-strip: borderline concept
+  | CountWithStrip {}
+
+.type Choice = [side: StripSide, tie: Tie, region: CountRegion]
+
+// The cells one case's winner count reads.
+.type Count = [side: StripSide, region: CountRegion]
+
+// One color's cells in the box, under one strip side.
+.type Ink = [side: StripSide, col: Color]
+
+// The winner each output grid is drawn for.
+.type TiebreakResolution = [winner: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    .decl background(c: Color) background(0).
+
+    // --- $StripSideStored ---
+    // The edge the palette strip lies on.
+    .decl strip_side(d: Dir) strip_side(DIR_T).
+}
+
+.init params = Params
+
+.decl strip_side_choice(s: StripSide)
+strip_side_choice($StripSideStored()). strip_side_choice($StripSideDerived()).
+
+.decl tie_choice(t: Tie)
+tie_choice($TieUndefined()). tie_choice($TieBoth()).
+
+.decl count_region_choice(r: CountRegion)
+count_region_choice($CountBox()). count_region_choice($CountWithStrip()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, T, R]) :- strip_side_choice(S), tie_choice(T), count_region_choice(R).
+
+// The edge line of the palette strip, under each strip side.
+.decl strip_dir(s: StripSide, d: Dir)
+
+// --- $StripSideStored ---
+
+strip_dir($StripSideStored(), D) :- params.strip_side(D).
+
+// --- $StripSideDerived ---
+
+// The colors each edge line holds.
+// @claim palette-strip
+.init edge_colors = Tally<Dir, Color>
+edge_colors.item(D, Col) :- dir_elem(D), in(P, Col), dist(P, D, 0).
+
+// @claim palette-strip
+// @ignore high: store — the stored edge is $StripSideStored's strip_side, so the case fails Equivalence
+.init most_colors = ArgExtremes<Unit, Dir>
+most_colors.cand($U(), D, N) :- edge_colors.tally(D, N).
+
+// The one edge line with the most colors; a tie leaves none.
+// @claim palette-strip
+// @ignore item: store — the stored edge is $StripSideStored's strip_side, so the case fails Equivalence
+// @ignore value: store — the stored edge is $StripSideStored's strip_side, so the case fails Equivalence
+.init strip_edge = Unanimous<Unit, Dir>
+strip_edge.item($U(), D) :- most_colors.high($U(), D, _).
+
+strip_dir($StripSideDerived(), D) :- strip_edge.value($U(), D).
+
+// --- concept, $StripSideDerived, $TieBoth, $CountWithStrip ---
+
+.decl strip(s: StripSide, p: Position)
+strip(S, P) :- strip_dir(S, D), in(P, _), dist(P, D, 0).
+
+// The frame is the rim of the cells past the strip, and the box lies
+// inside it.
+// @claim frame
+.init rest = Rim<StripSide>
+rest.cell(S, P) :- strip_dir(S, _), in(P, _), !strip(S, P).
+
+.decl box(s: StripSide, p: Position, col: Color)
+box(S, P, Col) :- rest.cell(S, P), !rest.rim(S, P), in(P, Col).
+
+.decl scattered(s: StripSide, p: Position, col: Color)
+scattered(S, P, Col) :- box(S, P, Col), !params.background(Col).
+
+// @claim winner
+.init votes = Mode<Count, Color, Position>
+
+.decl winner(ch: Choice, col: Color)
+
+// --- $CountBox ---
+
+votes.item([S, $CountBox()], Col, P) :- scattered(S, P, Col).
+
+// --- $CountWithStrip ---
+
+votes.item([S, $CountWithStrip()], Col, P) :-
+    ( scattered(S, P, Col)
+    ; strip(S, P), in(P, Col), !params.background(Col)   // a strip cell
+    ).
+
+// --- $TieUndefined ---
+
+// The one commonest color; a tie leaves none.
+// @claim winner
+.init plurality = Unanimous<Count, Color>
+plurality.item(K, Col) :- votes.mode(K, Col).
+
+winner([S, $TieUndefined(), R], Col) :- plurality.value([S, R], Col).
+
+// --- $TieBoth ---
+
+// Three colors tie for the most cells.
+.decl three_way(k: Count)
+three_way(K) :-
+    votes.mode(K, C1), votes.mode(K, C2), votes.mode(K, C3),
+    C1 != C2, C1 != C3, C2 != C3.
+
+winner([S, $TieBoth(), R], Col) :- votes.mode([S, R], Col), !three_way([S, R]).
+
+// --- concept, $StripSideDerived, $TieBoth, $CountWithStrip ---
+
+// @claim bbox-outline
+.init ink_box = Bbox<Ink>
+ink_box.cell([S, Col], P) :- scattered(S, P, Col).
+
+// The box cells on the edge of the bounding box of a color's cells.
+.decl outline(s: StripSide, col: Color, p: Position)
+outline(S, Col, P) :- ink_box.box([S, Col], B), box(S, P, _), dir_elem(D), box_edge(P, B, D).
+
+out(P, Col, [S, T, R], [W]) :-
+    impl_choice([S, T, R]), winner([S, T, R], W), in(P, Col_in),
+    ( strip(S, P), Col = Col_in                                  // keep-strip
+    ; rest.rim(S, P), Col = W                                    // recolor-frame
+    ; outline(S, W, P), Col = W                                  // bbox-outline
+    ; box(S, P, _), !outline(S, W, P), params.background(Col)    // clear-rest
+    ).

@@ -9,7 +9,8 @@
 // @rule stretch-match: a mark shape matches the reference shape when each
 //  shape, cut down to its bounding box and with each run of identical
 //  adjacent rows and each run of identical adjacent columns cut to one line,
-//  gives the same grid up to a transform of params.match_group
+//  gives the same grid up to a transform of the group, under each group of
+//  params.match_group; undefined where the groups disagree on a match
 // @rule recolor-match: each mark shape that matches turns params.ref_color
 // @rule keep-rest: every other cell keeps its input color
 
@@ -76,10 +77,7 @@
 // A 4-connected shape under one transform.
 .type Pattern = [id: Ident, d: D4]
 
-.type GroupValue = [s: Sym]
-.type OpenValue = [match_group: GroupValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $StoredRef ---
@@ -94,9 +92,8 @@
     .decl mark_color(c: Color) mark_color(1).
 
     // --- $Stretch ---
-    // The transforms under which two reduced shapes count as the same. Every
-    // reference in the evidence has a mirror axis, so the pairs fix neither.
-    // @open
+    // The groups of transforms under which two reduced shapes count as the
+    // same: a match holds under each group.
     .decl match_group(s: Sym) match_group(SYM_C4). match_group(SYM_D4).
 
     // --- $AnyColor, $CornerReference ---
@@ -112,6 +109,9 @@
 }
 
 .init params = Params
+
+.decl shape_match_choice(m: ShapeMatch)
+shape_match_choice($Stretch()). shape_match_choice($Topology()).
 
 .decl adjacency_choice(a: Adjacency)
 adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
@@ -170,21 +170,23 @@ box_cell4(Id, P, P_rel) :- bbox4.box(Id, B), in(P, _), crop(P, B, P_rel).
 .decl held4(id: Ident, p_rel: Position)
 held4(Id, P_rel) :- shape4.label(_, P, Id), box_cell4(Id, P, P_rel).
 
-// A candidate that matches a reference under each case, at open value v.
-.decl matched(ch: Choice, id: Ident, v: OpenValue)
+// A candidate that matches a reference under each case.
+.decl matched(ch: Choice, id: Ident)
 
-// The open value each reading of the match holds.
-.decl open_of(m: ShapeMatch, v: OpenValue)
+// A matched candidate that some reading of the match does not match.
+.decl unmatched(ch: Choice, id: Ident)
 
 // A cell that turns the paint color.
-.decl painted(ch: Choice, v: OpenValue, p: Position)
-painted([M, A, S, R], V, P) :- matched([M, A, S, R], Id, V), figure([A, Id], _, P).
+.decl painted(ch: Choice, p: Position)
+painted([M, A, S, R], P) :- matched([M, A, S, R], Id), figure([A, Id], _, P).
 
-out(P, Col, [M, A, S, R], V) :-
-    adjacency_choice(A), candidates_choice(S), open_of(M, V), ref_fig(R, _),
+out(P, Col, [M, A, S, R]) :-
+    shape_match_choice(M), adjacency_choice(A), candidates_choice(S), ref_fig(R, _),
     in(P, Col_in),
-    ( painted([M, A, S, R], V, P), paint_color(R, Col)
-    ; !painted([M, A, S, R], V, P), Col = Col_in
+    ( painted([M, A, S, R], P), paint_color(R, Col)
+    ; !painted([M, A, S, R], P), Col = Col_in
+    ; unmatched([M, A, S, R], Id), figure([A, Id], _, P),
+      Col = Col_in                                 // the readings disagree: two colors, undefined
     ).
 
 // --- $Stretch ---
@@ -259,11 +261,16 @@ same.pattern_member([Id, D], P_img) :-
     held4(Id, P), reduced4(Id, P, P_red), d4_elem(D), apply(D, P_red, P_img).
 same.observed_member(F, P_red) :- held(F, P), reduced(F, P, P_red).
 
-open_of($Stretch(), [[G]]) :- params.match_group(G).
-
-matched([$Stretch(), A, S, R], Id, [[G]]) :-
+// A candidate that matches a reference under group g.
+.decl group_match(ch: Choice, id: Ident, g: Sym)
+group_match([$Stretch(), A, S, R], Id, G) :-
     cand_fig(S, R, [A, Id]), ref_fig(R, Id_ref),
     same.equals([A, Id], [Id_ref, D]), params.match_group(G), sym_member(G, D).
+
+matched(Ch, Id) :- group_match(Ch, Id, _).
+
+unmatched(Ch, Id) :-
+    group_match(Ch, Id, _), params.match_group(G), !group_match(Ch, Id, G).
 
 // --- $Topology ---
 // The background parts of each shape's box.
@@ -305,9 +312,7 @@ open_parts4.domain(Id) :- bbox4.box(Id, _).
 closed_parts4.item(Id, Part) :- parts4.label(Id, _, Part), !open_part4(Id, Part).
 closed_parts4.domain(Id) :- bbox4.box(Id, _).
 
-open_of($Topology(), [nil]).
-
-matched([$Topology(), A, S, R], Id, [nil]) :-
+matched([$Topology(), A, S, R], Id) :-
     cand_fig(S, R, [A, Id]), ref_fig(R, Id_ref),
     open_parts.tally([A, Id], N1), open_parts4.tally(Id_ref, N1),
     closed_parts.tally([A, Id], N2), closed_parts4.tally(Id_ref, N2).

@@ -1,0 +1,139 @@
+// d282b262
+// @draft
+// @keywords: objects move bbox
+// @scene objects: every input holds several objects on a background of color
+//  params.bg; an object is a 4-connected group of non-background cells, and it
+//  can hold more than one color
+// @scene apart: no two objects touch in the input, at a side or at a corner
+// @rule slide: each object moves as a rigid piece toward params.heading, by
+//  the least distance that brings one of its cells against the frame edge or
+//  against a cell of another object at that object's resting place
+// @rule keep: each object keeps its shape and its colors; every cell no object
+//  covers after the slide is background
+
+// which cells join into one object
+.type Adjacency =
+    // @claim objects
+    Adjacent4 {}
+    // @scene objects: cells that touch at a corner also join one object
+    // @witness corner-touch: variant concept
+    //     @relaxed apart
+  | Diagonal8Bodies {}
+
+// which cells of an object block the other objects
+.type Footprint =
+    // @claim slide
+    OwnCells {}
+    // @rule slide: every cell of an object's bounding box moves with it and
+    //  blocks the other objects; undefined on an input where an object's box
+    //  covers a cell of another object
+    // @witness notch: variant concept
+  | BoxBodies {}
+
+.type Choice = [adj: Adjacency, foot: Footprint]
+
+// One object under one adjacency.
+.type Object = [adj: Adjacency, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(0).
+    // The direction every object slides.
+    .decl heading(d: Dir) heading(DIR_R).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacent4()). adjacency_choice($Diagonal8Bodies()).
+
+.decl footprint_choice(f: Footprint)
+footprint_choice($OwnCells()). footprint_choice($BoxBodies()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, F]) :- adjacency_choice(A), footprint_choice(F).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// The cells of each object.
+.decl object(a: Adjacency, id: Ident, p: Position)
+
+// The cells that move with each object and block the others.
+.decl body(ch: Choice, id: Ident, p: Position)
+
+// An object's footprint covers a cell of another object.
+.decl overlap(ch: Choice)
+
+// The objects slide together toward the heading as rigid bodies.
+// @claim slide
+.init slide = Gravity<Choice, Ident>
+slide.cell(Ch, Id, P) :- body(Ch, Id, P).
+slide.dir(Ch, D) :- impl_choice(Ch), params.heading(D).
+
+// The objects' cells at their resting places.
+.decl moved(ch: Choice, p: Position, col: Color)
+moved([A, F], Q, Col) :-
+    slide.travel([A, F], Id, V), object(A, Id, P), in(P, Col), compose(P, V, Q).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), !overlap(Ch), in(P, _),
+    ( moved(Ch, P, Col)
+    ; !moved(Ch, P, _), params.bg(Col)
+    ).
+
+// --- $Adjacent4 ---
+// @claim objects
+.init objects4 = Components<Unit>
+objects4.node($U(), P) :- ink(P).
+object($Adjacent4(), Id, P) :- objects4.label($U(), P, Id).
+
+// --- $Diagonal8Bodies ---
+// @claim objects
+.init objects8 = Components8<Unit>
+objects8.node($U(), P) :- ink(P).
+object($Diagonal8Bodies(), Id, P) :- objects8.label($U(), P, Id).
+
+// --- $OwnCells ---
+body([A, $OwnCells()], Id, P) :- object(A, Id, P).
+
+// --- $BoxBodies ---
+// @claim slide
+.init box = Bbox<Object>
+box.cell([A, Id], P) :- object(A, Id, P).
+
+body([A, $BoxBodies()], Id, P) :- box.box([A, Id], B), in(P, _), inside(P, B).
+
+overlap([A, $BoxBodies()]) :- body([A, $BoxBodies()], Id, P), object(A, Id2, P), Id != Id2.
+
+.comp Determine {
+    // The commonest colors of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some train input.
+    .decl outnumbered(col: Color)
+    outnumbered(Col) :- commonest.mode(_, Col), ex_out(E, _, _), !commonest.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- commonest.mode(_, Col), !outnumbered(Col).
+
+    // The commonest colors of each train output.
+    .init out_commonest = Mode<Example, Color, Position>
+    out_commonest.item(E, Col, P) :- ex_out(E, P, Col).
+
+    // Edge d of train output e holds a color other than its commonest.
+    .decl inked_edge(e: Example, d: Dir)
+    inked_edge(E, D) :-
+        ex_out(E, P, Col), !out_commonest.mode(E, Col), dir_elem(D), dist(P, D, 0).
+
+    // An edge that some train output leaves bare.
+    .decl bare(d: Dir)
+    bare(D) :- ex_out(E, _, _), dir_elem(D), !inked_edge(E, D).
+
+    // The objects pile against the heading edge in every output.
+    .decl heading(d: Dir)
+    heading(D) :- dir_elem(D), !bare(D).
+}

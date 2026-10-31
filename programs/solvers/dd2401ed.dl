@@ -1,0 +1,314 @@
+// dd2401ed
+// @draft
+// @keywords: lines move span count
+// @scene divider-line: one full line of line_color crosses the grid
+//  perpendicular to near_edge, and no other cell has line_color.
+// @scene near-marks: cells of near_color stand only between near_edge and the
+//  divider.
+// @scene far-marks: cells of far_color stand only on the far side of the
+//  divider.
+// @scene background: every other cell is background.
+// @scene room-to-move: the destination line, at factor times the count of
+//  lines from near_edge up to and including the divider, lies inside the grid.
+// @scene destination-clear: no far mark stands on the destination line.
+// @rule move-divider: the divider's old line becomes background, and the
+//  destination line becomes line_color; the count of lines from near_edge up to
+//  and including the destination is factor times the count up to and including
+//  the divider.
+// @rule recolor-swept: a far_color cell between the old line and the
+//  destination line becomes near_color.
+// @rule keep-rest: every other cell keeps its input color.
+
+// the edge the divider's distance is measured from
+.type NearEdge =
+    // @claim move-divider
+    StoredNearEdge {}
+    // @rule move-divider: near_edge is the edge the divider is nearer to;
+    //  undefined where the divider stands on the center line, or where no
+    //  single full line exists.
+    // @witness near-marks-on-right: variant $NearEdgeNearer
+    //     @relaxed near-marks
+    //     @relaxed far-marks
+    //     @relaxed room-to-move
+  | NearEdgeNearer {}
+
+// the color of the divider
+.type LineColor =
+    // @claim divider-line
+    StoredLineColor {}
+    // @scene divider-line: line_color is the color of the one full line of a
+    //  non-background color; undefined where no such line or more than one
+    //  exists.
+    // @witness divider-of-another-color: variant $LineColorOfFullLine
+    //     @relaxed divider-line
+  | LineColorOfFullLine {}
+
+// the color the swept far marks take
+.type NearColor =
+    // @claim recolor-swept
+    StoredNearColor {}
+    // @rule recolor-swept: near_color is the one non-background color on the
+    //  near side of the divider; undefined where that side holds no such color
+    //  or more than one.
+    // @witness near-marks-of-another-color: variant $NearColorOfNearSide
+    //     @relaxed background
+  | NearColorOfNearSide {}
+
+// what the destination line shows where a mark stands on it
+.type DestinationContent =
+    // @claim move-divider
+    LineOverMark {}
+    // @rule move-divider: a non-background cell on the destination line keeps
+    //  its input color.
+    // @witness far-mark-on-destination: borderline concept
+    //     @relaxed destination-clear
+  | MarkOverLine {}
+    // @rule move-divider: the sweep takes in the destination line, so a far
+    //  mark there takes near_color.
+    // @witness far-mark-on-destination-swept: borderline concept
+    //     @relaxed destination-clear
+  | SweptMarkOverLine {}
+
+// the colors the sweep recolors
+.type RecoloredColors =
+    // @claim recolor-swept
+    FarColorOnly {}
+    // @rule recolor-swept: every swept cell that is neither background nor
+    //  line_color takes near_color; it reads no far_color.
+    // @witness mark-of-third-color-swept: foreign concept
+    //     @relaxed background
+  | RecolorAnySwept {}
+
+// the cells the sweep recolors
+.type RecoloredRegion =
+    // @claim recolor-swept
+    SweptColumns {}
+    // @rule recolor-swept: every far_color cell on the near side of the
+    //  destination, the old line excepted, takes near_color.
+    // @witness far-mark-on-near-side: foreign $RecolorNearSide
+    //     @relaxed far-marks
+  | RecolorNearSide {}
+
+.type Choice = [e: NearEdge, l: LineColor, n: NearColor, d: DestinationContent,
+                c: RecoloredColors, r: RecoloredRegion]
+
+// a line of the grid: its axis, and its place along that axis
+.type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(0).
+    // the multiple of the count of lines from near_edge up to and including
+    // the divider that gives the destination's count
+    .decl factor(n: number) factor(2).
+
+    // --- $StoredNearEdge ---
+    .decl near_edge(d: Dir) near_edge(DIR_L).
+
+    // --- $StoredLineColor ---
+    .decl line_color(c: Color) line_color(5).
+
+    // --- $StoredNearColor ---
+    // @derive RarestColor: ordinary concept
+    .decl near_color(c: Color) near_color(1).
+
+    // --- $FarColorOnly ---
+    .decl far_color(c: Color) far_color(2).
+}
+
+.init params = Params
+
+.decl near_edge_choice(e: NearEdge)
+near_edge_choice($StoredNearEdge()). near_edge_choice($NearEdgeNearer()).
+
+.decl line_color_choice(l: LineColor)
+line_color_choice($StoredLineColor()). line_color_choice($LineColorOfFullLine()).
+
+.decl near_color_choice(n: NearColor)
+near_color_choice($StoredNearColor()). near_color_choice($NearColorOfNearSide()).
+
+.decl destination_content_choice(d: DestinationContent)
+destination_content_choice($LineOverMark()). destination_content_choice($MarkOverLine()).
+destination_content_choice($SweptMarkOverLine()).
+
+.decl recolored_colors_choice(c: RecoloredColors)
+recolored_colors_choice($FarColorOnly()). recolored_colors_choice($RecolorAnySwept()).
+
+.decl recolored_region_choice(r: RecoloredRegion)
+recolored_region_choice($SweptColumns()). recolored_region_choice($RecolorNearSide()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([E, L, N, D, C, R]) :-
+    near_edge_choice(E), line_color_choice(L), near_color_choice(N),
+    destination_content_choice(D), recolored_colors_choice(C), recolored_region_choice(R),
+    !subsumed_pair(E, N).
+
+// Where the stored near edge has a destination, the divider is nearer that
+// edge, so the case gives the output of $NearEdgeNearer with the same near color.
+.decl subsumed_pair(e: NearEdge, n: NearColor)
+subsumed_pair($StoredNearEdge(), $NearColorOfNearSide()).
+
+// --- the divider ---
+
+// The color of the divider under each reading of it.
+.decl divider_color(l: LineColor, c: Color)
+
+// --- $StoredLineColor ---
+divider_color($StoredLineColor(), Col) :- params.line_color(Col).
+
+// --- $LineColorOfFullLine ---
+// The one color of each line that holds a single color.
+// @claim divider-line
+.init line_paint = Unanimous<Line, Color>
+line_paint.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+divider_color($LineColorOfFullLine(), Col) :-
+    line_paint.value(_, Col), !params.background(Col).
+
+// --- shared ---
+
+.decl divider(l: LineColor, p: Position)
+divider(L, P) :- divider_color(L, Col), in(P, Col).
+
+// P is not strictly nearer edge D than every divider cell.
+.decl off_side(l: LineColor, d: Dir, p: Position)
+off_side(L, D, P) :- in(P, _), dir_elem(D), divider(L, Q), !nearer(D, P, Q).
+
+// P stands strictly on the D side of the divider.
+.decl on_side(l: LineColor, d: Dir, p: Position)
+on_side(L, D, P) :- in(P, _), dir_elem(D), divider(L, _), !off_side(L, D, P).
+
+// A non-background color on the D side of the divider.
+// @store: variant background=DominantColor
+//     @relaxed background
+.decl side_color(l: LineColor, d: Dir, col: Color)
+side_color(L, D, Col) :- on_side(L, D, P), in(P, Col), !params.background(Col).
+
+// The D side of the divider holds more than one non-background color.
+.decl mixed_side(l: LineColor, d: Dir)
+mixed_side(L, D) :- side_color(L, D, Col), side_color(L, D, Col2), Col != Col2.
+
+// --- the near color, for each near edge it may go with ---
+
+.decl near_color_at(n: NearColor, l: LineColor, d: Dir, col: Color)
+
+// --- $StoredNearColor ---
+near_color_at($StoredNearColor(), L, D, Col) :-
+    divider(L, _), dir_elem(D), params.near_color(Col).
+
+// --- $NearColorOfNearSide ---
+near_color_at($NearColorOfNearSide(), L, D, Col) :- side_color(L, D, Col), !mixed_side(L, D).
+
+// --- the near edge and the near color read together ---
+
+.decl near_reading(e: NearEdge, l: LineColor, n: NearColor, d: Dir, col: Color)
+
+// --- $StoredNearEdge ---
+near_reading($StoredNearEdge(), L, N, D, Col) :-
+    near_color_at(N, L, D, Col), params.near_edge(D).
+
+// --- $NearEdgeNearer ---
+// Some divider cell is no nearer edge D than the opposite edge.
+// @ignore: store — on no input does the stored value give an output other than $NearEdgeNearer's, so it fails Subsumption
+.decl off_half(l: LineColor, d: Dir)
+off_half(L, D) :- divider(L, P), dist_pair(P, D, K, K2), K >= K2.
+
+near_reading($NearEdgeNearer(), L, N, D, Col) :-
+    near_color_at(N, L, D, Col), !off_half(L, D).
+
+// --- shared ---
+
+// One reading of the near edge and the near color under a case.
+.decl reading(ch: Choice, d: Dir, c_near: Color)
+reading([E, L, N, Dc, C, R], D, Col) :-
+    impl_choice([E, L, N, Dc, C, R]), near_reading(E, L, N, D, Col).
+
+// Two divider cells stand at different distances from edge D: the divider
+// is no line across D.
+.decl skewed(l: LineColor, d: Dir)
+skewed(L, D) :- divider(L, P), divider(L, Q), dir_elem(D), !same_dist(D, P, Q).
+
+// The destination line: the count of lines from edge D up to and including
+// it is factor times the count up to and including the divider.
+// @claim move-divider
+.decl dest(l: LineColor, d: Dir, p: Position)
+dest(L, D, Q) :-
+    divider(L, P), opposite(D, D_far), !skewed(L, D),
+    neighbor(P, D_far, P1), dist(P1, D, K),                  // lines up to the divider
+    in(Q, _), neighbor(Q, D_far, Q1), dist(Q1, D, K_dest),   // lines up to Q
+    params.factor(N), tile_size(K_dest, N, 0, K).
+
+// --- the cells the sweep covers ---
+
+.decl zone(ch: Choice, d: Dir, c_near: Color, p: Position)
+
+// --- $SweptColumns ---
+zone([E, L, N, Dc, C, $SweptColumns()], D, Cn, P) :-
+    reading([E, L, N, Dc, C, $SweptColumns()], D, Cn),
+    divider(L, P_div), dest(L, D, Q), in(P, _), nearer(D, P_div, P), nearer(D, P, Q).
+
+// --- $RecolorNearSide ---
+zone([E, L, N, Dc, C, $RecolorNearSide()], D, Cn, P) :-
+    reading([E, L, N, Dc, C, $RecolorNearSide()], D, Cn),
+    dest(L, D, Q), in(P, _), nearer(D, P, Q), !divider(L, P).
+
+// --- $SweptMarkOverLine ---
+zone([E, L, N, $SweptMarkOverLine(), C, R], D, Cn, P) :-
+    reading([E, L, N, $SweptMarkOverLine(), C, R], D, Cn), dest(L, D, P).
+
+// --- the colors the sweep recolors ---
+
+.decl recolored(ch: Choice, d: Dir, c_near: Color, col: Color)
+
+// --- $FarColorOnly ---
+recolored([E, L, N, Dc, $FarColorOnly(), R], D, Cn, Col) :-
+    reading([E, L, N, Dc, $FarColorOnly(), R], D, Cn),
+    params.far_color(Col).
+
+// --- $RecolorAnySwept ---
+recolored([E, L, N, Dc, $RecolorAnySwept(), R], D, Cn, Col) :-
+    reading([E, L, N, Dc, $RecolorAnySwept(), R], D, Cn),
+    in(_, Col), !params.background(Col), !divider_color(L, Col).
+
+// --- shared ---
+
+// A mark the sweep recolors to the near color.
+.decl target(ch: Choice, d: Dir, c_near: Color, p: Position)
+target(Ch, D, Cn, P) :- zone(Ch, D, Cn, P), in(P, Col), recolored(Ch, D, Cn, Col).
+
+// The color each cell takes under one reading.
+.decl paint(ch: Choice, d: Dir, c_near: Color, p: Position, col: Color)
+
+// --- $LineOverMark ---
+paint([E, L, N, $LineOverMark(), C, R], D, Cn, P, Col) :-
+    reading([E, L, N, $LineOverMark(), C, R], D, Cn),
+    dest(L, D, P), divider_color(L, Col).
+
+// --- $MarkOverLine ---
+paint([E, L, N, $MarkOverLine(), C, R], D, Cn, P, Col) :-
+    reading([E, L, N, $MarkOverLine(), C, R], D, Cn), dest(L, D, P), in(P, Col_in),
+    ( params.background(Col_in), divider_color(L, Col)   // clear: the line
+    ; !params.background(Col_in), Col = Col_in           // a mark: it stays
+    ).
+
+// --- $SweptMarkOverLine ---
+paint([E, L, N, $SweptMarkOverLine(), C, R], D, Cn, P, Col) :-
+    reading([E, L, N, $SweptMarkOverLine(), C, R], D, Cn), dest(L, D, P),
+    ( target([E, L, N, $SweptMarkOverLine(), C, R], D, Cn, P), Col = Cn
+    ; !target([E, L, N, $SweptMarkOverLine(), C, R], D, Cn, P), divider_color(L, Col)
+    ).
+
+// --- shared ---
+
+// Off the destination: a recolored mark, the vacated line, or the input color.
+paint([E, L, N, Dc, C, R], D, Cn, P, Col) :-
+    reading([E, L, N, Dc, C, R], D, Cn), dest(L, D, _), in(P, Col_in), !dest(L, D, P),
+    ( target([E, L, N, Dc, C, R], D, Cn, P), Col = Cn
+    ; !target([E, L, N, Dc, C, R], D, Cn, P), divider(L, P), params.background(Col)
+    ; !target([E, L, N, Dc, C, R], D, Cn, P), !divider(L, P), Col = Col_in
+    ).
+
+out(P, Col, Ch) :- paint(Ch, _, _, P, Col).

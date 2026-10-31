@@ -1,0 +1,164 @@
+{
+  "id": "d749d46f",
+  "witnesses": [{
+    "id": "gap-two",
+    "separates": "The bars stand two columns apart. The concept spaces the output bars at the stored gap of one column; $GapPerNeighbor keeps the input's two-column spacing in both rows.",
+    "input": [
+      [8,8,1,1,8,1,1,8],
+      [8,8,1,1,8,1,1,8],
+      [1,1,1,1,8,1,1,8]
+    ],
+    "output": [{
+      "cases": ["$StoredGap"],
+      "grid": [
+        [8,8,1,8,8,8,1,8,8,8],
+        [8,8,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,8,1,8,1,1,1,1],
+        [8,8,1,8,1,8,1,1,1,1],
+        [8,8,1,8,1,8,1,1,1,1]
+      ]
+    }, {
+      "cases": ["$GapPerNeighbor"],
+      "grid": [
+        [8,8,1,1,8,8,8,1,1,8,8,8],
+        [8,8,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,8,1,1,8,1,1,1,1],
+        [8,8,1,1,8,1,1,8,1,1,1,1],
+        [8,8,1,1,8,1,1,8,1,1,1,1]
+      ]
+    }]
+  }, {
+    "id": "gaps-unequal",
+    "separates": "The bars stand one column apart and then two. The concept spaces every output bar one column apart; $GapPerNeighbor keeps one gap of one column and one of two.",
+    "input": [
+      [8,8,1,8,1,1,8],
+      [1,1,1,8,1,1,8],
+      [1,1,1,1,1,1,8]
+    ],
+    "output": [{
+      "cases": ["$StoredGap"],
+      "grid": [
+        [8,8,1,8,8,1,8,8,8],
+        [1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,8,1,1,1,1],
+        [8,1,8,1,8,1,1,1,1],
+        [8,1,8,1,8,1,1,1,1]
+      ]
+    }, {
+      "cases": ["$GapPerNeighbor"],
+      "grid": [
+        [8,8,1,8,8,1,1,8,8,8],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,8,1,1,1,1],
+        [8,1,8,1,1,8,1,1,1,1],
+        [8,1,8,1,1,8,1,1,1,1]
+      ]
+    }]
+  }, {
+    "id": "bars-outweigh-background",
+    "separates": "The bars cover more cells than the background. The concept takes the top-left color as the bar color and lays out two 3x2 bars; $BarColorMinority takes the rarer color, the one gap column, as a single 1x2 bar on a field of the other color.",
+    "input": [
+      [8,8,8,1,8,8,8],
+      [8,8,8,1,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Corner"],
+      "grid": [
+        [8,8,8,1,8,8,8],
+        [8,8,8,1,8,8,8],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [8,8,1,8,8,1,1],
+        [8,8,1,8,8,1,1],
+        [8,8,1,8,8,1,1]
+      ]
+    }, {
+      "cases": ["$BarColorMinority"],
+      "grid": [
+        [1,1],
+        [8,8],
+        [8,8],
+        [8,8],
+        [8,8],
+        [8,8],
+        [8,8],
+        [8,8],
+        [1,8],
+        [1,8]
+      ]
+    }]
+  }, {
+    "id": "minority-bars-gap-two",
+    "separates": "The top-left color covers more cells, and the rarer color stands in two columns two apart. The concept lays out three 2x2 bars of the top-left color one column apart; $BarColorMinority takes the two 2x1 columns of the rarer color as bars, one column apart under $StoredGap and two apart under $GapPerNeighbor.",
+    "input": [
+      [8,8,1,8,8,1,8,8],
+      [8,8,1,8,8,1,8,8]
+    ],
+    "output": [{
+      "cases": ["$Corner"],
+      "grid": [
+        [8,8,1,8,8,1,8,8],
+        [8,8,1,8,8,1,8,8],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [8,8,1,8,8,1,8,8],
+        [8,8,1,8,8,1,8,8]
+      ]
+    }, {
+      "cases": ["$GapPerNeighbor & $BarColorMinority"],
+      "grid": [
+        [1,1,8,8,1,1],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [1,8,8,1,8,8],
+        [1,8,8,1,8,8]
+      ]
+    }, {
+      "cases": ["$StoredGap & $BarColorMinority"],
+      "grid": [
+        [1,1,8,1,1],
+        [8,8,8,8,8],
+        [8,8,8,8,8],
+        [8,8,8,8,8],
+        [8,8,8,8,8],
+        [8,8,8,8,8],
+        [8,8,8,8,8],
+        [8,8,8,8,8],
+        [1,8,1,8,8],
+        [1,8,1,8,8]
+      ]
+    }]
+  }]
+}

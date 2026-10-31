@@ -1,0 +1,167 @@
+// fcb5c309
+// @draft
+// @keywords: crop objects border select rank
+// @scene background: every cell that is neither frame nor dot is background, color 0.
+// @scene frames: two or more hollow rectangle outlines, one cell thick, all in one frame
+//  color, none touching another.
+// @scene dots: cells of one dot color, other than the frame color, scattered inside and
+//  outside the frames, some touching one another or a frame; no dot sits on a frame's
+//  border.
+// @scene unique-most: exactly one frame holds more dots inside it than every other frame.
+// @rule select-most-dots: the selected frame is the one with the most dots strictly inside
+//  its border.
+// @rule crop-frame: the output is the selected frame's bounding box, border included.
+// @rule recolor-border: each border cell of the output takes the dot color; each interior
+//  cell keeps its input color.
+
+// how a frame's size is measured
+.type SizeMeasure =
+    // @claim select-most-dots
+    Area {}
+    // @rule select-most-dots: size is the frame's count of border cells; undefined where
+    //  two frames tie.
+    // @witness border-cell-count: ordinary concept
+  | SizeByBorderCells {}
+    // @rule select-most-dots: size is the frame's interior area; undefined where two frames
+    //  tie.
+    // @witness interior-area: ordinary concept
+  | SizeByInterior {}
+
+// what picks the frame that is cropped
+.type Selection =
+    // @claim select-most-dots
+    MostDots {}
+    // @rule select-most-dots: the selected frame is the largest, by bounding-box area;
+    //  undefined where two frames tie for the largest.
+    // @witness largest-frame: ordinary concept
+  | SelectLargest {m: SizeMeasure}
+
+// which dot cells join a cluster
+.type Adjacency =
+    // @claim select-most-dots
+    Adj4 {}
+    // @rule select-most-dots: diagonal neighbors join a cluster too.
+    // @witness diagonal-cluster: ordinary concept
+  | Adjacency8 {}
+
+// what is counted inside a frame
+.type CountUnit =
+    // @claim select-most-dots
+    DotCells {}
+    // @rule select-most-dots: the count is of 4-connected groups of dot cells inside the
+    //  frame; undefined where two frames tie.
+    // @witness dot-cluster: ordinary concept
+  | CountDotClusters {a: Adjacency}
+
+.type Choice = [s: Selection, u: CountUnit]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(col: Color) background(0).
+}
+
+.init params = Params
+
+.decl selection_choice(s: Selection)
+selection_choice($MostDots()).
+selection_choice($SelectLargest($Area())).
+selection_choice($SelectLargest($SizeByBorderCells())).
+selection_choice($SelectLargest($SizeByInterior())).
+
+.decl count_unit_choice(u: CountUnit)
+count_unit_choice($DotCells()).
+count_unit_choice($CountDotClusters($Adj4())).
+count_unit_choice($CountDotClusters($Adjacency8())).
+
+// The count unit exists only where a frame is picked by what it holds.
+.decl impl_choice(ch: Choice)
+impl_choice([S, $DotCells()]) :- selection_choice(S).
+impl_choice([$MostDots(), U]) :- count_unit_choice(U).
+
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !params.background(Col).
+
+// @claim frames
+.init outline = Outlines<Color>
+outline.node(Col, P) :- ink(Col), in(P, Col).
+
+// A cell on an edge of an outline of its own color.
+.decl on_outline(p: Position)
+on_outline(P) :- outline.box(Col, B), in(P, Col), box_edge(P, B, _).
+
+// The dot color: an ink color with a cell off its outlines.
+.decl dot_color(col: Color)
+dot_color(Col) :- ink(Col), in(P, Col), !on_outline(P).
+
+// The frames: the outlines of the ink color whose every cell lies on one.
+.decl frame(b: Box)
+frame(B) :- outline.box(Col, B), !dot_color(Col).
+
+.decl dot(p: Position)
+dot(P) :- dot_color(Col), in(P, Col).
+
+// The frame each case picks.
+.decl selected(b: Box, ch: Choice)
+
+// The cells each case counts toward a frame's score.
+// @claim select-most-dots
+.init score = Mode<Choice, Box, Position>
+
+selected(B, Ch) :- score.mode(Ch, B).
+
+out(P_inner, Col, Ch) :-
+    selected(B, Ch), in(P, C), crop(P, B, P_inner),
+    ( interior(P, B), Col = C                 // interior keeps its color
+    ; box_edge(P, B, _), dot_color(Col)       // border takes the dot color
+    ).
+
+// --- concept ---
+score.item([$MostDots(), $DotCells()], B, P) :- frame(B), dot(P), interior(P, B).
+
+// --- $Area ---
+score.item([$SelectLargest($Area()), $DotCells()], B, P) :- frame(B), in(P, _), inside(P, B).
+
+// --- $SizeByBorderCells ---
+score.item([$SelectLargest($SizeByBorderCells()), $DotCells()], B, P) :-
+    frame(B), in(P, _), box_edge(P, B, _).
+
+// --- $SizeByInterior ---
+score.item([$SelectLargest($SizeByInterior()), $DotCells()], B, P) :-
+    frame(B), in(P, _), interior(P, B).
+
+// --- $CountDotClusters ---
+// @claim select-most-dots
+.init cluster_score = Mode<Adjacency, Box, Ident>
+
+selected(B, [$MostDots(), $CountDotClusters(A)]) :- cluster_score.mode(A, B).
+
+// --- $Adj4 ---
+// @claim select-most-dots
+.init clusters4 = Components<Unit>
+clusters4.node($U(), P) :- dot(P).
+
+cluster_score.item($Adj4(), B, Id) :- frame(B), clusters4.label($U(), P, Id), interior(P, B).
+
+// --- $Adjacency8 ---
+// @claim select-most-dots
+.init clusters8 = Components8<Unit>
+clusters8.node($U(), P) :- dot(P).
+
+cluster_score.item($Adjacency8(), B, Id) :- frame(B), clusters8.label($U(), P, Id), interior(P, B).
+
+.comp Determine {
+    // A color inside a train output's border other than the border color.
+    .decl fill(e: Example, col: Color)
+    fill(E, Col) :-
+        ex_out(E, P, Col), interior(P, ZERO),                 // inside the border
+        ex_out(E, Q, C_border), !interior(Q, ZERO), Col != C_border.
+
+    // A fill color some train output lacks.
+    .decl missing(col: Color)
+    missing(Col) :- fill(_, Col), ex_out(E, _, _), !fill(E, Col).
+
+    .decl background(col: Color)
+    background(Col) :- fill(_, Col), !missing(Col).
+}

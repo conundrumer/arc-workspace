@@ -1,0 +1,198 @@
+{
+  "id": "e4941b18",
+  "witnesses": [{
+    "id": "background=DominantColor",
+    "separates": "The block holds more cells than the background. A stored background blanks the pusher's cell to 7; a background derived as the commonest color is 5 and blanks it to 5.",
+    "input": [
+      [7,2,7,8,7,7],
+      [5,5,5,5,5,7],
+      [5,5,5,5,5,7],
+      [5,5,5,5,5,7],
+      [5,5,5,5,5,7]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [7,7,7,2,7,7],
+        [5,5,5,5,5,7],
+        [5,5,5,5,5,7],
+        [5,5,5,5,5,7],
+        [5,5,5,5,5,8]
+      ]
+    }, {
+      "cases": ["$FallToEdge & background=DominantColor"],
+      "grid": [
+        [7,5,7,2,7,7],
+        [5,5,5,5,5,7],
+        [5,5,5,5,5,7],
+        [5,5,5,5,5,7],
+        [5,5,5,5,5,8]
+      ]
+    }, {
+      "cases": ["$FallUntilBlocked & background=DominantColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "block-above-floor",
+    "separates": "Background rows lie under the block. Falling to the grid edge lands the pushed mark on the bottom row; landing in the line of the block's base stops it beside the block's bottom row.",
+    "input": [
+      [7,7,7,7,7,7,7],
+      [7,2,7,8,7,7,7],
+      [7,5,5,5,5,7,7],
+      [7,5,5,5,5,7,7],
+      [7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$FallToEdge","$FallUntilBlocked"],
+      "grid": [
+        [7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7],
+        [7,5,5,5,5,7,7],
+        [7,5,5,5,5,7,7],
+        [7,7,7,7,7,7,7],
+        [7,7,7,7,7,8,7]
+      ]
+    }, {
+      "cases": ["$LandOnBlockBase"],
+      "grid": [
+        [7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7],
+        [7,5,5,5,5,7,7],
+        [7,5,5,5,5,8,7],
+        [7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "cell-in-fall-column",
+    "separates": "A cell of another color stands on the floor in the column the pushed mark falls down. Falling to the grid edge paints over that cell; falling until blocked stops on top of it.",
+    "input": [
+      [7,7,7,7,7,7,7,7],
+      [7,2,7,8,7,7,7,7],
+      [5,5,5,5,7,7,7,7],
+      [5,5,5,5,7,7,7,7],
+      [5,5,5,5,7,7,7,7],
+      [5,5,5,5,3,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$BlockByColor & $FallToEdge","$LandOnBlockBase"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,8,7,7,7]
+      ]
+    }, {
+      "cases": ["$BlockAsNonBackground"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,3,8,7,7]
+      ]
+    }, {
+      "cases": ["$FallUntilBlocked"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,8,7,7,7],
+        [5,5,5,5,3,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "stray-cell-beyond-block",
+    "separates": "A cell of another color stands on the floor two columns past the block. Finding the block by its color leaves the pushed mark beside the block; taking every non-background cell other than the marks as the block moves the landing past that stray cell.",
+    "input": [
+      [7,7,7,7,7,7,7,7],
+      [7,2,7,8,7,7,7,7],
+      [5,5,5,5,7,7,7,7],
+      [5,5,5,5,7,7,7,7],
+      [5,5,5,5,7,7,7,7],
+      [5,5,5,5,7,7,3,7]
+    ],
+    "output": [{
+      "cases": ["$BlockByColor"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,8,7,3,7]
+      ]
+    }, {
+      "cases": ["$BlockAsNonBackground"],
+      "grid": [
+        [7,7,7,7,7,7,7,7],
+        [7,7,7,2,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,7,7],
+        [5,5,5,5,7,7,3,8]
+      ]
+    }]
+  }, {
+    "id": "marks-beside-block",
+    "separates": "The marks stand beside the block's left side and the block touches the right edge. A stored gravity of bottom finds no marks on top of the block and is undefined; gravity taken from the marks' side drops the pushed mark toward the right edge.",
+    "input": [
+      [7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7],
+      [7,8,5,5,5,5,5],
+      [7,7,5,5,5,5,5],
+      [7,2,5,5,5,5,5],
+      [7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$StoredGravity"],
+      "grid": null
+    }, {
+      "cases": ["$GravityFromMarks"],
+      "grid": [
+        [7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,8],
+        [7,2,5,5,5,5,5],
+        [7,7,5,5,5,5,5],
+        [7,7,5,5,5,5,5],
+        [7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "dominant-not-stored",
+    "separates": "The field around the block is 3, which is the commonest color, and no cell is 7. A stored background of 7 finds no background cell for the pushed mark to fall through, so falling until blocked is undefined; the background derived as the commonest color is 3, through which the pushed mark falls to the bottom edge, and the pusher's old cell becomes 3.",
+    "input": [
+      [3,3,3,3,3,3],
+      [3,2,3,8,3,3],
+      [5,5,5,5,3,3],
+      [5,5,5,5,3,3]
+    ],
+    "output": [{
+      "cases": ["$BlockByColor & $FallToEdge & background=stored","$LandOnBlockBase"],
+      "grid": [
+        [3,3,3,3,3,3],
+        [3,7,3,2,3,3],
+        [5,5,5,5,3,3],
+        [5,5,5,5,8,3]
+      ]
+    }, {
+      "cases": ["$BlockAsNonBackground","$FallUntilBlocked & background=stored"],
+      "grid": null
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [3,3,3,3,3,3],
+        [3,3,3,2,3,3],
+        [5,5,5,5,3,3],
+        [5,5,5,5,8,3]
+      ]
+    }]
+  }]
+}

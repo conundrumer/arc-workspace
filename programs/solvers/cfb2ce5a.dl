@@ -1,0 +1,223 @@
+// cfb2ce5a
+// @draft
+// @keywords: tile-arrangement d4 markers mapping
+// @scene source-tile: the params.source_corner quadrant of a square holds a full
+//  tile of side 4 in 2 colors, none of them params.background.
+// @scene diagonal-symmetric-tile: the tile is symmetric across its diagonal
+//  through params.source_corner.
+// @scene square-in-border: the square is the grid inset by params.border on
+//  every side, has side 2 × 4, and the border is params.background.
+// @scene sparse-markers: each other quadrant holds a few non-background marker
+//  cells and is params.background elsewhere.
+// @scene consistent-markers: in one quadrant, the markers over cells that
+//  mirror one tile color share one color.
+// @rule mirror-into-quadrants: each other quadrant takes the tile reflected
+//  across the line or lines that part it from the source quadrant: across the
+//  vertical midline for the quadrant beside it, across the horizontal midline
+//  for the quadrant below or above it, and across both for the diagonal
+//  quadrant.
+// @rule recolor-by-marker: in a quadrant, each cell of a tile color takes the
+//  color of the markers that sit over that tile color in that quadrant.
+// @rule unmarked-to-background: in a quadrant, each cell of a tile color that
+//  no marker in that quadrant sits over is params.background.
+// @rule rest-kept: the source quadrant and the border are as in the input.
+
+// how each other quadrant's copy is placed
+.type Copy =
+    // @claim mirror-into-quadrants
+    Mirror {}
+    // @rule mirror-into-quadrants: each other quadrant takes the tile turned
+    //  about the square's center by the quarter turns that bring the source
+    //  quadrant onto it. Undefined where the concept is.
+    // @witness asymmetric-tile: borderline concept
+    //     @relaxed diagonal-symmetric-tile
+  | RotatedCopies {}
+
+// where the square is
+.type Square =
+    // @claim square-in-border
+    Inset {}
+    // @scene square-in-border: the tile is the largest square of
+    //  non-background cells at the source corner of the non-background
+    //  bounding box, and the square has twice its side, drawn from that
+    //  corner. Undefined where that square leaves the grid.
+    // @witness off-center-square: borderline $SquareFromFullTile
+    //     @relaxed square-in-border
+  | SquareFromFullTile {}
+
+// which corner holds the tile
+.type Source =
+    // @claim source-tile
+    StoredCorner {}
+    // @scene source-tile: the source corner is the corner of the square's one
+    //  quadrant with no background cell. Undefined where no quadrant or more
+    //  than one is so.
+    // @witness tile-in-other-corner: variant $SourceFromFullQuadrant
+    //     @relaxed source-tile
+  | SourceFromFullQuadrant {}
+
+.type Choice = [copy: Copy, square: Square, source: Source]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed square-in-border
+    //     @relaxed sparse-markers
+    .decl background(c: Color) background(0).
+
+    // --- $Inset ---
+    // @derive TileDim: borderline $SquareFromFullTile
+    //     @relaxed square-in-border
+    .decl border(k: number) border(1).
+
+    // --- $StoredCorner ---
+    .decl source_corner(d: DiagDir) source_corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl copy_choice(c: Copy)
+copy_choice($Mirror()). copy_choice($RotatedCopies()).
+
+.decl source_choice(s: Source)
+source_choice($StoredCorner()). source_choice($SourceFromFullQuadrant()).
+
+// $SquareFromFullTile with $SourceFromFullQuadrant is no case: each corner of
+// the ink box that holds a marker gives a full 1 × 1 tile, so more than one
+// corner qualifies and the pairs leave it undefined.
+.decl impl_choice(ch: Choice)
+impl_choice([C, $Inset(), S]) :- copy_choice(C), source_choice(S).
+impl_choice([C, $SquareFromFullTile(), $StoredCorner()]) :- copy_choice(C).
+
+// The bounding box of the non-background cells.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // @claim square-in-border
+    .init ink_box = Bbox<Key>
+    ink_box.cell(K, P) :- cell(K, P, Col), !params.background(Col).
+}
+
+// The square drawn from corner d.
+.decl square(sq: Square, d: DiagDir, b: Box)
+
+// --- $Inset ---
+square($Inset(), D, B) :- params.border(K), uniform_inset(K, B), diag_dir_elem(D).
+
+// --- $SquareFromFullTile ---
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// Cell p within ring r of corner d of the ink box: at most r from both of the
+// corner's edges.
+.decl within_ring(d: DiagDir, r: number, p: Position)
+within_ring(D, R, P) :-
+    parse.ink_box.box($U(), B), in(P, _), crop(P, B, P_box), diag_dir_elem(D),
+    diag_dist(P_box, D, _, K1, K2), in(Q, _), crop(Q, B, Q_box),
+    diag_dist(Q_box, D, _, R, R),                                // ring r ends at the diagonal cell q
+    K1 <= R, K2 <= R.
+
+.decl gap_within(d: DiagDir, r: number)
+gap_within(D, R) :- within_ring(D, R, P), in(P, Col), params.background(Col).
+
+// The largest full square at each corner.
+// @claim square-in-border
+.init tile_ring = Extremes<DiagDir>
+tile_ring.cand(D, R) :- within_ring(D, R, _), !gap_within(D, R).
+
+// @claim square-in-border
+.init full_tile = Bbox<DiagDir>
+full_tile.cell(D, P) :- tile_ring.high(D, R), within_ring(D, R, P).
+
+square($SquareFromFullTile(), D, B) :-
+    full_tile.box(D, T), full_tile.cell(D, P), box_extent(T, P, _, N),  // the tile side
+    diag_opposite(D, D_far), edge_outset(D_far, N, X),                  // the tile extended by its side
+    compose(T, X, B), inside(B, ZERO).                                  // within the grid
+
+// --- $Inset, $SquareFromFullTile ---
+// Each cell of a square, in the square's frame.
+.decl sq_cell(sq: Square, b: Box, p: Position, p_sq: Position)
+sq_cell(Sq, B, P, P_sq) :- square(Sq, _, B), in(P, _), crop(P, B, P_sq).
+
+// @claim source-tile mirror-into-quadrants recolor-by-marker
+// @ignore cell: store — no witnessed case takes the branch: a stored 8 × 8 frame gives the derived output on every input of the task and the witness file
+// @ignore quadrant: store — as for cell
+.init quad = DiagPlacement<Square>
+quad.cell(Sq, P_sq) :- sq_cell(Sq, _, _, P_sq).
+
+// The source corner d of square b.
+.decl source(sq: Square, src: Source, d: DiagDir, b: Box)
+
+// --- $StoredCorner ---
+source(Sq, $StoredCorner(), D, B) :- params.source_corner(D), square(Sq, D, B).
+
+// --- $SourceFromFullQuadrant ---
+// A quadrant of the square that holds a background cell.
+.decl open_quadrant(sq: Square, q: DiagDir)
+open_quadrant(Sq, Q) :-
+    sq_cell(Sq, _, P, P_sq), in(P, Col), params.background(Col), quad.quadrant(Sq, P_sq, Q).
+
+// The square's one quadrant with no background cell.
+// @claim source-tile
+.init pick = Unanimous<Square, DiagDir>
+pick.item(Sq, D) :- square(Sq, D, _), !open_quadrant(Sq, D).
+
+source(Sq, $SourceFromFullQuadrant(), D, B) :- pick.value(Sq, D), square(Sq, D, B).
+
+// --- $StoredCorner, $SourceFromFullQuadrant ---
+// Cell s_sq of the source tile, at corner d of square b.
+.decl tile_cell(sq: Square, src: Source, d: DiagDir, b: Box, s: Position, s_sq: Position)
+tile_cell(Sq, Src, D, B, S, S_sq) :-
+    source(Sq, Src, D, B), sq_cell(Sq, B, S, S_sq), quad.quadrant(Sq, S_sq, D).
+
+// The tile color each cell of quadrant q, other than the source's, takes.
+.decl copy(ch: Choice, q: DiagDir, p: Position, col: Color)
+
+// --- $Mirror ---
+copy([$Mirror(), Sq, Src], Q, P, Col) :-
+    tile_cell(Sq, Src, D, B, S, S_sq), in(S, Col),
+    sq_cell(Sq, B, P, P_sq), quad.quadrant(Sq, P_sq, Q), Q != D,
+    diag_dist(P_sq, Q, A, K1, K2), diag_dist(S_sq, D, A, K1, K2).  // same distances to its corner's edges
+
+// --- $RotatedCopies ---
+copy([$RotatedCopies(), Sq, Src], Q, P, Col) :-
+    tile_cell(Sq, Src, D, B, S, S_sq), in(S, Col),
+    c4_elem(R), apply_diag_dir(R, D, Q), Q != D,                  // the turn onto quadrant Q
+    apply(R, S_sq, P_sq), sq_cell(Sq, B, P, P_sq).
+
+// --- $Mirror, $RotatedCopies ---
+// The marker color over tile color col in quadrant q.
+.decl recolor(ch: Choice, q: DiagDir, col: Color, col_mark: Color)
+recolor(Ch, Q, Col, Col_mark) :-
+    copy(Ch, Q, P, Col), in(P, Col_mark), !params.background(Col_mark).
+
+out(P, Col_out, Ch) :-
+    impl_choice(Ch), copy(Ch, Q, P, Col),
+    ( recolor(Ch, Q, Col, Col_out)
+    ; !recolor(Ch, Q, Col, _), params.background(Col_out)
+    ).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [_, Sq, Src], source(Sq, Src, _, _), in(P, Col), !copy(Ch, _, P, _).
+
+.comp Determine {
+    // The color of the grid's edge cells.
+    .init edge = Unanimous<Unit, Color>
+    edge.item($U(), Col) :- ex_in(E, P, Col), dir_elem(D), dist(P, D, 0), ex_out(E, _, _).
+
+    .decl background(c: Color)
+    background(Col) :- edge.value($U(), Col).
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // The tile's corner stands as far from both edges of the source corner in
+    // every example.
+    .init margin = Unanimous<Unit, number>
+    margin.item($U(), K) :-
+        parse.ink_box.box(_, B), params.source_corner(Diag), dir_of(Diag, _, D), dist(B, D, K).
+
+    .decl border(k: number)
+    border(K) :- margin.value($U(), K).
+}

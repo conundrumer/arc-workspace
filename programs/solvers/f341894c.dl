@@ -1,0 +1,191 @@
+// f341894c
+// @draft
+// @keywords: markers objects
+// @scene edge-markers: marker_color (7) cells stand on the outer border of the
+//  grid; a marker in a corner stands on two edges.
+// @scene arrows: an arrow is two orthogonally adjacent cells, one head_color
+//  (6) and one tail_color (1); arrows may touch other arrows, so their cells
+//  can form larger clumps of the two colors.
+// @scene one-marker-per-arrow: each arrow lies along the row or column of
+//  exactly one marker, on the arrow's own axis, the marker standing at that
+//  line's end on the edge; that line holds no other arrow, and every marker
+//  has one arrow on one of its lines.
+// @rule head-toward-marker: each arrow is rewritten so that its cell nearer
+//  its marker is head_color and its other cell is tail_color.
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// where the marker an arrow turns toward stands
+.type MarkerPlace =
+    // @claim edge-markers
+    OnEdge {}
+    // @scene edge-markers: the marker is the first marker_color cell the
+    //  arrow's line reaches on either side, anywhere in the grid.
+    // @witness interior-marker: borderline $MarkerInLine
+    //     @relaxed edge-markers
+  | MarkerInLine {}
+
+// what an arrow does with a marker at each end of its line
+.type TwoMarkers =
+    // @claim one-marker-per-arrow
+    BothUndefined {}
+    // @scene one-marker-per-arrow: with a marker at each end, the head turns
+    //  toward the nearer one; undefined at equal distance.
+    // @witness markers-both-ends: borderline $NearerMarker
+    //     @relaxed one-marker-per-arrow
+  | NearerMarker {}
+
+// which cells of a marker's line the marker recolors
+.type ArrowParse =
+    // @claim arrows head-toward-marker
+    Pair {}
+    // @scene arrows: no arrows are found; the head_color and tail_color cells
+    //  on a marker's line are recolored, adjacent or not.
+    // @rule head-toward-marker: those cells alternate from the marker,
+    //  head_color first; undefined at a cell that the lines of two markers
+    //  give different colors.
+    // @witness alternate-crossing: borderline concept
+    //     @relaxed one-marker-per-arrow
+  | Alternate {}
+
+.type Choice = [a: ArrowParse, m: MarkerPlace, t: TwoMarkers]
+
+// an arrow's two cells, in one order, under one marker place
+.type ArrowKey = [m: MarkerPlace, a: Position, b: Position]
+
+// one marker's line toward one direction
+.type LineKey = [src: Position, e: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl head_color(c: Color) head_color(6).
+    .decl tail_color(c: Color) tail_color(1).
+    .decl marker_color(c: Color) marker_color(7).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Pair(), $OnEdge(), $BothUndefined()]).
+impl_choice([$Pair(), $OnEdge(), $NearerMarker()]).
+impl_choice([$Pair(), $MarkerInLine(), $NearerMarker()]).
+impl_choice([$Alternate(), $OnEdge(), $BothUndefined()]).
+
+.decl marker(p: Position)
+marker(P) :- in(P, Col), params.marker_color(Col).
+
+// a head_color or tail_color cell
+.decl arrow_color(p: Position)
+arrow_color(P) :- in(P, C), ( params.head_color(C) ; params.tail_color(C) ).
+
+// Each marker looks along its row and column, each way.
+// @claim edge-markers one-marker-per-arrow
+.init sight = Ray<Unit>
+sight.dir($U(), D) :- dir_elem(D).
+sight.cell($U(), P) :- in(P, _).
+sight.mark($U(), P) :- marker(P).
+sight.blocked($U(), P) :- marker(P).
+
+// The line of marker src reaches cell p toward e, k cells from src.
+.decl reach(m: MarkerPlace, p: Position, e: Dir, k: number, src: Position)
+
+// --- $OnEdge ---
+// a marker on edge d looks inward, across the grid
+reach($OnEdge(), P, E, K, Src) :-
+    sight.ray($U(), P, E, K, Src), dir_elem(E),
+    opposite(D, E), dist(Src, D, 0).
+
+// --- $MarkerInLine ---
+// a marker anywhere looks each way, up to the next marker
+reach($MarkerInLine(), P, E, K, Src) :- sight.clear($U(), P, E, K, Src), dir_elem(E).
+
+// The color each case gives a cell of an arrow or a marker line.
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- $Pair ---
+// The arrow a marker's line meets: n is its cell nearer the marker, k cells
+// from it, and f the next cell along the line.
+.decl aim(m: MarkerPlace, n: Position, f: Position, k: number)
+aim(M, N, F, K) :-
+    reach(M, N, E, K, _), neighbor(N, E, F),
+    params.head_color(C_head), params.tail_color(C_tail),
+    ( in(N, C_head), in(F, C_tail)
+    ; in(N, C_tail), in(F, C_head)
+    ).
+
+// The arrows each case turns: n becomes the head, f the tail.
+.decl turned(n: Position, f: Position, ch: Choice)
+
+paint(N, C, Ch) :- turned(N, _, Ch), params.head_color(C).
+paint(F, C, Ch) :- turned(_, F, Ch), params.tail_color(C).
+
+// --- concept ---
+// every marker's arrow turns, so a marker at each end gives a cell two colors
+turned(N, F, [$Pair(), $OnEdge(), $BothUndefined()]) :- aim($OnEdge(), N, F, _).
+
+// --- $NearerMarker ---
+// Of the markers at the two ends of an arrow's line, the nearer one aims it:
+// each aim is a candidate under both orders of the arrow's cells, scored by
+// the marker's distance, and the head is the near cell of the least score.
+// @claim one-marker-per-arrow
+.init nearest = ArgExtremes<ArrowKey, Position>
+nearest.cand([M, N, F], N, K) :- aim(M, N, F, K).
+nearest.cand([M, F, N], N, K) :- aim(M, N, F, K).
+
+turned(N, F, [$Pair(), M, $NearerMarker()]) :- nearest.low([M, N, F], N, _).
+
+// --- $Alternate ---
+// the head_color and tail_color cells of each marker line, ranked from the
+// marker
+// @claim arrows
+.init along = Order<LineKey, Position>
+along.elem([Src, E], P) :- reach($OnEdge(), P, E, _, Src), arrow_color(P).
+along.score([Src, E], P, K) :- reach($OnEdge(), P, E, K, Src), arrow_color(P).
+
+// the two colors as a cycle, walked one step per rank
+// @claim head-toward-marker
+.init alternation = CycleWalk<Unit, Color>
+alternation.succ($U(), C_head, C_tail) :- params.head_color(C_head), params.tail_color(C_tail).
+alternation.succ($U(), C_tail, C_head) :- params.head_color(C_head), params.tail_color(C_tail).
+alternation.step($U(), R) :- along.rank(_, _, R).
+
+paint(P, C, [$Alternate(), $OnEdge(), $BothUndefined()]) :-
+    along.rank(_, P, R),
+    params.head_color(C_head), alternation.walk($U(), C_head, R, C).
+
+// --- $Pair, $Alternate ---
+out(P, C, Ch) :- paint(P, C, Ch).
+out(P, C, Ch) :- in(P, C), impl_choice(Ch), !paint(P, _, Ch).
+
+.comp Determine {
+    // a cell on the grid border
+    .decl on_border(e: Example, p: Position)
+    on_border(E, P) :- ex_in(E, P, _), dir_elem(D), dist(P, D, 0).
+
+    // a color with a cell off the border, in an example with an output
+    .decl off_border(c: Color)
+    off_border(C) :- ex_in(E, P, C), ex_out(E, _, _), !on_border(E, P).
+
+    // the color that stands only on the border
+    .decl marker_color(c: Color)
+    marker_color(C) :- ex_in(_, _, C), !off_border(C).
+
+    // a cell whose color the output changes
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, C0), ex_out(E, P, C), C != C0.
+
+    // Two adjacent changed cells on the line of a marker on edge d: the
+    // output colors of the one nearer d and of the other.
+    .decl turned(c_head: Color, c_tail: Color)
+    turned(C_head, C_tail) :-
+        changed(E, P), changed(E, Q), opposite(D, D2), neighbor(P, D2, Q),
+        ex_out(E, P, C_head), ex_out(E, Q, C_tail),
+        ex_in(E, M, C_m), marker_color(C_m), dist(M, D, 0),        // the marker
+        axis_of(D, A), same_line(A, M, P).                         // on P's line
+
+    .decl head_color(c: Color)
+    head_color(C) :- turned(C, _).
+
+    .decl tail_color(c: Color)
+    tail_color(C) :- turned(_, C).
+}

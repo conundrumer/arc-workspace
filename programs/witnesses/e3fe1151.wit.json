@@ -1,0 +1,151 @@
+{
+  "id": "e3fe1151",
+  "witnesses": [{
+    "id": "blank-color-apart",
+    "separates": "the blanks are 0 inside a 7 cross; with the blank color stored apart from the cross color each 0 cell takes its quadrant's missing color, and with one color for both no cell is a blank and the quadrants' missing colors have nowhere to go, so the model is undefined",
+    "input": [
+      [0,2,7,1,0],
+      [3,4,7,3,4],
+      [7,7,7,7,7],
+      [1,2,7,1,2],
+      [0,4,7,3,0]
+    ],
+    "assign": {
+      "blank_color": [
+        [0]
+      ]
+    },
+    "output": [{
+      "cases": ["$DividerBlank","$LineCross"],
+      "grid": null
+    }, {
+      "cases": ["$OwnBlankColor & $CenterCross"],
+      "grid": [
+        [1,2,7,1,2],
+        [3,4,7,3,4],
+        [7,7,7,7,7],
+        [1,2,7,1,2],
+        [3,4,7,3,4]
+      ]
+    }]
+  }, {
+    "id": "blank-row-across-top",
+    "separates": "the blanks of both top quadrants fill row 0, so row 0 and row 2 are both full rows of 7; the center cross fills each top quadrant with its two missing colors, and the line reading finds two full rows and is undefined",
+    "input": [
+      [7,7,7,7,7],
+      [2,2,7,1,1],
+      [7,7,7,7,7],
+      [1,2,7,2,1],
+      [2,1,7,1,2]
+    ],
+    "output": [{
+      "cases": ["$CenterCross"],
+      "grid": [
+        [1,1,7,2,2],
+        [2,2,7,1,1],
+        [7,7,7,7,7],
+        [1,2,7,2,1],
+        [2,1,7,1,2]
+      ]
+    }, {
+      "cases": ["$LineCross"],
+      "grid": null
+    }]
+  }, {
+    "id": "divider_color=DominantColor",
+    "separates": "`divider_color=DominantColor` from the stored value: train 0 with 7 and 2 swapped",
+    "input": [
+      [2,1,2,8,0],
+      [0,8,2,2,1],
+      [2,2,2,2,2],
+      [8,2,2,2,1],
+      [0,1,2,8,5]
+    ],
+    "output": [{
+      "cases": ["divider_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["divider_color=DominantColor"],
+      "grid": [
+        [5,1,2,8,0],
+        [0,8,2,5,1],
+        [2,2,2,2,2],
+        [8,5,2,0,1],
+        [0,1,2,8,5]
+      ]
+    }]
+  }, {
+    "id": "cross-at-top",
+    "separates": "the full row of 7 is row 0, off the grid's center; the line reading takes row 0 and column 2 as the cross and fills the blank at (1,4) with 2, the one color its quadrant lacks, and the center reading takes row 1 as the cross, finds the top quadrants all blank and lacking two colors, and is undefined",
+    "input": [
+      [7,7,7,7,7],
+      [1,2,7,1,7],
+      [3,4,7,3,4]
+    ],
+    "output": [{
+      "cases": ["$CenterCross"],
+      "grid": null
+    }, {
+      "cases": ["$LineCross"],
+      "grid": [
+        [7,7,7,7,7],
+        [1,2,7,1,2],
+        [3,4,7,3,4]
+      ]
+    }]
+  }, {
+    "id": "dominant-content",
+    "separates": "the quadrants are 3 x 3 and each holds five 1s, so 1 outnumbers the 7s of the cross and the blanks; with the blank color one with the cross color each 7 blank takes its quadrant's missing color, and with the blank color derived as the commonest color every 1 is a blank, the quadrants do not hold one multiset, and the model is undefined",
+    "input": [
+      [1,1,1,7,1,2,1],
+      [1,1,2,7,1,1,7],
+      [3,4,7,7,4,5,1],
+      [7,7,7,7,7,7,7],
+      [5,1,1,7,1,1,3],
+      [1,7,1,7,4,1,5],
+      [2,3,1,7,7,1,1]
+    ],
+    "output": [{
+      "cases": ["divider_color=stored & blank_color=stored"],
+      "grid": [
+        [1,1,1,7,1,2,1],
+        [1,1,2,7,1,1,3],
+        [3,4,5,7,4,5,1],
+        [7,7,7,7,7,7,7],
+        [5,1,1,7,1,1,3],
+        [1,4,1,7,4,1,5],
+        [2,3,1,7,2,1,1]
+      ]
+    }, {
+      "cases": ["divider_color=DominantColor","blank_color=DominantColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "blank_color=DominantColor",
+    "separates": "the blanks are 0, the commonest color, inside a 7 cross; with the blank color derived as the commonest color each 0 cell takes its quadrant's missing color, and with the stored blank color 7 no cell is a blank, the quadrants do not hold one multiset, and the model is undefined",
+    "input": [
+      [2,2,2,7,1,1,1],
+      [2,0,0,7,1,1,0],
+      [0,0,0,7,0,0,0],
+      [7,7,7,7,7,7,7],
+      [0,0,0,7,0,0,0],
+      [0,0,2,7,0,1,1],
+      [2,2,2,7,1,1,1]
+    ],
+    "output": [{
+      "cases": ["divider_color=stored & blank_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["divider_color=DominantColor","blank_color=DominantColor"],
+      "grid": [
+        [2,2,2,7,1,1,1],
+        [2,1,1,7,1,1,2],
+        [1,1,1,7,2,2,2],
+        [7,7,7,7,7,7,7],
+        [1,1,1,7,2,2,2],
+        [1,1,2,7,2,1,1],
+        [2,2,2,7,1,1,1]
+      ]
+    }]
+  }]
+}

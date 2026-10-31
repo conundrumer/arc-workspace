@@ -29,14 +29,6 @@
     // @witness stride-three: variant $DerivedStride
     //     @relaxed markers
   | DerivedStride {}
-    // @scene markers: a marker is three marker-color cells at three corners
-    //  of any axis-aligned rectangle whose sides are each at most
-    //  params.marker_max_side, with the fourth corner not of that color.
-    //  Undefined unless each marker-color cell lies in exactly one such
-    //  triple.
-    // @witness squashed-marker: borderline concept
-    //     @relaxed markers
-  | RectMarker {}
 
 // where the marker color comes from
 .type MarkerHue =
@@ -85,17 +77,11 @@
 .type Choice = [extent: Extent, mcolor: MarkerHue, tcolor: TemplateHue, transform: Transform,
                 stamp: Stamp]
 
-// A reading of the markers: the extent branch and the marker-color branch.
-.type Reader = [extent: Extent, mcolor: MarkerHue]
-
 // A reading of the template: the marker branches, the template branch, and
 // the n of the marker reading.
 .type TmplKey = [extent: Extent, mcolor: MarkerHue, tcolor: TemplateHue, n: number]
 
-.type SideValue = [n: number]
-.type OpenValue = [marker_max_side: SideValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $DerivedMarkerColor, $AnyColorTemplate, $BoxStamp ---
@@ -111,16 +97,7 @@
     //     @relaxed markers
     .decl marker_stride(n: number) marker_stride(2).
 
-    // --- $RectMarker ---
-    // The longest side a marker's box may have.
-    // @derive SepTileCount: borderline concept
-    // @derive TileCount: ordinary concept
-    // @open
-    .decl marker_max_side(n: number)
-    marker_max_side(2). marker_max_side(3). marker_max_side(4). marker_max_side(5).
-    marker_max_side(6). marker_max_side(7). marker_max_side(8).
-
-    // --- $StoredMarkerColor ---
+    // --- $StoredMarkerColor, $DerivedMarkerColor ---
     .decl marker_color(c: Color) marker_color(4).
 
     // --- $StoredTemplateColor ---
@@ -131,80 +108,51 @@
 
 .init params = Params
 
-// The marker triples of a grid, and whether a family of them splits a color's
-// cells exactly.
-.comp Parse<Key, Fam> {
-    .decl cell(key: Key, p: Position, col: Color)
+// A branch's triples at n are squares of side n.
+// @ignore: store — a side the grid lacks forms no triple, so the stored rows read as the
+//  derived ones on every input
+.decl square(ext: Extent, n: number)
 
-    // The colors whose triples a family reads.
-    .decl hue(key: Key, fam: Fam, col: Color)
+// The cells of each branch's marker colors in line with each such cell.
+// @claim markers
+.init line = Ray<MarkerHue>
+line.dir(Mc, D) :- hue_cand(Mc, _), dir_elem(D).
+line.cell(Mc, P) :- hue_cand(Mc, Col), in(P, Col).
+line.mark(Mc, P) :- hue_cand(Mc, Col), in(P, Col).
 
-    // A family's triples at n are squares of side n.
-    .decl square(key: Key, fam: Fam, n: number)
+// Cells of color Col, a marker color of branch Mc, at corners C, P and Q of a box whose fourth corner E
+// holds another color. E lies toward X from C; P is K1 from C toward D1, and Q
+// is K2 from C toward D2.
+.decl triple(mc: MarkerHue, col: Color, e: Position, x: DiagDir, c: Position, p: Position, q: Position,
+             k1: number, k2: number)
+triple(Mc, Col, E, X, C, P, Q, K1, K2) :-
+    hue_cand(Mc, Col), in(C, Col), diag_dirs(X, _, D1, D2),
+    line.ray(Mc, P, D1, K1, C), K1 > 0, in(P, Col),
+    line.ray(Mc, Q, D2, K2, C), K2 > 0, in(Q, Col),
+    jump(P, D2, K2, E), in(E, _), !in(E, Col).
 
-    // A family's triples at n have sides K1 and K2.
-    .decl admits(key: Key, fam: Fam, n: number, k1: number, k2: number)
+.decl box_triple(ext: Extent, mc: MarkerHue, n: number, col: Color, e: Position, x: DiagDir,
+                 c: Position, p: Position, q: Position)
+box_triple(Ext, Mc, N, Col, E, X, C, P, Q) :-
+    square(Ext, N), triple(Mc, Col, E, X, C, P, Q, N, N).
 
-    // A length a side of a marker's box can take.
-    .decl side(key: Key, k: number)
-    side(Ky, K) :- cell(Ky, P, _), dir_elem(D), dist(P, D, K), K > 0.
+// A cell of the triple whose empty corner is E and whose opposite corner is C.
+.decl triple_cell(ext: Extent, mc: MarkerHue, n: number, col: Color, e: Position, c: Position,
+                  p: Position)
+triple_cell(Ext, Mc, N, Col, E, C, P) :-
+    box_triple(Ext, Mc, N, Col, E, _, C, P1, Q1), ( P = C ; P = P1 ; P = Q1 ).
 
-    // The cells of the family colors in line with each such cell.
-    // @claim markers
-    .init line = Ray<Key>
-    line.dir(Ky, D) :- hue(Ky, _, _), dir_elem(D).
-    line.cell(Ky, P) :- hue(Ky, _, Col), cell(Ky, P, Col).
-    line.mark(Ky, P) :- hue(Ky, _, Col), cell(Ky, P, Col).
-
-    // Cells of color Col at corners C, P and Q of a box whose fourth corner E
-    // holds another color. E lies toward X from C; P is K1 from C toward D1,
-    // and Q is K2 from C toward D2.
-    .decl triple(key: Key, col: Color, e: Position, x: DiagDir, c: Position, p: Position,
-                 q: Position, k1: number, k2: number)
-    triple(Ky, Col, E, X, C, P, Q, K1, K2) :-
-        hue(Ky, _, Col), cell(Ky, C, Col), diag_dirs(X, _, D1, D2),
-        line.ray(Ky, P, D1, K1, C), K1 > 0, cell(Ky, P, Col),
-        line.ray(Ky, Q, D2, K2, C), K2 > 0, cell(Ky, Q, Col),
-        jump(P, D2, K2, E), cell(Ky, E, _), !cell(Ky, E, Col).
-
-    .decl box_triple(key: Key, fam: Fam, n: number, col: Color, e: Position, x: DiagDir,
-                     c: Position, p: Position, q: Position)
-    box_triple(Ky, F, N, Col, E, X, C, P, Q) :-
-        square(Ky, F, N), hue(Ky, F, Col), triple(Ky, Col, E, X, C, P, Q, N, N).
-    box_triple(Ky, F, N, Col, E, X, C, P, Q) :-
-        admits(Ky, F, N, K1, K2), hue(Ky, F, Col), triple(Ky, Col, E, X, C, P, Q, K1, K2).
-
-    // A cell of the triple whose empty corner is E and whose opposite corner
-    // is C.
-    .decl triple_cell(key: Key, fam: Fam, n: number, col: Color, e: Position, c: Position,
-                      p: Position)
-    triple_cell(Ky, F, N, Col, E, C, P) :-
-        box_triple(Ky, F, N, Col, E, _, C, P1, Q1), ( P = C ; P = P1 ; P = Q1 ).
-
-    // A cell of color Col lies in no triple, or in two.
-    .decl split_fault(key: Key, fam: Fam, n: number, col: Color)
-    split_fault(Ky, F, N, Col) :-
-        box_triple(Ky, F, N, Col, _, _, _, _, _), cell(Ky, P, Col),
-        !triple_cell(Ky, F, N, Col, _, _, P).
-    split_fault(Ky, F, N, Col) :-
-        triple_cell(Ky, F, N, Col, E, C, P), triple_cell(Ky, F, N, Col, E2, C2, P),
-        ( E != E2 ; C != C2 ).
-
-    // The cells of color Col split exactly into the family's triples at n.
-    .decl exact_split(key: Key, fam: Fam, n: number, col: Color)
-    exact_split(Ky, F, N, Col) :-
-        box_triple(Ky, F, N, Col, _, _, _, _, _), !split_fault(Ky, F, N, Col).
-}
-
-// @ignore hue: store — the rows copy hue_cand, whose stored reading has its own line
-// @ignore square: store — a side the grid lacks forms no triple, so the stored rows read
-//  as the derived ones on every input
-.init parse = Parse<Unit, Reader>
-parse.cell($U(), P, Col) :- in(P, Col).
-parse.hue($U(), [Ext, Mc], Col) :- hue_cand(Mc, Col), extent_choice(Ext).
+// A cell of color Col lies in no triple, or in two.
+.decl split_fault(ext: Extent, mc: MarkerHue, n: number, col: Color)
+split_fault(Ext, Mc, N, Col) :-
+    box_triple(Ext, Mc, N, Col, _, _, _, _, _), in(P, Col),
+    !triple_cell(Ext, Mc, N, Col, _, _, P).
+split_fault(Ext, Mc, N, Col) :-
+    triple_cell(Ext, Mc, N, Col, E, C, P), triple_cell(Ext, Mc, N, Col, E2, C2, P),
+    ( E != E2 ; C != C2 ).
 
 .decl extent_choice(ext: Extent)
-extent_choice($StoredStride()). extent_choice($DerivedStride()). extent_choice($RectMarker()).
+extent_choice($StoredStride()). extent_choice($DerivedStride()).
 
 .decl marker_hue_choice(mc: MarkerHue)
 marker_hue_choice($StoredMarkerColor()). marker_hue_choice($DerivedMarkerColor()).
@@ -232,9 +180,7 @@ impl_choice([Ext, Mc, Tc, Tr, Sk]) :-
 //  model is the one that takes the derived value
 .decl hue_cand(mc: MarkerHue, col: Color)
 
-// A marker reading the branches admit: markers of color Col at n, the side
-// for StoredStride and DerivedStride and the bound on the sides for
-// RectMarker.
+// A marker reading the branches admit: markers of color Col at side n.
 .decl reading_cand(ext: Extent, mc: MarkerHue, n: number, col: Color)
 
 // Two readings compete at n.
@@ -246,18 +192,12 @@ reading(Ext, Mc, N, Col) :- reading_cand(Ext, Mc, N, Col), !rival(Ext, Mc, N).
 
 .decl marker_at(ext: Extent, mc: MarkerHue, n: number, e: Position, x: DiagDir)
 marker_at(Ext, Mc, N, E, X) :-
-    reading(Ext, Mc, N, Col), parse.box_triple($U(), [Ext, Mc], N, Col, E, X, _, _, _).
+    reading(Ext, Mc, N, Col), box_triple(Ext, Mc, N, Col, E, X, _, _, _).
 
-// The open value of params.marker_max_side the reading at n is derived at,
-// nil where the extent reads none.
-// @ignore: head-repeat — the value column is nil for the extents that read no bound
-.decl value_of(ext: Extent, n: number, w: SideValue)
-
-// The readings at two values of n disagree at open value w.
-.decl split_reading(ext: Extent, mc: MarkerHue, w: SideValue)
-split_reading(Ext, Mc, W) :-
-    marker_at(Ext, Mc, N, E, X), value_of(Ext, N, W),
-    reading(Ext, Mc, N2, _), value_of(Ext, N2, W), !marker_at(Ext, Mc, N2, E, X).
+// The readings at two values of n disagree.
+.decl split_reading(ext: Extent, mc: MarkerHue)
+split_reading(Ext, Mc) :-
+    marker_at(Ext, Mc, N, E, X), reading(Ext, Mc, N2, _), !marker_at(Ext, Mc, N2, E, X).
 
 .decl tmpl(k: TmplKey, p: Position, col: Color)
 
@@ -293,52 +233,41 @@ copy([Ext, Mc, Tc, N], Tr, Sk, P, Col) :-
     carry(Tr, X, X2, G), footprint([Ext, Mc, Tc, N], Sk, V, Col),
     apply(G, V, V2), compose(E2, V2, P).
 
-out(P, Col, [Ext, Mc, Tc, Tr, Sk], [W]) :-
-    source([Ext, Mc, Tc, N], _, _), value_of(Ext, N, W), !split_reading(Ext, Mc, W),
+out(P, Col, [Ext, Mc, Tc, Tr, Sk]) :-
+    source([Ext, Mc, Tc, N], _, _), !split_reading(Ext, Mc),
     impl_choice([Ext, Mc, Tc, Tr, Sk]), in(P, C0),
     ( copy([Ext, Mc, Tc, N], Tr, Sk, P, Col)
     ; !copy([Ext, Mc, Tc, N], Tr, Sk, P, _), Col = C0
     ).
 
 // --- $StoredStride ---
-parse.square($U(), [$StoredStride(), Mc], S) :- params.marker_stride(S), marker_hue_choice(Mc).
-
-value_of($StoredStride(), N, nil) :- params.marker_stride(N).
+square($StoredStride(), S) :- params.marker_stride(S).
 
 // --- $StoredStride & $StoredMarkerColor ---
 reading_cand($StoredStride(), $StoredMarkerColor(), N, Col) :-
-    parse.box_triple($U(), [$StoredStride(), $StoredMarkerColor()], N, Col, _, _, _, _, _).
+    box_triple($StoredStride(), $StoredMarkerColor(), N, Col, _, _, _, _, _).
 
 // --- $StoredStride & $DerivedMarkerColor ---
+// The cells of color Col split exactly into the branches' triples at n.
 reading_cand($StoredStride(), $DerivedMarkerColor(), N, Col) :-
-    parse.exact_split($U(), [$StoredStride(), $DerivedMarkerColor()], N, Col).
+    box_triple($StoredStride(), $DerivedMarkerColor(), N, Col, _, _, _, _, _),
+    !split_fault($StoredStride(), $DerivedMarkerColor(), N, Col).
 
 // --- $DerivedStride ---
-parse.square($U(), [$DerivedStride(), Mc], K) :- parse.side($U(), K), marker_hue_choice(Mc).
+// A length a side of a marker's box can take.
+square($DerivedStride(), K) :- in(P, _), dir_elem(D), dist(P, D, K), K > 0.
 
+// The cells of color Col split exactly into the branches' triples at n.
 reading_cand($DerivedStride(), Mc, N, Col) :-
-    parse.exact_split($U(), [$DerivedStride(), Mc], N, Col).
+    box_triple($DerivedStride(), Mc, N, Col, _, _, _, _, _),
+    !split_fault($DerivedStride(), Mc, N, Col).
 
 rival($DerivedStride(), Mc, N) :-
     reading_cand($DerivedStride(), Mc, N, _), reading_cand($DerivedStride(), Mc, N2, _), N != N2.
 
-value_of($DerivedStride(), N, nil) :- parse.side($U(), N).
-
-// --- $RectMarker ---
-parse.admits($U(), [$RectMarker(), Mc], M, K1, K2) :-
-    params.marker_max_side(M), marker_hue_choice(Mc),
-    parse.side($U(), K1), K1 <= M, parse.side($U(), K2), K2 <= M.
-
-reading_cand($RectMarker(), Mc, N, Col) :-
-    parse.exact_split($U(), [$RectMarker(), Mc], N, Col).
-
-// The reading at n is the one at the open value n.
-value_of($RectMarker(), N, [N]) :- params.marker_max_side(N).
-
-// --- $StoredMarkerColor ---
+// --- $StoredMarkerColor, $DerivedMarkerColor ---
 hue_cand($StoredMarkerColor(), Col) :- params.marker_color(Col).
 
-// --- $DerivedMarkerColor ---
 hue_cand($DerivedMarkerColor(), Col) :- in(_, Col), !params.bg(Col).
 
 // --- $StoredTemplateColor ---
@@ -368,20 +297,3 @@ footprint(K, $BoxStamp(), V, Col) :-
     ( tmpl(K, P, Col)
     ; !tmpl(K, P, _), params.bg(Col)
     ).
-
-.comp Determine {
-    .init parse = Parse<Example, Unit>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col).
-    parse.hue(E, $U(), Col) :- ex_in(E, _, _), params.marker_color(Col).
-    parse.admits(E, $U(), M, K1, K2) :-
-        parse.side(E, M), parse.side(E, K1), K1 <= M, parse.side(E, K2), K2 <= M.
-
-    // Some example's marker cells do not split exactly at bound M.
-    .decl unsplit(m: number)
-    unsplit(M) :-
-        parse.side(_, M), ex_out(E, _, _), params.marker_color(Col),
-        !parse.exact_split(E, $U(), M, Col).
-
-    .decl marker_max_side(n: number)
-    marker_max_side(M) :- parse.exact_split(_, $U(), M, _), !unsplit(M).
-}

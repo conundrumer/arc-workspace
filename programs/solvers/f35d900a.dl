@@ -1,0 +1,165 @@
+// f35d900a
+// @draft
+// @keywords: markers stamp span parity
+// @scene four-corner-markers: on a field of `background`, exactly four single cells, at the corners of an axis-aligned rectangle.
+// @scene diagonal-colors: the markers have two colors, and the two markers on each diagonal share one.
+// @scene rings-in-frame: no marker lies on the frame edge, so its 3×3 box fits the grid.
+// @scene rings-apart: the two markers of each side are at least 5 apart, so their 3×3 boxes leave a gap of at least 2 cells.
+// @rule swap-ring: the 8 neighbors of each marker take the other marker color; the marker keeps its color.
+// @rule dotted-sides: on each side of the rectangle, a cell between the two rings takes `dot_color` where its distance to the nearer ring is odd (the cell next to a ring is at distance 1).
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// how many dots each end of a side sends
+.type DotReach =
+    // @claim dotted-sides
+    FullReach {}
+    // @rule dotted-sides: each end dots at most `reach_cap` cells, at distances 1, 3, …, 2·`reach_cap`−1 from its ring, still only on its own half.
+    // @witness long-side: ordinary concept
+  | CappedReach {}
+
+// whether one end's dots stop where the other end's half begins
+.type Clip =
+    // @claim dotted-sides
+    ClipAtMiddle {}
+    // @rule dotted-sides: each end's dots run from its ring across the whole gap, and the side takes the union of both ends' dots.
+    // @witness four-cell-gap: ordinary concept
+  | UnclippedArm {}
+
+// which color a marker's ring takes
+.type Ring =
+    // @claim swap-ring
+    SwapRing {}
+    // @rule swap-ring: the ring takes the color of the nearest other marker; undefined on a square whose two side partners differ in color.
+    // @witness row-colored: foreign concept
+    //     @relaxed diagonal-colors
+  | NearestMarkerColor {}
+
+.type Choice = [reach: DotReach, clip: Clip, ring: Ring]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed four-corner-markers
+    .decl background(c: Color) background(0).
+    .decl dot_color(c: Color) dot_color(5).
+    // along a side, each dot is w cells long and is followed by a gap of g cells
+    .decl dot_spacing(w: number, g: number) dot_spacing(1, 1).
+
+    // --- $CappedReach ---
+    // @ignore: derive ConstInDim — Equivalence: it gives a grid dimension among its values, so no end ever reaches the cap, and the case equals $FullReach on every input
+    // @ignore: derive Period — Equivalence: the least period of an input exceeds the span of its markers, so no end ever reaches the cap, and the case equals $FullReach on every input
+    // @derive SepThickness: ordinary concept
+    //     @ignore: derive $UnclippedArm — Fit: the derived cap lets an end dot past the middle of train1's long sides
+    // @ignore: derive SepTileCount — Subsumption: on no input of up to 18×18 cells does the derived cap fall below the dots an end sends, so the case gives the $FullReach output wherever it is defined
+    // @ignore: derive SepTileDim — Subsumption: on no input of up to 18×18 cells does the derived cap fall below the dots an end sends, so the case gives the $FullReach output wherever it is defined
+    // @ignore: derive TileCount — Equivalence: it gives a grid dimension among its values, so no end ever reaches the cap, and the case equals $FullReach on every input
+    // @ignore: derive TileDim — Equivalence: it gives a grid dimension among its values, so no end ever reaches the cap, and the case equals $FullReach on every input
+    .decl reach_cap(n: number) reach_cap(2).
+}
+
+.init params = Params
+
+.decl dot_reach_choice(r: DotReach)
+dot_reach_choice($FullReach()). dot_reach_choice($CappedReach()).
+
+.decl ring_choice(r: Ring)
+ring_choice($SwapRing()). ring_choice($NearestMarkerColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, $ClipAtMiddle(), Rg]) :- dot_reach_choice(R), ring_choice(Rg).
+impl_choice([$CappedReach(), $UnclippedArm(), Rg]) :- ring_choice(Rg).
+
+.decl marker(p: Position, col: Color)
+marker(P, Col) :- in(P, Col), !params.background(Col).
+
+// The markers in line with each marker, toward each direction.
+// @claim four-corner-markers
+.init marker_ray = Ray<Unit>
+marker_ray.dir($U(), D) :- dir_elem(D).
+marker_ray.cell($U(), P) :- marker(P, _).
+marker_ray.mark($U(), P) :- marker(P, _).
+
+// P2 is the marker k cells from P toward d: the two share a side.
+.decl partner(p: Position, d: Dir, p2: Position, k: number)
+partner(P, D, P2, K) :- marker_ray.ray($U(), P2, D, K, P), dir_elem(D), P != P2.
+
+// The gap cell next to P's ring, on the side toward d.
+.decl gap_start(p: Position, d: Dir, s: Position)
+gap_start(P, D, S) :- partner(P, D, _, _), neighbor(P, D, R), neighbor(R, D, S).
+
+// The cells of each side's gap, cast from the gap's two ends.
+// @claim dotted-sides
+.init gap_ray = Ray<Unit>
+gap_ray.dir($U(), D) :- dir_elem(D).
+gap_ray.cell($U(), Q) :- in(Q, _).
+gap_ray.mark($U(), S) :- gap_start(_, _, S).
+
+// Q lies in the gap between the rings of a side, t1 cells past the first gap
+// cell on one end and t2 past the first on the other end.
+.decl gap_cell(q: Position, t1: number, t2: number)
+gap_cell(Q, T1, T2) :-
+    partner(P, D, P2, _), opposite(D, D2),
+    gap_start(P, D, S1), gap_start(P2, D2, S2),
+    gap_ray.ray($U(), Q, D, T1, S1), gap_ray.ray($U(), Q, D2, T2, S2).
+
+// Q takes a dot from the end its t1 counts from.
+.decl arm_dot(r: DotReach, q: Position, t1: number, t2: number)
+
+.decl dot(r: DotReach, c: Clip, q: Position)
+
+.decl ring_cell(q: Position)
+ring_cell(Q) :- marker(P, _), neighbor(P, _, Q).
+
+.decl ring(r: Ring, q: Position, col: Color)
+
+// --- $FullReach ---
+arm_dot($FullReach(), Q, T1, T2) :-
+    gap_cell(Q, T1, T2), params.dot_spacing(W, G), stride(T1, W, G, _, _).
+
+// --- $CappedReach ---
+arm_dot($CappedReach(), Q, T1, T2) :-
+    gap_cell(Q, T1, T2), params.dot_spacing(W, G), stride(T1, W, G, N, _),
+    params.reach_cap(Cap), N < Cap.                    // fewer than reach_cap dots before Q
+
+// --- $ClipAtMiddle ---
+dot(R, $ClipAtMiddle(), Q) :- arm_dot(R, Q, T1, T2), T1 <= T2.   // Q on its own end's half
+
+// --- $UnclippedArm ---
+dot(R, $UnclippedArm(), Q) :- arm_dot(R, Q, _, _).
+
+// --- $SwapRing ---
+ring($SwapRing(), Q, Col) :-
+    marker(P, Col0), neighbor(P, _, Q),
+    marker(_, Col), Col != Col0.                       // the other marker color
+
+// --- $NearestMarkerColor ---
+// @claim swap-ring
+.init nearest = ArgExtremes<Position, Position>
+nearest.cand(P, P2, K) :- partner(P, _, P2, K).
+
+ring($NearestMarkerColor(), Q, Col) :-
+    nearest.low(P, P2, _), neighbor(P, _, Q), marker(P2, Col).
+
+// --- concept, $CappedReach, $UnclippedArm, $NearestMarkerColor ---
+out(Q, Col, [R, Cl, Rg]) :- impl_choice([R, Cl, Rg]), ring(Rg, Q, Col).
+out(Q, Col, [R, Cl, Rg]) :- impl_choice([R, Cl, Rg]), dot(R, Cl, Q), params.dot_color(Col).
+out(Q, Col, [R, Cl, Rg]) :-
+    impl_choice([R, Cl, Rg]), in(Q, Col),
+    !ring_cell(Q), !dot(R, Cl, Q).
+
+.comp Determine {
+    // The commonest color of every input.
+    .init counts = Mode<Example, Color, Position>
+    counts.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl background_defect(col: Color)
+    background_defect(Col) :- counts.mode(_, Col), ex_in(E, _, _), !counts.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- counts.mode(_, Col), !background_defect(Col).
+
+    // A color some output holds and its input lacks.
+    .decl dot_color(c: Color)
+    dot_color(Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+}

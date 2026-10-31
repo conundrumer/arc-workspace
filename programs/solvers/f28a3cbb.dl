@@ -1,0 +1,342 @@
+// f28a3cbb
+// @draft
+// @keywords: objects move rank
+// @scene background: every cell that is in no square and no stray holds the background color, 6.
+// @scene two-corner-squares: two solid squares of side 3, each of its own color, sit in the top-left
+//  and bottom-right corners of a 9×9 grid; each is the largest solid square of its color.
+// @scene strays-of-square-colors: every other non-background cell is a stray: a cell of one of the
+//  two squares' colors, outside both squares and not touching its own square's side; strays may
+//  touch one another.
+// @rule squares-stay: each square stays where it is.
+// @rule stray-vacates: each stray's cell becomes background.
+// @rule stray-in-band-attaches: a stray in a row band or a column band of its square moves along
+//  that row or column toward the square until it touches the square's side; strays on one line
+//  pile outward from the side cell, the nearest first.
+// @rule stray-off-band-diagonal: a stray in neither band steps diagonally toward its square until it
+//  enters a band, then lands as a stray in that band does; if it reaches the cell touching the
+//  square's corner first, it stays there.
+
+// How strays that come to one line meet.
+.type Collision =
+    // @claim stray-in-band-attaches
+    Pile {}
+    // @rule stray-in-band-attaches: strays that land on one cell make one cell; defined wherever the
+    //  concept is.
+    // @witness same-line-strays: ordinary concept
+    // @witness domino-along-motion: ordinary concept
+  | Merge {}
+
+// What moves as one unit.
+.type StrayUnit =
+    // @claim stray-in-band-attaches
+    PerCell {}
+    // @rule stray-in-band-attaches: each 4-connected piece of strays of one color moves as one
+    //  rigid body, straight along the band it overlaps, until one of its cells touches the square's
+    //  side; undefined on a body that overlaps both bands.
+    // @rule stray-off-band-diagonal: a piece that overlaps neither band moves diagonally as one
+    //  body until one of its cells enters a band or reaches the corner cell.
+    // @witness piece-across-band-edge: ordinary concept
+  | RigidPieces {}
+
+// Where a stray on the square's corner diagonal lands.
+.type OffBandLanding =
+    // @claim stray-off-band-diagonal
+    DiagonalApproach {}
+    // @rule stray-off-band-diagonal: the stray lands on each edge-adjacent cell of its square
+    //  nearest it by Euclidean distance, painting both when two tie; defined wherever the concept is.
+    // @witness corner-diagonal-stray: ordinary concept
+  | NearestSide {}
+
+// What a cell whose color has no square does.
+.type Squareless =
+    // @claim strays-of-square-colors
+    SquarelessClears {}
+    // @rule squareless-kept: a non-background cell whose color has no square stays where it is.
+    // @witness squareless-color: variant any
+    //     @relaxed strays-of-square-colors
+  | SquarelessKept {}
+
+// How a color's square is identified.
+.type SquareShape =
+    // @claim two-corner-squares
+    LargestSquare {}
+    // @scene two-corner-squares: a color's square is its largest 4-connected piece, when that
+    //  piece is a solid square; undefined where two pieces tie for largest.
+    // @witness stray-touching-side: variant concept
+    //     @relaxed strays-of-square-colors
+  | LargestPiece {}
+
+.type Choice = [c: Collision, u: StrayUnit, l: OffBandLanding, s: Squareless, q: SquareShape]
+
+// Two cells on one diagonal, as the opposite corners of a square.
+.type CellPair = [p: Position, q: Position]
+.type ShapeColor = [q: SquareShape, col: Color]
+.type Quadrant = [q: SquareShape, col: Color, dd: DiagDir]
+.type Body = [q: SquareShape, u: StrayUnit, b: Ident]
+.type Mover = [l: OffBandLanding, body: Body]
+.type Pile = [q: SquareShape, u: StrayUnit, l: OffBandLanding, col: Color, h: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(c: Color) bg(6).
+}
+
+.init params = Params
+
+.decl collision_choice(c: Collision)
+collision_choice($Pile()). collision_choice($Merge()).
+
+.decl stray_unit_choice(u: StrayUnit)
+stray_unit_choice($PerCell()). stray_unit_choice($RigidPieces()).
+
+.decl off_band_landing_choice(l: OffBandLanding)
+off_band_landing_choice($DiagonalApproach()). off_band_landing_choice($NearestSide()).
+
+.decl squareless_choice(s: Squareless)
+squareless_choice($SquarelessClears()). squareless_choice($SquarelessKept()).
+
+.decl square_shape_choice(q: SquareShape)
+square_shape_choice($LargestSquare()). square_shape_choice($LargestPiece()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, U, L, S, Q]) :-
+    collision_choice(C), stray_unit_choice(U), off_band_landing_choice(L),
+    squareless_choice(S), square_shape_choice(Q).
+
+// Each color's square, and the colors whose square is ambiguous.
+.decl square_of(q: SquareShape, col: Color, b: Box)
+.decl square_tie(q: SquareShape, col: Color)
+
+// --- $LargestSquare ---
+// The square spanned by two cells of one color on one diagonal.
+// @claim two-corner-squares
+.init spans = Bbox<CellPair>
+spans.cell([P, Q], P), spans.cell([P, Q], Q) :-
+    in(P, Col), in(Q, Col), !params.bg(Col), P != Q,
+    diag_axis_elem(DA), same_line(DA, P, Q).
+
+// Solid squares of each color, by side.
+.decl solid(col: Color, b: Box, k: number)
+solid(Col, B, K) :-
+    spans.box([P, _], B), in(P, Col), !breach(Col, B),
+    axis_elem(A), box_extent(B, P, A, K).
+
+// A cell of another color inside the span.
+.decl breach(col: Color, b: Box)
+breach(Col, B) :- spans.box([P, _], B), in(P, Col), in(Q, Col2), Col2 != Col, inside(Q, B).
+
+// @claim two-corner-squares
+.init largest_square = ArgExtremes<Color, Box>
+largest_square.cand(Col, B, K) :- solid(Col, B, K).
+
+square_of($LargestSquare(), Col, B) :- largest_square.high(Col, B, _).
+square_tie($LargestSquare(), Col) :-
+    largest_square.high(Col, B1, _), largest_square.high(Col, B2, _), B1 != B2.
+
+// --- $LargestPiece ---
+// @claim two-corner-squares
+.init color_pieces = Components<Color>
+color_pieces.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+// @claim two-corner-squares
+.init piece_size = Tally<Ident, Position>
+piece_size.item(Id, P) :- color_pieces.label(_, P, Id).
+piece_size.domain(Id) :- color_pieces.label(_, _, Id).
+
+// @claim two-corner-squares
+.init largest_piece = ArgExtremes<Color, Ident>
+largest_piece.cand(Col, Id, N) :- color_pieces.label(Col, _, Id), piece_size.tally(Id, N).
+
+// @claim two-corner-squares
+.init piece_box = Bbox<Ident>
+piece_box.cell(Id, P) :- color_pieces.label(_, P, Id).
+
+square_of($LargestPiece(), Col, B) :-
+    largest_piece.high(Col, Id, _), piece_box.box(Id, B),
+    color_pieces.label(Col, P1, Id), color_pieces.label(Col, P2, Id), P1 != P2,   // side of at least 2
+    perp(A, A2), box_extent(B, P1, A, K), box_extent(B, P1, A2, K),               // a square
+    !piece_gap(Id).
+square_tie($LargestPiece(), Col) :-
+    largest_piece.high(Col, Id1, _), largest_piece.high(Col, Id2, _), Id1 != Id2.
+
+// A cell of the piece's box outside the piece.
+.decl piece_gap(id: Ident)
+piece_gap(Id) :- piece_box.box(Id, B), in(P, _), inside(P, B), !color_pieces.label(_, P, Id).
+
+// --- $LargestSquare, $LargestPiece ---
+// The cells of all squares.
+.decl square_cell(q: SquareShape, p: Position, col: Color)
+square_cell(Q, P, Col) :- square_of(Q, Col, B), in(P, Col), inside(P, B).
+
+.decl stray(q: SquareShape, col: Color, p: Position)
+stray(Q, Col, P) :- square_of(Q, Col, B), in(P, Col), !inside(P, B).
+
+// The cell touching side d of the square, and the cell touching its corner dd.
+.decl side_cell(q: SquareShape, col: Color, s: Position, d: Dir)
+side_cell(Q, Col, S, D) :- square_of(Q, Col, B), in(E, _), box_edge(E, B, D), neighbor(E, D, S).
+.decl corner_cell(q: SquareShape, col: Color, c: Position, dd: DiagDir)
+corner_cell(Q, Col, C, DD) :-
+    square_of(Q, Col, B), in(E, _), box_corner(E, B, DD), neighbor(E, DD, C).
+
+// Cell p lies in a band of the square, on its side d.
+.decl in_band(q: SquareShape, col: Color, p: Position, d: Dir)
+in_band(Q, Col, P, D) :-
+    side_cell(Q, Col, S, D), in(P, _), axis_of(D, A), same_line(A, P, S), !nearer(D, S, P).
+
+// Cell p lies off both bands, beyond the square's corner dd.
+.decl in_quadrant(q: SquareShape, col: Color, p: Position, dd: DiagDir)
+in_quadrant(Q, Col, P, DD) :-
+    corner_cell(Q, Col, C, DD), in(P, _),
+    diag_dirs(DD, _, D1, D2), !nearer(D1, C, P), !nearer(D2, C, P).
+
+// Each body of strays and its cells.
+.decl body(q: SquareShape, u: StrayUnit, col: Color, b: Ident, p: Position)
+
+// --- $PerCell ---
+// @claim stray-in-band-attaches
+.init cell_id = IdentOf<Position>
+cell_id.value(P) :- stray(_, _, P).
+
+body(Q, $PerCell(), Col, Id, P) :- stray(Q, Col, P), cell_id.id(P, Id).
+
+// --- $RigidPieces ---
+// @claim stray-in-band-attaches
+.init stray_pieces = Components<ShapeColor>
+stray_pieces.node([Q, Col], P) :- stray(Q, Col, P).
+
+body(Q, $RigidPieces(), Col, Id, P) :- stray_pieces.label([Q, Col], P, Id).
+
+// --- $PerCell, $RigidPieces ---
+// The cells a diagonal step from a stray toward its square reaches before it leaves the quadrant.
+// @claim stray-off-band-diagonal
+.init approach = Ray<Quadrant>
+approach.dir([Q, Col, DD], D) :- in_quadrant(Q, Col, _, DD), diag_opposite(DD, D).
+approach.cell([Q, Col, DD], P) :- in_quadrant(Q, Col, _, DD), in(P, _).
+approach.mark([Q, Col, DD], P) :- stray(Q, Col, P), in_quadrant(Q, Col, P, DD).
+approach.blocked([Q, Col, DD], P) :-
+    in_quadrant(Q, Col, _, DD), in(P, _), !in_quadrant(Q, Col, P, DD).
+
+// A body that overlaps a band at the start.
+.decl body_in_band(q: SquareShape, u: StrayUnit, col: Color, b: Ident)
+body_in_band(Q, U, Col, Id) :- body(Q, U, Col, Id, P), in_band(Q, Col, P, _).
+
+// The diagonal steps that take a body off its quadrant: the least over its cells.
+// @claim stray-off-band-diagonal
+.init leave = Extremes<Body>
+leave.cand([Q, U, Id], K) :-
+    body(Q, U, Col, Id, P), !body_in_band(Q, U, Col, Id),
+    in_quadrant(Q, Col, P, DD), approach.stop([Q, Col, DD], _, _, K, P).
+
+// The body's shift once its diagonal phase ends.
+.decl diagonal_shift(q: SquareShape, u: StrayUnit, col: Color, b: Ident, dd: DiagDir, v: Offset)
+diagonal_shift(Q, U, Col, Id, DD, V) :-
+    leave.low([Q, U, Id], K), body(Q, U, Col, Id, P), in_quadrant(Q, Col, P, DD),
+    diag_opposite(DD, D), jump_offset(D, K, V).
+
+// The diagonal phase ends at the corner cell.
+.decl at_corner(q: SquareShape, u: StrayUnit, col: Color, b: Ident)
+at_corner(Q, U, Col, Id) :-
+    diagonal_shift(Q, U, Col, Id, _, V), body(Q, U, Col, Id, P), compose(P, V, P2),
+    square_of(Q, Col, B), inside(P2, B).
+
+// Each body's cells once its diagonal phase ends.
+.decl placed(q: SquareShape, u: StrayUnit, l: OffBandLanding, col: Color, b: Ident, p: Position)
+placed(Q, U, L, Col, Id, P) :-
+    body_in_band(Q, U, Col, Id), body(Q, U, Col, Id, P), off_band_landing_choice(L).
+placed(Q, U, L, Col, Id, P2) :-
+    diagonal_shift(Q, U, Col, Id, _, V), !at_corner(Q, U, Col, Id),
+    body(Q, U, Col, Id, P), compose(P, V, P2), off_band_landing_choice(L).
+
+// --- $DiagonalApproach ---
+// A body that reaches the corner cell stays there.
+.decl rested(q: SquareShape, u: StrayUnit, l: OffBandLanding, col: Color, p: Position)
+rested(Q, U, $DiagonalApproach(), Col, P2) :-
+    at_corner(Q, U, Col, Id), diagonal_shift(Q, U, Col, Id, DD, V), neighbor(V, DD, V2),
+    body(Q, U, Col, Id, P), compose(P, V2, P2).
+
+// --- $NearestSide ---
+// A body that reaches the corner cell lands on both side cells beside it.
+rested(Q, U, $NearestSide(), Col, P3) :-
+    at_corner(Q, U, Col, Id), diagonal_shift(Q, U, Col, Id, DD, V), neighbor(V, DD, V2),
+    diag_dirs(DD, _, D, _), opposite(D, D_in), neighbor(V2, D_in, V3),
+    body(Q, U, Col, Id, P), compose(P, V3, P3).
+
+// --- $PerCell, $RigidPieces ---
+// The heading toward the square of a body that overlaps a band.
+.decl heading(q: SquareShape, u: StrayUnit, l: OffBandLanding, col: Color, b: Ident, h: Dir)
+heading(Q, U, L, Col, Id, H) :-
+    placed(Q, U, L, Col, Id, P), in_band(Q, Col, P, D), opposite(D, H).
+
+// --- $Merge ---
+// @claim stray-in-band-attaches
+.init fall_alone = Gravity<Mover, Ident>
+fall_alone.cell([L, [Q, U, Id]], Id, P) :-
+    placed(Q, U, L, Col, Id, P), heading(Q, U, L, Col, Id, _).
+fall_alone.dir([L, [Q, U, Id]], H) :- heading(Q, U, L, _, Id, H).
+fall_alone.blocked([L, [Q, U, Id]], P) :- heading(Q, U, L, _, Id, _), square_cell(Q, P, _).
+
+// --- $Pile ---
+// @claim stray-in-band-attaches
+.init fall_stack = Gravity<Pile, Ident>
+fall_stack.cell([Q, U, L, Col, H], Id, P) :-
+    placed(Q, U, L, Col, Id, P), heading(Q, U, L, Col, Id, H).
+fall_stack.dir([Q, U, L, Col, H], H) :- heading(Q, U, L, Col, _, H).
+fall_stack.blocked([Q, U, L, Col, H], P) :- heading(Q, U, L, Col, _, H), square_cell(Q, P, _).
+
+// Each body's cells where it comes to rest.
+.decl landed(c: Collision, q: SquareShape, u: StrayUnit, l: OffBandLanding, col: Color, p: Position)
+
+// --- $Merge ---
+landed($Merge(), Q, U, L, Col, P2) :-
+    fall_alone.travel([L, [Q, U, Id]], Id, V), placed(Q, U, L, Col, Id, P), compose(P, V, P2).
+
+// --- $Pile ---
+landed($Pile(), Q, U, L, Col, P2) :-
+    fall_stack.travel([Q, U, L, Col, H], Id, V), heading(Q, U, L, Col, Id, H),
+    placed(Q, U, L, Col, Id, P), compose(P, V, P2).
+
+// --- $SquarelessKept ---
+.decl kept(s: Squareless, q: SquareShape, p: Position, col: Color)
+kept($SquarelessKept(), Q, P, Col) :-
+    square_shape_choice(Q), in(P, Col), !params.bg(Col), !square_of(Q, Col, _).
+
+// --- $Pile, $Merge ---
+// The inputs a case leaves undefined.
+.decl undefined(ch: Choice)
+
+landed(C, Q, U, L, Col, P) :- rested(Q, U, L, Col, P), collision_choice(C).
+
+undefined([C, U, L, S, Q]) :- impl_choice([C, U, L, S, Q]), square_tie(Q, _).
+undefined([C, U, L, S, Q]) :-
+    impl_choice([C, U, L, S, Q]),
+    heading(Q, U, L, Col, Id, H1), heading(Q, U, L, Col, Id, H2), H1 != H2.   // a body on both bands
+
+.decl ink(ch: Choice, p: Position, col: Color)
+ink([C, U, L, S, Q], P, Col) :-
+    impl_choice([C, U, L, S, Q]),
+    ( square_cell(Q, P, Col)
+    ; landed(C, Q, U, L, Col, P)
+    ; kept(S, Q, P, Col)
+    ).
+
+out(P, Col, Ch) :- ink(Ch, P, Col), !undefined(Ch).
+out(P, Col, Ch) :- impl_choice(Ch), !undefined(Ch), in(P, _), !ink(Ch, P, _), params.bg(Col).
+
+.comp Determine {
+    // A cell of example e changes into color c, and another changes out of it: a stray's cell
+    // vacates to the background, and a background cell takes the stray it lands.
+    .decl swapped(e: Example, c: Color)
+    swapped(E, C) :-
+        ex_in(E, P, C1), ex_out(E, P, C), C1 != C,
+        ex_in(E, Q, C), ex_out(E, Q, C2), C2 != C.
+
+    // An example whose cells do not swap through c.
+    .decl defect(c: Color)
+    defect(C) :- swapped(_, C), ex_out(E, _, _), !swapped(E, C).
+
+    .decl bg(c: Color)
+    bg(C) :- swapped(_, C), !defect(C).
+}

@@ -1,0 +1,327 @@
+// fe9372f3
+// @draft
+// @keywords: objects cast wallpaper
+// @scene one-plus: one plus of plus_color 2 on a field of background 0: a
+//  center cell and its four cardinal arms, each arm_length 1 cells long, every
+//  other cell background.
+// @rule keep-input: every input cell keeps its color unless a ray below
+//  paints it.
+// @rule diagonal-rays: from the center (the non-background cell whose four
+//  neighbors are non-background) toward each of the four diagonal directions,
+//  every cell from distance 1 to the grid edge takes diag_color.
+// @rule dashed-cardinal-rays: from each arm tip (the last non-background cell
+//  of the run out of the center) toward its own cardinal direction, the cell k
+//  steps past the tip, for k from 1 to the grid edge, takes
+//  dash_pattern[(k - 1) mod |dash_pattern|].
+
+// where the dash pattern's count starts
+.type Phase =
+    // @claim dashed-cardinal-rays
+    FromTip {}
+    // @rule dashed-cardinal-rays: the count starts at the first arm cell out
+    //  of the center, so the cell at distance d from the center takes
+    //  dash_pattern[(d - 2) mod |dash_pattern|].
+    // @witness long-arms: variant concept
+    //     @relaxed one-plus
+  | PhaseFromCenter {}
+
+// what fixes the dash period
+.type Period =
+    // @claim dashed-cardinal-rays
+    StoredPattern {}
+    // @rule dashed-cardinal-rays: the period is the plus's span through the
+    //  tip, 2·arm_length + 1 cells: span − 1 cells of dash_color, then one of
+    //  accent_color.
+    // @witness long-arms: variant concept
+  | PeriodFromSpan {}
+
+// where each diagonal ray starts
+.type DiagOrigin =
+    // @claim diagonal-rays
+    FromCenter {}
+    // @rule diagonal-rays: each diagonal ray starts at the plus's
+    //  bounding-box corner, arm_length steps out, and leaves the nearer
+    //  diagonal cells as they are.
+    // @witness long-arms: variant concept
+  | DiagFromCorner {}
+
+// where a ray stops
+.type RayStop =
+    // @claim diagonal-rays dashed-cardinal-rays
+    ToEdge {}
+    // @rule diagonal-rays: the ray stops before the first input cell that is
+    //  not background.
+    // @rule dashed-cardinal-rays: the ray stops before the first input cell
+    //  that is not background.
+    // @witness halt-at-obstacle: borderline any
+    //     @relaxed one-plus
+  | HaltAtObstacle {}
+
+// how the plus is found
+.type Locate =
+    // @claim diagonal-rays dashed-cardinal-rays
+    NonBackground {}
+    // @rule diagonal-rays: the plus is the cells of plus_color, and where none
+    //  forms a plus the output is the input.
+    // @rule dashed-cardinal-rays: the plus is the cells of plus_color.
+    // @witness recolored-plus: variant concept
+    //     @relaxed one-plus
+  | PlusByColor {}
+
+.type Choice = [phase: Phase, period: Period, diag: DiagOrigin, stop: RayStop, locate: Locate]
+
+.type SpokeKey = [phase: Phase, locate: Locate, d: Dir]
+.type SpanKey = [locate: Locate, d: Dir]
+.type PatternKey = [period: Period, locate: Locate, d: Dir]
+.type DiagKey = [diag: DiagOrigin, locate: Locate]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl diag_color(c: Color) diag_color(1).
+
+    // --- $NonBackground, $HaltAtObstacle ---
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // --- $StoredPattern ---
+    // The cyclic colors of a cardinal ray, slot 0 next to the arm tip.
+    .decl dash_pattern(k: number, col: Color)
+    dash_pattern(0, 8). dash_pattern(1, 8). dash_pattern(2, 4).
+
+    // --- $PeriodFromSpan ---
+    .decl dash_color(c: Color) dash_color(8).
+    .decl accent_color(c: Color) accent_color(4).
+
+    // --- $PlusByColor ---
+    // @derive RarestColor: variant concept
+    //     @relaxed one-plus
+    .decl plus_color(c: Color) plus_color(2).
+}
+
+.init params = Params
+
+.decl phase_choice(ph: Phase)
+phase_choice($FromTip()). phase_choice($PhaseFromCenter()).
+
+.decl period_choice(pe: Period)
+period_choice($StoredPattern()). period_choice($PeriodFromSpan()).
+
+.decl diag_origin_choice(o: DiagOrigin)
+diag_origin_choice($FromCenter()). diag_origin_choice($DiagFromCorner()).
+
+.decl ray_stop_choice(st: RayStop)
+ray_stop_choice($ToEdge()). ray_stop_choice($HaltAtObstacle()).
+
+.decl locate_choice(l: Locate)
+locate_choice($NonBackground()). locate_choice($PlusByColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Ph, Pe, O, St, L]) :-
+    phase_choice(Ph), period_choice(Pe), diag_origin_choice(O),
+    ray_stop_choice(St), locate_choice(L).
+
+// The plus found among the cells the caller gives: its center, and the tip
+// of each arm.
+.comp Parse<Key> {
+    .decl plus(key: Key, p: Position)  // input
+
+    // A plus cell with a side that leaves the plus.
+    .decl open_side(key: Key, p: Position)
+    open_side(Ky, P) :- plus(Ky, P), dir_elem(D), neighbor(P, D, Q), !plus(Ky, Q).
+
+    .decl center(key: Key, p: Position)
+    center(Ky, P) :- plus(Ky, P), !open_side(Ky, P).
+
+    // The arms: the runs of plus cells out of each cell.
+    // @claim diagonal-rays dashed-cardinal-rays
+    .init arms = Slide<Key>
+    arms.node(Ky, P) :- plus(Ky, P).
+    arms.dir(Ky, D)  :- plus(Ky, _), dir_elem(D).
+
+    // The last plus cell of the run out of center C toward D.
+    .decl tip(key: Key, c: Position, d: Dir, p: Position)
+    tip(Ky, C, D, P) :- center(Ky, C), dir_elem(D), arms.halt(Ky, C, D, P).
+}
+
+// --- concept, $PhaseFromCenter, $PeriodFromSpan, $DiagFromCorner, $HaltAtObstacle, $PlusByColor ---
+
+.init parse = Parse<Locate>
+
+// --- $NonBackground ---
+
+parse.plus($NonBackground(), P) :- in(P, Col), !params.background(Col).
+
+// --- $PlusByColor ---
+
+parse.plus($PlusByColor(), P) :- in(P, Col), params.plus_color(Col).
+
+// --- concept, $PhaseFromCenter, $PeriodFromSpan, $DiagFromCorner, $HaltAtObstacle, $PlusByColor ---
+
+// The cell a cardinal ray's dash count starts from: one step back from the
+// first cell the pattern paints.
+.decl anchor(ph: Phase, l: Locate, c: Position, d: Dir, p: Position)
+
+// --- $FromTip ---
+
+anchor($FromTip(), L, C, D, P) :- parse.tip(L, C, D, P).
+
+// --- $PhaseFromCenter ---
+
+anchor($PhaseFromCenter(), L, C, D, P) :- parse.tip(L, C, D, _), neighbor(C, D, P).
+
+// --- concept, $PhaseFromCenter, $PeriodFromSpan, $DiagFromCorner, $HaltAtObstacle, $PlusByColor ---
+
+// The cardinal rays, cast from each tip and each anchor along the tip's own
+// direction.
+// @claim dashed-cardinal-rays
+.init spokes = Ray<SpokeKey>
+spokes.dir([Ph, L, D], D)  :- anchor(Ph, L, _, D, _).
+spokes.cell([Ph, L, D], P) :- anchor(Ph, L, _, D, _), in(P, _).
+spokes.mark([Ph, L, D], P) :- anchor(Ph, L, C, D, _), parse.tip(L, C, D, P).
+spokes.mark([Ph, L, D], P) :- anchor(Ph, L, _, D, P).
+spokes.blocked([Ph, L, D], P) :-
+    anchor(Ph, L, _, D, _), in(P, Col), !params.background(Col).
+
+// A cell past a tip on its cardinal ray, k steps from the ray's anchor.
+.decl spoke(l: Locate, ph: Phase, st: RayStop, d: Dir, p: Position, k: number)
+
+// --- $ToEdge ---
+
+spoke(L, Ph, $ToEdge(), D, P, K) :-
+    anchor(Ph, L, C, D, A), parse.tip(L, C, D, T),
+    spokes.ray([Ph, L, D], P, D, K_tip, T), K_tip != 0,    // past the tip, to the edge
+    spokes.cast([Ph, L, D], P, D, K, A).                     // steps from the anchor
+
+// --- $HaltAtObstacle ---
+
+spoke(L, Ph, $HaltAtObstacle(), D, P, K) :-
+    anchor(Ph, L, C, D, A), parse.tip(L, C, D, T),
+    spokes.clear([Ph, L, D], P, D, K_tip, T), K_tip != 0,  // past the tip, short of an obstacle
+    spokes.cast([Ph, L, D], P, D, K, A).
+
+// --- $StoredPattern ---
+
+// The colors of each cardinal ray's pattern, slot 0 next to the anchor.
+.decl pattern(pe: Period, l: Locate, d: Dir, k: number, col: Color)
+pattern($StoredPattern(), L, D, K, Col) :- parse.tip(L, _, D, _), params.dash_pattern(K, Col).
+
+// --- $PeriodFromSpan ---
+
+// The plus's span through each tip, cast back from the tip, the tip at 0.
+// @claim dashed-cardinal-rays
+.init span = Ray<SpanKey>
+span.dir([L, D], B)     :- parse.tip(L, _, D, _), opposite(D, B).
+span.cell([L, D], P)    :- parse.tip(L, _, D, _), parse.plus(L, P).
+span.mark([L, D], P)    :- parse.tip(L, _, D, P).
+span.blocked([L, D], P) :- parse.tip(L, _, D, _), in(P, _), !parse.plus(L, P).
+
+// One slot per span cell: the far tip's slot is the accent, the others dash.
+pattern($PeriodFromSpan(), L, D, K, Col) :-
+    span.clear([L, D], Q, B, K, _),
+    ( parse.tip(L, _, B, Q), params.accent_color(Col)       // the far tip
+    ; !parse.tip(L, _, B, Q), params.dash_color(Col)
+    ).
+
+// --- concept, $PhaseFromCenter, $PeriodFromSpan, $DiagFromCorner, $HaltAtObstacle, $PlusByColor ---
+
+// @claim dashed-cardinal-rays
+.init dash_cycle = IndexCycle<PatternKey>
+dash_cycle.idx([Pe, L, D], K) :- pattern(Pe, L, D, K, _).
+
+// @claim dashed-cardinal-rays
+.init dash_walk = CycleWalk<PatternKey, number>
+dash_walk.succ(Ky, K, K2) :- dash_cycle.succ(Ky, K, K2).
+dash_walk.step([Pe, L, D], K) :- pattern(Pe, L, D, _, _), spokes.cast([_, L, D], _, D, K, _).
+
+// The anchor stands at the pattern's last slot, so the cell one step on
+// takes slot 0.
+.decl dash(l: Locate, ph: Phase, st: RayStop, pe: Period, p: Position, col: Color)
+dash(L, Ph, St, Pe, P, Col) :-
+    spoke(L, Ph, St, D, P, K),
+    dash_cycle.succ([Pe, L, D], S_last, 0),                 // the anchor's slot
+    dash_walk.walk([Pe, L, D], S_last, K, S), pattern(Pe, L, D, S, Col).
+
+// The first cell of each diagonal ray.
+.decl origin(o: DiagOrigin, l: Locate, dg: DiagDir, p: Position)
+
+// --- $FromCenter ---
+
+origin($FromCenter(), L, Dg, P) :- parse.center(L, C), diag_dir_elem(Dg), neighbor(C, Dg, P).
+
+// --- $DiagFromCorner ---
+
+// The plus's bounding-box corner: level with one tip along each of the
+// corner's two directions.
+origin($DiagFromCorner(), L, Dg, P) :-
+    diag_dirs(Dg, _, D1, D2), parse.tip(L, C, D1, T1), parse.tip(L, C, D2, T2),
+    in(P, _), same_dist(D1, P, T1), same_dist(D2, P, T2).
+
+// --- concept, $PhaseFromCenter, $PeriodFromSpan, $DiagFromCorner, $HaltAtObstacle, $PlusByColor ---
+
+// @claim diagonal-rays
+.init diags = Ray<DiagKey>
+diags.dir([O, L], Dg)    :- origin(O, L, Dg, _).
+diags.cell([O, L], P)    :- origin(O, L, _, _), in(P, _).
+diags.mark([O, L], P)    :- origin(O, L, _, P).
+diags.blocked([O, L], P) :- origin(O, L, _, _), in(P, Col), !params.background(Col).
+
+// A diagonal ray cell, from the ray's origin along its own direction.
+.decl diag_cell(o: DiagOrigin, l: Locate, st: RayStop, p: Position)
+
+// --- $ToEdge ---
+
+diag_cell(O, L, $ToEdge(), P) :- diags.ray([O, L], P, Dg, _, Q), origin(O, L, Dg, Q).
+
+// --- $HaltAtObstacle ---
+
+diag_cell(O, L, $HaltAtObstacle(), P) :-
+    diags.clear([O, L], P, Dg, _, Q), origin(O, L, Dg, Q),
+    !diags.blocked([O, L], Q).                              // an origin on an obstacle casts nothing
+
+// --- concept, $PhaseFromCenter, $PeriodFromSpan, $DiagFromCorner, $HaltAtObstacle, $PlusByColor ---
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([Ph, Pe, O, St, L], P, Col) :- dash(L, Ph, St, Pe, P, Col), diag_origin_choice(O).
+paint([Ph, Pe, O, St, L], P, Col) :-
+    diag_cell(O, L, St, P), params.diag_color(Col), phase_choice(Ph), period_choice(Pe).
+
+out(P, Col, Ch) :-
+    in(P, Col_in), impl_choice(Ch),
+    ( paint(Ch, P, Col)
+    ; !paint(Ch, P, _), Col = Col_in
+    ).
+
+.comp Determine {
+    .type Slot = [w: number, k: number]
+
+    .init parse = Parse<Example>
+    parse.plus(E, P) :- ex_in(E, P, Col), !params.background(Col).
+
+    // The color a train output gives the cell i steps on from the cell next
+    // to a tip.
+    .decl ray_col(e: Example, d: Dir, i: number, col: Color)
+    ray_col(E, D, I, Col) :-
+        parse.tip(E, _, D, T), neighbor(T, D, N),
+        ex_in(E, P, _), dist(P, D, I),            // a step count the grid spans
+        jump(N, D, I, Q), ex_out(E, Q, Col).
+
+    // Candidate periods: the step counts the rays reach.
+    .decl cand(w: number)
+    cand(W) :- ray_col(_, _, W, _), W != 0.
+
+    // The colors every ray carries at each slot of a candidate period.
+    .init slot_color = Unanimous<Slot, Color>
+    slot_color.item([W, K], Col) :- cand(W), ray_col(_, _, I, Col), stride(I, W, 0, _, K).
+
+    // A period that folds two differing steps onto one slot.
+    .decl mismatch(w: number)
+    mismatch(W) :- slot_color.clash([W, _]).
+
+    // The shortest period no ray breaks.
+    .init unbroken = Extremes<Unit>
+    unbroken.cand($U(), W) :- cand(W), !mismatch(W).
+
+    .decl dash_pattern(k: number, col: Color)
+    dash_pattern(K, Col) :- unbroken.low($U(), W), slot_color.value([W, K], Col).
+}

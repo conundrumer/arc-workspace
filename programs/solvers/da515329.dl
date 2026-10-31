@@ -1,0 +1,137 @@
+// da515329
+// @draft
+// @keywords: walk objects symmetry
+// @scene one-plus: on a field of 0, one plus of one color: four straight arms
+//  of one length, which leave the center cell 0 and point toward the four
+//  cardinal directions.
+// @rule arms-grow: all four arms grow at once, one cell per step, from their
+//  tips, on an unbounded plane.
+// @rule hug-the-spiral: a growing arm keeps a lane of one background cell
+//  between its new cell and every wall cell it does not grow from, by the
+//  8-neighborhood: it turns toward `sense` where it can, goes straight where
+//  it cannot, and turns the other way where straight is blocked.
+// @rule clip: the output has the input's size; a cell is the plus's color
+//  where a spiral passes through it, and background elsewhere, the center
+//  cell included.
+
+// An arm's tip and the heading it grew in.
+.type Tip = [p: Position, h: Dir]
+
+// A cell of one example's input.
+.type Cell = [e: Example, p: Position]
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-plus
+    .decl bg(c: Color) bg(0).
+    .decl plus_color(c: Color) plus_color(8).
+    // the sense in which each arm curls
+    .decl sense(s: Sense) sense(SENSE_CW).
+}
+
+.init params = Params
+
+.decl plus(p: Position, col: Color)
+plus(P, Col) :- in(P, Col), params.plus_color(Col).
+
+// A cell some neighbor of which is not a plus cell.
+.decl off_center(p: Position)
+off_center(P) :- in(P, _), dir_elem(D), neighbor(P, D, Q), !plus(Q, _).
+
+.decl center(p: Position)
+center(P) :- in(P, Col), params.bg(Col), !off_center(P).
+
+// The distance from the center to the farthest grid edge: every grid cell
+// lies within it of the center on both axes.
+// @claim clip
+.init reach = Extremes<Unit>
+reach.cand($U(), K) :- center(C), dir_elem(D), dist(C, D, K).
+
+.decl within(k: number)
+within(K) :- reach.high($U(), R), in(P, _), dir_elem(D), dist(P, D, K), K <= R.
+
+// The tip of the arm that points toward d.
+.decl tip(d: Dir, p: Position)
+tip(D, P) :-
+    center(C), dir_elem(D), within(K), jump(C, D, K, P), plus(P, _),
+    neighbor(P, D, Q), !plus(Q, _).                        // the next cell out is not the plus
+
+// The square around the center that holds the grid.
+.decl square(p: Position)
+square(Q) :-
+    center(C), diag_dirs(_, _, D1, D2),
+    within(K1), jump(C, D1, K1, Q1), within(K2), jump(Q1, D2, K2, Q).
+
+// The part of the plane the arms grow in: the square and two rings around
+// it, where a spiral that leaves the square turns back into it.
+.decl domain(p: Position)
+domain(Q) :- square(P), dir8_elem(D1), neighbor(P, D1, Q1), dir8_elem(D2), neighbor(Q1, D2, Q).
+
+// The cells that must be free for an arm in the domain to grow into n
+// heading g: n, the cell ahead, and the cells beside both.
+.decl lane(n: Position, g: Dir, q2: Position, q3: Position, q4: Position, q5: Position, q6: Position)
+lane(N, G, A, B1, B2, C1, C2) :-
+    domain(P), dir_elem(G), neighbor(P, G, N),
+    neighbor(N, G, A), perp_dir(G, E1), opposite(E1, E2),
+    neighbor(N, E1, B1), neighbor(N, E2, B2), neighbor(A, E1, C1), neighbor(A, E2, C2).
+
+.decl lane_cell(n: Position, g: Dir, q: Position)
+lane_cell(N, G, Q) :-
+    lane(N, G, Q2, Q3, Q4, Q5, Q6),
+    ( Q = N ; Q = Q2 ; Q = Q3 ; Q = Q4 ; Q = Q5 ; Q = Q6 ).
+
+// Each arm grows in its own walk, keyed by the heading it points toward.
+// The plus turns onto itself under each quarter turn about its center, and
+// so does the rule, so the four spirals do too: each cell an arm takes takes
+// its images under those turns, the cells the other arms take in the same
+// step, as walls for that arm.
+// @claim arms-grow hug-the-spiral
+// @ignore step: domain-enumerator — `dir_elem(D)` and `dir_elem(H)` ground the key and the state the walk reads
+// @ignore take: domain-enumerator — `dir_elem(D)` grounds the key the walk reads
+.init walk = Take<Dir, Tip, Position>
+walk.start(D, [P, D]) :- tip(D, P).
+walk.init_taken(D, P) :- tip(D, _), plus(P, _).
+walk.init_untaken(D, Q) :- tip(D, _), lane_cell(_, _, Q), domain(Q), !plus(Q, _).   // free: in the domain, off the plus
+walk.conflict(D, Q, Q2) :-
+    tip(D, _), lane_cell(_, _, Q), center(C), relative(C, Q, V),
+    c4_elem(M), apply(M, V, V2), compose(C, V2, Q2).
+
+// The arm grows into the first of the turn toward `sense`, straight on, and
+// the other turn whose lane is free. A lane cell past the domain is neither
+// free nor wall, so an arm whose lanes reach past the domain ends there.
+walk.take(D, [P, H], N) :-
+    walk.taken(D, [P, H], P), dir_elem(D), domain(P), params.sense(Sn), turn(Sn, H, G1), sense_elem(Sn2), !params.sense(Sn2), turn(Sn2, H, G3),
+    neighbor(P, G1, N1), neighbor(P, H, N2), neighbor(P, G3, N3),
+    ( N = N1, G = G1
+    ; N = N2, G = H,
+      lane_cell(N1, G1, B1), ( walk.taken(D, [P, H], B1) ; walk.excluded(D, [P, H], B1) )
+    ; N = N3, G = G3,
+      lane_cell(N1, G1, B1), ( walk.taken(D, [P, H], B1) ; walk.excluded(D, [P, H], B1) ),
+      lane_cell(N2, H, B2), ( walk.taken(D, [P, H], B2) ; walk.excluded(D, [P, H], B2) )
+    ),
+    lane(N, G, Q2, Q3, Q4, Q5, Q6),
+    walk.untaken(D, [P, H], N), walk.untaken(D, [P, H], Q2), walk.untaken(D, [P, H], Q3),
+    walk.untaken(D, [P, H], Q4), walk.untaken(D, [P, H], Q5), walk.untaken(D, [P, H], Q6).
+walk.step(D, [P, H], [N, G]) :-
+    walk.take(D, [P, H], N), dir_elem(D), domain(P), dir_elem(H), dir_elem(G), neighbor(P, G, N).
+
+// A wall cell: a cell some arm's walk takes.
+.decl wall(p: Position)
+wall(P) :- in(P, _), walk.taken(_, _, P).
+
+out(P, Col) :- wall(P), plus(_, Col).
+out(P, Col) :- in(P, _), !wall(P), params.bg(Col), center(_).   // a plus was found
+
+.comp Determine {
+    // The color with the most cells over the inputs: the field.
+    .init field = Mode<Unit, Color, Cell>
+    field.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- field.mode($U(), Col).
+
+    .decl plus_color(c: Color)
+    plus_color(Col) :- ex_in(_, _, Col), !field.mode($U(), Col).
+}

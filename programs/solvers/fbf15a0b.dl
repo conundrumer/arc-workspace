@@ -1,0 +1,183 @@
+// fbf15a0b
+// @draft
+// @keywords: decompose crop markers
+// @scene background: every cell not otherwise named holds the background
+//  color, 8
+// @scene marker-pair: exactly two cells hold the marker color, 5; they lie on
+//  one edge line of the grid, on one row or one column, with 1 background
+//  cell between them, both in one half of the grid along that line
+// @scene even-extent: the grid's extent along the line the pair runs along is
+//  a multiple of the part count, 2
+// @rule halve-along-pair: the input is cut into the part count of equal parts
+//  along the axis the pair runs along (rows when the pair shares a column,
+//  columns when it shares a row), each part with the full extent across
+// @rule keep-marker-half: the output is the part holding the markers, copied
+//  cell for cell
+// @rule erase-markers: each marker cell becomes background in the output
+
+// where the part count comes from
+.type PartCount =
+    // @claim halve-along-pair
+    Stored {}
+    // @rule halve-along-pair: the part count is the number of marker cells;
+    //  undefined where the kept part does not hold every marker
+    // @witness marker-count: borderline concept
+    //     @relaxed marker-pair
+  | CountMarkers {}
+    // @rule halve-along-pair: the part count is the step between consecutive
+    //  marker cells along their line; undefined where the steps differ
+    // @witness marker-spacing: variant concept
+    //     @relaxed marker-pair
+  | MarkerSpacing {}
+
+// what the cut does with an extent the part count does not divide
+.type UnevenCut =
+    // @claim even-extent
+    Exact {}
+    // @scene even-extent: any extent; the kept part runs the extent divided
+    //  by the part count, rounded down, lines from the marker end; undefined
+    //  where the markers fall outside that part
+    // @witness odd-extent: borderline any
+    //     @relaxed even-extent
+  | FloorPart {}
+    // @scene even-extent: any extent; the kept part runs the extent divided
+    //  by the part count, rounded up, lines from the marker end; undefined
+    //  where the markers fall outside that part
+    // @witness odd-extent: borderline any
+  | CeilPart {}
+
+.type Choice = [pc: PartCount, uc: UnevenCut]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: borderline concept
+    .decl marker_color(c: Color) marker_color(5).
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(8).
+
+    // --- $Stored ---
+    .decl part_count(n: number) part_count(2).
+}
+
+.init params = Params
+
+.decl marker(p: Position)
+marker(P) :- in(P, C), params.marker_color(C).
+
+// The axis the marker pair runs along: the markers differ only along it.
+.decl pair_axis(a: Axis)
+pair_axis(A) :-
+    marker(P1), marker(P2), P1 != P2,
+    axis_elem(A), split(P1, A, _, X), split(P2, A, _, X).   // same line across A
+
+// The input cell each output cell copies.
+.decl copy(p_in: Position, p_out: Position, ch: Choice)
+
+// The number of parts the grid is cut into along the pair's axis.
+.decl part_count(n: number, pc: PartCount)
+
+// --- $Stored ---
+part_count(N, $Stored()) :- params.part_count(N).
+
+// --- $CountMarkers ---
+
+// @claim halve-along-pair
+.init marker_tally = Tally<Unit, Position>
+marker_tally.item($U(), P) :- marker(P).
+marker_tally.domain($U()).
+
+part_count(N, $CountMarkers()) :- marker_tally.tally($U(), N).
+
+// --- $MarkerSpacing ---
+
+// @claim halve-along-pair
+.init marker_ray = Ray<Unit>
+marker_ray.dir($U(), D) :- pair_axis(A), axis_of(D, A).
+marker_ray.mark($U(), P) :- marker(P).
+marker_ray.blocked($U(), P) :- marker(P).
+
+part_count(K, $MarkerSpacing()) :- marker_ray.stop($U(), _, _, K, _).   // next marker K steps on
+
+// --- $Exact ---
+
+// The part each cell falls in, and its place in that part.
+.decl part_cell(p: Position, p_outer: Position, p_inner: Position, pc: PartCount)
+part_cell(P, P_outer, P_inner, PC) :-
+    in(P, _), pair_axis(A), part_count(N, PC), divide_slab(P, A, N, 0, P_outer, P_inner).
+
+copy(P, P_inner, [PC, $Exact()]) :-
+    part_cell(P, P_outer, P_inner, PC), part_cell(M, P_outer, _, PC), marker(M).
+
+// --- $FloorPart, $CeilPart ---
+
+// The part at end d of the pair's axis, under one case.
+.type EndPart = [ch: Choice, d: Dir]
+
+// The cells of the part at end D: those fewer lines from D than the part runs.
+.decl end_part(p: Position, e: EndPart)
+end_part(P, [[PC, $FloorPart()], D]) :-
+    in(P, _), pair_axis(A), axis_of(D, A), part_count(N, PC),
+    axis_dim(P, A, Ext), stride(Ext, N, 0, K, _),      // K: whole rounds of N lines
+    dist(P, D, T), T < K.
+end_part(P, [[PC, $CeilPart()], D]) :-
+    in(P, _), pair_axis(A), axis_of(D, A), part_count(N, PC),
+    in(Q, _), opposite(D, D_far), dist(Q, D_far, 0), dist(Q, D, Far),
+    stride(Far, N, 0, K, _),                            // K: the round the far line falls in
+    dist(P, D, T), T <= K.
+
+// The end part holding a marker.
+.decl kept(p: Position, e: EndPart)
+kept(P, E) :- end_part(P, E), end_part(M, E), marker(M).
+
+// @claim keep-marker-half
+.init kept_box = Bbox<EndPart>
+kept_box.cell(E, P) :- kept(P, E).
+
+copy(P, P_inner, Ch) :- kept(P, [Ch, D]), kept_box.box([Ch, D], B), crop(P, B, P_inner).
+
+// --- shared ---
+
+out(P_out, Col, Ch) :-
+    copy(P, P_out, Ch), in(P, C),
+    ( marker(P), params.background(Col)   // a marker is erased
+    ; !marker(P), Col = C ).              // every other cell is copied
+
+.comp Determine {
+    // The commonest color of each input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that some input's commonest color is not.
+    .decl not_common(c: Color)
+    not_common(Col) :- common.mode(_, Col), ex_in(E, _, _), !common.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- common.mode(_, Col), !not_common(Col).
+
+    // The rarest color of each input.
+    .init rare = ArgExtremes<Example, Color>
+    rare.cand(E, Col, N) :- common.tally(E, Col, N).
+
+    // A color that some input's rarest color is not.
+    .decl not_rare(c: Color)
+    not_rare(Col) :- rare.low(_, Col, _), ex_in(E, _, _), !rare.low(E, Col, _).
+
+    .decl marker_color(c: Color)
+    marker_color(Col) :- rare.low(_, Col, _), !not_rare(Col).
+
+    // The parts an output's extent cuts its input's extent into, on an axis
+    // the output shortens.
+    .decl cut(e: Example, n: number)
+    cut(E, N) :-
+        ex_in(E, P, _), ex_out(E, Q, _), axis_elem(A),
+        axis_dim(P, A, Ext), axis_dim(Q, A, K), K < Ext,
+        sub_extent(P, A, N), tile_size(Ext, N, 0, K).
+
+    // A part count that some output contradicts.
+    .decl uncut(n: number)
+    uncut(N) :- cut(_, N), ex_out(E, _, _), !cut(E, N).
+
+    .decl part_count(n: number)
+    part_count(N) :- cut(_, N), !uncut(N).
+}

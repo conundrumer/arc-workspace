@@ -1,0 +1,392 @@
+// ddf7fa4f
+// @draft
+// @keywords: markers objects rank cast
+// @scene marker-line: the line of cells at the params.marker_edge edge (top)
+//  holds the markers, single cells of colors other than params.bg and
+//  params.block_color, with params.bg between them; the line next to it holds
+//  only params.bg.
+// @scene blocks: the rest of the grid holds solid rectangles of
+//  params.block_color (5) on params.bg (0), each one 4-connected component;
+//  two blocks can touch at a corner.
+// @scene one-marker-per-block: the span of each block along the marker line
+//  holds exactly one marker, and each marker stands over exactly one block.
+// @rule recolor-by-marker: each block cell takes the color of the marker whose
+//  cell on the marker line falls in the block's span along that line.
+// @rule keep-rest: every other cell keeps its input color.
+
+// which blocks a marker reaches
+.type Hit =
+    // @claim recolor-by-marker
+    AllHit {}
+    // @rule recolor-by-marker: each marker paints the first block its column
+    //  meets going away from the marker line; undefined where two markers'
+    //  columns meet one block.
+    // @witness shadowed-marker: borderline $FirstHit
+    //     @relaxed one-marker-per-block
+  | FirstHit {}
+
+// what a block that no marker reaches takes
+.type Unmarked =
+    // @claim recolor-by-marker
+    NoFill {}
+    // @rule keep-unmarked: a block that no marker reaches keeps its color.
+    // @witness marker-beside-block: borderline $NearestMarker
+    //     @relaxed one-marker-per-block
+  | KeepUnmarked {}
+    // @rule nearest-marker: a block that no marker reaches takes the color of
+    //  the marker nearest its span along the marker line; undefined where two
+    //  markers tie.
+    // @witness marker-beside-block: borderline $NearestMarker
+  | NearestMarker {}
+
+// how a block is paired with a marker
+.type Match =
+    // @claim recolor-by-marker
+    Span {r: Hit, u: Unmarked}
+    // @rule recolor-by-marker: the blocks, ordered by their span's edge on
+    //  either side along the marker line, pair one to one with the markers
+    //  ordered from that side; undefined where the counts differ, two blocks
+    //  or two markers tie, or the two sides give different outputs.
+    // @witness two-blocks-one-marker: borderline concept
+    //     @relaxed one-marker-per-block
+  | Rank {}
+
+// which cells are markers
+.type Source =
+    // @claim marker-line
+    MarkerLine {}
+    // @scene marker-line: every cell of a color other than params.bg and the
+    //  block color is a marker, wherever it lies, at its place along the
+    //  marker line's axis; undefined where a block's span holds two of them.
+    // @witness marker-in-field: borderline $MarkersAnywhere
+    //     @relaxed marker-line
+    //     @relaxed one-marker-per-block
+  | MarkersAnywhere {}
+
+// which cells form the blocks
+.type Blocks =
+    // @claim blocks
+    StoredBlockColor {}
+    // @scene blocks: the block color is the commonest color other than
+    //  params.bg; undefined where two colors tie.
+    // @witness block-color-permuted: variant $AnyBlockColor
+    //     @relaxed blocks
+  | BlockColorFromField {}
+    // @scene blocks: the blocks are the one-color 4-connected components of
+    //  any color other than params.bg off the marker line; with
+    //  $MarkersAnywhere, the single-cell components are markers, not blocks.
+    // @witness block-color-permuted: variant $AnyBlockColor
+    // @witness two-block-colors: borderline $AnyBlockColor
+    //     @relaxed blocks
+  | AnyBlockColor {}
+
+// which edge holds the markers
+.type Edge =
+    // @claim marker-line
+    StoredEdge {}
+    // @scene marker-line: the marker edge is the one edge whose line holds a
+    //  cell of a color other than params.bg and the block color and whose
+    //  next line holds only params.bg; undefined where no edge or more than
+    //  one does.
+    // @witness markers-on-right-edge: variant $EdgeFromMarkers
+    //     @relaxed marker-line
+  | EdgeFromMarkers {}
+
+.type Choice = [m: Match, s: Source, k: Blocks, e: Edge]
+
+// the Choice fields other than Match: the parse that the Match cases share
+.type Setup = [s: Source, k: Blocks, e: Edge]
+.type BlockKey = [st: Setup, c: Color]
+.type BlockRef = [st: Setup, id: Ident]
+.type SideKey = [st: Setup, d: Dir]
+.type BlockSide = [st: Setup, id: Ident, d: Dir]
+.type ExColor = [e: Example, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed marker-line
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredBlockColor ---
+    .decl block_color(c: Color) block_color(5).
+
+    // --- $StoredEdge ---
+    .decl marker_edge(d: Dir) marker_edge(DIR_T).
+}
+
+.init params = Params
+
+.decl hit_choice(r: Hit)
+hit_choice($AllHit()). hit_choice($FirstHit()).
+
+.decl unmarked_choice(u: Unmarked)
+unmarked_choice($NoFill()). unmarked_choice($KeepUnmarked()). unmarked_choice($NearestMarker()).
+
+.decl match_choice(m: Match)
+// $FirstHit with $NoFill is subsumed by $FirstHit with $KeepUnmarked, and $AllHit
+// with $NearestMarker by $FirstHit with $NearestMarker.
+match_choice($Span($AllHit(), U)) :- unmarked_choice(U), U != $NearestMarker().
+match_choice($Span($FirstHit(), U)) :- unmarked_choice(U), U != $NoFill().
+match_choice($Rank()).
+
+.decl source_choice(s: Source)
+source_choice($MarkerLine()). source_choice($MarkersAnywhere()).
+
+.decl blocks_choice(k: Blocks)
+blocks_choice($StoredBlockColor()). blocks_choice($BlockColorFromField()). blocks_choice($AnyBlockColor()).
+
+.decl edge_choice(e: Edge)
+edge_choice($StoredEdge()). edge_choice($EdgeFromMarkers()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, S, K, E]) :- match_choice(M), source_choice(S), blocks_choice(K), edge_choice(E).
+
+// --- $StoredBlockColor, $BlockColorFromField ---
+
+.decl block_color(k: Blocks, c: Color)
+block_color($StoredBlockColor(), C) :- params.block_color(C).
+
+// --- $BlockColorFromField ---
+
+// @claim blocks
+.init field_count = Tally<Color, Position>
+field_count.item(C, P) :- in(P, C), !params.bg(C).
+field_count.domain(C) :- in(_, C), !params.bg(C).
+
+// @claim blocks
+.init commonest = ArgExtremes<Unit, Color>
+commonest.cand($U(), C, N) :- field_count.tally(C, N).
+
+.decl commonest_tie()
+commonest_tie() :- commonest.high($U(), C1, _), commonest.high($U(), C2, _), C1 != C2.
+
+block_color($BlockColorFromField(), C) :- commonest.high($U(), C, _), !commonest_tie().
+
+// --- shared parse ---
+
+// The block kinds whose block color is settled.
+.decl blocks_ok(k: Blocks)
+blocks_ok(K) :- block_color(K, _).
+blocks_ok($AnyBlockColor()).
+
+// Cells of a color other than the background and the block color.
+.decl other_ink(k: Blocks, p: Position)
+other_ink(K, P) :- in(P, C), !params.bg(C), blocks_ok(K), !block_color(K, C).
+
+.decl marker_edge(k: Blocks, e: Edge, d: Dir)
+
+// --- $StoredEdge ---
+marker_edge(K, $StoredEdge(), D) :- blocks_ok(K), params.marker_edge(D).
+
+// --- $EdgeFromMarkers ---
+
+.decl edge_has_ink(k: Blocks, d: Dir)
+edge_has_ink(K, D) :- other_ink(K, P), dir_elem(D), dist(P, D, 0).
+
+// The line next to edge d holds a non-background cell.
+.decl next_line_ink(d: Dir)
+next_line_ink(D) :-
+    in(P, _), dir_elem(D), dist(P, D, 0), opposite(D, D2), neighbor(P, D2, Q),
+    in(Q, C), !params.bg(C).
+
+.decl edge_cand(k: Blocks, d: Dir)
+edge_cand(K, D) :- edge_has_ink(K, D), !next_line_ink(D).
+
+.decl edge_multi(k: Blocks)
+edge_multi(K) :- edge_cand(K, D1), edge_cand(K, D2), D1 != D2.
+
+marker_edge(K, $EdgeFromMarkers(), D) :- edge_cand(K, D), !edge_multi(K).
+
+// --- shared parse ---
+
+.decl setup(st: Setup)
+setup([S, K, E]) :- source_choice(S), marker_edge(K, E, _).
+
+.decl kin_neighbor(p: Position)
+kin_neighbor(P) :- in(P, C), dir_elem(D), neighbor(P, D, Q), in(Q, C).
+
+// A non-background cell with no 4-neighbor of its color: a single-cell component.
+.decl lone(p: Position)
+lone(P) :- in(P, C), !params.bg(C), !kin_neighbor(P).
+
+.decl marker(st: Setup, p: Position, c: Color)
+
+// --- $MarkerLine ---
+marker([$MarkerLine(), K, E], P, C) :-
+    marker_edge(K, E, D), other_ink(K, P), dist(P, D, 0), in(P, C).
+
+// --- $MarkersAnywhere ---
+marker([$MarkersAnywhere(), K, E], P, C) :-
+    marker_edge(K, E, _), K != $AnyBlockColor(), other_ink(K, P), in(P, C).
+
+// --- $MarkersAnywhere & $AnyBlockColor ---
+marker([$MarkersAnywhere(), $AnyBlockColor(), E], P, C) :-
+    marker_edge($AnyBlockColor(), E, D), other_ink($AnyBlockColor(), P), in(P, C),
+    ( dist(P, D, 0)               // on the marker line
+    ; !dist(P, D, 0), lone(P)     // a single cell off it
+    ).
+
+// --- shared parse ---
+
+.decl block_node(bk: BlockKey, p: Position)
+block_node([[S, K, E], C], P) :- setup([S, K, E]), block_color(K, C), in(P, C).
+
+// --- $AnyBlockColor ---
+.decl field_cell(e: Edge, p: Position, c: Color)
+field_cell(E, P, C) :-
+    marker_edge($AnyBlockColor(), E, D), in(P, C), !params.bg(C), !dist(P, D, 0).
+
+// --- $MarkerLine & $AnyBlockColor ---
+block_node([[$MarkerLine(), $AnyBlockColor(), E], C], P) :- field_cell(E, P, C).
+
+// --- $MarkersAnywhere & $AnyBlockColor ---
+block_node([[$MarkersAnywhere(), $AnyBlockColor(), E], C], P) :- field_cell(E, P, C), !lone(P).
+
+// --- shared parse ---
+
+// @claim blocks
+.init blocks = Components<BlockKey>
+blocks.node(Bk, P) :- block_node(Bk, P).
+
+.decl block(st: Setup, id: Ident, p: Position)
+block(St, Id, P) :- blocks.label([St, _], P, Id).
+
+// The axis of the marker line's edge, whose across part is a place along the line.
+.decl line_axis(st: Setup, a: Axis)
+line_axis([S, K, E], A) :- setup([S, K, E]), marker_edge(K, E, D), axis_of(D, A).
+
+.decl reach_hit(r: Hit, st: Setup, id: Ident, p_marker: Position, c: Color)
+
+// --- $AllHit ---
+reach_hit($AllHit(), St, Id, P_m, C) :-
+    block(St, Id, P), line_axis(St, A), split(P, A, _, Q),
+    marker(St, P_m, C), split(P_m, A, _, Q).
+
+// --- $FirstHit ---
+
+// @claim recolor-by-marker
+.init first_hit = Ray<Setup>
+first_hit.dir([S, K, E], D2) :-
+    setup([S, K, E]), marker_edge(K, E, D), opposite(D, D2).
+first_hit.mark(St, P) :- marker(St, P, _).
+first_hit.blocked(St, P) :- block(St, _, P).
+
+reach_hit($FirstHit(), St, Id, P_m, C) :-
+    first_hit.stop(St, P, _, _, P_m), block(St, Id, P), marker(St, P_m, C).
+
+// --- $Span ---
+
+.decl multi_hit(r: Hit, st: Setup, id: Ident)
+multi_hit(R, St, Id) :- reach_hit(R, St, Id, P1, _), reach_hit(R, St, Id, P2, _), P1 != P2.
+
+.decl unreached(r: Hit, st: Setup, id: Ident)
+unreached(R, St, Id) :- hit_choice(R), block(St, Id, _), !reach_hit(R, St, Id, _, _).
+
+.decl fill(ch: Choice, p: Position, c: Color)
+fill([$Span(R, U), S, K, E], P, C) :-
+    unmarked_choice(U), reach_hit(R, [S, K, E], Id, _, C), !multi_hit(R, [S, K, E], Id),
+    block([S, K, E], Id, P).
+
+// --- $KeepUnmarked ---
+fill([$Span(R, $KeepUnmarked()), S, K, E], P, C) :-
+    unreached(R, [S, K, E], Id), block([S, K, E], Id, P), in(P, C).
+
+// --- $NearestMarker ---
+
+// K: the cells along the marker line between the marker's place and a place in
+// the block's span.
+.decl gap(st: Setup, id: Ident, p_marker: Position, k: number)
+gap(St, Id, P_m, K) :-
+    block(St, Id, P), line_axis(St, A), split(P, A, _, Q),
+    marker(St, P_m, _), split(P_m, A, _, Q_m),
+    relative(Q_m, Q, V), axis_of(D, A), perp_dir(D, D2), dist(V, D2, K), K >= 0.
+
+// @claim nearest-marker
+.init nearest = ArgExtremes<BlockRef, Position>
+nearest.cand([St, Id], P_m, K) :- gap(St, Id, P_m, K).
+
+.decl nearest_tie(st: Setup, id: Ident)
+nearest_tie(St, Id) :-
+    nearest.low([St, Id], P1, _), nearest.low([St, Id], P2, _), P1 != P2.
+
+fill([$Span(R, $NearestMarker()), S, K, E], P, C) :-
+    unreached(R, [S, K, E], Id), !nearest_tie([S, K, E], Id),
+    nearest.low([[S, K, E], Id], P_m, _), marker([S, K, E], P_m, C),
+    block([S, K, E], Id, P).
+
+// --- $Rank ---
+
+// The two sides along the marker line that the ranks run from.
+.decl rank_side(st: Setup, d: Dir)
+rank_side([S, K, E], D2) :- setup([S, K, E]), marker_edge(K, E, D), perp_dir(D, D2).
+
+// @claim recolor-by-marker
+.init span_edge = Extremes<BlockSide>
+span_edge.cand([St, Id, D], K) :- block(St, Id, P), rank_side(St, D), dist(P, D, K).
+
+// @claim recolor-by-marker
+.init block_rank = Order<SideKey, Ident>
+block_rank.elem([St, D], Id) :- span_edge.low([St, Id, D], _).
+block_rank.score([St, D], Id, K) :- span_edge.low([St, Id, D], K).
+
+// @claim recolor-by-marker
+.init marker_rank = Order<SideKey, Position>
+marker_rank.elem([St, D], P) :- marker(St, P, _), rank_side(St, D).
+marker_rank.score([St, D], P, K) :- marker(St, P, _), rank_side(St, D), dist(P, D, K).
+
+.decl block_ranked(st: Setup, d: Dir, n: number)
+block_ranked(St, D, N) :- block_rank.rank([St, D], _, N).
+
+.decl marker_ranked(st: Setup, d: Dir, n: number)
+marker_ranked(St, D, N) :- marker_rank.rank([St, D], _, N).
+
+// The ranks do not pair blocks and markers one to one: $Rank is undefined.
+broken([$Rank(), S, K, E]) :-
+    block_rank.rank([[S, K, E], D], Id1, N), block_rank.rank([[S, K, E], D], Id2, N), Id1 != Id2.
+broken([$Rank(), S, K, E]) :-
+    marker_rank.rank([[S, K, E], D], P1, N), marker_rank.rank([[S, K, E], D], P2, N), P1 != P2.
+broken([$Rank(), S, K, E]) :- block_ranked([S, K, E], D, N), !marker_ranked([S, K, E], D, N).
+broken([$Rank(), S, K, E]) :- marker_ranked([S, K, E], D, N), !block_ranked([S, K, E], D, N).
+
+fill([$Rank(), S, K, E], P, C) :-
+    block_rank.rank([[S, K, E], D], Id, N), marker_rank.rank([[S, K, E], D], P_m, N),
+    marker([S, K, E], P_m, C), block([S, K, E], Id, P).
+
+// --- output ---
+
+// The cases undefined on the input.
+.decl broken(ch: Choice)
+broken([M, S, K, E]) :- impl_choice([M, S, K, E]), !setup([S, K, E]).
+
+out(P, C, Ch) :- fill(Ch, P, C), impl_choice(Ch).
+out(P, C, [M, S, K, E]) :-
+    impl_choice([M, S, K, E]), !broken([M, S, K, E]),
+    in(P, C), !block([S, K, E], _, P).
+
+.comp Determine {
+    // The commonest color of every input that has an output.
+    .init color_count = Tally<ExColor, Position>
+    color_count.item([E, C], P) :- ex_in(E, P, C), ex_out(E, _, _).
+    color_count.domain([E, C]) :- ex_in(E, _, C), ex_out(E, _, _).
+
+    .init commonest = ArgExtremes<Example, Color>
+    commonest.cand(E, C, N) :- color_count.tally([E, C], N).
+
+    .decl not_commonest(c: Color)
+    not_commonest(C) :- commonest.high(_, C, _), commonest.cand(E, _, _), !commonest.high(E, C, _).
+
+    .decl bg(c: Color)
+    bg(C) :- commonest.high(_, C, _), !not_commonest(C).
+
+    // The input colors of the cells the output changes.
+    .decl changed(c: Color)
+    changed(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    .decl mixed()
+    mixed() :- changed(C1), changed(C2), C1 != C2.
+
+    .decl block_color(c: Color)
+    block_color(C) :- changed(C), !mixed().
+}

@@ -1,0 +1,235 @@
+// d255d7a7
+// @draft
+// @keywords: objects move bbox
+// @scene cup: each cup is a params.frame (0) bracket of 3 × 3 cells that is
+//  open on one side, and its open side lies on a grid edge
+// @scene handle: a straight params.frame line runs from the middle of each
+//  cup's closed side, away from its opening, to the opposite grid edge
+// @rule slide-to-handle-end: each cup, with the cells inside its bracket,
+//  moves along its handle until its closed side lies on the handle's last
+//  cell
+// @rule clear-vacated: the handle and the cup's old cells become
+//  params.background
+// @rule keep-rest: every other cell keeps its input color
+
+// which cells travel with the cup
+.type ContentsReach =
+    // @claim slide-to-handle-end
+    BracketBox {}
+    // @rule slide-to-handle-end: the slab from the grid edge at the cup's
+    //  open side to its closed side, across the cup's width, travels
+    // @witness inset-cup: borderline concept
+    //     @relaxed cup
+  | EdgeSlab {}
+
+// where the cup stops
+.type Landing =
+    // @claim slide-to-handle-end
+    HandleEnd {}
+    // @rule slide-to-handle-end: the cup stops with its closed side on the
+    //  grid edge the handle points to
+    // @witness short-handle: variant concept
+    //     @relaxed handle
+  | EdgeLanding {}
+
+// what shows where a landed cup covers a cell that keeps its color
+.type Overlap =
+    // @claim keep-rest
+    CupOnTop {}
+    // @rule keep-rest: a kept cell other than params.background shows over
+    //  the landed cup
+    // @witness mark-in-landing: variant concept
+  | MarksOnTop {}
+
+// how far a cup reaches along its handle
+.type CupExtent =
+    // @claim cup
+    Spanning {}
+    // @scene cup: the params.cup_width lines at the open side of a
+    //  params.frame component are the cup and the rest is handle; undefined
+    //  where a component is not params.cup_width across
+    // @witness deep-cup: variant concept
+    //     @relaxed cup
+  | StoredWidth {}
+
+.type Choice = [r: ContentsReach, l: Landing, o: Overlap, e: CupExtent]
+
+// One cup under one reading of its extent.
+.type Cup = [id: Ident, e: CupExtent]
+
+// A frame component of the input, or of an example's grid.
+.type UnitPiece = [k: Unit, id: Ident]
+.type ExamplePiece = [k: Example, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl background(c: Color) background(7).
+    // the color of the cups and the handles
+    .decl frame(c: Color) frame(0).
+
+    // --- $StoredWidth ---
+    // @derive TileCount: variant concept
+    //     @relaxed cup
+    .decl cup_width(n: number) cup_width(3).
+}
+
+.init params = Params
+
+.decl contents_reach_choice(r: ContentsReach)
+contents_reach_choice($BracketBox()). contents_reach_choice($EdgeSlab()).
+
+.decl landing_choice(l: Landing)
+landing_choice($HandleEnd()). landing_choice($EdgeLanding()).
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($CupOnTop()). overlap_choice($MarksOnTop()).
+
+.decl cup_extent_choice(e: CupExtent)
+cup_extent_choice($Spanning()). cup_extent_choice($StoredWidth()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, L, O, E]) :-
+    contents_reach_choice(R), landing_choice(L), overlap_choice(O), cup_extent_choice(E).
+
+.comp Parse<Key, Piece> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // Each frame component is one cup with its handle.
+    // @claim cup handle
+    .init piece = Components<Key>
+    piece.node(K, P) :- cell(K, P, Col), params.frame(Col).
+
+    // @claim cup handle
+    .init piece_box = Bbox<Piece>
+    piece_box.cell([K, Id], P) :- piece.label(K, P, Id).
+}
+
+.init parse = Parse<Unit, UnitPiece>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The cells of each cup's bracket.
+.decl cup_cell(cup: Cup, p: Position)
+
+// The box of the cup's bracket.
+// @claim cup
+.init cup_box = Bbox<Cup>
+cup_box.cell(Cup, P) :- cup_cell(Cup, P).
+
+// The side the handle leaves the cup toward, and the handle's length.
+.decl handle(cup: Cup, d: Dir, k: number)
+handle([Id, E], D, K) :-
+    parse.piece_box.box([$U(), Id], B), cup_box.box([Id, E], B_cup),
+    relative(B, B_cup, B_rel),                          // the cup inside its piece's box
+    dir_elem(D), dist(B_rel, D, K), !dist(B_rel, D, 0).
+
+// How far each cup slides.
+.decl travel(cup: Cup, d: Dir, k: number, l: Landing)
+
+// The cells that travel with each cup.
+.decl carried(cup: Cup, p: Position, r: ContentsReach)
+
+// --- $Spanning ---
+// A piece cell whose line across the handle holds piece cells on both sides
+// of the piece's box.
+cup_cell([Id, $Spanning()], P) :-
+    parse.piece.label($U(), P, Id), parse.piece_box.box([$U(), Id], B),
+    axis_of(D, A), opposite(D, D2),
+    parse.piece.label($U(), Q, Id), box_edge(Q, B, D), same_line(A, P, Q),
+    parse.piece.label($U(), Q2, Id), box_edge(Q2, B, D2), same_line(A, P, Q2).
+
+// --- $StoredWidth ---
+// A piece cell among the cup_width lines at the piece's open side, the side
+// whose two corners both hold piece cells.
+cup_cell([Id, $StoredWidth()], P) :-
+    parse.piece.label($U(), P, Id), parse.piece_box.box([$U(), Id], B),
+    dir_of(C, A, D), dir_of(C2, A, D), C != C2,
+    parse.piece.label($U(), Q, Id), box_corner(Q, B, C),
+    parse.piece.label($U(), Q2, Id), box_corner(Q2, B, C2),
+    params.cup_width(W), perp(A, A2), box_extent(B, P, A2, W),   // the piece is cup_width across
+    crop(P, B, P_rel), dist(P_rel, D, K), K < W.                 // within cup_width of the open side
+
+// --- $HandleEnd ---
+travel(Cup, D, K, $HandleEnd()) :- handle(Cup, D, K).
+
+// --- $EdgeLanding ---
+travel(Cup, D, K, $EdgeLanding()) :-
+    handle(Cup, D, _), cup_box.box(Cup, B_cup), dist(B_cup, D, K).
+
+// --- $BracketBox ---
+carried(Cup, P, $BracketBox()) :-
+    handle(Cup, _, _), cup_box.box(Cup, B_cup), in(P, _), crop(P, B_cup, _).
+
+// --- $EdgeSlab ---
+carried(Cup, P, $EdgeSlab()) :-
+    handle(Cup, D, _), axis_of(D, A),
+    cup_box.box(Cup, B_cup), in(Q, _), crop(Q, B_cup, _),
+    in(P, _), same_line(A, P, Q), !nearer(D, P, Q).     // not past the closed side
+
+// --- concept, $EdgeSlab, $EdgeLanding, $MarksOnTop, $StoredWidth ---
+// A carried cell's color at its landing place.
+.decl landed(p: Position, col: Color, ch: Choice)
+landed(Q, Col, [R, L, O, E]) :-
+    impl_choice([R, L, O, E]),
+    carried([Id, E], P, R), in(P, Col),
+    travel([Id, E], D, K, L), jump(P, D, K, Q).
+
+// The cells a cup or its handle leaves.
+.decl vacated(p: Position, ch: Choice)
+vacated(P, [R, L, O, E]) :- impl_choice([R, L, O, E]), carried([_, E], P, R).
+vacated(P, [R, L, O, E]) :-
+    impl_choice([R, L, O, E]), parse.piece.label($U(), P, Id), handle([Id, E], _, _).
+
+// A cell no cup touches; a piece that does not move keeps none of its cells.
+.decl kept(p: Position, col: Color, ch: Choice)
+kept(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !parse.piece.label($U(), P, _), !vacated(P, Ch).
+
+out(P, Col, Ch) :- vacated(P, Ch), !landed(P, _, Ch), params.background(Col).
+out(P, Col, Ch) :- kept(P, Col, Ch), !landed(P, _, Ch).
+
+// --- $CupOnTop ---
+out(P, Col, [R, L, $CupOnTop(), E]) :- landed(P, Col, [R, L, $CupOnTop(), E]).
+
+// --- $MarksOnTop ---
+// A kept cell other than background.
+.decl kept_ink(p: Position, ch: Choice)
+kept_ink(P, Ch) :- kept(P, Col, Ch), !params.background(Col).
+
+out(P, Col, [R, L, $MarksOnTop(), E]) :-
+    landed(P, Col, [R, L, $MarksOnTop(), E]), !kept_ink(P, [R, L, $MarksOnTop(), E]).
+out(P, Col, [R, L, $MarksOnTop(), E]) :-
+    kept(P, Col, [R, L, $MarksOnTop(), E]), landed(P, _, [R, L, $MarksOnTop(), E]),
+    kept_ink(P, [R, L, $MarksOnTop(), E]).
+
+.comp Determine {
+    .init parse = Parse<Example, ExamplePiece>
+    parse.cell(E, P, Col) :- ex_out(E, P, Col).
+
+    // The commonest color of each output.
+    .init out_mode = Mode<Example, Color, Position>
+    out_mode.item(E, Col, P) :- ex_out(E, P, Col).
+
+    // A color that some output's commonest color is and another's is not.
+    .decl background_defect(c: Color)
+    background_defect(Col) :- out_mode.mode(_, Col), ex_out(E, _, _), !out_mode.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- out_mode.mode(_, Col), !background_defect(Col).
+
+    // The commonest color of each train input other than background.
+    .init ink_mode = Mode<Example, Color, Position>
+    ink_mode.item(E, Col, P) :- ex_out(E, _, _), ex_in(E, P, Col), !params.background(Col).
+
+    .decl frame_defect(c: Color)
+    frame_defect(Col) :- ink_mode.mode(_, Col), ex_out(E, _, _), !ink_mode.mode(E, Col).
+
+    .decl frame(c: Color)
+    frame(Col) :- ink_mode.mode(_, Col), !frame_defect(Col).
+
+    // The extent of each frame component of the outputs: a landed cup.
+    .decl cup_width(n: number)
+    cup_width(W) :-
+        parse.piece_box.box([E, Id], B), parse.piece.label(E, P, Id),
+        axis_elem(A), box_extent(B, P, A, W).
+}

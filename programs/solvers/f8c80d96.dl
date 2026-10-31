@@ -1,0 +1,198 @@
+// f8c80d96
+// @draft
+// @keywords: objects rings
+// @scene background-field: every cell that is not on an outline holds params.bg (0).
+// @scene one-line-color: every outline cell holds the one other color of the input, the line color.
+// @scene nested-outlines: the line cells are the visible cells of two or more rectangle outlines,
+//  1 cell thick, each of which reaches past the grid edge on one or more sides.
+// @scene uniform-step: each outline is the next inner one moved outward by one step on every side,
+//  the same step for every two consecutive outlines.
+// @rule grow-outward: the output holds the input's outlines and every further outline that the
+//  step gives outward from the outermost one, drawn in the line color where it falls in the grid,
+//  up to the first outline that falls wholly outside the grid.
+// @rule fill-rest: every other output cell holds params.fill_color (5).
+
+// which way the outlines grow
+.type Growth =
+    // @claim grow-outward
+    Outward {}
+    // @rule grow-inward: also draws each outline the step gives inward from the innermost one,
+    //  until the next one falls outside the grid or turns inside out. Undefined where the concept is.
+    // @witness missing-inner-outline: variant $GrowInward
+  | GrowInward {}
+
+// how many steps the outlines share
+.type Step =
+    // @claim uniform-step
+    Uniform {}
+    // @scene uniform-step: one step per axis, each read from the gaps on that axis. Undefined
+    //  where the two sides of one axis step differently.
+    // @witness unequal-axis-steps: variant $PerAxisStep
+    //     @relaxed uniform-step
+    // @witness inner-side-unobserved: variant $PerAxisStep
+    //     @relaxed uniform-step
+  | PerAxisStep {}
+    // @scene uniform-step: one step per side, each read from the gaps on that side. Undefined
+    //  where one side's gaps differ between consecutive outlines.
+    // @witness unequal-side-steps: borderline $PerSideStep
+    //     @relaxed uniform-step
+  | PerSideStep {}
+
+.type Choice = [g: Growth, s: Step]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl bg(c: Color) bg(0).
+    .decl fill_color(c: Color) fill_color(5).
+}
+
+.init params = Params
+
+.decl growth_choice(g: Growth)
+growth_choice($Outward()). growth_choice($GrowInward()).
+
+.decl step_choice(s: Step)
+step_choice($Uniform()). step_choice($PerAxisStep()). step_choice($PerSideStep()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Outward(), $Uniform()]). impl_choice([$Outward(), $PerSideStep()]).
+impl_choice([$GrowInward(), S]) :- step_choice(S), S != $Uniform().
+
+// The line color: the input's one color other than the background.
+// @claim one-line-color
+.init line = Unanimous<Unit, Color>
+line.item($U(), Col) :- in(_, Col), !params.bg(Col).
+
+.decl line_cell(p: Position)
+line_cell(P) :- in(P, Col), line.value($U(), Col).
+
+// Each outline is one component of line cells.
+// @claim nested-outlines
+.init outline = Components<Unit>
+outline.node($U(), P) :- line_cell(P).
+
+// The part of each outline that lies in the grid.
+// @claim nested-outlines
+.init visible = Bbox<Ident>
+visible.cell(Id, P) :- outline.label($U(), P, Id).
+
+// A side of an outline's visible box that some non-outline cell lies on: the outline runs on
+// past the grid edge there.
+.decl open_side(id: Ident, d: Dir)
+open_side(Id, D) :-
+    visible.box(Id, B), dir_elem(D),
+    in(P, _), box_edge(P, B, D), !outline.label($U(), P, Id).
+
+// A side of the outline that lies in the grid.
+.decl side(id: Ident, d: Dir)
+side(Id, D) :- visible.box(Id, _), dir_elem(D), !open_side(Id, D).
+
+// Outline Id2 encloses outline Id.
+.decl encloses(id2: Ident, id: Ident)
+encloses(Id2, Id) :- visible.box(Id, B), visible.box(Id2, B2), Id != Id2, inside(B, B2).
+
+// Some outline lies between Id and Id2.
+.decl enclosed_between(id: Ident, id2: Ident)
+enclosed_between(Id, Id2) :- encloses(Id2, Id3), encloses(Id3, Id).
+
+.decl outermost(id: Ident)
+outermost(Id) :- visible.box(Id, _), !encloses(_, Id).
+
+.decl innermost(id: Ident)
+innermost(Id) :- visible.box(Id, _), !encloses(Id, _).
+
+// The gap S on side D from an outline to the next one out, where that one's side D lies in
+// the grid.
+.decl gap(d: Dir, s: number)
+gap(D, S) :-
+    encloses(Id2, Id), !enclosed_between(Id, Id2), side(Id2, D),   // consecutive outlines
+    visible.box(Id, B), visible.box(Id2, B2), relative(B2, B, V), dist(V, D, S).
+
+// The step each case moves side D by.
+.decl step(ch: Choice, d: Dir, s: number)
+
+// Some side the drawing grows from has no step.
+.decl unstepped(ch: Choice)
+unstepped(Ch) :- impl_choice(Ch), outermost(Id), side(Id, D), !step(Ch, D, _).
+
+// The case is defined: some two outlines are nested, and every side it grows from has a step.
+.decl ready(ch: Choice)
+ready(Ch) :- impl_choice(Ch), gap(_, _), !unstepped(Ch).
+
+// Cell P lies at period N, index K, of the steps outward from the outermost outline's side D.
+.decl outward(ch: Choice, p: Position, d: Dir, n: number, k: number)
+outward(Ch, P, D, N, K) :-
+    outermost(Id), visible.box(Id, B), side(Id, D), step(Ch, D, S),
+    in(P, _), relative(P, B, V), dist(V, D, M),                  // M cells outside side D
+    stride(M, S, 0, N, K).
+
+// Cell P lies outside the outline N steps outward.
+.decl outward_past(ch: Choice, p: Position, n: number)
+outward_past(Ch, P, N) :-
+    outward(Ch, P, _, N, _), outward(Ch, P, _, N2, K2),
+    ( N2 > N ; N2 = N, K2 > 0 ).
+
+.decl drawn(ch: Choice, p: Position)
+drawn(Ch, P) :- outward(Ch, P, _, N, 0), !outward_past(Ch, P, N).
+
+out(P, Col, Ch) :- ready(Ch), line.value($U(), Col), ( line_cell(P) ; drawn(Ch, P) ).
+out(P, Col, Ch) :- ready(Ch), in(P, _), !line_cell(P), !drawn(Ch, P), params.fill_color(Col).
+
+// --- $GrowInward ---
+
+// Cell P lies at period N, index K, of the steps inward from the innermost outline's side D.
+.decl inward(ch: Choice, p: Position, d: Dir, n: number, k: number)
+inward(Ch, P, D, N, K) :-
+    Ch = [$GrowInward(), _], step(Ch, D, S),
+    innermost(Id), visible.box(Id, B), side(Id, D),
+    in(P, _), relative(B, P, V), dist(V, D, M),                  // M cells inside side D
+    stride(M, S, 0, N, K).
+
+// Cell P lies outside the outline N steps inward: on some side of the innermost outline it
+// lies fewer than N steps in, or outside.
+.decl inward_short(ch: Choice, p: Position, n: number)
+inward_short(Ch, P, N) :-
+    inward(Ch, P, _, N, _), innermost(Id), side(Id, D),
+    ( inward(Ch, P, D, N2, _), N2 < N ; !inward(Ch, P, D, _, _) ).
+
+drawn(Ch, P) :- inward(Ch, P, _, N, 0), !inward_short(Ch, P, N).
+
+unstepped(Ch) :-
+    impl_choice(Ch), Ch = [$GrowInward(), _],
+    innermost(Id), side(Id, D), !step(Ch, D, _).
+
+// --- $Uniform ---
+
+// @claim uniform-step
+.init uniform = Unanimous<Unit, number>
+uniform.item($U(), S) :- gap(_, S).
+
+step([G, $Uniform()], D, S) :- growth_choice(G), dir_elem(D), uniform.value($U(), S).
+
+// --- $PerAxisStep ---
+
+// @claim uniform-step
+.init axis_step = Unanimous<Axis, number>
+axis_step.item(A, S) :- gap(D, S), axis_of(D, A).
+
+step([G, $PerAxisStep()], D, S) :- growth_choice(G), axis_of(D, A), axis_step.value(A, S).
+
+// --- $PerSideStep ---
+
+// @claim uniform-step
+.init side_step = Unanimous<Dir, number>
+side_step.item(D, S) :- gap(D, S).
+
+step([G, $PerSideStep()], D, S) :- growth_choice(G), side_step.value(D, S).
+
+.comp Determine {
+    // The input color whose cells the outputs change.
+    .decl bg(c: Color)
+    bg(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // An output color that its input lacks.
+    .decl fill_color(c: Color)
+    fill_color(C) :- ex_out(E, _, C), !ex_in(E, _, C).
+}

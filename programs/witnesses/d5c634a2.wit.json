@@ -1,0 +1,331 @@
+{
+  "id": "d5c634a2",
+  "witnesses": [{
+    "id": "swapped-count-table",
+    "separates": "an up-T count of 2, at a table whose entry for 2 marks the panel's top-left and bottom-right corners: the table marks (0,0),(2,2), and every model that orders corners marks (0,0),(2,0)",
+    "input": [
+      [0,2,0,0,2,2,2],
+      [2,2,2,0,0,2,0],
+      [0,0,0,0,0,0,0],
+      [0,2,0,0,0,0,0],
+      [2,2,2,0,0,0,0]
+    ],
+    "assign": {
+      "count_table": [
+        [1,[0,2,0,2]],
+        [2,[0,2,0,2]],
+        [2,[2,0,2,0]],
+        [3,[0,2,0,2]],
+        [3,[2,0,0,2]],
+        [3,[0,2,2,0]],
+        [4,[0,2,0,2]],
+        [4,[2,0,0,2]],
+        [4,[0,2,2,0]],
+        [4,[2,0,2,0]]
+      ]
+    },
+    "output": [{
+      "cases": ["$Corners","$SlotOrderPerDir","$PeriodSlots"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [3,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$CountTable & $SharedOrder"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [0,0,3,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "lex.rank=stored",
+    "separates": "an up-T count of 2, at a stored slot list (0,0),(2,2),(0,2),(2,0) that no corner and axis give: the stored list marks (0,0),(2,2), and the lexicographic order marks (0,0),(2,0)",
+    "input": [
+      [0,2,0,0,2,2,2],
+      [2,2,2,0,0,2,0],
+      [0,0,0,0,0,0,0],
+      [0,2,0,0,0,0,0],
+      [2,2,2,0,0,0,0]
+    ],
+    "assign": {
+      "lex.rank": [
+        [
+          ["DIR_T"],
+          [0,2,0,2],
+          0
+        ],
+        [
+          ["DIR_T"],
+          [2,0,2,0],
+          1
+        ],
+        [
+          ["DIR_T"],
+          [0,2,2,0],
+          2
+        ],
+        [
+          ["DIR_T"],
+          [2,0,0,2],
+          3
+        ],
+        [
+          ["DIR_B"],
+          [0,2,0,2],
+          0
+        ],
+        [
+          ["DIR_B"],
+          [2,0,2,0],
+          1
+        ],
+        [
+          ["DIR_B"],
+          [0,2,2,0],
+          2
+        ],
+        [
+          ["DIR_B"],
+          [2,0,0,2],
+          3
+        ]
+      ]
+    },
+    "output": [{
+      "cases": ["lex.rank=derived"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [3,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["lex.rank=stored"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [0,0,3,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "five-in-a-wide-panel",
+    "separates": "five up-Ts at a 5x5 panel: the cells at even offsets hold nine slots and marks the first five, column by column, while the panel's corners hold four and the corner models are undefined",
+    "input": [
+      [0,2,0,0,0,2,0,0,0,2,0,0,0,2,0],
+      [2,2,2,0,2,2,2,0,2,2,2,0,2,2,2],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,0,0,2,2,2,0,0,0,0,0,0,0,0],
+      [2,2,2,0,0,2,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "panel_size": [
+        ["AXIS_V",5],
+        ["AXIS_H",5]
+      ]
+    },
+    "output": [{
+      "cases": ["$Corners","$CountTable"],
+      "grid": null
+    }, {
+      "cases": ["$PeriodSlots"],
+      "grid": [
+        [3,0,3,0,0,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [3,0,3,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [3,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "per-panel-order",
+    "separates": "a down-T count of 2, at an assignment where the down panel fills row by row: the per-direction order marks (0,3),(0,5), and the shared order marks (0,3),(2,3)",
+    "input": [
+      [0,2,0,0,2,2,2],
+      [2,2,2,0,0,2,0],
+      [0,0,0,0,0,0,0],
+      [2,2,2,0,0,0,0],
+      [0,2,0,0,0,0,0]
+    ],
+    "assign": {
+      "dir_order": [
+        ["DIR_T","AXIS_H","DIAG_TL"],
+        ["DIR_B","AXIS_V","DIAG_TL"]
+      ]
+    },
+    "output": [{
+      "cases": ["$SharedOrder","$CountTable"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,1,0,0]
+      ]
+    }, {
+      "cases": ["$Corners & $SlotOrderPerDir"],
+      "grid": [
+        [3,0,0,1,0,1],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "plus-holds-two-ts",
+    "separates": "a plus-shaped component holds an up-T and a down-T placement: the occurrence count adds one to each panel, and the component reading, which counts only components that are a T, does not",
+    "input": [
+      [0,2,0,0,0,2,0],
+      [2,2,2,0,2,2,2],
+      [0,2,0,0,0,0,0],
+      [0,0,0,0,2,2,2],
+      [0,0,0,0,0,2,0]
+    ],
+    "output": [{
+      "cases": ["$WholeComponent"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ShapeOccurrences"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [3,0,0,1,0,0]
+      ]
+    }]
+  }, {
+    "id": "l-in-shape-table",
+    "separates": "an L tetromino, at a shape table that files the L with the up-T: the table counts the L into the up panel, and the stem-direction reading counts only T shapes",
+    "input": [
+      [2,0,0,0,0,2,0],
+      [2,0,0,0,2,2,2],
+      [2,2,0,0,0,0,0],
+      [0,0,0,0,2,2,2],
+      [0,0,0,0,0,2,0]
+    ],
+    "assign": {
+      "shape_table": [
+        [0,[0,1,1,1]],
+        [0,[1,0,0,2]],
+        [0,[1,0,1,1]],
+        [0,[1,0,2,0]],
+        [1,[0,1,0,2]],
+        [1,[0,1,1,1]],
+        [1,[0,1,2,0]],
+        [1,[1,0,1,1]],
+        [2,[0,2,0,1]],
+        [2,[1,1,0,1]],
+        [2,[2,0,0,1]],
+        [2,[2,0,1,0]]
+      ],
+      "shape_key": [
+        [0,"DIR_T"],
+        [1,"DIR_B"],
+        [2,"DIR_T"]
+      ]
+    },
+    "output": [{
+      "cases": ["$StemGeometry"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ShapeTable"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [3,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "`bg=DominantColor` from the stored value: train 0 with 0 and 4 swapped",
+    "input": [
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,2,4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,2,2,2,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,4,4,4,4,2,2,2,4,4,4,4,4],
+      [2,2,2,4,4,4,4,4,2,4,4,4,4,4,4],
+      [4,2,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,4,4,2,2,2,4,4,4,4,4,4,4],
+      [4,4,2,4,4,4,2,4,4,4,4,4,4,2,4],
+      [4,2,2,2,4,4,4,4,4,4,4,4,2,2,2],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,4,4,4,2,2,2,4,4,4,4,4,4],
+      [4,4,4,4,4,4,4,2,4,4,4,4,4,4,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
+    ],
+    "output": [{
+      "cases": ["$Corners & $WholeComponent & bg=stored","$PeriodSlots"],
+      "grid": [
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ShapeOccurrences","$CountTable"],
+      "grid": null
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [3,4,3,1,4,1],
+        [4,4,4,4,4,4],
+        [3,4,4,1,4,1]
+      ]
+    }]
+  }, {
+    "id": "per-panel-count-table",
+    "separates": "a down-T count of 2, at per-direction count tables whose down entry for 2 marks the panel's top corners: the per-direction tables mark (0,3),(0,5), and the shared table and every corner order mark (0,3),(2,3)",
+    "input": [
+      [0,2,0,0,2,2,2],
+      [2,2,2,0,0,2,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,2],
+      [0,0,2,0,0,2,0],
+      [0,2,2,2,0,0,0]
+    ],
+    "assign": {
+      "dir_count_table": [
+        ["DIR_T",1,[0,2,0,2]],
+        ["DIR_T",2,[0,2,0,2]],
+        ["DIR_T",2,[2,0,0,2]],
+        ["DIR_T",3,[0,2,0,2]],
+        ["DIR_T",3,[2,0,0,2]],
+        ["DIR_T",3,[0,2,2,0]],
+        ["DIR_T",4,[0,2,0,2]],
+        ["DIR_T",4,[2,0,0,2]],
+        ["DIR_T",4,[0,2,2,0]],
+        ["DIR_T",4,[2,0,2,0]],
+        ["DIR_B",1,[0,2,0,2]],
+        ["DIR_B",2,[0,2,0,2]],
+        ["DIR_B",2,[0,2,2,0]],
+        ["DIR_B",3,[0,2,0,2]],
+        ["DIR_B",3,[2,0,0,2]],
+        ["DIR_B",3,[0,2,2,0]],
+        ["DIR_B",4,[0,2,0,2]],
+        ["DIR_B",4,[2,0,0,2]],
+        ["DIR_B",4,[0,2,2,0]],
+        ["DIR_B",4,[2,0,2,0]]
+      ]
+    },
+    "output": [{
+      "cases": ["$Corners","$SharedOrder"],
+      "grid": [
+        [3,0,0,1,0,0],
+        [0,0,0,0,0,0],
+        [3,0,0,1,0,0]
+      ]
+    }, {
+      "cases": ["$CountTable & $SlotOrderPerDir"],
+      "grid": [
+        [3,0,0,1,0,1],
+        [0,0,0,0,0,0],
+        [3,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

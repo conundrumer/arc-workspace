@@ -1,0 +1,238 @@
+// fcc82909
+// @draft
+// @keywords: objects count cast
+// @scene blocks: a few 2×2 blocks of non-params.bg cells, each cell any color
+//  other than params.bg and params.bar_color, the blocks apart from one another
+// @scene room-below: below each block, toward params.direction, the cells its
+//  bar covers are params.bg and inside the grid
+// @rule keep: every input cell keeps its color
+// @rule bar: under each block, toward params.direction, the cells in the
+//  block's columns from the row next to the block out to as many rows as the
+//  block has distinct colors take params.bar_color
+
+// how the bar's row count is found
+.type Height =
+    // @claim bar
+    Distinct {}
+    // @rule bar: the row count is params.bar_height at the block's distinct
+    //  color count; undefined on a block whose count is not a key
+    // @witness height-table: ordinary concept
+    //     @reassigned bar_height
+  | Height_table {}
+
+// how the blocks are found
+.type BlockParse =
+    // @claim blocks bar
+    Four_blocks {}
+    // @scene blocks: blocks are the 8-connected components of non-params.bg
+    //  cells, so blocks meeting at a corner join
+    // @witness corner-touch: borderline concept
+    //     @relaxed blocks
+  | Corner_join {}
+    // @scene blocks: the non-params.bg cells tile into
+    //  params.block_size×params.block_size squares, each square a block;
+    //  undefined where they do not tile
+    // @witness side-touch: borderline $Square_blocks
+    //     @relaxed blocks
+  | Square_blocks {}
+    // @rule bar: each column of a block hangs its own bar from the row next
+    //  to that column's last cell toward params.direction
+    // @witness column-bars: foreign concept
+    //     @relaxed blocks
+  | Column_bars {}
+
+// what a bar does where it meets a non-background cell
+.type Meet =
+    // @claim bar
+    Bar_over {}
+    // @rule bar: bar cells that land on a non-params.bg cell keep that cell
+    // @witness bar-meets-block: borderline $Bar_behind
+    //     @relaxed room-below
+  | Bar_behind {}
+    // @rule bar: the bar ends at the row before the first row where any of
+    //  its columns meets a non-params.bg cell
+    // @witness bar-meets-block: borderline $Bar_behind
+  | Bar_stops {}
+
+.type Choice = [h: Height, b: BlockParse, m: Meet]
+
+// A block of one parse.
+.type BlockKey = [b: BlockParse, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(0).
+    .decl bar_color(c: Color) bar_color(3).
+    // the side of the block the bar hangs from
+    .decl direction(d: Dir) direction(DIR_B).
+
+    // --- $Square_blocks ---
+    .decl block_size(k: number) block_size(2).
+
+    // --- $Height_table ---
+    // a block's distinct color count, and its bar's row count
+    .decl bar_height(n: number, k: number)
+    bar_height(2, 2). bar_height(3, 3). bar_height(4, 4).
+}
+
+.init params = Params
+
+.decl height_choice(h: Height)
+height_choice($Distinct()). height_choice($Height_table()).
+
+.decl block_parse_choice(b: BlockParse)
+block_parse_choice($Four_blocks()). block_parse_choice($Corner_join()).
+block_parse_choice($Square_blocks()). block_parse_choice($Column_bars()).
+
+.decl meet_choice(m: Meet)
+meet_choice($Bar_over()). meet_choice($Bar_behind()). meet_choice($Bar_stops()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([H, B, M]) :- height_choice(H), block_parse_choice(B), meet_choice(M).
+
+// The blocks of the concept parse, and what each block's bar reads.
+.comp Parse<Key> {
+    .type Blk = [k: Key, b: BlockKey]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl ink(k: Key, p: Position)
+    ink(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    // The cells of each block.
+    .decl block(k: Key, b: BlockKey, p: Position, col: Color)
+
+    // @claim blocks
+    .init comps = Components<Key>
+    comps.node(K, P) :- ink(K, P).
+
+    block(K, [$Four_blocks(), Id], P, Col) :- comps.label(K, P, Id), cell(K, P, Col).
+
+    // @claim bar
+    .init colors = Tally<Blk, Color>
+    colors.item([K, Bk], Col) :- block(K, Bk, _, Col).
+
+    // @claim bar
+    .init box = Bbox<Blk>
+    box.cell([K, Bk], P) :- block(K, Bk, P, _).
+
+    // The cells each block's bar is cast from.
+    // @claim bar
+    .init cast = Ray<Blk>
+    cast.dir(Kb, D) :- box.box(Kb, _), params.direction(D).
+    cast.cell([K, Bk], P) :- box.box([K, Bk], _), cell(K, P, _).
+
+    cast.mark([K, Bk], P) :-
+        box.box([K, Bk], B), Bk = [Bp, _], Bp != $Column_bars(),
+        cell(K, P, _), params.direction(D), box_edge(P, B, D).   // the box's edge toward the bar
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- $Column_bars ---
+parse.block($U(), [$Column_bars(), Id], P, Col) :- parse.comps.label($U(), P, Id), in(P, Col).
+
+parse.cast.mark([$U(), K], P) :-
+    parse.block($U(), K, P, _), K = [$Column_bars(), _],
+    params.direction(D), neighbor(P, D, Q), !parse.block($U(), K, Q, _).   // the column's last cell
+
+// --- $Corner_join ---
+// @claim blocks
+.init comps8 = Components8<Unit>
+comps8.node($U(), P) :- parse.ink($U(), P).
+
+parse.block($U(), [$Corner_join(), Id], P, Col) :- comps8.label($U(), P, Id), in(P, Col).
+
+// --- $Square_blocks ---
+// The all-ink squares of params.block_size, and the tiling they force.
+.init square = Frame2D<Unit>
+square.extent($U(), A, K) :- axis_elem(A), params.block_size(K).
+
+// @claim blocks
+.init squares = Occurrences<Unit, Unit>
+squares.cell($U(), P, $U()) :- parse.ink($U(), P).
+squares.shape($U(), S, $U()) :- square.cell($U(), S).
+
+// @claim blocks
+.init tiling = CoverForcing<Unit, Box>
+tiling.covers($U(), B, P) :- squares.occurrence($U(), B), parse.ink($U(), P), inside(P, B).
+
+.decl tile(b: Box)
+tile(B) :- tiling.forced($U(), B), !tiling.ruled_out($U(), B).
+
+// @claim blocks
+.init tile_id = IdentOf<Box>
+tile_id.value(B) :- tile(B).
+
+parse.block($U(), [$Square_blocks(), Id], P, Col) :- tile_id.id(B, Id), in(P, Col), inside(P, B).
+
+.decl tiled(p: Position)
+tiled(P) :- tile(B), parse.ink($U(), P), inside(P, B).
+
+// --- shared ---
+.decl height(h: Height, k: BlockKey, n: number)
+height($Distinct(), K, N) :- parse.colors.tally([$U(), K], N).
+height($Height_table(), K, N) :- parse.colors.tally([$U(), K], T), params.bar_height(T, N).
+
+// --- shared ---
+// A bar cell of each block, before the bar meets anything.
+.decl reach(h: Height, k: BlockKey, p: Position, d: number)
+reach(H, K, P, Kd) :- parse.cast.ray([$U(), K], P, _, Kd, _), Kd > 0, height(H, K, N), Kd <= N.
+
+.decl bar(ch: Choice, p: Position)
+
+// --- $Bar_over ---
+bar([H, Bp, $Bar_over()], P) :- reach(H, [Bp, _], P, _).
+
+// --- $Bar_behind ---
+bar([H, Bp, $Bar_behind()], P) :- reach(H, [Bp, _], P, _), !parse.ink($U(), P).
+
+// --- $Bar_stops ---
+bar([H, Bp, $Bar_stops()], P) :- reach(H, K, P, Kd), K = [Bp, _], !stopped(H, K, Kd).
+
+// A distance at or past the first hit.
+.decl stopped(h: Height, k: BlockKey, d: number)
+stopped(H, K, Kd) :-
+    reach(H, K, _, Kd), reach(H, K, Q, K2), parse.ink($U(), Q), K2 <= Kd.   // the bar meets ink at or before Kd
+
+// --- shared ---
+// A case undefined on this input.
+.decl undefined(ch: Choice)
+undefined([$Height_table(), Bp, M]) :- impl_choice([$Height_table(), Bp, M]),
+    parse.colors.tally([$U(), [Bp, _]], T), !params.bar_height(T, _).                       // a count with no row count
+undefined([H, $Square_blocks(), M]) :- impl_choice([H, $Square_blocks(), M]),
+    parse.ink($U(), P), !tiled(P).                                                    // an ink cell no tile covers
+
+out(P, Col, Ch) :- bar(Ch, P), !undefined(Ch), params.bar_color(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !bar(Ch, P), !undefined(Ch).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl block_size(k: number)
+    block_size(K) :-
+        parse.box.box([E, Bk], B), parse.block(E, Bk, P, _), Bk = [$Four_blocks(), _],
+        box_extent(B, P, A, K), perp(A, A2), box_extent(B, P, A2, K).     // a square box
+
+    .decl bar_cell(e: Example, p: Position)
+    bar_cell(E, P) :- ex_out(E, P, Col), params.bar_color(Col).
+
+    // A ray cell short of distance Kd that the output leaves unpainted.
+    .decl gap_below(e: Example, id: Ident, d: number)
+    gap_below(E, Id, Kd) :-
+        parse.cast.ray([E, [$Four_blocks(), Id]], P, _, Kd, _), bar_cell(E, P),
+        parse.cast.ray([E, [$Four_blocks(), Id]], Q, _, K2, _), K2 > 0, K2 < Kd,
+        ex_out(E, Q, _), !bar_cell(E, Q).
+
+    // The bar's last row: painted, with no gap before it, and the next cell unpainted.
+    // @ignore: determine prediction — reads each train block's row count off its bar in the output
+    .decl bar_height(n: number, k: number)
+    bar_height(N, Kd) :-
+        parse.colors.tally([E, [$Four_blocks(), Id]], N),
+        parse.cast.ray([E, [$Four_blocks(), Id]], P, D, Kd, _), Kd > 0, bar_cell(E, P),
+        !gap_below(E, Id, Kd), neighbor(P, D, Q), !bar_cell(E, Q).
+}

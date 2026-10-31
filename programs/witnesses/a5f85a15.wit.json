@@ -83,21 +83,21 @@
     }]
   }, {
     "id": "anti-diagonal-odd",
-    "separates": "One anti-diagonal line of three cells: the stored step finds no line and returns the input, and $DerivedAxis marks the middle cell.",
+    "separates": "One anti-diagonal line of three cells: the stored step finds no line and returns the input, and $DerivedAxis marks the middle cell, as does $DiagonalClass under the stored step with the stored diagonal.ray.",
     "input": [
       [0,0,5],
       [0,5,0],
       [5,0,0]
     ],
     "output": [{
-      "cases": ["$LineStart & $StoredStep"],
+      "cases": ["$Run & $StoredStep","$DiagonalClass & $StoredStep & diagonal.ray=derived"],
       "grid": [
         [0,0,5],
         [0,5,0],
         [5,0,0]
       ]
     }, {
-      "cases": ["$ColumnParity","$GridDiagonal","$DerivedAxis"],
+      "cases": ["$ColumnParity","$GridDiagonal","$DerivedAxis","$DiagonalClass & $StoredStep & diagonal.ray=stored"],
       "grid": [
         [0,0,5],
         [0,4,0],
@@ -155,14 +155,14 @@
     }]
   }, {
     "id": "anti-diagonal-wide",
-    "separates": "One anti-diagonal line of three cells in a 3x4 grid: $DerivedAxis counts along the line, $GridDiagonal under the stored step marks each ink cell whose min(row, column) is odd, and $GridDiagonal under $DerivedAxis counts along the anti-diagonal.",
+    "separates": "One anti-diagonal line of three cells in a 3x4 grid: $DerivedAxis counts along the line, $GridDiagonal under the stored step marks each ink cell whose min(row, column) is odd, and $GridDiagonal under $DerivedAxis counts along the anti-diagonal; $DiagonalClass under the stored step with the stored diagonal.ray marks the same cell as $DerivedAxis.",
     "input": [
       [0,0,0,5],
       [0,0,5,0],
       [0,5,0,0]
     ],
     "output": [{
-      "cases": ["$LineStart & $StoredStep"],
+      "cases": ["$Run & $StoredStep","$DiagonalClass & $StoredStep & diagonal.ray=derived"],
       "grid": [
         [0,0,0,5],
         [0,0,5,0],
@@ -183,7 +183,7 @@
         [0,4,0,0]
       ]
     }, {
-      "cases": ["$DerivedAxis"],
+      "cases": ["$DerivedAxis","$DiagonalClass & $StoredStep & diagonal.ray=stored"],
       "grid": [
         [0,0,0,5],
         [0,0,4,0],
@@ -266,15 +266,90 @@
       [0,0,0,9,0,0,0,0],
       [0,0,9,0,0,0,0,0]
     ],
-    "output": [
-      [0,0,0,9,0,0,0,0],
-      [0,0,4,0,0,0,0,0],
-      [0,9,0,0,0,0,0,9],
-      [4,0,0,0,0,0,4,0],
-      [0,0,0,0,0,9,0,0],
-      [0,0,0,0,4,0,0,0],
-      [0,0,0,9,0,0,0,0],
-      [0,0,4,0,0,0,0,0]
-    ]
+    "output": [{
+      "cases": ["$Run & $StoredStep"],
+      "grid": [
+        [0,0,0,9,0,0,0,0],
+        [0,0,9,0,0,0,0,0],
+        [0,9,0,0,0,0,0,9],
+        [9,0,0,0,0,0,9,0],
+        [0,0,0,0,0,9,0,0],
+        [0,0,0,0,9,0,0,0],
+        [0,0,0,9,0,0,0,0],
+        [0,0,9,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DiagonalClass & $StoredStep & diagonal.ray=derived"],
+      "grid": [
+        [0,0,0,9,0,0,0,0],
+        [0,0,9,0,0,0,0,0],
+        [0,9,0,0,0,0,0,9],
+        [9,0,0,0,0,0,4,0],
+        [0,0,0,0,0,4,0,0],
+        [0,0,0,0,4,0,0,0],
+        [0,0,0,4,0,0,0,0],
+        [0,0,9,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DiagonalClass & $StoredStep & diagonal.ray=stored"],
+      "grid": [
+        [0,0,0,9,0,0,0,0],
+        [0,0,4,0,0,0,0,0],
+        [0,9,0,0,0,0,0,9],
+        [4,0,0,0,0,0,9,0],
+        [0,0,0,0,0,4,0,0],
+        [0,0,0,0,9,0,0,0],
+        [0,0,0,4,0,0,0,0],
+        [0,0,4,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GridDiagonal & $StoredStep & diagonal.ray=derived"],
+      "grid": [
+        [0,0,0,9,0,0,0,0],
+        [0,0,4,0,0,0,0,0],
+        [0,4,0,0,0,0,0,9],
+        [9,0,0,0,0,0,4,0],
+        [0,0,0,0,0,9,0,0],
+        [0,0,0,0,9,0,0,0],
+        [0,0,0,4,0,0,0,0],
+        [0,0,9,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GridDiagonal & $StoredStep & diagonal.ray=stored"],
+      "grid": [
+        [0,0,0,9,0,0,0,0],
+        [0,0,4,0,0,0,0,0],
+        [0,4,0,0,0,0,0,9],
+        [4,0,0,0,0,0,4,0],
+        [0,0,0,0,0,9,0,0],
+        [0,0,0,0,4,0,0,0],
+        [0,0,0,4,0,0,0,0],
+        [0,0,4,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnParity"],
+      "grid": [
+        [0,0,0,4,0,0,0,0],
+        [0,0,9,0,0,0,0,0],
+        [0,4,0,0,0,0,0,4],
+        [9,0,0,0,0,0,9,0],
+        [0,0,0,0,0,4,0,0],
+        [0,0,0,0,9,0,0,0],
+        [0,0,0,4,0,0,0,0],
+        [0,0,9,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedAxis"],
+      "grid": [
+        [0,0,0,9,0,0,0,0],
+        [0,0,4,0,0,0,0,0],
+        [0,9,0,0,0,0,0,9],
+        [4,0,0,0,0,0,4,0],
+        [0,0,0,0,0,9,0,0],
+        [0,0,0,0,4,0,0,0],
+        [0,0,0,9,0,0,0,0],
+        [0,0,4,0,0,0,0,0]
+      ]
+    }]
   }]
 }

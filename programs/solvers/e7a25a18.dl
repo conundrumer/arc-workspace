@@ -1,0 +1,205 @@
+// e7a25a18
+// @draft
+// @keywords: crop scale objects bbox
+// @scene one-frame: the input holds one square outline of color `frame_color`, one cell thick, on a field of `background`.
+// @scene quad-pattern: inside the frame, on `background`, lies one solid square pattern made of four equal square blocks in a 2×2 arrangement, each block one color, none of them `frame_color` or `background`.
+// @scene pattern-fits-inside: the pattern's side divides the side of the frame's inside, by the ratio 2.
+// @rule crop-to-frame: the output is the frame's box, with the frame drawn in its color on its border.
+// @rule scale-pattern: the inside of the frame is the pattern scaled up on each axis by the ratio of the inside's side to the pattern's side, so each block of the pattern fills the matching quadrant of the inside.
+
+// what fills the frame's inside
+.type Fill =
+    // @claim scale-pattern
+    Scaled {}
+    // @rule scale-pattern: the pattern is read as a grid of single-color blocks, as few per side on each axis as the pattern allows; the inside is cut into as many equal parts per side, and each part takes the color of the matching block; undefined where the inside's side is not a multiple of that count.
+    // @witness quadrants-off-scale: variant $BlockGrid
+    //     @relaxed pattern-fits-inside
+  | BlockGrid {}
+
+// how the frame is found
+.type Frame =
+    // @claim one-frame
+    ByColor {}
+    // @scene one-frame: the frame is the one rectangle outline, of any color, whose inside holds a cell of another color that is not `background`, and the frame's color is that outline's color; undefined where no such outline or more than one stands.
+    // @witness recolored-frame: variant $FrameByOutline
+    //     @relaxed one-frame
+  | FrameByOutline {}
+
+// where the pattern is read
+.type Pattern =
+    // @claim quad-pattern
+    InsideFrame {}
+    // @scene quad-pattern: the pattern is the bounding box of every cell, anywhere in the grid, that is neither `background` nor the frame's color.
+    // @witness stray-cell-outside: borderline concept
+    //     @relaxed one-frame
+  | PatternAnywhere {}
+
+.type Choice = [fill: Fill, frame: Frame, pattern: Pattern]
+
+.type Source = [frame: Frame, pattern: Pattern]
+.type SourceAxis = [s: Source, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // --- $ByColor ---
+    .decl frame_color(c: Color) frame_color(2).
+}
+
+.init params = Params
+
+.decl fill_choice(f: Fill)
+fill_choice($Scaled()). fill_choice($BlockGrid()).
+
+.decl frame_choice(f: Frame)
+frame_choice($ByColor()). frame_choice($FrameByOutline()).
+
+.decl pattern_choice(p: Pattern)
+pattern_choice($InsideFrame()). pattern_choice($PatternAnywhere()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, Fr, Pt]) :- fill_choice(F), frame_choice(Fr), pattern_choice(Pt).
+
+// The frame's box and its color.
+.decl frame(fr: Frame, b: Box, col: Color)
+
+// The frame's inside: the cells strictly inside the frame's box.
+.decl inside_cell(fr: Frame, p: Position)
+inside_cell(Fr, P) :- frame(Fr, B, _), in(P, _), crop(P, B, P_rel), interior(P_rel, ZERO).
+
+// @claim crop-to-frame
+.init inside_box = Bbox<Frame>
+inside_box.cell(Fr, P) :- inside_cell(Fr, P).
+
+// Each inside cell in the inside's own frame.
+.decl inside_view(fr: Frame, p_grid: Position, p_inner: Position)
+inside_view(Fr, P, P_inner) :- inside_box.box(Fr, B), inside_cell(Fr, P), crop(P, B, P_inner).
+
+.decl pattern_cell(s: Source, p: Position)
+
+// @claim quad-pattern
+.init pattern_box = Bbox<Source>
+pattern_box.cell(S, P) :- pattern_cell(S, P).
+
+// The pattern in its own box's frame.
+.decl tile_col(s: Source, p_tile: Position, col: Color)
+tile_col(S, P_tile, Col) :- pattern_box.box(S, B), in(P, Col), crop(P, B, P_tile).
+
+// The color each inside cell takes.
+.decl fill(ch: Choice, p: Position, col: Color)
+
+// The output is the frame's box: the inside filled, the border in the frame's color.
+out(P_out, Col, [F, Fr, Pt]) :- fill([F, Fr, Pt], P, Col), frame(Fr, B, _), crop(P, B, P_out).
+out(P_out, Col, [F, Fr, Pt]) :-
+    impl_choice([F, Fr, Pt]), frame(Fr, B, Col),
+    in(P, _), crop(P, B, P_out), !interior(P_out, ZERO).  // the frame's border
+
+// --- $ByColor ---
+
+// @claim one-frame
+.init frame_cells = Bbox<Unit>
+frame_cells.cell($U(), P) :- in(P, Col), params.frame_color(Col).
+
+frame($ByColor(), B, Col) :- frame_cells.box($U(), B), params.frame_color(Col).
+
+// --- $FrameByOutline ---
+
+// @claim one-frame
+.init outlines = Outlines<Color>
+outlines.node(Col, P) :- in(P, Col), !params.background(Col).
+
+frame($FrameByOutline(), B, Col) :-
+    outlines.box(Col, B),
+    in(P, Col2), Col2 != Col, !params.background(Col2),  // a cell of another color
+    crop(P, B, P_rel), interior(P_rel, ZERO).            // inside the outline
+
+// --- $InsideFrame ---
+
+pattern_cell([Fr, $InsideFrame()], P) :- inside_cell(Fr, P), in(P, Col), !params.background(Col).
+
+// --- $PatternAnywhere ---
+
+pattern_cell([Fr, $PatternAnywhere()], P) :-
+    frame(Fr, _, Col_frame), in(P, Col), !params.background(Col), Col != Col_frame.
+
+// --- $Scaled ---
+
+// The scale on each axis: the inside's extent over the pattern's.
+// @ignore: store — no input shows the stored scale defined and giving an output other than the derived scale's, so it fails Subsumption
+.decl scale(s: Source, a: Axis, k: number)
+scale([Fr, Pt], A, K) :-
+    inside_view(Fr, _, P_inner), tile_col([Fr, Pt], P_tile, _),
+    axis_elem(A), axis_dim(P_inner, A, Ext), axis_dim(P_tile, A, N), tile_size(Ext, N, 0, K).
+
+// @claim scale-pattern
+.init scaled = Tile2D<Source>
+scaled.cell(P_inner) :- inside_view(_, _, P_inner).
+scaled.gap(0).
+
+scaled.dim(S, A, K) :- scale(S, A, K).
+
+fill([$Scaled(), Fr, Pt], P, Col) :-
+    inside_view(Fr, P, P_inner),
+    scaled.tile([Fr, Pt], P_inner, P_tile, _),  // the pattern cell it scales
+    tile_col([Fr, Pt], P_tile, Col).
+
+// --- $BlockGrid ---
+
+// The block counts to try along an axis: each count up to the pattern's extent.
+.decl block_cand(s: Source, a: Axis, n: number)
+block_cand(S, A, N) :- tile_col(S, P, _), axis_elem(A), ( sub_extent(P, A, N) ; axis_dim(P, A, N) ).
+
+// A count that leaves two lines of one slab along the axis different.
+.decl block_defect(s: Source, a: Axis, n: number)
+block_defect(S, A, N) :-
+    block_cand(S, A, N), tile_col(S, P, C1), tile_col(S, Q, C2), C1 != C2,
+    divide(P, A, N, 0, P_outer, _), divide(Q, A, N, 0, P_outer, _),  // one slab
+    split(P, A, _, X), split(Q, A, _, X).                              // one place across
+
+// @claim scale-pattern
+.init block_count = Extremes<SourceAxis>
+block_count.cand([S, A], N) :-
+    block_cand(S, A, N), !block_defect(S, A, N), tile_col(S, P, _), divide(P, A, N, 0, _, _).
+
+// @claim scale-pattern
+.init inside_parts = Divide2D<Source>
+inside_parts.cell(P_inner) :- inside_view(_, _, P_inner).
+inside_parts.dim(S, A, N) :- block_count.low([S, A], N).
+inside_parts.gap(0).
+
+// @claim scale-pattern
+.init pattern_parts = Divide2D<Source>
+pattern_parts.cell(P_tile) :- tile_col(_, P_tile, _).
+pattern_parts.dim(S, A, N) :- block_count.low([S, A], N).
+pattern_parts.gap(0).
+
+fill([$BlockGrid(), Fr, Pt], P, Col) :-
+    inside_view(Fr, P, P_inner),
+    inside_parts.tile([Fr, Pt], P_inner, P_part, _),   // its part of the inside
+    pattern_parts.tile([Fr, Pt], P_tile, P_part, _),   // the matching block of the pattern
+    tile_col([Fr, Pt], P_tile, Col).
+
+.comp Determine {
+    // The commonest color of every input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl background_defect(c: Color)
+    background_defect(Col) :- common.mode(_, Col), ex_in(E, _, _), !common.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- common.mode(_, Col), !background_defect(Col).
+
+    // The color of every border cell of every output.
+    .decl border_col(c: Color)
+    border_col(Col) :- ex_out(_, P, Col), dir_elem(D), dist(P, D, 0).
+
+    .decl frame_color_defect(c: Color)
+    frame_color_defect(Col) :- border_col(Col), border_col(Col2), Col2 != Col.
+
+    .decl frame_color(c: Color)
+    frame_color(Col) :- border_col(Col), !frame_color_defect(Col).
+}

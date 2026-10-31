@@ -1,0 +1,147 @@
+// f0100645
+// @draft
+// @keywords: objects move
+// @scene two-walls: two opposite edge lines of the grid are each one solid
+//  color, and the two colors differ.
+// @scene background: every other cell that is not part of a shape is
+//  `background` (7).
+// @scene shapes: the shapes are 8-connected groups of one color, and each
+//  shape's color is one of the two wall colors.
+// @rule fall-to-own-wall: each shape moves as a rigid body along the wall
+//  axis toward the wall of its color.
+// @rule stack: a shape stops at the smallest shift that puts one of its cells
+//  next to its wall, or next to a cell of a stopped same-direction shape.
+//  Shapes nearer the wall stop first.
+// @rule keep-rest: the walls stay in place, and every cell no shape covers
+//  after moving is `background`.
+
+// what a cell does whose color is neither the background nor a wall color
+.type Choice =
+    // @claim keep-rest
+    Erase {}
+    // @rule keep-rest: a cell of a color that is neither the background nor
+    //  a wall color keeps its place and its color, and a body that lands on
+    //  it covers it.
+    // @witness stray-color-cell: borderline $StrayBlocks
+    //     @relaxed shapes
+  | StrayStays {blocking: Blocking}
+
+// whether a kept stray cell stops a body
+.type Blocking =
+    // @claim stack
+    PassOver {}
+    // @rule stack: a kept stray cell also stops a body.
+    // @witness stray-color-cell: borderline $StrayBlocks
+  | StrayBlocks {}
+
+.type FallKey = [ch: Choice, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(7).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Erase()).
+impl_choice($StrayStays($PassOver())).
+impl_choice($StrayStays($StrayBlocks())).
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // An edge line that holds two colors.
+    .decl edge_defect(k: Key, d: Dir)
+    edge_defect(K, D) :-
+        dir_elem(D), cell(K, P, C1), dist(P, D, 0), cell(K, Q, C2), dist(Q, D, 0),
+        C1 != C2.
+
+    // The color of an edge line that holds one color.
+    .decl edge_color(k: Key, d: Dir, c: Color)
+    edge_color(K, D, C) :- dir_elem(D), cell(K, P, C), dist(P, D, 0), !edge_defect(K, D).
+
+    // An edge line whose opposite line is also one color, a different one.
+    .decl wall_pair(k: Key, d: Dir, c: Color)
+    wall_pair(K, D, C) :-
+        edge_color(K, D, C), opposite(D, D2), edge_color(K, D2, C2), C != C2.
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, C) :- in(P, C).
+
+// The axis of the two walls.
+// @ignore: single-consumer — the value a stored wall axis would replace
+.decl wall_axis(a: Axis)
+wall_axis(A) :- parse.wall_pair($U(), D, _), axis_of(D, A).
+
+// The wall on edge d has color c, and shapes of color c head toward d.
+.decl wall(d: Dir, c: Color)
+wall(D, C) :- wall_axis(A), axis_of(D, A), parse.wall_pair($U(), D, C).
+
+.decl wall_cell(d: Dir, p: Position)
+wall_cell(D, P) :- wall(D, _), in(P, _), dist(P, D, 0).
+
+// The cells between the two walls.
+.decl field(p: Position)
+field(P) :-
+    wall(D, _), opposite(D, D2), wall(D2, _),
+    in(P, _), !dist(P, D, 0), !dist(P, D2, 0).
+
+// @claim shapes
+.init shapes = Components8<Color>
+shapes.node(C, P) :- field(P), in(P, C), wall(_, C).
+
+// A field cell of a color that is neither the background nor a wall color.
+.decl stray(p: Position)
+stray(P) :- field(P), in(P, C), !params.background(C), !wall(_, C).
+
+// Each shape slides toward the wall of its color and stops against that wall
+// or a shape of its color already at rest.
+// @claim fall-to-own-wall stack
+.init fall = Gravity<FallKey, Ident>
+fall.cell([Ch, C], Id, P) :- impl_choice(Ch), shapes.label(C, P, Id).
+fall.dir([Ch, C], D) :- impl_choice(Ch), wall(D, C).
+fall.blocked([Ch, C], P) :- impl_choice(Ch), wall(D, C), wall_cell(D, P).
+
+.decl landed(ch: Choice, c: Color, p: Position)
+landed(Ch, C, Q) :-
+    fall.travel([Ch, C], Id, V), shapes.label(C, P, Id), compose(P, V, Q).
+
+out(P, C, Ch) :- impl_choice(Ch), wall_cell(D, P), wall(D, C).
+out(P, C, Ch) :- landed(Ch, C, P).
+
+// --- concept ---
+out(P, Bg, $Erase()) :-
+    field(P), !landed($Erase(), _, P), params.background(Bg).
+
+// --- $StrayStays ---
+out(P, C, Ch) :-
+    impl_choice(Ch), Ch = $StrayStays(_), field(P), !landed(Ch, _, P),
+    ( stray(P), in(P, C)                         // a stray keeps its color
+    ; !stray(P), params.background(C)
+    ).
+
+// --- $StrayBlocks ---
+fall.blocked([$StrayStays($StrayBlocks()), C], P) :- wall(_, C), stray(P).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, C) :- ex_in(E, P, C).
+
+    // A color of a cell off both walls that is no wall color.
+    .decl field_color(e: Example, c: Color)
+    field_color(E, C) :-
+        parse.wall_pair(E, D, _), opposite(D, D2),
+        ex_in(E, P, C), !dist(P, D, 0), !dist(P, D2, 0), !parse.wall_pair(E, _, C).
+
+    // A field color that some input lacks.
+    .decl absent(c: Color)
+    absent(C) :- field_color(_, C), ex_in(E, _, _), !field_color(E, C).
+
+    .decl background(c: Color)
+    background(C) :- field_color(_, C), !absent(C).
+}

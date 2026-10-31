@@ -336,7 +336,6 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
         ; ground_demand(T, M, E, Col), !ex.shade.value([E, G], Col)
         ).
 
-    // @workaround: the runner's fit of panel_role over its candidate values, which the plan's enumeration limit blocks
     // @ignore: determine prediction — the four roles are fixed jointly by the
     //  product the output draws, and the runner's fit over the parameter's
     //  domain is past its limit, so this keeps the assignments of the panel

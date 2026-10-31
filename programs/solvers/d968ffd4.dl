@@ -1,0 +1,126 @@
+// d968ffd4
+// @draft
+// @keywords: objects lines span
+// @scene background: one color fills every cell that is not in a block
+// @scene two-blocks: there are two solid rectangular blocks, of two different
+//  colors that are not the background
+// @scene facing-ends: the two blocks sit at the two opposite ends of one
+//  axis, each 1 cell from its near edge of the frame, with background lines
+//  between them
+// @scene side-margin: across the axis, each block spans the whole frame less
+//  1 cell at each side, so the two blocks have one extent across the axis
+// @scene thickness: along the axis, each block is 2 lines thick
+// @rule split-gap: the lines between the two blocks split into two halves of
+//  equal count, and each half, the one nearer a block, takes that block's
+//  color on every cell of each of its lines, the side margins included
+// @rule odd-middle: when the count of lines between the blocks is odd, the
+//  middle line keeps the background
+// @rule keep-rest: every other cell keeps its input color
+
+// the axis on which the blocks face
+.type FaceAxis =
+    // @claim facing-ends
+    AxisByEnds {}
+    // @scene facing-ends: the blocks face along the frame's longer axis;
+    //  undefined on a square frame and where the two blocks do not sit at the
+    //  two ends of the longer axis
+    // @witness short-axis-facing: variant concept
+    // @witness three-blocks: foreign any
+    //     @relaxed two-blocks
+  | AxisByShape {}
+
+// where the gap divides between the two blocks
+.type SplitLine =
+    // @claim split-gap odd-middle
+    GapMidpoint {}
+    // @rule split-gap: a gap line takes the color of the block on its side of
+    //  the frame's center line
+    // @rule odd-middle: the center line of an odd-extent frame keeps the
+    //  background
+    // @witness unequal-thickness: borderline concept
+    //     @relaxed thickness
+  | FrameMidline {}
+
+.type Choice = [f: FaceAxis, s: SplitLine]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl split_line_choice(s: SplitLine)
+split_line_choice($GapMidpoint()). split_line_choice($FrameMidline()).
+
+// The background: the color of the frame's corners.
+.decl bg(col: Color)
+bg(Col) :- in(P, Col), diag_dir_elem(D), corner_dist(P, D, 0).
+
+// A block cell; each block is the cells of its color.
+.decl block(p: Position, col: Color)
+block(P, Col) :- in(P, Col), !bg(Col).
+
+// The other block lies toward d from block col, on a line they share.
+.decl toward(col: Color, d: Dir)
+toward(C1, D) :-
+    block(P, C1), block(Q, C2), C1 != C2,
+    dir_elem(D), axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).
+
+// The axis the blocks face along, per FaceAxis branch.
+.decl facing(f: FaceAxis, a: Axis)
+
+// Line l, axis-only, is the line of block col that faces the other block,
+// which lies toward d.
+.decl face(f: FaceAxis, col: Color, d: Dir, l: Position)
+face(F, Col, D, L) :-
+    facing(F, A), toward(Col, D), axis_of(D, A),
+    block(P, Col), neighbor(P, D, Q), !block(Q, Col), split(P, A, L, _).
+
+// Line l, axis-only, lies k lines on from block col's face toward the other
+// block.
+.decl ahead(f: FaceAxis, col: Color, l: Position, k: number)
+ahead(F, Col, L2, K) :-
+    face(F, Col, D, L), axis_of(D, A), opposite(D, O),
+    in(P, _), split(P, A, L2, _), relative(L, L2, V), dist(V, O, K), K > 0.
+
+// Line l lies between the blocks, k1 lines from block col and k2 from the
+// other block.
+.decl gap(f: FaceAxis, l: Position, col: Color, k1: number, k2: number)
+gap(F, L, C1, K1, K2) :- ahead(F, C1, L, K1), ahead(F, C2, L, K2), C1 != C2.
+
+// The color each filled gap line takes, and the gap line that keeps the
+// background.
+.decl fill(ch: Choice, l: Position, col: Color)
+.decl middle(ch: Choice, l: Position)
+
+// A filled gap line takes its color across the whole frame, the middle line
+// keeps the background, and every other cell keeps its input color.
+out(P, Col, [F, S]) :-
+    facing(F, A), in(P, _), split(P, A, L, _),
+    ( fill([F, S], L, Col)
+    ; middle([F, S], L), bg(Col)
+    ; split_line_choice(S), in(P, Col), !fill([F, S], L, _), !middle([F, S], L)
+    ).
+
+// --- $AxisByEnds ---
+
+facing($AxisByEnds(), A) :- toward(_, D), axis_of(D, A).
+
+// --- $AxisByShape ---
+
+facing($AxisByShape(), A) :-
+    toward(_, D), axis_of(D, A),
+    in(P, _), axis_dims(P, A, N1, N2), N1 > N2.    // the longer axis
+
+// --- $GapMidpoint ---
+
+fill([F, $GapMidpoint()], L, C1) :- gap(F, L, C1, K1, K2), K1 < K2.
+middle([F, $GapMidpoint()], L) :- gap(F, L, _, K, K).
+
+// --- $FrameMidline ---
+
+fill([F, $FrameMidline()], L, Col) :-
+    gap(F, L, Col, _, _), face(F, Col, D, _), opposite(D, O),
+    dist_pair(L, O, K1, K2), K1 < K2.                               // on the block's side of the center
+middle([F, $FrameMidline()], L) :-
+    gap(F, L, _, _, _), facing(F, A), axis_of(D, A), dist_pair(L, D, K, K).

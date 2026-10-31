@@ -20,18 +20,6 @@
 //  blocks, with no gap. Each piece is copied unchanged into the block it
 //  points to
 
-// which cells form one piece
-.type PieceParse =
-    // @claim pieces
-    WindowParse {}
-    // @scene pieces: every run of non-params.bg cells along a row or a column
-    //  is cut into lengths of params.piece_size, counted from its end toward
-    //  params.tile_origin; a cell at a cut on both axes is the corner of a
-    //  piece. Undefined when that corner's square is not free of params.bg
-    // @witness aligned-strip: variant $TileParse
-    //     @relaxed pieces
-  | TileParse {}
-
 // where a piece with no params.fill cell goes
 .type FillFree =
     // @claim direction
@@ -105,21 +93,19 @@
     //     @relaxed pieces
   | SizeDerived {}
 
-.type Choice = [parse: PieceParse, fill_free: FillFree, unmarked: Unmarked,
-                direction: Direction, empty: EmptyBlock, fill: FillColor,
-                size: PieceSize]
+.type Choice = [fill_free: FillFree, unmarked: Unmarked, direction: Direction,
+                empty: EmptyBlock, fill: FillColor, size: PieceSize]
 
 // A piece's marks under one fill reading.
 .type Marked = [fill: FillColor, b: Box]
 
+// A square side tried under one reading.
+.type Trial = [sz: PieceSize, n: number]
+
 // A piece and a side.
 .type Lean = [fill: FillColor, b: Box, d: Dir]
 
-.type TileOriginValue = [d: DiagDir]
-
-.type OpenValue = [tile_origin: TileOriginValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -143,19 +129,9 @@
 
     // --- $StoredSize ---
     .decl piece_size(k: number) piece_size(3).
-
-    // --- $TileParse ---
-    // The corner a run is cut from. Every run in the pairs is a multiple of
-    // params.piece_size long, so every corner stays open.
-    // @open
-    .decl tile_origin(d: DiagDir)
-    tile_origin(DIAG_TL). tile_origin(DIAG_TR). tile_origin(DIAG_BL). tile_origin(DIAG_BR).
 }
 
 .init params = Params
-
-.decl piece_parse_choice(pc: PieceParse)
-piece_parse_choice($WindowParse()). piece_parse_choice($TileParse()).
 
 .decl fill_free_choice(ff: FillFree)
 fill_free_choice($FillFreeCenter()). fill_free_choice($NeedsFill()).
@@ -174,72 +150,39 @@ piece_size_choice($StoredSize()). piece_size_choice($SizeDerived()).
 // params.bg, or with params.fill after dropping the unmarked pieces. Each other
 // case fails Fit or is subsumed by one of these.
 .decl impl_choice(ch: Choice)
-impl_choice([$WindowParse(), $FillFreeCenter(), $UnmarkedCenter(), $HalfCount(),
-             $EmptyUndefined(), $StoredFill(), $StoredSize()]).
-impl_choice([Pc, Ff, $UnmarkedCenter(), Dr, $BgDefault(), Fc, Sz]) :-
-    piece_parse_choice(Pc), fill_free_choice(Ff), direction_choice(Dr), fill_color_choice(Fc),
-    piece_size_choice(Sz).
-impl_choice([Pc, Ff, $SkipUnmarked(), Dr, $FillDefault(), Fc, Sz]) :-
-    piece_parse_choice(Pc), fill_free_choice(Ff), direction_choice(Dr), fill_color_choice(Fc),
-    piece_size_choice(Sz).
+impl_choice([$FillFreeCenter(), $UnmarkedCenter(), $HalfCount(), $EmptyUndefined(),
+             $StoredFill(), $StoredSize()]).
+impl_choice([Ff, $UnmarkedCenter(), Dr, $BgDefault(), Fc, Sz]) :-
+    fill_free_choice(Ff), direction_choice(Dr), fill_color_choice(Fc), piece_size_choice(Sz).
+impl_choice([Ff, $SkipUnmarked(), Dr, $FillDefault(), Fc, Sz]) :-
+    fill_free_choice(Ff), direction_choice(Dr), fill_color_choice(Fc), piece_size_choice(Sz).
 
-// The squares free of params.bg, and the pieces a tile cut reads.
-.comp Parse<Key> {
-    .type Trial = [k: Key, n: number]
+// The sides tried, and the sides a piece is read at.
+.decl trial(sz: PieceSize, n: number)
+.decl side(sz: PieceSize, n: number)
 
-    .decl cell(k: Key, p: Position, col: Color)
+// The cells of a square of each side, in its own frame.
+.init frame = Frame2D<number>
+frame.extent(N, A, N) :- trial(_, N), axis_elem(A).
 
-    // The sides tried, and the sides a piece is read at.
-    .decl trial(k: Key, n: number)
-    .decl side(k: Key, n: number)
+// The squares free of params.bg, each by the box it covers.
+// @claim pieces
+.init squares = Occurrences<Trial, Unit>
+squares.cell([Sz, N], P, $U()) :- trial(Sz, N), in(P, Col), !params.bg(Col).
+squares.shape([Sz, N], P, $U()) :- trial(Sz, N), frame.cell(N, P).
 
-    // The cells of a square of each side, in its own frame.
-    .init frame = Frame2D<number>
-    frame.extent(N, A, N) :- trial(_, N), axis_elem(A).
+.decl window_at(sz: PieceSize, n: number, b: Box)
+window_at(Sz, N, B) :- squares.occurrence([Sz, N], B).
 
-    .decl ink(k: Key, p: Position)
-    ink(K, P) :- cell(K, P, Col), !params.bg(Col).
-
-    // The squares free of params.bg, each by the box it covers.
-    // @claim pieces
-    .init squares = Occurrences<Trial, Unit>
-    squares.cell([K, N], P, $U()) :- trial(K, N), ink(K, P).
-    squares.shape([K, N], P, $U()) :- trial(K, N), frame.cell(N, P).
-
-    .decl window(k: Key, n: number, b: Box)
-    window(K, N, B) :- squares.occurrence([K, N], B).
-
-    // A window's cells, in its own frame.
-    .decl window_color(k: Key, b: Box, p: Position, col: Color)
-    window_color(K, B, P_inner, Col) :-
-        side(K, N), window(K, N, B), frame.cell(N, P_inner), compose(B, P_inner, P),
-        cell(K, P, Col).
-
-    // @claim pieces
-    .init runs = Slide<Key>
-    runs.node(K, P) :- ink(K, P).
-    runs.dir(K, D) :- side(K, _), dir_elem(D).
-
-    // A cell a multiple of n from the end of its run toward d.
-    .decl cut(k: Key, n: number, d: Dir, p: Position)
-    cut(K, N, D, P) :-
-        side(K, N), dir_elem(D), runs.rest(K, P, D, Q),        // q ends p's run toward d
-        relative(Q, P, V), dist(V, D, T), stride(T, N, 0, _, 0).
-
-    // The corner of a piece cut from origin o, and the piece.
-    .decl corner(k: Key, n: number, o: DiagDir, p: Position)
-    corner(K, N, O, P) :- diag_dirs(O, _, D1, D2), cut(K, N, D1, P), cut(K, N, D2, P).
-
-    .decl tile_piece(k: Key, n: number, o: DiagDir, p: Position, b: Box)
-    tile_piece(K, N, O, P, B) :- corner(K, N, O, P), window(K, N, B), box_corner(P, B, O).
-}
-
-.init parse = Parse<PieceSize>
-parse.cell(Sz, P, Col) :- piece_size_choice(Sz), in(P, Col).
+// A window's cells, in its own frame.
+.decl window_color(sz: PieceSize, b: Box, p: Position, col: Color)
+window_color(Sz, B, P_inner, Col) :-
+    side(Sz, N), window_at(Sz, N, B), frame.cell(N, P_inner), compose(B, P_inner, P),
+    in(P, Col).
 
 // The squares free of params.bg at each reading's piece side.
 .decl window(sz: PieceSize, b: Box)
-window(Sz, B) :- parse.side(Sz, K), parse.window(Sz, K, B).
+window(Sz, B) :- side(Sz, K), window_at(Sz, K, B).
 
 // The color of a piece's unmarked cells under each reading; undefined when
 // the reading gives two.
@@ -247,16 +190,11 @@ window(Sz, B) :- parse.side(Sz, K), parse.window(Sz, K, B).
 .init fill = Unanimous<FillColor, Color>
 
 .decl mark(fc: FillColor, b: Box, p: Position)
-mark(Fc, B, P) :- fill.value(Fc, _), parse.window_color(_, B, P, Col), !fill.value(Fc, Col).
-
-// The pieces each parse reads.
-.decl piece(sz: PieceSize, pc: PieceParse, b: Box)
-
+mark(Fc, B, P) :- fill.value(Fc, _), window_color(_, B, P, Col), !fill.value(Fc, Col).
 
 // The pieces a case places, before and after it drops the unmarked ones.
-.decl candidate(sz: PieceSize, fc: FillColor, pc: PieceParse, ff: FillFree, b: Box)
-.decl member(sz: PieceSize, fc: FillColor, pc: PieceParse, ff: FillFree, um: Unmarked,
-              b: Box)
+.decl candidate(sz: PieceSize, fc: FillColor, ff: FillFree, b: Box)
+.decl member(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, b: Box)
 
 // The sides each reading sends a piece toward.
 .decl toward(fc: FillColor, dr: Direction, b: Box, d: Dir)
@@ -275,9 +213,9 @@ misfit(Fc, Dr, B, S) :-
 points(Fc, Dr, B, S) :-
     fill.value(Fc, _), direction_choice(Dr), window(_, B), params.slot(S), !misfit(Fc, Dr, B, S).
 
-.decl placed(sz: PieceSize, fc: FillColor, pc: PieceParse, ff: FillFree, um: Unmarked,
-             dr: Direction, b: Box, s: Position)
-placed(Sz, Fc, Pc, Ff, Um, Dr, B, S) :- member(Sz, Fc, Pc, Ff, Um, B), points(Fc, Dr, B, S).
+.decl placed(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
+             b: Box, s: Position)
+placed(Sz, Fc, Ff, Um, Dr, B, S) :- member(Sz, Fc, Ff, Um, B), points(Fc, Dr, B, S).
 
 // The color of a block that no piece points to.
 .decl empty_color(e: EmptyBlock, fc: FillColor, col: Color)
@@ -285,69 +223,32 @@ placed(Sz, Fc, Pc, Ff, Um, Dr, B, S) :- member(Sz, Fc, Pc, Ff, Um, B), points(Fc
 // The cells a vacant block shows.
 .decl empty_cell(e: EmptyBlock, fc: FillColor, sz: PieceSize, p_inner: Position, col: Color)
 empty_cell(E, Fc, Sz, P_inner, Col) :-
-    empty_color(E, Fc, Col), parse.side(Sz, K), parse.frame.cell(K, P_inner).
-
-// --- $WindowParse ---
-piece(Sz, $WindowParse(), B) :- window(Sz, B).
+    empty_color(E, Fc, Col), side(Sz, K), frame.cell(K, P_inner).
 
 // The blocks no piece is put in.
 .decl vacant(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
              s: Position)
 vacant(Sz, Fc, Ff, Um, Dr, S) :-
-    impl_choice([$WindowParse(), Ff, Um, Dr, _, Fc, Sz]), params.slot(S),
-    !placed(Sz, Fc, $WindowParse(), Ff, Um, Dr, _, S).
+    impl_choice([Ff, Um, Dr, _, Fc, Sz]), params.slot(S), !placed(Sz, Fc, Ff, Um, Dr, _, S).
 
-out(P, Col, [$WindowParse(), Ff, Um, Dr, E, Fc, Sz], [nil]) :-
-    impl_choice([$WindowParse(), Ff, Um, Dr, E, Fc, Sz]),
-    ( placed(Sz, Fc, $WindowParse(), Ff, Um, Dr, B, S), parse.window_color(Sz, B, P_inner, Col)
+out(P, Col, [Ff, Um, Dr, E, Fc, Sz]) :-
+    impl_choice([Ff, Um, Dr, E, Fc, Sz]),
+    ( placed(Sz, Fc, Ff, Um, Dr, B, S), window_color(Sz, B, P_inner, Col)
     ; vacant(Sz, Fc, Ff, Um, Dr, S), empty_cell(E, Fc, Sz, P_inner, Col) ),
     concat_2d(S, P_inner, 0, P).
 
-// --- $TileParse ---
-// The pieces each open origin cuts.
-.decl tile_piece(sz: PieceSize, o: DiagDir, p: Position, b: Box)
-tile_piece(Sz, O, P, B) :-
-    parse.side(Sz, N), params.tile_origin(O), parse.tile_piece(Sz, N, O, P, B).
-
-// The cut from origin o is undefined on this input.
-.decl torn(sz: PieceSize, o: DiagDir)
-torn(Sz, O) :-
-    parse.side(Sz, N), params.tile_origin(O), parse.corner(Sz, N, O, P),
-    !tile_piece(Sz, O, P, _).
-
-piece(Sz, $TileParse(), B) :- tile_piece(Sz, _, _, B).
-
-// The pieces each open origin puts in each block.
-.decl filled(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
-             o: DiagDir, b: Box, s: Position)
-filled(Sz, Fc, Ff, Um, Dr, O, B, S) :-
-    placed(Sz, Fc, $TileParse(), Ff, Um, Dr, B, S), tile_piece(Sz, O, _, B).
-
-// The blocks each open origin puts no piece in.
-.decl unfilled(sz: PieceSize, fc: FillColor, ff: FillFree, um: Unmarked, dr: Direction,
-               o: DiagDir, s: Position)
-unfilled(Sz, Fc, Ff, Um, Dr, O, S) :-
-    impl_choice([$TileParse(), Ff, Um, Dr, _, Fc, Sz]), params.tile_origin(O), params.slot(S),
-    !filled(Sz, Fc, Ff, Um, Dr, O, _, S).
-
-out(P, Col, [$TileParse(), Ff, Um, Dr, E, Fc, Sz], [[O]]) :-
-    impl_choice([$TileParse(), Ff, Um, Dr, E, Fc, Sz]), params.tile_origin(O), !torn(Sz, O),
-    ( filled(Sz, Fc, Ff, Um, Dr, O, B, S), parse.window_color(Sz, B, P_inner, Col)
-    ; unfilled(Sz, Fc, Ff, Um, Dr, O, S), empty_cell(E, Fc, Sz, P_inner, Col) ),
-    concat_2d(S, P_inner, 0, P).
-
 // --- $FillFreeCenter ---
-candidate(Sz, Fc, Pc, $FillFreeCenter(), B) :- piece(Sz, Pc, B), fill.value(Fc, _).
+candidate(Sz, Fc, $FillFreeCenter(), B) :- window(Sz, B), fill.value(Fc, _).
 
 // --- $NeedsFill ---
-candidate(Sz, Fc, Pc, $NeedsFill(), B) :-
-    piece(Sz, Pc, B), parse.window_color(Sz, B, _, Col), fill.value(Fc, Col).
+candidate(Sz, Fc, $NeedsFill(), B) :-
+    window(Sz, B), window_color(Sz, B, _, Col), fill.value(Fc, Col).
 
 // --- $UnmarkedCenter ---
-member(Sz, Fc, Pc, Ff, $UnmarkedCenter(), B) :- candidate(Sz, Fc, Pc, Ff, B).
+member(Sz, Fc, Ff, $UnmarkedCenter(), B) :- candidate(Sz, Fc, Ff, B).
 
 // --- $SkipUnmarked ---
-member(Sz, Fc, Pc, Ff, $SkipUnmarked(), B) :- candidate(Sz, Fc, Pc, Ff, B), mark(Fc, B, _).
+member(Sz, Fc, Ff, $SkipUnmarked(), B) :- candidate(Sz, Fc, Ff, B), mark(Fc, B, _).
 
 // --- $HalfCount ---
 // A mark nearer edge d than the opposite edge.
@@ -402,26 +303,22 @@ commonest.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
 
 fill.item($FillDerived(), Col) :- commonest.mode($U(), Col).
 
-// --- $StoredSize ---
-parse.trial($StoredSize(), K) :- params.piece_size(K).
-parse.side($StoredSize(), K) :- parse.trial($StoredSize(), K).
-
-// --- $SizeDerived ---
-parse.trial($SizeDerived(), K) :-
+// --- $StoredSize, $SizeDerived ---
+trial($StoredSize(), K) :- params.piece_size(K).
+trial($SizeDerived(), K) :-
     in(P, _), axis_elem(A), ( sub_extent(P, A, K) ; axis_dim(P, A, K) ).
 
+// --- $StoredSize ---
+side($StoredSize(), K) :- trial($StoredSize(), K).
+
+// --- $SizeDerived ---
 // @claim pieces
 .init largest = Extremes<Unit>
-largest.cand($U(), K) :- parse.window($SizeDerived(), K, _).
+largest.cand($U(), K) :- window_at($SizeDerived(), K, _).
 
-parse.side($SizeDerived(), K) :- largest.high($U(), K).
+side($SizeDerived(), K) :- largest.high($U(), K).
 
 .comp Determine {
-    .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col).
-    parse.trial(E, N) :- ex_in(E, _, _), params.piece_size(N).
-    parse.side(E, N) :- parse.trial(E, N).
-
     // The commonest color of each output, taken as the fill when every output
     // agrees.
     .init out_mode = Mode<Example, Color, Position>
@@ -432,15 +329,4 @@ parse.side($SizeDerived(), K) :- largest.high($U(), K).
 
     .decl fill(c: Color)
     fill(Col) :- out_mode.mode(_, Col), !fill_contradicted(Col).
-
-    // An origin whose cut misses a window, or reads a corner with no window.
-    .decl origin_contradicted(o: DiagDir)
-    origin_contradicted(O) :-
-        diag_dir_elem(O), ex_out(E, _, _), parse.side(E, N), parse.window(E, N, B),
-        !parse.tile_piece(E, N, O, _, B).
-    origin_contradicted(O) :-
-        parse.corner(E, N, O, P), ex_out(E, _, _), !parse.tile_piece(E, N, O, P, _).
-
-    .decl tile_origin(d: DiagDir)
-    tile_origin(O) :- diag_dir_elem(O), !origin_contradicted(O).
 }

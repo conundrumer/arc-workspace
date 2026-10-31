@@ -1,0 +1,5 @@
+# dc2aa30b
+
+- interference, `uv run python scripts/run_dl.py record dc2aa30b <id>`: two witnesses that change the board layout (a 3 × 3 board of 4 × 4 tiles, and a 2 × 2 board of 4 × 4 tiles) hit the 20 s run limit. The stored layout cuts those inputs into unequal tiles with many tied counts, and `$TieAnyOrder` then enumerates every order of each tie through `TiebreakResolutions`. Cost: about 1.5 min and two attempts. It still holds: no witness shows `divider_color=SharedColor` defined and different from the stored layout.
+- interference, `uv run python scripts/run_dl.py audit dc2aa30b`: the relabelings check timed out after 20 s on both runs, so it reports nothing. Cost: about 20 s per audit. It still holds.
+- interference, `uv run python scripts/run_dl.py derive dc2aa30b`: it lists `VanishedColor` as a fitting derivation of `divider_color`, but `analyze.md` says that proposer gives no value in a run on one input. In a run on one input it gives every color of that input, the same as `SharedColor`. Cost: one `@ignore` line and one witness removed. This is resolved.

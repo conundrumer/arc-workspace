@@ -1,0 +1,324 @@
+// e78887d1
+// @draft
+// @keywords: decompose permutation
+// @scene glyph-tiling: the input is cut into cells of params.glyph_size
+//  × params.glyph_size, with blank lines params.gap wide between cells on both
+//  axes; on the axis the bands stack along, a blank line params.gap wide also
+//  borders the first and the last band, and on the other axis no blank line
+//  borders the grid.
+// @scene bands: each line of cells across the stacking axis is a band, and
+//  each cell of a band is a slot that holds one glyph: a pattern of one color
+//  on params.bg.
+// @scene slot-colors: each slot position holds one color in every band, and
+//  different slot positions hold different colors.
+// @scene band-shift: each band after the first, toward params.band_dir, is the
+//  band before it with each glyph pattern moved params.shift_step slots toward
+//  params.shift_dir, a pattern that passes the slot nearest params.shift_dir
+//  wrapping round to the slot farthest from it, and each pattern drawn in the
+//  color of the slot it lands in.
+// @rule next-band: the output is one band without its border lines: the last
+//  band with each glyph pattern moved params.shift_step slots toward
+//  params.shift_dir, a pattern that passes the slot nearest params.shift_dir
+//  wrapping round to the slot farthest from it, and each pattern drawn in the
+//  color of the slot it lands in.
+
+// Where the move from one band to the next comes from
+.type StepSource =
+    // @claim next-band
+    Stored {}
+    // @rule next-band: the move is read off the input as each cyclic move of
+    //  the slots that takes each band's patterns onto the next band's, and on
+    //  an input with one band it is the stored move; undefined where an input
+    //  has more than one band and no cyclic move, or more than one, takes each
+    //  band onto the next.
+    // @witness bands-move-right: variant $StepFromBandsOrStored
+    //     @relaxed band-shift
+  | StepFromBandsOrStored {}
+    // @rule next-band: the move is each permutation of the slots that takes
+    //  each band's patterns onto the next band's, read off the input, and on an
+    //  input with one band it is the stored move; undefined where an input has
+    //  more than one band and no permutation takes each band onto the next.
+    // @witness bands-swap-two: borderline $PermutationFromBandsOrStored
+    //     @relaxed band-shift
+    // @witness patterns-repeat: ordinary concept
+  | PermutationFromBandsOrStored {}
+
+// Which band the output continues from
+.type OutputBand =
+    // @claim next-band
+    LastBand {}
+    // @rule next-band: the first band's patterns are moved as many times as
+    //  there are bands; undefined nowhere the concept is defined.
+    // @witness bands-unrelated: foreign concept
+    //     @relaxed band-shift
+  | FromFirstBand {}
+
+// The color a moved pattern is drawn in
+.type GlyphColor =
+    // @claim next-band
+    LandingSlot {}
+    // @rule next-band: a moved pattern is drawn in the color of the slot it
+    //  lands in, in the first band; undefined nowhere the concept is defined.
+    // @witness slot-colors-change: foreign concept
+    //     @relaxed slot-colors
+  | SlotColorFromFirstBand {}
+
+.type Choice = [s: StepSource, o: OutputBand, g: GlyphColor]
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Position, item: Position, rest: TiebreakResolution}
+
+// The move of one step source under one resolution of its ties.
+.type MoveKey = [s: StepSource, res: TiebreakResolution]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed glyph-tiling
+    //     @relaxed bands
+    .decl bg(c: Color) bg(0).
+    .decl glyph_size(k: number) glyph_size(3).
+    // @derive SepThickness: variant derived
+    //     @relaxed glyph-tiling
+    .decl gap(g: number) gap(1).
+    // The direction in which glyph patterns move from one band to the next.
+    .decl shift_dir(d: Dir) shift_dir(DIR_L).
+    // The number of slots a glyph pattern moves from one band to the next.
+    // @derive SepThickness: variant concept
+    // @ignore: derive gap=stored — wherever the stored gap tiles the input, the
+    //  separators are that gap wide, so these cases are subsumed
+    .decl shift_step(n: number) shift_step(1).
+    // The turn from params.shift_dir to the direction from each band to the next.
+    .decl band_sense(s: Sense) band_sense(SENSE_CC).
+
+    .decl band_dir(d: Dir)
+    band_dir(D2) :- shift_dir(D), band_sense(S), turn(S, D, D2).
+}
+
+.init params = Params
+
+.decl step_source_choice(s: StepSource)
+step_source_choice($Stored()). step_source_choice($StepFromBandsOrStored()).
+step_source_choice($PermutationFromBandsOrStored()).
+
+.decl output_band_choice(o: OutputBand)
+output_band_choice($LastBand()). output_band_choice($FromFirstBand()).
+
+.decl glyph_color_choice(g: GlyphColor)
+glyph_color_choice($LandingSlot()). glyph_color_choice($SlotColorFromFirstBand()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, O, G]) :- step_source_choice(S), output_band_choice(O), glyph_color_choice(G).
+
+// The bands, their slots, and the glyph each slot holds.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // A cell of a band, in the band's own frame: the border lines cropped off,
+    // then the grid cut into bands across params.band_dir's axis.
+    .decl band_cell(key: Key, p_grid: Position, p_band: Position, p_inband: Position)
+    band_cell(K, P_grid, P_band, P_inband) :-
+        cell(K, P_grid, _), params.band_dir(BD), params.gap(G),
+        axis_inset(BD, G, G, B), crop(P_grid, B, P_inner),                 // border cropped
+        axis_of(BD, A), params.glyph_size(Sz),
+        divide_by_size_slab(P_inner, A, Sz, G, P_band, P_inband).
+
+    // A band cell inside a slot, with its place in the slot.
+    .decl slot_cell(key: Key, p_band: Position, p_inband: Position,
+                    p_slot: Position, p_intile: Position)
+    slot_cell(K, P_band, P_inband, P_slot, P_intile) :-
+        band_cell(K, _, P_band, P_inband), params.glyph_size(Sz), params.gap(G),
+        divide_by_size_2d(P_inband, Sz, G, P_slot, P_intile).
+
+    .decl glyph(key: Key, p_band: Position, p_slot: Position, p_intile: Position, col: Color)
+    glyph(K, P_band, P_slot, P_intile, Col) :-
+        band_cell(K, P_grid, P_band, P_inband), cell(K, P_grid, Col),
+        slot_cell(K, P_band, P_inband, P_slot, P_intile).
+
+    // A cell of a glyph's pattern.
+    .decl ink(key: Key, p_band: Position, p_slot: Position, p_intile: Position)
+    ink(K, P_band, P_slot, P_intile) :- glyph(K, P_band, P_slot, P_intile, Col), !params.bg(Col).
+
+    .decl slot_color(key: Key, p_band: Position, p_slot: Position, col: Color)
+    slot_color(K, P_band, P_slot, Col) :- glyph(K, P_band, P_slot, _, Col), !params.bg(Col).
+
+    .decl band_pos(key: Key, p_band: Position)
+    band_pos(K, P_band) :- band_cell(K, _, P_band, _).
+
+    .decl slot(key: Key, p_slot: Position)
+    slot(K, P_slot) :- slot_cell(K, _, _, P_slot, _).
+
+    .decl first_band(key: Key, p_band: Position)
+    first_band(K, P_band) :-
+        band_pos(K, P_band), params.band_dir(BD), opposite(BD, BD2), dist(P_band, BD2, 0).
+
+    .decl last_band(key: Key, p_band: Position)
+    last_band(K, P_band) :- band_pos(K, P_band), params.band_dir(BD), dist(P_band, BD, 0).
+
+    // Band b2 directly follows band b1.
+    .decl next_band(key: Key, p_band1: Position, p_band2: Position)
+    next_band(K, B1, B2) :-
+        band_pos(K, B1), params.band_dir(BD), neighbor(B1, BD, B2), band_pos(K, B2).
+
+    // The pattern of slot s1 in b1 differs from the pattern of slot s2 in b2.
+    .decl unlike(key: Key, p_band1: Position, p_slot1: Position,
+                 p_band2: Position, p_slot2: Position)
+    unlike(K, B1, S1, B2, S2) :-
+        next_band(K, B1, B2), glyph(K, B1, S1, P_intile, _), slot(K, S2),
+        ( ink(K, B1, S1, P_intile), !ink(K, B2, S2, P_intile)
+        ; !ink(K, B1, S1, P_intile), ink(K, B2, S2, P_intile)
+        ).
+
+    // The input has a band after another.
+    .decl stacked(key: Key)
+    stacked(K) :- next_band(K, _, _).
+
+    // The slots form a cycle toward params.shift_dir: the slot nearest it
+    // wraps round to the slot farthest from it.
+    // @claim next-band
+    .init slot_cycle = CycleWalk<Key, Position>
+    slot_cycle.succ(K, S, S2) :-
+        slot(K, S), params.shift_dir(D),
+        ( neighbor(S, D, S2), slot(K, S2)
+        ; dist(S, D, 0), opposite(D, D2), slot(K, S2), dist(S2, D2, 0)
+        ).
+    slot_cycle.step(K, N) :- step_cand(K, N).
+
+    // The cyclic moves: each count of steps round the slot cycle.
+    .decl step_cand(key: Key, n: number)
+    step_cand(K, N) :- slot(K, S), params.shift_dir(D), dist(S, D, N).
+
+    // A count of steps that takes some band's pattern onto another pattern
+    // of the next band.
+    .decl step_misfit(key: Key, n: number)
+    step_misfit(K, N) :- step_cand(K, N), slot_cycle.walk(K, S, N, S2), unlike(K, _, S, _, S2).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The stored move.
+parse.slot_cycle.step($U(), N) :- params.shift_step(N).
+.decl stored_move(p_slot1: Position, p_slot2: Position)
+stored_move(S, S2) :- params.shift_step(N), parse.slot_cycle.walk($U(), S, N, S2).
+
+// The move of each step source from one slot to another.
+.decl move(k: MoveKey, p_slot1: Position, p_slot2: Position)
+
+// Where the patterns of a source band land: slot s of the source band lands
+// in slot s2.
+.decl landing(s: StepSource, o: OutputBand, res: TiebreakResolution,
+               p_band: Position, p_slot: Position, p_slot2: Position)
+
+// The band whose slot colors the moved patterns take.
+.decl color_band(g: GlyphColor, p_band: Position)
+
+// The output is the last band's frame: each slot holds its landed pattern,
+// and each cell between slots is params.bg.
+out(P, Col, [Sr, O, G], Res) :-
+    impl_choice([Sr, O, G]), landing(Sr, O, Res, B_src, S, S2),
+    parse.last_band($U(), B), parse.slot_cell($U(), B, P, S2, P_intile),
+    ( parse.ink($U(), B_src, S, P_intile), color_band(G, B_col),        // a pattern cell
+      parse.slot_color($U(), B_col, S2, Col)
+    ; !parse.ink($U(), B_src, S, P_intile), params.bg(Col)
+    ).
+out(P, Col, [Sr, O, G], Res) :-
+    impl_choice([Sr, O, G]), landing(Sr, O, Res, _, _, _),
+    parse.last_band($U(), B), parse.band_cell($U(), _, B, P),
+    !parse.slot_cell($U(), B, P, _, _), params.bg(Col).                 // between slots
+
+// --- $Stored ---
+move([$Stored(), $End()], S, S2) :- stored_move(S, S2).
+
+// --- $StepFromBandsOrStored ---
+
+move([$StepFromBandsOrStored(), $End()], S, S2) :-
+    parse.stacked($U()), parse.step_cand($U(), N), !parse.step_misfit($U(), N),
+    parse.slot_cycle.walk($U(), S, N, S2).
+move([$StepFromBandsOrStored(), $End()], S, S2) :- !parse.stacked($U()), stored_move(S, S2).
+
+// --- $PermutationFromBandsOrStored ---
+// Slot s2 of every band holds the pattern of slot s1 of the band before it.
+.decl slot_match(p_slot1: Position, p_slot2: Position)
+slot_match(S, S2) :-
+    parse.stacked($U()), parse.slot($U(), S), parse.slot($U(), S2), !parse.unlike($U(), _, S, _, S2).
+
+// Each permutation of the slots that the matches allow.
+.init perms = TiebreakResolutions<Unit, Position, Position>
+perms.cand($U(), S2, S) :- slot_match(S, S2).
+
+move([$PermutationFromBandsOrStored(), Res], S, S2) :- perms.assign($U(), Res, S2, S).
+move([$PermutationFromBandsOrStored(), $End()], S, S2) :- !parse.stacked($U()), stored_move(S, S2).
+
+// --- $LastBand ---
+landing(Sr, $LastBand(), Res, B, S, S2) :- move([Sr, Res], S, S2), parse.last_band($U(), B).
+
+// --- $FromFirstBand ---
+// @claim next-band
+.init band_count = Tally<Unit, Position>
+band_count.item($U(), B) :- parse.band_pos($U(), B).
+band_count.domain($U()).
+
+// The move applied once per band.
+// @claim next-band
+.init moves = CycleWalk<MoveKey, Position>
+moves.succ(Mk, S, S2) :- move(Mk, S, S2).
+moves.step(Mk, N) :- move(Mk, _, _), band_count.tally($U(), N).
+
+landing(Sr, $FromFirstBand(), Res, B, S, S2) :-
+    band_count.tally($U(), N), moves.walk([Sr, Res], S, N, S2), parse.first_band($U(), B).
+
+// --- $LandingSlot ---
+color_band($LandingSlot(), B) :- parse.last_band($U(), B).
+
+// --- $SlotColorFromFirstBand ---
+color_band($SlotColorFromFirstBand(), B) :- parse.first_band($U(), B).
+
+.comp Determine {
+    .init in_parse = Parse<Example>
+    in_parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The one color of the grid's edge line toward params.band_dir.
+    .init edge = Unanimous<Unit, Color>
+    edge.item($U(), Col) :- ex_in(_, P, Col), params.band_dir(BD), dist(P, BD, 0).
+
+    .decl bg(c: Color)
+    bg(Col) :- edge.value($U(), Col).
+
+    // The output's extent across the bands.
+    .decl glyph_size(k: number)
+    glyph_size(K) :- ex_out(_, P, _), params.band_dir(BD), axis_of(BD, A), axis_dim(P, A, K).
+
+    // The border's width: the distance from the edge toward params.band_dir
+    // to the nearest pattern cell.
+    .init border = Extremes<Example>
+    border.cand(E, K) :- ex_in(E, P, Col), !params.bg(Col), params.band_dir(BD), dist(P, BD, K).
+
+    .init border_width = Unanimous<Unit, number>
+    border_width.item($U(), K) :- border.low(_, K).
+
+    .decl gap(g: number)
+    gap(K) :- border_width.value($U(), K).
+
+    // A train output's cell inside a slot, with its place in the slot.
+    .decl out_slot_cell(e: Example, p_slot: Position, p_intile: Position, col: Color)
+    out_slot_cell(E, P_slot, P_intile, Col) :-
+        ex_out(E, P, Col), params.glyph_size(Sz), params.gap(G),
+        divide_by_size_2d(P, Sz, G, P_slot, P_intile).
+
+    // A count of steps under which the last band's patterns do not land on
+    // the train output's patterns.
+    .decl step_unfit(n: number)
+    step_unfit(N) :-
+        in_parse.step_cand(E, N), in_parse.slot_cycle.walk(E, S, N, S2),
+        in_parse.last_band(E, B), out_slot_cell(E, S2, P_intile, Col),
+        ( in_parse.ink(E, B, S, P_intile), params.bg(Col)
+        ; !in_parse.ink(E, B, S, P_intile), !params.bg(Col)
+        ).
+
+    // @ignore: determine prediction — the move is the step count that takes the
+    //  last band's patterns onto the output's, the fact next-band states
+    .decl shift_step(n: number)
+    shift_step(N) :- in_parse.step_cand(E, N), ex_out(E, _, _), !step_unfit(N).
+}

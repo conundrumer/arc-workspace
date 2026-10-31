@@ -131,11 +131,9 @@
     {
      "cases": [
       "concept",
-      "$LexTie",
       "bg=DominantColor",
       "$FitSquare",
-      "$StoredPath",
-      "$Overflow"
+      "$StoredPath"
      ],
      "grid": [
       [
@@ -158,8 +156,7 @@
     {
      "cases": [
       "$Objects",
-      "$Diag8",
-      "$MixedObjects"
+      "$Diag8"
      ],
      "grid": [
       [
@@ -178,170 +175,6 @@
        0
       ]
      ]
-    }
-   ]
-  },
-  {
-   "id": "touching-two-colors",
-   "separates": "a dot of 3 beside a dot of 7: the concept and $Objects list both colors, $MixedObjects takes the pair as one dot of two colors and is undefined",
-   "input": [
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     9,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     8,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     3,
-     7,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     2,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     4
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ]
-   ],
-   "assign": {},
-   "output": [
-    {
-     "cases": [
-      "concept",
-      "$Objects",
-      "$Diag8",
-      "$LexTie",
-      "bg=DominantColor",
-      "$FitSquare",
-      "$StoredPath",
-      "$Overflow"
-     ],
-     "grid": [
-      [
-       3,
-       7,
-       9
-      ],
-      [
-       4,
-       8,
-       2
-      ],
-      [
-       0,
-       0,
-       0
-      ]
-     ]
-    },
-    {
-     "cases": [
-      "$MixedObjects"
-     ],
-     "grid": null
     }
    ]
   },
@@ -476,12 +309,9 @@
      "cases": [
       "concept",
       "$Objects",
-      "$MixedObjects",
-      "$LexTie",
       "bg=DominantColor",
       "$FitSquare",
-      "$StoredPath",
-      "$Overflow"
+      "$StoredPath"
      ],
      "grid": [
       [
@@ -520,189 +350,6 @@
        0,
        0,
        0
-      ]
-     ]
-    }
-   ]
-  },
-  {
-   "id": "shared-column",
-   "separates": "two dots in one column: the concept, $Objects, $Diag8, $FitSquare and $StoredPath give them one rank and are undefined, $LexTie orders them by row, the top one first or the bottom one first",
-   "input": [
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     8,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     1,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     9,
-     0
-    ],
-    [
-     0,
-     0,
-     3,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     2,
-     0,
-     0,
-     0
-    ],
-    [
-     6,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ],
-    [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0
-    ]
-   ],
-   "assign": {},
-   "output": [
-    {
-     "cases": [
-      "concept",
-      "$Objects",
-      "$Diag8",
-      "$MixedObjects",
-      "bg=DominantColor",
-      "$FitSquare",
-      "$StoredPath",
-      "$Overflow"
-     ],
-     "grid": null
-    },
-    {
-     "cases": [
-      "$LexTie"
-     ],
-     "grid": [
-      [
-       [
-        1,
-        6,
-        3
-       ],
-       [
-        9,
-        2,
-        8
-       ],
-       [
-        0,
-        0,
-        0
-       ]
-      ],
-      [
-       [
-        6,
-        1,
-        3
-       ],
-       [
-        9,
-        2,
-        8
-       ],
-       [
-        0,
-        0,
-        0
-       ]
       ]
      ]
     }
@@ -840,53 +487,10 @@
       "concept",
       "$Objects",
       "$Diag8",
-      "$MixedObjects",
       "$FitSquare",
-      "$StoredPath",
-      "$Overflow"
+      "$StoredPath"
      ],
      "grid": null
-    },
-    {
-     "cases": [
-      "$LexTie"
-     ],
-     "grid": [
-      [
-       [
-        5,
-        5,
-        5
-       ],
-       [
-        5,
-        5,
-        2
-       ],
-       [
-        5,
-        5,
-        5
-       ]
-      ],
-      [
-       [
-        5,
-        5,
-        5
-       ],
-       [
-        5,
-        5,
-        5
-       ],
-       [
-        2,
-        5,
-        5
-       ]
-      ]
-     ]
     },
     {
      "cases": [
@@ -914,7 +518,7 @@
   },
   {
    "id": "ten-dots",
-   "separates": "ten dots, one in each column: the concept lays the first nine in the 3x3 output and drops the tenth, $Overflow is undefined, $FitSquare lays all ten in a 4x4 output",
+   "separates": "ten dots, one in each column: the concept lays the first nine in the 3x3 output and drops the tenth, $FitSquare lays all ten in a 4x4 output",
    "input": [
     [
      0,
@@ -1044,8 +648,6 @@
       "concept",
       "$Objects",
       "$Diag8",
-      "$MixedObjects",
-      "$LexTie",
       "bg=DominantColor",
       "$StoredPath"
      ],
@@ -1097,12 +699,6 @@
        0
       ]
      ]
-    },
-    {
-     "cases": [
-      "$Overflow"
-     ],
-     "grid": null
     }
    ]
   },
@@ -1238,11 +834,8 @@
       "concept",
       "$Objects",
       "$Diag8",
-      "$MixedObjects",
-      "$LexTie",
       "bg=DominantColor",
-      "$StoredPath",
-      "$Overflow"
+      "$StoredPath"
      ],
      "grid": [
       [
@@ -1408,84 +1001,18 @@
     "fill_order": [
      [
       0,
-      [
-       0,
-       2,
-       0,
-       2
-      ]
-     ],
-     [
       1,
-      [
-       0,
-       2,
-       1,
-       1
-      ]
-     ],
-     [
-      2,
-      [
-       0,
-       2,
-       2,
-       0
-      ]
+      2
      ],
      [
       3,
-      [
-       1,
-       1,
-       0,
-       2
-      ]
-     ],
-     [
       4,
-      [
-       1,
-       1,
-       1,
-       1
-      ]
-     ],
-     [
-      5,
-      [
-       1,
-       1,
-       2,
-       0
-      ]
+      5
      ],
      [
       6,
-      [
-       2,
-       0,
-       0,
-       2
-      ]
-     ],
-     [
       7,
-      [
-       2,
-       0,
-       1,
-       1
-      ]
-     ],
-     [
-      8,
-      [
-       2,
-       0,
-       2,
-       0
-      ]
+      8
      ]
     ]
    },
@@ -1495,11 +1022,8 @@
       "concept",
       "$Objects",
       "$Diag8",
-      "$MixedObjects",
-      "$LexTie",
       "bg=DominantColor",
-      "$FitSquare",
-      "$Overflow"
+      "$FitSquare"
      ],
      "grid": [
       [

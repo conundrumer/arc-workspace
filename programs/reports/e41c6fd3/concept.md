@@ -9,15 +9,15 @@
 - `disjoint-columns`: no two copies share a column.
 
 ## Rules
-- `align-to-anchor`: each copy slides along the axis of `align_dir`, with its place across that axis kept, until its line on the `align_dir` edge meets the anchor copy's line on that edge; the anchor copy stays where it is.
+- `align-to-anchor`: each copy slides along `align_axis`, with its place across that axis kept, until its line on an edge of `align_axis` meets the anchor copy's line on that edge; the anchor copy stays where it is. The rule runs both edges of `align_axis` and is undefined on an input where the two edges give different outputs.
 - `clear-rest`: every cell that no moved copy covers is the `background` color.
 
 ## Parameters
 - `background`: `0`
 - `anchor`: `8`
     - the color of the copy that keeps its place
-- `align_dir`: `DIR_T`, `DIR_B`
-    - the edge on which each copy's line meets the anchor's; its axis is the axis of the slide
+- `align_axis`: `AXIS_V`
+    - the axis of the slide
 
 ## Scene parameters
 none

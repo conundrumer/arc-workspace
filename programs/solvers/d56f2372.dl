@@ -1,0 +1,164 @@
+// d56f2372
+// @draft
+// @keywords: objects color-class bbox crop symmetry select
+// @scene shapes-on-background: every input holds several shapes on a field of
+//  params.background, each shape one color, and no two shapes share a color.
+// @scene one-symmetric-shape: exactly one shape is unchanged under the
+//  params.symmetry reflection of its bounding box, and every other shape is
+//  changed by it.
+// @rule crop-symmetric-shape: the output is the bounding box of the shape that
+//  params.symmetry keeps, with the shape's cells in its color and every other
+//  cell params.background.
+
+// which shape is kept
+.type Selection =
+    // @claim one-symmetric-shape
+    Stored {}
+    // @scene one-symmetric-shape: exactly one shape is unchanged under some
+    //  non-identity D4 element of its bounding box.
+    // @rule crop-symmetric-shape: the output is the bounding box of the shape
+    //  some non-identity D4 element keeps, drawn on params.background;
+    //  undefined where the number of such shapes is not one.
+    // @witness tb-only-symmetric: variant $AnySym
+    //     @relaxed one-symmetric-shape
+  | AnySym {}
+    // @scene one-symmetric-shape: exactly one shape has a set of D4 symmetries
+    //  that no other shape of the input has.
+    // @rule crop-symmetric-shape: the output is the bounding box of that shape,
+    //  drawn on params.background; undefined where the number of such shapes
+    //  is not one.
+    // @witness tb-only-symmetric: variant $AnySym
+    // @witness two-shapes: variant concept
+    // @witness odd-asymmetric: variant $OddSym
+    //     @relaxed one-symmetric-shape
+  | OddSym {}
+
+// what a shape is
+.type ShapeParse =
+    // @claim shapes-on-background
+    ColorClass {}
+    // @scene shapes-on-background: a shape is one 8-connected piece of one
+    //  color; undefined where the number of pieces kept is not one.
+    // @witness shared-color-piece: variant $Components8
+    //     @relaxed one-symmetric-shape
+  | Components8 {}
+
+// what the output holds within the kept shape's box
+.type OutputContent =
+    // @claim crop-symmetric-shape
+    Drawn {}
+    // @rule crop-symmetric-shape: the output is the input's window at the kept
+    //  shape's bounding box, other shapes' cells included.
+    // @witness intruding-cell: borderline concept
+  | GridWindow {}
+
+.type Choice = [s: Selection, p: ShapeParse, o: OutputContent]
+
+.type ShapeKey = [p: ShapeParse, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+
+    // --- $Stored ---
+    // The reflection of its own box that keeps the chosen shape.
+    .decl symmetry(d: D4) symmetry(D4_LR).
+}
+
+.init params = Params
+
+.decl selection_choice(s: Selection)
+selection_choice($Stored()). selection_choice($AnySym()). selection_choice($OddSym()).
+
+.decl shape_parse_choice(p: ShapeParse)
+shape_parse_choice($ColorClass()). shape_parse_choice($Components8()).
+
+.decl output_content_choice(o: OutputContent)
+output_content_choice($Drawn()). output_content_choice($GridWindow()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, P, O]) :- selection_choice(S), shape_parse_choice(P), output_content_choice(O).
+
+// The cells of each shape.
+.decl shape_cell(s: ShapeKey, p: Position, col: Color)
+
+// @claim crop-symmetric-shape
+.init bbox = Bbox<ShapeKey>
+bbox.cell(S, P) :- shape_cell(S, P, _).
+
+// The shape drawn on the background within its box.
+.decl drawn(s: ShapeKey, p_inner: Position, col: Color)
+drawn(S, P_inner, Col) :-
+    bbox.box(S, B), in(P, _), crop(P, B, P_inner),
+    ( shape_cell(S, P, Col)
+    ; !shape_cell(S, P, _), params.background(Col)
+    ).
+
+// The symmetries of each drawn shape.
+// @claim one-symmetric-shape crop-symmetric-shape
+.init sym = D4Map<ShapeKey, Color>
+sym.src(S, P, Col) :- drawn(S, P, Col).
+sym.dst(S, P, Col) :- drawn(S, P, Col).
+
+// The shapes a selection keeps.
+.decl kept(s: ShapeKey, sel: Selection)
+
+// A selection that keeps more than one shape of a parse.
+.decl rivaled(sp: ShapeParse, sel: Selection)
+rivaled(Sp, Sel) :- kept([Sp, Id], Sel), kept([Sp, Id2], Sel), Id != Id2.
+
+// The one shape a case keeps, of the case's parse.
+.decl chosen(id: Ident, ch: Choice)
+chosen(Id, [Sel, Sp, O]) :-
+    impl_choice([Sel, Sp, O]), kept([Sp, Id], Sel), !rivaled(Sp, Sel).
+
+// --- $ColorClass ---
+.init classes = Canon<Position>
+classes.equiv(P, Q) :- in(P, Col), in(Q, Col), !params.background(Col).
+
+shape_cell([$ColorClass(), Id], P, Col) :- classes.id(P, Id), in(P, Col).
+
+// --- $Components8 ---
+// @claim shapes-on-background
+.init pieces = Components8<Color>
+pieces.node(Col, P) :- in(P, Col), !params.background(Col).
+
+shape_cell([$Components8(), Id], P, Col) :- pieces.label(Col, P, Id).
+
+// --- $Stored ---
+kept(S, $Stored()) :- params.symmetry(D), sym.map(S, D).
+
+// --- $AnySym ---
+kept(S, $AnySym()) :- sym.has_sym(S).
+
+// --- $OddSym ---
+// @claim one-symmetric-shape
+.init sym_sets = KeyedSetCompare<ShapeKey, ShapeKey, D4>
+sym_sets.pattern_member(S, D)  :- sym.map(S, D).
+sym_sets.observed_member(S, D) :- sym.map(S, D).
+
+// A shape whose set of symmetries another shape of its parse has.
+.decl sym_shared(s: ShapeKey)
+sym_shared([Sp, Id]) :- sym_sets.equals([Sp, Id], [Sp, Id2]), Id != Id2.
+
+kept(S, $OddSym()) :- bbox.box(S, _), !sym_shared(S).
+
+// --- $Drawn ---
+out(P, Col, [Sel, Sp, $Drawn()]) :- chosen(Id, [Sel, Sp, $Drawn()]), drawn([Sp, Id], P, Col).
+
+// --- $GridWindow ---
+out(P_inner, Col, [Sel, Sp, $GridWindow()]) :-
+    chosen(Id, [Sel, Sp, $GridWindow()]),
+    bbox.box([Sp, Id], B), in(P, Col), crop(P, B, P_inner).
+
+.comp Determine {
+    // A color some train output lacks.
+    .decl lacking(col: Color)
+    lacking(Col) :- ex_out(_, _, Col), ex_out(E, _, _), !ex_out(E, _, Col).
+
+    // The field every train output draws its shape on.
+    .decl background(c: Color)
+    background(Col) :- ex_out(_, _, Col), !lacking(Col).
+}

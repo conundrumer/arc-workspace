@@ -92,60 +92,6 @@
       ]
     }]
   }, {
-    "id": "anchor-edge",
-    "separates": "An anti-diagonal band of period 3 whose eight cells are no whole number of periods: with the input at the top-right corner, the output band reads 1 2 3 repeating from the top-right corner, and with the input at the bottom-left corner it reads 2 3 1 repeating from there, so each anchor_edge value gives its own output.",
-    "input": [
-      [0,0,0,0,0,0,0,1],
-      [0,0,0,0,0,0,2,0],
-      [0,0,0,0,0,3,0,0],
-      [0,0,0,0,1,0,0,0],
-      [0,0,0,2,0,0,0,0],
-      [0,0,3,0,0,0,0,0],
-      [0,1,0,0,0,0,0,0],
-      [2,0,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": ["concept","$LeastPeriodDiagonal"],
-      "grid": [
-        [
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0],
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0],
-          [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
-          [0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0],
-          [0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0],
-          [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-          [0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0],
-          [0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0],
-          [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
-          [0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0],
-          [0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0],
-          [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
-          [0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0],
-          [0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-          [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-        ],
-        [
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0],
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
-          [0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0],
-          [0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0],
-          [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
-          [0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0],
-          [0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0],
-          [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
-          [0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0],
-          [0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0],
-          [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
-          [0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0],
-          [0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0],
-          [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-          [2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-        ]
-      ]
-    }]
-  }, {
     "id": "short-anti-shift-field",
     "separates": "The one-cell band 1 2 3 4 1 2 of short-anti-shift on a field of 5 with no 0: the concept finds colored corners on both diagonals and is undefined; background=DominantColor continues the band down the main diagonal on a field of 5; $LeastPeriodDiagonal takes the anti-diagonal with period 3 and fills the cells no input cell reaches with 0; $LeastPeriodDiagonal & background=DominantColor takes the anti-diagonal and fills them with 5.",
     "input": [

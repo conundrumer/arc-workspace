@@ -1,0 +1,108 @@
+// d90796e8
+// @draft
+// @keywords: objects match
+// @scene scattered-single-cells: on a background field, the input holds single
+//  cells of merge_color, absorbed_color and other colors, with no two cells of
+//  one color side by side
+// @scene pairs-disjoint: each merge_color cell touches at most one
+//  absorbed_color cell side by side, and each absorbed_color cell touches at
+//  most one merge_color cell side by side
+// @rule merge-pair: a merge_color cell that has an absorbed_color cell as a
+//  4-neighbor takes result_color, and that absorbed_color cell takes background
+// @rule keep-rest: every other cell keeps its input color, a lone merge_color
+//  or absorbed_color cell included
+
+// which merge_color cells with an absorbed_color 4-neighbor merge
+.type Choice =
+    // @claim merge-pair
+    AnyPartner {}
+    // @rule merge-pair: a 4-connected object of non-background cells merges
+    //  only when it is exactly one merge_color cell and one absorbed_color cell,
+    //  and every other object is unchanged
+    // @witness pair-touching-other-color: ordinary concept
+  | IsolatedPair {}
+    // @rule merge-pair: a merge_color cell and an absorbed_color cell merge only
+    //  when each is the other's one 4-neighbor of the partner color, and a cell
+    //  with two partners is unchanged
+    // @witness red-between-two-greens: borderline concept
+    //     @relaxed pairs-disjoint
+  | ExclusivePair {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign derived
+    //     @relaxed scattered-single-cells
+    .decl background(c: Color) background(0).
+    .decl merge_color(c: Color) merge_color(3).
+    .decl absorbed_color(c: Color) absorbed_color(2).
+    .decl result_color(c: Color) result_color(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($AnyPartner()). impl_choice($IsolatedPair()). impl_choice($ExclusivePair()).
+
+// A merge_color cell p with an absorbed_color 4-neighbor q.
+.decl partner(p: Position, q: Position)
+partner(P, Q) :-
+    in(P, Col), params.merge_color(Col),
+    dir_elem(D), neighbor(P, D, Q), in(Q, Col2), params.absorbed_color(Col2).
+
+// The pairs that merge: p takes result_color and q takes background.
+.decl merged(p: Position, q: Position, ch: Choice)
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, Ch) :- merged(P, _, Ch), params.result_color(Col).
+painted(Q, Col, Ch) :- merged(_, Q, Ch), params.background(Col).
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
+
+// --- $AnyPartner ---
+merged(P, Q, $AnyPartner()) :- partner(P, Q).
+
+// --- $IsolatedPair ---
+
+// @claim merge-pair
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !params.background(Col).
+
+// The pair's object holds a third cell.
+.decl crowded(p: Position, q: Position)
+crowded(P, Q) :- partner(P, Q), objs.label($U(), P, Id), objs.label($U(), R, Id), R != P, R != Q.
+
+merged(P, Q, $IsolatedPair()) :- partner(P, Q), !crowded(P, Q).
+
+// --- $ExclusivePair ---
+
+// The merge_color cell has two partners.
+.decl two_absorbed(p: Position)
+two_absorbed(P) :- partner(P, Q), partner(P, Q2), Q != Q2.
+
+// The absorbed_color cell has two partners.
+.decl two_merging(q: Position)
+two_merging(Q) :- partner(P, Q), partner(P2, Q), P != P2.
+
+merged(P, Q, $ExclusivePair()) :- partner(P, Q), !two_absorbed(P), !two_merging(Q).
+
+.comp Determine {
+    // A cell the output changes, with its input and output colors.
+    .decl changed(e: Example, p: Position, col_in: Color, col_out: Color)
+    changed(E, P, Col_in, Col_out) :- ex_in(E, P, Col_in), ex_out(E, P, Col_out), Col_in != Col_out.
+
+    // A changed cell takes a color its input lacks.
+    .decl result_color(c: Color)
+    result_color(Col) :- changed(E, _, _, Col), !ex_in(E, _, Col).
+
+    .decl merge_color(c: Color)
+    merge_color(Col) :- changed(_, _, Col, Col_out), result_color(Col_out).
+
+    // The other changed cells are erased into the background.
+    .decl absorbed_color(c: Color)
+    absorbed_color(Col) :- changed(_, _, Col, Col_out), !result_color(Col_out).
+
+    .decl background(c: Color)
+    background(Col) :- changed(_, _, _, Col), !result_color(Col).
+}

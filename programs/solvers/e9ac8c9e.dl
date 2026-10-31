@@ -1,0 +1,154 @@
+// e9ac8c9e
+// @draft
+// @keywords: objects markers cast
+// @scene squares: the input holds one or more solid squares of
+//  params.block_color, each with an even side
+// @scene corner-dots: each square has, at each of its four corners, one cell
+//  diagonally adjacent to that corner and outside the square, which holds a
+//  color other than params.bg and params.block_color
+// @rule erase-dots: each corner dot becomes params.bg
+// @rule quadrant-color: each square is cut into four equal quarters, and
+//  every cell of a quarter takes the color of the dot at that quarter's
+//  corner of the square
+// @rule keep-rest: every other cell keeps its input color
+
+// what a block is
+.type BlockSource =
+    // @claim squares
+    StoredColor {}
+    // @scene squares: each 4-connected one-color component of non-params.bg
+    //  cells that has more than one cell is a block, and its own color is its
+    //  block color
+    // @witness non-gray-block: variant $BlockByShape
+    //     @relaxed squares
+  | BlockByShape {}
+
+// which cell holds a corner's dot
+.type DotReach =
+    // @claim corner-dots
+    Adjacent {}
+    // @scene corner-dots: the dot of a corner is the first non-params.bg cell
+    //  on the diagonal ray outward from that corner; undefined where the ray
+    //  meets no such cell, or meets a cell of the block color first
+    // @witness gapped-dots: borderline $RayDot
+    //     @relaxed corner-dots
+  | RayDot {}
+
+// what a quarter with no dot at its corner does
+.type MissingDot =
+    // @claim quadrant-color
+    DotRequired {}
+    // @rule keep-block: a quarter whose corner has no dot keeps the block
+    //  color
+    // @witness missing-dot: borderline $KeepBlock
+    //     @relaxed corner-dots
+  | KeepBlock {}
+
+.type Choice = [block: BlockSource, reach: DotReach, missing: MissingDot]
+
+.type Piece = [s: BlockSource, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredColor ---
+    .decl block_color(c: Color) block_color(5).
+}
+
+.init params = Params
+
+.decl block_source_choice(s: BlockSource)
+block_source_choice($StoredColor()). block_source_choice($BlockByShape()).
+
+.decl dot_reach_choice(r: DotReach)
+dot_reach_choice($Adjacent()). dot_reach_choice($RayDot()).
+
+.decl missing_dot_choice(m: MissingDot)
+missing_dot_choice($DotRequired()). missing_dot_choice($KeepBlock()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, R, M]) :- block_source_choice(S), dot_reach_choice(R), missing_dot_choice(M).
+
+// The cells of each block, with its block color.
+.decl block(pc: Piece, p: Position, col: Color)
+
+// --- $StoredColor ---
+// @claim squares
+.init squares = Components<Unit>
+squares.node($U(), P) :- in(P, Col), params.block_color(Col).
+
+block([$StoredColor(), Id], P, Col) :- squares.label($U(), P, Id), params.block_color(Col).
+
+// --- $BlockByShape ---
+// @claim squares
+.init shapes = Components<Color>
+shapes.node(Col, P) :-
+    in(P, Col), !params.bg(Col),
+    dir_elem(D), neighbor(P, D, Q), in(Q, Col).   // a cardinal neighbor of its color
+
+block([$BlockByShape(), Id], P, Col) :- shapes.label(Col, P, Id).
+
+// --- $StoredColor, $BlockByShape ---
+// @claim squares
+.init box = Bbox<Piece>
+box.cell(Pc, P) :- block(Pc, P, _).
+
+// The cell at corner d of a block's box.
+.decl corner(pc: Piece, d: DiagDir, p: Position)
+corner(Pc, D, P) :- box.box(Pc, B), in(P, _), box_corner(P, B, D).
+
+// The cell that may hold the dot of corner d.
+.decl reach(r: DotReach, pc: Piece, d: DiagDir, q: Position)
+
+// --- $Adjacent ---
+reach($Adjacent(), Pc, D, Q) :- corner(Pc, D, P), neighbor(P, D, Q).
+
+// --- $RayDot ---
+// @claim corner-dots
+.init diag_ray = Ray<Unit>
+diag_ray.dir($U(), D) :- diag_dir_elem(D).
+diag_ray.mark($U(), P) :- corner(_, _, P).
+diag_ray.blocked($U(), P) :- in(P, Col), !params.bg(Col).
+
+reach($RayDot(), Pc, D, Q) :- corner(Pc, D, P), diag_ray.stop($U(), Q, D, _, P).
+
+// --- $StoredColor, $BlockByShape ---
+// The dot at corner d of a block: the reached cell, in a color other than
+// the background and the block color.
+.decl dot(r: DotReach, pc: Piece, d: DiagDir, q: Position, col: Color)
+dot(R, Pc, D, Q, Col) :- reach(R, Pc, D, Q), in(Q, Col), !params.bg(Col), !block(Pc, _, Col).
+
+// A block cell, and the same cell in the frame of the block's box.
+.decl block_inner(pc: Piece, p: Position, p_inner: Position)
+block_inner(Pc, P, P_inner) :- block(Pc, P, _), box.box(Pc, B), crop(P, B, P_inner).
+
+// @claim quadrant-color
+.init quarter = DiagPlacement<Piece>
+quarter.cell(Pc, P_inner) :- block_inner(Pc, _, P_inner).
+
+// A block cell in the quarter at corner d.
+.decl quarter_cell(pc: Piece, p: Position, d: DiagDir)
+quarter_cell(Pc, P, D) :- block_inner(Pc, P, P_inner), quarter.quadrant(Pc, P_inner, D).
+
+// The new color of a block cell.
+.decl recolor(ch: Choice, p: Position, col: Color)
+recolor([S, R, M], P, Col) :-
+    impl_choice([S, R, M]), quarter_cell([S, Id], P, D), dot(R, [S, Id], D, _, Col).
+
+// --- $KeepBlock ---
+recolor([S, R, $KeepBlock()], P, Col) :-
+    impl_choice([S, R, $KeepBlock()]), quarter_cell([S, Id], P, D),
+    !dot(R, [S, Id], D, _, _), in(P, Col).
+
+// --- $StoredColor, $BlockByShape ---
+// A cell that a block or a dot covers.
+.decl covered(ch: Choice, p: Position)
+covered([S, R, M], P) :- impl_choice([S, R, M]), block([S, _], P, _).
+covered([S, R, M], Q) :- impl_choice([S, R, M]), dot(R, [S, _], _, Q, _).
+
+out(P, Col, Ch) :- recolor(Ch, P, Col).
+out(Q, Col, [S, R, M]) :- impl_choice([S, R, M]), dot(R, [S, _], _, Q, _), params.bg(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).

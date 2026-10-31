@@ -1,0 +1,134 @@
+// e4075551
+// @draft
+// @keywords: markers span border cast rank
+// @scene five-dots: on a field of the background, the input holds exactly five
+//  single non-background cells, with no two of them adjacent
+// @scene center-dot: exactly one of the five cells has the center color 2
+// @scene side-dots: each of the other four cells is the unique cell of the
+//  five that is extreme toward one side, and each side has exactly one such
+//  cell
+// @scene inside: the center dot lies strictly inside the box whose edges are
+//  the lines of the four side dots, and each side dot lies on that box's edge
+//  between the edge's two corners
+// @rule frame: the output draws the outline of that box, each side in the
+//  color of its side dot; the two edges on the corner axis (top and bottom)
+//  include the corners, and the other two run only between them
+// @rule cross: inside the box, the row and the column through the center dot
+//  take the cross color, from edge to edge of the box's interior
+// @rule center-kept: the center dot keeps its color
+// @rule rest-background: every other cell is background
+
+// how the center dot is found
+.type Choice =
+    // @claim center-dot
+    ByColor {}
+    // @scene center-dot: the center is the one dot that is extreme toward no
+    //  side, in any color; undefined where no box is found
+    // @witness center-not-2: borderline $CenterByPlace
+    //     @relaxed center-dot
+  | CenterByPlace {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline derived
+    //     @relaxed five-dots
+    .decl background(c: Color) background(0).
+    .decl cross_color(c: Color) cross_color(5).
+    // the axis whose two edges take the box's corner cells
+    .decl corner_axis(a: Axis) corner_axis(AXIS_V).
+
+    // --- $ByColor ---
+    .decl center_color(c: Color) center_color(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($ByColor()). impl_choice($CenterByPlace()).
+
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- in(P, Col), !params.background(Col).
+
+// Some other dot is at least as near edge D as dot P.
+.decl not_extreme(d: Dir, p: Position)
+not_extreme(D, P) :- dot(P, _), dot(Q, _), P != Q, dir_elem(D), !nearer(D, P, Q).
+
+// The side dot of edge D: the one dot nearer that edge than every other dot.
+.decl side(d: Dir, p: Position, col: Color)
+side(D, P, Col) :- dot(P, Col), dir_elem(D), !not_extreme(D, P).
+
+// The box whose edges are the side dots' lines.
+// @claim inside frame cross
+.init box = DirPack<Unit>
+box.edge($U(), D, K) :- side(D, P, _), dist(P, D, K).
+
+// Frame cell P on the box's edge D, in that edge's side-dot color.
+.decl on_edge(p: Position, d: Dir, col: Color)
+on_edge(P, D, Col) :- in(P, _), box.box($U(), B), box_edge(P, B, D), side(D, _, Col).
+
+.decl on_corner_axis_edge(p: Position)
+on_corner_axis_edge(P) :- on_edge(P, D, _), axis_of(D, A), params.corner_axis(A).
+
+.decl frame(p: Position, col: Color)
+frame(P, Col) :-
+    on_edge(P, D, Col), axis_of(D, A),
+    ( params.corner_axis(A)
+    ; !on_corner_axis_edge(P)    // the corners belong to the corner-axis edges
+    ).
+
+.decl center(ch: Choice, p: Position, col: Color)
+
+// What the frame, the cross and the center draw.
+.decl drawn(ch: Choice, p: Position, col: Color)
+drawn(Ch, P, Col) :- impl_choice(Ch), frame(P, Col).
+drawn(Ch, P, Col) :- center(Ch, P, Col), box.box($U(), _).
+drawn(Ch, P, Col) :-
+    center(Ch, C, _), box.box($U(), B), in(P, _), interior(P, B),
+    axis_elem(A), same_line(A, P, C), P != C, params.cross_color(Col).
+
+out(P, Col, Ch) :- drawn(Ch, P, Col).
+out(P, Col, Ch) :-
+    center(Ch, _, _), box.box($U(), _), in(P, _), !drawn(Ch, P, _), params.background(Col).
+
+// --- $ByColor ---
+center($ByColor(), P, Col) :- dot(P, Col), params.center_color(Col).
+
+// --- $CenterByPlace ---
+center($CenterByPlace(), P, Col) :- dot(P, Col), !side(_, P, _).
+
+.comp Determine {
+    // Train examples only.
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    // The background is the commonest color of every train input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col), train(E).
+
+    .decl not_background(c: Color)
+    not_background(Col) :- commonest.mode(_, Col), train(E), !commonest.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !not_background(Col).
+
+    // The center color fills exactly one cell of every train output.
+    .decl not_center(c: Color)
+    not_center(Col) :- ex_out(_, _, Col), train(E), !ex_out(E, _, Col).
+    not_center(Col) :- ex_out(E, P, Col), ex_out(E, Q, Col), P != Q.
+
+    .decl center_color(c: Color)
+    center_color(Col) :- ex_out(_, _, Col), !not_center(Col).
+
+    // The colors next to the center cell of train output E.
+    .decl center_neighbor(e: Example, c: Color)
+    center_neighbor(E, Col) :-
+        ex_out(E, C, Cc), center_color(Cc), dir_elem(D), neighbor(C, D, Q), ex_out(E, Q, Col).
+
+    // The cross color is next to the center cell in every train output.
+    .decl not_cross(c: Color)
+    not_cross(Col) :- center_neighbor(_, Col), train(E), !center_neighbor(E, Col).
+
+    .decl cross_color(c: Color)
+    cross_color(Col) :- center_neighbor(_, Col), !not_cross(Col).
+}

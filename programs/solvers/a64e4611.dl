@@ -38,17 +38,6 @@
     // @witness equal-bands: variant $TiedBands
     //     @relaxed band
   | TiedBands {}
-    // @scene band: each axis with a line of params.background cells across
-    //  the whole grid has a band. On each line across that axis, take the
-    //  run of params.background cells through the middle of the span of
-    //  those empty lines. The band's cross-section is the intersection of
-    //  the runs at least as wide as the narrowest width that params.quorum
-    //  lines share, and its extent is each longest stretch of lines whose
-    //  run spans that cross-section. With no empty line there is no band,
-    //  and the output is the input.
-    // @witness no-empty-line: ordinary concept
-    // @witness equal-bands: variant $TiedBands
-  | EmptyLineBands {}
 
 // what a channel runs to
 .type Anchor =
@@ -110,11 +99,7 @@
 .type Choice = [bands: Band, anchor: Anchor, extent: Extent, heading: Heading,
                 line: LineRule, edge: EdgeRule]
 
-.type QuorumValue = [n: number]
-
-.type OpenValue = [quorum: QuorumValue]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -126,13 +111,6 @@
     .decl background(c: Color) background(0).
     .decl fill(c: Color) fill(3).
     .decl margin(k: number) margin(1).
-
-    // --- $EmptyLineBands ---
-    // The fewest lines that share a run width for that width to bound the
-    // band. The pairs leave it open.
-    // @open
-    .decl quorum(n: number)
-    quorum(3). quorum(4). quorum(5). quorum(6). quorum(7). quorum(8).
 }
 
 .init params = Params
@@ -151,7 +129,7 @@ flooding($ChannelChain(), $StopAtBand(), $AnyHeading(), $SideEmpty()).
 // LargestArea takes no other branch: wherever it is defined, it finds the
 // one band TiedBands finds.
 .decl band_choice(bd: Band)
-band_choice($WidestBand()). band_choice($TiedBands()). band_choice($EmptyLineBands()).
+band_choice($WidestBand()). band_choice($TiedBands()).
 
 .decl anchor_choice(an: Anchor)
 anchor_choice($BandAnchor()). anchor_choice($ChannelChain()).
@@ -168,9 +146,6 @@ line_rule_choice($ClearLine()). line_rule_choice($SideEmpty()).
 .decl edge_rule_choice(eg: EdgeRule)
 edge_rule_choice($OpenEdge()). edge_rule_choice($BandEdgeMargin()).
 
-.decl ink(p: Position)
-ink(P) :- in(P, Col), !params.background(Col).
-
 .decl blank(p: Position)
 blank(P) :- in(P, Col), params.background(Col).
 
@@ -183,7 +158,7 @@ open_run.dir($U(), D) :- blank(_), dir_elem(D).
 // Some ink cell lies within the margin of P on both axes.
 .decl crowded(p: Position)
 crowded(P) :-
-    in(P, _), ink(Q),
+    in(P, _), in(Q, Col), !params.background(Col),
     params.margin(M), uniform_outset(M, O), compose(P, O, B), inside(Q, B).
 
 // ---------------------------------------------------------------------------
@@ -216,26 +191,21 @@ area.item(B, P) :- hull.box(_, B), blank(P), inside(P, B).
 // ---------------------------------------------------------------------------
 // Bands
 
-// The band read at one open value. Only EmptyLineBands reads the quorum.
-.type Reading = [bd: Band, v: OpenValue]
-
-.decl band_box(r: Reading, b: Box)
-
-// The open values each band branch's output is derived at.
-.decl band_value(bd: Band, v: OpenValue)
+// The band each branch finds, if any.
+.decl band_box(bd: Band, b: Box)
 
 // @claim band
 .init by_area = ArgExtremes<Unit, Box>
 by_area.cand($U(), B, N) :- area.tally(B, N).
 
-// --- $LargestArea ---
+// LargestArea: the one rectangle of the largest area.
 .decl area_tie()
 area_tie() :- by_area.high(_, B1, _), by_area.high(_, B2, _), B1 != B2.
 
-band_value($LargestArea(), [nil]).
-band_box([$LargestArea(), [nil]], B) :- by_area.high(_, B, _), !area_tie().
+band_box($LargestArea(), B) :- by_area.high(_, B, _), !area_tie().
 
 // --- $WidestBand ---
+// WidestBand: the rectangle with the longest short side.
 // @claim band
 .init short_side = Extremes<Box>
 short_side.cand(B, N) :- hull.box([_, P], B), box_extent(B, P, _, N).
@@ -251,118 +221,11 @@ side_area.cand($U(), B, N) :- by_side.high(_, B, _), area.tally(B, N).
 .decl side_tie()
 side_tie() :- side_area.high(_, B1, _), side_area.high(_, B2, _), B1 != B2.
 
-band_value($WidestBand(), [nil]).
-band_box([$WidestBand(), [nil]], B) :- side_area.high(_, B, _), !side_tie().
+band_box($WidestBand(), B) :- side_area.high(_, B, _), !side_tie().
 
 // --- $TiedBands ---
-band_value($TiedBands(), [nil]).
-band_box([$TiedBands(), [nil]], B) :- by_area.high(_, B, _).
-
-// --- $EmptyLineBands ---
-// A line along A, by its cell's component across A, that holds ink.
-.decl inked_line(a: Axis, l: Position)
-inked_line(A, L) :- ink(P), perp(A, A2), split(P, A2, L, _).
-
-.decl empty_line(a: Axis, p: Position)
-empty_line(A, P) :-
-    in(P, _), perp(A, A2), split(P, A2, L, _), !inked_line(A, L).
-
-// The span across A from the first empty line to the last.
-// @claim band
-.init span = Bbox<Axis>
-span.cell(L, P) :- empty_line(L, P).
-
-// A cell on a middle line of the span: equally far from the span's two
-// sides, or one of the two lines that are.
-.decl middle(a: Axis, p: Position)
-middle(A, P) :-
-    span.box(A, S), in(P, _), crop(P, S, P_rel),
-    perp(A, A2), axis_of(D, A2), opposite(D, O), dist(P_rel, D, N),
-    ( dist(P_rel, O, N)
-    ; neighbor(P, D, Q), crop(Q, S, Q_rel), dist(Q_rel, O, N)
-    ).
-
-// A line across A, by its component along A.
-.type Row = [a: Axis, r: Position]
-
-// A line across A whose middle cell is ink.
-.decl broken(r: Row)
-broken([A, R]) :- middle(A, P), ink(P), split(P, A, R, _).
-
-// A middle cell P of line R, where the middle is blank.
-.decl mid(r: Row, p: Position)
-mid([A, R], P) :- middle(A, P), split(P, A, R, _), !broken([A, R]).
-
-// The end toward D of the blank run through the middle of line R.
-.decl mid_end(r: Row, d: Dir, e: Position)
-mid_end([A, R], D, E) :-
-    mid([A, R], P), perp(A, A2), axis_of(D, A2), open_run.rest($U(), P, D, E).
-
-// @claim band
-.init run_width = Tally<Row, Position>
-run_width.item([A, R], Q) :-
-    mid([A, R], P),
-    ( Q = P ; perp(A, A2), axis_of(D, A2), open_run.run($U(), P, D, Q) ).
-
-.type Width = [a: Axis, w: number]
-
-// @claim band
-.init width_count = Tally<Width, Position>
-width_count.item([L, W], R) :- run_width.tally([L, R], W).
-
-// Each axis read at one quorum value.
-.type Tier = [a: Axis, q: number]
-
-// The narrowest width that the quorum of lines shares.
-// @claim band
-.init shared = Extremes<Tier>
-shared.cand([A, Q], W) :-
-    width_count.tally([A, W], N), params.quorum(Q), N >= Q.
-
-.decl wide_run(t: Tier, r: Position)
-wide_run([L, Q], R) :- run_width.tally([L, R], W), shared.low([L, Q], W0), W >= W0.
-wide_run([A, Q], R) :-
-    run_width.tally([A, R], _), params.quorum(Q), !shared.low([A, Q], _).
-
-.type Side = [t: Tier, d: Dir]
-
-// The cross-section: the intersection of the wide runs.
-// @claim band
-.init cut = Extremes<Side>
-cut.cand([[L, Q], D], N) :- wide_run([L, Q], R), mid_end([L, R], D, E), dist(E, D, N).
-
-.decl short_run(t: Tier, r: Position)
-short_run([L, Q], R) :-
-    mid_end([L, R], D, E), cut.high([[L, Q], D], N), dist(E, D, N2), N2 > N.
-
-// @claim band
-.init stretch = Components<Tier>
-stretch.node([A, Q], P) :- mid([A, R], P), params.quorum(Q), !short_run([A, Q], R).
-
-.type Stretch = [t: Tier, id: Ident]
-
-// @claim band
-.init stretch_len = Tally<Stretch, Position>
-stretch_len.item([[A, Q], Id], R) :- stretch.label([A, Q], P, Id), split(P, A, R, _).
-
-// @claim band
-.init longest = ArgExtremes<Tier, Ident>
-longest.cand(T, Id, N) :- stretch_len.tally([T, Id], N).
-
-// @claim band
-.init stretch_box = Bbox<Stretch>
-stretch_box.cell([T, Id], P) :- stretch.label(T, P, Id).
-
-.init line_box = DirPack<Stretch>
-line_box.edge([[A, Q], Id], D, N) :-
-    longest.high([A, Q], Id, _), stretch_box.box([[A, Q], Id], B),
-    axis_of(D, A), dist(B, D, N).
-line_box.edge([[A, Q], Id], D, N) :-
-    longest.high([A, Q], Id, _), perp(A, A2), axis_of(D, A2),
-    cut.high([[A, Q], D], N).
-
-band_value($EmptyLineBands(), [[Q]]) :- params.quorum(Q).
-band_box([$EmptyLineBands(), [[Q]]], B) :- line_box.box([[_, Q], _], B).
+// TiedBands: every rectangle of the largest area.
+band_box($TiedBands(), B) :- by_area.high(_, B, _).
 
 // ---------------------------------------------------------------------------
 // Pieces
@@ -395,40 +258,40 @@ band_rim(Eg, B, P) :-
     kept_side(Eg, B, D), in(P, _),
     crop(P, B, P_rel), dist(P_rel, D, K), params.margin(M), K < M.  // within the margin of side D
 
-.decl band_green(r: Reading, eg: EdgeRule, b: Box, p: Position)
-band_green(R, Eg, B, P) :-
-    edge_rule_choice(Eg), band_box(R, B), in(P, _), inside(P, B), !band_rim(Eg, B, P).
+.decl band_green(bd: Band, eg: EdgeRule, b: Box, p: Position)
+band_green(Bd, Eg, B, P) :-
+    edge_rule_choice(Eg), band_box(Bd, B), in(P, _), inside(P, B), !band_rim(Eg, B, P).
 
 // ---------------------------------------------------------------------------
 // --- $ClearLine ---
 
-.type Green = [r: Reading, eg: EdgeRule]
+.type Green = [bd: Band, eg: EdgeRule]
 
-// Some band has green under the reading and the edge rule.
+// Some band has green under the band branch and the edge rule.
 .decl lit(g: Green)
-lit([R, Eg]) :- band_green(R, Eg, _, _).
+lit([Bd, Eg]) :- band_green(Bd, Eg, _, _).
 
 // The runs of clear cells outside the band's green.
 // @claim channel-fill
 .init lane_run = Slide<Green>
-lane_run.node(G, P) :- lit(G), G = [R, Eg], in(P, _), !crowded(P), !band_green(R, Eg, _, P).
+lane_run.node(G, P) :- lit(G), G = [Bd, Eg], in(P, _), !crowded(P), !band_green(Bd, Eg, _, P).
 lane_run.dir(G, D) :- lit(G), dir_elem(D).
 
-.type Feed = [r: Reading, eg: EdgeRule, hd: Heading]
+.type Feed = [bd: Band, eg: EdgeRule, hd: Heading]
 
 // P lies on a line that runs to edge D and the other way to the green it
 // leaves.
 .decl lane(f: Feed, d: Dir, p: Position)
-lane([R, Eg, Hd], D, P) :-
-    lane_run.rest([R, Eg], P, D, E), dist(E, D, 0),
-    opposite(D, D2), lane_run.rest([R, Eg], P, D2, F), neighbor(F, D2, G),
-    band_green(R, Eg, B, G), across(Hd, B, D).
+lane([Bd, Eg, Hd], D, P) :-
+    lane_run.rest([Bd, Eg], P, D, E), dist(E, D, 0),
+    opposite(D, D2), lane_run.rest([Bd, Eg], P, D2, F), neighbor(F, D2, G),
+    band_green(Bd, Eg, B, G), across(Hd, B, D).
 
-.type Lanes = [r: Reading, eg: EdgeRule, hd: Heading, an: Anchor]
+.type Lanes = [bd: Band, eg: EdgeRule, hd: Heading, an: Anchor]
 
 // The lanes each case fills.
 .decl channel_lane(k: Lanes, d: Dir, p: Position)
-channel_lane([R, Eg, Hd, $BandAnchor()], D, P) :- lane([R, Eg, Hd], D, P).
+channel_lane([Bd, Eg, Hd, $BandAnchor()], D, P) :- lane([Bd, Eg, Hd], D, P).
 
 // --- $ClearLine & $ChannelChain ---
 // A lane toward D may leave from a lane toward D_q.
@@ -442,16 +305,16 @@ turns($AnyHeading(), D, D_q) :- dir_elem(D), dir_elem(D_q).
 // a lane toward D.
 // @claim channel-fill
 .init chain_lane = Propagation<Feed, Spot>
-chain_lane.source([R, Eg, Hd], [D, P]) :- lane([R, Eg, Hd], D, P).
-chain_lane.edge([R, Eg, Hd], [D_q, Q], [D, P]) :-
-    impl_choice([Bd, $ChannelChain(), _, Hd, $ClearLine(), Eg]), R = [Bd, Q_r],
-    lane_run.rest([R, Eg], P, D, E), dist(E, D, 0),                   // P's line runs to edge D
-    opposite(D, D2), neighbor(P, D2, Q), lane_run.node([R, Eg], Q),   // the clear cell behind P
+chain_lane.source([Bd, Eg, Hd], [D, P]) :- lane([Bd, Eg, Hd], D, P).
+chain_lane.edge([Bd, Eg, Hd], [D_q, Q], [D, P]) :-
+    impl_choice([Bd, $ChannelChain(), _, Hd, $ClearLine(), Eg]),
+    lane_run.rest([Bd, Eg], P, D, E), dist(E, D, 0),                  // P's line runs to edge D
+    opposite(D, D2), neighbor(P, D2, Q), lane_run.node([Bd, Eg], Q),    // the clear cell behind P
     ( turns(Hd, D, D_q)                                               // on a lane P may leave
     ; D_q = D                                                         // on a lane toward D
     ).
 
-channel_lane([R, Eg, Hd, $ChannelChain()], D, P) :- chain_lane.reached([R, Eg, Hd], [D, P]).
+channel_lane([Bd, Eg, Hd, $ChannelChain()], D, P) :- chain_lane.reached([Bd, Eg, Hd], [D, P]).
 
 // --- $ClearLine & $ChannelChain & $PerpendicularChannels ---
 turns($PerpendicularChannels(), D, D_q) :- axis_of(D, A), axis_of(D_q, A2), perp(A, A2).
@@ -619,7 +482,7 @@ arm_far(Hd, $ChannelRect(), B, G, N) :- arm_off(Hd, B, G), rect_far(G, N).
 // A band some case leaves through arms off arms.
 .decl track(hd: Heading, ex: Extent, b: Box)
 track(Hd, Ex, B) :-
-    impl_choice([Bd, $ChannelChain(), Ex, Hd, $SideEmpty(), _]), band_box([Bd, _], B).
+    impl_choice([Bd, $ChannelChain(), Ex, Hd, $SideEmpty(), _]), band_box(Bd, B).
 
 // A band, and the arm rule of a case that leaves it through arms off arms.
 .type Arms = [hd: Heading, ex: Extent, b0: Box]
@@ -634,40 +497,34 @@ chain.edge([Hd, Ex, B0], B, B_arm) :-
 // --- $SideEmpty ---
 // The boxes that channels and arms leave: the bands, and under ChannelChain
 // the arms.
-.decl piece(r: Reading, hd: Heading, an: Anchor, ex: Extent, b: Box)
-piece(R, Hd, An, Ex, B) :-
-    band_box(R, B), heading_choice(Hd), anchor_choice(An), extent_choice(Ex).
+.decl piece(bd: Band, hd: Heading, an: Anchor, ex: Extent, b: Box)
+piece(Bd, Hd, An, Ex, B) :-
+    band_box(Bd, B), heading_choice(Hd), anchor_choice(An), extent_choice(Ex).
 // --- $SideEmpty & $ChannelChain ---
-piece(R, Hd, $ChannelChain(), Ex, B) :-
-    band_box(R, B0), track(Hd, Ex, B0),
+piece(Bd, Hd, $ChannelChain(), Ex, B) :-
+    band_box(Bd, B0), track(Hd, Ex, B0),
     chain.reached([Hd, Ex, B0], B).            // a box reached through arms off arms
 
-.decl arm_cell(r: Reading, hd: Heading, an: Anchor, ex: Extent, p: Position)
-arm_cell(R, Hd, An, Ex, P) :-
-    piece(R, Hd, An, Ex, B), arm_far(Hd, Ex, B, G, N), arm.box([G, N], B_arm),
+.decl arm_cell(bd: Band, hd: Heading, an: Anchor, ex: Extent, p: Position)
+arm_cell(Bd, Hd, An, Ex, P) :-
+    piece(Bd, Hd, An, Ex, B), arm_far(Hd, Ex, B, G, N), arm.box([G, N], B_arm),
     in(P, _), inside(P, B_arm).
 
 // ---------------------------------------------------------------------------
 // Output
 
-// The case's green at one open value.
-.decl green(ch: Choice, v: OpenValue, p: Position)
-green([Bd, An, Ex, Hd, Ln, Eg], V, P) :-
-    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_green([Bd, V], Eg, _, P).
+// The case's green.
+.decl green(ch: Choice, p: Position)
+green([Bd, An, Ex, Hd, Ln, Eg], P) :-
+    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_green(Bd, Eg, _, P).
 
 // --- $ClearLine ---
-green([Bd, An, Ex, Hd, $ClearLine(), Eg], V, P) :-
-    channel_green([[Bd, V], Eg, Hd, An], Ex, P).
+green([Bd, An, Ex, Hd, $ClearLine(), Eg], P) :-
+    channel_green([Bd, Eg, Hd, An], Ex, P).
 
 // --- $SideEmpty ---
-green([Bd, An, Ex, Hd, $SideEmpty(), Eg], V, P) :-
-    edge_rule_choice(Eg), arm_cell([Bd, V], Hd, An, Ex, P).
-
-// The band branch finds its band or bands, or keeps the input.
-.decl framed(r: Reading)
-framed(R) :- band_box(R, _).
-// --- $EmptyLineBands ---
-framed([$EmptyLineBands(), V]) :- band_value($EmptyLineBands(), V).
+green([Bd, An, Ex, Hd, $SideEmpty(), Eg], P) :-
+    edge_rule_choice(Eg), arm_cell(Bd, Hd, An, Ex, P).
 
 // The case reads the band's long axis.
 .decl needs_axis(hd: Heading, eg: EdgeRule)
@@ -676,18 +533,18 @@ needs_axis($PerpendicularChannels(), Eg) :- edge_rule_choice(Eg).
 // --- $BandEdgeMargin ---
 needs_axis(Hd, $BandEdgeMargin()) :- heading_choice(Hd).
 
-.decl unaligned(r: Reading, hd: Heading, eg: EdgeRule)
-unaligned(R, Hd, Eg) :- band_box(R, B), !long_axis(B, _), needs_axis(Hd, Eg).
+.decl unaligned(bd: Band, hd: Heading, eg: EdgeRule)
+unaligned(Bd, Hd, Eg) :- band_box(Bd, B), !long_axis(B, _), needs_axis(Hd, Eg).
 
-// The case is undefined at open value V.
-.decl unready(ch: Choice, v: OpenValue)
-unready([Bd, An, Ex, Hd, Ln, Eg], V) :-
-    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_value(Bd, V),
-    ( !framed([Bd, V]) ; unaligned([Bd, V], Hd, Eg) ).
+// The case is undefined.
+.decl unready(ch: Choice)
+unready([Bd, An, Ex, Hd, Ln, Eg]) :-
+    impl_choice([Bd, An, Ex, Hd, Ln, Eg]),
+    ( !band_box(Bd, _) ; unaligned(Bd, Hd, Eg) ).
 
-out(P, Col, [Bd, An, Ex, Hd, Ln, Eg], V) :-
-    impl_choice([Bd, An, Ex, Hd, Ln, Eg]), band_value(Bd, V),
-    !unready([Bd, An, Ex, Hd, Ln, Eg], V), in(P, Col_in),
-    ( green([Bd, An, Ex, Hd, Ln, Eg], V, P), params.fill(Col)
-    ; !green([Bd, An, Ex, Hd, Ln, Eg], V, P), Col = Col_in
+out(P, Col, [Bd, An, Ex, Hd, Ln, Eg]) :-
+    impl_choice([Bd, An, Ex, Hd, Ln, Eg]),
+    !unready([Bd, An, Ex, Hd, Ln, Eg]), in(P, Col_in),
+    ( green([Bd, An, Ex, Hd, Ln, Eg], P), params.fill(Col)
+    ; !green([Bd, An, Ex, Hd, Ln, Eg], P), Col = Col_in
     ).

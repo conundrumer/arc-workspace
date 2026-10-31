@@ -1,0 +1,5 @@
+# d4c90558 — create progress
+
+- interference: `uv run python scripts/run_dl.py determination-plan d4c90558`. The action line, "write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from", lists `bar_sense` and `short_end` as well, though no proposer derives them (they are "domain enumerable, pairs-exact"). It is not clear whether those two need clauses. Cost: one more plan run and some reading. The output still lists them after the `background_color` and `mark_color` relations were written. I took the line as covering only the proposer-derived values.
+- interference: the `determine prediction` lint hint, on the first Determine draft. It fired on a test that read inputs and outputs together (`vanished`, `bare`). It took two rewrites to find a form it accepts: candidates read from the train inputs, and an output-only negated test, `!ex_out(_, _, Col)`. Cost: three solver runs. That is resolved now.
+- delay: the PreToolUse hook blocked a shell `for` loop over four solver files ("unsupported executable construct 'for'"). Cost: one call; I used Grep over the files in its place.

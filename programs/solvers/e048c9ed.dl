@@ -1,0 +1,145 @@
+// e048c9ed
+// @draft
+// @keywords: objects markers count lookup cross
+// @scene background: a field of the background color (0).
+// @scene one-marker: exactly one object is a single cell; it sits on the top row, in gray (5).
+// @scene bars: every other object is a straight one-color bar along the bar axis (H), of length 2 or more, each on its own line, with lines of background between bars.
+// @scene bar-lengths-known: each bar's length is a key of `length_color`.
+// @rule mark-per-bar: for each bar, the cell where the bar's line meets the marker's line across the bar axis takes the color `length_color` gives the bar's cell count; the bar's own color does not count.
+// @rule keep-rest: every other cell keeps its input color.
+
+// which object is the marker
+.type Marker =
+    // @claim one-marker
+    SingleCell {}
+    // @scene one-marker: the marker is the one object with a cell on the `marker_edge` row; undefined where no object or more than one meets that row, or where that object spans more than one column.
+    // @witness two-cell-marker: borderline $MarkerOnEdge
+    //     @relaxed one-marker
+  | MarkerOnEdge {}
+
+// which bars are marked
+.type BarAxis =
+    // @claim bars
+    AlongAxis {}
+    // @scene bars: every other object is a straight bar along either axis; undefined on an object of two or more cells that is not straight.
+    // @rule mark-per-bar: the mark goes where the bar's line meets the marker's line across that bar's own axis.
+    // @witness turned-scene: variant $EitherAxis
+    //     @relaxed bars
+    //     @relaxed one-marker
+  | EitherAxis {}
+
+.type Choice = [m: Marker, l: BarAxis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(c: Color) bg(0).
+    // a bar's cell count to the mark's color
+    .decl length_color(n: number, col: Color)
+    length_color(2, 1). length_color(3, 4). length_color(4, 9). length_color(5, 6).
+
+    // --- $AlongAxis ---
+    .decl bar_axis(a: Axis) bar_axis(AXIS_H).
+
+    // --- $MarkerOnEdge ---
+    .decl marker_edge(d: Dir) marker_edge(DIR_T).
+}
+
+.init params = Params
+
+.decl marker_choice(m: Marker)
+marker_choice($SingleCell()). marker_choice($MarkerOnEdge()).
+
+.decl bar_axis_choice(l: BarAxis)
+bar_axis_choice($AlongAxis()). bar_axis_choice($EitherAxis()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, L]) :- marker_choice(M), bar_axis_choice(L).
+
+.comp Parse<Key> {
+    .type KObj = [k: Key, o: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // @claim one-marker bars
+    .init objs = Components<Key>
+    objs.node(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    // @claim mark-per-bar
+    .init size = Tally<KObj, Position>
+    size.item([K, O], P) :- objs.label(K, P, O).
+
+    // Two of the object's cells lie on different lines along axis a.
+    .decl bent(key: Key, o: Ident, a: Axis)
+    bent(K, O, A) :-
+        objs.label(K, P, O), objs.label(K, Q, O),
+        axis_elem(A), perp(A, A2), axis_of(D, A2), nearer(D, P, Q).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The marker's cells.
+.decl marker_cell(m: Marker, p: Position)
+
+// The objects other than the marker.
+.decl bar(m: Marker, o: Ident)
+bar(M, O) :- marker_choice(M), parse.objs.label($U(), P, O), !marker_cell(M, P).
+
+// A bar, and the axis it runs along.
+.decl bar_line(ch: Choice, o: Ident, a: Axis)
+
+// The cell where bar o's line meets the marker's line across it.
+.decl target(ch: Choice, o: Ident, p: Position)
+target([M, L], O, P) :-
+    bar_line([M, L], O, A), parse.objs.label($U(), Q, O), marker_cell(M, R),
+    perp(A, A2), in(P, _), same_line(A, P, Q), same_line(A2, P, R).
+
+// The case has no defined output on the input.
+.decl undefined(ch: Choice)
+undefined([M, L]) :- impl_choice([M, L]), !marker_cell(M, _).
+undefined([M, L]) :- bar(M, O), bar_axis_choice(L), !bar_line([M, L], O, _).   // a bar that is not straight
+undefined([M, L]) :-
+    bar_line([M, L], _, A), axis_of(D, A),
+    marker_cell(M, P), marker_cell(M, Q), nearer(D, P, Q).   // the marker spans two lines across the bar
+
+out(P, Col, Ch) :-
+    target(Ch, O, P), !undefined(Ch),
+    parse.size.tally([$U(), O], N), params.length_color(N, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !target(Ch, _, P), !undefined(Ch).
+
+// --- $SingleCell ---
+
+marker_cell($SingleCell(), P) :- parse.objs.label($U(), P, O), !parse.bent($U(), O, _).
+
+// --- $MarkerOnEdge ---
+
+marker_cell($MarkerOnEdge(), P) :-
+    parse.objs.label($U(), Q, O), params.marker_edge(E), dist(Q, E, 0),   // an object on the edge row
+    parse.objs.label($U(), P, O).
+
+undefined([$MarkerOnEdge(), L]) :-
+    bar_axis_choice(L), params.marker_edge(E), axis_of(E, A), perp(A, A2), axis_of(D, A2),
+    marker_cell($MarkerOnEdge(), P), marker_cell($MarkerOnEdge(), Q),
+    nearer(D, P, Q).                                         // the marker spans two lines across the edge
+
+// --- $AlongAxis ---
+
+bar_line([M, $AlongAxis()], O, A) :- bar(M, O), params.bar_axis(A), !parse.bent($U(), O, A).
+
+// --- $EitherAxis ---
+
+bar_line([M, $EitherAxis()], O, A) :- bar(M, O), axis_elem(A), !parse.bent($U(), O, A).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl length_color(n: number, col: Color)
+    length_color(N, Col) :-
+        ex.objs.label(E, Q, O), ex.size.tally([E, O], N),                  // an object with its cell count
+        params.bar_axis(A), same_line(A, P, Q), ex_in(E, P, Bg), params.bg(Bg),   // a background cell on its line
+        ex_out(E, P, Col), !params.bg(Col).                                // that the output marks
+}

@@ -1,0 +1,4 @@
+# d4f3cd78 create: progress notes
+
+- interference, `uv run python scripts/run_dl.py d4f3cd78` (the "case section" hint): the hint fired five times on `hull`, `walls`, `object_box` and the Interior-keyed basin relation. It said `$EachObject` may read `$ColorHull`'s relations, and the other way round, but each case reads them only at its own Interior value, through the shared `water`/`gap` clauses. Finding precedent (c0f76784) and adding `@ignore: case section` lines took about five minutes. The output was wrong (false positives) and still is; the ignores hide it.
+- interference, [Project commands](prompts/agents/notes/project-commands.md#project-commands) with `uv run python scripts/context.py section`: the link that CLAUDE.md gives does not resolve with `context.py section` because that command only names handbook docs, so I read the file directly. That cost one extra call. The output was an error, and the command still gives it.

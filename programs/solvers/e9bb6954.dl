@@ -1,0 +1,290 @@
+// e9bb6954
+// @draft
+// @keywords: objects cast cross
+// @scene background-field: the field is 0.
+// @scene square-blocks: one or more solid squares of side 3, each a single
+//  color, each a whole 4-connected component of that color.
+// @scene distinct-block-colors: no two blocks share a color.
+// @scene scattered-noise: every other non-background cell is noise, in single
+//  cells or short runs, and no noise forms a solid square of side 3.
+// @scene separate-lines: no two blocks share a row or a column, so no block's
+//  center row or center column is another block's.
+// @scene lines-miss-blocks: no block's center row or center column passes
+//  through another block.
+// @rule center-cross: each block paints its center row and its center column,
+//  end to end, in its color, over noise and background.
+// @rule crossing-cleared: a cell on lines of two different blocks becomes the
+//  background, whatever the input holds there.
+// @rule rest-kept: every other cell keeps its input color.
+
+// which components are blocks
+.type Shape =
+    // @claim square-blocks
+    Square {}
+    // @scene square-blocks: a block is a solid one-color square of any side
+    //  above 1, with no block size; undefined where such a square has an even
+    //  side
+    // @witness larger-block: variant $AnySideSquare
+    //     @relaxed square-blocks
+    // @witness mixed-block-sizes: borderline $AnySideSquare
+    //     @relaxed scattered-noise
+  | AnySideSquare {}
+    // @scene square-blocks: the blocks are the one-color components of the
+    //  greatest cell count in the grid, crossed at their bounding box's center;
+    //  undefined where such a box has an even side
+    // @witness mixed-block-sizes: borderline $AnySideSquare
+  | LargestComponents {}
+
+// how a block's cells are grouped
+.type Grouping =
+    // @claim square-blocks
+    Components {}
+    // @scene square-blocks: 8-adjacency in place of 4-adjacency, so a
+    //  same-color cell at a block's corner joins it
+    // @witness diagonal-noise-at-block: ordinary concept
+    // @witness largest-diagonal-run: ordinary concept
+  | Components8 {}
+    // @scene square-blocks: every placement of a solid one-color square of
+    //  side 3, whether or not other cells of that color touch it; undefined
+    //  where two placements of one color overlap
+    // @witness noise-touches-block: variant $SquareOccurrence
+    //     @relaxed square-blocks
+  | SquareOccurrence {}
+
+// what a crossing cell takes
+.type CrossFill =
+    // @claim crossing-cleared
+    ClearToBackground {}
+    // @rule crossing-cleared: a crossing takes a stored cross color, 0
+    // @witness crossings-at-new-background: variant concept
+    //     @reassigned background
+  | CrossColorStored {}
+
+// which cells count as crossings
+.type CrossTest =
+    // @claim crossing-cleared
+    TwoBlocks {}
+    // @rule crossing-cleared: a crossing is a cell where one block's row line
+    //  meets another block's column line; undefined where two row lines or two
+    //  column lines of different colors fall on one cell
+    // @witness shared-center-row: borderline concept
+    //     @relaxed separate-lines
+    // @witness same-color-shared-row: borderline concept
+    //     @relaxed separate-lines
+    //     @relaxed distinct-block-colors
+  | CrossOnlyPerpendicular {}
+
+// what a line paints over
+.type Overwrite =
+    // @claim center-cross
+    OverEverything {}
+    // @rule center-cross: a cell of another block keeps that block's color
+    // @witness line-through-block: borderline concept
+    //     @relaxed lines-miss-blocks
+  | BlocksOverLines {}
+
+.type Choice = [shape: Shape, group: Grouping, fill: CrossFill, test: CrossTest, over: Overwrite]
+
+// A connected part of one color under a grouping.
+.type Part = [g: Grouping, u: Ident]
+
+// A candidate block: its grouping, its color, and its box.
+.type Blob = [g: Grouping, col: Color, b: Box]
+
+// The cells of one color in one example.
+.type ExampleColor = [e: Example, col: Color]
+
+// A connected part of one color in one example.
+.type ExamplePart = [ec: ExampleColor, u: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(0).
+
+    // --- $Square, $SquareOccurrence ---
+    // @derive TileCount: variant derived
+    //     @relaxed square-blocks
+    // @ignore: derive $SquareOccurrence — fails Fit at train0, where it gives the input unchanged
+    .decl block_size(k: number) block_size(3).
+
+    // --- $CrossColorStored ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl cross_color(c: Color) cross_color(0).
+}
+
+.init params = Params
+
+.decl shape_choice(s: Shape)
+shape_choice($Square()). shape_choice($AnySideSquare()). shape_choice($LargestComponents()).
+
+.decl grouping_choice(g: Grouping)
+grouping_choice($Components()). grouping_choice($Components8()). grouping_choice($SquareOccurrence()).
+
+.decl cross_fill_choice(f: CrossFill)
+cross_fill_choice($ClearToBackground()). cross_fill_choice($CrossColorStored()).
+
+.decl cross_test_choice(t: CrossTest)
+cross_test_choice($TwoBlocks()). cross_test_choice($CrossOnlyPerpendicular()).
+
+.decl overwrite_choice(o: Overwrite)
+overwrite_choice($OverEverything()). overwrite_choice($BlocksOverLines()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, G, F, T, O]) :-
+    shape_choice(S), grouping_choice(G), cross_fill_choice(F), cross_test_choice(T), overwrite_choice(O),
+    ( G != $SquareOccurrence() ; S = $Square() ).
+
+// The cells of each candidate block.
+.decl blob_cell(bl: Blob, p: Position)
+
+// --- $Components, $Components8 ---
+// @claim square-blocks
+.init comps = Components<Color>
+comps.node(Col, P) :- in(P, Col), !params.background(Col).
+
+// @claim square-blocks
+.init comps8 = Components8<Color>
+comps8.node(Col, P) :- in(P, Col), !params.background(Col).
+
+.decl part_cell(pt: Part, col: Color, p: Position)
+part_cell([$Components(), U], Col, P) :- comps.label(Col, P, U).
+part_cell([$Components8(), U], Col, P) :- comps8.label(Col, P, U).
+
+// @claim square-blocks
+.init part_box = Bbox<Part>
+part_box.cell(Pt, P) :- part_cell(Pt, _, P).
+
+blob_cell([G, Col, B], P) :- part_cell([G, U], Col, P), part_box.box([G, U], B).
+
+// --- $SquareOccurrence ---
+.init square = Frame2D<Unit>
+square.extent($U(), A, K) :- params.block_size(K), axis_elem(A).
+
+// @claim square-blocks
+.init occ = Occurrences<Color, Color>
+occ.cell(Col, P, Col) :- in(P, Col), !params.background(Col).
+occ.shape(Col, S, Col) :- in(_, Col), !params.background(Col), square.cell($U(), S).
+
+blob_cell([$SquareOccurrence(), Col, B], P) :- occ.occurrence(Col, B), in(P, _), crop(P, B, _).
+
+// --- shared ---
+
+// A candidate block with a cell of another color inside its box.
+.decl holed(bl: Blob)
+holed([G, Col, B]) :- blob_cell([G, Col, B], _), in(P, C), crop(P, B, _), C != Col.
+
+.decl block(s: Shape, bl: Blob)
+
+// --- $Square ---
+block($Square(), [G, Col, B]) :-
+    blob_cell([G, Col, B], P), !holed([G, Col, B]),
+    params.block_size(K), box_extent(B, P, A1, K), perp(A1, A2), box_extent(B, P, A2, K).
+
+// --- $AnySideSquare ---
+block($AnySideSquare(), [G, Col, B]) :-
+    blob_cell([G, Col, B], P), !holed([G, Col, B]),
+    box_extent(B, P, A1, N), perp(A1, A2), box_extent(B, P, A2, N),   // a square box
+    blob_cell([G, Col, B], Q), P != Q.                                 // of more than one cell
+
+// --- $LargestComponents ---
+// @claim square-blocks
+// @ignore tally: store — the count follows from the side of the blocks the inputs hold
+.init size = Tally<Blob, Position>
+size.item(Bl, P) :- blob_cell(Bl, P).
+
+// @claim square-blocks
+// @ignore cand: store — the count follows from the side of the blocks the inputs hold
+.init largest = ArgExtremes<Grouping, Blob>
+largest.cand(G, [G, Col, B], N) :- size.tally([G, Col, B], N).
+
+block($LargestComponents(), Bl) :- largest.high(_, Bl, _).
+
+// --- shared ---
+
+// The cell at equal distance from the block's two edges on each axis.
+.decl center(s: Shape, bl: Blob, c: Position)
+center(S, [G, Col, B], C) :- block(S, [G, Col, B]), in(C, _), crop(C, B, C_rel), centered(C_rel).
+
+// The block's line on axis A.
+.decl line(s: Shape, bl: Blob, a: Axis, q: Position)
+line(S, Bl, A, Q) :- center(S, Bl, C), in(Q, _), axis_elem(A), same_line(A, C, Q).
+
+// A cell some block's line passes through.
+.decl on_line(s: Shape, g: Grouping, q: Position)
+on_line(S, G, Q) :- line(S, [G, _, _], _, Q).
+
+// Where the case's model is undefined.
+.decl undefined(s: Shape, g: Grouping)
+undefined(S, G) :- block(S, [G, Col, B]), !center(S, [G, Col, B], _).    // a block with no center cell
+undefined(S, $SquareOccurrence()) :-                                      // two placements of one color overlap
+    blob_cell([$SquareOccurrence(), Col, B1], P), blob_cell([$SquareOccurrence(), Col, B2], P), B1 != B2,
+    shape_choice(S).
+
+.decl crossing(s: Shape, g: Grouping, t: CrossTest, q: Position)
+
+// --- $TwoBlocks ---
+crossing(S, G, $TwoBlocks(), Q) :-
+    line(S, [G, Col1, B1], _, Q), line(S, [G, Col2, B2], _, Q), ( Col1 != Col2 ; B1 != B2 ).
+
+// --- $CrossOnlyPerpendicular ---
+crossing(S, G, $CrossOnlyPerpendicular(), Q) :-
+    line(S, [G, Col1, B1], A1, Q), line(S, [G, Col2, B2], A2, Q), ( Col1 != Col2 ; B1 != B2 ), perp(A1, A2).
+
+.decl fill(f: CrossFill, col: Color)
+
+// --- $ClearToBackground ---
+fill($ClearToBackground(), Col) :- params.background(Col).
+
+// --- $CrossColorStored ---
+fill($CrossColorStored(), Col) :- params.cross_color(Col).
+
+// The cells no line or crossing changes.
+.decl shielded(s: Shape, g: Grouping, o: Overwrite, q: Position)
+
+// --- $BlocksOverLines ---
+shielded(S, G, $BlocksOverLines(), Q) :- block(S, [G, Col, B]), blob_cell([G, Col, B], Q).
+
+// --- shared ---
+.decl defined(ch: Choice)
+defined([S, G, F, T, O]) :- impl_choice([S, G, F, T, O]), !undefined(S, G).
+
+out(Q, Col, [S, G, F, T, O]) :-
+    defined([S, G, F, T, O]), line(S, [G, Col, _], _, Q),
+    !crossing(S, G, T, Q), !shielded(S, G, O, Q).
+out(Q, Col, [S, G, F, T, O]) :-
+    defined([S, G, F, T, O]), crossing(S, G, T, Q),
+    !shielded(S, G, O, Q), fill(F, Col).
+out(Q, Col, [S, G, F, T, O]) :-
+    defined([S, G, F, T, O]), in(Q, Col),
+    ( !on_line(S, G, Q) ; shielded(S, G, O, Q) ).
+
+.comp Determine {
+    .init parts = Components<ExampleColor>
+    parts.node([E, Col], P) :- ex_in(E, P, Col), !params.background(Col).
+
+    .init part_box = Bbox<ExamplePart>
+    part_box.cell([Ec, U], P) :- parts.label(Ec, P, U).
+
+    // A part with a cell of another color inside its box.
+    .decl holed(pt: ExamplePart)
+    holed([[E, Col], U]) :-
+        part_box.box([[E, Col], U], B), ex_in(E, P, C), crop(P, B, _), C != Col.
+
+    // The side of each solid square part of more than one cell.
+    .decl square_side(e: Example, k: number)
+    square_side(E, K) :-
+        part_box.box([[E, Col], U], B), !holed([[E, Col], U]),
+        parts.label([E, Col], P, U), parts.label([E, Col], Q, U), P != Q,
+        box_extent(B, P, A1, K), perp(A1, A2), box_extent(B, P, A2, K).
+
+    // A side some train input holds no solid square of.
+    .decl missing(k: number)
+    missing(K) :- square_side(_, K), ex_out(E, _, _), !square_side(E, K).
+
+    .decl block_size(k: number)
+    block_size(K) :- square_side(_, K), !missing(K).
+}

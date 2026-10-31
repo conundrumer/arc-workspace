@@ -1,6 +1,6 @@
 // bc93ec48
 // @draft
-// @keywords: objects permutation move rank
+// @keywords: objects permutation move
 // @scene background-field: the grid is a field of background, with one-color
 //  shapes on it
 // @rule corner-shape: the shape of a corner is the 4-connected one-color
@@ -29,15 +29,6 @@
     // @witness shape-hugs-empty-corner: borderline $EdgePair
   | EdgePair {}
 
-// the color of a cell that copies of different colors cover
-.type Clash =
-    // @claim overlay
-    Unresolved {}
-    // @rule precedence: where copies of different colors cover one cell, the
-    //  copy from the corner ranked first in precedence is drawn on top
-    // @witness copies-overlap: borderline $Precedence
-  | Precedence {}
-
 // how the target corner of each corner is encoded
 .type Step =
     // @claim next-corner
@@ -53,15 +44,12 @@
     // @witness corners-swap: ordinary $CornerMap
   | CornerMap {}
 
-.type Choice = [shape: Shape, pick: Pick, clash: Clash, step: Step]
-
-.type PrecedenceValue = [v: Ident]
-.type OpenValue = [precedence: PrecedenceValue]
+.type Choice = [shape: Shape, pick: Pick, step: Step]
 
 // A shape, under the Shape branch that finds it.
 .type ShapeId = [s: Shape, x: Ident]
 
-.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
@@ -81,35 +69,6 @@
     corner_target(DIAG_TR, DIAG_BR).
     corner_target(DIAG_BR, DIAG_BL).
     corner_target(DIAG_BL, DIAG_TL).
-
-    // --- $Precedence ---
-    // Each order v of the corners, as the rank of each corner in it.
-    // @open
-    .decl precedence(v: Ident, c: DiagDir, r: number)
-    precedence(0, DIAG_TL, 0). precedence(0, DIAG_TR, 1). precedence(0, DIAG_BR, 2). precedence(0, DIAG_BL, 3).
-    precedence(1, DIAG_TL, 0). precedence(1, DIAG_TR, 1). precedence(1, DIAG_BL, 2). precedence(1, DIAG_BR, 3).
-    precedence(2, DIAG_TL, 0). precedence(2, DIAG_BR, 1). precedence(2, DIAG_TR, 2). precedence(2, DIAG_BL, 3).
-    precedence(3, DIAG_TL, 0). precedence(3, DIAG_BR, 1). precedence(3, DIAG_BL, 2). precedence(3, DIAG_TR, 3).
-    precedence(4, DIAG_TL, 0). precedence(4, DIAG_BL, 1). precedence(4, DIAG_TR, 2). precedence(4, DIAG_BR, 3).
-    precedence(5, DIAG_TL, 0). precedence(5, DIAG_BL, 1). precedence(5, DIAG_BR, 2). precedence(5, DIAG_TR, 3).
-    precedence(6, DIAG_TR, 0). precedence(6, DIAG_TL, 1). precedence(6, DIAG_BR, 2). precedence(6, DIAG_BL, 3).
-    precedence(7, DIAG_TR, 0). precedence(7, DIAG_TL, 1). precedence(7, DIAG_BL, 2). precedence(7, DIAG_BR, 3).
-    precedence(8, DIAG_TR, 0). precedence(8, DIAG_BR, 1). precedence(8, DIAG_TL, 2). precedence(8, DIAG_BL, 3).
-    precedence(9, DIAG_TR, 0). precedence(9, DIAG_BR, 1). precedence(9, DIAG_BL, 2). precedence(9, DIAG_TL, 3).
-    precedence(10, DIAG_TR, 0). precedence(10, DIAG_BL, 1). precedence(10, DIAG_TL, 2). precedence(10, DIAG_BR, 3).
-    precedence(11, DIAG_TR, 0). precedence(11, DIAG_BL, 1). precedence(11, DIAG_BR, 2). precedence(11, DIAG_TL, 3).
-    precedence(12, DIAG_BR, 0). precedence(12, DIAG_TL, 1). precedence(12, DIAG_TR, 2). precedence(12, DIAG_BL, 3).
-    precedence(13, DIAG_BR, 0). precedence(13, DIAG_TL, 1). precedence(13, DIAG_BL, 2). precedence(13, DIAG_TR, 3).
-    precedence(14, DIAG_BR, 0). precedence(14, DIAG_TR, 1). precedence(14, DIAG_TL, 2). precedence(14, DIAG_BL, 3).
-    precedence(15, DIAG_BR, 0). precedence(15, DIAG_TR, 1). precedence(15, DIAG_BL, 2). precedence(15, DIAG_TL, 3).
-    precedence(16, DIAG_BR, 0). precedence(16, DIAG_BL, 1). precedence(16, DIAG_TL, 2). precedence(16, DIAG_TR, 3).
-    precedence(17, DIAG_BR, 0). precedence(17, DIAG_BL, 1). precedence(17, DIAG_TR, 2). precedence(17, DIAG_TL, 3).
-    precedence(18, DIAG_BL, 0). precedence(18, DIAG_TL, 1). precedence(18, DIAG_TR, 2). precedence(18, DIAG_BR, 3).
-    precedence(19, DIAG_BL, 0). precedence(19, DIAG_TL, 1). precedence(19, DIAG_BR, 2). precedence(19, DIAG_TR, 3).
-    precedence(20, DIAG_BL, 0). precedence(20, DIAG_TR, 1). precedence(20, DIAG_TL, 2). precedence(20, DIAG_BR, 3).
-    precedence(21, DIAG_BL, 0). precedence(21, DIAG_TR, 1). precedence(21, DIAG_BR, 2). precedence(21, DIAG_TL, 3).
-    precedence(22, DIAG_BL, 0). precedence(22, DIAG_BR, 1). precedence(22, DIAG_TL, 2). precedence(22, DIAG_TR, 3).
-    precedence(23, DIAG_BL, 0). precedence(23, DIAG_BR, 1). precedence(23, DIAG_TR, 2). precedence(23, DIAG_TL, 3).
 }
 
 .init params = Params
@@ -120,14 +79,11 @@ shape_choice($Conn4()). shape_choice($Conn8()).
 .decl pick_choice(k: Pick)
 pick_choice($CornerCell()). pick_choice($EdgePair()).
 
-.decl clash_choice(cl: Clash)
-clash_choice($Unresolved()). clash_choice($Precedence()).
-
 .decl step_choice(t: Step)
 step_choice($SenseStep()). step_choice($CornerD4()). step_choice($CornerMap()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([S, K, Cl, T]) :- shape_choice(S), pick_choice(K), clash_choice(Cl), step_choice(T).
+impl_choice([S, K, T]) :- shape_choice(S), pick_choice(K), step_choice(T).
 
 // Each shape: its cells and its color.
 .decl shape(s: Shape, x: Ident, p: Position, col: Color)
@@ -154,11 +110,14 @@ copy(S, K, T, C, Q, Col) :-
     jump(P, D1, K1, Q1), jump(Q1, D2, K2, Q).
 
 // The color each case paints at a cell some copy covers.
-.decl paint(ch: Choice, q: Position, col: Color, ov: OpenValue)
+.decl paint(ch: Choice, q: Position, col: Color)
+paint([S, K, T], Q, Col) :- copy(S, K, T, _, Q, Col).
 
-out(Q, Col, Ch, Ov) :- paint(Ch, Q, Col, Ov), Ch = [S, K, _, _], !ambiguous(S, K).
-out(P, Col, Ch, [nil]) :-
-    impl_choice(Ch), Ch = [S, K, _, _], !ambiguous(S, K), in(P, Col), !paint(Ch, P, _, _).
+out(P, Col, Ch) :-
+    ( paint(Ch, P, Col)                                           // a copy covers the cell
+    ; impl_choice(Ch), in(P, Col), !paint(Ch, P, _)               // no copy covers it: the input color
+    ),
+    Ch = [S, K, _], !ambiguous(S, K).
 
 // --- $Conn4 ---
 // @claim corner-shape
@@ -191,18 +150,6 @@ target($CornerD4(), C, C2) :- params.corner_d4(G), apply_diag_dir(G, C, C2).
 
 // --- $CornerMap ---
 target($CornerMap(), C, C2) :- params.corner_target(C, C2).
-
-// --- $Unresolved ---
-paint([S, K, $Unresolved(), T], Q, Col, [nil]) :- copy(S, K, T, _, Q, Col).
-
-// --- $Precedence ---
-// Under order v, a copy from a corner ranked before c covers q.
-.decl covered(s: Shape, k: Pick, t: Step, v: Ident, c: DiagDir, q: Position)
-covered(S, K, T, V, C, Q) :-
-    copy(S, K, T, C2, Q, _), params.precedence(V, C2, R2), params.precedence(V, C, R), R2 < R.
-
-paint([S, K, $Precedence(), T], Q, Col, [[V]]) :-
-    copy(S, K, T, C, Q, Col), params.precedence(V, C, _), !covered(S, K, T, V, C, Q).
 
 .comp Determine {
     .type ExColor = [e: Example, col: Color]
@@ -239,21 +186,4 @@ paint([S, K, $Precedence(), T], Q, Col, [[V]]) :-
 
     .decl corner_target(c: DiagDir, c2: DiagDir)
     corner_target(C, C2) :- found_at(_, C, C2), !missed(C, C2).
-
-    // The count of the corners an order of precedence ranks.
-    .init corner_count = Tally<Unit, DiagDir>
-    corner_count.item($U(), C) :- diag_dir_elem(C).
-    corner_count.domain($U()).
-
-    // A line of one cell per corner, whose cells' distances to an edge are
-    // the ranks an order gives the corners.
-    .init rank_line = AxisFrame<Unit>
-    rank_line.extent($U(), A, N) :- corner_count.tally($U(), N), axis_elem(A).
-
-    .decl precedence_r(r: number)
-    precedence_r(R) :- rank_line.cell($U(), A, P), axis_of(D, A), dist(P, D, R).
-
-    // Each corner with each rank an order of precedence can give it.
-    .decl precedence_pairs(c: DiagDir, r: number)
-    precedence_pairs(C, R) :- diag_dir_elem(C), precedence_r(R).
 }

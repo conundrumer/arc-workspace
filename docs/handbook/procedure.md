@@ -125,6 +125,7 @@
     - `uv run python scripts/run_dl.py witness --file programs/reports/<task_id>/witnesses.json` checks the file's shape.
         + xref: src/cli/audit.py:cmd_witness
 5. Write the report to `programs/reports/<task_id>/analyze.md`, in this form:
+    * comment: The Analyze passes on cdecee7f (`tie_dir`) and d6542281 (`shape_min_size`, `group_reach`) on branch create-rest-pass listed open parameters whose only ground is that the pairs do not fix them; ticket 26-1 records them and the user's ruling, "an open parameter stays where the concept reads it ... each open value is a reading of the concept ... and Analyze gives it" (session c3a1e90b, 2026-10-26T21:10:28Z to 21:26:00Z).
 
     ```
     # <task_id>
@@ -142,7 +143,7 @@
         - `<branch>` & `<branch>`: <the model of a case that line does not give>
 
     ## Open parameters
-    - `<name>`: <its open values>, under `<branch>` when one branch alone reads it
+    - `<name>`: <its open values, and what reading of the concept each is>, under `<branch>` when one branch alone reads it
 
     ## Not formed
     - <claim>: <why>
@@ -201,6 +202,8 @@
 ### Determine
 - Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), and store a value it reports for a parameter beyond the stored values only for an open parameter, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) defines one, unless [Principles](docs/handbook/principles.md) make that parameter a choice point.
     + xref: src/checker/render/surveys.py:JUDGE_FREE, src/checker/sweep.py:survey_sweep, docs/handbook/principles.md#choice-points-and-open-parameters
+    - An open parameter here is one `analyze.md` gives.
+        * comment: The Create passes on c8cbb738, c62e2108 and bda2d7a6 on master, and on cfb2ce5a and d2acf2cb on branch create-rest-pass, read "an open parameter" as a parameter the pairs do not fix, and added `@open` parameters their `analyze.md` lists under "Open parameters: none"; ticket 26-1 records them, from the coordinator session c3a1e90b, 2026-10-26T21:14:17Z.
     - Where it reports that a parameter's determination keeps fewer values than those at which the model fits every train pair, and the concept fixes that parameter's value, derive that value in the program, as [Stored or derived](docs/handbook/principles.md#stored-or-derived) gives a derivation.
         + xref: docs/handbook/principles.md#stored-or-derived
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).

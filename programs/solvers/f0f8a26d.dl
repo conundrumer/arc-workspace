@@ -1,0 +1,179 @@
+// f0f8a26d
+// @draft
+// @keywords: objects d4
+// @scene background-field: a field of `background` 7.
+// @scene one-mark-color: every non-background cell holds one color, the same across the input.
+// @scene straight-bars: the marked cells form 4-connected parts, each a straight 1-wide bar along a row or a column, a lone cell included.
+// @scene odd-length: every bar has an odd length, so it has one middle cell.
+// @scene turn-inside-frame: every bar's quarter turn about its middle cell lies inside the frame.
+// @rule quarter-turn: each bar is redrawn on the other axis, with the same length and the same middle cell, in the mark color.
+// @rule union: the output is the background with the union of the turned bars, so bars that cross after the turn share their cell.
+// @rule same-frame: the output has the input's size, and off the scene, a turned bar's cells past the frame are dropped.
+
+// which parts turn
+.type Scope =
+    // @claim straight-bars
+    Straight {}
+    // @scene straight-bars: every part, of any shape, is a part; undefined where a part's box height and width differ in parity.
+    // @rule quarter-turn: each part is redrawn under each `obj_turn` element about its box centre; undefined where those elements give different outputs.
+    // @witness plus-part: borderline $ObjectD4
+    //     @relaxed straight-bars
+  | ObjectD4 {}
+
+// what a part of the marked cells is
+.type Parts =
+    // @claim straight-bars
+    Components {scope: Scope}
+    // @scene straight-bars: the parts are the maximal row runs and column runs of two or more cells, and the lone cells; a cell can lie in two runs, and each run turns about its own middle; undefined where a run has even length.
+    // @witness touching-bars: borderline $Runs
+    //     @relaxed straight-bars
+  | Runs {}
+
+// how many mark colors an input holds
+.type MarkColors =
+    // @claim one-mark-color
+    OneColor {}
+    // @scene one-mark-color: the parts are taken per color, and each part turns in its own color; undefined where two colors land on one cell.
+    // @witness two-mark-colors: borderline $PartColors
+    //     @relaxed one-mark-color
+  | PartColors {}
+
+.type Choice = [parts: Parts, colors: MarkColors]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(7).
+
+    // --- $ObjectD4 ---
+    // the D4 elements each part is redrawn under
+    .decl obj_turn(d: D4)
+    obj_turn(D4_CW). obj_turn(D4_CC). obj_turn(D4_DG). obj_turn(D4_AD).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Components($Straight()), $OneColor()]).
+impl_choice([$Components($ObjectD4()), $PartColors()]).
+impl_choice([$Runs(), $PartColors()]).
+
+.decl mark(p: Position, c: Color)
+mark(P, C) :- in(P, C), !params.background(C).
+
+// cell p of a straight part with middle cell m, in color c
+.decl bar_cell(pa: Parts, c: Color, m: Position, p: Position)
+
+// the D4 elements a part is redrawn under
+.decl turned_by(pa: Parts, d: D4)
+
+// cell q, drawn in color c from a part under element d
+.decl drawn(pa: Parts, d: D4, c: Color, q: Position)
+
+// the cases undefined on this input
+.decl undefined(ch: Choice)
+
+out(P, C, Ch) :-
+    impl_choice(Ch), Ch = [Pa, _], !undefined(Ch), in(P, _),
+    ( drawn(Pa, _, C, P)
+    ; turned_by(Pa, D), !drawn(Pa, D, _, P), params.background(C)  // some element leaves p undrawn
+    ).
+
+// --- $OneColor ---
+
+// @claim one-mark-color
+.init mark_color = Unanimous<Unit, Color>
+mark_color.item($U(), C) :- mark(_, C).
+
+undefined([Pa, $OneColor()]) :- impl_choice([Pa, $OneColor()]), mark_color.clash($U()).
+
+// --- $Components ---
+
+// @claim straight-bars
+.init parts = Components<Color>
+parts.node(C, P) :- mark(P, C).
+
+// @claim odd-length
+.init part_box = Bbox<Ident>
+part_box.cell(Id, P) :- parts.label(_, P, Id).
+
+// --- $Straight ---
+
+// two cells of the part lie on different lines of axis a
+.decl bent(id: Ident, a: Axis)
+bent(Id, A) :-
+    parts.label(_, P, Id), parts.label(_, Q, Id),
+    axis_elem(A), perp(A, A2), axis_of(D, A2), !same_dist(D, P, Q).
+
+.decl straight(id: Ident)
+straight(Id) :- parts.label(_, _, Id), axis_elem(A), !bent(Id, A).
+
+// the cell at the centre of the part's box
+.decl middle(id: Ident, m: Position)
+middle(Id, M) :- parts.label(_, M, Id), part_box.box(Id, B), crop(M, B, M_rel), centered(M_rel).
+
+bar_cell($Components($Straight()), C, M, P) :- parts.label(C, P, Id), middle(Id, M).
+turned_by($Components($Straight()), D) :- sense_elem(S), rotation(S, D).
+
+undefined([$Components($Straight()), Mc]) :-
+    impl_choice([$Components($Straight()), Mc]), parts.label(_, _, Id),
+    ( !straight(Id) ; !middle(Id, _) ).
+
+// --- $ObjectD4 ---
+
+// the square box with the centre of the part's box
+.decl square(id: Ident, s: Box)
+square(Id, S) :-
+    part_box.box(Id, B), parts.label(_, P, Id),
+    ( S = B
+    ; axis_elem(A), sub_extent(P, A, K), axis_of(D, A),
+      axis_outset(D, K, K, X), compose(B, X, S)  // grown by k on both sides along a
+    ),
+    perp(A1, A2), box_extent(S, P, A1, N), box_extent(S, P, A2, N).
+
+turned_by($Components($ObjectD4()), D) :- params.obj_turn(D).
+
+drawn($Components($ObjectD4()), D, C, Q) :-
+    parts.label(C, P, Id), square(Id, S), turned_by($Components($ObjectD4()), D),
+    crop(P, S, P_rel), apply(D, P_rel, Q_rel), compose(S, Q_rel, Q).
+
+undefined([$Components($ObjectD4()), Mc]) :-
+    impl_choice([$Components($ObjectD4()), Mc]), parts.label(_, _, Id), !square(Id, _).
+
+// --- $Runs ---
+
+// @claim straight-bars
+.init runs = Slide<Color>
+runs.node(C, P) :- mark(P, C).
+runs.dir(C, D) :- mark(_, C), dir_elem(D).
+
+// a mark cell with a mark neighbor of its color
+.decl joined(p: Position)
+joined(P) :- mark(P, C), dir_elem(D), !runs.rim_dir(C, P, D).
+
+// a run along d's axis of two or more cells, or a lone cell, with end e
+// toward d and end e2 toward the opposite
+.decl run(c: Color, d: Dir, e: Position, e2: Position)
+run(C, D, E, E2) :-
+    runs.rest(C, _, D, E), opposite(D, D2), runs.rest(C, E, D2, E2),
+    ( E != E2 ; !joined(E) ).
+
+// m is as far from e as from e2
+.decl run_middle(c: Color, d: Dir, e: Position, m: Position)
+run_middle(C, D, E, M) :-
+    run(C, D, E, E2), runs.rest(C, M, D, E),
+    relative(E, M, V), compose(M, V, E2).
+
+bar_cell($Runs(), C, M, P) :- run_middle(C, D, E, M), runs.rest(C, P, D, E).
+turned_by($Runs(), D) :- sense_elem(S), rotation(S, D).
+
+undefined([$Runs(), Mc]) :-
+    impl_choice([$Runs(), Mc]), run(C, D, E, _), !run_middle(C, D, E, _).
+
+// --- $Straight, $Runs ---
+
+drawn(Pa, D, C, Q) :-
+    bar_cell(Pa, C, M, P), turned_by(Pa, D),
+    relative(M, P, V), apply(D, V, W), compose(M, W, Q).  // p's offset from m, turned

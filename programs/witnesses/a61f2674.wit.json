@@ -295,7 +295,7 @@
     }]
   }, {
     "id": "bars-outnumber-field",
-    "separates": "the $DeriveBarColor cases from the bar_color=RarestColor copies: the bar cells outnumber the background cells, so the rarest color is 0. $DeriveBarColor takes 5, the one color other than the background, and recolors the two bars. The bar_color=RarestColor copies take 0 as the bar color: the $ColumnCount copy ranks col 1 above the lone 0 cell in col 2, and the other copies find one unit at both extremes, where role_priority leaves the output undefined.",
+    "separates": "the $DeriveBarColor cases from the bar_color=RarestColor copies: the bar cells outnumber the background cells, so the rarest color is 0. $DeriveBarColor takes 5, the one color other than the background, and recolors the two bars. The bar_color=RarestColor copies take 0 as the bar color: the $ColumnCount copy ranks col 1 above the lone 0 cell in col 2, and the other copies find one unit at both extremes, where they are undefined.",
     "input": [
       [5,0,0],
       [5,0,5],
@@ -323,22 +323,7 @@
       ]
     }, {
       "cases": ["$ComponentSpan & bar_color=RarestColor"],
-      "grid": [
-        [
-          [5,1,1],
-          [5,1,5],
-          [5,1,5],
-          [5,1,5],
-          [5,1,5]
-        ],
-        [
-          [5,2,2],
-          [5,2,5],
-          [5,2,5],
-          [5,2,5],
-          [5,2,5]
-        ]
-      ]
+      "grid": null
     }]
   }]
 }

@@ -2,7 +2,7 @@
   "id": "ac0c5833",
   "witnesses": [{
     "id": "squashed-marker",
-    "separates": "Three 4 cells at three corners of a 1x2 box: $RectMarker reads them as a marker and draws a copy past its empty corner (11, 9); the concept, which reads only 2-apart square boxes, leaves them as they are.",
+    "separates": "Three 4 cells at three corners of a 1x2 box: the concept, which reads only 2-apart square boxes, finds no marker besides the template's and leaves the input as it is; the cases that derive the marker color, the template color or the stride are undefined.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,4,0,4,0,0,0,0,0,0,0,0,0,0],
@@ -38,24 +38,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker"],
-      "grid": [
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,4,0,4,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,4,0,2,0,2,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,2,0,0,0,0,0,0,0,0],
-        [0,0,0,2,2,2,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,4,0,4,0,0,0,0],
-        [0,0,0,0,0,0,0,4,0,2,0,2,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,2,0,0],
-        [0,0,0,0,0,0,0,0,0,2,2,2,0,0]
-      ]
-    }, {
       "cases": [
         "$StoredStride & $DerivedMarkerColor",
         "template_color=RarestColor",
@@ -85,11 +67,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$RectMarker",
-        "$StoredStride & marker_stride=stored",
-        "marker_stride=SepTileCount"
-      ],
+      "cases": ["$StoredStride & marker_stride=stored","marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["marker_stride=TileCount","$DerivedStride"],
@@ -114,7 +92,7 @@
     }]
   }, {
     "id": "line-template",
-    "separates": "A 1x7 template, with 4 cells of different markers on shared lines: at bounds 6 and above, cells of three markers form further rectangle triples, so RectMarker is undefined; the concept copies the template at the two other markers.",
+    "separates": "A 1x7 template, with 4 cells of different markers on shared lines: marker_stride=SepTileCount is undefined; the concept copies the template at the two other markers.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,4,0,4,0,0,0,0,0,0,0,0],
@@ -150,7 +128,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker","marker_stride=SepTileCount"],
+      "cases": ["marker_stride=SepTileCount"],
       "grid": null
     }]
   }, {
@@ -428,7 +406,7 @@
         [0,0,0,0,0,0,0,0,4,0,4,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker","marker_stride=SepTileCount"],
+      "cases": ["marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["$BoxStamp"],
@@ -451,7 +429,7 @@
     }]
   }, {
     "id": "copy-past-edge",
-    "separates": "The copy at the marker whose empty corner is (1, 11) runs one row past the top edge, and a 4 cell of each marker shares a row with the other: the concept draws the rows inside the grid; at bounds 6 and above the two markers' cells form further rectangle triples, so $RectMarker is undefined.",
+    "separates": "The copy at the marker whose empty corner is (1, 11) runs one row past the top edge, and a 4 cell of each marker shares a row with the other: the concept draws the rows inside the grid, and template_color=RarestColor is undefined.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,4,0,4,0,0,0,0,0,4,0,0,0,0],
@@ -469,11 +447,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "$StoredStride & template_color=stored",
-        "$DerivedStride"
-      ],
+      "cases": ["$StoredStride & template_color=stored","$DerivedStride"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,2],
         [0,4,0,4,0,0,0,0,0,4,0,2,0,2],
@@ -491,11 +465,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$RectMarker & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "template_color=RarestColor"
-      ],
+      "cases": ["template_color=RarestColor"],
       "grid": null
     }]
   }, {
@@ -593,11 +563,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$RectMarker",
-        "$StoredStride & marker_stride=stored",
-        "marker_stride=SepTileCount"
-      ],
+      "cases": ["$StoredStride & marker_stride=stored","marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["marker_stride=TileCount","$DerivedStride"],
@@ -619,55 +585,6 @@
         [0,0,0,2,2,2,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }]
-  }, {
-    "id": "marker_max_side=SepTileCount",
-    "separates": "`marker_max_side=SepTileCount` from the stored value: the input of `copy-past-edge`",
-    "input": [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,4,0,4,0,0,0,0,0,4,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,4,0,2,0,2,0,0,0,4,0,4,0,0],
-      [0,0,0,0,0,2,0,0,0,0,0,0,0,0],
-      [0,0,0,2,2,2,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "$StoredStride & template_color=stored",
-        "$DerivedStride"
-      ],
-      "grid": [
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-        [0,4,0,4,0,0,0,0,0,4,0,2,0,2],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,4,0,2,0,2,0,0,0,4,0,4,0,0],
-        [0,0,0,0,0,2,0,0,0,0,0,0,0,0],
-        [0,0,0,2,2,2,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": [
-        "$RectMarker & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "template_color=RarestColor"
-      ],
-      "grid": null
     }]
   }, {
     "id": "template_color=RarestColor",
@@ -765,7 +682,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$RectMarker","$StoredStride & marker_stride=stored"],
+      "cases": ["$StoredStride & marker_stride=stored"],
       "grid": null
     }, {
       "cases": [
@@ -819,61 +736,6 @@
       ]
     }]
   }, {
-    "id": "marker_max_side=TileCount",
-    "separates": "On an 11x11 grid, a 4 cell of the template's marker forms a second rectangle triple with a cell 8 columns away: at the stored bounds 2..8 the bound 8 splits the 4 cells inexactly and RectMarker is undefined; TileCount gives the bounds 2, 3, 4 and 6, at which every reading agrees.",
-    "input": [
-      [4,0,4,0,0,0,0,0,4,0,4],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [4,0,2,2,0,0,0,0,0,0,4],
-      [0,0,0,2,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [4,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0],
-      [4,0,4,0,0,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "marker_max_side=TileCount",
-        "$StoredStride & $Mirror",
-        "$DerivedStride & $Mirror"
-      ],
-      "grid": [
-        [4,0,4,0,0,0,0,0,4,0,4],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [4,0,2,2,0,0,0,2,2,0,4],
-        [0,0,0,2,0,0,0,2,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,2,0,0,0,0,0,0,0],
-        [4,0,2,2,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [4,0,4,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": ["$RectMarker & marker_max_side=stored"],
-      "grid": null
-    }, {
-      "cases": ["$Rotate"],
-      "grid": [
-        [4,0,4,0,0,0,0,0,4,0,4],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [4,0,2,2,0,0,0,0,2,0,4],
-        [0,0,0,2,0,0,0,2,2,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,2,2,0,0,0,0,0,0,0],
-        [4,0,2,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0],
-        [4,0,4,0,0,0,0,0,0,0,0]
-      ]
-    }]
-  }, {
     "id": "hue_cand=stored",
     "separates": "Beside the 4 markers, three 3 cells sit at three corners of a 2-apart box: with the admitted colors read from the input, 3 and 4 both split exactly into marker triples and $DerivedMarkerColor is undefined; with the stored colors 2 and 4, it reads the 4 markers as the concept does.",
     "input": [
@@ -918,57 +780,8 @@
       "grid": null
     }]
   }, {
-    "id": "rect-bound-two",
-    "separates": "The input of copy-past-edge, with the bound on a marker's sides set to 2 alone: $RectMarker reads the two markers and copies the template; with the bounds TileCount gives, which reach 7, the cells of the two markers also form a rectangle triple and the case is undefined.",
-    "input": [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,4,0,4,0,0,0,0,0,4,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,4,0,2,0,2,0,0,0,4,0,4,0,0],
-      [0,0,0,0,0,2,0,0,0,0,0,0,0,0],
-      [0,0,0,2,2,2,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ],
-    "assign": {
-      "marker_max_side": [
-        [2]
-      ]
-    },
-    "output": [{
-      "cases": [
-        "marker_max_side=stored & template_color=stored",
-        "marker_max_side=SepTileCount"
-      ],
-      "grid": [
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-        [0,4,0,4,0,0,0,0,0,4,0,2,0,2],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,4,0,2,0,2,0,0,0,4,0,4,0,0],
-        [0,0,0,0,0,2,0,0,0,0,0,0,0,0],
-        [0,0,0,2,2,2,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": ["marker_max_side=TileCount","template_color=RarestColor"],
-      "grid": null
-    }]
-  }, {
     "id": "tiling-free",
-    "separates": "On an 11x11 grid with ink on every candidate separator line, 4 cells of different markers form rectangle triples at bound 8: the bounds TileCount gives, 2, 3, 4 and 6, read the stride-2 markers and copy the template; SepTileCount finds no separator tiling, so its case is undefined, and so is $RectMarker at the stored bounds.",
+    "separates": "On an 11x11 grid with ink on every candidate separator line: the stored stride, TileCount and DerivedStride read the stride-2 markers and copy the template; SepTileCount finds no separator tiling, so its case is undefined.",
     "input": [
       [4,0,4,0,0,0,0,0,4,0,4],
       [0,0,0,0,0,0,0,0,0,0,0],
@@ -984,7 +797,6 @@
     ],
     "output": [{
       "cases": [
-        "marker_max_side=TileCount",
         "$StoredStride & $Mirror & marker_stride=stored",
         "$Mirror & marker_stride=TileCount",
         "$DerivedStride & $Mirror"
@@ -1003,11 +815,7 @@
         [4,0,4,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$RectMarker & marker_max_side=stored",
-        "marker_max_side=SepTileCount",
-        "marker_stride=SepTileCount"
-      ],
+      "cases": ["marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["$Rotate & marker_stride=stored","$Rotate & marker_stride=TileCount"],
@@ -1105,7 +913,7 @@
     }]
   }, {
     "id": "big-template",
-    "separates": "A 5x5 template that outnumbers the background and no other marker: at the stored background $AnyColorTemplate copies nothing and returns the input; with bg=DominantColor the background is read as 2, the template as the 0 cells, and the case is undefined.",
+    "separates": "A 5x5 template that outnumbers the background and no other marker: at the stored background $AnyColorTemplate copies nothing and returns the input; with bg=DominantColor the background is read as 2, so $AnyColorTemplate takes the 0 cells as the template and is undefined.",
     "input": [
       [4,0,4,0,0,0,0],
       [0,0,0,0,0,0,0],
@@ -1117,8 +925,7 @@
     ],
     "output": [{
       "cases": [
-        "bg=stored & marker_stride=stored & marker_max_side=stored & template_color=stored",
-        "marker_max_side=TileCount",
+        "bg=stored & marker_stride=stored & template_color=stored",
         "marker_stride=TileCount"
       ],
       "grid": [
@@ -1131,12 +938,7 @@
         [0,0,2,2,2,2,2]
       ]
     }, {
-      "cases": [
-        "marker_max_side=SepTileCount",
-        "bg=DominantColor",
-        "template_color=RarestColor",
-        "marker_stride=SepTileCount"
-      ],
+      "cases": ["bg=DominantColor","template_color=RarestColor","marker_stride=SepTileCount"],
       "grid": null
     }]
   }, {
@@ -1176,7 +978,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker & $DerivedMarkerColor","$AnyColorTemplate"],
+      "cases": ["$AnyColorTemplate"],
       "grid": null
     }, {
       "cases": ["$StoredTemplateColor & $Rotate"],
@@ -1218,33 +1020,8 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "marker_stride=stored & marker_max_side=stored",
-        "marker_max_side=TileCount",
-        "marker_stride=TileCount"
-      ],
+      "cases": ["marker_stride=stored","marker_stride=TileCount"],
       "grid": null
-    }, {
-      "cases": ["marker_max_side=SepTileCount"],
-      "grid": [
-        [4,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [4,0,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,2,2,0,4,0,2,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,2,2,0,0,4],
-        [0,0,0,0,0,0,0,0,4,0,4,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,4],
-        [0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0],
-        [0,0,0,0,0,0,4,0,0,2,2,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,4,0,0,4,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
     }, {
       "cases": ["$Mirror & marker_stride=SepTileCount"],
       "grid": [
@@ -1318,7 +1095,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$RectMarker","marker_stride=TileCount","marker_stride=SepTileCount"],
+      "cases": ["marker_stride=TileCount","marker_stride=SepTileCount"],
       "grid": null
     }, {
       "cases": ["$Rotate & marker_stride=stored"],

@@ -1,0 +1,3 @@
+# f560132c — Create progress
+
+- `delay`: [Develop](#develop) "Iterate until it works": the solver with every branch of `analyze.md` as a case (60 cases over a record `Choice`) ran past the runner's per-pair limit (20 s, then 40 s) on every pair, `timeout 120 uv run python scripts/run_dl.py f560132c` taking 37 s and 41 s. The likely load is the rectangle frames (every pair of sub-extents, about 700 frames on a 20×20 grid, 1250 on 26×26, each enumerated by `Frame2D` and counted by `Tally`) and the three piece parses, each tiling enumerated separately. Cost: two slow runs and, at the Develop budget, a cut to the concept case alone; the cut solver runs in 2 s and passes every pair.

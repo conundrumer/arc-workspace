@@ -1,0 +1,167 @@
+// c920a713
+// @draft
+// @keywords: color-class bbox occlude rank rings
+// @scene background: every cell that no outline covers is background.
+// @scene stacked-outlines: the input holds several rectangle outlines, one per
+//  color, each one cell wide; a cell where two or more outlines meet shows the
+//  color of one of them.
+// @scene visible-extent: each outline shows a cell on each of its four sides,
+//  so the bounding box of its color's cells is the outline.
+// @scene one-stack: the order that layer-order gives ranks every outline, with
+//  no two outlines left unordered and no cycle.
+// @rule layer-order: each outline is drawn whole, in stack order from the
+//  bottom, and covers what lies under it; one outline is above another when it
+//  was drawn later.
+//     @approximated: an outline is above another when some cell on both
+//      outlines shows its color and no cell on both shows the other's; the
+//      stack is that order closed under transitivity.
+//     @witness hidden-side: borderline other
+//         @relaxed visible-extent
+// @rule nested-rings: the output is a square of side 2n-1 for n outlines; the
+//  ring at depth k from the edge, 1 cell wide, takes the outline with k
+//  outlines below it, so the bottom outline is the outer ring and the top
+//  outline is the center cell.
+
+// how a pair of outlines is ordered when their shared cells show both colors
+.type Conflict =
+    // @claim layer-order
+    Drop {}
+    // @rule layer-order: the pair is ordered by the color that more of its
+    //  shared cells show, and a tie gives no direct order. Undefined where the
+    //  stack has a cycle or leaves two outlines unordered.
+    // @witness outvoted-crossing: borderline $Majority
+    //     @relaxed one-stack
+  | Majority {}
+
+// the output where the stack leaves two outlines unordered
+.type Unordered =
+    // @claim one-stack
+    Total {}
+    // @scene one-stack: the stack has no cycle, and may leave two outlines
+    //  unordered; the output holds one grid per total order that extends the
+    //  stack. Undefined where the stack has a cycle.
+    // @witness apart: borderline $EachExtension
+    //     @relaxed one-stack
+  | EachExtension {}
+
+.type Choice = [c: Conflict, u: Unordered]
+
+.type TiebreakResolution =
+    End {} | Sit {ring: number, outline: Color, rest: TiebreakResolution}
+
+// A pair of outlines.
+.type Pair = [c: Color, c2: Color]
+
+// An outline, under one reading of the conflicts.
+.type Layer = [x: Conflict, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl background(col: Color) background(0).
+}
+
+.init params = Params
+
+.decl conflict_choice(c: Conflict)
+conflict_choice($Drop()). conflict_choice($Majority()).
+
+// An outline is the border of the box its color's cells bound.
+// @claim stacked-outlines visible-extent
+.init rect = Bbox<Color>
+rect.cell(Col, P) :- in(P, Col), !params.background(Col).
+
+// A cell on the outlines of two colors.
+.decl shared(c: Color, c2: Color, p: Position)
+shared(C, C2, P) :-
+    in(P, _), rect.box(C, B), box_edge(P, B, _),
+    rect.box(C2, B2), C != C2, box_edge(P, B2, _).
+
+// C2 lies directly above C.
+.decl above(x: Conflict, c2: Color, c: Color)
+
+// --- $Drop ---
+
+.decl shows(c: Color, c2: Color, col: Color)
+shows(C, C2, Col) :- shared(C, C2, P), in(P, Col).
+
+above($Drop(), C2, C) :- shows(C, C2, C2), !shows(C, C2, C).
+
+// --- $Majority ---
+
+// @claim layer-order
+.init votes = Excess<Pair, Position>
+votes.plus([C2, C], P) :- shared(C, C2, P), in(P, C2).
+votes.minus([C2, C], P) :- shared(C, C2, P), in(P, C).
+
+above($Majority(), C2, C) :- votes.excess([C2, C], _).
+
+// --- shared ---
+
+.decl base(r: Layer)
+base([X, C]) :- conflict_choice(X), rect.box(C, _).
+
+// The stack: the outlines above each outline, through a run of direct orders.
+.init over = Propagation<Layer, Color>
+over.source([X, C], C2) :- above(X, C2, C).
+over.edge([X, C0], C, C2) :- base([X, C0]), above(X, C2, C).
+
+// Some two outlines the stack leaves unordered.
+.decl loose(x: Conflict)
+loose(X) :-
+    base([X, C]), base([X, C2]), C != C2,
+    !over.reached([X, C], C2), !over.reached([X, C2], C).
+
+// @claim nested-rings
+.init outlines = Tally<Unit, Color>
+outlines.item($U(), C) :- rect.box(C, _).
+
+.init strip = AxisFrame<Unit>
+strip.extent($U(), A, N) :- axis_elem(A), outlines.tally($U(), N).
+
+// One ring per outline, numbered by its distance from the center.
+.decl ring(k: number)
+ring(K) :- strip.cell($U(), A, P), axis_of(D, A), dist(P, D, K).
+
+// Each seating of the outlines in the rings, one outline per ring.
+.init ties = TiebreakResolutions<Conflict, number, Color>
+ties.cand(X, K, C) :- base([X, C]), ring(K).
+
+// A seating that puts an outline outside one below it.
+.decl misplaced(x: Conflict, res: TiebreakResolution)
+misplaced(X, Res) :-
+    ties.assign(X, Res, K, C), ties.assign(X, Res, K2, C2),
+    over.reached([X, C], C2), K < K2.
+
+// @claim nested-rings
+.init outermost = Extremes<Unit>
+outermost.cand($U(), K) :- ring(K).
+
+// The cells of ring k, around the center of a square as wide as the rings.
+.decl ring_cell(k: number, p: Position)
+ring_cell(K, P) :-
+    outermost.high($U(), M), uniform_inset(M, Q),   // the center
+    ring(K), ring(J), J <= K,
+    dir_elem(D), jump(Q, D, K, Q2),                 // K steps out from the center
+    perp_dir(D, D2), jump(Q2, D2, J, P).            // then along the ring's side
+
+// Each total order that extends the stack, drawn as rings.
+.decl drawn(x: Conflict, res: TiebreakResolution, p: Position, col: Color)
+drawn(X, Res, P, Col) :-
+    ties.resolution(X, Res), !misplaced(X, Res),
+    ties.assign(X, Res, K, Col), ring_cell(K, P).
+
+// --- $Total ---
+
+out(P, Col, [X, $Total()], Res) :- drawn(X, Res, P, Col), !loose(X).
+
+// --- $EachExtension ---
+
+out(P, Col, [X, $EachExtension()], Res) :- drawn(X, Res, P, Col).
+
+.comp Determine {
+    // A color of the inputs that no output shows: the cells no outline covers.
+    .decl background(col: Color)
+    background(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(_, _, Col).
+}

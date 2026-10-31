@@ -81,11 +81,6 @@
     //     @relaxed figures
   | TwoAxisThird {}
     // @rule recolor-by-symmetry: a shape that is in no class and has an axis
-    //  mirror takes the color of the class params.first_axis
-    // @witness plus-priority: borderline any
-    //     @relaxed figures
-  | AxisPriority {}
-    // @rule recolor-by-symmetry: a shape that is in no class and has an axis
     //  mirror takes the background color
     // @witness plus: borderline any
   | TwoAxisErased {}
@@ -99,10 +94,7 @@
 // The components of one figure reading under one connectivity.
 .type Grouping = [fig: Figure, conn: Connectivity]
 
-.type FirstAxis = [s: Sym]
-.type OpenValue = [first_axis: FirstAxis]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The color each mirror class takes, keyed by the class's symmetry group.
@@ -127,16 +119,6 @@
 
     .decl third(c: Color)
     third(Col) :- class_color(S, Col), !axis_class(S).
-
-    // --- $AxisPriority ---
-    // The class a shape mirrored across both axes takes. No pair has such a
-    // shape, so both axis classes stay open.
-    // @open
-    .decl first_axis(s: Sym) first_axis(SYM_TB). first_axis(SYM_LR).
-
-    // The color of class s.
-    .decl priority_color(s: Sym, c: Color)
-    priority_color(S, Col) :- first_axis(S), class_color(S, Col).
 }
 
 .init params = Params
@@ -159,7 +141,7 @@ no_axis_shape_choice($NoAxisErased()).
 
 .decl two_axis_shape_choice(ta: TwoAxisShape)
 two_axis_shape_choice($TwoAxisUndefined()). two_axis_shape_choice($TwoAxisThird()).
-two_axis_shape_choice($AxisPriority()). two_axis_shape_choice($TwoAxisErased()).
+two_axis_shape_choice($TwoAxisErased()).
 
 // The concept case, and every case with a non-concept branch at both class
 // points. A case with the concept branch at one class point is undefined on
@@ -248,27 +230,18 @@ two_axis(K, C, Id) :- unclassed(K, C, Id), parse.axis_mirrored(K, C, Id).
 
 // The same, for a shape with an axis mirror.
 // @ignore: store — in every variant task the stored color is the one
-//  params.third or params.priority_color takes from params.class_color, so
+//  params.third takes from params.class_color, so
 //  each stored copy is equivalent to its case
 .decl two_axis_color(k: Figure, c: Connectivity, id: Ident, ta: TwoAxisShape, col: Color)
 
-// The color of a shape with an axis mirror under AxisPriority, at open value v.
-// @ignore: single-consumer — it keeps the AxisPriority color under its marker
-.decl first_axis_color(k: Figure, c: Connectivity, id: Ident, ta: TwoAxisShape, v: OpenValue, col: Color)
-
-// The open value each reading of the two-axis class point's output holds.
-.decl open_of(ta: TwoAxisShape, v: OpenValue)
-open_of(TA, [nil]) :- two_axis_shape_choice(TA), TA != $AxisPriority().
-
-out(P, Col, [C, B, F, N, NA, TA], V) :-
-    impl_choice([C, B, F, N, NA, TA]), open_of(TA, V), background.value(B, BG), in(P, Col_in),
+out(P, Col, [C, B, F, N, NA, TA]) :-
+    impl_choice([C, B, F, N, NA, TA]), background.value(B, BG), in(P, Col_in),
     ( parse.member([B, F], C, Id, P),
       ( noise([B, F], C, Id, N), Col = BG
       ; shape([B, F], C, Id, N),
         ( parse.named.equals([[B, F], C, Id], S), params.class_color(S, Col)
         ; no_axis_color([B, F], C, Id, NA, Col)
-        ; two_axis_color([B, F], C, Id, TA, Col)
-        ; first_axis_color([B, F], C, Id, TA, V, Col) ) )
+        ; two_axis_color([B, F], C, Id, TA, Col) ) )
     ; !parse.figure([B, F], P), Col = Col_in ).
 
 // --- $Commonest ---
@@ -311,12 +284,6 @@ no_axis_color([B, F], C, Id, $NoAxisErased(), BG) :-
 // --- $TwoAxisThird ---
 two_axis_color(K, C, Id, $TwoAxisThird(), Col) :- two_axis(K, C, Id), params.third(Col).
 
-// --- $AxisPriority ---
-open_of($AxisPriority(), [[S]]) :- params.first_axis(S).
-
-first_axis_color(K, C, Id, $AxisPriority(), [[S]], Col) :-
-    two_axis(K, C, Id), params.priority_color(S, Col).
-
 // --- $TwoAxisErased ---
 two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
     two_axis([B, F], C, Id), background.value(B, BG).
@@ -337,19 +304,4 @@ two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
 
     .decl class_color(s: Sym, c: Color)
     class_color(S, Col) :- kept(E, Id, Col), parse.named.equals([E, $Conn8(), Id], S).
-
-    // A component in no class, mirrored across an axis.
-    .decl two_axis(e: Example, id: Ident)
-    two_axis(E, Id) :-
-        parse.named.equals([E, $Conn8(), Id], S), !class_color(S, _),
-        parse.axis_mirrored(E, $Conn8(), Id).
-
-    // An axis class whose color a kept two-axis component does not take.
-    .decl axis_contradicted(s: Sym)
-    axis_contradicted(S) :- two_axis(E, Id), kept(E, Id, Col), class_color(S, Col2), Col2 != Col.
-
-    .decl first_axis(s: Sym)
-    first_axis(S) :-
-        class_color(S, _), sym_member(S, D), flip_of(_, D),         // an axis class
-        !axis_contradicted(S).
 }

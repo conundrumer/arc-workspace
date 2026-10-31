@@ -1,0 +1,251 @@
+// e872b94a
+// @draft
+// @keywords: objects count lookup
+// @scene snakes-on-background: the input holds params.shape_color (5) paths on
+//  a background field (0), and no other color.
+// @scene snakes-apart: no two snakes touch, by a side or by a corner.
+// @rule count-snakes: each part of the params.shape_color cells that is
+//  connected through shared sides is one snake.
+// @rule strip-length: the output is a strip along params.axis,
+//  params.strip_width cells wide, and as long as the snake count plus
+//  params.extra_cells.
+// @rule strip-fill: every cell of the strip is params.fill_color.
+
+// which cells the snakes are made of
+.type SnakeCells =
+    // @claim count-snakes
+    ShapeColor {}
+    // @rule count-snakes: a snake is a side-connected part of the cells that
+    //  are not params.background; defined on every input.
+    // @witness second-color-snake: borderline $NonBackground
+    //     @relaxed snakes-on-background
+  | NonBackground {}
+
+// which parts the strip counts
+.type CountedParts =
+    // @claim count-snakes
+    Snakes {}
+    // @rule count-snakes: the counted parts are the side-connected parts of
+    //  the cells that are not snake cells.
+    // @rule strip-length: the strip is as long as the count of those parts,
+    //  with no extra cells; undefined on an input with no such cell.
+    // @witness snake-off-edge: variant concept
+  | BackgroundRegions {}
+
+// how counted parts join
+.type Adjacency =
+    // @claim count-snakes
+    Adjacency4 {}
+    // @rule count-snakes: counted parts also join through corners; defined on
+    //  every input.
+    // @witness corner-contact: borderline $Adjacency8
+    //     @relaxed snakes-apart
+  | Adjacency8 {}
+
+// where the strip's axis comes from
+.type AxisSource =
+    // @claim strip-length
+    StoredAxis {}
+    // @rule strip-length: the axis is the axis that some snake spans from edge
+    //  to edge; undefined on an input where no snake spans either axis, or
+    //  where snakes span both.
+    // @witness sideways-snake: variant $AxisFromSnakes
+  | AxisFromSnakes {}
+
+// how the output is drawn from the count
+.type StripForm =
+    // @claim strip-length
+    Strip {axis: AxisSource}
+    // @rule strip-length: a stored table gives the output grid for each count;
+    //  undefined on an input whose count is no key of the table.
+    // @rule strip-fill: the table's grid gives every color.
+    // @witness table-entry-off-form: ordinary $CountTable
+    //     @reassigned count_table
+  | CountTable {}
+
+.type Choice = [cells: SnakeCells, parts: CountedParts, adj: Adjacency, form: StripForm]
+
+.type PartsKey = [cells: SnakeCells, parts: CountedParts, adj: Adjacency]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $ShapeColor ---
+    // @derive RarestColor: ordinary concept
+    .decl shape_color(c: Color) shape_color(5).
+
+    // --- $NonBackground ---
+    // @derive DominantColor: ordinary concept
+    .decl background(c: Color) background(0).
+
+    // --- $Strip ---
+    // @derive DominantColor: ordinary concept
+    .decl fill_color(c: Color) fill_color(0).
+    .decl strip_width(k: number) strip_width(1).
+
+    // --- $StoredAxis ---
+    // the axis the strip runs along
+    .decl axis(a: Axis) axis(AXIS_V).
+
+    // --- $Snakes & $Strip ---
+    // the strip length less the snake count
+    .decl extra_cells(k: number) extra_cells(1).
+
+    // --- $Snakes & $CountTable ---
+    // the output grid for each snake count
+    .decl count_table(n: number, p: Position, col: Color)
+    GRID_2x1(count_table, 1, 0, 0)
+    GRID_3x1(count_table, 2, 0, 0, 0)
+    GRID_4x1(count_table, 3, 0, 0, 0, 0)
+    GRID_5x1(count_table, 4, 0, 0, 0, 0, 0)
+
+    // --- $BackgroundRegions & $CountTable ---
+    // the output grid for each region count
+    .decl region_count_table(n: number, p: Position, col: Color)
+    GRID_2x1(region_count_table, 2, 0, 0)
+    GRID_3x1(region_count_table, 3, 0, 0, 0)
+    GRID_4x1(region_count_table, 4, 0, 0, 0, 0)
+    GRID_5x1(region_count_table, 5, 0, 0, 0, 0, 0)
+}
+
+.init params = Params
+
+.decl snake_cells_choice(c: SnakeCells)
+snake_cells_choice($ShapeColor()). snake_cells_choice($NonBackground()).
+
+.decl counted_parts_choice(p: CountedParts)
+counted_parts_choice($Snakes()). counted_parts_choice($BackgroundRegions()).
+
+.decl adjacency_choice(j: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+.decl axis_source_choice(x: AxisSource)
+axis_source_choice($StoredAxis()). axis_source_choice($AxisFromSnakes()).
+
+.decl strip_form_choice(f: StripForm)
+strip_form_choice($Strip(X)) :- axis_source_choice(X).
+strip_form_choice($CountTable()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, Pt, J, F]) :-
+    snake_cells_choice(C), counted_parts_choice(Pt), adjacency_choice(J), strip_form_choice(F).
+
+.decl parts_key(k: PartsKey)
+parts_key([C, Pt, J]) :- snake_cells_choice(C), counted_parts_choice(Pt), adjacency_choice(J).
+
+// the count of each key's parts
+// @claim count-snakes strip-length
+.init tally = Tally<PartsKey, Ident>
+tally.item(K, Id) :- part_label(K, _, Id).
+tally.domain(K) :- parts_key(K).
+
+// --- $ShapeColor ---
+.decl snake_cell(p: Position, c: SnakeCells)
+snake_cell(P, $ShapeColor()) :- in(P, Col), params.shape_color(Col).
+
+// --- $NonBackground ---
+snake_cell(P, $NonBackground()) :- in(P, Col), !params.background(Col).
+
+// --- $Snakes ---
+.decl part_cell(k: PartsKey, p: Position)
+part_cell([C, $Snakes(), J], P) :- snake_cell(P, C), adjacency_choice(J).
+
+// --- $BackgroundRegions ---
+part_cell([C, $BackgroundRegions(), J], P) :-
+    in(P, _), snake_cells_choice(C), adjacency_choice(J), !snake_cell(P, C).
+
+// --- $Adjacency4 ---
+// @claim count-snakes
+.init parts4 = Components<PartsKey>
+parts4.node([C, Pt, $Adjacency4()], P) :- part_cell([C, Pt, $Adjacency4()], P).
+
+.decl part_label(k: PartsKey, p: Position, id: Ident)
+part_label(K, P, Id) :- parts4.label(K, P, Id).
+
+// --- $Adjacency8 ---
+// @claim count-snakes
+.init parts8 = Components8<PartsKey>
+parts8.node([C, Pt, $Adjacency8()], P) :- part_cell([C, Pt, $Adjacency8()], P).
+
+part_label(K, P, Id) :- parts8.label(K, P, Id).
+
+// --- $Snakes & $Strip ---
+// the extra cells, on each axis
+.init tail = AxisFrame<Unit>
+tail.extent($U(), A, K) :- axis_elem(A), params.extra_cells(K).
+
+// The strip's length: the extra cells, extended past one end by one cell
+// per counted part.
+.decl length(k: PartsKey, n: number)
+length([C, $Snakes(), J], L) :-
+    tally.tally([C, $Snakes(), J], N),
+    tail.cell($U(), A, P), axis_of(D, A), edge_outset(D, N, B), box_extent(B, P, A, L).
+
+// --- $BackgroundRegions & $Strip ---
+length([C, $BackgroundRegions(), J], N) :- tally.tally([C, $BackgroundRegions(), J], N).
+
+// --- $StoredAxis ---
+// the axes the strip runs along
+// @ignore: case section — the axis reads the snakes, keyed by $Snakes, under every counted-parts branch
+.decl strip_axis(a: Axis, c: SnakeCells, j: Adjacency, x: AxisSource)
+strip_axis(A, C, J, $StoredAxis()) :- params.axis(A), snake_cells_choice(C), adjacency_choice(J).
+
+// --- $AxisFromSnakes ---
+// some snake has a cell on each edge of axis A
+strip_axis(A, C, J, $AxisFromSnakes()) :-
+    part_label([C, $Snakes(), J], P1, Id), axis_of(D, A), dist(P1, D, 0),
+    part_label([C, $Snakes(), J], P2, Id), opposite(D, D2), dist(P2, D2, 0).
+
+// --- $Strip ---
+.init strip = Frame2D<Choice>
+strip.extent([C, Pt, J, $Strip(X)], A, L) :- length([C, Pt, J], L), strip_axis(A, C, J, X).
+strip.extent(Ch, A2, W) :-
+    impl_choice(Ch), Ch = [C, _, J, $Strip(X)],
+    strip_axis(A, C, J, X), perp(A, A2), params.strip_width(W).
+
+out(P, Col, Ch) :- strip.cell(Ch, P), params.fill_color(Col).
+
+// --- $Snakes & $CountTable ---
+out(P, Col, [C, $Snakes(), J, $CountTable()]) :-
+    tally.tally([C, $Snakes(), J], N), params.count_table(N, P, Col).
+
+// --- $BackgroundRegions & $CountTable ---
+out(P, Col, [C, $BackgroundRegions(), J, $CountTable()]) :-
+    tally.tally([C, $BackgroundRegions(), J], N), params.region_count_table(N, P, Col).
+
+.comp Determine {
+    // the color of every output cell
+    .decl fill_color(c: Color)
+    fill_color(C) :- ex_out(_, _, C).
+
+    // An axis some output is no longer along than across.
+    .decl short(a: Axis)
+    short(A) :- ex_out(_, P, _), axis_dims(P, A, N1, N2), N1 <= N2.
+
+    .decl axis(a: Axis)
+    axis(A) :- axis_elem(A), ex_out(_, _, _), !short(A).
+
+    .decl strip_width(k: number)
+    strip_width(W) :- axis(A), perp(A, A2), ex_out(_, P, _), axis_dim(P, A2, W).
+
+    // the snakes, and the background regions, of each example's input
+    .init snakes = Components<Example>
+    snakes.node(E, P) :- ex_in(E, P, Col), params.shape_color(Col).
+
+    .init regions = Components<Example>
+    regions.node(E, P) :- ex_in(E, P, Col), !params.shape_color(Col).
+
+    .init snake_count = Tally<Example, Ident>
+    snake_count.item(E, Id) :- snakes.label(E, _, Id).
+    snake_count.domain(E) :- ex_in(E, _, _).
+
+    .init region_count = Tally<Example, Ident>
+    region_count.item(E, Id) :- regions.label(E, _, Id).
+    region_count.domain(E) :- ex_in(E, _, _).
+
+    .decl count_table(n: number, p: Position, col: Color)
+    count_table(N, P, Col) :- snake_count.tally(E, N), ex_out(E, P, Col).
+
+    .decl region_count_table(n: number, p: Position, col: Color)
+    region_count_table(N, P, Col) :- region_count.tally(E, N), ex_out(E, P, Col).
+}

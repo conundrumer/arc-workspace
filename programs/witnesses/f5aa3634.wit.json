@@ -1,0 +1,346 @@
+{
+  "id": "f5aa3634",
+  "witnesses": [{
+    "id": "diagonal-joint",
+    "separates": "a cell of color 4 meets each copy of the repeated object at a corner only: under 4-adjacency the cell is an object of its own that also occurs twice, so two objects repeat and the concept is undefined; under 8-adjacency it joins its copy, and the 4x4 crop with the cell is the one repeated object",
+    "input": [
+      [0,0,5,8,8,0,0,0,0,0,0,0,0],
+      [0,3,5,3,8,0,0,0,0,0,0,0,0],
+      [0,0,3,3,0,0,0,0,0,0,7,0,0],
+      [0,4,0,0,0,0,0,0,0,7,7,2,0],
+      [0,0,0,0,0,0,0,0,0,0,2,2,0],
+      [0,0,3,5,2,0,0,0,0,0,0,0,0],
+      [0,0,2,2,0,0,0,0,0,5,8,8,0],
+      [0,0,3,2,0,0,0,0,3,5,3,8,0],
+      [0,0,0,0,0,0,0,0,0,3,3,0,0],
+      [0,0,0,0,0,0,0,0,4,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Adjacency4"],
+      "grid": null
+    }, {
+      "cases": ["$Adjacency8"],
+      "grid": [
+        [0,5,8,8],
+        [3,5,3,8],
+        [0,3,3,0],
+        [4,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "mirrored-distractor",
+    "separates": "beside two exact copies of the repeated object stands one left-right mirror of it: the concept outputs the copy; matching up to D4 puts all three in one class and gives both the copy and its mirror",
+    "input": [
+      [0,0,5,8,8,0,0,0,0,0,0,0,0,0],
+      [0,3,5,3,8,0,0,0,0,0,7,0,0,0],
+      [0,0,3,3,0,0,0,0,0,7,7,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,2,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,5,8,8,0],
+      [0,8,8,5,0,0,0,0,0,3,5,3,8,0],
+      [0,8,3,5,3,0,0,0,0,0,3,3,0,0],
+      [0,0,3,3,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Translation"],
+      "grid": [
+        [0,5,8,8],
+        [3,5,3,8],
+        [0,3,3,0]
+      ]
+    }, {
+      "cases": ["$Congruent & $CopyCount"],
+      "grid": null
+    }, {
+      "cases": ["$Congruent & $Repeated"],
+      "grid": [
+        [
+          [0,5,8,8],
+          [3,5,3,8],
+          [0,3,3,0]
+        ],
+        [
+          [8,8,5,0],
+          [8,3,5,3],
+          [0,3,3,0]
+        ]
+      ]
+    }]
+  }, {
+    "id": "recolored-distractor",
+    "separates": "beside two exact copies of the repeated object stands one object of the same shape in other colors: the concept outputs the copy; matching by shape alone puts all three in one class and gives both colorings",
+    "input": [
+      [0,0,5,8,8,0,0,0,0,0,0,0,0,0],
+      [0,3,5,3,8,0,0,0,0,0,7,0,0,0],
+      [0,0,3,3,0,0,0,0,0,7,7,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,2,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,5,8,8,0],
+      [0,0,6,1,1,0,0,0,0,3,5,3,8,0],
+      [0,4,6,4,1,0,0,0,0,0,3,3,0,0],
+      [0,0,4,4,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$WithColors"],
+      "grid": [
+        [0,5,8,8],
+        [3,5,3,8],
+        [0,3,3,0]
+      ]
+    }, {
+      "cases": ["$ShapeOnly & $CopyCount"],
+      "grid": null
+    }, {
+      "cases": ["$ShapeOnly & $Repeated"],
+      "grid": [
+        [
+          [0,5,8,8],
+          [3,5,3,8],
+          [0,3,3,0]
+        ],
+        [
+          [0,6,1,1],
+          [4,6,4,1],
+          [0,4,4,0]
+        ]
+      ]
+    }]
+  }, {
+    "id": "triple-and-pair",
+    "separates": "one object occurs three times and another twice: the concept, which needs one repeated object, is undefined; the most frequent object is the triple; the object occurring exactly twice is the pair",
+    "input": [
+      [0,5,8,8,0,0,0,5,8,8,0,0,0,0],
+      [3,5,3,8,0,0,3,5,3,8,0,0,0,0],
+      [0,3,3,0,0,0,0,3,3,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,7,0,0,0,0,0,7,0,0,0,0,0],
+      [0,7,7,2,0,0,0,7,7,2,0,0,0,0],
+      [0,0,2,2,0,0,0,0,2,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,5,2,0,0,0,0,0,5,8,8,0],
+      [0,0,2,2,0,0,0,0,0,3,5,3,8,0],
+      [0,0,3,2,0,0,0,0,0,0,3,3,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Repeated","copies=TileCount"],
+      "grid": null
+    }, {
+      "cases": ["$CopyCount & copies=stored"],
+      "grid": [
+        [0,7,0],
+        [7,7,2],
+        [0,2,2]
+      ]
+    }, {
+      "cases": ["$MostFrequent"],
+      "grid": [
+        [0,5,8,8],
+        [3,5,3,8],
+        [0,3,3,0]
+      ]
+    }]
+  }, {
+    "id": "decoy-in-bbox",
+    "separates": "a one-cell object sits inside the bounding box of one copy of the repeated L, touching it at no side or corner: the concept crops the L alone; cropping the input's region at each copy's box gives the L and the L with the decoy cell",
+    "input": [
+      [0,5,8,8,8,0,0,0,0,0,0,0,0],
+      [0,3,0,0,0,0,0,0,0,7,0,0,0],
+      [0,3,0,0,0,0,0,0,7,7,2,0,0],
+      [0,0,0,0,0,0,0,0,0,2,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,3,5,2,0,0,0,0,5,8,8,8,0],
+      [0,2,2,0,0,0,0,0,3,0,0,0,0],
+      [0,3,2,0,0,0,0,0,3,0,0,6,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ObjectCells"],
+      "grid": [
+        [5,8,8,8],
+        [3,0,0,0],
+        [3,0,0,0]
+      ]
+    }, {
+      "cases": ["$CropRegion"],
+      "grid": [
+        [
+          [5,8,8,8],
+          [3,0,0,0],
+          [3,0,0,0]
+        ],
+        [
+          [5,8,8,8],
+          [3,0,0,0],
+          [3,0,0,6]
+        ]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "`bg=DominantColor` from the stored value: train 0 with 0 and 1 swapped",
+    "input": [
+      [1,1,5,8,8,1,1,1,1,1,1,1,1],
+      [1,3,5,3,8,1,1,1,1,1,1,1,1],
+      [1,1,3,3,1,1,1,1,1,1,7,1,1],
+      [1,1,1,1,1,1,1,1,1,7,7,2,1],
+      [1,1,1,1,1,1,1,1,1,1,2,2,1],
+      [1,1,3,5,2,1,1,1,1,1,1,1,1],
+      [1,1,2,2,1,1,1,1,1,5,8,8,1],
+      [1,1,3,2,1,1,1,1,3,5,3,8,1],
+      [1,1,1,1,1,1,1,1,1,3,3,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ],
+    "output": [{
+      "cases": ["$CopyCount","$Repeated & bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["$MostFrequent"],
+      "grid": [
+        [1,1,5,8,8,1,1,1,1,1,1,1,1],
+        [1,3,5,3,8,1,1,1,1,1,1,1,1],
+        [1,1,3,3,1,1,1,1,1,1,7,1,1],
+        [1,1,1,1,1,1,1,1,1,7,7,2,1],
+        [1,1,1,1,1,1,1,1,1,1,2,2,1],
+        [1,1,3,5,2,1,1,1,1,1,1,1,1],
+        [1,1,2,2,1,1,1,1,1,5,8,8,1],
+        [1,1,3,2,1,1,1,1,3,5,3,8,1],
+        [1,1,1,1,1,1,1,1,1,3,3,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1]
+      ]
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [1,5,8,8],
+        [3,5,3,8],
+        [1,3,3,1]
+      ]
+    }]
+  }, {
+    "id": "copies=TileCount",
+    "separates": "the 3/8/4 object occurs three times and every other object once: no class has the stored two members, so a copy count of 2 shows nothing; the copy counts derived from the 15x15 grid's tilings include 3, and the triple is shown",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,8,8,0],
+      [0,0,0,5,5,5,0,0,0,0,8,5,5,8,0],
+      [0,0,0,5,9,5,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,9,0,0,0,0,0,0,3,8,3,0],
+      [0,0,0,0,0,0,0,3,8,3,0,3,4,3,0],
+      [0,0,0,0,0,0,0,3,4,3,0,0,4,0,0],
+      [0,0,0,0,0,0,0,0,4,0,0,0,4,0,0],
+      [0,2,2,0,0,0,0,0,4,0,0,0,0,0,0],
+      [0,7,2,0,0,0,0,0,0,0,0,3,8,3,0],
+      [0,0,7,7,0,0,0,0,0,0,0,3,4,3,0],
+      [0,0,0,7,0,0,0,0,2,0,0,0,4,0,0],
+      [0,0,0,0,0,0,0,1,2,0,0,0,4,0,0],
+      [0,0,0,0,0,0,0,1,1,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Repeated","copies=TileCount","$MostFrequent"],
+      "grid": [
+        [3,8,3],
+        [3,4,3],
+        [0,4,0],
+        [0,4,0]
+      ]
+    }, {
+      "cases": ["$CopyCount & copies=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "lone-recolor-and-mirror",
+    "separates": "no object occurs twice exactly; one object has a recolored twin and another a mirrored twin: the concept and every case that classes by exact cells and colors show nothing; classing by shape alone pairs the recolored twins, and classing up to D4 pairs the mirrored twins, and each shows both crops of its pair",
+    "input": [
+      [0,0,5,8,8,0,0,0,0,0,0,0,0,0],
+      [0,3,5,3,8,0,0,0,0,0,7,0,0,0],
+      [0,0,3,3,0,0,0,0,0,7,7,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,2,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,6,1,1,0],
+      [0,0,7,0,0,0,0,0,0,4,6,4,1,0],
+      [0,2,7,7,0,0,0,0,0,0,4,4,0,0],
+      [0,2,2,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$WithColors & $Translation"],
+      "grid": null
+    }, {
+      "cases": ["$ShapeOnly"],
+      "grid": [
+        [
+          [0,5,8,8],
+          [3,5,3,8],
+          [0,3,3,0]
+        ],
+        [
+          [0,6,1,1],
+          [4,6,4,1],
+          [0,4,4,0]
+        ]
+      ]
+    }, {
+      "cases": ["$Congruent"],
+      "grid": [
+        [
+          [0,7,0],
+          [7,7,2],
+          [0,2,2]
+        ],
+        [
+          [0,7,0],
+          [2,7,7],
+          [2,2,0]
+        ]
+      ]
+    }]
+  }, {
+    "id": "six-and-three",
+    "separates": "one object occurs three times and another six times on a 15x15 grid: the concept, with two repeated classes, shows nothing; the most frequent class is the six; the copy counts derived from the grid's tilings include 3 and not 6, so the derived copy count shows the triple",
+    "input": [
+      [3,8,3,0,0,3,8,3,0,0,3,8,3,0,0],
+      [3,4,3,0,0,3,4,3,0,0,3,4,3,0,0],
+      [0,4,0,0,0,0,4,0,0,0,0,4,0,0,0],
+      [0,4,0,0,0,0,4,0,0,0,0,4,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,2,0,0,0,0,0,1,2,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,2,0,0,0,0,0,1,2,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,2,0,0,0,0,0,1,2,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$CopyCount & copies=stored","$Repeated"],
+      "grid": null
+    }, {
+      "cases": ["copies=TileCount"],
+      "grid": [
+        [3,8,3],
+        [3,4,3],
+        [0,4,0],
+        [0,4,0]
+      ]
+    }, {
+      "cases": ["$MostFrequent"],
+      "grid": [
+        [1,2]
+      ]
+    }]
+  }]
+}

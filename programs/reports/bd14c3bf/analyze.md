@@ -1,7 +1,7 @@
 # bd14c3bf
 
 ## Concept
-- The concept case fits every pair (`probe.py pairs`), at either open value of `match_group`. It is undefined on an input with no `ref_color` cell.
+- The concept case fits every pair (`probe.py pairs`), under each value of `match_group`. It is undefined on an input with no `ref_color` cell.
 - No witness has the verdict `other`.
 - `stretch-match` has a relational form: the reduction removes each row or column of a shape's box that equals the one before it, and the match compares the reduced grids under the elements of `match_group`. The generator's rule as restated is the concept file's rule, with no approximation.
 
@@ -30,9 +30,6 @@
     - `concept`: derived, the reference's color `ref_color`
     - `paint_color=stored`: stores `paint_color` (2) apart from `ref_color`, replacing `ref_color` in `recolor-match`. Undefined nowhere the concept is defined. Fits every pair. Witness `paint_color=stored`: a train0-like scene with one stretched U that matches, and `paint_color` reassigned to 3. It breaks no scene claim, `foreign`, verdict `concept`. Invariant it breaks: the input breaks none, and the assignment breaks the tie of the paint to the reference's color.
 - `shape-match` & `adjacency`, `shape-match` & `candidate-shapes`, `shape-match` & `ref_color`, `shape-match` & `paint_color`, `adjacency` & `candidate-shapes`, `adjacency` & `ref_color`, `adjacency` & `paint_color`, `candidate-shapes` & `ref_color`, `candidate-shapes` & `paint_color`, `ref_color` & `paint_color`: the two branches' changes applied together
-
-## Open parameters
-- `match_group`: `SYM_C4`, `SYM_D4`. Every reference in the evidence has a mirror axis, so its C4 orbit is its D4 orbit and the pairs do not separate the two. `$Topology` does not read it.
 
 ## Not formed
 - A derivation of `ref_color` by `SharedColor`, `DominantColor`, `CountRankAsc` or another color proposer other than `RarestColor`: on a single input none of them gives 2 alone (`SharedColor` gives 0, 1 and 2; `DominantColor` gives 0), so none has a reading as the reference color.

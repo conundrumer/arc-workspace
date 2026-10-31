@@ -1,0 +1,94 @@
+// da2b0fe3
+// @draft
+// @keywords: lines bbox
+// @scene one-figure: every non-background cell (background 0) has one color,
+//  and those cells form one figure on a field of background
+// @scene one-gap-line: exactly one row or column that crosses the figure's
+//  bounding box holds no figure cell, and it splits the figure into a part on
+//  each side
+// @rule gap-lines: the lines drawn are the rows and columns that cross the
+//  figure's bounding box and hold no figure cell
+// @rule full-span: each drawn line runs across the whole grid, and every cell
+//  on it is set to line_color (3); every other cell keeps its input color
+
+// which lines are drawn
+.type Choice =
+    // @claim gap-lines
+    EveryGap {}
+    // @rule gap-lines: in each run of adjacent gap lines only the center line
+    //  is drawn; undefined where a run has an even width
+    // @witness wide-gap: borderline any
+    //     @relaxed one-gap-line
+  | GapCenter {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-figure
+    .decl bg(c: Color) bg(0).
+    .decl line_color(c: Color) line_color(3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($EveryGap()). impl_choice($GapCenter()).
+
+.decl figure(p: Position)
+figure(P) :- in(P, Col), !params.bg(Col).
+
+// @claim one-figure gap-lines
+.init fig_box = Bbox<Unit>
+fig_box.cell($U(), P) :- figure(P).
+
+// A line of axis A, as an axis-only position, that crosses the figure's
+// bounding box.
+.decl crossing(a: Axis, l: Position)
+crossing(A, L) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),
+    fig_box.box($U(), B), split(B, A, B_a, _), inside(L, B_a).
+
+// A line that holds a figure cell.
+.decl inked(l: Position)
+inked(L) :- figure(P), axis_elem(A), split(P, A, L, _).
+
+.decl gap(a: Axis, l: Position)
+gap(A, L) :- crossing(A, L), !inked(L).
+
+// The lines the case draws.
+.decl drawn(ch: Choice, a: Axis, l: Position)
+
+// The case's model is undefined on this input.
+.decl undefined(ch: Choice)
+
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- drawn(Ch, A, L), in(P, _), split(P, A, L, _).
+
+out(P, Col, Ch) :- painted(P, Ch), !undefined(Ch), params.line_color(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !undefined(Ch), !painted(P, Ch).
+
+// --- $EveryGap ---
+
+drawn($EveryGap(), A, L) :- gap(A, L).
+
+// --- $GapCenter ---
+
+// The runs of adjacent gap lines.
+// @claim gap-lines
+.init runs = Components<Unit>
+runs.node($U(), L) :- gap(_, L).
+
+// @claim gap-lines
+.init run_box = Bbox<Ident>
+run_box.cell(Id, L) :- runs.label($U(), L, Id).
+
+// The center line of its run.
+.decl center(id: Ident, a: Axis, l: Position)
+center(Id, A, L) :-
+    gap(A, L), runs.label($U(), L, Id), run_box.box(Id, B),
+    crop(L, B, L_rel), centered(L_rel).
+
+drawn($GapCenter(), A, L) :- center(_, A, L).
+
+undefined($GapCenter()) :- runs.label($U(), _, Id), !center(Id, _, _).   // an even run

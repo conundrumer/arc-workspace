@@ -1,0 +1,314 @@
+// e9fc42f2
+// @draft
+// @keywords: objects markers move match crop
+// @scene field: a field of 2 holds several pieces, each a 4-connected set of
+//  cells other than 2, with 2 between any two pieces.
+// @scene pieces: each piece is drawn in 1, and holds one or more connector
+//  cells, each of a color that is neither 1 nor 2.
+// @scene connector-side: each connector lies on exactly one edge of its
+//  piece's bounding box, and faces out from that edge.
+// @scene connector-pairs: each connector color occurs once or twice in the
+//  input; the two connectors of a pair lie on different pieces and face
+//  opposite directions.
+// @scene one-assembly: the pairs link every piece into one connected assembly
+//  with no cycle, and in that assembly no two pieces overlap.
+// @rule snap: each piece moves by translation alone, so that the two
+//  connectors of each pair are adjacent cells, each one step past its
+//  partner's facing edge.
+// @rule crop: the output is the bounding box of the assembly; each cell of a
+//  piece keeps its color, unpaired connectors included, and every other cell
+//  is the background.
+
+// How the two connectors of a pair are placed against each other.
+.type Join =
+    // @claim snap connector-side
+    Snap {motion: Motion}
+    // @rule snap: a pair's second connector sits one step from the first
+    //  toward any of the four directions at which no two pieces share a cell,
+    //  and the output holds each such assembly; undefined where no choice of
+    //  directions keeps the pieces apart.
+    // @witness connector-tip: ordinary concept
+  | NoOverlapJoin {}
+
+// How a piece moves to meet its partner.
+.type Motion =
+    // @claim snap
+    Translate {}
+    // @rule snap: the assembly builds out from the piece with the most cells,
+    //  and the piece that joins turns by the quarter turns that make its
+    //  connector face its partner; undefined where pieces tie for the most
+    //  cells and the roots give different outputs.
+    // @scene connector-pairs: the two connectors of a pair lie on different
+    //  pieces, facing any directions.
+    // @witness connectors-same-side: borderline $TurnToFace
+    //     @relaxed connector-pairs
+  | TurnToFace {}
+
+// Which cells make one piece.
+.type Connectivity =
+    // @claim field
+    FourConnected {}
+    // @scene field: a piece is 8-connected.
+    // @witness diagonal-cell: borderline $EightConnected
+    //     @relaxed one-assembly
+  | EightConnected {}
+
+// Which colors are connectors.
+.type ConnectorColors =
+    // @claim pieces
+    AnyColor {}
+    // @scene pieces: a connector is a cell of a color in `connector`; a cell
+    //  of any other color than 1 is a mark of its piece and keeps its color.
+    // @witness pair-on-one-piece: borderline $StoredConnectorColors
+    //     @relaxed connector-pairs
+  | StoredConnectorColors {}
+
+.type Choice = [join: Join, conn: Connectivity, colors: ConnectorColors]
+
+// Under $NoOverlapJoin, the pair of color c joins with its connector on the
+// piece nearer the origin at `from`, and the other one step from it toward d.
+.type PairDir = [c: Color, from: Position, d: Dir]
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Color, item: PairDir, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl bg(col: Color) bg(2).
+
+    // --- $AnyColor ---
+    .decl body(col: Color) body(1).
+
+    // --- $StoredConnectorColors ---
+    .decl connector(col: Color) connector(3). connector(4). connector(8).
+}
+
+.init params = Params
+
+.decl join_choice(j: Join)
+join_choice($Snap($Translate())). join_choice($Snap($TurnToFace())).
+join_choice($NoOverlapJoin()).
+
+.decl connectivity_choice(k: Connectivity)
+connectivity_choice($FourConnected()). connectivity_choice($EightConnected()).
+
+.decl connector_colors_choice(f: ConnectorColors)
+connector_colors_choice($AnyColor()). connector_colors_choice($StoredConnectorColors()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([J, K, F]) :-
+    join_choice(J), connectivity_choice(K), connector_colors_choice(F).
+
+.type PieceKey = [k: Connectivity, o: Ident]
+
+.decl piece_cell(k: Connectivity, o: Ident, p: Position)
+.decl connector(f: ConnectorColors, p: Position, col: Color)
+
+// Two connectors of one color on different pieces.
+.decl pair(k: Connectivity, f: ConnectorColors, o1: Ident, c1: Position, o2: Ident, c2: Position, col: Color)
+pair(K, F, O1, C1, O2, C2, Col) :-
+    connector(F, C1, Col), piece_cell(K, O1, C1),
+    connector(F, C2, Col), piece_cell(K, O2, C2), O1 != O2.
+
+// The assembly grows from a connector of a piece; that connector is the
+// origin, and every placed cell is an offset from it.
+.decl origin(ch: Choice, o: Ident, c: Position)
+
+// The translations a piece may take: those between two cells of the frame.
+.decl shift(v: Offset)
+shift(V) :- in(P, _), in(Q, _), relative(P, Q, V).
+
+// A piece placed: cell p of o lands where turn t of p's offset from the
+// origin, moved by shift v, puts it.
+.type Placed = [o: Ident, t: D4, v: Offset]
+.type AsmKey = [ch: Choice, origin: Position, res: TiebreakResolution]
+
+.decl key(ky: AsmKey, k: Connectivity, f: ConnectorColors)
+
+// A step of the assembly: piece b, placed at turn t2, joins piece a, placed
+// at [a, t1, v1], so that its connector c2 lands at q.
+// @ignore: head-repeat — under $NoOverlapJoin and $Translate a piece takes
+//  the turn of the piece it joins
+.decl join_step(ky: AsmKey, a: Ident, t1: D4, v1: Offset, b: Ident, c2: Position, t2: D4, q: Offset)
+
+.init asm = Propagation<AsmKey, Placed>
+asm.source(Ky, [O, T, ZERO]) :-
+    key(Ky, _, _), Ky = [Ch, C, _], origin(Ch, O, C),
+    d4_compose(T, T, T).  // no turn: the one turn that composed with itself is itself
+asm.edge(Ky, [A, T1, V1], [B, T2, V2]) :-
+    join_step(Ky, A, T1, V1, B, C2, T2, Q), Ky = [_, C, _],
+    relative(C, C2, R0), apply(T2, R0, R1), relative(R1, Q, V2).  // the shift that takes c2 to q
+
+.decl placed_cell(ky: AsmKey, o: Ident, q: Offset, col: Color)
+placed_cell(Ky, O, Q, Col) :-
+    asm.reached(Ky, [O, T, V]), Ky = [[_, K, _], C, _], piece_cell(K, O, P), in(P, Col),
+    relative(C, P, R0), apply(T, R0, R1), compose(R1, V, Q).
+
+// The pairs link every piece into the assembly.
+.decl reached_piece(ky: AsmKey, o: Ident)
+reached_piece(Ky, O) :- asm.reached(Ky, [O, _, _]).
+
+.decl incomplete(ky: AsmKey)
+incomplete(Ky) :- key(Ky, K, _), piece_cell(K, O, _), !reached_piece(Ky, O).
+
+// No two pieces share a cell.
+.decl overlap(ky: AsmKey)
+
+// Two connectors of one color lie on one piece, so no move joins them.
+.decl joined_in_place(k: Connectivity, f: ConnectorColors)
+joined_in_place(K, F) :-
+    connector(F, C1, Col), connector(F, C2, Col), C1 != C2,
+    piece_cell(K, O, C1), piece_cell(K, O, C2).
+
+.decl assembled(ky: AsmKey)
+assembled(Ky) :-
+    key(Ky, K, F), !incomplete(Ky), !overlap(Ky), !joined_in_place(K, F).
+
+// @claim crop
+.init asm_box = Bbox<AsmKey>
+asm_box.cell(Ky, Q) :- assembled(Ky), placed_cell(Ky, _, Q, _).
+
+.init frame = Frame2D<AsmKey>
+frame.extent(Ky, A, N) :- asm_box.box(Ky, B), axis_elem(A), box_extent(B, ZERO, A, N).
+
+.decl assembled_cell(ky: AsmKey, p: Position, col: Color)
+assembled_cell(Ky, P, Col) :- asm_box.box(Ky, B), placed_cell(Ky, _, Q, Col), crop(Q, B, P).
+
+out(P, Col, Ch, R) :- assembled_cell([Ch, C, R], P, Col).
+out(P, Col, Ch, R) :-
+    frame.cell([Ch, C, R], P), !assembled_cell([Ch, C, R], P, _), params.bg(Col).
+
+// --- $FourConnected ---
+
+// @claim field
+.init pieces4 = Components<Unit>
+pieces4.node($U(), P) :- in(P, Col), !params.bg(Col).
+piece_cell($FourConnected(), O, P) :- pieces4.label(_, P, O).
+
+// --- $EightConnected ---
+
+// @claim field
+.init pieces8 = Components8<Unit>
+pieces8.node($U(), P) :- in(P, Col), !params.bg(Col).
+piece_cell($EightConnected(), O, P) :- pieces8.label(_, P, O).
+
+// --- $AnyColor ---
+
+connector($AnyColor(), P, Col) :- in(P, Col), !params.bg(Col), !params.body(Col).
+
+// --- $StoredConnectorColors ---
+
+connector($StoredConnectorColors(), P, Col) :- in(P, Col), params.connector(Col).
+
+// --- $Snap ---
+
+// @claim connector-side
+.init piece_box = Bbox<PieceKey>
+piece_box.cell([K, O], P) :- piece_cell(K, O, P).
+
+// A connector faces out from the edge of its piece's bounding box it lies on.
+.decl facing(k: Connectivity, f: ConnectorColors, o: Ident, p: Position, d: Dir)
+facing(K, F, O, P, D) :-
+    connector(F, P, _), piece_cell(K, O, P),
+    piece_box.box([K, O], B), box_edge(P, B, D).
+
+key([Ch, C, $End()], K, F) :-
+    impl_choice(Ch), Ch = [$Snap(_), K, F], origin(Ch, _, C).
+
+// The second connector sits one step past the first's facing edge, and
+// faces back.
+.decl snap_step(ky: AsmKey, a: Ident, t1: D4, v1: Offset, b: Ident, c2: Position, d2_t: Dir, q: Offset)
+snap_step([Ch, C, R], A, T1, V1, B, C2, D2_t, Q) :-
+    key([Ch, C, R], K, F), Ch = [$Snap(_), _, _], shift(V1), d4_elem(T1),
+    pair(K, F, A, C1, B, C2, _), facing(K, F, A, C1, D1),
+    relative(C, C1, R0), apply(T1, R0, R1), compose(R1, V1, Q1),  // c1 placed
+    apply_dir(T1, D1, D1_t), neighbor(Q1, D1_t, Q),               // one step past it
+    opposite(D1_t, D2_t).                                          // c2 faces back
+
+// --- $Translate ---
+
+origin(Ch, O, C) :-
+    impl_choice(Ch), Ch = [$Snap($Translate()), K, F], piece_cell(K, O, C), connector(F, C, _).
+
+join_step(Ky, A, T, V1, B, C2, T, Q) :-
+    snap_step(Ky, A, T, V1, B, C2, D2, Q), Ky = [[$Snap($Translate()), K, F], _, _],
+    d4_compose(T, T, T),  // no turn
+    facing(K, F, B, C2, D2).
+
+// --- $TurnToFace ---
+
+// @claim snap
+.init piece_size = Tally<PieceKey, Position>
+piece_size.item([K, O], P) :- piece_cell(K, O, P).
+piece_size.domain([K, O]) :- piece_cell(K, O, _).
+
+// @claim snap
+.init largest = ArgExtremes<Connectivity, Ident>
+largest.cand(K, O, N) :- piece_size.tally([K, O], N).
+
+origin(Ch, O, C) :-
+    impl_choice(Ch), Ch = [$Snap($TurnToFace()), K, F],
+    largest.high(K, O, _), piece_cell(K, O, C), connector(F, C, _).
+
+join_step(Ky, A, T1, V1, B, C2, T2, Q) :-
+    snap_step(Ky, A, T1, V1, B, C2, D2_t, Q), Ky = [[$Snap($TurnToFace()), K, F], _, _],
+    c4_elem(T1), c4_elem(T2), facing(K, F, B, C2, D2), apply_dir(T2, D2, D2_t).
+
+// --- $NoOverlapJoin ---
+
+origin(Ch, O, C) :-
+    impl_choice(Ch), Ch = [$NoOverlapJoin(), K, F], piece_cell(K, O, C), connector(F, C, _).
+
+// The pairs as a tree from the origin's piece: of a pair's two connectors,
+// the one on the piece nearer the origin is the first.
+.type Root = [ch: Choice, origin: Position]
+
+// @claim snap
+.init tree = GraphDistance<Root, Ident>
+tree.seed([Ch, C], O) :- origin(Ch, O, C), Ch = [$NoOverlapJoin(), _, _].
+tree.edge([Ch, C], A, B) :-
+    origin(Ch, _, C), Ch = [$NoOverlapJoin(), K, F], pair(K, F, A, _, B, _, _).
+
+// Each pair takes one of the four directions: the second connector sits one
+// step from the first that way.
+.init dirs = TiebreakResolutions<Root, Color, PairDir>
+dirs.cand(Rt, Col, [Col, C1, D]) :-
+    tree.pred(Rt, B, A), Rt = [[$NoOverlapJoin(), K, F], _], pair(K, F, A, C1, B, _, Col), dir_elem(D).
+
+key([Ch, C, R], K, F) :- dirs.resolution([Ch, C], R), Ch = [$NoOverlapJoin(), K, F].
+
+join_step([Ch, C, R], A, T, V1, B, C2, T, Q) :-
+    key([Ch, C, R], K, F), Ch = [$NoOverlapJoin(), _, _], shift(V1),
+    d4_compose(T, T, T),  // no turn
+    pair(K, F, A, C1, B, C2, Col), dirs.assign([Ch, C], R, Col, [Col, C1, D]),
+    relative(C, C1, R0), compose(R0, V1, Q1),  // c1 placed
+    neighbor(Q1, D, Q).
+
+overlap(Ky) :-
+    placed_cell(Ky, O1, Q, _), placed_cell(Ky, O2, Q, _), O1 != O2,
+    Ky = [[$NoOverlapJoin(), _, _], _, _].
+
+.comp Determine {
+    // The field: the commonest color of every input.
+    .init field = Mode<Example, Color, Position>
+    field.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl field_miss(col: Color)
+    field_miss(Col) :- field.mode(_, Col), ex_in(E, _, _), !field.mode(E, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- field.mode(_, Col), !field_miss(Col).
+
+    // The body: the commonest color of every input's pieces.
+    .init drawn = Mode<Example, Color, Position>
+    drawn.item(E, Col, P) :- ex_in(E, P, Col), !bg(Col).
+
+    .decl drawn_miss(col: Color)
+    drawn_miss(Col) :- drawn.mode(_, Col), ex_in(E, _, _), !drawn.mode(E, Col).
+
+    .decl body(col: Color)
+    body(Col) :- drawn.mode(_, Col), !drawn_miss(Col).
+}

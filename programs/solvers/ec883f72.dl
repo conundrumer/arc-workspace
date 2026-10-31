@@ -1,0 +1,226 @@
+// ec883f72
+// @draft
+// @keywords: objects cast enclose bbox
+// @scene background: every cell outside the two objects is background (0)
+// @scene core: one solid rectangle of one color, the core
+// @scene wall: one 1-wide wall of another color, made of straight arms that
+//  meet at right-angle bends; each free end of an arm reaches the grid edge,
+//  and together with the grid edge the wall encloses the core
+// @scene wall-gap: a background band 1 cell wide separates the core from each
+//  wall arm that faces it
+// @rule keep-input: the output starts as a copy of the input
+// @rule corner-rays: at each bend of the wall (a wall cell with wall
+//  neighbors on two perpendicular sides), a diagonal ray in the core's color
+//  starts at the diagonal neighbor that points away from both of those
+//  neighbors, and continues in that direction to the grid edge
+
+// which bends cast
+.type BendSelection =
+    // @claim corner-rays
+    EveryBend {}
+    // @rule corner-rays: only a bend whose outward diagonal neighbor lies
+    //  outside the pocket, the 4-connected non-wall region that holds the
+    //  core, casts
+    // @witness stepped-wall: borderline $ConvexBendsOnly
+    //     @relaxed wall-gap
+  | ConvexBendsOnly {}
+
+// where the rays come from
+.type Origin =
+    // @claim corner-rays
+    WallBends {s: BendSelection}
+    // @rule corner-rays: from each corner of the core's box, a ray runs along
+    //  that corner's outward diagonal, and each cell past the ray's first
+    //  wall cell takes the core's color
+    // @witness uneven-gap: borderline concept
+    //     @relaxed wall-gap
+  | CoreCornerRays {}
+
+// what a ray does at a non-background cell
+.type Blocking =
+    // @claim corner-rays
+    PaintThrough {}
+    // @rule corner-rays: a ray stops before the first non-background cell
+    // @witness stepped-wall: borderline $ConvexBendsOnly
+  | RayStopsAtInk {}
+    // @rule corner-rays: a ray paints background cells only, and goes on
+    //  past ink
+    // @witness stepped-wall: borderline $ConvexBendsOnly
+  | RayKeepsInk {}
+
+// which object is the core
+.type CoreId =
+    // @claim core
+    SolidCore {}
+    // @scene core: the wall is the 1-wide object (no 2×2 block) that has a
+    //  bend, and the core is the one other object, whatever its shape;
+    //  undefined unless exactly one object is 1-wide with a bend
+    // @witness bent-core: variant $WallByShape
+    //     @relaxed core
+    // @witness thick-wall: foreign any
+    //     @relaxed wall
+  | WallByShape {}
+
+.type Choice = [o: Origin, b: Blocking, c: CoreId]
+
+// The rays of one origin choice over one reading of the core and wall.
+.type Source = [o: Origin, c: CoreId]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl origin_choice(o: Origin)
+origin_choice($WallBends($EveryBend())). origin_choice($WallBends($ConvexBendsOnly())).
+origin_choice($CoreCornerRays()).
+
+.decl blocking_choice(b: Blocking)
+blocking_choice($PaintThrough()). blocking_choice($RayStopsAtInk()). blocking_choice($RayKeepsInk()).
+
+.decl core_id_choice(c: CoreId)
+core_id_choice($SolidCore()). core_id_choice($WallByShape()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, B, C]) :- origin_choice(O), blocking_choice(B), core_id_choice(C).
+
+// The objects: the connected parts of each non-background color.
+// @claim core wall
+.init objs = Components<Color>
+objs.node(Col, P) :- in(P, Col), !params.background(Col).
+
+.decl obj(id: Ident, p: Position)
+obj(Id, P) :- objs.label(_, P, Id).
+
+// @claim core
+.init obj_box = Bbox<Ident>
+obj_box.cell(Id, P) :- obj(Id, P).
+
+// The object turns at P: it goes on from P toward two perpendicular sides,
+// and D points away from both.
+.decl bend(id: Ident, p: Position, d: DiagDir)
+bend(Id, P, D) :-
+    obj(Id, P), diag_dirs(D, _, D1, D2),
+    opposite(D1, D1_back), neighbor(P, D1_back, Q1), obj(Id, Q1),
+    opposite(D2, D2_back), neighbor(P, D2_back, Q2), obj(Id, Q2).
+
+// The object each reading picks by its shape: the core, or the wall.
+// @claim core wall
+.init picked = Unanimous<CoreId, Ident>
+
+// The one object besides the picked one.
+// @claim core wall
+.init other = Unanimous<CoreId, Ident>
+other.item(C, Id) :- picked.value(C, Id_picked), obj_box.box(Id, _), Id != Id_picked.
+
+.decl core(c: CoreId, id: Ident)
+.decl wall(c: CoreId, id: Ident)
+
+.decl core_color(c: CoreId, col: Color)
+core_color(C, Col) :- core(C, Id), objs.label(Col, _, Id).
+
+.decl wall_cell(c: CoreId, p: Position)
+wall_cell(C, P) :- wall(C, Id), obj(Id, P).
+
+// A wall cell a ray leaves from, toward D.
+.decl origin(o: Origin, c: CoreId, p: Position, d: DiagDir)
+
+// @claim corner-rays
+.init beam = Ray<Source>
+beam.dir([O, C], D) :- origin(O, C, _, D).
+beam.cell([O, C], P) :- origin(O, C, _, _), in(P, _).
+beam.mark([O, C], P) :- origin(O, C, P, _).
+beam.blocked([O, C], P) :- origin(O, C, _, _), in(P, Col), !params.background(Col).
+
+// A ray cell past its origin.
+.decl ray(o: Origin, c: CoreId, p: Position)
+ray(O, C, P) :- beam.ray([O, C], P, D, K, Src), K != 0, origin(O, C, Src, D).
+
+.decl paint(ch: Choice, p: Position, col: Color)
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, [O, B, C]) :-
+    impl_choice([O, B, C]), core(C, _), wall(C, _),    // the scene is read
+    in(P, Col), !paint([O, B, C], P, _).
+
+// --- $SolidCore ---
+
+// A cell of the object's box that the object leaves out.
+.decl hole(id: Ident)
+hole(Id) :- obj_box.box(Id, B), in(P, _), crop(P, B, _), !obj(Id, P).
+
+picked.item($SolidCore(), Id) :- obj_box.box(Id, _), !hole(Id).
+core($SolidCore(), Id) :- picked.value($SolidCore(), Id).
+wall($SolidCore(), Id) :- other.value($SolidCore(), Id).
+
+// --- $WallByShape ---
+
+// The object holds a 2×2 block.
+.decl thick(id: Ident)
+thick(Id) :-
+    obj(Id, P), diag_dirs(D, _, D1, D2),
+    neighbor(P, D1, Q1), obj(Id, Q1), neighbor(P, D2, Q2), obj(Id, Q2),
+    neighbor(P, D, Q3), obj(Id, Q3).
+
+picked.item($WallByShape(), Id) :- bend(Id, _, _), !thick(Id).
+wall($WallByShape(), Id) :- picked.value($WallByShape(), Id).
+core($WallByShape(), Id) :- other.value($WallByShape(), Id).
+
+// --- $EveryBend ---
+
+origin($WallBends($EveryBend()), C, P, D) :- wall(C, Id), bend(Id, P, D).
+
+// --- $ConvexBendsOnly ---
+
+// The pocket: the non-wall cells the core reaches.
+// @claim corner-rays
+.init pocket = Reach<CoreId>
+pocket.node(C, P) :- core(C, _), in(P, _), !wall_cell(C, P).
+pocket.seed(C, P) :- core(C, Id), obj(Id, P).
+
+origin($WallBends($ConvexBendsOnly()), C, P, D) :-
+    wall(C, Id), bend(Id, P, D), neighbor(P, D, Q), !pocket.reach(C, Q).
+
+// --- $CoreCornerRays ---
+
+// A corner of the core's box, and its outward diagonal.
+.decl corner(c: CoreId, p: Position, d: DiagDir)
+corner(C, P, D) :- core(C, Id), obj_box.box(Id, B), obj(Id, P), box_corner(P, B, D).
+
+// @claim corner-rays
+.init corner_cast = Ray<CoreId>
+corner_cast.dir(C, D) :- corner(C, _, D).
+corner_cast.mark(C, P) :- corner(C, P, _).
+corner_cast.blocked(C, P) :- wall_cell(C, P).
+
+// The first wall cell on each corner's diagonal.
+origin($CoreCornerRays(), C, P, D) :- corner_cast.stop(C, P, D, _, Src), corner(C, Src, D).
+
+// --- $PaintThrough ---
+
+paint([O, $PaintThrough(), C], P, Col) :- ray(O, C, P), core_color(C, Col).
+
+// --- $RayStopsAtInk ---
+
+paint([O, $RayStopsAtInk(), C], P, Col) :-
+    beam.clear([O, C], P, D, K, Src), K != 0, origin(O, C, Src, D), core_color(C, Col).
+
+// --- $RayKeepsInk ---
+
+paint([O, $RayKeepsInk(), C], P, Col) :-
+    ray(O, C, P), in(P, Col_in), params.background(Col_in), core_color(C, Col).
+
+.comp Determine {
+    // A color that some train input lacks.
+    .decl missing(col: Color)
+    missing(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !ex_in(E, _, Col).
+
+    // The background is the one color every train input holds.
+    .decl background(c: Color)
+    background(Col) :- ex_in(_, _, Col), !missing(Col).
+}

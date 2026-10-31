@@ -1,0 +1,183 @@
+// f1bcbc2c
+// @draft
+// @keywords: objects markers flood
+// @scene two-walls: two separate 7 walls, each a 4-connected staircase path of
+//  straight runs and right-angle bends, run side by side from one grid edge to
+//  another.
+// @scene pipe: between the two walls lies a one-cell-wide corridor of non-wall
+//  cells, the one non-wall component that touches both walls; it opens on the
+//  top edge at one end and on another edge at the other.
+// @scene at-most-one-plug: the corridor holds at most one 9 cell, which lies
+//  inside the corridor, away from both openings; all its other cells are 0.
+// @rule fill-from-source: each corridor cell that a walk through the corridor
+//  from its opening on the `source_edge` edge reaches is painted `fill_color`.
+// @rule plug-at-bend-blocks: a plug with wall cells on two adjacent sides (it
+//  sits at a bend) stops the walk: it keeps `plug_color`, and the corridor
+//  beyond it keeps its input color.
+// @rule plug-on-straight-passes: a plug with wall cells on two opposite sides
+//  (it sits on a straight run) lets the walk pass through it, and is painted
+//  `fill_color` with the rest.
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// what decides whether a plug stops the walk
+.type PlugTest =
+    // @claim plug-at-bend-blocks
+    PlugTestByWalls {}
+    // @rule plug-at-bend-blocks: a plug blocks unless it has exactly two
+    //  corridor neighbors and they are collinear.
+    // @rule plug-on-straight-passes: a plug with exactly two corridor
+    //  neighbors, collinear, passes and is painted `fill_color`.
+    // @witness plug-at-outlet: borderline concept
+    //     @relaxed at-most-one-plug
+  | PlugTestByOpenSides {}
+
+// where the walk enters the corridor
+.type Source =
+    // @claim fill-from-source
+    SourceEdge {}
+    // @rule fill-from-source: the walk starts at the corridor's opening
+    //  nearest the `source_edge` edge; undefined where two openings tie for
+    //  nearest.
+    // @witness side-openings: borderline $SourceUpperEnd
+    //     @relaxed pipe
+  | SourceUpperEnd {}
+    // @rule fill-from-source: where blocking plugs split the corridor, its
+    //  largest part fills, and otherwise the whole corridor fills; undefined
+    //  where two parts tie for largest.
+    // @witness longer-part: ordinary concept
+  | FillLongerPart {}
+
+.type Choice = [t: PlugTest, s: Source]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl wall_color(c: Color) wall_color(7).
+    // @derive RarestColor: variant concept
+    .decl plug_color(c: Color) plug_color(9).
+    .decl fill_color(c: Color) fill_color(8).
+
+    // --- $SourceEdge, $SourceUpperEnd ---
+    // the grid edge the pouring end of the corridor opens on
+    .decl source_edge(d: Dir) source_edge(DIR_T).
+}
+
+.init params = Params
+
+.decl plug_test_choice(t: PlugTest)
+plug_test_choice($PlugTestByWalls()). plug_test_choice($PlugTestByOpenSides()).
+
+.decl source_choice(s: Source)
+source_choice($SourceEdge()). source_choice($SourceUpperEnd()). source_choice($FillLongerPart()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, S]) :- plug_test_choice(T), source_choice(S).
+
+// @claim two-walls
+.init walls = Components<Unit>
+walls.node($U(), P) :- in(P, Col), params.wall_color(Col).
+
+// @claim pipe
+.init regions = Components<Unit>
+regions.node($U(), P) :- in(P, Col), !params.wall_color(Col).
+
+// non-wall region R borders wall W
+.decl touches(r: Ident, w: Ident)
+touches(R, W) :-
+    regions.label(_, P, R), dir_elem(D), neighbor(P, D, Q), walls.label(_, Q, W).
+
+.decl corridor(p: Position)
+corridor(P) :- regions.label(_, P, R), touches(R, W1), touches(R, W2), W1 != W2.
+
+.decl plug(p: Position)
+plug(P) :- corridor(P), in(P, Col), params.plug_color(Col).
+
+// a corridor cell on the grid border
+.decl opening(p: Position)
+opening(P) :- corridor(P), dir_elem(D), dist(P, D, 0).
+
+// the plugs that stop the walk under each plug test
+.decl blocker(p: Position, t: PlugTest)
+
+// --- $PlugTestByWalls ---
+// a wall cell lies one step from corridor cell P toward D
+.decl wall_side(p: Position, d: Dir)
+wall_side(P, D) :-
+    corridor(P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), params.wall_color(Col).
+
+blocker(P, $PlugTestByWalls()) :- plug(P), wall_side(P, D), perp_dir(D, D2), wall_side(P, D2).
+
+// --- $PlugTestByOpenSides ---
+// a corridor cell lies one step from corridor cell P toward D
+.decl open_side(p: Position, d: Dir)
+open_side(P, D) :- corridor(P), dir_elem(D), neighbor(P, D, Q), corridor(Q).
+
+.decl bent(p: Position)
+bent(P) :- open_side(P, D), perp_dir(D, D2), open_side(P, D2).
+
+.decl straight(p: Position)
+straight(P) :- open_side(P, D), opposite(D, D2), open_side(P, D2), !bent(P).
+
+blocker(P, $PlugTestByOpenSides()) :- plug(P), !straight(P).
+
+// --- $SourceEdge, $SourceUpperEnd, $FillLongerPart ---
+// the walk runs through the corridor and stops at blocking plugs
+// @claim fill-from-source plug-at-bend-blocks plug-on-straight-passes
+.init flow = Reach<Choice>
+flow.node([T, S], P) :- impl_choice([T, S]), corridor(P), !blocker(P, T).
+flow.seed(Ch, P) :- source(P, Ch).
+
+// the cells the walk starts from
+.decl source(p: Position, ch: Choice)
+
+.decl filled(p: Position, ch: Choice)
+filled(P, Ch) :- flow.reach(Ch, P).
+
+// the cases whose output is defined on the input
+.decl defined(ch: Choice)
+defined(Ch) :- source(_, Ch).
+
+// --- $SourceEdge ---
+source(P, [T, $SourceEdge()]) :-
+    plug_test_choice(T), opening(P), params.source_edge(D), dist(P, D, 0).
+
+// --- $SourceUpperEnd ---
+// @claim fill-from-source
+.init nearest = ArgExtremes<Unit, Position>
+nearest.cand($U(), P, K) :- opening(P), params.source_edge(D), dist(P, D, K).
+
+.decl nearest_tie()
+nearest_tie() :- nearest.low(_, P1, _), nearest.low(_, P2, _), P1 != P2.
+
+source(P, [T, $SourceUpperEnd()]) :- plug_test_choice(T), nearest.low(_, P, _), !nearest_tie().
+
+// --- $FillLongerPart ---
+// the largest part of the corridor that the blocking plugs leave
+// @claim fill-from-source
+.init longer = Mode<Choice, Ident, Position>
+longer.item([T, $FillLongerPart()], Id, P) :- flow.label([T, $FillLongerPart()], P, Id).
+
+.decl longer_tie(ch: Choice)
+longer_tie(Ch) :- longer.mode(Ch, I1), longer.mode(Ch, I2), I1 != I2.
+
+filled(P, Ch) :- longer.mode(Ch, I), !longer_tie(Ch), flow.label(Ch, P, I).
+defined(Ch) :- longer.mode(Ch, _), !longer_tie(Ch).
+
+// --- $SourceEdge, $SourceUpperEnd, $FillLongerPart ---
+out(P, Col, Ch) :- filled(P, Ch), params.fill_color(Col).
+out(P, Col, Ch) :- defined(Ch), in(P, Col), !filled(P, Ch).
+
+.comp Determine {
+    // a color that some train pair changes at some cell
+    .decl changed(c: Color)
+    changed(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col2 != Col.
+
+    // the walls are the input color that no train pair changes
+    // @ignore: determine prediction — the wall color is read from the evidence as the color each train pair leaves in place
+    .decl wall_color(c: Color)
+    wall_color(Col) :- ex_in(_, _, Col), !changed(Col).
+
+    // the fill is the color the train outputs hold and no input does
+    .decl fill_color(c: Color)
+    fill_color(Col) :- ex_out(_, _, Col), !ex_in(_, _, Col).
+}

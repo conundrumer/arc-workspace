@@ -78,20 +78,6 @@
     // @witness tee-shape: variant concept
   | StoredShape {}
 
-// which panel is the other shape panel
-.type Detect =
-    // @claim direction
-    OnePanel {}
-    // @scene two-shapes: the center panel is not read
-    // @rule direction: the other panel is the last ring panel, in the order
-    //  from params.probe_corner along params.order_axis, whose cell at
-    //  params.probe_corner, or a cell beside it, holds the shape color; with
-    //  no such panel, the ring panel toward params.probe_corner
-    // @witness dot-shape: variant concept
-    // @witness extra-dot: borderline $CornerProbe
-    //     @relaxed rest-empty
-  | CornerProbe {}
-
 // how a copy meets its target panel
 .type Combine =
     // @claim stamp
@@ -103,20 +89,12 @@
     //     @relaxed rest-empty
   | ClearTarget {}
 
-.type Choice = [geometry: Geometry, shape_color: ShapeColor, stamp: Stamp, detect: Detect,
-                combine: Combine]
+.type Choice = [geometry: Geometry, shape_color: ShapeColor, stamp: Stamp, combine: Combine]
 
 // The panels and the shape color under one reading.
 .type Reading = [g: Geometry, sc: ShapeColor]
 
-// A lex order over the probed panels, per probe corner and order axis.
-.type ProbeKey = [r: Reading, c: DiagDir, a: Axis]
-
-.type ProbeCorner = [d: DiagDir]
-.type OrderAxis = [a: Axis]
-.type OpenValue = [probe_corner: ProbeCorner, order_axis: OrderAxis]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The ring steps from d to each target.
@@ -155,16 +133,6 @@
         _, 1, _,
         1, _, 1,
         _, 1, _)
-
-    // --- $CornerProbe ---
-    // The corner whose cells the probe reads, which the order starts from,
-    // and toward which the fallback panel lies. No pair has two probed panels
-    // or none, so every corner and axis stays open.
-    // @open
-    .decl probe_corner(d: DiagDir)
-    probe_corner(DIAG_TL). probe_corner(DIAG_TR). probe_corner(DIAG_BL). probe_corner(DIAG_BR).
-    // @open
-    .decl order_axis(a: Axis) order_axis(AXIS_V). order_axis(AXIS_H).
 }
 
 .init params = Params
@@ -222,14 +190,6 @@
     // --- $FixedPanels ---
     cut.divider([K, $FixedPanels()], A, L) :-
         cut.cell([K, $FixedPanels()], _), params.fixed_divider(A, L).
-
-    // --- $CornerProbe ---
-    // A place in a panel at corner c, or beside it.
-    .decl probe_place(key: Key, g: Geometry, p_intile: Position, c: DiagDir)
-    probe_place(K, G, P_intile, Dc) :-
-        panel(K, G, _, _, P_intile),
-        ( box_corner(P_intile, ZERO, Dc)
-        ; dir_elem(D), neighbor(P_intile, D, P0), box_corner(P0, ZERO, Dc) ).
 }
 
 .decl separator_choice(s: Separator)
@@ -258,34 +218,42 @@ stamp_choice($CenterShape()). stamp_choice($CopyOther()). stamp_choice($StoredSh
 shape_cell([G, Sc], Q, P_intile) :-
     shape_color([G, Sc], Col), parse.panel($U(), G, P, Q, P_intile), in(P, Col).
 
-// A panel each reading of the other shape panel takes. The relations below
-// depend on the open values only through that panel, so they are keyed by it;
-// probe_other keys each panel by its probe corner and order axis, and the
-// CornerProbe out clause gives one grid per open value from it.
-.decl candidate(r: Reading, dt: Detect, q: Position)
+// The other shape panel.
+.decl other(r: Reading, q: Position)
 
 // Each target panel and its color, when q is the other shape panel.
-.decl target(r: Reading, dt: Detect, q: Position, t: Position, col: Color)
+.decl target(r: Reading, q: Position, t: Position, col: Color)
 
 // A target panel on neither side of the line along d.
-.decl unsided(r: Reading, dt: Detect, q: Position)
+.decl unsided(r: Reading, q: Position)
 
 // Every target has a side.
-.decl ready(r: Reading, dt: Detect, q: Position)
-ready(R, Dt, Q) :- candidate(R, Dt, Q), !unsided(R, Dt, Q).
+.decl ready(r: Reading, q: Position)
+ready(R, Q) :- other(R, Q), !unsided(R, Q).
 
 // A place in a panel that a copy writes.
-.decl copy(r: Reading, st: Stamp, dt: Detect, q: Position, p_intile: Position)
+.decl copy(r: Reading, st: Stamp, q: Position, p_intile: Position)
 
-.decl stamped(r: Reading, st: Stamp, dt: Detect, q: Position, p: Position, col: Color)
-stamped([G, Sc], St, Dt, Q, P, Col) :-
-    copy([G, Sc], St, Dt, Q, P_intile), target([G, Sc], Dt, Q, T, Col),
+.decl stamped(r: Reading, st: Stamp, q: Position, p: Position, col: Color)
+stamped([G, Sc], St, Q, P, Col) :-
+    copy([G, Sc], St, Q, P_intile), target([G, Sc], Q, T, Col),
     parse.panel($U(), G, P, T, P_intile).
 
 // The output when q is the other shape panel.
-.decl drawn(r: Reading, st: Stamp, cb: Combine, dt: Detect, q: Position, p: Position, col: Color)
-drawn(R, St, Cb, Dt, Q, P, Col) :-
-    stamped(R, St, Dt, Q, P, Col), ready(R, Dt, Q), combine_choice(Cb).
+.decl drawn(r: Reading, st: Stamp, cb: Combine, q: Position, p: Position, col: Color)
+drawn(R, St, Cb, Q, P, Col) :-
+    stamped(R, St, Q, P, Col), ready(R, Q), combine_choice(Cb).
+
+// @claim direction
+.init shape_panel = Unanimous<Reading, Position>
+shape_panel.item([G, Sc], Q) :- shape_cell([G, Sc], Q, _), !parse.center($U(), G, Q).
+
+other([G, Sc], Q) :-
+    shape_panel.value([G, Sc], Q), parse.ring($U(), G, Q, _),
+    parse.center($U(), G, C), shape_cell([G, Sc], C, _).                 // the center holds a shape
+
+out(P, Col, [G, Sc, St, Cb]) :-
+    other([G, Sc], Q), drawn([G, Sc], St, Cb, Q, P, Col).
 
 // --- $Turn, $FixedPanels ---
 
@@ -303,27 +271,27 @@ ring_walk.step(S, N) :- sense_elem(S), params.turn(N).
 turn_geometry($Lines(S, $Turn())) :- separator_choice(S).
 turn_geometry($FixedPanels()).
 
-target([G, Sc], Dt, Q, T, Col) :-
-    turn_geometry(G), candidate([G, Sc], Dt, Q),
+target([G, Sc], Q, T, Col) :-
+    turn_geometry(G), other([G, Sc], Q),
     params.turn(N), ring_walk.walk(S, Q, N, T), params.turn_color(S, Col).
 
 // --- $ManhattanTargets ---
 
 // A panel params.turn steps from the other shape panel.
-.decl manhattan(r: Reading, dt: Detect, q: Position, t: Position)
-manhattan([G, Sc], Dt, Q, T) :-
-    G = $Lines(_, $ManhattanTargets()), candidate([G, Sc], Dt, Q), parse.panel($U(), G, _, T, _),
+.decl manhattan(r: Reading, q: Position, t: Position)
+manhattan([G, Sc], Q, T) :-
+    G = $Lines(_, $ManhattanTargets()), other([G, Sc], Q), parse.panel($U(), G, _, T, _),
     relative(Q, T, V),
     diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,   // the corner facing away from Q
     corner_dist(V, Diag, N), params.turn(N).
 
-target([G, Sc], Dt, Q, T, Col) :-
-    manhattan([G, Sc], Dt, Q, T),
+target([G, Sc], Q, T, Col) :-
+    manhattan([G, Sc], Q, T),
     parse.ring($U(), G, Q, D), parse.center($U(), G, C),
     rotation(S, R), apply_dir8(R, D, D_side), nearer(D_side, T, C),       // on the sense's side
     params.turn_color(S, Col).
 
-unsided(R, Dt, Q) :- manhattan(R, Dt, Q, T), !target(R, Dt, Q, T, _).
+unsided(R, Q) :- manhattan(R, Q, T), !target(R, Q, T, _).
 
 // --- $StoredShapeColor ---
 shape_color([G, $StoredShapeColor()], Col) :- geometry_choice(G), params.shape_color(Col).
@@ -336,80 +304,32 @@ center_color.item(G, Col) :-
 
 shape_color([G, $DeriveShapeColor()], Col) :- center_color.value(G, Col).
 
-// --- $OnePanel ---
-// @claim direction
-.init shape_panel = Unanimous<Reading, Position>
-shape_panel.item([G, Sc], Q) :- shape_cell([G, Sc], Q, _), !parse.center($U(), G, Q).
-
-// The other shape panel.
-.decl other(r: Reading, q: Position)
-other([G, Sc], Q) :-
-    shape_panel.value([G, Sc], Q), parse.ring($U(), G, Q, _),
-    parse.center($U(), G, C), shape_cell([G, Sc], C, _).                 // the center holds a shape
-
-candidate(R, $OnePanel(), Q) :- other(R, Q).
-
-// One grid, read at every probe corner and order axis.
-out(P, Col, [G, Sc, St, $OnePanel(), Cb], [nil, nil]) :-
-    other([G, Sc], Q), drawn([G, Sc], St, Cb, $OnePanel(), Q, P, Col).
-
-// --- $CornerProbe ---
-
-// A ring panel whose cell at the corner, or a cell beside it, holds the
-// shape color.
-.decl probed(r: Reading, c: DiagDir, q: Position)
-probed([G, Sc], Dc, Q) :-
-    parse.ring($U(), G, Q, _), shape_cell([G, Sc], Q, P_intile),
-    params.probe_corner(Dc), parse.probe_place($U(), G, P_intile, Dc).
-
-// @claim direction
-.init probe_order = LexOrder<ProbeKey>
-probe_order.cell([R, Dc, A], Q) :- probed(R, Dc, Q), params.order_axis(A).
-probe_order.corner([R, Dc, A], Dc) :- probe_order.cell([R, Dc, A], _).
-probe_order.axis([R, Dc, A], A) :- probe_order.cell([R, Dc, A], _).
-
-// The other shape panel under each open corner and axis: the last probed
-// panel, or the ring panel toward the corner when none is probed.
-.decl probe_other(r: Reading, c: DiagDir, a: Axis, q: Position)
-probe_other(R, Dc, A, Q) :- probe_order.last([R, Dc, A], Q).
-probe_other([G, Sc], Dc, A, Q) :-
-    shape_color([G, Sc], _), params.probe_corner(Dc), params.order_axis(A),
-    parse.ring($U(), G, Q, Dc), !probed([G, Sc], Dc, _).
-
-candidate(R, $CornerProbe(), Q) :- probe_other(R, _, _, Q).
-
-// One grid per probe corner and order axis.
-out(P, Col, [G, Sc, St, $CornerProbe(), Cb], [[Dc], [A]]) :-
-    probe_other([G, Sc], Dc, A, Q), drawn([G, Sc], St, Cb, $CornerProbe(), Q, P, Col).
-
 // --- $CenterShape ---
-copy([G, Sc], $CenterShape(), Dt, Q, P_intile) :-
-    candidate([G, Sc], Dt, Q), parse.center($U(), G, C), shape_cell([G, Sc], C, P_intile).
+copy([G, Sc], $CenterShape(), Q, P_intile) :-
+    other([G, Sc], Q), parse.center($U(), G, C), shape_cell([G, Sc], C, P_intile).
 
 // --- $CopyOther ---
-copy(R, $CopyOther(), Dt, Q, P_intile) :- candidate(R, Dt, Q), shape_cell(R, Q, P_intile).
+copy(R, $CopyOther(), Q, P_intile) :- other(R, Q), shape_cell(R, Q, P_intile).
 
 // --- $StoredShape ---
-copy(R, $StoredShape(), Dt, Q, P_intile) :- candidate(R, Dt, Q), params.stored_shape(P_intile).
+copy(R, $StoredShape(), Q, P_intile) :- other(R, Q), params.stored_shape(P_intile).
 
 // --- $ShapeOnly ---
-drawn([G, Sc], St, $ShapeOnly(), Dt, Q, P, Col) :-
-    ready([G, Sc], Dt, Q), stamp_choice(St), in(P, Col), !stamped([G, Sc], St, Dt, Q, P, _).
+drawn([G, Sc], St, $ShapeOnly(), Q, P, Col) :-
+    ready([G, Sc], Q), stamp_choice(St), in(P, Col), !stamped([G, Sc], St, Q, P, _).
 
 // --- $ClearTarget ---
 
 // A cell of a target panel.
-.decl in_target(r: Reading, dt: Detect, q: Position, p: Position)
-in_target([G, Sc], Dt, Q, P) :- target([G, Sc], Dt, Q, T, _), parse.panel($U(), G, P, T, _).
+.decl in_target(r: Reading, q: Position, p: Position)
+in_target([G, Sc], Q, P) :- target([G, Sc], Q, T, _), parse.panel($U(), G, P, T, _).
 
-drawn([G, Sc], St, $ClearTarget(), Dt, Q, P, Col) :-
-    ready([G, Sc], Dt, Q), stamp_choice(St), in(P, Col_in), !stamped([G, Sc], St, Dt, Q, P, _),
-    ( in_target([G, Sc], Dt, Q, P), params.bg(Col)
-    ; !in_target([G, Sc], Dt, Q, P), Col = Col_in ).
+drawn([G, Sc], St, $ClearTarget(), Q, P, Col) :-
+    ready([G, Sc], Q), stamp_choice(St), in(P, Col_in), !stamped([G, Sc], St, Q, P, _),
+    ( in_target([G, Sc], Q, P), params.bg(Col)
+    ; !in_target([G, Sc], Q, P), Col = Col_in ).
 
 .comp Determine {
-    .type ProbeEx = [e: Example, c: DiagDir, a: Axis]
-
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
@@ -452,30 +372,4 @@ drawn([G, Sc], St, $ClearTarget(), Dt, Q, P, Col) :-
     turn_color(S, Col) :-
         changed(E, T, _, Col), other(E, _, D), parse.center(E, G, C), concept(G),
         rotation(S, R), apply_dir8(R, D, D_side), nearer(D_side, T, C).
-
-    // A ring panel whose cell at corner c, or a cell beside it, holds the
-    // shape color.
-    .decl probed(e: Example, c: DiagDir, q: Position)
-    probed(E, Dc, Q) :-
-        parse.ring(E, G, Q, _), concept(G), shape_cell(E, Q, P_intile),
-        parse.probe_place(E, G, P_intile, Dc).
-
-    // A corner at which the other shape panel fails the probe.
-    .decl corner_contradicted(c: DiagDir)
-    corner_contradicted(Dc) :- other(E, Q, _), diag_dir_elem(Dc), !probed(E, Dc, Q).
-
-    .decl probe_corner(d: DiagDir)
-    probe_corner(Dc) :- diag_dir_elem(Dc), !corner_contradicted(Dc).
-
-    .init order = LexOrder<ProbeEx>
-    order.cell([E, Dc, A], Q) :- probed(E, Dc, Q), probe_corner(Dc), axis_elem(A).
-    order.corner([E, Dc, A], Dc) :- order.cell([E, Dc, A], _).
-    order.axis([E, Dc, A], A) :- order.cell([E, Dc, A], _).
-
-    // An axis whose order puts another probed panel last.
-    .decl axis_contradicted(a: Axis)
-    axis_contradicted(A) :- order.last([E, _, A], Q), other(E, Q2, _), Q != Q2.
-
-    .decl order_axis(a: Axis)
-    order_axis(A) :- axis_elem(A), !axis_contradicted(A).
 }

@@ -1,0 +1,235 @@
+// e5c44e8f
+// @draft
+// @keywords: markers rings walk
+// @scene one-seed: the input holds exactly one cell of seed_color (3) on a
+//  field of background (0).
+// @scene scattered-obstacles: the other non-background cells are single cells
+//  of obstacle_color (2).
+// @scene obstacle-before-edge: the spiral path from the seed meets an obstacle
+//  cell before it leaves the grid.
+// @rule spiral-path: the path starts at the seed and runs in arms along
+//  first_dir, then turns a quarter turn in turn_sense at the end of each arm;
+//  arms k = 0, 1, 2, ... have length (gap + 1) · (⌊k/2⌋ + 1), so arms 2, 2, 4,
+//  4, 6, 6, ... at gap 1.
+// @rule stop-at-obstacle: the path ends at the last cell before its first cell
+//  that is an obstacle; the obstacle keeps its color.
+// @rule paint-path: each cell of the path takes seed_color, and every other
+//  cell keeps its input color.
+
+// What the path does when it leaves the grid before it meets an obstacle
+.type EdgeExit =
+    // @claim obstacle-before-edge
+    MeetsObstacle {}
+    // @scene obstacle-before-edge: the path may leave the grid before it meets
+    //  an obstacle.
+    // @rule stop-at-obstacle: the path also ends at its last cell in the grid.
+    // @witness path-leaves-grid: variant $EdgeStop
+    //     @relaxed obstacle-before-edge
+  | EdgeStop {}
+    // @scene obstacle-before-edge: the path may leave the grid before it meets
+    //  an obstacle.
+    // @rule edge-continue: the path goes on outside the grid with the same
+    //  arms, paints the cells where it re-enters, and ends before its first
+    //  obstacle in the grid, or after its last cell in the grid when it meets
+    //  none.
+    // @witness path-leaves-grid: variant $EdgeStop
+  | EdgeContinue {}
+
+// Which cells end the path
+.type Blocking =
+    // @claim scattered-obstacles stop-at-obstacle
+    ObstacleColor {}
+    // @scene scattered-obstacles: the other non-background cells may take any
+    //  color but seed_color.
+    // @rule stop-at-obstacle: every cell that is neither background nor
+    //  seed_color ends the path.
+    // @witness foreign-color-on-path: borderline $AnyColorBlocks
+    //     @relaxed scattered-obstacles
+  | AnyColorBlocks {}
+
+.type Choice = [e: EdgeExit, b: Blocking]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl first_dir(d: Dir) first_dir(DIR_T).
+    .decl turn_sense(s: Sense) turn_sense(SENSE_CW).
+    .decl gap(n: number) gap(1).
+    // @derive RarestColor: variant derived
+    //     @relaxed one-seed
+    .decl seed_color(c: Color) seed_color(3).
+
+    // --- $ObstacleColor ---
+    .decl obstacle_color(c: Color) obstacle_color(2).
+
+    // --- $AnyColorBlocks ---
+    // @derive DominantColor: variant derived
+    //     @relaxed one-seed
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl edge_exit_choice(e: EdgeExit)
+edge_exit_choice($MeetsObstacle()). edge_exit_choice($EdgeStop()). edge_exit_choice($EdgeContinue()).
+
+.decl blocking_choice(b: Blocking)
+blocking_choice($ObstacleColor()). blocking_choice($AnyColorBlocks()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([E, B]) :- edge_exit_choice(E), blocking_choice(B).
+
+.decl seed(p: Position)
+seed(P) :- in(P, Col), params.seed_color(Col).
+
+// A seed cell beside another; no case gives an output on an input with one.
+.decl second_seed(p: Position)
+second_seed(P) :- seed(P), seed(Q), P != Q.
+
+// @store: variant concept
+.decl paint(col: Color)
+paint(Col) :- seed(P), in(P, Col).
+
+// The ring radii, as translations from the seed toward first_dir: 0, then
+// gap + 1 more for each ring.
+.init rings = Propagation<Unit, Offset>
+rings.source($U(), ZERO).
+rings.edge($U(), V, V2) :-
+    in(P, _), params.first_dir(F), dist(P, F, K), jump_offset(F, K, V),  // a radius the grid spans
+    params.gap(G), jump(V, F, G, V1), neighbor(V1, F, V2).               // gap lines, then the next ring
+
+// A ring's square around the seed, by its radius.
+.decl ring(v: Offset, r: number, b: Box)
+ring(V, R, B) :-
+    rings.reached($U(), V), params.first_dir(F), opposite(F, F_opp), dist(V, F_opp, R),
+    seed(S), uniform_outset(R, O), compose(S, O, B).
+
+// One turn of the spiral runs from the square of the ring before it to its
+// own square.
+.decl turn_of(b0: Box, r: number, b: Box)
+turn_of(B0, R, B) :- rings.edge($U(), V0, V), ring(V0, _, B0), ring(V, R, B).
+
+// The arm along T of each turn: it runs on side X of box L, from the
+// opposite-of-T edge of box A to the T edge of the turn's own square. The arm
+// along first_dir runs on the previous square, and it and the next arm start
+// at the previous square.
+.decl arm(r: number, t: Dir, x: Dir, l: Box, a: Box, b: Box)
+arm(R, T, X, L, A, B) :-
+    turn_of(B0, R, B), params.first_dir(F), params.turn_sense(S), turn(S, X, T),
+    ( T = F, L = B0, A = B0                                  // first arm
+    ; turn(S, F, T), L = B, A = B0                           // second arm
+    ; T != F, !turn(S, F, T), L = B, A = B                   // third and fourth arms
+    ).
+
+// The cells of each arm, among the cells beside a grid cell.
+.decl arm_cell(r: number, t: Dir, p: Position)
+arm_cell(R, T, P) :-
+    in(Q, _), neighbor(Q, _, P),
+    arm(R, T, X, L, A, B), same_dist(X, P, L), opposite(T, T_opp),
+    dist(P, T_opp, K1), dist(A, T_opp, K2), K1 >= K2,       // not before the arm's start
+    dist(P, T, K3), dist(B, T, K4), K3 >= K4.               // not past the arm's end
+
+.decl path(r: number, t: Dir, p: Position)
+path(R, T, P) :- arm_cell(R, T, P), in(P, _).
+
+// T1's arm comes before T2's in a turn: first_dir, then a quarter turn in
+// turn_sense at a time.
+.decl arm_before(t1: Dir, t2: Dir)
+arm_before(T1, T2) :-
+    params.first_dir(F), params.turn_sense(S), dir_elem(T2),
+    ( T1 = F, T2 != F
+    ; turn(S, F, T1), ( turn(S, T1, T2) ; opposite(T1, T2) )
+    ; opposite(F, T1), turn(S, T1, T2)
+    ).
+
+// The path reaches (r1, t1, p1) before (r2, t2, p2).
+.decl precedes(r1: number, t1: Dir, p1: Position, r2: number, t2: Dir, p2: Position)
+precedes(R1, T1, P1, R2, T2, P2) :-
+    path(R1, T1, P1), path(R2, T2, P2),
+    ( R1 < R2
+    ; R1 = R2, arm_before(T1, T2)
+    ; R1 = R2, T1 = T2, nearer(T1, P2, P1)
+    ).
+
+// The path's last cell in the grid before it leaves the grid.
+.decl exit(r: number, t: Dir, p: Position)
+exit(R, T, P) :- path(R, T, P), neighbor(P, T, Q), arm_cell(R, T, Q), !in(Q, _).
+
+// Cells that end the path.
+.decl block(p: Position, b: Blocking)
+
+// --- $ObstacleColor ---
+block(P, $ObstacleColor()) :- in(P, Col), params.obstacle_color(Col).
+
+// --- $AnyColorBlocks ---
+block(P, $AnyColorBlocks()) :- in(P, Col), !params.background(Col), !params.seed_color(Col).
+
+// --- shared ---
+
+// Path cells at or past the first blocking cell.
+.decl blocked(p: Position, b: Blocking)
+blocked(P, B) :-
+    path(R, T, P),
+    ( block(P, B)
+    ; path(R0, T0, O), block(O, B), precedes(R0, T0, O, R, T, P)
+    ).
+
+// Path cells past the path's first exit from the grid.
+.decl past_exit(p: Position)
+past_exit(P) :- path(R, T, P), exit(R0, T0, Q), precedes(R0, T0, Q, R, T, P).
+
+.decl painted(p: Position, ch: Choice)
+
+// --- $MeetsObstacle, $EdgeContinue ---
+painted(P, [E, B]) :-
+    impl_choice([E, B]), E != $EdgeStop(),
+    path(_, _, P), !seed(P), !blocked(P, B).
+
+// --- $EdgeStop ---
+painted(P, [$EdgeStop(), B]) :-
+    blocking_choice(B), path(_, _, P), !seed(P), !blocked(P, B), !past_exit(P).
+
+// --- shared ---
+
+// The cases that give an output on this input: $MeetsObstacle only where a
+// blocking cell comes before every exit.
+.decl defined(ch: Choice)
+defined([$MeetsObstacle(), B]) :-
+    path(R, T, O), block(O, B), !past_exit(O), !exit(R, T, O).
+defined([E, B]) :- impl_choice([E, B]), E != $MeetsObstacle().
+
+out(P, Col_out, Ch) :-
+    seed(S), !second_seed(S), defined(Ch), in(P, Col),         // one seed cell
+    ( painted(P, Ch), paint(Col_out)
+    ; !painted(P, Ch), Col_out = Col
+    ).
+
+.comp Determine {
+    // A cell the output paints over: its input color, and the paint.
+    .decl repaint(e: Example, p: Position, col_in: Color, col_out: Color)
+    repaint(E, P, Col_in, Col_out) :- ex_in(E, P, Col_in), ex_out(E, P, Col_out), Col_in != Col_out.
+
+    .decl background(c: Color)
+    background(Col) :- repaint(_, _, Col, _).
+
+    .decl seed_color(c: Color)
+    seed_color(Col) :- repaint(_, _, _, Col).
+
+    // The other input colors, which the output keeps.
+    // @ignore: determine prediction — the obstacle color is the input color
+    //  the output neither paints with nor paints over, which only a pair shows
+    .decl obstacle_color(c: Color)
+    obstacle_color(Col) :- ex_in(_, _, Col), !background(Col), !seed_color(Col).
+
+    // A cast from the seed in the second arm's direction crosses gap empty
+    // cells before it meets the third arm.
+    .init beside = Ray<Example>
+    beside.dir(E, D) :-
+        repaint(E, _, _, _), params.first_dir(F), params.turn_sense(S), turn(S, F, D).
+    beside.cell(E, P) :- ex_out(E, P, _).
+    beside.mark(E, P) :- ex_in(E, P, Col), seed_color(Col).
+    beside.blocked(E, P) :- repaint(E, P, _, _).
+
+    .decl gap(n: number)
+    gap(K) :- beside.clear(E, Q, D, K, _), neighbor(Q, D, Q2), beside.blocked(E, Q2).
+}

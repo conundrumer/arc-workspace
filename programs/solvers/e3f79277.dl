@@ -1,0 +1,175 @@
+// e3f79277
+// @draft
+// @keywords: scale count grow
+// @scene corner-angle: the input is a 6 by 6 field of the background color 7,
+//  and one corner holds a right angle of one other color: two legs of equal
+//  length k, one along each edge of that corner, that meet in the corner cell.
+// @scene no-other-marks: every cell off the angle is the background color.
+// @rule canvas: the output is an out_size by out_size grid of the background
+//  color.
+// @rule same-corner: the triangle sits in the output corner that matches the
+//  input corner of the angle.
+// @rule scaled-legs: each leg of the triangle runs leg_scale times k cells
+//  from that corner along the matching edge, in the angle's color.
+// @rule hypotenuse: the diagonal from the far end of one leg to the far end of
+//  the other is drawn in the angle's color.
+
+// how the output side is set
+.type Canvas =
+    // @claim canvas
+    StoredSize {}
+    // @rule canvas: the output side is the input side plus a stored size_gap
+    //  of lines; undefined on no input.
+    // @witness size-from-input: variant concept
+    //     @relaxed corner-angle
+  | SizeFromInput {}
+
+// which leg length the output legs scale
+.type Legs =
+    // @claim scaled-legs
+    EqualLegs {}
+    // @scene corner-angle: the two legs may differ in length.
+    // @rule scaled-legs: k is the length of the longer leg, and both output
+    //  legs take leg_scale times it; undefined on no input with an angle in a
+    //  corner.
+    // @witness unequal-legs: foreign any
+    //     @relaxed corner-angle
+  | LongerLeg {}
+    // @scene corner-angle: the two legs may differ in length.
+    // @rule scaled-legs: k is the length of the shorter leg, and both output
+    //  legs take leg_scale times it; undefined on no input with an angle in a
+    //  corner.
+    // @witness unequal-legs: foreign any
+  | ShorterLeg {}
+
+.type Choice = [s: Canvas, l: Legs]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed corner-angle
+    .decl background(col: Color) background(7).
+    // the factor from the input leg length to the output leg length
+    .decl leg_scale(n: number) leg_scale(2).
+
+    // --- $StoredSize ---
+    // the side length of the square output grid
+    .decl out_size(n: number) out_size(16).
+
+    // --- $SizeFromInput ---
+    // the lines the output side has beyond the input side
+    .decl size_gap(n: number) size_gap(10).
+}
+
+.init params = Params
+
+// A right angle in a corner of a grid, and the lengths of its legs.
+.comp Parse<Key> {
+    .type KeyEdge = [k: Key, e: Dir]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // The angle's cells and its color.
+    .decl angle(key: Key, p: Position, col: Color)
+    angle(K, P, Col) :- cell(K, P, Col), !params.background(Col).
+
+    // The corner whose cell holds the angle.
+    .decl corner(key: Key, c: DiagDir)
+    corner(K, C) :- angle(K, P, _), box_corner(P, ZERO, C).
+
+    // The leg along edge E of the corner: the angle's cells on that edge.
+    // @claim corner-angle scaled-legs
+    .init legs = Tally<KeyEdge, Position>
+    legs.domain([K, E]) :- corner(K, C), diag_dirs(C, _, _, E).
+    legs.item([K, E], P) :- legs.domain([K, E]), angle(K, P, _), dist(P, E, 0).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The input leg length k that the output legs scale.
+.decl leg_length(k: number, l: Legs)
+
+// The output frame.
+.init canvas = Frame2D<Canvas>
+
+// An output leg cell: on edge E of the corner, in a run of leg_scale cells
+// along the edge that has fewer runs before it than the leg length.
+.decl leg(p: Position, ch: Choice)
+leg(P, [S, L]) :-
+    canvas.cell(S, P),
+    parse.corner($U(), C), diag_dirs(C, _, D, E), dist(P, E, 0),  // on edge E, along toward D
+    dist(P, D, T), params.leg_scale(K), stride(T, K, 0, I, _),  // run I from the corner
+    leg_length(N, L), I < N.
+
+// The corner distance of a leg's far end: the next cell along the edge is off
+// the leg.
+.decl far_end(k: number, ch: Choice)
+far_end(J, Ch) :-
+    leg(P, Ch), parse.corner($U(), C), diag_dirs(C, _, D, E), dist(P, E, 0),
+    opposite(D, D_out), neighbor(P, D_out, Q), !leg(Q, Ch),
+    corner_dist(P, C, J).
+
+// The triangle outline: the legs, and the diagonal through their far ends.
+.decl ink(p: Position, ch: Choice)
+ink(P, Ch) :- leg(P, Ch).
+ink(P, [S, L]) :- far_end(J, [S, L]), canvas.cell(S, P), parse.corner($U(), C),
+    corner_dist(P, C, J).
+
+out(P, Col, Ch) :- ink(P, Ch), parse.angle($U(), _, Col).
+out(P, Col, [S, L]) :-
+    leg_length(_, L), canvas.cell(S, P), !ink(P, [S, L]),
+    params.background(Col).
+
+// --- $EqualLegs ---
+// @claim corner-angle
+.init equal = Unanimous<Unit, number>
+equal.item($U(), K) :- parse.legs.tally(_, K).
+
+leg_length(K, $EqualLegs()) :- equal.value($U(), K).
+
+// --- $LongerLeg, $ShorterLeg ---
+// @claim scaled-legs
+.init extremes = Extremes<Unit>
+extremes.cand($U(), K) :- parse.legs.tally(_, K).
+
+leg_length(K, $LongerLeg()) :- extremes.high($U(), K).
+leg_length(K, $ShorterLeg()) :- extremes.low($U(), K).
+
+// --- $StoredSize ---
+canvas.extent($StoredSize(), A, N) :- axis_elem(A), params.out_size(N).
+
+// --- $SizeFromInput ---
+.init gap_lines = AxisFrame<Unit>
+gap_lines.extent($U(), A, N) :- axis_elem(A), params.size_gap(N).
+
+// The output's lines on each axis: the input's lines and the gap's lines.
+// @claim canvas
+.init lines = Tally<Axis, Position>
+lines.item(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+lines.item(A, L) :- gap_lines.cell($U(), A, L).
+
+canvas.extent($SizeFromInput(), A, N) :- lines.tally(A, N).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The output's triangle, read as an angle: its legs are the output legs.
+    .init out_parse = Parse<Example>
+    out_parse.cell(E, P, Col) :- ex_out(E, P, Col).
+
+    // The factor at which an example's output legs fill input-leg-length runs.
+    .decl scale(e: Example, n: number)
+    scale(E, K) :-
+        parse.legs.tally([E, D], N), out_parse.legs.tally([E, D], M),
+        tile_size(M, N, 0, K).
+
+    // A factor some example with an output does not show.
+    .decl defect(n: number)
+    defect(K) :- scale(_, K), ex_out(E, _, _), !scale(E, K).
+
+    .decl leg_scale(n: number)
+    leg_scale(K) :- scale(_, K), !defect(K).
+}

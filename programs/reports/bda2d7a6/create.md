@@ -3,7 +3,6 @@
 ## Departures
 - The `predecessor` point is split: `Predecessor` has the concept branch `ListCycle {order: ListOrder}` and `$EnclosingColor`, and `$CountOrder` stands under `ListOrder` beside the concept branch `FirstSeen`. The report puts `$CountOrder` and `$EnclosingColor` side by side under one point: [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) puts a property that exists only with some branches under a branch of its own, and the order of the list exists only where a color takes the one before it in a list. The witness names are unchanged.
 - The concept file's parameter `step` (1) is not stored. The program reads the color just before each color through `Order.next`, and reads the last color for the first through `first`/`last`, so the header's `cycle-colors` is restated without `params.step`. The rests: the sweep reported that the determination of `step` keeps fewer values than those the train pairs admit (1, 4 and 7), and the concept fixes the value ("the color that comes just before it"). For such a value, the Determine operation has the program derive it.
-- `$ScanOrder` is added under `ListOrder`. It comes from the report's Not formed item "order of first appearance in row-major scan", and lists the colors in the order of their first cells in a scan. Its `scan` (corner, axis first) is `@open` over all eight values, since the pairs do not separate them and the task does not single out an orientation. Witness `uneven-ring`, `foreign concept`, `@relaxed nested-rings`. On that witness, the scans that meet color 2 first give the concept's grid, and the scans that meet color 0 first give another grid.
 - `@store tally` stands on `others`, the count that `$RingShift` reads, with witness `others.tally=stored`, `variant concept`, `@relaxed color-cycle`. The report's Not formed item says that no rule reads `color-count`, but `$RingShift`'s rule reads it ("ring `color-count` − 1"). `store` printed no line, as no D4 image or color swap of a train input changes the count. The witness has rings 8 0 5 2: the derived count gives the outermost ring color 2, as the concept does, and a stored count of 2 gives it color 5.
 
 ## Judgments
@@ -22,7 +21,6 @@
 - Keywords `rings rank permutation mapping count`: `count` is there for `$CountOrder`.
 
 ## Open
-- Whether the open values of `scan` are all eight scans, or reading order alone: an annotator's judgment of what a reader of "row-major scan" takes in a D4 variant would settle it.
 - Whether a sibling task turns the cycle outward, which would make the place offset task data again (the dropped `step`): a variant task of this generator would settle it.
 
 ## Concept faults

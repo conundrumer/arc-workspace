@@ -1,0 +1,98 @@
+{
+  "id": "d35bdbdc",
+  "witnesses": [{
+    "id": "self-named-box",
+    "separates": "the 7-plus at a wire end has its own outer color 7 at its center: the concept erases it, since no other box has outer color 7; $SelfLookup links it, looks itself up, and keeps it unchanged",
+    "input": [
+      [0,0,0,0,0,0,0,2,0,0],
+      [0,0,4,0,0,0,2,3,2,0],
+      [0,4,2,4,0,0,0,2,0,0],
+      [0,0,4,0,0,0,0,5,0,0],
+      [0,0,0,0,0,0,5,0,0,0],
+      [0,0,0,0,1,0,5,0,3,0],
+      [0,7,0,1,9,1,5,3,3,3],
+      [7,7,7,0,1,0,5,0,3,0],
+      [0,7,0,5,0,5,0,0,0,0],
+      [0,5,5,0,5,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": [
+        [0,0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,3,2,0],
+        [0,0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,5,0,0],
+        [0,0,0,0,0,0,5,0,0,0],
+        [0,0,0,0,0,0,5,0,0,0],
+        [0,0,0,0,0,0,5,0,0,0],
+        [0,0,0,0,0,0,5,0,0,0],
+        [0,0,0,5,0,5,0,0,0,0],
+        [0,5,5,0,5,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SelfLookup"],
+      "grid": [
+        [0,0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,3,2,0],
+        [0,0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,5,0,0],
+        [0,0,0,0,0,0,5,0,0,0],
+        [0,0,0,0,0,0,5,0,0,0],
+        [0,7,0,0,0,0,5,0,0,0],
+        [7,7,7,0,0,0,5,0,0,0],
+        [0,7,0,5,0,5,0,0,0,0],
+        [0,5,5,0,5,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "6 is the commonest color of the input: the concept keeps 0 as background, links the 3-box and the 6-box at the wire ends and erases the 2-box; DominantColor takes 6 as background, so the 6-box is field, the 3-box names no box and both other boxes are erased to 6",
+    "input": [
+      [3,3,3,0,0,6,6,6,0,2,2,2],
+      [3,6,3,5,5,6,3,6,0,2,6,2],
+      [3,3,3,0,0,6,6,6,0,2,2,2]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [3,3,3,0,0,6,6,6,0,0,0,0],
+        [3,3,3,5,5,6,6,6,0,0,0,0],
+        [3,3,3,0,0,6,6,6,0,0,0,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [6,6,6,0,0,6,6,6,0,6,6,6],
+        [6,6,6,5,5,6,3,6,0,6,6,6],
+        [6,6,6,0,0,6,6,6,0,6,6,6]
+      ]
+    }]
+  }, {
+    "id": "hooked-wire-end",
+    "separates": "the wire's end at (3,8) hooks back so that it also touches the wire cell (4,7): the generator's wire ends at (3,8), so it links the 6-box, which takes 8 from the 1-box; the concept reads (3,8) as a wire cell with two neighbors, so it links only the 3-box and erases the 6-box",
+    "input": [
+      [3,3,3,0,0,0,0,6,6,6],
+      [3,4,3,0,0,0,0,6,1,6],
+      [3,3,3,0,0,0,0,6,6,6],
+      [0,5,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,5,0,5],
+      [5,0,5,5,5,5,5,0,5,0],
+      [0,5,0,0,0,0,0,0,0,0],
+      [4,4,4,0,0,0,0,1,1,1],
+      [4,3,4,0,0,0,0,1,8,1],
+      [4,4,4,0,0,0,0,1,1,1]
+    ],
+    "output": [
+      [3,3,3,0,0,0,0,6,6,6],
+      [3,3,3,0,0,0,0,6,8,6],
+      [3,3,3,0,0,0,0,6,6,6],
+      [0,5,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,5,0,5],
+      [5,0,5,5,5,5,5,0,5,0],
+      [0,5,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ]
+  }]
+}

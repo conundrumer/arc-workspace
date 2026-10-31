@@ -1,0 +1,257 @@
+// f8be4b64
+// @draft
+// @keywords: markers objects cast
+// @scene background: every cell outside the pluses holds background (0).
+// @scene pluses: the input holds pluses, each four ring_color cells orthogonally
+//  around one center cell, whose color is not ring_color; the center of a hollow
+//  plus is background.
+// @scene distinct-lines: no two plus centers share a row or a column.
+// @rule cast-cross: each plus paints its center's row and column in its center
+//  color, from its center outward toward each of the four directions, a hollow
+//  plus painting background.
+// @rule rings-kept: every ring_color cell keeps its color.
+// @rule blocked-at-ring: a beam stops before the first ring_color cell it meets
+//  past its own plus's ring.
+// @rule column-on-top: where a beam along top_axis crosses a beam along the
+//  other axis, the top_axis beam's color shows.
+
+// the color of a cell that two beams along one axis cover
+.type Overlap =
+    // @claim distinct-lines
+    SameAxisClash {}
+    // @rule nearer-beam: where two beams along one axis cover one cell, the beam
+    //  from the nearer center shows; undefined where two such centers are
+    //  equally near and differ in color.
+    // @witness same-row-lamps: borderline $NearerBeamShows
+    //     @relaxed distinct-lines
+  | NearerBeamShows {}
+
+// where a hollow plus casts
+.type HollowAxes =
+    // @claim cast-cross
+    HollowBothAxes {}
+    // @rule cast-cross: a hollow plus casts background along top_axis only.
+    // @witness hollow-same-row: borderline $NearerBeamShows
+    //     @relaxed distinct-lines
+    // @witness hollow-row-mark: foreign $StopAtAnyMark
+    //     @relaxed background
+  | HollowTopAxisOnly {}
+
+// whether a hollow plus's arms stop a beam
+.type HollowRing =
+    // @claim blocked-at-ring
+    HollowRingsBlock {}
+    // @rule blocked-at-ring: the arms of a hollow plus stop no beam; a beam
+    //  passes them, keeps them, and goes on.
+    // @witness hollow-ring-in-path: ordinary concept
+  | HollowRingsPassable {}
+
+// whether a hollow plus's beam stops at another plus's arm
+.type BgBeam =
+    // @claim blocked-at-ring
+    BackgroundBeamBlocked {}
+    // @rule blocked-at-ring: the beams of a hollow plus pass every ring_color
+    //  cell and go on.
+    // @witness background-beam-blocked: ordinary concept
+  | BackgroundBeamUnblocked {}
+
+// what stops a beam
+.type Blocker =
+    // @claim blocked-at-ring
+    StopAtRingColor {}
+    // @rule blocked-at-ring: only an arm of another plus stops a beam; a lone
+    //  ring_color cell is passed and kept.
+    // @witness stray-ring-cell: foreign concept
+    //     @relaxed background
+  | StopAtPlusRing {}
+    // @rule blocked-at-ring: the first non-background cell past the beam's own
+    //  arms stops it and is kept.
+    // @witness stray-mark: foreign $StopAtAnyMark
+    //     @relaxed background
+  | StopAtAnyMark {}
+
+.type Choice = [o: Overlap, ha: HollowAxes, hr: HollowRing, bb: BgBeam, bl: Blocker]
+
+// A beam's blocking rule and the center it is cast from.
+.type BeamKey = [hr: HollowRing, bb: BgBeam, bl: Blocker, c: Position]
+
+// A cell, an axis through it, and a case.
+.type CellAxis = [p: Position, a: Axis, ch: Choice]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl ring_color(c: Color) ring_color(3).
+    // the axis whose beams show where two beams cross
+    .decl top_axis(a: Axis) top_axis(AXIS_V).
+
+    // --- $HollowTopAxisOnly, $HollowRingsPassable, $BackgroundBeamUnblocked, $StopAtAnyMark ---
+    // @derive DominantColor: variant concept
+    //     @relaxed background
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($SameAxisClash()). overlap_choice($NearerBeamShows()).
+
+.decl hollow_axes_choice(ha: HollowAxes)
+hollow_axes_choice($HollowBothAxes()). hollow_axes_choice($HollowTopAxisOnly()).
+
+.decl hollow_ring_choice(hr: HollowRing)
+hollow_ring_choice($HollowRingsBlock()). hollow_ring_choice($HollowRingsPassable()).
+
+.decl bg_beam_choice(bb: BgBeam)
+bg_beam_choice($BackgroundBeamBlocked()). bg_beam_choice($BackgroundBeamUnblocked()).
+
+.decl blocker_choice(bl: Blocker)
+blocker_choice($StopAtRingColor()). blocker_choice($StopAtPlusRing()). blocker_choice($StopAtAnyMark()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, Ha, Hr, Bb, Bl]) :-
+    overlap_choice(O), hollow_axes_choice(Ha), hollow_ring_choice(Hr), bg_beam_choice(Bb), blocker_choice(Bl).
+
+.decl ring(p: Position)
+ring(P) :- in(P, Col), params.ring_color(Col).
+
+// The neighbor of p toward d is a ring cell.
+.decl arm_toward(p: Position, d: Dir)
+arm_toward(P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), ring(Q).
+
+.decl armless(p: Position)
+armless(P) :- in(P, _), dir_elem(D), !arm_toward(P, D).
+
+// A plus center and its color, the color its beams cast.
+.decl center(p: Position, col: Color)
+center(P, Col) :- in(P, Col), !ring(P), !armless(P).
+
+.decl arm(p_center: Position, q: Position)
+arm(Pc, Q) :- center(Pc, _), dir_elem(D), neighbor(Pc, D, Q).
+
+// The cells that stop a beam from the center, before the hollow exemptions.
+.decl base_block(bl: Blocker, p_center: Position, q: Position)
+
+// --- $StopAtRingColor ---
+base_block($StopAtRingColor(), Pc, Q) :- center(Pc, _), ring(Q), !arm(Pc, Q).
+
+// --- $StopAtPlusRing ---
+base_block($StopAtPlusRing(), Pc, Q) :- center(Pc, _), arm(Pc2, Q), Pc2 != Pc.
+
+// --- $StopAtAnyMark ---
+base_block($StopAtAnyMark(), Pc, Q) :-
+    center(Pc, _), in(Q, Col), !params.bg(Col), !arm(Pc, Q), Q != Pc.
+
+// --- $HollowTopAxisOnly, $HollowRingsPassable, $BackgroundBeamUnblocked ---
+.decl hollow(p_center: Position)
+hollow(Pc) :- center(Pc, Col), params.bg(Col).
+
+// A blocking cell that a beam passes.
+.decl passed(k: BeamKey, q: Position)
+
+// --- $HollowRingsPassable ---
+passed([$HollowRingsPassable(), Bb, Bl, Pc], Q) :-
+    bg_beam_choice(Bb), base_block(Bl, Pc, Q), hollow(Pc2), arm(Pc2, Q).
+
+// --- $BackgroundBeamUnblocked ---
+passed([Hr, $BackgroundBeamUnblocked(), Bl, Pc], Q) :-
+    hollow_ring_choice(Hr), base_block(Bl, Pc, Q), hollow(Pc), ring(Q).
+
+// --- shared ---
+// The four beams of each center, under each blocking rule.
+// @claim cast-cross blocked-at-ring
+.init beam = Ray<BeamKey>
+beam.dir([Hr, Bb, Bl, Pc], D) :- impl_choice([_, _, Hr, Bb, Bl]), center(Pc, _), dir_elem(D).
+beam.cell([Hr, Bb, Bl, Pc], P) :- impl_choice([_, _, Hr, Bb, Bl]), center(Pc, _), in(P, _).
+beam.mark([Hr, Bb, Bl, Pc], Pc) :- impl_choice([_, _, Hr, Bb, Bl]), center(Pc, _).
+beam.blocked(K, Q) :-
+    impl_choice([_, _, Hr, Bb, Bl]), base_block(Bl, Pc, Q), K = [Hr, Bb, Bl, Pc], !passed(K, Q).
+
+// The axes a center casts along.
+.decl casts(ha: HollowAxes, p_center: Position, a: Axis)
+
+// --- $HollowBothAxes ---
+casts($HollowBothAxes(), Pc, A) :- center(Pc, _), axis_elem(A).
+
+// --- $HollowTopAxisOnly ---
+casts($HollowTopAxisOnly(), Pc, A) :-
+    center(Pc, _), axis_elem(A), ( !hollow(Pc) ; params.top_axis(A) ).
+
+// --- shared ---
+// A non-ring cell on a beam along axis a, k cells from its center.
+.decl lit(p: Position, a: Axis, col: Color, k: number, ch: Choice)
+lit(P, A, Col, K, [O, Ha, Hr, Bb, Bl]) :-
+    impl_choice([O, Ha, Hr, Bb, Bl]), beam.clear([Hr, Bb, Bl, Pc], P, D, K, _),
+    axis_of(D, A), casts(Ha, Pc, A), center(Pc, Col), !ring(P).
+
+// The beam color that shows at p along axis a.
+.decl shown(p: Position, a: Axis, col: Color, ch: Choice)
+
+// --- $SameAxisClash ---
+shown(P, A, Col, Ch) :- lit(P, A, Col, _, Ch), Ch = [$SameAxisClash(), _, _, _, _].
+
+// --- $NearerBeamShows ---
+// The beams along axis a at p, by distance from their centers.
+// @claim nearer-beam
+.init nearest = ArgExtremes<CellAxis, Color>
+nearest.cand([P, A, Ch], Col, K) :- lit(P, A, Col, K, Ch), Ch = [$NearerBeamShows(), _, _, _, _].
+
+shown(P, A, Col, Ch) :- nearest.low([P, A, Ch], Col, _).
+
+// --- shared ---
+.decl top_covered(p: Position, ch: Choice)
+top_covered(P, Ch) :- shown(P, A, _, Ch), params.top_axis(A).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    shown(P, A, Col, Ch),
+    ( params.top_axis(A)       // the top axis's beam
+    ; !top_covered(P, Ch)      // any beam, where no top axis beam lies
+    ).
+
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
+
+.comp Determine {
+    // The neighbor of p toward d holds col.
+    .decl toward(e: Example, p: Position, d: Dir, col: Color)
+    toward(E, P, D, Col) :- ex_in(E, P, _), dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col).
+
+    // Some neighbor of p does not hold col.
+    .decl gap(e: Example, p: Position, col: Color)
+    gap(E, P, Col) :- toward(E, P, _, Col), dir_elem(D), !toward(E, P, D, Col).
+
+    // A plus: four neighbors of one color around a center of another.
+    .decl plus(e: Example, p_center: Position, c_ring: Color)
+    plus(E, P, C) :- ex_in(E, P, Cc), toward(E, P, _, C), C != Cc, !gap(E, P, C).
+
+    .decl has_plus(e: Example, c_ring: Color)
+    has_plus(E, C) :- plus(E, _, C).
+
+    // Some input holds no plus of col.
+    .decl missing(col: Color)
+    missing(C) :- has_plus(_, C), ex_in(E, _, _), !has_plus(E, C).
+
+    .decl ring_color(c: Color)
+    ring_color(C) :- has_plus(_, C), !missing(C).
+
+    .decl plus_cell(e: Example, p: Position)
+    plus_cell(E, Q) :-
+        plus(E, P, C), ring_color(C),
+        ( Q = P                                // the center
+        ; dir_elem(D), neighbor(P, D, Q)       // an arm
+        ).
+
+    // The color of the cells outside the pluses.
+    .decl bg(c: Color)
+    bg(C) :- ex_in(E, P, C), !plus_cell(E, P).
+
+    // A filled center's color shows where its line along a crosses the
+    // other axis's line of a center of another filled color.
+    .decl top_axis(a: Axis)
+    top_axis(A) :-
+        ring_color(R), plus(E, Pa, R), ex_in(E, Pa, Ca), !bg(Ca),
+        plus(E, Pb, R), ex_in(E, Pb, Cb), !bg(Cb), Ca != Cb,
+        ex_out(E, P, Ca), axis_elem(A), same_line(A, Pa, P),   // on a's line through Pa
+        perp(A, A2), same_line(A2, Pb, P).                     // and on the other axis's line through Pb
+}

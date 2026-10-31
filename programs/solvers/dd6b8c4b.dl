@@ -1,0 +1,185 @@
+// dd6b8c4b
+// @draft
+// @keywords: flood rank count move
+// @scene field: A grid of background 7 with wall 6 cells drawn on it.
+// @scene box: One 3x3 square of box color 3 cells with a center 2 cell at
+//  its center.
+// @scene marks: Single mark 9 cells scattered over the field, some of them
+//  shut off from the box by walls.
+// @rule reach: A mark reaches the box when a 4-adjacent walk through cells
+//  that are not wall joins it to a box cell; its distance is the length of
+//  the shortest such walk.
+// @rule take: The reached marks are taken nearest first, as many as the box
+//  has cells, or all of them when there are fewer. Undefined where the last
+//  mark taken and the first mark left are at one distance.
+// @rule vacate: Each taken mark becomes background.
+// @rule fill: The box cells, the center included, take the mark color in
+//  fill order, one for each taken mark.
+// @rule keep: Every other cell keeps its input color.
+
+// Where the walk that measures a mark's distance starts.
+.type Metric =
+    // @claim take
+    BoxWalk {}
+    // @rule take: The distance is the walk from the center cell, through the
+    //  box cells. Undefined where the last mark taken and the first mark left
+    //  are at one such distance.
+    // @witness center-breaks-tie: borderline any
+  | WalkFromCenter {}
+
+// What decides between marks at one distance.
+.type Tie =
+    // @claim take
+    TieUndefined {}
+    // @rule take: Among marks at one distance, the mark earlier in fill order
+    //  is taken first.
+    // @witness tie-at-cut: borderline any
+    // @witness center-breaks-tie: borderline any
+  | TieReading {}
+
+.type Choice = [m: Metric, t: Tie]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    .decl wall(c: Color) wall(6).
+    .decl mark(c: Color) mark(9).
+    .decl box_color(c: Color) box_color(3).
+    // @derive RarestColor: variant derived
+    //     @relaxed box
+    .decl center(c: Color) center(2).
+
+    // The order the box cells fill in: a start corner and a primary axis.
+    .decl fill_corner(d: DiagDir) fill_corner(DIAG_TL).
+    .decl fill_axis(a: Axis) fill_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl metric_choice(m: Metric)
+metric_choice($BoxWalk()). metric_choice($WalkFromCenter()).
+
+.decl tie_choice(t: Tie)
+tie_choice($TieUndefined()). tie_choice($TieReading()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, T]) :- metric_choice(M), tie_choice(T).
+
+// A mark, keyed by the case that ranks it.
+.type CaseMark = [ch: Choice, p: Position]
+
+// @store: variant stored
+//     @relaxed box
+.decl box(p: Position)
+box(P) :- in(P, Col), ( params.box_color(Col) ; params.center(Col) ).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark(Col).
+
+// The fewest 4-adjacent steps through cells that are not wall.
+// @ignore seed: store — the stored seed cell is the center, and no witnessed case takes it
+// @claim reach take
+.init walk = GraphDistance<Metric, Position>
+walk.edge(M, P, Q) :-
+    metric_choice(M), in(P, C1), !params.wall(C1),
+    dir_elem(D), neighbor(P, D, Q), in(Q, C2), !params.wall(C2).
+
+// The box cells in fill order.
+// @claim fill
+.init fill = LexOrder<Unit>
+fill.corner($U(), D) :- params.fill_corner(D).
+fill.axis($U(), A) :- params.fill_axis(A).
+fill.cell($U(), P) :- box(P).
+
+// @ignore item: store — the program reads the box's cell count alone, so a stored cell set is equivalent to `capacity.tally=stored`
+// @store tally: variant center=RarestColor
+//     @relaxed box
+// @claim take
+.init capacity = Tally<Unit, Position>
+capacity.item($U(), P) :- box(P).
+
+// @claim fill
+.init reached = Tally<Metric, Position>
+reached.item(M, P) :- mark(P), walk.distance(M, P, _).
+
+// The reached marks, nearest first.
+// @claim take
+.init near = Order<Choice, Position>
+near.elem([M, T], P) :- impl_choice([M, T]), mark(P), walk.distance(M, P, _).
+near.score([M, T], P, K) :- near.elem([M, T], P), walk.distance(M, P, K).
+
+// The marks no farther along the take order than each reached mark.
+// @claim take
+.init upto = Tally<CaseMark, Position>
+upto.item([Ch, P], Q) :- near.rank(Ch, P, R), near.rank(Ch, Q, R2), R2 <= R.
+
+// A mark the box takes: every mark no farther fits in it.
+.decl taken(ch: Choice, p: Position)
+taken(Ch, P) :- upto.tally([Ch, P], E), capacity.tally($U(), N), E <= N.
+
+// A mark the box has no room for: the nearer marks fill it.
+.decl left(ch: Choice, p: Position)
+left(Ch, P) :- near.rank(Ch, P, R), capacity.tally($U(), N), R >= N.
+
+// A box cell that a taken mark fills.
+.decl filled(m: Metric, p: Position)
+filled(M, P) :- fill.rank($U(), P, K), reached.tally(M, N), K < N.
+
+out(P, Col, [M, T]) :-
+    impl_choice([M, T]), in(P, C0),
+    ( filled(M, P), params.mark(Col)
+    ; taken([M, T], P), params.bg(Col)
+    ; left([M, T], P), Col = C0
+    ; !box(P), !near.elem([M, T], P), Col = C0
+    ; box(P), !filled(M, P), Col = C0
+    ).
+
+// --- $BoxWalk ---
+walk.seed($BoxWalk(), P) :- box(P).
+
+// --- $WalkFromCenter ---
+walk.seed($WalkFromCenter(), P) :- in(P, Col), params.center(Col).
+
+// --- $TieReading ---
+// @claim take
+.init reading = LexOrder<Unit>
+reading.corner($U(), D) :- params.fill_corner(D).
+reading.axis($U(), A) :- params.fill_axis(A).
+reading.cell($U(), P) :- mark(P).
+
+near.secondary_score([M, $TieReading()], P, R) :-
+    impl_choice([M, $TieReading()]), near.elem([M, $TieReading()], P),
+    reading.rank($U(), P, R).
+
+.comp Determine {
+    // A cell whose color changes from c to c2.
+    .decl change(e: Example, p: Position, c: Color, c2: Color)
+    change(E, P, C, C2) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // The mark leaves some cells and enters others.
+    .decl mark(c: Color)
+    mark(M) :- change(_, _, M, _), change(_, _, _, M).
+
+    .decl bg(c: Color)
+    bg(C) :- mark(M), change(_, _, M, C).
+
+    // A color of the box: its cells take the mark.
+    .decl boxlike(c: Color)
+    boxlike(C) :- mark(M), change(_, _, C, M).
+
+    // A cell with a neighbor outside the box.
+    .decl box_rim(e: Example, p: Position)
+    box_rim(E, P) :-
+        ex_in(E, P, _), dir_elem(D),
+        ( dist(P, D, 0)
+        ; neighbor(P, D, Q), ex_in(E, Q, C), !boxlike(C)
+        ).
+
+    // The box color whose cell lies inside the box.
+    .decl center(c: Color)
+    center(C) :- boxlike(C), ex_in(E, P, C), !box_rim(E, P).
+
+    .decl box_color(c: Color)
+    box_color(C) :- boxlike(C), !center(C).
+}

@@ -1,0 +1,279 @@
+// ea32f347
+// @draft
+// @keywords: objects rank lookup
+// @scene background: every cell that is not a bar cell is 0
+// @scene straight-bars: the input holds 3 bars of the color params.bar_color,
+//  each a 4-connected straight run of cells, one cell wide, horizontal or
+//  vertical, and no two bars touch
+// @scene distinct-lengths: no two bars have the same length
+// @rule rank-by-length: a bar's length is its cell count, and its rank is the
+//  number of distinct lengths longer than its own, so bars of one length share
+//  a rank
+// @rule recolor-by-rank: each cell of a bar takes the color params.rank_color
+//  gives to that bar's rank, and every other cell keeps its input color;
+//  undefined where a rank has no entry in params.rank_color
+
+// how a bar's color follows from the length order
+.type Direction =
+    // @claim rank-by-length recolor-by-rank
+    RankFromLongest {}
+    // @rule rank-by-length: a bar's rank is the number of distinct lengths
+    //  shorter than its own
+    // @rule recolor-by-rank: each cell of a bar takes the color
+    //  params.ascending_rank_color gives to that bar's rank; undefined where a
+    //  rank has no entry
+    // @witness two-bars: variant $ExtremesAndRest
+    //     @relaxed straight-bars
+  | RankFromShortest {}
+    // @rule rank-by-length: the longest bars, the shortest bars, and every
+    //  other bar form three roles; undefined where all bars have one length
+    // @rule recolor-by-rank: the longest bars take params.longest_color, the
+    //  shortest bars params.shortest_color, and every other bar
+    //  params.rest_color
+    // @witness two-bars: variant $ExtremesAndRest
+  | ExtremesAndRest {}
+
+// the rank of bars that share a length
+.type Tie =
+    // @claim rank-by-length
+    DenseRank {}
+    // @rule rank-by-length: a bar's rank is the number of bars longer than it
+    // @witness tied-lengths: borderline $CompetitionRank
+    //     @relaxed distinct-lengths
+  | CompetitionRank {}
+
+// what a bar's length counts
+.type Measure =
+    // @claim rank-by-length
+    CellCount {}
+    // @rule rank-by-length: a bar's length is its extent along its longer axis
+    // @witness bent-bar: foreign concept
+    //     @relaxed straight-bars
+  | ExtentLength {}
+
+// which bar cells join one bar
+.type Adjacency =
+    // @claim straight-bars
+    FourConnected {}
+    // @scene straight-bars: a bar is an 8-connected component of the bar cells
+    // @witness corner-touch: borderline concept
+    //     @relaxed straight-bars
+  | DiagonalJoin {}
+
+// which cells form bars
+.type Cells =
+    // @claim straight-bars
+    BarColor {}
+    // @scene straight-bars: the bar cells are the cells that are not
+    //  params.background
+    // @witness non-background-bars: variant $NonBackground
+    //     @relaxed straight-bars
+  | NonBackground {}
+
+.type Choice = [direction: Direction, tie: Tie, measure: Measure, adjacency: Adjacency, cells: Cells]
+
+// The bars found under one reading of the bar cells, adjacency and length.
+.type View = [c: Cells, a: Adjacency, m: Measure]
+
+// One bar under a view.
+.type Bar = [v: View, id: Ident]
+
+// One bar of a task example.
+.type ExampleBar = [e: Example, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $BarColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed straight-bars
+    .decl bar_color(col: Color) bar_color(5).
+
+    // --- $NonBackground ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(col: Color) background(0).
+
+    // --- $RankFromLongest ---
+    .decl rank_color(r: number, col: Color)
+    rank_color(0, 1). rank_color(1, 4). rank_color(2, 2).
+
+    // --- $RankFromShortest ---
+    .decl ascending_rank_color(r: number, col: Color)
+    ascending_rank_color(0, 2). ascending_rank_color(1, 4). ascending_rank_color(2, 1).
+
+    // --- $ExtremesAndRest ---
+    .decl longest_color(col: Color) longest_color(1).
+    .decl shortest_color(col: Color) shortest_color(2).
+    .decl rest_color(col: Color) rest_color(4).
+}
+
+.init params = Params
+
+.decl direction_choice(d: Direction)
+direction_choice($RankFromLongest()). direction_choice($RankFromShortest()).
+direction_choice($ExtremesAndRest()).
+
+.decl tie_choice(t: Tie)
+tie_choice($DenseRank()). tie_choice($CompetitionRank()).
+
+.decl measure_choice(m: Measure)
+measure_choice($CellCount()). measure_choice($ExtentLength()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($FourConnected()). adjacency_choice($DiagonalJoin()).
+
+.decl cells_choice(c: Cells)
+cells_choice($BarColor()). cells_choice($NonBackground()).
+
+// ExtremesAndRest reads no rank, so CompetitionRank gives it no other model.
+.decl impl_choice(ch: Choice)
+impl_choice([O, T, M, A, C]) :-
+    direction_choice(O), tie_choice(T), measure_choice(M), adjacency_choice(A), cells_choice(C),
+    ( O != $ExtremesAndRest() ; T != $CompetitionRank() ).
+
+// The bar cells under each reading.
+.decl ink(c: Cells, p: Position)
+
+// The cells of each bar.
+.decl member(b: Bar, p: Position)
+
+// The length of each bar.
+.decl length(b: Bar, n: number)
+
+// The rank of each bar under each counting direction and tie reading.
+.decl rank(o: Direction, t: Tie, b: Bar, r: number)
+
+// The color each bar takes.
+.decl paint(o: Direction, t: Tie, b: Bar, col: Color)
+
+out(P, Col, [O, T, M, A, C]) :-
+    impl_choice([O, T, M, A, C]), member([[C, A, M], Id], P), paint(O, T, [[C, A, M], Id], Col).
+out(P, Col, [O, T, M, A, C]) :- impl_choice([O, T, M, A, C]), in(P, Col), !ink(C, P).
+
+// --- $BarColor ---
+ink($BarColor(), P) :- in(P, Col), params.bar_color(Col).
+
+// --- $NonBackground ---
+ink($NonBackground(), P) :- in(P, Col), !params.background(Col).
+
+// --- $FourConnected ---
+// @claim straight-bars
+.init bars = Components<Cells>
+bars.node(C, P) :- ink(C, P).
+
+member([[C, $FourConnected(), M], Id], P) :- bars.label(C, P, Id), measure_choice(M).
+
+// --- $DiagonalJoin ---
+// @claim straight-bars
+.init bars8 = Components8<Cells>
+bars8.node(C, P) :- ink(C, P).
+
+member([[C, $DiagonalJoin(), M], Id], P) :- bars8.label(C, P, Id), measure_choice(M).
+
+// --- $CellCount ---
+// @claim rank-by-length
+.init size = Tally<Bar, Position>
+size.item([[C, A, $CellCount()], Id], P) :- member([[C, A, $CellCount()], Id], P).
+
+length(X, N) :- size.tally(X, N).
+
+// --- $ExtentLength ---
+// @claim rank-by-length
+.init span = Bbox<Bar>
+span.cell([[C, A, $ExtentLength()], Id], P) :- member([[C, A, $ExtentLength()], Id], P).
+
+// The bar's extent along each axis.
+// @claim rank-by-length
+.init extent = Extremes<Bar>
+extent.cand(X, N) :- span.box(X, B), member(X, P), axis_elem(A), box_extent(B, P, A, N).
+
+length(X, N) :- extent.high(X, N).
+
+// --- $DenseRank ---
+// @claim rank-by-length
+.init dense = Ordinal<View>
+dense.idx_set(V, N) :- length([V, _], N).
+
+rank($RankFromLongest(), $DenseRank(), [V, Id], R) :- length([V, Id], N), dense.rank_desc(V, N, R).
+
+// --- $RankFromShortest & $DenseRank ---
+rank($RankFromShortest(), $DenseRank(), [V, Id], R) :- length([V, Id], N), dense.rank(V, N, R).
+
+// --- $CompetitionRank ---
+// @claim rank-by-length
+.init competition = Order<View, Ident>
+competition.elem(V, Id) :- length([V, Id], _).
+competition.score(V, Id, N) :- length([V, Id], N).
+
+// --- $RankFromLongest & $CompetitionRank ---
+rank($RankFromLongest(), $CompetitionRank(), [V, Id], R) :- competition.rank_desc(V, Id, R).
+
+// --- $RankFromShortest & $CompetitionRank ---
+rank($RankFromShortest(), $CompetitionRank(), [V, Id], R) :- competition.rank(V, Id, R).
+
+// --- $RankFromLongest ---
+paint($RankFromLongest(), T, X, Col) :-
+    rank($RankFromLongest(), T, X, R), params.rank_color(R, Col).
+
+// --- $RankFromShortest ---
+paint($RankFromShortest(), T, X, Col) :-
+    rank($RankFromShortest(), T, X, R), params.ascending_rank_color(R, Col).
+
+// --- $ExtremesAndRest ---
+// @claim rank-by-length
+.init ends = Extremes<View>
+ends.cand(V, N) :- length([V, _], N).
+
+// No bar takes a role where all bars have one length.
+paint($ExtremesAndRest(), $DenseRank(), [V, Id], Col) :-
+    length([V, Id], N),
+    ( ends.high(V, N), !ends.low(V, N), params.longest_color(Col)
+    ; ends.low(V, N), !ends.high(V, N), params.shortest_color(Col)
+    ; !ends.high(V, N), !ends.low(V, N), params.rest_color(Col)
+    ).
+
+.comp Determine {
+    // The colors that are the commonest of every input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // The commonest colors of some input that some other input does not share.
+    .decl uncommon(col: Color)
+    uncommon(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    .decl background(col: Color)
+    background(Col) :- commonest.mode(_, Col), !uncommon(Col).
+
+    // The input colors of the cells the output changes.
+    .decl bar_color(col: Color)
+    bar_color(Col) :- ex_in(E, P, Col), ex_out(E, P, _), !ex_out(E, P, Col).
+
+    .init bars = Components<Example>
+    bars.node(E, P) :- ex_in(E, P, Col), bar_color(Col).
+
+    .init size = Tally<ExampleBar, Position>
+    size.item([E, Id], P) :- bars.label(E, P, Id).
+
+    .init lengths = Ordinal<Example>
+    lengths.idx_set(E, N) :- size.tally([E, _], N).
+
+    // The output color of each bar, with its length.
+    .decl bar_out(e: Example, n: number, col: Color)
+    bar_out(E, N, Col) :- bars.label(E, P, Id), size.tally([E, Id], N), ex_out(E, P, Col).
+
+    .decl rank_color(r: number, col: Color)
+    rank_color(R, Col) :- bar_out(E, N, Col), lengths.rank_desc(E, N, R).
+
+    .decl ascending_rank_color(r: number, col: Color)
+    ascending_rank_color(R, Col) :- bar_out(E, N, Col), lengths.rank(E, N, R).
+
+    .decl longest_color(col: Color)
+    longest_color(Col) :- bar_out(E, N, Col), lengths.rank_desc(E, N, 0).
+
+    .decl shortest_color(col: Color)
+    shortest_color(Col) :- bar_out(E, N, Col), lengths.rank(E, N, 0).
+
+    .decl rest_color(col: Color)
+    rest_color(Col) :- bar_out(E, N, Col), !lengths.rank_desc(E, N, 0), !lengths.rank(E, N, 0).
+}

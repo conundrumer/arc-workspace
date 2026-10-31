@@ -1,0 +1,139 @@
+// d2acf2cb
+// @draft
+// @keywords: markers lines span mapping
+// @scene marker-pairs: each params.marker cell sits on a grid edge, and a
+//  params.marker cell faces it on the opposite edge, on the same row or column
+// @scene recodable-field: every cell that is not a params.marker cell has a
+//  color that is a key of params.recolor
+// @rule recode-between: each cell strictly between the two params.marker
+//  cells of a marked line takes the color that params.recolor maps its color to
+// @rule rest-kept: every other cell keeps its color
+
+// which lines a pair of markers can mark
+.type Lines =
+    // @claim marker-pairs
+    Straight {}
+    // @scene marker-pairs: a marker may also face another across the grid on a
+    //  diagonal, and that diagonal is marked too
+    // @witness diagonal-pair: foreign $WithDiagonals
+    //     @relaxed marker-pairs
+  | WithDiagonals {}
+
+// which cells of a line are recoded
+.type Segment =
+    // @claim recode-between
+    EdgePair {}
+    // @scene marker-pairs: a marker at either end of a line marks it, with no
+    //  marker facing it
+    // @rule recode-between: every cell of a marked line that is not a marker
+    //  is recoded
+    // @witness lone-marker: borderline concept
+    //     @relaxed marker-pairs
+  | OneEnd {}
+
+// what a recoded cell whose color is no key of params.recolor does
+.type Unmapped =
+    // @claim recodable-field
+    Strict {}
+    // @scene recodable-field: a non-marker cell may hold any color
+    // @rule recode-between: a recoded cell whose color is no key of
+    //  params.recolor keeps its color
+    // @witness third-color: borderline $KeepUnmapped
+    //     @relaxed recodable-field
+  | KeepUnmapped {}
+
+.type Choice = [l: Lines, s: Segment, u: Unmapped]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant concept
+    .decl marker(c: Color) marker(4).
+
+    // the color a recoded cell takes, keyed by its input color
+    .decl recolor(c: Color, c2: Color)
+    recolor(0, 8).
+    recolor(6, 7).
+}
+
+.init params = Params
+
+.decl lines_choice(l: Lines)
+lines_choice($Straight()). lines_choice($WithDiagonals()).
+
+.decl unmapped_choice(u: Unmapped)
+unmapped_choice($Strict()). unmapped_choice($KeepUnmapped()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, $EdgePair(), U]) :- lines_choice(L), unmapped_choice(U).
+impl_choice([$Straight(), $OneEnd(), U]) :- unmapped_choice(U).
+
+// A marker cell on edge d.
+.decl marker_on(p: Position, d: Dir)
+marker_on(P, D) :- in(P, Col), params.marker(Col), dir_elem(D), dist(P, D, 0).
+
+// The line families a pair of markers can mark.
+.decl family(l: Lines, a: Axis4)
+
+// Cell q lies on a line of family a that leaves a marker on edge d.
+.decl from_end(l: Lines, d: Dir, a: Axis4, q: Position)
+from_end(L, D, A, Q) :-
+    marker_on(P, D), family(L, A),
+    in(Q, _), same_line(A, P, Q), nearer(D, P, Q).
+
+// The cells a marked line recodes.
+.decl recoded(l: Lines, s: Segment, q: Position)
+
+// The color a recoded cell of color col takes.
+// @ignore: head-repeat — under $KeepUnmapped a color with no key of
+//  params.recolor takes itself
+// @ignore: store — a stored table of these rows is a params.recolor of
+//  another value, so its branch is the concept model and fails Equivalence
+.decl recode(u: Unmapped, col: Color, col2: Color)
+
+out(Q, Col2, [L, S, U]) :-
+    recoded(L, S, Q), impl_choice([L, S, U]), in(Q, Col), recode(U, Col, Col2).
+out(P, Col, [L, S, U]) :- in(P, Col), impl_choice([L, S, U]), !recoded(L, S, P).
+
+// --- $Straight ---
+family($Straight(), A) :- axis_elem(A).
+
+// --- $WithDiagonals ---
+family($WithDiagonals(), A) :- axis4_elem(A).
+
+// --- $EdgePair ---
+recoded(L, $EdgePair(), Q) :-
+    from_end(L, D, A, Q), opposite(D, D2),     // a marker on edge d
+    from_end(L, D2, A, Q).                     // and one on the opposite edge, same line
+
+// --- $OneEnd ---
+recoded(L, $OneEnd(), Q) :- from_end(L, _, _, Q), in(Q, Col), !params.marker(Col).
+
+// --- $Strict, $KeepUnmapped ---
+recode(U, Col, Col2) :- unmapped_choice(U), params.recolor(Col, Col2).
+
+// --- $KeepUnmapped ---
+recode($KeepUnmapped(), Col, Col) :- in(_, Col), !params.recolor(Col, _).
+
+.comp Determine {
+    // Cell q of a train input lies strictly between edge cell p and the cell
+    // of p's color facing it on the opposite edge, on p's row or column.
+    .decl inside(e: Example, p: Position, q: Position)
+    inside(E, P, Q) :-
+        ex_in(E, P, Col), ex_out(E, _, _),                  // a train input cell
+        dist(P, D, 0), axis_of(D, A), opposite(D, D2),     // on edge d
+        ex_in(E, P2, Col), dist(P2, D2, 0), same_line(A, P, P2),
+        ex_in(E, Q, _), same_line(A, P, Q), nearer(D, P, Q), nearer(D2, P2, Q).
+
+    // Some cell between p and its partner keeps its color.
+    .decl kept_inside(e: Example, p: Position)
+    kept_inside(E, P) :- inside(E, P, Q), ex_in(E, Q, Col), ex_out(E, Q, Col).
+
+    // The color of the two ends of a line whose cells between them all change.
+    .decl marker(c: Color)
+    marker(Col) :- inside(E, P, _), !kept_inside(E, P), ex_in(E, P, Col).
+
+    // A train cell of color col takes col2.
+    .decl recolor(c: Color, c2: Color)
+    recolor(Col, Col2) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+}

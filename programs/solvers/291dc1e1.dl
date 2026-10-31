@@ -160,7 +160,6 @@ out(P_grid, Col, Ch) :-
     stack_axis(A), concat_slab(P_tile, P_slab, A, 0, P_grid).
 
 .comp Determine {
-    // @workaround: no determination of rot, so that a proposer and the fit give it, once the joint enumeration of rot, primary_col and stack_dir is within the plan's limit
     .type KID = [e: Example, id: Ident, d: D4]
 
     .init ex = Parse<Example>
@@ -181,6 +180,8 @@ out(P_grid, Col, Ch) :-
     .decl unseen(d: D4)
     unseen(D) :- turnable(E, Id), d4_elem(D), !occ.occurrence([E, Id, D], _).
 
+    // @ignore: determine prediction — the turn relates each block of the input
+    //  to its image in the output, so no fact of one side gives it
     .decl rot(d: D4)
     rot(D) :- d4_elem(D), !unseen(D).
 }

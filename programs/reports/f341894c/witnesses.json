@@ -1,0 +1,61 @@
+{ "id": "f341894c",
+  "witnesses": [{
+    "id": "interior-marker",
+    "separates": "an arrow whose row holds a marker inside the grid and none on the edge: the concept leaves the arrow as it is; $MarkerInLine turns its head toward the interior marker",
+    "input": [
+      [8,8,8,8,8,8],
+      [8,8,8,8,8,8],
+      [8,6,1,8,7,8],
+      [8,8,8,8,8,8],
+      [8,8,8,8,8,8],
+      [8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["concept", "$NearerMarker"],
+      "grid": [
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,6,1,8,7,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$MarkerInLine"],
+      "grid": [
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,1,6,8,7,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "markers-both-ends",
+    "separates": "an arrow whose row has an edge marker at each end, the left one nearer: the concept and $MarkerInLine are undefined; $NearerMarker turns its head toward the left marker",
+    "input": [
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8],
+      [7,1,6,8,8,8,7],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["concept", "$MarkerInLine"],
+      "grid": null
+    }, {
+      "cases": ["$NearerMarker"],
+      "grid": [
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8],
+        [7,6,1,8,8,8,7],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8]
+      ]
+    }]
+  }] }

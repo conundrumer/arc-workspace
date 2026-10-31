@@ -1,0 +1,354 @@
+// df9fd884
+// @draft
+// @keywords: objects move continue
+// @scene background: every cell that is not a cup or the object has the color
+//  params.background
+// @scene two-cups: the input holds two cups of params.cup_color; a cup is a
+//  solid line along one edge of the grid with a leg of 1 cell at each end,
+//  standing away from that edge, so the cup's mouth faces into the grid
+// @scene opposite-cups: the two cups lie in opposite corners, their mouths face
+//  each other along one axis, and the two mouths have one width
+// @scene one-object: the input holds one connected object of one color that is
+//  neither params.background nor params.cup_color
+// @scene object-at-mouth: the object is as wide as the mouths, lies in line
+//  with the mouth of one cup, the entry cup, and sits between the two cups,
+//  apart from both
+// @scene clear-path: no cell other than params.background lies in the object's
+//  way from the mouth of the exit cup to the grid edge that mouth faces
+// @rule remove-object: the object's cells take params.background
+// @rule exit-other-cup: the object, unchanged in shape and color, moves across
+//  the axis of the mouths until it lies in line with the mouth of the other
+//  cup, the exit cup
+// @rule slide-to-edge: along that axis, the object then moves in the direction
+//  the exit cup's mouth faces, until it touches the grid edge
+// @rule keep-rest: every other cell keeps its input color
+
+// how the object's shape lands
+.type Shape =
+    // @claim exit-other-cup
+    KeepShape {}
+    // @rule exit-other-cup: the object lands reflected along the axis of the
+    //  mouths
+    // @witness flipped-shape: ordinary concept
+  | FlipShape {}
+
+// where the slide stops
+.type Stop =
+    // @claim slide-to-edge
+    ToEdge {}
+    // @rule slide-to-edge: the object slides until the next step would leave
+    //  the grid or meet a cell other than params.background
+    // @scene clear-path: dropped
+    // @witness blocked-exit-path: borderline $StopAtObstacle
+    //     @relaxed clear-path
+  | StopAtObstacle {}
+
+// which way the slide goes
+.type Heading =
+    // @claim slide-to-edge
+    MouthFacing {}
+    // @rule slide-to-edge: the object slides toward params.fall_dir
+    // @witness mouths-flipped: variant concept
+  | StoredDirection {}
+
+// which cup the object enters, and where it comes out
+.type Placement =
+    // @claim exit-other-cup
+    MatchMouth {}
+    // @scene object-at-mouth: the entry cup is the cup whose mouth spans every
+    //  line the object spans
+    // @rule exit-other-cup: the object moves by the shift that takes the entry
+    //  mouth onto the exit mouth; undefined where no mouth spans the object's
+    //  lines
+    // @witness object-narrower-than-mouth: borderline $KeepOffsetInMouth
+    //     @relaxed object-at-mouth
+  | KeepOffsetInMouth {}
+
+// what goes through the cups as one piece
+.type Count =
+    // @claim one-object
+    OneObject {}
+    // @scene one-object: each connected piece of cells that are neither
+    //  params.background nor a cup goes through the cups on its own; undefined
+    //  where some piece lines up with no mouth
+    // @witness two-objects: borderline $EachObject
+    //     @relaxed one-object
+    // @witness split-object: borderline concept
+    //     @relaxed one-object
+  | EachObject {}
+
+// how the cups are found
+.type Cups =
+    // @claim two-cups
+    ColorCups {}
+    // @scene two-cups: a cup is a one-color connected piece of any color
+    //  whose bounding box holds other cells only along one side, away from its
+    //  corners, and whose opposite side lies on the grid edge
+    // @witness cups-of-another-color: variant $CupByShape
+    //     @relaxed two-cups
+  | CupByShape {}
+
+.type Choice = [shape: Shape, stop: Stop, heading: Heading, place: Placement, objects: Count, cups: Cups]
+
+// A cup under the reading that finds it.
+.type Cup = [k: Cups, id: Ident]
+
+// A connected piece of cells, under the reading of the cups that leaves it.
+.type Piece = [k: Cups, id: Ident]
+
+// One object's slide under one reading of every point but the stop.
+.type Fall = [sh: Shape, hd: Heading, pl: Placement, n: Count, k: Cups, b: Box]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(7).
+
+    // --- $ColorCups ---
+    .decl cup_color(c: Color) cup_color(4).
+
+    // --- $StoredDirection ---
+    .decl fall_dir(d: Dir) fall_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl shape_choice(s: Shape)
+shape_choice($KeepShape()). shape_choice($FlipShape()).
+
+.decl stop_choice(s: Stop)
+stop_choice($ToEdge()). stop_choice($StopAtObstacle()).
+
+.decl heading_choice(h: Heading)
+heading_choice($MouthFacing()). heading_choice($StoredDirection()).
+
+.decl placement_choice(p: Placement)
+placement_choice($MatchMouth()). placement_choice($KeepOffsetInMouth()).
+
+.decl cups_choice(k: Cups)
+cups_choice($ColorCups()). cups_choice($CupByShape()).
+
+// The cases. EachObject with MatchMouth is subsumed by EachObject with
+// KeepOffsetInMouth, so EachObject takes KeepOffsetInMouth.
+.decl impl_choice(ch: Choice)
+impl_choice([S, T, H, P, $OneObject(), K]) :-
+    shape_choice(S), stop_choice(T), heading_choice(H), placement_choice(P), cups_choice(K).
+impl_choice([S, T, H, $KeepOffsetInMouth(), $EachObject(), K]) :-
+    shape_choice(S), stop_choice(T), heading_choice(H), cups_choice(K).
+
+// --- cups ---
+
+// The cells of the cups each reading finds.
+.decl cup_cell(k: Cups, p: Position)
+
+// @claim two-cups
+.init cups = Components<Cups>
+cups.node(K, P) :- cup_cell(K, P).
+
+// @claim two-cups
+.init cup_box = Bbox<Cup>
+cup_box.cell([K, Id], P) :- cups.label(K, P, Id).
+
+// The cells of a cup's bounding box that are not cup cells.
+.decl mouth(c: Cup, p: Position)
+mouth([K, Id], P) :- cup_box.box([K, Id], B), in(P, _), inside(P, B), !cup_cell(K, P).
+
+// The direction a cup's mouth faces: the side of its box the mouth lies on.
+.decl facing(c: Cup, d: Dir)
+facing(C, D) :- mouth(C, P), cup_box.box(C, B), box_edge(P, B, D).
+
+// The lines across the facing axis that a cup's mouth spans.
+.decl mouth_line(c: Cup, a: Axis, l: Position)
+mouth_line(C, A, L) :- mouth(C, P), facing(C, D), axis_of(D, A), split(P, A, _, L).
+
+// @claim opposite-cups
+.init mouth_box = Bbox<Cup>
+mouth_box.cell(C, P) :- mouth(C, P).
+
+// --- objects ---
+
+// The cells that are neither background nor a cup.
+.decl object_cell(k: Cups, p: Position)
+object_cell(K, P) :- cups_choice(K), in(P, Col), !params.background(Col), !cup_cell(K, P).
+
+// The cells of each object, named by its bounding box.
+.decl unit(k: Cups, n: Count, b: Box, p: Position)
+
+.decl object(k: Cups, n: Count, b: Box)
+object(K, N, B) :- unit(K, N, B, _).
+
+// The lines across axis a that an object spans.
+.decl object_line(k: Cups, n: Count, b: Box, a: Axis, l: Position)
+object_line(K, N, B, A, L) :- unit(K, N, B, P), axis_elem(A), split(P, A, _, L).
+
+// Some line of the object lies outside the cup's mouth.
+.decl overhang(k: Cups, n: Count, b: Box, id: Ident)
+overhang(K, N, B, Id) :-
+    object_line(K, N, B, A, L), facing([K, Id], D), axis_of(D, A), !mouth_line([K, Id], A, L).
+
+// The cup the object enters.
+.decl entry(pl: Placement, k: Cups, n: Count, b: Box, id: Ident)
+
+// The object enters at the entry cup, crosses axis a by offset v to the exit
+// cup, and leaves through a mouth facing d.
+// @store: variant concept
+// @ignore: store $KeepShape — only the flip reads the stored axis, so each of
+//  these cases is equivalent to the case that slides toward params.fall_dir
+.decl trip(pl: Placement, k: Cups, n: Count, b: Box, a: Axis, v: Offset, d: Dir)
+trip(Pl, K, N, B, A, V, D) :-
+    entry(Pl, K, N, B, Id), facing([K, Id], D_in), axis_of(D_in, A),
+    facing([K, Id2], D), Id2 != Id,                                   // the other cup
+    mouth_box.box([K, Id], M_in), mouth_box.box([K, Id2], M_out),
+    relative(M_in, M_out, V_mouth), split(V_mouth, A, _, V).          // across part of the shift
+
+// Each object cell, reshaped and moved across to the exit mouth.
+.decl carried(sh: Shape, pl: Placement, k: Cups, n: Count, b: Box, q: Position, col: Color)
+
+// The direction each object slides out of the exit cup.
+.decl heading(hd: Heading, pl: Placement, k: Cups, n: Count, b: Box, d: Dir)
+
+// The offset of each object's slide.
+.decl slide(st: Stop, sh: Shape, hd: Heading, pl: Placement, n: Count, k: Cups, b: Box, w: Offset)
+
+.decl landed(ch: Choice, p: Position, col: Color)
+landed([Sh, St, Hd, Pl, N, K], Q2, Col) :-
+    impl_choice([Sh, St, Hd, Pl, N, K]), slide(St, Sh, Hd, Pl, N, K, B, W),
+    carried(Sh, Pl, K, N, B, Q, Col), compose(Q, W, Q2).
+
+out(P, Col, Ch) :- landed(Ch, P, Col).
+out(P, Col, [Sh, St, Hd, Pl, N, K]) :-
+    impl_choice([Sh, St, Hd, Pl, N, K]), trip(Pl, K, N, B, _, _, _), unit(K, N, B, P),
+    !landed([Sh, St, Hd, Pl, N, K], P, _), params.background(Col).
+out(P, Col, [Sh, St, Hd, Pl, N, K]) :-
+    impl_choice([Sh, St, Hd, Pl, N, K]), in(P, Col), !object_cell(K, P),
+    !landed([Sh, St, Hd, Pl, N, K], P, _).
+
+// --- $ColorCups ---
+cup_cell($ColorCups(), P) :- in(P, Col), params.cup_color(Col).
+
+// --- $CupByShape ---
+// @claim two-cups
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !params.background(Col).
+
+// @claim two-cups
+.init shape_box = Bbox<Ident>
+shape_box.cell(Id, P) :- shapes.label(_, P, Id).
+
+// A cell of a piece's bounding box that is not in the piece.
+.decl gap(id: Ident, p: Position)
+gap(Id, P) :- shape_box.box(Id, B), in(P, _), inside(P, B), !shapes.label(_, P, Id).
+
+// A gap cell off side d of the box, or at a corner.
+.decl stray_gap(id: Ident, d: Dir)
+stray_gap(Id, D) :-
+    gap(Id, P), shape_box.box(Id, B), dir_elem(D),
+    ( !box_edge(P, B, D) ; box_corner(P, B, _) ).
+
+// A piece whose gap cells all lie on side d of its box, off the corners, and
+// whose opposite side lies on the grid edge.
+.decl cup_shape(id: Ident)
+cup_shape(Id) :-
+    gap(Id, P), shape_box.box(Id, B), box_edge(P, B, D), !stray_gap(Id, D),
+    opposite(D, D_base), dist(B, D_base, 0).
+
+cup_cell($CupByShape(), P) :- cup_shape(Id), shapes.label(_, P, Id).
+
+// --- $OneObject ---
+// @claim one-object
+.init whole = Bbox<Cups>
+whole.cell(K, P) :- object_cell(K, P).
+
+unit(K, $OneObject(), B, P) :- object_cell(K, P), whole.box(K, B).
+
+// --- $EachObject ---
+// @claim one-object
+.init pieces = Components<Cups>
+pieces.node(K, P) :- object_cell(K, P).
+
+// @claim one-object
+.init piece_box = Bbox<Piece>
+piece_box.cell([K, Id], P) :- pieces.label(K, P, Id).
+
+unit(K, $EachObject(), B, P) :- pieces.label(K, P, Id), piece_box.box([K, Id], B).
+
+// --- $MatchMouth ---
+// Some line of the cup's mouth lies outside the object.
+.decl underhang(k: Cups, n: Count, b: Box, id: Ident)
+underhang(K, N, B, Id) :-
+    object(K, N, B), mouth_line([K, Id], A, L), !object_line(K, N, B, A, L).
+
+entry($MatchMouth(), K, N, B, Id) :-
+    object(K, N, B), cup_box.box([K, Id], _),
+    !overhang(K, N, B, Id), !underhang(K, N, B, Id).
+
+// --- $KeepOffsetInMouth ---
+entry($KeepOffsetInMouth(), K, N, B, Id) :-
+    object(K, N, B), cup_box.box([K, Id], _), !overhang(K, N, B, Id).
+
+// --- $KeepShape ---
+carried($KeepShape(), Pl, K, N, B, Q, Col) :-
+    trip(Pl, K, N, B, _, V, _), unit(K, N, B, P), in(P, Col), compose(P, V, Q).
+
+// --- $FlipShape ---
+carried($FlipShape(), Pl, K, N, B, Q, Col) :-
+    trip(Pl, K, N, B, A, V, _), unit(K, N, B, P), in(P, Col),
+    crop(P, B, P_rel), flip_of(A, F), apply(F, P_rel, P_rel2),     // reflected in the object's box
+    compose(B, P_rel2, P2), compose(P2, V, Q).
+
+// --- $MouthFacing ---
+heading($MouthFacing(), Pl, K, N, B, D) :- trip(Pl, K, N, B, _, _, D).
+
+// --- $StoredDirection ---
+heading($StoredDirection(), Pl, K, N, B, D) :- trip(Pl, K, N, B, _, _, _), params.fall_dir(D).
+
+// --- $ToEdge ---
+slide($ToEdge(), Sh, Hd, Pl, N, K, B, W) :-
+    shape_choice(Sh), heading(Hd, Pl, K, N, B, D), trip(Pl, K, N, B, _, V, _),
+    compose(B, V, B_across), dist(B_across, D, Steps), jump_offset(D, Steps, W).
+
+// --- $StopAtObstacle ---
+// @claim slide-to-edge
+.init fall = Gravity<Fall, Unit>
+fall.cell([Sh, Hd, Pl, N, K, B], $U(), Q) :-
+    carried(Sh, Pl, K, N, B, Q, _), heading_choice(Hd).
+fall.dir([Sh, Hd, Pl, N, K, B], D) :- shape_choice(Sh), heading(Hd, Pl, K, N, B, D).
+fall.blocked([Sh, Hd, Pl, N, K, B], P) :-
+    shape_choice(Sh), heading(Hd, Pl, K, N, B, _),
+    in(P, Col), !params.background(Col), !unit(K, N, B, P).
+
+slide($StopAtObstacle(), Sh, Hd, Pl, N, K, B, W) :- fall.travel([Sh, Hd, Pl, N, K, B], $U(), W).
+
+.comp Determine {
+    .init bg_mode = Mode<Example, Color, Position>
+    bg_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not the commonest of another.
+    .decl off_mode(c: Color)
+    off_mode(Col) :- bg_mode.mode(_, Col), ex_in(E, _, _), !bg_mode.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- bg_mode.mode(_, Col), !off_mode(Col).
+
+    // A color missing from some input.
+    .decl missing(c: Color)
+    missing(Col) :- ex_in(_, _, Col), ex_in(E, _, _), !ex_in(E, _, Col).
+
+    // The color besides the background that every input holds.
+    .decl cup_color(c: Color)
+    cup_color(Col) :- ex_in(_, _, Col), !background(Col), !missing(Col).
+
+    // The edges the object touches in a train output.
+    .decl object_edge(e: Example, d: Dir)
+    object_edge(E, D) :-
+        ex_out(E, P, Col), !background(Col), !cup_color(Col), dir_elem(D), dist(P, D, 0).
+
+    // An edge the object misses in some train output.
+    .decl missed(d: Dir)
+    missed(D) :- object_edge(_, D), ex_out(E, _, _), !object_edge(E, D).
+
+    .decl fall_dir(d: Dir)
+    fall_dir(D) :- object_edge(_, D), !missed(D).
+}

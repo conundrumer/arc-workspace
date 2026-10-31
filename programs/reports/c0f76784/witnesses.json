@@ -3,7 +3,7 @@
  "witnesses": [
   {
    "id": "rank-two-sizes",
-   "separates": "two outlines only, holes of side 1 and 2: the side table fills 6 and 7; the descending rank fills the larger 8 and the smaller 7; an extent on either axis gives the side table's grid",
+   "separates": "two outlines only, holes of side 1 and 2: the side table fills 6 and 7; the descending rank fills the larger 8 and the smaller 7",
    "input": [
     [
      0,
@@ -84,7 +84,6 @@
      "cases": [
       "concept",
       "$KeyByArea",
-      "$KeyByAxisExtent",
       "$KeyByMinSide",
       "$KeyByMaxSide",
       "$KeyByOutlineSide",
@@ -254,7 +253,7 @@
   },
   {
    "id": "hole-1x4",
-   "separates": "a 1x4 hole: the side readings are undefined; the cell count 4 fills 7; the shorter side 1 fills 6; the longer side and the width have no key",
+   "separates": "a 1x4 hole: the side readings are undefined; the cell count 4 fills 7; the shorter side 1 fills 6; the longer side has no key",
    "input": [
     [
      0,
@@ -312,7 +311,6 @@
     {
      "cases": [
       "concept",
-      "$KeyByAxisExtent",
       "$KeyByMaxSide",
       "$KeyByOutlineSide",
       "$KeyByOutlineSide & $OutlineAdj4",
@@ -444,7 +442,7 @@
   },
   {
    "id": "hole-2x3",
-   "separates": "a 2x3 hole: the side, area and outline-side readings are undefined; the shorter side and the height fill 7; the longer side and the width fill 8",
+   "separates": "a 2x3 hole: the side, area and outline-side readings are undefined; the shorter side fills 7; the longer side fills 8",
    "input": [
     [
      0,
@@ -518,125 +516,6 @@
       "$FillBboxInterior & $OutlineAdj4"
      ],
      "grid": null
-    },
-    {
-     "cases": [
-      "$KeyByAxisExtent"
-     ],
-     "grid": [
-      [
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        5,
-        5,
-        5,
-        5,
-        5,
-        0
-       ],
-       [
-        0,
-        5,
-        7,
-        7,
-        7,
-        5,
-        0
-       ],
-       [
-        0,
-        5,
-        7,
-        7,
-        7,
-        5,
-        0
-       ],
-       [
-        0,
-        5,
-        5,
-        5,
-        5,
-        5,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ]
-      ],
-      [
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ],
-       [
-        0,
-        5,
-        5,
-        5,
-        5,
-        5,
-        0
-       ],
-       [
-        0,
-        5,
-        8,
-        8,
-        8,
-        5,
-        0
-       ],
-       [
-        0,
-        5,
-        8,
-        8,
-        8,
-        5,
-        0
-       ],
-       [
-        0,
-        5,
-        5,
-        5,
-        5,
-        5,
-        0
-       ],
-       [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-       ]
-      ]
-     ]
     },
     {
      "cases": [
@@ -864,7 +743,6 @@
      "cases": [
       "concept",
       "$KeyByArea",
-      "$KeyByAxisExtent",
       "$KeyByMinSide",
       "$KeyByMaxSide",
       "$Enclose8",
@@ -1255,7 +1133,6 @@
      "cases": [
       "concept",
       "$KeyByArea",
-      "$KeyByAxisExtent",
       "$KeyByMinSide",
       "$KeyByMaxSide",
       "$KeyByOutlineSide",
@@ -1560,7 +1437,6 @@
      "cases": [
       "concept",
       "$KeyByArea",
-      "$KeyByAxisExtent",
       "$KeyByMinSide",
       "$KeyByMaxSide",
       "$KeyByOutlineSide",
@@ -1822,7 +1698,6 @@
      "cases": [
       "concept",
       "$KeyByArea",
-      "$KeyByAxisExtent",
       "$KeyByMinSide",
       "$KeyByMaxSide",
       "$Enclose8"
@@ -2164,7 +2039,6 @@
      "cases": [
       "concept",
       "$KeyByArea",
-      "$KeyByAxisExtent",
       "$KeyByMinSide",
       "$KeyByMaxSide",
       "$KeyByOutlineSide & $OutlineAdj4",

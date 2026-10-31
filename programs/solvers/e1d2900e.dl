@@ -1,0 +1,339 @@
+// e1d2900e
+// @draft
+// @keywords: objects move rank
+// @scene background: a field of params.background_color
+// @scene squares: solid squares of params.square_color, each 2 by 2, apart
+//  from one another
+// @scene dots: single cells of params.dot_color, apart from the squares and
+//  from one another
+// @rule in-line: a dot is in line with a square when the dot's row crosses
+//  the square's rows, or the dot's column crosses the square's columns
+// @rule nearest-square: of the squares a dot is in line with, the dot takes
+//  the one with the fewest cells between the dot and the square along that
+//  line
+// @rule slide-to-touch: the dot moves along that line toward the square's
+//  facing side, and its old cell becomes background; the dots that slide to
+//  one side of a square along one line pack against it, nearest first
+// @rule stay: a dot in line with no square keeps its cell
+// @rule squares-kept: the squares keep their cells
+
+// which of the squares a dot lies in line with it slides to
+.type Pull =
+    // @claim nearest-square
+    Nearest {}
+    // @rule nearest-square: as the claim, and a dot with a tie keeps its
+    //  cell; defined on every input
+    // @witness tie: ordinary any
+  | TieStay {}
+    // @rule nearest-square: as the claim, and a dot with a tie is drawn
+    //  beside each tied square; defined on every input
+    // @witness tie: ordinary any
+  | TieBoth {}
+    // @rule nearest-square: as the claim, and a dot with a tie gives one
+    //  output grid per tied square; defined on every input
+    // @witness tie: ordinary any
+  | TieEither {}
+
+// what a dot does when another dot lies between it and the square it slides to
+.type Path =
+    // @claim nearest-square
+    Pack {}
+    // @rule nearest-square: a slide whose path holds another dot is ruled
+    //  out, the dot takes the nearest slide left, and a dot with none keeps
+    //  its cell
+    // @witness dot-on-path: ordinary concept
+  | PathBlocked {}
+
+// how the program tells dots from squares
+.type Roles =
+    // @claim squares dots
+    ByColor {}
+    // @scene squares: the components of more than one cell of a color other
+    //  than params.background_color
+    // @scene dots: the single-cell components of a color other than
+    //  params.background_color, each keeping its own color
+    // @witness extra-color-dot: borderline any
+  | RolesByShape {}
+
+// which components of the square color pull dots
+.type Shape =
+    // @claim in-line
+    AnyBlock {}
+    // @rule in-line: only a solid params.square_size by params.square_size
+    //  component pulls dots
+    // @witness large-block: borderline concept
+    //     @relaxed squares
+  | SquareSizeChecked {}
+
+.type Choice = [u: Pull, w: Path, r: Roles, s: Shape]
+
+// A tied dot's slide toward one direction.
+.type Pick = [dot: Position, d: Dir]
+
+.type TiebreakResolution =
+    End {} | Sit {slot: Position, item: Pick, rest: TiebreakResolution}
+
+// The squares and dots one combination of Roles and Shape finds.
+.type Cast = [r: Roles, s: Shape]
+
+// One dot under one Cast.
+.type Probe = [c: Cast, dot: Position]
+
+// One component under one Roles.
+.type Piece = [r: Roles, id: Ident]
+
+// The dots that slide to one side of one square along one line.
+.type Lane = [c: Choice, res: TiebreakResolution, stop: Position, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background_color(c: Color) background_color(0).
+
+    // --- $ByColor ---
+    .decl square_color(c: Color) square_color(2).
+    .decl dot_color(c: Color) dot_color(1).
+
+    // --- $SquareSizeChecked ---
+    // @derive TileCount: borderline concept
+    //     @relaxed squares
+    // @derive TileDim: borderline concept
+    //     @relaxed squares
+    .decl square_size(n: number) square_size(2).
+}
+
+.init params = Params
+
+.decl pull_choice(u: Pull)
+pull_choice($Nearest()). pull_choice($TieStay()). pull_choice($TieBoth()). pull_choice($TieEither()).
+
+.decl path_choice(w: Path)
+path_choice($Pack()). path_choice($PathBlocked()).
+
+.decl roles_choice(r: Roles)
+roles_choice($ByColor()). roles_choice($RolesByShape()).
+
+.decl shape_choice(s: Shape)
+shape_choice($AnyBlock()). shape_choice($SquareSizeChecked()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([U, W, R, S]) :- pull_choice(U), path_choice(W), roles_choice(R), shape_choice(S).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background_color(Col).
+
+// A dot, with the color it keeps.
+.decl dot(r: Roles, p: Position, col: Color)
+
+// A cell of a component that may pull dots.
+.decl block(r: Roles, p: Position, id: Ident)
+
+// The cells of the squares that pull dots.
+.decl square(c: Cast, p: Position)
+
+// Each dot casts along its row and column; the first square cell on each
+// cast is the square it would slide to that way.
+// @claim in-line nearest-square
+.init slide = Ray<Cast>
+slide.dir([R, S], D) :- roles_choice(R), shape_choice(S), dir_elem(D).
+slide.mark([R, S], P) :- dot(R, P, _), shape_choice(S).
+slide.cell([R, S], P) :- dot(R, P, _), shape_choice(S).
+slide.blocked(C, P) :- square(C, P).
+
+// The slides each case's dot may take, nearest first.
+.decl best(ch: Choice, dot: Position, d: Dir)
+
+// A dot with two nearest slides.
+.decl tied(ch: Choice, dot: Position)
+tied(Ch, Dot) :- best(Ch, Dot, D1), best(Ch, Dot, D2), D1 != D2.
+
+// The slides a dot takes on every resolution of a tie.
+.decl go(ch: Choice, dot: Position, d: Dir)
+go(Ch, Dot, D) :- best(Ch, Dot, D), !tied(Ch, Dot).
+
+// A dot whose cell the output leaves undefined.
+.decl hole(ch: Choice, p: Position)
+
+// The tied slide each resolution takes.
+.init ties = TiebreakResolutions<Choice, Position, Pick>
+
+// Every resolution of a case's ties; a case with none has the one empty
+// resolution.
+.decl resolved(ch: Choice, res: TiebreakResolution)
+resolved(Ch, Res) :- ties.resolution(Ch, Res).
+resolved(Ch, $End()) :- impl_choice(Ch), !ties.resolution(Ch, _).
+
+// The slides a dot takes on one resolution.
+.decl slid(ch: Choice, res: TiebreakResolution, dot: Position, d: Dir)
+slid(Ch, Res, Dot, D) :- go(Ch, Dot, D), resolved(Ch, Res).
+
+// The cell a slide lands on.
+.decl landing(ch: Choice, res: TiebreakResolution, dot: Position, p: Position)
+
+// The dots of one lane, ranked by the length of their slide.
+// @claim slide-to-touch
+.init lane = Order<Lane, Position>
+lane.elem([Ch, Res, Q, D], Dot) :-
+    slid(Ch, Res, Dot, D), Ch = [_, _, R, S], slide.stop([R, S], Q, D, _, Dot).
+lane.score([Ch, Res, Q, D], Dot, K) :-
+    slid(Ch, Res, Dot, D), Ch = [_, _, R, S], slide.stop([R, S], Q, D, K, Dot).
+
+landing(Ch, Res, Dot, L) :-
+    lane.rank([Ch, Res, Q, D], Dot, K),
+    opposite(D, D0), neighbor(Q, D0, L0), jump(L0, D0, K, L).   // K dots ahead of it
+
+.decl paint(ch: Choice, res: TiebreakResolution, p: Position, col: Color)
+paint(Ch, Res, L, Col) :- landing(Ch, Res, Dot, L), Ch = [_, _, R, _], dot(R, Dot, Col).
+
+.decl vacated(ch: Choice, res: TiebreakResolution, p: Position)
+vacated(Ch, Res, Dot) :- slid(Ch, Res, Dot, _).
+
+out(P, Col, Ch, Res) :-
+    in(P, C0), resolved(Ch, Res),
+    ( paint(Ch, Res, P, Col)                                                       // a dot lands
+    ; !paint(Ch, Res, P, _), vacated(Ch, Res, P), params.background_color(Col)    // a dot leaves
+    ; !paint(Ch, Res, P, _), !vacated(Ch, Res, P), !hole(Ch, P), Col = C0 ).      // kept
+
+// --- $ByColor ---
+
+dot($ByColor(), P, Col) :- in(P, Col), params.dot_color(Col).
+
+// The components of the square color.
+// @claim squares
+.init color_piece = Components<Unit>
+color_piece.node($U(), P) :- in(P, Col), params.square_color(Col).
+
+block($ByColor(), P, Id) :- color_piece.label($U(), P, Id).
+
+// --- $RolesByShape ---
+
+// The components of the ink.
+// @claim squares dots
+.init ink_piece = Components<Unit>
+ink_piece.node($U(), P) :- ink(P).
+
+// An ink cell whose component holds another cell.
+.decl joined(p: Position)
+joined(P) :- ink_piece.label($U(), P, Id), ink_piece.label($U(), Q, Id), P != Q.
+
+dot($RolesByShape(), P, Col) :- in(P, Col), ink(P), !joined(P).
+block($RolesByShape(), P, Id) :- joined(P), ink_piece.label($U(), P, Id).
+
+// --- $AnyBlock ---
+
+square([R, $AnyBlock()], P) :- block(R, P, _).
+
+// --- $SquareSizeChecked ---
+
+// @claim in-line
+.init piece_box = Bbox<Piece>
+piece_box.cell([R, Id], P) :- block(R, P, Id).
+
+// A component that is not a solid square of the square size.
+.decl misshapen(r: Roles, id: Ident)
+misshapen(R, Id) :-
+    piece_box.box([R, Id], B), in(P, _),
+    ( axis_elem(A), box_extent(B, P, A, N), !params.square_size(N)   // wrong extent
+    ; inside(P, B), !block(R, P, Id) ).                              // a hole
+
+square([R, $SquareSizeChecked()], P) :- block(R, P, Id), !misshapen(R, Id).
+
+// --- $Nearest ---
+
+hole([$Nearest(), W, R, S], Dot) :- tied([$Nearest(), W, R, S], Dot).
+
+// --- $TieBoth ---
+
+go([$TieBoth(), W, R, S], Dot, D) :- best([$TieBoth(), W, R, S], Dot, D).
+
+// --- $TieEither ---
+
+ties.cand([$TieEither(), W, R, S], Dot, [Dot, D]) :-
+    best([$TieEither(), W, R, S], Dot, D), tied([$TieEither(), W, R, S], Dot).
+slid(Ch, Res, Dot, D) :- ties.assign(Ch, Res, Dot, [Dot, D]).
+
+// --- $Pack ---
+
+// The nearest of a dot's slides.
+// @claim nearest-square
+.init near = ArgExtremes<Probe, Dir>
+near.cand([C, Dot], D, K) :- slide.stop(C, _, D, K, Dot), dir_elem(D).
+
+best([U, $Pack(), R, S], Dot, D) :-
+    impl_choice([U, $Pack(), R, S]), near.low([[R, S], Dot], D, _).
+
+// --- $PathBlocked ---
+
+// Another dot lies on the dot's slide toward d.
+.decl crowded(c: Cast, dot: Position, d: Dir)
+crowded(C, Dot, D) :- slide.clear(C, Q, D, _, Dot), Q != Dot, dir_elem(D).
+
+// The nearest of a dot's slides with no other dot on their path.
+// @claim nearest-square
+.init near_clear = ArgExtremes<Probe, Dir>
+near_clear.cand([C, Dot], D, K) :- slide.stop(C, _, D, K, Dot), dir_elem(D), !crowded(C, Dot, D).
+
+best([U, $PathBlocked(), R, S], Dot, D) :-
+    impl_choice([U, $PathBlocked(), R, S]), near_clear.low([[R, S], Dot], D, _).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some input.
+    .decl outnumbered(c: Color)
+    outnumbered(Col) :- ex_in(_, _, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    .decl background_color(c: Color)
+    background_color(Col) :- commonest.mode(_, Col), !outnumbered(Col).
+
+    // An input cell of a color other than the background.
+    .decl ink(e: Example, p: Position, c: Color)
+    ink(E, P, Col) :- ex_in(E, P, Col), !background_color(Col).
+
+    // An ink cell with no neighbor of its color.
+    .decl lone(e: Example, p: Position, c: Color)
+    lone(E, P, Col) :- ink(E, P, Col), !paired(E, P, Col).
+
+    .decl paired(e: Example, p: Position, c: Color)
+    paired(E, P, Col) :- ink(E, P, Col), dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, Col).
+
+    .decl square_color(c: Color)
+    square_color(Col) :- ink(_, _, Col), !lone(_, _, Col).
+
+    // An output cell of a color other than the background.
+    .decl out_ink(e: Example, p: Position, c: Color)
+    out_ink(E, P, Col) :- ex_out(E, P, Col), !background_color(Col).
+
+    // A lone output cell of a color that touches a cell of another color: a
+    // dot that has slid against a square.
+    .decl dot_color(c: Color)
+    dot_color(Col) :-
+        out_next(E, P, Col, Q, Col2), out_ink(E, Q, Col2), Col != Col2, !out_next(E, P, Col, _, Col).
+
+    // An output ink cell and a neighbor of it.
+    .decl out_next(e: Example, p: Position, c: Color, q: Position, c2: Color)
+    out_next(E, P, Col, Q, Col2) :-
+        out_ink(E, P, Col), dir_elem(D), neighbor(P, D, Q), ex_out(E, Q, Col2).
+
+    // The square-color components of each input.
+    .init block = Components<Example>
+    block.node(E, P) :- ex_in(E, P, Col), square_color(Col).
+
+    .init block_box = Bbox<Ident>
+    block_box.cell(Id, P) :- block.label(_, P, Id).
+
+    // A block's extent on one axis.
+    .decl extent(id: Ident, n: number)
+    extent(Id, N) :-
+        block_box.box(Id, B), block.label(_, P, Id), axis_elem(A), box_extent(B, P, A, N).
+
+    // An extent that some block does not have on some axis.
+    .decl unshared(n: number)
+    unshared(N) :- extent(_, N), extent(_, N2), N != N2.
+
+    .decl square_size(n: number)
+    square_size(N) :- extent(_, N), !unshared(N).
+}

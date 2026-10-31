@@ -1,0 +1,163 @@
+// ff72ca3e
+// @draft
+// @keywords: markers span rank
+// @scene lone-cells: on a field of 0, every other cell is a lone cell of
+//  params.center_color or of params.blocker_color
+// @scene square-fits: the square each center grows lies wholly inside the
+//  grid
+// @scene squares-apart: no two of the squares share a cell, and no square
+//  holds another center
+// @rule square-radius: a center's square has radius one less than the
+//  Chebyshev distance from the center to its nearest blocker cell
+// @rule paint-square: every grid cell of a square that is not a center takes
+//  params.fill_color; every center keeps its color
+// @rule keep-rest: every cell outside the squares keeps its input color
+
+// whether the grid edge bounds the square
+.type Edge =
+    // @claim square-radius
+    Open {}
+    // @rule square-radius: the radius is the smaller of the nearest-blocker
+    //  Chebyshev distance less one and the center's distance to the nearest
+    //  grid edge; defined also where a center has no blocker
+    // @witness edge-bounds: variant concept
+    //     @relaxed square-fits
+  | EdgeBounds {}
+
+// which cells stop a square
+.type Block =
+    // @claim square-radius
+    Gray {}
+    // @rule square-radius: the other centers join the blocker cells;
+    //  undefined where a center has neither a blocker nor another center
+    // @witness centers-block: variant concept
+    //     @relaxed squares-apart
+  | CentersBlock {}
+
+// whether a center inside another center's square keeps its color
+.type Cover =
+    // @claim paint-square
+    Keep {}
+    // @rule paint-square: every square cell but that square's own center
+    //  takes params.fill_color
+    // @witness cover-centers: variant concept
+    //     @relaxed squares-apart
+  | CoverCenters {}
+
+.type Choice = [edge: Edge, block: Block, cover: Cover]
+
+// a center under one branch of Block
+.type Grower = [c: Position, b: Block]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed lone-cells
+    .decl center_color(c: Color) center_color(4).
+    .decl blocker_color(c: Color) blocker_color(5).
+    .decl fill_color(c: Color) fill_color(2).
+}
+
+.init params = Params
+
+.decl edge_choice(e: Edge)
+edge_choice($Open()). edge_choice($EdgeBounds()).
+
+.decl block_choice(b: Block)
+block_choice($Gray()). block_choice($CentersBlock()).
+
+.decl cover_choice(c: Cover)
+cover_choice($Keep()). cover_choice($CoverCenters()).
+
+// Under $CentersBlock no square holds another center, so $CoverCenters
+// changes nothing there.
+.decl impl_choice(ch: Choice)
+impl_choice([E, $Gray(), Cv]) :- edge_choice(E), cover_choice(Cv).
+impl_choice([E, $CentersBlock(), $Keep()]) :- edge_choice(E).
+
+.decl center(p: Position)
+center(P) :- in(P, Col), params.center_color(Col).
+
+// A king move between two grid cells.
+.decl king_step(p: Position, q: Position)
+king_step(P, Q) :- in(P, _), dir8_elem(D), neighbor(P, D, Q), in(Q, _).
+
+// The Chebyshev distance from each center to each grid cell.
+// @claim square-radius
+.init reach = GraphDistance<Position, Position>
+reach.seed(C, C) :- center(C).
+reach.edge(C, P, Q) :- center(C), king_step(P, Q).
+
+// The cells that stop the square of center C.
+.decl stop(c: Position, q: Position, b: Block)
+stop(C, Q, B) :- center(C), in(Q, Col), params.blocker_color(Col), block_choice(B).
+
+// The distance from each center to its nearest stop.
+// @claim square-radius
+.init nearest = Extremes<Grower>
+nearest.cand([C, B], K) :- stop(C, Q, B), reach.distance(C, Q, K).
+
+// Cells as far from center C as its nearest stop, or farther.
+.decl beyond(c: Position, q: Position, b: Block)
+beyond(C, Q, B) :- nearest.low([C, B], K_stop), reach.distance(C, Q, K), K >= K_stop.
+
+// The cells of center C's square.
+.decl square(c: Position, q: Position, e: Edge, b: Block)
+
+// The cells that take params.fill_color.
+.decl paint(p: Position, ch: Choice)
+
+// A case with no radius at some center.
+.decl undefined(e: Edge, b: Block)
+
+out(P, Col, Ch) :- paint(P, Ch), params.fill_color(Col).
+out(P, Col, [E, B, Cv]) :-
+    impl_choice([E, B, Cv]), in(P, Col), !paint(P, [E, B, Cv]), !undefined(E, B).
+
+// --- $Open ---
+square(C, Q, $Open(), B) :- nearest.low([C, B], _), reach.distance(C, Q, _), !beyond(C, Q, B).
+undefined($Open(), B) :- center(C), block_choice(B), !nearest.low([C, B], _).
+
+// --- $EdgeBounds ---
+// The distance from each center to its nearest grid edge.
+// @claim square-radius
+.init frame = Extremes<Position>
+frame.cand(C, K) :- center(C), dir_elem(D), dist(C, D, K).
+
+square(C, Q, $EdgeBounds(), B) :-
+    frame.low(C, K_edge), reach.distance(C, Q, K), K <= K_edge,
+    block_choice(B), !beyond(C, Q, B).
+
+// --- $CentersBlock ---
+stop(C, Q, $CentersBlock()) :- center(C), center(Q), C != Q.
+
+// --- $Keep ---
+paint(Q, [E, B, $Keep()]) :- square(_, Q, E, B), !center(Q).
+
+// --- $CoverCenters ---
+paint(Q, [E, B, $CoverCenters()]) :-
+    square(C, Q, E, B), Q != C, impl_choice([E, B, $CoverCenters()]).
+
+.comp Determine {
+    .decl fill_color(c: Color)
+    fill_color(C) :- ex_out(_, _, C), !ex_in(_, _, C).
+
+    // An output cell with a neighbor not in the fill color.
+    .decl unfilled_around(e: Example, p: Position)
+    unfilled_around(E, P) :-
+        fill_color(F), ex_out(E, P, _), dir8_elem(D), neighbor(P, D, Q), !ex_out(E, Q, F).
+
+    // The color of an output cell that the fill color surrounds.
+    .decl center_color(c: Color)
+    center_color(C) :- fill_color(F), ex_out(E, P, C), C != F, !unfilled_around(E, P).
+
+    // A color with two input cells side by side.
+    .decl clumped(c: Color)
+    clumped(C) :- ex_in(E, P, C), dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, C).
+
+    // The lone-cell color that is not the center color.
+    // @ignore: determine prediction — the input's lone-cell colors are the center and the blocker, and the center color is read off the outputs
+    .decl blocker_color(c: Color)
+    blocker_color(C) :- ex_in(_, _, C), !clumped(C), !center_color(C).
+}

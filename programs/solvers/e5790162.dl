@@ -1,0 +1,282 @@
+// e5790162
+// @draft
+// @keywords: markers walk lookup
+// @scene start-cell: one cell of path_color 3 sits on the frame edge opposite
+//  start_dir, and every other cell that is not background 0 is a marker.
+// @scene every-marker-met: each marker is the cell directly ahead of the line
+//  at one of its turns.
+// @scene line-exits: the line reaches the frame edge without a crossing of
+//  itself and without a marker directly ahead of a cell where it turns.
+// @rule walk: the line starts at the start cell with heading start_dir, and
+//  steps one cell along the heading at a time.
+// @rule turn-at-marker: when the next cell ahead is a marker, the line turns a
+//  quarter turn in the sense turn_sense gives for that marker's color, and
+//  continues from the cell it is at.
+// @rule stop-at-edge: the line stops when the next cell ahead is outside the
+//  frame.
+// @rule paint-line: each cell the line visits takes path_color, and every
+//  other cell keeps its input color.
+
+// what gives the heading of the line's first step
+.type Heading =
+    // @claim walk
+    StoredDir {}
+    // @rule walk: the line heads away from the one frame edge the start cell
+    //  is on; undefined where the start cell is on no frame edge or on two.
+    // @witness start-on-top-edge: variant $HeadAwayFromEdge
+    //     @relaxed start-cell
+  | HeadAwayFromEdge {}
+    // @rule walk: the line heads toward the nearest marker in line with the
+    //  start cell; undefined where no marker is in line with it, or where two
+    //  are nearest at one distance.
+    // @witness no-marker-in-start-row: borderline concept
+    //     @relaxed every-marker-met
+  | HeadTowardMarker {}
+
+// what gives the color of the start cell and of the line
+.type LineColor =
+    // @claim start-cell
+    StoredColor {}
+    // @scene start-cell: the start cell's color is the one color of the input
+    //  that is not background and has no turn_sense row; undefined where the
+    //  input holds no such color or more than one.
+    // @witness start-of-another-color: variant $StartIsNonMarker
+    //     @relaxed start-cell
+  | StartIsNonMarker {}
+
+// what the line does when a marker is directly ahead after a turn
+.type BlockedTurn =
+    // @claim turn-at-marker
+    TurnAgain {}
+    // @rule turn-at-marker: the line stops where a marker is directly ahead
+    //  of it after a turn.
+    // @witness marker-ahead-after-turn: borderline concept
+    //     @relaxed line-exits
+  | StopWhenBlocked {}
+
+// what the line does when it meets its own trail
+.type TrailMeeting =
+    // @claim walk
+    CrossTrail {}
+    // @rule walk: the line stops before a cell it has already visited.
+    // @witness line-crosses-trail: borderline concept
+    //     @relaxed line-exits
+  | StopAtTrail {}
+
+// which cells the line passes over
+.type Passable =
+    // @claim walk
+    PassNonMarker {}
+    // @rule walk: the line stops before a cell that is not background.
+    // @witness other-color-on-line: foreign any
+    //     @relaxed start-cell
+  | OnlyBackgroundPassable {}
+
+.type Choice = [h: Heading, c: LineColor, b: BlockedTurn, t: TrailMeeting, x: Passable]
+
+// The line at a cell, with its heading.
+.type Walker = [p: Position, w: Dir]
+
+// One case's line from one start cell.
+.type Line = [ch: Choice, s: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the turn sense of each marker color
+    .decl turn_sense(col: Color, s: Sense)
+    turn_sense(6, SENSE_CW).
+    turn_sense(8, SENSE_CC).
+
+    // --- $StoredDir ---
+    .decl start_dir(d: Dir) start_dir(DIR_R).
+
+    // --- $StoredColor ---
+    .decl path_color(col: Color) path_color(3).
+
+    // --- $StartIsNonMarker, $OnlyBackgroundPassable ---
+    // @derive DominantColor: variant derived
+    //     @relaxed start-cell
+    .decl background(col: Color) background(0).
+}
+
+.init params = Params
+
+.decl heading_choice(h: Heading)
+heading_choice($StoredDir()). heading_choice($HeadAwayFromEdge()). heading_choice($HeadTowardMarker()).
+
+.decl line_color_choice(c: LineColor)
+line_color_choice($StoredColor()). line_color_choice($StartIsNonMarker()).
+
+.decl blocked_turn_choice(b: BlockedTurn)
+blocked_turn_choice($TurnAgain()). blocked_turn_choice($StopWhenBlocked()).
+
+.decl trail_meeting_choice(t: TrailMeeting)
+trail_meeting_choice($CrossTrail()). trail_meeting_choice($StopAtTrail()).
+
+.decl passable_choice(x: Passable)
+passable_choice($PassNonMarker()). passable_choice($OnlyBackgroundPassable()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([H, C, B, T, X]) :-
+    heading_choice(H), line_color_choice(C), blocked_turn_choice(B),
+    trail_meeting_choice(T), passable_choice(X).
+
+// A marker, with the turn sense of its color.
+.decl marker(p: Position, s: Sense)
+marker(P, S) :- in(P, Col), params.turn_sense(Col, S).
+
+// The color of the start cells and of the line.
+.decl line_color(col: Color, c: LineColor)
+
+// --- $StoredColor ---
+line_color(Col, $StoredColor()) :- params.path_color(Col).
+
+// --- $StartIsNonMarker ---
+// @claim start-cell
+// @ignore item: store — the stored set gives the one color 3, so the case is equivalent to $StoredColor
+// @ignore value: store — the stored color makes the case equivalent to $StoredColor
+.init plain = Unanimous<Unit, Color>
+plain.item($U(), Col) :- in(_, Col), !params.background(Col), !params.turn_sense(Col, _).
+
+line_color(Col, $StartIsNonMarker()) :- plain.value($U(), Col).
+
+// --- $StoredColor, $StartIsNonMarker ---
+.decl start(p: Position, c: LineColor)
+start(P, C) :- line_color(Col, C), in(P, Col).
+
+// The heading of the first step from a start cell.
+.decl aim(p: Position, d: Dir, h: Heading)
+
+// --- $StoredDir ---
+aim(P, D, $StoredDir()) :- start(P, _), params.start_dir(D).
+
+// --- $HeadAwayFromEdge ---
+aim(P, W, $HeadAwayFromEdge()) :- start(P, _), dist(P, D, 0), opposite(D, W).
+
+// --- $HeadTowardMarker ---
+// The first marker in line with a start cell, toward each direction.
+// @claim walk
+// @ignore stop: store — a stored first marker per direction fixes the heading, so the case is equivalent to $StoredDir
+.init sight = Ray<Position>
+sight.dir(P, D) :- start(P, _), dir_elem(D).
+sight.mark(P, P) :- start(P, _).
+sight.blocked(P, Q) :- start(P, _), marker(Q, _).
+
+// @claim walk
+// @ignore cand: store — a stored heading makes the case equivalent to $StoredDir
+// @ignore low: store — a stored heading makes the case equivalent to $StoredDir
+.init nearest = ArgExtremes<Position, Dir>
+nearest.cand(P, D, K) :- sight.stop(P, _, D, K, P), dir_elem(D).
+
+aim(P, D, $HeadTowardMarker()) :- nearest.low(P, D, _).
+
+// --- $StoredDir, $HeadAwayFromEdge, $HeadTowardMarker ---
+// A start cell that a heading branch gives no single heading.
+.decl unaimed(p: Position, h: Heading)
+unaimed(P, H) :- start(P, _), heading_choice(H), !aim(P, _, H).
+unaimed(P, H) :- aim(P, D1, H), aim(P, D2, H), D1 != D2.
+
+// A turn: the cell ahead of p heading w is a marker, and the line turns to w2.
+.decl turn_at(p: Position, w: Dir, w2: Dir)
+turn_at(P, W, W2) :- in(P, _), dir_elem(W), neighbor(P, W, Q), marker(Q, S), turn(S, W, W2).
+
+// A turn the line takes.
+.decl turned(p: Position, w: Dir, w2: Dir, b: BlockedTurn)
+
+// --- $TurnAgain ---
+turned(P, W, W2, $TurnAgain()) :- turn_at(P, W, W2).
+
+// --- $StopWhenBlocked ---
+turned(P, W, W2, $StopWhenBlocked()) :- turn_at(P, W, W2), !turn_at(P, W2, _).
+
+// A cell the line may step onto.
+.decl passable(p: Position, x: Passable)
+
+// --- $PassNonMarker ---
+passable(P, $PassNonMarker()) :- in(P, _), !marker(P, _).
+
+// --- $OnlyBackgroundPassable ---
+passable(P, $OnlyBackgroundPassable()) :- in(P, Col), params.background(Col).
+
+// --- $StoredDir, $HeadAwayFromEdge, $HeadTowardMarker ---
+// The line's walk: from each start cell along its heading, turning in place
+// where a marker is ahead and stepping onto a passable cell otherwise.
+.init walk = Propagation<Choice, Walker>
+walk.source([H, C, B, T, X], [P, D]) :-
+    impl_choice([H, C, B, T, X]), start(P, C), aim(P, D, H).
+walk.edge([H, C, B, T, X], [P, W], S2) :-
+    impl_choice([H, C, B, T, X]), in(P, _),
+    ( turned(P, W, W2, B), S2 = [P, W2]               // a marker ahead: turn in place
+    ; neighbor(P, W, Q), passable(Q, X), S2 = [Q, W]  // a passable cell ahead: step onto it
+    ).
+
+// The cells the line visits.
+.decl visited(p: Position, ch: Choice)
+
+// --- $CrossTrail ---
+visited(P, [H, C, B, $CrossTrail(), X]) :- walk.reached([H, C, B, $CrossTrail(), X], [P, _]).
+
+// --- $StopAtTrail ---
+// The step count at which each line reaches each state.
+// @claim walk
+.init trail = GraphDistance<Line, Walker>
+trail.seed([[H, C, B, $StopAtTrail(), X], P], S) :-
+    walk.source([H, C, B, $StopAtTrail(), X], S), S = [P, _].
+trail.edge([Ch, P], S1, S2) :- trail.seed([Ch, P], _), walk.edge(Ch, S1, S2).
+
+// A step at step count k onto a cell the line visited at step count k or
+// before.
+.decl crossing(l: Line, k: number)
+crossing(L, K) :-
+    trail.distance(L, [P, W], K), trail.edge(L, [P, W], [Q, W]),   // a step at k
+    trail.distance(L, [Q, _], K2), K2 <= K.                        // onto a visited cell
+
+// A state the line reaches after a crossing.
+.decl past_crossing(l: Line, s: Walker)
+past_crossing(L, S) :- trail.distance(L, S, K), crossing(L, K2), K2 < K.
+
+visited(P, Ch) :- trail.distance([Ch, P0], S, _), !past_crossing([Ch, P0], S), S = [P, _].
+
+// --- $StoredDir, $HeadAwayFromEdge, $HeadTowardMarker ---
+// The cases whose model is undefined on the input.
+.decl undefined(ch: Choice)
+undefined([H, C, B, T, X]) :- impl_choice([H, C, B, T, X]), !line_color(_, C).
+undefined([H, C, B, T, X]) :- impl_choice([H, C, B, T, X]), start(P, C), unaimed(P, H).
+
+out(P, Col, [H, C, B, T, X]) :-
+    impl_choice([H, C, B, T, X]), !undefined([H, C, B, T, X]),
+    ( visited(P, [H, C, B, T, X]), line_color(Col, C)        // on the line
+    ; in(P, Col), !visited(P, [H, C, B, T, X])               // elsewhere
+    ).
+
+.comp Determine {
+    // A cell whose color the line changes.
+    .decl painted(e: Example, p: Position, col: Color)
+    painted(E, P, Col) :- ex_out(E, P, Col), ex_in(E, P, Col0), Col != Col0.
+
+    .decl path_color(col: Color)
+    path_color(Col) :- painted(_, _, Col).
+
+    .decl background(col: Color)
+    background(Col0) :- painted(E, P, _), ex_in(E, P, Col0).
+
+    // A cell of the line, the start cell included.
+    .decl line(e: Example, p: Position)
+    line(E, P) :- path_color(Col), ex_out(E, P, Col).
+
+    // The heading from the start cell to the first painted cell.
+    .decl start_dir(d: Dir)
+    start_dir(D) :-
+        path_color(Col), ex_in(E, P, Col),             // a start cell
+        dir_elem(D), neighbor(P, D, Q), painted(E, Q, _).
+
+    // A marker's color, with the sense the line turns in before it.
+    // @ignore: determine prediction — the clause reads each sense from a turn of the line in the output; the background test only tells a marker from a cell beside the line
+    .decl turn_sense(col: Color, s: Sense)
+    turn_sense(Col, S) :-
+        line(E, P), dir_elem(W), neighbor(P, W, Q), ex_in(E, Q, Col), !line(E, Q),  // a cell ahead the line does not enter
+        !background(Col),                                                           // a marker
+        opposite(W, W_back), neighbor(P, W_back, P_back), line(E, P_back),          // the line arrives heading w
+        turn(S, W, W2), neighbor(P, W2, R), line(E, R).                             // and leaves on the s side
+}

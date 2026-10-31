@@ -30,8 +30,7 @@
 //  stamp does not turn.
 // @rule stamp: each block at a mask cell takes the stamp, and every other
 //  field cell keeps its color. Each legend stamps its own mask on the same
-//  field. Where two stamps overlap, the later one in params.stamp_order
-//  shows.
+//  field. Where two stamps overlap, the output is undefined.
 
 // how the arrow box is found
 .type ArrowFind =
@@ -109,10 +108,7 @@
 .type Choice = [arrow: ArrowFind, pattern: PatternFind, mask: MaskFind,
                 anchor: AnchorFind, field: FieldFind]
 
-.type StampOrder = [d: Dir]
-.type OpenValue = [stamp_order: StampOrder]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl sep(c: Color) sep(6).
@@ -121,13 +117,6 @@
 
     // The arrow direction at which the mask does not turn.
     .decl ref_dir(d: Dir) ref_dir(DIR_T).
-
-    // The side whose legend stamps first, so that the later stamp shows where
-    // two stamps overlap. No pair has overlapping stamps, so both sides stay
-    // open.
-    // @open
-    .decl stamp_order(d: Dir)
-    stamp_order(DIR_L). stamp_order(DIR_R).
 
     // --- $ArrowColor ---
     .decl arrow(c: Color) arrow(7).
@@ -147,7 +136,7 @@
 
 .init params = Params
 
-// Each case's output grid on each input, read with each stamp order.
+// Each case's output grid on each input.
 .comp Parse<Key> {
     .type Panel = [ky: Key, pl: Position]
     .type Part = [ky: Key, id: Ident]
@@ -480,13 +469,6 @@
         diag_dist(P_s, Diag, Ax, K1, K2),                            // flush with the corner
         field_at(Ky, F, P_inner, _), diag_dist(P_inner, Diag, Ax, K1, K2).
 
-    // Legend Pl is stamped over at P_inner by a legend stamped after it, when
-    // the legend on side D stamps first.
-    .decl hidden(ky: Key, ch: Choice, d: Dir, pl: Position, p_inner: Position)
-    hidden(Ky, Ch, D, Pl, P_inner) :-
-        cover(Ky, Ch, Pl, _, P_inner), opposite(D, D2),
-        cover(Ky, Ch, Pl2, _, P_inner), nearer(D2, Pl2, Pl).
-
     // Every legend of the case has an anchor, a turn, and a stamp.
     .decl ready(ky: Key, ch: Choice, pl: Position)
     ready(Ky, [Af, Pa, Mk, A, F], Pl) :-
@@ -507,7 +489,8 @@
     overlap(Ky, Ch, P_inner) :-
         cover(Ky, Ch, Pl, _, P_inner), cover(Ky, Ch, Pl2, _, P_inner), Pl != Pl2.
 
-    // The case's output at each field cell that no two legends cover.
+    // The case's output at each field cell that no two legends cover. A field
+    // cell that two legends cover has no output, so the case is undefined there.
     .decl shown(ky: Key, ch: Choice, p_inner: Position, col: Color)
     shown(Ky, [Af, Pa, Mk, A, F], P_inner, Col) :-
         cover(Ky, [Af, Pa, Mk, A, F], Pl, T, P_inner), !overlap(Ky, [Af, Pa, Mk, A, F], P_inner),
@@ -515,14 +498,6 @@
     shown(Ky, [Af, Pa, Mk, A, F], P_inner, Col) :-
         case(Ky, [Af, Pa, Mk, A, F]), field_at(Ky, F, P_inner, Col),
         !cover(Ky, [Af, Pa, Mk, A, F], _, _, P_inner), !unready(Ky, [Af, Pa, Mk, A, F]).
-
-    // The case's output at each field cell that two legends cover, when the
-    // legend on side D stamps first.
-    .decl shown_over(ky: Key, ch: Choice, d: Dir, p_inner: Position, col: Color)
-    shown_over(Ky, [Af, Pa, Mk, A, F], D, P_inner, Col) :-
-        side(Ky, D), cover(Ky, [Af, Pa, Mk, A, F], Pl, T, P_inner),
-        overlap(Ky, [Af, Pa, Mk, A, F], P_inner), !hidden(Ky, [Af, Pa, Mk, A, F], D, Pl, P_inner),
-        stamp_color(Ky, Pa, Pl, T, Col), !unready(Ky, [Af, Pa, Mk, A, F]).
 }
 
 .decl arrow_find_choice(af: ArrowFind)
@@ -548,11 +523,7 @@ parse.case($U(), [Af, Pa, Mk, A, F]) :-
     arrow_find_choice(Af), pattern_find_choice(Pa), mask_find_choice(Mk),
     anchor_find_choice(A), field_find_choice(F).
 
-out(P, Col, Ch, [[D]]) :-
-    params.stamp_order(D), parse.side($U(), D),
-    ( parse.shown($U(), Ch, P, Col)
-    ; parse.shown_over($U(), Ch, D, P, Col)
-    ).
+out(P, Col, Ch) :- parse.shown($U(), Ch, P, Col).
 
 .comp Determine {
     .decl trained(e: Example)

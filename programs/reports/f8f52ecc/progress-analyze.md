@@ -1,0 +1,4 @@
+# f8f52ecc — Analyze progress
+
+- `interference`: the PreToolUse hook blocked `for f in 2dd70a9a 3e6067c3 7b0280bc b15fca0b; do awk '/^$/{exit} 1' programs/solvers/$f.dl; echo ----; done` ("unsupported executable construct 'for'"). This cost one extra call: the four headers were printed again by four chained `awk` calls. The output was not wrong, and nothing is still wrong.
+- `delay`: the step "probes over the pairs" ([Analyze after the concept](.claude/analyze-next.md), step 1). The first two versions of `timeout 170 python -u work/task/f8f52ecc/steiner_enum.py data/tasks/f8f52ecc.json` hit the 170 s bound. They ran Dreyfus-Wagner once per candidate cell, made required cells into terminals, and searched the whole grid. Limiting the search to the dots' bounding box grown by one cell, and leaving forced cells out of the terminals, brought the run down to seconds. Cost: about 6 minutes of wall time.

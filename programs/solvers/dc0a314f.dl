@@ -1,0 +1,283 @@
+// dc0a314f
+// @draft
+// @keywords: symmetry crop repair occlude latent-canvas
+// @scene symmetric-pattern: the grid is square, and once the covered cells are
+//  filled in, it is unchanged under each symmetry of the `symmetry` group
+//  (SYM_D4) about the grid's center.
+// @scene cover-block: one solid rectangle of `cover_color` (3) covers part of
+//  the pattern, and `cover_color` occurs nowhere else.
+// @scene cover-recoverable: each covered cell has an image under the `symmetry`
+//  group that is not covered.
+// @rule fill-from-image: each covered cell takes the color of an uncovered image
+//  of it under the `symmetry` group.
+// @rule crop-cover: the output is the cover's rectangle of the filled grid.
+
+// Where the symmetry group comes from.
+.type SymSource =
+    // @claim fill-from-image
+    SymStored {}
+    // @rule fill-from-image: the group is derived on each input as the largest
+    //  subgroup of D4 under which the uncovered cells agree; undefined where
+    //  two subgroups tie for largest.
+    // @witness two-mirror-axes: variant $GroupPerInput
+    //     @relaxed symmetric-pattern
+    // @witness pinwheel: variant $GroupPerInput
+    //     @relaxed symmetric-pattern
+  | GroupPerInput {}
+
+// Where the center of the symmetry lies.
+.type Center =
+    // @claim symmetric-pattern
+    GridCenter {}
+    // @scene symmetric-pattern: the symmetries act about a stored point, the
+    //  center of the `center_frame` box.
+    // @witness pattern-overhangs: variant $CenterStored
+    //     @relaxed symmetric-pattern
+    //     @reassigned center_frame
+    // @witness overhang-stray: borderline $CenterStored
+    //     @relaxed symmetric-pattern
+    //     @reassigned center_frame
+  | CenterStored {}
+    // @scene symmetric-pattern: the symmetries act about each point, a cell or
+    //  the corner of four cells, about which the uncovered cells agree and
+    //  every covered cell has an uncovered image; undefined where those
+    //  points give different outputs.
+    // @witness off-center: variant $CenterFound
+    //     @relaxed symmetric-pattern
+  | CenterFound {}
+
+// What restores together.
+.type RestoreUnit =
+    // @claim fill-from-image
+    CellRestore {}
+    // @rule fill-from-image: the cover restores from the image of its whole
+    //  rectangle under each element of the group whose image lies in the grid
+    //  and holds no covered cell; those images must agree, and it is undefined
+    //  where none exists.
+    // @witness stray-cell: borderline any
+    //     @relaxed symmetric-pattern
+  | WholeBlockImage {}
+
+// How a covered cell's disagreeing images resolve.
+.type ImageConflict =
+    // @claim fill-from-image
+    ImagesAgree {}
+    // @rule fill-from-image: a covered cell takes the commonest color among its
+    //  uncovered images; undefined at a tie.
+    // @witness two-mirror-axes: variant $GroupPerInput
+  | ImageMajority {}
+
+.type Choice = [s: SymSource, c: Center, u: RestoreUnit, i: ImageConflict]
+
+// A cell and one of its diagonal neighbors, which bound a 2x2 block.
+.type BlockKey = [p: Position, q: Position]
+
+// A square whose center may be the center of the symmetry.
+.type FrameKey = [c: Center, b: Box]
+
+// A covered cell restored about a square.
+.type MajorityKey = [s: SymSource, u: RestoreUnit, c: Center, b: Box, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @ignore: derive — every built-in derivation fails Fit at train0
+    .decl cover_color(c: Color) cover_color(3).
+
+    // --- $SymStored ---
+    .decl symmetry(s: Sym) symmetry(SYM_D4).
+
+    // --- $CenterStored ---
+    // The square, as a box in the grid frame; its center is the center of the
+    // symmetry.
+    .decl center_frame(b: Box) center_frame(ZERO).
+}
+
+.init params = Params
+
+.decl sym_source_choice(s: SymSource)
+sym_source_choice($SymStored()). sym_source_choice($GroupPerInput()).
+
+.decl center_choice(c: Center)
+center_choice($GridCenter()). center_choice($CenterStored()). center_choice($CenterFound()).
+
+.decl restore_unit_choice(u: RestoreUnit)
+restore_unit_choice($CellRestore()). restore_unit_choice($WholeBlockImage()).
+
+.decl image_conflict_choice(i: ImageConflict)
+image_conflict_choice($ImagesAgree()). image_conflict_choice($ImageMajority()).
+
+// The majority branch adds nothing to a derived group or a found center, about
+// which a covered cell's images always agree.
+.decl impl_choice(ch: Choice)
+impl_choice([S, C, U, I]) :-
+    sym_source_choice(S), center_choice(C), restore_unit_choice(U), image_conflict_choice(I),
+    ( I = $ImagesAgree()
+    ; I = $ImageMajority(), S = $SymStored(), C != $CenterFound()
+    ).
+
+.decl covered(p: Position)
+covered(P) :- in(P, Col), params.cover_color(Col).
+
+.decl uncovered(p: Position, col: Color)
+uncovered(P, Col) :- in(P, Col), !params.cover_color(Col).
+
+// The cover's rectangle.
+// @claim crop-cover
+.init cover = Bbox<Unit>
+cover.cell($U(), P) :- covered(P).
+
+// --- $GridCenter ---
+// The squares whose center may be the center of the symmetry, in the grid
+// frame.
+// @ignore: head-zero — the grid's own frame as a box, which no relation measures
+// @ignore: store — the found centers range over each input's own cells
+.decl frame_at(c: Center, b: Box)
+frame_at($GridCenter(), ZERO).
+
+// --- $CenterStored ---
+frame_at($CenterStored(), B) :- params.center_frame(B).
+
+// --- $CenterFound ---
+// The 2x2 blocks: their centers are the corners of four cells.
+// @claim symmetric-pattern
+.init block = Bbox<BlockKey>
+block.cell([P, Q], P), block.cell([P, Q], Q) :-
+    in(P, _), diag_dir_elem(D), neighbor(P, D, Q), in(Q, _).
+
+// Each cell, and each 2x2 block.
+frame_at($CenterFound(), B) :- in(B, _).
+frame_at($CenterFound(), B) :- block.box(_, B).
+
+// --- concept, $GroupPerInput, $CenterStored, $CenterFound, $WholeBlockImage, $ImageMajority ---
+// P2 is the image of P under D about the center of square B.
+.decl image(c: Center, b: Box, d: D4, p: Position, p2: Position)
+image(C, B, D, P, P2) :-
+    frame_at(C, B), in(P, _), d4_elem(D),
+    relative(B, P, Q), apply(D, Q, Q2), compose(B, Q2, P2),
+    in(P2, _).
+
+// Under D about B, two uncovered cells disagree.
+.decl clash(c: Center, b: Box, d: D4)
+clash(C, B, D) :- image(C, B, D, P, P2), uncovered(P, Col), uncovered(P2, Col2), Col != Col2.
+
+// --- $SymStored ---
+.decl group(s: SymSource, c: Center, b: Box, d: D4)
+group($SymStored(), C, B, D) :- frame_at(C, B), params.symmetry(S), sym_member(S, D).
+
+// --- $GroupPerInput ---
+.decl sym_clash(c: Center, b: Box, s: Sym)
+sym_clash(C, B, S) :- sym_member(S, D), clash(C, B, D).
+
+// @claim fill-from-image
+.init sym_size = Tally<Sym, D4>
+sym_size.item(S, D) :- sym_member(S, D).
+
+// The largest subgroup under which the uncovered cells agree, where one is.
+// @claim fill-from-image
+.init largest = ArgExtremes<FrameKey, Sym>
+largest.cand([C, B], S, N) :-
+    frame_at(C, B), sym_elem(S), !sym_clash(C, B, S), sym_size.tally(S, N).
+
+// @claim fill-from-image
+.init derived_group = Unanimous<FrameKey, Sym>
+derived_group.item(K, S) :- largest.high(K, S, _).
+
+group($GroupPerInput(), C, B, D) :- derived_group.value([C, B], S), sym_member(S, D).
+
+// --- concept, $GroupPerInput, $CenterStored, $CenterFound, $WholeBlockImage, $ImageMajority ---
+// A covered cell's uncovered images under the group, each restoring it alone.
+.decl unit_image(s: SymSource, u: RestoreUnit, c: Center, b: Box, p: Position, col: Color, p2: Position)
+unit_image(S, $CellRestore(), C, B, P, Col, P2) :-
+    covered(P), group(S, C, B, D), image(C, B, D, P, P2), uncovered(P2, Col).
+
+// --- $WholeBlockImage ---
+.decl uncovered_image(c: Center, b: Box, d: D4, p: Position)
+uncovered_image(C, B, D, P) :- image(C, B, D, P, P2), uncovered(P2, _).
+
+// D takes some covered cell out of the grid or onto the cover.
+.decl block_defect(c: Center, b: Box, d: D4)
+block_defect(C, B, D) :- frame_at(C, B), d4_elem(D), covered(P), !uncovered_image(C, B, D, P).
+
+// The image of the whole cover under each element that takes it onto uncovered
+// cells.
+unit_image(S, $WholeBlockImage(), C, B, P, Col, P2) :-
+    covered(P), group(S, C, B, D), !block_defect(C, B, D),
+    image(C, B, D, P, P2), uncovered(P2, Col).
+
+// --- $ImageMajority ---
+// @claim fill-from-image
+.init majority = Mode<MajorityKey, Color, Position>
+majority.item([S, U, C, B, P], Col, P2) :- unit_image(S, U, C, B, P, Col, P2).
+
+// --- concept, $GroupPerInput, $CenterStored, $CenterFound, $WholeBlockImage, $ImageMajority ---
+// The restored color of a covered cell about square B.
+.decl restored(s: SymSource, u: RestoreUnit, i: ImageConflict, c: Center, b: Box, p: Position, col: Color)
+restored(S, U, $ImagesAgree(), C, B, P, Col) :- unit_image(S, U, C, B, P, Col, _).
+restored(S, U, $ImageMajority(), C, B, P, Col) :- majority.mode([S, U, C, B, P], Col).
+
+// --- $CenterFound ---
+// About B, the uncovered cells disagree, or some covered cell has no
+// uncovered image.
+.decl center_defect(s: SymSource, b: Box)
+center_defect(S, B) :- group(S, $CenterFound(), B, D), clash($CenterFound(), B, D).
+center_defect(S, B) :-
+    group(S, $CenterFound(), B, _), covered(P),
+    !unit_image(S, $CellRestore(), $CenterFound(), B, P, _, _).
+
+// --- concept, $GroupPerInput, $CenterStored, $CenterFound, $WholeBlockImage, $ImageMajority ---
+// The squares whose center is the center of the symmetry.
+.decl center(s: SymSource, c: Center, b: Box)
+center(S, C, B) :- group(S, C, B, _), C != $CenterFound().
+center(S, $CenterFound(), B) :- group(S, $CenterFound(), B, _), !center_defect(S, B).
+
+out(P_inner, Col, [S, C, U, I]) :-
+    impl_choice([S, C, U, I]), center(S, C, B),
+    cover.box($U(), B_cover), crop(P, B_cover, P_inner),   // a cell of the cover's rectangle
+    ( restored(S, U, I, C, B, P, Col)
+    ; uncovered(P, Col)
+    ).
+
+.comp Determine {
+    .decl has_color(e: Example, c: Color)
+    has_color(E, C) :- ex_in(E, _, C).
+
+    // A color some input lacks.
+    .decl not_everywhere(c: Color)
+    not_everywhere(C) :- has_color(_, C), ex_in(E, _, _), !has_color(E, C).
+
+    // The cover color is in every input and in no train output.
+    .decl cover_color(c: Color)
+    cover_color(C) :- has_color(_, C), !not_everywhere(C), !ex_out(_, _, C).
+
+    // The uncovered cells of each input, under each D4 element.
+    .init inv = D4Map<Example, Color>
+    inv.src(E, P, C) :- ex_in(E, P, C), !cover_color(C).
+    inv.dst(E, P, C) :- ex_in(E, P, C), !cover_color(C).
+
+    .decl sym_clash(s: Sym)
+    sym_clash(S) :- sym_member(S, D), inv.conflict(_, D).
+
+    .init sym_size = Tally<Sym, D4>
+    sym_size.item(S, D) :- sym_member(S, D).
+
+    // The largest subgroup under which every input's uncovered cells agree.
+    .init largest = ArgExtremes<Unit, Sym>
+    largest.cand($U(), S, N) :- sym_elem(S), !sym_clash(S), sym_size.tally(S, N).
+
+    // @ignore: determine prediction — the test reads the outputs only through the determined cover_color, which picks the uncovered cells
+    .decl symmetry(s: Sym)
+    symmetry(S) :- largest.high($U(), S, _).
+
+    // The extent of the inputs on each axis.
+    .decl extent(n: number)
+    extent(N) :- ex_in(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    .decl extent_clash(n: number)
+    extent_clash(N) :- extent(N), extent(N2), N2 != N.
+
+    // The square of the inputs' one extent: the whole grid, as a box in the
+    // grid frame.
+    .decl center_frame(b: Box)
+    center_frame(ZERO) :- extent(N), !extent_clash(N).
+}

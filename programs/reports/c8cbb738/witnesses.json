@@ -127,8 +127,7 @@
    "output": [
     {
      "cases": [
-      "concept",
-      "$CornerBackground"
+      "concept"
      ],
      "grid": [
       [
@@ -346,8 +345,7 @@
    "output": [
     {
      "cases": [
-      "concept",
-      "$CornerBackground"
+      "concept"
      ],
      "grid": [
       [
@@ -441,7 +439,7 @@
   },
   {
    "id": "mark-on-corner",
-   "separates": "A mark sits on the top-left corner cell: the concept takes the most common color as the background and gives the 3x3 overlay, and $CornerBackground takes the mark's color as the background, reads the real background as one figure that spans the grid, and gives the input back.",
+   "separates": "A mark sits on the top-left corner cell: the concept takes the most common color as the background and gives the 3x3 overlay.",
    "input": [
     [
      2,
@@ -530,76 +528,6 @@
        2,
        1,
        2
-      ]
-     ]
-    },
-    {
-     "cases": [
-      "$CornerBackground"
-     ],
-     "grid": [
-      [
-       2,
-       3,
-       2,
-       3,
-       3,
-       3,
-       3
-      ],
-      [
-       3,
-       3,
-       3,
-       3,
-       3,
-       3,
-       3
-      ],
-      [
-       2,
-       3,
-       2,
-       1,
-       3,
-       3,
-       3
-      ],
-      [
-       3,
-       3,
-       1,
-       3,
-       1,
-       3,
-       3
-      ],
-      [
-       3,
-       3,
-       3,
-       1,
-       3,
-       3,
-       3
-      ],
-      [
-       3,
-       3,
-       3,
-       3,
-       3,
-       3,
-       3
-      ],
-      [
-       3,
-       3,
-       3,
-       3,
-       3,
-       3,
-       3
       ]
      ]
     }

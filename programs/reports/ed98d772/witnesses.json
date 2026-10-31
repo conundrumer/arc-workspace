@@ -1,0 +1,59 @@
+{ "id": "ed98d772",
+  "witnesses": [{
+    "id": "mirror-tile",
+    "separates": "a quadrant table whose BR entry is a mirror, which no sequence of quarter turns and no product of a row step and a column step gives: the concept puts the input mirrored left-right at BR, while $SuccessiveTurns and $StepProduct put it turned a quarter clockwise there",
+    "input": [
+      [9,9,9],
+      [0,0,0],
+      [9,9,0]
+    ],
+    "assign": {
+      "quadrant_transform": [["DIAG_TL","D4_ID"],["DIAG_TR","D4_CC"],["DIAG_BL","D4_HT"],["DIAG_BR","D4_LR"]]
+    },
+    "output": [{
+      "cases": ["concept", "$StoredFrame"],
+      "grid": [
+        [9,9,9,9,0,0],
+        [0,0,0,9,0,9],
+        [9,9,0,9,0,9],
+        [0,9,9,9,9,9],
+        [0,0,0,0,0,0],
+        [9,9,9,0,9,9]
+      ]
+    }, {
+      "cases": ["$SuccessiveTurns", "$StepProduct"],
+      "grid": [
+        [9,9,9,9,0,0],
+        [0,0,0,9,0,9],
+        [9,9,0,9,0,9],
+        [0,9,9,9,0,9],
+        [0,0,0,9,0,9],
+        [9,9,9,0,0,9]
+      ]
+    }]
+  }, {
+    "id": "$StoredFrame",
+    "separates": "a 4x4 input: the concept and the turn-derived branches make an 8x8 pinwheel, while $StoredFrame, whose output frame is stored 6x6 with 3x3 quadrants, cannot hold a 4x4 copy and is undefined",
+    "input": [
+      [4,4,4,4],
+      [0,0,0,4],
+      [4,0,0,0],
+      [4,4,0,0]
+    ],
+    "output": [{
+      "cases": ["concept", "$SuccessiveTurns", "$StepProduct"],
+      "grid": [
+        [4,4,4,4,4,4,0,0],
+        [0,0,0,4,4,0,0,0],
+        [4,0,0,0,4,0,0,4],
+        [4,4,0,0,4,0,4,4],
+        [0,0,4,4,4,4,0,4],
+        [0,0,0,4,4,0,0,4],
+        [4,0,0,0,0,0,0,4],
+        [4,4,4,4,0,0,4,4]
+      ]
+    }, {
+      "cases": ["$StoredFrame"],
+      "grid": null
+    }]
+  }] }

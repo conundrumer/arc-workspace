@@ -1,0 +1,158 @@
+// de1cd16c
+// @draft
+// @keywords: color-class bbox noise count rank
+// @scene rectangular-regions: the grid is tiled by axis-aligned rectangles,
+//  each filled with its own background color, and no two regions share a
+//  color.
+// @scene scattered-specks: cells of one speck color, which no region has as
+//  its fill, sit isolated inside the regions; no speck touches another speck
+//  or a region border.
+// @scene unique-most: one region holds strictly more specks than every other
+//  region.
+// @rule count-specks: each region's speck count is the number of speck cells
+//  inside the bounding box of that region's fill cells.
+// @rule output-most: the output is an out_dim×out_dim grid filled with the
+//  fill color of the region with the most specks.
+
+// how the speck color is found
+.type SpeckColor =
+    // @claim scattered-specks
+    IsolatedSpeck {}
+    // @scene scattered-specks: the speck color is the input's rarest color;
+    //  undefined where two colors tie for rarest.
+    // @witness tiny-region: variant concept
+  | RarestSpeck {}
+
+// what one region is
+.type RegionUnit =
+    // @claim rectangular-regions
+    ColorRegion {}
+    // @scene rectangular-regions: each 4-connected component of one fill
+    //  color is a region.
+    // @rule count-specks: a region's specks are the speck cells in its
+    //  component's bounding box.
+    // @rule output-most: the output is the color of the component with the
+    //  most specks; undefined where components of two colors tie at the most.
+    // @witness split-region: borderline $ComponentRegion
+    //     @relaxed rectangular-regions
+  | ComponentRegion {}
+
+// which region a speck counts toward
+.type SpeckOwner =
+    // @claim count-specks
+    BoxOwner {}
+    // @rule count-specks: a speck counts toward each fill color among its
+    //  4-neighbors.
+    // @witness edge-speck: variant concept
+    //     @relaxed scattered-specks
+  | NeighborOwner {}
+
+// the output where regions tie at the most specks
+.type Tie =
+    // @claim unique-most
+    UniqueMost {}
+    // @scene unique-most: several regions may tie at the most specks.
+    // @rule output-most: the output holds one grid for each region tied at
+    //  the most specks.
+    // @witness tied-most: borderline $TieAll
+    //     @relaxed unique-most
+  | TieAll {}
+
+.type Choice = [s: SpeckColor, r: RegionUnit, o: SpeckOwner, t: Tie]
+
+.type TiebreakResolution = Sole {} | Tied {region: Ident}
+
+// A region under one reading of the speck color and the region unit.
+.type Region = [s: SpeckColor, r: RegionUnit, id: Ident]
+
+// The regions a speck count ranks: one reading of the speck color, the
+// region unit and the speck owner.
+.type Ranked = [s: SpeckColor, r: RegionUnit, o: SpeckOwner]
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    .init helpers = ParamsHelpers
+
+    .decl out_dim(n: number) out_dim(1).
+
+    .decl out_pos(p: Position)
+    out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
+}
+
+.init params = Params
+
+// --- $IsolatedSpeck ---
+// A cell with a 4-neighbor of its own color.
+.decl same_neighbor(p: Position)
+same_neighbor(P) :- in(P, Col), dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+speck.item($IsolatedSpeck(), Col) :- in(P, Col), !same_neighbor(P).
+
+// --- $RarestSpeck ---
+// @claim scattered-specks
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col).
+
+// @claim scattered-specks
+.init rarest = ArgExtremes<Unit, Color>
+rarest.cand($U(), Col, N) :- color_count.tally(Col, N).
+
+speck.item($RarestSpeck(), Col) :- rarest.low($U(), Col, _).
+
+// --- $IsolatedSpeck, $RarestSpeck ---
+// @claim scattered-specks
+.init speck = Unanimous<SpeckColor, Color>
+
+.decl speck_cell(s: SpeckColor, p: Position)
+speck_cell(S, P) :- speck.value(S, Col), in(P, Col).
+
+// The cells of each region.
+.decl region(g: Region, p: Position)
+
+// --- $ColorRegion ---
+// @claim rectangular-regions
+.init color_id = IdentOf<Color>
+color_id.value(Col) :- in(_, Col).
+
+region([S, $ColorRegion(), Id], P) :-
+    speck.value(S, _), in(P, Col), !speck.value(S, Col), color_id.id(Col, Id).
+
+// --- $ComponentRegion ---
+// @claim rectangular-regions
+.init part = Components<Color>
+part.node(Col, P) :- in(P, Col).
+
+region([S, $ComponentRegion(), Id], P) :-
+    speck.value(S, _), part.label(Col, P, Id), !speck.value(S, Col).
+
+// --- $ColorRegion, $ComponentRegion ---
+// The specks each region holds.
+.decl owned(k: Ranked, id: Ident, p: Position)
+
+// --- $BoxOwner ---
+// @claim count-specks
+.init box = Bbox<Region>
+box.cell(G, P) :- region(G, P).
+
+owned([S, R, $BoxOwner()], Id, P) :-
+    box.box([S, R, Id], B), speck_cell(S, P), crop(P, B, _).
+
+// --- $NeighborOwner ---
+owned([S, R, $NeighborOwner()], Id, P) :-
+    speck_cell(S, P), dir_elem(D), neighbor(P, D, Q), region([S, R, Id], Q).
+
+// --- $BoxOwner, $NeighborOwner ---
+// @claim output-most
+.init most = Mode<Ranked, Ident, Position>
+most.item(K, Id, P) :- owned(K, Id, P).
+
+.decl winner(k: Ranked, id: Ident, col: Color)
+winner([S, R, O], Id, Col) :-
+    most.mode([S, R, O], Id), region([S, R, Id], P), in(P, Col).   // the region's fill color
+
+// --- $UniqueMost ---
+out(P, Col, [S, R, O, $UniqueMost()], $Sole()) :- winner([S, R, O], _, Col), params.out_pos(P).
+
+// --- $TieAll ---
+out(P, Col, [S, R, O, $TieAll()], $Tied(Id)) :- winner([S, R, O], Id, Col), params.out_pos(P).

@@ -40,17 +40,6 @@
     //     @relaxed edge-markers
   | ToMarker {}
 
-// what each copy draws
-.type TileSource =
-    // @claim repeat-toward-marker
-    OwnBox {}
-    // @rule repeat-toward-marker: each copy is `tile` drawn in the square's
-    //  color, its `tile_corner` corner on that corner of the square's box, and
-    //  the stride is the tile's extent plus `gap`.
-    // @witness small-square: variant concept
-    //     @relaxed squares
-  | StoredTile {}
-
 // how each copy relates to the one before
 .type RepeatForm =
     // @claim repeat-toward-marker
@@ -91,22 +80,16 @@
     //     @relaxed edge-markers
   | EraseMarkers {}
 
-.type Choice = [layer: Layering, reach: CopyReach, tile: TileSource, form: RepeatForm,
+.type Choice = [layer: Layering, reach: CopyReach, form: RepeatForm,
                 adj: Adjacency, owner: MarkerOwner, unmatched: UnmatchedMarker]
 
 // A piece found under one adjacency.
 .type Piece = [adj: Adjacency, id: Ident]
 
-// A cell under one case and open corner.
-.type CaseCell = [ch: Choice, v: TileCorner, p: Position]
+// A cell under one case.
+.type CaseCell = [ch: Choice, p: Position]
 
-// A cast toward one direction under one tile source.
-.type Cast = [t: TileSource, d: Dir]
-
-.type TileCorner = [c: DiagDir]
-.type OpenValue = [tile_corner: TileCorner]
-
-.decl out(p: Position, col: Color, ch: Choice, v: OpenValue)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: borderline concept
@@ -115,19 +98,6 @@
     .decl marker(c: Color) marker(1).
     // the cells between one copy and the next
     .decl gap(k: number) gap(0).
-
-    // --- $StoredTile ---
-    // the cells of each copy: 1 for the square's color, 0 for `background`
-    .decl tile(p: Position, ink: number)
-    GRID_4x4(tile,
-        1, 1, 1, 1,
-        1, 0, 0, 1,
-        1, 0, 0, 1,
-        1, 1, 1, 1)
-    // the corner of the tile laid on the same corner of the square's box
-    // @open
-    .decl tile_corner(c: DiagDir)
-    tile_corner(DIAG_TL). tile_corner(DIAG_TR). tile_corner(DIAG_BL). tile_corner(DIAG_BR).
 }
 
 .init params = Params
@@ -137,9 +107,6 @@ layering_choice($Overwrite()). layering_choice($Overlay()).
 
 .decl copy_reach_choice(r: CopyReach)
 copy_reach_choice($ToEdge()). copy_reach_choice($ToMarker()).
-
-.decl tile_source_choice(t: TileSource)
-tile_source_choice($OwnBox()). tile_source_choice($StoredTile()).
 
 .decl repeat_form_choice(f: RepeatForm)
 repeat_form_choice($Translate()). repeat_form_choice($Mirror()).
@@ -154,8 +121,8 @@ marker_owner_choice($EveryLined()). marker_owner_choice($NearestOnly()).
 unmatched_marker_choice($KeepMarkers()). unmatched_marker_choice($EraseMarkers()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([L, R, T, F, Ad, O, U]) :-
-    layering_choice(L), copy_reach_choice(R), tile_source_choice(T), repeat_form_choice(F),
+impl_choice([L, R, F, Ad, O, U]) :-
+    layering_choice(L), copy_reach_choice(R), repeat_form_choice(F),
     adjacency_choice(Ad), marker_owner_choice(O), unmatched_marker_choice(U).
 
 // --- shared ---
@@ -210,68 +177,53 @@ nearest.cand([Ad, M], S, K) :- lined(Ad, S, M, _, K).
 hit(Ad, $NearestOnly(), S, M, D) :- nearest.low([Ad, M], S, _), lined(Ad, S, M, D, _).
 
 // --- shared ---
-// The color tile T gives cell P_t of the frame it is drawn in, for square S.
-.decl tile_val(ad: Adjacency, t: TileSource, s: Ident, p_t: Position, col: Color)
+// The color the box of square S gives cell P_t of its own frame.
+.decl tile_val(ad: Adjacency, s: Ident, p_t: Position, col: Color)
+tile_val(Ad, S, P_t, Col) :- square(Ad, S, _, B), in(Q, Col), crop(Q, B, P_t).
 
-// The grid cell Q where tile T, laid at open corner V, puts cell P_t, on the
-// tile's edge away from D, for square S.
-.decl origin(ad: Adjacency, t: TileSource, v: TileCorner, s: Ident, d: Dir, q: Position, p_t: Position)
-
-// --- $OwnBox ---
-tile_val(Ad, $OwnBox(), S, P_t, Col) :- square(Ad, S, _, B), in(Q, Col), crop(Q, B, P_t).
-
-origin(Ad, $OwnBox(), nil, S, D, Q, P_t) :-
+// The grid cell Q whose cell P_t of the box of square S lies on the box's edge
+// away from D.
+.decl origin(ad: Adjacency, s: Ident, d: Dir, q: Position, p_t: Position)
+origin(Ad, S, D, Q, P_t) :-
     lined(Ad, S, _, D, _), square(Ad, S, _, B),
     in(Q, _), crop(Q, B, P_t), opposite(D, D_opp), dist(P_t, D_opp, 0).
 
-// --- $StoredTile ---
-tile_val(Ad, $StoredTile(), S, P_t, Col) :-
-    square(Ad, S, Col_s, _), params.tile(P_t, Ink),
-    ( Ink != 0, Col = Col_s
-    ; Ink = 0, params.background(Col) ).
-
-origin(Ad, $StoredTile(), [C], S, D, Q, P_t) :-
-    lined(Ad, S, _, D, _), square(Ad, S, _, B),
-    params.tile(P_t, _), opposite(D, D_opp), dist(P_t, D_opp, 0),
-    params.tile_corner(C), in(Q, _), relative(B, Q, Q_rel),
-    corner_anchor(C, P_t, Q_rel).                          // as far from B's corner C as P_t from the tile's
-
 // --- shared ---
 // @claim repeat-toward-marker
-.init march = Ray<Cast>
-march.dir([T, D], D) :- origin(_, T, _, _, D, _, _).
-march.cell([T, D], P) :- origin(_, T, _, _, D, _, _), in(P, _).
-march.mark([T, D], Q) :- origin(_, T, _, _, D, Q, _).
+.init march = Ray<Dir>
+march.dir(D, D) :- origin(_, _, D, _, _).
+march.cell(D, P) :- origin(_, _, D, _, _), in(P, _).
+march.mark(D, Q) :- origin(_, _, D, Q, _).
 
 // P lies in copy N of square S toward D, I cells past that copy's edge away
 // from D, on the line across D through origin cell P_t0.
-.decl placed(ad: Adjacency, t: TileSource, v: TileCorner, s: Ident, d: Dir, p: Position, n: number, i: number, p_t0: Position)
-placed(Ad, T, V, S, D, P, N, I, P_t0) :-
-    origin(Ad, T, V, S, D, Q, P_t0), march.ray([T, D], P, D, K, Q),
+.decl placed(ad: Adjacency, s: Ident, d: Dir, p: Position, n: number, i: number, p_t0: Position)
+placed(Ad, S, D, P, N, I, P_t0) :-
+    origin(Ad, S, D, Q, P_t0), march.ray(D, P, D, K, Q),
     axis_of(D, A), axis_dim(P_t0, A, W), params.gap(G), stride(K, W, G, N, I), N > 0.
 
-// The edge of the tile that copy N toward D counts its cells from.
-.decl start_side(f: RepeatForm, t: TileSource, d: Dir, n: number, side: Dir)
+// The edge of the box that copy N toward D counts its cells from.
+.decl start_side(f: RepeatForm, d: Dir, n: number, side: Dir)
 
 // --- $Translate ---
-start_side($Translate(), T, D, N, D_opp) :- placed(_, T, _, _, D, _, N, _, _), opposite(D, D_opp).
+start_side($Translate(), D, N, D_opp) :- placed(_, _, D, _, N, _, _), opposite(D, D_opp).
 
 // --- $Mirror ---
 // Each copy counts from the edge opposite the one the copy before it counts from.
 // @claim repeat-toward-marker
-.init flips = CycleWalk<Cast, Dir>
-flips.succ([T, D], D, D_opp) :- placed(_, T, _, _, D, _, _, _, _), opposite(D, D_opp).
-flips.succ([T, D], D_opp, D) :- placed(_, T, _, _, D, _, _, _, _), opposite(D, D_opp).
-flips.step([T, D], N) :- placed(_, T, _, _, D, _, N, _, _).
+.init flips = CycleWalk<Dir, Dir>
+flips.succ(D, D, D_opp) :- placed(_, _, D, _, _, _, _), opposite(D, D_opp).
+flips.succ(D, D_opp, D) :- placed(_, _, D, _, _, _, _), opposite(D, D_opp).
+flips.step(D, N) :- placed(_, _, D, _, N, _, _).
 
-start_side($Mirror(), T, D, N, Side) :- flips.walk([T, D], D_opp, N, Side), opposite(D, D_opp).
+start_side($Mirror(), D, N, Side) :- flips.walk(D, D_opp, N, Side), opposite(D, D_opp).
 
 // --- shared ---
 // Copy cell P of square S toward D takes color Col.
-.decl copy_cell(ad: Adjacency, t: TileSource, v: TileCorner, f: RepeatForm, s: Ident, d: Dir, p: Position, col: Color)
-copy_cell(Ad, T, V, F, S, D, P, Col) :-
-    placed(Ad, T, V, S, D, P, N, I, P_t0), start_side(F, T, D, N, Side),
-    perp_dir(D, D_p), tile_val(Ad, T, S, P_t, Col), same_dist(D_p, P_t, P_t0),
+.decl copy_cell(ad: Adjacency, f: RepeatForm, s: Ident, d: Dir, p: Position, col: Color)
+copy_cell(Ad, F, S, D, P, Col) :-
+    placed(Ad, S, D, P, N, I, P_t0), start_side(F, D, N, Side),
+    perp_dir(D, D_p), tile_val(Ad, S, P_t, Col), same_dist(D_p, P_t, P_t0),
     dist(P_t, Side, I).
 
 // P lies past where reach R stops the copies toward marker M.
@@ -279,7 +231,7 @@ copy_cell(Ad, T, V, F, S, D, P, Col) :-
 
 // --- $ToMarker ---
 past($ToMarker(), Ad, M, D, P) :-
-    lined(Ad, S, M, D, _), copy_cell(Ad, _, _, _, S, D, P, _), mark_cell(Ad, M, Q), nearer(D, P, Q).
+    lined(Ad, S, M, D, _), copy_cell(Ad, _, S, D, P, _), mark_cell(Ad, M, Q), nearer(D, P, Q).
 
 // --- shared ---
 // The colors layering L leaves unwritten.
@@ -289,49 +241,39 @@ past($ToMarker(), Ad, M, D, P) :-
 unwritten($Overlay(), Col) :- params.background(Col).
 
 // --- shared ---
-.decl painted(ch: Choice, v: TileCorner, p: Position, col: Color)
-painted([L, R, T, F, Ad, O, U], V, P, Col) :-
-    impl_choice([L, R, T, F, Ad, O, U]), hit(Ad, O, S, M, D), copy_cell(Ad, T, V, F, S, D, P, Col),
+.decl painted(ch: Choice, p: Position, col: Color)
+painted([L, R, F, Ad, O, U], P, Col) :-
+    impl_choice([L, R, F, Ad, O, U]), hit(Ad, O, S, M, D), copy_cell(Ad, F, S, D, P, Col),
     !past(R, Ad, M, D, P), !unwritten(L, Col).
 
 // @claim copies-overwrite
 .init shown = Unanimous<CaseCell, Color>
-shown.item([Ch, V, P], Col) :- painted(Ch, V, P, Col).
+shown.item([Ch, P], Col) :- painted(Ch, P, Col).
 
-.decl clash(ch: Choice, v: TileCorner)
-clash(Ch, V) :- shown.clash([Ch, V, _]).
+.decl clash(ch: Choice)
+clash(Ch) :- shown.clash([Ch, _]).
 
 // The one color the copies write at P.
-.decl written(ch: Choice, v: TileCorner, p: Position, col: Color)
-written(Ch, V, P, Col) :- shown.value([Ch, V, P], Col).
+.decl written(ch: Choice, p: Position, col: Color)
+written(Ch, P, Col) :- shown.value([Ch, P], Col).
 
 // The cells that turn `background` where no copy writes.
 .decl cleared(ch: Choice, p: Position)
 
 // --- $Overlay ---
-cleared([$Overlay(), R, T, F, Ad, O, U], P) :-
-    impl_choice([$Overlay(), R, T, F, Ad, O, U]), hit(Ad, O, _, M, _), mark_cell(Ad, M, P).
+cleared([$Overlay(), R, F, Ad, O, U], P) :-
+    impl_choice([$Overlay(), R, F, Ad, O, U]), hit(Ad, O, _, M, _), mark_cell(Ad, M, P).
 
 // --- $EraseMarkers ---
-cleared([L, R, T, F, Ad, O, $EraseMarkers()], P) :-
-    impl_choice([L, R, T, F, Ad, O, $EraseMarkers()]), in(P, Col), params.marker(Col).
+cleared([L, R, F, Ad, O, $EraseMarkers()], P) :-
+    impl_choice([L, R, F, Ad, O, $EraseMarkers()]), in(P, Col), params.marker(Col).
 
 // --- shared ---
-// The open corners each tile source reads.
-.decl open_corner(t: TileSource, v: TileCorner)
-
-// --- $OwnBox ---
-open_corner($OwnBox(), nil).
-
-// --- $StoredTile ---
-open_corner($StoredTile(), [C]) :- params.tile_corner(C).
-
-// --- shared ---
-out(P, Col, Ch, [V]) :-
-    impl_choice(Ch), Ch = [_, _, T, _, _, _, _], open_corner(T, V), in(P, Col_in), !clash(Ch, V),
-    ( written(Ch, V, P, Col)
-    ; !written(Ch, V, P, _), cleared(Ch, P), params.background(Col)
-    ; !written(Ch, V, P, _), !cleared(Ch, P), Col = Col_in ).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in), !clash(Ch),
+    ( written(Ch, P, Col)
+    ; !written(Ch, P, _), cleared(Ch, P), params.background(Col)
+    ; !written(Ch, P, _), !cleared(Ch, P), Col = Col_in ).
 
 .comp Determine {
     .decl train(e: Example)
@@ -350,34 +292,4 @@ out(P, Col, Ch, [V]) :-
     // The train inputs' color that no train output shows.
     .decl marker(c: Color)
     marker(C) :- ex_in(E, _, C), train(E), !ex_out(_, _, C).
-
-    .type ExColor = [e: Example, col: Color]
-    .type ExSquare = [e: Example, s: Ident]
-    .type ExSquareCell = [e: Example, s: Ident, p_t: Position]
-
-    // The squares of the train inputs: the pieces of a color other than
-    // background and marker.
-    .init piece = Components<ExColor>
-    piece.node([E, Col], P) :- ex_in(E, P, Col), train(E), !background(Col), !marker(Col).
-
-    .init square_box = Bbox<ExSquare>
-    square_box.cell([E, S], P) :- piece.label([E, _], P, S).
-
-    // Cell P of square S's box, at P_t in the box's frame.
-    .decl box_cell(s: ExSquare, p: Position, p_t: Position)
-    box_cell([E, S], P, P_t) :- square_box.box([E, S], B), ex_in(E, P, _), crop(P, B, P_t).
-
-    // The square's cells at each place of its box.
-    .init ink = Tally<ExSquareCell, Position>
-    ink.domain([E, S, P_t]) :- box_cell([E, S], _, P_t).
-    ink.item([E, S, P_t], P) :- box_cell([E, S], P, P_t), piece.label([E, _], P, S).
-
-    // The count every square of every train input holds at each place.
-    .init shape = Unanimous<Position, number>
-    shape.item(P_t, N) :- ink.tally([_, _, P_t], N).
-
-    // @ignore: determine prediction — the test runs no step of the program: it
-    //  leaves out the pieces of the marker, which its own relation determines
-    .decl tile(p: Position, ink: number)
-    tile(P_t, N) :- shape.value(P_t, N).
 }

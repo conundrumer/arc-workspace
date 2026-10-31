@@ -1,0 +1,271 @@
+// fd02da9e
+// @draft
+// @keywords: markers stamp lookup
+// @scene background-field: every input is an 8×8 grid filled with params.bg
+// @scene corner-markers: one or more of the four corner cells each hold a
+//  single marker cell of a color other than params.bg, and no other cell
+//  differs from params.bg
+// @rule markers-cleared: each marker cell becomes params.bg
+// @rule face-part: each marked corner paints the cells of its
+//  params.corner_stamp entry in its marker's color, each cell placed by its
+//  distances from that corner's two edges
+// @rule rest-background: every other cell is params.bg
+
+// where a stamp cell lands
+.type Placement =
+    // @claim face-part
+    CornerAnchored {}
+    // @rule face-part: the face cells keep their offsets from the grid centre
+    //  in a params.face_reach face; undefined where the grid's extent less
+    //  the face's is odd on an axis, or where a cell falls outside the frame
+    // @witness grid-10x10: variant $CenterPlacement
+    //     @relaxed background-field
+  | CenterPlacement {}
+    // @rule face-part: the face cells keep their places in a
+    //  params.face_reach face whose corner params.anchor_corner is the
+    //  grid's; undefined where a cell falls outside the frame
+    // @witness grid-10x10: variant $CenterPlacement
+  | AnchorPlacement {}
+
+// what gives the cells a marker paints
+.type StampSource =
+    // @claim face-part
+    CornerTable {}
+    // @rule face-part: a stored face picture params.face, each cell painted
+    //  by the marker of the corner whose quadrant holds it
+    // @witness nose-cell: variant $QuadrantPartition
+    //     @reassigned face
+  | QuadrantPartition {}
+
+// whether the right corners' stamps are their own values
+.type RightStamps =
+    // @claim face-part
+    OwnStamps {}
+    // @rule face-part: the stamps of the corners away from
+    //  params.mirror_source are the mirrors of those on its side
+    // @witness winking-eye: variant concept
+    //     @reassigned corner_stamp
+  | MirroredHalves {}
+
+// what a cell that is neither a marker nor a stamp cell becomes
+.type OtherCells =
+    // @claim rest-background
+    Cleared {}
+    // @rule rest-background: every other cell keeps its input color
+    // @witness stray-cell: borderline $KeepStrayCells
+    //     @relaxed corner-markers
+  | KeepStrayCells {}
+
+// which cells are markers, and of which corner
+.type MarkerSite =
+    // @claim corner-markers
+    CornerCell {}
+    // @scene corner-markers: every cell of a color other than params.bg is a
+    //  marker of the corner whose quadrant holds it; a cell on a middle line
+    //  is no marker
+    // @witness stray-cell: borderline $KeepStrayCells
+  | NearestCorner {}
+
+.type Choice = [placement: Placement, source: StampSource, right: RightStamps, other: OtherCells, site: MarkerSite]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl bg(c: Color) bg(7).
+
+    // --- $CornerTable ---
+    // Each corner's face part, as offsets from the corner cell.
+    .decl corner_stamp(d: DiagDir, v: Offset)
+    GRID_STAMP_3x3(corner_stamp, DIAG_TL,
+        @_, _, _,
+        _, 1, 1,
+        _, 1, 1)
+    GRID_STAMP_3x3(corner_stamp, DIAG_TR,
+        _, _, @_,
+        1, 1, _,
+        1, 1, _)
+    GRID_STAMP_4x4(corner_stamp, DIAG_BL,
+        _, _, 1, _,
+        _, _, 1, _,
+        _, _, _, 1,
+        @_, _, _, _)
+    GRID_STAMP_4x4(corner_stamp, DIAG_BR,
+        _, 1, _, _,
+        _, 1, _, _,
+        1, _, _, _,
+        _, _, _, @_)
+
+    // --- $QuadrantPartition ---
+    .decl face(p: Position)
+    GRID_MASK_8x8(face,
+        _, _, _, _, _, _, _, _,
+        _, 1, 1, _, _, 1, 1, _,
+        _, 1, 1, _, _, 1, 1, _,
+        _, _, _, _, _, _, _, _,
+        _, _, 1, _, _, 1, _, _,
+        _, _, 1, _, _, 1, _, _,
+        _, _, _, 1, 1, _, _, _,
+        _, _, _, _, _, _, _, _)
+
+    // --- $CenterPlacement, $AnchorPlacement ---
+    // The diagonal steps between two opposite corner cells of the face.
+    .decl face_reach(k: number) face_reach(7).
+
+    // --- $AnchorPlacement ---
+    .decl anchor_corner(d: DiagDir) anchor_corner(DIAG_TL).
+
+    // --- $MirroredHalves ---
+    // The side whose corners' stamps are stored.
+    .decl mirror_source(d: Dir) mirror_source(DIR_L).
+}
+
+.init params = Params
+
+.decl placement_choice(l: Placement)
+placement_choice($CornerAnchored()). placement_choice($CenterPlacement()).
+placement_choice($AnchorPlacement()).
+
+.decl stamp_source_choice(s: StampSource)
+stamp_source_choice($CornerTable()). stamp_source_choice($QuadrantPartition()).
+
+.decl right_stamps_choice(r: RightStamps)
+right_stamps_choice($OwnStamps()). right_stamps_choice($MirroredHalves()).
+
+.decl other_cells_choice(o: OtherCells)
+other_cells_choice($Cleared()). other_cells_choice($KeepStrayCells()).
+
+.decl marker_site_choice(m: MarkerSite)
+marker_site_choice($CornerCell()). marker_site_choice($NearestCorner()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, S, R, O, M]) :-
+    placement_choice(L), stamp_source_choice(S), right_stamps_choice(R), other_cells_choice(O),
+    marker_site_choice(M).
+
+// A marker of corner d.
+.decl marker(m: MarkerSite, d: DiagDir, p: Position, col: Color)
+
+// The cells of corner d's face part: offsets from the face's corner d under
+// $CornerTable, cells of the face's own frame under $QuadrantPartition.
+.decl own_stamp(s: StampSource, d: DiagDir, b: Box)
+.decl stamp(s: StampSource, r: RightStamps, d: DiagDir, b: Box)
+
+// Stamp cell B of corner D lands on grid cell Q.
+.decl placed(l: Placement, s: StampSource, r: RightStamps, d: DiagDir, b: Box, q: Position)
+
+// A case with no face box, or with a marked corner's stamp cell that lands
+// on no grid cell.
+.decl unplaced(ch: Choice)
+unplaced([L, S, R, O, M]) :- impl_choice([L, S, R, O, M]), !face.box(L, _).
+unplaced([L, S, R, O, M]) :-
+    impl_choice([L, S, R, O, M]), marker(M, D, _, _), stamp(S, R, D, B),
+    !placed(L, S, R, D, B, _).
+
+.decl painted(ch: Choice, q: Position, col: Color)
+painted([L, S, R, O, M], Q, Col) :-
+    impl_choice([L, S, R, O, M]), !unplaced([L, S, R, O, M]),
+    placed(L, S, R, D, _, Q), marker(M, D, _, Col).
+
+.decl unpainted(ch: Choice, q: Position)
+unpainted(Ch, Q) :- impl_choice(Ch), !unplaced(Ch), in(Q, _), !painted(Ch, Q, _).
+
+out(Q, Col, Ch) :- painted(Ch, Q, Col).
+
+// The box of the face whose corners the face parts are placed from, bounded
+// by these cells.
+// @ignore cell: store — a stored face box separates no witnessed case from the derived one
+// @claim face-part
+.init face = Bbox<Placement>
+
+// --- $CornerAnchored ---
+face.cell($CornerAnchored(), P) :- in(P, _).
+
+// --- $CenterPlacement ---
+// Two cells face_reach diagonal steps apart, each as far from the edges of
+// its own corner as the other.
+face.cell($CenterPlacement(), C) :-
+    in(C, _), params.face_reach(K), diag_dir_elem(D), diag_opposite(D, O),
+    jump(C, D, K, C2),
+    diag_dist(C, O, A, K1, K2), diag_dist(C2, D, A, K1, K2).
+
+// --- $AnchorPlacement ---
+face.cell($AnchorPlacement(), C2) :-
+    in(C, _), params.anchor_corner(D), box_corner(C, ZERO, D),
+    ( C2 = C                                                          // the grid corner
+    ; diag_opposite(D, O), params.face_reach(K), jump(C, O, K, C2)    // the face's opposite corner
+    ).
+
+// --- $CornerTable ---
+own_stamp($CornerTable(), D, V) :- params.corner_stamp(D, V).
+
+placed(L, $CornerTable(), R, D, V, Q) :-
+    face.box(L, F), stamp($CornerTable(), R, D, V),
+    in(C, _), box_corner(C, F, D), compose(C, V, Q), in(Q, _).    // offset from the face's corner cell
+
+// --- $QuadrantPartition ---
+// @claim face-part
+.init quadrant = DiagPlacement<Unit>
+quadrant.cell($U(), P) :- params.face(P).
+
+own_stamp($QuadrantPartition(), D, P) :- quadrant.quadrant($U(), P, D).
+
+placed(L, $QuadrantPartition(), R, D, P, Q) :-
+    face.box(L, F), stamp($QuadrantPartition(), R, D, P),
+    in(Q, _), crop(Q, F, Q_rel), corner_anchor(D, P, Q_rel).    // as far from D's edges of the face
+
+// --- $OwnStamps ---
+stamp(S, $OwnStamps(), D, B) :- own_stamp(S, D, B).
+
+// --- $MirroredHalves ---
+stamp(S, $MirroredHalves(), D, B) :-
+    params.mirror_source(E), own_stamp(S, D0, B0), dir_of(D0, A, E), flip_of(A, M),
+    ( D = D0, B = B0                                       // a stored corner
+    ; apply_diag_dir(M, D0, D), apply(M, B0, B)            // its mirror
+    ).
+
+// --- $Cleared ---
+out(Q, Col, [L, S, R, $Cleared(), M]) :- unpainted([L, S, R, $Cleared(), M], Q), params.bg(Col).
+
+// --- $KeepStrayCells ---
+out(Q, Col, [L, S, R, $KeepStrayCells(), M]) :-
+    unpainted([L, S, R, $KeepStrayCells(), M], Q),
+    ( marker(M, _, Q, _), params.bg(Col)           // a marker is cleared
+    ; in(Q, Col), !marker(M, _, Q, _)              // a stray cell keeps its color
+    ).
+
+// --- $CornerCell ---
+marker($CornerCell(), D, P, Col) :-
+    in(P, Col), !params.bg(Col), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+// --- $NearestCorner ---
+// @claim corner-markers
+.init quadrant_of = DiagPlacement<Unit>
+quadrant_of.cell($U(), P) :- in(P, _).
+
+marker($NearestCorner(), D, P, Col) :-
+    in(P, Col), !params.bg(Col), quadrant_of.quadrant($U(), P, D).
+
+.comp Determine {
+    // The field: each input's commonest color.
+    .init field = Mode<Example, Color, Position>
+    field.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A corner cell of another color than the field.
+    .decl marker(e: Example, d: DiagDir, p: Position, col: Color)
+    marker(E, D, P, Col) :-
+        ex_in(E, P, Col), !field.mode(E, Col), diag_dir_elem(D), box_corner(P, ZERO, D).
+
+    .decl corner_stamp(d: DiagDir, v: Offset)
+    corner_stamp(D, V) :- marker(E, D, C, Col), ex_out(E, Q, Col), relative(C, Q, V).
+
+    .decl face(p: Position)
+    face(P) :- marker(E, _, _, Col), ex_out(E, P, Col).
+
+    // The diagonal steps from a grid corner cell to the opposite corner cell.
+    .decl face_reach(k: number)
+    face_reach(K) :-
+        ex_out(E, C, _), diag_dir_elem(D), box_corner(C, ZERO, D),
+        diag_opposite(D, O), diag_dirs(O, _, D1, D2), dist(C, D1, K), dist(C, D2, K).
+}

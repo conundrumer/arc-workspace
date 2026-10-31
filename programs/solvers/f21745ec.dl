@@ -1,0 +1,146 @@
+// f21745ec
+// @draft
+// @keywords: objects color-class bbox match stamp select rank d4
+// @scene rectangles-on-background: on a field of `bg` 0, a few single-color
+//  rectangles stand apart, each of its own color, none touching another.
+// @scene one-patterned-rectangle: exactly one rectangle has cells of its color
+//  inside its border, the pattern; each other rectangle is an empty
+//  one-cell-wide outline.
+// @rule same-size-gets-pattern: an empty outline whose height and width both
+//  equal the patterned rectangle's takes, at each cell of its box, the
+//  patterned rectangle's cell at the same place in its box, recolored to the
+//  outline's color.
+// @rule other-size-erased: an empty outline whose height or width differs from
+//  the patterned rectangle's becomes `bg`.
+// @rule pattern-kept: the patterned rectangle stays as it is.
+
+// Which rectangle supplies the pattern
+.type Source =
+    // @claim one-patterned-rectangle
+    PatternedSource {}
+    // @scene one-patterned-rectangle: the pattern is the rectangle with the
+    //  most cells; undefined where two rectangles tie for the most.
+    // @witness most-cells-source: ordinary concept
+  | SourceMostCells {}
+
+// The transform the copy applies to the pattern
+.type Copy =
+    // @claim same-size-gets-pattern
+    CopyInPlace {}
+    // @rule same-size-gets-pattern: the copy applies the stored D4 element
+    //  `copy_d4` to the pattern, and an outline matches when its extents equal
+    //  the transformed pattern's.
+    // @witness copy-reflected: ordinary concept
+    //     @reassigned copy_d4
+  | CopyTransformed {}
+
+.type Choice = [s: Source, c: Copy]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed rectangles-on-background
+    .decl bg(c: Color) bg(0).
+
+    // --- $CopyTransformed ---
+    .decl copy_d4(d: D4) copy_d4(D4_ID).
+}
+
+.init params = Params
+
+.decl source_choice(s: Source)
+source_choice($PatternedSource()). source_choice($SourceMostCells()).
+
+.decl copy_choice(c: Copy)
+copy_choice($CopyInPlace()). copy_choice($CopyTransformed()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, C]) :- source_choice(S), copy_choice(C).
+
+// Each rectangle: the cells of one non-background color.
+.decl rect_cell(col: Color, p: Position)
+rect_cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// @claim rectangles-on-background
+.init rect_box = Bbox<Color>
+rect_box.cell(Col, P) :- rect_cell(Col, P).
+
+// The rectangle that supplies the pattern.
+.decl source(s: Source, col: Color)
+
+// --- $PatternedSource ---
+source($PatternedSource(), Col) :- rect_box.box(Col, B), rect_cell(Col, P), interior(P, B).
+
+// --- $SourceMostCells ---
+// @claim one-patterned-rectangle
+.init rect_size = Tally<Color, Position>
+rect_size.item(Col, P) :- rect_cell(Col, P).
+
+// @claim one-patterned-rectangle
+.init most = ArgExtremes<Unit, Color>
+most.cand($U(), Col, N) :- rect_size.tally(Col, N).
+
+source($SourceMostCells(), Col) :- most.high($U(), Col, _).
+
+// --- $PatternedSource, $SourceMostCells ---
+// A second source, which leaves the output undefined.
+.decl extra_source(s: Source)
+extra_source(S) :- source(S, Col), source(S, Col2), Col != Col2.
+
+// The empty outlines: every rectangle but the source.
+.decl outline(s: Source, col: Color, b: Box)
+outline(S, Col, B) :- source_choice(S), rect_box.box(Col, B), !source(S, Col).
+
+// Each cell of the source's box, as a cell of the box's own frame.
+.decl pattern_cell(s: Source, p_rel: Position, col: Color)
+pattern_cell(S, P_rel, Col) :-
+    source(S, Col_src), rect_box.box(Col_src, B), in(P, Col), crop(P, B, P_rel).
+
+// The copy of the pattern, in the copy's own frame.
+.decl copy_cell(s: Source, c: Copy, p_rel: Position, col: Color)
+
+// --- $CopyInPlace ---
+copy_cell(S, $CopyInPlace(), P_rel, Col) :- pattern_cell(S, P_rel, Col).
+
+// --- $CopyTransformed ---
+copy_cell(S, $CopyTransformed(), P_rel, Col) :-
+    pattern_cell(S, Q_rel, Col), params.copy_d4(T), apply(T, Q_rel, P_rel).
+
+// --- $CopyInPlace, $CopyTransformed ---
+// The copy's extent on each axis.
+.decl copy_dim(s: Source, c: Copy, a: Axis, n: number)
+copy_dim(S, C, A, N) :- copy_cell(S, C, P_rel, _), axis_elem(A), axis_dim(P_rel, A, N).
+
+// The outline's extent on some axis differs from the copy's.
+.decl differs(s: Source, c: Copy, col: Color)
+differs(S, C, Col) :-
+    outline(S, Col, B), rect_cell(Col, P), copy_dim(S, C, A, N2),
+    box_extent(B, P, A, N), N != N2.
+
+// The outlines whose extents equal the copy's on both axes.
+.decl matched(s: Source, c: Copy, col: Color)
+matched(S, C, Col) :- outline(S, Col, _), copy_choice(C), !differs(S, C, Col).
+
+.decl painted(ch: Choice, p: Position, col: Color)
+
+// A matched outline's box takes the copy, the source's color turned to the
+// outline's.
+painted([S, C], P, Col) :-
+    matched(S, C, Col_o), outline(S, Col_o, B), in(P, _), crop(P, B, P_rel),
+    copy_cell(S, C, P_rel, Col_c), source(S, Col_src),
+    ( Col_c = Col_src, Col = Col_o
+    ; Col_c != Col_src, Col = Col_c
+    ).
+
+// Every other outline is erased.
+painted([S, C], P, Col) :-
+    impl_choice([S, C]), outline(S, Col_o, _), !matched(S, C, Col_o),
+    rect_cell(Col_o, P), params.bg(Col).
+
+// Every cell outside the outlines keeps its color.
+out(P, Col, [S, C]) :-
+    impl_choice([S, C]), !extra_source(S),
+    ( painted([S, C], P, Col)
+    ; in(P, Col), !painted([S, C], P, _)
+    ).

@@ -1,0 +1,201 @@
+// d6ad076f
+// @draft
+// @keywords: objects bbox span
+// @scene two-blocks: every input holds exactly two solid rectangles, each of
+//  one color other than params.bg and of distinct colors, on a field of
+//  params.bg
+// @scene facing-across-gap: the two rectangles are separated along one axis
+//  by a gap of params.bg cells at least one cell wide, and their spans on the
+//  other axis overlap by at least three cells
+// @rule bridge: each cell that lies in the gap between the two rectangles
+//  along the axis that separates them, and whose line on the other axis lies
+//  within the overlap of the two rectangles' spans on that axis, at least
+//  params.inset cells from each end of that overlap, takes params.fill
+// @rule keep-rest: every other cell keeps its input color
+
+// the extent of the bridge on the axis across the gap
+.type Span =
+    // @claim bridge
+    Overlap {}
+    // @rule bridge: the bridge's extent across the gap is the narrower
+    //  block's span, less params.inset lines at each end; undefined where the
+    //  two blocks' spans across the gap are equally wide
+    // @witness staggered: variant concept
+  | NarrowerFace {}
+    // @rule bridge: the bridge's extent across the gap is the narrower
+    //  block's span less params.inset lines at each end, cut to the overlap of
+    //  the two spans; undefined where the two blocks' spans across the gap are
+    //  equally wide
+    // @witness staggered: variant concept
+  | NarrowerFaceClipped {}
+
+// how many blocks the scene holds
+.type BlockCount =
+    // @claim two-blocks
+    Two {}
+    // @scene two-blocks: two or more solid rectangles of distinct colors on
+    //  params.bg; undefined where no two rectangles face each other
+    // @rule bridge: a bridge spans the gap between each two rectangles that
+    //  face each other across a gap of params.bg
+    // @witness three-blocks: variant $EveryFacingPair
+    //     @relaxed two-blocks
+  | EveryFacingPair {}
+
+.type Choice = [span: Span, block_count: BlockCount]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl bg(c: Color) bg(0).
+    .decl fill(c: Color) fill(8).
+    .decl inset(k: number) inset(1).
+}
+
+.init params = Params
+
+.decl span_choice(s: Span)
+span_choice($Overlap()). span_choice($NarrowerFace()). span_choice($NarrowerFaceClipped()).
+
+.decl block_count_choice(c: BlockCount)
+block_count_choice($Two()). block_count_choice($EveryFacingPair()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, C]) :- span_choice(S), block_count_choice(C).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // @claim two-blocks
+    .init blocks = Components<Key>
+    blocks.node(Ky, P) :- cell(Ky, P, Col), !params.bg(Col).
+
+    .type Block = [key: Key, id: Ident]
+
+    // @claim facing-across-gap bridge
+    .init box = Bbox<Block>
+    box.cell([Ky, Id], P) :- blocks.label(Ky, P, Id).
+
+    // Cell p lies nearer edge d than every cell of the block.
+    .decl past(key: Key, id: Ident, p: Position, d: Dir) inline
+    past(Ky, Id, P, D) :- box.box([Ky, Id], B), dist(B, D, K_box), dist(P, D, K), K < K_box.
+
+    // Cell p lies between blocks a and b along d's axis, with b toward d.
+    .decl gap(key: Key, a: Ident, b: Ident, d: Dir, p: Position)
+    gap(Ky, A, B, D, P) :-
+        cell(Ky, P, _), dir_elem(D), opposite(D, D2),
+        past(Ky, A, P, D), past(Ky, B, P, D2).
+
+    // A gap cell whose line across the gap misses the span of a or of b.
+    .decl aside(key: Key, a: Ident, b: Ident, d: Dir, p: Position)
+    aside(Ky, A, B, D, P) :-
+        gap(Ky, A, B, D, P), perp_dir(D, E),
+        ( past(Ky, A, P, E) ; past(Ky, B, P, E) ).
+
+    // The cells between the two blocks: the gap, on the lines both spans cover.
+    .decl region(key: Key, a: Ident, b: Ident, d: Dir, p: Position)
+    region(Ky, A, B, D, P) :- gap(Ky, A, B, D, P), !aside(Ky, A, B, D, P).
+
+    .decl obstructed(key: Key, a: Ident, b: Ident, d: Dir)
+    obstructed(Ky, A, B, D) :- region(Ky, A, B, D, P), cell(Ky, P, Col), !params.bg(Col).
+
+    // Blocks a and b face each other across a gap of bg, b toward d.
+    .decl facing(key: Key, a: Ident, b: Ident, d: Dir)
+    facing(Ky, A, B, D) :- region(Ky, A, B, D, _), !obstructed(Ky, A, B, D).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The pairs each block-count branch bridges.
+.decl pair(c: BlockCount, a: Ident, b: Ident, d: Dir)
+
+// A block whose span across the gap, less inset lines at each end, bounds
+// the bridge of a pair under the span branch.
+.decl bound(s: Span, a: Ident, b: Ident, id: Ident)
+
+// The narrower and the wider block of a facing pair, by their extents across
+// the gap.
+.decl narrower(a: Ident, b: Ident, n: Ident, w: Ident)
+narrower(A, B, N, W) :-
+    parse.facing($U(), A, B, D), axis_of(D, Ax), perp(Ax, Ax2),
+    ( N = A, W = B ; N = B, W = A ),
+    parse.box.box([$U(), N], B_n), parse.box.box([$U(), W], B_w),
+    parse.blocks.label($U(), P, N),                  // a cell of the frame
+    box_extent(B_n, P, Ax2, K_n), box_extent(B_w, P, Ax2, K_w), K_n < K_w.
+
+// A gap cell the span branch leaves out of the bridge.
+.decl trimmed(s: Span, a: Ident, b: Ident, d: Dir, p: Position)
+trimmed(S, A, B, D, P) :-
+    parse.gap($U(), A, B, D, P), bound(S, A, B, Id), perp_dir(D, E),
+    params.inset(K), jump(P, E, K, Q),
+    parse.past($U(), Id, Q, E).                      // inset lines toward e, past the span
+
+// Some pair the block-count branch bridges has no bound under the span branch.
+.decl unbounded(s: Span, c: BlockCount)
+unbounded(S, C) :- span_choice(S), pair(C, A, B, _), !bound(S, A, B, _).
+
+.decl defined(ch: Choice)
+defined([S, C]) :- impl_choice([S, C]), pair(C, _, _, _), !unbounded(S, C).
+
+.decl bridge(ch: Choice, p: Position)
+bridge([S, C], P) :-
+    defined([S, C]), pair(C, A, B, D),
+    parse.gap($U(), A, B, D, P), !trimmed(S, A, B, D, P).
+
+out(P, Col, Ch) :- bridge(Ch, P), params.fill(Col).
+out(P, Col, Ch) :- defined(Ch), in(P, Col), !bridge(Ch, P).
+
+// --- $Overlap ---
+bound($Overlap(), A, B, Id) :- parse.facing($U(), A, B, _), ( Id = A ; Id = B ).
+
+// --- $NarrowerFace, $NarrowerFaceClipped ---
+bound(S, A, B, N) :- span_choice(S), S != $Overlap(), narrower(A, B, N, _).
+
+// --- $NarrowerFaceClipped ---
+// The wider block's span cuts the bridge.
+trimmed($NarrowerFaceClipped(), A, B, D, P) :-
+    parse.gap($U(), A, B, D, P), narrower(A, B, _, W), perp_dir(D, E),
+    parse.past($U(), W, P, E).
+
+// --- $Two ---
+// A block other than a and b.
+.decl third(a: Ident, b: Ident)
+third(A, B) :- parse.facing($U(), A, B, _), parse.blocks.label($U(), _, C), C != A, C != B.
+
+pair($Two(), A, B, D) :- parse.facing($U(), A, B, D), !third(A, B).
+
+// --- $EveryFacingPair ---
+pair($EveryFacingPair(), A, B, D) :- parse.facing($U(), A, B, D).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // A cell the output repaints, with its input and its output color.
+    .decl repainted(e: Example, p: Position, c: Color, c2: Color)
+    repainted(E, P, Col, Col2) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl bg(c: Color)
+    bg(Col) :- repainted(_, _, Col, _).
+
+    .decl fill(c: Color)
+    fill(Col) :- repainted(_, _, _, Col).
+
+    // A facing pair of one example.
+    .type Facing = [e: Example, a: Ident, b: Ident, d: Dir]
+
+    // The cells between the pair.
+    .init region = Bbox<Facing>
+    region.cell([E, A, B, D], P) :- parse.region(E, A, B, D, P), parse.facing(E, A, B, D).
+
+    // The bridge between the pair.
+    .init bridge = Bbox<Facing>
+    bridge.cell([E, A, B, D], P) :- parse.region(E, A, B, D, P), repainted(E, P, _, _).
+
+    // The lines between the bridge and each end of the region across the gap.
+    .decl inset(k: number)
+    inset(K) :-
+        region.box([E, A, B, D], B_region), bridge.box([E, A, B, D], B_bridge),
+        relative(B_region, B_bridge, B_rel), perp_dir(D, D2), dist(B_rel, D2, K).
+}

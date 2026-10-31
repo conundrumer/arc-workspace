@@ -1,0 +1,476 @@
+// d8e07eb2
+// @draft
+// @keywords: decompose objects match bbox classify congruent
+// @scene three-panels: two full lines of the divider color (6) cut the
+//  params.background (8) grid into three panels across one axis: a key panel,
+//  a card panel, and an empty status panel, with the card panel between the
+//  other two
+// @scene slot-tiling: the card's shapes sit in square slots of side 3, laid
+//  out on a tiling whose bands on each axis are the maximal runs of card-panel
+//  lines that hold a non-background cell
+// @scene card: the card panel holds 4 by 4 slots, each with one single-color
+//  shape, and no two slots of the card hold the same shape in the same color
+// @scene key: the key panel holds one band of slots: its rows are the key
+//  panel's run of lines that hold a non-background cell, and its columns are
+//  the card's column bands; each key slot holds one single-color shape or
+//  nothing
+// @scene key-on-card: each key shape occurs exactly once on the card, as a
+//  slot whose content equals the key slot's content: the same color at the
+//  same cells of the slot
+// @scene status-empty: the status panel holds only params.background
+// @rule ring-called: for each card slot whose content equals a key slot's
+//  content, every params.background cell of the slot's box grown by
+//  params.halo_margin on each side becomes params.halo_color
+// @rule bingo: the card has a line when the called slots include every slot
+//  of one card row band or of one card column band
+// @rule win-bars: when the card has a line, every params.background cell of
+//  the key panel and of the status panel becomes params.win_color
+// @rule lose-bar: when the card has no line, every params.background cell of
+//  the status panel becomes params.lose_color, and the key panel is unchanged
+// @rule rest-kept: every other cell keeps its input color
+
+// whether a match reads the shape's colors
+.type MatchColor =
+    // @claim ring-called
+    SameColor {}
+    // @rule ring-called: the slots match where their non-background cells sit
+    //  at the same places, whatever the colors
+    // @witness ignore-color: variant concept
+    //     @relaxed key-on-card
+  | IgnoreColor {}
+
+// what geometry two slot contents share when they match
+.type MatchGeometry =
+    // @claim ring-called
+    Exact {}
+    // @rule ring-called: the slots match where their shapes, the
+    //  non-background cells with their colors, are equal up to translation
+    // @witness shifted-key-shape: borderline $UpToTranslation
+    //     @relaxed key-on-card
+  | UpToTranslation {}
+    // @rule ring-called: the shapes are equal up to translation and a D4
+    //  transform
+    // @witness rotated-copy: variant concept
+  | UpToD4 {}
+
+// the box a called slot's halo fills
+.type Halo =
+    // @claim ring-called
+    SlotBox {}
+    // @rule ring-called: the halo is the slot's tiling cell, the box grown by
+    //  half the gap between neighboring card bands; undefined where no two
+    //  grown bands abut
+    // @witness halo-tiling-cell: variant concept
+    //     @relaxed card
+  | HaloTilingCell {}
+
+// what counts as a line of the card
+.type Line =
+    // @claim bingo
+    FullBand {}
+    // @rule bingo: the card has a line when every called slot lies in one row
+    //  band or one column band
+    // @witness three-in-column: ordinary concept
+  | Collinear {}
+    // @rule bingo: one of the two corner diagonals of the card also counts as
+    //  a line
+    // @witness diagonal: ordinary concept
+  | WithDiagonals {}
+    // @rule bingo: the card has a line when the called slots are exactly the
+    //  slots of one row band or one column band
+    // @witness duplicate-slot: borderline concept
+    //     @relaxed card
+  | AllOnLine {}
+
+// the color the winning bars take
+.type WinColor =
+    // @claim win-bars
+    WinStored {}
+    // @rule win-bars: the winning bars take params.halo_color
+    // @witness win-is-halo: variant any
+    //     @reassigned halo_color
+  | WinIsHalo {}
+
+// which cells of the status panel the bars paint
+.type StatusPaint =
+    // @claim win-bars
+    StatusBackground {}
+    // @rule win-bars: the bars paint every cell of the status panel
+    // @rule lose-bar: the bar paints every cell of the status panel
+    // @witness whole-status: foreign any
+    //     @relaxed status-empty
+  | WholeStatus {}
+
+.type Choice = [mc: MatchColor, mg: MatchGeometry, h: Halo, l: Line, w: WinColor, s: StatusPaint]
+
+// A slot content under one geometry: the slot, with the transform its cells
+// are taken under.
+.type Image = [g: MatchGeometry, s: Box, d: D4]
+// A card slot under one geometry.
+.type Form = [g: MatchGeometry, s: Box]
+// A run of ink lines on one axis.
+.type Run = [a: Axis, id: Ident]
+// A slot cell with its color.
+.type Ink = [p: Position, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    //     @relaxed card
+    .decl background(c: Color) background(8).
+    .decl halo_color(c: Color) halo_color(3).
+    .decl lose_color(c: Color) lose_color(2).
+
+    // --- $SlotBox ---
+    .decl halo_margin(k: number) halo_margin(1).
+
+    // --- $WinStored ---
+    .decl win_color(c: Color) win_color(3).
+}
+
+.init params = Params
+
+.decl match_color_choice(m: MatchColor)
+match_color_choice($SameColor()). match_color_choice($IgnoreColor()).
+
+.decl match_geometry_choice(g: MatchGeometry)
+match_geometry_choice($Exact()). match_geometry_choice($UpToTranslation()). match_geometry_choice($UpToD4()).
+
+.decl halo_choice(h: Halo)
+halo_choice($SlotBox()). halo_choice($HaloTilingCell()).
+
+.decl line_choice(l: Line)
+line_choice($FullBand()). line_choice($Collinear()). line_choice($WithDiagonals()). line_choice($AllOnLine()).
+
+.decl win_color_choice(w: WinColor)
+win_color_choice($WinStored()). win_color_choice($WinIsHalo()).
+
+.decl status_paint_choice(s: StatusPaint)
+status_paint_choice($StatusBackground()). status_paint_choice($WholeStatus()).
+
+// --- shared ---
+// A cell that holds a color other than the background.
+.decl ink(p: Position, c: Color)
+ink(P, C) :- in(P, C), !params.background(C).
+
+// Each line of the grid on each axis, axis-only, with the colors it holds.
+.decl line_color(a: Axis, l: Position, c: Color)
+line_color(A, L, C) :- in(P, C), axis_elem(A), split(P, A, L, _).
+
+.decl mixed_line(a: Axis, l: Position)
+mixed_line(A, L) :- line_color(A, L, C1), line_color(A, L, C2), C1 != C2.
+
+// The colors of the full lines of one non-background color.
+// @claim three-panels
+.init full_line_color = Unanimous<Unit, Color>
+full_line_color.item($U(), C) :- line_color(A, L, C), !mixed_line(A, L), !params.background(C).
+
+// The one color of the full non-background lines.
+// @store: variant concept
+//     @relaxed three-panels
+.decl divider_color(c: Color)
+divider_color(C) :- full_line_color.value($U(), C).
+
+.decl divider(a: Axis, l: Position)
+divider(A, L) :- line_color(A, L, C), !mixed_line(A, L), divider_color(C).
+
+// The panels the dividers cut.
+// @claim three-panels
+.init panels = DividerTiles<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- divider(A, L).
+
+// A cell of the outer panel toward d.
+.decl outer(p: Position, d: Dir)
+outer(P, D) :- divider(A, _), axis_of(D, A), panels.part_idx($U(), P, D, 0).
+
+.decl inked_side(d: Dir)
+inked_side(D) :- outer(P, D), ink(P, _).
+
+// The key panel: the inked outer panel whose opposite panel holds no ink.
+// @store: variant concept
+.decl key_side(d: Dir)
+key_side(D) :- inked_side(D), opposite(D, O), !inked_side(O).
+
+.decl key_panel(p: Position)
+key_panel(P) :- key_side(D), outer(P, D).
+
+.decl status_panel(p: Position)
+status_panel(P) :- key_side(D), opposite(D, O), outer(P, O).
+
+.decl card_panel(p: Position)
+card_panel(P) :- panels.tile_of($U(), P, _), !outer(P, _).
+
+// The axis the panels are cut across.
+.decl cut_axis(a: Axis)
+cut_axis(A) :- key_side(D), axis_of(D, A).
+
+// A line that holds a slot's ink: across the cut, in the key or the card
+// panel; along it, in the card panel alone.
+.decl ink_line(a: Axis, l: Position)
+ink_line(A_line, L) :-
+    cut_axis(A), ink(P, _), split(P, A_line, L, _),
+    ( key_panel(P), A_line = A              // key ink: across the cut alone
+    ; card_panel(P), A_line = A             // card ink: across the cut
+    ; card_panel(P), perp(A, A_line)        // and along it
+    ).
+
+// The bands: the maximal runs of ink lines.
+// @claim slot-tiling
+.init runs = Components<Axis>
+runs.node(A, L) :- ink_line(A, L).
+
+// @claim slot-tiling
+.init run_box = Bbox<Run>
+run_box.cell([A, Id], L) :- runs.label(A, L, Id).
+
+// @store: variant concept
+.decl slot_bands(a: Axis, b: Box)
+slot_bands(A, B) :- run_box.box([A, _], B).
+
+// The slots: a band across the cut crossed with a band along it.
+.decl slot(s: Box)
+slot(S) :- cut_axis(A), perp(A, A2), slot_bands(A, B1), slot_bands(A2, B2), compose(B1, B2, S).
+
+// The ink of each card slot, in the slot's frame.
+// @store: variant concept
+.decl card_cell(s: Box, p: Position, c: Color)
+card_cell(S, P_rel, C) :-
+    slot(S), card_panel(P), ink(P, C), crop(P, S, P_rel).
+
+// The ink of each key slot, in the slot's frame.
+.decl key_cell(s: Box, p: Position, c: Color)
+key_cell(S, P_rel, C) :-
+    slot(S), key_panel(P), ink(P, C), crop(P, S, P_rel).
+
+.decl card_slot(s: Box)
+card_slot(S) :- card_cell(S, _, _).
+
+// The box of each slot's shape, in the slot's frame.
+// @claim ring-called
+.init shape_box = Bbox<Box>
+shape_box.cell(S, P) :- card_cell(S, P, _).
+shape_box.cell(S, P) :- key_cell(S, P, _).
+
+// A slot's ink under each geometry: in the slot's frame, or in its shape's box.
+.decl framed(g: MatchGeometry, s: Box, p: Position, c: Color)
+
+// The transforms a key shape is compared under.
+.decl image_op(g: MatchGeometry, d: D4)
+
+// --- $Exact ---
+framed($Exact(), S, P, C) :- ( card_cell(S, P, C) ; key_cell(S, P, C) ).
+
+// --- $UpToTranslation, $UpToD4 ---
+framed(G, S, Q, C) :-
+    match_geometry_choice(G), G != $Exact(),
+    shape_box.box(S, B), ( card_cell(S, P, C) ; key_cell(S, P, C) ), crop(P, B, Q).
+
+// --- $Exact, $UpToTranslation ---
+// The identity alone: the element that composed with itself is itself.
+image_op(G, D) :- match_geometry_choice(G), G != $UpToD4(), d4_compose(D, D, D).
+
+// --- $UpToD4 ---
+image_op($UpToD4(), D) :- d4_elem(D).
+
+// --- shared ---
+
+// Card slots and key slots whose contents agree in color and place.
+// @claim ring-called
+.init match_ink = KeyedSetCompare<Image, Form, Ink>
+match_ink.pattern_member([G, S], [P, C]) :- framed(G, S, P, C), card_slot(S).
+match_ink.observed_member([G, S, D], [Q, C]) :-
+    framed(G, S, P, C), key_cell(S, _, _), image_op(G, D), apply(D, P, Q).
+
+// Card slots and key slots whose contents agree in place.
+// @claim ring-called
+// @ignore: common-subexpr — the two instances compare one framing under two member types
+.init match_place = KeyedSetCompare<Image, Form, Position>
+match_place.pattern_member([G, S], P) :- framed(G, S, P, _), card_slot(S).
+match_place.observed_member([G, S, D], Q) :-
+    framed(G, S, P, _), key_cell(S, _, _), image_op(G, D), apply(D, P, Q).
+
+// A card slot that a key slot calls.
+.decl called(m: MatchColor, g: MatchGeometry, s: Box)
+
+// --- $SameColor ---
+called($SameColor(), G, S) :- match_ink.equals([G, _, _], [G, S]).
+
+// --- $IgnoreColor ---
+called($IgnoreColor(), G, S) :- match_place.equals([G, _, _], [G, S]).
+
+// --- shared ---
+
+// The band a card slot lies in on each axis.
+.decl in_band(a: Axis, b: Box, s: Box)
+in_band(A, B, S) :- card_slot(S), axis_elem(A), split(S, A, B, _).
+
+// A band of the card that holds an uncalled slot.
+.decl uncalled_in(m: MatchColor, g: MatchGeometry, a: Axis, b: Box)
+uncalled_in(M, G, A, B) :-
+    match_color_choice(M), match_geometry_choice(G), in_band(A, B, S), !called(M, G, S).
+
+// A band of the card with a called slot off it.
+.decl called_off(m: MatchColor, g: MatchGeometry, a: Axis, b: Box)
+called_off(M, G, A, B) :- in_band(A, B, _), called(M, G, S), !in_band(A, B, S).
+
+// A band of the card whose every slot is called.
+.decl full_band(m: MatchColor, g: MatchGeometry, a: Axis, b: Box)
+full_band(M, G, A, B) :-
+    match_color_choice(M), match_geometry_choice(G), in_band(A, B, _), !uncalled_in(M, G, A, B).
+
+// The card has a line.
+.decl win(m: MatchColor, g: MatchGeometry, l: Line)
+
+// --- $FullBand ---
+win(M, G, $FullBand()) :- full_band(M, G, _, _).
+
+// --- $Collinear ---
+win(M, G, $Collinear()) :- called(M, G, S), in_band(A, B, S), !called_off(M, G, A, B).
+
+// --- $WithDiagonals ---
+// The rank of each card band on its axis.
+// @claim bingo
+.init band_order = OrderFrame<Axis, Box>
+band_order.axis(A, A) :- axis_elem(A).
+band_order.member(A, B, L) :- in_band(A, B, _), line_color(A, L, _), inside(L, B).
+
+// Each card slot at its place in the frame of card bands.
+.decl slot_place(s: Box, p: Position)
+slot_place(S, P) :-
+    cut_axis(A), perp(A, A2), in_band(A, B1, S), in_band(A2, B2, S),
+    band_order.pos(A, B1, P1), band_order.pos(A2, B2, P2), compose(P1, P2, P).
+
+// The slots on each corner diagonal of the card.
+// @claim bingo
+.init card_diagonal = Diagonal<DiagDir>
+card_diagonal.cell(D, P) :- diag_dir_elem(D), slot_place(_, P).
+card_diagonal.corner(D, D) :- diag_dir_elem(D).
+
+.decl uncalled_diagonal(m: MatchColor, g: MatchGeometry, d: DiagDir)
+uncalled_diagonal(M, G, D) :-
+    match_color_choice(M), match_geometry_choice(G),
+    card_diagonal.diagonal(D, P, _), slot_place(S, P), !called(M, G, S).
+
+win(M, G, $WithDiagonals()) :- full_band(M, G, _, _).
+win(M, G, $WithDiagonals()) :-
+    match_color_choice(M), match_geometry_choice(G), diag_dir_elem(D), !uncalled_diagonal(M, G, D).
+
+// --- $AllOnLine ---
+win(M, G, $AllOnLine()) :- full_band(M, G, A, B), !called_off(M, G, A, B).
+
+// The halos whose growth is known.
+.decl halo_ready(h: Halo)
+
+// --- $SlotBox ---
+halo_ready($SlotBox()) :- params.halo_margin(_).
+
+.decl halo(h: Halo, s: Box, b: Box)
+halo($SlotBox(), S, B) :-
+    card_slot(S), params.halo_margin(K), uniform_outset(K, O), compose(S, O, B).
+
+// --- $HaloTilingCell ---
+// The bands of the card.
+.decl card_band(a: Axis, b: Box)
+card_band(A, B) :- in_band(A, B, _).
+
+// Two card bands on one axis, each grown by k, abut.
+.decl abut(k: number)
+abut(K) :-
+    card_band(A, B1), axis_of(D, A), line_color(A, L1, _), box_edge(L1, B1, D),
+    card_band(A, B2), opposite(D, O), line_color(A, L2, _), box_edge(L2, B2, O),
+    sub_extent(L1, A, K), jump(L1, D, K, M1), neighbor(M1, D, M2), jump(M2, D, K, L2).
+
+// The least growth at which two bands abut: half the gap between neighbors.
+// @claim ring-called
+.init tile_margin = Extremes<Unit>
+tile_margin.cand($U(), K) :- abut(K).
+
+halo_ready($HaloTilingCell()) :- tile_margin.low($U(), _).
+
+halo($HaloTilingCell(), S, B) :-
+    card_slot(S), tile_margin.low($U(), K), uniform_outset(K, O), compose(S, O, B).
+
+// --- shared ---
+// A cell the halo of a called slot paints.
+.decl halo_cell(m: MatchColor, g: MatchGeometry, h: Halo, p: Position)
+halo_cell(M, G, H, P) :-
+    called(M, G, S), halo(H, S, B), in(P, Bg), params.background(Bg), crop(P, B, _).
+
+// --- $StatusBackground ---
+// A status cell the bars paint.
+.decl status_cell(s: StatusPaint, p: Position)
+status_cell($StatusBackground(), P) :- status_panel(P), in(P, Bg), params.background(Bg).
+
+// --- $WholeStatus ---
+status_cell($WholeStatus(), P) :- status_panel(P).
+
+// --- $WinStored ---
+.decl win_paint(w: WinColor, c: Color)
+win_paint($WinStored(), C) :- params.win_color(C).
+
+// --- $WinIsHalo ---
+win_paint($WinIsHalo(), C) :- params.halo_color(C).
+
+// --- shared ---
+// A cell a bar paints, with its color.
+.decl bar(m: MatchColor, g: MatchGeometry, l: Line, w: WinColor, s: StatusPaint, p: Position, c: Color)
+bar(M, G, L, W, St, P, C) :-
+    win(M, G, L), win_color_choice(W), win_paint(W, C), status_paint_choice(St),
+    ( key_panel(P), in(P, Bg), params.background(Bg)
+    ; status_cell(St, P)
+    ).
+bar(M, G, L, W, St, P, C) :-
+    match_color_choice(M), match_geometry_choice(G), line_choice(L), !win(M, G, L),
+    win_color_choice(W), status_cell(St, P), params.lose_color(C).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, G, H, L, W, St]) :-
+    match_color_choice(M), match_geometry_choice(G), halo_choice(H),
+    line_choice(L), win_color_choice(W), status_paint_choice(St),
+    !unfit(M, G, L).
+
+// The combinations that fail a train pair.
+.decl unfit(m: MatchColor, g: MatchGeometry, l: Line)
+unfit($IgnoreColor(), $UpToD4(), L) :- line_choice(L).
+unfit($IgnoreColor(), G, $Collinear()) :- match_geometry_choice(G).
+unfit($IgnoreColor(), G, $AllOnLine()) :- match_geometry_choice(G).
+
+out(P, C, [M, G, H, L, W, St]) :-
+    impl_choice([M, G, H, L, W, St]),
+    key_cell(_, _, _), halo_ready(H),                   // defined: the key holds a shape
+    ( halo_cell(M, G, H, P), params.halo_color(C)
+    ; bar(M, G, L, W, St, P, C)
+    ; in(P, C), !halo_cell(M, G, H, P), !bar(M, G, L, _, St, P, _)
+    ).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, C, P) :- ex_in(E, P, C).
+
+    // A color that is not the commonest of some input.
+    .decl outvoted(c: Color)
+    outvoted(C) :- commonest.mode(_, C), ex_in(E, _, _), !commonest.mode(E, C).
+
+    .decl background(c: Color)
+    background(C) :- commonest.mode(_, C), !outvoted(C).
+
+    .decl input_color(c: Color)
+    input_color(C) :- ex_in(_, _, C).
+
+    // A color in some train output and in no input.
+    .decl new_color(c: Color)
+    new_color(C) :- ex_out(_, _, C), !input_color(C).
+
+    .decl halo_color(c: Color)
+    halo_color(C) :- new_color(C).
+
+    .decl win_color(c: Color)
+    win_color(C) :- new_color(C).
+
+    // The input color a background cell turns to.
+    .decl lose_color(c: Color)
+    lose_color(C) :- ex_out(E, P, C), ex_in(E, P, B), background(B), C != B, input_color(C).
+}

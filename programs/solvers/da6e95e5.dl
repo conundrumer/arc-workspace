@@ -1,0 +1,141 @@
+// da6e95e5
+// @draft
+// @keywords: objects crop select match
+// @scene background: one color fills every cell that no frame or shape covers.
+// @scene bracket-frames: each frame is four L-shaped corner brackets of one
+//  color, the corners of a rectangle, with gaps between them along each side.
+// @scene framed-shape: inside each frame's rectangle, clear of the brackets,
+//  sits one shape of one color, connected under 8-adjacency.
+// @scene one-match: exactly one frame has a shape of the frame's own color.
+// @rule crop-matching-shape: the output is the bounding box of the shape whose
+//  color equals its frame's color, with that shape's cells in its color and
+//  every other cell in the background color.
+
+// the window the output crops
+.type Choice =
+    // @claim crop-matching-shape
+    ShapeBox {}
+    // @rule crop-matching-shape: the output is the matching frame's rectangle
+    //  inset by `inset` cells on every side, copied from the input; undefined
+    //  where the inset leaves no cells.
+    // @witness wide-frame: variant concept
+  | FrameInset {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $FrameInset ---
+    // @derive TileDim: borderline concept
+    .decl inset(k: number) inset(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($ShapeBox()). impl_choice($FrameInset()).
+
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, col: Color]
+    .type KeyPair = [k: Key, p: Position, q: Position]
+    .type KeyBox = [k: Key, b: Box]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The background: the commonest color.
+    // @claim background
+    .init bg_mode = Mode<Key, Color, Position>
+    bg_mode.item(K, Col, P) :- cell(K, P, Col).
+
+    .decl bg(k: Key, col: Color)
+    bg(K, Col) :- bg_mode.mode(K, Col).
+
+    // The one-color pieces, under 8-adjacency, each keyed by its color.
+    // @claim framed-shape
+    .init piece = Components8<KeyColor>
+    piece.node([K, Col], P) :- cell(K, P, Col), !bg(K, Col).
+
+    // A bracket's corner cell at frame corner D: its two arms run from it
+    // away from D's two edges.
+    .decl bracket_corner(k: Key, p: Position, col: Color, d: DiagDir)
+    bracket_corner(K, P, Col, D) :-
+        cell(K, P, Col), !bg(K, Col), diag_dirs(D, _, D1, D2),
+        opposite(D1, E1), neighbor(P, E1, Q1), cell(K, Q1, Col),   // arm on one axis
+        opposite(D2, E2), neighbor(P, E2, Q2), cell(K, Q2, Col).   // arm on the other
+
+    // The rectangle that two bracket corners of one color at opposite frame
+    // corners bound.
+    // @claim bracket-frames
+    .init span = Bbox<KeyPair>
+    span.cell([K, P, Q], P), span.cell([K, P, Q], Q) :-
+        bracket_corner(K, P, Col, D), diag_opposite(D, D2), bracket_corner(K, Q, Col, D2).
+
+    .decl frame_cand(k: Key, b: Box, col: Color)
+    frame_cand(K, B, Col) :- span.box([K, P, _], B), cell(K, P, Col).
+
+    // Corner D of the rectangle holds a bracket corner of its color.
+    .decl corner_held(k: Key, b: Box, col: Color, d: DiagDir)
+    corner_held(K, B, Col, D) :-
+        frame_cand(K, B, Col), bracket_corner(K, P, Col, D), box_corner(P, B, D).
+
+    .decl corner_missing(k: Key, b: Box, col: Color)
+    corner_missing(K, B, Col) :-
+        frame_cand(K, B, Col), diag_dir_elem(D), !corner_held(K, B, Col, D).
+
+    .decl frame(k: Key, b: Box, col: Color)
+    frame(K, B, Col) :- frame_cand(K, B, Col), !corner_missing(K, B, Col).
+
+    // The one piece inside a frame, clear of its sides.
+    // @claim framed-shape
+    .init inner = Unanimous<KeyBox, Ident>
+    inner.item([K, B], Id) :- frame(K, B, _), piece.label([K, _], P, Id), interior(P, B).
+
+    .decl spills(k: Key, b: Box, id: Ident)
+    spills(K, B, Id) :- inner.value([K, B], Id), piece.label([K, _], P, Id), !interior(P, B).
+
+    // The frame whose shape has the frame's own color.
+    .decl matched(k: Key, b: Box, id: Ident, col: Color)
+    matched(K, B, Id, Col) :-
+        frame(K, B, Col), inner.value([K, B], Id), !spills(K, B, Id), piece.label([K, Col], _, Id).
+
+    // The cells of that shape.
+    .decl shape(k: Key, p: Position, col: Color)
+    shape(K, P, Col) :- matched(K, _, Id, Col), piece.label([K, Col], P, Id).
+
+    // @claim crop-matching-shape
+    .init shape_box = Bbox<Key>
+    shape_box.cell(K, P) :- shape(K, P, _).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- $ShapeBox ---
+
+out(P_inner, Col, $ShapeBox()) :-
+    parse.shape_box.box($U(), B), in(P, _), crop(P, B, P_inner),
+    ( parse.shape($U(), P, Col)                           // a shape cell
+    ; !parse.shape($U(), P, _), parse.bg($U(), Col)       // any other cell
+    ).
+
+// --- $FrameInset ---
+
+out(P_inner, Col, $FrameInset()) :-
+    parse.matched($U(), B, _, _), params.inset(K), uniform_inset(K, V), compose(B, V, W),
+    in(P, Col), crop(P, W, P_inner).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The margin between the matched frame and its shape's box, on every side.
+    .decl margin(e: Example, k: number)
+    margin(E, K) :-
+        parse.matched(E, B, _, _), parse.shape_box.box(E, S), relative(B, S, R),   // the shape box relative to the frame
+        dir_elem(D), dist(R, D, K), uniform_inset(K, R).                           // one margin, the same on every side
+
+    .decl contradicted(k: number)
+    contradicted(K) :- margin(_, K), ex_out(E, _, _), !margin(E, K).
+
+    .decl inset(k: number)
+    inset(K) :- margin(_, K), !contradicted(K).
+}

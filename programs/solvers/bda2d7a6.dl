@@ -19,12 +19,6 @@
     //  highest first; undefined where two colors have the same count
     // @witness non-periodic-rings: variant concept
   | CountOrder {}
-    // @rule cycle-colors: the colors are listed in the order their first
-    //  cells come in a scan from the corner and along the axis first that
-    //  params.scan gives
-    // @witness uneven-ring: foreign concept
-    //     @relaxed nested-rings
-  | ScanOrder {}
 
 // which color each color takes
 .type Predecessor =
@@ -48,27 +42,9 @@
     // @witness non-periodic-rings: variant concept
   | RingShift {}
 
-.type ScanValue = [d: DiagDir, a: Axis]
-.type OpenValue = [scan: ScanValue]
+.decl out(p: Position, col: Color, ch: Choice)
 
-// A list of the colors: its order, and the scan it is read in.
-.type Listing = [o: ListOrder, ov: OpenValue]
-
-.type ScanColor = [s: ScanValue, col: Color]
-
-.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
-
-.comp Params {
-    // --- $ScanOrder ---
-
-    // The corner a scan starts from, and the axis it runs along first.
-    // @open
-    .decl scan(d: DiagDir, a: Axis)
-    scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H).
-    scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
-    scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H).
-    scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
-}
+.comp Params {}
 
 .init params = Params
 
@@ -88,18 +64,18 @@ appear.cand(Col, I) :- ring_color(I, Col).
 // --- $ListCycle ---
 
 // @claim cycle-colors
-.init order = Order<Listing, Color>
+.init order = Order<ListOrder, Color>
 
 // A color takes the color just before it, and the first color the last.
-out(P, Col, $Recolor($ListCycle(O)), V) :-
+out(P, Col, $Recolor($ListCycle(O))) :-
     in(P, C),
-    ( order.next([O, V], Col, C)
-    ; order.first([O, V], C), order.last([O, V], Col) ).
+    ( order.next(O, Col, C)
+    ; order.first(O, C), order.last(O, Col) ).
 
 // --- $FirstSeen ---
 
-order.elem([$FirstSeen(), [nil]], Col) :- in(_, Col).
-order.score([$FirstSeen(), [nil]], Col, I) :- appear.low(Col, I).
+order.elem($FirstSeen(), Col) :- in(_, Col).
+order.score($FirstSeen(), Col, I) :- appear.low(Col, I).
 
 // --- $CountOrder ---
 
@@ -112,24 +88,8 @@ size.item(Col, P) :- in(P, Col).
 .init size_rank = Ordinal<Unit>
 size_rank.idx_set($U(), N) :- size.tally(_, N).
 
-order.elem([$CountOrder(), [nil]], Col) :- in(_, Col).
-order.score([$CountOrder(), [nil]], Col, R) :- size.tally(Col, N), size_rank.rank_desc($U(), N, R).
-
-// --- $ScanOrder ---
-
-// @claim cycle-colors
-.init scan = LexOrder<ScanValue>
-scan.cell([D, A], P) :- params.scan(D, A), in(P, _).
-scan.corner([D, A], D) :- params.scan(D, A).
-scan.axis([D, A], A) :- params.scan(D, A).
-
-// The place in each scan of each color's first cell.
-// @claim cycle-colors
-.init scan_first = Extremes<ScanColor>
-scan_first.cand([S, Col], R) :- in(P, Col), scan.rank(S, P, R).
-
-order.elem([$ScanOrder(), [S]], Col) :- scan_first.low([S, Col], _).
-order.score([$ScanOrder(), [S]], Col, R) :- scan_first.low([S, Col], R).
+order.elem($CountOrder(), Col) :- in(_, Col).
+order.score($CountOrder(), Col, R) :- size.tally(Col, N), size_rank.rank_desc($U(), N, R).
 
 // --- $EnclosingColor, $RingShift ---
 
@@ -145,7 +105,7 @@ outer_ring(I, I2) :-
 .init newest = Extremes<Unit>
 newest.cand($U(), I) :- appear.low(_, I).
 
-out(P, Col, $Recolor($EnclosingColor()), [nil]) :-
+out(P, Col, $Recolor($EnclosingColor())) :-
     in(P, C), appear.low(C, I),
     ( outer_ring(I, I2), ring_color(I2, Col)                    // the ring just outside
     ; I = 0, newest.high($U(), I2), appear.low(Col, I2) ).      // the last color to appear
@@ -160,7 +120,7 @@ out(P, Col, $Recolor($EnclosingColor()), [nil]) :-
 others.item($U(), Col) :- in(_, Col), !ring_color(0, Col).
 others.domain($U()).
 
-out(P, Col, $RingShift(), [nil]) :-
+out(P, Col, $RingShift()) :-
     peel.depth($U(), P, I),
     ( outer_ring(I, I2), ring_color(I2, Col)                        // the ring just outside
     ; I = 0, others.tally($U(), I2), ring_color(I2, Col) ).         // as deep as the other colors are many

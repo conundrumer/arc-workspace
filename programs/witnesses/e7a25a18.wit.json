@@ -1,0 +1,184 @@
+{
+  "id": "e7a25a18",
+  "witnesses": [{
+    "id": "recolored-frame",
+    "separates": "the frame is drawn in 5, not the stored frame color: $FrameByOutline finds the outline and fills it in 5, and every model that reads the stored frame color finds no frame and is undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,5,5,5,5,5,5,0,0,0,0],
+      [0,0,0,0,5,0,3,5,0,5,0,0,0,0],
+      [0,0,0,0,5,0,6,8,0,5,0,0,0,0],
+      [0,0,0,0,5,0,0,0,0,5,0,0,0,0],
+      [0,0,0,0,5,0,0,0,0,5,0,0,0,0],
+      [0,0,0,0,5,5,5,5,5,5,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ByColor"],
+      "grid": null
+    }, {
+      "cases": ["$FrameByOutline"],
+      "grid": [
+        [5,5,5,5,5,5],
+        [5,3,3,5,5,5],
+        [5,3,3,5,5,5],
+        [5,6,6,8,8,5],
+        [5,6,6,8,8,5],
+        [5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the frame is the grid's border, so the frame color outnumbers 0: background=DominantColor takes 2 as the background, reads the whole inside as the pattern and returns the input, while the stored background gives the pattern scaled by 2",
+    "input": [
+      [2,2,2,2,2,2],
+      [2,0,3,5,0,2],
+      [2,0,6,8,0,2],
+      [2,0,0,0,0,2],
+      [2,0,0,0,0,2],
+      [2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,3,3,5,5,2],
+        [2,3,3,5,5,2],
+        [2,6,6,8,8,2],
+        [2,6,6,8,8,2],
+        [2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$ByColor & background=DominantColor"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,0,3,5,0,2],
+        [2,0,6,8,0,2],
+        [2,0,0,0,0,2],
+        [2,0,0,0,0,2],
+        [2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$FrameByOutline & background=DominantColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "quadrants-off-scale",
+    "separates": "the inside is 6 across and the 2x2-block pattern 4 across: $BlockGrid fills each 3x3 quadrant with its block's color and the ratio 1.5 leaves the scaling models undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,2,2,2,2,2,2,0,0,0,0],
+      [0,0,2,0,0,0,0,0,0,2,0,0,0,0],
+      [0,0,2,0,3,3,4,4,0,2,0,0,0,0],
+      [0,0,2,0,3,3,4,4,0,2,0,0,0,0],
+      [0,0,2,0,1,1,8,8,0,2,0,0,0,0],
+      [0,0,2,0,1,1,8,8,0,2,0,0,0,0],
+      [0,0,2,0,0,0,0,0,0,2,0,0,0,0],
+      [0,0,2,2,2,2,2,2,2,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Scaled"],
+      "grid": null
+    }, {
+      "cases": ["$BlockGrid"],
+      "grid": [
+        [2,2,2,2,2,2,2,2],
+        [2,3,3,3,4,4,4,2],
+        [2,3,3,3,4,4,4,2],
+        [2,3,3,3,4,4,4,2],
+        [2,1,1,1,8,8,8,2],
+        [2,1,1,1,8,8,8,2],
+        [2,1,1,1,8,8,8,2],
+        [2,2,2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "stray-cell-outside",
+    "separates": "a cell of 4 sits outside the frame, beside the pattern's row: $PatternAnywhere takes it into the pattern's box with the frame cell between and scales that 2x4 box, and the models that read the pattern inside the frame ignore it",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,2,2,2,2,0,0,0,0],
+      [0,0,0,0,2,0,0,3,5,2,4,0,0,0],
+      [0,0,0,0,2,0,0,6,8,2,0,0,0,0],
+      [0,0,0,0,2,0,0,0,0,2,0,0,0,0],
+      [0,0,0,0,2,0,0,0,0,2,0,0,0,0],
+      [0,0,0,0,2,2,2,2,2,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$InsideFrame"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,3,3,5,5,2],
+        [2,3,3,5,5,2],
+        [2,6,6,8,8,2],
+        [2,6,6,8,8,2],
+        [2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$PatternAnywhere"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,3,5,2,4,2],
+        [2,3,5,2,4,2],
+        [2,6,8,2,0,2],
+        [2,6,8,2,0,2],
+        [2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "field-of-seven",
+    "separates": "the field outside the frame is 7 and the inside's lower half is 0: with 7 as the background, the pattern is the whole inside and the crop is unchanged, and the outline finder finds the frame alone; with the stored background 0, the pattern is the 2x4 top half, scaled 2 down and 1 across, and the 7 ring is a second outline",
+    "input": [
+      [7,7,7,7,7,7,7,7],
+      [7,2,2,2,2,2,2,7],
+      [7,2,3,3,5,5,2,7],
+      [7,2,3,3,5,5,2,7],
+      [7,2,0,0,0,0,2,7],
+      [7,2,0,0,0,0,2,7],
+      [7,2,2,2,2,2,2,7],
+      [7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$ByColor & $InsideFrame & background=stored"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,3,3,5,5,2],
+        [2,3,3,5,5,2],
+        [2,3,3,5,5,2],
+        [2,3,3,5,5,2],
+        [2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [2,2,2,2,2,2],
+        [2,3,3,5,5,2],
+        [2,3,3,5,5,2],
+        [2,0,0,0,0,2],
+        [2,0,0,0,0,2],
+        [2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$PatternAnywhere","$FrameByOutline & background=stored"],
+      "grid": null
+    }]
+  }]
+}

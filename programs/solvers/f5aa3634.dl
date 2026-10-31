@@ -1,0 +1,250 @@
+// f5aa3634
+// @draft
+// @keywords: objects match select crop count rank congruent bbox
+// @scene scattered-objects: on a field of params.bg, the non-bg cells form
+//  separate objects, each a 4-connected group of cells of several colors,
+//  with bg between any two objects.
+// @scene one-repeated-object: exactly one object occurs twice, with the same
+//  cells and the same color at each cell up to translation; every other
+//  object occurs once.
+// @rule crop-repeated: the output is the bounding box of the repeated object,
+//  with each of its cells in its color and every other cell of the box bg.
+
+// how objects are connected
+.type Adjacency =
+    // @claim scattered-objects
+    Adjacency4 {}
+    // @scene scattered-objects: objects are 8-connected, so a cell that meets
+    //  its object at a corner only belongs to it. Undefined where no class,
+    //  or several classes, repeat.
+    // @witness diagonal-joint: variant $Adjacency8
+    //     @relaxed one-repeated-object
+  | Adjacency8 {}
+
+// what two objects must share to be the same
+.type ColorMatch =
+    // @claim one-repeated-object
+    WithColors {}
+    // @scene one-repeated-object: objects are classed by their cell set
+    //  alone, whatever their colors.
+    // @rule crop-repeated: the output is the distinct crops of the repeated
+    //  class's members. Undefined where no class, or several classes, repeat.
+    // @witness recolored-distractor: variant concept
+  | ShapeOnly {}
+
+// the moves under which two objects are the same
+.type TransformMatch =
+    // @claim one-repeated-object
+    Translation {}
+    // @scene one-repeated-object: objects are classed up to a D4 transform
+    //  and a translation.
+    // @rule crop-repeated: the output is the distinct crops of the repeated
+    //  class's members. Undefined where no class, or several classes, repeat.
+    // @witness mirrored-distractor: variant concept
+  | Congruent {}
+
+// which class of objects the output shows
+.type Selection =
+    // @claim one-repeated-object
+    Repeated {}
+    // @scene one-repeated-object: the class with the most members is shown.
+    //  Undefined on a tie for the most members.
+    // @witness triple-and-pair: variant $MostFrequent
+    //     @relaxed one-repeated-object
+  | MostFrequent {}
+    // @scene one-repeated-object: the class of exactly params.copies members
+    //  is shown. Undefined where no class, or several classes, have that
+    //  many members.
+    // @witness triple-and-pair: variant $MostFrequent
+  | CopyCount {}
+
+// what fills the output box
+.type OutputFrame =
+    // @claim crop-repeated
+    ObjectCells {}
+    // @rule crop-repeated: the output is the input's subgrid at each member's
+    //  bounding box, as the set of distinct subgrids. Undefined where the
+    //  concept is.
+    // @witness decoy-in-bbox: variant concept
+  | CropRegion {}
+
+.type Choice = [adjacency: Adjacency, color_match: ColorMatch,
+                transform_match: TransformMatch, selection: Selection,
+                output_frame: OutputFrame]
+
+// the member of the shown class whose crop the output is
+.type TiebreakResolution = Member {o: Ident}
+
+// an object, under the adjacency that found it
+.type Obj = [a: Adjacency, o: Ident]
+// an object in a D4 pose
+.type Posed = [a: Adjacency, o: Ident, d: D4]
+// the reading of sameness the classes are formed under
+.type Sameness = [a: Adjacency, cm: ColorMatch, tm: TransformMatch]
+// an object, under a reading of sameness
+.type Classed = [s: Sameness, o: Ident]
+.type Cell = [p: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice, tr: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed scattered-objects
+    .decl bg(c: Color) bg(0).
+
+    // --- $CopyCount ---
+    // the member count of the shown class
+    // @derive TileCount: variant derived
+    //     @relaxed one-repeated-object
+    .decl copies(n: number) copies(2).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+.decl color_match_choice(cm: ColorMatch)
+color_match_choice($WithColors()). color_match_choice($ShapeOnly()).
+
+.decl transform_match_choice(tm: TransformMatch)
+transform_match_choice($Translation()). transform_match_choice($Congruent()).
+
+.decl selection_choice(s: Selection)
+selection_choice($Repeated()). selection_choice($MostFrequent()). selection_choice($CopyCount()).
+
+.decl output_frame_choice(f: OutputFrame)
+output_frame_choice($ObjectCells()). output_frame_choice($CropRegion()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, Cm, Tm, S, F]) :-
+    adjacency_choice(A), color_match_choice(Cm), transform_match_choice(Tm),
+    selection_choice(S), output_frame_choice(F).
+
+.decl obj(a: Adjacency, o: Ident, p: Position)
+
+// --- $Adjacency4 ---
+// @claim scattered-objects
+.init objects4 = Components<Unit>
+objects4.node($U(), P) :- in(P, Col), !params.bg(Col).
+obj($Adjacency4(), O, P) :- adjacency_choice($Adjacency4()), objects4.label($U(), P, O).
+
+// --- $Adjacency8 ---
+// @claim scattered-objects
+.init objects8 = Components8<Unit>
+objects8.node($U(), P) :- in(P, Col), !params.bg(Col).
+obj($Adjacency8(), O, P) :- adjacency_choice($Adjacency8()), objects8.label($U(), P, O).
+
+// --- $Adjacency4, $Adjacency8 ---
+// @claim crop-repeated
+.init obj_box = Bbox<Obj>
+obj_box.cell([A, O], P) :- obj(A, O, P).
+
+// an object's cells in its box's own frame
+.decl cell_rel(a: Adjacency, o: Ident, p: Position, col: Color)
+cell_rel(A, O, P_rel, Col) :-
+    obj(A, O, P), in(P, Col), obj_box.box([A, O], B), crop(P, B, P_rel).
+
+.decl alike(s: Sameness, o: Ident, o2: Ident)
+
+// --- $WithColors & $Translation ---
+// @claim one-repeated-object
+.init same_cells = KeyedSetCompare<Obj, Obj, Cell>
+same_cells.pattern_member([A, O], [P, Col]) :-
+    color_match_choice($WithColors()), cell_rel(A, O, P, Col).
+same_cells.observed_member([A, O], [P, Col]) :-
+    color_match_choice($WithColors()), cell_rel(A, O, P, Col).
+alike([A, $WithColors(), $Translation()], O1, O2) :-
+    transform_match_choice($Translation()), same_cells.equals([A, O1], [A, O2]).
+
+// --- $ShapeOnly & $Translation ---
+// @claim one-repeated-object
+.init same_shape = KeyedSetCompare<Obj, Obj, Position>
+same_shape.pattern_member([A, O], P) :- color_match_choice($ShapeOnly()), cell_rel(A, O, P, _).
+same_shape.observed_member([A, O], P) :- color_match_choice($ShapeOnly()), cell_rel(A, O, P, _).
+alike([A, $ShapeOnly(), $Translation()], O1, O2) :-
+    transform_match_choice($Translation()), same_shape.equals([A, O1], [A, O2]).
+
+// --- $Congruent ---
+// each object's cells in every D4 pose
+.decl posed(a: Adjacency, o: Ident, d: D4, p: Position, col: Color)
+posed(A, O, D, Q, Col) :-
+    transform_match_choice($Congruent()), cell_rel(A, O, P, Col), d4_elem(D), apply(D, P, Q).
+
+// --- $WithColors & $Congruent ---
+// @claim one-repeated-object
+.init congruent_cells = KeyedSetCompare<Obj, Posed, Cell>
+congruent_cells.pattern_member([A, O, D], [Q, Col]) :-
+    color_match_choice($WithColors()), posed(A, O, D, Q, Col).
+congruent_cells.observed_member([A, O], [P, Col]) :-
+    color_match_choice($WithColors()), cell_rel(A, O, P, Col).
+// o1 in some pose is o2
+alike([A, $WithColors(), $Congruent()], O1, O2) :- congruent_cells.equals([A, O2], [A, O1, _]).
+
+// --- $ShapeOnly & $Congruent ---
+// @claim one-repeated-object
+.init congruent_shape = KeyedSetCompare<Obj, Posed, Position>
+congruent_shape.pattern_member([A, O, D], Q) :-
+    color_match_choice($ShapeOnly()), posed(A, O, D, Q, _).
+congruent_shape.observed_member([A, O], P) :-
+    color_match_choice($ShapeOnly()), cell_rel(A, O, P, _).
+alike([A, $ShapeOnly(), $Congruent()], O1, O2) :- congruent_shape.equals([A, O2], [A, O1, _]).
+
+// the members of a class that the selection shows
+.decl candidate(s: Sameness, sel: Selection, o: Ident)
+
+// --- $Adjacency4, $Adjacency8 ---
+// two candidates of different classes: no one class is shown
+.decl ambiguous(s: Sameness, sel: Selection)
+ambiguous(S, Sel) :- candidate(S, Sel, O1), candidate(S, Sel, O2), !alike(S, O1, O2).
+
+.decl shown(s: Sameness, sel: Selection, o: Ident)
+shown(S, Sel, O) :- candidate(S, Sel, O), !ambiguous(S, Sel).
+
+// --- $Repeated ---
+candidate(S, $Repeated(), O1) :- selection_choice($Repeated()), alike(S, O1, O2), O1 != O2.
+
+// --- $MostFrequent, $CopyCount ---
+// @claim one-repeated-object
+.init class_size = Tally<Classed, Ident>
+class_size.item([S, O1], O2) :- alike(S, O1, O2).
+
+// --- $MostFrequent ---
+// @claim one-repeated-object
+.init size_extremes = Extremes<Sameness>
+size_extremes.cand(S, N) :- selection_choice($MostFrequent()), class_size.tally([S, _], N).
+candidate(S, $MostFrequent(), O) :- class_size.tally([S, O], N), size_extremes.high(S, N).
+
+// --- $CopyCount ---
+candidate(S, $CopyCount(), O) :-
+    selection_choice($CopyCount()), class_size.tally([S, O], N), params.copies(N).
+
+// --- $ObjectCells ---
+out(P_rel, Col, [A, Cm, Tm, Sel, $ObjectCells()], $Member(O)) :-
+    impl_choice([A, Cm, Tm, Sel, $ObjectCells()]), shown([A, Cm, Tm], Sel, O),
+    obj_box.box([A, O], B), in(P, C), crop(P, B, P_rel),   // a cell of the member's box
+    ( obj(A, O, P), Col = C                                // the member's own cell
+    ; !obj(A, O, P), params.bg(Col)                        // bg elsewhere
+    ).
+
+// --- $CropRegion ---
+out(P_rel, Col, [A, Cm, Tm, Sel, $CropRegion()], $Member(O)) :-
+    impl_choice([A, Cm, Tm, Sel, $CropRegion()]), shown([A, Cm, Tm], Sel, O),
+    obj_box.box([A, O], B), in(P, Col), crop(P, B, P_rel).
+
+.comp Determine {
+    // the places where the train output stands in its input, background included
+    .init copy_sites = Occurrences<Example, Color>
+    copy_sites.cell(E, P, Col) :- ex_out(E, _, _), ex_in(E, P, Col).
+    copy_sites.shape(E, P, Col) :- ex_out(E, P, Col).
+
+    .init copy_count = Tally<Example, Position>
+    copy_count.item(E, P) :- copy_sites.occurrence(E, P).
+    copy_count.domain(E) :- ex_out(E, _, _).
+
+    .init agreed = Unanimous<Unit, number>
+    agreed.item($U(), N) :- copy_count.tally(_, N).
+
+    .decl copies(n: number)
+    copies(N) :- agreed.value($U(), N).
+}

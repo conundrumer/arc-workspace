@@ -1,0 +1,156 @@
+// f5c89df1
+// @draft
+// @keywords: markers stamp objects
+// @scene one-anchor: exactly one cell has the anchor color 3; it is the
+//  shape's center.
+// @scene markers: one or more cells have the marker color 2.
+// @scene pattern: every other non-background cell has the pattern color 8;
+//  together these cells are the shape.
+// @rule stamp-at-markers: for each marker, each shape cell is painted at the
+//  marker plus that cell's offset from the center, in the shape cell's color;
+//  overlapping stamps paint the same color.
+// @rule erase-source: every cell no stamp paints is background, so the
+//  original shape, the center and the markers do not survive unless a stamp
+//  covers them.
+
+// which cells form the shape
+.type ShapeReach =
+    // @claim pattern
+    AllInk {}
+    // @scene pattern: the shape is the 8-connected component, among the
+    //  non-background non-marker cells, that holds the center.
+    // @witness detached-piece: variant concept
+  | AnchorComponent {}
+
+// which colors the shape takes
+.type ShapeColor =
+    // @claim pattern
+    AnyColor {s: StampColor}
+    // @scene pattern: the shape is the cells of the pattern color; cells of
+    //  other colors are wiped and not stamped.
+    // @witness second-shape-color: variant concept
+    //     @relaxed pattern
+  | ColorShape {}
+
+// the color a stamped cell gets
+.type StampColor =
+    // @claim stamp-at-markers
+    SourceColor {}
+    // @rule stamp-at-markers: every stamped cell paints the pattern color.
+    // @witness second-shape-color: variant concept
+  | PaintStored {}
+
+.type Choice = [reach: ShapeReach, color: ShapeColor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    .decl anchor_color(c: Color) anchor_color(3).
+    .decl marker_color(c: Color) marker_color(2).
+
+    // --- $PaintStored, $ColorShape ---
+    // @ignore: derive — on a run's one input each derivation gives every
+    //  color of that input, so under $ColorShape the case is the concept's
+    //  model, and under $PaintStored it paints several colors at once and
+    //  fails Fit.
+    .decl pattern_color(c: Color) pattern_color(8).
+}
+
+.init params = Params
+
+.decl shape_reach_choice(r: ShapeReach)
+shape_reach_choice($AllInk()). shape_reach_choice($AnchorComponent()).
+
+.decl shape_color_choice(s: ShapeColor)
+shape_color_choice($AnyColor($SourceColor())).
+shape_color_choice($AnyColor($PaintStored())).
+shape_color_choice($ColorShape()).
+
+// The center, and the translation that takes it onto each marker.
+.decl center(p: Position)
+center(A) :- in(A, Col), params.anchor_color(Col).
+
+.decl shift(v: Offset)
+shift(V) :- center(A), in(M, Col), params.marker_color(Col), relative(A, M, V).
+
+// A non-background cell that is neither the center nor a marker.
+// @ignore: store — a stored color of these cells is $ColorShape's
+//  pattern_color.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :-
+    in(P, Col), !params.background(Col),
+    !params.anchor_color(Col), !params.marker_color(Col).
+
+// The cells a shape reading takes.
+.decl member(p: Position, r: ShapeReach)
+
+// The shape's cells, each with the color its stamp paints.
+.decl shape(p: Position, col: Color, r: ShapeReach, s: ShapeColor)
+
+// A shape cell, moved by a marker's translation, landing in the grid.
+.decl stamp(p: Position, col: Color, r: ShapeReach, s: ShapeColor)
+stamp(Q, Col, R, S) :- shape(P, Col, R, S), shift(V), compose(P, V, Q), in(Q, _).
+
+// The stamps on background.
+out(P, Col, [R, S]) :-
+    in(P, _), shape_reach_choice(R), shape_color_choice(S),
+    ( stamp(P, Col, R, S)
+    ; !stamp(P, _, R, S), params.background(Col) ).
+
+// --- $AllInk ---
+member(P, $AllInk()) :- ink(P, _).
+
+// --- $AnchorComponent ---
+// @claim pattern
+.init comp8 = Components8<Unit>
+comp8.node($U(), P) :- in(P, Col), !params.background(Col), !params.marker_color(Col).
+
+member(P, $AnchorComponent()) :-
+    center(A), comp8.label($U(), A, Id),
+    ink(P, _), comp8.label($U(), P, Id).
+
+// --- $SourceColor ---
+shape(P, Col, R, $AnyColor($SourceColor())) :- member(P, R), ink(P, Col).
+
+// --- $PaintStored ---
+shape(P, Col, R, $AnyColor($PaintStored())) :- member(P, R), params.pattern_color(Col).
+
+// --- $ColorShape ---
+shape(P, Col, R, $ColorShape()) :- member(P, R), ink(P, Col), params.pattern_color(Col).
+
+.comp Determine {
+    // The commonest color of every input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl not_common(col: Color)
+    not_common(Col) :- common.mode(_, Col), ex_in(E, _, _), !common.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- common.mode(_, Col), !not_common(Col).
+
+    // A color some train input holds and no train output holds.
+    .decl vanished(col: Color)
+    vanished(Col) :- ex_out(E, _, _), ex_in(E, _, Col), !ex_out(_, _, Col).
+
+    // A vanished color that some train input lacks, or holds at two cells.
+    .decl not_single(col: Color)
+    not_single(Col) :-
+        vanished(Col), ex_out(E, _, _),
+        ( !ex_in(E, _, Col)
+        ; ex_in(E, P, Col), ex_in(E, Q, Col), P != Q ).
+
+    // The center: a vanished color at exactly one cell of every train input.
+    .decl anchor_color(c: Color)
+    anchor_color(Col) :- vanished(Col), !not_single(Col).
+
+    // The markers: the other vanished color.
+    .decl marker_color(c: Color)
+    marker_color(Col) :- vanished(Col), !anchor_color(Col).
+
+    // The color the stamps paint.
+    .decl pattern_color(c: Color)
+    pattern_color(Col) :- ex_out(_, _, Col), !background(Col).
+}

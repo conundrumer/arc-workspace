@@ -1,0 +1,221 @@
+// f8a8fe49
+// @draft
+// @keywords: d4 bbox objects
+// @scene background: every cell that is not a bracket or a mark is
+//  params.background
+// @scene two-facing-brackets: two brackets of params.bracket_color, each a
+//  straight base line with a cell of arm length 1 at each end pointing toward
+//  the other bracket; the two bases are parallel, on one axis, with their ends
+//  aligned
+// @scene marks-between: every params.mark_color cell lies strictly between the
+//  two brackets' arm lines and within the span of the bases
+// @scene no-midline: the lines strictly between the two bases are even in
+//  number, so every mark is strictly nearer one base than the other
+// @scene marks-touch-arm-line: the marks nearer each bracket include a cell on
+//  the line next to that bracket's arm line
+// @scene mirror-in-frame: each mark's mirror image across its nearer base lies
+//  inside the grid on a background cell
+// @rule brackets-stay: every bracket cell is kept
+// @rule marks-mirror-out: each mark cell is painted params.mark_color at its
+//  mirror image across the base line of the bracket it is nearer to: a mark at
+//  distance d inside that base lands at distance d outside it
+// @rule inside-cleared: each mark's input cell becomes params.background
+
+// what flips as one unit, and so which base it flips across
+.type FlipUnit =
+    // @claim marks-mirror-out
+    PerCell {}
+    // @rule marks-mirror-out: each 8-connected mark shape flips whole across
+    //  the base nearer to its nearest cell; undefined where a shape's nearest
+    //  cells are equally near both bases
+    // @witness straddling-bar: borderline $WholeShape
+  | WholeShape {adj: ShapeAdjacency}
+
+// which cells join one shape
+.type ShapeAdjacency =
+    // @claim marks-mirror-out
+    EightAdjacent {}
+    // @rule marks-mirror-out: shapes join by 4-adjacency
+    // @witness diagonal-chain: borderline $WholeShape
+  | FourAdjacent {}
+
+// where a flipped mark lands
+.type Placement =
+    // @claim marks-mirror-out
+    Mirror {}
+    // @rule marks-mirror-out: the marks nearer each base flip as a group, and
+    //  the group's near edge sits params.out_gap empty lines outside the base
+    // @witness marks-off-arm-line: variant concept
+    //     @relaxed marks-touch-arm-line
+  | FlipToGap {}
+
+.type Choice = [unit: FlipUnit, place: Placement]
+
+// The marks that flip across one base under one unit.
+.type Group = [u: FlipUnit, d: Dir]
+
+// One shape's cells measured from one base.
+.type ShapeSide = [u: FlipUnit, id: Ident, d: Dir]
+
+// One landed mark of an example's output, seen from one base.
+.type Landed = [e: Example, q: Position, d: Dir]
+
+// The marks of an example that flip across one base.
+.type ExampleGroup = [e: Example, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    //     @relaxed mirror-in-frame
+    .decl background(c: Color) background(0).
+    .decl bracket_color(c: Color) bracket_color(2).
+    // @derive RarestColor: borderline concept
+    .decl mark_color(c: Color) mark_color(5).
+
+    // --- $FlipToGap ---
+    .decl out_gap(k: number) out_gap(1).
+}
+
+.init params = Params
+
+.decl flip_unit_choice(u: FlipUnit)
+flip_unit_choice($PerCell()). flip_unit_choice($WholeShape($EightAdjacent())). flip_unit_choice($WholeShape($FourAdjacent())).
+
+.decl placement_choice(p: Placement)
+placement_choice($Mirror()). placement_choice($FlipToGap()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([U, Pl]) :- flip_unit_choice(U), placement_choice(Pl).
+
+// The box both brackets span; the bases are two of its edges.
+// @claim two-facing-brackets
+.init frame = Bbox<Unit>
+frame.cell($U(), P) :- in(P, Col), params.bracket_color(Col).
+
+// A side of the box whose edge holds a cell of another color: an arm side.
+// The other two sides are the bases.
+.decl open_side(d: Dir)
+open_side(D) :- frame.box($U(), B), in(P, Col), box_edge(P, B, D), !params.bracket_color(Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark_color(Col).
+
+// Mark p lies k lines inside the base on side d.
+.decl depth(p: Position, d: Dir, k: number)
+depth(P, D, K) :-
+    mark(P), frame.box($U(), B), crop(P, B, P_rel),
+    dir_elem(D), !open_side(D), dist(P_rel, D, K).
+
+// Mark p flips across the base on side d.
+.decl side(u: FlipUnit, p: Position, d: Dir)
+
+// Some shape is equally near both bases.
+.decl tie(u: FlipUnit)
+
+// A mark lands on q.
+.decl landing(ch: Choice, q: Position)
+
+// The bracket color is also the mark color or the background, so no bracket
+// stands apart from the rest.
+.decl shared_role()
+shared_role() :- params.bracket_color(C), ( params.mark_color(C) ; params.background(C) ).
+
+out(P, Col, [U, Pl]) :-
+    impl_choice([U, Pl]), !tie(U), !shared_role(), in(P, Col_in),
+    ( landing([U, Pl], P), params.mark_color(Col)                // a landed mark
+    ; !landing([U, Pl], P), mark(P), params.background(Col)       // a mark's old cell
+    ; !landing([U, Pl], P), !mark(P), Col = Col_in                // the rest
+    ).
+
+// --- $PerCell ---
+side($PerCell(), P, D) :- depth(P, D, K1), opposite(D, D2), depth(P, D2, K2), K1 < K2.
+
+// --- $WholeShape ---
+.decl shape(u: FlipUnit, p: Position, id: Ident)
+
+// Each shape's least depth from each base.
+// @claim marks-mirror-out
+.init reach = Extremes<ShapeSide>
+reach.cand([U, Id, D], K) :- shape(U, P, Id), depth(P, D, K).
+
+side(U, P, D) :-
+    shape(U, P, Id), reach.low([U, Id, D], K1),
+    opposite(D, D2), reach.low([U, Id, D2], K2), K1 < K2.
+
+tie(U) :- reach.low([U, Id, D], K), opposite(D, D2), reach.low([U, Id, D2], K).
+
+// --- $EightAdjacent ---
+// @claim marks-mirror-out
+.init shape8 = Components8<Unit>
+shape8.node($U(), P) :- mark(P).
+
+shape($WholeShape($EightAdjacent()), P, Id) :- shape8.label($U(), P, Id).
+
+// --- $FourAdjacent ---
+// @claim marks-mirror-out
+.init shape4 = Components<Unit>
+shape4.node($U(), P) :- mark(P).
+
+shape($WholeShape($FourAdjacent()), P, Id) :- shape4.label($U(), P, Id).
+
+// --- $Mirror ---
+landing([U, $Mirror()], Q) :-
+    side(U, P, D), depth(P, D, K),
+    jump(P, D, K, P_base), jump(P_base, D, K, Q).   // k inside the base, k outside
+
+// --- $FlipToGap ---
+// The marks that flip across each base, as one group.
+// @claim marks-mirror-out
+.init group = Bbox<Group>
+group.cell([U, D], P) :- side(U, P, D).
+
+landing([U, $FlipToGap()], Q) :-
+    side(U, P, D), depth(P, D, K), jump(P, D, K, P_base),
+    params.out_gap(G), jump(P_base, D, G, P_gap), neighbor(P_gap, D, P_near),   // the group's near line
+    group.box([U, D], B), crop(P, B, P_g), dist(P_g, D, K_g),                   // depth in the group
+    jump(P_near, D, K_g, Q).
+
+.comp Determine {
+    // A color some input cell holds that its output cell does not.
+    .decl changed(c: Color)
+    changed(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // A color some input cell holds that its output cell keeps.
+    .decl kept(c: Color)
+    kept(C) :- ex_in(E, P, C), ex_out(E, P, C).
+
+    // The color a mark's cell takes: marks are the color no cell keeps.
+    // @ignore: common-subexpr — `changed` drops the color the cell takes,
+    //  which this relation gives
+    .decl background(c: Color)
+    background(C2) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2, !kept(C).
+
+    // The box the brackets of each example span: the cells of a color that no
+    // cell changes from.
+    .init frame = Bbox<Example>
+    frame.cell(E, P) :- ex_in(E, P, C), ex_out(E, _, _), !changed(C).
+
+    // A mark cell of an output, outside the base on side d, with the cell
+    // of that base in its line.
+    .decl outside(l: Landed, p_base: Position)
+    outside([E, Q, D], P_base) :-
+        ex_out(E, Q, C), changed(C), !kept(C),
+        frame.box(E, B), ex_in(E, P_base, _), box_edge(P_base, B, D), nearer(D, Q, P_base),
+        perp_dir(D, D2), same_dist(D2, Q, P_base).
+
+    // The empty lines between each such mark and its base.
+    .init gap = Tally<Landed, Position>
+    gap.domain(L) :- outside(L, _).
+    gap.item([E, Q, D], X) :-
+        outside([E, Q, D], P_base), ex_out(E, X, _),
+        perp_dir(D, D2), same_dist(D2, X, Q),
+        nearer(D, X, P_base), nearer(D, Q, X).
+
+    // The least gap of each group.
+    .init near = Extremes<ExampleGroup>
+    near.cand([E, D], K) :- gap.tally([E, _, D], K).
+
+    .decl out_gap(k: number)
+    out_gap(K) :- near.low(_, K).
+}

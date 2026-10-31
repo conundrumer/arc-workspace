@@ -1,0 +1,5 @@
+# e66aafb8 progress
+
+- `delay`: Develop. The first design held every branch of `analyze.md`. `$DerivedCenter` tested candidate centers under every element and every candidate mask color, and each pairs run (`run_dl.py e66aafb8`) hit the runner's 20 s limit on each pair. Two runs went into that, about 1.5 min. With the derived center taken out, the run took 2 s.
+- `delay`: Develop, "If no run has passed every pair, cut the solver to the concept case with no second choice point". A 16-case version without `$DerivedCenter` was written but not run before the budget ran out. The rule cut the solver to the concept case, so every branch of `analyze.md` is now unsettled.
+- `interference`: `run_dl.py grid` and the pairs run print a witnessed case by the shortest name that denotes it. In the 16-case version, `$AsymmetricMask & $DerivedSym` stood for `[$AsymmetricMask, $MaskComponent, $DerivedSym, $GridCenter, $SharedImage]`. A `relation` dump showed rows under the same name for the `$AllMaskCells` case, so it looked as if that case emitted output and gave no grid at the same time. About 1 min went to that. The output is not wrong. The name only denotes a set of cases.

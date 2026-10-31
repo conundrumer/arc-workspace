@@ -1,0 +1,186 @@
+// d687bc17
+// @draft
+// @keywords: move match objects
+// @scene four-walls: the grid's border is four walls, one per edge, each a
+//  solid line of one color across that edge, with the four corner cells
+//  params.background (0)
+// @scene distinct-wall-colors: the four walls have four different colors
+// @scene scattered-dots: the interior is params.background with single-cell
+//  dots scattered in it, no two dots touching
+// @scene no-landing-clash: no two dots of one wall's color share a line
+//  perpendicular to that wall
+// @rule dot-to-wall: a dot whose color is a wall's color moves, along its row
+//  or column perpendicular to that wall, to the interior cell next to that
+//  wall; other dots do not block it
+// @rule unmatched-dot-erased: a dot whose color is no wall's color becomes
+//  params.background
+// @rule walls-kept: the walls and the corner cells stay as they are
+
+// what happens when dots of one color meet on their way to the wall
+.type Landing =
+    // @claim dot-to-wall
+    Merge {}
+    // @rule dot-to-wall: the dots of one wall's color fall together toward
+    //  that wall, and a dot stops against one already landed in its line
+    // @witness same-line-clash: variant $Stack
+    //     @relaxed no-landing-clash
+  | Stack {}
+
+// what moves as one unit
+.type Mover =
+    // @claim dot-to-wall
+    Dots {}
+    // @scene scattered-dots: the interior holds one-color objects of any shape
+    // @rule dot-to-wall: each one-color 4-connected object moves rigidly
+    //  toward the wall of its color until it touches the wall
+    // @witness bent-object: borderline $MoveObjects
+    //     @relaxed scattered-dots
+  | MoveObjects {}
+
+// which walls of a dot's color it goes to
+.type WallPick =
+    // @claim dot-to-wall
+    EveryWall {}
+    // @scene distinct-wall-colors: dropped
+    // @rule dot-to-wall: a dot goes only to the nearer wall of its color;
+    //  undefined where two walls of its color are at equal distance from it
+    // @witness two-walls-one-color: borderline $NearerWall
+    //     @relaxed distinct-wall-colors
+  | NearerWall {}
+
+.type Choice = [l: Landing, m: Mover, w: WallPick]
+
+// A unit that moves, under one reading of what moves.
+.type Piece = [m: Mover, b: Ident]
+
+// One piece's fall toward one wall.
+.type Fall = [w: WallPick, d: Dir, pc: Piece]
+
+// Every piece's fall toward one wall, together.
+.type Pile = [m: Mover, w: WallPick, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl landing_choice(l: Landing)
+landing_choice($Merge()). landing_choice($Stack()).
+
+.decl mover_choice(m: Mover)
+mover_choice($Dots()). mover_choice($MoveObjects()).
+
+.decl wall_pick_choice(w: WallPick)
+wall_pick_choice($EveryWall()). wall_pick_choice($NearerWall()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, M, W]) :- landing_choice(L), mover_choice(M), wall_pick_choice(W).
+
+// An interior cell: off the border.
+.decl inner(p: Position)
+inner(P) :- in(P, _), interior(P, ZERO).
+
+// A corner cell of the grid.
+.decl corner(p: Position)
+corner(P) :- in(P, _), box_corner(P, ZERO, _).
+
+// The color of the wall along edge d: its cells off the corners.
+.decl wall(d: Dir, col: Color)
+wall(D, Col) :- in(P, Col), box_edge(P, ZERO, D), !corner(P).
+
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- inner(P), in(P, Col), !params.background(Col).
+
+.decl piece(pc: Piece, p: Position, col: Color)
+
+// The walls each piece goes to.
+.decl aim(w: WallPick, pc: Piece, d: Dir)
+
+// The cases defined on the input.
+.decl live(ch: Choice)
+
+// Where each case puts the pieces.
+.decl landed(ch: Choice, p: Position, col: Color)
+
+out(P, Col, Ch) :- live(Ch), in(P, Col), !inner(P).
+out(P, Col, Ch) :- live(Ch), landed(Ch, P, Col).
+out(P, Bg, Ch) :- live(Ch), inner(P), !landed(Ch, P, _), params.background(Bg).
+
+// --- $Dots ---
+
+// @claim dot-to-wall
+.init dot_id = IdentOf<Position>
+dot_id.value(P) :- dot(P, _).
+
+piece([$Dots(), B], P, Col) :- dot(P, Col), dot_id.id(P, B).
+
+// --- $MoveObjects ---
+
+// @claim dot-to-wall
+.init object = Components<Color>
+object.node(Col, P) :- dot(P, Col).
+
+piece([$MoveObjects(), B], P, Col) :- object.label(Col, P, B).
+
+// --- $EveryWall ---
+
+aim($EveryWall(), Pc, D) :- piece(Pc, _, Col), wall(D, Col).
+
+live([L, M, $EveryWall()]) :- impl_choice([L, M, $EveryWall()]).
+
+// --- $NearerWall ---
+
+// Each piece's distance to each wall of its color: its least over its cells.
+// @claim dot-to-wall
+.init nearest = ArgExtremes<Piece, Dir>
+nearest.cand(Pc, D, K) :- piece(Pc, P, Col), wall(D, Col), dist(P, D, K).
+
+aim($NearerWall(), Pc, D) :- nearest.low(Pc, D, _).
+
+// Two walls of a piece's color at equal least distance.
+.decl tie(m: Mover)
+tie(M) :- nearest.low([M, B], D1, _), nearest.low([M, B], D2, _), D1 != D2.
+
+live([L, M, $NearerWall()]) :- impl_choice([L, M, $NearerWall()]), !tie(M).
+
+// --- $Merge ---
+
+// Each piece falls alone toward each wall it aims at, and stops against it.
+// @claim dot-to-wall
+.init drop = Gravity<Fall, Piece>
+drop.cell([W, D, Pc], Pc, P) :- aim(W, Pc, D), piece(Pc, P, _).
+drop.dir([W, D, Pc], D) :- aim(W, Pc, D).
+drop.blocked([W, D, Pc], P) :- aim(W, Pc, D), in(P, _), !inner(P).
+
+landed([$Merge(), M, W], Q, Col) :-
+    drop.travel([W, _, [M, B]], [M, B], V), piece([M, B], P, Col), compose(P, V, Q).
+
+// --- $Stack ---
+
+// The pieces aiming at one wall fall toward it together.
+// @claim dot-to-wall
+.init pile = Gravity<Pile, Piece>
+pile.cell([M, W, D], [M, B], P) :- aim(W, [M, B], D), piece([M, B], P, _).
+pile.dir([M, W, D], D) :- aim(W, [M, _], D).
+pile.blocked([M, W, D], P) :- aim(W, [M, _], D), in(P, _), !inner(P).
+
+landed([$Stack(), M, W], Q, Col) :-
+    pile.travel([M, W, _], [M, B], V), piece([M, B], P, Col), compose(P, V, Q).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not the commonest of a train
+    // input.
+    .decl uneven(col: Color)
+    uneven(Col) :- palette.mode(_, Col), ex_out(E, _, _), !palette.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- palette.mode(_, Col), !uneven(Col).
+}

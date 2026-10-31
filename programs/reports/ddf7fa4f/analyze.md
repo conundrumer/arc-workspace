@@ -8,7 +8,7 @@
 ## Choice points
 - `matching`: how a block is paired with a marker
     - `concept`: by position, the marker's place along the marker line against the block's span
-    - `$Rank`: replaces `recolor-by-marker`; the blocks, ordered by the edge of their span that `rank-edge` gives, pair one to one with the markers, ordered along the marker line; parameter `rank-edge`; undefined where the block count and the marker count differ, or where two markers share a place on the line or two blocks share a ranking edge. Fits every pair. Witness `two-blocks-one-marker`: breaks `one-marker-per-block`; stored assignment; plausibility `borderline`; verdict `concept`; breaks the invariant that each marker stands over exactly one block and each block's span holds exactly one marker.
+    - `$Rank`: replaces `recolor-by-marker`; the blocks, ordered by the edge of their span that `rank-edge` gives, pair one to one with the markers, ordered along the marker line; parameter `rank-edge`, left or right, and the case runs both values; undefined where the block count and the marker count differ, or where two markers share a place on the line or two blocks share a ranking edge, or where the two values give different outputs (`shadowed-marker`). Fits every pair. Witness `two-blocks-one-marker`: breaks `one-marker-per-block`; stored assignment; plausibility `borderline`; verdict `concept`; breaks the invariant that each marker stands over exactly one block and each block's span holds exactly one marker.
     - `reach`: under `concept` of `matching`, which blocks a marker reaches
         - `concept`: every block whose span holds the marker
         - `$FirstHit`: replaces `recolor-by-marker`; each marker paints the first block its column meets going away from the marker line, and a block met by two markers' columns is undefined; no parameter of its own. Fits every pair. Witness `shadowed-marker`: breaks `one-marker-per-block`; stored assignment; plausibility `borderline`; verdict `$FirstHit`; breaks the invariant that each block's span holds exactly one marker.
@@ -40,8 +40,7 @@
     - `$MarkersAnywhere` & `$AnyBlockColor`: no block color tells markers from blocks off the marker line, so the markers are the cells of the marker line other than `bg` and the single-cell components of colors other than `bg` elsewhere, and the blocks are the other components off the marker line
 
 ## Open parameters
-- `rank-edge`: left, right, under `$Rank`
-    - the pairs give one block order by either edge; `shadowed-marker` separates them, where ranking by the right edge gives `$FirstHit`'s output
+- none
 
 ## Not formed
 - Recoloring cell by cell, each cell taking the color of the marker in its column or nearest its column: every pair's output recolors whole blocks, cells under no marker's column included (train0 output (2,4)), so no reading of the pairs takes this.

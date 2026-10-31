@@ -89,7 +89,6 @@
      "cases": [
       "concept",
       "$KeepUnmapped",
-      "$ForegroundElse",
       "$BackgroundElse",
       "marker=RarestColor"
      ],
@@ -432,7 +431,6 @@
       "concept",
       "$WithDiagonals",
       "$KeepUnmapped",
-      "$ForegroundElse",
       "$BackgroundElse",
       "marker=RarestColor"
      ],
@@ -604,7 +602,7 @@
   },
   {
    "id": "third-color",
-   "separates": "a cell of a color that is no key of the map inside a marked row: the strict map is undefined, a kept unmapped color stays 2, the foreground split gives 8, the background split gives 7",
+   "separates": "a cell of a color that is no key of the map inside a marked row: the strict map is undefined, a kept unmapped color stays 2, the background split gives 7",
    "input": [
     [
      0,
@@ -760,90 +758,6 @@
        8,
        7,
        2,
-       7,
-       7,
-       8,
-       4
-      ],
-      [
-       0,
-       6,
-       6,
-       6,
-       0,
-       6,
-       6,
-       0,
-       0
-      ]
-     ]
-    },
-    {
-     "cases": [
-      "$ForegroundElse"
-     ],
-     "grid": [
-      [
-       0,
-       6,
-       0,
-       0,
-       0,
-       6,
-       6,
-       0,
-       0
-      ],
-      [
-       6,
-       6,
-       6,
-       6,
-       6,
-       6,
-       6,
-       6,
-       6
-      ],
-      [
-       0,
-       6,
-       6,
-       6,
-       6,
-       0,
-       0,
-       0,
-       0
-      ],
-      [
-       6,
-       6,
-       0,
-       0,
-       0,
-       6,
-       6,
-       0,
-       0
-      ],
-      [
-       0,
-       6,
-       6,
-       6,
-       0,
-       0,
-       6,
-       0,
-       6
-      ],
-      [
-       4,
-       8,
-       8,
-       7,
-       8,
        7,
        7,
        8,
@@ -1122,7 +1036,6 @@
       "$WithDiagonals",
       "$OneEnd",
       "$KeepUnmapped",
-      "$ForegroundElse",
       "$BackgroundElse"
      ],
      "grid": [

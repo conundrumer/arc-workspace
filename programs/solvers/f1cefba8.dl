@@ -1,0 +1,119 @@
+// f1cefba8
+// @draft
+// @keywords: markers cast
+// @scene framed-rectangle: one solid rectangle of a frame color on the background 0, with a solid rectangle of a second, inner color inside it, inset from every side of the frame by 2 cells.
+// @scene nubs: a few single cells of the inner color in the frame ring, each 4-adjacent to the inner rectangle's side, and so one cell outside that side, at the inner rectangle's span on the other axis.
+// @rule nub-erased: each nub takes the frame color.
+// @rule line-through-inner: each cell of the inner rectangle on the row of a nub on the left or right side, or on the column of a nub on the top or bottom side, takes the frame color.
+// @rule line-outside: each background cell on such a row or column takes the inner color, on both sides of the frame out to the grid edge.
+// @rule rest-kept: every other cell keeps its color, the frame ring included.
+
+// Which inner-color cells outside the inner rectangle are nubs
+.type Nub =
+    // @claim nubs
+    AdjacentNub {}
+    // @scene nubs: every inner-color cell outside the inner rectangle that lies in its row span or its column span is a nub, whether or not it touches the inner rectangle.
+    // @witness stray-ring-cell: borderline $AnyRingCell
+    //     @relaxed nubs
+  | AnyRingCell {}
+
+// Which cells of a line outside the frame take the inner color
+.type Paint =
+    // @claim line-outside
+    BackgroundOnly {}
+    // @rule line-outside: each cell on such a row or column that is not part of the framed rectangle's component of non-background cells takes the inner color, whatever its color.
+    // @witness stray-on-line: borderline $PaintOutside
+    //     @relaxed framed-rectangle
+  | PaintOutside {}
+
+.type Choice = [n: Nub, p: Paint]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: ordinary concept
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl nub_choice(n: Nub)
+nub_choice($AdjacentNub()). nub_choice($AnyRingCell()).
+
+.decl paint_choice(p: Paint)
+paint_choice($BackgroundOnly()). paint_choice($PaintOutside()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([N, P]) :- nub_choice(N), paint_choice(P).
+
+// The non-background cells: the frame with the inner rectangle and the nubs
+.decl region(p: Position)
+region(P) :- in(P, C), !params.background(C).
+
+// The parts that the cells of each non-background color close off from the grid edge
+// @claim framed-rectangle
+.init enclosed = Closed<Color>
+enclosed.cell(C, P) :- region(Q), in(Q, C), in(P, C2), C2 != C.
+
+// The color of the cells the frame closes off: the inner rectangle with its nubs
+.decl inner_color(c: Color)
+inner_color(C) :- enclosed.region(_, P, _), in(P, C).
+
+// The rectangles drawn in the inner color
+// @claim framed-rectangle
+.init inner_outlines = Outlines<Unit>
+inner_outlines.node($U(), P) :- inner_color(C), in(P, C).
+
+// The inner rectangle: the box the inner-color rectangles fill
+// @claim framed-rectangle
+.init inner = Bbox<Unit>
+inner.cell($U(), B) :- inner_outlines.box($U(), B).
+
+// A nub, with the axis of the line it marks
+.decl nub(p: Position, a: Axis, n: Nub)
+
+// A cell on a nub's line
+.decl on_line(p: Position, n: Nub)
+on_line(Q, N) :- nub(P, A, N), in(Q, _), same_line(A, P, Q).
+
+// A line cell outside the frame, which takes the inner color
+.decl painted(p: Position, ch: Choice)
+
+// The cells the lines recolor, with their new color
+.decl recolor(p: Position, col: Color, ch: Choice)
+recolor(P, Col, [N, F]) :-
+    paint_choice(F), enclosed.region(Col, _, _),            // the frame color
+    ( nub(P, _, N)                                          // nub-erased
+    ; on_line(P, N), inner.box($U(), B), inside(P, B)       // line-through-inner
+    ).
+recolor(P, Col, Ch) :- painted(P, Ch), inner_color(Col).  // line-outside
+
+out(P, Col, Ch) :- recolor(P, Col, Ch).
+out(P, C, Ch) :- in(P, C), impl_choice(Ch), !recolor(P, _, Ch).  // rest-kept
+
+// --- $AdjacentNub ---
+nub(P, A, $AdjacentNub()) :-
+    inner_color(C), in(P, C), inner.box($U(), B), !inside(P, B),  // inner-color cell outside the inner rectangle
+    dir_elem(D), neighbor(P, D, Q), inside(Q, B), axis_of(D, A).  // beside one of its sides
+
+// --- $AnyRingCell ---
+nub(P, A, $AnyRingCell()) :-
+    inner_color(C), in(P, C), inner.box($U(), B), !inside(P, B),  // inner-color cell outside the inner rectangle
+    in(Q, _), inside(Q, B), axis_elem(A), same_line(A, P, Q).     // in its span on the other axis
+
+// --- $BackgroundOnly ---
+painted(P, [N, $BackgroundOnly()]) :- on_line(P, N), in(P, C), params.background(C).
+
+// --- $PaintOutside ---
+// The connected pieces of the non-background cells
+// @claim framed-rectangle
+.init pieces = Components<Unit>
+pieces.node($U(), P) :- region(P).
+
+// The piece that holds the inner rectangle
+.decl framed(p: Position)
+framed(P) :-
+    inner.box($U(), B), in(Q, _), inside(Q, B),               // a cell of the inner rectangle
+    pieces.label($U(), Q, Id), pieces.label($U(), P, Id).     // in P's piece
+
+painted(P, [N, $PaintOutside()]) :- on_line(P, N), !framed(P).

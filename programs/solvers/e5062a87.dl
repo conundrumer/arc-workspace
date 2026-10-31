@@ -1,0 +1,266 @@
+// e5062a87
+// @draft
+// @keywords: stamp objects
+// @scene field-with-holes: every cell that is not of params.shape_color is of
+//  the field color, 5, or of params.hole_color.
+// @scene one-shape: the cells of params.shape_color form one 4-connected shape,
+//  the template.
+// @scene placements-disjoint: no two translates of the template that lie
+//  completely on cells of params.hole_color share a cell.
+// @rule stamp-every-fit: each translate of the template whose cells are all of
+//  params.hole_color in the input takes params.shape_color in the output.
+// @rule rest-kept: every other cell keeps its input color.
+
+// which transforms of the template are copied
+.type Orient =
+    // @claim stamp-every-fit
+    OwnOrientation {}
+    // @rule stamp-every-fit: the copies also include the template mirrored
+    //  across params.mirror_axis
+    // @witness mirrored-hole: ordinary concept
+  | MirrorCopies {}
+
+// which cells a copy may cover
+.type Seat =
+    // @claim stamp-every-fit
+    HoleSeat {}
+    // @rule stamp-every-fit: a copy may cover any cell that is neither of
+    //  params.field_color nor of the shape color
+    // @witness third-color: borderline concept
+    //     @relaxed field-with-holes
+  | NonFieldSeat {}
+
+// whether a copy may cover template cells
+.type OnShape =
+    // @claim stamp-every-fit
+    OffShape {}
+    // @rule stamp-every-fit: a copy may also cover cells of the shape color
+    // @witness fit-over-template: ordinary concept
+  | SeatOnShape {}
+
+// what fits that share cells paint
+.type Overlap =
+    // @claim stamp-every-fit
+    AllFits {}
+    // @rule stamp-every-fit: only a fit that shares no cell with another fit
+    //  paints
+    // @witness overlapping-fits: borderline concept
+    //     @relaxed placements-disjoint
+  | ExclusiveFits {}
+
+// how template cells join into one object
+.type Adjacency =
+    // @claim stamp-every-fit
+    Join4 {}
+    // @rule stamp-every-fit: diagonal neighbors join as well
+    // @witness diagonal-template: borderline $Join8
+    //     @relaxed one-shape
+  | Join8 {}
+
+// what one footprint is
+.type Footprint =
+    // @claim stamp-every-fit
+    WholeShape {}
+    // @scene one-shape: the cells of the shape color form one or more objects
+    // @rule stamp-every-fit: each object of the shape color is its own
+    //  footprint and stamps at its own fits
+    // @witness two-templates: borderline $PerObject
+    //     @relaxed one-shape
+  | PerObject {adj: Adjacency}
+
+// how the shape color is set
+.type ShapeSource =
+    // @claim stamp-every-fit
+    StoredShape {}
+    // @rule stamp-every-fit: the shape color is the one input color other than
+    //  params.field_color and params.hole_color; undefined where there is not
+    //  exactly one such color
+    // @witness recolored-shape: variant $ThirdColorShape
+    //     @relaxed field-with-holes
+    //     @relaxed one-shape
+  | ThirdColorShape {}
+
+.type Choice = [o: Orient, s: Seat, t: OnShape, x: Overlap, f: Footprint, c: ShapeSource]
+
+// One footprint copied under one transform of an orientation branch, with the
+// seats it may cover.
+.type FitKey = [o: Orient, s: Seat, t: OnShape, c: ShapeSource, f: Footprint, id: Ident, d: D4]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The transform of the template's own orientation.
+    .decl identity(d: D4) identity(D4_ID).
+
+    // --- $HoleSeat, $ThirdColorShape ---
+    .decl hole_color(c: Color) hole_color(0).
+
+    // --- $NonFieldSeat, $ThirdColorShape ---
+    // @derive DominantColor: borderline concept
+    .decl field_color(c: Color) field_color(5).
+
+    // --- $StoredShape ---
+    // @derive RarestColor: borderline concept
+    .decl shape_color(c: Color) shape_color(2).
+
+    // --- $MirrorCopies ---
+    .decl mirror_axis(a: Axis) mirror_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl orient_choice(o: Orient)
+orient_choice($OwnOrientation()). orient_choice($MirrorCopies()).
+
+.decl seat_choice(s: Seat)
+seat_choice($HoleSeat()). seat_choice($NonFieldSeat()).
+
+.decl on_shape_choice(t: OnShape)
+on_shape_choice($OffShape()). on_shape_choice($SeatOnShape()).
+
+.decl overlap_choice(x: Overlap)
+overlap_choice($AllFits()). overlap_choice($ExclusiveFits()).
+
+.decl footprint_choice(f: Footprint)
+footprint_choice($WholeShape()). footprint_choice($PerObject($Join4())). footprint_choice($PerObject($Join8())).
+
+.decl shape_source_choice(c: ShapeSource)
+shape_source_choice($StoredShape()). shape_source_choice($ThirdColorShape()).
+
+// Mirrored copies with exclusive fits fail train1, so that combination is no case.
+.decl impl_choice(ch: Choice)
+impl_choice([$OwnOrientation(), S, T, X, F, C]) :-
+    seat_choice(S), on_shape_choice(T), overlap_choice(X), footprint_choice(F), shape_source_choice(C).
+impl_choice([$MirrorCopies(), S, T, $AllFits(), F, C]) :-
+    seat_choice(S), on_shape_choice(T), footprint_choice(F), shape_source_choice(C).
+
+.decl template_color(c: ShapeSource, col: Color)
+
+.decl template_cell(c: ShapeSource, p: Position)
+template_cell(C, P) :- template_color(C, Col), in(P, Col).
+
+// @store: ordinary concept
+.decl paint_color(c: ShapeSource, col: Color)
+paint_color(C, Col) :- template_color(C, Col).
+
+// The transforms each orientation branch copies the template under.
+.decl transform(o: Orient, d: D4)
+transform(O, D) :- orient_choice(O), params.identity(D).
+
+// The cells a copy may cover, apart from template cells.
+.decl base_seat(s: Seat, c: ShapeSource, p: Position)
+
+.decl seat(s: Seat, t: OnShape, c: ShapeSource, p: Position)
+seat(S, T, C, P) :- base_seat(S, C, P), on_shape_choice(T).
+
+.decl footprint(c: ShapeSource, f: Footprint, id: Ident, p: Position)
+
+// @claim stamp-every-fit
+.init occ = Occurrences<FitKey, Unit>
+occ.cell([O, S, T, C, F, Id, D], P, $U()) :-
+    seat(S, T, C, P), footprint(C, F, Id, _), transform(O, D).
+occ.shape([O, S, T, C, F, Id, D], Q, $U()) :-
+    seat_choice(S), on_shape_choice(T),
+    footprint(C, F, Id, P), transform(O, D), apply(D, P, Q).
+
+// The cells each fit of a case covers: the footprint, its transform, and the
+// fit's offset.
+.decl fit_cell(ch: Choice, id: Ident, d: D4, m: Offset, p: Position)
+fit_cell([O, S, T, X, F, C], Id, D, M, P) :-
+    impl_choice([O, S, T, X, F, C]),
+    occ.occurrence([O, S, T, C, F, Id, D], M), occ.shape([O, S, T, C, F, Id, D], Q, _),
+    compose(M, Q, P).
+
+.decl painted(ch: Choice, p: Position)
+
+out(P, Col, [O, S, T, X, F, C]) :- painted([O, S, T, X, F, C], P), paint_color(C, Col).
+out(P, Col, [O, S, T, X, F, C]) :-
+    impl_choice([O, S, T, X, F, C]), template_color(C, _),
+    in(P, Col), !painted([O, S, T, X, F, C], P).
+
+// --- $MirrorCopies ---
+transform($MirrorCopies(), D) :- params.mirror_axis(A), flip_of(A, D).
+
+// --- $HoleSeat ---
+base_seat($HoleSeat(), C, P) :- shape_source_choice(C), in(P, Col), params.hole_color(Col).
+
+// --- $NonFieldSeat ---
+base_seat($NonFieldSeat(), C, P) :-
+    template_color(C, _), in(P, Col),
+    !params.field_color(Col), !template_color(C, Col).
+
+// --- $SeatOnShape ---
+seat(S, $SeatOnShape(), C, P) :- seat_choice(S), template_cell(C, P).
+
+// --- $AllFits ---
+painted([O, S, T, $AllFits(), F, C], P) :- fit_cell([O, S, T, $AllFits(), F, C], _, _, _, P).
+
+// --- $ExclusiveFits ---
+// A fit that shares a cell with another fit of a different cell set.
+.decl crowded(ch: Choice, id: Ident, d: D4, m: Offset)
+crowded(Ch, Id, D, M) :-
+    Ch = [_, _, _, $ExclusiveFits(), _, _],
+    fit_cell(Ch, Id, D, M, P), fit_cell(Ch, Id2, D2, M2, P),
+    ( fit_cell(Ch, Id2, D2, M2, Q), !fit_cell(Ch, Id, D, M, Q)
+    ; fit_cell(Ch, Id, D, M, Q), !fit_cell(Ch, Id2, D2, M2, Q)
+    ).
+
+painted([O, S, T, $ExclusiveFits(), F, C], P) :-
+    fit_cell([O, S, T, $ExclusiveFits(), F, C], Id, D, M, P),
+    !crowded([O, S, T, $ExclusiveFits(), F, C], Id, D, M).
+
+// --- $WholeShape ---
+// One class holding every template cell.
+.init whole = Canon<Position>
+whole.edge(P, Q) :- template_cell(C, P), template_cell(C, Q).
+
+footprint(C, $WholeShape(), Id, P) :- template_cell(C, P), whole.id(P, Id).
+
+// --- $Join4 ---
+// @claim stamp-every-fit
+.init objects4 = Components<ShapeSource>
+objects4.node(C, P) :- template_cell(C, P).
+
+footprint(C, $PerObject($Join4()), Id, P) :- objects4.label(C, P, Id).
+
+// --- $Join8 ---
+// @claim stamp-every-fit
+.init objects8 = Components8<ShapeSource>
+objects8.node(C, P) :- template_cell(C, P).
+
+footprint(C, $PerObject($Join8()), Id, P) :- objects8.label(C, P, Id).
+
+// --- $StoredShape ---
+template_color($StoredShape(), Col) :- params.shape_color(Col).
+
+// --- $ThirdColorShape ---
+// An input color that is neither the field color nor the hole color.
+
+// @ignore: store — a stored third color is a stored shape color, so each case
+//  that stores it is equivalent to the case with $StoredShape in place of
+//  $ThirdColorShape, and fails Equivalence
+.decl third_color(col: Color)
+third_color(Col) :- in(_, Col), !params.field_color(Col), !params.hole_color(Col).
+
+.decl third_colors_tie()
+third_colors_tie() :- third_color(Col1), third_color(Col2), Col1 != Col2.
+
+template_color($ThirdColorShape(), Col) :- third_color(Col), !third_colors_tie().
+
+.comp Determine {
+    // The color the outputs paint.
+    .decl shape_color(c: Color)
+    shape_color(C) :- ex_out(E, P, C), !ex_in(E, P, C).
+
+    // The color the outputs paint over.
+    .decl hole_color(c: Color)
+    hole_color(C) :- ex_in(E, P, C), !ex_out(E, P, C), ex_out(E, _, _).
+
+    // The input color that is neither of those.
+
+    // @ignore: determine prediction — the field color is read from the
+    //  evidence as the input color left once the painted color and the
+    //  painted-over color are known
+    .decl field_color(c: Color)
+    field_color(C) :- ex_in(_, _, C), !shape_color(C), !hole_color(C).
+}

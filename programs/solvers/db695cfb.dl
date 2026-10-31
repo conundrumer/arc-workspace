@@ -1,0 +1,150 @@
+// db695cfb
+// @draft
+// @keywords: markers span cast
+// @scene clear-cross-lines: the full diagonal through each `cross_color` cell
+//  that lies between two diagonal `link_color` cells, square to their joining
+//  line, holds no other mark and no cell of another joining line.
+// @rule join-diagonal-pairs: each two `link_color` cells on one diagonal are
+//  joined by `link_color` on every cell between them on that diagonal.
+// @rule perpendicular-cross: each `cross_color` cell strictly between two
+//  joined `link_color` cells paints `cross_color` on its whole diagonal of the
+//  other diagonal axis, out to the grid edges in both directions.
+// @rule cross-over-link: where a `cross_color` line and a `link_color` line
+//  meet, the cell is `cross_color`.
+// @rule rest-unchanged: every other cell keeps its input color, so a
+//  `cross_color` cell off every joining line stays a single cell.
+
+// which `cross_color` cells send a square line
+.type Emitters =
+    // @claim perpendicular-cross
+    Inside {}
+    // @rule extension-emits: a `cross_color` cell on the diagonal of a joined
+    //  pair, beyond either end, also sends the square line.
+    // @witness cross-color-on-extension: ordinary concept
+  | ExtensionEmits {}
+
+// where a square line ends
+.type Extent =
+    // @claim perpendicular-cross
+    ToEdge {}
+    // @rule perpendicular-cross: in each direction the square line stops
+    //  before the first input mark of either color.
+    // @witness stray-mark-on-cross-line: variant concept
+    //     @relaxed clear-cross-lines
+  | CrossStopsAtMark {}
+
+// the color of a cell where a square line meets `link_color`
+.type Precedence =
+    // @claim cross-over-link
+    CrossOverLink {}
+    // @rule cross-over-link: a cell of a joining line, or a `link_color` mark,
+    //  that a square line passes keeps `link_color`, and the emitting cell
+    //  keeps `cross_color`.
+    // @witness cross-line-meets-other-link: variant concept
+    //     @relaxed clear-cross-lines
+  | LinkOverCross {}
+
+.type Choice = [e: Emitters, x: Extent, r: Precedence]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl link_color(c: Color) link_color(1).
+    .decl cross_color(c: Color) cross_color(6).
+}
+
+.init params = Params
+
+.decl emitters_choice(e: Emitters)
+emitters_choice($Inside()). emitters_choice($ExtensionEmits()).
+
+.decl extent_choice(x: Extent)
+extent_choice($ToEdge()). extent_choice($CrossStopsAtMark()).
+
+.decl precedence_choice(r: Precedence)
+precedence_choice($CrossOverLink()). precedence_choice($LinkOverCross()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([E, X, R]) :- emitters_choice(E), extent_choice(X), precedence_choice(R).
+
+// The `link_color` marks, cast along each diagonal axis.
+// @claim join-diagonal-pairs
+.init link = Between<DiagAxis>
+link.axis(A, A) :- diag_axis_elem(A).
+link.cell(A, P) :- diag_axis_elem(A), in(P, _).
+link.mark(A, P) :- diag_axis_elem(A), in(P, Col), params.link_color(Col).
+
+// A cell of a joining line, the `link_color` marks included.
+.decl joined(p: Position)
+joined(P) :- link.between(_, P).
+
+// The `cross_color` cells that send a square line, with the axis of the
+// joining line they lie on.
+.decl emitter(p: Position, a: DiagAxis, e: Emitters)
+
+// The square lines, cast from every `cross_color` cell along each diagonal
+// axis, and blocked by every input mark.
+// @claim perpendicular-cross
+.init cross = Ray<DiagAxis>
+cross.dir(A, D) :- diag_axis_of(D, A).
+cross.cell(A, P) :- diag_axis_elem(A), in(P, _).
+cross.mark(A, P) :- diag_axis_elem(A), in(P, Col), params.cross_color(Col).
+cross.blocked(A, P) :-
+    diag_axis_elem(A), in(P, Col),
+    ( params.link_color(Col) ; params.cross_color(Col) ).
+
+.decl cross_line(p: Position, e: Emitters, x: Extent)
+
+// --- $Inside ---
+emitter(P, A, $Inside()) :- in(P, Col), params.cross_color(Col), link.between(A, P).
+
+// --- $ExtensionEmits ---
+// A `link_color` mark with a partner on its axis-a diagonal.
+.decl partnered(a: DiagAxis, q: Position)
+partnered(A, Q) :- link.ray(A, Q2, _, _, Q), link.mark(A, Q2), Q != Q2.
+
+emitter(P, A, $ExtensionEmits()) :-
+    in(P, Col), params.cross_color(Col),
+    partnered(A, Q), link.ray(A, P, _, _, Q).    // on the pair's diagonal
+
+// --- $ToEdge ---
+cross_line(P, E, $ToEdge()) :-
+    emitter(Src, A, E), diag_perp(A, A2), cross.ray(A2, P, _, _, Src).
+
+// --- $CrossStopsAtMark ---
+cross_line(P, E, $CrossStopsAtMark()) :-
+    emitter(Src, A, E), diag_perp(A, A2), cross.clear(A2, P, _, _, Src).
+
+// --- $CrossOverLink ---
+out(P, Col, [E, X, $CrossOverLink()]) :-
+    impl_choice([E, X, $CrossOverLink()]), in(P, Col0),
+    ( cross_line(P, E, X), params.cross_color(Col)
+    ; !cross_line(P, E, X), joined(P), params.link_color(Col)
+    ; !cross_line(P, E, X), !joined(P), Col = Col0
+    ).
+
+// --- $LinkOverCross ---
+// A joining-line cell that the input does not hold as `cross_color`.
+.decl link_top(p: Position)
+link_top(P) :- joined(P), in(P, Col), !params.cross_color(Col).
+
+out(P, Col, [E, X, $LinkOverCross()]) :-
+    impl_choice([E, X, $LinkOverCross()]), in(P, Col0),
+    ( link_top(P), params.link_color(Col)
+    ; !link_top(P), cross_line(P, E, X), params.cross_color(Col)
+    ; !link_top(P), !cross_line(P, E, X), Col = Col0
+    ).
+
+.comp Determine {
+    // A color some train input lacks.
+    .decl absent(c: Color)
+    absent(C) :- ex_in(_, _, C), ex_out(E, _, _), !ex_in(E, _, C).
+
+    // Every input has marks to join.
+    .decl link_color(c: Color)
+    link_color(C) :- ex_in(_, _, C), !absent(C).
+
+    // The other color that a train output paints over its input.
+    .decl cross_color(c: Color)
+    cross_color(C) :- ex_out(E, P, C), !ex_in(E, P, C), !link_color(C).
+}
