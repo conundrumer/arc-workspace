@@ -86,12 +86,6 @@ class Signal:
 
 
 @dataclass(frozen=True)
-class SetClass:
-    """The pid of an ungated process that is to run in the CPU class of the gated jobs."""
-    pid: int
-
-
-@dataclass(frozen=True)
 class Demote:
     """The gated job of client `pid` is to be given the need `need`, which is above its own, and its
     processes the nice value of it."""
@@ -99,7 +93,7 @@ class Demote:
     need: Need
 
 
-Effect = Union[Log, Signal, SetClass, Demote]
+Effect = Union[Log, Signal, Demote]
 
 
 @dataclass
@@ -332,8 +326,7 @@ class Core:
             del self.watch[root]
             reason = "cpu" if watch.cpu_since is not None and now - watch.cpu_since >= ADOPT_CPU_SECONDS else "memory"
             out += [Log("adopt", {"pid": root, "owner": p.session, "reason": reason, "cpus": job.cpus,
-                                  "gib": gib_up(footprint), "command": p.command[:COMMAND_CHARS]}),
-                    SetClass(root)]
+                                  "gib": gib_up(footprint), "command": p.command[:COMMAND_CHARS]})]
             self.tell(job, Reason.ADOPTED, heavy_notices.adopted(root, p.command, job.cpus, gib_up(footprint)))
         self.watch = {pid: w for pid, w in self.watch.items() if pid in seen}
         return out

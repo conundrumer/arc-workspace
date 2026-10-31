@@ -24,9 +24,7 @@ A call registers its command with the resource daemon (`scripts/resource_daemon.
 daemon where none runs. `queue` prints each running job with its need, and each ungated process of a session
 that the daemon counts.
 
-The call replaces itself with the command by `exec` of `taskpolicy -c utility
-<command>`. The command runs below the
-user's interactive applications, as does each process it starts, as the call's
+The call replaces itself with the command by `exec`. The command runs as the call's
 own process in the call's process group, with the caller's environment as it
 stands, plus `ARC_HEAVY_CPUS` set to `--cpus`, and `ARCLOG_THREADS`,
 `CARGO_BUILD_JOBS`, `RAYON_NUM_THREADS`, `RUST_TEST_THREADS`, `OMP_NUM_THREADS`
@@ -49,7 +47,7 @@ script or `<tier>` is none of the three.
 A failure before the command starts prints `run_heavy.py: <reason>` on
 stderr and exits 125: no command given, a bad option, the daemon (it cannot be
 reached or started, speaks another protocol, or reads no machine load), the
-nice value, `sysctl`, `vm_stat` or `taskpolicy`. A command that is not
+nice value, `sysctl` or `vm_stat`. A command that is not
 found exits 127, and one that cannot be executed 126, as `env` does. A signal
 before the command starts ends the call, and the command has not run.
 
@@ -190,8 +188,6 @@ def run(argv: List[str]) -> int:
     if (status := not_started(command[0])) is not None:
         say(f"{command[0]}: " + ("not found" if status == NOT_FOUND else "not executable"))
         return status
-    if shutil.which("taskpolicy") is None:
-        raise Refusal("taskpolicy is not found")
     set_nice(options.need)
     parent = os.environ.get(SHARE_ENV)
     if parent is not None:
@@ -208,9 +204,9 @@ def run(argv: List[str]) -> int:
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
     signal.signal(signal.SIGXFSZ, signal.SIG_DFL)
     try:
-        os.execvp("taskpolicy", ["taskpolicy", "-c", "utility", *command])
+        os.execvp(command[0], command)
     except OSError as error:
-        raise Refusal(f"taskpolicy: {error.strerror}")
+        raise Refusal(f"{command[0]}: {error.strerror}")
 
 
 def main(argv: List[str]) -> int:

@@ -58,7 +58,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import heavy_protocol
-from heavy_core import Core, Demote, Effect, Log, Proc, Sample, SetClass, Signal as SendSignal
+from heavy_core import Core, Demote, Effect, Log, Proc, Sample, Signal as SendSignal
 from heavy_model import Job, Kind, Need
 import heavy_legacy
 from heavy_notices import Reason, message_line
@@ -73,7 +73,6 @@ IDLE_EXIT_SECONDS = 60
 SOCKET_TIMEOUT = 2.0
 OUTSIDE_SECONDS = 15
 LOG_ROTATE_BYTES = 5 << 20
-TASKPOLICY_CLASS = "utility"
 READ_ERRORS = (OSError, ValueError, KeyError, IndexError, subprocess.CalledProcessError)
 
 
@@ -154,8 +153,6 @@ class Daemon:
                 self.log(effect.event, effect.fields)
             elif isinstance(effect, SendSignal):
                 self.send_signal(effect)
-            elif isinstance(effect, SetClass):
-                self.set_class(effect.pid)
             elif isinstance(effect, Demote):
                 self.demote(effect)
 
@@ -168,12 +165,6 @@ class Daemon:
             os.kill(effect.pid, effect.number)
         except OSError as error:
             self.log("signal-failed", {"pid": effect.pid, "signal": effect.number, "error": repr(error)})
-
-    def set_class(self, pid: int) -> None:
-        try:
-            subprocess.run(["taskpolicy", "-c", TASKPOLICY_CLASS, "-p", str(pid)], capture_output=True, timeout=5)
-        except (OSError, subprocess.SubprocessError) as error:
-            self.log("class-failed", {"pid": pid, "error": repr(error)})
 
     def demote(self, effect: Demote) -> None:
         """Give the job of `effect` its need, where it still runs."""
