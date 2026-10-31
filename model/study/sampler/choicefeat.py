@@ -17,7 +17,8 @@ record column, or END), val (a value of a column), fval (a value of a field), op
   rkind      the decoder's kind of the relation: 'lib relation', 'relation macro', 'fact relation', 'relation' (derived); null for a comparison
   col        val: the lib column's name, else null (always null for a derived relation)
   ctype      val, fval: the type of the column (of the field, for fval) the value fills, null where unknown
-  rtypes     the types of the relation's columns by position, null where unknown
+  rtypes     the types of the relation's columns by column position, null where unknown; null in a position with no column. A derived
+             relation's has one entry for each column token, and 'Record' for a record column
   text       the atom so far.  Column tokens are positions: '(neighbor (:0 L1) (:1 *L2) (:4'; a label is L<i>, i the order in which
              the clause made it (a fresh label is '*L<i>'); a record column holds '(:0 (:0 L3)'
   prefix     the clause's atoms before atom k, as strings
@@ -29,11 +30,16 @@ record column, or END), val (a value of a column), fval (a value of a field), op
 An atom stop row is of the finished atom: text is its whole text, prefix and scope_labels/scope_types include it (the labels it made are
   the last '*' of the prefix), rel and rkind/rtypes are its relation's, arity is the relation's number of columns (null where unknown), ncols
   the number of columns the atom names, and the options are STOP and GO (P's hazard and its complement).
-A row from CHOICE_ROWS also has gold, task, case, point, point_group and gold_atom; the mask drops them.
+  point_group  {'kind': 'RULE', 'DET' or 'INIT'}, the head of the clause being drawn (INIT for a port; a RULE that OUT reads is a 'RULE')
+  prior_uses the earlier atoms of the relation, oldest first: those of the program's earlier clauses, then those of the clause's atoms
+             before this one (an atom stop's leave out the finished atom); [] for a comparison.  Per atom: {'same_clause': bool, 'cols':
+             {':3': 'fresh' | 'read' | 'zero' | 'rec'}}, one entry for each column the atom names: a * (or ^) label, a label, 0, a record
+A row from CHOICE_ROWS also has gold, task, case, point and gold_atom; the mask drops them.
 
 mask_row(row) is what a feature sees.  It keeps only: k, phase, neg, rel, rkind, col, ctype, rtypes, text, prefix, scope_labels,
-scope_types, arity, ncols, options (tok, kind, p, ctype, name, key).  So it hides: gold, gold_atom, clause, point_group (with depth and d_out),
-task, case, point.  In what it keeps it hides the author's names:
+scope_types, arity, ncols, point_group (only its kind), prior_uses, options (tok, kind, p, ctype, name, key).  So it hides: gold, gold_atom,
+clause, task, case, point, and any other field of an old row's point_group (the group, output, depth, d_out).  In what it keeps it hides the
+author's names (prior_uses has none):
   derived relations   in the prefix '&r2.box' becomes '&r2'; a derived atom's column names become '_' ('(:key ...' -> '(:_ ...')
   label names         V0, V1, ... in the order the prefix first makes them with '*'; scope_labels takes the same names
   types               normalised to the name before '(' ('Pose(...)' -> 'Pose')
@@ -56,7 +62,7 @@ import relfeat
 PHASES = ('cols', 'fcol', 'val', 'fval', 'op', 'stop')  # the phases a model can score
 DEFAULT_PHASES = ('cols', 'fcol', 'val', 'fval', 'op')
 KEEP_ROW = ('k', 'phase', 'neg', 'rel', 'rkind', 'col', 'ctype', 'rtypes', 'text', 'prefix', 'scope_labels', 'scope_types', 'arity', 'ncols',
-            'options')
+            'prior_uses', 'options')
 KEEP_OPT = ('tok', 'kind', 'p', 'ctype', 'name', 'key')
 KINDS = ('column', 'stop', 'end', 'fresh', 'zero', 'label')
 RKINDS = {'lib relation': 'lib', 'relation macro': 'macro', 'fact relation': 'fact', 'relation': 'declared'}
@@ -104,6 +110,7 @@ def mask_row(row):
     out['phase'] = phase_of(row)
     out['neg'] = bool(row.get('neg'))
     out['prefix'] = [rename(a) for a in pre]
+    out['point_group'] = {'kind': (row.get('point_group') or {}).get('kind')}
     sl = row.get('scope_labels')
     out['scope_labels'] = [cmap[n] for n in sl] if sl is not None else None
     out['scope_types'] = [nt(t) for t in row.get('scope_types') or []]

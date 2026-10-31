@@ -71,8 +71,10 @@ Changes from sample.py (v1):
   column or the stop at a column, a value, a record field, an operand, and the stop after each atom where the clause can
   end), with the relation, the column's name, gold's pick and each option's token, kind and P share (STOP and GO for a
   stop);
-  The rows also carry neg, rkind, ctype and rtypes, a column option's ctype, name and key, and an atom stop's rel, text, rkind, rtypes, arity and
-  ncols, and its prefix and scope include the finished atom (choicefeat.py's docstring has the fields);
+  The rows also carry neg, rkind, ctype and rtypes (a derived relation's by column position), a column option's ctype, name and key, and an atom
+  stop's rel, text, rkind, rtypes, arity and ncols, and its prefix and scope include the finished atom; each row has point_group, {'kind': the
+  clause's head, INIT for a port}, and prior_uses, the earlier atoms of the pick's relation, which for an atom stop leave out the finished
+  atom (choicefeat.py's docstring has the fields);
 - STEER_CHOICE (the path of choicecheap's pickle, choicefeat.Scorer) multiplies the weight of each option of a column, a column stop, a
   field, a value or an operand by exp(STEER_CHOICE_BETA * f), f from the model on the row that CHOICE_ROWS would write at that pick
   (P's shares unsteered; GOLD_Q applies it to gold's path, P never). At a column pick where the atom may stop, the stop and the columns
@@ -396,6 +398,46 @@ def body_atoms(clause):
             if depth == 0:
                 out.append(inner[start:i + 1])
     return out
+
+
+RELATION_KINDS = ('relation', 'lib relation', 'relation macro', 'fact relation')  # the decoder's kinds of a relation token
+
+
+def atom_uses(V, toks):
+    """The atoms of the model tokens toks (vocabulary V), in order, as (relation token, {column token: how the atom binds it}):
+    'fresh' for a * or ^, 'read' for a label, 'zero' for 0 and 'rec' for a record value. A NOT, a comparison and a compound's
+    keyword end the atom before; the atoms inside a compound count as atoms."""
+    out, cur, col, rec = [], None, None, False
+    for t in toks:
+        if rec:
+            rec = t != M.END
+            continue
+        k = V.kind(t)
+        if k in RELATION_KINDS:
+            cur, col = {}, None
+            out.append((t, cur))
+        elif cur is None:
+            continue
+        elif k == 'column':
+            if col is None:
+                col = V.name(t)
+            else:  # a column right after a column: the first is a record's, and this is its field
+                cur[col], col, rec = 'rec', None, True
+        elif col is not None and (t in (M.STAR, M.CARET, M.ZERO) or k == 'label'):
+            cur[col], col = 'zero' if t == M.ZERO else 'fresh' if t in (M.STAR, M.CARET) else 'read', None
+        else:
+            cur, col = None, None
+    return out
+
+
+def prior_history(V, ids, model, paths, clause):
+    """(the head of clause `clause` of the program stream (ids, model, paths), {relation token: [the uses of it in the clauses
+    before, oldest first, as a CHOICE_ROWS row's prior_uses lists them]})."""
+    start = next(i for i, p in enumerate(paths) if p and p[0] == clause)
+    hist = collections.defaultdict(list)
+    for t, cols in atom_uses(V, [ids[i] for i in range(start) if model[i]]):
+        hist[t].append(dict(same_clause=False, cols=cols))
+    return V.name(ids[start]), hist
 
 
 def compat(a, b):
@@ -1157,6 +1199,7 @@ class Drawer:
         self.choice_stats = collections.Counter()  # STEER_CHOICE: calls, misses and CPU seconds (row, scoring)
         self.rel_stats = collections.Counter()  # STEER_REL: calls, misses and CPU seconds (prefix render, P weights, scoring)
         self.rel_closed, self.rel_base, self.rel_pg, self.rel_off = None, 0, None, False  # run_point sets these (closed_program, base_forms, point group, no steer)
+        self.row_pg, self.hist = {}, {}  # run_point sets these: a CHOICE_ROWS row's point_group, and prior_history's uses of each relation token before the clause
         self.rel_dag_src = None  # run_point sets this: (point_dir, point index), the forms before the point
         self.rel_dag = None  # STEER_REL: dag_info's (fields, adj) of those forms, built at the first miss; False where it cannot be built
         self.rel_dag_f, self.rel_dag_p = {}, {}  # base -> its fields; (bases the prefix reads, base) -> dag_path
@@ -1532,9 +1575,37 @@ class Drawer:
         t = column_type(ts, cols, pos, field)
         return None if t is None else str(t).split('(')[0]
 
-    def choice_row(self, k, n, popts, rel, joined, leaf, gold, stop=None):
+    def row_rtypes(self, rtok):
+        """A CHOICE_ROWS row's rtypes: the type of each column of relation token rtok by column position, without the type's
+        parameters (None where unknown, and at a position with no column). A derived relation's come from colmap, as col_type
+        reads them, with 'Record' for a record column; the others' from rel_types."""
+        if rtok is None:
+            return None
+        if self.fr.KIND[rtok] == 'relation':
+            cols = self.colmap.get(M.slot_no(self.V.name(rtok)))
+            if not cols:
+                return None
+            out = [None] * (1 + max(p for p, _ in cols))
+            for (p, f), t in cols.items():
+                if f is None:
+                    out[p] = str(t).split('(')[0]
+                elif out[p] is None:
+                    out[p] = 'Record'
+            return out
+        ts = self.rel_types(rtok)
+        return [str(t).split('(')[0] for t in ts] if ts else None
+
+    def prior_uses(self, rtok, key):
+        """A CHOICE_ROWS row's prior_uses: the earlier atoms of relation token rtok, oldest first, those of the clauses before the
+        clause and then those of the clause's tokens key; [] without a relation."""
+        if rtok is None:
+            return []
+        return self.hist.get(rtok, []) + [dict(same_clause=True, cols=c) for t, c in atom_uses(self.V, key) if t == rtok]
+
+    def choice_row(self, k, n, popts, rel, joined, leaf, gold, stop=None, key=()):
         """A CHOICE_ROWS row (without the fields of the point): gold's pick at node n among popts, with P's shares (times 1 - stop
-        where the atom could stop there, and a STOP option of share stop). The steer builds it with gold None."""
+        where the atom could stop there, and a STOP option of share stop). The steer builds it with gold None. key: the clause's
+        tokens before the atom."""
         ws = self.weights(n, popts, rel, joined, leaf, False)
         tot = sum(ws) or 1.0
         go = 1.0 - stop if stop is not None else 1.0
@@ -1551,27 +1622,28 @@ class Drawer:
         if stop is not None:
             opts.append(dict(tok='STOP', kind='stop', p=round(stop, 6)))
         col = names[n.last] if n.phase in ('val', 'fval') and names and 0 <= n.last < len(names) else None
-        ts = self.rel_types(n.rtok) if n.rtok is not None else None
         return dict(k=k, phase=n.phase, neg=bool(n.neg), rel=rel, rtok=self.V.name(n.rtok) if n.rtok is not None else None,
                     rkind=self.fr.KIND[n.rtok] if n.rtok is not None else None, col=col,
                     ctype=self.col_type(n.rtok, n.last, n.need if n.phase == 'fval' else None) if n.phase in ('val', 'fval') else None,
-                    rtypes=[str(t).split('(')[0] for t in ts] if ts else None, text=n.text, gold=gold, options=opts)
+                    rtypes=self.row_rtypes(n.rtok), text=n.text, gold=gold, options=opts, point_group=self.row_pg,
+                    prior_uses=self.prior_uses(n.rtok, key))
 
     def choice(self, k, n, popts, rel, joined, leaf, gold, stop=None):
         """A CHOICE_ROWS row of a forced pick."""
         if self.choices is None or self.force is None:
             return
-        self.choices.append(self.choice_row(k, n, popts, rel, joined, leaf, gold, stop))
+        self.choices.append(self.choice_row(k, n, popts, rel, joined, leaf, gold, stop, self.p_key))
 
-    def stop_row(self, k, toks, rel, text, h, gold=None):
+    def stop_row(self, k, toks, rel, text, h, gold=None, key=()):
         """A CHOICE_ROWS row of the stop after atom k (its tokens toks, relation rel, text), without the fields of the point and the
-        clause: P's hazard h and the atom. The row's prefix and scope include the atom."""
+        clause: P's hazard h and the atom. The row's prefix and scope include the atom, and its prior_uses (of the atom's relation)
+        do not. key: the clause's tokens before the atom."""
         tok = toks[1] if toks[0] == M.NOT else toks[0]
-        ts = None if tok in M.CMP else self.rel_types(tok)
         return dict(k=k, phase='atom stop', neg=toks[0] == M.NOT, rel=rel, rkind=None if tok in M.CMP else self.fr.KIND[tok],
-                    rtypes=[str(t).split('(')[0] for t in ts] if ts else None, text=text, arity=self.atom_arity(toks, rel),
+                    rtypes=None if tok in M.CMP else self.row_rtypes(tok), text=text, arity=self.atom_arity(toks, rel),
                     ncols=top_cols(text), gold=gold,
-                    options=[dict(tok='STOP', kind='stop', p=round(h, 6)), dict(tok='GO', kind='stop', p=round(1 - h, 6))])
+                    options=[dict(tok='STOP', kind='stop', p=round(h, 6)), dict(tok='GO', kind='stop', p=round(1 - h, 6))],
+                    point_group=self.row_pg, prior_uses=None if tok in M.CMP else self.prior_uses(tok, key))
 
     def choice_on(self, name):
         """Whether STEER_CHOICE steers phase `name` ('stop' for the atom stop): it is in STEER_CHOICE_PHASES and the model was trained on it."""
@@ -1592,9 +1664,9 @@ class Drawer:
             got = 0.0
             pf = self.rel_closed(dec, 1)
             if pf is not None:
-                row = self.stop_row(k, toks, rel, text, h)
+                row = self.stop_row(k, toks, rel, text, h, None, key[:len(key) - len(toks)])
                 row.update(prefix=body_atoms(pf.split('\n')[self.rel_base]), scope_labels=list(tb['labels']) if tb and tb.get('labels') is not None else None,
-                           scope_types=[str(t) for t in tb['types']] if tb else [], point_group=self.rel_pg)
+                           scope_types=[str(t) for t in tb['types']] if tb else [])
                 c1 = time.process_time()
                 self.choice_stats['s_row'] += c1 - c0
                 if CHOICE_CHECK:
@@ -1629,9 +1701,9 @@ class Drawer:
             got = ([1.0] * len(popts), 1.0)
             pre = None if self.rel_off else self.rel_prefix(fr, key, k)
             if pre is not None:
-                row = self.choice_row(k, n, popts, rel, joined, leaf, None, stop)
+                row = self.choice_row(k, n, popts, rel, joined, leaf, None, stop, key)
                 row.update(prefix=pre, scope_labels=list(self.p_labels) if self.p_labels is not None else None,
-                           scope_types=list(self.p_scope), point_group=self.rel_pg)
+                           scope_types=list(self.p_scope))
                 c1 = time.process_time()
                 self.choice_stats['s_row'] += c1 - c0
                 if CHOICE_CHECK:  # debug: the rows that the steer scores, one JSON line each
@@ -2357,6 +2429,8 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
 
     dr.rel_closed, dr.rel_base, dr.rel_pg, dr.rel_off = closed_program, base_forms, spec.get('point_group'), bool(port)
     dr.rel_id = [task, case, list(point)]
+    head, dr.hist = prior_history(V, ids, model, paths, point[0])
+    dr.row_pg = dict(kind='INIT' if port else head)  # the clause's head; whether OUT reads a RULE is not known before OUT
     dr.rel_dag_src = (spec['point_dir'], point[0])
 
     def static_hit(pf, path):
@@ -3012,7 +3086,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                     lg.both(math.log(h) if k == len(gold_atoms) else log0(1 - h))
                     parts['atom stop'] += math.log(h) if k == len(gold_atoms) else log0(1 - h)
                     if dr.choices is not None:
-                        dr.choices.append(dr.stop_row(k, a, res[2], res[3], h, 'STOP' if k == len(gold_atoms) else 'GO'))
+                        dr.choices.append(dr.stop_row(k, a, res[2], res[3], h, 'STOP' if k == len(gold_atoms) else 'GO', tuple(gt[:len(gt) - len(a)])))
                 parts['atom %d' % min(k, 4)] += sum(v for x, v in parts.items() if not x.startswith('atom ')) - before
             rows[0]['logp_parts'] = {x: round(v, 4) if math.isfinite(v) else None for x, v in parts.items()}  # None: P gives gold's pick 0
             if dr.relrows is not None:
@@ -3042,7 +3116,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                 for r in dr.choices:
                     after = r['phase'] == 'atom stop'  # the stop reads the clause with its atom
                     sc = scope_of(r['k'] + after)
-                    r.update(task=task, case=case, point=point, point_group=spec.get('point_group'),
+                    r.update(task=task, case=case, point=point,
                              prefix=gb[:r['k'] - 1 + after], gold_atom=gb[r['k'] - 1] if r['k'] <= len(gb) else None,
                              scope_labels=sc.get('labels'), scope_types=[str(t) for t in sc.get('types') or []])
                 choice_rows.extend(dr.choices)
