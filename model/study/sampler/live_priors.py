@@ -10,9 +10,11 @@ random orders that keep its reads.
 """
 import argparse
 import collections
+import json
 import os
 import pickle
 import random
+import tempfile
 
 import sample2_col as S
 import sampler_paths as P
@@ -22,6 +24,7 @@ KIND_TOP = 12  # the last bucket
 WALK_KINDS = 'DET', 'INIT', 'RULE'  # the kinds that a draw makes
 WALK_TOP = 8  # a kind's clause count is capped at this in a walk state
 WALK_ORDERS = 8  # random orders counted per program
+READER_PROGRAM = '(RULE &r (input (:P *P) (:Col *Col)))\n(OUT (&r ^P ^Col))'  # a program, for the engine's export of the registry
 
 
 def kind_bucket(n):
@@ -125,6 +128,19 @@ def body_compounds(tasks):
     return out
 
 
+def registry_types(regcols):
+    """S.lib_types over the registry's entries, which the engine exports with any program."""
+    program = S.arclog.StudyProgram.from_sexp(READER_PROGRAM, S.arclog.DecodeSettings())
+    entries = json.loads(S.arclog.study_program_export_json(program))['definitions']['registry']['entries']
+    with tempfile.TemporaryDirectory() as folder:
+        class Rc:  # lib_types reads only the libraries path of a point
+            class state:
+                libraries_path = folder + '/libraries.json'
+        with open(Rc.state.libraries_path, 'w') as f:
+            json.dump(entries, f)
+        return S.lib_types(Rc, regcols)
+
+
 def fit():
     tasks = sorted(t for t in os.listdir(S.CORPUS) if S.corpus_forms(t))
     kinds = collections.defaultdict(collections.Counter)  # (previous kind, bucket) -> next kind -> clauses
@@ -163,12 +179,7 @@ def fit():
     bodies = {k: S.gold_bodies(tasks, k) for k in ('RULE', 'DET')}
     bodies['INIT'] = S.gold_port_bodies(tasks)
     regcols = S.registry_columns()
-    with os.scandir(S.FSTORE) as points:
-        lib = next(points).path + '/libraries.json'  # one file, the same at every point
-
-    class Rc:  # lib_types reads only the libraries path of a point
-        class state:
-            libraries_path = lib
+    regtypes = registry_types(regcols)
     compound = collections.Counter()
     for c in S.compound_counts(tasks).values():
         compound.update(c)
@@ -180,7 +191,7 @@ def fit():
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
                 ports=ports, heads=heads, head_labels=dict(head_labels), compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
-                hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=S.lib_types(Rc, regcols),
+                hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
 

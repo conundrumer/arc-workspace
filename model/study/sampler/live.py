@@ -87,7 +87,10 @@ ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
 BRANCHES = 'RULE', 'key', 'port'  # the places of a body that may hold an OR, each with its counts in the priors
 BIND_QUIT = 0.8  # the chance that a later branch with an unbound exported label fails, at each atom past bind_atoms
 KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of 907 gold ports of keys of two or more labels read them all
+EXAMPLE_READ = dict(DET=0.2, INIT=0.03)  # the factor on a declared relation's Example column in a body of the kind: gold's atoms on declared relations read it in 32% of DETs' and 3.9% of INITs'; draws read it in 41% and 8% at these factors
 FIELD_AGAIN = 0.01  # the factor on a field that a record site repeats: 15 of 1570 gold record sites have one
+HEAD_FITS = dict(Position={'Position', 'Box'}, Offset={'Offset', 'Box'}, Axis={'Axis', 'Axis4'}, DiagAxis={'DiagAxis', 'Axis4'}, Dir={'Dir', 'Dir8'}, DiagDir={'DiagDir', 'Dir8'},
+                 Point={'Position', 'Offset', 'Box'})  # the label types that a head column of a type takes, where a family's other members do not: the engine's lattice has no value in both of two siblings
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against those of the program's state
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
@@ -349,15 +352,26 @@ class LiveDrawer(S.Drawer):
     """S's Drawer with the limits as arguments."""
 
     labs_wanted = 0  # the count of labels of the clause at which a port's body has as many as its head takes
+    example_read = 1.0  # the factor on the weight of a declared relation's Example column
 
     def __init__(self, V, counts, rng, regcols, fr, regtypes, limits):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
         self.root_cap, self.node_cap = limits.root_cap, limits.node_cap
 
     def weights(self, n, os, rel, joined, leaf, steer, jset=None, must_join=False):
-        """S's, with the field that a record site repeats at gold's share."""
+        """S's, with the field that a record site repeats at gold's share, and a declared relation's Example column, which S's column
+        weights take for the first column, at example_read."""
         ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
-        return [w * FIELD_AGAIN if self.fr.colpos.get(o) == n.need else w for o, w in zip(os, ws)] if n.phase == 'fcol' else ws
+        if n.phase == 'fcol':
+            return [w * FIELD_AGAIN if self.fr.colpos.get(o) == n.need else w for o, w in zip(os, ws)]
+        if n.phase == 'cols':
+            return [w * self.example_read if self.example_column(n, o) else w for o, w in zip(os, ws)]
+        return ws
+
+    def example_column(self, n, o):
+        """Whether column token o at cols node n is a declared relation's Example column: colmap has the relation's other columns."""
+        known = self.colmap.get(M.slot_no(self.V.name(n.rtok))) if self.fr.KIND[n.rtok] == 'relation' else None
+        return bool(known) and not any(p == self.fr.colpos[o] for p, _ in known)
 
     def steer_choice(self, fr, n, popts, opts, k, rel, joined, leaf, stop, key):
         """S's, with an atom going on where the port's head wants more labels, or where it holds a column of a needed type: a stop here
@@ -365,6 +379,8 @@ class LiveDrawer(S.Drawer):
         fm, stq = super().steer_choice(fr, n, popts, opts, k, rel, joined, leaf, stop, key)
         if stop is not None and (n.labs < self.labs_wanted or any(self.col_needed(n.rtok, fr.colpos[o]) for o in opts)):
             stq *= NEED_STOP
+        if stop is not None and opts and all(self.example_column(n, o) for o in opts):  # weights rank columns, so a lone Example column is read unless the atom stops
+            stq = 1 - (1 - stq) * self.example_read
         return fm, stq
 
 
@@ -732,7 +748,7 @@ class Run:
     def head_need(self, bound, params, fields):
         """[set of types] that a port's body needs for its head columns bound: (column, type) pairs. fields has each type parameter's
         label types so far."""
-        family = lambda t: {'Position', 'Box'} if t == 'Point' else next((set(x) for x in self.pri['families'] if t in x), {t})  # noqa: E731
+        family = lambda t: HEAD_FITS.get(t) or next((set(x) for x in self.pri['families'] if t in x), {t})  # noqa: E731
         return [family(t) for _, t in bound if t not in params or t == 'Point'] + [family(x) for _, t in bound for x in fields.get(t, ()) if x != ANY_TYPE]
 
     def record_size(self, comp, name, c):
@@ -818,7 +834,7 @@ class Run:
         dr = LiveDrawer(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
         dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmaps[kind], self.jc[kind]
         dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
-        dr.place = place or kind
+        dr.place, dr.example_read = place or kind, EXAMPLE_READ.get(kind, 1.0)
         dr.orc = self.orcs.get(dr.place)
         self.steer(pg, dr, kind)
         return dr
@@ -867,8 +883,8 @@ class Run:
 
     def label_types(self, dr, atoms):
         """{label name: type} of the labels that drawn atom texts make, where the engine gives no table (inside a port). A relation
-        with no known columns, as a proposer's or a component's output, or a column of no known type, gives ANY_TYPE, so that the decoder
-        judges its labels at the head."""
+        with no known columns, as a proposer's or a component's output, or a library column of no one type, gives ANY_TYPE, so that the
+        decoder judges its labels at the head. A label of a declared relation's Example column has no type here."""
         out = {}
         for atom in atoms:
             m = re.match(r'\((?:NOT \()?(\S+)', atom)
@@ -876,8 +892,9 @@ class Run:
             if rtok is not None:
                 unknown = self.ff0.KIND[rtok] == 'relation' and M.slot_no(m[1]) not in dr.colmap
                 for p, field, v in sites(atom):
-                    if v[0] == '*':
-                        out[v[1:]] = ANY_TYPE if unknown else dr.col_type(rtok, p, field) or ANY_TYPE
+                    t = ANY_TYPE if unknown else dr.col_type(rtok, p, field) or (None if self.ff0.KIND[rtok] == 'relation' else ANY_TYPE)
+                    if t is not None and v[0] == '*':
+                        out[v[1:]] = t
         return out
 
     def body(self, pg, dr, dec, kind, nlab, need=(), keys=()):
