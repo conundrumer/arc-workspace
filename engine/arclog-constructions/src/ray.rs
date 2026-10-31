@@ -47,7 +47,7 @@ impl Construction for Ray {
         let mut end = RowSet::empty(4);
         for d in dir.rows() {
             let d = d[0];
-            let offset = step_offset(context.registry, d);
+            let Some(offset) = step_offset(context.registry, d) else { continue };
             for origin in source.rows() {
                 let origin = origin[0];
                 let mut p = origin;
@@ -145,7 +145,7 @@ impl Construction for Boundary {
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [cell, dir] = group.inputs else { panic!("the two inputs of Boundary") };
-        let offsets: Vec<(TermId, TermId)> = dir.rows().map(|d| (d[0], step_offset(context.registry, d[0]))).collect();
+        let offsets: Vec<(TermId, TermId)> = dir.rows().filter_map(|d| Some((d[0], step_offset(context.registry, d[0])?))).collect();
         let mut boundary = RowSet::empty(1);
         let mut exposed = RowSet::empty(2);
         for p in cell.rows() {
@@ -191,7 +191,7 @@ impl Construction for Outlines {
         let registry = context.registry;
         let toward = |edge: Edge| {
             let d = Geometry::get().direction(Edges::of(&[edge])).expect("a Dir8 toward each edge");
-            step_offset(registry, d)
+            step_offset(registry, d).expect("a step offset of each Dir8")
         };
         let (right, down) = (toward(Edge::Right), toward(Edge::Bottom));
         // The cells of the run of nodes from each node toward a direction,
@@ -253,13 +253,15 @@ fn compose(registry: &Registry, p: TermId, offset: TermId) -> Option<TermId> {
     q
 }
 
-/// The Offset of one step toward the Dir8 `d`.
-fn step_offset(registry: &Registry, d: TermId) -> TermId {
+/// The Offset of one step toward `d`, or `None` where `d` is no Dir8, where
+/// the lib's `step_offset` holds no row. Ray and Boundary give no row of such
+/// a `d`.
+fn step_offset(registry: &Registry, d: TermId) -> Option<TermId> {
     let mut offset = None;
     BoxRelation::StepOffset
         .evaluate(&[Some(d), None], registry, &mut |row| offset = Some(row[1]))
         .expect("a step offset within a signed byte");
-    offset.expect("a step offset of each Dir8")
+    offset
 }
 
 /// The Box whose corner toward the top and the left is the Position `a`,
