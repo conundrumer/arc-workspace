@@ -137,11 +137,17 @@ pub fn decode(type_name: &str, packed: i64, registry: &Registry) -> Result<Value
     Ok(value)
 }
 
-/// Meaning of the reserved decoder label, after native site type resolution.
-pub fn zero_meaning(ty: &ValueType) -> Result<Value, String> {
+/// Whether the reserved decoder label stands at `ty`.
+pub fn check_zero(ty: &ValueType) -> Result<(), String> {
     if !ty.has_zero() {
         return Err(format!("reserved zero is illegal at {ty:?}"));
     }
+    Ok(())
+}
+
+/// Meaning of the reserved decoder label, after native site type resolution.
+pub fn zero_meaning(ty: &ValueType) -> Result<Value, String> {
+    check_zero(ty)?;
     let meaning = match ty {
         ValueType::Int | ValueType::Nat => "number zero",
         ValueType::Offset => "zero offset: identity translation, all four margins zero",
