@@ -188,8 +188,10 @@ fn binding_columns(
                                     })
                             });
                     if earlier {
-                        for (path, column) in
-                            native.iter().filter(|(path, _)| path.0.starts_with(&at.0))
+                        // The paths below `at` are the run of the sorted map that starts at `at`.
+                        for (path, column) in native
+                            .range(at.clone()..)
+                            .take_while(|(path, _)| path.0.starts_with(&at.0))
                         {
                             out.insert(
                                 path.clone(),

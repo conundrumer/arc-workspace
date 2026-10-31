@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyCapsule, PyModule};
+use pyo3::types::{PyBytes, PyDict, PyCapsule, PyList, PyModule};
 use pyo3::sync::PyOnceLock;
 
 /// The tables of one case program of a solver of a corpus, as flat columns
@@ -170,32 +170,40 @@ fn cell_bytes<T: Cell>(column: &[T]) -> Vec<u8> {
 // A raw consumer can retain a field after dropping CaseTables. Keep the
 // reservation on each actual escaped bytes/list object, not on the wrapper
 // or on a serialized mapping key. Buffer contents and isinstance stay native.
-fn owner_module(py:Python<'_>)->PyResult<&Py<PyModule>> {
-    static MODULE:PyOnceLock<Py<PyModule>>=PyOnceLock::new();
-    MODULE.get_or_try_init(py,||{
+fn owned_types(py:Python<'_>)->PyResult<&'static (Py<PyAny>,Py<PyAny>)> {
+    static TYPES:PyOnceLock<(Py<PyAny>,Py<PyAny>)>=PyOnceLock::new();
+    TYPES.get_or_try_init(py,||{
         let code=std::ffi::CString::new(r#"
 class _OwnedBytes(bytes):
     pass
 
 class _OwnedList(list):
     __slots__ = ('_owner',)
-
-def _own(value, capsule):
-    if isinstance(value, bytes):
-        owned = _OwnedBytes(value)
-    elif isinstance(value, list):
-        owned = _OwnedList([_own(item, capsule) if isinstance(item, (bytes, list)) else item for item in value])
-    else:
-        return value
-    owned._owner = capsule
-    return owned
 "#).expect("static Python source has no null");
-        PyModule::from_code(py,&code,c"_arclog_buffer_owner.py",c"_arclog_buffer_owner").map(Bound::unbind)
+        let module=PyModule::from_code(py,&code,c"_arclog_buffer_owner.py",c"_arclog_buffer_owner")?;
+        Ok((module.getattr("_OwnedBytes")?.unbind(),module.getattr("_OwnedList")?.unbind()))
     })
 }
 
+/// `value` as an object that holds `owner`: a `bytes` as an instance of a
+/// subclass of `bytes` with the same bytes, a `list` as an instance of a
+/// subclass of `list` with the items of the list so held, and any other value
+/// as it is.
 fn owned_value<'py>(py:Python<'py>,value:&Bound<'py,PyAny>,owner:&Bound<'py,PyAny>)->PyResult<Bound<'py,PyAny>> {
-    owner_module(py)?.bind(py).getattr("_own")?.call1((value,owner))
+    let (bytes,list)=owned_types(py)?;
+    let owned=if value.is_instance_of::<PyBytes>() {
+        bytes.bind(py).call1((value,))?
+    } else if let Ok(items)=value.cast::<PyList>() {
+        let mut held=Vec::with_capacity(items.len());
+        for item in items.iter() {
+            held.push(if item.is_instance_of::<PyBytes>()||item.is_instance_of::<PyList>() { owned_value(py,&item,owner)? } else { item });
+        }
+        list.bind(py).call1((PyList::new(py,held)?,))?
+    } else {
+        return Ok(value.clone());
+    };
+    owned.setattr("_owner",owner)?;
+    Ok(owned)
 }
 
 /// The dict of one part of a case's columns, and the dtype of each of its

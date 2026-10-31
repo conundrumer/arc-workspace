@@ -17,7 +17,7 @@ use super::interface::Assigned;
 use super::Decoder;
 use crate::eval::join::Budget;
 use crate::eval::{BodyValue, Limits, Outcome, ReachedBound, RelationValue, Stop};
-use crate::hash::StableHashMap;
+use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::NodePath;
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::terms::TermId;
@@ -64,7 +64,7 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
     }
     let stopped = |bound: ReachedBound| Projections::Stopped(Stop { bound, form: form.clone() });
     let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Projections::Found(Vec::new()) };
-    let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), under: StableHashMap::default() };
+    let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default() };
     let sets = match search.maximal(arity) {
         Ok(sets) => sets,
         Err(bound) => return stopped(bound),
@@ -103,6 +103,10 @@ struct Search<'a, 'b> {
     /// The plain projections of a part, by relation, part and the positions in the
     /// part's rows, in increasing order.
     projected: StableHashMap<(usize, usize, Box<[u16]>), RowSet>,
+    /// The count of the rows of a part projected, without repeats and up to
+    /// one over the cap, for a projection that `is_under` counted and that
+    /// `projected` does not hold.
+    counted: StableHashMap<(usize, usize, Box<[u16]>), usize>,
     /// Whether a set of columns, in increasing order, is under the cap.
     under: StableHashMap<Box<[u16]>, bool>,
 }
@@ -166,7 +170,7 @@ impl Search<'_, '_> {
                 if positions.is_empty() {
                     continue;
                 }
-                count = count.saturating_mul(self.part_rows(relation, part, positions)?.len() as u128);
+                count = count.saturating_mul(self.part_len(relation, part, positions)? as u128);
             }
             if count > u128::from(self.cap) {
                 under = false;
@@ -191,9 +195,46 @@ impl Search<'_, '_> {
         positions.into()
     }
 
+    /// The count of the rows of `part` of `relation` projected onto
+    /// `positions`, without repeats, or one over the cap where more rows
+    /// than the cap result: `part_rows` gives the rows. A projection that
+    /// reads the rows counts each as one binding tried, once for each
+    /// projection whichever of the two reads it first.
+    fn part_len(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<usize, ReachedBound> {
+        let key = (relation, part, positions);
+        if let Some(rows) = self.projected.get(&key) {
+            return Ok(rows.len());
+        }
+        if let Some(&count) = self.counted.get(&key) {
+            return Ok(count);
+        }
+        let this = &self.relations[relation].parts()[part];
+        if key.2.len() == this.columns.len() {
+            return Ok(this.rows.len());
+        }
+        self.budget.charge_work(this.rows.len() as u64)?;
+        // A row of at most four cells packs into one key.
+        if key.2.len() > 4 {
+            let projection = Self::project(this, &key.2);
+            let count = projection.len();
+            self.projected.insert(key, projection);
+            return Ok(count);
+        }
+        let mut seen: StableHashSet<u128> = StableHashSet::default();
+        for row in this.rows.rows() {
+            seen.insert(key.2.iter().fold(0u128, |packed, &position| packed << 32 | u128::from(row[usize::from(position)].encoding())));
+            if seen.len() as u64 > self.cap {
+                break;
+            }
+        }
+        let count = seen.len();
+        self.counted.insert(key, count);
+        Ok(count)
+    }
+
     /// The rows of `part` of `relation` projected onto `positions`, without
     /// repeats. A projection that reads the rows counts each as one binding
-    /// tried.
+    /// tried, unless `part_len` counted them.
     fn part_rows(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<&RowSet, ReachedBound> {
         let key = (relation, part, positions);
         if !self.projected.contains_key(&key) {
@@ -201,16 +242,29 @@ impl Search<'_, '_> {
             let projection = if key.2.len() == this.columns.len() {
                 this.rows.clone()
             } else {
-                self.budget.charge_work(this.rows.len() as u64)?;
-                let mut projection = RowSet::empty(key.2.len() as u16);
-                for row in this.rows.rows() {
-                    projection.insert(key.2.iter().map(|&position| row[usize::from(position)]).collect::<Vec<TermId>>().into());
+                if !self.counted.contains_key(&key) {
+                    self.budget.charge_work(this.rows.len() as u64)?;
                 }
-                projection
+                Self::project(this, &key.2)
             };
             self.projected.insert(key.clone(), projection);
         }
         Ok(&self.projected[&key])
+    }
+
+    /// The rows of `part` projected onto `positions`, without repeats.
+    fn project(part: &RelationPart, positions: &[u16]) -> RowSet {
+        let mut projection = RowSet::empty(positions.len() as u16);
+        let mut projected: Vec<TermId> = Vec::with_capacity(positions.len());
+        for row in part.rows.rows() {
+            projected.clear();
+            projected.extend(positions.iter().map(|&position| row[usize::from(position)]));
+            // A repeat of a row takes no allocation.
+            if !projection.contains(&projected) {
+                projection.insert(projected.as_slice().into());
+            }
+        }
+        projection
     }
 
     /// The `relation`th relation projected onto `set`, whose columns stand at
