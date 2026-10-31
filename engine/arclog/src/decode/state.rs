@@ -95,10 +95,10 @@ pub struct State {
 
 /// The most bytes of a prefix key that [`State::cached_prefix`] keeps.
 const PREFIX_KEY_BYTES: usize = 64 * 1024;
-/// The most entries, and the most bytes of keys, that a state's prefix
-/// verdicts hold before they are dropped.
-const PREFIX_ENTRIES: usize = 4096;
-const PREFIX_BYTES: usize = 8 * 1024 * 1024;
+/// The most entries, and the most bytes of keys, that a generation of a
+/// state's prefix verdicts holds before the generation before it is dropped.
+const PREFIX_ENTRIES: usize = 16384;
+const PREFIX_BYTES: usize = 16 * 1024 * 1024;
 
 /// The check verdicts of the prefixes at an open node, by the key of
 /// `prefix_key`, for one set of finished forms. A key holds the complete
@@ -106,10 +106,38 @@ const PREFIX_BYTES: usize = 8 * 1024 * 1024;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum PrefixKind { Check, SingleCheck, DetAdmission, StaticReplacement }
 
+type PrefixEntries = crate::hash::StableHashMap<(PrefixKind, Vec<u8>), Result<(), super::Refusal>>;
+
+/// The verdicts in two generations: a verdict that a lookup finds in the
+/// older generation moves to the current one, so the verdicts in use stay
+/// while the others age out.
 #[derive(Debug, Default)]
 struct PrefixMemo {
-    entries: crate::hash::StableHashMap<(PrefixKind, Vec<u8>), Result<(), super::Refusal>>,
+    entries: PrefixEntries,
+    older: PrefixEntries,
+    /// The bytes of the keys of `entries`.
     bytes: usize,
+}
+
+impl PrefixMemo {
+    fn get(&mut self, key: &(PrefixKind, Vec<u8>)) -> Option<Result<(), super::Refusal>> {
+        if let Some(verdict) = self.entries.get(key) {
+            return Some(verdict.clone());
+        }
+        let verdict = self.older.remove(key)?;
+        self.insert(key.clone(), verdict.clone());
+        Some(verdict)
+    }
+
+    fn insert(&mut self, key: (PrefixKind, Vec<u8>), verdict: Result<(), super::Refusal>) {
+        if self.entries.len() >= PREFIX_ENTRIES || self.bytes + key.1.len() > PREFIX_BYTES {
+            crate::stats::tick(crate::stats::Phase::DecodePrefixClear);
+            self.older = std::mem::take(&mut self.entries);
+            self.bytes = 0;
+        }
+        self.bytes += key.1.len();
+        self.entries.insert(key, verdict);
+    }
 }
 
 /// The check cache of the whole-program checks of programs that hold one
@@ -442,24 +470,15 @@ impl State {
 
     fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
         let key = (kind, key);
-        {
-            let memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
-            if let Some(verdict) = memo.entries.get(&key).cloned() {
-                crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-                return verdict;
-            }
+        let held = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&key);
+        if let Some(verdict) = held {
+            crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
+            return verdict;
         }
         crate::stats::tick(crate::stats::Phase::DecodePrefixMiss);
         let verdict = compute();
         if key.1.len() <= PREFIX_KEY_BYTES {
-            let mut memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
-            if memo.entries.len() >= PREFIX_ENTRIES || memo.bytes + key.1.len() > PREFIX_BYTES {
-                crate::stats::tick(crate::stats::Phase::DecodePrefixClear);
-                memo.entries.clear();
-                memo.bytes = 0;
-            }
-            memo.bytes += key.1.len();
-            memo.entries.insert(key, verdict.clone());
+            self.prefixes.lock().expect("the prefix cache is not poisoned").insert(key, verdict.clone());
         }
         verdict
     }
@@ -1906,4 +1925,30 @@ fn key_body(body: Node<Body>) -> KeyBody {
 
 fn empty() -> Node<Body> {
     Node::new(Body { conjuncts: Arc::from([]) })
+}
+
+#[cfg(test)]
+mod prefix_memo_tests {
+    use super::*;
+
+    fn key(n: usize) -> (PrefixKind, Vec<u8>) {
+        (PrefixKind::Check, n.to_le_bytes().to_vec())
+    }
+
+    /// A verdict that a lookup finds after its generation ended is kept, and one
+    /// that no lookup finds is dropped when the generation after it ends.
+    #[test]
+    fn a_verdict_in_use_outlives_its_generation() {
+        let mut memo = PrefixMemo::default();
+        for n in 0..=PREFIX_ENTRIES {
+            memo.insert(key(n), Ok(()));
+        }
+        assert_eq!(memo.get(&key(0)), Some(Ok(())));
+        for n in PREFIX_ENTRIES + 1..=2 * PREFIX_ENTRIES {
+            memo.insert(key(n), Ok(()));
+        }
+        assert_eq!(memo.get(&key(0)), Some(Ok(())));
+        assert_eq!(memo.get(&key(1)), None);
+        assert_eq!(memo.get(&key(2 * PREFIX_ENTRIES)), Some(Ok(())));
+    }
 }

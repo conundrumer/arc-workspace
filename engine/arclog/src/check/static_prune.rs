@@ -415,8 +415,8 @@ pub(crate) struct Match {
 }
 
 pub(crate) fn matches(checked: &CheckedProgram, registry: &Registry) -> Result<Vec<Match>, String> {
-    let native = render_sites::export_typed(checked, registry)?;
-    let columns = binding_columns(checked, registry, &native.columns);
+    let native = render_sites::site_columns(checked, registry)?;
+    let columns = binding_columns(checked, registry, &native);
     let mut matches = Vec::new();
     for (i, form) in checked.program.program.value().forms.iter().enumerate() {
         let mut bindings = Context::default();

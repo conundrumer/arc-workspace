@@ -47,14 +47,35 @@ pub(crate) fn export_typed(checked: &CheckedProgram, registry: &Registry) -> Res
 
 pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
     names: &crate::write::LabelNames) -> Result<TypedSiteExport, String> {
+    export_sites(checked, registry, Some(names))
+}
+
+/// The column type of each site argument of `checked`, as [`export_typed`]
+/// gives them, without that export's JSON. It fails where `export_typed` does.
+pub(crate) fn site_columns(checked: &CheckedProgram, registry: &Registry) -> Result<BTreeMap<NodePath, SiteColumnType>, String> {
+    Ok(export_sites(checked, registry, None)?.columns)
+}
+
+/// The export of the site types of `checked`, whose JSON names the labels
+/// with `names`; with no `names`, the JSON is null.
+fn export_sites(checked: &CheckedProgram, registry: &Registry,
+    names: Option<&crate::write::LabelNames>) -> Result<TypedSiteExport, String> {
+    /// What the walk of a form collects. The JSON is built only where the
+    /// export has names.
+    struct Sites {
+        rendered: bool,
+        arguments: Vec<Value>,
+        comparisons: Vec<Value>,
+        column_types: BTreeMap<NodePath, SiteColumnType>,
+        /// The labels that a site argument or an operand of the form uses.
+        used: std::collections::BTreeSet<u32>,
+    }
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&checked.program));
     let cases = CaseInferences::new(&clauses, registry);
     let inference = Inference::new(&checked.program, &cases);
-    let mut arguments = Vec::new();
-    let mut comparisons = Vec::new();
+    let mut out = Sites { rendered: names.is_some(), arguments: Vec::new(), comparisons: Vec::new(), column_types: BTreeMap::new(), used: Default::default() };
     let mut variables = Vec::new();
     let mut scopes = Vec::new();
-    let mut column_types = BTreeMap::new();
     fn frame(ty: &ValueType, label: Option<LabelId>, grids: &FormGrids<'_, '_>) -> Value {
         if !crate::registry::has_frame(ty) {
             return json!({"status":"not_applicable"});
@@ -74,15 +95,14 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
         inference: &Inference<'a>,
         reading: SiteReading<'_, 'a>,
         grids: &FormGrids<'_, 'a>,
-        out: &mut Vec<Value>,
-        column_types: &mut BTreeMap<NodePath, SiteColumnType>,
+        out: &mut Sites,
     ) -> Result<(), String> {
         column.push(site.column.clone());
         for (i, arg) in site.value.args.iter().enumerate() {
             let arg_at = at.child(i as u32);
             let (label, field) = match arg {
                 SiteArg::Field(inner) => {
-                    walk_site(inner, &arg_at, atom, column, inference, reading, grids, out, column_types)?;
+                    walk_site(inner, &arg_at, atom, column, inference, reading, grids, out)?;
                     continue;
                 }
                 SiteArg::Label(l) => (*l, None),
@@ -91,21 +111,28 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
             let mut path = column.clone();
             path.extend(field.cloned());
             let column_type = atom.and_then(|a| inference.site_type(reading, a, &path));
-            column_types.insert(arg_at.clone(), SiteColumnType {
+            out.column_types.insert(arg_at.clone(), SiteColumnType {
                 scope_path: reading.path.clone(), ty: column_type.clone(),
             });
             let label_id = crate::types::use_label(label);
+            out.used.extend(label_id.map(|l| l.0));
             let ty = match label_id {
                 Some(l) => typed(reading.labels, l),
                 None => column_type.clone(),
             }
             .ok_or_else(|| format!("no native inferred argument type at {arg_at:?}"))?;
+            if !out.rendered {
+                if label == LabelUse::Zero {
+                    crate::study::render_terms::check_zero(&ty)?;
+                }
+                continue;
+            }
             let zero = if label == LabelUse::Zero {
                 Some(crate::study::render_terms::zero_meaning(&ty)?)
             } else {
                 None
             };
-            out.push(json!({"path":path_json(&arg_at),"site_path":path_json(at),"scope_path":path_json(reading.path),
+            out.arguments.push(json!({"path":path_json(&arg_at),"site_path":path_json(at),"scope_path":path_json(reading.path),
                 "label_id":label_id.map(|l|l.0),"resolved_type":format!("{ty:?}"),
                 "type_identity":crate::study::render_correspondence::type_json(&ty),
                 "column_path":path.iter().map(crate::study::render::column).collect::<Vec<_>>(),
@@ -120,9 +147,7 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
         inference: &Inference<'a>,
         reading: SiteReading<'_, 'a>,
         grids: &FormGrids<'_, 'a>,
-        arguments: &mut Vec<Value>,
-        comparisons: &mut Vec<Value>,
-        column_types: &mut BTreeMap<NodePath, SiteColumnType>,
+        out: &mut Sites,
     ) -> Result<(), String> {
         if let Some(atom) = node.atom() {
             for (i, s) in atom.sites.iter().enumerate() {
@@ -134,8 +159,7 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
                     inference,
                     reading,
                     grids,
-                    arguments,
-                    column_types,
+                    out,
                 )?;
             }
             return Ok(());
@@ -150,8 +174,7 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
                     inference,
                     reading,
                     grids,
-                    arguments,
-                    column_types,
+                    out,
                 )?;
             }
             return walk(
@@ -160,26 +183,32 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
                 inference,
                 reading,
                 grids,
-                arguments,
-                comparisons,
-                column_types,
+                out,
             );
         }
         if let NodeRef::Conjunct(Conjunct::Constraint(c)) = node {
             let first = typed(reading.labels, c.first.label)
                 .ok_or_else(|| format!("no first operand type at {at:?}"))?;
+            out.used.insert(c.first.label.0);
             let second = match c.second {
                 Operand::Label(l) => {
                     let ty = typed(reading.labels, l.label)
                         .ok_or_else(|| format!("no second operand type at {at:?}"))?;
-                    json!({"label_id":l.label.0,"resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(l.label),grids)})
+                    out.used.insert(l.label.0);
+                    out.rendered.then(|| json!({"label_id":l.label.0,"resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(l.label),grids)}))
+                }
+                Operand::Zero if out.rendered => {
+                    Some(json!({"resolved_type":format!("{first:?}"),"literal":crate::study::render_terms::zero_meaning(&first)?,"frame":frame(&first,None,grids)}))
                 }
                 Operand::Zero => {
-                    json!({"resolved_type":format!("{first:?}"),"literal":crate::study::render_terms::zero_meaning(&first)?,"frame":frame(&first,None,grids)})
+                    crate::study::render_terms::check_zero(&first)?;
+                    None
                 }
             };
-            comparisons.push(json!({"path":path_json(at),"scope_path":path_json(reading.path),"operator":format!("{:?}",c.op),
-                "first":{"label_id":c.first.label.0,"resolved_type":format!("{first:?}"),"frame":frame(&first,Some(c.first.label),grids)},"second":second}));
+            if let Some(second) = second {
+                out.comparisons.push(json!({"path":path_json(at),"scope_path":path_json(reading.path),"operator":format!("{:?}",c.op),
+                    "first":{"label_id":c.first.label.0,"resolved_type":format!("{first:?}"),"frame":frame(&first,Some(c.first.label),grids)},"second":second}));
+            }
         }
         for (i, child) in node.children().into_iter().enumerate() {
             walk(
@@ -188,12 +217,30 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
                 inference,
                 reading,
                 grids,
-                arguments,
-                comparisons,
-                column_types,
+                out,
             )?;
         }
         Ok(())
+    }
+    fn declarations(node: NodeRef<'_>, at: &NodePath, out: &mut std::collections::BTreeMap<u32,Vec<Value>>, used: &mut std::collections::BTreeSet<u32>, rendered: bool) {
+        let columns = match node {
+            NodeRef::Clause(c) => Some(&c.columns[..]),
+            NodeRef::KeyClause(k) => Some(&k.key.columns[..]),
+            NodeRef::Out(o) => Some(&o.key.columns[..]),
+            _ => None,
+        };
+        if let Some(columns) = columns {
+            for (i,column) in columns.iter().enumerate() {
+                used.insert(column.label.0);
+                if rendered {
+                    out.entry(column.label.0).or_default()
+                        .push(json!({"kind":"declaration_column","path":path_json(at),"column":i}));
+                }
+            }
+        }
+        for (i,child) in node.children().into_iter().enumerate() {
+            declarations(child,&at.child(i as u32),out,used,rendered);
+        }
     }
     for (i, form) in checked.program.program.value().forms.iter().enumerate() {
         let at = NodePath::top(i as u32);
@@ -207,28 +254,27 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
             grids: Some(&grids),
             ..reading
         };
-        let first_argument = arguments.len();
-        let first_comparison = comparisons.len();
+        let first_argument = out.arguments.len();
+        let first_comparison = out.comparisons.len();
+        out.used.clear();
         walk(
             NodeRef::from(form),
             &at,
             &inference,
             reading,
             &grids,
-            &mut arguments,
-            &mut comparisons,
-            &mut column_types,
+            &mut out,
         )?;
         // Index original occurrences once per scope, rather than rescanning
         // every site and declaration for every variable.
         let mut occurrence_index = std::collections::BTreeMap::<u32,Vec<Value>>::new();
-        for argument in &arguments[first_argument..] {
+        for argument in &out.arguments[first_argument..] {
             if let Some(label) = argument["label_id"].as_u64() {
                 occurrence_index.entry(label as u32).or_default()
                     .push(json!({"kind":"site_argument","path":argument["path"]}));
             }
         }
-        for comparison in &comparisons[first_comparison..] {
+        for comparison in &out.comparisons[first_comparison..] {
             for operand in ["first","second"] {
                 if let Some(label) = comparison[operand]["label_id"].as_u64() {
                     occurrence_index.entry(label as u32).or_default()
@@ -236,41 +282,60 @@ pub(crate) fn export_typed_named(checked: &CheckedProgram, registry: &Registry,
                 }
             }
         }
-        fn declarations(node: NodeRef<'_>, at: &NodePath, out: &mut std::collections::BTreeMap<u32,Vec<Value>>) {
-            let columns = match node {
-                NodeRef::Clause(c) => Some(&c.columns[..]),
-                NodeRef::KeyClause(k) => Some(&k.key.columns[..]),
-                NodeRef::Out(o) => Some(&o.key.columns[..]),
-                _ => None,
-            };
-            if let Some(columns) = columns {
-                for (i,column) in columns.iter().enumerate() {
-                    out.entry(column.label.0).or_default()
-                        .push(json!({"kind":"declaration_column","path":path_json(at),"column":i}));
-                }
-            }
-            for (i,child) in node.children().into_iter().enumerate() {
-                declarations(child,&at.child(i as u32),out);
-            }
-        }
-        declarations(NodeRef::from(form),&at,&mut occurrence_index);
+        declarations(NodeRef::from(form),&at,&mut occurrence_index,&mut out.used,out.rendered);
         let mut scope_labels = Vec::new();
         for (label, _) in reading.labels {
             let ty = typed(reading.labels, *label)
                 .ok_or_else(||format!("no native inferred variable type at {at:?} label {label:?}"))?;
-            let occurrences = occurrence_index.remove(&label.0).unwrap_or_default();
-            if occurrences.is_empty() {
+            if !out.used.remove(&label.0) {
                 return Err(format!("native inferred variable has no original occurrence at {at:?} label {label:?}"));
             }
-            variables.push(json!({"scope_path":path_json(reading.path),"label_id":label.0,
-                "label_spelling":names[i].iter().find(|(id,_)|id==label).map(|(_,name)|name.as_ref()),
-                "resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(*label),&grids),"occurrences":occurrences}));
-            scope_labels.push(label.0);
+            if let Some(names) = names {
+                let occurrences = occurrence_index.remove(&label.0).unwrap_or_default();
+                variables.push(json!({"scope_path":path_json(reading.path),"label_id":label.0,
+                    "label_spelling":names[i].iter().find(|(id,_)|id==label).map(|(_,name)|name.as_ref()),
+                    "resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(*label),&grids),"occurrences":occurrences}));
+                scope_labels.push(label.0);
+            }
         }
-        scopes.push(json!({"scope_path":path_json(reading.path),"label_ids":scope_labels,
-            "argument_count":arguments.len()-first_argument,"comparison_count":comparisons.len()-first_comparison}));
+        if names.is_some() {
+            scopes.push(json!({"scope_path":path_json(reading.path),"label_ids":scope_labels,
+                "argument_count":out.arguments.len()-first_argument,"comparison_count":out.comparisons.len()-first_comparison}));
+        }
     }
-    Ok(TypedSiteExport { columns: column_types, json: json!({"arguments":arguments,"comparisons":comparisons,"variables":variables,"scopes":scopes,
-        "variable_identity":"(scope_path,label_id); includes comparison-only and branch-local variables; occurrence paths are original AST paths",
-        "frame_analysis":"native checker grid evidence; made/native table frames are a separate export part"}) })
+    let Sites { arguments, comparisons, column_types, .. } = out;
+    let json = if names.is_some() {
+        json!({"arguments":arguments,"comparisons":comparisons,"variables":variables,"scopes":scopes,
+            "variable_identity":"(scope_path,label_id); includes comparison-only and branch-local variables; occurrence paths are original AST paths",
+            "frame_analysis":"native checker grid evidence; made/native table frames are a separate export part"})
+    } else {
+        Value::Null
+    };
+    Ok(TypedSiteExport { columns: column_types, json })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::study::StudyProgram;
+
+    /// `site_columns` gives the columns of `export_typed` for each program, and
+    /// the export alone holds JSON.
+    #[test]
+    fn site_columns_are_the_columns_of_the_export() {
+        let registry = Registry::get();
+        let programs = [
+            "(RULE &output (input *P *Col))\n(OUT (&output ^P ^Col))\n",
+            "(RULE &x (input *P *Col) (inside (:A P) (:B P)))\n(RULE &output (&x *P *Col))\n(OUT (&output ^P ^Col))\n",
+            "(RULE &x (input *P *Col) (uniform_inset (:K 0) (:B *A)) (compose (:A A) (:B 0) (:C *C)))\n(RULE &output (&x *P *Col))\n(OUT (&output ^P ^Col))\n",
+        ];
+        for text in programs {
+            let program = StudyProgram::from_sexp(text, registry).unwrap_or_else(|fault| panic!("{text}: {fault}"));
+            let full = export_typed(program.checked(), registry).expect("the export");
+            let columns = site_columns(program.checked(), registry).expect("the columns");
+            assert!(!full.columns.is_empty(), "{text}");
+            assert_eq!(format!("{columns:?}"), format!("{:?}", full.columns), "{text}");
+            assert!(full.json["arguments"].as_array().is_some_and(|arguments| !arguments.is_empty()), "{text}");
+        }
+    }
 }
