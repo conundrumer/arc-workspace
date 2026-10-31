@@ -86,7 +86,25 @@ def binding_field(binding,witness,point):
     return field['source_body_column'],dict(header=witness,binding=proof,body_field=field)
 
 
-def side_readers(export,binding,point):
+def relation_field(binding,witness,point):
+    """Place a read header column in the DET relation's own table, for a DET whose BODY has no column.
+
+    The rows of such a DET come from its lib proposer, so no BODY column can hold the field. The native header
+    places the field at its physical column of the DET relation by the DET's declared layout or row path; the
+    relation's native table under each kept assignment gives its values."""
+    require(binding['projected_schema']==[],'relation-table DET projection requires a BODY without columns')
+    require(witness.get('status')=='declared_without_local_label' and witness.get('bindings')==[]
+            and witness.get('selected_header_binding') is None
+            and witness.get('proof') in ('declared_layout','resolved_row_path')
+            and type(witness.get('physical_column')) is int and witness['physical_column']>=0,
+            'read DET relation column lacks native declared placement')
+    return None,dict(header=witness,type=witness['type'],relation_column=witness['physical_column'],
+        proof=witness['proof'],meaning='DET relation column without a BODY column; values from the DET relation table')
+
+
+def side_readers(export,binding,point,*,field=binding_field):
+    """The native readers of the DET at `point`, each read field placed by `field`: a BODY column by
+    `binding_field`, or a column of the DET relation's own table by `relation_field`."""
     from definition_binding import definition_node
     require(export['parts'].get('definitions_readers')=='complete','native resolved reader inventory incomplete')
     nodes={tuple(n['path']):n for n in export['nodes']}
@@ -115,7 +133,7 @@ def side_readers(export,binding,point):
         for read in paths:
             found=[w for w in headers if row_path(w.get('row_path'))==read]
             require(len(found)==1,'reader site does not identify one native scalar header field')
-            witness=found[0];index,proof=binding_field(binding,witness,point)
+            witness=found[0];index,proof=field(binding,witness,point)
             fields.append(dict(row_path=list(read),physical_index=index,type=witness['type'],proof=proof))
         # Dedup repeated occurrences of one field, retaining the native path.
         unique={tuple(tuple(v) for v in f['row_path']):f for f in fields}
