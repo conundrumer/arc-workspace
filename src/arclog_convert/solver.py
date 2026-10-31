@@ -20,6 +20,7 @@ from engine.program import (
     Unit,
     Variable,
     Wildcard,
+    body_atoms,
 )
 from arclog_convert.frame_reads import FieldPlan, field_plan
 from arclog_convert import libmap
@@ -230,6 +231,32 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     return False
             return True
         return ok(u.body or ())
+
+    def task_wide_determination(self, prog) -> set[tuple[str, ...]]:
+        """What the `Determine` component derives that is task-wide: the relations whose clauses read `ex_in` or
+        `ex_out`, or read a task-wide relation or instance of the component, as `(name,)`, and those instances, as
+        `(instance, "")`. Its clauses that read `in` are not task-wide. A clause of a task-wide relation is a DET:
+        the checker refuses a RULE that reads `ex_input` or `ex_output`, or a task-wide relation at a site on its
+        Example column."""
+        units = [u for u in prog.units if u.scope.components == ("Determine",)]
+        found: set[tuple[str, ...]] = set()
+
+        def key(rn) -> tuple[str, ...]:
+            return (rn.instances[0], "") if rn.instances else (rn.name,)
+
+        def task_wide(u: Unit) -> bool:
+            reads = [a.relation for a, _ in body_atoms(tuple(u.body or ()))]
+            return all(rn.name != "in" or rn.instances for rn in reads) and any(
+                (rn.name in ("ex_in", "ex_out") and not rn.instances) or key(rn) in found for rn in reads)
+
+        grew = True
+        while grew:
+            grew = False
+            for u in units:
+                if key(u.head.relation) not in found and task_wide(u):
+                    found.add(key(u.head.relation))
+                    grew = True
+        return found
 
     def open_amps(self) -> set[str]:
         return {self.c.rel_name(("Params",), n) for n in self.c.open_params}
@@ -783,6 +810,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                         c.insts[(("Determine",), u.head.relation.instances[0])].component in c.comps:
                     continue
         det_inst_units = defaultdict(list)
+        task_wide = self.task_wide_determination(prog)
         for u in prog.units:
             if u.scope.components == ("Determine",):
                 if u.head.relation.instances:
@@ -790,7 +818,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 elif u.head.relation.name not in c.skip_rels:
                     parameter = c.determines_parameter(u.scope.components, u.head.relation.name)
                     if not parameter or u.head.relation.name in det_units:
-                        forms.append(self.clause(u, "DET" if parameter else "RULE", ("Determine",), {}))
+                        side = "DET" if parameter or (u.head.relation.name,) in task_wide else "RULE"
+                        forms.append(self.clause(u, side, ("Determine",), {}))
 
         # instances and clauses, in program order
         inst_units = defaultdict(list)
@@ -847,7 +876,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
             elif sc == ("Determine",):
                 us = det_inst_units.get((name,), [])
                 # Instance ports are inputs/helpers, not declared Params heads.
-                side = "RULE"
+                side = "DET" if (name, "") in task_wide else "RULE"
             elif sc == ():
                 us = inst_units.get((name,), [])
                 side = "RULE"
