@@ -938,8 +938,8 @@ class Converter:
         if not self.cand_params:
             return prog
         # a candidate stands where the parameter's determination refutes it:
-        # a clause of it negates, at its own value, a relation that reads
-        # the parse it runs per candidate
+        # a clause of it, or a clause that feeds an instance it reads, negates,
+        # at its own value, a relation that reads the parse it runs per candidate
         dheads: dict[str, list] = defaultdict(list)
         for u in prog.units:
             if u.scope.components == det and not u.head.relation.instances:
@@ -958,10 +958,18 @@ class Converter:
             reads_parse[x] = got
             return got
 
+        def feeds(u) -> list:
+            """The literals of `u`, and those of each clause that feeds an instance `u` reads."""
+            read = {l.atom.relation.instances[0] for l in u.body or ()
+                    if isinstance(l, AtomLiteral) and l.atom.relation.instances}
+            return [*(u.body or ()), *(l for v in prog.units if v.scope.components == det
+                                       and v.head.relation.instances[:1] and v.head.relation.instances[0] in read
+                                       and v.head.relation.instances[0] not in comp_insts for l in v.body or ())]
+
         def refuted(x: str, seen=frozenset()) -> bool:
             for u in dheads.get(x, ()):
                 hv = {a.name for a in u.head.args if isinstance(a, Variable)}
-                for l in u.body or ():
+                for l in feeds(u):
                     if isinstance(l, AtomLiteral) and not l.atom.relation.instances:
                         n = l.atom.relation.name
                         av = {a.name for a in l.atom.args if isinstance(a, Variable)}
