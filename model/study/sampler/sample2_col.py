@@ -107,6 +107,18 @@ Changes from sample.py (v1):
 - a DET assignment's row set in a table is kept by its packed rows (DROWS), since a point's tables repeat the same
   assignments.
 - --split holdout draws the holdout tasks' points; the prior and the hazards are dev's either way.
+- ROW_ORDERS=n gives REL_ROWS and CHOICE_ROWS for n random valid orders of gold's clause in place of the written one, and each row has `order`
+  (0 to n - 1). GOLD_ORDERS=all adds to gold's row logq_orders, gold's log q summed over its valid orders, each order's q as GOLD_Q gives it.
+  An order is valid where the decoder takes its tokens through the clause's END and the clause's rows do not change; in an order the first
+  occurrence of a label is `*` and the later ones are reads (reorder), so its tokens differ from gold's. The orders come from a seed of the
+  task and the clause (order_rng). Both settings turn on ANCESTOR_PREFIX. A clause of at most 5 atoms takes all its orders; a longer clause
+  takes GOLD_ORDER_CAP orders at random, with the sum estimated as the number of orders times the mean q. An order with an atom after a compound
+  has q 0, since a draw ends at a compound, so only orders with the compound last are scored and counted in that estimate; the row's
+  orders_n counts every valid order where n <= 5, orders_drawn the orders with the compound last (estimated above 5 atoms), and order_q each
+  scored order's atoms and log q;
+- ANCESTOR_PREFIX=1 gives a point a prefix of its clause's ancestors by reads only, in an order that reads no written position, so slot numbers
+  follow from the DAG (ancestor_order, ancestor_spec); gold's tables, GOLD_Q, the rows and the draws all stand on that prefix. A run with it has
+  no --samples, whose records are in the slots of the written program;
 - --seconds is the CPU budget of a point's draws; the point's setup (the prefix's tables, which the engine computes at
   every model step, and gold's row) is outside it, and its CPU is the info's setup_cpu.
 
@@ -181,6 +193,11 @@ REACH_CHECK = os.environ.get('REACH_CHECK', '') == '1'
 OUTPUT_GATE = os.environ.get('OUTPUT_GATE', '1') == '1'
 COMPOUND = os.environ.get('COMPOUND', '1') == '1'
 STATIC_ATOM = os.environ.get('STATIC_ATOM', '1') == '1'  # an atom is redrawn where the static prune matches it
+ROW_ORDERS = int(os.environ.get('ROW_ORDERS', '0'))  # REL_ROWS and CHOICE_ROWS: this many random valid orders per clause; 0: the written order
+GOLD_ORDERS = os.environ.get('GOLD_ORDERS', '') == 'all'  # GOLD_Q: logq_orders, gold's log q summed over its valid orders
+GOLD_ORDER_CAP = int(os.environ.get('GOLD_ORDER_CAP', '24'))  # the orders scored for a clause of more than 5 atoms
+ORDER_SHUFFLES = 2000  # the random orders tried for a clause of more than 5 atoms
+ANCESTOR_PREFIX = os.environ.get('ANCESTOR_PREFIX', '') == '1' or ROW_ORDERS > 0 or GOLD_ORDERS  # a point's prefix holds only its clause's ancestors by reads (ancestor_spec)
 SEED_TAG = os.environ.get('SEED_TAG', 'v2')  # a point's draws follow seed_of(task, case, point, SEED_TAG); another tag gives other draws
 HAZARD_GROUP = os.environ.get('HAZARD_GROUP', '') == '1'  # a RULE point's stop factors come from the gold bodies of its own point group
 PREFIX_DRAWS = os.environ.get('PREFIX_DRAWS', '') == '1'  # each passing draw and gold also give their clause cut at each atom where it can end
@@ -398,6 +415,84 @@ def body_atoms(clause):
             if depth == 0:
                 out.append(inner[start:i + 1])
     return out
+
+
+def label_sites(V, atoms):
+    """{(atom, token position): label number} of the label sites of a clause's atoms (token lists): a `*` has the next number, and
+    a label token has its own."""
+    out, n = {}, 0
+    for a, toks in enumerate(atoms):
+        for j, t in enumerate(toks):
+            if t == M.STAR:
+                out[a, j], n = n, n + 1
+            elif V.kind(t) == 'label':
+                out[a, j] = int(V.name(t)[1:])
+    return out
+
+
+def guard_reads(atoms, sites):
+    """Per atom, the labels it needs bound before it: a NOT's and a comparison's reads, which bind nothing. Other atoms need none."""
+    return [{sites[a, j] for j, t in enumerate(toks) if (a, j) in sites and t != M.STAR} if toks[0] == M.NOT or toks[0] in M.CMP else set()
+            for a, toks in enumerate(atoms)]
+
+
+def reorder(atoms, sites, order, label_tok):
+    """The tokens of atoms in the order `order`: a label's first occurrence is `*`, and a later one is a read of the label's new
+    number. None where a NOT or a comparison comes before the labels it reads."""
+    num, out = {}, []
+    for a in order:
+        toks = list(atoms[a])
+        guard = toks[0] == M.NOT or toks[0] in M.CMP
+        for j, t in enumerate(toks):
+            lab = sites.get((a, j))
+            if lab is None:
+                continue
+            if lab in num:
+                toks[j] = label_tok[num[lab]]
+            elif guard and t != M.STAR:
+                return None
+            else:
+                num[lab] = len(num)
+                toks[j] = M.STAR
+        out.append(toks)
+    return out
+
+
+def random_orders(items, rng):
+    """Distinct orders of items, each uniform among those not given yet: all of them for at most 5 items, else up to ORDER_SHUFFLES tries."""
+    if len(items) <= 5:
+        orders = list(itertools.permutations(items))
+        rng.shuffle(orders)
+        yield from orders
+        return
+    seen = set()
+    for _ in range(ORDER_SHUFFLES):
+        o = tuple(rng.sample(items, len(items)))
+        if o not in seen:
+            seen.add(o)
+            yield o
+
+
+def count_orders(atoms, sites, items):
+    """The number of orders of the atoms items where each NOT and comparison comes after the labels it reads."""
+    needs = guard_reads(atoms, sites)
+    labs = [{sites[a, j] for j in range(len(atoms[a])) if (a, j) in sites} for a in items]
+    ways = {0: 1}
+    for size in range(len(items)):
+        nxt = collections.Counter()
+        for mask, w in ways.items():
+            bound = set().union(*[labs[i] for i in range(len(items)) if mask >> i & 1])
+            for i, a in enumerate(items):
+                if not mask >> i & 1 and needs[a] <= bound:
+                    nxt[mask | 1 << i] += w
+        ways = nxt
+    return sum(ways.values())
+
+
+def lse(xs):
+    """log of the sum of exp(x) over xs."""
+    m = max(xs, default=-math.inf)
+    return m + math.log(sum(math.exp(x - m) for x in xs)) if m > -math.inf else -math.inf
 
 
 RELATION_KINDS = ('relation', 'lib relation', 'relation macro', 'fact relation')  # the decoder's kinds of a relation token
@@ -1200,7 +1295,7 @@ class Drawer:
         self.rel_stats = collections.Counter()  # STEER_REL: calls, misses and CPU seconds (prefix render, P weights, scoring)
         self.rel_closed, self.rel_base, self.rel_pg, self.rel_off = None, 0, None, False  # run_point sets these (closed_program, base_forms, point group, no steer)
         self.row_pg, self.hist = {}, {}  # run_point sets these: a CHOICE_ROWS row's point_group, and prior_history's uses of each relation token before the clause
-        self.rel_dag_src = None  # run_point sets this: (point_dir, point index), the forms before the point
+        self.rel_dag_src = None  # run_point sets this: (spec, point index), the forms before the point
         self.rel_dag = None  # STEER_REL: dag_info's (fields, adj) of those forms, built at the first miss; False where it cannot be built
         self.rel_dag_f, self.rel_dag_p = {}, {}  # base -> its fields; (bases the prefix reads, base) -> dag_path
 
@@ -1965,7 +2060,7 @@ class Drawer:
         if self.rel_dag is None:
             c0 = time.process_time()
             try:
-                self.rel_dag = dag_info(strata.program_forms(self.rel_dag_src[0]), self.rel_dag_src[1])
+                self.rel_dag = dag_info(point_forms(self.rel_dag_src[0]), self.rel_dag_src[1])
             except Exception:
                 self.rel_dag = False
             self.rel_stats['s_dag_point'] += time.process_time() - c0
@@ -2241,9 +2336,12 @@ class Prefix:
         gp = arclog.StudyProgram.from_sexp(spec['gold_sexp'], self.st)
         self.original = None  # the original gold program (an INIT port's whole INIT program), for point_info
         try:
-            np_ = self.original = arclog.StudyProgram.from_sexp(spec['port']['full_sexp'], self.st) if spec.get('port') else gp
-            nm = json.loads(np_.relation_source_names_json(GEN, self.task, self.case))
+            np_ = self.original = arclog.StudyProgram.from_sexp(spec['written_sexp'], self.st) if spec.get('written_sexp') else (
+                arclog.StudyProgram.from_sexp(spec['port']['full_sexp'], self.st) if spec.get('port') else gp)
+            nm = json.loads(np_.relation_source_names_json(GEN, self.task, self.case))  # it refuses a program in any other form order
             self.names = {'&r%d' % r['relation_slot']: r['display_name'] for r in nm['relations']}
+            if spec.get('written_sexp'):
+                self.names = moved_names(nm['relations'], spec['port']['full_sexp'] if spec.get('port') else spec['gold_sexp'])
         except Exception as e:  # noqa: BLE001
             self.names = {'_error': '%s: %s' % (type(e).__name__, str(e)[:200])}
         try:
@@ -2284,6 +2382,9 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         arclog.engine_stats(reset=True)
     pre = pre or Prefix(spec)
     rc = RuleCheck(spec['point_dir'], warm=False)  # the feature study's checks at this point; each call names its functions
+    if spec.get('written_sexp'):  # the checks read the same prefix as the decoder
+        rc.state.prefix = spec['prefix_lines']
+        rc.state.point = [len(spec['prefix_lines'])] + list(rc.state.point[1:])
     sp_keys = [k for k in rc.rules if rc.classes.get(k) in PREFIX_CLASSES and k != 'h3_repeated_test.dup' and k not in SP_CUT_EXEMPT]
     sp_functions = sorted({k.split('.', 1)[0] for k in sp_keys} | {'h3_repeated_test'})
     regtypes = lib_types(rc, regcols)
@@ -2300,7 +2401,8 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
     dec, before, decl_types = pre.dec.fork(), pre.before, dict(pre.decl_types)
     base_forms = n_forms(dec.program_form())
     END = M.END
-    rng = random.Random(M.seed_of(task, case, point, SEED_TAG))
+    seed_point, written_point = spec.get('seed_point', point), spec.get('written_point', point)
+    rng = random.Random(M.seed_of(task, case, seed_point, SEED_TAG))
     ndecl = 1 + max([M.slot_no(V.name(ids[i])) for i in range(first)
                      if not model[i] and V.kind(ids[i]) == 'relation'] + [-1])
     for s, ts in pre.native.items():  # an INIT port's relation that no prefix table typed
@@ -2428,10 +2530,10 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         return f.program_form()
 
     dr.rel_closed, dr.rel_base, dr.rel_pg, dr.rel_off = closed_program, base_forms, spec.get('point_group'), bool(port)
-    dr.rel_id = [task, case, list(point)]
+    dr.rel_id = [task, case, list(written_point)]
     head, dr.hist = prior_history(V, ids, model, paths, point[0])
     dr.row_pg = dict(kind='INIT' if port else head)  # the clause's head; whether OUT reads a RULE is not known before OUT
-    dr.rel_dag_src = (spec['point_dir'], point[0])
+    dr.rel_dag_src = (spec, point[0])
 
     def static_hit(pf, path):
         """Whether the static prune of program text pf (a closed program, or None) matches the node at path: the atom that
@@ -2469,14 +2571,14 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
             return STEER_FLOOR
         try:
             if STEER_ONLINE == 'cut':  # the cut as a cuts.jsonl row (no X rows: the scorer reads none), a log-odds; nan where it has no score
-                sc = cut_scorer(task, case, tuple(point)).score([dict(clause=pf.split('\n')[base_forms], x=summary(tb), x_rows=[], fail=None,
+                sc = cut_scorer(task, case, tuple(written_point)).score([dict(clause=pf.split('\n')[base_forms], x=summary(tb), x_rows=[], fail=None,
                                                                     out_reads=bool(out_reads))], names)[0]
                 if sc != sc:
                     cnt['steer nan'] += 1
                     return STEER_FLOOR
                 return sc
             if STEER_ONLINE:  # a cut that fails a hard rule gets the floor
-                ps = online_scorer(task, case, tuple(point), STEER_ONLINE)
+                ps = online_scorer(task, case, tuple(written_point), STEER_ONLINE)
                 r = ps.score(dict(clause=pf.split('\n')[base_forms], x=summary(tb), fail=None,
                                   x_rows=rows_with_models(tb, X_ROWS_CAP) if getattr(ps, 'needs_rows', True) else []), names)
                 return r['soft_score'] if r.get('passes') is True and r.get('soft_score') is not None else STEER_FLOOR
@@ -3046,6 +3148,72 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                             x_rows=rows_with_models(tb, X_ROWS_CAP) if tb else None))
         return out, False
 
+    order_no, order_clause = None, None  # the order that score_gold is on (ROW_ORDERS), and its closed clause; None: the written order
+
+    def order_rng():
+        """The rng of a clause's orders, seeded by the task and the clause's atoms as a set."""
+        return random.Random(M.seed_of(task, sorted(x.replace('*', '') for x in body_atoms(rows[0]['clause'])), 'orders'))
+
+    def order_state(atoms, tables):
+        """An order's {atoms, prefix, safe, clause, same}, with atoms as reorder gives them; None where the decoder refuses them. With
+        tables, also its prefix tables, and same: whether the clause's table at END has gold's rows (an order keeps the clause's rows)."""
+        d = dec.fork()
+        try:
+            for x in itertools.chain(*atoms):
+                d.step(x)
+            d.step(END)
+        except arclog.Refusal:
+            return None
+        st_ = dict(atoms=atoms, prefix=None, safe=None, clause=d.program_form().split('\n')[base_forms], same=None)
+        if tables:
+            cur_, st_['prefix'], st_['safe'] = dec.fork(), [], []
+            for a in atoms:
+                for x in a:
+                    cur_.step(x)
+                st_['prefix'].append(body_table(dr.frontier(cur_), task, case, cur_, before)[0])
+                st_['safe'].append(can_end(cur_))
+            gx_ = rows[0].get('body_x') or rows[0].get('x')
+            try:
+                st_['same'] = gx_ is None or (summary(parse_table(arclog.step_tables(d, task, case, True, before))) or {}).get('entries') == gx_['entries']
+            except M.Fail:
+                st_['same'] = False
+        return st_
+
+    def score_orders():
+        """ROW_ORDERS: the rows of score_gold for ROW_ORDERS random valid orders of gold's clause. rows[0]['row_orders'] counts the orders
+        tried and why each one left out was left out: the NOT and comparison rule, the decoder, a table, or score_gold."""
+        nonlocal gold_atoms, gprefix, gsafe, order_no, order_clause
+        if any(a[0] in (M.OR, IF_TOK) for a in gold_atoms):  # score_gold writes no rows for a compound
+            return
+        kept, sites = (gold_atoms, gprefix, gsafe), label_sites(V, gold_atoms)
+        tally_ = rows[0]['row_orders'] = collections.Counter()
+        tries_ = 0
+        try:
+            for o in random_orders(range(len(kept[0])), order_rng()):
+                tries_ += 1
+                atoms = reorder(kept[0], sites, o, dr.fr.label_tok)
+                if atoms is None:
+                    tally_['guard'] += 1
+                    continue
+                st_ = order_state(atoms, True)
+                if st_ is None:
+                    tally_['refused'] += 1
+                elif not st_['same'] or any(t is None for t in st_['prefix']):
+                    tally_['table'] += 1
+                else:
+                    gold_atoms, gprefix, gsafe, order_clause, order_no = atoms, st_['prefix'], st_['safe'], st_['clause'], tally_['kept']
+                    if score_gold() is None:
+                        tally_['unscored'] += 1
+                    else:
+                        tally_['kept'] += 1
+                        if tally_['kept'] == ROW_ORDERS:
+                            break
+        finally:
+            gold_atoms, gprefix, gsafe = kept
+            order_no, order_clause = None, None
+        tally_['tries'] = tries_
+        rows[0]['row_orders'] = dict(tally_)
+
     def score_gold():
         """(log p, log q_full) of gold's path, with its atoms' tokens forced through atom (no rng call, no steering by
         unread labels, no must_join) and the stop after each atom; None where an atom is a compound, which is not scored.
@@ -3055,9 +3223,10 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         saved = dict(dr.jcache), dict(dr.reach_cache), dr.lookahead_forks, dr.reach_drops, dr.complete_drops
         gcur, gt, lg = dec.fork(), [], Logs()
         dr.parts = parts = collections.Counter()
-        dr.relrows = [] if REL_ROWS else None
-        dr.choices = [] if CHOICE_ROWS else None
-        dr.on_value = value_cuts if VAL_CUTS else None
+        rows_on = order_no is not None or not ROW_ORDERS  # with ROW_ORDERS the rows come from the orders alone
+        dr.relrows = [] if REL_ROWS and rows_on else None
+        dr.choices = [] if CHOICE_ROWS and rows_on else None
+        dr.on_value = value_cuts if VAL_CUTS and order_no is None else None
         cut_info['c0'] = time.process_time()
         try:
             for k, a in enumerate(gold_atoms, 1):
@@ -3068,9 +3237,9 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                 scope = [str(t) for t in gprefix[k - 2]['types']] if k > 1 and gprefix[k - 2] else ()
                 dr.p_labels = gprefix[k - 2].get('labels') if k > 1 and gprefix[k - 2] else None
                 fr = dr.frontier(gcur, gt.count(M.STAR))
-                if PREFIX_CUTS:
+                if PREFIX_CUTS and order_no is None:
                     prefcut_rows.append(prefix_cut(k, gcur))
-                if k <= CUT_OPTS and not cut_info['truncated']:
+                if k <= CUT_OPTS and not cut_info['truncated'] and order_no is None:
                     got, cut_info['truncated'] = option_cuts(fr, gt, k, V.name(a[1] if a[0] == M.NOT else a[0]), cut_info['c0'])
                     cutopt_rows.extend(got)
                 dr.want, dr.need, dr.force = set(), need_at(scope), collections.deque(a)
@@ -3088,17 +3257,21 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                     if dr.choices is not None:
                         dr.choices.append(dr.stop_row(k, a, res[2], res[3], h, 'STOP' if k == len(gold_atoms) else 'GO', tuple(gt[:len(gt) - len(a)])))
                 parts['atom %d' % min(k, 4)] += sum(v for x, v in parts.items() if not x.startswith('atom ')) - before
-            rows[0]['logp_parts'] = {x: round(v, 4) if math.isfinite(v) else None for x, v in parts.items()}  # None: P gives gold's pick 0
+            if order_no is None:
+                rows[0]['logp_parts'] = {x: round(v, 4) if math.isfinite(v) else None for x, v in parts.items()}  # None: P gives gold's pick 0
+            gclause = order_clause or rows[0]['clause']
             if dr.relrows is not None:
-                gb = body_atoms(rows[0]['clause'])
+                gb = body_atoms(gclause)
                 try:  # DAG fields of each derived option: its base relation in the read graph of the forms before the point
-                    dag, adj = dag_info(strata.program_forms(spec['point_dir']), point[0])
+                    dag, adj = dag_info(point_forms(spec), point[0])
                 except Exception:
                     dag = None
                 base_of = lambda tok: (dr.prog_names.get(tok) or '').split('.')[0] or None  # noqa: E731
                 for r in dr.relrows:
-                    r.update(task=task, case=case, point=point, point_group=spec.get('point_group'), clause=rows[0]['clause'],
+                    r.update(task=task, case=case, point=point, point_group=spec.get('point_group'), clause=gclause,
                              prefix=gb[:r['k'] - 1], gold_atom=gb[r['k'] - 1] if r['k'] <= len(gb) else None)
+                    if order_no is not None:
+                        r['order'] = order_no
                     if dag is None:
                         continue
                     pre_bases = {b for a in gold_atoms[:r['k'] - 1] for t in a if (b := base_of(V.name(t)))}
@@ -3111,7 +3284,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                                             path=dag_path(adj, pre_bases, b) if pre_bases else None)
                 rel_rows.extend(dr.relrows)
             if dr.choices is not None:
-                gb = body_atoms(rows[0]['clause'])
+                gb = body_atoms(gclause)
                 scope_of = lambda k: (gprefix[k - 2] or {}) if k > 1 else {}  # noqa: E731
                 for r in dr.choices:
                     after = r['phase'] == 'atom stop'  # the stop reads the clause with its atom
@@ -3119,6 +3292,8 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                     r.update(task=task, case=case, point=point,
                              prefix=gb[:r['k'] - 1 + after], gold_atom=gb[r['k'] - 1] if r['k'] <= len(gb) else None,
                              scope_labels=sc.get('labels'), scope_types=[str(t) for t in sc.get('types') or []])
+                    if order_no is not None:
+                        r['order'] = order_no
                 choice_rows.extend(dr.choices)
             return lg.p, lg.q + lg.x
         finally:
@@ -3132,6 +3307,11 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
             rows[0]['logp'], rows[0]['logq_full'] = score_gold() or (None, None)
         except Exception as e:  # noqa: BLE001
             rows[0]['gold_score_error'] = '%s: %s' % (type(e).__name__, str(e)[:200])
+        if ROW_ORDERS:
+            try:
+                score_orders()
+            except Exception as e:  # noqa: BLE001
+                rows[0]['row_orders_error'] = '%s: %s' % (type(e).__name__, str(e)[:200])
     gx = rows[0].pop('_x_table', None)
     if is_output and gx is not None:  # gold's X: the probe table of an OR or IF atom drops the labels it exports
         rows[0]['output_gate'] = stop_gate(rows[0], rows[0]['clause']) if rows[0].get('clause') else None
@@ -3190,7 +3370,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
             return zero('atoms follow the compound: the draws end at a compound')
         if a[0] != M.OR:
             return zero('IF: the draws make OR shapes only')
-        rng.seed(M.seed_of(task, case, point, SEED_TAG + '/goldq/comp'))  # gold_q puts rng back
+        rng.seed(M.seed_of(task, case, seed_point, SEED_TAG + '/goldq/comp'))  # gold_q puts rng back
         sink = collections.Counter()
         dr.gq, dr.force = False, None
         # Pass 1: gold's atoms of each branch, split by the grammar (the forced atom stops where its tokens end) and the separators.
@@ -3444,8 +3624,8 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         gq_none.clear()
         saved = (dict(dr.jcache), dict(dr.reach_cache), dr.lookahead_forks, dr.reach_drops, dr.complete_drops, dict(memo), dict(safes),
                  rng.getstate(), list(picked), dr.rng)
-        dr.rng = random.Random(M.seed_of(task, case, point, SEED_TAG + '/goldq'))
-        yrng = random.Random(M.seed_of(task, case, point, SEED_TAG + '/goldq/sir'))  # the rng of the SIR factor's Y draws
+        dr.rng = random.Random(M.seed_of(task, case, seed_point, SEED_TAG + '/goldq'))
+        yrng = random.Random(M.seed_of(task, case, seed_point, SEED_TAG + '/goldq/sir'))  # the rng of the SIR factor's Y draws
         sink = collections.Counter()
         gcur, gt, gtexts, parts, total = dec.fork(), [], [], [], 0.0
         try:
@@ -3623,6 +3803,49 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
             picked[:] = saved[8]
             dr.deltas.clear()
 
+    def gold_orders():
+        """GOLD_ORDERS: fields of gold's row: logq_orders, gold's log q summed over its valid orders, each order's q from gold_q. The scored
+        orders are those with the compound last, where gold has a compound: with an atom after it the draws give q 0. At most 5 atoms:
+        every order, an exact sum of the estimated q's. More atoms: GOLD_ORDER_CAP orders at random, and the sum is (number of orders) times the
+        mean q, the number being count_orders' times the share of tried orders that the decoder takes. Two compounds have q 0 in every order."""
+        nonlocal gold_atoms, gprefix, gsafe
+        kept, sites = (gold_atoms, gprefix, gsafe), label_sites(V, gold_atoms)
+        comps = [i for i, a in enumerate(kept[0]) if a[0] in (M.OR, IF_TOK)]
+        n, exact = len(kept[0]), len(kept[0]) <= 5
+        if len(comps) > 1:
+            return dict(logq_orders=None, logq_orders_zero=True, orders_n=None, orders_drawn=0, orders_exact=exact, order_q=[])
+        plain = [i for i in range(n) if i not in comps]
+        scored, others, refused = [], 0, collections.Counter()
+        try:
+            if exact and comps:  # the orders with the compound elsewhere count in orders_n only
+                for o in itertools.permutations(range(n)):
+                    if o[-1] != comps[0]:
+                        atoms = reorder(kept[0], sites, o, dr.fr.label_tok)
+                        others += atoms is not None and order_state(atoms, False) is not None
+            for o in random_orders(plain, order_rng()):
+                o = tuple(o) + tuple(comps)
+                atoms = reorder(kept[0], sites, o, dr.fr.label_tok)
+                st_ = order_state(atoms, True) if atoms is not None else None
+                if st_ is None or not st_['same']:
+                    refused['guard' if atoms is None else 'decoder' if st_ is None else 'changed'] += 1
+                    continue
+                gold_atoms, gprefix, gsafe = st_['atoms'], st_['prefix'], st_['safe']
+                got = gold_q()
+                if got is None:
+                    refused['unscored'] += 1
+                    continue
+                scored.append(dict(order=list(o), lq=got[0] if math.isfinite(got[0]) else None))
+                if not exact and len(scored) >= GOLD_ORDER_CAP:
+                    break
+        finally:
+            gold_atoms, gprefix, gsafe = kept
+        lqs = [x['lq'] if x['lq'] is not None else -math.inf for x in scored]
+        tried = len(scored) + refused['decoder'] + refused['changed'] + refused['unscored']
+        nd = float(len(scored)) if exact else count_orders(kept[0], sites, plain) * len(scored) / max(tried, 1)
+        total = (lse(lqs) if exact else math.log(nd) + lse(lqs) - math.log(len(lqs))) if lqs and nd else -math.inf
+        return dict(logq_orders=total if math.isfinite(total) else None, logq_orders_zero=not math.isfinite(total), orders_n=others + len(scored) if exact else None,
+                    orders_drawn=nd, orders_exact=exact, orders_left_out=dict(refused), order_q=scored)
+
     if GOLD_Q and rows[0].get('clause'):
         try:
             got = gold_q()
@@ -3635,6 +3858,12 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         except Exception as e:  # noqa: BLE001
             fr_ = traceback.extract_tb(e.__traceback__)[-1]
             rows[0]['logq_steer_error'] = '%s: %s (%s:%d in %s)' % (type(e).__name__, str(e)[:200], os.path.basename(fr_.filename), fr_.lineno, fr_.name)
+        if GOLD_ORDERS:
+            try:
+                rows[0].update(gold_orders())
+            except Exception as e:  # noqa: BLE001
+                fr_ = traceback.extract_tb(e.__traceback__)[-1]
+                rows[0]['logq_orders_error'] = '%s: %s (%s:%d in %s)' % (type(e).__name__, str(e)[:200], os.path.basename(fr_.filename), fr_.lineno, fr_.name)
 
     setup_cpu, c0 = round(time.process_time() - c0, 2), time.process_time()  # the budget is for draws: setup (the prefix's tables, gold) is outside it
     while len(rows) <= draws and time.process_time() - c0 < seconds:  # CPU seconds, so a loaded machine gives a point the same work
@@ -4036,6 +4265,60 @@ def fstore_points():
     return {d: (case, point, golds[g]) for d, (case, point, g, mt) in points.items()}
 
 
+def ancestor_order(forms, i):
+    """The numbers of the forms that form i of parsed forms reads, directly or through other forms, sorted by (depth in the read
+    graph, form text). A form comes after each form it reads, and the order reads no written position."""
+    heads = {f[1]: j for j, f in enumerate(forms) if len(f) > 1 and isinstance(f[1], str) and f[1].startswith('&')}
+    depth = {}
+
+    def d(j):
+        if j not in depth:
+            depth[j] = 1 + max((d(heads[r]) for r in strata.reads_of(forms[j][2:], set()) - {forms[j][1]} if r in heads), default=0)
+        return depth[j]
+    d(i)
+    del depth[i]
+    return sorted(depth, key=lambda j: (depth[j], sx(forms[j])))
+
+
+def ancestor_spec(spec):
+    """spec with its program written as the clause's ancestors (ancestor_order), the clause, and the other forms as they were; the
+    decoder never reaches the other forms, which only keep the program whole. The point's number follows, written_point and
+    fstore_point keep its place in the written program, and the seed reads the clause's text. An INIT port's clause is its
+    whole INIT, so the ancestors are those of the INIT."""
+    port = spec.get('port')
+    whole = port['full_sexp'] if port else spec['gold_sexp']
+    texts = [whole[a:b] for a, b in form_spans(whole)]
+    i = spec['point'][0]
+    anc = ancestor_order(strata.sexprs(whole), i)
+    head = [texts[j] for j in anc]
+    new = '\n'.join(head + [texts[i]] + [t for j, t in enumerate(texts) if j != i and j not in anc])
+    out = dict(spec, point=[len(anc)] + list(spec['point'][1:]), written_point=spec['point'], fstore_point=spec.get('fstore_point', spec['point']),
+               written_sexp=whole, gold_sexp=new, prefix_lines=head, seed_point=texts[i])
+    if port:
+        g = spec['gold_sexp']
+        out['gold_sexp'] = '\n'.join(head + [g[a:b] for a, b in form_spans(g)[i:]])
+        out['port'] = dict(port, full_sexp=new)
+    return out
+
+
+def moved_names(relations, text):
+    """{'&rN': display name} of the slots of program text, a program with the forms of the written one in another order. A form
+    declares a run of slots (an INIT one per port), in the same inner order wherever the form stands. relations: the written program's
+    entries of relation_source_names_json."""
+    runs = collections.defaultdict(list)
+    for r in sorted(relations, key=lambda r: r['relation_slot']):
+        runs[r['display_name'].split('.')[0]].append(r['display_name'])
+    names = [x for f in strata.sexprs(text) if len(f) > 1 and isinstance(f[1], str) and f[1].startswith('&') for x in runs.get(f[1], ())]
+    if len(names) != len(relations):
+        raise ValueError('the forms of the program do not account for its %d relations' % len(relations))
+    return {'&r%d' % i: x for i, x in enumerate(names)}
+
+
+def point_forms(spec):
+    """The parsed forms of the program that spec's point number counts in."""
+    return strata.sexprs(spec['gold_sexp']) if spec.get('written_sexp') else strata.program_forms(spec['point_dir'])
+
+
 def pick_groups(n, dev, groups, per_task=1):
     """Hash-ordered points of dev tasks in fstore/points: up to n of each point group, at most per_task of a task in a group."""
     idx = fstore_points()
@@ -4165,6 +4448,8 @@ def main():
     ap.add_argument('--per-task', type=int, default=1, help='points of a task in a point group, at most')
     ap.add_argument('--split', default='dev', choices=('dev', 'holdout'), help="the tasks whose points are drawn; the prior and hazards are always dev's")
     a = ap.parse_args()
+    if ANCESTOR_PREFIX and a.samples:
+        ap.error('--samples writes records in the slots of the written program, so it does not take ANCESTOR_PREFIX=1')
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, 'fstore.txt'), 'w') as f:  # the feature-store points the run's points and gold come from, for its scorers
         f.write(FSTORE)
@@ -4207,6 +4492,8 @@ def main():
         for d in filter(None, map(str.strip, open(os.environ['SKIP_POINTS']))):
             done |= {(r['task'], r['case'], tuple(r['point'])) for r in iter_json(os.path.join(d, 'points.jsonl.zst'))}
         specs = [s for s in specs if (s['task'], s['case'], tuple(s.get('fstore_point', s['point']))) not in done]
+    if ANCESTOR_PREFIX:
+        specs = [ancestor_spec(s) for s in specs]
     print('%s points %d, static mask %s, registry relations %d' % (
         a.groups or a.kind, len(specs), STATIC_MASK, len(regcols)), flush=True)
     t0 = time.time()
@@ -4225,6 +4512,7 @@ def main():
         pcf = files.enter_context(JsonlWriter(os.path.join(a.out, 'prefcuts.jsonl.zst'))) if PREFIX_CUTS else None
         comp = compound_counts(dev) if 'RULE' in kinds else {}
 
+        @functools.lru_cache(maxsize=None)  # one per task and kind: every point of the run would hold its own copy
         def counts_of(task, kind):
             c = prior[kind].held_out(task)
             c['compound'] = held_out(comp, task) if comp and kind == 'RULE' else None
