@@ -28,6 +28,12 @@ The hoist of a site:
 - The atoms that ground a position or a key column take the clause's
   further top-level atoms over their variables, its tests among them, so
   that the instance holds only the positions and keys the clause reads.
+- A `Tiling` position input also takes a projection of each further stored
+  or derived top-level atom that shares a variable, other than a position
+  or an output, with its atoms or the key. A Tiling gives a row for each
+  pair of an outer and an inner position of a key, so a position that the
+  clause does not read pairs with each position of the other input, and the
+  Box of a pair can lie beyond the margins a Box holds.
 - Every other input, the axis, count, side and gap, and `ExtentDivisions`'
   frame, takes its atoms whole, and they leave the clause. A variable they
   share with the rest of the clause is a key column; so is an axis of an
@@ -721,9 +727,22 @@ class Hoist:
             return AtomLiteral(Atom(lit.atom.relation, args2, lit.atom.line), lit.negated)
 
         exact: dict[int, str | None] = {}   # a position input's literal its projection keeps whole, by input
+        pos_lits = {j for _, _, g in positions for j in g}
+
+        def bounds(g: list[int]) -> list[int]:
+            """The literals a Tiling's position input g takes besides its
+            own: the clause's further stored and derived atoms that share a
+            variable, other than a position or an output, with g's literals
+            or the key."""
+            if form.comp != "Tiling":
+                return []
+            vs = (set(_vars(tuple(self.body[j] for j in g))) | set(order)) - out_vars - pos_vars
+            return [j for j, lit in self.lits() if isinstance(lit, AtomLiteral) and self.table(lit.atom)
+                    and j not in pos_lits and j not in nc and set(_vars(lit)) & vs]
+
         for inp, t, g in positions:
             keep = set(_vars(t))
-            body = keyed(g, keep, [])
+            body = keyed(sorted(set(g) | set(bounds(g))), keep, [])
             for j in g:
                 if project(self.body[j], keep | set(order) | needed(g)) == self.body[j]:
                     exact.setdefault(j, inp)
