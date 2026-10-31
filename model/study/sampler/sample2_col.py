@@ -324,6 +324,7 @@ BRANCH_GATE_P = os.environ.get('BRANCH_GATE_P', '1') == '1'
 CELLS_GATE = os.environ.get('CELLS_GATE', '1') == '1'
 UNJOINED = 0.14
 PROG_CHUNK = int(os.environ.get('PROG_CHUNK', '4'))  # points of one gold program to a job; a job holds its points' draw rows (with X rows) until it ends
+SESSION_BYTES = int(os.environ.get('SESSION_BYTES', '0')) or None  # a point's session cap; a job past it gives an error row, where it would hold the whole machine
 X_ROWS_CAP = 2000  # rows kept per entry of a draw's X; gold's X keeps all
 MIN2_KINDS = {'DET', 'RULE'}  # kinds of point where a draw may not stop at one atom, except at the output clause or with a method call (one_call)
 ONE_CALL = os.environ.get('ONE_CALL', '1') == '1'
@@ -2332,7 +2333,7 @@ class Prefix:
     def __init__(self, spec):
         self.task, self.case = spec['task'], spec['case']
         self.st = settings()
-        self.sess = arclog.Session(arclog.Task.from_json(open(TASKS + self.task + '.json').read(), arclog.World.Closed), self.st)
+        self.sess = arclog.Session(arclog.Task.from_json(open(TASKS + self.task + '.json').read(), arclog.World.Closed), self.st, session_bytes=SESSION_BYTES)
         gp = arclog.StudyProgram.from_sexp(spec['gold_sexp'], self.st)
         self.original = None  # the original gold program (an INIT port's whole INIT program), for point_info
         try:
@@ -4414,6 +4415,10 @@ def worker(args):
     if prof is not None:
         prof.disable()
         prof.dump_stats('%s.%d.%d' % (os.environ['PROFILE'], os.getpid(), time.time_ns()))
+    if GC_TUNE:  # a point's session sits in a cycle, and the tuned collector would hold many of them
+        import gc
+        pre = None
+        gc.collect()
     return out
 
 
