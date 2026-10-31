@@ -424,6 +424,36 @@ mod synthesized {
         }
     }
 
+    /// The written name of each field of `site` that a
+    /// [`SiteArg::NamedLabel`] names by a slot, where no binding names the
+    /// record's fields: the name of the field's label, with the least digit
+    /// suffix that no other field of the site takes. A label at two fields
+    /// so names two fields, as `(:n C (:C2 C))`.
+    fn own_fields(site: &Site, names: &Names) -> Vec<(ColumnName, ColumnName)> {
+        let slotted = |arg: &SiteArg| match arg {
+            SiteArg::NamedLabel { name: name @ ColumnName::Slot(_), label: LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) } => Some((name.clone(), names.get(*id))),
+            _ => None,
+        };
+        let mut taken: Vec<String> = site.value.args.iter().filter_map(|arg| match arg {
+            SiteArg::NamedLabel { name: ColumnName::Written(name), .. } => Some(name.to_string()),
+            SiteArg::Field(field) => written(&field.column).map(str::to_owned),
+            arg => slotted(arg).map(|(_, name)| name.to_owned()),
+        }).collect();
+        let mut own: Vec<(ColumnName, ColumnName)> = Vec::new();
+        for (slot, name) in site.value.args.iter().filter_map(slotted) {
+            let text = match own.iter().any(|(_, to)| written(to) == Some(name)) {
+                false => name.to_owned(),
+                true => {
+                    let fresh = (2..).map(|n| format!("{name}{n}")).find(|fresh| !taken.contains(fresh)).expect("a free suffix");
+                    taken.push(fresh.clone());
+                    fresh
+                }
+            };
+            own.push((slot, ColumnName::Written(text.into())));
+        }
+        own
+    }
+
     struct Synthesizer<'r> {
         registry: &'r Registry,
         /// The written names of the columns of each relation a form before
@@ -890,6 +920,7 @@ mod synthesized {
             names: &Names,
             fields: Option<&[(ColumnName, ColumnName)]>,
         ) -> Site {
+            let own = own_fields(site, names);
             let args = site.value.args.iter().map(|arg| match arg {
                 SiteArg::NamedLabel { name, label: LabelUse::Zero } => {
                     let field = fields.and_then(|fields| fields.iter().find(|(from,_)|from == name)).map(|(_,to)|to.clone())
@@ -904,6 +935,7 @@ mod synthesized {
                     let field = fields
                         .and_then(|fields| fields.iter().find(|(from, _)| from == old))
                         .map(|(_, to)| to.clone())
+                        .or_else(|| own.iter().find(|(from, _)| from == old).map(|(_, to)| to.clone()))
                         .unwrap_or_else(|| ColumnName::Written(names.get(*id).into()));
                     if written(&field) == Some(names.get(*id)) {
                         SiteArg::NamedLabel {

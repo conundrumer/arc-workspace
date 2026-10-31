@@ -343,3 +343,24 @@ fn the_synthesized_program_form_writes_each_site_of_an_out_as_its_column() {
     let written = arclog::write::write_synthesized(decoder.program(), Registry::get());
     assert!(written.contains("(OUT (&r1 ^P) (&r2 ^Col))"), "{written}");
 }
+
+/// A record whose fields a decode names by slot, with one label at two
+/// fields, is written with a distinct name at each field, so the text reads
+/// back to the same record.
+#[test]
+fn the_synthesized_program_form_writes_one_label_at_two_fields_with_two_field_names() {
+    let inputs = inputs(&[1, 2], &[1, 2]);
+    let settings = DecodeSettings::default();
+    let mut decoder = decoder(&inputs, &settings);
+    let arclog = "(INIT &reach Propagation
+  (source ((:n Col (:C Col)))
+    (input *P *Col))
+  (edge ((:a Col C) (:b Col (:C C2)))
+    (input (:Col *Col)) (input (:Col *C)) (input (:Col *C2))))
+(RULE &s (input *P *Col) (&reach.reached (:n Col (:C Col))))
+(OUT (&s ^P ^Col))
+";
+    walk(&mut decoder, &model_tokens(arclog));
+    let written = arclog::write::write_synthesized(decoder.program(), Registry::get());
+    assert!(written.contains("(source ((:n Col (:Col2 Col)))"), "{written}");
+}
