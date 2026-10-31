@@ -42,7 +42,8 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
                 input,
                 registry,
             )?;
-            group_key_labels = key;
+            // A port without a key column does not carry the group key in its rows.
+            group_key_labels = if port_columns.iter().any(|c|c.key) {key} else {Vec::new()};
             logical_columns = port_columns.iter().map(|c|json!({
                 "logical_port_column":c.ordinal,"name":super::render::column(&c.name),
                 "role":if c.key {"group_key"} else {"input_value"},
