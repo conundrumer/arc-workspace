@@ -34,7 +34,8 @@
 
 ### Rules
 - Each rule below follows from the principle above. For a case that no rule covers, act by the principle.
-- Give each agent you launch the rules that apply to its work. In its brief, the rule on slow commands takes the place of the rule in its own documents to run a long command in the background.
+- Agents follow these rules too. Give each agent you launch these rules in its brief. In that brief, the rule on slow commands takes the place of the rule in the agent's own documents to run a long command in the background.
+    * comment: The user's words, session 87e85d44-886f-4f61-b02e-46e826a4b2ea, 2026-10-31T03:03:20Z: "wait the point is that the rules exempt agents rn", after a brief asked an agent to time the case phase of the largest solvers before and after a change.
 - **Agents run no slow commands.** An agent in a slow command produces nothing, and its prompt cache expires. An agent that needs a slow command hands it to you at the end of its turn, and you run it.
     - Instance: an agent blocked on a test run. Another agent ran one command for 50 min.
     * comment: The user's words, session 64993706-bdea-4acd-bcaf-7d7b1e3ea40a, 2026-10-26T14:05:17Z: "you run slow commands not agents", and session 20b50e1f-c69e-4779-9282-141a07f0880f, 2026-10-30T20:26:40Z: "5min batching was an old strategy to keep 5min TTL warm but we've moved on to handing off slow commands at end".
@@ -61,6 +62,8 @@
     * comment: The user's words, session 64993706-bdea-4acd-bcaf-7d7b1e3ea40a, 2026-10-30T03:16:44Z: "block on check when there is real active silent risk, and don't block otherwise", and session 20b50e1f-c69e-4779-9282-141a07f0880f, 2026-10-30T20:26:40Z: "if it's undoable, don't block".
     * comment: The instances: session 64993706-bdea-4acd-bcaf-7d7b1e3ea40a, 2026-10-30T14:08:21Z: "???? You were blocking everyone?", and 2026-10-28T08:25:24Z: "Assume we do? You're really waiting 20min for a yes no q?"
 - **Make work cheap by design.** Use the smallest input that shows the point. Use a script before a model judge, and a small model before a large one. Skip the few slow items, and say which you left out. Get signal before coverage. Never redo finished work, such as a baseline.
+    - Take no before-and-after timing of a change, and ask no agent for one. Time only the runs that the work does anyway.
+    * comment: The user's words, session 87e85d44-886f-4f61-b02e-46e826a4b2ea, 2026-10-31T03:07:48Z: "we should directly addres the before/after thing", after a brief asked an agent to time the case phase of the largest solvers before and after a change.
     * comment: The user's words, session 64993706-bdea-4acd-bcaf-7d7b1e3ea40a, 2026-10-27T23:40:34Z: "Don't let judges do what scripts can", 2026-10-26T17:20:58Z: "we need to move fast. smaller LM. or even just ngram", 2026-10-29T21:02:00Z: "speed is more important than coverage", and 2026-10-27T23:01:38Z: "Way to skip the few slow tasks?"; session b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d: "Never waste work. If the work has already been done like a baseline, never redo it".
 - **Launch a fresh agent for new work.** A codex agent idle for more than 30 min, or a claude agent idle for more than 5 min, has lost its prompt cache. A busy agent takes new work only after its current work.
     * comment: The user's words, session 64993706-bdea-4acd-bcaf-7d7b1e3ea40a, 2026-10-29T00:59:53Z: "default to launching new codex agents. you need to have a good reason to reuse agents bc if they're idle for >30min thats a cache bust and if they're busy then they're busy", and session 20b50e1f-c69e-4779-9282-141a07f0880f, 2026-10-30T20:26:40Z: "codex idle past 30min is cache bust. claude agents is 5min ttl".
