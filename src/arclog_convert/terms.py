@@ -320,9 +320,30 @@ def inlined(prog, names: frozenset[str], lib: Lib):
             hs = [a.name for a in u.head.args if isinstance(a, Variable)]
             assert len(hs) == len(u.head.args) == len(set(hs)), (n, u.head)
 
-    def instance(h: Unit, args, taken: set[str]) -> list:
+    component = {i.name: i.component for i in prog.instances if not i.scope.components}
+
+    def called(rn: RelationName) -> bool:
+        """`rn` reads a relation of `names`, in its own scope or through the top instance of its component."""
+        if rn.name not in defs:
+            return False
+        return not rn.instances or (len(rn.instances) == 1 and any(
+            h.scope.components == (component.get(rn.instances[0]),) for h in defs[rn.name]))
+
+    def through(body, inst: str, comp: str):
+        """`body`, of the component `comp`, read through its instance `inst`."""
+        own = {r.name for r in prog.relations if r.scope.components == (comp,)}
+        insts = {i.name for i in prog.instances if i.scope.components == (comp,)}
+        for l in list(walk_lits(body)):
+            if isinstance(l, AtomLiteral):
+                rn = l.atom.relation
+                if rn.instances[0] in insts if rn.instances else rn.name in own:
+                    body = rename_rel(body, rn, RelationName((inst, *rn.instances), rn.name))
+        return body
+
+    def instance(h: Unit, rn: RelationName, args, taken: set[str]) -> list:
+        body = through(h.body, rn.instances[0], component[rn.instances[0]]) if rn.instances else h.body
         uses: Counter = Counter()
-        var_uses(h.body, uses)
+        var_uses(body, uses)
         m: dict[str, object] = {}
         hv = {a.name for a in h.head.args}
 
@@ -338,15 +359,15 @@ def inlined(prog, names: frozenset[str], lib: Lib):
         for v in uses:
             if v not in hv:
                 m[v] = fresh(v)
-        return expand([subst_terms(x, m) for x in h.body], taken, 0)
+        return expand([subst_terms(x, m) for x in body], taken, 0)
 
     def expand(lits, taken: set[str], depth: int) -> list:
         assert depth < 8
         out: list = []
         for l in lits:
-            if isinstance(l, AtomLiteral) and not l.atom.relation.instances and l.atom.relation.name in defs:
+            if isinstance(l, AtomLiteral) and called(l.atom.relation):
                 assert not l.negated, l
-                bodies = [instance(h, l.atom.args, taken) for h in defs[l.atom.relation.name]]
+                bodies = [instance(h, l.atom.relation, l.atom.args, taken) for h in defs[l.atom.relation.name]]
                 if len(bodies) == 1:
                     out.extend(bodies[0])
                 else:
