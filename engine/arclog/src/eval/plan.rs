@@ -4,23 +4,31 @@
 //! The order is a function of the clause's IR and the sizes of the
 //! relations it reads, so a body of equal content over relations of equal
 //! ids has one plan. It is the order of least estimated bindings. A choice
-//! of the order is a variable that an atom binds, estimated at the row count
-//! of the smallest atom that binds it, or a variable that a union exports
+//! of the order is a variable that an atom binds, estimated at the least,
+//! over the atoms that bind it, of the atom's row count divided by the
+//! domains of the atom's other variables that are placed before the choice,
+//! and at least 1, or a variable that a union exports
 //! and no atom or comparison binds, estimated at the sum over the union's
 //! branches of the estimate of the variable in the branch, and chosen only
 //! where the union grounds at the placed variables: each column of its
 //! branches that it does not export is placed or has a finite orientation
 //! domain, and each branch, with its
-//! placed columns bound, grounds every variable it holds. A variable that
-//! an algebra relation or an `=` places costs nothing, and the cost of a
-//! sequence of choices is the sum over its choices of the product of the
-//! estimates up to that choice. Each choice is followed by the outputs of
-//! each algebra relation whose mode the placed variables satisfy, and by each
-//! variable an `=` binds from a placed one. A tie in cost goes to the
-//! sequence of the smaller estimates, then of the canonical positions. A
-//! clause with more than 12 choices takes its choices in order of estimate
-//! then canonical position, each export of a union that no atom or
-//! comparison binds once its union grounds. Where no variable left meets
+//! placed columns bound, grounds every variable it holds. The domain of a
+//! variable is the row count of the smallest atom that binds it, or the size
+//! of its orientation type where that is less, so a variable that an atom
+//! gives from placed variables, such as a remainder that an atom keys by a
+//! cell and a direction, has a small estimate once they are placed. A
+//! variable that an algebra relation or an `=` places costs nothing, and the
+//! cost of a sequence of choices is the sum over its choices of the product
+//! of the estimates up to that choice. Each choice is followed by the outputs
+//! of each algebra relation whose mode the placed variables satisfy, and by
+//! each variable an `=` binds from a placed one. A tie in cost goes to the
+//! sequence of the smaller estimates with no variable placed, then of the
+//! canonical positions. A clause with more than 12 choices takes next the
+//! choice of least estimate at the variables placed, a tie going to the
+//! smaller estimate with no variable placed, then to the canonical position,
+//! each export of a union that no atom or comparison binds once its union
+//! grounds. Where no variable left meets
 //! that rule, as where a union's branch reads a variable that only another
 //! union's exports ground, the order places the first export of a union that
 //! grounds with the nodes it leaves out: each export of the union, and each variable
@@ -32,7 +40,7 @@ use super::join::node_variables;
 use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Union, Variable};
 use crate::program::ConstraintOp;
 use crate::registry::{AlgebraRelation, LibName, Registry};
-use crate::algebra::geometry::orientation_domain;
+use crate::algebra::geometry::{domain, orientation_domain};
 
 /// The most choices the order searches subsets of; past it the order places
 /// the choices by estimate.
@@ -96,10 +104,11 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
         follow(clause, placed, &mut Vec::new());
     };
     let choices = choices(clause, sizes, &placed, &mut extend);
+    let estimates = Estimates::new(clause, sizes);
     let sequence = if (2..=SUBSET_BOUND).contains(&choices.len()) {
-        cheapest_sequence(&choices, &placed, &mut extend)
+        cheapest_sequence(&choices, &estimates, &placed, &mut extend)
     } else {
-        sequence_in_order(&choices, &placed, &mut extend)
+        sequence_in_order(&choices, &estimates, &placed, &mut extend)
     };
     for variable in sequence {
         place(variable, &mut placed, &mut order);
@@ -348,7 +357,8 @@ fn choices<'c>(
 
 /// The sequence of `choices` to place, each followed by its closure, of least
 /// cost, where the cost of a sequence is the sum over its choices of the
-/// product of the estimates of the choices up to and including that one. A
+/// product of the estimates of the choices up to and including that one, each
+/// estimate by [`Estimates::at`] at the closure of the choices before it. A
 /// choice is a variable outside the closure of the earlier choices, whose
 /// union, if any, grounds at that closure, and the sequence ends when that closure
 /// holds every choice. `choices` is in the order of estimate then index, and a
@@ -357,69 +367,134 @@ fn choices<'c>(
 /// and its closure to a set of placed variables, and `placed` holds the
 /// variables placed before any choice.
 ///
-/// The closure of a set of choices does not depend on their order, and the
-/// product of their estimates does not either, so the search is a minimum over
-/// subsets of the choices.
-fn cheapest_sequence(choices: &[Choice<'_>], placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Variable> {
+/// The closure of a set of choices does not depend on their order, so the
+/// search keeps, for each subset of the choices, the sequence of least cost
+/// that reaches it, with the product of its estimates.
+fn cheapest_sequence(choices: &[Choice<'_>], estimates: &Estimates, placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Variable> {
     let count = choices.len();
     let mut closures: Vec<Vec<bool>> = Vec::with_capacity(1 << count);
-    let mut products: Vec<u128> = Vec::with_capacity(1 << count);
-    // The best (cost, choices as indexes into `choices`) to reach each subset.
-    let mut best: Vec<Option<(u128, Vec<usize>)>> = vec![None; 1 << count];
-    let mut finish: Option<(u128, Vec<usize>)> = None;
+    // The best (cost, choices as indexes into `choices`, product of the
+    // estimates) to reach each subset.
+    let mut best: Vec<Option<(u128, Vec<usize>, u128)>> = vec![None; 1 << count];
+    let mut finish: Option<(u128, Vec<usize>, u128)> = None;
     for mask in 0..1usize << count {
         if mask == 0 {
             closures.push(placed.to_vec());
-            products.push(1);
-            best[0] = Some((0, Vec::new()));
+            best[0] = Some((0, Vec::new(), 1));
         } else {
             let low = mask.trailing_zeros() as usize;
             let mut closure = closures[mask & (mask - 1)].clone();
             extend(&mut closure, choices[low].variable);
             closures.push(closure);
-            products.push(products[mask & (mask - 1)].saturating_mul(u128::from(choices[low].estimate)));
-            let mut found: Option<(u128, Vec<usize>)> = None;
+            let mut found: Option<(u128, Vec<usize>, u128)> = None;
             for choice in (0..count).filter(|c| mask >> c & 1 == 1) {
                 let before = mask & !(1 << choice);
-                let Some((cost, earlier)) = &best[before] else { continue };
+                let Some((cost, earlier, product)) = &best[before] else { continue };
                 let closure = &closures[before];
                 if !choices[choice].is_next(closure) {
                     continue;
                 }
                 let mut next = earlier.clone();
                 next.push(choice);
-                let candidate = (cost.saturating_add(products[mask]), next);
-                if found.as_ref().is_none_or(|found| candidate < *found) {
+                let product = product.saturating_mul(u128::from(estimates.at(&choices[choice], closure)));
+                let candidate = (cost.saturating_add(product), next, product);
+                if found.as_ref().is_none_or(|found| (candidate.0, &candidate.1) < (found.0, &found.1)) {
                     found = Some(candidate);
                 }
             }
             best[mask] = found;
         }
         if let Some(candidate) = &best[mask] {
-            if choices.iter().all(|c| closures[mask][usize::from(c.variable.0)]) && finish.as_ref().is_none_or(|finish| candidate < finish) {
+            if choices.iter().all(|c| closures[mask][usize::from(c.variable.0)])
+                && finish.as_ref().is_none_or(|finish| (candidate.0, &candidate.1) < (finish.0, &finish.1))
+            {
                 finish = Some(candidate.clone());
             }
         }
     }
-    let (_, sequence) = finish.expect("the choices in order reach a set whose closure holds them all");
+    let (_, sequence, _) = finish.expect("the choices in order reach a set whose closure holds them all");
     sequence.into_iter().map(|c| choices[c].variable).collect()
 }
 
 /// The sequence of `choices` to place, each followed by its closure, where
 /// the count of choices is outside the range that [`cheapest_sequence`]
-/// searches, 0 or 1 or past [`SUBSET_BOUND`]: the first of `choices`, in
-/// their order of estimate then index, that the closure of the earlier ones
-/// does not hold and whose union, if any, grounds at that closure, until none
-/// is left.
+/// searches, 0 or 1 or past [`SUBSET_BOUND`]: the choice of least estimate by
+/// [`Estimates::at`] at the closure of the earlier ones, among those that
+/// closure does not hold and whose union, if any, grounds at it, until none is
+/// left. A tie goes to the first in the order of `choices`, of estimate then
+/// index.
 /// `extend` and `placed` are as for [`cheapest_sequence`].
-fn sequence_in_order(choices: &[Choice<'_>], placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Variable> {
+fn sequence_in_order(choices: &[Choice<'_>], estimates: &Estimates, placed: &[bool], extend: &mut impl FnMut(&mut Vec<bool>, Variable)) -> Vec<Variable> {
     let mut closure = placed.to_vec();
     let mut sequence = Vec::new();
-    while let Some(choice) = choices.iter().find(|choice| choice.is_next(&closure)) {
+    while let Some(choice) = choices.iter().filter(|choice| choice.is_next(&closure)).min_by_key(|choice| estimates.at(choice, &closure)) {
         extend(&mut closure, choice.variable);
         sequence.push(choice.variable);
     }
     sequence
+}
+
+/// The atoms of a clause with their row counts, and the domain of each
+/// variable, for the estimate of a choice at the variables placed before it.
+struct Estimates {
+    /// Each atom of known size: its row count and its variables.
+    atoms: Vec<(u64, Vec<Variable>)>,
+    /// The domain of each variable, by the variable's index: the row count of
+    /// the smallest atom that binds it, or the size of its orientation type
+    /// where that is less; 1 where neither is known.
+    domains: Vec<u64>,
+}
+
+impl Estimates {
+    fn new(clause: &ClauseIr, sizes: &RelationSizes) -> Self {
+        let atoms: Vec<(u64, Vec<Variable>)> = clause
+            .nodes
+            .iter()
+            .zip(sizes.0.iter())
+            .filter_map(|(node, size)| match (node, size) {
+                (IrNode::Atom(atom), NodeSize::Rows(count)) => Some((*count, variables_of(&atom.arguments).collect())),
+                _ => None,
+            })
+            .collect();
+        let registry = Registry::get();
+        let domains = atom_rows(clause, sizes)
+            .into_iter()
+            .zip(clause.variables.iter())
+            .map(|(rows, variable)| {
+                let finite = domain(registry, &variable.ty).map(|values| values.len() as u64);
+                match (rows, finite) {
+                    (Some(rows), Some(finite)) => rows.min(finite),
+                    (rows, finite) => rows.or(finite).unwrap_or(1),
+                }
+                .max(1)
+            })
+            .collect();
+        Estimates { atoms, domains }
+    }
+
+    /// The estimate of `choice` at `closure`, the variables placed before it.
+    /// For a variable that an atom binds, it is the least, over the atoms that
+    /// bind it, of the atom's row count divided by the domains of the atom's
+    /// other variables that `closure` holds, and at least 1. For an export of
+    /// a union, it is the choice's own estimate.
+    fn at(&self, choice: &Choice<'_>, closure: &[bool]) -> u64 {
+        if choice.union.is_some() {
+            return choice.estimate;
+        }
+        let variable = choice.variable;
+        self.atoms
+            .iter()
+            .filter(|(_, variables)| variables.contains(&variable))
+            .map(|(rows, variables)| {
+                let mut placed: Vec<Variable> = variables.iter().copied().filter(|v| *v != variable && closure[usize::from(v.0)]).collect();
+                placed.sort_by_key(|v| v.0);
+                placed.dedup();
+                let divisor = placed.iter().fold(1u64, |product, v| product.saturating_mul(self.domains[usize::from(v.0)]));
+                (rows / divisor).max(1)
+            })
+            .min()
+            .unwrap_or(choice.estimate)
+    }
 }
 
 /// The count of rows of the smallest atom of `clause` that binds each
