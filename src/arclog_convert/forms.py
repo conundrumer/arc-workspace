@@ -266,6 +266,7 @@ class Form:
     demo_input_reads: set = field(default_factory=set)
     marks: list[str] = field(default_factory=list)   # a clause's ONE marks, after its body
     head_repeat: list = field(default_factory=list)   # (column, the column its head repeats)
+    with_domain: list[str] | None = None   # a Cardinality's lines with its `domain` clause written, see `zero_domains`
     demo_rule: str = ""               # the demonstrated rule a clause's head names
 
     def __setattr__(self, key, value):
@@ -332,6 +333,20 @@ def nest_keyed(key_body: list[str] | None, blocks: list[list[str]], knames, head
             broad.append(b)
     close(out, ")")
     return out + [l for b in broad for l in b]
+
+
+def zero_domains(forms: list[Form]) -> None:
+    """Give a `Cardinality` that the engine fills from its key the `domain` clause the key gives, where its bodies
+    read, at any depth, a form that makes a label `0` at the top level of its body. A key column that the fill reads
+    stays in a case program read alone, and with it the `(= *X 0)` that makes the column, which the checker refuses.
+    The written clause holds the rows of the fill."""
+    zero = {f.name for f in forms if any(re.match(r"  \(= \*\w+ 0\)", l) for l in f.lines)}
+    reads = {f.name: {r.split(".")[0] for r in f.reads} for f in forms}
+    while grown := {n for n, rs in reads.items() if n not in zero and rs & zero}:
+        zero |= grown
+    for f in forms:
+        if f.with_domain is not None and f.name in zero:
+            f.lines = f.with_domain
 
 
 def close(lines: list[str], parens: str) -> None:

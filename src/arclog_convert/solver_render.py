@@ -24,6 +24,7 @@ from arclog_convert.forms import (
     render_forms,
     topo,
     without_repeats,
+    zero_domains,
 )
 from arclog_convert.terms import ctor_names
 
@@ -67,6 +68,7 @@ class RenderMixin:
     # ---- placement and rendering
 
     def render(self, forms: list[Form], claims: list[Claim], points, concept, all_ctors) -> str:
+        zero_domains(forms)
         slugs = [cl.slug for cl in claims]
         idx = {s: i for i, s in enumerate(slugs)}
         # An instance form whose branches hold the concept's constructor at

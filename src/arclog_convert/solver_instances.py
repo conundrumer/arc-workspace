@@ -521,6 +521,7 @@ class InstancesMixin:
         # perpendicular axis, in place of the union
         residual: dict[int, list] = {}
         key_body: list[str] | None = None
+        counts_members_only = False
         blocks: list[list[str]] = []
         if has_key:
             kset = set(knames)
@@ -898,10 +899,16 @@ class InstancesMixin:
                 blocks.append(fact_block(u, lr) if u.body is None else single(u, lr))
             if lr.name in unkeyed:
                 broadcast.update(range(first, len(blocks)))
+        with_domain = None
+        if key_body is not None and counts_members_only:
+            domain = ["  (domain ()"] + ["    " + l.replace("^", "") for l in key_body]
+            close(domain, ")")
+            with_domain = lines + nest_keyed(key_body, [*blocks, domain], knames, "key", amp, broadcast=broadcast)
+            close(with_domain, ")")
         lines.extend(nest_keyed(key_body, blocks, knames, "key", amp, broadcast=broadcast))
         close(lines, ")")
         reads.discard(amp)
-        f = Form(lines, amp, reads, line=inst.span.first if inst.span else 0)
+        f = Form(lines, amp, reads, line=inst.span.first if inst.span else 0, with_domain=with_domain)
         f.branches = tuple(sorted(branches))
         f.comments = [";; " + t for t in self.plain_comments(f.line)]
         f.src_inst = (inst, orig_us, side)
