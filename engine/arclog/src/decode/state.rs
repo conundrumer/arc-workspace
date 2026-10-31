@@ -445,13 +445,16 @@ impl State {
         {
             let memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
             if let Some(verdict) = memo.entries.get(&key).cloned() {
+                crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
                 return verdict;
             }
         }
+        crate::stats::tick(crate::stats::Phase::DecodePrefixMiss);
         let verdict = compute();
         if key.1.len() <= PREFIX_KEY_BYTES {
             let mut memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
             if memo.entries.len() >= PREFIX_ENTRIES || memo.bytes + key.1.len() > PREFIX_BYTES {
+                crate::stats::tick(crate::stats::Phase::DecodePrefixClear);
                 memo.entries.clear();
                 memo.bytes = 0;
             }

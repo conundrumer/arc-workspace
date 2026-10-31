@@ -1,5 +1,7 @@
 //! A task session and the settings of its decodes, as Python gives them.
 
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use arclog::registry::Registry;
@@ -17,6 +19,18 @@ pub(crate) struct SessionData {
     pub(crate) task: Arc<TaskData>,
     pub(crate) session: TaskSession,
     pub(crate) settings: DecodeSettings,
+    /// The values derived from the task, one of each type, made on the first ask ([`SessionData::derived`]).
+    derived: Mutex<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+}
+
+impl SessionData {
+    /// The value of type `T` that `make` derives from the task, made on the
+    /// first call for the session and shared after.
+    pub(crate) fn derived<T: Any + Send + Sync>(&self, make: impl FnOnce() -> T) -> Arc<T> {
+        let mut derived = self.derived.lock().expect("the derived values are not poisoned");
+        let value = derived.entry(TypeId::of::<T>()).or_insert_with(|| Arc::new(make()));
+        Arc::clone(value).downcast::<T>().expect("a value is kept under its own type")
+    }
 }
 
 /// A task session: the engine's state for one task, with the settings of its decodes.
@@ -42,7 +56,7 @@ impl PySession {
             None => DecodeSettings::synthesis(),
         };
         let session = TaskSession::new(SessionBound { bytes: session_bytes.unwrap_or(SESSION_BYTES) }, settings.caps);
-        Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings }), program_replay: Mutex::default() })
+        Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings, derived: Mutex::default() }), program_replay: Mutex::default() })
     }
 
     /// End a complete-program round-trip batch. No parsed/checkpoint state
