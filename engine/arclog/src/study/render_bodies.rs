@@ -11,7 +11,7 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
     let names = program.label_names(registry);
     let mut bodies = Vec::new();
     for point in program.mutation_points() {
-        let view = crate::eval::body_view::BodyView::at(program.checked(), &point.body)
+        let view = crate::eval::body_view::BodyView::keyed_at(program.checked(), &point.body)
             .map_err(|e| format!("body render compile at {:?}: {}", point.body, e.message))?;
         let columns=view.clause.columns.iter().enumerate().map(|(i,v)| {
             let label=view.paths.labels[v.0 as usize];

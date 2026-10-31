@@ -53,7 +53,7 @@ fn evaluate_query(gold:&StudyProgram,body:&NodePath,task:&Task,session:&TaskSess
     let acquired=(||->Outcome<()> {
         let view=match prefix {
             Some(count)=>arclog::eval::body_view::BodyView::prefix_at(gold.checked(),body,count)?,
-            None=>arclog::eval::body_view::BodyView::at(gold.checked(),body)?,
+            None=>arclog::eval::body_view::BodyView::keyed_at(gold.checked(),body)?,
         };
         if prefix.is_some() {
             result.report["body_query"]["columns"]=json!(view.clause.columns.iter().enumerate().map(|(i,v)| {

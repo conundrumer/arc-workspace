@@ -125,8 +125,9 @@ def side_readers(export,binding,point,*,field=binding_field):
         # semantics; don't claim an unchanged downstream observation there.
         require(path[:len(owner)]!=owner,'recursive reader inside changed clause needs explicit correspondence')
         atom=nodes.get(path)
+        # A RIGID_DET instance row is a bare atom: its export has no conjunct tag.
         require(atom is not None and atom['kind'] in ('atom','not')
-                and atom['data'].get('node') in ('atom','not_atom'),
+                and atom['data'].get('node',atom['kind']) in ('atom','not_atom'),
                 'native resolved reader lacks an atom or NOT atom export')
         paths=tuple(p for s in atom['data']['sites'] for p in read_paths(s))
         fields=[]

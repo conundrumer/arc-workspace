@@ -27,6 +27,7 @@ mod instance_label_types;
 mod join_order_cost;
 mod judge;
 mod judge_unfold;
+mod keyed_body_views;
 mod line_readings;
 mod lint_checks;
 mod mask_constraint_completion;
