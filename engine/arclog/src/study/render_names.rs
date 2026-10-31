@@ -4,27 +4,39 @@ use serde_json::{Value,json};
 use crate::check::CheckedProgram;
 use crate::program::{DeclaredName,ProgramRelation,RelationRef};
 use crate::registry::Registry;
-use crate::stream::{DecodeSettings,Emitter,Vocabulary,written_stream};
+use crate::decode::program_read::ProgramReader;
+use crate::stream::{DecodeSettings,Emitter,Token,Vocabulary,written_stream};
+use crate::study::StudyProgram;
 use crate::stream::corpus::{solver_streams,WantedCases,token_ids};
+
+/// The stream of the program that the tokens decode to, as its text gives it:
+/// the text writes the sites of an atom in column order, so programs that list
+/// the sites of an atom in another order give the same stream.
+fn identity_of(tokens:&[(Token,Emitter)],vocabulary:&Vocabulary,settings:&DecodeSettings)->Result<Value,String> {
+    let registry=Registry::get();
+    let tokens=token_ids(tokens,vocabulary);
+    let (ids,model):(Vec<u32>,Vec<u8>)=tokens.iter().map(|(id,emitter)|(*id,u8::from(*emitter==Emitter::Model))).unzip();
+    let decoded=ProgramReader::new(registry,*settings).read(&ids,&model)?;
+    let text=StudyProgram::from_decoded(decoded,registry)?.sexp(registry);
+    let stream=StudyProgram::from_sexp(&text,registry)?.decode_stream(registry,settings)?;
+    Ok(json!({"ids":stream.ids,"model":stream.model}))
+}
 
 fn identity(checked:&CheckedProgram,settings:&DecodeSettings)->Result<(Value,Vec<ProgramRelation>),String> {
     let vocabulary=Vocabulary::new(Registry::get(),settings);
     let stream=written_stream(checked,&vocabulary).map_err(|d|super::diagnostics_text(&[d]))?;
-    let tokens=token_ids(&stream.tokens,&vocabulary);
-    Ok((json!({"ids":tokens.iter().map(|(id,_)|id).collect::<Vec<_>>(),
-        "model":tokens.iter().map(|(_,e)|u8::from(*e==Emitter::Model)).collect::<Vec<_>>()}),stream.relations))
+    Ok((identity_of(&stream.tokens,&vocabulary,settings)?,stream.relations))
 }
 
-/// A source map is accepted only for the exact stream made from these sources.
-/// Source changes and wrong cases fail; no matching of printed programs occurs.
+/// A source map is accepted only for a case that decodes to the stream of
+/// these sources. The order of the sites within an atom does not matter; a
+/// case that is another program fails; no matching of printed programs occurs.
 pub fn from_case(checked:&CheckedProgram,settings:&DecodeSettings,corpus:&Path,task:&str,case:&str)->Result<Value,String> {
     let vocabulary=Vocabulary::new(Registry::get(),settings);
     let mut cases=solver_streams(corpus,task,WantedCases::Named(case),&vocabulary,false)?;
     if cases.len()!=1 {return Err("expected exactly one named source case".into());}
     let source=cases.remove(0).stream?;
-    let tokens=token_ids(&source.tokens,&vocabulary);
-    let source_identity=json!({"ids":tokens.iter().map(|(id,_)|id).collect::<Vec<_>>(),
-        "model":tokens.iter().map(|(_,e)|u8::from(*e==Emitter::Model)).collect::<Vec<_>>()});
+    let source_identity=identity_of(&source.tokens,&vocabulary,settings)?;
     let (actual,relations)=identity(checked,settings)?;
     if actual!=source_identity || relations.len()!=source.relations.len() {
         return Err("source case stream differs from the checked gold stream; refusing relation-name attribution".into());
