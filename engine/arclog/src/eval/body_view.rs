@@ -38,8 +38,29 @@ impl BodyView {
     pub fn column_of(&self,label:LabelId)->Option<usize> {
         self.clause.columns.iter().position(|v|self.paths.labels[v.0 as usize]==label)
     }
+    /// Whether the INIT input at `input` declares a key column in its port. A port with none
+    /// does not carry the key in its rows.
+    fn port_has_key_column(program:&CheckedProgram,input:&NodePath,component:&crate::registry::LibName)->bool {
+        let Some(NodeRef::InstanceInput(input))=node_at(NodeRef::Program(program.program.program.value()),input) else {return false};
+        crate::resolver::registry_columns::component(crate::registry::Registry::get(),component)
+            .and_then(|component|component.inputs.iter().find(|declared|declared.port.name==input.name))
+            .is_some_and(|declared|declared.port.columns.iter().any(crate::registry::is_key))
+    }
+
     /// Compile the exact body in its original checked form and key context.
     pub fn at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
+        Self::at_with(program,at,false)
+    }
+
+    /// The body as `at` compiles it, and for an INIT input outside the key
+    /// whose port has a key column, joined to the key relation: the input's
+    /// rows hold at every key group, so its complete tuple has the key columns.
+    /// Every other body is as `at`.
+    pub fn keyed_at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
+        Self::at_with(program,at,true)
+    }
+
+    fn at_with(program:&CheckedProgram,at:&NodePath,broadcast_key:bool)->Outcome<Self> {
         let root=NodeRef::Program(program.program.program.value());
         // A branch's lexical bindings include the outer body's prefix.
         // Use the same query for a whole branch and its completed prefix.
@@ -47,7 +68,7 @@ impl BodyView {
         let prefix=if nested {
             match node_at(root,at) {Some(NodeRef::Body(body))=>Some(body.conjuncts.len()),_=>None}
         } else {None};
-        Self::compile_at(program,at,false,prefix)
+        Self::compile_at(program,at,false,prefix,broadcast_key)
     }
 
     /// Query the full physical rows derived by an input. A broadcast input
@@ -55,7 +76,7 @@ impl BodyView {
     /// init_form::grouped does. Keep the key projected so key-local witnesses
     /// do not multiply the input's derivations. Source BODY queries use at.
     pub fn derivation_at(program:&CheckedProgram,at:&NodePath)->Outcome<Self> {
-        Self::compile_at(program,at,true,None)
+        Self::compile_at(program,at,true,None,false)
     }
 
     /// A completed-conjunct prefix in the original checked scope. An OR
@@ -64,10 +85,10 @@ impl BodyView {
     /// retain their projected key relation and recursive owner context.
     /// Partially written sites are not accepted by this query.
     pub fn prefix_at(program:&CheckedProgram,at:&NodePath,conjuncts:usize)->Outcome<Self> {
-        Self::compile_at(program,at,false,Some(conjuncts))
+        Self::compile_at(program,at,false,Some(conjuncts),false)
     }
 
-    fn compile_at(program:&CheckedProgram,at:&NodePath,physical_input:bool,prefix:Option<usize>)->Outcome<Self> {
+    fn compile_at(program:&CheckedProgram,at:&NodePath,physical_input:bool,prefix:Option<usize>,broadcast_key:bool)->Outcome<Self> {
         let fault=|message:String|RunFault {message:message.into(),form:at.clone()};
         let top=at.0.first().ok_or_else(||fault("body path has no form".into()))?.0;
         let form=NodePath::top(top);
@@ -93,7 +114,9 @@ impl BodyView {
         match owner {
             Form::Instance(instance)=>{
                 if let Some(held)=&instance.value().key {
-                    if (physical_input && input.is_some()) || (relative.0.len()>2 && relative.0[0].0==0 && relative.0[1].0>0) {
+                    // The key clause is the instance's first child; an input after it is outside the key.
+                    if (physical_input && input.is_some()) || (relative.0.len()>2 && relative.0[0].0==0 && relative.0[1].0>0)
+                        || (broadcast_key && relative.0[0].0>0 && Self::port_has_key_column(program,&form.child(relative.0[0].0),&instance.value().component)) {
                         let key_at=form.child(0).child(0);
                         let labels=crate::read::columns::key_labels(&held.value().key.body.value());
                         let (clause,paths,_)=super::init_form::key_clause_memo(program,&form,&(held.value().key.body.value(),key_at),&labels).map_err(|e|fault(format!("checked key body compile: {e:?}")))?;

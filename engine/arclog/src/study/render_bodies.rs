@@ -11,7 +11,7 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
     let names = program.label_names(registry);
     let mut bodies = Vec::new();
     for point in program.mutation_points() {
-        let view = crate::eval::body_view::BodyView::at(program.checked(), &point.body)
+        let view = crate::eval::body_view::BodyView::keyed_at(program.checked(), &point.body)
             .map_err(|e| format!("body render compile at {:?}: {}", point.body, e.message))?;
         let columns=view.clause.columns.iter().enumerate().map(|(i,v)| {
             let label=view.paths.labels[v.0 as usize];
@@ -42,7 +42,8 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
                 input,
                 registry,
             )?;
-            group_key_labels = key;
+            // A port without a key column does not carry the group key in its rows.
+            group_key_labels = if port_columns.iter().any(|c|c.key) {key} else {Vec::new()};
             logical_columns = port_columns.iter().map(|c|json!({
                 "logical_port_column":c.ordinal,"name":super::render::column(&c.name),
                 "role":if c.key {"group_key"} else {"input_value"},

@@ -58,6 +58,27 @@ pub(crate) fn trace_paths(
     a: &WrittenStream,
     b: &WrittenStream,
 ) -> BTreeMap<NodePath, NodePath> {
+    trace(source, target, a, b, false)
+}
+
+// As `trace_paths`, and a node with no emitted token, such as the empty BODY
+// of `(domain ())` or `(RULE &r)`, pairs by position under paired parents.
+fn trace_paths_with_empty(
+    source: &CheckedProgram,
+    target: &CheckedProgram,
+    a: &WrittenStream,
+    b: &WrittenStream,
+) -> BTreeMap<NodePath, NodePath> {
+    trace(source, target, a, b, true)
+}
+
+fn trace(
+    source: &CheckedProgram,
+    target: &CheckedProgram,
+    a: &WrittenStream,
+    b: &WrittenStream,
+    pair_empty_nodes: bool,
+) -> BTreeMap<NodePath, NodePath> {
     let traces = |checked: &CheckedProgram, written: &WrittenStream| {
         let mut tokens: BTreeMap<NodePath, Vec<usize>> = BTreeMap::new();
         for (i, at) in written.paths.iter().enumerate() {
@@ -94,16 +115,51 @@ pub(crate) fn trace_paths(
             &tokens,
             &mut out,
         );
-        out
+        (out, tokens)
     };
-    let before = traces(source, a);
-    let after = traces(target, b);
+    let (before, source_tokens) = traces(source, a);
+    let (after, target_tokens) = traces(target, b);
     let mut out = BTreeMap::new();
     for (key, targets) in after {
         if let (Some(sources), [target]) = (before.get(&key), targets.as_slice()) {
             if let [source] = sources.as_slice() {
                 out.insert(target.clone(), source.clone());
             }
+        }
+    }
+    if !pair_empty_nodes {
+        return out;
+    }
+    fn pair_empty(
+        source: NodeRef<'_>,
+        target: NodeRef<'_>,
+        at: (&NodePath, &NodePath),
+        tokens: (&BTreeMap<NodePath, Vec<usize>>, &BTreeMap<NodePath, Vec<usize>>),
+        out: &mut BTreeMap<NodePath, NodePath>,
+    ) {
+        let (source_children, target_children) = (source.children(), target.children());
+        if source_children.len() != target_children.len() {
+            return;
+        }
+        for (i, (s, t)) in source_children.into_iter().zip(target_children).enumerate() {
+            let (source_at, target_at) = (at.0.child(i as u32), at.1.child(i as u32));
+            if std::mem::discriminant(&s) != std::mem::discriminant(&t)
+                || tokens.0.contains_key(&source_at)
+                || tokens.1.contains_key(&target_at)
+            {
+                continue;
+            }
+            out.insert(target_at.clone(), source_at.clone());
+            pair_empty(s, t, (&source_at, &target_at), tokens, out);
+        }
+    }
+    let paired = out.iter().map(|(t, s)| (t.clone(), s.clone())).collect::<Vec<_>>();
+    for (target_at, source_at) in paired {
+        if let (Some(s), Some(t)) = (
+            node_at(NodeRef::Program(source.program.program.value()), &source_at),
+            node_at(NodeRef::Program(target.program.program.value()), &target_at),
+        ) {
+            pair_empty(s, t, (&source_at, &target_at), (&source_tokens, &target_tokens), &mut out);
         }
     }
     out
@@ -152,7 +208,7 @@ pub fn export(
         );
         out
     } else if equal {
-        trace_paths(origin, bridge, &a, &b)
+        trace_paths_with_empty(origin, bridge, &a, &b)
     } else {
         BTreeMap::new()
     };
@@ -233,11 +289,11 @@ pub fn export(
             continue;
         };
         let form = top(&at);
-        let native = crate::eval::body_view::BodyView::at(checked, &at)
+        let native = crate::eval::body_view::BodyView::keyed_at(checked, &at)
             .map_err(|e| e.message.to_string())?;
         let before = mapping.get(&at);
         let source_view =
-            before.and_then(|at| crate::eval::body_view::BodyView::at(origin, at).ok());
+            before.and_then(|at| crate::eval::body_view::BodyView::keyed_at(origin, at).ok());
         let fields=native.clause.columns.iter().enumerate().map(|(column,v)| {
             let id=native.paths.labels[v.0 as usize];let ty=&native.clause.variables[v.0 as usize].ty;
             let source=canonical(&form,id);
