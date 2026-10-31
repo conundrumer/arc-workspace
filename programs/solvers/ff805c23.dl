@@ -59,16 +59,21 @@
 // of, and for the block image, the element the image is taken under.
 .type TiebreakResolution = About {b: Box} | Through {b: Box, d: D4}
 
+.type SymmetryValue = [s: Sym]
+.type OpenValue = [symmetry: SymmetryValue]
+
 // A candidate frame of a mask.
 .type FrameKey = [m: MaskSource, b: Box]
 
 // A masked cell under one case, group and center.
 .type ModeKey = [m: MaskSource, c: Center, s: Sym, b: Box, p: Position]
 
-.decl out(p: Position, col: Color, ch: Choice, tr: TiebreakResolution)
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue, tr: TiebreakResolution)
 
 .comp Params {
-    // the symmetry group about the center that the restoration reads
+    // the symmetry group about the center that the restoration reads: the
+    // mirrors across both midlines, or the whole of D4
+    // @open
     .decl symmetry(s: Sym) symmetry(SYM_BOX). symmetry(SYM_D4).
 
     // --- $StoredColor ---
@@ -185,7 +190,7 @@ center(M, $FoundCenter(), S, B) :-
 
 // --- $CellImages ---
 
-out(P_inner, Col, [M, $CellImages(), C], $About(B)) :-
+out(P_inner, Col, [M, $CellImages(), C], [[S]], $About(B)) :-
     visible_image(M, C, S, B, P, _, _, Col), hole_cell(M, P, P_inner).
 
 // --- $BlockImage ---
@@ -195,7 +200,7 @@ out(P_inner, Col, [M, $CellImages(), C], $About(B)) :-
 block_hidden(M, C, S, B, D) :-
     center(M, C, S, B), masked(M, P), sym_member(S, D), !visible_image(M, C, S, B, P, D, _, _).
 
-out(P_inner, Col, [M, $BlockImage(), C], $Through(B, D)) :-
+out(P_inner, Col, [M, $BlockImage(), C], [[S]], $Through(B, D)) :-
     visible_image(M, C, S, B, P, D, _, Col), hole_cell(M, P, P_inner),
     !block_hidden(M, C, S, B, D).
 
@@ -205,7 +210,7 @@ out(P_inner, Col, [M, $BlockImage(), C], $Through(B, D)) :-
 .init commonest = Mode<ModeKey, Color, Position>
 commonest.item([M, C, S, B, P], Col, P2) :- visible_image(M, C, S, B, P, _, P2, Col).
 
-out(P_inner, Col, [M, $ModeImage(), C], $About(B)) :-
+out(P_inner, Col, [M, $ModeImage(), C], [[S]], $About(B)) :-
     commonest.mode([M, C, S, B, P], Col), hole_cell(M, P, P_inner).
 
 .comp Determine {

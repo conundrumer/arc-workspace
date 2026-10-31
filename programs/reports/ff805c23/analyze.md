@@ -2,7 +2,7 @@
 
 ## Concept
 - Fits every pair (train0–2, test0), and the test output is the one grid it gives. The checks after the concept found the following.
-    - Every input's visible cells are symmetric under the whole of D4 about the grid center, not just under the two midline mirrors. So the concept case runs every value of `symmetry` (SYM_BOX, SYM_D4), and both values give the same outputs on every pair. The case is undefined on an input where those values give different outputs.
+    - Every input's visible cells are symmetric under the whole of D4 about the grid center, not just under the two midline mirrors. The pairs do not separate SYM_BOX from SYM_D4, and both values give the same outputs on every pair. So `symmetry` is an open parameter, and the output holds the grid each of its open values gives.
     - Every input is 24×24 (`grid_size`, a scene parameter now in `square-grid`), and every mask is 5×5 of color 1. Each pattern color has at least 89 cells, against the mask's 25.
     - The mask's left-right image overlaps the mask in train2 and test0, and its top-bottom image does in train1. So no single mirror restores every pair, while each group holding the half turn does.
 - No witness has verdict `other`.
@@ -31,7 +31,7 @@
 - `mask-color` & `restoration`, `mask-color` & `symmetry-center`, `mask-color` & `output-frame`, `restoration` & `symmetry-center`, `restoration` & `output-frame`, `symmetry-center` & `output-frame`: the two branches' changes applied together
 
 ## Open parameters
-- none
+- `symmetry`: SYM_BOX, the reading of "mirror-symmetric" as the mirrors across both midlines; SYM_D4, the reading that adds the mirrors across both diagonals, which every input also holds
 
 ## Not formed
 - `symmetry` as SYM_LR or SYM_TB alone: the pairs separate them. SYM_LR is undefined on train2 and SYM_TB on train1, where the mirror image overlaps the mask.

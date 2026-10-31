@@ -6,7 +6,7 @@
 - The witness `$StoredOutSize` was removed. After its `$StoredOutSize` group was taken out, every case gave one grid on it, so it separated nothing. The witness `$StoredCenter` was renamed `top-left-pattern`, and its `separates` text was rewritten to name the found center in place of the stored one.
 - Added witness `stray-corner-cell`: train1 with (0,0) changed to a new color 9. This witness separates `$StoredColor & mask_color=RarestColor` from `$MaskBySolidBlock`. Before it, `witness` reported that no witness separated that pair. On it, RarestColor takes 9 as the mask and gives `0`, and the solid-block derivation takes both 1 and 9 and is undefined.
 - `Determine` derives `mask_color` as each color that every input holds and no train output holds. `determination-plan` asked for this because RarestColor covers the value.
-- `symmetry` is not an open parameter: no alt of the task accepts more than one of its values, so a case reads both and is undefined where they disagree.
+- `symmetry` is an open parameter, with the open values SYM_BOX and SYM_D4. `out` holds each value in its `OpenValue` column, so a case's output holds the grid each value gives.
 
 ## Judgments
 - `TiebreakResolution` is `About {b}` or `Through {b, d}`. With it, `$FoundCenter` gives one grid per qualifying center, and `$BlockImage` gives one grid per element of the group. The concept writes `$About(ZERO)`, so it gives one grid.
