@@ -97,6 +97,7 @@ phases! {
     DecodeCompletes => "decode.completes",
     InferFormFinished => "infer.form.finished",
     InferFormOpen => "infer.form.open",
+    InferFormKept => "infer.form.kept",
     ResolveLast => "resolve.last",
     PrefixCheckGrammar => "prefix.check.grammar",
     PrefixCheckScope => "prefix.check.scope",

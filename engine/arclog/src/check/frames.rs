@@ -133,9 +133,9 @@ pub(super) trait SharedGrids {
 #[derive(Debug, Default)]
 pub(super) struct GridCache {
     /// A key is a clause, by its path, and a column.
-    clauses: RefCell<StableHashMap<(NodePath, ColumnName), ColumnGrids>>,
+    clauses: RefCell<StableHashMap<(NodePath, ColumnName), (ColumnGrids, bool)>>,
     /// A key is an `INIT` form, by its path, an output and a column.
-    outputs: RefCell<StableHashMap<(NodePath, PortName, ColumnName), ColumnGrids>>,
+    outputs: RefCell<StableHashMap<(NodePath, PortName, ColumnName), (ColumnGrids, bool)>>,
 }
 
 /// The grids in each of `sets`, none for no set.
