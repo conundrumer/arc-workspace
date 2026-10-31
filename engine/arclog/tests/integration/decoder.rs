@@ -564,3 +564,39 @@ fn static_prune_review_changed_interface_keeps_alias_atom() {
     // premise. Its output is Box, whereas equality to input.P is Position.
     assert_eq!(static_refusal("(RULE &x (input *P) (compose (:A P) (:B 0) (:C *Q)))"), None);
 }
+
+/// A decode with static pruning on, replayed through the tokens of `arclog`
+/// that the model writes, up to the first one that static pruning refuses;
+/// the decode and that token.
+fn at_static_refusal<'i>(inputs: &'i Inputs, arclog: &str) -> (Decoder<'i>, Token) {
+    let mut settings = DecodeSettings::default();
+    settings.static_pruning = true;
+    let vocabulary = Vocabulary::new(Registry::get(), &settings);
+    let stream = token_stream(&checked(arclog), &vocabulary).expect("checked fixture stream");
+    let mut decoder = Decoder::new(&inputs.task, &inputs.session, Registry::get(), &inputs.constructions, &settings);
+    for (token, emitter) in stream {
+        if emitter == Emitter::Engine { continue; }
+        if matches!(decoder.forced(&token), Err(Refusal::Grammar(reason)) if reason.starts_with("static prune:")) {
+            return (decoder, token);
+        }
+        decoder.step_untested(token).expect("a token before the refusal");
+    }
+    panic!("no token is refused by static pruning");
+}
+
+#[test]
+fn a_replacement_verdict_is_the_same_for_a_mask_and_for_single_tokens() {
+    let inputs = inputs();
+    let arclog = "(RULE &x (uniform_inset (:K 0) (:B *A)) (compose (:A A) (:B 0) (:C *C)))";
+    let (single, _) = at_static_refusal(&inputs, arclog);
+    let ids: Vec<u32> = (0..u32::try_from(single.vocabulary().len()).expect("fewer than 2^32 tokens")).collect();
+    let verdicts = |decoder: &Decoder<'_>| ids.iter().map(|&id| decoder.forced(decoder.vocabulary().token(id).expect("a token")).map_err(|refusal| format!("{refusal:?}"))).collect::<Vec<_>>();
+    let singly = verdicts(&single);
+    let (masked, _) = at_static_refusal(&inputs, arclog);
+    let mask = masked.admits(&ids);
+    let (warm, _) = at_static_refusal(&inputs, arclog);
+    let _ = warm.admits(&ids);
+    assert_eq!(singly, verdicts(&warm));
+    assert_eq!(mask, singly.iter().map(Result::is_ok).collect::<Vec<_>>());
+    assert!(singly.iter().any(|verdict| matches!(verdict, Err(reason) if reason.contains("admitted equality binding"))));
+}

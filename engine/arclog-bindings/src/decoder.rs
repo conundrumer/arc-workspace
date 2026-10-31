@@ -69,6 +69,12 @@ impl PyDecoder {
         &self.data.task.task
     }
 
+    /// The value of type `T` that `make` derives from the task, made on the
+    /// first call for the decode's session, and shared by its decodes.
+    pub fn derived<T: std::any::Any + Send + Sync>(&self, make: impl FnOnce() -> T) -> Arc<T> {
+        self.data.derived(make)
+    }
+
     fn decoder_mut(&mut self) -> &mut Decoder<'static> {
         self.decoder.as_mut().expect("a decode outside a batch step")
     }

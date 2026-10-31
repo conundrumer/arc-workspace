@@ -61,6 +61,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let _timed = arclog::stats::span(arclog::stats::Phase::PyStepTables);
     let points = if bodies { Points::All } else { Points::Relations };
     let (engine, evidence) = (decoder.decoder(), decoder.task());
+    // The evidence tables hold the task alone, so a session derives them once.
+    let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
     let index = written.last().copied();
@@ -79,7 +81,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
             None => Vec::new(),
         };
         let materializer=Materializer::new(engine.evaluation_inputs().1,&limits);
-        let (columns, stream) = step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables(evidence, engine.registry()), tables, evidence.train.len());
+        let (columns, stream) = step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len());
         (columns.with_copies(&engine.take_copy_violations()), stream)
     });
     let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });

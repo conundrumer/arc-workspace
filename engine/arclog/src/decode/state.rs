@@ -104,7 +104,7 @@ const PREFIX_BYTES: usize = 8 * 1024 * 1024;
 /// `prefix_key`, for one set of finished forms. A key holds the complete
 /// source of its prefix.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum PrefixKind { Check, SingleCheck, DetAdmission }
+enum PrefixKind { Check, SingleCheck, DetAdmission, StaticReplacement }
 
 #[derive(Debug, Default)]
 struct PrefixMemo {
@@ -434,18 +434,27 @@ impl State {
         self.cached_verdict(PrefixKind::DetAdmission, key, compute)
     }
 
+    /// The verdict of the static prune's replacement check on a clause cut to
+    /// the conjunct it replaces, which every candidate of a mask shares.
+    pub(super) fn cached_replacement(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        self.cached_verdict(PrefixKind::StaticReplacement, key, compute)
+    }
+
     fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
         let key = (kind, key);
         {
             let memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
             if let Some(verdict) = memo.entries.get(&key).cloned() {
+                crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
                 return verdict;
             }
         }
+        crate::stats::tick(crate::stats::Phase::DecodePrefixMiss);
         let verdict = compute();
         if key.1.len() <= PREFIX_KEY_BYTES {
             let mut memo = self.prefixes.lock().expect("the prefix cache is not poisoned");
             if memo.entries.len() >= PREFIX_ENTRIES || memo.bytes + key.1.len() > PREFIX_BYTES {
+                crate::stats::tick(crate::stats::Phase::DecodePrefixClear);
                 memo.entries.clear();
                 memo.bytes = 0;
             }
