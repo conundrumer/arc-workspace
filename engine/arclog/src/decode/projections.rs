@@ -8,7 +8,9 @@
 //! projection is the product of the counts of its plain projections onto the
 //! parts it meets. The search projects each part apart and builds no product. A
 //! set over the cap has every larger set over the cap too, so the search
-//! extends only the sets under it.
+//! extends only the sets under it. A set under the cap has every smaller set
+//! under the cap too, so the search reads no row for a set that a set it read
+//! as under the cap holds, or that holds a set it read as over the cap.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -64,7 +66,7 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
     }
     let stopped = |bound: ReachedBound| Projections::Stopped(Stop { bound, form: form.clone() });
     let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Projections::Found(Vec::new()) };
-    let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default() };
+    let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(), read_under: Vec::new(), read_over: Vec::new() };
     let sets = match search.maximal(arity) {
         Ok(sets) => sets,
         Err(bound) => return stopped(bound),
@@ -109,6 +111,10 @@ struct Search<'a, 'b> {
     counted: StableHashMap<(usize, usize, Box<[u16]>), usize>,
     /// Whether a set of columns, in increasing order, is under the cap.
     under: StableHashMap<Box<[u16]>, bool>,
+    /// The sets that `is_under` read the rows of and found under the cap.
+    read_under: Vec<Box<[u16]>>,
+    /// The sets that `is_under` read the rows of and found over the cap.
+    read_over: Vec<Box<[u16]>>,
 }
 
 impl Search<'_, '_> {
@@ -153,12 +159,24 @@ impl Search<'_, '_> {
     }
 
     /// Whether the projection of every nonempty relation onto `set`, in
-    /// increasing order, holds at most the cap.
+    /// increasing order, holds at most the cap. Where a set read before
+    /// gives the answer, as the module doc gives, it reads no row.
     fn is_under(&mut self, set: &[u16]) -> Result<bool, ReachedBound> {
         if let Some(&under) = self.under.get(set) {
             return Ok(under);
         }
         self.budget.charge_work(1)?;
+        let known = if self.read_under.iter().any(|read| is_subset(set, read)) {
+            Some(true)
+        } else if self.read_over.iter().any(|read| is_subset(read, set)) {
+            Some(false)
+        } else {
+            None
+        };
+        if let Some(under) = known {
+            self.under.insert(set.into(), under);
+            return Ok(under);
+        }
         let mut under = true;
         for relation in 0..self.relations.len() {
             if self.relations[relation].is_empty() {
@@ -178,6 +196,7 @@ impl Search<'_, '_> {
             }
         }
         self.under.insert(set.into(), under);
+        if under { &mut self.read_under } else { &mut self.read_over }.push(set.into());
         Ok(under)
     }
 
@@ -293,6 +312,13 @@ impl Search<'_, '_> {
         }
         Ok(Relation::from_parts(arity, parts.into()))
     }
+}
+
+/// Whether each column of `small` stands in `large`, both in increasing
+/// order.
+fn is_subset(small: &[u16], large: &[u16]) -> bool {
+    let mut large = large.iter();
+    small.iter().all(|column| large.any(|other| other == column))
 }
 
 impl Decoder<'_> {
