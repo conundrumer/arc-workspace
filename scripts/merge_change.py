@@ -48,15 +48,11 @@ Other writers of `master` take no merge lock: a user's direct commit, and
 a merge of a Claude agent's worktree. So `master` can move after the
 rebase. Where the fast-forward of `master` fails and `master` is no longer
 the commit the stack was rebased onto, the script releases the refresh locks
-(below), prints a line that gives the old and the new `master` commit and
-whether the engine checks run again (under `--block`), rebases the stack
-onto the new `master` as it did the first time, runs the checks on its top
-(under `--block`), and fast-forwards `master` to it, in the same call.
-Another failure of the fast-forward fails the call. Under `--block`, the
-engine checks run again only where the `engine/` tree of the new top
-differs from that of the top on which they last passed
-(`merge_steps.py checks --engine-passed`); every other check runs again.
-The script gives up after 3 such re-checks in one call, and fails as for a
+(below), prints a line that gives the old and the new `master` commit,
+rebases the stack onto the new `master` as it did the first time, runs the
+checks on its top (under `--block`), and fast-forwards `master` to it, in
+the same call. Another failure of the fast-forward fails the call. The
+script gives up after 3 such re-checks in one call, and fails as for a
 fast-forward that fails for another reason, with the changes committed and
 rebased in their worktree. A conflict, or under `--block` a failed check,
 in a re-check refuses as in the first round.
@@ -77,20 +73,6 @@ to that script's own command line merges by the command line of
 
     uv run python -m controlled_markdown check
     uv run python scripts/context.py --write
-    cargo test --manifest-path engine/Cargo.toml <crates> --offline --no-fail-fast
-    env RUSTDOCFLAGS=-D warnings cargo doc --manifest-path engine/Cargo.toml <crates> --no-deps --offline
-
-The last two run only where the changes touch a path under `engine/`, in
-the kept tree, `merge-engine` under the `.cache/` of the main tree, which
-each call moves to the `HEAD` of the top of the stack, so that cargo
-compiles again only the crates the commits since the last merge changed.
-`<crates>` is `-p <crate>` for each crate that holds a path the changes
-touch and each crate that depends on one of them, directly or through
-others, and `--workspace` where a touched path under `engine/` lies in no
-crate's directory (`Cargo.toml`, `Cargo.lock`, `lib/`) or those crates are
-all of them. The checks fail where the top of the stack's tree holds an
-`engine/` edit that its `HEAD` lacks. `merge_steps.py --help` gives the
-kept tree and the selection in full.
 
 The checks run concurrently. A check passes when it exits 0, and a refusal
 under `--block` lists every check that fails. `<base>` is the `master`
@@ -272,7 +254,6 @@ scripts_importable()
 from change_checks import (merge_base, changed_outside_work,  # noqa: E402
                            outside_work, run_in, said, timed)
 from change_worktree import carried, same_blobs  # noqa: E402
-from merge_steps import engine_runs  # noqa: E402
 from refresh_locks import MergeLocks  # noqa: E402
 from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
                                  submodules, locked_update, SetupFailed)
@@ -356,19 +337,15 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
         raise Refused(str(exc)) from exc
 
 
-def run_checks(tree: Path, main: Path, base: str, touched: set[str],
-               engine_passed: str | None = None) -> str | None:
+def run_checks(tree: Path, main: Path, base: str, touched: set[str]) -> str | None:
     """Run in `tree` the checks of changes from the commit `base`: None
     where every check passes, else the output of the checks that fail.
     `touched`, the paths the changes touch, picks the copy of
     `merge_steps.py` that runs, as the module docstring gives, and `main`
-    is the main tree, where that copy is the main tree's. `engine_passed`,
-    the commit on which the engine checks last passed, is given to
-    `merge_steps.py checks`, as its `--help` gives."""
+    is the main tree, where that copy is the main tree's."""
     steps = (("--project", str(main), "python", str(main / STEPS[0])) if STEPS[0] in touched
              else ("python", *STEPS))
-    passed = ("--engine-passed", engine_passed) if engine_passed is not None else ()
-    argv = ("uv", "run", *steps, "checks", *passed, base)
+    argv = ("uv", "run", *steps, "checks", base)
     done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
                           text=True, stdin=subprocess.DEVNULL)
     if done.returncode == 0:
@@ -377,10 +354,9 @@ def run_checks(tree: Path, main: Path, base: str, touched: set[str],
         shown=" ".join(argv), code=done.returncode)
 
 
-def check(tree: Path, main: Path, base: str, touched: set[str],
-          engine_passed: str | None = None) -> None:
+def check(tree: Path, main: Path, base: str, touched: set[str]) -> None:
     """Run the checks as `run_checks` does, and refuse where one fails."""
-    failed = run_checks(tree, main, base, touched, engine_passed)
+    failed = run_checks(tree, main, base, touched)
     if failed is not None:
         raise Refused(failed)
 
@@ -630,12 +606,9 @@ def touched_by(changes: Sequence[Change]) -> set[str]:
     return {p for c in changes for p in c.touched}
 
 
-def say_moved(old: str, new: str, engine: bool | None) -> None:
-    """Say that `master` moved from `old` to `new`, and, where `engine` is
-    not None, whether the engine checks run again."""
-    again = "" if engine is None else (
-        f"; the engine checks {'run' if engine else 'do not run'} again")
-    say(f"{BASE} moved from {old[:12]} to {new[:12]}{again}", flush=True)
+def say_moved(old: str, new: str) -> None:
+    """Say that `master` moved from `old` to `new`."""
+    say(f"{BASE} moved from {old[:12]} to {new[:12]}", flush=True)
 
 
 def stack(main: Path, changes: Sequence[Change], locks: MergeLocks, block: bool,
@@ -647,7 +620,6 @@ def stack(main: Path, changes: Sequence[Change], locks: MergeLocks, block: bool,
     A refusal leaves each branch at `committed`. `landed` gets the stack
     once it lands."""
     base = checkout.git_out(main, "rev-parse", BASE).strip()
-    passed: str | None = None
     moved_from: str | None = None
     for attempt in range(RECHECKS + 1):
         try:
@@ -658,12 +630,10 @@ def stack(main: Path, changes: Sequence[Change], locks: MergeLocks, block: bool,
                 onto = checkout.git_out(c.worktree, "rev-parse", "HEAD").strip()
             top = changes[-1].worktree
             set_up_submodules(top, main)
-            again = engine_runs(top, base, passed) if block else None
             if moved_from is not None:
-                say_moved(moved_from, base, again)
+                say_moved(moved_from, base)
             if block:
-                check(top, main, base, touched_by(changes), passed)
-                passed = onto if again else passed
+                check(top, main, base, touched_by(changes))
             land(main, changes, locks, base, block, landed)
             return
         except Refused:
@@ -697,25 +667,21 @@ def merge_alone(main: Path, change: Change, locks: MergeLocks, block: bool,
     fast-forward, rebase, check and land again, up to `RECHECKS` times, as
     the module docstring gives. `landed` gets the change once it lands."""
     onto = checkout.git_out(main, "rev-parse", BASE).strip()
-    passed: str | None = None
     moved_from: str | None = None
     for attempt in range(RECHECKS + 1):
         rebase(change, onto, BASE, restore=True)
         try:
             set_up_submodules(change.worktree, main)
-            again = engine_runs(change.worktree, onto, passed) if block else None
             if moved_from is not None:
-                say_moved(moved_from, onto, again)
+                say_moved(moved_from, onto)
             if block:
-                check(change.worktree, main, onto, set(change.touched), passed)
+                check(change.worktree, main, onto, set(change.touched))
         except Refused as exc:
             tree = checkout.git_out(change.worktree, "rev-parse", "HEAD^{tree}").strip()
             checkout.git_out(change.worktree, "reset", "-q", "--mixed", onto)
             raise Refused(f"{exc}\n{change.branch} is moved back to {BASE}'s commit "
                           f"{onto[:12]}, and the change stands uncommitted in "
                           f"{change.worktree}" + REFUSED_TREE.format(tree=tree)) from exc
-        if again:
-            passed = checkout.git_out(change.worktree, "rev-parse", "HEAD").strip()
         try:
             land(main, [change], locks, onto, block, landed)
             return
