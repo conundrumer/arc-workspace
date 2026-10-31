@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 import time
 import traceback
@@ -21,6 +22,20 @@ from judge3.framed_jsonl import JsonlReader, JsonlWriter, iter_json
 SCHEMA = 'empty-gold-publication-v1'
 NATIVE_SCHEMA = 'arclog-empty-gold-v1'
 POLICY = 'all-train-test-inputs-all-assignments-empty-closure-v1'
+
+
+# A site whose only argument is a label spelled like its column, as the native
+# printer of a program writes it: `(:P *P)`, `(:A A)`, `(:Col ^Col)`. The
+# reader requires such a site, and a field site inside a record, bare.
+SPELLED_SITE = re.compile(r'\(:([A-Za-z0-9_]+) ([*^]?)\1\)')
+
+
+def bare_sites(program):
+    """The program text with each spelled-out site written as its bare label.
+
+    The case-file writer keeps the elision of the text it reads, so the text
+    that it reads must already be bare."""
+    return SPELLED_SITE.sub(lambda m: m.group(2) + m.group(1), program)
 
 
 def digest(value):
@@ -176,7 +191,7 @@ def commit_lint(out, seen, result, request):
 # exact predecessor's task receipts only under the identical request key.
 PUBLISH_COMPATIBLE_PREDECESSORS = ('1ddb3cf79a1952c441f42212559da3e93701aded0aacf5f13a264018fc107415',)
 
-MATERIALIZE_POLICY = 'empty-gold-case-overrides-v1'
+MATERIALIZE_POLICY = 'empty-gold-case-overrides-v2'
 
 
 def corpus_directory(path):
@@ -286,12 +301,16 @@ def materialize_task(arclog, corpus, gen, control, row, build):
                 if data is None: raise ValueError('native case has no stored arcdata: ' + name)
                 # Native case writer selects exactly the retained DET params;
                 # Python does not trim param records or invent case filenames.
-                standalone = arclog.case_files(task, case['filtered_program'], data, str(corpus))
+                # The publication's program text spells out the sites that the
+                # reader requires bare; the writer keeps the text's elision.
+                standalone = arclog.case_files(task, bare_sites(case['filtered_program']), data, str(corpus))
                 if len(standalone) != 1 or standalone[0].fault is not None:
                     raise ValueError('filtered case files unavailable: ' + name)
+                if SPELLED_SITE.search(standalone[0].arclog):
+                    raise ValueError('filtered case file keeps a spelled-out site: ' + name)
                 destination = stage_gen / 'cases' / task / source.file
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                Path(str(destination) + '.arclog').write_text(case['filtered_program'])
+                Path(str(destination) + '.arclog').write_text(standalone[0].arclog)
                 Path(str(destination) + '.arcdata').write_text(standalone[0].arcdata)
                 case_records.append(dict(case=name, file=source.file,
                     program_sha256=hashlib.sha256(case['filtered_program'].encode()).hexdigest()))

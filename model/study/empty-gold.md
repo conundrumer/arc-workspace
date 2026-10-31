@@ -52,10 +52,11 @@ use `work/arclog-v2-4b3e64f15/out`. Set `SAMPLER_GEN=<output>/gen`.
 
 For filtered tasks the original top-level `.arclog`/`.arcdata` pair remains the
 native case-discovery container (its ALTs enumerate the named cases). Every
-published case, including the concept case where present, gets its exact
-`filtered_program` at `gen/cases/<task>/<native-file>.arclog`. Native `case_files`
-supplies filenames and the matching `.arcdata`, retaining only parameters read
-by the filtered case. Python does not reconstruct ALT blocks, rename cases or
+published case, including the concept case where present, gets its
+`filtered_program` at `gen/cases/<task>/<native-file>.arclog`, with each site that
+the reader requires bare written bare (`*P` for `(:P *P)`), as native `case_files`
+writes it. Native `case_files` supplies filenames and the matching `.arcdata`,
+retaining only parameters read by the filtered case. Python does not reconstruct ALT blocks, rename cases or
 trim parameter values. Native corpus readers use these case overrides for the
 actual gold stream. Replacing the task container with one flat case would lose
 its other cases.
