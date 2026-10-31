@@ -24,6 +24,17 @@ pub enum DetRefusal {
 }
 
 impl Decoder<'_> {
+    /// What the computation of a `DET`'s domain in this decode reads beside
+    /// its key, for the memos of [`super::det_memo`].
+    pub(super) fn det_scope(&self) -> Scope {
+        Scope {
+            task: std::ptr::from_ref(self.task) as usize,
+            registry: std::ptr::from_ref(self.context.registry) as usize,
+            constructions: std::ptr::from_ref(self.constructions) as usize,
+            table_work_cap: self.context.settings.table_work_cap,
+        }
+    }
+
     pub(super) fn admit_written_dets(&self, token: &Token, after: &State) -> Result<(), Refusal> {
         if !matches!(token, Token::Control(Control::End | Control::Set | Control::One)) {
             return Ok(());
@@ -56,12 +67,7 @@ impl Decoder<'_> {
         // The probes of the task session share an intern table and the domains
         // they computed (`det_memo`). A probe whose session evicted or reached
         // the byte bound runs again in a session of its own.
-        let scope = Scope {
-            task: std::ptr::from_ref(self.task) as usize,
-            registry: std::ptr::from_ref(self.context.registry) as usize,
-            constructions: std::ptr::from_ref(self.constructions) as usize,
-            table_work_cap: self.context.settings.table_work_cap,
-        };
+        let scope = self.det_scope();
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         if let Some(probe) = memo.probe(scope, self.session) {
             let domains = probe.domains(program, &dets);

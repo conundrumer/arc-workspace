@@ -204,7 +204,7 @@ impl Recorded {
 }
 
 /// The bytes of `relation`'s rows, an estimate.
-fn relation_estimate(relation: &Relation) -> usize {
+pub(crate) fn relation_estimate(relation: &Relation) -> usize {
     relation.parts().iter().map(|part| part.rows.len() * (32 + usize::from(part.rows.arity()) * 8)).sum::<usize>() + 256
 }
 

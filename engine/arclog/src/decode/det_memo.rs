@@ -29,18 +29,21 @@
 //! holds at least the bytes that a session of its own would hold. A walk
 //! that stops at the byte bound, or whose cache evicts, runs again in a
 //! session of its own with no kept domain ([`super::det_admission`]).
+//!
+//! The walks of a decode's tables run in the task session itself, and keep
+//! the domains they compute in a memo of that session ([`SessionMemo`]).
 
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 use crate::check::CheckedProgram;
-use crate::eval::cache::{replay, Recorded};
+use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
 use crate::eval::{Domain, Evaluation, Outcome};
 use crate::hash::{StableHash, StableHashMap};
 use crate::judge::determination::{Assignment, Det, Domains};
 use crate::program::ProgramRelation;
 use crate::relations::Relation;
-use crate::session::{same_rows, TaskSession};
+use crate::session::{same_rows, ResultKey, TaskSession};
 use crate::types::ValueType;
 use crate::types::GraphRelation;
 
@@ -94,6 +97,10 @@ struct Computed {
     /// The table work it counted.
     charged: u64,
     domain: Domain,
+    /// The keys of the entries that its lookups found, by the ids of their
+    /// relations in the session where it ran, for a computation whose
+    /// every lookup found its entry ([`crate::session::ResultCache::found_keys`]).
+    found: Option<Box<[ResultKey]>>,
 }
 
 impl std::fmt::Debug for ProbeMemo {
@@ -156,7 +163,7 @@ impl ProbeMemo {
             Domain::Rows(values) => Domain::Rows(values.iter().map(&mut one).collect()),
             other => other.clone(),
         };
-        kept.domains.entry(key).or_default().push(Arc::new(Computed { events, charged: computed.charged, domain: domain.clone() }));
+        kept.domains.entry(key).or_default().push(Arc::new(Computed { events, charged: computed.charged, domain: domain.clone(), found: None }));
         kept.bytes += bytes;
         Some(domain)
     }
@@ -193,29 +200,46 @@ impl Probe<'_> {
     /// The domains of `dets`, the `DET`s of `program` in the order of the
     /// walk, through the memo.
     pub(crate) fn domains<'p>(&'p self, program: &CheckedProgram, dets: &'p [Det]) -> ProbeDomains<'p> {
-        let resolved = &program.program;
-        let acyclic = resolved.graph.find_cycle().is_none();
-        let keys = dets
-            .iter()
-            .enumerate()
-            .map(|(at, det)| {
-                if !acyclic || det.pick {
-                    return None;
-                }
-                let node = resolved.node_content(det.node)?.content_hash();
-                let columns = program.types.columns(&GraphRelation { node: det.node, output: None })?.into();
-                let reached = resolved.graph.reached(det.node);
-                let reads = dets[..at]
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, read)| reached[read.node.0 as usize])
-                    .map(|(index, read)| Some((index, resolved.node_content(read.node)?.content_hash())))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(DetKey { node, columns, reads })
-            })
-            .collect();
-        ProbeDomains { probe: self, dets, keys }
+        ProbeDomains { probe: self, dets, keys: det_keys(program, dets) }
     }
+}
+
+/// The parts of the key of each of `dets`, the `DET`s of `program` in the
+/// order of a walk, that its values leave out, or `None` for a `DET` whose
+/// domain is computed with no memo: a pick, and each `DET` of a program
+/// whose graph has a cycle.
+fn det_keys(program: &CheckedProgram, dets: &[Det]) -> Vec<Option<DetKey>> {
+    let resolved = &program.program;
+    let acyclic = resolved.graph.find_cycle().is_none();
+    dets.iter()
+        .enumerate()
+        .map(|(at, det)| {
+            if !acyclic || det.pick {
+                return None;
+            }
+            let node = resolved.node_content(det.node)?.content_hash();
+            let columns = program.types.columns(&GraphRelation { node: det.node, output: None })?.into();
+            let reached = resolved.graph.reached(det.node);
+            let reads = dets[..at]
+                .iter()
+                .enumerate()
+                .filter(|(_, read)| reached[read.node.0 as usize])
+                .map(|(index, read)| Some((index, resolved.node_content(read.node)?.content_hash())))
+                .collect::<Option<Vec<_>>>()?;
+            Some(DetKey { node, columns, reads })
+        })
+        .collect()
+}
+
+/// The key of the domain of `dets[at]`, whose key parts are `det`, at the
+/// values `assigned` of the `DET`s before it.
+fn key_at(dets: &[Det], det: &DetKey, assigned: &[Assignment]) -> Key {
+    let reads = det.reads.iter().map(|&(index, content)| {
+        let relation = &dets[index].relation;
+        let value = assigned.iter().find(|(name, _)| name == relation).map(|(_, value)| Arc::clone(value));
+        (relation.clone(), content, value)
+    });
+    Key { node: det.node, columns: det.columns.clone(), reads: reads.collect() }
 }
 
 /// The domains of the `DET`s of one walk.
@@ -281,12 +305,7 @@ impl Domains for ProbeDomains<'_> {
         let (Some(det), Some(work)) = (&self.keys[at], &evaluation.limits.table_work) else {
             return evaluation.domain(node);
         };
-        let reads = det.reads.iter().map(|&(index, content)| {
-            let relation = &self.dets[index].relation;
-            let value = assigned.iter().find(|(name, _)| name == relation).map(|(_, value)| Arc::clone(value));
-            (relation.clone(), content, value)
-        });
-        let key = Key { node: det.node, columns: det.columns.clone(), reads: reads.collect() };
+        let key = key_at(self.dets, det, assigned);
         let session = evaluation.session;
         let memo = self.probe.memo;
         for computed in memo.computed(self.probe.generation, &key) {
@@ -301,7 +320,7 @@ impl Domains for ProbeDomains<'_> {
         let events = session.results.take_recorded();
         let charged = work.count() - before;
         if let Ok(domain @ (Domain::Rows(_) | Domain::Undefined)) = &found {
-            let computed = Computed { events: events.into(), charged, domain: domain.clone() };
+            let computed = Computed { events: events.into(), charged, domain: domain.clone(), found: None };
             if let Some(domain) = memo.keep(self.probe.generation, key, computed) {
                 // The kept values hold the rows of the values computed, in
                 // parts of the same columns.
@@ -309,5 +328,158 @@ impl Domains for ProbeDomains<'_> {
             }
         }
         found
+    }
+}
+
+/// The most bytes that the domains kept for a session's table walks hold,
+/// by [`Recorded::bytes`] and the estimate of each value's rows; past it,
+/// the walks keep none of those kept so far.
+const SESSION_KEPT_BYTES: usize = 1 << 26;
+
+/// The domains that the table walks of one task session's decodes compute
+/// in the session itself ([`super::Decoder::assigned`]), kept across those
+/// walks.
+///
+/// A domain is kept only where its computation found in the session's
+/// result cache each entry it looked up, and so stored none: it read
+/// nothing that the cache did not hold, and so ran no evaluation that
+/// reads a held stop or reports a copy violation. Its lookups are those
+/// this thread made, so a computation on another thread adds none. A later
+/// walk that needs the domain of a `DET` of the same key ([`Key`]) takes
+/// the kept domain where each kept lookup would find in the cache a value
+/// of the same rows, held in parts of the same columns, and where its count
+/// stays within the cap after the work the computation counted. The
+/// computation reads nothing else that differs between the walks, so it
+/// would make those lookups and count that work in the later walk too, and
+/// give a domain of the same values: each value holds its rows in the
+/// content order of their terms, whatever the order of the rows it read.
+/// The later walk then makes those lookups and counts that work, so the
+/// cache and the count stand as the computation would leave them.
+/// Otherwise it computes the domain.
+pub(crate) struct SessionMemo {
+    scope: Scope,
+    kept: Mutex<SessionKept>,
+}
+
+#[derive(Default)]
+struct SessionKept {
+    domains: StableHashMap<Key, Vec<Arc<Computed>>>,
+    bytes: usize,
+}
+
+impl std::fmt::Debug for SessionMemo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionMemo").field("scope", &self.scope).finish_non_exhaustive()
+    }
+}
+
+impl SessionMemo {
+    /// The memo of the table walks of a session under `scope`, with
+    /// nothing kept.
+    pub(crate) fn new(scope: Scope) -> Self {
+        SessionMemo { scope, kept: Mutex::new(SessionKept::default()) }
+    }
+
+    /// The domains of `dets`, the `DET`s of `program` in the order of a
+    /// walk under `scope`, through the memo, or `None` where the memo
+    /// serves another scope.
+    pub(crate) fn domains<'p>(&'p self, scope: Scope, program: &CheckedProgram, dets: &'p [Det]) -> Option<SessionDomains<'p>> {
+        (scope == self.scope).then(|| SessionDomains { memo: self, dets, keys: det_keys(program, dets) })
+    }
+
+    fn computed(&self, key: &Key) -> Vec<Arc<Computed>> {
+        self.kept.lock().expect("the kept domains are not poisoned").domains.get(key).cloned().unwrap_or_default()
+    }
+
+    fn keep(&self, key: Key, computed: Computed) {
+        let values = match &computed.domain {
+            Domain::Rows(values) => values.iter().map(|value| relation_estimate(value)).sum(),
+            _ => 0,
+        };
+        let bytes = computed.events.iter().map(Recorded::bytes).sum::<usize>() + values + 1024;
+        let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
+        if bytes > SESSION_KEPT_BYTES {
+            return;
+        }
+        if kept.bytes + bytes > SESSION_KEPT_BYTES {
+            *kept = SessionKept::default();
+        }
+        let computations = kept.domains.entry(key).or_default();
+        if computations.len() >= PER_KEY {
+            return;
+        }
+        computations.push(Arc::new(computed));
+        kept.bytes += bytes;
+    }
+}
+
+/// The domains of the `DET`s of one table walk.
+pub(crate) struct SessionDomains<'p> {
+    memo: &'p SessionMemo,
+    dets: &'p [Det],
+    keys: Vec<Option<DetKey>>,
+}
+
+impl Domains for SessionDomains<'_> {
+    fn domain(&self, evaluation: &Evaluation<'_>, at: usize, assigned: &[Assignment]) -> Outcome<Domain> {
+        let node = self.dets[at].node;
+        let (Some(det), Some(work)) = (&self.keys[at], &evaluation.limits.table_work) else {
+            return evaluation.domain(node);
+        };
+        let key = key_at(self.dets, det, assigned);
+        let session = evaluation.session;
+        for computed in self.memo.computed(&key) {
+            let replayed = || match &computed.found {
+                Some(keys) if session.results.replay_found(&computed.events, keys) => true,
+                _ => replay(session, &computed.events),
+            };
+            if work.fits(computed.charged) && replayed() {
+                work.charge(computed.charged).expect("a count that stays within the cap");
+                return Ok(computed.domain.clone());
+            }
+        }
+        let Some(recording) = session.results.record_on_thread() else {
+            return evaluation.domain(node);
+        };
+        let before = work.count();
+        let found = evaluation.domain(node);
+        let events = recording.finish();
+        let charged = work.count() - before;
+        let pure = events.iter().all(|event| matches!(event, Recorded::Lookup { found: Some(_), .. }));
+        let (true, Ok(domain @ (Domain::Rows(_) | Domain::Undefined))) = (pure, &found) else {
+            return found;
+        };
+        // The relations that the cache holds in place of those of the same
+        // rows: a key's, which a lookup reads by its rows alone, and a
+        // value's that the cache holds laid out as the value is, which no
+        // read tells apart from it. A later lookup then finds them by
+        // their storage, with no comparison of rows.
+        let results = &session.results;
+        let held = |relation: &Arc<Relation>| results.held_relation(relation).unwrap_or_else(|| Arc::clone(relation));
+        let events: Box<[Recorded]> = events
+            .iter()
+            .map(|event| match event {
+                Recorded::Lookup { key, found } => Recorded::Lookup {
+                    key: RecordedKey { reads: key.reads.iter().map(held).collect(), parameters: key.parameters.iter().map(held).collect(), ..key.clone() },
+                    found: found.clone(),
+                },
+                other => other.clone(),
+            })
+            .collect();
+        let domain = match domain {
+            Domain::Rows(values) => Domain::Rows(
+                values
+                    .iter()
+                    .map(|value| match results.held_relation(value) {
+                        Some(kept) if kept.laid_out_as(value) => kept,
+                        _ => Arc::clone(value),
+                    })
+                    .collect(),
+            ),
+            other => other.clone(),
+        };
+        let found = results.found_keys(&events);
+        self.memo.keep(key, Computed { events, charged, domain: domain.clone(), found });
+        Ok(domain)
     }
 }

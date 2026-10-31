@@ -51,6 +51,18 @@ pub struct ResultKey {
     pub parameters: Box<[RelationId]>,
 }
 
+/// Whether a lookup that finds `a` does what one that found `b` did: values
+/// of the same kind, a relation's held in parts of the same columns, and a
+/// stop at the same bound. Two values under one key hold the same rows.
+fn alike(a: &CachedValue, b: &CachedValue) -> bool {
+    match (a, b) {
+        (RelationValue::Rows(a), RelationValue::Rows(b)) => a.parts().len() == b.parts().len() && a.parts().iter().zip(b.parts()).all(|(a, b)| a.columns == b.columns),
+        (RelationValue::Undefined, RelationValue::Undefined) => true,
+        (RelationValue::Stopped(a), RelationValue::Stopped(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// The id of a relation in a task session. The session gives each id once
 /// and never gives it again, so two relations with equal ids have equal
 /// rows. Two relations with equal rows can have distinct ids, such as a
@@ -89,6 +101,36 @@ pub struct ResultCache {
     /// that [`crate::eval::cache`] makes in `recorded`.
     recording: AtomicBool,
     recorded: Mutex<Vec<crate::eval::cache::Recorded>>,
+    /// The count of threads that keep the events they make in this cache
+    /// ([`ResultCache::record_on_thread`]).
+    thread_recorders: AtomicUsize,
+}
+
+thread_local! {
+    /// The events that this thread makes in one result cache, by the
+    /// cache's address, while a [`ThreadRecording`] of it lives.
+    static THREAD_RECORDED: std::cell::RefCell<Option<(usize, Vec<crate::eval::cache::Recorded>)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The keeping of the lookups, ids and stores that one thread makes in one
+/// result cache ([`ResultCache::record_on_thread`]); dropping it stops the
+/// keeping.
+pub(crate) struct ThreadRecording<'c> {
+    cache: &'c ResultCache,
+}
+
+impl ThreadRecording<'_> {
+    /// The events kept, in their order; the keeping stops.
+    pub(crate) fn finish(self) -> Vec<crate::eval::cache::Recorded> {
+        THREAD_RECORDED.with(|cell| cell.borrow_mut().take()).map(|(_, events)| events).unwrap_or_default()
+    }
+}
+
+impl Drop for ThreadRecording<'_> {
+    fn drop(&mut self) {
+        THREAD_RECORDED.with(|cell| cell.borrow_mut().take());
+        self.cache.thread_recorders.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Debug, Default)]
@@ -189,6 +231,45 @@ impl ResultCache {
         true
     }
 
+    /// The keys, by the ids of their relations, of the entries that
+    /// `events` found, each a lookup that found its entry, where the cache
+    /// holds the relations of each key; `None` otherwise.
+    pub(crate) fn found_keys(&self, events: &[crate::eval::cache::Recorded]) -> Option<Box<[ResultKey]>> {
+        use crate::eval::cache::Recorded;
+        let state = self.state.lock().expect(UNPOISONED);
+        events
+            .iter()
+            .map(|event| match event {
+                Recorded::Lookup { key, found: Some(_) } => state.held_key(key),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// [`ResultCache::replay`] of `events`, each a lookup that found its
+    /// entry, whose keys by the ids of their relations are `keys`
+    /// ([`ResultCache::found_keys`]), where the cache holds an entry under
+    /// each of `keys`: an id names one relation's rows for the life of the
+    /// session, so that entry is the one each lookup would find. Gives
+    /// whether it made them; `false` changes nothing.
+    pub(crate) fn replay_found(&self, events: &[crate::eval::cache::Recorded], keys: &[ResultKey]) -> bool {
+        use crate::eval::cache::Recorded;
+        let mut state = self.state.lock().expect(UNPOISONED);
+        let held = events.len() == keys.len()
+            && events.iter().zip(keys).all(|(event, key)| match (event, state.entries.get(key)) {
+                (Recorded::Lookup { found: Some(found), .. }, Some(entry)) => alike(&entry.value, found),
+                _ => false,
+            });
+        if !held {
+            return false;
+        }
+        for key in keys {
+            state.touch(key);
+            self.found.fetch_add(1, Ordering::Relaxed);
+        }
+        true
+    }
+
     /// Whether the cache's bytes have passed the bound of an eviction, so
     /// that it dropped the relations no entry holds, and entries.
     pub fn evicted(&self) -> bool {
@@ -210,12 +291,60 @@ impl ResultCache {
         std::mem::take(&mut *self.recorded.lock().expect(UNPOISONED))
     }
 
-    /// Keeps the lookup, id or store `event()` where the cache is recording.
+    /// Keeps the lookup, id or store `event()` where the cache is recording,
+    /// and where this thread keeps its events in this cache
+    /// ([`ResultCache::record_on_thread`]).
     #[inline]
     pub(crate) fn record(&self, event: impl FnOnce() -> crate::eval::cache::Recorded) {
-        if self.recording.load(Ordering::Relaxed) {
-            self.recorded.lock().expect(UNPOISONED).push(event());
+        let recording = self.recording.load(Ordering::Relaxed);
+        let threads = self.thread_recorders.load(Ordering::Relaxed) > 0;
+        if !recording && !threads {
+            return;
         }
+        let event = event();
+        if threads {
+            let address = std::ptr::from_ref(self) as usize;
+            THREAD_RECORDED.with(|cell| {
+                if let Some((cache, events)) = &mut *cell.borrow_mut()
+                    && *cache == address
+                {
+                    events.push(event.clone());
+                }
+            });
+        }
+        if recording {
+            self.recorded.lock().expect(UNPOISONED).push(event);
+        }
+    }
+
+    /// Starts keeping each lookup, id and store that this thread makes in
+    /// this cache, and no other thread's, until the result is finished or
+    /// dropped. `None` where this thread already keeps the events of a
+    /// cache.
+    pub(crate) fn record_on_thread(&self) -> Option<ThreadRecording<'_>> {
+        let address = std::ptr::from_ref(self) as usize;
+        let started = THREAD_RECORDED.with(|cell| {
+            let mut cell = cell.borrow_mut();
+            if cell.is_some() {
+                return false;
+            }
+            *cell = Some((address, Vec::new()));
+            true
+        });
+        if !started {
+            return None;
+        }
+        self.thread_recorders.fetch_add(1, Ordering::Relaxed);
+        Some(ThreadRecording { cache: self })
+    }
+
+    /// The relation that the cache holds with the rows of `relation`, or
+    /// `None` where it holds none.
+    pub(crate) fn held_relation(&self, relation: &Relation) -> Option<Arc<Relation>> {
+        let hash = relation.rows_hash();
+        let state = self.state.lock().expect(UNPOISONED);
+        let id = state.find(hash, relation)?;
+        Some(Arc::clone(&state.relations[&id].relation))
     }
 
     /// The id of a relation that the cache holds with the rows of
@@ -324,11 +453,7 @@ impl CacheState {
                 Recorded::Lookup { key, found } => {
                     let alike = match (&entry(&entries, key, key.digest()), found) {
                         (None, None) => true,
-                        (Some(RelationValue::Rows(a)), Some(RelationValue::Rows(b))) => {
-                            a.parts().len() == b.parts().len() && a.parts().iter().zip(b.parts()).all(|(a, b)| a.columns == b.columns)
-                        }
-                        (Some(RelationValue::Undefined), Some(RelationValue::Undefined)) => true,
-                        (Some(RelationValue::Stopped(a)), Some(RelationValue::Stopped(b))) => a == b,
+                        (Some(a), Some(b)) => alike(a, b),
                         _ => false,
                     };
                     if !alike {
@@ -545,6 +670,9 @@ pub struct TaskSession {
     /// The domains that the liveness walks of the decodes of this session
     /// keep, made on the first walk.
     det_probes: Arc<OnceLock<crate::decode::det_memo::ProbeMemo>>,
+    /// The domains that the table walks of the decodes of this session
+    /// keep, made on the first walk.
+    det_domains: Arc<OnceLock<crate::decode::det_memo::SessionMemo>>,
 }
 
 /// A count of bindings tried and a count of rows held.
@@ -575,7 +703,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), det_probes: Arc::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default() }
     }
 
     /// A session with this session's intern table and fact relations, and
@@ -587,6 +715,7 @@ impl TaskSession {
             largest_bindings: Arc::new(AtomicU64::new(0)),
             largest_rows: Arc::new(AtomicU64::new(0)),
             det_probes: Arc::default(),
+            det_domains: Arc::default(),
             ..self.clone()
         }
     }
@@ -594,6 +723,11 @@ impl TaskSession {
     /// The domains that the liveness walks of this session's decodes keep.
     pub(crate) fn det_probes(&self) -> &OnceLock<crate::decode::det_memo::ProbeMemo> {
         &self.det_probes
+    }
+
+    /// The domains that the table walks of this session's decodes keep.
+    pub(crate) fn det_domains(&self) -> &OnceLock<crate::decode::det_memo::SessionMemo> {
+        &self.det_domains
     }
 
     /// The rows of `fact` on `example` of `task`, built on the first request

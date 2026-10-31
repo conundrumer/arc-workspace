@@ -79,6 +79,15 @@ impl RowSet {
     pub fn shared(&self) -> SharedRows {
         SharedRows(std::sync::Arc::as_ptr(&self.rows) as usize)
     }
+
+    /// Whether `other` holds its rows as this set does: the same rows in the
+    /// same order, in a hash set of the same capacity, so that each read of
+    /// either, and each set made from a clone of either by the same changes,
+    /// gives the same rows in the same order.
+    pub(crate) fn laid_out_as(&self, other: &RowSet) -> bool {
+        std::sync::Arc::ptr_eq(&self.rows, &other.rows)
+            || (self.arity == other.arity && self.rows.len() == other.rows.len() && self.rows.capacity() == other.rows.capacity() && self.rows.iter().eq(other.rows.iter()))
+    }
 }
 
 /// The identity of the rows that the clones of a [`RowSet`] share, valid
@@ -170,6 +179,15 @@ impl Relation {
     /// The parts, whose product is the relation's rows.
     pub fn parts(&self) -> &[RelationPart] {
         &self.parts
+    }
+
+    /// Whether `other` holds its rows as this relation does: parts of the
+    /// same columns, each with its rows laid out as this one's
+    /// ([`RowSet::laid_out_as`]).
+    pub(crate) fn laid_out_as(&self, other: &Relation) -> bool {
+        self.arity == other.arity
+            && self.parts.len() == other.parts.len()
+            && self.parts.iter().zip(other.parts.iter()).all(|(a, b)| a.columns == b.columns && a.rows.laid_out_as(&b.rows))
     }
 
     /// The count of rows, the product of the parts' counts, `u64::MAX` where

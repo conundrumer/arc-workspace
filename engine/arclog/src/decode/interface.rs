@@ -16,7 +16,8 @@ use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, Ru
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
 use crate::judge::run::{Found, Tested};
-use crate::judge::determination::{dets_read, descend_assignments, distinct_values, walk, Assignment, Det, End, EvaluationInputs, Walked};
+use crate::judge::determination::{dets_read, descend_with, distinct_values, walk, Assignment, Det, Domains, End, EvaluationInputs, Walked};
+use super::det_memo::SessionMemo;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, ConstraintLabel, Constraint, DeclaredName, Form, Instance, LabelId, LabelUse, Negated, Node, Operand, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
 use crate::relations::Relation;
@@ -317,7 +318,11 @@ impl<'a> Decoder<'a> {
             found.push((assigned.to_vec(), at(evaluation)?));
             Ok(())
         };
-        match descend_assignments(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf).1 {
+        // A table's walk takes the domains that the session's table walks
+        // kept (`det_memo::SessionMemo`), where they would compute the same.
+        let memo = work.map(|_| self.session.det_domains().get_or_init(|| SessionMemo::new(self.det_scope())));
+        let domains = memo.and_then(|memo| memo.domains(self.det_scope(), program, dets));
+        match descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains.as_ref().map(|domains| domains as &dyn Domains)).1 {
             Ok(()) => Ok(Assigned { at: found, stop: None }),
             Err(End::Stop(stop)) => Ok(Assigned { at: found, stop: Some(stop) }),
             Err(End::Fault(fault)) => Err(fault),
