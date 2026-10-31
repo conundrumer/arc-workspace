@@ -47,9 +47,10 @@ pass removes, the forms that held an atom on it before the pass redirected it
 (`projections.ReaderForm`): the check compares that relation in a case only
 where one of those forms derives its relation and `&output` reads that relation
 (`parity.rerun`).
-A last pass removes each atom that another atom of the same conjunction implies
-(`arclog_convert.implied`): it runs on the text of the solver and on the text of each case, after the projection pass,
-and not on the copy under `CORPUS`.
+A pass removes each atom that another atom of the same conjunction implies
+(`arclog_convert.implied`): it runs on the text of the solver and on the text of each case, before the projection pass,
+which folds a relation the removal leaves a projection, and after it; it runs as well on the copy under `CORPUS`, before
+the projection pass.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 A clause or a factor that a pass keeps because a block other than the reader's derives its relation again, or because
@@ -320,9 +321,10 @@ def convert_one(stem: str) -> Converted:
         rows = Rows(stem, columns)
         pulled, *copy = _pull_up_all(rows, [(arclog, arcdata), *([checked] if checked is not None else [])])
         dropped = dict(pulled.dropped)
-        arclog = pulled.arclog
+        # an atom the pass removes may leave a clause that only projects one relation, which the projection pass folds
+        arclog = drop_implied(pulled.arclog).arclog
         if checked is not None:
-            checked = (copy[0].arclog, checked[1])
+            checked = (drop_implied(copy[0].arclog).arclog, checked[1])
             dropped.update({n: dropped.get(n, frozenset()) | g for n, g in copy[0].dropped.items()})
         columns = drop_columns(columns, dropped)
         paths.COLUMNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -471,7 +473,8 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
         written = []
         for file, arclog, arcdata in part:
             pulled = pull_up(arclog, arcdata, rows.single)
-            text = drop_implied(project(pulled.arclog, arcdata, drop_columns(columns, pulled.dropped)).arclog).arclog
+            text = project(drop_implied(pulled.arclog).arclog, arcdata, drop_columns(columns, pulled.dropped)).arclog
+            text = drop_implied(text).arclog
             # The corpus draw and Decoder use this same native classifier.
             # It edits original AST paths, preserves clause interfaces, refuses
             # removal of a binder, and re-resolves/checks the normalized case.
