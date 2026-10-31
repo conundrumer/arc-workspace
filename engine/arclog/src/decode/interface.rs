@@ -387,9 +387,10 @@ impl<'a> Decoder<'a> {
     }
 
     /// The program that `resolved` resolves, checked, or a fault at `form`
-    /// where a check refuses it.
+    /// where a check refuses it. `resolved` holds the finished forms of the
+    /// decode's state, and the check runs with their check cache.
     pub(super) fn checked(&self, resolved: Arc<ResolvedProgram>, form: &NodePath) -> Outcome<CheckedProgram> {
-        self.checked_with(resolved, form, &mut CheckCache::default())
+        self.state.checks().with(|cache| self.checked_with(resolved, form, cache))
     }
 
     /// [`Decoder::checked`] with `cache`, which the check fills.
@@ -404,20 +405,16 @@ impl<'a> Decoder<'a> {
 
     /// The program of `after`, whose last form just finished, checked: it
     /// resolves from `before`, the state before the step, and is checked on
-    /// the first ask, then shared by each clone of `after`. The check starts
-    /// from a copy of the cache that the check of `before`'s program left,
-    /// where that check has run, and the cell keeps the cache that this
-    /// check leaves.
+    /// the first ask, with the check cache of `after`'s finished forms, then
+    /// shared by each clone of `after`.
     pub fn finished_checked<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
-        let (checked, _) = after.checked_last().get_or_init(|| {
+        after.checked_last().get_or_init(|| {
             let program = after.program();
             let form = NodePath::top(program.value().forms.len() as u32 - 1);
             let registry = self.context.registry;
-            let mut cache = before.checked_last().get().map(|(_, cache)| cache.clone()).unwrap_or_default();
-            let checked = self.checked_with(Arc::new(resolve_last(&before.resolved(registry), program, registry)), &form, &mut cache);
-            (checked, cache)
-        });
-        checked
+            let resolved = Arc::new(resolve_last(&before.resolved(registry), program, registry));
+            after.checks().with(|cache| self.checked_with(resolved, &form, cache))
+        })
     }
 
     /// The consistency of the relation of the form that ends the program of

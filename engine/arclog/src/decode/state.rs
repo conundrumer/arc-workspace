@@ -80,10 +80,14 @@ pub struct State {
     /// forks with the same finished forms.
     prefixes: Arc<std::sync::Mutex<PrefixMemo>>,
     /// The checked program of the finished forms, resolved from the
-    /// resolution of the state before the last form finished, with the
-    /// check cache that its check left, made on its first read and shared
-    /// by every clone of the state until a form finishes.
-    checked_last: Arc<std::sync::OnceLock<(Outcome<CheckedProgram>, CheckCache)>>,
+    /// resolution of the state before the last form finished, made on its
+    /// first read and shared by every clone of the state until a form
+    /// finishes.
+    checked_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
+    /// The check cache of the whole-program checks of programs that hold
+    /// the finished forms, shared by the states and forks with the same
+    /// finished forms.
+    checks: Arc<SharedChecks>,
     /// The atom that the step in progress opened, as [`State::step`] takes
     /// it: none in every state a step gives.
     opened: Option<Opened>,
@@ -106,6 +110,52 @@ enum PrefixKind { Check, DetAdmission }
 struct PrefixMemo {
     entries: crate::hash::StableHashMap<(PrefixKind, Vec<u8>), Result<(), super::Refusal>>,
     bytes: usize,
+}
+
+/// The check cache of the whole-program checks of programs that hold one
+/// set of finished forms. On its first use it starts as a copy of the cache
+/// of the finished forms before the last one finished, so that a check
+/// takes the results of each form that an earlier check along the decode
+/// checked under the same [`crate::check::CheckCacheKey`]. A key holds what
+/// its check's result reads, so a result taken from it is the result a
+/// check from an empty cache gives.
+#[derive(Debug, Default)]
+pub(super) struct SharedChecks {
+    cache: std::sync::Mutex<Option<CheckCache>>,
+    /// The cache of the finished forms before the last one finished, until
+    /// the first use copies it.
+    from: std::sync::Mutex<Option<Arc<SharedChecks>>>,
+}
+
+impl SharedChecks {
+    fn after(from: &Arc<SharedChecks>) -> SharedChecks {
+        SharedChecks { cache: std::sync::Mutex::default(), from: std::sync::Mutex::new(Some(Arc::clone(from))) }
+    }
+
+    /// Runs `body` with the cache, or with an empty cache where another
+    /// check holds it.
+    pub(super) fn with<R>(&self, body: impl FnOnce(&mut CheckCache) -> R) -> R {
+        let Ok(mut held) = self.cache.try_lock() else { return body(&mut CheckCache::default()) };
+        let cache = held.get_or_insert_with(|| {
+            let from = self.from.lock().ok().and_then(|mut from| from.take());
+            from.map(|from| from.copy()).unwrap_or_default()
+        });
+        body(cache)
+    }
+
+    /// A copy of the cache, or of the cache it starts from where no check
+    /// has used it; an empty cache where a check holds it.
+    fn copy(&self) -> CheckCache {
+        let Ok(held) = self.cache.try_lock() else { return CheckCache::default() };
+        match &*held {
+            Some(cache) => cache.clone(),
+            None => {
+                let from = self.from.lock().ok().and_then(|from| from.clone());
+                drop(held);
+                from.map(|from| from.copy()).unwrap_or_default()
+            }
+        }
+    }
 }
 
 /// An atom that a step opened as its last change, which the form in
@@ -347,7 +397,7 @@ const FIELDS_TRIED: u32 = 1;
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), checked_last: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), opened: None }
     }
 
     /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
@@ -445,10 +495,15 @@ impl State {
         result
     }
 
-    /// The checked program of the finished forms and the check cache its
-    /// check left, as [`State::checked_last`] holds them.
-    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<(Outcome<CheckedProgram>, CheckCache)> {
+    /// The checked program of the finished forms, as [`State::checked_last`]
+    /// holds it.
+    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<Outcome<CheckedProgram>> {
         &self.checked_last
+    }
+
+    /// The check cache of the programs that hold the finished forms.
+    pub(super) fn checks(&self) -> &SharedChecks {
+        &self.checks
     }
 
     /// The resolution of `partial`, the finished forms with the form in
@@ -829,6 +884,7 @@ impl State {
         self.fixed_columns = Arc::default();
         self.prefixes = Arc::default();
         self.checked_last = Arc::default();
+        self.checks = Arc::new(SharedChecks::after(&self.checks));
         self.labels = 0;
     }
 

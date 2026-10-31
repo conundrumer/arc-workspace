@@ -2,7 +2,7 @@
 //! the mapping of paths and labels between the form's source order and its
 //! canonical order.
 
-use super::super::path::{NodePath, PathStep};
+use super::super::path::{NodePath, NodeRef, PathStep};
 use super::super::{Form, LabelId};
 use super::{form_root, AsWritten, CanonicalForm, CanonicalWriter, Context, SearchBudget};
 use crate::hash::StableHashMap;
@@ -67,6 +67,32 @@ impl CanonicalOrder {
         let (order, canonical, reached) = written(form);
         search.reached |= *reached;
         (order.clone(), canonical.clone())
+    }
+
+    /// The canonical form of `form`, as [`CanonicalOrder::with_form`] gives
+    /// it, followed by the source index of each child of each node of
+    /// `form`, each node's children in canonical order, so that two forms of
+    /// one canonical form are equal under it only where their lists are
+    /// written in one order. The node of `form` keeps it from the first
+    /// call.
+    pub fn with_written_lists(form: &Form) -> CanonicalForm {
+        fn write(node: NodeRef<'_>, at: &NodePath, order: &CanonicalOrder, out: &mut CanonicalWriter) {
+            let children = node.children();
+            for position in 0..children.len() as u32 {
+                let child = at.child(position);
+                let index = order.source_path(&child).0.last().expect("a child's path ends in its step").0;
+                out.write(&index.to_le_bytes());
+                write(children[index as usize], &child, order, out);
+            }
+        }
+        let kept = super::form::cache(form).written_lists.get_or_init(|| {
+            let (order, canonical, _) = written(form);
+            let mut out = CanonicalWriter::default();
+            out.write(&canonical.bytes);
+            write(NodeRef::from(form), &NodePath::default(), order, &mut out);
+            out.finish()
+        });
+        kept.clone()
     }
 
     /// An independent feature write that normalizes named site order. This

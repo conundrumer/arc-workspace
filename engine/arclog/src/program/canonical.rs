@@ -81,12 +81,14 @@ impl Default for SearchBudget {
 /// check of it, reads it once: the labels of its scope, as
 /// [`form_scope_labels`] gives them, and its canonical order and form, as
 /// [`CanonicalOrder::with_form`] gives them, with whether a search reached
-/// the cap; and its writes through name writers other than
-/// [`AsWritten`], as [`cached_write`] gives them.
+/// the cap; that form with the written order of its lists, as
+/// [`CanonicalOrder::with_written_lists`] gives it; and its writes through
+/// name writers other than [`AsWritten`], as [`cached_write`] gives them.
 #[derive(Debug, Default)]
 pub(super) struct FormCache {
     scope_labels: std::sync::OnceLock<Box<[LabelId]>>,
     order: std::sync::OnceLock<(CanonicalOrder, CanonicalForm, bool)>,
+    written_lists: std::sync::OnceLock<CanonicalForm>,
     writes: replay::WriteCache,
 }
 

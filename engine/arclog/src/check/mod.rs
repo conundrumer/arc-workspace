@@ -785,26 +785,6 @@ fn diagnostic(kind: DiagnosticKind, severity: Severity, message: Box<str>, at: N
     Diagnostic { kind, severity, message, location: Location::Path(at), cases: Box::new([]) }
 }
 
-/// `canonical`, the canonical form of `form`, followed by the source index
-/// of each child of each node of `form`, each node's children in canonical
-/// order, so that two forms of one canonical form are equal under it only
-/// where their lists are written in one order.
-fn with_written_order(form: &Form, canonical: &CanonicalForm, order: &CanonicalOrder) -> CanonicalForm {
-    fn write(node: NodeRef<'_>, at: &NodePath, order: &CanonicalOrder, out: &mut CanonicalWriter) {
-        let children = node.children();
-        for position in 0..children.len() as u32 {
-            let child = at.child(position);
-            let index = order.source_path(&child).0.last().expect("a child's path ends in its step").0;
-            out.write(&index.to_le_bytes());
-            write(children[index as usize], &child, order, out);
-        }
-    }
-    let mut out = CanonicalWriter::default();
-    out.write(&canonical.bytes);
-    write(NodeRef::from(form), &NodePath::default(), order, &mut out);
-    out.finish()
-}
-
 /// The signatures of the names `form`, at `path` in `program`, reads, in
 /// the order of each name's first read in the form's canonical order.
 fn read_signatures(program: &ResolvedProgram, form: &Form, path: &NodePath, order: &CanonicalOrder) -> Box<[Signature]> {

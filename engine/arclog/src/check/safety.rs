@@ -34,7 +34,7 @@ impl Check for SafetyCheck {
     /// order of each list of the form, since the check reads each list in
     /// its written order.
     fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
-        let canonical_form = super::with_written_order(at.form, at.canonical, at.order);
+        let canonical_form = CanonicalOrder::with_written_lists(at.form);
         Some(CheckCacheKey { check: self.id(), canonical_form, signatures: at.signatures.into() })
     }
 
