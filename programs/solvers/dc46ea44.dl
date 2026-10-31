@@ -431,4 +431,33 @@ travel(Ch, V) :- slide.travel(Ch, $U(), V).
     // The side of the stem's top cell that holds the hook's other cells.
     .decl hook_side(e: Example, d: Dir)
     hook_side(E, D) :- top(E, T), up(E, Up), perp_dir(Up, D), hook_in(E, Q), nearer(D, Q, T).
+
+    .decl hook_out(e: Example, p: Position)
+    hook_out(E, P) :- ex_out(E, P, Col), params.hook(Col).
+
+    // A lifted hook cell that another one lies beyond, toward the lift direction.
+    .decl below_top_out(e: Example, p: Position)
+    below_top_out(E, P) :- hook_out(E, P), up(E, D), hook_out(E, Q), nearer(D, Q, P).
+
+    // The lifted stem's top cell.
+    .decl top_out(e: Example, p: Position)
+    top_out(E, P) :- hook_out(E, P), up(E, _), !below_top_out(E, P).
+
+    // The box of the object where the output hangs it.
+    .init hung = Bbox<Example>
+    hung.cell(E, P) :-
+        ex_out(E, P, Col), !params.bg(Col), !params.hook(Col), !params.divider(Col).
+
+    // The corner of that box that lies on the tip, measured from the lifted
+    // stem's top cell.
+    // @ignore: determine prediction — the test runs no step of the program: it
+    //  finds the top of the hook the output shows, and the value is read off
+    //  the output
+    .decl tip_offset(k_back: number, k_side: number)
+    tip_offset(K_back, K_side) :-
+        hung.box(E, B), up(E, Up), opposite(Up, Back),
+        hook_side(E, Side), opposite(Side, Away),
+        diag_dirs(C, _, Back, Away), ex_out(E, P_c, _), box_corner(P_c, B, C),  // the corner
+        top_out(E, T), relative(T, P_c, V),                                     // from the top
+        dist(V, Up, K_back), dist(V, Away, K_side).                             // steps along each axis
 }
