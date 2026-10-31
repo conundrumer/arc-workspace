@@ -99,7 +99,7 @@ def order_frame(inst, ex):
     return Spec(".type {x}_dir = [key: {Key}, a: Axis, d: Dir]\n.init {x} = Order<{x}_dir, {T}>\n"
                 ".decl {x}_pos(key: {Key}, m: {T}, p_pos: Position)", {},
                 {"pos(Ky, M, P)": "{x}_pos(Ky, M, P)", "axis(Ky, A)": "in_axis(Ky, A)",
-                 "member(Ky, M, P)": "in_member(Ky, M, P)"},
+                 "member(Ky, M, P)": "in_member(Ky, M, P)", "nearer(Ky, D, M, M2)": "{x}.before([Ky, _, D], M, M2)"},
                 ("{x}.elem([{Ky}, A, D], {M}) :- in_member({Ky}, {M}, _), in_axis({Ky}, A), axis_of(D, A).\n"
                  "{x}.before([{Ky}, A, D], {M}, M_b) :- in_member({Ky}, {M}, {P}), in_member({Ky}, M_b, Q), {M} != M_b,"
                  " in_axis({Ky}, A), axis_of(D, A), dist({P}, D, K1), dist(Q, D, K2), K1 < K2.\n"
