@@ -491,7 +491,11 @@ class RenderMixin:
             counted(case)
             rels = sites[case]
             new = [f for f in fs if f.name in rels]
-            new += [f for f in main if f.name in rels - {g.name for g in fs} and not f.concept_dead]
+            # a concept form reads a relation that only alts derive; the case states the form without the reads of
+            # those that none of its forms derives
+            made_here = {g.name for g in fs}
+            new += [h for f in main if f.name in rels - made_here and not f.concept_dead
+                    if (h := self.without_reads(f, set(f.dead_reads) - made_here)) is not None]
             if not new:
                 continue
             # a form of the case that the new forms read, directly or through
