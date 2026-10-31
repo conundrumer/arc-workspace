@@ -66,7 +66,7 @@ def _guess_test(graph: Graph, at: InstancePath, head: Atom,
 
 
 @quotes("principles.md", "Models and tasks",
-        "A determination's clauses read the value from the evidence, or keep "
+        "A determination's clauses read the value from the whole evidence, or keep "
         "each value at which a fact of the inputs alone, or of the outputs "
         "alone, holds.")
 def check_determine_prediction(solver: Solver, runs: Runs) -> list[Finding]:
