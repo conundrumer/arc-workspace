@@ -609,15 +609,14 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     c.rel_name(("Params",), r.name), param_rules.get(r.name, []), helper_rows.get(r.name, []))
                 prop = helper_det[r.name][0]
                 name = libmap.DERIVATIONS[prop] if prop else None
+            elif any(d == "derive" for d, _, _ in ds):
+                # a DET_OR_RULE line: its first proposer's columns, which its derived readings have, so each reader
+                # names them, whether or not the line has a body
+                name = self.derive_props[r.name][0]
             elif parameter_source[r.name] != "proposal":
                 # A source derivation supplies its own columns and semantics;
                 # an advisory proposer plan must not replace it.
                 continue
-            elif any(d == "derive" for d, _, _ in ds):
-                if r.name in c.cand_params:
-                    continue   # a DET_OR_RULE with a body: the columns its body's labels give
-                # a DET_OR_RULE with no body: its first proposer's columns
-                name = self.derive_props[r.name][0]
             elif r.name in c.cand_params:
                 name = domain_proposer(types)
             else:
