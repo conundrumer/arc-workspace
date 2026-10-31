@@ -141,10 +141,16 @@ def plan_proposer(verdict: tuple[str, ...] | None, types: list[str], open_value:
     """The proposer a parameter's DET names by its plan verdict: the one
     `covered_proposer` gives; or, for an open parameter the plan leaves
     `undecided`, the type-domain proposer of `types` where one is defined, whose
-    values the fit keeps as the parameter's open values."""
+    values the fit keeps as the parameter's open values; or, for a parameter
+    the plan puts `overlimit`, the proposer of its cover where one is defined:
+    the plan's enumeration limit bounds the Souffle tooling, and the engine's
+    assignment cap bounds the product of the `DET`s' domains."""
     if verdict and verdict[0] == "undecided":
         prop = domain_proposer(types)
         return prop if open_value and prop in PROPOSER_COLS else None
+    if verdict and verdict[0] == "overlimit":
+        prop = covered_proposer(("covered", *verdict[2:]), types)
+        return prop if prop in PROPOSER_COLS else None
     return covered_proposer(verdict, types)
 
 

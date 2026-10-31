@@ -2,8 +2,10 @@
 per solver, with the hash of the inputs it was written from (`inputs_hash`:
 the solver file, its task file and its witness file) and the runner and lib
 stamp it was written under. A plan file is current where its inputs hash is
-the solver's, whatever its runner and lib stamp; `--require-current-lib` of
-`arclog_convert.convert` also requires the current stamp. A plan file holds the sections of
+the solver's, whatever its runner and lib stamp, and each line over the
+enumeration limit gives its cover, which the converter reads;
+`--require-current-lib` of `arclog_convert.convert` also requires the current
+stamp. A plan file holds the sections of
 `scripts/run_dl.py determination-plan` other than the one for the moved
 witnesses (`Plan.moved`), which the converter does not read. The plans are
 also kept in `store()`, one file per solver and inputs hash, which every
@@ -15,6 +17,7 @@ at most `CHUNK` solvers, then exiting so that none keeps the memory of a
 chunk."""
 
 import hashlib
+import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -27,6 +30,9 @@ from engine.pool import pool_size
 
 
 PLAN_HASH = "inputs sha256: "
+
+NO_COVER = re.compile(r"  \w+\(\d+\)")
+"""A line over the enumeration limit that gives no cover."""
 
 CHUNK = 16
 """The most solvers one worker process takes before it exits. A process
@@ -55,9 +61,11 @@ def kept_file(stem: str, digest: str) -> Path:
 
 def is_current(text: str, digest: str, lib_line: str | None) -> bool:
     """Whether the plan `text` records the inputs hash `digest`, and, where
-    `lib_line` is not None, the runner and lib line `lib_line`."""
+    `lib_line` is not None, the runner and lib line `lib_line`, and gives the
+    cover of each line over the enumeration limit."""
     lines = text.splitlines()
-    return PLAN_HASH + digest in lines and (lib_line is None or lib_line in lines)
+    return PLAN_HASH + digest in lines and (lib_line is None or lib_line in lines) \
+        and not any(NO_COVER.fullmatch(line) for line in lines)
 
 
 def current_lib_line() -> str:

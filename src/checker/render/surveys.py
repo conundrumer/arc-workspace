@@ -450,12 +450,13 @@ def _by_parameter(values: Sequence[PlanValue],
 
 
 def _over_lines(settle: Sequence[tuple[PlanValue, Candidates]],
-                printed: Printed) -> list[str]:
+                printed: Printed, note: Callable[[PlanValue], str]) -> list[str]:
     """One item per parameter over the enumeration limit, with its
-    candidate count (`by_parameter`); a parameter that stores a value per case
-    with the product of its cases' counts and each case's count."""
+    candidate count and the `note` of its cover (`by_parameter`); a parameter
+    that stores a value per case with the product of its cases' counts and
+    each case's count."""
     counts = {p: c.count for p, c in settle}
-    return [f"{printed(p)}({counts[p]})" if vs is None else
+    return [f"{printed(p)}({counts[p]}) {note(p)}" if vs is None else
             f"{printed(p)}({math.prod(counts[v] for v in vs)}: "
             + ", ".join(f"{v.name} {counts[v]}" for v in vs) + ")"
             for p, vs in by_parameter(p for p, _c in settle).items()]
@@ -481,7 +482,7 @@ JUDGE_FREE: Annotated[str, quotes(
 PLAN_HELP = mctx("""
     - Each entry under `write a determination relation:` is a value that needs a determination relation, with the rows each case needs, and the note beside it gives why.
     - `<n> of <m> joint assignments of the enumerated parameters reproduce every train pair`: of the `m` joint assignments of the parameters that their own domain settles, `n` give every train pair's output.
-    - The verdicts, which a covered line gives for its best proposer and `--verdicts` appends for each proposer:
+    - The verdicts, which a covered line and a line over the enumeration limit give for the best proposer and `--verdicts` appends for each proposer:
         - `exact`: the proposal is the stored value.
         - `narrowed(<n>)`: a one-column proposal that holds the stored value and is smaller than the column's domain, of `n` candidates, the non-empty subsets of the proposal for a multi-fact value.
         - `open`: a one-column proposal that holds the stored value and is no smaller than the domain.
@@ -635,7 +636,7 @@ def _over_part(v: _PlanValues) -> list[PlanPart]:
                               "the product of the remaining candidate counts goes "
                               "under the limit").format(
                                   joint=v.product, limit=ENUMERATION_LIMIT),
-                         _over_lines(v.classes.settle, v.printed), action=True)
+                         _over_lines(v.classes.settle, v.printed, v.covered_note), action=True)
 
 
 def _determined_part(v: _PlanValues) -> list[PlanPart]:

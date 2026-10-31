@@ -271,7 +271,8 @@ class ParamsMixin:
     def plan(self) -> dict[str, tuple[str, ...]]:
         """The determination plan's verdict on each parameter, from its
         output under plan/: ("covered", proposer, verdict),
-        ("write",), ("determined",), or ("undecided",)."""
+        ("overlimit", candidate count, proposer, verdict), ("write",),
+        ("determined",), or ("undecided",)."""
         if hasattr(self, "_plan"):
             return self._plan
         out: dict[str, tuple[str, ...]] = {}
@@ -289,9 +290,9 @@ class ParamsMixin:
                 if section is None:
                     continue
                 if section == "overlimit":
-                    m2 = re.match(r"\s+(\w+)\((\d+)\)", line)
+                    m2 = re.match(r"\s+(\w+)\((\d+)\) \((\S+) (\S+)\)", line)
                     if m2:
-                        out.setdefault(m2.group(1), ("overlimit", m2.group(2)))
+                        out.setdefault(m2.group(1), ("overlimit", *m2.groups()[1:]))
                     continue
                 m = re.match(r"\s+(\S+)(?:\s+\((\S+?)[ )](.*))?", line)
                 if not m:
