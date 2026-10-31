@@ -74,6 +74,8 @@
 .type OrderKey = [order: SlotOrder, sharing: OrderSharing, d: Dir]
 .type CornerAxis = [c: DiagDir, a: Axis]
 .type ExComp = [e: Example, id: Ident]
+.type ExDir = [e: Example, d: Dir]
+.type ExColor = [e: Example, col: Color]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -371,11 +373,17 @@ table_entry($SlotOrderPerDir(), D, N, P) :- params.dir_count_table(D, N, P).
     .decl bg(c: Color)
     bg(Col) :- in_color(_, Col), out_color(_, Col), !input_lacks(Col), !output_lacks(Col).
 
-    // The output frame cut into the panel arrangement's tiles.
+    // A mark color of the train outputs, and the box its marks span.
+    .decl mark_color(col: Color)
+    mark_color(Col) :- out_color(_, Col), !bg(Col).
+
+    .init mark_box = Bbox<Color>
+    mark_box.cell(Col, P) :- ex_out(_, P, Col), mark_color(Col).
+
+    // A panel is the box a mark color spans.
     .decl panel_size(a: Axis, n: number)
     panel_size(A, K) :-
-        ex_out(_, P, _), params.dir_panel(P_tile, _),
-        axis_elem(A), axis_dim(P, A, N), axis_dim(P_tile, A, M), tile_size(N, M, 0, K).
+        mark_box.box(_, B), ex_out(_, P, _), axis_elem(A), box_extent(B, P, A, K).
 
     .init panels = Tile2D<Unit>
     panels.cell(P) :- ex_out(_, P, _).
@@ -423,7 +431,7 @@ table_entry($SlotOrderPerDir(), D, N, P) :- params.dir_count_table(D, N, P).
     // A corner of a direction's panel that a train output marks.
     .decl corner_mark(e: Example, d: Dir, p: Position)
     corner_mark(E, D, P_inner) :-
-        ex_out(E, P, Col), params.dir_mark(D, Col), params.dir_panel(P_tile, D),
+        ex_out(E, P, Col), dir_mark(D, Col), dir_panel(P_tile, D),
         panels.tile($U(), P, P_tile, P_inner), box_corner(P_inner, ZERO, _).
 
     .init corner_order = LexOrder<CornerAxis>
@@ -441,7 +449,7 @@ table_entry($SlotOrderPerDir(), D, N, P) :- params.dir_count_table(D, N, P).
 
     .decl dir_order(d: Dir, a: Axis, c: DiagDir)
     dir_order(D, A, C) :-
-        params.dir_panel(_, D), axis_elem(A), diag_dir_elem(C), !order_defect(D, A, C).
+        dir_panel(_, D), axis_elem(A), diag_dir_elem(C), !order_defect(D, A, C).
 
     // The distinct pictures of the inputs' components, each cropped to its
     // bounding box.
@@ -464,4 +472,54 @@ table_entry($SlotOrderPerDir(), D, N, P) :- params.dir_count_table(D, N, P).
 
     .decl shape_table(id: Ident, p: Position)
     shape_table(Id, P) :- picture_class.id(C, Id), ex_picture(C, P).
+
+    // A side of a picture's box that holds a cell at one of its corners.
+    .decl side_defect(id: Ident, d: Dir)
+    side_defect(Id, D) :- shape_table(Id, P), box_corner(P, ZERO, C), dir_of(C, _, D).
+
+    // A picture points toward the side of its box whose corners are both
+    // empty: the stem of a T.
+    .decl shape_key(id: Ident, d: Dir)
+    shape_key(Id, D) :- shape_table(Id, _), dir_elem(D), !side_defect(Id, D).
+
+    .decl out_example(e: Example)
+    out_example(E) :- ex_out(E, _, _).
+
+    // The components of each train input that point toward each direction.
+    .init dir_shapes = Tally<ExDir, ExComp>
+    dir_shapes.item([E, D], [E, C]) :-
+        out_example(E), picture_class.id([E, C], Id), shape_key(Id, D).
+    dir_shapes.domain([E, D]) :- out_example(E), dir_elem(D).
+
+    // The marks of each color in each train output.
+    .init marks = Tally<ExColor, Position>
+    marks.item([E, Col], P) :- ex_out(E, P, Col), mark_color(Col).
+    marks.domain([E, Col]) :- out_example(E), mark_color(Col).
+
+    // A train output whose marks of a color count the shapes toward a
+    // direction, and a direction and color for which some output does not.
+    .decl count_match(e: Example, d: Dir, col: Color)
+    count_match(E, D, Col) :- dir_shapes.tally([E, D], N), marks.tally([E, Col], N).
+
+    .decl mark_defect(d: Dir, col: Color)
+    mark_defect(D, Col) :-
+        dir_elem(D), mark_color(Col), out_example(E), !count_match(E, D, Col).
+
+    .decl dir_mark(d: Dir, c: Color)
+    dir_mark(D, Col) :- dir_elem(D), mark_color(Col), !mark_defect(D, Col).
+
+    // The panel that holds a direction's marks.
+    .decl dir_panel(p_tile: Position, d: Dir)
+    dir_panel(P_tile, D) :-
+        ex_out(_, P, Col), dir_mark(D, Col), panels.tile($U(), P, P_tile, _).
+
+    // The panel cells a train output marks at the count of shapes toward a
+    // direction.
+    .decl dir_count_table(d: Dir, n: number, p: Position)
+    dir_count_table(D, N, P_inner) :-
+        dir_shapes.tally([E, D], N), dir_mark(D, Col), dir_panel(P_tile, D),
+        ex_out(E, P, Col), panels.tile($U(), P, P_tile, P_inner).
+
+    .decl count_table(n: number, p: Position)
+    count_table(N, P) :- dir_count_table(_, N, P).
 }
