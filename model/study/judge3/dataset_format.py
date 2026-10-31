@@ -40,6 +40,13 @@ def ordered_rows(rows):
         allow_nan=False, sort_keys=True, separators=(',', ':')))
 
 
+# Table-level keys of a table acquired at every live assignment: `kept_assignments` (the numbers of the case's
+# kept assignments), `assignments` (the DET slot rows of each number, `{slot: [row, ...]}`), `assignments_partial`
+# (an assignment lacks entries because the native walk stopped) and `assignments_fallback` (the reason the table
+# holds the kept assignments only).
+ASSIGNMENT_KEYS = ('kept_assignments', 'assignments', 'assignments_partial', 'assignments_fallback')
+
+
 def table_packet(acquired, *, table_id, source_name, case, roles,
                  callable_atom=None, copy_rows=True, sort_rows=False):
     """Package evaluator_train.acquire_train_table output, without truncation.
@@ -51,6 +58,11 @@ def table_packet(acquired, *, table_id, source_name, case, roles,
     this call and retains the exact source row object alongside its result.
     Empty rows are real empty relations; missing contexts remain explicit.
     A native TASK entry must have been broadcast by the evaluator, not here.
+    A TEST entry (example_kind 2) is written as `test`, a TRAIN entry as `train`.
+    The packet carries the evaluator's `test_rows` flag when it has one: False
+    marks a table that has no test rows, such as one that reads the test output.
+    `test_rows_fallback` (the reason) says the table was over the cell cap with its test
+    entries and holds its train entries only.
     """
     if type(copy_rows) is not bool:
         raise ValueError("copy_rows must be boolean")
@@ -66,15 +78,20 @@ def table_packet(acquired, *, table_id, source_name, case, roles,
                            **{k: deepcopy(field[k]) for k in ('frame', 'callable_row_path') if k in field}))
     entries = []
     identities = set()
+    axes = set()
     for item in acquired['entries']:
-        if item['example_kind'] != 1:
-            raise ValueError('public table accepts only evaluator-selected TRAIN entries')
+        kind = item['example_kind']
+        if kind not in (1, 2):
+            raise ValueError('public table accepts only evaluator-selected TRAIN and TEST entries')
+        if kind == 2 and acquired.get('test_rows') is False:
+            raise ValueError('a table marked without test rows holds a test entry')
         assignment, example, model = item['assignment'], item['example_index'], item['model']
         if any(type(x) is not int or x < 0 for x in (assignment, example, model)):
-            raise ValueError('assignment, train index and local model must be nonnegative integers')
-        identity = assignment, example, model
+            raise ValueError('assignment, example index and local model must be nonnegative integers')
+        identity = assignment, kind, example, model
+        axes.add((assignment, kind, example))
         if identity in identities:
-            raise ValueError('duplicate train model entry')
+            raise ValueError('duplicate train model entry' if kind == 1 else 'duplicate test model entry')
         identities.add(identity)
         rows = []
         for row in item['rows']:
@@ -94,20 +111,28 @@ def table_packet(acquired, *, table_id, source_name, case, roles,
                 rows = ordered_rows(rows)
                 if not copy_rows:
                     ordered[key] = (item['rows'], rows)
-        entries.append(dict(assignment=assignment, train=example, model=model,
-                            row_count=len(rows), rows=rows))
+        entries.append(dict([('assignment', assignment), ('train' if kind == 1 else 'test', example)],
+                            model=model, row_count=len(rows), rows=rows))
     required = [list(k) for k in acquired['required']]
     missing = [list(k) for k in acquired['missing']]
-    if any(len(k) != 3 or k[1] != 1 for k in required + missing):
-        raise ValueError('public context axes must be [assignment, 1, train_index]')
-    present = {(e['assignment'], 1, e['train']) for e in entries}
+    if any(len(k) != 3 or k[1] not in (1, 2) for k in required + missing):
+        raise ValueError('public context axes must be [assignment, 1 or 2, example_index]')
+    present = axes
     expected = {tuple(k) for k in required}
     if present - expected or set(map(tuple, missing)) != expected - present:
         raise ValueError('required/missing contexts disagree with supplied entries')
-    return dict(format=FORMAT, kind='table', id=table_id, source_name=source_name,
-                case=case, roles=list(roles), callable_atom=callable_atom,
-                fields=fields, entries=entries, required=required, missing=missing,
-                complete=not missing, row_count=sum(e['row_count'] for e in entries))
+    packet = dict(format=FORMAT, kind='table', id=table_id, source_name=source_name,
+                  case=case, roles=list(roles), callable_atom=callable_atom,
+                  fields=fields, entries=entries, required=required, missing=missing,
+                  complete=not missing, row_count=sum(e['row_count'] for e in entries))
+    if 'test_rows' in acquired:
+        packet['test_rows'] = acquired['test_rows']
+    if 'test_rows_fallback' in acquired:
+        packet['test_rows_fallback'] = acquired['test_rows_fallback']
+    # A table acquired at every live assignment (evaluator_train `all_assignments`) says which numbers
+    # are the case's kept assignments and what DET slot rows each number stands for.
+    packet.update({k: deepcopy(acquired[k]) for k in ASSIGNMENT_KEYS if k in acquired})
+    return packet
 
 
 def result_packet(checked, *, command, pair_id, table_path=None):
@@ -140,12 +165,18 @@ def table_summary(table, path):
     """Small index metadata, copied from the complete table without its rows."""
     if table.get('format')!=FORMAT or table.get('kind')!='table':
         raise ValueError('expected a public table packet')
-    return dict(id=table['id'],source_name=table['source_name'],case=table['case'],
+    summary = dict(id=table['id'],source_name=table['source_name'],case=table['case'],
                 roles=deepcopy(table['roles']),path=path,fields=deepcopy(table['fields']),
                 callable_atom=table['callable_atom'],row_count=table['row_count'],
                 complete=table['complete'],missing=deepcopy(table['missing']),
-                entry_counts=[{k:entry[k] for k in ('assignment','train','model','row_count')}
+                entry_counts=[{k:entry[k] for k in ('assignment','train','test','model','row_count') if k in entry}
                               for entry in table['entries']])
+    if 'test_rows' in table:
+        summary['test_rows'] = table['test_rows']
+    if 'test_rows_fallback' in table:
+        summary['test_rows_fallback'] = table['test_rows_fallback']
+    summary.update({k: deepcopy(table[k]) for k in ASSIGNMENT_KEYS if k in table and k != 'assignments'})
+    return summary
 
 
 def pair_packet(*, pair_id, task, case, change, tables, comparisons='comparisons.json',

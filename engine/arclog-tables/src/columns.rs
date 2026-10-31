@@ -1327,8 +1327,12 @@ fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Co
 // Each annotation output is genuine ownership even when its value run was
 // interned earlier. Cover simultaneous per-row scratch, sorted extent/status
 // copies and Python containers; retain the lease on the returned CaseColumns.
+// Each row keeps an inner status vector: its 24-byte slot and 32 bytes of
+// allocation slack, besides one status byte and two extent cells (8 bytes)
+// for each column. The preflight eight times that is `448 + 72 * columns`
+// bytes for each row, which the charge below covers.
 fn annotation_copy(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclog::session::SessionAllocation>>,rows:&Relation,columns:usize)->Result<(),arclog::eval::ReachedBound> {
-    let allocation=materializer.admit(rows,Materializer::row_bytes(columns.saturating_mul(128),8))?;
+    let allocation=materializer.admit(rows,Materializer::row_bytes(columns.saturating_mul(128).saturating_add(160),8))?;
     allocations.push(allocation);
     Ok(())
 }

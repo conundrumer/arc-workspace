@@ -467,7 +467,7 @@ class ReplayEvaluator:
         result['artifact'] = self._artifact(record, dict(clause=clause, profile=result['profile']), result)
         return result
 
-    def _coverage(self, record, capture, inserted=None, form=None, *, entry_mask=None):
+    def _coverage(self, record, capture, inserted=None, form=None, *, entry_mask=None, allow_test=False):
         n = capture['native']; ts = n['tables']
         if form is None:
             form = int(record['point'][0])+1
@@ -485,7 +485,7 @@ class ReplayEvaluator:
                            for e in entry_mask)
                     or len(entry_mask) != len(set(entry_mask))):
                 raise ValueError('invalid admitted full-row coverage entry mask')
-            if any(original.entries['example_kind'][e] not in (0, 1) for e in entry_mask):
+            if any(original.entries['example_kind'][e] not in ((0, 1, 2) if allow_test else (0, 1)) for e in entry_mask):
                 raise ValueError('selected full-row coverage requires TRAIN/TASK entries')
             allowed = set(entry_mask)
             scoped = copy(original)
@@ -599,10 +599,15 @@ class ReplayEvaluator:
                         if (full_rows_selector is not None and self._packing_attempt is not None
                                 and self._packing_attempt.get('selected_only') is True):
                             selection = self._packing_attempt['selection']
-                            if (selection.get('test_entries_selected') is not False
+                            kinds = self.captures[-1]['native']['_native_reader'].entries['example_kind']
+                            has_test = any(kinds[e] == 2 for e in selection['entries'])
+                            # A mask with TEST entries needs the selector's explicit allowance.
+                            if (selection.get('test_entries_selected') is not has_test
+                                    or (has_test and selection.get('test_entries_allowed') is not True)
                                     or report.get('full_rows_entries') != selection['entries']):
                                 raise ValueError('selected full-row coverage differs from admitted TRAIN/TASK mask')
                             coverage_options['entry_mask'] = report['full_rows_entries']
+                            coverage_options['allow_test'] = has_test
                         result.update(engine='ran', kept_coverage=self._coverage(
                             record, self.captures[-1], form=form, **coverage_options))
                         if result['kept_coverage']['status'] == 'unknown':

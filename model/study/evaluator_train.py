@@ -2,7 +2,9 @@
 
 This adapter does no replay on import or table acquisition. Matching and cell
 projection delegate to the existing evaluator and canonical producer. TEST
-entries are excluded before assignment inspection or cell decoding.
+entries are excluded before assignment inspection or cell decoding, unless
+the caller passes `ntest` > 0: then the TEST example entries of the native table
+(kind 2) and the TASK entries' broadcast to the TEST examples are acquired too.
 """
 from copy import deepcopy
 from functools import lru_cache
@@ -121,33 +123,130 @@ def _visibility():
     return namespace['visible']
 
 
-def train_entry_contexts(ev, native, table, record, *, ntrain, held_entries=None):
-    """Canonical kept TRAIN/TASK selection before any value/extent decoding."""
+@lru_cache(maxsize=1)
+def _compact():
+    """The renderer's cell-row key, used to drop repeated rows."""
+    source = CODE_ROOT / 'judge3/render_pair.py'
+    tree = ast.parse(source.read_text(), str(source))
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'compact')
+    namespace = dict(json=json)
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), namespace)
+    return namespace['compact']
+
+
+def test_visible(entry, schema, ntrain, example):
+    """The rows of `entry` that belong to TEST example `example`.
+
+    The native numbers the examples of a task as the train pairs and then the
+    test inputs (engine/arclog/src/task.rs:218-221), so the Example column
+    value of TEST example j is ntrain + j (engine/arclog-tables/src/tables.rs:74-82
+    maps a value below ntrain to (1, value) and any other to (2, value - ntrain)).
+    A row is kept when every Example column of the table holds that value. A table
+    with no Example column keeps all rows. Repeated rows drop, as in
+    `Document.visible`, which stays the TRAIN policy and rejects TEST entries.
+    """
+    compact = _compact()
+    columns = [c['index'] for c in schema if c['type'] == 'Example']
+    value = ntrain + example
+    rows = [row for row in entry['rows'] if all(row[i]['value'][0] == value for i in columns)]
+    unique = {compact(row): row for row in rows}
+    return dict(entry, rows=[unique[k] for k in sorted(unique)])
+
+
+def train_entry_contexts(ev, native, table, record, *, ntrain, ntest=0, held_entries=None):
+    """Canonical kept TRAIN/TASK selection before any value/extent decoding.
+
+    With `ntest` > 0 the TEST entries (kind 2) take part, and the kept selection
+    requires the test axes too."""
     from tables import Incomplete, kept_entries
     if type(ntrain) is not int or ntrain < 1:
         raise Incomplete('TRAIN acquisition requires the authenticated train input count')
+    if type(ntest) is not int or ntest < 0:
+        raise Incomplete('TEST acquisition requires a nonnegative test input count')
+    kinds = (0, 1, 2) if ntest else (0, 1)
     reader = native['_native_reader']
     # Only assignment metadata is read for eligible entries. Dummy rows allow
     # the canonical matcher to select contexts without decoding any value rows.
     metadata = []
     for index in reader.bytable[table]:
         kind = reader.entries['example_kind'][index]
-        if kind not in (0, 1):
+        if kind not in kinds:
             continue
         example = reader.entries['example_index'][index]
         if kind == 1 and not 0 <= example < ntrain:
             raise Incomplete('native TRAIN entry is outside the authenticated input axis')
+        if kind == 2 and not 0 <= example < ntest:
+            raise Incomplete('native TEST entry is outside the authenticated input axis')
         metadata.append(dict(entry=index, example=(kind, example),
             model=reader.entries['model'][index], rows=(),
             assignment=tuple(sorted((d['relation'], tuple(tuple(r) for r in d['rows']))
                                     for d in reader.assignment(index)))))
     ts = native['tables']
     return kept_entries(ev.legacy, metadata, ts['det_relations'][table],
-                           ts['det_types'][table], record, ntrain, 0, held_entries=held_entries)
+                           ts['det_types'][table], record, ntrain, ntest, held_entries=held_entries)
 
 
-def select_train_full_rows(ev, native, record, *, ntrain):
-    """Pure mask/receipt from canonical kept metadata; no packed owner escapes."""
+def _slot(relation):
+    """The sampler's key for a DET slot: the number of `&r12` as text, else the relation name."""
+    return relation[2:] if relation.startswith('&r') and relation[2:].isdigit() else relation
+
+
+def assignment_plan(reader, ts, table, matched, *, ntrain, ntest=0, width=None, copy_rows=True):
+    """Every live assignment of a table that reads a DET, numbered as the sampler numbers them.
+
+    `matched` is the table's `train_entry_contexts` result. Its kept contexts and
+    its `other_contexts` together are one entry per example and assignment that
+    the native walk reached. An assignment is the DET slot rows that the entry
+    holds; it takes the number of its first appearance over the entries, as
+    `rulecheck._dets_key` numbers a draw's assignments: the TRAIN/TASK entries in
+    entry order first, then the TEST entries (a set of slot rows that only a TEST
+    entry has takes the next number).
+
+    Returns None where the table reads no DET, or where a kept assignment has no
+    entry (the kept form then reports it as missing), else a dict:
+    - `contexts`: every entry's context, in entry order; `numbers` maps an
+      assignment key to its number; `assignments` lists the DET slot rows of each
+      number, `{slot: [row, ...]}` with the slot spelled as the sampler's `dets` do
+      (`12` for the DET `&r12`); `kept_numbers` the numbers of the case's kept
+      assignments;
+    - `missing`: the kept axes without an entry, `[number, kind, example]` with the
+      lowest number of the kept assignment;
+    - `cells`: the Python cells of the table at every assignment, counted as
+      `acquire_train_table` counts them (`width` is the projected field count)."""
+    if not ts['det_relations'][table]:
+        return None
+    contexts = sorted(matched['contexts'] + matched['other_contexts'], key=lambda c: c['entry'])
+    numbers = {}
+    for context in [c for c in contexts if c['example'][0] != 2] + [c for c in contexts if c['example'][0] == 2]:
+        numbers.setdefault(context['assignment'], len(numbers))
+    by_kept = {}
+    for context in matched['contexts']:
+        for a in context['kept_assignments']:
+            by_kept.setdefault(a, set()).add(numbers[context['assignment']])
+    if {k[0] for k in matched['required']} - by_kept.keys():
+        return None
+    rows = lambda c: int(reader.entries['rows'][c['entry']])
+    examples = lambda c: ntrain + ntest if reader.entries['example_kind'][c['entry']] == 0 else 1
+    cells = len(reader.schema(table)) * sum(rows(c) for c in contexts)
+    if copy_rows:
+        cells += (width if width is not None else len(reader.schema(table))) * sum(rows(c) * examples(c) for c in contexts)
+    return dict(contexts=contexts, numbers=numbers,
+        assignments=[{_slot(name): [list(row) for row in value] for name, value in key} for key in numbers],
+        kept_numbers=sorted({n for found in by_kept.values() for n in found}),
+        missing=[[min(by_kept[a]), kind, example] for a, kind, example in matched['missing']],
+        cells=cells)
+
+
+def select_train_full_rows(ev, native, record, *, ntrain, ntest=0, all_assignments=False):
+    """Pure mask/receipt from canonical kept metadata; no packed owner escapes.
+
+    With `ntest` > 0 the mask holds the kept TEST entries too, and the receipt
+    says so (`test_entries_allowed`). The native packs full rows for any entry
+    index in the mask, whatever its kind (engine/arclog-tables/src/columns.rs:438-441).
+    With `all_assignments` the mask holds the entries of every live assignment of a
+    table that reads a DET (`assignment_plan`), unless that table is over
+    TRAIN_TABLE_MAX_CELLS at every assignment: it then keeps the kept entries only,
+    and the table's proof says so (`all_assignments`)."""
     from tables import axis_receipt
     reader = native['_native_reader']
     selected = set()
@@ -155,10 +254,17 @@ def select_train_full_rows(ev, native, record, *, ntrain):
     for table in range(len(native['tables']['form'])):
         proof = dict(table=table)
         try:
-            matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain)
+            matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain, ntest=ntest)
             proof.update(status='matched', **axis_receipt(matched))
             proof['entries'] = []
             table_entries = set()
+            plan = assignment_plan(reader, native['tables'], table, matched, ntrain=ntrain, ntest=ntest) if all_assignments else None
+            if plan is not None:
+                if plan['cells'] > TRAIN_TABLE_MAX_CELLS:
+                    proof['all_assignments'] = dict(status='fallback', cells=plan['cells'], assignments=len(plan['assignments']))
+                else:
+                    proof['all_assignments'] = dict(status='selected', cells=plan['cells'], assignments=len(plan['assignments']))
+                    table_entries.update(c['entry'] for c in plan['contexts'])
             for context in matched['contexts']:
                 entry = context['entry']
                 table_entries.add(entry)
@@ -173,9 +279,13 @@ def select_train_full_rows(ev, native, record, *, ntrain):
             # result. A failed match grants no full-row transport selection.
             proof.update(status='unavailable', reason=str(error))
         tables.append(proof)
-    return dict(schema='evaluator-train-entry-mask-v1', entries=sorted(selected),
-                tables=tables, test_entries_selected=False,
-                selection='canonical kept_entries over native TRAIN/TASK metadata')
+    result = dict(schema='evaluator-train-entry-mask-v1', entries=sorted(selected),
+                  tables=tables,
+                  test_entries_selected=any(reader.entries['example_kind'][e] == 2 for e in selected),
+                  selection='canonical kept_entries over native TRAIN/TASK metadata')
+    if ntest:
+        result['test_entries_allowed'] = True
+    return result
 
 
 PROJECTED_FLOWS_MAX_BYTES = 1024 * 1024
@@ -255,9 +365,53 @@ def train_table_cells(packet):
     return len(packet['fields']) * sum(len(entry['rows']) for entry in packet['entries'])
 
 
-def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
+def without_test_rows(packet):
+    """The acquired packet without its TEST entries and test axes, marked `test_rows` False.
+
+    For a table that reads the test output (fact ex_output, or a node in
+    `ex_output_dependent_nodes`): such a table has no test rows. A packet from
+    `_input_train` takes the same call."""
+    private = {k: [axis for axis in packet[k] if axis[1] != 2] for k in ('_kept_required', '_kept_missing') if k in packet}
+    return dict(packet,
+        entries=[e for e in packet['entries'] if e['example_kind'] != 2],
+        required=[k for k in packet['required'] if k[1] != 2],
+        missing=[k for k in packet['missing'] if k[1] != 2],
+        test_rows=False, receipt=dict(packet['receipt'], test_cells=False), **private)
+
+
+def kept_form(packet):
+    """The packet of a table acquired with `all_assignments`, at the case's kept assignments only.
+
+    The result is the packet that `acquire_train_table` gives without the option:
+    `assignment` is the index of the kept assignment, and a model counts per
+    (kept assignment, kind, example) in entry order. A packet without the option,
+    or a table that reads no DET, comes back as it is. The rows are shared with
+    the packet."""
+    if '_kept_required' not in packet:
+        return packet
+    entries, models = [], {}
+    items = packet['entries']
+    i = 0
+    while i < len(items):
+        j = i
+        while j < len(items) and items[j]['_context'] == items[i]['_context']:
+            j += 1
+        for a in items[i]['_kept']:
+            for e in items[i:j]:
+                axis = (a, e['example_kind'], e['example_index'])
+                model = models.get(axis, 0)
+                models[axis] = model + 1
+                entries.append(dict(assignment=a, example_kind=e['example_kind'], example_index=e['example_index'],
+                                    model=model, rows=e['rows']))
+        i = j
+    dropped = ('kept_assignments', 'assignments', 'assignments_partial', 'assignments_fallback', '_kept_required', '_kept_missing')
+    return dict({k: v for k, v in packet.items() if k not in dropped}, entries=entries,
+                required=packet['_kept_required'], missing=packet['_kept_missing'])
+
+
+def acquire_train_table(ev, native, table, record, *, ntrain, ntest=0, test_rows=True, fields=None,
                         projection=None, output_aliases=None, source=None, held_entries=None, copy_rows=True,
-                        include_projected_flows=False):
+                        include_projected_flows=False, all_assignments=False, fall_back=None, test_rows_fallback=False):
     """Return full typed TRAIN cells at the case's local kept assignments.
 
     `native` is the canonical native payload/reader, not grouped value tuples.
@@ -267,6 +421,29 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
     Missing kept contexts are explicit and do not become empty tables.
     copy_rows=False shares read-only projected rows across local contexts; the
     synchronous feature writer retains them until serialization completes.
+    ntest > 0 adds the TEST entries (kind 2); a TASK entry is broadcast to every
+    train and every test example, and a test example keeps the rows of its own
+    Example value (`test_visible`). The packet then has `ntrain`, `ntest` and
+    `test_rows`. A table of the native fact ex_output, or a call with
+    test_rows=False, gets no test entries: it is acquired as with ntest=0 and
+    marked `test_rows` False. ntest=0 gives the packet as before.
+    all_assignments=True gives a table that reads a DET its entries at every live
+    assignment, not only the case's kept ones (`assignment_plan`; not with
+    `held_entries`). `assignment` is then the number of the assignment by first
+    appearance of its DET slot rows, and the packet adds `kept_assignments` (the
+    numbers of the case's kept assignments), `assignments` (the DET slot rows of
+    each number), `assignments_partial` (True where an assignment lacks entries
+    because the native walk stopped or an entry is unreadable) and
+    `assignments_fallback` (the reason, where the table is over
+    TRAIN_TABLE_MAX_CELLS at every assignment, or `fall_back` is given: it then
+    holds the kept assignments only, with the same numbers). A table that reads no
+    DET is acquired as without the option.
+    test_rows_fallback=True is for a call with `ntest` > 0 (and test_rows True): a table that is
+    over TRAIN_TABLE_MAX_CELLS with its test entries, at the assignments it would hold (every live
+    one, or the kept ones where `assignments_fallback` applies), is acquired again at the kept
+    assignments without test entries. The packet is then marked `test_rows` False and
+    `test_rows_fallback` (the reason, with the count). Only a table that is still over the cap
+    without test entries raises. Default off: such a table raises.
     """
     if type(copy_rows) is not bool:
         raise ValueError("copy_rows must be boolean")
@@ -278,7 +455,12 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
     from evaluator import sha
     if type(ntrain) is not int or ntrain < 1:
         raise Incomplete('TRAIN acquisition requires the authenticated train input count')
+    if type(ntest) is not int or ntest < 0 or type(test_rows) is not bool:
+        raise Incomplete('TEST acquisition requires a nonnegative test input count')
     reader = native['_native_reader']
+    test_dropped = False
+    if ntest and (not test_rows or native['tables']['fact'][table] == 'ex_output'):
+        ntest, test_dropped = 0, True
     schema = deepcopy(reader.schema(table))
     if projection is None:
         if fields is not None:
@@ -305,44 +487,105 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
               or comparison_type(type_identity(ev, record, schema[index]['type'])[0]) != comparison_type(type_identity(ev, record, field.get('native_type',field['type']))[0])):
             raise Incomplete('TRAIN projected field type or physical index differs')
 
-    matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain, held_entries=held_entries)
+    matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain, ntest=ntest, held_entries=held_entries)
+    plan = None
+    if all_assignments and held_entries is None:
+        plan = assignment_plan(reader, native['tables'], table, matched, ntrain=ntrain, ntest=ntest,
+                               width=len(fields), copy_rows=copy_rows)
+    fallback = None
+    if plan is not None:
+        fallback = fall_back
+        if fallback is None and plan['cells'] > TRAIN_TABLE_MAX_CELLS:
+            fallback = f"{plan['cells']} cells at every assignment, over TRAIN_TABLE_MAX_CELLS={TRAIN_TABLE_MAX_CELLS}"
+    # The contexts to acquire: the kept ones, or with a plan every one that the native walk reached.
+    used = plan['contexts'] if plan is not None and fallback is None else matched['contexts']
     contexts = [(context, int(reader.entries['rows'][context['entry']]),
-                 ntrain if reader.entries['example_kind'][context['entry']] == 0 else 1)
-                for context in matched['contexts']]
+                 ntrain + ntest if reader.entries['example_kind'][context['entry']] == 0 else 1)
+                for context in used]
     cells = len(schema) * sum(rows for _, rows, _ in contexts)
     if copy_rows:
-        cells += len(fields) * sum(rows * len(context['kept_assignments']) * examples for context, rows, examples in contexts)
+        cells += len(fields) * sum(rows * (1 if plan is not None else len(context['kept_assignments'])) * examples
+                                   for context, rows, examples in contexts)
     if cells > TRAIN_TABLE_MAX_CELLS:
+        if test_rows_fallback and ntest and not test_dropped:
+            # Last step: the kept assignments (as `assignments_fallback` where there is a plan) and train entries only.
+            packet = acquire_train_table(ev, native, table, record, ntrain=ntrain, ntest=ntest, test_rows=False, fields=fields,
+                projection=projection, output_aliases=output_aliases, source=source, held_entries=held_entries, copy_rows=copy_rows,
+                include_projected_flows=include_projected_flows, all_assignments=all_assignments,
+                fall_back=fallback if fallback is not None else fall_back)
+            packet['test_rows_fallback'] = f'{cells} cells with test rows, over TRAIN_TABLE_MAX_CELLS={TRAIN_TABLE_MAX_CELLS}'
+            return packet
         raise Incomplete(f'TRAIN table {table} needs {cells} cells, over TRAIN_TABLE_MAX_CELLS={TRAIN_TABLE_MAX_CELLS}')
     entries = []
     model_counts = {}
-    for context in matched['contexts']:
+    partial = False
+    for context in used:
         index = context['entry']
-        # The kind gate above precedes this sole value/geometry decoder.
-        decoded = reader.entry(index, with_extents=True, projection_stop=False)
-        if decoded['example_kind'] not in (0, 1):
-            raise Incomplete('native entry example kind changed during TRAIN acquisition')
-        # TASK facts may themselves contain test Example values. Filter with
-        # the producer policy before projection can hide the Example column.
-        decoded = _visibility()(SimpleNamespace(ntrain=ntrain), decoded, schema)
-        projected = _projector()(dict(entries=[dict(decoded, choice=None)]), projection)[0]['rows']
-        examples = range(ntrain) if decoded['example_kind'] == 0 else [decoded['example_index']]
-        for assignment in context['kept_assignments']:
-            for example in examples:
-                axis = (assignment, 1, example)
+        kept_context = 'kept_assignments' in context
+        try:
+            # The kind gate above precedes this sole value/geometry decoder.
+            decoded = reader.entry(index, with_extents=True, projection_stop=False)
+            if decoded['example_kind'] not in ((0, 1, 2) if ntest else (0, 1)):
+                raise Incomplete('native entry example kind changed during TRAIN acquisition')
+            kind = decoded['example_kind']
+            # (example kind, example index, projected rows) of each example that
+            # the entry serves: a TASK entry serves every example.
+            served = []
+            if kind != 2:
+                # TASK facts may themselves contain test Example values. Filter with
+                # the producer policy before projection can hide the Example column.
+                visible = _visibility()(SimpleNamespace(ntrain=ntrain), decoded, schema)
+                projected = _projector()(dict(entries=[dict(visible, choice=None)]), projection)[0]['rows']
+                served += [(1, example, projected)
+                           for example in (range(ntrain) if kind == 0 else [decoded['example_index']])]
+            if ntest and kind != 1:
+                for example in (range(ntest) if kind == 0 else [decoded['example_index']]):
+                    visible = test_visible(decoded, schema, ntrain, example)
+                    served.append((2, example, _projector()(dict(entries=[dict(visible, choice=None)]), projection)[0]['rows']))
+        except (ValueError, KeyError, IndexError, TypeError):
+            # An assignment that is not the case's kept one and that the native cannot give
+            # (a stop of the walk or of its rows, or an unreadable entry) leaves the table partial.
+            if plan is None or kept_context:
+                raise
+            partial = True
+            continue
+        for assignment in ([plan['numbers'][context['assignment']]] if plan is not None else context['kept_assignments']):
+            for example_kind, example, projected in served:
+                axis = (assignment, example_kind, example)
                 model = model_counts.get(axis, 0)
                 model_counts[axis] = model + 1
-                entries.append(dict(assignment=assignment, example_kind=1,
-                    example_index=example, model=model, rows=deepcopy(projected) if copy_rows else projected))
+                entries.append(dict(assignment=assignment, example_kind=example_kind,
+                    example_index=example, model=model, rows=deepcopy(projected) if copy_rows else projected,
+                    **(dict(_context=index, _kept=list(context.get('kept_assignments', ()))) if plan is not None else {})))
+    required = [list(k) for k in sorted(matched['required'])]
+    missing = [list(k) for k in matched['missing']]
+    if plan is not None:
+        missing = plan['missing']
+        required = [list(k) for k in sorted({(e['assignment'], e['example_kind'], e['example_index']) for e in entries}
+                                            | {tuple(k) for k in missing})]
     packet = dict(fields=fields, entries=entries,
-        required=[list(k) for k in sorted(matched['required'])],
-        missing=[list(k) for k in matched['missing']],
+        required=required,
+        missing=missing,
         source_schema=schema, projection=projection, output_aliases=dict(output_aliases or {}),
         receipt=dict(source=deepcopy(source), source_sha256=sha(record), table=table,
             kept_context_sha256=sha(record['evaluation']['kept_assignments']),
-            implementation=dependency_receipt(), test_cells=False,
+            implementation=dependency_receipt(), test_cells=ntest > 0,
             model_namespace='local to kept assignment and TRAIN input',
             task_broadcast='native TASK entries over authenticated TRAIN axis'))
+    if ntest:
+        packet.update(ntrain=ntrain, ntest=ntest, test_rows=True)
+        packet['receipt']['task_broadcast'] = 'native TASK entries over authenticated TRAIN and TEST axes'
+    elif test_dropped:
+        packet['test_rows'] = False
+    if plan is not None:
+        packet.update(kept_assignments=plan['kept_numbers'], assignments=plan['assignments'],
+                      _kept_required=[list(k) for k in sorted(matched['required'])],
+                      _kept_missing=[list(k) for k in matched['missing']])
+        if partial:
+            packet['assignments_partial'] = True
+        if fallback is not None:
+            packet['assignments_fallback'] = fallback
+        packet['receipt']['model_namespace'] = 'local to assignment number and TRAIN input'
     if include_projected_flows:
         axes = dict(required=packet['required'], missing=packet['missing'], entries=[
             [e['assignment'], e['example_kind'], e['example_index'], e['model'], len(e['rows'])]
@@ -380,7 +623,7 @@ def acquire_candidate_train(ev, native, table, record, *, ntrain, proof,
         output_aliases=aliases, source=source)
 
 
-def acquire_input_train(ev, native, table, record, *, ntrain, source=None):
+def acquire_input_train(ev, native, table, record, *, ntrain, ntest=0, source=None):
     """Expose per-input `input` from the exact native `ex_input` fact table.
 
     Kept matching, TRAIN visibility, TASK broadcast and typed-cell decoding are
@@ -391,7 +634,7 @@ def acquire_input_train(ev, native, table, record, *, ntrain, source=None):
     from tables import Incomplete
     if native['tables']['fact'][table] != 'ex_input':
         raise Incomplete('input TRAIN acquisition requires the native ex_input fact')
-    packet = acquire_train_table(ev, native, table, record, ntrain=ntrain, source=source)
+    packet = acquire_train_table(ev, native, table, record, ntrain=ntrain, ntest=ntest, source=source)
     return _input_train(packet)
 
 
@@ -405,20 +648,22 @@ def _input_train(packet):
     projection = [i for i in range(len(packet['fields'])) if i != example_column]
     entries = []
     for entry in packet['entries']:
+        # The native Example value of a test input is ntrain plus its index.
+        test = entry['example_kind'] == 2
         rows = [row for row in entry['rows']
-                if row[example_column]['value'] == [entry['example_index']]]
+                if row[example_column]['value'] == [entry['example_index'] + (packet['ntrain'] if test else 0)]]
         projected = _projector()(dict(entries=[dict(entry, rows=rows,
-            example='train'+str(entry['example_index']+1), choice=entry['assignment'])]),
+            example=('test' if test else 'train')+str(entry['example_index']+1), choice=entry['assignment'])]),
             projection)[0]['rows']
         entries.append(dict(entry, rows=deepcopy(projected)))
     return dict(packet, fields=[deepcopy(packet['fields'][i]) for i in projection],
         entries=entries, projection=projection,
         receipt=dict(packet['receipt'], input_projection=dict(
             source_fact='ex_input', relation='input', example_column=example_column,
-            rule='Example equals destination TRAIN index before Example column removal')))
+            rule='Example equals destination TRAIN index (ntrain + index for a TEST input) before Example column removal')))
 
 
-def acquire_case_train(ev, record, case_context, ntrain, ntest):
+def acquire_case_train(ev, record, case_context, ntrain, ntest, *, test_rows=False, all_assignments=False, test_rows_fallback=False):
     """One fresh canonical case replay, original table inventory and TRAIN cells.
 
     Persist this packet once per task/case/settings in the exporter. Every call
@@ -429,11 +674,24 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
     BODY observers are explicitly disabled: this surface returns original
     native tables only. Point G is acquired independently by acquire_train_point.
     No native handle or private TEST table transport escapes this surface.
+    test_rows=True adds the TEST entries of each table (kind 2) to the full-row
+    mask and the packets; a table whose test entries are absent, as one that reads
+    the test output, comes back without them and marked `test_rows` False.
+    all_assignments=True gives each table that reads a DET its entries at every
+    live assignment (`acquire_train_table`), and the full-row mask holds them. A
+    table over TRAIN_TABLE_MAX_CELLS at every assignment, or that would take the
+    case over TRAIN_CASE_MAX_CELLS, holds the kept assignments only and is marked
+    `assignments_fallback`. Default off: the packet is as without the option.
+    test_rows_fallback=True (with test_rows) lets a table that is still over
+    TRAIN_TABLE_MAX_CELLS, or that still takes the case over TRAIN_CASE_MAX_CELLS,
+    with its test entries at the kept assignments come back at the kept assignments
+    without test entries, marked `test_rows` False and `test_rows_fallback` (the
+    reason). Only a table that is over a cap without test entries fails.
     Each case owns a fresh native session through replay and typed extraction;
     closing it releases prior-case arenas without changing operation bounds.
     """
     with ev.fresh_session() as isolated:
-        packet = _acquire_case_train(isolated, record, case_context, ntrain, ntest)
+        packet = _acquire_case_train(isolated, record, case_context, ntrain, ntest, test_rows, all_assignments, test_rows_fallback)
         packet['receipt']['session'] = dict(
             scope='independent case replay and typed TRAIN extraction',
             lifetime='closed before returning JSON packet',
@@ -442,7 +700,7 @@ def acquire_case_train(ev, record, case_context, ntrain, ntest):
         return packet
 
 
-def _acquire_case_train(ev, record, case_context, ntrain, ntest):
+def _acquire_case_train(ev, record, case_context, ntrain, ntest, test_rows=False, all_assignments=False, test_rows_fallback=False):
     """Materialize one case while its independent native session is alive."""
     from case_collector import acquire_case, _context, clear_cache
     from tables import Incomplete
@@ -451,6 +709,7 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
     if (type(ntrain) is not int or ntrain < 1 or
             type(ntest) is not int or ntest < 0):
         raise Incomplete('case TRAIN acquisition requires authenticated input axes')
+    held_test = ntest if test_rows else 0
     case, text, kept, names, kept_observation = _context(ev, record, case_context, with_receipt=True)
     if not kept:
         raise Incomplete('case TRAIN acquisition requires a nonempty own kept axis')
@@ -471,7 +730,7 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
             # or reconstruct values from counts/projections in Python.
             kwargs['full_rows'] = True
             kwargs['full_rows_selector'] = lambda native: select_train_full_rows(
-                ev, native, own, ntrain=ntrain)
+                ev, native, own, ntrain=ntrain, ntest=held_test, all_assignments=all_assignments)
             result = ev.replay_program(*args, **kwargs)
             if saved:
                 raise Incomplete('case TRAIN collection exceeded its single replay contract')
@@ -506,10 +765,30 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
                     [type_identity(ev,own,field['type'])[0] for field in fields] !=
                     [type_identity(ev,own,field['type'])[0] for field in item['fields']]):
                 raise Incomplete('canonical case table fields differ from native physical schema')
-            packet = acquire_train_table(ev, native, table, own, ntrain=ntrain,
-                fields=fields, projection=list(range(len(fields))),
-                source=dict(identity, case=case, observation=bundle['receipt']))
+            def acquire(fall_back=None, no_test=None):
+                packet = acquire_train_table(ev, native, table, own, ntrain=ntrain, ntest=held_test,
+                    test_rows=no_test is None, fields=fields, projection=list(range(len(fields))),
+                    source=dict(identity, case=case, observation=bundle['receipt']),
+                    **(dict(test_rows_fallback=True) if test_rows_fallback and held_test and no_test is None else {}),
+                    **(dict(all_assignments=True, fall_back=fall_back) if all_assignments else {}))
+                if no_test is not None:
+                    packet['test_rows_fallback'] = no_test
+                if held_test and packet['missing'] and all(k[1] == 2 for k in packet['missing']):
+                    # No native test entry for a required test input, as a relation
+                    # that reads the test output: the table has no test rows.
+                    packet = without_test_rows(packet)
+                return packet
+            packet = acquire()
             cells = train_table_cells(packet)
+            if 'assignments' in packet and 'assignments_fallback' not in packet and held + cells > TRAIN_CASE_MAX_CELLS:
+                # The table at every assignment takes the case over its cap: keep the kept assignments.
+                packet = acquire(f'{cells} cells at every assignment, with {held} held, over TRAIN_CASE_MAX_CELLS={TRAIN_CASE_MAX_CELLS}')
+                cells = train_table_cells(packet)
+            if test_rows_fallback and held_test and packet.get('test_rows') is not False and held + cells > TRAIN_CASE_MAX_CELLS:
+                # The table with its test entries, at the kept assignments, takes the case over its cap: train entries only.
+                packet = acquire(packet.get('assignments_fallback'),
+                                 f'{cells} cells with test rows, with {held} held, over TRAIN_CASE_MAX_CELLS={TRAIN_CASE_MAX_CELLS}')
+                cells = train_table_cells(packet)
             if held + cells > TRAIN_CASE_MAX_CELLS:
                 raise Incomplete(f'case tables hold {held} cells, and table {table} adds {cells}, over TRAIN_CASE_MAX_CELLS={TRAIN_CASE_MAX_CELLS}')
             held += cells
@@ -525,13 +804,14 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
                              reason=output['reason']))
         rows.append(output)
     return dict(schema='evaluator-case-train-v1', task=record['task'], case=case,
-        ntrain=ntrain, program_sha256=bundle['program_sha256'],
+        ntrain=ntrain, **(dict(ntest=ntest) if test_rows else {}), **(dict(all_assignments=True) if all_assignments else {}),
+        program_sha256=bundle['program_sha256'],
         kept_context_sha256=bundle['kept_context_sha256'], kept_assignments=deepcopy(kept),
         export=deepcopy(bundle['export']), tables=rows, gaps=gaps,
         native_table_inventory_complete=native is not None,
         train_tables_complete=native is not None and all(item['status'] == 'complete' for item in rows),
         receipt=dict(observation=bundle['receipt'], original_source_sha256=sha(record),
-                     implementation=dependency_receipt(), test_cells=False,
+                     implementation=dependency_receipt(), test_cells=held_test > 0,
                      packing=dict(full_rows=True,
                                   native_full_rows=saved.get('replay', {}).get('engine_report', {}).get('full_rows'),
                                   source='native gold_tables packing',

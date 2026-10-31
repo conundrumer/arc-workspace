@@ -264,10 +264,14 @@ class Document:
             seeds = {i for i, n in graph.items() if self.owner in n['forms']
                      and n['definition']['kind'] in ('clause', 'parameter', 'rigid_assembly')}
         require(seeds, 'target relation absent from resolver graph')
-        def dependents(initial):
+        def dependents(initial, fixed_cut=False):
+            # fixed_cut: a DET (`parameter`) or CHOOSE (`chosen`) node holds one value for the task, so its
+            # readers do not depend on the outputs it was chosen from
             selected = set(initial)
             while True:
-                more = {i for i, n in graph.items() if selected.intersection(n['reads'])}
+                more = {i for i, n in graph.items()
+                        if any(r in selected and not (fixed_cut and graph[r]['definition']['kind'] in ('parameter', 'chosen'))
+                               for r in n['reads'])}
                 if more <= selected:
                     return selected
                 selected.update(more)
@@ -297,6 +301,7 @@ class Document:
         return dict(graph_nodes=definitions['graph_nodes'], target_nodes=sorted(seeds),
                     dependent_nodes=sorted(excluded), independent_nodes=sorted(graph.keys() - excluded),
                     ex_output_dependent_nodes=sorted(dependents(output_seeds)),
+                    ex_output_test_blocked_nodes=sorted(dependents(output_seeds, fixed_cut=True)),
                     ex_output_provenance='native resolver edges plus transitive resolved library fact reads; shared-owner library effects conservatively retained')
 
     def definition_node(self, definition):
