@@ -47,12 +47,15 @@ pass removes, the forms that held an atom on it before the pass redirected it
 (`projections.ReaderForm`): the check compares that relation in a case only
 where one of those forms derives its relation and `&output` reads that relation
 (`parity.rerun`).
+A last pass removes each atom that another atom of the same conjunction implies
+(`arclog_convert.implied`): it runs on the text of the solver and on the text of each case, after the projection pass,
+and not on the copy under `CORPUS`.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 A clause or a factor that a pass keeps because a block other than the reader's derives its relation again, or because
 its relation has clauses in several blocks, holds in the flat program of a case, where each relation has one deriving
 form (`projections.Projected.blocked`, `pull_up.Pulled.blocked`). On each solver where a pass keeps one, the run
-writes, once every solver stands in `gen/`, the files of the cases whose program read alone differs after the two
+writes, once every solver stands in `gen/`, the files of the cases whose program read alone differs after the
 passes (`convert_cases`): `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files`
 names the file of the case. A case whose program the passes leave as `arclog.case_files` gives it, and a case of
 which it gives a fault, have no files. The passes read Souffle's rows of the whole program
@@ -84,6 +87,7 @@ from engine import checkout
 from engine.memo import hash_files, write_whole
 from engine.pool import pool_size
 from engine.program import Qualifier, Variable
+from arclog_convert.implied import drop_implied
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert.lint_alts import alt_blocks, derived, placements
 from arclog_convert.lint_read import L, read
@@ -334,7 +338,7 @@ def convert_one(stem: str) -> Converted:
         kept = project(base[0], base[1], columns, keep=True)
         checked = (kept.arclog, base[1])
         projected = project(arclog, arcdata, columns)
-        arclog = projected.arclog
+        arclog = drop_implied(projected.arclog).arclog
         if pulled.blocked or projected.blocked:
             answers = rows.answers
         if kept.readers:
@@ -383,11 +387,11 @@ def _module_files(roots: Sequence[str]) -> set[Path]:
 
 def _cases_code_digest() -> str:
     """The hash of the code and the data the case phase reads besides the solvers' texts: the modules that the
-    pull-up pass and the projection pass import, followed through their imports under `src/`, this file, the sources
+    pull-up pass, the projection pass and the implied-atom pass import, followed through their imports under `src/`, this file, the sources
     that the Souffle runs of `Rows` depend on (`cli.common.SOURCES`), and the lib's files. The native streams digest also binds the static-valid
     normalization implementation and registry types."""
     from cli.common import SOURCES
-    files = {*_module_files(["arclog_convert.pull_up", "arclog_convert.projections"]),
+    files = {*_module_files(["arclog_convert.pull_up", "arclog_convert.projections", "arclog_convert.implied"]),
              *checkout.matched(checkout.ROOT, SOURCES), Path(__file__).resolve(), LIB_DL, SIGNATURE, REGISTRY}
     from arclog import streams_digest
     digest = hashlib.sha256(streams_digest().encode())
@@ -455,7 +459,7 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
     """The second round of the case phase for the cases `part` of the solver `stem`: write the files of those whose
     normal form differs from the case as `arclog.case_files` gives it, `gen/cases/<stem>/<case>.arclog` and
     `.arcdata`. The normal form is the pull-up and projection passes (which read
-    Souffle's rows through `Rows.single`), then deletion of native static-valid
+    Souffle's rows through `Rows.single`), the implied-atom pass, then deletion of native static-valid
     tests. The last pass reads only the checked program, not task rows.
 
     Gives the stem, the number of cases it wrote files of, and the error that stopped it."""
@@ -467,7 +471,7 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
         written = []
         for file, arclog, arcdata in part:
             pulled = pull_up(arclog, arcdata, rows.single)
-            text = project(pulled.arclog, arcdata, drop_columns(columns, pulled.dropped)).arclog
+            text = drop_implied(project(pulled.arclog, arcdata, drop_columns(columns, pulled.dropped)).arclog).arclog
             # The corpus draw and Decoder use this same native classifier.
             # It edits original AST paths, preserves clause interfaces, refuses
             # removal of a binder, and re-resolves/checks the normalized case.
