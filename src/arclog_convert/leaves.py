@@ -2669,17 +2669,19 @@ class Converter:
                                [dc_replace(l, name=pc.name) if l.kind == "keep" else l for l in cols[i][1]])
             else:
                 mismatch = ([col for _, col in kept], pcols)
-        def own_e(col, l):
-            """Whether `l` of `col` is a column E that holds no Example."""
-            return l.name == "E" and l.kind == "keep" \
+        def own_e(col, ls, l):
+            """Whether `l` of `col`, of leaves `ls`, is a column E that holds no Example: a leaf named E, or the
+            one kept leaf of a column named E."""
+            named = l.name == "E" or (col.name == "E" and sum(x.kind == "keep" for x in ls) == 1)
+            return named and l.kind == "keep" \
                 and self.leaf_type(col.type, l.path, r.scope.components, sub) != "Example"
 
-        if any(own_e(col, l) for col, ls in cols for l in ls):
+        if any(own_e(col, ls, l) for col, ls in cols for l in ls):
             # a lifted read's Example column is E, so the relation's own E takes a digit
             names = {l.name for _, ls in cols for l in ls}
             e = next(f"E{j}" for j in range(1, len(names) + 2) if f"E{j}" not in names)
-            cols = [(dc_replace(col, name=e) if col.name == "E" and any(own_e(col, l) for l in ls) else col,
-                     [dc_replace(l, name=e) if own_e(col, l) else l for l in ls])
+            cols = [(dc_replace(col, name=e) if col.name == "E" and any(own_e(col, ls, l) for l in ls) else col,
+                     [dc_replace(l, name=e) if own_e(col, ls, l) else l for l in ls])
                     for col, ls in cols]
         seen = Counter(l.name for _, ls in cols for l in ls if l.kind == "keep")
         if any(n > 1 for n in seen.values()):
