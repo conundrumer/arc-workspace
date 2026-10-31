@@ -1,12 +1,14 @@
 """The determination plan files under `plan/` of `arclog_convert.out`: one
 per solver, with the hash of the inputs it was written from (`inputs_hash`:
 the solver file, its task file and its witness file) and the runner and lib
-stamp it was written under. A plan file holds the sections of
+stamp it was written under. A plan file is current where its inputs hash is
+the solver's, whatever its runner and lib stamp; `--require-current-lib` of
+`arclog_convert.convert` also requires the current stamp. A plan file holds the sections of
 `scripts/run_dl.py determination-plan` other than the one for the moved
 witnesses (`Plan.moved`), which the converter does not read. The plans are
-also kept in `store()`, one file per solver, runner and lib state, which every
+also kept in `store()`, one file per solver and inputs hash, which every
 `--out` directory and every worktree shares; a missing or stale plan file is
-restored from there, and an up-to-date one under `plan/` seeds the store. The
+restored from there, and a current one under `plan/` seeds the store. The
 converter reruns the plans that neither holds in worker processes, at most
 `engine.pool.pool_size()` at once, each bound to one CPU and taking a chunk of
 at most `CHUNK` solvers, then exiting so that none keeps the memory of a
@@ -45,18 +47,17 @@ def store() -> Path:
     return checkout.cache() / "plans"
 
 
-def kept_file(stem: str, digest: str, lib_line: str) -> Path:
+def kept_file(stem: str, digest: str) -> Path:
     """The file in `store()` that holds the plan of the solver `stem` whose
-    inputs hash is `digest`, under the runner and lib line `lib_line`."""
-    key = hashlib.sha256(f"{digest}\0{lib_line}".encode()).hexdigest()[:16]
-    return store() / f"{stem}-{key}"
+    inputs hash is `digest`."""
+    return store() / f"{stem}-{digest[:16]}"
 
 
-def is_current(text: str, digest: str, lib_line: str) -> bool:
-    """Whether the plan `text` records the inputs hash `digest` and the
-    runner and lib line `lib_line`."""
+def is_current(text: str, digest: str, lib_line: str | None) -> bool:
+    """Whether the plan `text` records the inputs hash `digest`, and, where
+    `lib_line` is not None, the runner and lib line `lib_line`."""
     lines = text.splitlines()
-    return PLAN_HASH + digest in lines and lib_line in lines
+    return PLAN_HASH + digest in lines and (lib_line is None or lib_line in lines)
 
 
 def current_lib_line() -> str:
@@ -65,17 +66,18 @@ def current_lib_line() -> str:
     return f"runner and lib: {stamp()}"
 
 
-def restore_plans(stems: list[str], lib_line: str) -> list[str]:
-    """Make `paths.PLANS` hold a plan file up to date under the runner and
-    lib line `lib_line` for each of `stems` that `store()` or `paths.PLANS`
-    holds one for, and return the others. A plan file under `paths.PLANS`
-    that is up to date and not in `store()` is added to it. Both are
-    written whole or not at all."""
+def restore_plans(stems: list[str], lib_line: str | None) -> list[str]:
+    """Make `paths.PLANS` hold a current plan file for each of `stems` that
+    `store()` or `paths.PLANS` holds one for, and return the others. A plan
+    file is current where it records the solver's inputs hash and, where
+    `lib_line` is not None, the runner and lib line `lib_line`. A plan file
+    under `paths.PLANS` that is current and not in `store()` is added to it.
+    Both are written whole or not at all."""
     missing = []
     for stem in stems:
         digest = inputs_hash(stem, paths.SOLVERS)
         mine = paths.PLANS / f"{stem}.txt"
-        kept = kept_file(stem, digest, lib_line)
+        kept = kept_file(stem, digest)
         if mine.exists() and is_current(mine.read_text(), digest, lib_line):
             if not kept.exists():
                 keep(kept, mine.read_bytes())
@@ -107,7 +109,7 @@ def write_plan(stem: str, lib_line: str) -> str | None:
     if code != 0:
         return lines[-1] if lines else f"exit {code}"
     data = "".join(f"{line}\n" for line in [*lines, lib_line, PLAN_HASH + digest]).encode()
-    keep(kept_file(stem, digest, lib_line), data)
+    keep(kept_file(stem, digest), data)
     paths.PLANS.mkdir(parents=True, exist_ok=True)
     write_whole(paths.PLANS / f"{stem}.txt", data)
     return None
@@ -135,9 +137,13 @@ def chunks(stems: list[str]) -> list[list[str]]:
     return [order[i:i + size] for i in range(0, len(order), size)]
 
 
-def refresh_plans(stems: list[str]) -> None:
+def refresh_plans(stems: list[str], require_current_lib: bool = False) -> None:
+    """Make `paths.PLANS` hold a plan file for each of `stems`, and rerun
+    those that neither it nor `store()` holds a current one for; where
+    `require_current_lib` is set, a plan is current only under the current
+    runner and lib line."""
     line = current_lib_line()
-    stale = restore_plans(stems, line)
+    stale = restore_plans(stems, line if require_current_lib else None)
     if not stale:
         return
     print(f"rerunning the determination plan of {len(stale)} solvers")

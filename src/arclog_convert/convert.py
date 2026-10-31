@@ -3,7 +3,7 @@ files under gen/ of `arclog_convert.out`: `work/arclog/` of the main
 worktree, or the directory `--out` gives; in a linked worktree, `--out` is
 required (or `ARCLOG_OUT`).
 
-    uv run python -m arclog_convert.convert [--out <dir>] [<stem> ...]
+    uv run python -m arclog_convert.convert [--out <dir>] [--require-current-lib] [<stem> ...]
 
 Each run writes the output for the solvers, every solver where no
 stem is given, and prints its summary; the run exits with status 1
@@ -12,11 +12,14 @@ replay on the train pairs and the comparison with Souffle's rows, are
 `arclog_convert.verify`, which runs apart from the conversion.
 A solver's plan file under plan/ records the hash of the solver file, task
 file and witness file it was written from, and the runner and lib stamp of
-the run; where it is missing or records another hash or stamp, the script
+the run that wrote it; where it is missing or records another hash, the script
 first restores it from the plans kept under `.cache/plans/`, which every
 `--out` directory shares, and reruns the determination plan of the solver,
 without the moved witnesses that the plan file does not hold, in a worker
-process where none is kept for that hash and stamp (`arclog_convert.plans`). The
+process where none is kept for that hash (`arclog_convert.plans`). With
+`--require-current-lib`, a plan file or a kept plan is also current only where
+it records the current runner and lib stamp, so that a change in the runner or
+the lib reruns the plan of every solver whose stamp differs. The
 name map and the column map of each solver it converts, written under names/
 and columns/, are those of `arclog_convert.names`, and names/ also holds the
 Souffle texts that derive the rows of the relations the converter adds
@@ -580,12 +583,13 @@ def main(argv: list[str]) -> int:
     import argparse
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.convert")
     parser.add_argument("--out", type=Path, help="the directory to write under, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
+    parser.add_argument("--require-current-lib", action="store_true", help="rerun the determination plan of each solver whose plan file records another runner and lib stamp than the current one; otherwise a plan is current where its inputs hash matches")
     parser.add_argument("stems", nargs="*", help="the solvers to convert; every solver where none is given")
     args = parser.parse_args(argv)
     use_out(args.out)
     stems = args.stems or sorted(p.stem for p in paths.SOLVERS.glob("*.dl"))
     with phase("plans"):
-        refresh_plans(stems)
+        refresh_plans(stems, args.require_current_lib)
     print(f"{paths.OUT_DIR}:")
     with phase("conversion"):
         converted = convert_into(stems, paths.OUT_DIR)
