@@ -915,12 +915,16 @@ fn owner_spelled(owner: &crate::program::OutputOwner) -> String {
 }
 
 /// The program's text in the source's names, checked to read back to the
-/// program's stream.
+/// stream of the program's text in the engine's names. The text writes the
+/// sites of a read in slot order, which the program need not hold, so the
+/// program's own stream is not the one to compare.
 fn source_program(program: &StudyProgram, names: &Names, registry: &Registry) -> Result<String, String> {
-    let text = names.source_text(&program.sexp(registry));
+    let engine_text = program.sexp(registry);
+    let text = names.source_text(&engine_text);
     let settings = DecodeSettings::default();
     let read = StudyProgram::from_sexp(&text, registry).map_err(|fault| format!("the program text does not read back: {fault}"))?;
-    let (a, b) = (read.decode_stream(registry, &settings)?, program.decode_stream(registry, &settings)?);
+    let engine = StudyProgram::from_sexp(&engine_text, registry).map_err(|fault| format!("the program text does not read back: {fault}"))?;
+    let (a, b) = (read.decode_stream(registry, &settings)?, engine.decode_stream(registry, &settings)?);
     if a.ids != b.ids || a.model != b.model {
         return Err("the program text reads back to another stream".into());
     }

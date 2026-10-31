@@ -511,7 +511,7 @@ Two spellings of one body are equivalent by syntax alone in these cases, and the
 - In an `OR` branch, a `NOT` of an atom that an earlier branch holds positively with the same joined labels: the `IF` form spells it.
 - An `IF` whose test is one `NOT` atom: the same `IF` with the then and the else swapped spells it.
 - `NOT` over a form: the domain with a negated body spells it, as "some member fails".
-- Sites out of the relation's column order.
+- Sites out of the relation's column order. The engine's writer of a decoded program writes the sites of each read of a derived relation in ascending order of the relation's slots, and names the labels in the order the text makes them. A read stays in its order where the new order would change the order of its `^` labels, which is the order of key columns, and where a join of the read would then stand before the site that makes its label.
 
 Two spellings equivalent by meaning alone are left to the training data: a `NOT` on a derived relation whose own clause negates, against an `ALL`, which are the same only where the domain has a member at every binding of the clause that reads it, as each domain atom of the defect clause matching a positive atom of the reading clause, or being an element relation of the lib, gives, since an `ALL` over an empty domain fails, and otherwise the `NOT` is the only spelling; an else that re-reads an outer atom to carry a label, against `=`; the order of atoms; and a body written twice against a relation derived once.
 
