@@ -104,7 +104,7 @@ const PREFIX_BYTES: usize = 8 * 1024 * 1024;
 /// `prefix_key`, for one set of finished forms. A key holds the complete
 /// source of its prefix.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum PrefixKind { Check, DetAdmission }
+enum PrefixKind { Check, SingleCheck, DetAdmission }
 
 #[derive(Debug, Default)]
 struct PrefixMemo {
@@ -421,6 +421,13 @@ impl State {
     /// key and the cache's lifetime fix.
     pub(super) fn cached_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
         self.cached_verdict(PrefixKind::Check, key, compute)
+    }
+
+    /// [`State::cached_prefix`] for a verdict that the checks give outside the
+    /// mask's mode, as a single token's step does; it is kept apart from the
+    /// mask's.
+    pub(super) fn cached_single_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        self.cached_verdict(PrefixKind::SingleCheck, key, compute)
     }
 
     pub(super) fn cached_det_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {

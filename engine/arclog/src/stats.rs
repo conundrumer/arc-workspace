@@ -88,6 +88,7 @@ phases! {
     PyStep => "py.step",
     PyForced => "py.forced",
     PyAdmissible => "py.admissible",
+    PyAdmits => "py.admits",
     PyFork => "py.fork",
     PyStepTables => "py.step_tables",
     PyPack => "py.pack",

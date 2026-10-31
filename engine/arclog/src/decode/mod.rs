@@ -247,6 +247,19 @@ impl<'a> Decoder<'a> {
         self.held.0.get_or_init(|| self.compute_mask()).mask.clone()
     }
 
+    /// Whether each token whose id `ids` gives may come next, as
+    /// [`Decoder::admissible`] decides it, with the checks of the mask run
+    /// over those tokens alone and none of the mask kept for a later step.
+    /// Where the decode holds the mask of its state, it reads the verdicts
+    /// from the mask.
+    pub fn admits(&self, ids: &[u32]) -> Vec<bool> {
+        let mask = match self.held.0.get() {
+            Some(held) => held.mask.clone(),
+            None => self.mask_over(ids.iter().copied()).mask,
+        };
+        ids.iter().map(|&id| mask.contains(id)).collect()
+    }
+
     /// The mask that [`Decoder::next`] gives over every token of the
     /// vocabulary, the oracle of [`Decoder::admissible`].
     #[cfg(feature = "admissible-reference")]
@@ -268,6 +281,13 @@ impl<'a> Decoder<'a> {
     /// - [`State::native_classes`] shares one verdict among candidates.
     /// - [`State::cached_prefix`] shares the verdict of a repeated prefix.
     fn compute_mask(&self) -> Mask {
+        self.mask_over(0..u32::try_from(self.context.vocabulary.len()).expect("fewer than 2^32 tokens"))
+    }
+
+    /// The mask of [`Decoder::compute_mask`] over the tokens whose ids `ids`
+    /// gives: a token outside them is not in the mask. Each other token's
+    /// verdict is the one the mask over every token gives.
+    fn mask_over(&self, ids: impl Iterator<Item = u32>) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
@@ -275,7 +295,7 @@ impl<'a> Decoder<'a> {
             return Mask { mask, steps };
         }
         if self.state.awaits_component() {
-            for id in 0..vocabulary.len() as u32 {
+            for id in ids {
                 let token = vocabulary.token(id).expect("a vocabulary token");
                 if matches!(token, Token::Lib(_)) {
                     if let Ok(step) = self.grammar_next(token) {
@@ -301,7 +321,7 @@ impl<'a> Decoder<'a> {
                     }
                 }
             }
-            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
+            for id in ids {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
                 if matches!(token, Token::Label(label) if conflicts.contains(label)) {
                     continue;
@@ -652,10 +672,12 @@ impl<'a> Decoder<'a> {
             }
         };
         // Only the verdict at an open node is shared: a completed form keeps the
-        // node that the step built, and its checks run on that node.
-        if checks.is_mask() && candidate == Candidate::Any && open.is_some() {
+        // node that the step built, and its checks run on that node. A single
+        // token's step shares it as well, so that the step of a token that
+        // `forced` has checked at the state checks nothing again.
+        if candidate == Candidate::Any && open.is_some() {
             if let Some(key) = prefix_key::key(program.value().forms.last().unwrap(), open.as_ref()) {
-                return self.state.cached_prefix(key, check);
+                return if checks.is_mask() { self.state.cached_prefix(key, check) } else { self.state.cached_single_prefix(key, check) };
             }
         }
         check()
