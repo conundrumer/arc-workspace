@@ -62,10 +62,12 @@ form (`projections.Projected.blocked`, `pull_up.Pulled.blocked`). On each solver
 writes, once every solver stands in `gen/`, the files of the cases whose program read alone differs after the
 passes (`convert_cases`): `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files`
 names the file of the case. A case whose program the passes leave as `arclog.case_files` gives it, and a case of
-which it gives a fault, have no files. The passes read Souffle's rows of the whole program
+which it gives a fault (the checker refuses the case program read alone), have no files: the run skips that case, and
+the summary gives the number of such cases of each solver. A solver none of whose cases has files gets no case files. The passes read Souffle's rows of the whole program
 (`pull_up.Rows.single`). After a solver's case files stand, `case_records/` beside `gen/` holds a file `<stem>.sha256`
 with two lines: `inputs <hash>`, the inputs hash of the solver (`plans.inputs_hash`: its solver file, task file and
-witness file), and `code <hash>`, the hash of the code and the data the passes read (`_cases_code_digest`). A record is
+witness file), and `code <hash>`, the hash of the code and the data the passes read (`_cases_code_digest`); a line
+`skipped <n>` follows them where the run skipped `n` cases for a fault. A record is
 current where its inputs hash is the solver's, whatever its code hash, so that a change in the converter or the lib
 leaves the case files of a solver whose files are the same; with `--require-current-code`, a record is current also
 only where its code hash is the current one. The run keeps the case files of a solver whose record is current;
@@ -423,6 +425,8 @@ class Record(NamedTuple):
     """The hash of the code the case files were made with (`_cases_code_digest`)."""
     error: str | None
     """The error that stopped the case files of the solver, where one did and `REPEATABLE` holds it."""
+    skipped: int = 0
+    """The number of cases that `arclog.case_files` gave a fault, and that got no files."""
 
 
 REPEATABLE = ("ValueError", "Fault")
@@ -437,15 +441,16 @@ def _read_record(stem: str) -> Record | None:
         lines = (paths.CASE_RECORDS / f"{stem}.sha256").read_text().splitlines()
         fields = dict(line.split(" ", 1) for line in lines)
         error = json.loads(fields["error"]) if "error" in fields else None
-        return Record(fields["inputs"], fields["code"], error)
+        return Record(fields["inputs"], fields["code"], error, int(fields.get("skipped", 0)))
     except (OSError, ValueError, KeyError):
         return None
 
 
-def _write_record(stem: str, inputs: str, error: str | None = None) -> None:
-    """Write the record of `stem` whole: its inputs hash `inputs`, the current code hash, and `error` where one is
-    given."""
-    lines = [f"inputs {inputs}", f"code {_cases_code_digest()}", *([f"error {json.dumps(error)}"] if error else [])]
+def _write_record(stem: str, inputs: str, error: str | None = None, skipped: int = 0) -> None:
+    """Write the record of `stem` whole: its inputs hash `inputs`, the current code hash, the number `skipped` of
+    cases that got a fault where it is not 0, and `error` where one is given."""
+    lines = [f"inputs {inputs}", f"code {_cases_code_digest()}", *([f"skipped {skipped}"] if skipped else []),
+             *([f"error {json.dumps(error)}"] if error else [])]
     paths.CASE_RECORDS.mkdir(parents=True, exist_ok=True)
     write_whole(paths.CASE_RECORDS / f"{stem}.sha256", ("\n".join(lines) + "\n").encode())
 
@@ -458,10 +463,10 @@ def _standing(stem: str, inputs: str, require_current_code: bool) -> "Cased | No
     if record is None or record.inputs != inputs:
         return None
     if record.error is not None:
-        return Cased(stem, 0, False, record.error) if record.code == _cases_code_digest() else None
+        return Cased(stem, 0, False, record.error, record.skipped) if record.code == _cases_code_digest() else None
     if require_current_code and record.code != _cases_code_digest():
         return None
-    return Cased(stem, 0, True, None)
+    return Cased(stem, 0, True, None, record.skipped)
 
 
 class Prepared(NamedTuple):
@@ -473,6 +478,8 @@ class Prepared(NamedTuple):
     cases: CaseTexts | None
     """The cases to write the files of; none where `error` is set."""
     error: str | None
+    skipped: int = 0
+    """The number of cases of which `arclog.case_files` gives a fault."""
 
 
 def _excluded(arcdata: str) -> list[set[str]]:
@@ -492,13 +499,15 @@ def _prepare_cases(stem: str, answers: Answers) -> Prepared:
         gen = paths.OUT_DIR
         texts = (gen / f"{stem}.arclog").read_text(), (gen / f"{stem}.arcdata").read_text()
         excluded = _excluded(texts[1])
-        cases = [(f.file, f.arclog, f.arcdata) for f in case_files(stem, *texts, str(gen))
+        files = case_files(stem, *texts, str(gen))
+        skipped = sum(1 for f in files if f.fault is not None)
+        cases = [(f.file, f.arclog, f.arcdata) for f in files
                  if f.fault is None and not any(e <= set(f.file.split("+")) for e in excluded)]
         _drop_cases(stem)
         rows = Rows(stem, json.loads((paths.COLUMNS_DIR / f"{stem}.json").read_text()))
         rows.answers.update(answers)
         _ask_all(rows, [(arclog, arcdata) for _, arclog, arcdata in cases])
-        return Prepared(stem, rows.answers, cases, None)
+        return Prepared(stem, rows.answers, cases, None, skipped)
     except Exception as e:  # noqa: BLE001
         return Prepared(stem, {}, None, f"{type(e).__name__}: {e}")
 
@@ -555,6 +564,8 @@ class Cased(NamedTuple):
     kept: bool
     """Whether the solver's case files stood as the record says, so that the run wrote none."""
     error: str | None
+    skipped: int = 0
+    """The number of cases of the solver that got no files for a fault of `arclog.case_files`."""
 
 
 def _submit[**P, R](pool: Executor | None, fn: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> Future[R]:
@@ -594,15 +605,16 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
     left: Counter[str] = Counter()
     written: Counter[str] = Counter()
     errors: dict[str, str] = {}
+    skipped: Counter[str] = Counter()
 
     def finish(stem: str) -> None:
         error = errors.get(stem)
         if error is None:
-            _write_record(stem, inputs[stem])
+            _write_record(stem, inputs[stem], skipped=skipped[stem])
         elif error.partition(":")[0] in REPEATABLE:
             shutil.rmtree(paths.OUT_DIR / CASES / stem, ignore_errors=True)
-            _write_record(stem, inputs[stem], error)
-        outcomes[stem] = Cased(stem, written[stem], False, error)
+            _write_record(stem, inputs[stem], error, skipped[stem])
+        outcomes[stem] = Cased(stem, written[stem], False, error, skipped[stem])
 
     while pending:
         done, pending = wait(pending, return_when=FIRST_COMPLETED)
@@ -610,6 +622,7 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
             if future in preparing:
                 prepared = future.result()
                 stem = prepared.stem
+                skipped[stem] = prepared.skipped
                 if prepared.error is not None or not prepared.cases:
                     if prepared.error is not None:
                         errors[stem] = prepared.error
@@ -703,10 +716,10 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
     # the files of a case read the files of the solvers its solver names, so they are written once all stand
     with phase("cases"):
         cased = convert_cases(pool, workers, asked, require_current_code)
-    for stem, _, _, err in cased:
-        if err is not None:
-            failed.append((stem, f"the case files: {err}"))
-            converted.remove(stem)
+    for c in cased:
+        if c.error is not None:
+            failed.append((c.stem, f"the case files: {c.error}"))
+            converted.remove(c.stem)
     ok = [c for c in cased if c.error is None]
     if pool is not None:
         pool.shutdown()
@@ -714,6 +727,10 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
     print(f"case files: {sum(c.written for c in ok)} cases of {sum(1 for c in ok if c.written)} solvers; "
           f"the passes ran on the cases of {sum(1 for c in ok if not c.kept)} solvers; "
           f"kept the case files of {sum(1 for c in ok if c.kept)} solvers")
+    faulted = {c.stem: c.skipped for c in ok if c.skipped}
+    if faulted:
+        print(f"cases skipped, the checker refuses the case program read alone: {sum(faulted.values())} cases of "
+              f"{len(faulted)} solvers ({', '.join(f'{s} {n}' for s, n in sorted(faulted.items()))})")
     if stubbed:
         print(f"case files skipped, no determination plan or an unresolved relation: {len(stubbed)} stems ({', '.join(sorted(stubbed))})")
     print(f"merged {merges['relation']} relations and {merges['input']} inputs; "
