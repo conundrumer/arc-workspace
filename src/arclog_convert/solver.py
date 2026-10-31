@@ -531,6 +531,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 det_units[u.head.relation.name].append(u)
         det_units_all = {k: list(v) for k, v in det_units.items()}
         self.rigid_proposed: set[str] = set()   # the rigid parts a proposer's table gives
+        determined_copies: set[str] = set()   # the derived parameters whose determination has a DET of its own
         param_facts: dict[str, list] = defaultdict(list)
         param_rules: dict[str, list] = defaultdict(list)
         for u in prog.units:
@@ -735,6 +736,18 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     forms.append(Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)})"],
                                       amp, set(), line=r.span.first))
                     derive_points.append((amp, derives, "Derived", r.name))
+                    if any(not rn.instances and rn.name == r.name
+                           for u in prog.units if u.scope.components == ("Determine",)
+                           and u.head.relation.name != r.name
+                           for rn in (a.relation for a, _ in body_atoms(tuple(u.body or ())))):
+                        # the other clauses of Determine read its determination in every case, as the Souffle
+                        # Determine does, so the determination is a DET of its own name as well
+                        cand, n = f"{r.name}_determined", 2
+                        while cand in c.used_names:
+                            cand, n = f"{r.name}_determined{n}", n + 1
+                        c.used_names.add(cand)
+                        c.names[(("Determine",), r.name)] = cand
+                        determined_copies.add(r.name)
             elif parameter_source[r.name] == "params":
                 made = [self.clause(u, "RULE" if self.derives_from_params(u) else "DET", ("Params",), {})
                         for u in param_rules[r.name]]
@@ -827,7 +840,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 elif u.head.relation.name not in c.skip_rels:
                     parameter = c.determines_parameter(u.scope.components, u.head.relation.name)
                     if not parameter or u.head.relation.name in det_units:
-                        side = "DET" if parameter or (u.head.relation.name,) in task_wide else "RULE"
+                        side = "DET" if parameter or u.head.relation.name in determined_copies \
+                            or (u.head.relation.name,) in task_wide else "RULE"
                         forms.append(self.clause(u, side, ("Determine",), {}))
 
         # instances and clauses, in program order
