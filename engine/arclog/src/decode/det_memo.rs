@@ -30,6 +30,11 @@
 //! that stops at the byte bound, or whose cache evicts, runs again in a
 //! session of its own with no kept domain ([`super::det_admission`]).
 //!
+//! What the walk of a part of a program's `DET`s gave is kept too
+//! ([`PartKey`]). It reads only the forms that the key's content holds, in a
+//! session that starts empty, so it stands for each program that holds that
+//! part, whichever program walked it first.
+//!
 //! The walks of a decode's tables run in the task session itself, and keep
 //! the domains they compute in a memo of that session ([`SessionMemo`]).
 
@@ -58,6 +63,10 @@ const TERM_BYTES: usize = 1 << 28;
 /// The most computations kept for one key, each with its own lookups.
 const PER_KEY: usize = 4;
 
+/// The most walks of parts kept; past it, the walks keep none of those kept
+/// so far.
+const PARTS_KEPT: usize = 1 << 16;
+
 /// What the computation of a domain reads beside its key, the same for
 /// each walk of the task session: the task, the registry, the
 /// constructions, by their addresses, and the table work cap. The caps and
@@ -74,6 +83,53 @@ pub(crate) struct Scope {
 pub(crate) struct ProbeMemo {
     scope: Scope,
     kept: Mutex<Kept>,
+    parts: Mutex<StableHashMap<PartKey, PartWalk>>,
+}
+
+/// What the walk of a part of a program's `DET`s gave.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum PartWalk {
+    /// The walk reached its last leaf, with `leaves` leaves, and `live`
+    /// where one of them is live.
+    Ended { leaves: u64, live: bool },
+    /// The walk passed the assignment cap.
+    PastCap,
+    /// The walk ended at a fault or at another bound.
+    Stopped,
+}
+
+/// The key of a walk of a part: the assignment cap, and each `DET` it
+/// assigns and each pick it tests, in the order of the walk.
+#[derive(PartialEq, Eq, Hash)]
+pub(crate) struct PartKey {
+    cap: u64,
+    dets: Box<[PartDet]>,
+    picks: Box<[PartDet]>,
+}
+
+/// A `DET` of a [`PartKey`]: its relation, whether it is open and a pick, the
+/// content of its node, which holds the content of each of its forms and,
+/// at any depth, of each relation they read, and the types of its columns.
+#[derive(PartialEq, Eq, Hash)]
+struct PartDet {
+    relation: ProgramRelation,
+    open: bool,
+    pick: bool,
+    node: StableHash,
+    columns: Box<[ValueType]>,
+}
+
+/// The key of the walk of `dets` with `picks` in `program`, a program with no
+/// cycle, under the assignment cap `cap`, or `None` where one of them has no
+/// content or no column types.
+pub(crate) fn part_key(program: &CheckedProgram, dets: &[Det], picks: &[Det], cap: u64) -> Option<PartKey> {
+    let resolved = &program.program;
+    let part_det = |det: &Det| {
+        let node = resolved.node_content(det.node)?.content_hash();
+        let columns = program.types.columns(&GraphRelation { node: det.node, output: None })?.into();
+        Some(PartDet { relation: det.relation.clone(), open: det.open, pick: det.pick, node, columns })
+    };
+    Some(PartKey { cap, dets: dets.iter().map(part_det).collect::<Option<_>>()?, picks: picks.iter().map(part_det).collect::<Option<_>>()? })
 }
 
 struct Kept {
@@ -113,7 +169,26 @@ impl ProbeMemo {
     /// The memo of the walks of `session` under `scope`, with nothing kept.
     pub(crate) fn new(scope: Scope, session: &TaskSession) -> Self {
         let terms = TaskSession::new(session.bound, session.caps);
-        ProbeMemo { scope, kept: Mutex::new(Kept { generation: 0, terms, domains: StableHashMap::default(), relations: StableHashMap::default(), bytes: 0 }) }
+        let kept = Kept { generation: 0, terms, domains: StableHashMap::default(), relations: StableHashMap::default(), bytes: 0 };
+        ProbeMemo { scope, kept: Mutex::new(kept), parts: Mutex::default() }
+    }
+
+    /// What the walk of `key` gave under `scope`, where the memo keeps it.
+    pub(crate) fn part(&self, scope: Scope, key: &PartKey) -> Option<PartWalk> {
+        let parts = self.parts.lock().expect("the kept walks are not poisoned");
+        (scope == self.scope).then(|| parts.get(key).copied()).flatten()
+    }
+
+    /// Keeps `walk`, what the walk of `key` gave under `scope`.
+    pub(crate) fn keep_part(&self, scope: Scope, key: PartKey, walk: PartWalk) {
+        if scope != self.scope {
+            return;
+        }
+        let mut parts = self.parts.lock().expect("the kept walks are not poisoned");
+        if parts.len() >= PARTS_KEPT {
+            parts.clear();
+        }
+        parts.insert(key, walk);
     }
 
     /// The session of one walk of `session` under `scope`, which shares the

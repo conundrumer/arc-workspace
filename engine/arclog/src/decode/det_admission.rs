@@ -1,7 +1,7 @@
 //! Admission of a completed DET or mark, using the determination's domain walk.
 use std::ops::ControlFlow;
 
-use super::det_memo::{ProbeMemo, Scope};
+use super::det_memo::{part_key, PartWalk, ProbeMemo, Scope};
 use super::{Decoder, Refusal, State};
 use crate::check::CheckedProgram;
 use crate::eval::{Cancellation, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
@@ -60,41 +60,84 @@ impl Decoder<'_> {
             .map_err(|fault| DetRefusal::Fault(format!("{fault:?}")))?;
         let written = written_dets(program);
         let Some(root) = written.last().map(|det| det.node) else { return Ok(()) };
-        if self.live_past_cap(program, &written, root) {
-            return Ok(());
+        if let Some(verdict) = self.verdict_past_cap(program, &written, root) {
+            return verdict;
         }
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
-        self.walked(program, &dets, &picks, root).map(|_| ())
+        self.walked(program, &dets, &picks, root).1
     }
 
-    /// Whether the joint walk of `written`, the `DET`s of `program`, has
-    /// more leaves than the assignment cap, and one of them is live.
+    /// The verdict on a program whose joint walk is larger than the
+    /// assignment cap, from the walks of its parts, or `None` for a program
+    /// that the joint walk must decide.
     ///
     /// The parts of [`independent_parts`] read none of each other's values,
     /// so the leaves of the joint walk are the product of the leaves of the
     /// parts, and a live leaf of each part together make a live leaf of the
-    /// joint walk. A joint walk with more leaves than the cap reaches no
-    /// verdict but a refusal, so this gives `true` only for a program whose
-    /// joint walk is refused, and every other program takes the verdict of
-    /// the joint walk.
-    fn live_past_cap(&self, program: &CheckedProgram, written: &[Det], root: GraphNodeIndex) -> bool {
+    /// joint walk. A joint walk with a part with no leaf has no live leaf,
+    /// and one with more leaves than the cap reaches no verdict but a
+    /// refusal. The size of the walk is the product over the parts of the
+    /// leaves of each, or one for a part with none: the joint walk of a part
+    /// with no leaf counts no leaf toward the cap, and goes through each
+    /// assignment of the `DET`s before it.
+    fn verdict_past_cap(&self, program: &CheckedProgram, written: &[Det], root: GraphNodeIndex) -> Option<Result<(), DetRefusal>> {
         let parts = independent_parts(program, written);
         if parts.len() < 2 {
-            return false;
+            return None;
         }
-        let mut leaves: u64 = 1;
+        let cap = self.context.settings.caps.assignments;
+        let past = Err(DetRefusal::Bound(ReachedBound::Assignments { cap }));
+        let acyclic = program.program.graph.find_cycle().is_none();
+        let (mut size, mut stopped, mut empty, mut live): (u64, bool, bool, bool) = (1, false, false, true);
         for (dets, _) in &parts {
-            let Ok(count) = self.walked(program, dets, &[], root) else { return false };
-            leaves = leaves.saturating_mul(count);
+            match self.part(program, dets, &[], root, acyclic) {
+                PartWalk::PastCap => return Some(past),
+                PartWalk::Stopped => stopped = true,
+                PartWalk::Ended { leaves, live: found } => {
+                    size = size.saturating_mul(leaves.max(1));
+                    empty |= leaves == 0;
+                    live &= found;
+                }
+            }
         }
-        leaves > self.context.settings.caps.assignments
-            && parts.iter().all(|(dets, picks)| picks.is_empty() || self.walked(program, dets, picks, root).is_ok())
+        if stopped || size <= cap {
+            return None;
+        }
+        if empty {
+            return Some(Err(DetRefusal::NoLiveAssignment));
+        }
+        let picked = |(dets, picks): &(Vec<Det>, Vec<Det>)| {
+            picks.is_empty() || matches!(self.part(program, dets, picks, root, acyclic), PartWalk::Ended { live: true, .. })
+        };
+        Some(if live && parts.iter().all(picked) { Ok(()) } else { past })
     }
 
-    /// The leaves of the walk of `dets`, with a live leaf among them, as
-    /// [`Self::live`] gives them.
-    fn walked(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex) -> Result<u64, DetRefusal> {
+    /// What the walk of a part gives: its `DET`s `dets`, with `picks`. The
+    /// memo keeps it for a program with no cycle, so that a form leaves the
+    /// walks of the parts it does not touch to their first results.
+    fn part(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, acyclic: bool) -> PartWalk {
+        let scope = self.det_scope();
+        let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
+        let key = acyclic.then(|| part_key(program, dets, picks, self.context.settings.caps.assignments)).flatten();
+        if let Some(walk) = key.as_ref().and_then(|key| memo.part(scope, key)) {
+            return walk;
+        }
+        let walk = match self.walked(program, dets, picks, root) {
+            (leaves, Ok(())) => PartWalk::Ended { leaves, live: true },
+            (leaves, Err(DetRefusal::NoLiveAssignment)) => PartWalk::Ended { leaves, live: false },
+            (_, Err(DetRefusal::Bound(ReachedBound::Assignments { .. }))) => PartWalk::PastCap,
+            (_, Err(_)) => PartWalk::Stopped,
+        };
+        if let Some(key) = key {
+            memo.keep_part(scope, key, walk);
+        }
+        walk
+    }
+
+    /// The leaves of the walk of `dets`, as [`Self::live`] gives them, and
+    /// its verdict.
+    fn walked(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex) -> (u64, Result<(), DetRefusal>) {
         // Keep this probe independent of prior cache contents, byte reservations,
         // cancellation, held stops and elapsed time. Its values never escape.
         // The probes of the task session share an intern table and the domains
@@ -104,20 +147,20 @@ impl Decoder<'_> {
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         if let Some(probe) = memo.probe(scope, self.session) {
             let domains = probe.domains(program, dets);
-            let verdict = self.live(program, dets, picks, root, &probe.session, Some(&domains));
-            if !probe.session.results.evicted() && !matches!(verdict, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
-                return verdict;
+            let walked = self.live(program, dets, picks, root, &probe.session, Some(&domains));
+            if !probe.session.results.evicted() && !matches!(walked.1, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
+                return walked;
             }
         }
         let session = TaskSession::new(self.session.bound, self.session.caps);
         self.live(program, dets, picks, root, &session, None)
     }
 
-    /// The leaves of the walk of `dets` in `session`, where some leaf gives
-    /// each of them a value and each of `picks` a model, with the domains
-    /// from `domains` where it is given.
+    /// The leaves that the walk of `dets` in `session` reached, and its
+    /// verdict: whether some leaf gives each of them a value and each of
+    /// `picks` a model, with the domains from `domains` where it is given.
     #[allow(clippy::too_many_arguments)]
-    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>) -> Result<u64, DetRefusal> {
+    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>) -> (u64, Result<(), DetRefusal>) {
         let limits = Limits::new(None, Cancellation::default())
             .counted_in(TableWork::new(self.context.settings.table_work_cap));
         let inputs = EvaluationInputs {
@@ -151,12 +194,14 @@ impl Decoder<'_> {
             live = true;
             Ok(())
         };
-        match descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains).1 {
+        let end = descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains).1;
+        let verdict = match end {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
             Err(End::Stop(stop)) => Err(DetRefusal::Bound(stop.bound)),
-            Ok(()) if live => Ok(leaves),
+            Ok(()) if live => Ok(()),
             Ok(()) => Err(DetRefusal::NoLiveAssignment),
-        }
+        };
+        (leaves, verdict)
     }
 }
 
