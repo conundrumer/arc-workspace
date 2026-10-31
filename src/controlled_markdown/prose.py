@@ -119,6 +119,10 @@ def code_prose_lines(path: Path) -> list[tuple[int, str]]:
     return python_prose_lines(path.read_text())
 
 
+# The tree of study code whose files `code_carry_errors` does not read.
+CARRY_FREE_TREE = "model/study/sampler/"
+
+
 def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownError]:
     """A finding at each line of a fragment, of a lib doc comment, or of a
     docstring or a comment of a Python file, that the
@@ -126,7 +130,9 @@ def code_carry_errors(path: Path, source: str) -> Iterator[ControlledMarkdownErr
     line in the file. Where the other rules refuse to read a fragment, or
     the file's fragments past one, this check reads neither: those rules
     report it. The docstrings and comments are read apart from the
-    fragments."""
+    fragments. A file under `CARRY_FREE_TREE` gives no finding."""
+    if CARRY_FREE_TREE in path.as_posix():
+        return
     for line, text in code_prose_lines(path):
         if words := carry_words(text):
             yield _carry_error(source, line, words)
