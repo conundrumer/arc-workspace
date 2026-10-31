@@ -219,6 +219,9 @@ class ClauseWriter:
         name, cols, kind, inst = self.c.resolve(atom.relation, self.scope, self.sub)
         if atom in self.c.lib_judgment:
             self.c.todo.add("lib-judgment", self.c.lib_judgment[atom])
+        elif kind == "lib" and name not in self.c.sig.top and name not in libmap.REL:
+            # a lib relation the lib of the signature lacks, which no expansion replaced: it has no arclog name
+            cols = None
         if cols is None:
             self.c.todo.add("unresolved", atom.relation.text)
             return name, [souffle_term(a) for a in atom.args]

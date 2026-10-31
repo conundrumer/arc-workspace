@@ -673,8 +673,9 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
             corpus.mkdir(exist_ok=True)
             (corpus / f"{stem}.arclog").write_text(checked[0])
             (corpus / f"{stem}.arcdata").write_text(checked[1])
-        if any(k.startswith("no-det-") for k in kinds):
-            # a `(DET &x)` with no body has no columns, so a read of it fails the checks of every case
+        if any(k.startswith("no-det-") or k == "unresolved" for k in kinds):
+            # a `(DET &x)` with no body has no columns, and the engine reads no relation of an unresolved name, so
+            # each case of the solver fails its checks
             stubbed.append(stem)
             _drop_cases(stem)
         elif answers is not None:
@@ -702,7 +703,7 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
           f"the passes ran on the cases of {sum(1 for c in ok if not c.kept)} solvers; "
           f"kept the case files of {sum(1 for c in ok if c.kept)} solvers")
     if stubbed:
-        print(f"case files skipped, no determination plan: {len(stubbed)} stems ({', '.join(sorted(stubbed))})")
+        print(f"case files skipped, no determination plan or an unresolved relation: {len(stubbed)} stems ({', '.join(sorted(stubbed))})")
     print(f"merged {merges['relation']} relations and {merges['input']} inputs; "
           f"unmerged {merges['unmerged']} relations ({', '.join(sorted(set(unmerged)))}) "
           f"and {merges['input-unmerged']} inputs")
