@@ -9,6 +9,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
+use crate::check::CheckCache;
 use crate::harness::{panic_message, read_solver_texts};
 use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
 use crate::program::path::{node_at, NodePath, NodeRef, PathNode};
@@ -17,7 +18,7 @@ use crate::solver::{Case, CaseName, Exclusion, FileOwner, Solver};
 use crate::trace::label_names::label_name;
 use crate::write::{elide_out_sites, write_arcdata, write_arclog};
 
-use super::{case_spelled, resolve_alone};
+use super::{case_spelled, check_alone};
 
 /// The texts of the two files of a case.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -69,12 +70,13 @@ pub fn case_files(task_id: &str, arclog: &str, arcdata: &str, corpus: &Path) -> 
     let solver = read_solver_texts(corpus, task_id, arclog, arcdata).map_err(|e| format!("the solver's files do not read: {e}"))?;
     let concept = solver.concept_case().name;
     let mut files: Vec<CaseFiles> = Vec::new();
+    let mut cache = CheckCache::default();
     for case in solver.cases(Exclusion::WithExcluded) {
         let file = case_file_name(&case.name);
         if let Some(taken) = files.iter().find(|held| held.file == file) {
             return Err(format!("the cases {} and {} get the file name {file}", taken.case, case_spelled(&case.name)));
         }
-        let texts = catch_unwind(AssertUnwindSafe(|| case_texts(&solver, &case))).unwrap_or_else(|payload| {
+        let texts = catch_unwind(AssertUnwindSafe(|| case_texts(&solver, &case, &mut cache))).unwrap_or_else(|payload| {
             Err(format!("the writer panicked: {}", panic_message(&*payload).unwrap_or("a payload that is not a message")))
         });
         files.push(CaseFiles { case: case_spelled(&case.name), file, concept: case.name == concept, texts });
@@ -102,10 +104,12 @@ pub(super) fn read_case_files(corpus: &Path, task_id: &str, name: &CaseName) -> 
     }
 }
 
-/// The texts of the case `case` of `solver`, or the fault that it has none.
-fn case_texts(solver: &Solver, case: &Case) -> Result<CaseTexts, String> {
+/// The texts of the case `case` of `solver`, or the fault that it has none:
+/// the fault that [`super::case_stream`] gives for the same case, where the
+/// program read alone has no stream or the checker refuses it.
+fn case_texts(solver: &Solver, case: &Case, cache: &mut CheckCache) -> Result<CaseTexts, String> {
     if !case.reads_alone_as_it_stands() {
-        resolve_alone(case).map_err(|fault| format!("the case program read alone has no files: {fault}"))?;
+        check_alone(case, cache).map_err(|fault| format!("the case program read alone has no files: {fault}"))?;
     }
     let program = case.program_alone();
     let mut layout = case_layout(solver, case);
