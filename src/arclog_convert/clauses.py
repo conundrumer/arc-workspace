@@ -21,6 +21,7 @@ from engine.program import (
     Variable,
     Wildcard,
 )
+from souffle.parser import RIGID_POSE
 from souffle.printer import term as souffle_term
 from arclog_convert.literals import collect_vars
 from arclog_convert import libmap
@@ -53,6 +54,12 @@ class Site:
 POSE_TESTS = frozenset({"c4_elem", "sym_member"})
 """The lib relations that test, at their last column, a D4 element for a subgroup of D4. A `Pose` label stands at no
 such column (`docs/arclog/rigid.md#the-pose`)."""
+
+
+def column_site(column: str, label: str) -> str:
+    """The site of the column `column` that reads `label`, `label` alone where
+    it is the column's name (`docs/arclog/arclog.md#sites`)."""
+    return label if label.lstrip("*^") == column else f"(:{column} {label})"
 
 
 def kept_leaf(leaf: "Leaf") -> bool:
@@ -364,6 +371,12 @@ class ClauseWriter:
                 return []
             if l.negated and not l.atom.relation.instances and self.defect(l.atom.relation.name):
                 return self.universal(l.atom, bound)
+            if (column := self.d4_column(l.atom)) is not None:
+                keyed = self.c.rigid[l.atom.relation.name][0] in self.c.rigid_keyed
+                if not l.negated and len(l.atom.args) == POSE_COLUMN + 2 + keyed:
+                    return self.d4_part(l.atom, column, bound)
+                self.c.todo.add("rigid-d4", f"{souffle_term(l.atom)}: only a positive read of a part that holds the "
+                                "stored pose and the part's key has a form")
             if l.negated:
                 name, s = self.sites(l.atom, None)
                 self.note(name, True)
@@ -548,20 +561,47 @@ class ClauseWriter:
         self.clause_vars.add(name)
         return Variable(name)
 
-    def pose_subgroup(self, test: Atom, chart: Atom, bound: set[str]) -> list[str]:
-        """The narrowing of `docs/arclog/rigid.md#subgroups`: `test` on the pose that `chart` reads, written as `test`
-        on that pose's difference from a training pose of the block, which reads no single pose."""
-        pose, trained, difference = test.args[-1], self.new_label("D0", bound), self.new_label("T", bound)
+    def d4_column(self, atom: Atom) -> int | None:
+        """Where `atom` reads a RIGID block's placed relation with a D4 column, that column."""
+        rel = atom.relation
+        if rel.name not in self.c.rigid or rel.instances != (() if self.scope == ("Params",) else ("params",)):
+            return None
+        columns = self.c.rels[(("Params",), rel.name)].columns
+        return next((i for i, c in enumerate(columns) if i != POSE_COLUMN and c.type.name == RIGID_POSE), None)
+
+    def d4_part(self, part: Atom, column: int, bound: set[str]) -> list[str]:
+        """`part`, a read of the D4 column `column` of a RIGID block's part, written as its pose's difference from a
+        training pose of the block. A placement leaves a D4 column as it is (`docs/arclog/rigid.md#semantics`), where
+        Souffle's takes a stored pose S to the P of `d4_compose(P, S, D)`, the element that takes S onto the pose D."""
+        read, trained = self.pose_read(part, bound)
+        name = self.c.rel_name(("Params",), part.relation.name)
+        self.note(name, False)
+        if name.split(".")[0] in self.drop_neg:
+            raise Dead
+        return [read, self.pose_difference(trained, part.args[POSE_COLUMN], part.args[column], bound)]
+
+    def pose_read(self, chart: Atom, bound: set[str]) -> tuple[str, Variable]:
+        """The read of a training pose of the block that `chart` reads, and that pose's new label."""
+        trained = self.new_label("D0", bound)
         args: list = [Wildcard()] * len(chart.args)
         args[POSE_COLUMN] = trained
         if self.c.rigid[chart.relation.name][0] in self.c.rigid_keyed:
             args[POSE_COLUMN + 1] = chart.args[POSE_COLUMN + 1]   # each key is an assembly of its own
         name, sites = self.sites(dc_replace(chart, args=tuple(args)), bound)
-        read = " ".join([f"{name.split('.')[0]}.pose", *sites])
-        at_b = self.label(pose.name)
-        return [f"({read})",
-                f"(pose_difference (:A {self.label(trained.name)}) {at_b if at_b == 'B' else f'(:B {at_b})'} "
-                f"(:D {self.one(difference, bound)}))",
+        return "(" + " ".join([f"{name.split('.')[0]}.pose", *sites]) + ")", trained
+
+    def pose_difference(self, trained: Variable, pose, difference, bound: set[str]) -> str:
+        """The atom that gives `difference`, the element that takes the placement at `trained` onto that at `pose`."""
+        sites = [column_site(column, self.one(term, bound))
+                 for column, term in (("A", trained), ("B", pose), ("D", difference))]
+        return f"(pose_difference {' '.join(sites)})"
+
+    def pose_subgroup(self, test: Atom, chart: Atom, bound: set[str]) -> list[str]:
+        """The narrowing of `docs/arclog/rigid.md#subgroups`: `test` on the pose that `chart` reads, written as `test`
+        on that pose's difference from a training pose of the block, which reads no single pose."""
+        read, trained = self.pose_read(chart, bound)
+        difference = self.new_label("T", bound)
+        return [read, self.pose_difference(trained, test.args[-1], difference, bound),
                 *self.lit(AtomLiteral(dc_replace(test, args=(*test.args[:-1], difference)), False), bound)]
 
     def equals_first(self, lits: list, bound: set[str]) -> list:

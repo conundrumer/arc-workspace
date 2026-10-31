@@ -33,7 +33,7 @@ from arclog_convert.frame_reads import (
 )
 from arclog_convert import paths
 
-from arclog_convert.clauses import ClauseWriter
+from arclog_convert.clauses import ClauseWriter, column_site
 from arclog_convert.forms import (
     Form,
     close,
@@ -47,12 +47,6 @@ from arclog_convert.forms import (
 from arclog_convert.leaves import Written
 from arclog_convert.lib import KeyedTable, PROPOSER_COLS, keyed_row, pascal, takes_set_mark, require_exact_set
 from arclog_convert.terms import name_of
-
-
-def column_site(column: str, label: str) -> str:
-    """The site of the column `column` that reads `label`, `label` alone where
-    it is the column's name (`docs/arclog/arclog.md#sites`)."""
-    return label if label.lstrip("*^") == column else f"(:{column} {label})"
 
 
 def atom(relation: str, sites: list[str]) -> str:
