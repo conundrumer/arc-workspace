@@ -322,6 +322,15 @@ impl Solver {
         }
         let concept_determination = |p: &Placed| p.depth() == 0 && is_det(&p.form) && !other_readings.contains(&p.step);
         let mut helpers = Vec::new();
+        let mut port_determinations = Vec::new();
+        let read_as_mapped = |placed: &mut Vec<Vec<Placed>>, map: &dyn Fn(&Atom) -> Option<Atom>| {
+            for p in placed.iter_mut().flatten().filter(|p| !concept_determination(p)) {
+                if let Some(form) = map_atoms(&p.form, map) {
+                    p.form = form;
+                    p.made = true;
+                }
+            }
+        };
         if !stored.is_empty() {
             let mut used = self.declared_names();
             let read_columns = self.columns_read_in_any_block();
@@ -348,20 +357,18 @@ impl Solver {
                     }
                 }
                 if let Some(rename) = &reading.rename {
-                    for forms in placed.iter_mut() {
-                        for p in forms.iter_mut() {
-                            if !concept_determination(p) {
-                                if let Some(form) = map_atoms(&p.form, &|atom| rename.of(atom)) {
-                                    p.form = form;
-                                    p.made = true;
-                                }
-                            }
-                        }
-                    }
+                    read_as_mapped(&mut placed, &|atom| rename.of(atom));
                 }
                 if let Some(helper) = reading.helper {
+                    // A deeper block's form of the relation takes the place
+                    // of the `DET`, and a lifted read reads that form.
+                    let key = derives(&original.form);
+                    if !walk.placed.iter().any(|p| p.depth() > original.depth() && derives(&p.form) == key) {
+                        read_as_mapped(&mut placed, &|atom| if lifted(atom) { helper.of(atom) } else { None });
+                    }
                     helpers.push(helper);
                 }
+                port_determinations.extend(reading.port_determination);
                 placed[index] = reading.forms.into_iter().map(|form| Placed { form, made: true, ..original.clone() }).collect();
             }
         }
@@ -393,6 +400,7 @@ impl Solver {
             origins.insert(path, (p.owner, p.path.clone()));
             forms.push(form);
         }
+        task_wide_ports(&mut forms, &port_determinations);
         let mut alone = forms.clone();
         let mut changed = false;
         for path in &concept_determinations {
@@ -971,11 +979,15 @@ struct StoredReading {
     /// the concept determinations read as the `DET`.
     rename: Option<Rename>,
     /// The reads of the line's relation, which a concept determination reads
-    /// as the helper when the case program stands alone.
+    /// as the helper when the case program stands alone, and which each other
+    /// form reads as the helper where the read has a site on the Example
+    /// column.
     helper: Option<Rename>,
     /// On an input port, the body that replaces the input's clause in the
     /// instance: a read of the `DET`.
     input: Option<Node<Body>>,
+    /// On an output port, the `DET` that reads the port.
+    port_determination: Option<RelationName>,
 }
 
 /// One column of the relation a stored reading's `DET` determines: its name,
@@ -1051,7 +1063,9 @@ fn single_label(site: &Site) -> Option<(&SiteArg, LabelId)> {
 ///
 /// A line with a body has the helper `RULE` as `D`; a line on an input has a
 /// helper over the `INIT` form's clause of that input; a line on an output has
-/// the port as `D`, and the `DET` takes a name of its own. The `DET` of a line
+/// the port as `D`, and the `DET` takes a name of its own, and
+/// [`task_wide_ports`] states it over a port that has no Example column in the
+/// case. The `DET` of a line
 /// with a body has the columns of the line that a read of its relation names,
 /// `read`, the Example column left out (`docs/arclog/arclog.md#sites`); the
 /// helper has all of the line's.
@@ -1102,7 +1116,7 @@ fn stored_reading(
         let columns = named.map(|column| StoredColumn { name: column.name.clone(), arg: SiteArg::Label(LabelUse::Zero), record: None }).collect::<Vec<_>>();
         let derivation = RelationRef::Declared(name.clone());
         let forms = vec![helper(&name, line.body.clone(), line.columns.clone()), Form::Clause(Node::new(determination(line, &derivation, &columns, false)))];
-        return Some(StoredReading { forms, rename: None, helper: Some(Rename { from: relation, to: derivation, keep_lifted: false, flat: Vec::new() }), input: None });
+        return Some(StoredReading { forms, rename: None, helper: Some(Rename { from: relation, to: derivation, keep_lifted: false, flat: Vec::new() }), input: None, port_determination: None });
     }
     let port = port?;
     if port.input {
@@ -1146,7 +1160,7 @@ fn stored_reading(
         };
         let input = Node::new(Body { conjuncts: Arc::from([Conjunct::Atom(Node::new(read))]) });
         let forms = vec![helper(&name, input_body, made.into()), Form::Clause(Node::new(det))];
-        return Some(StoredReading { forms, rename: None, helper: None, input: Some(input) });
+        return Some(StoredReading { forms, rename: None, helper: None, input: Some(input), port_determination: None });
     }
     let ProgramRelation::Output(_) = &line.derives else { return None };
     let keyed = instance.and_then(|instance| instance.key.as_ref());
@@ -1226,8 +1240,14 @@ fn stored_reading(
         let name = fresh("_stored", used);
         let det = RelationRef::Declared(name.clone());
         let mut clause = determination(line, &relation, &columns, false);
-        clause.derives = ProgramRelation::Declared(name);
-        return Some(StoredReading { forms: vec![Form::Clause(Node::new(clause))], rename: Some(Rename { from: relation, to: det, keep_lifted: true, flat: Vec::new() }), helper: None, input: None });
+        clause.derives = ProgramRelation::Declared(name.clone());
+        return Some(StoredReading {
+            forms: vec![Form::Clause(Node::new(clause))],
+            rename: Some(Rename { from: relation, to: det, keep_lifted: true, flat: Vec::new() }),
+            helper: None,
+            input: None,
+            port_determination: Some(name),
+        });
     }
     // The value columns, then the other columns read.
     let mut values = Vec::new();
@@ -1248,7 +1268,7 @@ fn stored_reading(
     let stored = fresh("_stored", used);
     let value_ref = RelationRef::Declared(value.clone());
     let mut det = determination(line, &relation, &values, true);
-    det.derives = ProgramRelation::Declared(value);
+    det.derives = ProgramRelation::Declared(value.clone());
     // The `RULE` joins the value rows with the rows of the other columns
     // that the port gives on the input.
     let all: Vec<&StoredColumn> = values.iter().chain(&columns).collect();
@@ -1264,7 +1284,48 @@ fn stored_reading(
     let rule = helper(&stored, Node::new(Body { conjuncts: conjuncts.into() }), rule_columns);
     let to = RelationRef::Declared(stored);
     let forms = vec![Form::Clause(Node::new(det)), rule];
-    Some(StoredReading { forms, rename: Some(Rename { from: relation, to, keep_lifted: true, flat }), helper: None, input: None })
+    Some(StoredReading { forms, rename: Some(Rename { from: relation, to, keep_lifted: true, flat }), helper: None, input: None, port_determination: Some(value) })
+}
+
+/// Each form of `forms`, the forms of a case, that derives a relation of
+/// `determinations`, the `DET`s of [`stored_reading`] on output ports, read
+/// as [`task_wide_determination`] gives where the form's read of its port is
+/// not lifted: the instance reads no per-input relation in the case, as
+/// `docs/arclog/arclog.md#program` gives, so the port has no Example column.
+fn task_wide_ports(forms: &mut [Form], determinations: &[RelationName]) {
+    if determinations.is_empty() {
+        return;
+    }
+    let program = Node::new(Program { forms: forms.to_vec().into() });
+    for (index, form) in forms.iter_mut().enumerate() {
+        let Form::Clause(clause) = &*form else { continue };
+        let clause = clause.value();
+        if !matches!(&clause.derives, ProgramRelation::Declared(name) if determinations.contains(name)) {
+            continue;
+        }
+        let path = NodePath::top(index as u32);
+        let read = crate::check::reads::form_reads(form, &path).into_iter().find(|read| matches!(read.atom.relation, RelationRef::Output(_)));
+        if let Some(read) = read {
+            if !crate::resolver::grammar_reads_example_column(&program, &path.join(&read.at), crate::registry::Registry::get()) {
+                *form = Form::Clause(Node::new(task_wide_determination(clause)));
+            }
+        }
+    }
+}
+
+/// The `DET` `clause`, as [`determination`] gives it, on a port that has no
+/// Example column: the port's rows, with a site on each of the same columns.
+fn task_wide_determination(clause: &Clause) -> Clause {
+    let example = crate::resolver::columns::example();
+    let port = clause.body.value().conjuncts.iter().find_map(|conjunct| match conjunct {
+        Conjunct::Atom(atom) if matches!(atom.value().relation, RelationRef::Output(_)) => Some(atom.value()),
+        _ => None,
+    });
+    let port = port.expect("a `DET` of a stored reading reads its port");
+    let sites = port.sites.iter().filter(|site| site.column != example).cloned().collect();
+    let read = Atom { relation: port.relation.clone(), sites };
+    let body = Node::new(Body { conjuncts: Arc::from([Conjunct::Atom(Node::new(read))]) });
+    Clause { body, columns: clause.columns[1..].into(), ..clause.clone() }
 }
 
 /// The value columns of the stored reading of a line on an output port of an
