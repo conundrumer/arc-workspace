@@ -11,6 +11,12 @@ B reads only columns that A reads, joined to the variables that A joins them to.
 A site of B that makes a label (`*X`) which no other node of the form names
 reads nothing, and B needs no site of A at its column. An atom with no sites
 stands for the relation's having a row, which any atom on the relation implies.
+An atom B on an orientation-type relation (`ELEM`, such as `d4_elem`) with one site that names a label without a mark
+is implied also by an atom A on a lib relation that names that label at a column whose type is that orientation type or
+a type below it (`BELOW`): A holds only values of that type, whether an algebra relation enumerates the column or
+another atom binds it, so B tests nothing. `d4_inverse` at its `D_inv` column and `axis_inversion` at its `T` column
+imply `d4_elem`, and `split` at its `A` column implies `axis_elem`. A may be an algebra relation, which the same-relation rule
+leaves alone.
 The pass removes B, with the white space before it.
 
 The pass leaves B where:
@@ -31,13 +37,21 @@ implies another. The text stays as it is where it removes none."""
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from arclog_convert.lib import ALGEBRA_MODES
-from arclog_convert.lint import FORMS, MARKS, OPS, bare_label, is_const, site_pairs
+from arclog_convert.lib import ALGEBRA_MODES, pascal
+from arclog_convert.lint import FORMS, LIB, MARKS, OPS, bare_label, is_const, site_pairs
 from arclog_convert.lint_alts import placements
 from arclog_convert.lint_read import L, Sym, read, walk
 
 BODIES = ("RULE", "DET")
 """The clauses with a body."""
+
+ELEM = {"dir_elem": "Dir", "axis_elem": "Axis", "diag_dir_elem": "DiagDir", "diag_axis_elem": "DiagAxis",
+        "d4_elem": "D4", "c4_elem": "C4", "sense_elem": "Sense", "sym_elem": "Sym", "dir8_elem": "Dir8",
+        "axis4_elem": "Axis4"}
+"""The relation that tests membership in each orientation type, by name, with that type."""
+
+BELOW = {"D4": {"C4"}, "Dir8": {"Dir", "DiagDir"}, "Axis4": {"Axis", "DiagAxis"}}
+"""The types below each orientation type that has some (`lib-signature.dl`), apart from itself."""
 
 
 @dataclass(frozen=True)
@@ -124,6 +138,23 @@ def _implies(a: L, b: L, named: set[str], clause: bool) -> bool:
     return True
 
 
+def _typed(a: L, b: L) -> bool:
+    """Whether the lib atom `a` names the label of the one site of `b`, an atom of `ELEM`, at a column whose type is
+    that of `b` or below it. The label of `b` has no mark."""
+    tested = ELEM[b.head]
+    sb = _sites(b)
+    if sb is None or len(sb) != 1:
+        return False
+    (label,) = sb.values()
+    if label.startswith(("*", "^")):
+        return False
+    types = dict((pascal(name), ty) for name, ty in LIB.top[a.head])
+    sa = _sites(a)
+    return sa is not None and any(
+        bare_label(held) == label and (ty := types.get(path)) is not None and (ty == tested or ty in BELOW.get(tested, ()))
+        for path, held in sa.items())
+
+
 def _binds_before(items: list, a: L, b: L) -> bool:
     """Whether the atom `a` that implies `b` stands before `b` or has no `NOT` or `ALL` between them: `b` leaves,
     and a `NOT` between would stand before the atom that binds its labels."""
@@ -138,10 +169,12 @@ def _step(text: str) -> str | None:
         form = placed.form
         for items, clause in _conjunctions(form):
             atoms = _readable(items)
+            typed = [x for x in items if isinstance(x, L) and x.head in LIB.top]
             for b in reversed(atoms):
                 peers = [a for a in atoms if a is not b and a.head == b.head]
                 named = _names(form, b) if peers else set()
-                if any(_implies(a, b, named, clause) and _binds_before(items, a, b) for a in peers):
+                if any(_implies(a, b, named, clause) and _binds_before(items, a, b) for a in peers) or \
+                        b.head in ELEM and any(a is not b and _typed(a, b) and _binds_before(items, a, b) for a in typed):
                     start = b.start
                     while text[start - 1].isspace():
                         start -= 1
