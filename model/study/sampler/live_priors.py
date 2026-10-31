@@ -3,7 +3,7 @@
 DATA/sampler/models/live_priors.pkl. The file holds what S reads from disk at a point (the atom priors, the stop hazards,
 the compound counts of RULE bodies and of an INIT's key and port bodies, the registry's columns and types), and the program-level counts that a draw from an empty prefix
 needs: the next clause's kind or the stop, by how many clauses of each kind exist, a DET's proposer and marks, and an INIT's
-component and ports. A clause comes after what it reads and written order counts for nothing: each program is walked in WALK_ORDERS
+component, ports and head sites. A clause comes after what it reads and written order counts for nothing: each program is walked in WALK_ORDERS
 random orders that keep its reads.
 
   <runtime python> live_priors.py [--out PATH]
@@ -55,6 +55,13 @@ def walk_counts(tasks):
                 have[forms[j][0]] += 1
             after[tuple(min(have[k], WALK_TOP) for k in WALK_KINDS)]['stop'] += 1
     return dict(kinds=WALK_KINDS, top=WALK_TOP, after=dict(after))
+
+
+def port_heads(form):
+    """[(port name, {column: the count of labels its head site takes})] of an INIT form's ports, in or out of a key group. A record's fields
+    count as labels."""
+    ports = [q for g in form[3:] if isinstance(g, list) and g for q in (g[2:] if g[0] == 'key' else [g]) if isinstance(q, list) and q]
+    return [(p[0], {h[0][1:]: len(h) - 1 for h in p[1] if isinstance(h, list)}) for p in ports]
 
 
 def init_bodies(form):
@@ -127,6 +134,7 @@ def fit():
     det = collections.Counter()  # 'proposer' or 'atoms' -> clauses; ('ONE' or 'SET', the same) -> clauses
     keyed, ports = collections.Counter(), collections.Counter()  # component -> INITs with a key group; (component, key group, port) -> uses
     heads = collections.Counter()  # (component, port, column) -> uses of the port whose head names the column
+    head_labels = collections.defaultdict(collections.Counter)  # (component, port, column) -> count of labels at that head site -> uses
     for t in tasks:
         prev, n = '^', 0
         lengths[sum(f[0] != 'OUT' for f in S.corpus_forms(t))] += 1
@@ -148,8 +156,10 @@ def fit():
                 comps[f[2]] += 1
                 keyed[f[2]] += k
                 ports.update((f[2], k, p) for p in used)
-                for p, head, _ in S.port_parts(f) + [q for g in f[3:] if isinstance(g, list) and g[:1] == ['key'] for q in S.port_parts(['', '', ''] + g[2:])]:
-                    heads.update((f[2], p, col) for col, _ in head)
+                for p, head in port_heads(f):
+                    heads.update((f[2], p, col) for col in head)
+                    for col, n in head.items():
+                        head_labels[f[2], p, col][n] += 1
     bodies = {k: S.gold_bodies(tasks, k) for k in ('RULE', 'DET')}
     bodies['INIT'] = S.gold_port_bodies(tasks)
     regcols = S.registry_columns()
@@ -169,7 +179,7 @@ def fit():
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
-                ports=ports, heads=heads, compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=S.lib_types(Rc, regcols),
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)

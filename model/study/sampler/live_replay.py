@@ -234,7 +234,7 @@ class Walk:
         slots = [M.slot_no(self.V.name(x)) for x in forced if self.V.kind(x) == 'relation']
         pg.names = pg.names | {'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)}
         params, ports = run.pri['comp_ports'][name]
-        nlab, keys = 0, {}
+        nlab, keys, fields = 0, {}, {}
         if t[self.i] == SKIP_TOK:
             f = f.fork()
             f.step(SKIP_TOK)
@@ -263,7 +263,7 @@ class Walk:
                 continue
             if t[self.i] in KIND_TOK.values() or t[self.i] == OUT_TOK:
                 break
-            f, nlab = self.port(f, pname, cols, params, nlab, keys)
+            f, nlab = self.port(f, name, pname, cols, params, nlab, keys, fields)
         while t[self.i] == SKIP_TOK:
             f = f.fork()
             f.step(SKIP_TOK)
@@ -273,8 +273,25 @@ class Walk:
         run.close(pg, f)
         return f
 
-    def port(self, f, pname, cols, params, nlab, keys):
-        pg, run, t, pri = self.pg, self.run, self.t, self.run.pri
+    def head_column(self, g):
+        """The head column at self.i, walked from decoder g: (decoder, its labels). A record's fields go in order, each with its token."""
+        t, labs, record = self.t, [], False
+        while t[self.i] != M.END:
+            if self.kind(self.i) == 'column':
+                record = True
+            else:
+                labs.append(t[self.i])
+            g = g.fork()
+            g.step(t[self.i])
+            self.i += 1
+        for _ in range(1 + (record or len(labs) > 1)):
+            g = g.fork()
+            g.step(M.END)
+            self.i += 1
+        return g, labs
+
+    def port(self, f, comp, pname, cols, params, nlab, keys, fields):
+        pg, run, t = self.pg, self.run, self.t
         dr = run.drawer(pg, 'INIT', f, 'port')
         dr.want_types = frozenset(x for x in keys.values() if x)
         dr.fr.hidden = frozenset(run.ff0.label_tok[i] for i in range(nlab)) - set(keys)
@@ -288,25 +305,19 @@ class Walk:
         self.i += 1
         made = list(range(nlab, nlab + ptoks.count(M.STAR)))
         nlab = made[-1] + 1 if made else nlab
-        bound = []
+        bound, types, before = [], run.label_types(dr, dr.drawn), dict(fields)
         for c, ty in cols:
-            labs = []
-            while t[self.i] != M.END:
-                labs.append(t[self.i])
-                g = g.fork()
-                g.step(t[self.i])
-                self.i += 1
-            g = g.fork()
-            g.step(M.END)
-            self.i += 1
-            if len(labs) > 1:
-                raise Refused('head: a record of labels')
-            if labs:
-                bound.append((c, ty))
-                if labs[0] not in [run.ff0.label_tok.get(i) for i in made]:
-                    raise Refused('head names a key label')
-        need = [{'Position', 'Box'} if x == 'Point' else next((set(y) for y in pri['families'] if x in y), {x})
-                for _, x in bound if x not in params or x == 'Point']
+            g, labs = self.head_column(g)
+            if not labs:
+                continue
+            bound.append((c, ty))
+            if not set(labs) <= {run.ff0.label_tok.get(i) for i in made}:
+                raise Refused('head names a key label')
+            if len(labs) > 1 and len(labs) not in run.pri.get('head_labels', {}).get((comp, pname, c), ()) and ty not in fields:
+                self.hard['head: record size'] += 1
+            if ty in params and ty not in fields:
+                fields[ty] = [types.get(self.V.name(x), live.ANY_TYPE) for x in labs]
+        need = run.head_need(bound, params, before)
         if need and live.ANY_TYPE not in scope and any(not x & set(scope) for x in need):
             self.hard['gate:port head'] += 1
             self.why.append('%s need %s scope %s %s' % (pname, need, scope, text))

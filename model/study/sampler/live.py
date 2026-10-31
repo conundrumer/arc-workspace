@@ -22,8 +22,10 @@ counts them over random dependency orders of gold). A RULE's atoms and a DET's c
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
 alone, and other labels stay in their branch. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
-each key, or stops with chance 1 - KEY_ALL. The decoder gives every read of the task: its checks, and tables through step_tables; this module reads no
-gold and no path but the priors.
+each key, or stops with chance 1 - KEY_ALL. A head column of a type parameter may take a record of several labels, its count from the
+priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
+sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. The decoder gives every read of the task: its checks, and tables through step_tables;
+this module reads no gold and no path but the priors.
 
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
 the draw goes on past it. At each form end, for each relation R the form declared, the best suited first (Gate.suits): R over the
@@ -85,6 +87,7 @@ ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
 BRANCHES = 'RULE', 'key', 'port'  # the places of a body that may hold an OR, each with its counts in the priors
 BIND_QUIT = 0.8  # the chance that a later branch with an unbound exported label fails, at each atom past bind_atoms
 KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of 907 gold ports of keys of two or more labels read them all
+FIELD_AGAIN = 0.01  # the factor on a field that a record site repeats: 15 of 1570 gold record sites have one
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against those of the program's state
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
@@ -345,14 +348,22 @@ class Deadline(Exception):
 class LiveDrawer(S.Drawer):
     """S's Drawer with the limits as arguments."""
 
+    labs_wanted = 0  # the count of labels of the clause at which a port's body has as many as its head takes
+
     def __init__(self, V, counts, rng, regcols, fr, regtypes, limits):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
         self.root_cap, self.node_cap = limits.root_cap, limits.node_cap
 
+    def weights(self, n, os, rel, joined, leaf, steer, jset=None, must_join=False):
+        """S's, with the field that a record site repeats at gold's share."""
+        ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
+        return [w * FIELD_AGAIN if self.fr.colpos.get(o) == n.need else w for o, w in zip(os, ws)] if n.phase == 'fcol' else ws
+
     def steer_choice(self, fr, n, popts, opts, k, rel, joined, leaf, stop, key):
-        """S's, with an atom that holds a column of a needed type going on to that column: a stop here leaves the port's head with no label."""
+        """S's, with an atom going on where the port's head wants more labels, or where it holds a column of a needed type: a stop here
+        leaves the port's head with no label."""
         fm, stq = super().steer_choice(fr, n, popts, opts, k, rel, joined, leaf, stop, key)
-        if stop is not None and any(self.col_needed(n.rtok, fr.colpos[o]) for o in opts):
+        if stop is not None and (n.labs < self.labs_wanted or any(self.col_needed(n.rtok, fr.colpos[o]) for o in opts)):
             stq *= NEED_STOP
         return fm, stq
 
@@ -370,8 +381,10 @@ class LiveFrontier(S.FastFrontier):
             c = [t for t in c if t not in drop and not (n.phase == 'op' and n.need == 1 and t == n.toks[-1])]  # a comparison of an operand with itself says nothing
         elif n.phase == 'root' and M.NOT in c and n.labs == len(self.hidden):  # no label for a NOT atom to join
             c.remove(M.NOT)
-        elif n.phase == 'fcol':  # a key's record may hold one column name twice
-            c = [self.col_by_pos[n.need]] + c
+        elif n.phase == 'fcol':  # a key's record may hold one column name twice, and no gold site repeats one twice
+            named = re.findall(r'\(:(\d+) [^(]', n.text[[m.start() for m in re.finditer(r'\(:\d+ \(:', n.text)][-1] + 1:])
+            if len(named) == len(set(named)):
+                c = [self.col_by_pos[n.need]] + c
         return c
 
 
@@ -677,7 +690,7 @@ class Run:
         pg.names = pg.names | {'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)}  # a '.' tells a method (one_call)
         params, ports = pri['comp_ports'][comp]
         keyed = rng.random() < pri['keyed'][comp] / pri['comps'][comp]
-        nlab, keys = 0, {}
+        nlab, keys, fields = 0, {}, {}
         if keyed:  # the key port: one label of its body becomes the key
             dr = self.drawer(pg, 'INIT', f, 'key')
             dr.key_labels = self.pick(*zip(*self.key_labels))
@@ -705,7 +718,7 @@ class Run:
                 f = f.fork()
                 f.step(SKIP_TOK)
                 continue
-            f, nlab = self.port(pg, f, comp, name, cols, params, nlab, keys)
+            f, nlab = self.port(pg, f, comp, name, cols, params, nlab, keys, fields)
         for _ in ports:  # a key group's ports come again after it, for a port that reads no key
             if f.admits([RULE_TOK])[0]:
                 break
@@ -716,14 +729,46 @@ class Run:
         self.close(pg, f)
         return f
 
-    def port(self, pg, f, comp, name, cols, params, nlab, keys):
-        """The decoder after port name's body and head at f, with the labels of the INIT so far."""
+    def head_need(self, bound, params, fields):
+        """[set of types] that a port's body needs for its head columns bound: (column, type) pairs. fields has each type parameter's
+        label types so far."""
+        family = lambda t: {'Position', 'Box'} if t == 'Point' else next((set(x) for x in self.pri['families'] if t in x), {t})  # noqa: E731
+        return [family(t) for _, t in bound if t not in params or t == 'Point'] + [family(x) for _, t in bound for x in fields.get(t, ()) if x != ANY_TYPE]
+
+    def record_size(self, comp, name, c):
+        """A head column's count of labels, from the priors."""
+        sizes = self.pri.get('head_labels', {}).get((comp, name, c))
+        return self.pick(*zip(*sizes.items())) if sizes else 1
+
+    def head_column(self, f, labs, n):
+        """(decoder after a head column at f that takes n labels of the label tokens labs, labels taken). Two labels or more are a record:
+        each field's token, then its label."""
+        f, got = f.fork(), []
+        for j in range(n):
+            if n > 1:
+                f.step(self.ff0.col_by_pos[j])
+            some = [x for x, y in zip(labs, f.admits(labs)) if y]
+            if not some:
+                raise Drop('head: no label for a field')
+            got.append(self.rng.choice([x for x in some if x not in got] or some))
+            f.step(got[-1])
+        f.step(M.END)
+        if n > 1:
+            f.step(M.END)
+        return f, got
+
+    def port(self, pg, f, comp, name, cols, params, nlab, keys, fields):
+        """The decoder after port name's body and head at f, with the labels of the INIT so far. fields has each type parameter's label
+        types so far, and gets those of the columns that this head binds first."""
         pri, rng = self.pri, self.rng
         uses = sum(pri['ports'][comp, k, name] for k in (False, True))
         bound = [(c, t) for c, t in cols if rng.random() < (pri['heads'][comp, name, c] + 0.1) / (uses + 0.2)]
-        need = [{'Position', 'Box'} if t == 'Point' else next((set(x) for x in pri['families'] if t in x), {t})
-                for _, t in bound if t not in params or t == 'Point']
+        need = self.head_need(bound, params, fields)
+        sizes = {}  # a type -> the count of labels that a head column of it takes
+        for c, t in bound:
+            sizes[t] = len(fields[t]) if t in fields else sizes.get(t) or self.record_size(comp, name, c)
         dr = self.drawer(pg, 'INIT', f, 'port')
+        dr.labs_wanted = nlab + max(sizes.values(), default=0)
         dr.want, dr.want_types = set(keys), frozenset(t for t in keys.values() if t)
         dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want  # a port's body reads its own labels and the key
         cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, keys)
@@ -731,16 +776,18 @@ class Run:
         nlab = made[-1] + 1 if made else nlab
         f = cur.fork()
         f.step(M.END)
-        names = {c for c, _ in bound}
-        for c, _ in cols:
-            labs = [self.ff0.label_tok[i] for i in made if i in self.ff0.label_tok] if c in names else []
+        names, labs = {c for c, _ in bound}, [self.ff0.label_tok[i] for i in made if i in self.ff0.label_tok]
+        types = self.label_types(dr, dr.drawn)
+        for c, t in cols:
             ok = f.admits(labs + [M.END])
-            labs = [x for x, y in zip(labs, ok) if y]
-            f = f.fork()
-            if labs:  # a label of the body, the newest last to be read
-                f.step(rng.choice(labs))
-                f.step(M.END)
+            some = [x for x, y in zip(labs, ok) if y]
+            if some and (c in names or not ok[-1]):  # the decoder refuses END at a column whose type an earlier port bound
+                n = len(fields[t]) if t in fields else min(sizes.get(t, 1), len(some))
+                f, got = self.head_column(f, some, n)
+                if t in params:
+                    fields[t] = [types.get(self.V.name(x), ANY_TYPE) for x in got]
             elif ok[-1]:
+                f = f.fork()
                 f.step(M.END)
             else:
                 raise Drop('head: no label for %s' % name)
@@ -820,7 +867,8 @@ class Run:
 
     def label_types(self, dr, atoms):
         """{label name: type} of the labels that drawn atom texts make, where the engine gives no table (inside a port). A relation
-        with no known columns, as a proposer's or a component's output, gives ANY_TYPE, so that the decoder judges its labels at the head."""
+        with no known columns, as a proposer's or a component's output, or a column of no known type, gives ANY_TYPE, so that the decoder
+        judges its labels at the head."""
         out = {}
         for atom in atoms:
             m = re.match(r'\((?:NOT \()?(\S+)', atom)
@@ -828,9 +876,8 @@ class Run:
             if rtok is not None:
                 unknown = self.ff0.KIND[rtok] == 'relation' and M.slot_no(m[1]) not in dr.colmap
                 for p, field, v in sites(atom):
-                    t = ANY_TYPE if unknown else dr.col_type(rtok, p, field)
-                    if t is not None and v[0] == '*':
-                        out[v[1:]] = t
+                    if v[0] == '*':
+                        out[v[1:]] = ANY_TYPE if unknown else dr.col_type(rtok, p, field) or ANY_TYPE
         return out
 
     def body(self, pg, dr, dec, kind, nlab, need=(), keys=()):
@@ -895,6 +942,9 @@ class Run:
                 labels = tb.get('labels') if tb is not None else None
                 stop = self.rng.random() < self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb)
             if not stop and k < top:
+                continue
+            if nlab + toks.count(M.STAR) < dr.labs_wanted and k < top:
+                c['gate:head labels'] += 1
                 continue
             if need and ANY_TYPE not in scope and any(not x & set(scope) for x in need):
                 c['gate:port head'] += 1
