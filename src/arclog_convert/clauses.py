@@ -386,6 +386,18 @@ class ClauseWriter:
                 # constructors they share, the case the clause stands in
                 self.branches.update(ctor_names(lhs))
                 return []
+            if l.op.value in ("=", "!=") and isinstance(lhs, RecordTerm) and isinstance(rhs, RecordTerm) \
+                    and len(lhs.args) == len(rhs.args) \
+                    and not any(isinstance(t, Wildcard) for t in (*lhs.args, *rhs.args)):
+                # two records compare by their fields: `=` holds where each pair of fields is equal, and `!=` where
+                # some pair differs
+                pairs = [(x, y) for x, y in zip(lhs.args, rhs.args) if x != y]
+                parts = [self.lit(Comparison(l.op, x, y, l.line), bound) for x, y in pairs]
+                if l.op.value == "=":
+                    return [text for part in parts for text in part]
+                if not parts:
+                    raise Dead
+                return parts[0] if len(parts) == 1 else wrap("(OR ", parts)
             if l.op.value == "=":
                 # `=` makes its first label: `(= *X Y)`, the made label first
                 lfree = isinstance(lhs, Variable) and self.label(lhs.name) not in bound
