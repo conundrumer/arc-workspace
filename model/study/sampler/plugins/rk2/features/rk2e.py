@@ -20,6 +20,7 @@ E4  While that deepest level is still unread, an option that supplies a type whi
 E5  (off unless env RK2E_SLOT=1) Slot recency: 33% of derived golds are the relation defined last, against 6% of options.
     The earlier ranker excluded slot-distance features, so this block is off by default.  Keys e5_*.
 """
+import functools
 import os
 import re
 
@@ -42,6 +43,7 @@ _LASTREL = re.compile(r'^\((?:NOT \()?([^\s()]+)')
 _cache = [None, None]
 
 
+@functools.cache
 def _nt(t):
     return str(t).split('(')[0]
 
@@ -54,6 +56,7 @@ def _up(t):
     return out
 
 
+@functools.cache
 def _comp(a, b):
     return a == b or b in _up(a) or a in _up(b)
 

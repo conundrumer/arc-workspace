@@ -15,6 +15,7 @@ b6  Clause shape: how many library and derived atoms the prefix holds; a library
 b8  Unread derived relations (dag.readers == 0): option is unread and not in the prefix; row has pending unread options; the
     prefix already read one.  Keys b8_rd0, b8_pending, b8_discharged.
 """
+import functools
 import re
 
 _UP = {'Position': 'Box', 'Offset': 'Box', 'Dir': 'Dir8', 'DiagDir': 'Dir8', 'Axis': 'Axis4', 'DiagAxis': 'Axis4',
@@ -26,10 +27,12 @@ _SLOT = re.compile(r'&r\d+')
 _cache = [None, None]
 
 
+@functools.cache
 def _t(x):
     return str(x).split('(')[0]
 
 
+@functools.cache
 def _sub(a, b):
     while a:
         if a == b:

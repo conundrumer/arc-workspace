@@ -19,6 +19,7 @@ A5  A slot type counts as met when some scope type is comparable to it (either o
 A6  A variable bound in the prefix and not read by any later atom is open.  A candidate that has a column type that an
     open variable can fill is likely to read it.
 """
+import functools
 import re
 
 _SUPER = {'Position': 'Box', 'Offset': 'Box', 'Dir': 'Dir8', 'DiagDir': 'Dir8', 'Axis': 'Axis4', 'DiagAxis': 'Axis4',
@@ -28,6 +29,7 @@ _COL = re.compile(r'\(:(\w+)\s+([^()]*)\)')
 _cache = [None, None]
 
 
+@functools.cache
 def _nt(t):
     return str(t).split('(')[0]
 
@@ -40,10 +42,12 @@ def _up(t):
     return out
 
 
+@functools.cache
 def _sub(a, b):
     return b in _up(a)
 
 
+@functools.cache
 def _comp(a, b):
     return a == b or _sub(a, b) or _sub(b, a)
 

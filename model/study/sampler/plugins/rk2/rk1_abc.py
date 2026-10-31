@@ -19,7 +19,9 @@ def _load(path, name):
 
 
 def _keep(fn):
-    return lambda row, o: {k: v for k, v in fn(row, o).items() if not k.startswith(DROP)}
+    kept = lambda row, o: {k: v for k, v in fn(row, o).items() if not k.startswith(DROP)}  # noqa: E731
+    kept.unfiltered = getattr(fn, 'unfiltered', fn)  # relsteer.Scorer calls this: a fitted model has no column for a name that DROP lists
+    return kept
 
 
 FEATURE_FUNCS = dict(_load(f'{F}/dag_options.py', 'dag_options').FEATURE_FUNCS)

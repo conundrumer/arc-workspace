@@ -10,6 +10,7 @@ row: the fields a relrows row carries: k, phase, scope, prefix (gold's atoms so 
 ({'point_group', 'depth', 'd_out'}) and options (tok, kind, name, p, types, columns).  The derived-name mask the model was trained
 with (ck['mask']) is applied here, so a row may carry the author's names.
 """
+import array
 import importlib.util
 import math
 import os
@@ -43,6 +44,19 @@ def load_plugin(path):
     relfeat.FEATURE_FUNCS.update(mod.FEATURE_FUNCS)
 
 
+class Columns(dict):
+    """A feature set's {feature name: column of the model}, filled as names come; -1 for a name that has no column, and for 'logp',
+    which option_dicts takes from no set."""
+
+    def __init__(self, col, group):
+        super().__init__(logp=-1)
+        self.col, self.group = col, group
+
+    def __missing__(self, name):
+        j = self[name] = self.col.get(relfeat.qualify(self.group, name), -1)
+        return j
+
+
 class Scorer:
     def __init__(self, path, model='hgb'):
         with open(path, 'rb') as f:
@@ -60,21 +74,34 @@ class Scorer:
             self.model, self.beta = m['model'], m['beta']
             self.col = {n: j for j, n in enumerate(m['names'])}
             self.nd = len(self.col)
+            self.sets = [(getattr(relfeat.FEATURE_FUNCS[g], 'unfiltered', relfeat.FEATURE_FUNCS[g]), Columns(self.col, g)) for g in self.groups]
+
+    def matrix(self, row):
+        """(the model's input, the log shares) of a masked row: option_dicts' values by column, with no names kept. X is float32, as
+        the model was fit."""
+        opts, nd, sets = row['options'], self.nd, self.sets
+        X = array.array('f', bytes(4 * len(opts) * nd))
+        logp = [math.log(max(o['p'], 1e-9)) for o in opts]
+        lc, base = self.col.get('logp', -1), 0
+        for o, lp in zip(opts, logp):
+            if lc >= 0:
+                X[lc + base] = lp
+            for fn, col in sets:
+                for n, v in (fn(row, o) or {}).items():
+                    if v:
+                        j = col[n]
+                        if j >= 0:
+                            X[j + base] = v
+            base += nd
+        return np.frombuffer(X, np.float32).reshape(len(opts), nd), logp
 
     def f(self, row):
         row = relfeat.mask_row(row, self.mask)
-        ds = relfeat.option_dicts(row, self.groups)
-        logp = [d['logp'] for d in ds]
         if self.kind == 'logit':
+            ds = relfeat.option_dicts(row, self.groups)
             idx, w = self.index, self.w
-            return [sum(w[idx[n]] * v for n, v in d.items() if n in idx) - lp for d, lp in zip(ds, logp)]
-        X = np.zeros((len(ds), self.nd), np.float32)
-        col = self.col
-        for i, d in enumerate(ds):
-            for n, v in d.items():
-                j = col.get(n)
-                if j is not None:
-                    X[i, j] = v
+            return [sum(w[idx[n]] * v for n, v in d.items() if n in idx) - d['logp'] for d in ds]
+        X, logp = self.matrix(row)
         return (self.beta * self.model.decision_function(X) - np.array(logp)).tolist()
 
 

@@ -13,6 +13,7 @@ C4  Gold supplies the one type another option still lacks (a derived relation wa
 C5  Gold joins or introduces a type that few options carry (idf over the row's options): c5_*.
 C6  A comparison op is picked when two unread labels have the same type, or an unread number exists: c6_*.
 """
+import functools
 import math
 import re
 
@@ -24,10 +25,12 @@ REL = re.compile(r'^\((?:NOT \()?([^\s()]+)')
 OPARGS = re.compile(r'(?<![\w*:])([A-Za-z_]\w*)(?=[ )])')
 
 
+@functools.cache
 def _nt(t):
     return str(t).split('(')[0]
 
 
+@functools.cache
 def _sub(a, b):
     while a:
         if a == b:
@@ -234,7 +237,7 @@ def _rowinfo(row):
     info = dict(all_t=all_t, dang_t=dang_t, last_t=last_t, idf=idf, nlast=len(last_t), touch_t=touch_t, numpairs=nnum * (nnum - 1) // 2, nnum=nnum,
                 apairs=apairs, age_t=sorted(zip(ages, [l[1] for l in labs if l[3] == 0]), key=lambda x: x[0]), miss_p=miss_p, miss_n=miss_n, miss_of=miss_of,
                 nl=len(labs), nd=len(dang_t),
-                pairs=_pairs([l for l in labs if l[3] == 0]))
+                pairs=_pairs([l for l in labs if l[3] == 0]), by_cols={})
     _cache[0], _cache[1] = row, info
     return info
 
@@ -300,9 +303,34 @@ def _fn(row, o):
             d['c6_cmp_numdang'] = float(info['nnum'])
         return d
     cols = _arity_types(o)
-    ar = len(cols)
-    if not ar:
+    if not cols:
         return d
+    block, supplied = info['by_cols'].get(tuple(cols)) or info['by_cols'].setdefault(tuple(cols), _by_cols(cols, info))
+    d.update(block)
+    # unblocking: other options whose single missing type this option supplies
+    mp, mn, mo = info['miss_p'], info['miss_n'], info['miss_of']
+    own = mo.get(id(o))
+    n = pp = mx = 0.0
+    for T in supplied:
+        cn, cp = mn[T], mp[T]
+        if own == T:
+            cn -= 1
+            cp -= o['p']
+        if cn > 0:
+            n += cn
+            pp += cp
+            mx = max(mx, cp)
+    d['c4_unblock_n'] = n
+    d['c4_unblock_p'] = pp
+    d['c4_unblock_max'] = mx
+    return d
+
+
+def _by_cols(cols, info):
+    """What the option's column types and the row's labels give, which options with one column list share: the keys of _fn that read
+    nothing else, and the missing types of miss_p that the columns supply."""
+    d = {}
+    ar = len(cols)
     all_t = info['all_t']
     md = _match(cols, info['dang_t'])
     d['c1_dang_cols'] = float(md)
@@ -344,24 +372,7 @@ def _fn(row, o):
     d['c5_idf_join'] = sum(idf.get(t, 0.0) for t in joined)
     d['c5_idf_new'] = sum(idf.get(t, 0.0) for t in freec)
     d['c5_idf_new_max'] = max((idf.get(t, 0.0) for t in freec), default=0.0)
-    # unblocking: other options whose single missing type this option supplies
-    mp, mn, mo = info['miss_p'], info['miss_n'], info['miss_of']
-    own = mo.get(id(o))
-    n = pp = mx = 0.0
-    for T in mp:
-        if any(_sub(t, T) for t in set(cols)):
-            cn, cp = mn[T], mp[T]
-            if own == T:
-                cn -= 1
-                cp -= o['p']
-            if cn > 0:
-                n += cn
-                pp += cp
-                mx = max(mx, cp)
-    d['c4_unblock_n'] = n
-    d['c4_unblock_p'] = pp
-    d['c4_unblock_max'] = mx
-    return d
+    return d, [T for T in info['miss_p'] if any(_sub(t, T) for t in cols)]
 
 
 def fn(row, o):
@@ -369,4 +380,5 @@ def fn(row, o):
     return {k: float(v) for k, v in _fn(row, o).items()}
 
 
+fn.unfiltered = _fn  # relsteer.Scorer calls this: its matrix takes the values as floats
 FEATURE_FUNCS = {'rk1c': fn}

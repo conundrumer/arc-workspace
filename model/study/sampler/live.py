@@ -57,13 +57,16 @@ S.REACH = False  # no look-ahead below a column or a value: an atom that cannot 
 RULE_TOK, DET_TOK, INIT_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 7, 12, 13
 KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK)
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
+NEED_RESCUE = 64.0  # a port's boost for those types after a stop that the head's needs refused
+NEED_STOP = 0.1  # the factor on an atom's stop chance where it holds a column of a type that the head needs
+ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the next-kind counts over all buckets, against those of the clause count's bucket
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 STEERS = 'struct', 'tilt', 'rel', 'choice'
-STEER_FILES = dict(tilt='tilt_v1.json', rel='relR3_rk2.pkl', choice='choice3_ch.pkl')
+STEER_FILES = dict(tilt='tilt_v1.json', rel='relR3_rk2.pkl', choice='choice5_o.pkl')
 
 
 def size(grid):
@@ -193,6 +196,13 @@ class LiveDrawer(S.Drawer):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
         self.root_cap, self.node_cap = limits.root_cap, limits.node_cap
 
+    def steer_choice(self, fr, n, popts, opts, k, rel, joined, leaf, stop, key):
+        """S's, with an atom that holds a column of a needed type going on to that column: a stop here leaves the port's head with no label."""
+        fm, stq = super().steer_choice(fr, n, popts, opts, k, rel, joined, leaf, stop, key)
+        if stop is not None and any(self.col_needed(n.rtok, fr.colpos[o]) for o in opts):
+            stq *= NEED_STOP
+        return fm, stq
+
 
 class LiveFrontier(S.FastFrontier):
     """S's FastFrontier less the tokens that the decoder refuses only at the body's END, which would end the draw of the body
@@ -204,7 +214,7 @@ class LiveFrontier(S.FastFrontier):
         c = super().candidates(n)
         if n.phase in ('val', 'fval', 'op'):
             drop = self.hidden | {M.STAR} if n.neg else self.hidden
-            c = [t for t in c if t not in drop]
+            c = [t for t in c if t not in drop and not (n.phase == 'op' and n.need == 1 and t == n.toks[-1])]  # a comparison of an operand with itself says nothing
         elif n.phase == 'root' and M.NOT in c and n.labs == len(self.hidden):  # no label for a NOT atom to join
             c.remove(M.NOT)
         return c
@@ -403,15 +413,15 @@ class Run:
         pg.names = pg.names | {'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)}  # a '.' tells a method (one_call)
         params, ports = pri['comp_ports'][comp]
         keyed = rng.random() < pri['keyed'][comp] / pri['comps'][comp]
-        nlab, keys = 0, []
+        nlab, keys = 0, {}
         if keyed:  # the key port: one label of its body becomes the key
             dr = self.drawer(pg, 'INIT', f)
-            cur, toks = self.body(pg, dr, f, 'INIT', 0)[:2]
+            cur, toks, text = self.body(pg, dr, f, 'INIT', 0)[:3]
             stars = [i for i, t in enumerate(toks) if t == M.STAR]
             if not stars:
                 raise Drop('key body makes no label')
             i = stars[rng.randrange(len(stars))]
-            keys = [self.ff0.label_tok[stars.index(i)]]
+            keys = {self.ff0.label_tok[stars.index(i)]: self.label_types(dr, text).get('L%d' % stars.index(i))}
             g = f.fork()
             for j, t in enumerate(toks):
                 g.step(M.CARET if j == i else t)
@@ -446,7 +456,7 @@ class Run:
         need = [{'Position', 'Box'} if t == 'Point' else next((set(x) for x in pri['families'] if t in x), {t})
                 for _, t in bound if t not in params or t == 'Point']
         dr = self.drawer(pg, 'INIT', f)
-        dr.want = set(keys)
+        dr.want, dr.want_types = set(keys), frozenset(t for t in keys.values() if t)
         dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want  # a port's body reads its own labels and the key
         cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, keys)
         made = list(range(nlab, nlab + toks.count(M.STAR)))
@@ -474,6 +484,8 @@ class Run:
         """colmap and arity of the relations that lack them, at decoder dec, an atom start."""
         if pg.pending:
             pg.colmap.update(S.column_positions(dec, self.V, pg.pending, pg.ndecl))
+            rest = {s: [x for x in e if x[1] != 'Example'] for s, e in pg.pending.items() if s not in pg.colmap}  # the decoder refuses a read of a table's Example column here, so column_positions counts one column too few
+            pg.colmap.update(S.column_positions(dec, self.V, rest, pg.ndecl))
             for s, e in pg.pending.items():
                 pg.arity[self.rel0 + s] = len({c for c, _ in e}) + 2
             pg.pending = {}
@@ -523,11 +535,31 @@ class Run:
         except arclog.Refusal:
             return False
 
-    def atom_scope(self, dr, atom):
-        """The types of the labels that drawn atom text makes, where the engine gives no table (inside a port)."""
-        m = re.match(r'\((?:NOT \()?(\S+)', atom)
-        rtok = self.V.id(m[1]) if m else None
-        return [t for p, _ in re.findall(r'\(:(\d+) \*(L\d+)\)', atom) if (t := dr.col_type(rtok, int(p))) is not None] if rtok is not None else []
+    def port_can_end(self, d):
+        """can_end at a port's END, where a head search that spent its budget ends the body: each atom after it gives the search more
+        labels, and a new draw of the body costs less than the atoms that a pass would take."""
+        try:
+            d.forced(M.END)
+            return True
+        except arclog.Refusal as e:
+            if 'spent its budget' in str(e):
+                raise Drop('body: head search spent') from None
+            return False
+
+    def label_types(self, dr, atoms):
+        """{label name: type} of the labels that drawn atom texts make, where the engine gives no table (inside a port). A relation
+        with no known columns, as a proposer's or a component's output, gives ANY_TYPE, so that the decoder judges its labels at the head."""
+        out = {}
+        for atom in atoms:
+            m = re.match(r'\((?:NOT \()?(\S+)', atom)
+            rtok = self.V.id(m[1]) if m else None
+            if rtok is not None:
+                unknown = self.ff0.KIND[rtok] == 'relation' and M.slot_no(m[1]) not in dr.colmap
+                for p, label in re.findall(r'\(:(\d+) \*(L\d+)\)', atom):
+                    t = ANY_TYPE if unknown else dr.col_type(rtok, int(p))
+                    if t is not None:
+                        out[label] = t
+        return out
 
     def body(self, pg, dr, dec, kind, nlab, need=(), keys=()):
         """Atoms at decoder dec (with nlab labels before them) until the hazard stops them: (decoder, tokens, atom texts,
@@ -546,11 +578,11 @@ class Run:
                 if n_try - free >= lim.atom_tries:
                     break
                 dr.p_k, dr.p_scope, dr.p_key, dr.p_last, dr.p_labels = k, tuple(scope), tuple(toks), (), labels
-                res, why = dr.atom(fr, k, scope, tuple(toks))
+                res, why = dr.atom(fr, max(k, 2) if keys else k, tuple(dr.want_types) + tuple(scope), tuple(toks))  # 98% of gold's keyed ports read the key, and a body's atoms have no order, so the atom drawn first joins it
                 if res is None:
                     c['try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
                     continue
-                if k > 1 and not res[4] and res[5]:
+                if (k > 1 or keys) and not res[4] and res[5]:
                     c['try:unjoined'] += 1
                     free += 1
                     continue
@@ -573,14 +605,15 @@ class Run:
             cur = got[0].dec
             toks += list(got[0].toks)
             text.append(got[3])
-            scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + self.atom_scope(dr, got[3])
+            scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + list(self.label_types(dr, [got[3]]).values())
             labels = tb.get('labels') if tb is not None else None
             if not self.rng.random() < self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb) and k < top:
                 continue
-            if need and any(not x & set(scope) for x in need):
+            if need and ANY_TYPE not in scope and any(not x & set(scope) for x in need):
                 c['gate:port head'] += 1
+                dr.need_boost = NEED_RESCUE
                 continue
-            if kind == 'INIT' and not self.can_end(cur):
+            if kind == 'INIT' and not self.port_can_end(cur):
                 c['gate:unsafe'] += 1
                 continue
             if k == 1 and kind in S.MIN2_KINDS and not S.one_call(dr, text):

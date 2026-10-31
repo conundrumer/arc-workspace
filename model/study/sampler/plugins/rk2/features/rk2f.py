@@ -15,6 +15,8 @@ F5  Atom classes.  The class (input, lib, derived, comparison, NOT) of the last 
     at the end of the prefix: f5_*.
 F6  Identity of a library relation or a comparison, to rescale the sampler's share per relation: f6_*.
 """
+import bisect
+import functools
 import re
 
 _SUPER = {'Position': 'Box', 'Offset': 'Box', 'Dir': 'Dir8', 'DiagDir': 'Dir8', 'Axis': 'Axis4', 'DiagAxis': 'Axis4',
@@ -25,10 +27,12 @@ REL = re.compile(r'^\((?:NOT \()?([^\s()]+)')
 OPARGS = re.compile(r'(?<![\w*:])([A-Za-z_]\w*)(?=[ )])')
 
 
+@functools.cache
 def _nt(t):
     return str(t).split('(')[0]
 
 
+@functools.cache
 def _sub(a, b):
     while a:
         if a == b:
@@ -260,6 +264,8 @@ def _info(row):
     for o in opts:
         bykind.setdefault(o['kind'], []).append(o)
     ps = {k: sorted((o['p'] for o in v), reverse=True) for k, v in bykind.items()}
+    neg_ps = {k: [-p for p in v] for k, v in ps.items()}
+    sum_ps = {k: sum(v) for k, v in ps.items()}
     depths = sorted(o['dag']['depth'] for o in bykind.get('derived', []) if o.get('dag') and o['dag'].get('depth') is not None)
     arity = {k: [len(o.get('types') or []) for o in v] for k, v in bykind.items()}
     last = classes[-1] if classes else None
@@ -282,7 +288,7 @@ def _info(row):
             else:
                 break
         run[cls] = n
-    info = dict(labs=labs, L=L, atoms=atoms, dang=dang, twin=twin, cross=cross, same=same, ps=ps, depths=depths, arity=arity,
+    info = dict(labs=labs, L=L, atoms=atoms, dang=dang, twin=twin, cross=cross, same=same, ps=ps, neg_ps=neg_ps, sum_ps=sum_ps, by_types={}, pct={}, depths=depths, arity=arity,
                 scope=scope, pool=pool, demand=demand, last=last, run=run, nneg=sum(1 for c, n in classes if n), ncmp=sum(1 for c, n in classes if c == 'cmp'),
                 twin_n=len(twin), twin_of=twin_of, cross_n=sum(cross.values()), same_n=sum(same.values()))
     _cache[0], _cache[1] = row, info
@@ -299,6 +305,44 @@ def _class_of(o):
     if o['kind'] == 'lib':
         return 'in' if o['tok'] == 'input' else 'lib'
     return 'neg' if o['tok'] == 'NOT' else 'cmp'
+
+
+def _by_types(types, info):
+    """What the option's column types and the row give, which options with one column list share: (the keys of F2, the keys of F3)."""
+    two = {'f2_twin_cons': float(sum(1 for cs in info['twin'] if any(_two(T, types) for T in cs))),
+           'f2_cross_cons': float(sum(1 for T in info['cross'] if _two(T, types))),
+           'f2_same_cons': float(sum(1 for T in info['same'] if _two(T, types)))}
+    d = {}
+    pool = info['pool']
+    cnt = dict(grid=0, color=0, ident=0, enum=0, num=0, other=0)
+    unf = dict(grid=0, color=0, ident=0, enum=0, num=0, other=0)
+    for t in types:
+        c = ('grid' if t in GRID else 'color' if t == 'Color' else 'ident' if t == 'Ident' else 'enum' if t in ENUM
+             else 'num' if t in NUM else 'other')
+        cnt[c] += 1
+        if not any(_sub(s, t) or _sub(t, s) for s in pool):
+            unf[c] += 1
+    for c in cnt:
+        d['f3_n_' + c] = float(cnt[c])
+        d['f3_u_' + c] = float(unf[c])
+    d['f3_all_enum'] = float(cnt['enum'] == len(types))
+    for c in ('color', 'grid', 'num', 'ident'):
+        d['f3_all_' + c] = float(cnt[c] == len(types))
+    dm = sum(info['demand'].get(t, 0) for t in set(types) if t in ENUM and not any(_sub(s, t) or _sub(t, s) for s in pool))
+    d['f3_enum_demand'] = float(dm)
+    d['f3_enum_demand_all'] = float(dm if cnt['enum'] == len(types) and unf['enum'] == len(types) else 0)
+    d['f3_u_data'] = float(unf['grid'] + unf['color'] + unf['ident'])
+    d['f3_u_all'] = float(sum(unf.values()))
+    return two, d
+
+
+def _row_pct(info, name, vals, v):
+    """_pct(vals, v), once per name and v in a row."""
+    key = name, v
+    got = info['pct'].get(key)
+    if got is None:
+        got = info['pct'][key] = _pct(vals, v)
+    return got
 
 
 def fn(row, o):
@@ -332,6 +376,9 @@ def fn(row, o):
         d['f1_gen_bdang'] = float((not cons) and bdang)
     # F2: twin labels
     types = [_nt(t) for t in o.get('types') or []]
+    by_types = None
+    if types:
+        by_types = info['by_types'].get(tuple(types)) or info['by_types'].setdefault(tuple(types), _by_types(types, info))
     if kind == 'op':
         if tok in CMP:
             nm = CMP[tok]
@@ -340,44 +387,23 @@ def fn(row, o):
             d['f2_%s_cross' % grp] = float(info['cross_n'])
             d['f2_%s_same' % grp] = float(info['same_n'])
     elif types:
-        d['f2_twin_cons'] = float(sum(1 for cs in info['twin'] if any(_two(T, types) for T in cs)))
-        d['f2_cross_cons'] = float(sum(1 for T in info['cross'] if _two(T, types)))
-        d['f2_same_cons'] = float(sum(1 for T in info['same'] if _two(T, types)))
+        d.update(by_types[0])
     # F3: column classes
     if types:
-        pool = info['pool']
-        cnt = dict(grid=0, color=0, ident=0, enum=0, num=0, other=0)
-        unf = dict(grid=0, color=0, ident=0, enum=0, num=0, other=0)
-        for t in types:
-            c = ('grid' if t in GRID else 'color' if t == 'Color' else 'ident' if t == 'Ident' else 'enum' if t in ENUM
-                 else 'num' if t in NUM else 'other')
-            cnt[c] += 1
-            if not any(_sub(s, t) or _sub(t, s) for s in pool):
-                unf[c] += 1
-        for c in cnt:
-            d['f3_n_' + c] = float(cnt[c])
-            d['f3_u_' + c] = float(unf[c])
-        d['f3_all_enum'] = float(cnt['enum'] == len(types))
-        for c in ('color', 'grid', 'num', 'ident'):
-            d['f3_all_' + c] = float(cnt[c] == len(types))
-        dm = sum(info['demand'].get(t, 0) for t in set(types) if t in ENUM and not any(_sub(s, t) or _sub(t, s) for s in pool))
-        d['f3_enum_demand'] = float(dm)
-        d['f3_enum_demand_all'] = float(dm if cnt['enum'] == len(types) and unf['enum'] == len(types) else 0)
-        d['f3_u_data'] = float(unf['grid'] + unf['color'] + unf['ident'])
-        d['f3_u_all'] = float(sum(unf.values()))
-    # F4: scale inside the row
-    ps = info['ps'].get(kind) or [o['p']]
-    d['f4_p_rank_kind'] = float(sum(1 for x in ps if x > o['p'])) / len(ps)
+        d.update(by_types[1])
+    # F4: scale inside the row (every kind of the row has its ps)
+    ps, total = info['ps'][kind], info['sum_ps'][kind]
+    d['f4_p_rank_kind'] = float(bisect.bisect_left(info['neg_ps'][kind], -o['p'])) / len(ps)
     d['f4_p_rel_kind'] = o['p'] / ps[0] if ps[0] > 0 else 0.0
-    d['f4_p_share_kind'] = o['p'] / sum(ps) if sum(ps) > 0 else 0.0
-    d['f4_kind_mass'] = float(sum(ps))
+    d['f4_p_share_kind'] = o['p'] / total if total > 0 else 0.0
+    d['f4_kind_mass'] = float(total)
     ar = info['arity'].get(kind)
     if ar and types:
-        d['f4_arity_pct'] = _pct(ar, len(types))
+        d['f4_arity_pct'] = _row_pct(info, kind, ar, len(types))
     dag = o.get('dag') or {}
     if kind == 'derived' and dag.get('depth') is not None and info['depths']:
         dep = dag['depth']
-        d['f4_depth_pct'] = _pct(info['depths'], dep)
+        d['f4_depth_pct'] = _row_pct(info, 'depth', info['depths'], dep)
         d['f4_depth_rel'] = dep / info['depths'][-1] if info['depths'][-1] else 0.0
     else:
         d['f4_depth_pct'] = -1.0
