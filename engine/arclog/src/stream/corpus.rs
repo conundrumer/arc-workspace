@@ -5,13 +5,16 @@
 
 mod files;
 
-use std::path::Path;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
 
 pub use files::{case_file_name, case_files, CaseFiles, CaseTexts};
 
 use crate::check::{check_program_of_files, check_shared_program, CheckCache, CheckedProgram, SolverClauses};
 use crate::decode::replay::holds_demonstrated;
-use crate::harness::{read_corpus_solver, read_solver_texts};
+use crate::harness::read_solver_texts;
 use crate::registry::Registry;
 use crate::eval::determinations::relation_spelled;
 use crate::hash::StableHashSet;
@@ -73,32 +76,118 @@ pub struct CaseStream {
 /// the call checks: the case programs, the program of each case's files, and
 /// each case program read alone.
 pub fn solver_streams(corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary, prefix: bool) -> Result<Vec<CaseStream>, String> {
-    let solver = read_corpus_solver(corpus, id).map_err(|e| format!("the solver's files do not read: {e}"))?;
-    let cases = resolve_cases(&solver, Registry::get());
-    let clauses = SolverClauses::of_cases(&cases);
-    let names = match wanted {
-        WantedCases::Concept => decoded_cases(&cases, false),
-        WantedCases::Cases => solver.case_names(Exclusion::WithoutExcluded),
-        WantedCases::All => decoded_cases(&cases, true),
-        WantedCases::Named(spelled) => {
-            let found = cases.cases().find(|case| case_spelled(&case.case.name) == spelled).ok_or_else(|| format!("the solver has no case {spelled}"))?;
-            vec![found.case.name.clone()]
+    SolverAnalysis::read(corpus, id)?.streams(corpus, id, wanted, vocabulary, prefix)
+}
+
+/// A solver read from its files, with what the check of any one of its cases
+/// reads of the whole solver: the resolved program of each case, and the index
+/// of the clauses of all of them. The check of a case reads the clauses of the
+/// other cases (the types of a relation's columns, and the columns that are `0`
+/// in every clause of a relation), so the analysis of a solver of `n` cases
+/// resolves `n` programs, and it is no work of one case. It is the same for
+/// every case of the solver, so a caller that asks for the cases one at a time
+/// takes it from [`shared_analysis`].
+pub struct SolverAnalysis {
+    corpus: PathBuf,
+    id: String,
+    solver: Arc<Solver>,
+    cases: ResolvedCases,
+    clauses: SolverClauses,
+    /// The files the solver was read from, the files of the solvers its
+    /// `representative` lines name included, with their texts at the read,
+    /// `None` for a file that did not read.
+    sources: Vec<(PathBuf, Option<String>)>,
+}
+
+impl SolverAnalysis {
+    /// The analysis of the solver `id` of `corpus`, or the fault that its
+    /// files do not read.
+    pub fn read(corpus: &Path, id: &str) -> Result<Self, String> {
+        let fault = |e: String| format!("the solver's files do not read: {e}");
+        let read_file = |extension: &str| {
+            let path = corpus.join(format!("{id}.{extension}"));
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
+        };
+        let solver = read_solver_texts(corpus, id, &read_file("arclog").map_err(fault)?, &read_file("arcdata").map_err(fault)?).map_err(fault)?;
+        let sources: Vec<(PathBuf, Option<String>)> = solver_files(corpus, &solver).into_iter().map(|path| {
+            let text = std::fs::read_to_string(&path).ok();
+            (path, text)
+        }).collect();
+        let cases = resolve_cases(&solver, Registry::get());
+        let clauses = SolverClauses::of_cases(&cases);
+        Ok(SolverAnalysis { corpus: corpus.to_path_buf(), id: id.to_owned(), solver, cases, clauses, sources })
+    }
+
+    /// Whether this is the analysis of the solver `id` of `corpus` as its
+    /// files stand now.
+    fn is_current(&self, corpus: &Path, id: &str) -> bool {
+        self.corpus == corpus && self.id == id && self.sources.iter().all(|(path, text)| std::fs::read_to_string(path).ok() == *text)
+    }
+
+    /// The stream of each wanted case of the solver, as [`solver_streams`]
+    /// gives it. `corpus` and `id` are those the analysis was read with.
+    pub fn streams(&self, corpus: &Path, id: &str, wanted: WantedCases<'_>, vocabulary: &Vocabulary, prefix: bool) -> Result<Vec<CaseStream>, String> {
+        let (solver, cases, clauses) = (&*self.solver, &self.cases, &self.clauses);
+        let names = match wanted {
+            WantedCases::Concept => decoded_cases(cases, false),
+            WantedCases::Cases => solver.case_names(Exclusion::WithoutExcluded),
+            WantedCases::All => decoded_cases(cases, true),
+            WantedCases::Named(spelled) => {
+                let found = cases.cases().find(|case| case_spelled(&case.case.name) == spelled).ok_or_else(|| format!("the solver has no case {spelled}"))?;
+                vec![found.case.name.clone()]
+            }
+        };
+        let mut cache = CheckCache::default();
+        let programs = check_cases(solver, cases, clauses, &mut cache, &|name| names.contains(name), prefix)?;
+        let concept = &cases.concept().case.name;
+        Ok(programs
+            .iter()
+            .map(|(name, program)| {
+                let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
+                let (stream, labels) = match named_case_stream(corpus, id, solver, case, program, vocabulary, &mut cache, prefix) {
+                    Ok((stream, labels)) => (Ok(stream), labels),
+                    Err(fault) => (Err(fault), Vec::new()),
+                };
+                CaseStream { case: case_spelled(name), concept: name == concept, demonstrated: holds_demonstrated(program), stream, labels }
+            })
+            .collect())
+    }
+}
+
+/// The files of `solver` and of the solvers its `representative` lines name.
+fn solver_files(corpus: &Path, solver: &Solver) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut next = Some(solver);
+    while let Some(solver) = next {
+        files.extend(["arclog", "arcdata"].map(|extension| corpus.join(format!("{}.{extension}", solver.task_id))));
+        next = solver.representative.as_deref();
+    }
+    files
+}
+
+thread_local! {
+    /// The analysis [`shared_analysis`] gave last on this thread.
+    static LAST_ANALYSIS: RefCell<Option<Rc<SolverAnalysis>>> = const { RefCell::new(None) };
+}
+
+/// The analysis of the solver `id` of `corpus`, which the last call on this
+/// thread gave where it was for the same solver and its files have not
+/// changed, and otherwise a new one, which replaces it. A thread holds one
+/// analysis, so what a solver of many cases holds is freed where the thread
+/// turns to another solver. The check of one named case asks for this where
+/// the caller asks for the cases of a solver one at a time, as the model
+/// builders do: each such call then costs the check of its case, and not a
+/// resolution of every case of the solver.
+pub fn shared_analysis(corpus: &Path, id: &str) -> Result<Rc<SolverAnalysis>, String> {
+    if let Some(held) = LAST_ANALYSIS.take() {
+        if held.is_current(corpus, id) {
+            LAST_ANALYSIS.set(Some(Rc::clone(&held)));
+            return Ok(held);
         }
-    };
-    let mut cache = CheckCache::default();
-    let programs = check_cases(&solver, &cases, &clauses, &mut cache, &|name| names.contains(name), prefix)?;
-    let concept = &cases.concept().case.name;
-    Ok(programs
-        .iter()
-        .map(|(name, program)| {
-            let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
-            let (stream, labels) = match named_case_stream(corpus, id, &solver, case, program, vocabulary, &mut cache, prefix) {
-                Ok((stream, labels)) => (Ok(stream), labels),
-                Err(fault) => (Err(fault), Vec::new()),
-            };
-            CaseStream { case: case_spelled(name), concept: name == concept, demonstrated: holds_demonstrated(program), stream, labels }
-        })
-        .collect())
+    }
+    let analysis = Rc::new(SolverAnalysis::read(corpus, id)?);
+    LAST_ANALYSIS.set(Some(Rc::clone(&analysis)));
+    Ok(analysis)
 }
 
 /// The program that the files of a case under `cases/<id>/` of a corpus make:

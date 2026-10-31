@@ -7,7 +7,7 @@ use crate::registry::Registry;
 use crate::decode::program_read::ProgramReader;
 use crate::stream::{DecodeSettings,Emitter,Token,Vocabulary,written_stream};
 use crate::study::StudyProgram;
-use crate::stream::corpus::{solver_streams,WantedCases,token_ids};
+use crate::stream::corpus::{shared_analysis,WantedCases,token_ids};
 
 /// The stream of the program that the tokens decode to, as its text gives it:
 /// the text writes the sites of an atom in column order, so programs that list
@@ -31,9 +31,11 @@ fn identity(checked:&CheckedProgram,settings:&DecodeSettings)->Result<(Value,Vec
 /// A source map is accepted only for a case that decodes to the stream of
 /// these sources. The order of the sites within an atom does not matter; a
 /// case that is another program fails; no matching of printed programs occurs.
+/// The calls of one thread for one solver share the analysis of the solver
+/// ([`shared_analysis`]), so each call costs the check of its case.
 pub fn from_case(checked:&CheckedProgram,settings:&DecodeSettings,corpus:&Path,task:&str,case:&str)->Result<Value,String> {
     let vocabulary=Vocabulary::new(Registry::get(),settings);
-    let mut cases=solver_streams(corpus,task,WantedCases::Named(case),&vocabulary,false)?;
+    let mut cases=shared_analysis(corpus,task)?.streams(corpus,task,WantedCases::Named(case),&vocabulary,false)?;
     if cases.len()!=1 {return Err("expected exactly one named source case".into());}
     let source=cases.remove(0).stream?;
     let source_identity=identity_of(&source.tokens,&vocabulary,settings)?;
