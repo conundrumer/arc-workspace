@@ -186,13 +186,15 @@ class ClauseWriter:
         if isinstance(term, Wildcard):
             return [Wildcard()] * len(leaves)
         if isinstance(term, Variable):
-            if sum(l.kind in ("keep", "example") for l in leaves) == 1:
-                # one leaf kept: the leaf is the variable
-                return [term if l.kind in ("keep", "example") else Wildcard() for l in leaves]
             inner = [l.field[depth:] for l in leaves]
             last = [f[-1] if f else l.name.lower() for f, l in zip(inner, leaves)]
             tags = last if len(set(last)) == len(last) else \
                 ["_".join(f) if f else l.name.lower() for f, l in zip(inner, leaves)]
+            if sum(l.kind in ("keep", "example") for l in leaves) == 1:
+                # one leaf kept: the leaf is the variable, or the label the clause's head gives that field of it
+                return [Wildcard() if l.kind not in ("keep", "example") else
+                        Variable(f"{term.name}_{t}") if f"{term.name}_{t}" in self.rename else term
+                        for l, t in zip(leaves, tags)]
             out = []
             for l, t in zip(leaves, tags):
                 if l.kind in ("keep", "example"):
