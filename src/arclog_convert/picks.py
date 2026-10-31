@@ -396,6 +396,8 @@ class Rewriter:
         """A head `$Ctor(V..)` of type `TiebreakResolution`: the atoms that
         bind V.. become a picked relation of one row."""
         adt = self.types.get(((), RES))
+        if isinstance(adt, RecordType):
+            return self.record_picks(units, rels, adt)
         if not isinstance(adt, AdtType):
             return units, rels
         ctors = {c.name: c for c in adt.constructors}
@@ -433,6 +435,69 @@ class Rewriter:
             self.picks[name] = Pick(name, "Resolution", u.span.first if u.span else 0, head, [], [], vs,
                                     cvars=vs, ones=[[]], fold=vs)
         return out, rels
+
+    def record_picks(self, units, rels, rec: RecordType):
+        """A relation whose one column has the record type `TiebreakResolution`,
+        and whose every clause heads it with a record of distinct variables:
+        each row of the relation is one resolution. The column becomes the
+        record's fields, a read of the relation takes them from the record
+        that its column is compared with, and the relation is a pick with one
+        `ONE` mark, so a model keeps one of its rows."""
+        n = len(rec.fields)
+        found: dict[str, list[Unit]] = {}
+        for r in rels:
+            if r.scope.components or len(r.columns) != 1 or r.columns[0].type.name != RES:
+                continue
+            us = [u for u in units if u.head.relation.name == r.name and not u.head.relation.instances
+                  and not u.scope.components]
+            if us and all(u.body and isinstance(u.head.args[0], RecordTerm) and len(u.head.args[0].args) == n
+                          and all(isinstance(a, Variable) for a in u.head.args[0].args)
+                          and len({a.name for a in u.head.args[0].args if isinstance(a, Variable)}) == n
+                          for u in us):
+                found[r.name] = us
+        if not found:
+            return units, rels
+
+        def read(conj):
+            out = list(conj)
+            for k, l in enumerate(out):
+                if not (isinstance(l, AtomLiteral) and not l.negated and l.atom.relation.name in found
+                        and not l.atom.relation.instances):
+                    continue
+                t = l.atom.args[0]
+                parts = None
+                if isinstance(t, RecordTerm) and len(t.args) == n:
+                    parts = t.args
+                elif isinstance(t, Variable):
+                    for m, c in enumerate(out):
+                        if isinstance(c, Comparison) and c.op == ComparisonOperator.EQ:
+                            for a, b in ((c.lhs, c.rhs), (c.rhs, c.lhs)):
+                                if a == t and isinstance(b, RecordTerm) and len(b.args) == n and parts is None:
+                                    parts = b.args
+                                    out[m] = None
+                if parts is None:
+                    parts = tuple(Wildcard() for _ in range(n))
+                out[k] = dc_replace(l, atom=dc_replace(l.atom, args=tuple(parts)))
+            return [l for l in out if l is not None]
+
+        new_units = []
+        for u in units:
+            if u.head.relation.name in found and u in found[u.head.relation.name]:
+                u = dc_replace(u, head=dc_replace(u.head, args=u.head.args[0].args))
+            if u.body is not None:
+                u = dc_replace(u, body=tuple(map_lits(u.body, read)))
+            new_units.append(u)
+        new_rels = []
+        for r in rels:
+            if r.name in found:
+                r = dc_replace(r, columns=tuple(Column(f.name, f.type) for f in rec.fields))
+                us = found[r.name]
+                vs = [f.name for f in rec.fields]
+                head = Atom(RelationName((), r.name), tuple(Variable(v) for v in vs), 0)
+                self.picks[r.name] = Pick(r.name, "Resolution", us[0].span.first if us[0].span else 0, head, [], [], vs,
+                                          cvars=vs, ones=[[]], fold=vs)
+            new_rels.append(r)
+        return new_units, new_rels
 
     # ---- one instance
 

@@ -1169,8 +1169,9 @@ class Converter:
                         same[k] = j
             return same
 
+        resolutions = {(p_.scope, p_.name) for p_ in self.picks.values() if p_.comp == "Resolution" and p_.ones is not None}
         for (scope, name), rel in self.rels.items():
-            if scope not in ((), ("Parse",)):
+            if scope not in ((), ("Parse",)) or (scope, name) in resolutions:   # a resolution's candidates keep each column
                 continue
             us = [u for u in prog.units if u.scope.components == scope and u.head.relation == RelationName((), name)]
             if not us or any(u.body is None for u in us):

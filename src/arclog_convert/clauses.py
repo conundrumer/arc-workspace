@@ -373,6 +373,15 @@ class ClauseWriter:
                 a, b = self.label(lhs.name), self.label(rhs.name)
                 if a not in bound and b not in bound:
                     fa, fb = self.field_labels(lhs.name, bound), self.field_labels(rhs.name, bound)
+                    if l.op.value == "=" and (bool(fa) != bool(fb)):
+                        # a record variable that the fields of another make whole: a label per field,
+                        # named as a later read of the variable names them
+                        made, src = (rhs, fa) if fa else (lhs, fb)
+                        got = {t: f"{made.name}_{t}" for t in src}
+                        self.fields.setdefault(made.name, {}).update(got)
+                        fa, fb = (src, got) if fa else (got, src)
+                        return [f"(= *{fa[x]} {fb[x]})" if made is lhs else f"(= *{fb[x]} {fa[x]})"
+                                for x in sorted(src)]
                     common = sorted(fa.keys() & fb.keys())
                     if common and fa.keys() == fb.keys():
                         if l.op.value == "=":
