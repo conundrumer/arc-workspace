@@ -238,6 +238,23 @@ def _projected_flow_receipt(reader, table, record, schema, projection, fields, s
     return result
 
 
+# The most Python cells that one TRAIN acquisition holds. The native bounds do
+# not count them: the session bytes (`session_mib`) count 4 bytes for a native
+# cell, and the table work cap counts bindings. A decoded cell is a dict of
+# lists, about 1 KB with its extent. A table decodes one cell for each column of
+# the native table in each row of each selected entry, and with `copy_rows`
+# copies one for each projected column in each row of each kept assignment and
+# TRAIN input of the entry.
+TRAIN_TABLE_MAX_CELLS = 1 << 19
+# The most cells that the acquired tables of one case hold together.
+TRAIN_CASE_MAX_CELLS = 1 << 20
+
+
+def train_table_cells(packet):
+    """The cells that the entries of an acquired table hold."""
+    return len(packet['fields']) * sum(len(entry['rows']) for entry in packet['entries'])
+
+
 def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
                         projection=None, output_aliases=None, source=None, held_entries=None, copy_rows=True,
                         include_projected_flows=False):
@@ -289,6 +306,14 @@ def acquire_train_table(ev, native, table, record, *, ntrain, fields=None,
             raise Incomplete('TRAIN projected field type or physical index differs')
 
     matched = train_entry_contexts(ev, native, table, record, ntrain=ntrain, held_entries=held_entries)
+    contexts = [(context, int(reader.entries['rows'][context['entry']]),
+                 ntrain if reader.entries['example_kind'][context['entry']] == 0 else 1)
+                for context in matched['contexts']]
+    cells = len(schema) * sum(rows for _, rows, _ in contexts)
+    if copy_rows:
+        cells += len(fields) * sum(rows * len(context['kept_assignments']) * examples for context, rows, examples in contexts)
+    if cells > TRAIN_TABLE_MAX_CELLS:
+        raise Incomplete(f'TRAIN table {table} needs {cells} cells, over TRAIN_TABLE_MAX_CELLS={TRAIN_TABLE_MAX_CELLS}')
     entries = []
     model_counts = {}
     for context in matched['contexts']:
@@ -463,6 +488,7 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
         # Release this private proxy cache as soon as acquisition is finished.
         clear_cache(proxy)
     rows = []
+    held = 0
     gaps = deepcopy(bundle['gaps'])
     native = saved.get('native')
     for item in bundle['tables']:
@@ -483,6 +509,10 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest):
             packet = acquire_train_table(ev, native, table, own, ntrain=ntrain,
                 fields=fields, projection=list(range(len(fields))),
                 source=dict(identity, case=case, observation=bundle['receipt']))
+            cells = train_table_cells(packet)
+            if held + cells > TRAIN_CASE_MAX_CELLS:
+                raise Incomplete(f'case tables hold {held} cells, and table {table} adds {cells}, over TRAIN_CASE_MAX_CELLS={TRAIN_CASE_MAX_CELLS}')
+            held += cells
             output.update(table=packet, status='complete' if not packet['missing'] else 'unknown')
             if packet['missing']:
                 output['reason'] = 'case native table lacks required kept TRAIN entries'
