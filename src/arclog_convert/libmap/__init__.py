@@ -74,13 +74,15 @@ def rewrite(prog, lib, ground: bool = False, only: set[str] | None = None):
     `lib` is the present lib's `Lib`. With `ground`, the shape holds the
     atoms the Souffle engine needs to ground it. With `only`, only the
     expansions of those names apply: a component's name, or a relation's,
-    `crop`, `box_edge`, `box_corner` and the division relations."""
-    from arclog_convert.libmap import box, cells, division, instances, orders
+    `crop`, `box_edge`, `box_corner`, `tile_size` and the division relations."""
+    from arclog_convert.libmap import box, cells, division, instances, orders, tile
     specs = {k: v for k, v in (orders.SPECS | cells.SPECS | division.SPECS).items() if only is None or k in only}
     prog, judgment, moved, held = instances.expand(prog, lib, specs)
     if only is None or only & box.IDIOMS:
         prog, j2 = box.idioms(prog, ground)
         judgment |= j2
+    if only is None or only & tile.IDIOMS:
+        prog = tile.expand(prog)
     if only is None or only & division.HOISTED:
         prog, j3 = division.hoist(prog, lib, ground)
         judgment |= j3
