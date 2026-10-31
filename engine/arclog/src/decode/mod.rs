@@ -633,23 +633,30 @@ impl<'a> Decoder<'a> {
                 crate::program::static_prune::Class::Valid => return Err(Refusal::Grammar("static prune: the completed atom repeats an existing test")),
                 crate::program::static_prune::Class::Alias | crate::program::static_prune::Class::Constant => {
                     let Some(replacement) = found.replacement else { continue };
-                    // Remove the next, still-open atom through the ordinary
-                    // editor to recover this clause prefix's own declaration.
-                    // The replacement checker then PRESERVES that interface.
-                    let body_path = NodePath::default().child(0);
-                    let absolute = NodePath::top((program.value().forms.len() - 1) as u32).join(&body_path);
-                    let mut truncated = program.clone();
-                    let mut available = true;
-                    for later in ((index + 1)..body.conjuncts.len()).rev() {
-                        match truncated.apply(&crate::program::edit::Edit::RemoveConjunct { at: absolute.child(later as u32) }) {
-                            Ok(next) => truncated = next,
-                            Err(_) => { available = false; break; }
+                    let admitted = || {
+                        // Remove the next, still-open atom through the ordinary
+                        // editor to recover this clause prefix's own declaration.
+                        // The replacement checker then PRESERVES that interface.
+                        let body_path = NodePath::default().child(0);
+                        let absolute = NodePath::top((program.value().forms.len() - 1) as u32).join(&body_path);
+                        let mut truncated = program.clone();
+                        for later in ((index + 1)..body.conjuncts.len()).rev() {
+                            match truncated.apply(&crate::program::edit::Edit::RemoveConjunct { at: absolute.child(later as u32) }) {
+                                Ok(next) => truncated = next,
+                                Err(_) => return Ok(()),
+                            }
                         }
-                    }
-                    if available && crate::check::static_prune::replacement_admitted(
-                        &self.state.resolved(self.context.registry), &truncated, &body_path, replacement, self.context.registry,
-                    ) {
-                        return Err(Refusal::Grammar("static prune: use the admitted equality binding"));
+                        if crate::check::static_prune::replacement_admitted(
+                            &self.state.resolved(self.context.registry), &truncated, &body_path, replacement, self.context.registry,
+                        ) {
+                            return Err(Refusal::Grammar("static prune: use the admitted equality binding"));
+                        }
+                        Ok(())
+                    };
+                    // The cut clause and the finished forms fix the replacement and its verdict, which each candidate of a mask shares.
+                    match program.value().forms.last().and_then(|form| prefix_key::clause_cut_key(form, index + 1)) {
+                        Some(key) => self.state.cached_replacement(key, admitted)?,
+                        None => admitted()?,
                     }
                 }
             }
