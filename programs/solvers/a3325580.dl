@@ -118,14 +118,15 @@ obox.cell([Pc, Id], P) :- cell(Pc, Id, P).
 .init order = Order<View, Ident>
 order.elem([[Pc, K], C], Id) :- view([[Pc, K], C]), kept(Pc, Id).
 
-// A unit sits no nearer the lead edge than the count of units before it;
-// seating them all leaves each the lines of its own tie.
+// A unit sits no nearer the lead edge than the count of units before it,
+// and no nearer the far edge than the count of units after it: the lines of
+// its own tie.
 .init ties = TiebreakResolutions<View, Position, Ident>
 
 // A case whose corners give different seatings.
 .decl split_res(ch: Choice)
 split_res(Ch) :-
-    ties.resolution([Ch, C], Res), view([Ch, C2]), !ties.resolution([Ch, C2], Res).
+    ties.cand([Ch, C], P_line, Id), view([Ch, C2]), !ties.cand([Ch, C2], P_line, Id).
 
 // Each line takes the color of the unit seated on it, where every corner
 // gives the same seatings.
@@ -161,8 +162,9 @@ cell($ColorClass(), Id, P) :- classes.id(P, Id).
 view([[Pc, $NearEdge()], C]) :- piece_choice(Pc), diag_dir_elem(C).
 
 ties.cand([[Pc, $NearEdge()], C], P_line, Id) :-
-    view([[Pc, $NearEdge()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
-    order.rank([[Pc, $NearEdge()], C], Id, R), R <= N.
+    view([[Pc, $NearEdge()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist_pair(P_line, L, N, N2),
+    order.rank([[Pc, $NearEdge()], C], Id, R), R <= N,
+    order.rank_desc([[Pc, $NearEdge()], C], Id, R2), R2 <= N2.
 
 order.score([[Pc, $NearEdge()], C], Id, K) :-
     lead_end(C, L), obox.box([Pc, Id], B), dist(B, L, K).
@@ -172,8 +174,9 @@ order.score([[Pc, $NearEdge()], C], Id, K) :-
 view([[Pc, $FirstScan()], C]) :- piece_choice(Pc), diag_dir_elem(C).
 
 ties.cand([[Pc, $FirstScan()], C], P_line, Id) :-
-    view([[Pc, $FirstScan()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist(P_line, L, N),
-    order.rank([[Pc, $FirstScan()], C], Id, R), R <= N.
+    view([[Pc, $FirstScan()], C]), lead_end(C, L), line_of(Pc, _, P_line), dist_pair(P_line, L, N, N2),
+    order.rank([[Pc, $FirstScan()], C], Id, R), R <= N,
+    order.rank_desc([[Pc, $FirstScan()], C], Id, R2), R2 <= N2.
 
 // A unit's line nearest the scan edge.
 // @claim order
