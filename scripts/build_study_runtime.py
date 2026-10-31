@@ -82,13 +82,18 @@ def main():
         raise RuntimeError(f"expected exactly one wheel, got {built}")
     # The study's readers import numpy; pin the repository environment's version.
     # The labeling passes also read tables through pandas and pyarrow.
+    # The sampler loads a scikit-learn relation-pick model in this venv.
     numpy = "numpy==" + importlib.metadata.version("numpy")
     run(["uv", "pip", "install", "--python", venv / "bin/python", "--no-deps",
          built[0], numpy, "zstandard==0.23.0", "pandas==3.1.0", "pyarrow==26.0.0",
-         "python-dateutil==3.0.0", "six==1.17.0"], "install private wheel and study readers")
+         "python-dateutil==3.0.0", "six==1.17.0",
+         "scikit-learn==1.9.1", "scipy==1.18.1", "joblib==1.6.0", "threadpoolctl==3.7.0",
+         "narwhals==2.28.0"],
+        "install private wheel and study readers")
     verify = (
-        "import hashlib, pathlib, sys, zipfile, arclog, zstandard, pandas, pyarrow\n"
+        "import hashlib, pathlib, sys, zipfile, arclog, zstandard, pandas, pyarrow, sklearn\n"
         "assert zstandard.__version__ == '0.23.0', 'study zstandard version differs'\n"
+        "assert sklearn.__version__ == '1.9.1', 'study scikit-learn version differs'\n"
         "package = pathlib.Path(arclog.__file__).resolve().parent\n"
         "with zipfile.ZipFile(sys.argv[1]) as wheel:\n"
         "    members = [n for n in wheel.namelist() if n.endswith(('.so', '.pyd'))]\n"
