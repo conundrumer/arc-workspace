@@ -111,8 +111,8 @@ def _packet_complete(packet):
         raise ValueError('full DET packet lacks required kept TRAIN axes')
     required={tuple(k) for k in packet['required']}
     present={(e['assignment'],e['example_kind'],e['example_index']) for e in packet['entries']}
-    if present!=required or any(e['example_kind']!=1 for e in packet['entries']):
-        raise ValueError('full DET packet axes differ or contain nonTRAIN entries')
+    if present!=required or any(e['example_kind'] not in (1,2) for e in packet['entries']):
+        raise ValueError('full DET packet axes differ or contain entries that are not TRAIN or TEST')
     return packet
 
 
@@ -128,7 +128,7 @@ def acquire_det_full_body_train_point(ev,record,adapter,ntrain,ntest,side='mutan
         for name,value in binding['native_selector'].items():
             if name in native['tables'] and native['tables'][name][table]!=value:
                 raise ValueError('full DET stored native selector differs')
-        return _packet_complete(acquire_train_table(ev,native,table,record,ntrain=ntrain,
+        return _packet_complete(acquire_train_table(ev,native,table,record,ntrain=ntrain,ntest=ntest,test_rows=True,
             fields=binding['projected_schema'],projection=[f['source_body_column'] for f in binding['projected_schema']],
             source=dict(side=side,layout=LAYOUT,native_ref=record['native'][side],
                 selector=binding['native_selector'],gold_source_kind='stored_raw' if side=='gold' else None,
@@ -147,7 +147,7 @@ def acquire_det_full_body_train_point(ev,record,adapter,ntrain,ntest,side='mutan
                 raise ValueError('persisted full DET TRAIN cache authentication differs')
             packet=_packet_complete(envelope['packet']);kind='persisted_full'
             packet=dict(packet,receipt=dict(source_sha256=_sha(record),
-                kept_context_sha256=_sha(record['evaluation']['kept_assignments']),test_cells=False,
+                kept_context_sha256=_sha(record['evaluation']['kept_assignments']),test_cells=packet['receipt']['test_cells'],
                 source=dict(side='gold',layout=LAYOUT,gold_source_kind=kind),
                 cached_acquisition=packet['receipt'],cache=dict(path=str(path),**_file(path))))
         else:
@@ -181,7 +181,7 @@ def packet_summary(packet):
         fields_sha256=_sha(packet['fields']),schema_sha256=_sha(packet['source_schema']),
         projection=list(packet['projection']),required=deepcopy(packet['required']),missing=[],
         present=[list(k) for k in sorted({(e['assignment'],e['example_kind'],e['example_index']) for e in packet['entries']})],
-        entries=[dict(assignment=e['assignment'],example_kind=1,example_index=e['example_index'],
+        entries=[dict(assignment=e['assignment'],example_kind=e['example_kind'],example_index=e['example_index'],
             model=e['model'],row_count=len(e['rows'])) for e in packet['entries']],
         acquisition=deepcopy(packet['receipt']),gold=deepcopy(packet.get('det_full_body')),
         namespace=deepcopy(packet.get('current_native_names_acquisition')))
@@ -222,6 +222,11 @@ def inherit_available(old,stage,record,task_path,producer):
         point_file=dict(path=str(old/'point.json'),**_file(old/'point.json')),
         tables=tables,files=refs,authority='existing validated available snapshot; IDs/bytes unchanged',
         new_native_operations=0)
+
+
+def _test_cells(tables):
+    """True when any of the table summaries holds TEST cells."""
+    return any(table['acquisition']['test_cells'] is True for table in tables)
 
 
 def _implementation():
@@ -274,7 +279,7 @@ def write_export_receipts(ev,pair_id,record,target,adapter,x,g,pair_stage,pair_d
         gold_program_sha256=_sha(record['gold_sexp']),
         task_input_sha256=_file(adapter['source']['task_path'])['sha256'],
         full_kept_sha256=_sha(record['evaluation']['kept_assignments']))
-    common=dict(layout=LAYOUT,complete=True,test_cells=False,test_fit=False,judge_admission=False,
+    common=dict(layout=LAYOUT,complete=True,test_fit=False,judge_admission=False,
         policy=POLICY,runtime=deepcopy(ev.receipt),implementation=implementation)
     if g is not None:
         point=_read(point_dir/'point.json');public_files={}
@@ -283,7 +288,7 @@ def write_export_receipts(ev,pair_id,record,target,adapter,x,g,pair_stage,pair_d
         gold=g.get('gold')
         if not gold or gold['gold_source_kind'] not in POLICY['gold_reuse']:
             raise ValueError('full DET gold source authority missing')
-        point_receipt=dict(common,schema='study-det-full-body-point-v1',source=source,
+        point_receipt=dict(common,schema='study-det-full-body-point-v1',source=source,test_cells=_test_cells([g]),
             point_dir=str(point_dir),tables=dict(G=g),gold_source_kind=gold['gold_source_kind'],
             inherited_available=inherited,public_files=public_files)
         _write(point_path,point_receipt)
@@ -302,7 +307,7 @@ def write_export_receipts(ev,pair_id,record,target,adapter,x,g,pair_stage,pair_d
     pair=_read(pair_stage/'pair.json')
     files={relative:_file(pair_stage/relative) for relative in
            {'pair.json','tables/X.json',pair['programs']['mutant']}}
-    receipt=dict(common,schema='study-det-full-body-export-v1',pair_id=pair_id,
+    receipt=dict(common,schema='study-det-full-body-export-v1',pair_id=pair_id,test_cells=_test_cells([x]),
         source=dict(source,source_sha256=_sha(record),source_original_sha256=target.get('source_original_sha256'),
             native=deepcopy(record['native']),producer={k:record[k] for k in ('engine_commit','wheel_sha256','native_binary_sha256')},
             mutant_program_sha256=_sha(record['mutant_sexp']),identity_sha256=_sha(record['identity'])),
@@ -332,7 +337,7 @@ def validate_det_full_body_export(pair_dir,receipt_ref=None,*,private=None):
     point=_read(point_path);point_dir=Path(receipt['point_dir']).resolve()
     for value,schema in ((receipt,'study-det-full-body-export-v1'),(point,'study-det-full-body-point-v1')):
         if (value.get('schema')!=schema or value.get('layout')!=LAYOUT or value.get('policy')!=POLICY
-                or value.get('complete') is not True or value.get('test_cells') is not False
+                or value.get('complete') is not True or value.get('test_cells') is not _test_cells(value['tables'].values())
                 or value.get('test_fit') is not False or value.get('judge_admission') is not False):
             raise ValueError('full DET export policy/completeness differs')
         for filename,expected in value['implementation'].items():
@@ -382,4 +387,4 @@ def validate_det_full_body_export(pair_dir,receipt_ref=None,*,private=None):
         source=source,policy=POLICY,runtime=receipt['runtime'],gold_source_kind=point['gold_source_kind'],
         axes=dict(X=receipt['tables']['X']['required'],G=point['tables']['G']['required']),
         schemas=dict(X=receipt['tables']['X']['fields_sha256'],G=point['tables']['G']['fields_sha256']),
-        receipts=private_files,public_files=refs,test_cells=False,test_fit=False)
+        receipts=private_files,public_files=refs,test_cells=receipt['test_cells'] or point['test_cells'],test_fit=False)

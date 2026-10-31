@@ -405,7 +405,7 @@ def _acquire_case(ev,files,task,case,cache):
                 return any((ts['fact'][index]==item['fact'] if set(item)=={'fact'} else
                     producer.selectors['matches'](ts,index,item)) for item in selectors)
             def select_required(native):
-                proof=select_train_full_rows(isolated,native,selection,ntrain=ntrain)
+                proof=select_train_full_rows(isolated,native,selection,ntrain=ntrain,ntest=ntest)
                 admitted={i for i in range(len(native['tables']['form'])) if required_table(native['tables'],i)}
                 selected={entry for table in admitted for entry in native['_native_reader'].bytable[table]}
                 # The canonical selector's entries/mode receipt remains intact.
@@ -439,7 +439,7 @@ def _acquire_case(ev,files,task,case,cache):
                 metadata_export=export if not rebound else dict(export,definitions=dict(export['definitions'],
                     native_relations=[rebound.get(d['relation_slot'],d) for d in export['definitions']['native_relations']]))
                 meta=producer.case_table_metadata(metadata_export,dict(selector=selector,native_schema=schema,source_name=source_name))
-                packet=acquire_train_table(isolated,native,table,selection,ntrain=ntrain,
+                packet=acquire_train_table(isolated,native,table,selection,ntrain=ntrain,ntest=ntest,test_rows=True,
                     fields=[dict(c,field_name=m['display_name']) for c,m in zip(schema,meta['schema'])],
                     projection=list(range(len(schema))),copy_rows=False,
                     source=dict(kind='fresh_normalized',case=case,program_sha256=_sha(view.program.sexp()),
@@ -452,7 +452,7 @@ def _acquire_case(ev,files,task,case,cache):
                         callable_atom=None,relation_slots=[]))
         bundle=dict(key=key,tables=tables,kept=choices,kept_map=matched,kept_report=kept,
             receipt=dict(source_kind='fresh_normalized',row_policy=ROW_POLICY,normalization_report=view.report,
-                replay=replay,source_sha256=_sha(record),test_cells=False,test_fit=False,
+                replay=replay,source_sha256=_sha(record),test_cells=_test_cells(t['packet']['receipt'] for t in tables),test_fit=False,
                 held_alignment='canonical full_kept_matches on actual fresh normalized choices',
                 enabled_decoder=decoder))
         bundle['content_sha256']=_json_digest(bundle)
@@ -495,7 +495,7 @@ def _body(ev,bundle,body_path,full_det,cache):
         if stored.get('key')!=saved_key or claimed!=_json_digest(stored):
             raise ValueError('normalized BODY cache key/content differs')
         return _body_layout(ev,record,program,stored,full_det)
-    task=_read(Path(ev.cfg['tasks'])/(record['task']+'.json'));ntrain=len(task['train'])
+    task=_read(Path(ev.cfg['tasks'])/(record['task']+'.json'));ntrain=len(task['train']);ntest=len(task['test'])
     with ev.fresh_session() as isolated:
         native_ev=isolated.task_evaluator(record['task']);kept=json.loads(native_ev.gold_kept(program))
         choices=isolated.validate_gold_observation(program,kept,record['task'])
@@ -538,7 +538,7 @@ def _body(ev,bundle,body_path,full_det,cache):
             if not full_det:raise
             fields=None;projected_error=dict(error_type=type(error).__name__,reason=str(error))
         selection=dict(task=record['task'],case=record['case'],gold_sexp=program.sexp(),context_schema='normalized-gold-selection-v1',evaluation=dict(kept_assignments=record['evaluation']['kept_assignments']))
-        packet=acquire_train_table(isolated,native,table,selection,ntrain=ntrain,
+        packet=acquire_train_table(isolated,native,table,selection,ntrain=ntrain,ntest=ntest,test_rows=True,
             fields=raw_fields,projection=list(range(len(raw_fields))),
             held_entries=_held_entries(native,table,report,old),copy_rows=False,
             source=dict(kind='fresh_normalized',normalization_sha256=_sha(view.proof),
@@ -576,7 +576,7 @@ def _body_layout(ev,record,program,stored,full_det):
             # renderer projector expects an example name and choice. Adapt
             # its input only; retain the packet's exact axes on the output.
             rows=_projector()(dict(entries=[dict(entry,
-                example='train'+str(entry['example_index']+1),
+                example=('test' if entry['example_kind']==2 else 'train')+str(entry['example_index']+1),
                 choice=entry['assignment'])]),projection)[0]['rows']
             shared[key]=(entry['rows'],rows)
         else:rows=cached[1]
@@ -584,6 +584,11 @@ def _body_layout(ev,record,program,stored,full_det):
     return dict(packet,fields=fields,entries=entries,projection=projection,
         receipt=dict(packet['receipt'],layout_projection=dict(indices=projection,fields_sha256=_sha(fields),
             source='same validated full physical normalized BODY packet; canonical projector')))
+
+
+def _test_cells(receipts):
+    """True when any of the acquisition receipts holds TEST cells."""
+    return any(receipt['test_cells'] is True for receipt in receipts)
 
 
 def _receipt_path(private,point_id):
@@ -793,7 +798,7 @@ def export_normalized_gold_point(ev,manifest_ref,operation,generation_dir,cache,
                     if path.is_relative_to(staged):public_path=final/path.relative_to(staged);break
                 outputs[str(public_path.relative_to(root))]=_file(path)
     receipt=dict(schema='study-normalized-gold-export-v1',policy=POLICY,row_policy=ROW_POLICY,
-        complete=True,test_cells=False,test_fit=False,feature_safe_prefix_rows=False,
+        complete=True,test_cells=_test_cells(a['receipt'] for a in acquisitions.values()),test_fit=False,feature_safe_prefix_rows=False,
         point_id=point_id,generation_dir=str(root),pending_points=[dict(stage=str(a),point=str(b)) for a,b in point_stages],manifest=manifest_ref,operation_sha256=_sha(operation),
         input_generation=dict(point_path=str(old),point_json=_file(old/'point.json'),capabilities=_capabilities(old_point)),
         output_capabilities=dict(_capabilities(newpoint),layouts=list(layout_variants)),
@@ -821,7 +826,7 @@ def validate_normalized_gold_export(generation_dir,receipt_ref=None,*,private=No
     receipt=_read(path)
     if (receipt.get('schema')!='study-normalized-gold-export-v1' or receipt.get('policy')!=POLICY
             or receipt.get('complete') is not True or receipt.get('generation_dir')!=str(root)
-            or receipt.get('test_cells') is not False or receipt.get('test_fit') is not False):
+            or receipt.get('test_cells') is not _test_cells(a['receipt'] for a in receipt['acquisitions'].values()) or receipt.get('test_fit') is not False):
         raise ValueError('normalized receipt completeness/policy differs')
     for name,wanted in receipt['implementation'].items():
         if _file(name)['sha256']!=wanted:raise ValueError('normalized provider source SHA differs')
@@ -836,4 +841,4 @@ def validate_normalized_gold_export(generation_dir,receipt_ref=None,*,private=No
         policy=POLICY,row_policy=receipt['row_policy'],capabilities=receipt['output_capabilities'],
         manifest=receipt['manifest'],normalized_gold_receipt=receipt_ref,public_files=receipt['public_files'],
         layout_variants=receipt.get('layout_variants',{}),per_pair_source_generations=receipt.get('per_pair_source_generations',{}),
-        test_cells=False,test_fit=False,feature_safe_prefix_rows=False)
+        test_cells=receipt['test_cells'],test_fit=False,feature_safe_prefix_rows=False)
