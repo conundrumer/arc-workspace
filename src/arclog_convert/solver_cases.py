@@ -193,7 +193,7 @@ class CasesMixin:
                 narrow.add(g.name)
         for i, g in enumerate(redo):
             for n in narrow & g.reads:
-                lines = read_without(redo[i].lines, n, reps[n])
+                lines = read_without(redo[i].lines, n, reps[n], redo[i].cols)
                 if lines is not None:
                     redo[i] = dc_replace(redo[i], lines=lines)
         # a rederivation the same as the concept's is no rederivation

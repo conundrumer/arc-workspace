@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass, field, replace as dc_replace
 from engine.program import Atom, AtomLiteral, RelationName, Unit, Variable
 
@@ -471,12 +472,16 @@ def label_sources(f: "Form") -> tuple[tuple[Source, ...], ...]:
                  for j, names in enumerate(f.col_labels))
 
 
-def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] | None:
+def read_without(lines: list[str], rel: str, drop: dict[str, str], heads: Collection[str] = ()) -> list[str] | None:
     """The lines with each one-line read of `rel` leaving out the dropped
     columns, and the label each named relabeled to the label at the column
     it repeats, or, where the read names no label there, standing at that
-    column; None where a read is not one line."""
+    column; None where a read is not one line. A dropped column's label that
+    is a column of the clause's head (`heads`) stays, and the label at the
+    column it repeats takes its name, since the head's columns are the
+    labels the clause makes."""
     ren: dict[str, str] = {}
+    keep: dict[str, str] = {}
     out = []
     for l in lines:
         i = l.find(f"({rel} ")
@@ -522,13 +527,16 @@ def read_without(lines: list[str], rel: str, drop: dict[str, str]) -> list[str] 
                     # the read takes the label at the column the dropped one repeats
                     kept.append(f"(:{drop[col]} {mark}{lab})")
                     continue
-                ren[lab] = labs[drop[col]]
+                if lab in heads and labs[drop[col]] not in heads:
+                    keep[labs[drop[col]]] = lab
+                else:
+                    ren[lab] = labs[drop[col]]
                 continue
             kept.append(it)
         out.append(l[:i] + "(" + " ".join([rel] + kept) + l[j:])
-    if not ren:
+    if not ren and not keep:
         return out
-    return relabel(out, lambda mark, v: (mark if v not in ren else "") + ren.get(v, v))
+    return relabel(out, lambda mark, v: (mark if v not in ren else "") + ren.get(v, keep.get(v, v)))
 
 
 def relabel(lines: list[str], fn) -> list[str]:

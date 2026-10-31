@@ -618,7 +618,7 @@ class RenderMixin:
             for g in list(main):
                 if g is new or not any(f"({f.name} " in l or f"({f.name})" in l for l in g.lines):
                     continue
-                lines = read_without(g.lines, f.name, drop)
+                lines = read_without(g.lines, f.name, drop, g.cols)
                 if lines is None or lines == g.lines:
                     continue
                 main[main.index(g)] = dc_replace(g, lines=lines)
@@ -629,7 +629,7 @@ class RenderMixin:
                 if g.name == f.name or set(g.branches) & bs or \
                         not any(f"({f.name} " in l or f"({f.name})" in l for l in g.lines):
                     continue
-                lines = read_without(g.lines, f.name, drop)
+                lines = read_without(g.lines, f.name, drop, g.cols)
                 if lines is None or lines == g.lines:
                     continue
                 branch_forms[branch_forms.index(g)] = dc_replace(g, lines=lines)
@@ -657,7 +657,7 @@ class RenderMixin:
                 base = r.concept_form or r
                 if not any(f"({f.name} " in l or f"({f.name})" in l for l in base.lines):
                     continue
-                lines = read_without(base.lines, f.name, drop)
+                lines = read_without(base.lines, f.name, drop, r.cols)
                 if lines is None or lines == base.lines:
                     continue
                 r.concept_form = dc_replace(base, lines=lines)
