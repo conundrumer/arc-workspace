@@ -381,13 +381,22 @@ class ClauseWriter:
                         made, src = (rhs, fa) if fa else (lhs, fb)
                         got = {t: f"{made.name}_{t}" for t in src}
                         self.fields.setdefault(made.name, {}).update(got)
+                        bound.update(got.values())
                         fa, fb = (src, got) if fa else (got, src)
                         return [f"(= *{fa[x]} {fb[x]})" if made is lhs else f"(= *{fb[x]} {fa[x]})"
                                 for x in sorted(src)]
                     common = sorted(fa.keys() & fb.keys())
                     if common and fa.keys() == fb.keys():
                         if l.op.value == "=":
-                            return [f"(= {fa[x]} {fb[x]})" for x in common]
+                            out = []
+                            for first, second in ((fa[x], fb[x]) for x in common):
+                                if first in bound and second not in bound:
+                                    first, second = second, first
+                                # `=` makes its first label, where the other stands bound
+                                made = first not in bound and second in bound
+                                bound.update({first} if made else ())
+                                out.append(f"(= {'*' if made else ''}{first} {second})")
+                            return out
                         if len(common) == 1:
                             return [f"(!= {fa[common[0]]} {fb[common[0]]})"]
                         return wrap("(OR ", [[f"(!= {fa[x]} {fb[x]})"] for x in common])
