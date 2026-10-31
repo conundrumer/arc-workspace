@@ -69,6 +69,28 @@ def init_bodies(form):
     return out
 
 
+def carets(x, out):
+    """The labels of x, a list of atoms, that a ^ marks, added to the set out."""
+    if isinstance(x, str):
+        if len(x) > 1 and x[0] == '^':
+            out.add(x[1:])
+    else:
+        for y in x:
+            carets(y, out)
+    return out
+
+
+def key_labels(tasks):
+    """{count of ^ labels: keys} over the key bodies of the tasks' INITs."""
+    out = collections.Counter()
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            for g in f[3:] if f[0] == 'INIT' else ():
+                if isinstance(g, list) and g[:1] == ['key']:
+                    out[len(carets(g[1], set()))] += 1
+    return out
+
+
 def body_compounds(tasks):
     """{'key' or 'port': counts in the form of S.compound_counts, with ('after',) as compound has it, over the bodies of that place.
     A place has no output clause, so the flag of 'reach' and 'comp' is False."""
@@ -147,7 +169,7 @@ def fit():
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
-                ports=ports, heads=heads, compound=compound, compounds=body_compounds(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=S.lib_types(Rc, regcols),
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)

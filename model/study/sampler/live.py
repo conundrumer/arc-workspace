@@ -20,8 +20,9 @@ A draw walks the program form by form. Clause order does not matter: what a step
 next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how many clauses of each kind exist (live_priors.py
 counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an
 INIT takes a component, and each of its ports takes
-a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the key
-alone, and other labels stay in their branch. The decoder gives every read of the task: its checks, and tables through step_tables; this module reads no
+a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
+alone, and other labels stay in their branch. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
+each key, or stops with chance 1 - KEY_ALL. The decoder gives every read of the task: its checks, and tables through step_tables; this module reads no
 gold and no path but the priors.
 
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
@@ -82,6 +83,8 @@ NEED_RESCUE = 64.0  # a port's boost for those types after a stop that the head'
 NEED_STOP = 0.1  # the factor on an atom's stop chance where it holds a column of a type that the head needs
 ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
 BRANCHES = 'RULE', 'key', 'port'  # the places of a body that may hold an OR, each with its counts in the priors
+BIND_QUIT = 0.8  # the chance that a later branch with an unbound exported label fails, at each atom past bind_atoms
+KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of 907 gold ports of keys of two or more labels read them all
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against those of the program's state
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
@@ -227,6 +230,37 @@ def fold_outcome(session, ids, model, y):
     return 'pass' if y in att else 'wrong' if att else 'no attempt'
 
 
+def sites(atom):
+    """[(column, field or None, value)] of atom text: a site on a record column has a field."""
+    out = []
+    for p, record, v in re.findall(r'\(:(\d+) (?:((?:\(:\d+ [^()]+\) ?)+)\)|([^()]+)\))', atom):
+        if record:
+            out += [(int(p), int(q), x) for q, x in re.findall(r'\(:(\d+) ([^()]+)\)', record)]
+        else:
+            out.append((int(p), None, v))
+    return out
+
+
+def atom_parts(atom):
+    """(negated, relation, {(column, field, value with no *)}) of atom text."""
+    rel = re.match(r'\((?:NOT \()?([^\s()]*)', atom + '(')
+    return atom.startswith('(NOT '), rel and rel[1], {(p, q, v.lstrip('*')) for p, q, v in sites(atom)}
+
+
+def clash(atom, atoms, outer=()):
+    """Whether atom text says nothing beside atoms, the texts of its list, or holds nowhere with them and outer, the atoms around that
+    list: another atom of the list has its sites on its relation, or NOT of a part of an atom's sites stands beside that atom."""
+    neg, rel, mine = atom_parts(atom)
+    for other in (*atoms, *outer):
+        neg2, rel2, theirs = atom_parts(other)
+        if rel2 == rel and mine and theirs:
+            if neg == neg2 and mine == theirs and other in atoms:
+                return True
+            if neg != neg2 and (mine if neg else theirs) <= (theirs if neg else mine):
+                return True
+    return False
+
+
 def opposite(atom):
     """The text of NOT of atom text, or of the atom that a NOT holds: both in one list hold nowhere."""
     return atom[5:-1] if atom.startswith('(NOT ') else '(NOT %s)' % atom
@@ -270,6 +304,7 @@ class Limits:
     cheap_tries: int = S.CHEAP_TRIES  # further redraws for a repeated or unjoined atom
     max_atoms: int = S.MAX_ATOMS  # atoms of a body
     branch_atoms: int = 12  # atoms of an OR's branch, the most that gold has
+    bind_atoms: int = 6  # atoms of a later branch by which 98% of gold's bind the exported labels; past them a branch ends with chance BIND_QUIT
     port_atoms: int = 6  # atoms of a port's body; 0.4% of gold's are longer, and the checks of a long one cost most
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
@@ -335,6 +370,8 @@ class LiveFrontier(S.FastFrontier):
             c = [t for t in c if t not in drop and not (n.phase == 'op' and n.need == 1 and t == n.toks[-1])]  # a comparison of an operand with itself says nothing
         elif n.phase == 'root' and M.NOT in c and n.labs == len(self.hidden):  # no label for a NOT atom to join
             c.remove(M.NOT)
+        elif n.phase == 'fcol':  # a key's record may hold one column name twice
+            c = [self.col_by_pos[n.need]] + c
         return c
 
 
@@ -399,7 +436,8 @@ class Run:
         self.spent_after = DEADLINE_SHARE * (session.settings.deadline_seconds or math.inf)
         self.root = session.decoder()
         self.rng = random.Random(seed)
-        self.orcs = {'RULE': or_counts(pri['compound'])} | {k: or_counts(v) for k, v in pri.get('compounds', {}).items()}
+        self.orcs = {'RULE': or_counts(pri['compound'])} | {k: or_counts(v) for k, v in pri['compounds'].items()}
+        self.key_labels = sorted(pri.get('key_labels', {1: 1}).items())  # a key's count of ^ labels, and its gold count
         self.t0 = time.monotonic()
         self.c = collections.Counter()
         self.steer_stats = dict(rel=collections.Counter(), choice=collections.Counter())  # the Drawers' rel_stats and choice_stats
@@ -642,17 +680,19 @@ class Run:
         nlab, keys = 0, {}
         if keyed:  # the key port: one label of its body becomes the key
             dr = self.drawer(pg, 'INIT', f, 'key')
+            dr.key_labels = self.pick(*zip(*self.key_labels))
             cur, toks = self.body(pg, dr, f, 'INIT', 0)[:2]
             stars = [i for i, t in enumerate(toks) if t == M.STAR]
             free = [j for j in range(len(stars)) if self.ff0.label_tok[j] not in dr.fr.hidden]  # a label local to a branch is no key
             if not free:
                 raise Drop('key body makes no label')
-            n = free[rng.randrange(len(free))]
-            i = stars[n]
-            keys = {self.ff0.label_tok[n]: self.label_types(dr, dr.drawn).get('L%d' % n)}
+            picked = rng.sample(free, min(len(free), dr.key_labels))
+            types = self.label_types(dr, dr.drawn)
+            keys = {self.ff0.label_tok[n]: types.get('L%d' % n) for n in picked}
+            carets = {stars[n] for n in picked}
             g = f.fork()
             for j, t in enumerate(toks):
-                g.step(M.CARET if j == i else t)
+                g.step(M.CARET if j in carets else t)
             g.step(M.END)
             f, nlab = g, len(stars)
         else:
@@ -787,10 +827,10 @@ class Run:
             rtok = self.V.id(m[1]) if m else None
             if rtok is not None:
                 unknown = self.ff0.KIND[rtok] == 'relation' and M.slot_no(m[1]) not in dr.colmap
-                for p, label in re.findall(r'\(:(\d+) \*(L\d+)\)', atom):
-                    t = ANY_TYPE if unknown else dr.col_type(rtok, int(p))
-                    if t is not None:
-                        out[label] = t
+                for p, field, v in sites(atom):
+                    t = ANY_TYPE if unknown else dr.col_type(rtok, p, field)
+                    if t is not None and v[0] == '*':
+                        out[v[1:]] = t
         return out
 
     def body(self, pg, dr, dec, kind, nlab, need=(), keys=()):
@@ -805,6 +845,7 @@ class Run:
             if time.monotonic() >= self.deadline:
                 raise Deadline
             dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
+            dr.want = (set(keys) - set(toks) or set(keys)) if keys else dr.want  # a port reads each key
             ored = None
             if dr.orc and self.rng.random() < self.p_or(dr.orc, k):
                 dr.p_labels = labels
@@ -830,7 +871,7 @@ class Run:
                         c['try:unjoined'] += 1
                         free += 1
                         continue
-                    if res[3] in text:
+                    if res[3] in text or clash(res[3], text):
                         c['try:repeat'] += 1
                         free += 1
                         continue
@@ -867,6 +908,9 @@ class Run:
                 continue
             if keys and not set(keys) & set(toks):
                 c['gate:key unread'] += 1
+                continue
+            if set(keys) - set(toks) and self.rng.random() < KEY_ALL:
+                c['gate:key partly read'] += 1
                 continue
             pg.toks = pg.toks + toks
             return cur, toks, text, scope
@@ -951,9 +995,9 @@ class Run:
             return None
         return f, out, '(NOT (%s %s))' % (V.name(rel), ' '.join('(%s %s)' % (V.name(c), V.name(v)) for c, v in zip(keep[::2], keep[1::2])))
 
-    def branch_atom(self, dr, d, labs, pkey, k, types, scope, outer, joins):
-        """One atom of a branch at decoder d, with labs labels in the clause: (Drawer.atom's result, or None) after its tries. joins
-        says that the atom may not stand unjoined."""
+    def branch_atom(self, dr, d, labs, pkey, k, types, scope, outer, text, joins):
+        """One atom of a branch at decoder d, with labs labels in the clause: (Drawer.atom's result, or None) after its tries. text is
+        the branch's atoms and outer the body's. joins says that the atom may not stand unjoined."""
         lim, c, free = self.lim, self.c, 0
         fr = dr.frontier(d, labs)
         for n_try in range(lim.atom_tries + lim.cheap_tries):
@@ -968,7 +1012,7 @@ class Run:
             elif joins and not res[4] and res[5]:
                 c['or:try:unjoined'] += 1
                 free += 1
-            elif res[3] in outer or opposite(res[3]) in outer:
+            elif res[3] in outer + text or opposite(res[3]) in outer + text or clash(res[3], text, outer):
                 c['or:try:repeat'] += 1
                 free += 1
             else:
@@ -1004,7 +1048,7 @@ class Run:
             wtypes = [types[i] for i in wanted if types.get(i, ANY_TYPE) != ANY_TYPE] + list(want_types)
             dr.want_types = frozenset(wtypes)
             joins = k + j > 2 or (bool(want) and not later)
-            res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer + text, joins)
+            res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer, text, joins)
             if res is None:
                 return None, 'no atom'
             d = res[0].dec
@@ -1019,6 +1063,8 @@ class Run:
                 first.append(list(res[0].toks))
             bound |= set(fresh) | (set(joins) & (exported or set()))
             named, unread = not later or exported <= bound, later and strict and any(not read[x] for x in made)
+            if not named and j >= self.lim.bind_atoms and self.rng.random() < BIND_QUIT:
+                return None, 'unbound'
             soft = None if named and not unread else S.P_UNREAD_LOCAL if named else S.P_UNNAMED if not unread else 0.0
             if self.rng.random() < hz.get(j, 1.0) and (soft is None or self.rng.random() < soft):
                 self.c['or:soft close'] += soft is not None
@@ -1031,7 +1077,7 @@ class Run:
         """An OR at decoder dec, the k-th atom of a body with tokens toks and atom texts text, by S's rules (draw_compound): (decoder
         after its END, tokens, text, the label tokens that are local to a branch, the branches' atom texts), or None. The labels the
         first branch makes and does not read again are exported, and each label it reads again with chance P_REEXPORT. In a key, the
-        key alone is exported."""
+        key's labels alone are exported."""
         rng, c = self.rng, self.c
         nparts = self.pick(*zip(*dr.orc['shapes']))
         d = dec.fork()
@@ -1067,7 +1113,7 @@ class Run:
                     exported &= bound
                 else:
                     first_made = set(made)
-                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(rng.sample(made, min(len(made), 1)))
+                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(rng.sample(made, min(len(made), dr.key_labels)))
                 dr.fr.hidden = hidden0 | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
         finally:
             dr.rel_closed, dr.fr.hidden = closed, hidden0

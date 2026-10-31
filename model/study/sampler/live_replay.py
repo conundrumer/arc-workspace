@@ -23,6 +23,19 @@ from live import ALSO_TOK, KIND_TOK, OUT_TOK, S, SKIP_TOK, TABLES, M, arclog
 HEADS = {3: 'ONE', 4: 'SET', 5: 'CHOOSE', 6: 'RIGID_DET', 9: 'IF', 10: 'ALL'}  # the control tokens that live.py has no draw of
 
 
+class AnyFieldOrder(live.LiveFrontier):
+    """A frontier that also walks a record's fields out of position order: a draw writes them in order, and the other order is the same
+    program."""
+
+    def candidates(self, n):
+        c = super().candidates(n)
+        if n.phase == 'fcol':
+            opened = n.text[[m.start() for m in re.finditer(r'\(:\d+ \(:', n.text)][-1] + 1:]
+            named = {int(x) for x in re.findall(r'\(:(\d+) [^(]', opened)}
+            c = c + [self.col_by_pos[p] for p in range(n.need) if p in self.col_by_pos and p not in named]
+        return c
+
+
 class Refused(Exception):
     """A form that the walk can't go through; the message is the shape."""
 
@@ -75,7 +88,7 @@ class Walk:
             f.step(M.STAR if t == M.CARET else t)
         return f, None
 
-    def flat(self, dr, cur, text, end, j, k, labs, prefix, scope, close, one):
+    def flat(self, dr, cur, text, end, j, k, labs, prefix, scope, close, one, outer=()):
         """Gates of one atom at index j: (decoder, atom text). close(decoder) says whether the clause or branch can close there."""
         d, a = self.atom(dr, cur, j, end, labs, prefix + tuple(self.t[j:end]))
         if a is None:
@@ -83,8 +96,9 @@ class Walk:
         joined = re.search(r'(?<![*\w])L\d+', a) is not None or self.t[j] in M.CMP
         if k > 1 and not joined:
             self.soft[one + 'unjoined'] += 1
-        if a in text or live.opposite(a) in text:
+        if a in [*outer, *text] or live.opposite(a) in [*outer, *text] or live.clash(a, text, outer):
             self.hard[one + 'repeat'] += 1
+            self.why.append('%s beside %s' % (a, text))
         if close is not None and not close(d):
             self.hard[one + 'unsafe'] += 1
         return d, a
@@ -102,7 +116,7 @@ class Walk:
                 if t[self.i] in (M.OR, *HEADS):
                     raise Refused('compound inside a compound')
                 end, j = self.atom_end(self.i), j + 1
-                d, a = self.flat(dr, d, text + btext, end, self.i, k + j - 1, loc, pfx, scope, run.can_close, 'or:try:')
+                d, a = self.flat(dr, d, btext, end, self.i, k + j - 1, loc, pfx, scope, run.can_close, 'or:try:', text)
                 loc += sum(x in (M.STAR, M.CARET) for x in t[self.i:end])
                 self.i = end
                 btext.append(a or '')
@@ -120,6 +134,14 @@ class Walk:
         made = [set(re.findall(r'\*L(\d+)', ' '.join(b))) for b in branches]
         read = [set(re.findall(r'(?<![*\w])L(\d+)', ' '.join(b))) for b in branches]
         exported = {x for x in made[0] if all(x in m | r for m, r in zip(made[1:], read[1:]))}
+        for b, m, r in zip(branches[1:], made[1:], read[1:]):  # the atom that binds the last exported label
+            left = {x for x in exported} - m
+            for i, atom in enumerate(b):
+                left -= set(re.findall(r'(?<![*\w])L(\d+)', atom)) | set(re.findall(r'\*L(\d+)', atom))
+                if not left:
+                    if i >= run.lim.bind_atoms:
+                        self.soft['or:bound late'] += 1
+                    break
         if made[0] - read[0] - exported and dr.place != 'key':
             self.hard['or:first branch keeps an unread label'] += 1
         if any(m - r for m, r in zip(made[1:], read[1:])) and dr.place != 'key':
@@ -223,16 +245,16 @@ class Walk:
             self.body(pg, dr, 'INIT', f, 0)
             carets = [x for x in t[self.start:self.i] if x in (M.STAR, M.CARET)]
             where = [i for i, x in enumerate(carets) if x == M.CARET]
-            if len(where) != 1:
-                raise Refused('key of %d ^ labels' % len(where))
+            if not where:
+                raise Refused('key of no ^ label')
             g = f.fork()
             for x in t[self.start:self.i]:
                 g.step(x)
             g.step(M.END)
             self.i += 1
             f, nlab = g, len(carets)
-            lab = run.ff0.label_tok[where[0]]
-            keys = {lab: run.label_types(dr, dr.drawn).get('L%d' % where[0])}
+            types = run.label_types(dr, dr.drawn)
+            keys = {run.ff0.label_tok[n]: types.get('L%d' % n) for n in where}
         for pname, cols in ports:
             if t[self.i] == SKIP_TOK:
                 f = f.fork()
@@ -329,6 +351,7 @@ def main():
     ap.add_argument('--models', default=live_try.P.SAMPLER_DATA + '/models')
     a = ap.parse_args()
     sampler = live.Sampler(a.models, ())
+    live.LiveFrontier = AnyFieldOrder
     tally, end = collections.Counter(), time.monotonic() + a.seconds
     for item in a.tasks:
         if time.monotonic() >= end:
