@@ -70,7 +70,12 @@ def validate_report(report, request):
         if (not isinstance(indices, list)
                 or any(v is not None and (type(v) is not int or v < 0) for v in indices)):
             raise ValueError('native clause map malformed')
-        if not all(isinstance(case[name], str) for name in ('original_program', 'filtered_program')):
+        # The native API returns null texts for an unreadable case (for
+        # example DEMONSTRATED), and selects the whole original task.
+        unreadable_original = (report['selection'] == 'original'
+            and case['original_program'] is None and case['filtered_program'] is None)
+        if not unreadable_original and not all(
+                isinstance(case[name], str) for name in ('original_program', 'filtered_program')):
             raise ValueError('native program text missing')
         if not all(isinstance(case[name], list) for name in ('removed_clauses', 'edited_clauses')):
             raise ValueError('native edit inventory missing')
@@ -103,7 +108,11 @@ def audit_check_set(publication, check_set, destination):
     removed = {}
     fallbacks = {}
     for task, row in selected.items():
-        report = row['result']
+        # Readback audits also accept the owner's completed native JSONL.
+        # This grants no runtime/source binding or publication-resume authority.
+        report = row['result'] if row.get('schema') == SCHEMA else row
+        if report.get('schema') != NATIVE_SCHEMA:
+            raise ValueError('check audit input is not a native task result')
         if report['selection'] != 'filtered':
             fallbacks[task] = report['reason']
             continue
@@ -125,7 +134,11 @@ def audit_check_set(publication, check_set, destination):
 
 
 def lint_records(result, request):
-    """Forward the report-only native lint without imposing proof fields."""
+    """Forward exactly the documented report-only native lint fields.
+
+    Findings have task/case/clause_index/relation/labels, no atom_paths or proof.
+    The native entry owns singleton/read validation; do not impose extra fields.
+    """
     lint = result.get('singleton_double_read_lint', {})
     if lint.get('status') != 'complete':
         return [], dict(status='unavailable', reason=lint.get('reason', 'native lint not acquired'))
