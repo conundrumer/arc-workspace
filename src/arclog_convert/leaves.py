@@ -2272,7 +2272,11 @@ class Converter:
         out = []
         for t in sorted((t for t in self.prog.types if isinstance(t, AdtType) and t.name in self.case_types
                          and not t.scope.components), key=lambda t: t.span.first):
-            out.append((named.get(t.name, t.name[:1].lower() + t.name[1:]), t))
+            name = named.get(t.name, t.name[:1].lower() + t.name[1:])
+            if any(name == taken for taken, _ in out):
+                # two types reached by fields of one name are two points
+                name = t.name[:1].lower() + t.name[1:]
+            out.append((name, t))
         return out
 
     def leaves(self, name: str, type_name: str, tparam: bool, scope: tuple[str, ...],
