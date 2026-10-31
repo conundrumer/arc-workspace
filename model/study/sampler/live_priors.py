@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+"""Writes the frozen priors of live.py: every corpus task's gold program counted, with no task held out, into
+DATA/sampler/models/live_priors.pkl. The file holds what S reads from disk at a point (the atom priors, the stop hazards,
+the compound counts, the registry's columns and types), and the program-level counts that a draw from an empty prefix
+needs: the next clause's kind, the stop after n clauses, a DET's proposer and marks, and an INIT's component and ports.
+
+  <runtime python> live_priors.py [--out PATH]
+"""
+import argparse
+import collections
+import os
+import pickle
+
+import sample2_col as S
+import sampler_paths as P
+
+KIND_STEP = 2  # the clause count is bucketed by this step in the next-kind counts
+KIND_TOP = 12  # the last bucket
+
+
+def kind_bucket(n):
+    return min(n // KIND_STEP, KIND_TOP)
+
+
+def plain(prior):
+    return {f: collections.Counter(c) for f, c in prior.total.items()}
+
+
+def init_ports(form):
+    """(whether the INIT has a key group, {port name}) of an INIT form; the ports of a key group are its elements after the key's body."""
+    parts = [p for p in form[3:] if isinstance(p, list) and p]
+    keyed = bool(parts) and parts[0][0] == 'key'
+    return keyed, {p[0] for p in (parts[0][2:] if keyed else parts) if isinstance(p, list) and p}
+
+
+def fit():
+    tasks = sorted(t for t in os.listdir(S.CORPUS) if S.corpus_forms(t))
+    kinds = collections.defaultdict(collections.Counter)  # (previous kind, bucket) -> next kind -> clauses
+    lengths = collections.Counter()  # clauses before OUT -> programs
+    kinds1 = collections.defaultdict(collections.Counter)  # previous kind -> next kind -> clauses
+    proposers, comps = collections.Counter(), collections.Counter()
+    det = collections.Counter()  # 'proposer' or 'atoms' -> clauses; ('ONE' or 'SET', the same) -> clauses
+    keyed, ports = collections.Counter(), collections.Counter()  # component -> INITs with a key group; (component, key group, port) -> uses
+    heads = collections.Counter()  # (component, port, column) -> uses of the port whose head names the column
+    for t in tasks:
+        prev, n = '^', 0
+        lengths[sum(f[0] != 'OUT' for f in S.corpus_forms(t))] += 1
+        for f in S.corpus_forms(t):
+            if f[0] == 'OUT':
+                continue
+            kinds[prev, kind_bucket(n)][f[0]] += 1
+            kinds1[prev][f[0]] += 1
+            prev, n = f[0], n + 1
+            if f[0] == 'DET':
+                how = 'proposer' if any(isinstance(x, str) for x in f[2:]) else 'atoms'
+                det[how] += 1
+                proposers.update(x for x in f[2:] if isinstance(x, str))
+                for x in f[2:]:
+                    if x in (['ONE'], ['SET']):
+                        det[x[0], how] += 1
+            elif f[0] == 'INIT':
+                k, used = init_ports(f)
+                comps[f[2]] += 1
+                keyed[f[2]] += k
+                ports.update((f[2], k, p) for p in used)
+                for p, head, _ in S.port_parts(f) + [q for g in f[3:] if isinstance(g, list) and g[:1] == ['key'] for q in S.port_parts(['', '', ''] + g[2:])]:
+                    heads.update((f[2], p, col) for col, _ in head)
+    bodies = {k: S.gold_bodies(tasks, k) for k in ('RULE', 'DET')}
+    bodies['INIT'] = S.gold_port_bodies(tasks)
+    regcols = S.registry_columns()
+    with os.scandir(S.FSTORE) as points:
+        lib = next(points).path + '/libraries.json'  # one file, the same at every point
+
+    class Rc:  # lib_types reads only the libraries path of a point
+        class state:
+            libraries_path = lib
+    compound = collections.Counter()
+    for c in S.compound_counts(tasks).values():
+        compound.update(c)
+    top = max(lengths)
+    stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
+    return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), proposers=proposers, comps=comps, det=det, keyed=keyed,
+                ports=ports, heads=heads, compound=compound, atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=S.lib_types(Rc, regcols),
+                comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
+                families=S.FAMILIES)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--out', default=P.SAMPLER_DATA + '/models/live_priors.pkl')
+    a = ap.parse_args()
+    got = fit()
+    with open(a.out + '.tmp', 'wb') as f:
+        pickle.dump(got, f, protocol=5)
+    os.replace(a.out + '.tmp', a.out)
+    print(a.out, got['tasks'], 'tasks', {k: sum(v['rel'].values()) for k, v in got['atoms'].items()}, 'atoms')
+
+
+if __name__ == '__main__':
+    main()

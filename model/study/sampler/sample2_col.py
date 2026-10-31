@@ -1118,6 +1118,8 @@ class Logs:
 
 
 class Drawer:
+    root_cap, node_cap = ROOT_CAP, NODE_CAP
+
     def __init__(self, V, counts, rng, regcols, fr, regtypes):
         self.V, self.c, self.rng, self.reg, self.fr, self.types = V, counts, rng, regcols, fr, regtypes
         self.port_rel = sum(v for q, v in counts['rel'].items() if q.startswith('port:'))
@@ -1174,7 +1176,7 @@ class Drawer:
         ck = self.root_key = (key, labs)
         root = self.roots.get(ck)
         if root is None:
-            if len(self.roots) >= ROOT_CAP or self.fr.created - self.created0 >= NODE_CAP:
+            if len(self.roots) >= self.root_cap or self.fr.created - self.created0 >= self.node_cap:
                 self.roots.clear()
                 self.created0 = self.fr.created
             root = self.roots[ck] = self.fr.reset(dec, labs)
