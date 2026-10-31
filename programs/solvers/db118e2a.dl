@@ -22,8 +22,9 @@
     // @witness smaller-picture: variant concept
     //     @relaxed content-extent
   | CenterGap {}
-    // @rule two-copies: the copies take their `copy_anchor` corner to the stored cells (2,2) and (8,8).
-    //  Undefined where a copy leaves the canvas or the two copies paint one cell with two colors.
+    // @rule two-copies: each copy takes one of its corners to a stored cell, the corner and the cells
+    //  as `copy_anchor` gives them. Undefined where a copy leaves the canvas or the two copies paint one
+    //  cell with two colors.
     // @witness smaller-picture: variant concept
   | FixedAnchors {}
     // @rule two-copies: the first copy is `corner_inset` in from the corner `chain_corner`, and the
@@ -67,7 +68,13 @@
 // The picture's key: the branches it depends on.
 .type Pic = [b: Background, w: Width]
 
-.decl out(p: Position, col: Color, ch: Choice)
+// A copy in a train output: the example and the copy's piece.
+.type CopyPiece = [e: Example, id: Ident]
+
+.type CopyAnchorValue = [d: DiagDir]
+.type OpenValue = [copy_anchor: CopyAnchorValue]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
 
 .comp Params {
     // --- $StoredBg ---
@@ -94,8 +101,12 @@
 
     // --- $FixedAnchors ---
     // The canvas cell each copy's corner d sits on.
+    // @open
     .decl copy_anchor(d: DiagDir, p: Position)
     copy_anchor(DIAG_TL, [2, 12, 2, 12]). copy_anchor(DIAG_TL, [8, 6, 8, 6]).
+    copy_anchor(DIAG_TR, [2, 12, 6, 8]). copy_anchor(DIAG_TR, [8, 6, 12, 2]).
+    copy_anchor(DIAG_BL, [6, 8, 2, 12]). copy_anchor(DIAG_BL, [12, 2, 8, 6]).
+    copy_anchor(DIAG_BR, [6, 8, 6, 8]). copy_anchor(DIAG_BR, [12, 2, 12, 2]).
 
     // --- $ChainFromCorner ---
     // The corner the chain of copies starts from.
@@ -183,7 +194,7 @@ framed(K, R, Col) :-
     pic.box(K, Bp), framed_box(K, Bf), in(P, Col_in), crop(P, Bf, R),
     ( inside(P, Bp), Col = Col_in                              // the picture, as it stands
     ; !inside(P, Bp), !copy_corner(K, P), frame_col(Col)       // the frame
-    ; copy_corner(K, P), K = [B, _], bg(B, Col)                // its corners
+    ; copy_corner([B, W], P), K = [B, W], bg(B, Col)              // its corners
     ).
 
 // Each cell of the framed picture, as its offset from the picture's corner d.
@@ -198,21 +209,23 @@ copy_cell(K, D, V, Col) :-
 
 // The canvas cell that each copy's corner d sits on.
 // @ignore: store — a stored anchor set is the model of $FixedAnchors
-.decl anchor(ch: Choice, d: DiagDir, a: Position)
+// @ignore: head-repeat — the open value holds the `copy_anchor` corner a fact is derived at
+.decl anchor(ch: Choice, d: DiagDir, a: Position, ov: OpenValue)
 
-.decl paint(ch: Choice, p: Position, col: Color)
-paint([C, B, W], Q, Col) :-
-    anchor([C, B, W], D, A), copy_cell([B, W], D, V, Col), compose(A, V, Q).
+.decl paint(ch: Choice, ov: OpenValue, p: Position, col: Color)
+paint([C, B, W], Ov, Q, Col) :-
+    anchor([C, B, W], D, A, Ov), copy_cell([B, W], D, V, Col), compose(A, V, Q).
 
 // Some copy cell falls off the canvas.
-.decl spills(ch: Choice)
-spills(Ch) :- paint(Ch, Q, _), !canvas(Ch, Q).
+.decl spills(ch: Choice, ov: OpenValue)
+spills(Ch, Ov) :- paint(Ch, Ov, Q, _), !canvas(Ch, Q).
 
-.decl drawn(ch: Choice)
-drawn(Ch) :- paint(Ch, _, _), !spills(Ch).
+.decl drawn(ch: Choice, ov: OpenValue)
+drawn(Ch, Ov) :- paint(Ch, Ov, _, _), !spills(Ch, Ov).
 
-out(Q, Col, Ch) :- drawn(Ch), paint(Ch, Q, Col).
-out(Q, Col, Ch) :- drawn(Ch), canvas(Ch, Q), !paint(Ch, Q, _), Ch = [_, B, _], bg(B, Col).
+out(Q, Col, Ch, Ov) :- drawn(Ch, Ov), paint(Ch, Ov, Q, Col).
+out(Q, Col, Ch, Ov) :-
+    drawn(Ch, Ov), canvas(Ch, Q), !paint(Ch, Ov, Q, _), Ch = [_, B, _], bg(B, Col).
 
 // --- $StoredCanvas ---
 .init stored_canvas = Frame2D<Unit>
@@ -247,19 +260,19 @@ canvas([$FitCanvas(), B, W], P) :- fit.cell([B, W], P).
 .decl corner_rule(c: Canvas)
 corner_rule($StoredCanvas($Corners())). corner_rule($FitCanvas()).
 
-anchor([C, B, W], Diag, A) :-
+anchor([C, B, W], Diag, A, [nil]) :-
     corner_rule(C), canvas([C, B, W], A),
     params.copy_axis(Da), diag_axis_of(Diag, Da),
     params.corner_inset(I), edge_inset(Diag, I, Bx), box_corner(A, Bx, Diag).
 
 // --- $CenterGap ---
 // Each copy's far corner sits one diagonal step from the canvas center toward its own corner.
-anchor([$StoredCanvas($CenterGap()), B, W], Od, A) :-
+anchor([$StoredCanvas($CenterGap()), B, W], Od, A, [nil]) :-
     impl_choice([$StoredCanvas($CenterGap()), B, W]), stored_canvas.cell($U(), Z), centered(Z),
     params.copy_axis(Da), diag_axis_of(Diag, Da), diag_opposite(Diag, Od), neighbor(Z, Diag, A).
 
 // --- $FixedAnchors ---
-anchor([$StoredCanvas($FixedAnchors()), B, W], D, A) :-
+anchor([$StoredCanvas($FixedAnchors()), B, W], D, A, [[D]]) :-
     impl_choice([$StoredCanvas($FixedAnchors()), B, W]), params.copy_anchor(D, A).
 
 // --- $ChainFromCorner ---
@@ -277,7 +290,7 @@ copy_span(K, V) :-
     params.chain_corner(D), framed(K, R0, _), box_corner(R0, ZERO, D),
     diag_opposite(D, Od), framed(K, R1, _), box_corner(R1, ZERO, Od), relative(R0, R1, V).
 
-anchor([$StoredCanvas($ChainFromCorner()), B, W], Diag, A2) :-
+anchor([$StoredCanvas($ChainFromCorner()), B, W], Diag, A2, [nil]) :-
     impl_choice([$StoredCanvas($ChainFromCorner()), B, W]), params.chain_corner(Diag), chain_start(A),
     ( A2 = A                                                                  // the first copy
     ; copy_span([B, W], V), compose(A, V, C1),                          // its far corner
@@ -292,4 +305,24 @@ anchor([$StoredCanvas($ChainFromCorner()), B, W], Diag, A2) :-
 
     .decl canvas_size(a: Axis, n: number)
     canvas_size(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    // The copies: the 8-connected pieces of each output's non-bg cells.
+    .init piece = Components8<Example>
+    piece.node(E, P) :- ex_out(E, P, Col), !bg(Col).
+
+    .init copy_box = Bbox<CopyPiece>
+    copy_box.cell([E, Id], P) :- piece.label(E, P, Id).
+
+    // Corner d of some copy in example e sits on cell a.
+    .decl seen_anchor(e: Example, d: DiagDir, a: Position)
+    seen_anchor(E, D, A) :-
+        piece.label(E, _, Id), copy_box.box([E, Id], B),
+        ex_out(E, A, _), diag_dir_elem(D), box_corner(A, B, D).
+
+    // Some output has no copy with corner d on cell a.
+    .decl missed_anchor(d: DiagDir, a: Position)
+    missed_anchor(D, A) :- seen_anchor(_, D, A), ex_out(E, _, _), !seen_anchor(E, D, A).
+
+    .decl copy_anchor(d: DiagDir, p: Position)
+    copy_anchor(D, A) :- seen_anchor(_, D, A), !missed_anchor(D, A).
 }

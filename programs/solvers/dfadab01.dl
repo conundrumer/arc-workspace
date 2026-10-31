@@ -198,4 +198,43 @@ undefined(Ch) :- sample_key.clash(Ch).
 
     .decl background(c: Color)
     background(Col) :- field.mode($U(), Col).
+
+    // A cell touches a cell of its own color at a side or a corner.
+    .decl touches_own(e: Example, p: Position)
+    touches_own(E, P) :- ex_in(E, P, Col), neighbor(P, _, Q), ex_in(E, Q, Col).
+
+    // The cells of a sample: off the field, each touching its own color.
+    .decl sample_cell(e: Example, p: Position, col: Color)
+    sample_cell(E, P, Col) :- ex_in(E, P, Col), !background(Col), touches_own(E, P).
+
+    // A lone cell off the field.
+    .decl marker(e: Example, p: Position, k: Color)
+    marker(E, P, K) :- ex_in(E, P, K), !background(K), !touches_own(E, P).
+
+    .init sample = Bbox<Example>
+    sample.cell(E, P) :- sample_cell(E, P, _).
+
+    // A marker outside the sample's box that touches the box.
+    .decl key_marker(e: Example, p: Position, k: Color)
+    key_marker(E, P, K) :-
+        sample.box(E, B), marker(E, P, K), !inside(P, B),
+        neighbor(P, _, Q), inside(Q, B).
+
+    // The picture a sample gives its key, read relative to corner d of its box.
+    .decl picture(d: DiagDir, k: Color, v: Offset, col: Color)
+    picture(D, K, V, Col) :-
+        key_marker(E, _, K), sample.box(E, B),
+        ex_in(E, C, _), box_corner(C, B, D),          // the box's corner d
+        sample_cell(E, S, Col), relative(C, S, V).    // offset from that corner
+
+    // A train marker that is no key marker, drawing its key's picture read
+    // from corner d, disagrees with the train output.
+    .decl misfit(d: DiagDir)
+    misfit(D) :-
+        ex_out(E, _, _), marker(E, P, K), !key_marker(E, P, _),
+        picture(D, K, V, Col), compose(P, V, Q), ex_in(E, Q, _),
+        !ex_out(E, Q, Col).
+
+    .decl stamp(k: Color, v: Offset, col: Color)
+    stamp(K, V, Col) :- picture(D, K, V, Col), !misfit(D).
 }

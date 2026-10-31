@@ -615,4 +615,87 @@ out(P, Col, [Sg, Pp, H, W, Sp]) :-
 
     .decl piece_glyph(id: Ident, p: Position)
     piece_glyph(Id, Q) :- glyph_class.id(Pc, Id), glyph_cell(Pc, Q).
+
+    // --- piece_paint, piece_exit: the walk, replayed ---
+
+    // The pieces of an example in order from params.read_from.
+    .init piece_order = OrderFrame<Example, Ident>
+    piece_order.axis(E, A) :- runs.label(E, _, _), params.read_from(D), axis_of(D, A).
+    piece_order.member(E, T, L) :- runs.label(E, L, T).
+
+    .decl next_piece(e: Example, t: Ident, t2: Ident)
+    next_piece(E, T, T2) :-
+        piece_order.pos(E, T, P), params.read_from(D), opposite(D, D2),
+        neighbor(P, D2, P2), piece_order.pos(E, T2, P2).
+
+    .decl first_piece(e: Example, t: Ident)
+    first_piece(E, T) :- piece_order.pos(E, T, P), params.read_from(D), dist(P, D, 0).
+
+    .decl last_piece(e: Example, t: Ident)
+    last_piece(E, T) :- piece_order.pos(E, T, _), !next_piece(E, T, _).
+
+    // The runs of output pipe cells that a piece may paint: along the flow
+    // or across it, never back against it.
+    .init run = Slide<Example>
+    run.node(E, P) :- ex_out(E, P, Col), params.pipe_color(Col).
+    run.dir(E, D) :- drawn(E), dir_elem(D), flow_dir(F), opposite(F, F0), D != F0.
+
+    // A run from P0 to Q that piece T can paint: the last piece's run is
+    // maximal.
+    .decl fit(e: Example, t: Ident, p0: Position, d: Dir, q: Position)
+    fit(E, T, P0, D, Q) :-
+        runs.label(E, _, T), run.run(E, P0, D, Q), dir_elem(D),
+        ( !last_piece(E, T)
+        ; last_piece(E, T), run.halt(E, P0, D, Q)
+        ).
+
+    // A piece with a cell its run may start on.
+    .type Pen = [t: Ident, p: Position]
+
+    // The pen's walk: the first piece starts next to the source along the
+    // flow, and each next piece one step along the flow from where the run
+    // before it ends.
+    .init walk = Propagation<Example, Pen>
+    walk.source(E, [T, P]) :-
+        first_piece(E, T), source_cell(E, S), flow_dir(F), neighbor(S, F, P).
+    walk.edge(E, [T, P0], [T2, P2]) :-
+        next_piece(E, T, T2), fit(E, T, P0, _, Q), flow_dir(F), neighbor(Q, F, P2).
+
+    // The walks back from each start of the last piece that a run fits.
+    .init back = Propagation<Example, Pen>
+    back.source(E, [T, P0]) :- walk.reached(E, [T, P0]), last_piece(E, T), fit(E, T, P0, _, _).
+    back.edge(E, B, A) :- walk.edge(E, A, B).
+
+    // A run some whole walk paints, from P0 to Q.
+    .decl drew(e: Example, t: Ident, p0: Position, d: Dir, q: Position)
+    drew(E, T, P0, D, Q) :-
+        walk.reached(E, [T, P0]), back.reached(E, [T, P0]), fit(E, T, P0, D, Q),
+        ( last_piece(E, T)
+        ; next_piece(E, T, T2), flow_dir(F), neighbor(Q, F, P2), back.reached(E, [T2, P2])
+        ).
+
+    // A drawn run and its exit: one step along the flow from its end, as an
+    // offset from its start.
+    .decl drew_exit(e: Example, t: Ident, p0: Position, d: Dir, q: Position, v: Offset)
+    drew_exit(E, T, P0, D, Q, V) :-
+        drew(E, T, P0, D, Q), flow_dir(F), neighbor(Q, F, P2), relative(P0, P2, V).
+
+    .decl exit_cand(id: Ident, v: Offset)
+    exit_cand(Id, V) :- drew_exit(E, T, _, _, _, V), glyph_class.id([E, T], Id).
+
+    .decl exit_defect(id: Ident, v: Offset)
+    exit_defect(Id, V) :-
+        exit_cand(Id, V), glyph_class.id([E, T], Id), drawn(E), !drew_exit(E, T, _, _, _, V).
+
+    .decl piece_exit(id: Ident, v: Offset)
+    piece_exit(Id, V) :- exit_cand(Id, V), !exit_defect(Id, V).
+
+    // The cells of a drawn run with a kept exit, from its start.
+    .decl piece_paint(id: Ident, v: Offset)
+    piece_paint(Id, V) :-
+        piece_exit(Id, X), glyph_class.id([E, T], Id), drew_exit(E, T, P0, D, Q, X),
+        ( C = P0
+        ; run.run(E, P0, D, C), !run.run(E, Q, D, C)
+        ),
+        relative(P0, C, V).
 }
