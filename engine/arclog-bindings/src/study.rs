@@ -444,3 +444,20 @@ impl PyStudyProgram {
         ))
     }
 }
+
+/// The gold of the task `task` without its empty clauses, and the singleton
+/// double-read lint, as JSON (`arclog::study::empty_gold`): `corpus` is the
+/// converted corpus, `tasks` the directory of the task files, and
+/// `deadline_seconds` the deadline of each evaluation request, none by
+/// default. A stop at the deadline proves nothing, so a deadline only proves
+/// fewer clauses empty. `ValueError` where the task file does not read. The
+/// call runs with the GIL released.
+#[pyfunction]
+#[pyo3(signature = (corpus, tasks, task, deadline_seconds=None))]
+pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &str, deadline_seconds: Option<f64>) -> PyResult<String> {
+    let deadline = deadline_seconds.map(std::time::Duration::try_from_secs_f64).transpose().map_err(|error| PyValueError::new_err(format!("deadline_seconds: {error}")))?;
+    let constructions = crate::constructions()?;
+    py.detach(|| arclog::study::empty_gold::empty_gold(std::path::Path::new(corpus), std::path::Path::new(tasks), task, deadline, constructions))
+        .map(|value| value.to_string())
+        .map_err(PyValueError::new_err)
+}

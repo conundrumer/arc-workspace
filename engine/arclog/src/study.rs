@@ -18,6 +18,7 @@ pub mod render_names;
 pub mod render_correspondence;
 pub mod stream_certificate;
 pub mod normalization;
+pub mod empty_gold;
 
 use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
 use crate::diagnostic::{Diagnostic, Severity};
