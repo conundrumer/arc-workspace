@@ -382,7 +382,11 @@ class Rewriter:
         mine = [u for u in units if u.head.relation == rn and u.scope.components == sc]
         if rn.instances or r is None or not mine or any(u.body is None for u in mine):
             return units, rels
-        if any(rn.name in reads_of(u.body) for u in units if u not in mine and u.body):
+        # `rewrite_reads` runs after this, and turns a read of the generator into a read of the item relation
+        gen = GENERATORS[pick.comp].relation
+        read = {rn, RelationName(("parse",), rn.name),
+                RelationName((inst.name,), gen), RelationName(("parse", inst.name), gen)}
+        if any(read & reads_of(u.body) for u in units if u not in mine and u.body):
             return units, rels
         pick.fold = [a.name if isinstance(a, Variable) else
                      next((v for v, s in pick.spread.items() if s == a), None) for a in pick.item.args]
@@ -894,13 +898,13 @@ class Rewriter:
                           for u in stripped]
 
 
-def reads_of(lits) -> set[str]:
-    """The names of the relations an atom anywhere in `lits` reads."""
-    out: set[str] = set()
+def reads_of(lits) -> set[RelationName]:
+    """The relations an atom anywhere in `lits` reads."""
+    out: set[RelationName] = set()
 
     def go(x):
         if isinstance(x, Atom):
-            out.add(x.relation.name)
+            out.add(x.relation)
         if isinstance(x, tuple):
             for y in x:
                 go(y)
