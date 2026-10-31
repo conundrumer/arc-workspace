@@ -12,12 +12,19 @@
 //! that has become empty, each `OR` branch with a positive atom on such a
 //! relation, and each clause whose body then has a positive atom on such a
 //! relation, until nothing changes. A relation becomes empty when each form
-//! that derives it is deleted. Any other read of such a relation, a clause
-//! with proposers whose body becomes empty, and a filtered program that the
-//! checker refuses, keep the original gold of the whole task. So does an
-//! `OUT` relation of the filtered program that differs from the original's
-//! on an example, an assignment or a model, or whose enumeration is not
-//! complete.
+//! that derives it is deleted. An `OR` with a branch the edit leaves with no
+//! conjunct is true, and the edit drops it where it exports no label. A
+//! clause whose `OR` loses branches takes as its columns the labels its body
+//! then keeps, and each read of its relation names its columns by their new
+//! slots. An `INIT` form whose key body becomes false is deleted, and so is
+//! one with an input body that becomes false where each of its outputs is
+//! proved empty; otherwise that input's clause is removed where the input
+//! then has no row. Any other read of such a relation, an `OUT` form that
+//! reads one, a clause with proposers whose body becomes empty, and a
+//! filtered program that the checker refuses, keep the original gold of the
+//! whole task. So does an `OUT` relation of the filtered program that
+//! differs from the original's on an example, an assignment or a model, or
+//! whose enumeration is not complete.
 //!
 //! The lint reports, on the original program, two positive atoms of one
 //! conjunction that read the same relation, bind the same columns to the same
@@ -43,10 +50,13 @@ use crate::eval::instance::Constructions;
 use crate::eval::{output_relation, relation_of, Evaluation, ModelsEnd, RelationValue};
 use crate::judge::determination::{descend_assignments, Assignment, End, EvaluationInputs};
 use crate::program::path::{Handle, NodePath, NodeRef};
-use crate::program::{column_spelled, Body, ClauseKeyword, Conjunct, Form, LabelId, LabelUse, Negated, Node, Program, ProgramRelation, RelationRef, Site, SiteArg};
+use crate::program::{column_spelled, Atom, Body, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, Form, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
+use crate::read::columns::{made_labels, slot_columns};
+use crate::registry::LibEntry;
 use crate::registry::Registry;
 use crate::relations::Relation;
 use crate::resolver::DependencyKind;
+use crate::safety::body_labels;
 use crate::session::{same_rows, TaskSession};
 use crate::stream::corpus::{solver_streams, token_ids, WantedCases};
 use crate::stream::{DecodeSettings, Emitter, Vocabulary, WrittenStream};
@@ -104,6 +114,11 @@ pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Durati
             Err(reason) => {
                 lint_gap.get_or_insert(format!("{}: {reason}", case.case));
             }
+        }
+        // Once a case keeps its original gold, the whole task does.
+        if fallback.is_some() {
+            cases.push(CaseResult::original(&case.case, case.concept, &original, names.as_ref().ok(), registry));
+            continue;
         }
         let filtered = filter(&evaluator, &original, &mut tables, registry, &program_settings);
         let result = match (filtered, &names) {
@@ -300,55 +315,83 @@ fn filter(evaluator: &Evaluator<'_>, original: &StudyProgram, tables: &mut Table
             deleted.insert(index, EMPTY);
         }
     }
-    let (replacements, edited) = loop {
+    let plan = loop {
         let empty = emptied(checked, &deleted);
         let mut added = false;
-        let mut replacements: Vec<(NodePath, Node<Body>)> = Vec::new();
-        let mut edited = BTreeSet::new();
+        let mut plan = Plan::default();
         for (index, form) in forms.iter().enumerate() {
-            if deleted.contains_key(&index) {
+            if deleted.contains_key(&index) || !mentions(NodeRef::from(form), &empty) {
                 continue;
             }
-            let mut bodies = Vec::new();
-            let mut parts = Vec::new();
-            root_bodies(NodeRef::from(form), &NodePath::top(index as u32), &mut bodies, &mut parts);
-            if parts.iter().any(|atom| reads(&atom.relation, &empty)) {
-                return Err(format!("a RIGID_DET part of form {index} reads an empty relation"));
-            }
-            for (at, body) in bodies {
-                match rewrite(body.value(), &empty).map_err(|reason| format!("form {index}: {reason}"))? {
-                    Rewritten::Same => {}
-                    Rewritten::Changed(conjuncts) => {
-                        replacements.push((at, Node::new(Body { conjuncts: conjuncts.into() })));
-                        edited.insert(index);
-                    }
-                    Rewritten::Empty => {
-                        let deletable = match form {
-                            Form::Clause(clause) => matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) && clause.value().proposers.is_empty() && at == NodePath::top(index as u32).child(0),
-                            _ => false,
-                        };
-                        if !deletable {
-                            return Err(format!("form {index} reads an empty relation where no deletion is supported"));
-                        }
-                        deleted.insert(index, READS_EMPTY);
+            let at = NodePath::top(index as u32);
+            match form {
+                Form::Out(_) => return Err(format!("the OUT form, form {index}, reads a relation that is empty on every input, so the case's output is empty")),
+                Form::Instance(instance) => match edit_instance(evaluator, tables, checked, registry, instance.value(), &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                    InstanceEdit::Delete(reason) => {
+                        deleted.insert(index, reason);
                         added = true;
+                    }
+                    InstanceEdit::Keep { bodies, inputs } => {
+                        plan.bodies.extend(bodies);
+                        if !inputs.is_empty() {
+                            plan.inputs.insert(index, inputs);
+                        }
+                        plan.edited.insert(index);
+                    }
+                },
+                _ => {
+                    let mut bodies = Vec::new();
+                    let mut parts = Vec::new();
+                    root_bodies(NodeRef::from(form), &at, &mut bodies, &mut parts);
+                    if parts.iter().any(|atom| reads(&atom.relation, &empty)) {
+                        return Err(format!("a RIGID_DET part of form {index} reads an empty relation"));
+                    }
+                    for (path, body) in bodies {
+                        match rewrite(body.value(), &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                            Rewritten::Same => {}
+                            Rewritten::Changed(conjuncts) => {
+                                plan.bodies.push((path, Node::new(Body { conjuncts: conjuncts.into() })));
+                                plan.edited.insert(index);
+                            }
+                            Rewritten::Empty => {
+                                let deletable = match form {
+                                    Form::Clause(clause) => matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) && clause.value().proposers.is_empty() && path == at.child(0),
+                                    _ => false,
+                                };
+                                if !deletable {
+                                    return Err(format!("form {index} reads an empty relation where no deletion is supported"));
+                                }
+                                deleted.insert(index, READS_EMPTY);
+                                added = true;
+                            }
+                        }
                     }
                 }
             }
         }
         if !added {
-            break (replacements, edited);
+            break plan;
         }
     };
-    let edited: BTreeSet<usize> = edited.into_iter().filter(|index| !deleted.contains_key(index)).collect();
+    let edited: BTreeSet<usize> = plan.edited.iter().copied().filter(|index| !deleted.contains_key(index)).collect();
     if deleted.is_empty() && edited.is_empty() {
         return Ok(Filtered { program: original.clone(), edit: original.clone(), deleted, edited });
     }
     let mut program = original.program().clone();
-    for (at, body) in &replacements {
+    for (at, body) in &plan.bodies {
         program = crate::mutation::edit::replace_body(&program, at, body)?;
     }
-    let kept: Vec<Form> = program.value().forms.iter().enumerate().filter(|(index, _)| !deleted.contains_key(index)).map(|(_, form)| form.clone()).collect();
+    let mut forms: Vec<Form> = program.value().forms.to_vec();
+    for (index, inputs) in &plan.inputs {
+        forms[*index] = without_inputs(&forms[*index], inputs);
+    }
+    let moved = take_columns(&mut forms, &edited)?;
+    if !moved.is_empty() {
+        for form in &mut forms {
+            *form = remap_form(form, &moved)?;
+        }
+    }
+    let kept: Vec<Form> = forms.into_iter().enumerate().filter(|(index, _)| !deleted.contains_key(index)).map(|(_, form)| form).collect();
     let edit = StudyProgram::from_decoded(Node::new(Program { forms: kept.into() }), registry).map_err(|fault| format!("the checker refuses the filtered program: {fault}"))?;
     compare_out(evaluator, original, &edit)?;
     // The program the filtered stream reads back as: the slots of its
@@ -368,21 +411,220 @@ fn filter(evaluator: &Evaluator<'_>, original: &StudyProgram, tables: &mut Table
     Ok(Filtered { program, edit, deleted, edited })
 }
 
-/// The relations each of whose deriving forms is in `deleted`.
+/// What the edit does to the forms it keeps.
+#[derive(Default)]
+struct Plan {
+    /// Each body the edit replaces, by its path.
+    bodies: Vec<(NodePath, Node<Body>)>,
+    /// The inputs of an instance whose clauses the edit removes, by the
+    /// index of the `INIT` form.
+    inputs: BTreeMap<usize, Vec<PortName>>,
+    /// The forms the edit changes.
+    edited: BTreeSet<usize>,
+}
+
+enum InstanceEdit {
+    /// The instance's outputs are empty, for the reason given.
+    Delete(&'static str),
+    /// The bodies the edit replaces, and the inputs whose clauses it
+    /// removes.
+    Keep { bodies: Vec<(NodePath, Node<Body>)>, inputs: Vec<PortName> },
+}
+
+/// The edit of the `INIT` form `instance` at `at`, one of whose bodies reads
+/// a relation of `empty`. A key body that becomes false gives no key, and
+/// each output of a keyed instance is empty at a key it does not have. An
+/// input body that becomes false gives the input no row: the instance is
+/// deleted where each of its outputs is proved empty in the original
+/// program, and otherwise the input's clause is removed where the component
+/// gives the input no default row and does not fill it from the key, since
+/// an input with no clause and no default has no row.
+fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, registry: &Registry, instance: &crate::program::Instance, at: &NodePath, empty: &Empty) -> Result<InstanceEdit, String> {
+    let mut bodies = Vec::new();
+    let mut inputs: Vec<(NodePath, &Node<InstanceInput>)> = Vec::new();
+    if let Some(key) = &instance.key {
+        let clause = at.child(0);
+        match rewrite(key.value().key.body.value(), empty)? {
+            Rewritten::Same => {}
+            Rewritten::Empty => return Ok(InstanceEdit::Delete(READS_EMPTY)),
+            Rewritten::Changed(conjuncts) => bodies.push((clause.child(0), Node::new(Body { conjuncts: conjuncts.into() }))),
+        }
+        inputs.extend(key.value().inputs.iter().enumerate().map(|(index, input)| (clause.child(1 + index as u32), input)));
+    }
+    let first = u32::from(instance.key.is_some());
+    inputs.extend(instance.inputs.iter().enumerate().map(|(index, input)| (at.child(first + index as u32), input)));
+    let mut falsified = Vec::new();
+    for (path, input) in inputs {
+        let input = input.value();
+        match rewrite(input.body.value(), empty)? {
+            Rewritten::Same => {}
+            Rewritten::Empty => falsified.push(input.name.clone()),
+            Rewritten::Changed(conjuncts) => bodies.push((path.child(input.head.len() as u32), Node::new(Body { conjuncts: conjuncts.into() }))),
+        }
+    }
+    if falsified.is_empty() {
+        return Ok(InstanceEdit::Keep { bodies, inputs: falsified });
+    }
+    if outputs_empty(evaluator, tables, checked, at) {
+        return Ok(InstanceEdit::Delete(EMPTY));
+    }
+    let Some(LibEntry::Component(component)) = registry.entry(&instance.component) else {
+        return Err("the instance's component is not in the lib".into());
+    };
+    for name in &falsified {
+        let port = component.inputs.iter().find(|port| port.port.name == *name).ok_or("an input that the component does not declare")?;
+        if port.default.is_some() || port.from_key || port.reads_outputs {
+            return Err(format!("the input {} reads an empty relation, and an input with no clause would hold rows", name.0));
+        }
+    }
+    Ok(InstanceEdit::Keep { bodies, inputs: falsified })
+}
+
+/// Whether each output of the instance at `at` that the program reads is
+/// proved empty.
+fn outputs_empty(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, at: &NodePath) -> bool {
+    let resolved = &checked.program;
+    resolved.nodes_of(at).iter().all(|&node| match &resolved.graph.nodes[node.0 as usize].kind {
+        DependencyKind::InstanceOutput { .. } => matches!(evaluator.coverage(tables, checked, &GraphRelation { node, output: None }), Coverage::Complete { empty: true, .. }),
+        DependencyKind::InstanceInput { .. } => true,
+        _ => false,
+    })
+}
+
+/// `form`, an `INIT` form, without the clauses of the inputs `names`.
+fn without_inputs(form: &Form, names: &[PortName]) -> Form {
+    let Form::Instance(instance) = form else { return form.clone() };
+    let instance = instance.value();
+    let kept = |inputs: &[Node<InstanceInput>]| -> Arc<[Node<InstanceInput>]> { inputs.iter().filter(|input| !names.contains(&input.value().name)).cloned().collect() };
+    let key = instance.key.as_ref().map(|key| Node::new(KeyClause { key: key.value().key.clone(), inputs: kept(&key.value().inputs) }));
+    Form::Instance(Node::new(crate::program::Instance { key, inputs: kept(&instance.inputs), ..instance.clone() }))
+}
+
+/// The new slot of each old column of a relation whose clause takes new
+/// columns.
+type Moved = Vec<(RelationName, Vec<u32>)>;
+
+/// Gives each edited clause of `forms` whose body keeps other labels than
+/// its columns' the columns of its body. An `OR` that loses a branch keeps
+/// each label it exported, and may export more: the labels its remaining
+/// branches all name. Each such label becomes a column, which each read of
+/// the relation projects away, since a read names the columns it reads. `Err`
+/// where a column would be dropped, or where the clause has `ONE` marks,
+/// whose models the new columns would change.
+fn take_columns(forms: &mut [Form], edited: &BTreeSet<usize>) -> Result<Moved, String> {
+    let mut moved = Vec::new();
+    for &index in edited {
+        let Form::Clause(clause) = &forms[index] else { continue };
+        let clause = clause.value();
+        let made = made_labels(clause.body.value());
+        let old: Vec<LabelId> = clause.columns.iter().map(|column| column.label).collect();
+        if made == old {
+            continue;
+        }
+        if !clause.ones.is_empty() {
+            return Err(format!("form {index}: the edit changes the columns of a clause with ONE marks"));
+        }
+        let ProgramRelation::Declared(name) = &clause.derives else {
+            return Err(format!("form {index}: the edit changes the columns of an output's clause"));
+        };
+        if clause.columns.iter().enumerate().any(|(slot, column)| column.name != ColumnName::Slot(slot as u32)) {
+            return Err(format!("form {index}: a column of the clause is not named by its slot"));
+        }
+        let slots: Option<Vec<u32>> = old.iter().map(|label| made.iter().position(|own| own == label).map(|slot| slot as u32)).collect();
+        let slots = slots.ok_or_else(|| format!("form {index}: the edit drops a column of the clause"))?;
+        moved.push((name.clone(), slots));
+        forms[index] = Form::Clause(Node::new(crate::program::Clause { columns: slot_columns(made, 0), ..clause.clone() }));
+    }
+    Ok(moved)
+}
+
+/// `form` with each read of a relation of `moved` naming its columns by
+/// their new slots.
+fn remap_form(form: &Form, moved: &Moved) -> Result<Form, String> {
+    let touched = |node: NodeRef<'_>| moved.iter().any(|(name, _)| reads_named(node, name));
+    if !touched(NodeRef::from(form)) {
+        return Ok(form.clone());
+    }
+    let atom = |atom: &Node<Atom>| remap_atom(atom, moved);
+    let key = |key: &KeyBody| KeyBody { body: map_body(&key.body, &atom), columns: key.columns.clone() };
+    let input = |input: &Node<InstanceInput>| {
+        let input = input.value();
+        Node::new(InstanceInput { name: input.name.clone(), head: input.head.clone(), body: map_body(&input.body, &atom) })
+    };
+    Ok(match form {
+        Form::Clause(clause) => Form::Clause(Node::new(crate::program::Clause { body: map_body(&clause.value().body, &atom), ..clause.value().clone() })),
+        Form::Instance(instance) => {
+            let instance = instance.value();
+            let clause = instance.key.as_ref().map(|clause| Node::new(KeyClause { key: key(&clause.value().key), inputs: clause.value().inputs.iter().map(input).collect() }));
+            Form::Instance(Node::new(crate::program::Instance { key: clause, inputs: instance.inputs.iter().map(input).collect(), ..instance.clone() }))
+        }
+        Form::Out(out) => Form::Out(Node::new(crate::program::Out { key: key(&out.value().key) })),
+        Form::Choose(choose) => {
+            let choose = choose.value();
+            Form::Choose(Node::new(crate::program::Choose {
+                rows: choose.rows.as_ref().map(key),
+                from: map_body(&choose.from, &atom),
+                never: choose.never.iter().map(|body| map_body(body, &atom)).collect(),
+                ..choose.clone()
+            }))
+        }
+        _ => return Err("a form of a kind the edit does not rewrite reads a relation whose columns change".into()),
+    })
+}
+
+/// Whether an atom at or below `node` reads the relation `name`.
+fn reads_named(node: NodeRef<'_>, name: &RelationName) -> bool {
+    node.atom().is_some_and(|atom| matches!(&atom.relation, RelationRef::Declared(own) if own == name)) || node.children().into_iter().any(|child| reads_named(child, name))
+}
+
+fn remap_atom(atom: &Node<Atom>, moved: &Moved) -> Node<Atom> {
+    let RelationRef::Declared(name) = &atom.value().relation else { return atom.clone() };
+    let Some((_, slots)) = moved.iter().find(|(own, _)| own == name) else { return atom.clone() };
+    let site = |site: &Site| match &site.column {
+        ColumnName::Slot(slot) => Site { column: ColumnName::Slot(slots.get(*slot as usize).copied().unwrap_or(*slot)), value: site.value.clone() },
+        ColumnName::Written(_) => site.clone(),
+    };
+    Node::new(Atom { relation: atom.value().relation.clone(), sites: atom.value().sites.iter().map(site).collect() })
+}
+
+/// `body` with `atom` applied to each atom at or below it.
+fn map_body(body: &Node<Body>, atom: &dyn Fn(&Node<Atom>) -> Node<Atom>) -> Node<Body> {
+    Node::new(Body { conjuncts: body.value().conjuncts.iter().map(|conjunct| map_conjunct(conjunct, atom)).collect() })
+}
+
+fn map_conjunct(conjunct: &Conjunct, atom: &dyn Fn(&Node<Atom>) -> Node<Atom>) -> Conjunct {
+    match conjunct {
+        Conjunct::Atom(own) => Conjunct::Atom(atom(own)),
+        Conjunct::Not(Negated::Atom(own)) => Conjunct::Not(Negated::Atom(atom(own))),
+        Conjunct::Not(Negated::Form(form)) => Conjunct::Not(Negated::Form(Arc::new(map_conjunct(form, atom)))),
+        Conjunct::Constraint(_) => conjunct.clone(),
+        Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(|branch| map_body(branch, atom)).collect()),
+        Conjunct::If { test, then, otherwise } => Conjunct::If { test: map_body(test, atom), then: map_body(then, atom), otherwise: map_body(otherwise, atom) },
+        Conjunct::All { domain, body } => Conjunct::All { domain: map_body(domain, atom), body: map_body(body, atom) },
+    }
+}
+
+/// The relations that have become empty: each relation of the graph each of
+/// whose forms is in `deleted`, where no other node of the graph gives it.
 fn emptied(checked: &CheckedProgram, deleted: &BTreeMap<usize, &'static str>) -> Empty {
     let resolved = &checked.program;
     let mut empty = Empty::default();
+    let mut live = Empty::default();
     for (index, node) in resolved.graph.nodes.iter().enumerate() {
         let relation = match &node.kind {
             DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation.clone(),
             DependencyKind::Chosen(name) => ProgramRelation::Declared(name.clone()),
+            DependencyKind::InstanceOutput { instance, output } => ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(output.clone())]) }),
             _ => continue,
         };
         let forms = resolved.forms_of(crate::resolver::GraphNodeIndex(index as u32));
         if !forms.is_empty() && forms.iter().all(|at| at.0.len() == 1 && deleted.contains_key(&(at.0[0].0 as usize))) {
             empty.insert(relation);
+        } else {
+            live.insert(relation);
         }
     }
+    empty.retain(|relation| !live.contains(relation));
     empty
 }
 
@@ -417,11 +659,23 @@ enum Rewritten {
     Same,
     /// The body is false.
     Empty,
+    /// The body's new conjuncts. None is a true body.
     Changed(Vec<Conjunct>),
 }
 
 /// `body` with the empty relations of `empty` taken out, or why the edit
 /// does not support it.
+///
+/// A positive atom on an empty relation makes its body false, and a `NOT`
+/// of it is true, so the edit drops it. An `OR` drops each false branch; it
+/// is false with none left. A branch left with no conjunct is true, so the
+/// `OR` is true where it exports no label, and the edit drops the `OR`; an
+/// `OR` that exports a label keeps that label free in a true branch, which
+/// the edit does not support. An `OR` left with one branch is that branch's
+/// conjuncts. Where the first branch is dropped, the new first branch makes
+/// each label the `OR` exported, at its first site in a positive atom of
+/// the branch's own list or at the first label of a `=` there: every later
+/// branch named it, so each remaining branch still does.
 fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
     let mut kept: Vec<Conjunct> = Vec::new();
     let mut changed = false;
@@ -439,26 +693,44 @@ fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
                             kept.push(Conjunct::Not(Negated::Form(Arc::new(inner))));
                             changed = true;
                         }
+                        // NOT over a true form is false.
                         Err(inner) if inner.is_empty() => return Ok(Rewritten::Empty),
                         Err(_) => return Err("a NOT over a form whose edit gives several conjuncts".into()),
                     },
                 }
             }
             Conjunct::Or(branches) if branches.iter().any(|branch| mentions(NodeRef::Body(branch.value()), empty)) => {
-                let mut left: Vec<Node<Body>> = Vec::new();
-                for branch in branches.iter() {
+                let exported = made_labels(&Body { conjuncts: Arc::from([conjunct.clone()]) });
+                let mut left: Vec<(usize, Node<Body>)> = Vec::new();
+                let mut true_branch = false;
+                for (index, branch) in branches.iter().enumerate() {
                     match rewrite(branch.value(), empty)? {
-                        Rewritten::Same => left.push(branch.clone()),
+                        Rewritten::Same => left.push((index, branch.clone())),
                         Rewritten::Empty => {}
-                        Rewritten::Changed(inner) if inner.is_empty() => return Err("an OR branch whose edit leaves no conjunct".into()),
-                        Rewritten::Changed(inner) => left.push(Node::new(Body { conjuncts: inner.into() })),
+                        Rewritten::Changed(inner) if inner.is_empty() => true_branch = true,
+                        Rewritten::Changed(inner) => left.push((index, Node::new(Body { conjuncts: inner.into() }))),
                     }
                 }
                 changed = true;
+                if true_branch {
+                    if !exported.is_empty() {
+                        return Err("an OR that exports a label has a branch whose edit leaves no conjunct".into());
+                    }
+                    continue;
+                }
+                let Some((first, _)) = left.first() else { return Ok(Rewritten::Empty) };
+                if *first != 0 {
+                    let mut branch = left[0].1.value().clone();
+                    for &label in &exported {
+                        if !made_labels(&branch).contains(&label) {
+                            branch = make_label(&branch, label).ok_or("an OR whose new first branch has no site that can make a label the OR exports")?;
+                        }
+                    }
+                    left[0].1 = Node::new(branch);
+                }
                 match left.len() {
-                    0 => return Ok(Rewritten::Empty),
-                    1 => kept.extend(left[0].value().conjuncts.iter().cloned()),
-                    _ => kept.push(Conjunct::Or(left.into())),
+                    1 => kept.extend(left[0].1.value().conjuncts.iter().cloned()),
+                    _ => kept.push(Conjunct::Or(left.into_iter().map(|(_, branch)| branch).collect())),
                 }
             }
             Conjunct::If { .. } | Conjunct::All { .. } if mentions(NodeRef::Conjunct(conjunct), empty) => {
@@ -470,6 +742,77 @@ fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
     Ok(if changed { Rewritten::Changed(kept) } else { Rewritten::Same })
 }
 
+/// `body` with `label` made at its first site in a positive atom of the
+/// body's own list, a site on a declared or a fact relation before one on a
+/// lib relation, or else at the first label of a `=` of that list, or else
+/// in the first branch of an `OR`, or the then of an `IF`, of that list
+/// whose other branches all name it. `None` where none of these holds it.
+fn make_label(body: &Body, label: LabelId) -> Option<Body> {
+    let with = |index: usize, conjunct: Conjunct| {
+        let mut conjuncts = body.conjuncts.to_vec();
+        conjuncts[index] = conjunct;
+        Body { conjuncts: conjuncts.into() }
+    };
+    for lib in [false, true] {
+        for (index, conjunct) in body.conjuncts.iter().enumerate() {
+            let Conjunct::Atom(atom) = conjunct else { continue };
+            if matches!(atom.value().relation, RelationRef::Lib(_)) != lib {
+                continue;
+            }
+            let mut done = false;
+            let sites: Arc<[Site]> = atom.value().sites.iter().map(|site| made_in_site(site, label, &mut done)).collect();
+            if done {
+                return Some(with(index, Conjunct::Atom(Node::new(Atom { relation: atom.value().relation.clone(), sites }))));
+            }
+        }
+    }
+    let made = body.conjuncts.iter().enumerate().find_map(|(index, conjunct)| match conjunct {
+        Conjunct::Constraint(constraint) if constraint.op == ConstraintOp::Eq && constraint.first.label == label && !constraint.first.fresh => {
+            Some(with(index, Conjunct::Constraint(Constraint { first: ConstraintLabel { label, fresh: true }, ..*constraint })))
+        }
+        _ => None,
+    });
+    // An `OR` or an `IF` of the list exports the label where its first
+    // branch, or its then, makes it and each other branch names it.
+    made.or_else(|| {
+        body.conjuncts.iter().enumerate().find_map(|(index, conjunct)| match conjunct {
+            Conjunct::Or(branches) if branches[1..].iter().all(|branch| body_labels(branch.value()).contains(&label)) => {
+                let first = make_label(branches[0].value(), label)?;
+                let branches = std::iter::once(Node::new(first)).chain(branches[1..].iter().cloned()).collect();
+                Some(with(index, Conjunct::Or(branches)))
+            }
+            Conjunct::If { test, then, otherwise } if body_labels(otherwise.value()).contains(&label) => {
+                let then = Node::new(make_label(then.value(), label)?);
+                Some(with(index, Conjunct::If { test: test.clone(), then, otherwise: otherwise.clone() }))
+            }
+            _ => None,
+        })
+    })
+}
+
+/// `site` with its first `X` of `label` made, `*X`, where `done` is not yet
+/// set; sets `done` once it makes one.
+fn made_in_site(site: &Site, label: LabelId, done: &mut bool) -> Site {
+    let args = site
+        .value
+        .args
+        .iter()
+        .map(|arg| match arg {
+            SiteArg::Label(LabelUse::Join(own)) if !*done && *own == label => {
+                *done = true;
+                SiteArg::Label(LabelUse::Fresh(label))
+            }
+            SiteArg::NamedLabel { name, label: LabelUse::Join(own) } if !*done && *own == label => {
+                *done = true;
+                SiteArg::NamedLabel { name: name.clone(), label: LabelUse::Fresh(label) }
+            }
+            SiteArg::Field(field) => SiteArg::Field(made_in_site(field, label, done)),
+            other => other.clone(),
+        })
+        .collect();
+    Site { column: site.column.clone(), value: SiteValue { args } }
+}
+
 /// `Err` where the `OUT` relation of `filtered` differs from that of
 /// `original` on an example, or where either enumeration is not complete.
 /// The two walks are compared leaf by leaf, in walk order: the joint
@@ -479,11 +822,11 @@ fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
 /// values of a `DET` are not compared across the programs, since an
 /// evaluation keeps only the columns that its program reads.
 fn compare_out(evaluator: &Evaluator<'_>, original: &StudyProgram, filtered: &StudyProgram) -> Result<(), String> {
-    let of = |program: &StudyProgram| -> Result<_, String> {
+    let of = |program: &StudyProgram, which: &str| -> Result<_, String> {
         let relation = output_relation(program.checked()).ok_or("the program has no OUT form")?;
-        evaluator.values(program.checked(), &relation).map_err(|reason| format!("the OUT comparison is not complete: {reason}"))
+        evaluator.values(program.checked(), &relation).map_err(|reason| format!("the OUT comparison is not complete: in the {which} program, {reason}"))
     };
-    let (before, after) = (of(original)?, of(filtered)?);
+    let (before, after) = (of(original, "original")?, of(filtered, "filtered")?);
     if before.len() != after.len() {
         return Err(format!("OUT has {} leaves in the original and {} in the filtered program", before.len(), after.len()));
     }
