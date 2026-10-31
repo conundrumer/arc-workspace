@@ -174,59 +174,21 @@ fn owner_module(py:Python<'_>)->PyResult<&Py<PyModule>> {
     static MODULE:PyOnceLock<Py<PyModule>>=PyOnceLock::new();
     MODULE.get_or_try_init(py,||{
         let code=std::ffi::CString::new(r#"
-class _Owner:
-    __slots__ = ('capsule', 'live')
-    def __init__(self):
-        self.capsule = None
-        self.live = 0
-    def check(self, capsule):
-        if capsule is not None and self.capsule is not None and capsule is not self.capsule:
-            raise TypeError('a buffer cannot replace its native owner')
-    def retain(self, capsule):
-        if capsule is not None:
-            self.capsule = capsule
-        self.live += 1
-    def release(self):
-        self.live -= 1
-        if not self.live:
-            self.capsule = None
+class _OwnedBytes(bytes):
+    pass
 
-def _classes(owner):
-    holder = _Owner()
-    class _OwnedBytes(bytes):
-        __slots__ = ()
-        def __new__(cls, value, capsule=None):
-            holder.check(capsule)
-            result = bytes.__new__(cls, value)
-            holder.retain(capsule)
-            return result
-        def __del__(self):
-            holder.release()
-        @property
-        def _owner(self):
-            return holder.capsule
-    class _OwnedList(list):
-        __slots__ = ()
-        def __new__(cls, value=(), capsule=None):
-            holder.check(capsule)
-            result = list.__new__(cls)
-            holder.retain(capsule)
-            return result
-        def __init__(self, value=(), capsule=None):
-            list.__init__(self, value)
-        def __del__(self):
-            holder.release()
-        @property
-        def _owner(self):
-            return holder.capsule
-    return _OwnedBytes, _OwnedList, owner
+class _OwnedList(list):
+    __slots__ = ('_owner',)
 
-def _own(value, classes):
+def _own(value, capsule):
     if isinstance(value, bytes):
-        return classes[0](value, classes[2])
-    if isinstance(value, list):
-        return classes[1]((_own(item, classes) for item in value), classes[2])
-    return value
+        owned = _OwnedBytes(value)
+    elif isinstance(value, list):
+        owned = _OwnedList([_own(item, capsule) if isinstance(item, (bytes, list)) else item for item in value])
+    else:
+        return value
+    owned._owner = capsule
+    return owned
 "#).expect("static Python source has no null");
         PyModule::from_code(py,&code,c"_arclog_buffer_owner.py",c"_arclog_buffer_owner").map(Bound::unbind)
     })
@@ -299,7 +261,7 @@ impl PyCaseTables {
     /// is the base of a case whose `columns` are cut.
     pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns, relations: Option<&[String]>, base: Option<Base>) -> PyResult<Self> {
         let capsule=PyCapsule::new(py,columns.allocations(),None)?;
-        let owner=owner_module(py)?.bind(py).getattr("_classes")?.call1((capsule,))?;
+        let owner=capsule.into_any();
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes,&owner);
         let c = &columns.tables;

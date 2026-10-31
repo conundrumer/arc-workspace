@@ -152,6 +152,20 @@ impl PyDecoder {
         self.decoder().forced(&token).map(|forced| self.forced_ids(&forced)).map_err(|refusal| refusal_error(&refusal))
     }
 
+    /// Whether each token with an id of `ids` may come next: the verdicts of
+    /// `forced` for those tokens, each `True` where `forced` gives the token's
+    /// forced ids and `False` where it raises `Refusal`. The checks run over
+    /// those tokens together, as the checks of `admissible` run over the
+    /// vocabulary, and leave the decode as it was.
+    fn admits(&self, ids: Vec<u32>) -> PyResult<Vec<bool>> {
+        let _timed = stats::span(Phase::PyAdmits);
+        let vocabulary = self.decoder().vocabulary();
+        if let Some(&id) = ids.iter().find(|&&id| vocabulary.token(id).is_none()) {
+            return Err(PyIndexError::new_err(format!("no token with id {id}")));
+        }
+        Ok(self.decoder().admits(&ids))
+    }
+
     /// A second decode from the same state, which shares this one's caches.
     pub(crate) fn fork(&self) -> PyDecoder {
         let _timed = stats::span(Phase::PyFork);

@@ -445,6 +445,41 @@ fn a_step_after_the_mask_is_the_step_with_no_mask() {
     }
 }
 
+/// Along a stream, at each state, `admits` of any ids gives the verdicts that
+/// `forced` gives for those tokens, whether the decode holds the mask of its
+/// state or not, and leaves the decode's program and trace as they were.
+#[test]
+fn admits_is_the_verdict_of_forced_for_each_token() {
+    let registry = Registry::get();
+    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
+    let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
+    let written = checked(&format!("{BG}{FG}{COMPS}{AXIS}{PRIOR}{boxes}"));
+    let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
+    let inputs = inputs();
+    let mut decoder = decoder(&inputs);
+    let ids: Vec<u32> = (0..vocabulary.len() as u32).collect();
+    let (mut admitted, mut refused) = (0, 0);
+    for (token, emitter) in &stream {
+        if matches!(emitter, Emitter::Engine) {
+            continue;
+        }
+        let expected: Vec<bool> = ids.iter().map(|&id| decoder.forced(vocabulary.token(id).expect("an id of the vocabulary")).is_ok()).collect();
+        let trace = decoder.trace().len();
+        let program = decoder.program().clone();
+        let few: Vec<u32> = ids.iter().copied().step_by(7).collect();
+        assert_eq!(decoder.admits(&few), few.iter().map(|&id| expected[id as usize]).collect::<Vec<_>>(), "{token:?}, a subset");
+        assert_eq!(decoder.admits(&ids), expected, "{token:?}, every token");
+        assert_eq!(decoder.trace().len(), trace, "{token:?}");
+        assert_eq!(&program, decoder.program(), "{token:?}");
+        decoder.admissible();
+        assert_eq!(decoder.admits(&ids), expected, "{token:?}, mask held");
+        admitted += expected.iter().filter(|&&verdict| verdict).count();
+        refused += expected.iter().filter(|&&verdict| !verdict).count();
+        decoder.step(token.clone()).expect("a token of the stream");
+    }
+    assert!(admitted > 0 && refused > 0, "{admitted} admitted, {refused} refused");
+}
+
 /// At a state where `END` ends a `RULE` clause, `forced` of a token gives
 /// the tokens that the step of the token on a fork gives as forced, whether
 /// the decode holds the mask of its state or not, leaves the decode's trace
