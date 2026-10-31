@@ -475,6 +475,14 @@ class Prepared(NamedTuple):
     error: str | None
 
 
+def _excluded(arcdata: str) -> list[set[str]]:
+    """The combinations of alts that the `exclude` records of the arcdata text leave out, each as the alt names in
+    a case's file name: without their `$`. A case that holds one is no case of the solver, and its program may
+    derive a relation twice."""
+    return [{alt.replace("$", "") for alt in m.group(1).split()}
+            for m in re.finditer(r"\(exclude \(([^()]*)\)", arcdata)]
+
+
 def _prepare_cases(stem: str, answers: Answers) -> Prepared:
     """The first round of the case phase for the solver `stem`, whose record is not current: read the texts of its
     cases, remove the record and the solver's case files, and ask Souffle's rows the questions of the pull-up pass on
@@ -483,7 +491,9 @@ def _prepare_cases(stem: str, answers: Answers) -> Prepared:
     try:
         gen = paths.OUT_DIR
         texts = (gen / f"{stem}.arclog").read_text(), (gen / f"{stem}.arcdata").read_text()
-        cases = [(f.file, f.arclog, f.arcdata) for f in case_files(stem, *texts, str(gen)) if f.fault is None]
+        excluded = _excluded(texts[1])
+        cases = [(f.file, f.arclog, f.arcdata) for f in case_files(stem, *texts, str(gen))
+                 if f.fault is None and not any(e <= set(f.file.split("+")) for e in excluded)]
         _drop_cases(stem)
         rows = Rows(stem, json.loads((paths.COLUMNS_DIR / f"{stem}.json").read_text()))
         rows.answers.update(answers)
