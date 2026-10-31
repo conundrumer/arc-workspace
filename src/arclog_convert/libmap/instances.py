@@ -442,10 +442,10 @@ class Expander:
                 continue
             key = (inst.scope.components, inst.name)
             if key in plans and h.instances[-1] == inst.name and (
-                    len(h.instances) == 1 or len(h.instances) == 2 and not u.scope.components
-                    and h.name in plans[key][1].derive):
-                # (a clause outside the solver's component, such as `parse.table.divider(..) :- ..`, feeds an
-                # input of an instance nested in the component's instance, and derives the input's relation)
+                    len(h.instances) == 1 or len(h.instances) == 2 and h.name in plans[key][1].derive):
+                # (a clause outside the solver's component, such as `parse.table.divider(..) :- ..` or, in
+                # Determine, `ex.table.divider(..) :- ..`, feeds an input of an instance nested in the component's
+                # instance, and derives the input's relation)
                 inputs_of[key].setdefault(h.name, []).append(u)
         self.inputs_of, self.rels = inputs_of, rels
         for key, (inst, spec) in plans.items():
@@ -711,8 +711,8 @@ class Expander:
                             scope=inst.scope, span=None))
         for c in cs:
             # a clause outside the component feeds the relation through the component's instance
-            v = replace(c, id=self.uid(), head=Atom(RelationName(c.head.relation.instances[:-1] if not c.scope.components
-                                                                  else (), rname), c.head.args, c.head.line))
+            v = replace(c, id=self.uid(), head=Atom(RelationName(c.head.relation.instances[:-1], rname),
+                                                    c.head.args, c.head.line))
             self.own[v.id] = (inst.scope.components, inst.name)
             self.from_input.add(v.id)
             self.pending.append(v)
