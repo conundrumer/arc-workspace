@@ -632,7 +632,12 @@ class RenderMixin:
                 lines = read_without(g.lines, f.name, drop, g.cols)
                 if lines is None or lines == g.lines:
                     continue
-                branch_forms[branch_forms.index(g)] = dc_replace(g, lines=lines)
+                # the reader that reads the concept's columns holds where the points of the rederiving alts take the
+                # concept's constructor, so that no case holds it beside the reader that the alts' combination states
+                at_concept = {adt.constructors[0].name for _, adt in self.c.point_fields()
+                              if any(k.name in bs for k in adt.constructors)} & concept
+                branch_forms[branch_forms.index(g)] = dc_replace(g, lines=lines,
+                                                                 branches=tuple(sorted(set(g.branches) | at_concept)))
                 branch_forms.append(dc_replace(g, branches=tuple(sorted(set(g.branches) | bs))))
         return main, branch_forms
 
