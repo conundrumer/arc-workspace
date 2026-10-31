@@ -478,10 +478,13 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
             # The corpus draw and Decoder use this same native classifier.
             # It edits original AST paths, preserves clause interfaces, refuses
             # removal of a binder, and re-resolves/checks the normalized case.
-            pruned = json.loads(StudyProgram.from_sexp(text, DecodeSettings.corpus())
-                                .static_prune_json(normalize=True))
-            if pruned["removed_atom_paths"]:
-                text = pruned["normalized_program_sexp"]
+            program = StudyProgram.from_sexp(text, DecodeSettings.corpus())
+            # With `normalize=True` the report also holds a provenance record of megabytes, which this pass does
+            # not use. The call is made only for a case in which the classifier finds a test to delete.
+            if any(m["class"] == "valid" for m in json.loads(program.static_prune_json())["matches"]):
+                pruned = json.loads(program.static_prune_json(normalize=True))
+                if pruned["removed_atom_paths"]:
+                    text = pruned["normalized_program_sexp"]
             if text != arclog:
                 written.append((file, text, arcdata))
         directory = paths.OUT_DIR / CASES / stem
