@@ -134,6 +134,23 @@ class Correspondence:
                     yield deepcopy(dict(physical_type=current, source_type=original,
                         relation_slot=relation['relation_slot'], physical_column=field['physical_column'],
                         source_column=source))
+        # A BODY column's Pose type names its key by scope labels, a relation
+        # column's by column positions, so the relation pairs never give it.
+        for body in self._bodies.values():
+            if body.get('source_status') != 'resolved':
+                continue
+            for field in body['columns']:
+                canonical = field.get('canonical_source', {})
+                if canonical.get('status') != 'resolved':
+                    continue
+                current, original = _type(field['physical_type']), _type(canonical['source_type'])
+                if not current['nominal'] or not original['nominal']:
+                    continue
+                if current['wire_type'] != original['wire_type'] or current['cell_width'] != original['cell_width']:
+                    raise Unavailable('native nominal source/physical encoding differs')
+                yield deepcopy(dict(physical_type=current, source_type=original,
+                    body_path=body['body_path'], physical_column=field['physical_column'],
+                    source_body_column=field.get('source_body_column')))
 
     def body_from_source(self, source_path):
         """Invert only native-certified path links, requiring uniqueness."""
