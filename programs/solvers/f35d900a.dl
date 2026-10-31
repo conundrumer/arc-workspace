@@ -162,4 +162,37 @@ out(Q, Col, [R, Cl, Rg]) :-
     // A color some output holds and its input lacks.
     .decl dot_color(c: Color)
     dot_color(Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+
+    // The runs of dot color that leave a ring cell, cast from that cell.
+    .init dot_run = Ray<Example>
+    dot_run.dir(E, D) :- ex_out(E, _, _), dir_elem(D).
+    dot_run.cell(E, P) :- ex_out(E, P, _).
+    dot_run.mark(E, R) :- ex_in(E, P, Col), !background(Col), dir_elem(D), neighbor(P, D, R).
+    dot_run.blocked(E, P) :- ex_out(E, P, Col), !dot_color(Col).
+
+    // Q ends the first dot of a side, w cells from the ring, and background follows it.
+    .decl first_dot(e: Example, d: Dir, q: Position, w: number)
+    first_dot(E, D, Q, W) :-
+        dot_run.clear(E, Q, D, W, _), dir_elem(D), ex_out(E, Q, Col), dot_color(Col),
+        neighbor(Q, D, N), ex_out(E, N, Col2), background(Col2).
+
+    // The runs of background that follow a first dot, cast from its last cell.
+    .init gap_run = Ray<Example>
+    gap_run.dir(E, D) :- ex_out(E, _, _), dir_elem(D).
+    gap_run.cell(E, P) :- ex_out(E, P, _).
+    gap_run.mark(E, Q) :- first_dot(E, _, Q, _).
+    gap_run.blocked(E, P) :- ex_out(E, P, Col), !background(Col).
+
+    // A side of output e opens with a dot of w cells, then g cells of background, then a dot.
+    .decl spacing_shown(e: Example, w: number, g: number)
+    spacing_shown(E, W, G) :-
+        first_dot(E, D, Q, W), gap_run.clear(E, P, D, G, Q),
+        neighbor(P, D, N), ex_out(E, N, Col), dot_color(Col).
+
+    .decl dot_spacing_defect(w: number, g: number)
+    dot_spacing_defect(W, G) :- spacing_shown(_, W, G), ex_out(E, _, _), !spacing_shown(E, W, G).
+
+    // The spacing every output shows: a short side's middle gap may show another.
+    .decl dot_spacing(w: number, g: number)
+    dot_spacing(W, G) :- spacing_shown(_, W, G), !dot_spacing_defect(W, G).
 }
