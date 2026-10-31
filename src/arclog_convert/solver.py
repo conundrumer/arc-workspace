@@ -235,7 +235,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
     def task_wide_determination(self, prog) -> set[tuple[str, ...]]:
         """What the `Determine` component derives that is task-wide: the relations whose clauses read `ex_in` or
         `ex_out`, or read a task-wide relation or instance of the component, as `(name,)`, and those instances, as
-        `(instance, "")`. Its clauses that read `in` are not task-wide. A clause of a task-wide relation is a DET:
+        `(instance, "")`. A clause that reads the lifted parse of a candidate instance is task-wide too. Its clauses
+        that read `in` are not task-wide. A clause of a task-wide relation is a DET:
         the checker refuses a RULE that reads `ex_input` or `ex_output`, or a task-wide relation at a site on its
         Example column."""
         units = [u for u in prog.units if u.scope.components == ("Determine",)]
@@ -244,10 +245,19 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         def key(rn) -> tuple[str, ...]:
             return (rn.instances[0], "") if rn.instances else (rn.name,)
 
+        def lifted(rn) -> bool:
+            """The atom reads, at an Example key, the program's parse that the component runs per candidate
+            (`candidate_parse`), which is the parse lifted over the examples."""
+            if not rn.instances or rn.instances[0] not in self.c.cand_insts:
+                return False
+            _, cols, _, _ = self.c.resolve(rn, ("Determine",), {})
+            return cols is not None and any(l.kind == "example" for _, leaves in cols for l in leaves)
+
         def task_wide(u: Unit) -> bool:
             reads = [a.relation for a, _ in body_atoms(tuple(u.body or ()))]
             return all(rn.name != "in" or rn.instances for rn in reads) and any(
-                (rn.name in ("ex_in", "ex_out") and not rn.instances) or key(rn) in found for rn in reads)
+                (rn.name in ("ex_in", "ex_out") and not rn.instances) or key(rn) in found or lifted(rn)
+                for rn in reads)
 
         grew = True
         while grew:

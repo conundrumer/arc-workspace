@@ -509,9 +509,28 @@ class ClauseWriter:
             collect_vars([AtomLiteral(Atom(RelationName((), "_"), (t,), 0), False)], out)
             return {self.label(v) for v in out}
 
+        def dropped_only(atom: Atom) -> set[str]:
+            """The labels that the atom has at the fields of a record column that the relation drops, and nowhere
+            else: the atom writes no site for them, so it binds none of them."""
+            saved = list(self.c.todo.pending), Counter(self.c.todo.kinds)
+            name, cols, kind, inst = self.c.resolve(atom.relation, self.scope, self.sub)
+            self.c.todo.pending, self.c.todo.kinds = saved
+            if cols is None or len(cols) != len(atom.args):
+                return set()
+            dropped: set[str] = set()
+            kept: set[str] = set()
+            for (col, leaves), arg in zip(cols, atom.args):
+                if isinstance(arg, RecordTerm) and any(l.kind == "drop" and len(l.path) == 1 for l in leaves):
+                    for i, a in enumerate(arg.args):
+                        here = [l for l in leaves if l.path[:1] == (i,)]
+                        (dropped if here and all(l.kind == "drop" for l in here) else kept).update(vs(a))
+                else:
+                    kept |= vs(arg)
+            return dropped - kept
+
         def binds(l) -> set[str]:
             if isinstance(l, AtomLiteral) and not l.negated:
-                return set().union(*(vs(a) for a in l.atom.args)) if l.atom.args else set()
+                return set().union(*(vs(a) for a in l.atom.args)) - dropped_only(l.atom) if l.atom.args else set()
             if isinstance(l, Comparison) and l.op.value == "=":
                 return vs(l.lhs) | vs(l.rhs)
             if isinstance(l, Disjunction):
