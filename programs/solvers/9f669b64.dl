@@ -237,7 +237,7 @@ roles($ProjectileBetween(), W, P, T) :-
 
 // --- $FromWedge ---
 shot(R, $FromWedge(), P, T, D) :-
-    roles(R, W, P, T), beyond(W, P, D_back), opposite(D_back, D).
+    roles(R, W, P, T), beyond(P, W, D).
 
 // --- $TowardTarget ---
 shot(R, $TowardTarget(), P, T, D) :- roles(R, _, P, T), beyond(T, P, D).
