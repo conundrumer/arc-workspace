@@ -164,7 +164,7 @@ import sample_label as sl  # noqa: E402
 sys.path[:] = _path
 SOURCE_REVISION = hashlib.sha256(open(__file__, 'rb').read()).hexdigest()[:16]  # the producer's revision, in each candidate
 
-FSTORE = os.environ.get('SAMPLER_FSTORE', P.DATA + '/feat-exp/fstore-gen3/points/')
+FSTORE = os.environ.get('SAMPLER_FSTORE', P.DATA + '/feat-exp/fstore-gen3/points-t/')
 REGISTRY = P.REPO + '/engine/lib/registry.sexpr'
 GEN = os.environ.get('SAMPLER_GEN', P.DATA + '/gold/gen-v3-11f6a212c/corpus/gen')
 MAX_ATOMS = int(os.environ.get('MAX_ATOMS', '16'))  # gold bodies reach 12 atoms
