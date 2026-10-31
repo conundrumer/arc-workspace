@@ -1,9 +1,12 @@
 //! Admission of a completed DET or mark, using the determination's domain walk.
 use std::ops::ControlFlow;
 
+use super::det_memo::{ProbeMemo, Scope};
 use super::{Decoder, Refusal, State};
+use crate::check::CheckedProgram;
 use crate::eval::{Cancellation, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
-use crate::judge::determination::{descend_assignments, held_dets, written_dets, End, EvaluationInputs};
+use crate::judge::determination::{descend_with, held_dets, written_dets, Det, Domains, End, EvaluationInputs};
+use crate::resolver::GraphNodeIndex;
 use crate::session::TaskSession;
 use crate::stats::{self, Phase};
 use crate::stream::{Control, Token};
@@ -50,11 +53,36 @@ impl Decoder<'_> {
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
         // Keep this probe independent of prior cache contents, byte reservations,
         // cancellation, held stops and elapsed time. Its values never escape.
+        // The probes of the task session share an intern table and the domains
+        // they computed (`det_memo`). A probe whose session evicted or reached
+        // the byte bound runs again in a session of its own.
+        let scope = Scope {
+            task: std::ptr::from_ref(self.task) as usize,
+            registry: std::ptr::from_ref(self.context.registry) as usize,
+            constructions: std::ptr::from_ref(self.constructions) as usize,
+            table_work_cap: self.context.settings.table_work_cap,
+        };
+        let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
+        if let Some(probe) = memo.probe(scope, self.session) {
+            let domains = probe.domains(program, &dets);
+            let verdict = self.live(program, &dets, &picks, root, &probe.session, Some(&domains));
+            if !probe.session.results.evicted() && !matches!(verdict, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
+                return verdict;
+            }
+        }
         let session = TaskSession::new(self.session.bound, self.session.caps);
+        self.live(program, &dets, &picks, root, &session, None)
+    }
+
+    /// Whether some leaf of the walk of `dets` in `session` gives each of
+    /// them a value and each of `picks` a model, with the domains from
+    /// `domains` where it is given.
+    #[allow(clippy::too_many_arguments)]
+    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>) -> Result<(), DetRefusal> {
         let limits = Limits::new(None, Cancellation::default())
             .counted_in(TableWork::new(self.context.settings.table_work_cap));
         let inputs = EvaluationInputs {
-            program, concept: None, task: self.task, session: &session,
+            program, concept: None, task: self.task, session,
             registry: self.context.registry, constructions: self.constructions, limits: &limits,
         };
         let mut live = false;
@@ -63,7 +91,7 @@ impl Decoder<'_> {
             // bindings. A partial leaf cannot certify that the written DETs live.
             stats::units(Phase::DetLiveness, 1);
             if assigned.len() != dets.len() { return Ok(()); }
-            for pick in &picks {
+            for pick in picks {
                 let mut found = false;
                 let mut stop = None;
                 let relation = GraphRelation { node: pick.node, output: None };
@@ -82,7 +110,7 @@ impl Decoder<'_> {
             live = true;
             Ok(())
         };
-        match descend_assignments(inputs, &dets, root, self.context.settings.caps.assignments, &mut leaf).1 {
+        match descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains).1 {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
             Err(End::Stop(stop)) => Err(DetRefusal::Bound(stop.bound)),
             Ok(()) if live => Ok(()),

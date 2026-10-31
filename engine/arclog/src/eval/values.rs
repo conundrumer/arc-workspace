@@ -377,6 +377,16 @@ impl TableWork {
     pub fn is_past_cap(&self) -> bool {
         self.count.load(Ordering::Relaxed) > self.cap
     }
+
+    /// The bindings counted so far.
+    pub fn count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    /// Whether the count stays within the cap after `bindings` more.
+    pub fn fits(&self, bindings: u64) -> bool {
+        self.count().saturating_add(bindings) <= self.cap
+    }
 }
 
 /// The bounds of one evaluation that differ between the evaluations of a

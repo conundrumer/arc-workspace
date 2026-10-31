@@ -7,8 +7,8 @@
 //! byte bound, [`crate::eval::cache::cache_bytes_bound`].
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use crate::eval::pool::InFlight;
 use crate::eval::{Caps, ReachedBound, RelationValue};
@@ -85,6 +85,10 @@ pub struct ResultCache {
     /// The entries that a thread of the pool computes, which a thread that
     /// asks for one of them waits for.
     in_flight: InFlight<ResultKey, CachedValue>,
+    /// Whether [`ResultCache::record`] keeps the lookups, ids and stores
+    /// that [`crate::eval::cache`] makes in `recorded`.
+    recording: AtomicBool,
+    recorded: Mutex<Vec<crate::eval::cache::Recorded>>,
 }
 
 #[derive(Debug, Default)]
@@ -102,6 +106,8 @@ struct CacheState {
     rows: StableHashMap<SharedRows, (usize, usize)>,
     /// The bytes of the held relations, of their rows and of the entries.
     bytes: usize,
+    /// Whether the bytes have passed the bound of an eviction.
+    evicted: bool,
 }
 
 #[derive(Debug)]
@@ -143,6 +149,75 @@ impl ResultCache {
         self.state.lock().expect(UNPOISONED).insert(key, value);
     }
 
+    /// Makes the events `events`, which a cache recorded
+    /// ([`ResultCache::start_recording`]) in a session that shares this
+    /// session's intern table, where each would do here what it did there,
+    /// and gives whether it made them. They would where each lookup finds
+    /// here, after the events before it, an entry whose value has the rows
+    /// of the value it found there, held in parts of the same columns, or a
+    /// stop at the same bound, and finds no entry where it found none. The
+    /// cache then makes them as [`crate::eval::cache`] made them: a lookup
+    /// that finds its entry counts as a use of it, an id holds a copy of its
+    /// relation where the cache holds none of its rows, and a store caches
+    /// its value and evicts under `bound`.
+    pub(crate) fn replay(&self, events: &[crate::eval::cache::Recorded], bound: usize) -> bool {
+        use crate::eval::cache::Recorded;
+        let mut state = self.state.lock().expect(UNPOISONED);
+        if !state.replays(events) {
+            return false;
+        }
+        for event in events {
+            match event {
+                Recorded::Lookup { key, found: Some(_) } => {
+                    let key = state.held_key(key).expect("a replayed lookup finds the relations of its key");
+                    let found = state.touch(&key);
+                    debug_assert!(found.is_some(), "a replayed lookup finds the entry it found");
+                    self.found.fetch_add(1, Ordering::Relaxed);
+                }
+                Recorded::Lookup { found: None, .. } => {}
+                Recorded::Id { relation } => {
+                    state.id_of(relation);
+                }
+                Recorded::Store { key, value } => {
+                    let reads = key.reads.iter().map(|relation| state.id_of(relation)).collect();
+                    let parameters = key.parameters.iter().map(|relation| state.id_of(relation)).collect();
+                    state.insert(ResultKey { clause: key.clause.clone(), reads, example: key.example, parameters }, value.clone());
+                    state.evict(bound);
+                }
+            }
+        }
+        true
+    }
+
+    /// Whether the cache's bytes have passed the bound of an eviction, so
+    /// that it dropped the relations no entry holds, and entries.
+    pub fn evicted(&self) -> bool {
+        self.state.lock().expect(UNPOISONED).evicted
+    }
+
+    /// Starts keeping each lookup, id and store that [`crate::eval::cache`]
+    /// makes, until [`ResultCache::take_recorded`].
+    pub fn start_recording(&self) {
+        self.recorded.lock().expect(UNPOISONED).clear();
+        self.recording.store(true, Ordering::Relaxed);
+    }
+
+    /// The lookups, ids and stores kept since
+    /// [`ResultCache::start_recording`], in their order, and stops keeping
+    /// them.
+    pub fn take_recorded(&self) -> Vec<crate::eval::cache::Recorded> {
+        self.recording.store(false, Ordering::Relaxed);
+        std::mem::take(&mut *self.recorded.lock().expect(UNPOISONED))
+    }
+
+    /// Keeps the lookup, id or store `event()` where the cache is recording.
+    #[inline]
+    pub(crate) fn record(&self, event: impl FnOnce() -> crate::eval::cache::Recorded) {
+        if self.recording.load(Ordering::Relaxed) {
+            self.recorded.lock().expect(UNPOISONED).push(event());
+        }
+    }
+
     /// The id of a relation that the cache holds with the rows of
     /// `relation`, or `None` where it holds none.
     pub fn find_id(&self, relation: &Relation) -> Option<RelationId> {
@@ -154,12 +229,7 @@ impl ResultCache {
     /// rows, or a new id, under which the cache holds a copy of it until an
     /// entry holds it or an eviction drops it.
     pub fn relation_id(&self, relation: &Relation) -> RelationId {
-        let hash = relation.rows_hash();
-        let mut state = self.state.lock().expect(UNPOISONED);
-        match state.find(hash, relation) {
-            Some(id) => id,
-            None => state.add(hash, Arc::new(relation.clone())),
-        }
+        self.state.lock().expect(UNPOISONED).id_of(relation)
     }
 
     /// Drops the relations that no entry holds, then the entries least
@@ -208,6 +278,85 @@ impl CacheState {
     fn tick(&mut self) -> u64 {
         self.clock += 1;
         self.clock
+    }
+
+    /// The id of the relation held with the rows of `relation`, or of a
+    /// copy of `relation` that the cache then holds.
+    fn id_of(&mut self, relation: &Relation) -> RelationId {
+        let hash = relation.rows_hash();
+        match self.find(hash, relation) {
+            Some(id) => id,
+            None => self.add(hash, Arc::new(relation.clone())),
+        }
+    }
+
+    /// The key of the entry of `key` by the ids of its relations, where the
+    /// cache holds a relation with the rows of each.
+    fn held_key(&self, key: &crate::eval::cache::RecordedKey) -> Option<ResultKey> {
+        let ids = |relations: &[Arc<Relation>]| -> Option<Box<[RelationId]>> { relations.iter().map(|relation| self.find(relation.rows_hash(), relation)).collect() };
+        Some(ResultKey { clause: key.clause.clone(), reads: ids(&key.reads)?, example: key.example, parameters: ids(&key.parameters)? })
+    }
+
+    /// Whether `events` would do in this cache what they did where they were
+    /// recorded, as [`ResultCache::replay`] gives. The check changes nothing.
+    fn replays(&self, events: &[crate::eval::cache::Recorded]) -> bool {
+        use crate::eval::cache::{Recorded, RecordedKey};
+        type Added = StableHashMap<StableHash, Vec<Arc<Relation>>>;
+        type Stored<'e> = StableHashMap<u64, Vec<(&'e RecordedKey, CachedValue)>>;
+        // The relations and the entries that the events before add.
+        let mut relations: Added = StableHashMap::default();
+        let mut entries: Stored<'_> = StableHashMap::default();
+        let held = |relations: &Added, relation: &Arc<Relation>| -> Option<Arc<Relation>> {
+            let hash = relation.rows_hash();
+            match self.find(hash, relation) {
+                Some(id) => Some(Arc::clone(&self.relations[&id].relation)),
+                None => relations.get(&hash)?.iter().find(|held| same_rows(held, relation)).cloned(),
+            }
+        };
+        let entry = |entries: &Stored<'_>, key: &RecordedKey, digest: u64| -> Option<CachedValue> {
+            if let Some(found) = self.held_key(key).and_then(|key| self.entries.get(&key)) {
+                return Some(found.value.clone());
+            }
+            entries.get(&digest)?.iter().find(|(stored, _)| stored.same(key)).map(|(_, value)| value.clone())
+        };
+        for event in events {
+            match event {
+                Recorded::Lookup { key, found } => {
+                    let alike = match (&entry(&entries, key, key.digest()), found) {
+                        (None, None) => true,
+                        (Some(RelationValue::Rows(a)), Some(RelationValue::Rows(b))) => {
+                            a.parts().len() == b.parts().len() && a.parts().iter().zip(b.parts()).all(|(a, b)| a.columns == b.columns)
+                        }
+                        (Some(RelationValue::Undefined), Some(RelationValue::Undefined)) => true,
+                        (Some(RelationValue::Stopped(a)), Some(RelationValue::Stopped(b))) => a == b,
+                        _ => false,
+                    };
+                    if !alike {
+                        return false;
+                    }
+                }
+                Recorded::Id { relation } => {
+                    if held(&relations, relation).is_none() {
+                        relations.entry(relation.rows_hash()).or_default().push(Arc::clone(relation));
+                    }
+                }
+                Recorded::Store { key, value } => {
+                    let digest = key.digest();
+                    if entry(&entries, key, digest).is_some() {
+                        continue;
+                    }
+                    let value = match value {
+                        RelationValue::Rows(relation) => RelationValue::Rows(held(&relations, relation).unwrap_or_else(|| {
+                            relations.entry(relation.rows_hash()).or_default().push(Arc::clone(relation));
+                            Arc::clone(relation)
+                        })),
+                        other => other.clone(),
+                    };
+                    entries.entry(digest).or_default().push((key, value));
+                }
+            }
+        }
+        true
     }
 
     fn find(&self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
@@ -294,6 +443,7 @@ impl CacheState {
         if self.bytes <= bound {
             return;
         }
+        self.evicted = true;
         let unheld: Vec<RelationId> = self.relations.iter().filter(|(_, held)| held.holders == 0).map(|(&id, _)| id).collect();
         for id in unheld {
             self.drop_relation(id);
@@ -392,6 +542,9 @@ pub struct TaskSession {
     /// The fact relations built so far, one per fact and example, each
     /// built on its first use. A session serves one task.
     facts: Arc<Mutex<StableHashMap<(FactRelation, Option<Example>), Arc<Relation>>>>,
+    /// The domains that the liveness walks of the decodes of this session
+    /// keep, made on the first walk.
+    det_probes: Arc<OnceLock<crate::decode::det_memo::ProbeMemo>>,
 }
 
 /// A count of bindings tried and a count of rows held.
@@ -422,7 +575,25 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()) }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), det_probes: Arc::default() }
+    }
+
+    /// A session with this session's intern table and fact relations, and
+    /// an empty result cache, no reserved bytes and no counts of its own.
+    pub(crate) fn sharing_terms(&self) -> Self {
+        TaskSession {
+            results: Arc::new(ResultCache::default()),
+            allocated: Arc::new(AtomicUsize::new(0)),
+            largest_bindings: Arc::new(AtomicU64::new(0)),
+            largest_rows: Arc::new(AtomicU64::new(0)),
+            det_probes: Arc::default(),
+            ..self.clone()
+        }
+    }
+
+    /// The domains that the liveness walks of this session's decodes keep.
+    pub(crate) fn det_probes(&self) -> &OnceLock<crate::decode::det_memo::ProbeMemo> {
+        &self.det_probes
     }
 
     /// The rows of `fact` on `example` of `task`, built on the first request

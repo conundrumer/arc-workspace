@@ -38,6 +38,7 @@
 
 mod batch;
 mod det_admission;
+pub(crate) mod det_memo;
 pub mod corpus;
 mod interface;
 pub mod replay;

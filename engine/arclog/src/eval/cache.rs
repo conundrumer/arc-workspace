@@ -11,7 +11,7 @@ use crate::program::path::NodePath;
 use crate::relations::Relation;
 use super::ir::ClauseIr;
 use crate::resolver::ResolvedContent;
-use crate::session::{CachedValue, RelationId, ResultContent, ResultKey, TaskSession};
+use crate::session::{same_rows, CachedValue, RelationId, ResultContent, ResultKey, TaskSession};
 use crate::terms::Example;
 
 /// What an entry evaluates, by reference: a form's resolved content, the
@@ -51,17 +51,18 @@ pub struct EntryRequest<'a> {
 /// stop the cache holds is given at `form`, so its diagnostic stands at a
 /// path of the requesting program.
 pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>, form: &NodePath) -> Option<RelationValue> {
+    let value = found_key(session, request.clause.owned(), request.reads, request.example, request.parameters).and_then(|key| session.results.get(&key));
+    session.results.record(|| Recorded::Lookup { key: RecordedKey::of(request), found: value.clone() });
+    Some(value?.map_stop(|bound| Stop { bound, form: form.clone() }))
+}
+
+/// The key of an entry whose relations the cache holds, each by its id, or
+/// `None` where it holds none with the rows of one of them.
+fn found_key(session: &TaskSession, clause: ResultContent, reads: &[Arc<Relation>], example: Option<Example>, parameters: &[Arc<Relation>]) -> Option<ResultKey> {
     let found = |relations: &[Arc<Relation>]| -> Option<Box<[RelationId]>> {
         relations.iter().map(|relation| session.results.find_id(relation)).collect()
     };
-    let key = ResultKey {
-        clause: request.clause.owned(),
-        reads: found(request.reads)?,
-        example: request.example,
-        parameters: found(request.parameters)?,
-    };
-    let value = session.results.get(&key)?;
-    Some(value.map_stop(|bound| Stop { bound, form: form.clone() }))
+    Some(ResultKey { clause, reads: found(reads)?, example, parameters: found(parameters)? })
 }
 
 /// Caches `value` for `request` in `session`, where its stop, if it holds
@@ -72,7 +73,9 @@ pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &Relation
     let Some(value) = cached(value) else {
         return;
     };
-    session.results.insert(key(session, request), value);
+    let key = key(session, request);
+    session.results.record(|| Recorded::Store { key: RecordedKey::of(request), value: value.clone() });
+    session.results.insert(key, value);
     session.results.evict(cache_bytes_bound(session));
 }
 
@@ -102,8 +105,115 @@ pub fn key(session: &TaskSession, request: &EntryRequest<'_>) -> ResultKey {
 /// combines the hashes of the rows in no order, and two relations whose
 /// hashes match are compared by their rows, so two relations share an id
 /// only where they hold the same rows.
-pub fn relation_id(session: &TaskSession, relation: &Relation) -> RelationId {
+pub fn relation_id(session: &TaskSession, relation: &Arc<Relation>) -> RelationId {
+    session.results.record(|| Recorded::Id { relation: Arc::clone(relation) });
     session.results.relation_id(relation)
+}
+
+/// What [`lookup`], [`relation_id`] and [`store`] did to a session's result
+/// cache while it was recording
+/// ([`crate::session::ResultCache::start_recording`]).
+#[derive(Clone, Debug)]
+pub enum Recorded {
+    /// A lookup, and the value it found, if any.
+    Lookup { key: RecordedKey, found: Option<CachedValue> },
+    /// The id of `relation`, which the cache then holds where it held no
+    /// relation of its rows.
+    Id { relation: Arc<Relation> },
+    /// A store of `value`.
+    Store { key: RecordedKey, value: CachedValue },
+}
+
+/// The key of an entry by the relations it reads, and not by their ids in
+/// one session, so that it can be looked up in another session that shares
+/// the intern table.
+#[derive(Clone, Debug)]
+pub struct RecordedKey {
+    pub(crate) clause: ResultContent,
+    pub(crate) reads: Box<[Arc<Relation>]>,
+    pub(crate) example: Option<Example>,
+    pub(crate) parameters: Box<[Arc<Relation>]>,
+}
+
+impl RecordedKey {
+    fn of(request: &EntryRequest<'_>) -> Self {
+        RecordedKey { clause: request.clause.owned(), reads: request.reads.into(), example: request.example, parameters: request.parameters.into() }
+    }
+
+    /// Whether `self` and `other` are the key of one entry: the same content
+    /// and example, and relations of the same rows.
+    pub(crate) fn same(&self, other: &RecordedKey) -> bool {
+        let rows = |a: &[Arc<Relation>], b: &[Arc<Relation>]| a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.rows_hash() == b.rows_hash() && same_rows(a, b));
+        self.example == other.example && self.clause == other.clause && rows(&self.reads, &other.reads) && rows(&self.parameters, &other.parameters)
+    }
+
+    /// A digest of the key that two keys of one entry share.
+    pub(crate) fn digest(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = crate::hash::StableHasher::new();
+        self.clause.hash(&mut hasher);
+        self.example.hash(&mut hasher);
+        self.reads.len().hash(&mut hasher);
+        for relation in self.relations() {
+            relation.rows_hash().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    pub(crate) fn relations(&self) -> impl Iterator<Item = &Arc<Relation>> {
+        self.reads.iter().chain(self.parameters.iter())
+    }
+}
+
+impl Recorded {
+    /// This event with each relation it holds replaced by `one` of it.
+    pub fn with_relations(&self, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> Recorded {
+        fn key(key: &RecordedKey, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> RecordedKey {
+            RecordedKey {
+                clause: key.clause.clone(),
+                reads: key.reads.iter().map(&mut *one).collect(),
+                example: key.example,
+                parameters: key.parameters.iter().map(&mut *one).collect(),
+            }
+        }
+        fn value(value: &CachedValue, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> CachedValue {
+            match value {
+                RelationValue::Rows(relation) => RelationValue::Rows(one(relation)),
+                other => other.clone(),
+            }
+        }
+        match self {
+            Recorded::Lookup { key: looked, found } => Recorded::Lookup { key: key(looked, one), found: found.as_ref().map(|found| value(found, one)) },
+            Recorded::Id { relation } => Recorded::Id { relation: one(relation) },
+            Recorded::Store { key: stored, value: kept } => Recorded::Store { key: key(stored, one), value: value(kept, one) },
+        }
+    }
+
+    /// The bytes of the relations this event holds, an estimate.
+    pub fn bytes(&self) -> usize {
+        let value = |value: &CachedValue| match value {
+            RelationValue::Rows(relation) => relation_estimate(relation),
+            _ => 0,
+        };
+        256 + match self {
+            Recorded::Lookup { key, found } => key.relations().map(|relation| relation_estimate(relation)).sum::<usize>() + found.as_ref().map_or(0, value),
+            Recorded::Id { relation } => relation_estimate(relation),
+            Recorded::Store { key, value: stored } => key.relations().map(|relation| relation_estimate(relation)).sum::<usize>() + value(stored),
+        }
+    }
+}
+
+/// The bytes of `relation`'s rows, an estimate.
+fn relation_estimate(relation: &Relation) -> usize {
+    relation.parts().iter().map(|part| part.rows.len() * (32 + usize::from(part.rows.arity()) * 8)).sum::<usize>() + 256
+}
+
+/// Makes in `session` the events `events`, recorded in a session that shares
+/// its intern table, where each would do in `session` what it did there, as
+/// [`crate::session::ResultCache::replay`] gives, and gives whether it made
+/// them.
+pub fn replay(session: &TaskSession, events: &[Recorded]) -> bool {
+    session.results.replay(events, cache_bytes_bound(session))
 }
 
 /// The share of the session's byte bound that the result cache may hold:

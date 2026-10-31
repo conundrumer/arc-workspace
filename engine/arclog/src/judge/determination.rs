@@ -368,12 +368,33 @@ pub(crate) fn descend_assignments(
     cap: u64,
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
 ) -> (Vec<ProgramRelation>, Result<(), End>) {
+    descend_with(inputs, dets, root, cap, leaf, None)
+}
+
+/// The domain of the `DET` `dets[at]` at an evaluation whose parameter
+/// values are `assigned`, the values of the `DET`s before it, as
+/// [`Evaluation::domain`] gives it, with what that computation does to the
+/// evaluation's session and table work count.
+pub(crate) trait Domains {
+    fn domain(&self, evaluation: &Evaluation<'_>, at: usize, assigned: &[Assignment]) -> crate::eval::Outcome<Domain>;
+}
+
+/// [`descend_assignments`], with each domain of a `DET` that is no pick
+/// from `domains` where it is given.
+pub(crate) fn descend_with(
+    inputs: EvaluationInputs<'_>,
+    dets: &[Det],
+    root: GraphNodeIndex,
+    cap: u64,
+    leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
+    domains: Option<&dyn Domains>,
+) -> (Vec<ProgramRelation>, Result<(), End>) {
     let _timed = stats::span(Phase::TableWalk);
     stats::seen(Phase::TableWalk, || {
         let program = &inputs.program.program;
         stats::digest(&(program.stats_finished_id(), program.program.value().forms.len(), dets.iter().map(|det| &det.relation).collect::<Vec<_>>()))
     });
-    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf };
+    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains };
     let end = walk.descend(0, &mut Vec::new());
     (walk.branching, end)
 }
@@ -389,6 +410,7 @@ struct Walk<'w, 'a> {
     /// The `DET`s met with several values in the domain, in the order met.
     branching: Vec<ProgramRelation>,
     leaf: &'w mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
+    domains: Option<&'w dyn Domains>,
 }
 
 impl Walk<'_, '_> {
@@ -438,7 +460,11 @@ impl Walk<'_, '_> {
             if undefined { return self.descend(at + 1, assigned); }
             values
         } else {
-            match evaluation.domain(det.node).map_err(End::Fault)? {
+            let domain = match self.domains {
+                Some(domains) => domains.domain(&evaluation, at, assigned),
+                None => evaluation.domain(det.node),
+            };
+            match domain.map_err(End::Fault)? {
                 Domain::Rows(rows) if det.open => one_row_each(&rows),
                 Domain::Rows(rows) => rows,
                 Domain::Undefined => return self.descend(at + 1, assigned),
