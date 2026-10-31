@@ -35,6 +35,7 @@ OPS = {"=", "!=", "<", "<=", ">", ">="}
 FORMS = {"OR", "IF", "ALL", "NOT"}
 SCENE_BUILTINS = {"ex": ["E"], "color": ["C"], "number": ["N"], "ident": ["Id"]}
 MARKS = {"ONE", "SET"}   # the marks a clause ends in
+POSE_LIB = {"pose_difference": ["A", "B", "D"]}   # the lib relations on a Pose: Souffle has no Pose, so the signature has none
 
 
 # ---------------------------------------------------------------- relations
@@ -45,6 +46,8 @@ LIB = Lib(SIGNATURE)
 def lib_cols(name: str) -> set[str] | None:
     if name in FACTS:
         return set(FACTS[name])
+    if name in POSE_LIB:
+        return set(POSE_LIB[name])
     if name in LIB.top:
         return {pascal(n) for n, _ in LIB.top[name]}
     return None

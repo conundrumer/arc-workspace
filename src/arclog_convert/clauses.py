@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from engine.program import (
+    POSE_COLUMN,
     Aggregate,
     Atom,
     AtomLiteral,
@@ -47,6 +48,11 @@ class Site:
     leaf: "Leaf"
     label: str
     field: str | None
+
+
+POSE_TESTS = frozenset({"c4_elem", "sym_member"})
+"""The lib relations that test, at their last column, a D4 element for a subgroup of D4. A `Pose` label stands at no
+such column (`docs/arclog/rigid.md#the-pose`)."""
 
 
 def kept_leaf(leaf: "Leaf") -> bool:
@@ -510,14 +516,53 @@ class ClauseWriter:
     def lits(self, lits, bound: set[str], bound_before: set[str] | None = None) -> list[str]:
         """`bound` holds the labels already written, which a later site names
         without `*`; `bound_before` holds the labels the atoms before bind, where
-        that is fewer, as in a later branch of an `OR`."""
+        that is fewer, as in a later branch of an `OR`. A test of a pose (`pose_chart`) stands after the rest, which
+        bind that pose."""
         vs: set[str] = set()
         collect_vars(list(lits), vs)
         self.clause_vars |= {self.label(v) for v in vs}
+        charts = {id(l): chart for l in lits if (chart := self.pose_chart(l, lits)) is not None}
+        rest = [l for l in lits if id(l) not in charts]
         out: list[str] = []
-        for l in self.equals_first(self.reorder(list(lits), bound if bound_before is None else bound_before), bound):
+        for l in self.equals_first(self.reorder(rest, bound if bound_before is None else bound_before), bound):
             out.extend(self.lit(l, bound))
+        for l in lits:
+            if id(l) in charts:
+                out.extend(self.pose_subgroup(l.atom, charts[id(l)], bound))
         return out
+
+    def pose_chart(self, l, lits) -> Atom | None:
+        """Where `l` is a positive `POSE_TESTS` atom on the pose of a read of a RIGID block's placed relation among
+        `lits`, that read."""
+        if not (isinstance(l, AtomLiteral) and not l.negated and not l.atom.relation.instances
+                and l.atom.relation.name in POSE_TESTS and isinstance(l.atom.args[-1], Variable)):
+            return None
+        return next((x.atom for x in lits if isinstance(x, AtomLiteral) and not x.negated
+                     and x.atom.relation.instances == ("params",) and x.atom.relation.name in self.c.rigid
+                     and x.atom.args[POSE_COLUMN] == l.atom.args[-1]), None)
+
+    def new_label(self, stem: str, bound: set[str]) -> Variable:
+        """A variable of a label no list of the clause holds so far: `stem`, or `stem` and a number."""
+        taken = self.clause_vars | bound | self.rename.keys() | set(self.rename.values())
+        name = next(n for n in (stem, *(f"{stem}{k}" for k in range(2, len(taken) + 3))) if n not in taken)
+        self.clause_vars.add(name)
+        return Variable(name)
+
+    def pose_subgroup(self, test: Atom, chart: Atom, bound: set[str]) -> list[str]:
+        """The narrowing of `docs/arclog/rigid.md#subgroups`: `test` on the pose that `chart` reads, written as `test`
+        on that pose's difference from a training pose of the block, which reads no single pose."""
+        pose, trained, difference = test.args[-1], self.new_label("D0", bound), self.new_label("T", bound)
+        args: list = [Wildcard()] * len(chart.args)
+        args[POSE_COLUMN] = trained
+        if self.c.rigid[chart.relation.name][0] in self.c.rigid_keyed:
+            args[POSE_COLUMN + 1] = chart.args[POSE_COLUMN + 1]   # each key is an assembly of its own
+        name, sites = self.sites(dc_replace(chart, args=tuple(args)), bound)
+        read = " ".join([f"{name.split('.')[0]}.pose", *sites])
+        at_b = self.label(pose.name)
+        return [f"({read})",
+                f"(pose_difference (:A {self.label(trained.name)}) {at_b if at_b == 'B' else f'(:B {at_b})'} "
+                f"(:D {self.one(difference, bound)}))",
+                *self.lit(AtomLiteral(dc_replace(test, args=(*test.args[:-1], difference)), False), bound)]
 
     def equals_first(self, lits: list, bound: set[str]) -> list:
         """`lits` with each `X = Y` whose `Y` stands in `bound`, and whose `X` a later site would make, before the
