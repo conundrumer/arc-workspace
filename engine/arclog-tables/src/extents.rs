@@ -26,7 +26,9 @@
 //!     the `size` column of the maker's atom ([`Registry::frame_size`]), with
 //!     its rows and columns swapped where the D4 element that the label at
 //!     the `by` column holds moves the top edge to the left or the right edge,
-//!     plus the margins of the label at the maker's column;
+//!     plus the margins of the label at the maker's column. A maker in the
+//!     body of an input of an instance, which the body reads through that
+//!     input's port, gives no extent, since its labels are of another scope;
 //!   - the frame of the column the source reads, `Read`: the extent of the
 //!     frame of that column in the latest earlier table of the relation read,
 //!     at the rows of that table whose cells equal the labels of the atom's
@@ -1181,7 +1183,11 @@ impl Analysis<'_> {
         let size = self.registry.frame_size(relation, column)?;
         let atom = atom_at(self.checked, at)?;
         if let Some(extent)=self.key_made_extent(at,site_label(atom,column)?,row,ctx) {return extent;}
-        let made = self.sub.column_of(site_label(atom, column)?)?;
+        // The maker of a source read through an instance's input stands in that
+        // input's body: its labels are of that scope, and no label id of this body
+        // can stand for them.
+        frame_context::node_at_path(&self.sub.clause,&self.sub.paths,at)?;
+        let made =self.sub.column_of(site_label(atom, column)?)?;
         let sized = self.sub.column_of(site_label(atom, &size.column.column)?)?;
         let margins = margins_of(row[made], self.types.get(made)?)?;
         let (mut own_rows, mut own_columns) = self.own_size(sized, row, ctx, depth)?;
