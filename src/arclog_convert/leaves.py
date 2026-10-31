@@ -1354,6 +1354,10 @@ class Converter:
             if target is None:
                 return prog
             inst, lr = target
+            inlined = self._inline_input(prog, inst, lr)
+            if inlined is not None:
+                prog = inlined
+                continue
             if inst.scope.components:
                 done.add((inst.scope.components, inst.name, lr.name))
                 prog = self._split_input(prog, inst, lr)
@@ -1361,6 +1365,66 @@ class Converter:
                 continue
             done.add((inst.name, lr.name))
             prog = self._split_input(prog, inst, lr)
+
+    def _inline_input(self, prog, inst, lr):
+        """The program with an input of an instance unfolded into the other
+        inputs of the instance that read it, or None where none does. The
+        input has one clause, and that clause reads an output of the instance.
+        The other inputs read it each by an atom of the top of their body. A
+        relation of its own would read the instance and be read by it: a cycle,
+        where an input of an `Unfold` may read the instance's outputs."""
+        from arclog_convert.libmap.instances import _dedup, subst as lsubst, term_vars as lterm_vars, unify
+        sc = inst.scope.components
+        rn = RelationName((inst.name,), lr.name)
+        own = [u for u in prog.units if u.scope.components == sc and u.head.relation == rn]
+        if len(own) != 1 or own[0].body is None:
+            return None
+        c = own[0]
+        outs = {r.name for r in self.lib.relations(inst.component)[1] if not r.is_input}
+
+        def reads(lits, pred) -> bool:
+            for l in lits:
+                if isinstance(l, AtomLiteral) and pred(l.atom):
+                    return True
+                if isinstance(l, Disjunction) and any(reads(b, pred) for b in l.branches):
+                    return True
+            return False
+        if not reads(c.body, lambda a: a.relation.instances == (inst.name,) and a.relation.name in outs):
+            return None
+        readers = []
+        for u in prog.units:
+            if u.scope.components != sc or u.body is None or u is c:
+                continue
+            if not reads(u.body, lambda a: a.relation == rn):
+                continue
+            if u.head.relation.instances != (inst.name,) or u.head.relation == rn:
+                continue   # a reader outside the instance keeps its read
+            top = [k for k, l in enumerate(u.body) if isinstance(l, AtomLiteral) and l.atom.relation == rn]
+            if len(top) != 1 or u.body[top[0]].negated or \
+                    sum(1 for l in u.body if reads([l], lambda a: a.relation == rn)) != 1:
+                return None
+            readers.append((u, top[0]))
+        if not readers:
+            return None
+        new = {}
+        for u, k in readers:
+            a = u.body[k].atom
+            used, mine = set(lterm_vars((u.head, u.body), [])), lterm_vars((c.head, c.body), [])
+            taken, ren = used | set(mine), {}
+            for v in mine:
+                if v in used:
+                    n = 2
+                    while f"{v}{n}" in taken:
+                        n += 1
+                    taken.add(f"{v}{n}")
+                    ren[v] = Variable(f"{v}{n}")
+            cc = dc_replace(c, head=lsubst(c.head, ren), body=lsubst(c.body, ren)) if ren else c
+            m: dict = {}
+            if len(cc.head.args) != len(a.args) or not all(unify(x, y, m) for x, y in zip(cc.head.args, a.args)):
+                return None
+            body = _dedup(lsubst((*u.body[:k], *cc.body, *u.body[k + 1:]), m))
+            new[id(u)] = dc_replace(u, head=lsubst(u.head, m), body=body)
+        return dc_replace(prog, units=tuple(new.get(id(u), u) for u in prog.units))
 
     def _split_input(self, prog, inst, lr):
         from engine.program import Column, DeclId, RelationDecl, Scope, TypeName, UnitId
@@ -1383,6 +1447,13 @@ class Converter:
                 elif isinstance(l, Disjunction):
                     for b in l.branches:
                         yield from reader_atoms(b)
+        def reader_atoms_all(lits):
+            for l in lits:
+                if isinstance(l, AtomLiteral):
+                    yield l.atom
+                elif isinstance(l, Disjunction):
+                    for b in l.branches:
+                        yield from reader_atoms_all(b)
         readers = [a for u in prog.units if u.scope.components == sc and u.head.relation != rn
                    for a in reader_atoms(u.body or ())]
         dup: dict[int, int] = {}
@@ -1434,9 +1505,20 @@ class Converter:
             return x
         units = []
         bridged = False
+        outs = {r.name for r in self.lib.relations(inst.component)[1] if not r.is_input}
+        # clauses that read an output of the instance stay the input's, and a copy of them is the relation's: a
+        # bridge from the relation to the input would make the instance read itself
+        copies = bool(own) and any(a.relation.instances == (inst.name,) and a.relation.name in outs
+                                   for u in own for a in reader_atoms_all(u.body or ()))
+        next_id = prog.next_unit_index()
         for u in prog.units:
             if u.scope.components != sc:
                 units.append(u)
+            elif u.head.relation == rn and copies:
+                units.append(u)
+                units.append(dc_replace(u, id=UnitId(next_id), head=dc_replace(
+                    u.head, relation=new_rn, args=tuple(u.head.args[i] for i in kept_idx)), body=rename(u.body)))
+                next_id += 1
             elif u.head.relation == rn:
                 if not bridged:
                     bridged = True

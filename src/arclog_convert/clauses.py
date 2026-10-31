@@ -537,6 +537,9 @@ class ClauseWriter:
                     kept |= vs(arg)
             return dropped - kept
 
+        def vs_atom(l) -> set[str]:
+            return set().union(*(vs(a) for a in l.atom.args)) if l.atom.args else set()
+
         def binds(l) -> set[str]:
             if isinstance(l, AtomLiteral) and not l.negated:
                 return set().union(*(vs(a) for a in l.atom.args)) - dropped_only(l.atom) if l.atom.args else set()
@@ -651,8 +654,24 @@ class ClauseWriter:
                     made |= (binds(lits[i]) & binds(m)) - others
             return made
 
+        def own_read(l) -> bool:
+            """A read of an output of the instance whose input this is: every site of it joins."""
+            if self.own_inst is None or not isinstance(l, AtomLiteral) or l.negated or l.atom.relation.instances[:1] == ():
+                return False
+            saved = list(self.c.todo.pending), Counter(self.c.todo.kinds)
+            inst = self.c.resolve(l.atom.relation, self.scope, self.sub)[3]
+            self.c.todo.pending, self.c.todo.kinds = saved
+            return inst == self.own_inst
+
         out, pending, after = [], [], {}
         for i, l in enumerate(lits):
+            if orderable and own_read(l):
+                # the labels that another literal binds are bound before the read
+                need = vs_atom(l) & set().union(*(binds(m) for j, m in enumerate(lits) if j != i and not own_read(m)), set(bound))
+                if not need <= B:
+                    after[id(l)] = need
+                    pending.append(l)
+                    continue
             if orderable and is_fact(l) and (waits_for := made_by_waiting(i, B)):
                 after[id(l)] = waits_for
                 pending.append(l)
