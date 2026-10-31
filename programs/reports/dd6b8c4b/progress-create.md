@@ -1,0 +1,3 @@
+# dd6b8c4b create: progress notes
+
+- interference: `uv run python scripts/run_dl.py audit dd6b8c4b`, relabelings check. It prints "the relabeling run failed: line 71: `box` is not one value on every input at the case values the cases that take its `@store` branch hold; it differs on train 1", while `store` on the same solver prints "store: ok" and lists `box` as one cell set on every input. The message does not say which relabeling or which case gives another value, so the pass could not act on it. Cost: two audit runs and the time spent on a diagnosis that the output does not support. The relabelings check is still failing.

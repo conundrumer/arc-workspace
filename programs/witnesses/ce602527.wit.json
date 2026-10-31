@@ -97,44 +97,6 @@
       "grid": null
     }]
   }, {
-    "id": "stretched-copy",
-    "separates": "the copy enlarges its shape by 2 down and 3 across: one factor for both axes finds no match and gives no output; a factor per axis matches the 2 shape and gives it",
-    "input": [
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,2,2,2,1,1,1,1,3,1,3,1,1,1,1],
-      [1,1,2,1,1,1,1,1,1,3,3,3,1,1,1,1],
-      [1,1,2,2,2,1,1,1,1,1,3,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,8,8,8,8,8,8,8,8,8,1,1,1],
-      [1,1,1,1,8,8,8,8,8,8,8,8,8,1,1,1],
-      [1,1,1,1,8,8,8,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,8,8,8,1,1,1,1,1,1,1,1,1]
-    ],
-    "assign": {
-      "scale_axis": [
-        ["AXIS_V",2],
-        ["AXIS_H",3]
-      ]
-    },
-    "output": [{
-      "cases": ["$Uniform"],
-      "grid": null
-    }, {
-      "cases": ["$ScalePerAxis"],
-      "grid": [
-        [2,2,2],
-        [2,1,1],
-        [2,2,2]
-      ]
-    }]
-  }, {
     "id": "scale=TileCount",
     "separates": "`scale=TileCount` from the stored value: the input of `scale-three-copy`",
     "input": [
@@ -276,11 +238,7 @@
       [1,1,1,1,1,8,8,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": [
-        "$Uniform & $AnyShape & scale=stored",
-        "$Stored & $AnyShape & scale=stored",
-        "$LargeByEdge"
-      ],
+      "cases": ["$AnyShape & scale=stored","$LargeByEdge"],
       "grid": [
         [
           [2,2,2],
@@ -295,7 +253,7 @@
         ]
       ]
     }, {
-      "cases": ["$ScaleDerived & $ScalePerAxis","scale=TileCount","scale=TileDim"],
+      "cases": ["scale=TileCount","scale=TileDim"],
       "grid": [
         [
           [2,2,2],
@@ -318,47 +276,6 @@
         [2,2,2],
         [2,1,1],
         [2,2,2]
-      ]
-    }]
-  }, {
-    "id": "top-strip",
-    "separates": "a 2 by 5 block of 4 at the top edge, uncut across, is the cut enlarged form of the 3 cell at 5 across: one factor per axis derived from the input finds 2 down and 5 across and adds the 3 shape; one factor for both axes, stored, derived, or from the grid's tiles, finds none and gives the 2 shape alone",
-    "input": [
-      [1,1,1,1,1,1,1,1,4,4,4,4,4,1,1,1],
-      [1,1,1,1,1,1,1,1,4,4,4,4,4,1,1,1],
-      [1,1,2,2,2,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,2,2,2,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,3,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,8,8,8,8,8,8,1,1,1,1,1],
-      [1,1,1,1,1,8,8,8,8,8,8,1,1,1,1,1],
-      [1,1,1,1,1,8,8,1,1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,8,8,1,1,1,1,1,1,1,1,1]
-    ],
-    "output": [{
-      "cases": ["$Uniform","$Stored"],
-      "grid": [
-        [2,2,2],
-        [2,1,1],
-        [2,2,2]
-      ]
-    }, {
-      "cases": ["$ScaleDerived & $ScalePerAxis"],
-      "grid": [
-        [
-          [2,2,2],
-          [2,1,1],
-          [2,2,2]
-        ],
-        [
-          [3]
-        ]
       ]
     }]
   }]

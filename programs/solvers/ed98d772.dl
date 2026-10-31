@@ -1,0 +1,106 @@
+// ed98d772
+// @draft
+// @keywords: tile-arrangement d4 lookup rank
+// @scene square-input: every input is a square grid of side 3, so each turn of it fits the same square.
+// @rule quadrant-copies: the output is twice the input's side on each axis, cut into 2 by 2 quadrants,
+//  and each quadrant holds the input under the transform `quadrant_transform` gives that quadrant's
+//  corner, cell colors copied unchanged.
+
+// How each quadrant's transform is given.
+.type Choice =
+    // @claim quadrant-copies
+    Table {}
+    // @rule quadrant-copies: the quadrants, taken in the lexicographic order that starts at corner
+    //  `order_corner` with primary axis `order_axis` (reading order), hold the input turned one more
+    //  quarter turn in sense `turn_sense` than the quadrant before, the first as it is.
+    // @witness mirror-tile: ordinary concept
+    //     @reassigned quadrant_transform
+  | SuccessiveTurns {}
+    // @rule quadrant-copies: the quadrant at corner `anchor` holds the input as it is, a quadrant
+    //  across from it on one axis holds the input under that axis's step in `axis_step`, and the
+    //  diagonal quadrant under the composition of the two steps; undefined where the two orders of
+    //  composition disagree.
+    // @witness mirror-tile: ordinary concept
+  | StepProduct {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $Table ---
+    // The D4 transform of the input that the quadrant at each corner holds.
+    .decl quadrant_transform(c: DiagDir, d: D4)
+    quadrant_transform(DIAG_TL, D4_ID).
+    quadrant_transform(DIAG_TR, D4_CC).
+    quadrant_transform(DIAG_BL, D4_HT).
+    quadrant_transform(DIAG_BR, D4_CW).
+
+    // --- $SuccessiveTurns ---
+    .decl order_corner(d: DiagDir) order_corner(DIAG_TL).
+    .decl order_axis(a: Axis) order_axis(AXIS_V).
+    .decl turn_sense(s: Sense) turn_sense(SENSE_CC).
+
+    // --- $StepProduct ---
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+    // The transform one quadrant over along each axis adds.
+    .decl axis_step(a: Axis, d: D4)
+    axis_step(AXIS_V, D4_HT).
+    axis_step(AXIS_H, D4_CC).
+}
+
+.init params = Params
+
+// The input's side, the same on both axes.
+// @store: variant concept
+//     @relaxed square-input
+.decl side(n: number)
+side(N) :- in(P, _), axis_elem(A), axis_dims(P, A, N, N).
+
+// The output quadrant at each corner: a box of the input's size at that corner of a frame twice
+// the input's side.
+.decl quadrant(d: DiagDir, b: Box)
+quadrant(D, B) :- side(N), diag_opposite(D, D_opp), edge_inset(D_opp, N, B).
+
+// The D4 transform of the input that the quadrant at each corner holds.
+.decl transform(d: DiagDir, t: D4, ch: Choice)
+
+out(P_grid, Col, Ch) :-
+    transform(D, T, Ch), quadrant(D, B),                    // a quadrant and its transform
+    in(P, Col), apply(T, P, P_img),                         // image of the input cell
+    compose(B, P_img, P_grid).                              // placed in the quadrant
+
+// --- $Table ---
+transform(D, T, $Table()) :- params.quadrant_transform(D, T).
+
+// --- $SuccessiveTurns ---
+// @claim quadrant-copies
+.init quadrant_order = LexOrder<Unit>
+quadrant_order.corner($U(), D) :- params.order_corner(D).
+quadrant_order.axis($U(), A) :- params.order_axis(A).
+quadrant_order.cell($U(), B) :- quadrant(_, B).
+
+// One quarter turn in the turn sense after each transform.
+// @claim quadrant-copies
+.init turns = CycleWalk<Unit, D4>
+turns.succ($U(), T, T2) :- params.turn_sense(S), rotation(S, R), d4_elem(T), d4_compose(R, T, T2).
+turns.step($U(), K) :- quadrant_order.rank($U(), _, K).
+
+transform(D, T, $SuccessiveTurns()) :-
+    quadrant(D, B), quadrant_order.rank($U(), B, K),       // the quadrant's rank
+    d4_compose(I, I, I),                                    // the identity
+    turns.walk($U(), I, K, T).                              // K quarter turns
+
+// --- $StepProduct ---
+// Corner D lies across from the anchor on axis A.
+.decl across(d: DiagDir, a: Axis)
+across(D, A) :-
+    params.anchor(D0), dir_of(D0, A, X0),
+    dir_of(D, A, X), opposite(X0, X).
+
+transform(D, T, $StepProduct()) :- params.anchor(D), d4_compose(T, T, T).  // the identity
+transform(D, T, $StepProduct()) :-
+    across(D, A), perp(A, A2),
+    ( !across(D, A2), params.axis_step(A, T)                // one step over
+    ; across(D, A2),                                        // diagonal: both steps,
+      params.axis_step(A, T1), params.axis_step(A2, T2),    // in either order
+      d4_compose(T1, T2, T), d4_compose(T2, T1, T)
+    ).

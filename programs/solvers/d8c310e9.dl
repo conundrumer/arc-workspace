@@ -5,8 +5,6 @@
 // @scene segment-at-edge: the drawn segment starts at the edge opposite dir
 //  and runs toward dir, and every line across the segment (a column for dir
 //  right) holds a cell that is not bg; past the segment's end every cell is bg
-// @scene segment-on-ground: the drawn content rests on the ground edge
-//  (bottom), and the line along that edge is not bg across the whole segment
 // @rule period: the tile length is the smallest period of the segment along
 //  dir: the least p >= 1 at which each line of the segment equals the line p
 //  further along dir, wherever both lie in the segment
@@ -36,21 +34,6 @@
     //  line with no ink stays bg
     // @witness short-row-run: ordinary concept
   | PerLine {}
-    // @rule period: the period is the smallest period of the ground line's
-    //  run from the start edge to its last non-bg cell, and every line repeats
-    //  by it
-    // @witness ground-faster: ordinary concept
-  | GroundPeriod {g: Ground}
-
-// where the ground edge comes from
-.type Ground =
-    // @claim segment-on-ground
-    StoredGround {}
-    // @scene segment-on-ground: the ground edge is each edge along dir whose
-    //  line holds no bg cell across the segment; undefined where no edge does
-    // @witness hanging: variant concept
-    //     @relaxed segment-on-ground
-  | GroundFromScene {}
 
 .type Choice = [d: Direction, p: Period]
 
@@ -65,9 +48,6 @@
 
     // --- $StoredDir ---
     .decl dir(d: Dir) dir(DIR_R).
-
-    // --- $StoredGround ---
-    .decl ground(d: Dir) ground(DIR_B).
 }
 
 .init params = Params
@@ -93,7 +73,7 @@ out(P, Col, [Ch_dir, Ch_per]) :-
     dist(P, O, T), stride(T, K, 0, _, R),                      // its place within the period
     in(Q, Col), split(Q, A, _, L), dist(Q, O, R).              // the input cell at that place
 
-// --- $Whole, $DirFromScene, $GroundFromScene ---
+// --- $Whole, $DirFromScene ---
 
 // The segment toward D: every cell no farther from the start edge than some
 // ink cell.
@@ -139,7 +119,7 @@ seg_period(D, N) :- axis_of(D, A), seg_len.tally(D, N), !seg.min_period(D, A, _)
 
 period_at($Whole(), D, L, K) :- seg_period(D, K), axis_of(D, A), line(A, L).
 
-// --- $PerLine, $GroundPeriod ---
+// --- $PerLine ---
 
 // Each line's run toward D: its cells no farther from the start edge than
 // some ink cell of the line.
@@ -172,33 +152,6 @@ out(P, Col, [Ch_dir, $PerLine()]) :-
     dir_at(Ch_dir, D), axis_of(D, A),
     in(P, _), split(P, A, _, L), !run([D, L], _), params.bg(Col).
 
-// --- $GroundPeriod ---
-
-// The ground edge each case reads, toward D.
-.decl ground_at(ch_g: Ground, d: Dir, g: Dir)
-
-// The ground line's period, for every line.
-// @workaround: the period of the ground line's cells within the segment, in
-//  an OffsetInvariance instance of its own; the runner fails a solver that
-//  stores two instances of one comp
-period_at($GroundPeriod(Ch_g), D, L, K) :-
-    ground_at(Ch_g, D, G), perp_dir(D, G),                    // an edge along D
-    run_period([D, L_g], K), dist(L_g, G, 0),                 // the period of its line
-    axis_of(D, A), line(A, L).
-
-// --- $StoredGround ---
-
-ground_at($StoredGround(), D, G) :- dir_elem(D), params.ground(G).
-
-// --- $GroundFromScene ---
-
-// A segment cell on the edge line toward G is bg.
-.decl gap(d: Dir, g: Dir)
-gap(D, G) :- segment(D, P), dir_elem(G), dist(P, G, 0), in(P, Col), params.bg(Col).
-
-ground_at($GroundFromScene(), D, G) :-
-    segment(D, _), perp_dir(D, G), !gap(D, G).
-
 .comp Determine {
     // The extension paints over background cells.
     .decl bg(col: Color)
@@ -211,12 +164,4 @@ ground_at($GroundFromScene(), D, G) :-
     // The output's ink reaches an edge the input's ink does not.
     .decl dir(d: Dir)
     dir(D) :- ex_out(E, P, Col), !params.bg(Col), dir_elem(D), dist(P, D, 0), !in_reach(E, D).
-
-    // A bg cell of example E's output lies on the edge toward G.
-    .decl out_gap(e: Example, g: Dir)
-    out_gap(E, G) :- ex_out(E, P, Col), params.bg(Col), dir_elem(G), dist(P, G, 0).
-
-    // The edge whose line no output leaves bg anywhere.
-    .decl ground(d: Dir)
-    ground(D) :- dir_elem(D), !out_gap(_, D).
 }

@@ -140,7 +140,6 @@ out(P, Col) :-
     .decl pattern(p_tile: Position)
     pattern(T) :- ex.frame.tile_of(_, _, T), !mask_tile(T), !out_tile(T).
 
-    // @workaround: no determination of top_tile, so that a proposer and the fit give it, once the joint enumeration of top_tile and under_tile is within the plan's limit
     // A pattern panel that the painted marker's side contradicts.
     .decl not_top(p_tile: Position)
     not_top(T) :-
@@ -148,6 +147,8 @@ out(P, Col) :-
         out_tile(T_out), ex.panel_view(E, T_out, P, P_intile),                       // the blank panel's cell there
         ex_out(E, P, Col2), Col != Col2.
 
+    // @ignore: determine prediction — the top panel is the one whose cells on the
+    //  marker's side the output's blank panel repeats, so no fact of one side gives it
     .decl top_tile(p_tile: Position)
     top_tile(T) :- pattern(T), !not_top(T).
 

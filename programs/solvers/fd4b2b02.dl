@@ -1,0 +1,138 @@
+// fd4b2b02
+// @draft
+// @keywords: bbox objects walk d4 mapping
+// @scene one-bar: one solid rectangle of one color of the partner pair on the
+//  background, longer on one axis than on the other.
+// @rule keep-bar: the input bar stays where it is, and the output has the
+//  input's size.
+// @rule diagonal-chains: toward each of the four diagonal directions, a chain
+//  of bars runs from the input bar: each next bar has the extents of the last
+//  one swapped, takes the partner of its color, and sits so its corner cell
+//  nearest the last bar is diagonally adjacent, in that direction, to the last
+//  bar's corner cell.
+// @rule clip-at-edge: a chain runs until a bar lies wholly outside the grid,
+//  and the part of a bar outside the grid is dropped.
+// @rule rest-background: every other cell is background.
+
+// what counts as the bar the chains start from
+.type Choice =
+    // @claim one-bar
+    OneBar {}
+    // @scene one-bar: each 4-connected component of non-background cells is a
+    //  bar, its bounding box in its one color; undefined where a component
+    //  holds two colors.
+    // @rule keep-bar: every input bar stays where it is.
+    // @rule diagonal-chains: each bar sends its own four chains; undefined
+    //  where two bars' chains give a cell different colors.
+    // @witness two-bars: variant $PerBar
+    //     @relaxed one-bar
+  | PerBar {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-bar
+    .decl background(c: Color) background(0).
+    // the color a bar of each color passes to the next bar of a chain
+    .decl partner(c: Color, c2: Color)
+    partner(6, 3).
+    partner(3, 6).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($OneBar()). impl_choice($PerBar()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// A bar: its box in the grid and its color.
+.decl bar(ch: Choice, b: Box, col: Color)
+
+// A bar that leaves the case undefined: a component of two colors, or a color
+// with no partner.
+.decl bar_defect(ch: Choice)
+bar_defect(Ch) :- bar(Ch, _, Col), !params.partner(Col, _).
+
+// --- $OneBar ---
+
+// @claim one-bar
+.init whole_box = Bbox<Unit>
+whole_box.cell($U(), P) :- ink(P, _).
+
+// @claim one-bar
+.init whole_color = Unanimous<Unit, Color>
+whole_color.item($U(), Col) :- ink(_, Col).
+
+bar($OneBar(), B, Col) :- whole_box.box($U(), B), whole_color.value($U(), Col).
+
+// --- $PerBar ---
+
+// @claim one-bar
+.init part = Components<Unit>
+part.node($U(), P) :- ink(P, _).
+
+// @claim one-bar
+.init part_box = Bbox<Ident>
+part_box.cell(Id, P) :- part.label($U(), P, Id).
+
+// @claim one-bar
+.init part_color = Unanimous<Ident, Color>
+part_color.item(Id, Col) :- part.label($U(), P, Id), ink(P, Col).
+
+bar($PerBar(), B, Col) :- part_box.box(Id, B), part_color.value(Id, Col).
+bar_defect($PerBar()) :- part_color.clash(_).
+
+// --- $OneBar, $PerBar ---
+
+// A bar of a chain toward d: the cell at its corner nearest the chain's start,
+// its box in that cell's frame, and its color.
+.type BarNode = [d: DiagDir, near: Position, shape: Box, col: Color]
+
+// Each input bar, as the start of its chain toward each diagonal direction.
+.decl start(ch: Choice, n: BarNode)
+start(Ch, [D, N, S, Col]) :-
+    bar(Ch, B, Col), diag_dir_elem(D), diag_opposite(D, D0),
+    in(N, _), box_corner(N, B, D0), relative(N, B, S).    // the corner facing away from d
+
+// The shapes a chain toward d takes: the bar's, and the bar turned across the
+// chain's diagonal.
+.decl shape(ch: Choice, d: DiagDir, s: Box)
+shape(Ch, D, S) :-
+    start(Ch, [D, _, S0, _]), diag_axis_of(D, Da), diag_flip_of(Da, R),
+    ( S = S0
+    ; apply(R, S0, S)
+    ).
+
+// @claim diagonal-chains clip-at-edge
+.init chain = Propagation<Choice, BarNode>
+chain.source(Ch, Nd) :- start(Ch, Nd).
+chain.edge(Ch, [D, N, S, Col], [D, N2, S2, Col2]) :-
+    shape(Ch, D, S), in(N, _), params.partner(Col, Col2),    // a candidate bar
+    compose(N, S, B),                                         // its box in the grid
+    diag_dirs(D, A, D1, D2), axis_of(D2, A2),
+    box_extent(B, N, A, K1), box_extent(B, N, A2, K2),
+    jump(N, D1, K1, Q), jump(Q, D2, K2, N2),                  // one cell past its far corner
+    diag_axis_of(D, Da), diag_flip_of(Da, R), apply(R, S, S2).  // turned
+
+// A cell of a chain bar, the input bar left out.
+.decl chain_cell(ch: Choice, p: Position, col: Color)
+chain_cell(Ch, P, Col) :-
+    chain.reached(Ch, [D, N, S, Col]), !start(Ch, [D, N, S, Col]),
+    compose(N, S, B), in(P, _), inside(P, B).
+
+out(P, Col, Ch) :-
+    bar(Ch, _, _), !bar_defect(Ch),
+    ( chain_cell(Ch, P, Col)
+    ; !chain_cell(Ch, P, _), in(P, Col)
+    ).
+
+.comp Determine {
+    // The input bar's color passes to the color the output adds beside it.
+    .decl partner(c: Color, c2: Color)
+    partner(Col, Col2) :-
+        ex_in(E, _, Col), !params.background(Col),
+        ex_out(E, _, Col2), !params.background(Col2), Col != Col2.
+}

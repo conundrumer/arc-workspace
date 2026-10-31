@@ -1,0 +1,183 @@
+// ef135b50
+// @draft
+// @keywords: objects span bbox
+// @scene solid-rectangles: the cells of params.object_color form solid
+//  axis-aligned rectangles on a field of one other color, and no two
+//  rectangles touch, by side or by corner
+// @rule bridge-facing-pairs: two rectangles face each other when they share a
+//  line along params.bridge_axis; their strip is the cells strictly between
+//  them on the lines they share. A pair whose strip holds no cell of
+//  params.object_color is bridged, and every cell of its strip takes
+//  params.bridge_color; a pair whose strip holds a rectangle cell is not
+//  bridged on any of its lines
+// @rule keep-rest: every other cell keeps its input color; no bridge is
+//  painted across params.bridge_axis
+
+// what a bridge spans
+.type GapUnit =
+    // @claim bridge-facing-pairs
+    PiecePair {adj: Adjacency, strip: Strip}
+    // @rule bridge-facing-pairs: on each line along params.bridge_axis, each
+    //  run of params.background between two cells of params.object_color
+    //  takes params.bridge_color; no pieces are read
+    // @witness blocked-pair-open-lines: ordinary concept
+  | PerLineRun {}
+
+// which cells join into one piece
+.type Adjacency =
+    // @claim bridge-facing-pairs
+    SideJoin {}
+    // @scene solid-rectangles: pieces are the 8-connected components of
+    //  params.object_color, and a piece's extent is its bounding box
+    // @rule bridge-facing-pairs: pieces join at corners as well as sides
+    // @witness corner-touching-rectangles: borderline concept
+    //     @relaxed solid-rectangles
+  | DiagonalJoin {}
+
+// where the strip on a shared line ends
+.type Strip =
+    // @claim bridge-facing-pairs
+    BoxStrip {}
+    // @rule bridge-facing-pairs: on each shared line the strip runs from the
+    //  near piece's last cell on that line to the far piece's first cell on it
+    // @witness l-shaped-piece: borderline $CellwiseStrip
+    //     @relaxed solid-rectangles
+  | CellwiseStrip {}
+
+// whether the lines at the grid border take bridges
+.type Border =
+    // @claim keep-rest
+    AllLines {}
+    // @rule keep-rest: a line along params.bridge_axis at the grid border
+    //  also takes no bridge cell
+    // @witness border-line-bridge: ordinary concept
+  | BorderLinesUnbridged {}
+
+.type Choice = [unit: GapUnit, border: Border]
+
+// A piece, as one gap unit finds it.
+.type Region = [unit: GapUnit, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl object_color(c: Color) object_color(2).
+    .decl bridge_color(c: Color) bridge_color(9).
+    .decl bridge_axis(a: Axis) bridge_axis(AXIS_H).
+
+    // --- $PerLineRun ---
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($SideJoin()). adjacency_choice($DiagonalJoin()).
+
+.decl strip_choice(s: Strip)
+strip_choice($BoxStrip()). strip_choice($CellwiseStrip()).
+
+.decl border_choice(b: Border)
+border_choice($AllLines()). border_choice($BorderLinesUnbridged()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$PiecePair(A, S), B]) :- adjacency_choice(A), strip_choice(S), border_choice(B).
+impl_choice([$PerLineRun(), $BorderLinesUnbridged()]).
+
+// The cells that take the bridge color, per gap unit.
+.decl bridge(u: GapUnit, p: Position)
+
+// The cells each case paints.
+.decl paint(ch: Choice, p: Position)
+
+out(P, Col, Ch) :- impl_choice(Ch), paint(Ch, P), params.bridge_color(Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(Ch, P).
+
+// --- $PiecePair ---
+
+// The cells of each piece.
+.decl piece(a: Adjacency, id: Ident, p: Position)
+
+// The cells a piece's strip starts from.
+.decl region(r: Region, p: Position)
+
+// @claim bridge-facing-pairs
+.init cast = Ray<Region>
+cast.dir(R, D) :- region(R, _), params.bridge_axis(A), axis_of(D, A).
+cast.cell(R, P) :- region(R, _), in(P, _).
+cast.mark(R, P) :- region(R, P).
+
+// p lies past region r toward d, on one of its lines.
+.decl front(r: Region, d: Dir, p: Position)
+front(R, D, P) :- cast.ray(R, P, D, _, _), opposite(D, O), !cast.ray(R, P, O, _, _).
+
+// The strip between piece x and piece y, which lies past x toward d.
+.decl strip(u: GapUnit, x: Ident, y: Ident, d: Dir, p: Position)
+strip(U, X, Y, D, P) :- front([U, X], D, P), opposite(D, O), front([U, Y], O, P).
+
+// Some cell of the strip is a piece cell.
+.decl blocked(u: GapUnit, x: Ident, y: Ident, d: Dir)
+blocked(U, X, Y, D) :- strip(U, X, Y, D, P), in(P, Col), params.object_color(Col).
+
+bridge(U, P) :- strip(U, X, Y, D, P), !blocked(U, X, Y, D).
+
+// --- $SideJoin ---
+
+// @claim solid-rectangles bridge-facing-pairs
+.init pieces = Components<Unit>
+pieces.node($U(), P) :- in(P, Col), params.object_color(Col).
+
+piece($SideJoin(), Id, P) :- pieces.label($U(), P, Id).
+
+// --- $DiagonalJoin ---
+
+// @claim solid-rectangles bridge-facing-pairs
+.init pieces8 = Components8<Unit>
+pieces8.node($U(), P) :- in(P, Col), params.object_color(Col).
+
+piece($DiagonalJoin(), Id, P) :- pieces8.label($U(), P, Id).
+
+// --- $BoxStrip ---
+
+// @claim bridge-facing-pairs
+.init extent = Bbox<Region>
+extent.cell([$PiecePair(A, $BoxStrip()), Id], P) :- piece(A, Id, P).
+
+region(R, P) :- extent.box(R, B), in(P, _), inside(P, B).
+
+// --- $CellwiseStrip ---
+
+region([$PiecePair(A, $CellwiseStrip()), Id], P) :- piece(A, Id, P).
+
+// --- $PerLineRun ---
+
+// @claim bridge-facing-pairs
+.init runs = Between<Unit>
+runs.axis($U(), A) :- params.bridge_axis(A).
+runs.cell($U(), P) :- in(P, Col), params.background(Col).
+runs.mark($U(), P) :- in(P, Col), params.object_color(Col).
+
+bridge($PerLineRun(), P) :- runs.between($U(), P).
+
+// --- $AllLines ---
+
+paint([U, $AllLines()], P) :- bridge(U, P).
+
+// --- $BorderLinesUnbridged ---
+
+// The lines along params.bridge_axis at the grid border.
+.decl border_line(p: Position)
+border_line(P) :-
+    in(P, _), params.bridge_axis(A), perp(A, A2), axis_of(D, A2), dist(P, D, 0).
+
+paint([U, $BorderLinesUnbridged()], P) :- bridge(U, P), !border_line(P).
+
+.comp Determine {
+    // A color that some train output changes.
+    .decl background(c: Color)
+    background(Col) :- ex_in(E, P, Col), ex_out(E, P, _), !ex_out(E, P, Col).
+
+    // A color that a train output holds and its input does not.
+    .decl bridge_color(c: Color)
+    bridge_color(Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+}

@@ -1,0 +1,150 @@
+// f560132c
+// @draft
+// @keywords: objects pack congruent mapping
+// @scene four-pieces: four single-color objects of four distinct colors on a
+//  field of `background` (0), each one 4-connected, no two touching, even at a
+//  corner.
+// @scene key-piece: exactly one piece holds a 2×2 block of four distinct
+//  colors, none of them `background` or a piece's color, nearest the
+//  `key_corner` (DIAG_TL) corner of the piece's box; the key cells count as
+//  cells of that piece.
+// @scene pieces-tile-square: the four pieces, the key piece unturned and each
+//  other piece under some rotation, tile a solid square with no gap and no
+//  overlap, each piece covering exactly one corner of the square, the key
+//  piece the `key_corner` (DIAG_TL) corner.
+// @rule assemble: the output is that square, the key piece placed unturned and
+//  each other piece turned by the rotation that makes the four tile it; the
+//  program enumerates every rotation of C4 for a piece.
+// @rule color-by-corner: every cell of a piece, key cells included, takes the
+//  key's color at the same corner of the key as the corner of the square the
+//  piece covers.
+
+// A piece, a turn of it, and a placement of the turned piece in the square
+// of side n.
+.type Cand = [id: Ident, d: D4, n: number, b: Position]
+// A tiling: the key piece's placement and those of the other three.
+.type TiebreakResolution = [key: Cand, c2: Cand, c3: Cand, c4: Cand]
+
+.decl out(p: Position, col: Color, res: TiebreakResolution)
+
+.comp Params {
+    .decl background(c: Color) background(0).
+
+    // The identity turn, the key piece's pose.
+    .decl unturned(d: D4) unturned(D4_ID).
+}
+
+.init params = Params
+
+// --- the key ---
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// A 2×2 block of four distinct colors.
+.decl key_cell(p: Position)
+key_cell(P) :-
+    ink(P, C0), diag_dirs(Dg, _, D1, D2),
+    neighbor(P, D1, Q1), ink(Q1, C1), neighbor(P, D2, Q2), ink(Q2, C2),
+    neighbor(P, Dg, Q3), ink(Q3, C3),
+    C0 != C1, C0 != C2, C0 != C3, C1 != C2, C1 != C3, C2 != C3.
+
+// The key cell on the key's d-side edge.
+.decl key_edge(d: Dir, p: Position)
+key_edge(D, P) :- key_cell(P), dir_elem(D), neighbor(P, D, Q), !key_cell(Q).
+
+// The key's color at its corner d.
+.decl key_color(d: DiagDir, col: Color)
+key_color(Dg, Col) :- diag_dirs(Dg, _, D1, D2), key_edge(D1, P), key_edge(D2, P), in(P, Col).
+
+// --- the pieces ---
+
+// @claim four-pieces
+.init piece = Components<Unit>
+piece.node($U(), P) :- ink(P, _).
+
+// @claim assemble
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- piece.label($U(), P, Id).
+
+// The piece's footprint under each turn, in its own box.
+.decl foot(id: Ident, d: D4, p: Position)
+foot(Id, D, S2) :-
+    piece.label($U(), P, Id), bbox.box(Id, B), crop(P, B, S),   // the piece's cell in its box
+    c4_elem(D), apply(D, S, S2).
+
+// --- the square ---
+
+// @claim pieces-tile-square
+.init area = Tally<Unit, Position>
+area.domain($U()).
+area.item($U(), P) :- ink(P, _).
+
+.init square = Frame2D<number>
+square.extent(N, A, N) :- in(P, _), sub_extent(P, A2, N), axis_elem(A2), axis_elem(A).
+
+// @claim pieces-tile-square
+.init square_area = Tally<number, Position>
+square_area.item(N, P) :- square.cell(N, P).
+
+// --- the candidate placements ---
+
+// A placement of a turned piece that lands one of its cells on a corner of
+// the square: each piece covers a corner.
+.decl corner_place(c: Cand)
+corner_place([Id, D, N, B]) :-
+    area.tally($U(), K), square_area.tally(N, K),      // the square of the pieces' area
+    square.cell(N, Q), corner_dist(Q, _, 0),           // a corner of it
+    foot(Id, D, S), relative(S, Q, B).                  // a piece cell on it
+
+// Some cell of the placed piece falls off the square.
+.decl off_square(c: Cand)
+off_square([Id, D, N, B]) :-
+    corner_place([Id, D, N, B]), foot(Id, D, S), compose(B, S, P), !inside(P, ZERO).
+
+.decl covers(c: Cand, p: Position)
+covers([Id, D, N, B], P) :-
+    corner_place([Id, D, N, B]), !off_square([Id, D, N, B]), foot(Id, D, S), compose(B, S, P).
+
+// The candidate covers the square's corner d.
+.decl corner_cand(c: Cand, d: DiagDir)
+corner_cand(C, Dg) :- covers(C, P), corner_dist(P, Dg, 0).
+
+.decl overlap(c: Cand, c2: Cand)
+overlap(C, C2) :- covers(C, P), covers(C2, P), C != C2.
+
+// Four distinct pieces, the key piece unturned, each covering a corner,
+// pairwise disjoint: with the pieces' area the square's, they tile it.
+.decl tiling(t: TiebreakResolution)
+tiling([C1, C2, C3, C4]) :-
+    C1 = [Id1, D1, N, _], key_cell(P), piece.label($U(), P, Id1),   // the key piece
+    params.unturned(D1), corner_cand(C1, _),
+    C2 = [Id2, _, N, _], corner_cand(C2, _), Id2 != Id1, !overlap(C1, C2),
+    C3 = [Id3, _, N, _], corner_cand(C3, _), Id3 != Id1, Id3 != Id2,
+    !overlap(C1, C3), !overlap(C2, C3),
+    C4 = [Id4, _, N, _], corner_cand(C4, _), Id4 != Id1, Id4 != Id2, Id4 != Id3,
+    !overlap(C1, C4), !overlap(C2, C4), !overlap(C3, C4).
+
+// --- the output ---
+
+// Each piece of a tiling takes the key's color at the corner it covers.
+out(P, Col, T) :-
+    tiling(T), T = [C1, C2, C3, C4], (C = C1 ; C = C2 ; C = C3 ; C = C4),
+    covers(C, P), corner_cand(C, Dg), key_color(Dg, Col).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // An input whose commonest color is another.
+    .decl background_defect(c: Color)
+    background_defect(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !background_defect(Col).
+
+    // The turn that composed with itself is itself.
+    .decl unturned(d: D4)
+    unturned(D) :- d4_elem(D), d4_compose(D, D, D).
+}

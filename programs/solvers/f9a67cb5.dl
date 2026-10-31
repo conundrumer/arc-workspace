@@ -1,0 +1,146 @@
+// f9a67cb5
+// @draft
+// @keywords: markers flood lines
+// @scene one-source: exactly one cell of source_color (2) lies on an edge of
+//  the grid, off its corners; that edge is the source edge
+// @scene parallel-walls: full-length lines of wall_color (8) run parallel to
+//  the source edge, each broken by one or more one-cell gaps
+// @scene background: every other cell is background (0)
+// @rule fall-straight: water leaves the source moving away from the source
+//  edge and moves straight on while the cell ahead is not wall, until it
+//  leaves the grid
+// @rule spread-along-wall: where the cell ahead of the water is wall, the
+//  water spreads both ways along its line, each way up to and including the
+//  first cell whose cell ahead is not wall, or up to the grid edge
+// @rule drain-through-gap: from each cell the water reaches whose cell ahead
+//  is not wall, the water falls straight on through the gap; water that
+//  arrives straight in front of a gap passes through without spreading
+// @rule paint-water: every cell the water reaches takes source_color; every
+//  other cell keeps its input color
+
+// what a wall is
+.type Wall =
+    // @claim parallel-walls
+    WallColor {}
+    // @scene parallel-walls: full-length lines of cells that are neither
+    //  background nor the source run parallel to the source edge, each broken
+    //  by one or more one-cell gaps
+    // @witness wall-other-color: variant $WallAnyColor
+    //     @relaxed parallel-walls
+    //     @relaxed background
+  | WallAnyColor {}
+
+// where the water drains through a gap
+.type Drain =
+    // @claim drain-through-gap
+    DrainCell {}
+    // @rule drain-through-gap: water at a cell that faces a gap also spreads
+    //  over every cell that faces the same gap, and falls straight on from
+    //  each of them
+    // @witness wide-gap: borderline concept
+    //     @relaxed parallel-walls
+  | DrainWholeGap {}
+
+.type Choice = [w: Wall, g: Drain]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed one-source
+    // the spout's color
+    .decl source_color(c: Color) source_color(2).
+
+    // --- $WallColor ---
+    .decl wall_color(c: Color) wall_color(8).
+
+    // --- $WallAnyColor ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.decl wall_choice(w: Wall)
+wall_choice($WallColor()). wall_choice($WallAnyColor()).
+
+.decl drain_choice(g: Drain)
+drain_choice($DrainCell()). drain_choice($DrainWholeGap()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([W, G]) :- wall_choice(W), drain_choice(G).
+
+// The spout.
+.decl source(p: Position)
+source(P) :- params.source_color(C), in(P, C).
+
+// The water flows away from the edge the spout sits on.
+.decl flow(d: Dir)
+flow(D) :- source(P), opposite(D, E), dist(P, E, 0).
+
+// The color the water takes: the spout's.
+// @store: ordinary concept
+.decl water_color(c: Color)
+water_color(C) :- source(P), in(P, C).
+
+// The cell ahead of p, in the flow direction.
+.decl ahead(p: Position, q: Position)
+ahead(P, Q) :- flow(D), in(P, _), neighbor(P, D, Q), in(Q, _).
+
+.decl wall(p: Position, w: Wall)
+
+// q lies beside p along the line across the flow, and is not wall.
+// @ignore: common-subexpr — the step beside runs across the flow, the step in `ahead` along it
+.decl beside(p: Position, q: Position, w: Wall)
+beside(P, Q, W) :-
+    wall_choice(W), flow(D), perp_dir(D, S), in(P, _),
+    neighbor(P, S, Q), in(Q, _), !wall(Q, W).
+
+.init water = Propagation<Choice, Position>
+water.source(Ch, P) :- impl_choice(Ch), source(P).
+// On into the cell ahead when it is not wall, or along the line in front of a
+// wall.
+water.edge([W, G], P, Q) :-
+    impl_choice([W, G]),
+    ( ahead(P, Q), !wall(Q, W)                     // fall-straight, drain-through-gap
+    ; ahead(P, Q0), wall(Q0, W), beside(P, Q, W)   // spread-along-wall
+    ).
+
+out(P, C, Ch) :- water.reached(Ch, P), water_color(C).
+out(P, C, Ch) :- in(P, C), impl_choice(Ch), !water.reached(Ch, P).
+
+// --- $WallColor ---
+wall(P, $WallColor()) :- params.wall_color(C), in(P, C).
+
+// --- $WallAnyColor ---
+wall(P, $WallAnyColor()) :- in(P, C), !params.background(C), !source(P).
+
+// --- $DrainWholeGap ---
+
+// A gap cell: a cell that is not wall, on a line across the flow that holds
+// wall.
+.decl gap(p: Position, w: Wall)
+gap(G, W) :-
+    flow(D), wall(Q, W), in(G, _), same_dist(D, G, Q), !wall(G, W).
+
+// Water facing a gap spreads to the next cell that faces the same gap.
+water.edge([W, $DrainWholeGap()], P, Q) :-
+    impl_choice([W, $DrainWholeGap()]),
+    ahead(P, G), gap(G, W), beside(P, Q, W), ahead(Q, G2), gap(G2, W).
+
+.comp Determine {
+    // The water takes the spout's color: the color the outputs paint.
+    .decl source_color(c: Color)
+    source_color(C) :- ex_in(E, P, C0), ex_out(E, P, C), C != C0.
+
+    // The water paints only background.
+    .decl background(c: Color)
+    background(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // The walls take the input color that is neither background nor the
+    // spout's.
+    // @ignore: determine prediction — the value is read from the evidence, as the one input color besides the spout's that the water never paints over
+    .decl wall_color(c: Color)
+    wall_color(C) :- ex_in(_, _, C), !background(C), !source_color(C).
+}

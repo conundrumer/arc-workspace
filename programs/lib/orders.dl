@@ -293,12 +293,12 @@
     .decl untaken(key: Key, t: T, item: Item)
     untaken(Ky, T, X) :- start(Ky, T), init_untaken(Ky, X).
     untaken(Ky, T2, X) :-
-        step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y, !conflict(Ky, Y, X).
+        step(Ky, T, T2), take(Ky, T, Y), untaken(Ky, T, X), X != Y, !conflict(Ky, Y, X).
     untaken(Ky, T2, X) :- skip(Ky, T, T2), untaken(Ky, T, X).
 
     /// The items `conflict` removed up to t.
     .decl excluded(key: Key, t: T, item: Item)
     excluded(Ky, T2, X) :-
-        step(Ky, T, T2), untaken(Ky, T, X), take(Ky, T, Y), X != Y, conflict(Ky, Y, X).
+        step(Ky, T, T2), take(Ky, T, Y), conflict(Ky, Y, X), X != Y, untaken(Ky, T, X).
     excluded(Ky, T2, X) :- ( step(Ky, T, T2) ; skip(Ky, T, T2) ), excluded(Ky, T, X).
 }

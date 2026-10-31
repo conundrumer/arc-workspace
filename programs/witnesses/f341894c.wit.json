@@ -1,0 +1,95 @@
+{
+  "id": "f341894c",
+  "witnesses": [{
+    "id": "interior-marker",
+    "separates": "an arrow whose row holds a marker inside the grid and none on the edge: the concept leaves the arrow as it is; $MarkerInLine turns its head toward the interior marker",
+    "input": [
+      [8,8,8,8,8,8],
+      [8,8,8,8,8,8],
+      [8,6,1,8,7,8],
+      [8,8,8,8,8,8],
+      [8,8,8,8,8,8],
+      [8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$OnEdge"],
+      "grid": [
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,6,1,8,7,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$MarkerInLine"],
+      "grid": [
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,1,6,8,7,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8],
+        [8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "markers-both-ends",
+    "separates": "an arrow whose row has an edge marker at each end, the left one nearer: the concept and $MarkerInLine are undefined; $NearerMarker turns its head toward the left marker",
+    "input": [
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8],
+      [7,1,6,8,8,8,7],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$BothUndefined"],
+      "grid": null
+    }, {
+      "cases": ["$NearerMarker"],
+      "grid": [
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8],
+        [7,6,1,8,8,8,7],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "alternate-crossing",
+    "separates": "a marker's row crosses a cell of another marker's arrow before reaching its own arrow: the concept turns only the two adjacent cells of its own arrow; $Alternate recolors every head/tail cell of the row alternately from the marker, and swaps the colors of the arrow's two cells",
+    "input": [
+      [8,8,8,8,7,8,8],
+      [8,8,8,8,8,8,8],
+      [8,6,1,8,1,8,7],
+      [8,8,8,8,6,8,8],
+      [8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Pair"],
+      "grid": [
+        [8,8,8,8,7,8,8],
+        [8,8,8,8,8,8,8],
+        [8,1,6,8,6,8,7],
+        [8,8,8,8,1,8,8],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$Alternate"],
+      "grid": [
+        [8,8,8,8,7,8,8],
+        [8,8,8,8,8,8,8],
+        [8,6,1,8,6,8,7],
+        [8,8,8,8,1,8,8],
+        [8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8]
+      ]
+    }]
+  }]
+}

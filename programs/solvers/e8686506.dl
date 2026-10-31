@@ -1,0 +1,226 @@
+// e8686506
+// @draft
+// @keywords: objects crop pack
+// @scene background: the commonest color fills the grid around everything else.
+// @scene frame: the frame is all cells of one or two frame colors, and no piece holds a frame color.
+// @scene pieces: every other non-background cell belongs to a piece, a 4-connected one-color part
+//  that touches no other non-background cell, even at a corner.
+// @scene exact-fit: the pieces, each transformed by an element of piece_turns (SYM_1) and then
+//  translated, cover the background cells of the frame's bounding box exactly once, and no other cell.
+// @rule find-frame: the frame colors are the set of colors at which exact-fit holds.
+// @rule crop: the output is the frame's bounding box, with the frame cells kept.
+// @rule fill: each background cell of that box takes the color of the piece that covers it in the
+//  exact cover.
+
+// How the background color is found.
+.type Background =
+    // @claim background
+    Commonest {}
+    // @scene background: the color all four grid corners hold fills the grid around everything
+    //  else; undefined where the corners differ.
+    // @witness corner-field: borderline $CornerColor
+    //     @relaxed background
+  | CornerColor {}
+
+// How the frame colors are found.
+.type FrameColors =
+    // @claim find-frame
+    Search {}
+    // @rule find-frame: the frame colors are the colors that have the most cells in the input, ties
+    //  included; undefined where the other colors' pieces do not cover that box's background exactly.
+    // @witness dotted-rows: foreign any
+    // @witness accent-frame: ordinary concept
+  | FrameMostCells {}
+
+// How a piece is cut from the input.
+.type PieceParts =
+    // @claim pieces
+    Parts4 {}
+    // @scene pieces: a piece is an 8-connected one-color part; undefined where no cover exists.
+    // @witness diagonal-piece: borderline $Pieces8
+    //     @relaxed pieces
+  | Pieces8 {}
+
+.type Choice = [b: Background, f: FrameColors, p: PieceParts]
+
+// A piece, under the readings of the background and the pieces that cut it.
+.type Piece = [b: Background, pa: PieceParts, o: Ident]
+
+// A non-background color, under a reading of the background.
+.type Inked = [b: Background, col: Color]
+
+// A frame candidate: one or two frame colors, a single color written twice, under the readings of
+// the background and the pieces.
+.type FrameSet = [b: Background, pa: PieceParts, c1: Color, c2: Color]
+
+// Piece o turned by d inside the box of frame candidate k.
+.type Pose = [k: FrameSet, o: Ident, d: D4]
+
+// Piece o turned by d and translated to the margins at.
+.type Placement = [o: Ident, d: D4, at: Position]
+
+// One exact cover: a placement for each piece.
+.type TiebreakResolution =
+    End {} | Sit {o: Ident, pl: Placement, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // The subgroup of D4 a piece may be transformed by before it moves into place.
+    .decl piece_turns(s: Sym) piece_turns(SYM_1).
+}
+
+.init params = Params
+
+.decl background_choice(b: Background)
+background_choice($Commonest()). background_choice($CornerColor()).
+
+.decl piece_parts_choice(pa: PieceParts)
+piece_parts_choice($Parts4()). piece_parts_choice($Pieces8()).
+
+.decl bg(b: Background, col: Color)
+
+.decl ink(b: Background, col: Color)
+ink(Bk, Col) :- background_choice(Bk), in(_, Col), !bg(Bk, Col).
+
+.decl piece_cell(pc: Piece, col: Color, p: Position)
+
+// --- the frame candidates ---
+
+.decl frame_set(k: FrameSet)
+frame_set([Bk, Pa, C1, C2]) :- piece_parts_choice(Pa), ink(Bk, C1), ink(Bk, C2).
+
+.decl frame_cell(k: FrameSet, p: Position, col: Color)
+frame_cell([Bk, Pa, C1, C2], P, Col) :-
+    frame_set([Bk, Pa, C1, C2]), in(P, Col), ( Col = C1 ; Col = C2 ).
+
+// @claim crop
+.init frame_box = Bbox<FrameSet>
+frame_box.cell(K, P) :- frame_cell(K, P, _).
+
+// The background cells of the candidate frame's box.
+.decl gap(k: FrameSet, p: Position)
+gap([Bk, Pa, C1, C2], P) :-
+    frame_box.box([Bk, Pa, C1, C2], B), in(P, Col), bg(Bk, Col), inside(P, B).
+
+// The pieces left when the candidate's colors make the frame.
+.decl piece(k: FrameSet, o: Ident)
+piece([Bk, Pa, C1, C2], O) :-
+    frame_set([Bk, Pa, C1, C2]), piece_cell([Bk, Pa, O], Col, _), Col != C1, Col != C2.
+
+// --- the exact cover ---
+
+// @claim exact-fit
+.init gap_count = Tally<FrameSet, Position>
+gap_count.item(K, P) :- gap(K, P).
+
+// @claim exact-fit
+.init piece_count = Tally<FrameSet, Position>
+piece_count.item([Bk, Pa, C1, C2], P) :- piece([Bk, Pa, C1, C2], O), piece_cell([Bk, Pa, O], _, P).
+
+// A piece's footprint, read from its own box and turned by each element of piece_turns.
+// @claim exact-fit
+.init piece_box = Bbox<Piece>
+piece_box.cell(Pc, P) :- piece_cell(Pc, _, P).
+
+.decl shape(pc: Piece, d: D4, p: Position)
+shape(Pc, D, P_t) :-
+    piece_cell(Pc, _, P), piece_box.box(Pc, B), crop(P, B, P_inner),
+    params.piece_turns(S), sym_member(S, D), apply(D, P_inner, P_t).
+
+// Where a turned piece lands with each of its cells on a gap.
+// @claim exact-fit
+.init occ = Occurrences<Pose, Unit>
+occ.shape([K, O, D], P, $U()) :-
+    gap_count.tally(K, N), piece_count.tally(K, N),   // the pieces hold as many cells as the gaps
+    piece(K, O), K = [Bk, Pa, _, _], shape([Bk, Pa, O], D, P).
+occ.cell([K, O, D], P, $U()) :- occ.shape([K, O, D], _, _), gap(K, P).
+
+.decl covers(k: FrameSet, pl: Placement, p: Position)
+covers([Bk, Pa, C1, C2], [O, D, B], P) :-
+    occ.occurrence([[Bk, Pa, C1, C2], O, D], B), shape([Bk, Pa, O], D, S), compose(B, S, P).
+
+// The placements some exact cover may hold.
+// @claim exact-fit
+.init pruning = PlacementPruning<FrameSet, Placement, Ident>
+pruning.cand(K, [O, D, B], O) :- occ.occurrence([K, O, D], B).
+pruning.conflict(K, Pl, Pl2) :- covers(K, Pl, P), covers(K, Pl2, P).
+
+// Some piece has no placement left.
+.decl stranded(k: FrameSet)
+stranded(K) :- piece(K, O), !pruning.alive(K, _, O).
+
+// Each choice of one live placement per piece.
+.init ties = TiebreakResolutions<FrameSet, Ident, Placement>
+ties.cand(K, O, Pl) :- pruning.alive(K, Pl, O), !stranded(K).
+
+.decl laid(k: FrameSet, res: TiebreakResolution, o: Ident, p: Position)
+laid(K, R, O, P) :- ties.assign(K, R, O, Pl), covers(K, Pl, P).
+
+// Two pieces of the choice overlap.
+.decl clash(k: FrameSet, res: TiebreakResolution)
+clash(K, R) :- laid(K, R, O, P), laid(K, R, O2, P), O != O2.
+
+// The frame candidates each frame reading takes.
+.decl chosen(f: FrameColors, k: FrameSet)
+
+out(P_inner, Col, [Bk, F, Pa], R) :-
+    chosen(F, K), K = [Bk, Pa, _, _],
+    ties.resolution(K, R), !clash(K, R),   // with as many piece cells as gaps, an exact cover
+    frame_box.box(K, B), crop(P, B, P_inner),
+    ( frame_cell(K, P, Col)                                // the frame stays
+    ; laid(K, R, O, P), piece_cell([Bk, Pa, O], Col, _)    // a piece fills the gap
+    ).
+
+// --- $Commonest ---
+
+// @claim background
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+bg($Commonest(), Col) :- commonest.mode($U(), Col).
+
+// --- $CornerColor ---
+
+// The colors at the grid corners.
+.decl corner(col: Color)
+corner(Col) :- in(P, Col), diag_dir_elem(D), corner_dist(P, D, 0).
+
+.decl corners_differ()
+corners_differ() :- corner(C), corner(C2), C != C2.
+
+bg($CornerColor(), Col) :- corner(Col), !corners_differ().
+
+// --- $Parts4 ---
+
+// @claim pieces
+.init parts4 = Components<Inked>
+parts4.node([Bk, Col], P) :- in(P, Col), ink(Bk, Col).
+
+piece_cell([Bk, $Parts4(), O], Col, P) :- parts4.label([Bk, Col], P, O).
+
+// --- $Pieces8 ---
+
+// @claim pieces
+.init parts8 = Components8<Inked>
+parts8.node([Bk, Col], P) :- in(P, Col), ink(Bk, Col).
+
+piece_cell([Bk, $Pieces8(), O], Col, P) :- parts8.label([Bk, Col], P, O).
+
+// --- $Search ---
+
+chosen($Search(), K) :- frame_set(K).
+
+// --- $FrameMostCells ---
+
+// @claim find-frame
+.init most = Mode<Background, Color, Position>
+most.item(Bk, Col, P) :- in(P, Col), ink(Bk, Col).
+
+// A color with the most cells lies outside the candidate.
+.decl most_outside(k: FrameSet)
+most_outside([Bk, Pa, C1, C2]) :- frame_set([Bk, Pa, C1, C2]), most.mode(Bk, C), C != C1, C != C2.
+
+chosen($FrameMostCells(), [Bk, Pa, C1, C2]) :-
+    frame_set([Bk, Pa, C1, C2]), most.mode(Bk, C1), most.mode(Bk, C2),
+    !most_outside([Bk, Pa, C1, C2]).

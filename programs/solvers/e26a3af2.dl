@@ -1,0 +1,99 @@
+// e26a3af2
+// @draft
+// @keywords: lines noise repair count rank
+// @scene stripes: the grid is cut, along one axis, into stripes that run the
+//  full length of the other axis, and each stripe has one color.
+// @scene sparse-noise: some cells carry a color other than their stripe's
+//  color, and in each line across a stripe's length, the stripe's color holds
+//  more than half of the cells.
+// @rule line-axis: the stripe axis is the axis on which each line has one
+//  color that holds more than half of its cells.
+// @rule line-mode: each stripe is painted whole with its color from before the
+//  noise.
+//     @approximated: each line on the stripe axis is painted whole with its
+//      commonest color.
+//     @witness noise-outnumbers-stripe: borderline other
+//         @relaxed sparse-noise
+
+// which axis the stripes run along
+.type Choice =
+    // @claim line-axis
+    AxisMajority {}
+    // @rule line-axis: among the axes on which every line has one commonest
+    //  color with no tie, the axis whose per-line painting changes the fewest
+    //  cells; undefined where no axis qualifies or two axes tie on the count.
+    // @witness wide-stripe: variant $AxisFewestChanges
+    // @witness heavy-noise-line: variant $AxisFewestChanges
+    //     @relaxed sparse-noise
+  | AxisFewestChanges {}
+
+// A line along an axis, named by its across component.
+.type Line = [a: Axis, p_line: Position]
+.type LineColor = [l: Line, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($AxisMajority()). impl_choice($AxisFewestChanges()).
+
+// Each cell on its line along each axis.
+.decl line_of(p: Position, l: Line)
+line_of(P, [A, P_line]) :- in(P, _), axis_elem(A), split(P, A, _, P_line).
+
+// The commonest colors of each line.
+// @claim line-axis line-mode
+.init line_colors = Mode<Line, Color, Position>
+line_colors.item(L, Col, P) :- in(P, Col), line_of(P, L).
+
+.decl stripe_axis(a: Axis, ch: Choice)
+
+// --- $AxisMajority ---
+
+// A color that holds more than half of its line's cells.
+// @claim line-axis
+.init majority = Excess<LineColor, Position>
+majority.plus([L, Col], P) :- in(P, Col), line_of(P, L).
+majority.minus([L, Col], P) :-
+    line_colors.tally(L, Col, _), line_of(P, L), in(P, Col2), Col2 != Col.
+
+// A line where one color holds more than half of the cells.
+.decl majority_line(l: Line)
+majority_line(L) :- majority.excess([L, _], _).
+
+// An axis with a line where no color holds more than half of the cells.
+.decl no_majority(a: Axis)
+no_majority(A) :- line_of(_, L), L = [A, _], !majority_line(L).
+
+stripe_axis(A, $AxisMajority()) :-
+    axis_elem(A), !no_majority(A),
+    perp(A, A2), no_majority(A2).                   // the other axis fails
+
+// --- $AxisFewestChanges ---
+
+// An axis with a line whose commonest color ties.
+.decl tied(a: Axis)
+tied(A) :- line_colors.mode(L, C1), line_colors.mode(L, C2), C1 != C2, L = [A, _].
+
+// The cells that painting each line of an untied axis changes.
+// @claim line-axis
+.init changes = Tally<Axis, Position>
+changes.domain(A) :- axis_elem(A), !tied(A).
+changes.item(A, P) :-
+    changes.domain(A), line_of(P, L), L = [A, _],
+    in(P, Col), !line_colors.mode(L, Col).          // off its line's commonest color
+
+// @claim line-axis
+.init fewest = ArgExtremes<Unit, Axis>
+fewest.cand($U(), A, N) :- changes.tally(A, N).
+
+stripe_axis(A, $AxisFewestChanges()) :-
+    fewest.low($U(), A, _),
+    perp(A, A2), !fewest.low($U(), A2, _).          // no tie with the other axis
+
+// --- Output ---
+out(P, Col, Ch) :-
+    stripe_axis(A, Ch), line_of(P, L), L = [A, _], line_colors.mode(L, Col).

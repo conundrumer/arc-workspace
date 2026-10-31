@@ -1,0 +1,413 @@
+// db615bd4
+// @draft
+// @keywords: objects color-class bbox pack rank
+// @scene dot-class: a background field with a dot of one dot color at each
+//  cell on the dot class, the cells whose row and column are both odd.
+// @scene frame: one color draws the outline of a rectangle on the dot class,
+//  a dot at each dot-class cell of that outline, in place of the dot color.
+// @scene frame-interior: inside the frame outline, the dot-class cells hold
+//  the dot color, and the other cells the background.
+// @scene pieces: two or more pieces, each in its own color, distinct from the
+//  background, the dot color and the frame color; each piece has a dot at
+//  each cell of a rectangle whose row and column are both even, at a spacing
+//  of 2, and no other cell.
+// @scene pieces-outside: every piece lies outside the frame's bounding box.
+// @scene pieces-apart: along the frame's long axis, the spans of the pieces'
+//  bounding boxes are pairwise disjoint.
+// @scene common-cross-extent: across the frame's long axis, the pieces'
+//  bounding boxes have one extent.
+// @scene exact-fit: along the frame's long axis, the pieces' bounding-box
+//  extents with `gap` between consecutive ones add up to the interior extent
+//  less a margin of 1 at each end.
+// @scene cross-room: across the long axis, the interior extent less the
+//  common block extent is even and at least 2.
+// @rule solid-outline: every cell of the frame outline takes the frame color.
+// @rule clear-interior: every interior cell of the frame takes the
+//  background, before the blocks are drawn.
+// @rule lift-pieces: every piece cell takes the background.
+// @rule stack-blocks: each piece becomes a solid block of its color the size
+//  of its bounding box; the blocks line up in the frame interior along the
+//  frame's long axis, in the order of the pieces along that axis, `gap` cells
+//  between consecutive blocks, and the stack is centered in the interior on
+//  both axes.
+// @rule keep-rest: every other cell keeps its input color.
+
+// The axis the blocks line up along
+.type StackAxis =
+    // @claim stack-blocks
+    FrameLong {}
+    // @rule stack-blocks: the blocks line up along the long side of the joint
+    //  bounding box of all the pieces; undefined where that box is square.
+    // @witness spread-vs-frame: ordinary concept
+  | SpreadAxis {}
+    // @rule stack-blocks: the blocks line up along the one axis on which
+    //  they fit, `gap` apart, in the interior less `margin` at each end;
+    //  undefined where they fit on both axes or on neither.
+    // @scene exact-fit: dropped.
+    // @witness fits-short-axis: variant $RoomAxis
+    //     @relaxed exact-fit
+  | RoomAxis {}
+
+// The order of the blocks along the stack
+.type StackOrder =
+    // @claim stack-blocks
+    SpanOrder {}
+    // @rule stack-blocks: the blocks follow the order of the pieces'
+    //  bounding-box centers along the stack axis; undefined where two
+    //  centers tie.
+    // @scene pieces-apart: dropped.
+    // @witness overlapping-spans: variant $OrderByCenter
+    //     @relaxed pieces-apart
+  | OrderByCenter {}
+    // @rule stack-blocks: the blocks follow the pieces' order along the long
+    //  side of their joint bounding box, a quarter turn in `spread_sense`
+    //  taking that order onto the stack axis where the two axes differ;
+    //  undefined where that box is square or where the spans along its long
+    //  side overlap.
+    // @witness order-across-spread: ordinary concept
+  | OrderAlongSpread {}
+
+// How the blocks sit across the stack
+.type CrossPlacement =
+    // @claim stack-blocks
+    CenterStack {}
+    // @rule stack-blocks: each block is centered across the stack on its
+    //  own; undefined where the interior extent less a block's extent is odd.
+    // @scene common-cross-extent: dropped.
+    // @witness mixed-cross-extents: variant $CenterEachBlock
+    //     @relaxed common-cross-extent
+  | CenterEachBlock {}
+
+// How the stack sits along its axis
+.type AlongPlacement =
+    // @claim stack-blocks
+    CenterAlong {}
+    // @rule stack-blocks: the gap is the one at which the stack runs from
+    //  `margin` after one end of the interior to `margin` before the other;
+    //  undefined where no gap does.
+    // @witness slack-along: borderline concept
+    //     @relaxed exact-fit
+  | GapFromFit {}
+
+// Which color draws the frame
+.type FrameParse =
+    // @claim frame
+    DotClassFrame {}
+    // @scene frame: the frame is the color, other than the background and
+    //  the dot color, with the most cells; undefined where two colors tie.
+    // @witness frame-off-dot-class: borderline $FrameLargest
+    //     @relaxed frame
+  | FrameLargest {}
+
+.type Choice = [axis: StackAxis, order: StackOrder, cross: CrossPlacement,
+                along: AlongPlacement, frame: FrameParse]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The background cells between consecutive blocks along the stack.
+    .decl gap(k: number) gap(1).
+
+    // --- $RoomAxis, $GapFromFit ---
+    // The background cells between the end blocks and the frame outline.
+    .decl margin(k: number) margin(1).
+
+    // --- $OrderAlongSpread ---
+    .decl spread_sense(s: Sense) spread_sense(SENSE_CC).
+}
+
+.init params = Params
+
+.decl stack_axis_choice(x: StackAxis)
+stack_axis_choice($FrameLong()). stack_axis_choice($SpreadAxis()). stack_axis_choice($RoomAxis()).
+
+.decl stack_order_choice(o: StackOrder)
+stack_order_choice($SpanOrder()). stack_order_choice($OrderByCenter()).
+stack_order_choice($OrderAlongSpread()).
+
+.decl cross_placement_choice(c: CrossPlacement)
+cross_placement_choice($CenterStack()). cross_placement_choice($CenterEachBlock()).
+
+.decl along_placement_choice(g: AlongPlacement)
+along_placement_choice($CenterAlong()). along_placement_choice($GapFromFit()).
+
+.decl frame_parse_choice(f: FrameParse)
+frame_parse_choice($DotClassFrame()). frame_parse_choice($FrameLargest()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([X, O, C, G, F]) :-
+    stack_axis_choice(X), stack_order_choice(O), cross_placement_choice(C),
+    along_placement_choice(G), frame_parse_choice(F),
+    ( X != $SpreadAxis() ; O != $OrderAlongSpread() ).
+
+// The key of one stack layout: the frame, the order, the direction the stack
+// is read from, and the gap.
+.type Layout = [f: FrameParse, o: StackOrder, d: Dir, g: number]
+.type OrderKey = [f: FrameParse, o: StackOrder, d: Dir]
+// A line of the stack: a line of piece a's span, a = b; or a gap line between
+// consecutive pieces a and b.
+.type Token = [a: Color, p: Position, b: Color]
+.type LayoutToken = [k: Layout, t: Token]
+
+// --- the scene ---
+
+// @claim dot-class
+.init palette = Mode<Unit, Color, Position>
+palette.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- palette.mode($U(), Col).
+
+// The dot color: the commonest color off the background.
+// @claim dot-class
+.init inks = Mode<Unit, Color, Position>
+inks.item($U(), Col, P) :- in(P, Col), !bg(Col).
+
+.decl dot(col: Color)
+dot(Col) :- inks.mode($U(), Col).
+
+.decl frame_cand(f: FrameParse, col: Color)
+
+// @claim frame
+.init frame_color = Unanimous<FrameParse, Color>
+frame_color.item(F, Col) :- frame_cand(F, Col).
+
+// @claim frame
+.init frame_box = Bbox<FrameParse>
+frame_box.cell(F, P) :- frame_color.value(F, Col), in(P, Col).
+
+// @claim frame-interior
+.init interior_box = Bbox<FrameParse>
+interior_box.cell(F, P) :- frame_box.box(F, B), in(P, _), interior(P, B).
+
+// An interior cell, in the interior's own frame.
+.decl inner(f: FrameParse, q: Position, q_inner: Position)
+inner(F, Q, Q_inner) :- interior_box.box(F, B), in(Q, _), crop(Q, B, Q_inner).
+
+// The lines of the interior along axis a, in its own frame.
+.decl inner_line(f: FrameParse, a: Axis, l: Position)
+inner_line(F, A, L) :- inner(F, _, Q_inner), axis_elem(A), split(Q_inner, A, L, _).
+
+.decl piece(f: FrameParse, col: Color)
+piece(F, Col) :-
+    frame_color.value(F, _), in(_, Col), !bg(Col), !dot(Col), !frame_color.value(F, Col).
+
+// @claim pieces stack-blocks
+.init piece_box = Bbox<Color>
+piece_box.cell(Col, P) :- in(P, Col), !bg(Col), !dot(Col).
+
+// A cell of piece col's block: the grid cell, and the cell in the block.
+.decl block(col: Color, p: Position, p_rel: Position)
+block(Col, P, P_rel) :- piece_box.box(Col, B), in(P, _), crop(P, B, P_rel).
+
+// The joint bounding box of the pieces.
+// @claim stack-blocks
+.init spread = Bbox<FrameParse>
+spread.cell(F, P) :- piece(F, Col), in(P, Col).
+
+// The longer axis of the interior (frame) and of the pieces' joint box
+// (spread).
+.decl long_axis(f: FrameParse, b: Box, a: Axis)
+long_axis(F, B, A) :-
+    ( interior_box.box(F, B) ; spread.box(F, B) ), in(P, _),
+    box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2), N1 > N2.
+
+// --- the order of the pieces ---
+
+// Piece col1 lies wholly nearer d than piece col2.
+.decl span_before(f: FrameParse, d: Dir, col1: Color, col2: Color)
+span_before(F, D, Col1, Col2) :-
+    piece(F, Col1), piece(F, Col2), Col1 != Col2, dir_elem(D), !span_defect(D, Col1, Col2).
+
+// Some cell of col1 is no nearer d than some cell of col2.
+.decl span_defect(d: Dir, col1: Color, col2: Color)
+span_defect(D, Col1, Col2) :-
+    in(P1, Col1), in(P2, Col2), Col1 != Col2,
+    !bg(Col1), !dot(Col1), !bg(Col2), !dot(Col2),
+    dir_elem(D), !nearer(D, P1, P2).
+
+.decl piece_before(k: OrderKey, col1: Color, col2: Color)
+
+// --- $SpanOrder ---
+
+piece_before([F, $SpanOrder(), D], Col1, Col2) :- span_before(F, D, Col1, Col2).
+
+// --- $OrderByCenter ---
+
+// A cell on the center line of piece col's bounding box, across axis a.
+.decl center(col: Color, a: Axis, p: Position)
+center(Col, A, P) :- block(Col, P, P_rel), axis_of(D, A), dist_pair(P_rel, D, K, K).
+
+piece_before([F, $OrderByCenter(), D], Col1, Col2) :-
+    piece(F, Col1), piece(F, Col2), axis_of(D, A),
+    center(Col1, A, P1), center(Col2, A, P2), nearer(D, P1, P2).
+
+// --- $OrderAlongSpread ---
+
+piece_before([F, $OrderAlongSpread(), D], Col1, Col2) :-
+    spread.box(F, B), long_axis(F, B, A_s), span_before(F, D_s, Col1, Col2), axis_of(D_s, A_s),
+    ( axis_of(D, A_s), D = D_s                                     // one axis
+    ; dir_elem(D), !axis_of(D, A_s), params.spread_sense(S), turn(S, D_s, D)
+    ).
+
+// --- the stack ---
+
+// Two pieces that the order leaves unordered.
+.decl unordered(k: OrderKey)
+unordered([F, O, D]) :-
+    piece(F, Col1), piece(F, Col2), Col1 != Col2, stack_order_choice(O), dir_elem(D),
+    !piece_before([F, O, D], Col1, Col2), !piece_before([F, O, D], Col2, Col1).
+
+// @claim stack-blocks
+.init piece_order = Order<OrderKey, Color>
+piece_order.elem([F, O, D], Col) :- piece(F, Col), stack_order_choice(O), dir_elem(D).
+piece_order.before(K, Col1, Col2) :- piece_before(K, Col1, Col2).
+
+// The gaps the layouts read: the stored gap, and each gap a stack could
+// take in the interior.
+// @ignore: head-zero — a stack with no line between its blocks is one candidate
+.decl gap_cand(f: FrameParse, a: Axis, g: number)
+gap_cand(F, A, G) :- frame_box.box(F, _), axis_elem(A), params.gap(G).
+gap_cand(F, A, 0) :- frame_box.box(F, _), axis_elem(A).
+gap_cand(F, A, G) :- inner(F, _, Q_inner), axis_elem(A), sub_extent(Q_inner, A, G).
+
+.init gap_lines = AxisFrame<number>
+gap_lines.extent(G, A, G) :- gap_cand(_, A, G).
+
+.decl layout(k: Layout)
+layout([F, O, D, G]) :-
+    stack_order_choice(O), dir_elem(D), axis_of(D, A), gap_cand(F, A, G),
+    !unordered([F, O, D]).
+
+// @claim stack-blocks
+.init stack = Order<Layout, Token>
+stack.elem([F, O, D, G], [Col, L, Col]) :-                   // a span line of a piece
+    layout([F, O, D, G]), piece(F, Col), axis_of(D, A),
+    block(Col, P, _), split(P, A, L, _).
+stack.elem([F, O, D, G], [Col1, L, Col2]) :-                 // a gap line
+    layout([F, O, D, G]), piece_order.next([F, O, D], Col1, Col2),
+    axis_of(D, A), gap_lines.cell(G, A, L).
+stack.before([F, O, D, G], [A1, L1, B1], [A2, L2, B2]) :-
+    stack.elem([F, O, D, G], [A1, L1, B1]), stack.elem([F, O, D, G], [A2, L2, B2]),
+    ( piece_order.before([F, O, D], B1, A2)                    // past what follows it
+    ; B1 = A2, (A1 != B1 ; A2 != B2)                          // a gap at its piece
+    ; A1 = A2, B1 = B2, nearer(D, L1, L2)                     // within one span or gap
+    ).
+
+// Each stack line, as a line of the stack's own frame.
+.init stack_line = DirPack<LayoutToken>
+stack_line.edge([K, T], D, R) :- stack.rank(K, T, R), K = [_, _, D, _].
+stack_line.edge([K, T], D2, R) :- stack.rank_desc(K, T, R), K = [_, _, D, _], opposite(D, D2).
+
+// The axis each case stacks along.
+.decl stack_axis(f: FrameParse, x: StackAxis, o: StackOrder, a: Axis)
+
+// The direction and gap of each case's layout.
+.decl case_layout(ch: Choice, d: Dir, g: number)
+
+.decl used(k: Layout)
+used([F, O, D, G]) :- case_layout([_, O, _, _, F], D, G).
+
+// Each block cell placed in the interior: its line of the stack, its place
+// across in its block, and the stack centered.
+.decl placed(k: Layout, p: Position, q: Position, col: Color)
+placed(K, P, Q, Col) :-
+    used(K), K = [F, _, D, _], axis_of(D, A),
+    block(Col, P, P_rel), split(P, A, L, _), split(P_rel, A, _, Across),
+    stack_line.axis_pos([K, [Col, L, Col]], A, L_stack), compose(L_stack, Across, C),
+    inner(F, Q, Q_inner), relative(C, Q_inner, X), centered(X).
+
+.decl unplaced(k: Layout)
+unplaced(K) :- used(K), K = [F, _, _, _], piece(F, Col), block(Col, P, _), !placed(K, P, _, Col).
+
+// The case's layout, where every block has its place.
+.decl complete(ch: Choice, k: Layout)
+
+// --- the output ---
+
+out(Q, Col, Ch) :-
+    complete(Ch, [F, _, _, _]), frame_box.box(F, B), in(Q, Col_in),
+    ( box_edge(Q, B, _), frame_color.value(F, Col)                          // the outline
+    ; interior(Q, B), complete(Ch, K), placed(K, _, Q, Col)                 // a block
+    ; interior(Q, B), complete(Ch, K), !placed(K, _, Q, _), bg(Col)         // cleared
+    ; !inside(Q, B), piece(F, Col_in), bg(Col)                              // a lifted piece
+    ; !inside(Q, B), !piece(F, Col_in), Col = Col_in                        // the rest
+    ).
+
+// --- $FrameLong ---
+
+stack_axis(F, $FrameLong(), O, A) :-
+    interior_box.box(F, B), long_axis(F, B, A), stack_order_choice(O).
+
+// --- $SpreadAxis ---
+
+stack_axis(F, $SpreadAxis(), O, A) :- spread.box(F, B), long_axis(F, B, A), stack_order_choice(O).
+
+// --- $RoomAxis, $GapFromFit ---
+
+// The stack laid along its axis with its first line `margin` from the
+// interior's edge, and the distance of its last line from the far edge.
+.decl far_end(k: Layout, n: number)
+far_end(K, N) :-
+    stack.first(K, T), K = [F, _, D, _], axis_of(D, A),
+    stack_line.axis_pos([K, T], A, L0), inner_line(F, A, L), relative(L0, L, X),
+    params.margin(M), dist(X, D, M), opposite(D, D2), dist(X, D2, N).
+
+// --- $RoomAxis ---
+
+stack_axis(F, $RoomAxis(), O, A) :- room(F, O, A), perp(A, A2), !room(F, O, A2).
+
+// The stack fits along axis a, `margin` from each end or more.
+.decl room(f: FrameParse, o: StackOrder, a: Axis)
+room(F, O, A) :- far_end([F, O, D, G], N), params.gap(G), params.margin(M), N >= M, axis_of(D, A).
+
+// --- $CenterAlong ---
+
+case_layout([X, O, C, $CenterAlong(), F], D, G) :-
+    impl_choice([X, O, C, $CenterAlong(), F]), stack_axis(F, X, O, A), axis_of(D, A),
+    params.gap(G), layout([F, O, D, G]).
+
+// --- $GapFromFit ---
+
+case_layout([X, O, C, $GapFromFit(), F], D, G) :-
+    impl_choice([X, O, C, $GapFromFit(), F]), stack_axis(F, X, O, A), axis_of(D, A),
+    far_end([F, O, D, G], M), params.margin(M).
+
+// --- $CenterStack ---
+
+// Two pieces whose blocks differ in extent across axis a.
+.decl mixed_cross(f: FrameParse, a: Axis)
+mixed_cross(F, A) :-
+    piece(F, Col1), piece_box.box(Col1, B1), piece(F, Col2), piece_box.box(Col2, B2),
+    in(P, _), perp(A, A2), box_extent(B1, P, A2, N1), box_extent(B2, P, A2, N2), N1 != N2.
+
+complete(Ch, [F, O, D, G]) :-
+    case_layout(Ch, D, G), Ch = [_, O, $CenterStack(), _, F], !unplaced([F, O, D, G]),
+    axis_of(D, A), !mixed_cross(F, A).
+
+// --- $CenterEachBlock ---
+
+complete(Ch, [F, O, D, G]) :-
+    case_layout(Ch, D, G), Ch = [_, O, $CenterEachBlock(), _, F], !unplaced([F, O, D, G]).
+
+// --- $DotClassFrame ---
+
+// The dot class: the cells the dots reach in steps of two cells.
+// @claim dot-class frame
+.init lattice = Reach<Unit>
+lattice.node($U(), P) :- in(P, Col), !bg(Col).
+lattice.step(V) :- dir_elem(D), step_offset(D, V1), compose(V1, V1, V).
+lattice.seed($U(), P) :- in(P, Col), dot(Col).
+
+.decl off_lattice(col: Color)
+off_lattice(Col) :- in(P, Col), !lattice.reach($U(), P).
+
+frame_cand($DotClassFrame(), Col) :- in(_, Col), !bg(Col), !dot(Col), !off_lattice(Col).
+
+// --- $FrameLargest ---
+
+// @claim frame
+.init largest = ArgExtremes<Unit, Color>
+largest.cand($U(), Col, N) :- inks.tally($U(), Col, N), !dot(Col).
+
+frame_cand($FrameLargest(), Col) :- largest.high($U(), Col, _).

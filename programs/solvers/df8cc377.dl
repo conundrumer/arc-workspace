@@ -1,0 +1,229 @@
+// df8cc377
+// @draft
+// @keywords: objects color-class count match parity rank
+// @scene hollow-frames: a few one-cell-thick rectangle outlines, each in its own color, each around an interior of background cells at least one cell on each side.
+// @scene scattered-dots: single cells in colors that no frame has, scattered on the background outside the frames, with one dot color per frame.
+// @scene counts-match: for each frame, exactly one dot color has as many dots as the frame's checkerboard has cells, and no two frames share that color.
+// @rule erase-dots: every dot becomes background.
+// @rule keep-frames: every frame cell keeps its color.
+// @rule checker-fill: in each frame's interior, the cells whose row and column offsets from the anchor corner of the interior have an even sum take the dot color whose dot count equals the number of those cells, and the other interior cells stay background.
+
+// how a frame picks its dot color
+.type Match =
+    // @claim checker-fill
+    ExactCount {}
+    // @rule checker-fill: the frames are ranked by checkerboard cell count and the dot colors by dot count, both dense and ascending, and the frame of rank k takes the dot color of rank k. Undefined where two dot colors of one rank meet a frame of that rank.
+    // @witness counts-off-by-one: foreign $MatchByRank
+    //     @relaxed counts-match
+  | MatchByRank {k: RankKey}
+
+// what ranks the frames
+.type RankKey =
+    // @claim checker-fill
+    RankByChecker {}
+    // @rule checker-fill: the frames are ranked by interior area.
+    // @witness tied-checker-counts: foreign $RankByArea
+    //     @relaxed counts-match
+  | RankByArea {}
+
+// what a dot color's count counts
+.type Count =
+    // @claim checker-fill
+    CountCells {}
+    // @rule checker-fill: a dot color's count is the number of its 4-connected pieces.
+    // @witness touching-dots: variant concept
+    //     @relaxed scattered-dots
+  | CountPieces {}
+
+// what a frame is
+.type FrameParse =
+    // @claim hollow-frames
+    ColorClassFrame {}
+    // @scene hollow-frames: a frame is a 4-connected one-color piece that forms a rectangle outline, and a dot is every other non-background cell.
+    // @witness shared-frame-color: variant $FramePerPiece
+    //     @relaxed hollow-frames
+  | FramePerPiece {}
+
+// what happens to the dots of a color that no frame takes
+.type DotFate =
+    // @claim erase-dots
+    EraseAllDots {}
+    // @rule erase-dots: only the dots of a color that a frame takes become background, and the others keep their color.
+    // @witness frameless-dot-color: variant concept
+    //     @relaxed scattered-dots
+  | KeepUnmatchedDots {}
+
+.type Choice = [m: Match, c: Count, f: FrameParse, u: DotFate]
+
+.type DotKey = [f: FrameParse, col: Color]
+.type FrameKey = [f: FrameParse, b: Box]
+.type FrameRankKey = [f: FrameParse, k: RankKey]
+.type DotRankKey = [f: FrameParse, c: Count]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    // the interior corner whose cell the checkerboard fills
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+}
+
+.init params = Params
+
+.decl match_choice(m: Match)
+match_choice($ExactCount()). match_choice($MatchByRank($RankByChecker())). match_choice($MatchByRank($RankByArea())).
+
+.decl count_choice(c: Count)
+count_choice($CountCells()). count_choice($CountPieces()).
+
+.decl frame_parse_choice(f: FrameParse)
+frame_parse_choice($ColorClassFrame()). frame_parse_choice($FramePerPiece()).
+
+.decl dot_fate_choice(u: DotFate)
+dot_fate_choice($EraseAllDots()). dot_fate_choice($KeepUnmatchedDots()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, C, F, U]) :- match_choice(M), count_choice(C), frame_parse_choice(F), dot_fate_choice(U).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// Each frame under a parse, by its outline box.
+.decl frame(f: FrameParse, b: Box, col: Color)
+.decl frame_cell(f: FrameParse, p: Position)
+.decl dot(f: FrameParse, p: Position, col: Color)
+
+// The frame's interior.
+// @claim hollow-frames
+.init hollow = Bbox<FrameKey>
+hollow.cell([F, B], P) :- frame(F, B, _), in(P, _), interior(P, B).
+
+// An interior cell at an even taxicab distance from the interior's anchor
+// corner: some interior cell lies at half that distance.
+.decl checker(fr: FrameKey, p: Position)
+checker(Fr, P) :-
+    hollow.box(Fr, B_in), params.anchor(D),
+    hollow.cell(Fr, P), crop(P, B_in, P_rel), corner_dist(P_rel, D, K),
+    hollow.cell(Fr, M), crop(M, B_in, M_rel), corner_dist(M_rel, D, J),
+    dir_of(D, _, D_edge), opposite(D_edge, D_away),
+    jump(M_rel, D_away, J, Q), corner_dist(Q, D, K).    // M is halfway out to K
+
+.decl dot_count(f: FrameParse, c: Count, col: Color, n: number)
+
+// The dot color each frame takes.
+.decl take(m: Match, c: Count, f: FrameParse, b: Box, col: Color)
+
+.decl filled(ch: Choice, p: Position, col: Color)
+filled([M, C, F, U], P, Col) :-
+    impl_choice([M, C, F, U]), take(M, C, F, B, Col), checker([F, B], P).
+
+.decl kept(ch: Choice, p: Position, col: Color)
+
+out(P, Col, Ch) :- filled(Ch, P, Col).
+out(P, Col, Ch) :- kept(Ch, P, Col).
+out(P, Col, [M, C, F, U]) :- impl_choice([M, C, F, U]), frame_cell(F, P), in(P, Col).
+out(P, Col, [M, C, F, U]) :-
+    impl_choice([M, C, F, U]), in(P, _), !frame_cell(F, P),
+    !filled([M, C, F, U], P, _), !kept([M, C, F, U], P, _), params.background(Col).
+
+// --- $ColorClassFrame ---
+// @claim hollow-frames
+.init class_outline = Outlines<Color>
+class_outline.node(Col, P) :- ink(P, Col).
+
+// A cell of the color off the outline.
+.decl class_stray(col: Color, b: Box)
+class_stray(Col, B) :- class_outline.box(Col, B), ink(P, Col), ( !inside(P, B) ; interior(P, B) ).
+
+frame($ColorClassFrame(), B, Col) :- class_outline.box(Col, B), !class_stray(Col, B).
+frame_cell($ColorClassFrame(), P) :- frame($ColorClassFrame(), _, Col), ink(P, Col).
+dot($ColorClassFrame(), P, Col) :- ink(P, Col), !frame($ColorClassFrame(), _, Col).
+
+// --- $FramePerPiece ---
+// @claim hollow-frames
+.init pieces = Components<Color>
+pieces.node(Col, P) :- ink(P, Col).
+
+// @claim hollow-frames
+.init piece_outline = Outlines<Ident>
+piece_outline.node(Id, P) :- pieces.label(_, P, Id).
+
+// A cell of the piece off the outline.
+.decl piece_stray(id: Ident, b: Box)
+piece_stray(Id, B) :-
+    piece_outline.box(Id, B), pieces.label(_, P, Id), ( !inside(P, B) ; interior(P, B) ).
+
+.decl frame_piece(id: Ident, b: Box)
+frame_piece(Id, B) :- piece_outline.box(Id, B), !piece_stray(Id, B).
+
+frame($FramePerPiece(), B, Col) :- frame_piece(Id, B), pieces.label(Col, _, Id).
+frame_cell($FramePerPiece(), P) :- frame_piece(Id, _), pieces.label(_, P, Id).
+dot($FramePerPiece(), P, Col) :- ink(P, Col), !frame_cell($FramePerPiece(), P).
+
+// --- $CountCells ---
+// @claim checker-fill
+.init dot_cells = Tally<DotKey, Position>
+dot_cells.item([F, Col], P) :- dot(F, P, Col).
+
+dot_count(F, $CountCells(), Col, N) :- dot_cells.tally([F, Col], N).
+
+// --- $CountPieces ---
+// @claim checker-fill
+.init dot_pieces = Components<DotKey>
+dot_pieces.node([F, Col], P) :- dot(F, P, Col).
+
+// @claim checker-fill
+.init dot_piece_count = Tally<DotKey, Ident>
+dot_piece_count.item(K, Id) :- dot_pieces.label(K, _, Id).
+
+dot_count(F, $CountPieces(), Col, N) :- dot_piece_count.tally([F, Col], N).
+
+// --- $ExactCount, $RankByChecker ---
+// @claim checker-fill
+.init checker_size = Tally<FrameKey, Position>
+checker_size.item(Fr, P) :- checker(Fr, P).
+
+// --- $ExactCount ---
+take($ExactCount(), C, F, B, Col) :- checker_size.tally([F, B], N), dot_count(F, C, Col, N).
+
+// --- $MatchByRank ---
+.decl frame_score(k: RankKey, fr: FrameKey, n: number)
+
+// @claim checker-fill
+.init frame_rank = Ordinal<FrameRankKey>
+frame_rank.idx_set([F, K], N) :- frame_score(K, [F, _], N).
+
+// @claim checker-fill
+.init dot_rank = Ordinal<DotRankKey>
+dot_rank.idx_set([F, C], N) :- dot_count(F, C, _, N).
+
+take($MatchByRank(K), C, F, B, Col) :-
+    frame_score(K, [F, B], N), frame_rank.rank([F, K], N, R),
+    dot_count(F, C, Col, N2), dot_rank.rank([F, C], N2, R).
+
+// --- $RankByChecker ---
+frame_score($RankByChecker(), Fr, N) :- checker_size.tally(Fr, N).
+
+// --- $RankByArea ---
+// @claim checker-fill
+.init hollow_size = Tally<FrameKey, Position>
+hollow_size.item(Fr, P) :- hollow.cell(Fr, P).
+
+frame_score($RankByArea(), Fr, N) :- hollow_size.tally(Fr, N).
+
+// --- $KeepUnmatchedDots ---
+kept([M, C, F, $KeepUnmatchedDots()], P, Col) :-
+    impl_choice([M, C, F, $KeepUnmatchedDots()]), dot(F, P, Col), !take(M, C, F, _, Col).
+
+.comp Determine {
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not a commonest color of another.
+    .decl not_commonest(c: Color)
+    not_commonest(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !not_commonest(Col).
+}

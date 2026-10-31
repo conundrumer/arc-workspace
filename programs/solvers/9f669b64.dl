@@ -46,8 +46,6 @@
     //     @relaxed target
     // @witness target-behind: foreign $PushOut
     //     @relaxed target
-    // @witness wedge-corner: foreign any
-    //     @relaxed wedge
   | TowardTarget {}
     // @rule launch-direction: the projectile moves toward the side the wedge
     //  narrows to: off its back side, every wedge cell has a wedge cell
@@ -82,13 +80,9 @@
     // @witness odd-aside: foreign $PushOut
     //     @relaxed projectile
     //     @relaxed target
-    // @witness odd-even: borderline any
-    //     @relaxed projectile
     // @witness odd-offset: foreign $OddFloor
     //     @relaxed projectile
     //     @relaxed target
-    // @witness odd-side-tip: foreign concept
-    //     @relaxed wedge
   | OddFloor {}
     // @rule target-split: each half shifts by the count of the projectile's
     //  lines it covers ahead of the projectile. A cell on the cut line is in
@@ -237,7 +231,7 @@ roles($ProjectileBetween(), W, P, T) :-
 
 // --- $FromWedge ---
 shot(R, $FromWedge(), P, T, D) :-
-    roles(R, W, P, T), beyond(W, P, D_back), opposite(D_back, D).
+    roles(R, W, P, T), beyond(P, W, D).
 
 // --- $TowardTarget ---
 shot(R, $TowardTarget(), P, T, D) :- roles(R, _, P, T), beyond(T, P, D).

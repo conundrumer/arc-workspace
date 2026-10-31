@@ -1,0 +1,2359 @@
+{
+  "id": "e6de6e8f",
+  "witnesses": [{
+    "id": "wide-step",
+    "separates": "a three-column L piece: the stored table has no entry for it and the concept is undefined; $DerivedSegments paints a run of the piece's width, three cells; $FixedLengths paints a run of two, as for a two-column L",
+    "input": [
+      [2,0,0,0,0,2,0,2,0,2,0,0,2],
+      [2,2,2,0,2,2,0,2,0,2,2,0,2]
+    ],
+    "output": [{
+      "cases": ["$TableSegments"],
+      "grid": null
+    }, {
+      "cases": ["$GlyphExtent & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,2,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,2,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredWidth","$FixedLengths & $WidthFromSteps"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "short-drop",
+    "separates": "four L pieces and one bar, so the pipe drops six rows: the stored height keeps 8 rows and leaves the last one blank; $HeightFromPipe makes the frame 7 rows; $WidthFromSteps makes it 9 columns with the source at column 3",
+    "input": [
+      [2,0,0,0,2,0,2,0,0,0,2,0,2],
+      [2,2,0,2,2,0,2,2,0,2,2,0,2]
+    ],
+    "output": [{
+      "cases": [
+        "$HeightFromInput & $StoredWidth",
+        "$HeightFromInputDiff & $StoredWidth",
+        "$StoredHeight & $StoredWidth"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$HeightFromInput & $WidthFromInputDiff",
+        "$HeightFromInputDiff & $WidthFromInputDiff",
+        "$StoredHeight & $WidthFromInputDiff & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$HeightFromInput & $SourceCentered",
+        "$HeightFromInputDiff & $SourceCentered",
+        "$StoredHeight & $WidthFromSteps & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$HeightFromInput & $WidthFromSteps & $StoredSource",
+        "$HeightFromInputDiff & $WidthFromSteps & $StoredSource",
+        "$StoredHeight & $WidthFromSteps & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromPipe & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromPipe & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff & $SourceCentered"],
+      "grid": null
+    }]
+  }, {
+    "id": "five-steps",
+    "separates": "five L pieces and one bar: the stored width keeps 7 columns; $WidthFromSteps and $WidthFromInputDiff make the frame 11 columns, the strip's 16 less 5, with the source at column 3",
+    "input": [
+      [2,0,0,0,2,0,2,0,0,0,2,0,2,0,0,2],
+      [2,2,0,2,2,0,2,2,0,2,2,0,2,2,0,2]
+    ],
+    "output": [{
+      "cases": ["$StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff & $StoredSource","$WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromSteps & $SourceCentered","$WidthFromInputDiff & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,0,3,0,0,0,0,0],
+        [0,0,0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,0,0,2,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "wide-frame",
+    "separates": "train0's input in a frame 9 columns wide: the stored source column keeps the source at column 3; $SourceCentered puts it at column 4, the center",
+    "input": [
+      [2,0,0,0,2,0,2,0,2,0,0,2],
+      [2,2,0,2,2,0,2,0,2,2,0,2]
+    ],
+    "assign": {
+      "out_dims": [
+        ["AXIS_V",8],
+        ["AXIS_H",9]
+      ]
+    },
+    "output": [{
+      "cases": ["$StoredWidth & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff","$WidthFromSteps"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$StoredWidth & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "tall-strip",
+    "separates": "a strip of three rows holding two three-row bars, with the table holding an entry for a three-row bar: the stored height keeps 8 rows; $HeightFromInput makes the frame 12 rows, four times the strip's; $HeightFromInputDiff makes it 9, the strip's 3 plus 6; $HeightFromPipe makes it 7; $FixedLengths drops two rows per bar",
+    "input": [
+      [2,0,2],
+      [2,0,2],
+      [2,0,2]
+    ],
+    "assign": {
+      "piece_glyph": [
+        [0,[0,1,0,0]],
+        [0,[1,0,0,0]],
+        [1,[0,1,0,1]],
+        [1,[1,0,0,1]],
+        [1,[1,0,1,0]],
+        [2,[0,1,1,0]],
+        [2,[1,0,0,1]],
+        [2,[1,0,1,0]],
+        [3,[0,2,0,0]],
+        [3,[1,1,0,0]],
+        [3,[2,0,0,0]]
+      ],
+      "piece_paint": [
+        [0,[0,0,0,0]],
+        [0,[1,-1,0,0]],
+        [1,[0,0,0,0]],
+        [1,[0,0,1,-1]],
+        [2,[0,0,0,0]],
+        [2,[0,0,-1,1]],
+        [3,[0,0,0,0]],
+        [3,[1,-1,0,0]],
+        [3,[2,-2,0,0]]
+      ],
+      "piece_exit": [
+        [0,[2,-2,0,0]],
+        [1,[1,-1,1,-1]],
+        [2,[1,-1,-1,1]],
+        [3,[3,-3,0,0]]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$TableSegments & $StoredHeight & $StoredWidth",
+        "$GlyphExtent & $StoredHeight & $StoredWidth"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$TableSegments & $HeightFromInput & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff","$WidthFromSteps & $StoredSource"],
+      "grid": null
+    }, {
+      "cases": ["$TableSegments & $HeightFromInput & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$TableSegments & $HeightFromInputDiff & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$TableSegments & $HeightFromInputDiff & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $HeightFromPipe & $StoredWidth",
+        "$GlyphExtent & $HeightFromPipe & $StoredWidth"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $HeightFromPipe & $SourceCentered",
+        "$GlyphExtent & $HeightFromPipe & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $StoredHeight & $WidthFromSteps & $SourceCentered",
+        "$GlyphExtent & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInput & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInput & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInputDiff & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInputDiff & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredHeight & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredHeight & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0]
+      ]
+    }]
+  }, {
+    "id": "bg=RarestColor",
+    "separates": "train0's input with a blank column on each side, so 0 outnumbers 2: the stored colors give train0's output; bg=RarestColor takes 2 as the background and fills the frame with 2",
+    "input": [
+      [0,2,0,0,0,2,0,2,0,2,0,0,2,0],
+      [0,2,2,0,2,2,0,2,0,2,2,0,2,0]
+    ],
+    "output": [{
+      "cases": ["$StoredWidth & bg=stored & pipe_color=stored","$WidthFromSteps"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0]
+      ]
+    }, {
+      "cases": ["pipe_color=DominantColor"],
+      "grid": null
+    }, {
+      "cases": ["bg=RarestColor"],
+      "grid": [
+        [2,2,2,3,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "pipe_color=DominantColor",
+    "separates": "train0's input with its pieces in 4: the stored pipe color 2 finds no piece and leaves only the source; pipe_color=DominantColor takes 4, the commonest color, and lays train0's pipe in 4",
+    "input": [
+      [4,0,0,0,4,0,4,0,4,0,0,4],
+      [4,4,0,4,4,0,4,0,4,4,0,4]
+    ],
+    "output": [{
+      "cases": [
+        "$HeightFromInput & $StoredWidth",
+        "$HeightFromInput & $WidthFromInputDiff",
+        "$HeightFromInputDiff & $StoredWidth",
+        "$HeightFromInputDiff & $WidthFromInputDiff",
+        "$StoredHeight & $StoredWidth & pipe_color=stored",
+        "$StoredHeight & $WidthFromInputDiff"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$HeightFromInput & $SourceCentered",
+        "$HeightFromInputDiff & $SourceCentered",
+        "$StoredHeight & $WidthFromSteps & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$WidthFromSteps & $StoredSource"],
+      "grid": null
+    }, {
+      "cases": ["$HeightFromPipe & $StoredWidth","$HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [3]
+      ]
+    }, {
+      "cases": ["pipe_color=DominantColor"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,4,4,0,0],
+        [0,0,0,4,4,0,0],
+        [0,0,0,4,0,0,0],
+        [0,0,0,4,0,0,0],
+        [0,0,0,4,4,0,0],
+        [0,0,0,0,4,0,0],
+        [0,0,0,0,4,0,0]
+      ]
+    }]
+  }, {
+    "id": "diagonal-contact",
+    "separates": "a piece of two cells that touch at a corner, with the table holding an entry for a one-cell bar: the column-run parse and $Components8 read one glyph the table lacks and are undefined; $ComponentPieces reads two one-cell bars and drops one row for each",
+    "input": [
+      [2,0,0,0,2,0,2,0,0,2,0,0,2],
+      [2,2,0,2,2,0,0,2,0,2,2,0,2]
+    ],
+    "assign": {
+      "piece_glyph": [
+        [0,[0,1,0,0]],
+        [0,[1,0,0,0]],
+        [1,[0,1,0,1]],
+        [1,[1,0,0,1]],
+        [1,[1,0,1,0]],
+        [2,[0,1,1,0]],
+        [2,[1,0,0,1]],
+        [2,[1,0,1,0]],
+        [3,[0,0,0,0]]
+      ],
+      "piece_paint": [
+        [0,[0,0,0,0]],
+        [0,[1,-1,0,0]],
+        [1,[0,0,0,0]],
+        [1,[0,0,1,-1]],
+        [2,[0,0,0,0]],
+        [2,[0,0,-1,1]],
+        [3,[0,0,0,0]]
+      ],
+      "piece_exit": [
+        [0,[2,-2,0,0]],
+        [1,[1,-1,1,-1]],
+        [2,[1,-1,-1,1]],
+        [3,[1,-1,0,0]]
+      ]
+    },
+    "output": [{
+      "cases": ["$ColumnRuns","bg=RarestColor","$TableSegments & $Components8"],
+      "grid": null
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $StoredWidth & bg=stored",
+        "$TableSegments & $ComponentPieces & $WidthFromSteps",
+        "$GlyphExtent & $ComponentPieces & $StoredWidth & bg=stored",
+        "$GlyphExtent & $ComponentPieces & $WidthFromSteps"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $WidthFromInputDiff",
+        "$GlyphExtent & $ComponentPieces & $WidthFromInputDiff"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$GlyphExtent & $Components8 & $StoredHeight & $WidthFromSteps & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $ComponentPieces & $HeightFromInput",
+        "$DerivedSegments & $ComponentPieces & $HeightFromInputDiff",
+        "$FixedLengths & $ComponentPieces & $StoredHeight & $StoredWidth & bg=stored",
+        "$FixedLengths & $ComponentPieces & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $ComponentPieces & $HeightFromPipe & $StoredWidth & bg=stored",
+        "$DerivedSegments & $ComponentPieces & $HeightFromPipe & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $ComponentPieces & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $ComponentPieces & $StoredHeight & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $Components8 & $HeightFromInput & $StoredSource",
+        "$DerivedSegments & $Components8 & $HeightFromInputDiff & $StoredSource",
+        "$FixedLengths & $Components8 & $StoredHeight & $StoredWidth & bg=stored"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $Components8 & $HeightFromInput & $SourceCentered",
+        "$DerivedSegments & $Components8 & $HeightFromInputDiff & $SourceCentered",
+        "$FixedLengths & $Components8 & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $StoredHeight & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredHeight & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "gapped-column",
+    "separates": "a three-row strip whose middle piece has two cells in adjacent columns that do not touch, with the table holding entries for a one-cell bar and a three-row bar: the column-run parse reads one glyph the table lacks and is undefined; $ComponentPieces and $Components8 read a three-row bar and two one-cell bars",
+    "input": [
+      [2,0,2,0,0],
+      [2,0,0,0,0],
+      [2,0,0,2,0]
+    ],
+    "assign": {
+      "piece_glyph": [
+        [0,[0,1,0,0]],
+        [0,[1,0,0,0]],
+        [1,[0,1,0,1]],
+        [1,[1,0,0,1]],
+        [1,[1,0,1,0]],
+        [2,[0,1,1,0]],
+        [2,[1,0,0,1]],
+        [2,[1,0,1,0]],
+        [3,[0,0,0,0]],
+        [4,[0,2,0,0]],
+        [4,[1,1,0,0]],
+        [4,[2,0,0,0]]
+      ],
+      "piece_paint": [
+        [0,[0,0,0,0]],
+        [0,[1,-1,0,0]],
+        [1,[0,0,0,0]],
+        [1,[0,0,1,-1]],
+        [2,[0,0,0,0]],
+        [2,[0,0,-1,1]],
+        [3,[0,0,0,0]],
+        [4,[0,0,0,0]],
+        [4,[1,-1,0,0]],
+        [4,[2,-2,0,0]]
+      ],
+      "piece_exit": [
+        [0,[2,-2,0,0]],
+        [1,[1,-1,1,-1]],
+        [2,[1,-1,-1,1]],
+        [3,[1,-1,0,0]],
+        [4,[3,-3,0,0]]
+      ]
+    },
+    "output": [{
+      "cases": ["$ColumnRuns","$WidthFromInputDiff","$WidthFromSteps & $StoredSource"],
+      "grid": null
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInput & $StoredSource & bg=stored",
+        "$TableSegments & $Components8 & $HeightFromInput & $StoredSource & bg=stored"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromInput & bg=RarestColor"],
+      "grid": [
+        [2,2,2,3,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInput & $SourceCentered",
+        "$TableSegments & $Components8 & $HeightFromInput & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInputDiff & $StoredSource & bg=stored",
+        "$TableSegments & $Components8 & $HeightFromInputDiff & $StoredSource & bg=stored"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromInputDiff & bg=RarestColor"],
+      "grid": [
+        [2,2,2,3,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInputDiff & $SourceCentered",
+        "$TableSegments & $Components8 & $HeightFromInputDiff & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $StoredWidth & bg=stored",
+        "$TableSegments & $Components8 & $HeightFromPipe & $StoredWidth & bg=stored",
+        "$GlyphExtent & $HeightFromPipe & $StoredWidth & bg=stored"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $HeightFromPipe & bg=RarestColor",
+        "$GlyphExtent & $HeightFromPipe & bg=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,3,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $SourceCentered",
+        "$TableSegments & $Components8 & $HeightFromPipe & $SourceCentered",
+        "$GlyphExtent & $HeightFromPipe & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $StoredHeight & $StoredWidth & bg=stored",
+        "$TableSegments & $Components8 & $StoredHeight & $StoredSource & bg=stored",
+        "$GlyphExtent & $StoredHeight & $StoredWidth & bg=stored"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$ComponentPieces & $StoredHeight & bg=RarestColor",
+        "$Components8 & $StoredHeight & bg=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,3,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $StoredHeight & $SourceCentered",
+        "$TableSegments & $Components8 & $StoredHeight & $SourceCentered",
+        "$GlyphExtent & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInput & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInput & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInputDiff & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $HeightFromInputDiff & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0],
+        [0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & bg=RarestColor"],
+      "grid": [
+        [2,2,2,3,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredHeight & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredHeight & $SourceCentered"],
+      "grid": [
+        [3],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [2],
+        [0]
+      ]
+    }]
+  }, {
+    "id": "diagonal-strip",
+    "separates": "a strip whose 2 cells outnumber its 0 cells, with a piece of a one-cell bar that touches an L at a corner, and a table entry for that piece's glyph: the column-run parse and $Components8 read the one glyph and lay its entry; $ComponentPieces reads a one-cell bar and an L; $DerivedSegments reads no bar or L in the glyph and is undefined under $Components8",
+    "input": [
+      [2,0,0,2,0,2,0,2,0,0,2],
+      [2,2,0,0,2,2,0,2,0,2,2]
+    ],
+    "assign": {
+      "piece_glyph": [
+        [0,[0,1,0,0]],
+        [0,[1,0,0,0]],
+        [1,[0,1,0,1]],
+        [1,[1,0,0,1]],
+        [1,[1,0,1,0]],
+        [2,[0,1,1,0]],
+        [2,[1,0,0,1]],
+        [2,[1,0,1,0]],
+        [3,[0,0,0,0]],
+        [5,[0,1,0,2]],
+        [5,[0,1,2,0]],
+        [5,[1,0,1,1]],
+        [5,[1,0,2,0]]
+      ],
+      "piece_paint": [
+        [0,[0,0,0,0]],
+        [0,[1,-1,0,0]],
+        [1,[0,0,0,0]],
+        [1,[0,0,1,-1]],
+        [2,[0,0,0,0]],
+        [2,[0,0,-1,1]],
+        [3,[0,0,0,0]],
+        [5,[0,0,0,0]],
+        [5,[0,0,1,-1]]
+      ],
+      "piece_exit": [
+        [0,[2,-2,0,0]],
+        [1,[1,-1,1,-1]],
+        [2,[1,-1,-1,1]],
+        [3,[1,-1,0,0]],
+        [5,[1,-1,1,-1]]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$ColumnRuns & $HeightFromInput & $StoredWidth",
+        "$ColumnRuns & $HeightFromInput & $WidthFromSteps",
+        "$ColumnRuns & $HeightFromInputDiff & $StoredWidth",
+        "$ColumnRuns & $HeightFromInputDiff & $WidthFromSteps",
+        "$ColumnRuns & $StoredHeight & $StoredWidth",
+        "$ColumnRuns & $StoredHeight & $WidthFromSteps",
+        "$TableSegments & $Components8 & $HeightFromInput",
+        "$TableSegments & $Components8 & $HeightFromInputDiff",
+        "$TableSegments & $Components8 & $StoredHeight"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$HeightFromInput & $WidthFromInputDiff",
+        "$HeightFromInputDiff & $WidthFromInputDiff",
+        "$ColumnRuns & $StoredHeight & $WidthFromInputDiff & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0],
+        [0,0,0,2,2,0],
+        [0,0,0,0,2,2],
+        [0,0,0,0,0,2],
+        [0,0,0,0,0,2],
+        [0,0,0,0,2,2],
+        [0,0,0,0,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$ColumnRuns & $HeightFromPipe & $StoredWidth",
+        "$ColumnRuns & $HeightFromPipe & $WidthFromSteps",
+        "$TableSegments & $Components8 & $HeightFromPipe & $StoredWidth",
+        "$TableSegments & $Components8 & $HeightFromPipe & $WidthFromSteps"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,2,2,0]
+      ]
+    }, {
+      "cases": [
+        "$ColumnRuns & $HeightFromPipe & $WidthFromInputDiff",
+        "$TableSegments & $Components8 & $WidthFromInputDiff"
+      ],
+      "grid": [
+        [0,0,0,3,0,0],
+        [0,0,0,2,2,0],
+        [0,0,0,0,2,2],
+        [0,0,0,0,0,2],
+        [0,0,0,0,0,2],
+        [0,0,0,0,2,2]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff & $SourceCentered","$DerivedSegments & $Components8"],
+      "grid": null
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInput",
+        "$TableSegments & $ComponentPieces & $HeightFromInputDiff",
+        "$TableSegments & $ComponentPieces & $StoredHeight & $StoredWidth",
+        "$TableSegments & $ComponentPieces & $StoredHeight & $SourceCentered",
+        "$GlyphExtent & $ComponentPieces & $StoredWidth",
+        "$GlyphExtent & $ComponentPieces & $WidthFromSteps"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,2,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $StoredWidth",
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $WidthFromSteps"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,2,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$TableSegments & $ComponentPieces & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0],
+        [0,0,0,2,2,0],
+        [0,0,0,0,2,0],
+        [0,0,0,2,2,0],
+        [0,0,0,2,0,0],
+        [0,0,0,2,0,0],
+        [0,0,2,2,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $StoredHeight & $WidthFromInputDiff",
+        "$GlyphExtent & $ComponentPieces & $WidthFromInputDiff"
+      ],
+      "grid": [
+        [0,0,0,3,0,0],
+        [0,0,0,2,2,0],
+        [0,0,0,0,2,0],
+        [0,0,0,2,2,0],
+        [0,0,0,2,0,0],
+        [0,0,0,2,0,0],
+        [0,0,2,2,0,0],
+        [0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$FixedLengths & $ComponentPieces & $StoredWidth",
+        "$FixedLengths & $ComponentPieces & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,2,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $ComponentPieces & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0],
+        [0,0,0,2,2,0],
+        [0,0,0,0,2,0],
+        [0,0,0,0,2,0],
+        [0,0,0,2,2,0],
+        [0,0,0,2,0,0],
+        [0,0,0,2,0,0],
+        [0,0,2,2,0,0]
+      ]
+    }]
+  }, {
+    "id": "gapped-block",
+    "separates": "a three-row strip whose 2 cells outnumber its 0 cells, with a full block, a piece of two cells in adjacent columns that do not touch, and a three-row bar, with table entries for each glyph: the column-run parse reads the two cells as one glyph and drops one row for it; $ComponentPieces and $Components8 read two one-cell bars and drop two rows",
+    "input": [
+      [2,2,2,0,2,0,0,2,0],
+      [2,2,2,0,0,0,0,2,0],
+      [2,2,2,0,0,2,0,2,0]
+    ],
+    "assign": {
+      "piece_glyph": [
+        [0,[0,1,0,0]],
+        [0,[1,0,0,0]],
+        [1,[0,1,0,1]],
+        [1,[1,0,0,1]],
+        [1,[1,0,1,0]],
+        [2,[0,1,1,0]],
+        [2,[1,0,0,1]],
+        [2,[1,0,1,0]],
+        [3,[0,0,0,0]],
+        [4,[0,2,0,0]],
+        [4,[1,1,0,0]],
+        [4,[2,0,0,0]],
+        [6,[0,2,0,1]],
+        [6,[2,0,1,0]],
+        [7,[0,2,0,2]],
+        [7,[0,2,1,1]],
+        [7,[0,2,2,0]],
+        [7,[1,1,0,2]],
+        [7,[1,1,1,1]],
+        [7,[1,1,2,0]],
+        [7,[2,0,0,2]],
+        [7,[2,0,1,1]],
+        [7,[2,0,2,0]]
+      ],
+      "piece_paint": [
+        [0,[0,0,0,0]],
+        [0,[1,-1,0,0]],
+        [1,[0,0,0,0]],
+        [1,[0,0,1,-1]],
+        [2,[0,0,0,0]],
+        [2,[0,0,-1,1]],
+        [3,[0,0,0,0]],
+        [4,[0,0,0,0]],
+        [4,[1,-1,0,0]],
+        [4,[2,-2,0,0]],
+        [6,[0,0,0,0]],
+        [7,[0,0,0,0]],
+        [7,[0,0,1,-1]],
+        [7,[0,0,2,-2]]
+      ],
+      "piece_exit": [
+        [0,[2,-2,0,0]],
+        [1,[1,-1,1,-1]],
+        [2,[1,-1,-1,1]],
+        [3,[1,-1,0,0]],
+        [4,[3,-3,0,0]],
+        [6,[1,-1,0,0]],
+        [7,[1,-1,2,-2]]
+      ]
+    },
+    "output": [{
+      "cases": ["$ColumnRuns & $StoredHeight & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromInput & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromInput & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3],
+        [0,0,0,2],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromInput & $SourceCentered"],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromInput & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0],
+        [0,0,0,2,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromInputDiff & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromInputDiff & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3],
+        [0,0,0,2],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromInputDiff & $SourceCentered"],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$HeightFromInputDiff & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0],
+        [0,0,0,2,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromPipe & $StoredWidth"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3],
+        [0,0,0,2],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $HeightFromPipe & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0],
+        [0,0,0,2,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$WidthFromInputDiff & $SourceCentered","$DerivedSegments"],
+      "grid": null
+    }, {
+      "cases": ["$TableSegments & $StoredHeight & $WidthFromInputDiff & $StoredSource"],
+      "grid": [
+        [0,0,0,3],
+        [0,0,0,2],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $StoredHeight & $WidthFromSteps & $SourceCentered"],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColumnRuns & $StoredHeight & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0],
+        [0,0,0,2,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInput & $StoredSource",
+        "$TableSegments & $Components8 & $HeightFromInput & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInput & $SourceCentered",
+        "$TableSegments & $Components8 & $HeightFromInput & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInputDiff & $StoredSource",
+        "$TableSegments & $Components8 & $HeightFromInputDiff & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromInputDiff & $SourceCentered",
+        "$TableSegments & $Components8 & $HeightFromInputDiff & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $StoredWidth",
+        "$TableSegments & $Components8 & $HeightFromPipe & $StoredWidth"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $WidthFromInputDiff",
+        "$TableSegments & $Components8 & $WidthFromInputDiff"
+      ],
+      "grid": [
+        [0,0,0,3],
+        [0,0,0,2],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $HeightFromPipe & $SourceCentered",
+        "$TableSegments & $Components8 & $HeightFromPipe & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2]
+      ]
+    }, {
+      "cases": [
+        "$ComponentPieces & $HeightFromPipe & $WidthFromSteps & $StoredSource",
+        "$TableSegments & $Components8 & $WidthFromSteps & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0],
+        [0,0,0,2,2],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $StoredHeight & $StoredWidth",
+        "$TableSegments & $Components8 & $StoredHeight & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$TableSegments & $ComponentPieces & $StoredHeight & $SourceCentered",
+        "$TableSegments & $Components8 & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,3,0,0],
+        [0,0,2,2,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,2],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "rare-cell",
+    "separates": "the diagonal-contact strip with one cell of 5 in a blank column, so bg=RarestColor takes 5: under $DerivedSegments, $Components8 reads the two cells that touch at a corner as one L and $ComponentPieces reads two one-cell bars, so their pipes differ on a frame of 5",
+    "input": [
+      [2,0,5,0,2,0,2,0,0,2,0,0,2],
+      [2,2,0,2,2,0,0,2,0,2,2,0,2]
+    ],
+    "output": [{
+      "cases": ["$TableSegments"],
+      "grid": null
+    }, {
+      "cases": [
+        "$GlyphExtent & $ComponentPieces & $StoredWidth & bg=stored",
+        "$GlyphExtent & $ComponentPieces & $WidthFromSteps"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $ComponentPieces & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,5,2,5,5],
+        [5,5,5,5,2,5,5]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $ComponentPieces & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,5,2,5,5],
+        [5,5,5,5,2,2,5],
+        [5,5,5,5,5,2,5],
+        [5,5,5,5,5,2,5]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $HeightFromPipe & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,5,2,5,5],
+        [5,5,5,5,2,2,5],
+        [5,5,5,5,5,2,5],
+        [5,5,5,5,5,2,5],
+        [5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$GlyphExtent & $Components8 & $StoredHeight & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$GlyphExtent & $Components8 & $StoredHeight & $WidthFromSteps & $StoredSource"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $ComponentPieces & $HeightFromInput",
+        "$DerivedSegments & $ComponentPieces & $HeightFromInputDiff",
+        "$FixedLengths & $ComponentPieces & $StoredHeight & $StoredWidth & bg=stored",
+        "$FixedLengths & $ComponentPieces & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $ComponentPieces & $HeightFromPipe & $StoredWidth & bg=stored",
+        "$DerivedSegments & $ComponentPieces & $HeightFromPipe & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,0,0],
+        [0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $ComponentPieces & $HeightFromPipe & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,5,2,5,5],
+        [5,5,5,5,2,5,5]
+      ]
+    }, {
+      "cases": ["$DerivedSegments & $ComponentPieces & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,0,0,0],
+        [0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $ComponentPieces & $StoredHeight & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,5,5,5],
+        [5,5,5,2,2,5,5]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $ComponentPieces & $StoredHeight & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $Components8 & $HeightFromInput & $StoredSource",
+        "$DerivedSegments & $Components8 & $HeightFromInputDiff & $StoredSource",
+        "$FixedLengths & $Components8 & $StoredHeight & $StoredWidth & bg=stored"
+      ],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": [
+        "$DerivedSegments & $Components8 & $HeightFromInput & $SourceCentered",
+        "$DerivedSegments & $Components8 & $HeightFromInputDiff & $SourceCentered",
+        "$FixedLengths & $Components8 & $StoredHeight & $SourceCentered"
+      ],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & $StoredWidth & bg=stored"],
+      "grid": [
+        [0,0,0,3,0,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,2,2,0,0],
+        [0,0,0,0,2,2,0],
+        [0,0,0,0,0,2,0],
+        [0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,5,2,2,5],
+        [5,5,5,5,5,2,5],
+        [5,5,5,5,5,2,5]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $HeightFromPipe & $SourceCentered"],
+      "grid": [
+        [0,0,0,0,3,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,2,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $HeightFromPipe & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $StoredHeight & bg=RarestColor"],
+      "grid": [
+        [5,5,5,3,5,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,2,2,5,5],
+        [5,5,5,5,2,2,5],
+        [5,5,5,5,5,2,5],
+        [5,5,5,5,5,2,5],
+        [5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $Components8 & $StoredHeight & $WidthFromInputDiff"],
+      "grid": [
+        [0,0,0,3,0,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,2,2,0,0,0],
+        [0,0,0,0,2,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,2,0,0],
+        [0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FixedLengths & $StoredHeight & $WidthFromSteps & $StoredSource"],
+      "grid": [
+        [0,0,0,3,0,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,2,2,0,0,0,0],
+        [0,0,0,0,2,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }]
+}

@@ -1,0 +1,278 @@
+// edb79dae
+// @draft
+// @keywords: crop objects mapping stamp bbox scale
+// @scene background: one background color, the commonest, fills the grid
+//  around every object
+// @scene frame: one rectangle outline of frame_color (5) encloses a field of
+//  background holding solid single-color squares, all of one size k, set
+//  apart by background
+// @scene keys: outside the frame stand color keys, each a two-color block of
+//  3 by 4 cells, the source color filling the two columns of one side and the
+//  middle cell of the third, the target color the rest, so the source color's
+//  half pokes one cell into the target color's half
+// @scene stencils: outside the frame, each square color has one stencil: the
+//  cells of that color that belong to no key and lie outside the frame, whose
+//  bounding box is k by k
+// @scene one-key-per-color: each square color is the source color of exactly
+//  one key
+// @rule crop-frame: the output is the frame's box, outline included
+// @rule stamp-stencil: each square becomes its color's stencil, placed at the
+//  square by bounding box, with the stencil's cells in the target color of the
+//  key whose source is the square's color and the rest background
+// @rule keep-rest: every other cell of the frame's box keeps its input color
+
+// which of a key's two colors is the source
+.type KeySource =
+    // @claim keys
+    KeySourceByPoke {}
+    // @scene keys: the source is the color of the key's column on the
+    //  key_side side (L); undefined where that column holds both colors or
+    //  two keys share a source with different targets
+    // @witness mirrored-keys: variant concept
+  | KeySourceBySide {}
+    // @scene keys: the source is the key color with more cells; undefined
+    //  where the counts tie
+    // @witness wide-keys: variant concept
+    //     @relaxed keys
+  | KeySourceByCount {}
+
+// a stencil whose bounding box is not the square's size
+.type StencilSize =
+    // @claim stamp-stencil
+    StencilExact {}
+    // @rule stamp-stencil: the stencil is scaled up by the whole quotient of
+    //  the square's size by its bounding box; undefined where that quotient is
+    //  not whole
+    // @witness scaled-stencil: borderline $StencilScaled
+    //     @relaxed stencils
+  | StencilScaled {}
+
+// a square whose color sources no key or has no stencil
+.type Unkeyed =
+    // @claim stamp-stencil
+    UnkeyedUndefined {}
+    // @rule stamp-stencil: a square whose color sources no key or has no
+    //  stencil keeps its input cells
+    // @witness unkeyed-square: borderline $IdentityUnkeyed
+    //     @relaxed one-key-per-color
+  | KeepUnkeyed {}
+    // @rule stamp-stencil: a square whose color sources no key takes its
+    //  stencil in its own color; undefined where the color has no stencil
+    // @witness unkeyed-square: borderline $IdentityUnkeyed
+  | IdentityUnkeyed {}
+
+// how the frame is found
+.type FrameFind =
+    // @claim frame
+    FrameByColor {}
+    // @scene frame: the frame is the one single-color object that is the
+    //  outline of its bounding box, at least 3 by 3; undefined where there is
+    //  none or more than one
+    // @witness recolored-frame: variant $FrameByOutline
+    //     @relaxed frame
+  | FrameByOutline {}
+
+.type Choice = [k: KeySource, z: StencilSize, u: Unkeyed, f: FrameFind]
+
+// A color's stencil under one way of finding the frame.
+.type StencilKey = [f: FrameFind, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $KeySourceBySide ---
+    // The side of a key whose column holds the source color.
+    .decl key_side(d: Dir) key_side(DIR_L).
+
+    // --- $FrameByColor ---
+    .decl frame_color(c: Color) frame_color(5).
+}
+
+.init params = Params
+
+.decl key_source_choice(k: KeySource)
+key_source_choice($KeySourceByPoke()). key_source_choice($KeySourceBySide()).
+key_source_choice($KeySourceByCount()).
+
+.decl stencil_size_choice(z: StencilSize)
+stencil_size_choice($StencilExact()). stencil_size_choice($StencilScaled()).
+
+.decl unkeyed_choice(u: Unkeyed)
+unkeyed_choice($UnkeyedUndefined()). unkeyed_choice($KeepUnkeyed()).
+unkeyed_choice($IdentityUnkeyed()).
+
+.decl frame_find_choice(f: FrameFind)
+frame_find_choice($FrameByColor()). frame_find_choice($FrameByOutline()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([K, Z, U, F]) :-
+    key_source_choice(K), stencil_size_choice(Z), unkeyed_choice(U), frame_find_choice(F).
+
+// @claim background
+.init ground = Mode<Unit, Color, Position>
+ground.item($U(), C, P) :- in(P, C).
+
+// The objects: connected cells off the background, of one color or more.
+// @claim frame keys stencils
+.init blob = Components<Unit>
+blob.node($U(), P) :- in(P, C), !ground.mode($U(), C).
+
+.decl blob_color(id: Ident, c: Color)
+blob_color(Id, C) :- blob.label($U(), P, Id), in(P, C).
+
+// A key: an object of two colors.
+.decl key(id: Ident)
+key(Id) :- blob_color(Id, C1), blob_color(Id, C2), C1 != C2.
+
+// @claim frame stamp-stencil
+.init blob_box = Bbox<Ident>
+blob_box.cell(Id, P) :- blob.label($U(), P, Id).
+
+// The frame's box, outline included.
+.decl frame_box(f: FrameFind, b: Box)
+
+// A square: an object inside the frame.
+.decl square(f: FrameFind, c: Color, b: Box)
+square(F, C, B) :-
+    frame_box(F, B_f), blob.label($U(), P, Id), interior(P, B_f),
+    blob_color(Id, C), blob_box.box(Id, B).
+
+.decl in_square(f: FrameFind, p: Position)
+in_square(F, Q) :- square(F, _, B), in(Q, _), inside(Q, B).
+
+// A stencil cell: a cell of an object that is no key, outside the frame's box.
+.decl stencil(f: FrameFind, c: Color, p: Position)
+stencil(F, C, P) :-
+    frame_box(F, B_f), blob.label($U(), P, Id), !key(Id), !inside(P, B_f), in(P, C).
+
+// @claim stencils stamp-stencil
+.init stencil_box = Bbox<StencilKey>
+stencil_box.cell([F, C], P) :- stencil(F, C, P).
+
+// Each cell of a stencil's box, in the box's own frame.
+.decl stencil_frame(f: FrameFind, c: Color, p: Position)
+stencil_frame(F, C, R) :- stencil_box.box([F, C], B), in(P, _), crop(P, B, R).
+
+// The cells a stencil covers, in its box's own frame.
+.decl stencil_at(f: FrameFind, c: Color, p: Position)
+stencil_at(F, C, R) :- stencil(F, C, P), stencil_box.box([F, C], B), crop(P, B, R).
+
+// A square cell q of color c, and the cell r of c's stencil box it takes.
+.decl source(f: FrameFind, z: StencilSize, q: Position, c: Color, r: Position)
+
+// A key with source color s and target color t.
+.decl map(k: KeySource, s: Color, t: Color)
+
+// The color a square of color c is painted.
+// @ignore: head-repeat — $IdentityUnkeyed paints a color in itself
+.decl paint(k: KeySource, u: Unkeyed, c: Color, t: Color)
+paint(K, U, C, T) :- map(K, C, T), unkeyed_choice(U).
+
+// The frame's box, cut out.
+out(P_out, Col, [K, Z, U, F]) :-
+    impl_choice([K, Z, U, F]), frame_box(F, B_f), crop(Q, B_f, P_out),
+    ( source(F, Z, Q, C, R), paint(K, U, C, T),             // a square cell
+      ( stencil_at(F, C, R), Col = T                        // the stencil covers it
+      ; !stencil_at(F, C, R), ground.mode($U(), Col) )      // the stencil leaves it
+    ; in(Q, Col), !in_square(F, Q) ).                       // any other cell
+
+// --- $KeySourceByPoke ---
+
+// A key cell of color s with color t toward d and on both sides across d.
+.decl poke(id: Ident, s: Color, t: Color)
+poke(Id, S, T) :-
+    blob.label($U(), P, Id), in(P, S), blob_color(Id, T), T != S,
+    dir_elem(D), neighbor(P, D, Q1), in(Q1, T),
+    perp_dir(D, D2), neighbor(P, D2, Q2), in(Q2, T),
+    opposite(D2, D3), neighbor(P, D3, Q3), in(Q3, T).
+
+map($KeySourceByPoke(), S, T) :- poke(Id, S, T), !poke(Id, T, S).
+
+// --- $KeySourceBySide ---
+
+// A color of a key's column on the key_side side.
+.decl side_color(id: Ident, c: Color)
+side_color(Id, C) :-
+    key(Id), params.key_side(D), blob_box.box(Id, B),
+    blob.label($U(), P, Id), box_edge(P, B, D), in(P, C).
+
+.decl side_mixed(id: Ident)
+side_mixed(Id) :- side_color(Id, C1), side_color(Id, C2), C1 != C2.
+
+map($KeySourceBySide(), S, T) :-
+    side_color(Id, S), !side_mixed(Id), blob_color(Id, T), T != S.
+
+// --- $KeySourceByCount ---
+
+// @claim keys
+.init key_mass = Mode<Ident, Color, Position>
+key_mass.item(Id, C, P) :- key(Id), blob.label($U(), P, Id), in(P, C).
+
+map($KeySourceByCount(), S, T) :-
+    key_mass.mode(Id, S), blob_color(Id, T), !key_mass.mode(Id, T).
+
+// --- $StencilExact ---
+
+// The square's box and the stencil's box share a frame only where their
+// sizes agree.
+source(F, $StencilExact(), Q, C, R) :-
+    square(F, C, B), in(Q, _), crop(Q, B, R), stencil_frame(F, C, R).
+
+// --- $StencilScaled ---
+
+// Each stencil cell spans a block of the square, as many cells on each axis
+// as the square's size holds the stencil's.
+source(F, $StencilScaled(), Q, C, R_s) :-
+    square(F, C, B), in(Q, _), crop(Q, B, R), stencil_box.box([F, C], B_s),
+    axis_elem(A), perp(A, A2),
+    box_extent(B_s, Q, A, N1), divide(R, A, N1, 0, R1, _),
+    box_extent(B_s, Q, A2, N2), divide(R, A2, N2, 0, R2, _),
+    compose(R1, R2, R_s).
+
+// --- $KeepUnkeyed ---
+
+// A square whose color sources no key or has no stencil keeps its cells.
+out(P_out, Col, [K, Z, $KeepUnkeyed(), F]) :-
+    impl_choice([K, Z, $KeepUnkeyed(), F]), frame_box(F, B_f),
+    square(F, C, B), in(Q, Col), inside(Q, B), crop(Q, B_f, P_out),
+    ( !map(K, C, _)
+    ; !stencil_box.box([F, C], _) ).
+
+// --- $IdentityUnkeyed ---
+
+paint(K, $IdentityUnkeyed(), C, C) :- key_source_choice(K), in(_, C), !map(K, C, _).
+
+// --- $FrameByColor ---
+
+frame_box($FrameByColor(), B) :-
+    params.frame_color(C), blob_color(Id, C), blob_box.box(Id, B).
+
+// --- $FrameByOutline ---
+
+// An object with a cell off its box's edge.
+.decl off_edge(id: Ident)
+off_edge(Id) :- blob.label($U(), P, Id), blob_box.box(Id, B), interior(P, B).
+
+// An object with a cell of its box's edge missing.
+.decl edge_gap(id: Ident)
+edge_gap(Id) :-
+    blob_box.box(Id, B), in(P, _), inside(P, B), !interior(P, B),
+    !blob.label($U(), P, Id).
+
+frame_box($FrameByOutline(), B) :-
+    blob_box.box(Id, B), !key(Id), !off_edge(Id), !edge_gap(Id),
+    in(P, _), interior(P, B).                           // at least 3 by 3
+
+.comp Determine {
+    // A color on the edge of a train output.
+    .decl edge_color(e: Example, c: Color)
+    edge_color(E, C) :- ex_out(E, P, C), dir_elem(D), dist(P, D, 0).
+
+    // Some train output's edge holds a color other than c.
+    .decl off_color(c: Color)
+    off_color(C) :- edge_color(_, C), edge_color(_, C2), C2 != C.
+
+    // The frame's outline is the edge of every output.
+    .decl frame_color(c: Color)
+    frame_color(C) :- edge_color(_, C), !off_color(C).
+}

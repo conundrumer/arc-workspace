@@ -1,0 +1,162 @@
+// e9c9d9a1
+// @draft
+// @keywords: decompose enclose lookup
+// @scene full-lines: lines of line_color 3, each one cell wide, run across the
+//  full width or the full height of the grid on a field of background 0.
+// @scene two-lines-per-axis: on each axis there are at least two lines, so
+//  there are at least three rooms across each axis and at least one inner room.
+// @scene no-edge-line: no line is on the grid edge, and no two lines are
+//  adjacent, so each room is a nonempty rectangle.
+// @rule corner-rooms: each of the four corner rooms is filled with the color
+//  corner_color gives for its corner.
+// @rule inner-rooms: each room that touches no grid edge is filled with
+//  inner_color.
+// @rule rest-unchanged: the lines and the edge rooms that are not corner rooms
+//  keep their input cells.
+
+// how the rooms are found
+.type Choice =
+    // @claim corner-rooms inner-rooms
+    TableRooms {test: DividerTest}
+    // @rule corner-rooms: the rooms are the 4-connected components of
+    //  background cells, and a corner room is the component that holds the
+    //  grid's corner cell. Undefined where one component holds two grid
+    //  corners.
+    // @rule inner-rooms: an inner room is a component of background cells that
+    //  no walk through background cells reaches from the grid edge.
+    // @witness partial-wall: foreign $EnclosedRooms
+    //     @relaxed full-lines
+  | EnclosedRooms {}
+
+// which full lines are dividers
+.type DividerTest =
+    // @claim full-lines
+    NoBackgroundLines {}
+    // @scene full-lines: a divider is a full row or column whose cells are all
+    //  line_color. Undefined where an axis has no full line of line_color.
+    // @witness third-color-line: foreign $LineColorLines
+    //     @relaxed full-lines
+  | LineColorLines {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed full-lines
+    .decl background(c: Color) background(0).
+    .decl corner_color(d: DiagDir, c: Color)
+    corner_color(DIAG_TL, 2). corner_color(DIAG_TR, 4).
+    corner_color(DIAG_BL, 1). corner_color(DIAG_BR, 8).
+    .decl inner_color(c: Color) inner_color(7).
+
+    // --- $LineColorLines ---
+    // @derive RarestColor: variant derived
+    //     @relaxed full-lines
+    .decl line_color(c: Color) line_color(3).
+}
+
+.init params = Params
+
+.decl divider_test(t: DividerTest)
+divider_test($NoBackgroundLines()). divider_test($LineColorLines()).
+
+.decl impl_choice(ch: Choice)
+impl_choice($TableRooms(T)) :- divider_test(T).
+impl_choice($EnclosedRooms()).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .decl line(key: Key, a: Axis, l: Position)
+    line(K, A, L) :- cell(K, P, _), axis_elem(A), split(P, A, L, _).
+
+    // A line that holds a background cell.
+    .decl open_line(key: Key, a: Axis, l: Position)
+    open_line(K, A, L) :- cell(K, P, B), params.background(B), axis_elem(A), split(P, A, L, _).
+
+    // A full line with no background cell.
+    .decl clear_line(key: Key, a: Axis, l: Position)
+    clear_line(K, A, L) :- line(K, A, L), !open_line(K, A, L).
+
+    // The table of rooms that the dividers cut.
+    // @claim corner-rooms inner-rooms
+    .init table = DividerTiles<Key>
+    table.cell(K, P) :- cell(K, P, _).
+
+    // A background cell of a room.
+    .decl room_cell(key: Key, p: Position)
+    room_cell(K, P) :- table.tile_of(K, P, _), cell(K, P, B), params.background(B).
+
+    // A background cell of a room on no grid edge.
+    .decl inner_cell(key: Key, p: Position)
+    inner_cell(K, P) :- room_cell(K, P), !table.part_idx(K, P, _, 0).
+}
+
+// The fill each case gives a background cell of a room.
+.decl fill(p: Position, col: Color, ch: Choice)
+
+out(P, Col, Ch) :- fill(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).
+
+// --- $TableRooms ---
+
+.init parse = Parse<DividerTest>
+parse.cell(T, P, Col) :- divider_test(T), in(P, Col).
+
+fill(P, Col, $TableRooms(T)) :-
+    parse.room_cell(T, P), diag_dirs(Dg, _, D1, D2),
+    parse.table.part_idx(T, P, D1, 0), parse.table.part_idx(T, P, D2, 0),   // in the corner's room
+    params.corner_color(Dg, Col).
+fill(P, Col, $TableRooms(T)) :- parse.inner_cell(T, P), params.inner_color(Col).
+
+// --- $NoBackgroundLines ---
+parse.table.divider($NoBackgroundLines(), A, L) :- parse.clear_line($NoBackgroundLines(), A, L).
+
+// --- $LineColorLines ---
+
+// A line that holds a cell of another color than line_color.
+.decl broken_line(a: Axis, l: Position)
+broken_line(A, L) :- in(P, Col), !params.line_color(Col), axis_elem(A), split(P, A, L, _).
+
+parse.table.divider($LineColorLines(), A, L) :-
+    parse.line($LineColorLines(), A, L), !broken_line(A, L).
+
+// --- $EnclosedRooms ---
+
+// The rooms as connected parts of the background.
+// @claim corner-rooms
+.init room = Components<Unit>
+room.node($U(), P) :- in(P, B), params.background(B).
+
+// The rooms no walk through the background reaches from the grid edge.
+// @claim inner-rooms
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, B), params.background(B).
+
+fill(P, Col, $EnclosedRooms()) :-
+    room.label($U(), P, Id), room.label($U(), Q, Id),             // same room as Q
+    diag_dirs(Dg, _, D1, D2), dist(Q, D1, 0), dist(Q, D2, 0),     // Q is the grid's corner cell
+    params.corner_color(Dg, Col).
+fill(P, Col, $EnclosedRooms()) :- closed.region($U(), P, _), params.inner_color(Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+    ex.table.divider(E, A, L) :- ex.clear_line(E, A, L).
+
+    // The input color of the room cells that the output fills.
+    .decl background(c: Color)
+    background(B) :- ex_in(E, P, B), ex_out(E, P, Col), !ex_in(E, P, Col).
+
+    // The output color of the grid's corner cell, in the corner's room.
+    .decl corner_color(d: DiagDir, c: Color)
+    corner_color(Dg, Col) :-
+        ex_out(_, P, Col), diag_dirs(Dg, _, D1, D2), dist(P, D1, 0), dist(P, D2, 0).
+
+    .decl inner_color(c: Color)
+    inner_color(Col) :- ex.inner_cell(E, P), ex_out(E, P, Col).
+
+    // The color of the full lines.
+    .decl line_color(c: Color)
+    line_color(Col) :- ex.clear_line(E, A, L), ex.cell(E, P, Col), split(P, A, L, _).
+}

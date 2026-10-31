@@ -1,0 +1,271 @@
+// fafd9572
+// @draft
+// @keywords: objects markers rank
+// @scene key: the cells of colors other than `background` (0) and
+//  `shape_color` (1) form one small 8-connected key, and every row and every
+//  column of its bounding box holds a key cell
+// @scene copies: the cells of `shape_color` (1) form identical copies of one
+//  8-connected shape, laid on a lattice whose period on each axis is the
+//  shape's extent plus `copy_gap` (1)
+// @scene layout-matches-key: the copies' ranks from the four edges are exactly
+//  the key cells' places in the key's box
+// @rule recolor-copy: each copy takes the color of the key cell whose place in
+//  the key's box, counted from each edge, is the copy's rank among the copies
+//  from that edge
+// @rule keep-rest: the key and the background are unchanged
+
+// How a copy finds its key cell.
+.type Slot =
+    // @claim recolor-copy
+    Rank {}
+    // @rule recolor-copy: a copy's slot is its tile in the copies' box cut on
+    //  each axis into tiles of the shape's extent, `copy_gap` apart, and the
+    //  copy takes the key cell at that slot of the key's box; undefined where
+    //  the copies differ in extent, the cut does not fit the box, or the slot
+    //  holds no key cell
+    // @witness key-with-gap: variant $LatticeSlot
+    //     @relaxed key
+    // @witness skipped-column: variant $LatticeSlot
+    //     @relaxed key
+  | LatticeSlot {gap: GapSource}
+    // @rule recolor-copy: the n-th copy in reading order of its box's corner
+    //  takes the n-th key cell in reading order; undefined where the copy
+    //  count differs from the key cell count
+    // @witness copies-off-key-layout: foreign $OrderMatch
+    //     @relaxed layout-matches-key
+    // @witness copies-in-a-row: foreign $OrderMatch
+    //     @relaxed layout-matches-key
+    // @witness missing-copy: borderline concept
+    //     @relaxed layout-matches-key
+  | OrderMatch {}
+
+// Where the lattice's gap comes from.
+.type GapSource =
+    // @claim copies
+    GapStored {}
+    // @scene copies: on each axis, the gap is the fewest lines between two
+    //  copies that lie apart along that axis, and none where no two do
+    // @witness wide-gap: variant $GapFromSpacing
+    //     @relaxed copies
+  | GapFromSpacing {}
+
+// Where the copies' color comes from.
+.type ShapeSource =
+    // @claim copies
+    ShapeStored {}
+    // @scene copies: `shape_color` is the input's commonest color other than
+    //  `background`; undefined where that color ties
+    // @witness copies-in-another-color: variant $ShapeColorByCount
+    //     @relaxed copies
+  | ShapeColorByCount {}
+
+.type Choice = [s: Slot, c: ShapeSource]
+
+// A shape source with an edge or with an axis.
+.type SideKey = [c: ShapeSource, d: Dir]
+.type AxisKey = [c: ShapeSource, a: Axis]
+// Two copies, the second past the first toward d.
+.type Spacing = [d: Dir, a: Ident, b: Ident]
+// Two lines of an example that hold copy cells, the second toward d.
+.type LineRun = [e: Example, d: Dir, a: Position, b: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed key
+    .decl background(c: Color) background(0).
+
+    // --- $ShapeStored ---
+    // The color of the uncolored copies.
+    .decl shape_color(c: Color) shape_color(1).
+
+    // --- $GapStored ---
+    // The background lines between two neighboring copies.
+    .decl copy_gap(g: number) copy_gap(1).
+
+    // --- $OrderMatch ---
+    // The reading order: the corner it starts from and the axis it runs along.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    .decl axis(a: Axis) axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl slot_choice(s: Slot)
+slot_choice($Rank()). slot_choice($LatticeSlot($GapStored())).
+slot_choice($LatticeSlot($GapFromSpacing())). slot_choice($OrderMatch()).
+
+.decl shape_source_choice(c: ShapeSource)
+shape_source_choice($ShapeStored()). shape_source_choice($ShapeColorByCount()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, C]) :- slot_choice(S), shape_source_choice(C).
+
+// The copies' color, per source.
+.decl shape_color(c: ShapeSource, col: Color)
+
+// @claim key
+.decl key_cell(c: ShapeSource, p: Position, col: Color)
+key_cell(C, P, Col) :- shape_color(C, _), in(P, Col), !params.background(Col), !shape_color(C, Col).
+
+// @claim key
+.init key_box = Bbox<ShapeSource>
+key_box.cell(C, P) :- key_cell(C, P, _).
+
+// A key cell's place in the key's box.
+.decl key_place(c: ShapeSource, p_inner: Position, col: Color)
+key_place(C, P_inner, Col) :- key_cell(C, P, Col), key_box.box(C, B), crop(P, B, P_inner).
+
+// @claim copies
+.init copies = Components8<ShapeSource>
+copies.node(C, P) :- shape_color(C, Col), in(P, Col).
+
+.decl copy(c: ShapeSource, id: Ident)
+copy(C, Id) :- copies.label(C, _, Id).
+
+.decl copy_cell(c: ShapeSource, p: Position)
+copy_cell(C, P) :- copies.label(C, P, _).
+
+// @claim copies
+.init copy_box = Bbox<Ident>
+copy_box.cell(Id, P) :- copies.label(_, P, Id).
+
+// A case whose copies and key do not pair off.
+.decl unpaired(ch: Choice)
+
+out(P, Col, [S, C]) :- impl_choice([S, C]), in(P, Col), !copy_cell(C, P), !unpaired([S, C]).
+
+// --- $ShapeStored ---
+shape_color($ShapeStored(), Col) :- params.shape_color(Col).
+
+// --- $ShapeColorByCount ---
+// @claim copies
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col), !params.background(Col).
+
+// @claim copies
+.init commonest_one = Unanimous<Unit, Color>
+commonest_one.item($U(), Col) :- commonest.mode($U(), Col).
+
+shape_color($ShapeColorByCount(), Col) :- commonest_one.value($U(), Col).
+
+// --- $Rank ---
+// A copy's distance to edge d.
+.decl copy_dist(c: ShapeSource, id: Ident, d: Dir, k: number)
+copy_dist(C, Id, D, K) :- copy(C, Id), copy_box.box(Id, B), dir_elem(D), dist(B, D, K).
+
+// The copies' distances to each edge, ranked densely.
+// @claim recolor-copy
+.init rank = Ordinal<SideKey>
+rank.idx_set([C, D], K) :- copy_dist(C, _, D, K).
+
+// A copy's place: its rank from each of the four edges.
+.init place = DirPack<Ident>
+place.edge(Id, D, R) :- copy_dist(C, Id, D, K), rank.rank([C, D], K, R).
+
+out(P, Col, [$Rank(), C]) :-
+    copies.label(C, P, Id), place.box(Id, P_key), key_place(C, P_key, Col).
+
+// --- $LatticeSlot ---
+// The box of all copies.
+// @claim recolor-copy
+.init copies_box = Bbox<ShapeSource>
+copies_box.cell(C, P) :- copy_cell(C, P).
+
+// @claim copies
+.init shape_extent = Unanimous<AxisKey, number>
+shape_extent.item([C, A], N) :-
+    copy(C, Id), copy_box.box(Id, B), axis_elem(A), in(P, _), box_extent(B, P, A, N).
+
+.decl lattice_gap(g: GapSource, c: ShapeSource, a: Axis, k: number)
+
+// A copy cell's tile on one axis.
+.decl axis_slot(g: GapSource, c: ShapeSource, p: Position, a: Axis, p_outer: Position)
+axis_slot(G, C, P, A, P_outer) :-
+    copy_cell(C, P), copies_box.box(C, B), crop(P, B, P_inner),
+    lattice_gap(G, C, A, Gap), shape_extent.value([C, A], K),
+    divide_by_size(P_inner, A, K, Gap, P_outer, _).
+
+out(P, Col, [$LatticeSlot(G), C]) :-
+    axis_slot(G, C, P, A, P_a), perp(A, A2), axis_slot(G, C, P, A2, P_a2),
+    compose(P_a, P_a2, P_slot), key_place(C, P_slot, Col).
+
+// --- $GapStored ---
+lattice_gap($GapStored(), C, A, Gap) :- shape_color(C, _), axis_elem(A), params.copy_gap(Gap).
+
+// --- $GapFromSpacing ---
+// The lines between copy a and copy b, which lies past it toward d.
+// @claim copies
+.init spacing = Tally<Spacing, Position>
+spacing.item([D, Id1, Id2], L) :-
+    copy(C, Id1), copy(C, Id2), copy_box.box(Id1, B1), copy_box.box(Id2, B2),
+    in(P, _), axis_of(D, A), split(P, A, L, _), opposite(D, O),
+    dist(B1, D, K1), dist(L, D, K_l), K_l < K1,       // past copy a toward d
+    dist(B2, O, K2), dist(L, O, K_lo), K_lo < K2.     // short of copy b
+
+// @claim copies
+.init least_gap = Extremes<AxisKey>
+least_gap.cand([C, A], N) :- spacing.tally([D, Id, _], N), copy(C, Id), axis_of(D, A).
+
+lattice_gap($GapFromSpacing(), C, A, Gap) :-
+    shape_color(C, _), axis_elem(A),
+    ( least_gap.low([C, A], Gap)
+    ; !least_gap.low([C, A], _), Gap = 0      // no two copies lie apart along a
+    ).
+
+// --- $OrderMatch ---
+// @claim recolor-copy
+.init copy_read = LexOrder<ShapeSource>
+copy_read.corner(C, D) :- shape_color(C, _), params.corner(D).
+copy_read.axis(C, A) :- shape_color(C, _), params.axis(A).
+copy_read.cell(C, B) :- copy(C, Id), copy_box.box(Id, B).
+
+// @claim recolor-copy
+.init key_read = LexOrder<ShapeSource>
+key_read.corner(C, D) :- shape_color(C, _), params.corner(D).
+key_read.axis(C, A) :- shape_color(C, _), params.axis(A).
+key_read.cell(C, P) :- key_cell(C, P, _).
+
+// A key cell has no copy at its rank.
+unpaired([$OrderMatch(), C]) :- key_read.rank(C, _, R), !copy_read.rank(C, _, R).
+
+out(P, Col, [$OrderMatch(), C]) :-
+    copies.label(C, P, Id), copy_box.box(Id, B), copy_read.rank(C, B, R),
+    key_read.rank(C, Q, R), key_cell(C, Q, Col).
+
+.comp Determine {
+    .decl background(c: Color)
+    .decl shape_color(c: Color)
+    .decl copy_gap(g: number)
+
+    // The commonest color of every input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl not_commonest(c: Color)
+    not_commonest(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    background(Col) :- commonest.mode(_, Col), !not_commonest(Col).
+
+    // The input color of a cell that changes in a train output.
+    shape_color(Col) :- ex_in(E, P, Col), ex_out(E, P, _), !ex_out(E, P, Col).
+
+    // The lines of each input on each axis, and those that hold a copy cell.
+    .decl line(e: Example, a: Axis, l: Position)
+    line(E, A, L) :- ex_in(E, P, _), axis_elem(A), split(P, A, L, _).
+
+    .decl copy_line(e: Example, a: Axis, l: Position)
+    copy_line(E, A, L) :- ex_in(E, P, Col), shape_color(Col), axis_elem(A), split(P, A, L, _).
+
+    // The lines free of copy cells between two copy lines.
+    .init free_run = Tally<LineRun, Position>
+    free_run.item([E, D, L1, L2], L) :-
+        copy_line(E, A, L1), copy_line(E, A, L2), axis_of(D, A),
+        line(E, A, L), !copy_line(E, A, L), nearer(D, L, L1), nearer(D, L2, L).
+
+    .init least_run = Extremes<Unit>
+    least_run.cand($U(), N) :- free_run.tally(_, N).
+
+    copy_gap(G) :- least_run.low($U(), G).
+}

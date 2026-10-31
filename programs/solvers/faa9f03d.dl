@@ -1,0 +1,302 @@
+// faa9f03d
+// @draft
+// @keywords: color-class markers repair occlude cast
+// @scene background: every cell no wire or marker takes holds `background` (0).
+// @scene wires: two or more wires, each of one color other than `corner_color` (2)
+//  and `turn_color` (4), each a path of horizontal and vertical straight runs
+//  whose two ends lie on the grid edge; two wires meet only where they cross at
+//  right angles.
+// @scene breaks: a wire may be missing single cells along a run, each a
+//  `background` cell between two cells of its run.
+// @scene corner-markers: some cells of a wire, at its corners and ends, hold
+//  `corner_color` in place of the wire's color.
+// @scene turn-marker: a wire may hold a `turn_color` cell just past one of its
+//  corners, on the side away from the run it turns from; the drawn wire there
+//  runs straight on through the corner to its own edge end.
+// @scene crossing-shown: at a crossing the input shows one of the two wires, or
+//  `background`.
+// @rule redraw-wires: the output is `background` with each wire drawn whole in
+//  its color, breaks filled and `corner_color` cells in the wire's color.
+// @rule reroute-at-turn: where a `turn_color` cell stands past a corner, the
+//  wire's strand that runs straight on from that corner, to its end, is erased,
+//  and the wire runs from the corner through the `turn_color` cell straight on
+//  to the grid edge.
+// @rule crossing-top: each crossing shows the wire on top. A wire that a
+//  `turn_color` cell extends across another lies on top there. Where the input
+//  shows one of the two wires, the shown wire is on top unless one of the two
+//  wires carries a `corner_color` marker, and then the other wire is on top.
+//  Where the input shows `background`, the wire on top at the two wires' other
+//  crossings is on top.
+
+// what inverts the shown wire at a crossing
+.type Top =
+    // @claim crossing-top
+    WireMarker {}
+    // @rule crossing-top: every shown crossing is inverted when the grid holds
+    //  any `corner_color` cell.
+    // @witness unmarked-crossing-beside-marked-wire: ordinary concept
+  | FlipByGridMarker {}
+    // @rule crossing-top: a shown crossing is inverted when the straight run of
+    //  either wire through it holds a `corner_color` cell.
+    // @witness unmarked-run-of-marked-wire: ordinary concept
+  | FlipBySegmentMarker {}
+
+// how wide a break is filled
+.type Gap =
+    // @claim breaks
+    OneCell {}
+    // @scene breaks: a break along a run may be any number of cells wide.
+    // @rule redraw-wires: a break of any width along a run is filled.
+    // @witness wide-break: variant $AnyWidthBreaks
+    //     @relaxed breaks
+  | AnyWidthBreaks {}
+
+// what becomes of a wire end short of the edge
+.type Ends =
+    // @claim wires
+    StayFree {}
+    // @rule extend-all-ends: every free wire end runs straight on to the grid
+    //  edge, on top at crossings.
+    // @witness short-wire-end: variant $ExtendAllEnds
+    //     @relaxed wires
+  | ExtendAllEnds {}
+
+.type Choice = [top: Top, gap: Gap, ends: Ends]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: foreign concept
+    .decl background(c: Color) background(0).
+    .decl corner_color(c: Color) corner_color(2).
+    .decl turn_color(c: Color) turn_color(4).
+}
+
+.init params = Params
+
+.decl top_choice(t: Top)
+top_choice($WireMarker()). top_choice($FlipByGridMarker()). top_choice($FlipBySegmentMarker()).
+
+.decl gap_choice(g: Gap)
+gap_choice($OneCell()). gap_choice($AnyWidthBreaks()).
+
+.decl ends_choice(e: Ends)
+ends_choice($StayFree()). ends_choice($ExtendAllEnds()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, G, E]) :- top_choice(T), gap_choice(G), ends_choice(E).
+
+// The wire colors.
+.decl hue(c: Color)
+hue(C) :- in(_, C), !params.background(C), !params.corner_color(C), !params.turn_color(C).
+
+.decl marker(p: Position)
+marker(P) :- in(P, M), params.corner_color(M).
+
+// A cell of wire c that runs on both sides along axis a.
+.decl passing(c: Color, p: Position, a: Axis)
+passing(C, P, A) :-
+    in(P, C), axis_of(D, A), opposite(D, D2),
+    neighbor(P, D, Q1), in(Q1, C), neighbor(P, D2, Q2), in(Q2, C).
+
+// A cell of wire c as the input draws it: its color, or a corner marker that
+// a run of the wire leads into.
+.decl ink(c: Color, p: Position)
+ink(C, P) :-
+    hue(C),
+    ( in(P, C)
+    ; marker(P), axis_of(D, A), perp(A, A2), neighbor(P, D, Q), in(Q, C),
+      !passing(C, Q, A2)                                    // not a wire passing beside it
+    ).
+
+// The wires that carry a corner marker.
+.decl marked(c: Color)
+marked(C) :- marker(P), ink(C, P).
+
+// An ink cell in the middle of a run along axis a.
+// @ignore: common-subexpr — `passing` tests the input's wire colors alone, before the markers join the wire
+.decl mid_run(c: Color, p: Position, a: Axis)
+mid_run(C, P, A) :-
+    ink(C, P), axis_of(D, A), opposite(D, D2),
+    neighbor(P, D, Q1), ink(C, Q1), neighbor(P, D2, Q2), ink(C, Q2).
+
+// The nearest ink cell of each wire from every other cell, toward each side.
+// @claim breaks
+.init span = Ray<Color>
+span.dir(C, D) :- hue(C), dir_elem(D).
+span.mark(C, P) :- hue(C), in(P, _), !ink(C, P).
+span.blocked(C, P) :- ink(C, P).
+
+// The wire's cells before the reroute: its ink, and each break cell, between
+// two of its cells on one axis, neither of them in the middle of a run across
+// that axis.
+.decl base(c: Color, p: Position, g: Gap)
+base(C, P, G) :- gap_choice(G), ink(C, P).
+
+// --- $OneCell ---
+base(C, P, $OneCell()) :-
+    span.mark(C, P), axis_of(D, A), opposite(D, D2), perp(A, A2),
+    neighbor(P, D, Q1), ink(C, Q1), !mid_run(C, Q1, A2),
+    neighbor(P, D2, Q2), ink(C, Q2), !mid_run(C, Q2, A2).
+
+// --- $AnyWidthBreaks ---
+base(C, P, $AnyWidthBreaks()) :-
+    axis_of(D, A), opposite(D, D2), perp(A, A2),
+    span.stop(C, Q1, D, _, P), !mid_run(C, Q1, A2),
+    span.stop(C, Q2, D2, _, P), !mid_run(C, Q2, A2),
+    ( neighbor(P, D, Q1), neighbor(P, D2, Q2)                 // one cell wide
+    ; !marker(Q1), !marker(Q2),                               // wider: no corner at either side,
+      neighbor(Q1, D, R1), ink(C, R1), neighbor(Q2, D2, R2), ink(C, R2)  // and the run goes on past each
+    ).
+
+// --- $WireMarker, $FlipByGridMarker, $FlipBySegmentMarker ---
+
+// A turn marker t past the corner p_corner of wire c, toward d from the corner,
+// where the wire runs on through the corner to p_strand.
+.decl pivot(c: Color, t: Position, p_corner: Position, p_strand: Position, d: Dir, g: Gap)
+pivot(C, T, P, S, D, G) :-
+    in(T, K), params.turn_color(K),
+    opposite(D, D2), neighbor(T, D2, P), base(C, P, G),
+    neighbor(P, D2, S), base(C, S, G).
+
+// The strand that runs straight on from the corner, away from the turn marker.
+.type TurnKey = [t: Position, g: Gap]
+// @claim reroute-at-turn
+.init strand = Reach<TurnKey>
+strand.node([T, G], P) :- pivot(C, T, P_corner, _, _, G), base(C, P, G), P != P_corner.
+strand.seed([T, G], S) :- pivot(_, T, _, S, _, G).
+
+// The cells on a line from each cell toward each side.
+// @claim reroute-at-turn extend-all-ends
+.init line = Ray<Unit>
+line.dir($U(), D) :- dir_elem(D).
+line.cell($U(), P) :- in(P, _).
+line.mark($U(), P) :- in(P, _).
+
+// The arm from the corner through the turn marker to the edge.
+.decl arm(c: Color, p: Position, g: Gap)
+arm(C, P, G) :- pivot(C, T, _, _, D, G), line.ray($U(), P, D, _, T).
+
+.decl erased(c: Color, p: Position, g: Gap)
+erased(C, P, G) :- pivot(C, T, _, _, _, G), strand.reach([T, G], P).
+
+// The wire's cells after the reroute.
+.decl drawn(c: Color, p: Position, g: Gap)
+drawn(C, P, G) :- base(C, P, G), !erased(C, P, G).
+drawn(C, P, G) :- arm(C, P, G).
+
+// The cells a wire lays over the others: a turn arm, and an extended end.
+.decl lay(c: Color, p: Position, g: Gap, e: Ends)
+lay(C, P, G, E) :- ends_choice(E), arm(C, P, G).
+lay(C, P, G, E) :- stretch(C, P, G, E).
+
+// --- $ExtendAllEnds ---
+
+// Wire c continues from p toward d.
+.decl link(c: Color, p: Position, d: Dir, g: Gap)
+link(C, P, D, G) :- drawn(C, P, G), dir_elem(D), neighbor(P, D, Q), drawn(C, Q, G).
+
+// A wire cell linked toward two sides.
+.decl through(c: Color, p: Position, g: Gap)
+through(C, P, G) :- link(C, P, D1, G), link(C, P, D2, G), D1 != D2.
+
+// The cells from a wire end on to the edge it faces.
+.decl stretch(c: Color, p: Position, g: Gap, e: Ends)
+stretch(C, P, G, $ExtendAllEnds()) :-
+    link(C, P_end, D, G), !through(C, P_end, G),       // a wire end
+    opposite(D, D_out), neighbor(P_end, D_out, S),      // the cell past it
+    line.ray($U(), P, D_out, _, S).
+
+// --- $WireMarker, $FlipByGridMarker, $FlipBySegmentMarker ---
+
+.decl wire(c: Color, p: Position, g: Gap, e: Ends)
+wire(C, P, G, E) :- ends_choice(E), drawn(C, P, G).
+wire(C, P, G, E) :- lay(C, P, G, E).
+
+.decl crossing(p: Position, c1: Color, c2: Color, g: Gap, e: Ends)
+crossing(P, C1, C2, G, E) :- wire(C1, P, G, E), wire(C2, P, G, E), C1 != C2.
+
+// Where c1 is shown at the crossing p, it gives way to c2.
+.decl flip(p: Position, c1: Color, c2: Color, ch: Choice)
+
+// --- $WireMarker ---
+flip(P, C1, C2, [$WireMarker(), G, E]) :-
+    crossing(P, C1, C2, G, E), ( marked(C1) ; marked(C2) ).
+
+// --- $FlipByGridMarker ---
+flip(P, C1, C2, [$FlipByGridMarker(), G, E]) :- crossing(P, C1, C2, G, E), marker(_).
+
+// --- $FlipBySegmentMarker ---
+
+// The straight run of each wire through a crossing.
+.type WireKey = [c: Color, g: Gap, e: Ends]
+// @claim crossing-top
+.init run = Ray<WireKey>
+run.dir([C, G, E], D) :- crossing(_, C, _, G, E), dir_elem(D).
+run.cell([C, G, E], P) :- crossing(_, C, _, G, E), in(P, _).
+run.mark([C, G, E], P) :- crossing(P, C, _, G, E).
+run.blocked([C, G, E], P) :- crossing(_, C, _, G, E), in(P, _), !wire(C, P, G, E).
+
+flip(P, C1, C2, [$FlipBySegmentMarker(), G, E]) :-
+    crossing(P, C1, C2, G, E),
+    ( run.clear([C1, G, E], Q, _, _, P) ; run.clear([C2, G, E], Q, _, _, P) ),
+    marker(Q).
+
+// --- $WireMarker, $FlipByGridMarker, $FlipBySegmentMarker ---
+
+// A crossing that no wire is laid over.
+.decl unlaid(p: Position, c1: Color, c2: Color, g: Gap, e: Ends)
+unlaid(P, C1, C2, G, E) :- crossing(P, C1, C2, G, E), !lay(C1, P, G, E), !lay(C2, P, G, E).
+
+// The wire on top at a crossing that a wire is laid over, or that shows one of
+// its wires.
+.decl shown_top(p: Position, c: Color, ch: Choice)
+shown_top(P, C, [T, G, E]) :-
+    top_choice(T), crossing(P, C, C2, G, E),
+    ( stretch(C, P, G, E)                       // an extended end over all
+    ; arm(C, P, G), !stretch(C2, P, G, E)      // a turn arm over all but that
+    ).
+shown_top(P, C, [T, G, E]) :-
+    top_choice(T), unlaid(P, C1, C2, G, E), in(P, C1),
+    ( flip(P, C1, C2, [T, G, E]), C = C2
+    ; !flip(P, C1, C2, [T, G, E]), C = C1
+    ).
+
+// A crossing that shows neither wire takes the top of the two wires' other crossings.
+.decl top(p: Position, c: Color, ch: Choice)
+top(P, C, Ch) :- shown_top(P, C, Ch).
+top(P, C, [T, G, E]) :-
+    unlaid(P, C1, C2, G, E), !in(P, C1), !in(P, C2),
+    crossing(Q, C1, C2, G, E), shown_top(Q, C, [T, G, E]).
+
+out(P, C, Ch) :- top(P, C, Ch).
+out(P, C, [T, G, E]) :- impl_choice([T, G, E]), wire(C, P, G, E), !crossing(P, C, _, G, E).
+out(P, B, [T, G, E]) :- impl_choice([T, G, E]), in(P, _), !wire(_, P, G, E), params.background(B).
+
+.comp Determine {
+    // The commonest color of each train output.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, C, P) :- ex_out(E, P, C).
+
+    // A train output whose commonest color is not c.
+    .decl uncommon(c: Color)
+    uncommon(C) :- common.mode(_, C), ex_out(E, _, _), !common.mode(E, C).
+
+    .decl background(c: Color)
+    background(C) :- common.mode(_, C), !uncommon(C).
+
+    // An input color that no train output keeps: the markers are repainted.
+    .decl repainted(c: Color)
+    repainted(C) :- ex_in(_, _, C), !ex_out(_, _, C).
+
+    // Some corner marker meets one wire on two axes, at a corner.
+    .decl corner_color(c: Color)
+    corner_color(C) :-
+        repainted(C), ex_in(E, P, C),
+        dir_elem(D1), neighbor(P, D1, Q1), ex_in(E, Q1, W), !repainted(W), !background(W),
+        perp_dir(D1, D2), neighbor(P, D2, Q2), ex_in(E, Q2, W).
+
+    // The other repainted color.
+    .decl turn_color(c: Color)
+    turn_color(C) :- repainted(C), !corner_color(C).
+}

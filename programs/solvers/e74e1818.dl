@@ -1,0 +1,153 @@
+// e74e1818
+// @draft
+// @keywords: lines d4 bbox color-class
+// @scene layer-per-color: each color other than params.bg forms one layer,
+//  and the layer's cells are all the cells of that color.
+// @scene stacked-layers: along params.axis, the layers occupy disjoint,
+//  consecutive spans of lines, and each line that a layer covers holds a cell
+//  of that layer.
+// @scene background: every other cell has params.bg.
+// @rule flip-in-span: each layer is reflected across the center of its own
+//  span along params.axis: a cell at line k of a span from line a to line b
+//  moves to line a + b - k, and keeps its position across the axis.
+// @rule background-fill: every cell that no reflected layer covers has
+//  params.bg.
+
+// what a layer is
+.type Layer =
+    // @claim layer-per-color
+    ColorLayer {}
+    // @scene layer-per-color: a layer is a maximal run of consecutive lines
+    //  whose cells other than params.bg all have one color; undefined where a
+    //  line holds two such colors
+    // @scene stacked-layers: two runs may share a color
+    // @witness repeated-color: variant $RowBandLayer
+    //     @relaxed stacked-layers
+  | RowBandLayer {}
+
+// what moves each layer's cells
+.type Transform =
+    // @claim flip-in-span
+    FlipInSpan {}
+    // @rule flip-in-span: each layer turns a half turn within its bounding box
+    // @witness asymmetric-layer: variant concept
+  | Rot180InBox {}
+    // @rule flip-in-span: each layer turns a half turn within its span of
+    //  lines, across the whole grid
+    // @witness off-center-layer: variant concept
+    // @witness asymmetric-layer: variant concept
+  | Rot180InSpan {}
+
+.type Choice = [layer: Layer, transform: Transform]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(0).
+
+    // --- $FlipInSpan, $Rot180InSpan, $RowBandLayer ---
+    // the axis along which the layers stack and are flipped
+    .decl axis(a: Axis) axis(AXIS_V).
+}
+
+.init params = Params
+
+// The layer choices that are defined on the input.
+.decl layering(l: Layer)
+
+.decl transform_choice(t: Transform)
+transform_choice($FlipInSpan()). transform_choice($Rot180InBox()). transform_choice($Rot180InSpan()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// Each ink cell with the bounding box of its layer.
+.decl layer_box(p: Position, l: Layer, b: Box)
+
+// The frame each ink cell moves in at each case.
+.decl framed(p: Position, ch: Choice, f: Box)
+
+// The D4 element that moves a layer's cells within their frame.
+.decl transform(t: Transform, d: D4)
+
+// Each ink cell moved within its frame.
+.decl moved(p: Position, col: Color, ch: Choice)
+moved(Q, Col, [L, T]) :-
+    framed(P, [L, T], F), ink(P, Col), transform(T, D),
+    crop(P, F, P_rel), apply(D, P_rel, Q_rel), compose(F, Q_rel, Q).
+
+out(Q, Col, Ch) :- moved(Q, Col, Ch).
+out(P, Bg, [L, T]) :-
+    in(P, _), layering(L), transform_choice(T), !moved(P, _, [L, T]), params.bg(Bg).
+
+// --- $ColorLayer ---
+
+// @claim flip-in-span
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- ink(P, Col).
+
+layering($ColorLayer()).
+layer_box(P, $ColorLayer(), B) :- ink(P, Col), color_box.box(Col, B).
+
+// --- $RowBandLayer ---
+
+// Each ink cell with its line across params.axis.
+.decl ink_line(p: Position, col: Color, l: Position)
+ink_line(P, Col, L) :- ink(P, Col), params.axis(A), split(P, A, L, _).
+
+// The one ink color of each line.
+// @claim layer-per-color
+.init line_color = Unanimous<Position, Color>
+line_color.item(L, Col) :- ink_line(_, Col, L).
+
+// @claim layer-per-color
+.init bands = Components<Color>
+bands.node(Col, L) :- line_color.value(L, Col).
+
+// @claim flip-in-span
+.init band_box = Bbox<Ident>
+band_box.cell(Id, P) :- ink_line(P, Col, L), bands.label(Col, L, Id).
+
+layering($RowBandLayer()) :- !line_color.clash(_).
+layer_box(P, $RowBandLayer(), B) :- band_box.cell(Id, P), band_box.box(Id, B).
+
+// --- $FlipInSpan, $Rot180InSpan ---
+
+// Each ink cell with its layer's span of lines along params.axis.
+.decl layer_span(p: Position, l: Layer, s: Box)
+layer_span(P, L, S) :- layer_box(P, L, B), params.axis(A), split(B, A, S, _).
+
+// --- $FlipInSpan ---
+framed(P, [L, $FlipInSpan()], S) :- layer_span(P, L, S).
+transform($FlipInSpan(), D) :- params.axis(A), flip_of(A, D).
+
+// --- $Rot180InBox ---
+framed(P, [L, $Rot180InBox()], B) :- layer_box(P, L, B).
+transform($Rot180InBox(), D) :- half_turn(D).
+
+// --- $Rot180InSpan ---
+framed(P, [L, $Rot180InSpan()], S) :- layer_span(P, L, S).
+transform($Rot180InSpan(), D) :- half_turn(D).
+
+// --- $Rot180InBox, $Rot180InSpan ---
+
+// A half turn: the reflections on both axes together.
+// @ignore: pass-through — states the half turn once for the two transforms that use it
+.decl half_turn(d: D4)
+half_turn(D) :- flip_of(A, F1), perp(A, A2), flip_of(A2, F2), d4_compose(F1, F2, D).
+
+.comp Determine {
+    // A line along axis a, in a train input, that holds two colors other
+    // than col.
+    .decl shared_line(col: Color, a: Axis)
+    shared_line(Col, A) :-
+        ex_in(E, P1, Col1), ex_in(E, P2, Col2), Col1 != Col2, ex_out(E, _, _),
+        axis_elem(A), split(P1, A, L, _), split(P2, A, L, _),
+        ex_in(E, _, Col), Col != Col1, Col != Col2.
+
+    // The colors that leave the other colors on disjoint lines along some
+    // axis.
+    .decl bg(c: Color)
+    bg(Col) :- ex_in(_, _, Col), axis_elem(A), !shared_line(Col, A).
+}

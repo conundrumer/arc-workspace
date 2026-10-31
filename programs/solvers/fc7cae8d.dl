@@ -1,0 +1,187 @@
+// fc7cae8d
+// @draft
+// @keywords: crop markers d4 noise objects rank
+// @scene color-frame: two adjacent edges of the grid are each a solid line of one color, the two
+//  colors different, with stray cells of the line's color just inside it.
+// @scene noise-edges: the other two edges hold scattered noise (5) cells on the background (0).
+// @scene picture: one rectangle on the background (0) field, clear of the edges, with a
+//  one-cell-wide strip outside each of two adjacent sides, as long as that side, one strip in
+//  each frame color.
+// @scene picture-colors: no cell of the picture holds a frame color.
+// @rule crop-picture: the output is the picture's box, the strips left out, each cell copied,
+//  background (0) cells included.
+// @rule orient-by-color: the picture is moved by the D4 element that takes the side each strip
+//  borders to the grid edge of the strip's color.
+
+// Which D4 element turns the picture.
+.type Orientation =
+    // @claim orient-by-color
+    ByColor {}
+    // @rule orient-by-color: of the two D4 elements that take the strips' corner of the
+    //  picture to the corner where the frame edges meet, the one that swaps the axes; it reads
+    //  no strip color.
+    // @witness same-axis-colors: ordinary concept
+  | CornerSwap {}
+
+// Which cells of the input form the picture.
+.type Extent =
+    // @claim crop-picture
+    StripBox {}
+    // @rule crop-picture: the box is the bounding box of the largest 8-connected set of cells
+    //  that are neither background, noise nor a frame color; undefined where no cell is such.
+    // @witness blank-far-edge: variant concept
+  | ContentBox {}
+
+.type Choice = [o: Orientation, e: Extent]
+
+// A candidate corner of the strips: the cell x outside the picture's corner, and the
+// diagonal k that points from x into the picture.
+.type Corner = [x: Position, k: DiagDir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $ContentBox ---
+    // @derive DominantColor: variant concept
+    .decl bg(c: Color) bg(0).
+    // @derive DominantColor: borderline concept
+    //     @relaxed noise-edges
+    // @derive RarestColor: variant concept
+    .decl noise(c: Color) noise(5).
+}
+
+.init params = Params
+
+// Cell p lies on the line of edge d.
+.decl edge_cell(d: Dir, p: Position, col: Color)
+edge_cell(D, P, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
+// The color of each edge line: its commonest color.
+// @claim color-frame
+.init edge_mode = Mode<Dir, Color, Position>
+edge_mode.item(D, Col, P) :- edge_cell(D, P, Col).
+
+// Two edges that meet at a corner, of two different colors.
+.decl frame_cand(d1: Dir, c1: Color, d2: Dir, c2: Color)
+frame_cand(D1, C1, D2, C2) :-
+    perp_dir(D1, D2), edge_mode.mode(D1, C1), edge_mode.mode(D2, C2), C1 != C2.
+
+// One of the two edge lines holds a third color.
+.decl frame_defect(d1: Dir, c1: Color, d2: Dir, c2: Color)
+frame_defect(D1, C1, D2, C2) :-
+    frame_cand(D1, C1, D2, C2),
+    ( edge_cell(D1, _, Col) ; edge_cell(D2, _, Col) ),
+    Col != C1, Col != C2.
+
+// A frame edge and its color.
+.decl frame_edge(d: Dir, col: Color)
+frame_edge(D1, C1) :- frame_cand(D1, C1, D2, C2), !frame_defect(D1, C1, D2, C2).
+
+.decl frame_color(col: Color)
+frame_color(Col) :- frame_edge(_, Col).
+
+// @claim picture
+.init run = Slide<Color>
+run.node(Col, P) :- in(P, Col), frame_color(Col).
+run.dir(Col, D) :- frame_color(Col), dir_elem(D).
+
+// Strip ends of two frame colors meet at x across the diagonal k: the strip of color c1
+// starts one step from x toward u, and a strip of the other frame color one step from x
+// toward r.
+.decl strip_corner(k: Corner, u: Dir, c1: Color, r: Dir)
+strip_corner([X, K], U, C1, R) :-
+    in(X, Col), diag_dirs(K, _, U, R),
+    neighbor(X, U, E1), in(E1, C1), frame_color(C1),
+    neighbor(X, R, E2), in(E2, C2), frame_color(C2),
+    C1 != C2, Col != C1, Col != C2.
+
+// The cells of the strip of color col, which borders side s of the picture.
+.decl strip(k: Corner, s: Dir, col: Color, p: Position)
+strip([X, K], S, C1, Q) :-
+    strip_corner([X, K], U, C1, R), opposite(R, S), neighbor(X, U, E1),
+    ( Q = E1 ; run.run(C1, E1, U, Q) ).
+
+// The picture's box: the cells beside the strips span it.
+// @claim picture crop-picture
+.init box = Bbox<Corner>
+box.cell(K, P) :- strip(K, S, _, Q), opposite(S, D), neighbor(Q, D, P).
+
+// A strip is more than one cell wide, or the box holds a frame color.
+.decl tainted(k: Corner)
+tainted(K) :-
+    strip(K, S, Col, Q), ( D = S ; opposite(S, D) ), neighbor(Q, D, Q2), in(Q2, Col).
+tainted(K) :- box.box(K, B), in(P, Col), frame_color(Col), inside(P, B).
+
+.decl picture(k: Corner, b: Box)
+picture(K, B) :- box.box(K, B), !tainted(K).
+
+// --- $ByColor ---
+
+// The element that takes each strip's side to the edge of its color.
+.decl orient(o: Orientation, k: Corner, g: D4)
+orient($ByColor(), K, G) :-
+    strip(K, S1, C1, _), strip(K, S2, C2, _), S1 != S2,
+    frame_edge(D1, C1), frame_edge(D2, C2),
+    apply_dir(G, S1, D1), apply_dir(G, S2, D2).
+
+// --- $CornerSwap ---
+
+// The element that takes the strips' corner of the picture to the frame's corner and swaps
+// the axes.
+orient($CornerSwap(), [X, K], G) :-
+    picture([X, K], _), diag_opposite(K, K_pic),
+    frame_edge(D1, _), frame_edge(D2, _), diag_dirs(K_frame, _, D1, D2),
+    apply_diag_dir(G, K_pic, K_frame),
+    apply_dir(G, D1, D3), axis_of(D1, A1), axis_of(D3, A3), perp(A1, A3).
+
+// --- $StripBox ---
+
+.decl extent(e: Extent, k: Corner, b: Box)
+extent($StripBox(), K, B) :- picture(K, B).
+
+// --- $ContentBox ---
+
+// @claim crop-picture
+.init content = Components8<Unit>
+content.node($U(), P) :- in(P, Col), !params.bg(Col), !params.noise(Col), !frame_color(Col).
+
+// @claim crop-picture
+.init content_size = Tally<Ident, Position>
+content_size.item(Id, P) :- content.label($U(), P, Id).
+
+// @claim crop-picture
+.init largest = ArgExtremes<Unit, Ident>
+largest.cand($U(), Id, N) :- content_size.tally(Id, N).
+
+// @claim crop-picture
+.init content_box = Bbox<Unit>
+content_box.cell($U(), P) :- content.label($U(), P, Id), largest.high($U(), Id, _).
+
+extent($ContentBox(), K, B) :- picture(K, _), content_box.box($U(), B).
+
+// --- $ByColor, $CornerSwap, $StripBox, $ContentBox ---
+
+out(P_out, Col, [O, E]) :-
+    orient(O, K, G), extent(E, K, B),
+    in(P, Col), crop(P, B, P_inner), apply(G, P_inner, P_out).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init input_mode = Mode<Example, Color, Position>
+    input_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that is not the commonest of another.
+    .decl uncommon(c: Color)
+    uncommon(Col) :- input_mode.mode(_, Col), ex_in(E, _, _), !input_mode.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- input_mode.mode(_, Col), !uncommon(Col).
+
+    // A color some input lacks.
+    .decl missing(c: Color)
+    missing(Col) :- ex_in(_, _, Col), ex_in(E, _, _), !ex_in(E, _, Col).
+
+    // The color every input holds and no output holds.
+    .decl noise(c: Color)
+    noise(Col) :- ex_in(_, _, Col), !missing(Col), !ex_out(_, _, Col).
+}

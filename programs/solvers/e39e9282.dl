@@ -1,0 +1,239 @@
+// e39e9282
+// @draft
+// @keywords: objects markers move cast
+// @scene background: a field of the background color fills the grid
+// @scene boxes: solid 3×3 squares of the keep color or of the erase color
+//  stand on the field, apart from each other
+// @scene pins: single cells of the pin color stand on the field, each next to
+//  one side cell of one box, across that side
+// @rule pin-cleared: each pin of a keep-color box becomes the background color
+// @rule pin-to-middle: each pin of a keep-color box paints the pin color on
+//  the box cell where the pin's line, through the box, crosses the box's
+//  middle line across that line
+// @rule box-erased: each erase-color box becomes the background color
+// @rule pin-grows: each pin of an erase-color box stays, and paints the pin
+//  color on the box cell next to it
+// @rule rest-kept: every other cell keeps its input color
+
+// where a pin of a keep-color box lands along its line
+.type Landing =
+    // @claim pin-to-middle
+    Middle {}
+    // @rule pin-to-middle: each pin of a keep-color box paints the pin color
+    //  two cells along its line from the pin, on the cell past the box's edge
+    //  cell
+    // @witness keep-box-wide: variant concept
+    //     @relaxed boxes
+  | PinJumpsEdge {}
+    // @rule pin-to-middle: each pin of a keep-color box paints the pin color
+    //  on the box cell next to the box's far edge, along the pin's line
+    // @witness keep-box-wide: variant concept
+  | PinNearFarEdge {}
+
+// which pin-color cells are pins of a box
+.type PinReach =
+    // @claim pins
+    Beside {}
+    // @rule pin-cast: a pin-color cell that is next to no box, and that has
+    //  only background between it and a box's side cell along a row or a
+    //  column, is also a pin of that box
+    // @witness distant-pin: borderline concept
+    //     @relaxed pins
+  | StrayPinCasts {}
+
+// what a pin-color cell that is no pin becomes
+.type Stray =
+    // @claim rest-kept
+    StrayKept {}
+    // @rule stray-erased: each pin-color cell that is no pin becomes the
+    //  background color
+    // @witness stray-pin: borderline concept
+    //     @relaxed pins
+  | StrayPinErased {}
+
+// what an erase-color box with no pin becomes
+.type Unpinned =
+    // @claim box-erased
+    UnpinnedErased {}
+    // @rule box-erased: an erase-color box with at least one pin becomes the
+    //  background color, and one with no pin keeps its color
+    // @witness unpinned-erase-box: variant concept
+  | UnpinnedBoxKept {}
+
+.type Choice = [l: Landing, r: PinReach, s: Stray, u: Unpinned]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(c: Color) bg(8).
+    // @derive RarestColor: variant derived
+    //     @relaxed pins
+    .decl pin(c: Color) pin(9).
+    // The color of the boxes that take their pins inside.
+    .decl keep(c: Color) keep(6).
+    // The color of the boxes that are taken away.
+    .decl erase(c: Color) erase(5).
+
+    .decl box_color(c: Color)
+    box_color(C) :- keep(C).
+    box_color(C) :- erase(C).
+}
+
+.init params = Params
+
+.decl landing_choice(l: Landing)
+landing_choice($Middle()). landing_choice($PinJumpsEdge()). landing_choice($PinNearFarEdge()).
+
+.decl pin_reach_choice(r: PinReach)
+pin_reach_choice($Beside()). pin_reach_choice($StrayPinCasts()).
+
+.decl stray_choice(s: Stray)
+stray_choice($StrayKept()). stray_choice($StrayPinErased()).
+
+.decl unpinned_choice(u: Unpinned)
+unpinned_choice($UnpinnedErased()). unpinned_choice($UnpinnedBoxKept()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, R, S, U]) :-
+    landing_choice(L), pin_reach_choice(R), stray_choice(S), unpinned_choice(U).
+
+// @claim boxes
+.init boxes = Components<Color>
+boxes.node(Col, P) :- in(P, Col), params.box_color(Col).
+
+// @claim boxes
+.init box_bbox = Bbox<Ident>
+box_bbox.cell(Id, P) :- boxes.label(_, P, Id).
+
+.decl pin_cell(p: Position)
+pin_cell(P) :- in(P, Col), params.pin(Col).
+
+// Pin p stands across box id's d-side from its side cell q.
+.decl beside(p: Position, id: Ident, d: Dir, q: Position)
+beside(P, Id, D, Q) :-
+    boxes.label(_, Q, Id), box_bbox.box(Id, B), box_edge(Q, B, D),
+    neighbor(Q, D, P), pin_cell(P).
+
+// The pins of each reach: pin p of box id on its d side, facing side cell q.
+.decl pin(r: PinReach, p: Position, id: Ident, d: Dir, q: Position)
+pin(R, P, Id, D, Q) :- pin_reach_choice(R), beside(P, Id, D, Q).
+
+.decl keep_pin(r: PinReach, p: Position, id: Ident, d: Dir, q: Position)
+keep_pin(R, P, Id, D, Q) :- pin(R, P, Id, D, Q), boxes.label(Col, Q, Id), params.keep(Col).
+
+// The erase-color box cell a pin grows into.
+.decl grown(r: PinReach, q: Position)
+grown(R, Q) :- pin(R, _, Id, _, Q), boxes.label(Col, Q, Id), params.erase(Col).
+
+// A pin of a keep-color box moves from p to cell l.
+.decl move(l: Landing, r: PinReach, p: Position, l_cell: Position)
+
+// A pin-color cell that is no pin.
+.decl stray(r: PinReach, p: Position)
+stray(R, P) :- pin_reach_choice(R), pin_cell(P), !pin(R, P, _, _, _).
+
+.decl painted(ch: Choice, p: Position)
+painted([L, R, S, U], P) :- impl_choice([L, R, S, U]), move(L, R, _, P).
+painted([L, R, S, U], P) :- impl_choice([L, R, S, U]), grown(R, P).
+
+.decl cleared(ch: Choice, p: Position)
+cleared([L, R, S, U], P) :- impl_choice([L, R, S, U]), move(L, R, P, _).
+
+// A keep-color box's pin: only its move gives its output, so a pin that lands
+// nowhere leaves the output undefined.
+.decl moving(ch: Choice, p: Position)
+moving([L, R, S, U], P) :- impl_choice([L, R, S, U]), keep_pin(R, P, _, _, _).
+
+out(P, Col, Ch) :- painted(Ch, P), params.pin(Col).
+out(P, Col, Ch) :- cleared(Ch, P), !painted(Ch, P), params.bg(Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col),
+    !painted(Ch, P), !cleared(Ch, P), !moving(Ch, P).
+
+// --- $Middle ---
+move($Middle(), R, P, L) :-
+    keep_pin(R, P, Id, D, Q), box_bbox.box(Id, B),
+    boxes.label(_, L, Id), crop(L, B, L_rel), dist_pair(L_rel, D, K, K),  // on the middle line
+    perp_dir(D, D2), same_dist(D2, Q, L).                                 // on the pin's line
+
+// --- $PinJumpsEdge ---
+move($PinJumpsEdge(), R, P, L) :-
+    keep_pin(R, P, _, D, Q), opposite(D, D_in), neighbor(Q, D_in, L).
+
+// --- $PinNearFarEdge ---
+move($PinNearFarEdge(), R, P, L) :-
+    keep_pin(R, P, Id, D, Q), box_bbox.box(Id, B), opposite(D, D_far),
+    boxes.label(_, F, Id), box_edge(F, B, D_far),                      // a far-edge cell
+    perp_dir(D, D2), same_dist(D2, Q, F), neighbor(F, D, L).           // on the pin's line
+
+// --- $StrayPinCasts ---
+// @claim pins
+.init pin_cast = Ray<Unit>
+pin_cast.dir($U(), D) :- dir_elem(D).
+pin_cast.cell($U(), P) :- in(P, _).
+pin_cast.mark($U(), P) :- pin_cell(P), !beside(P, _, _, _).
+pin_cast.blocked($U(), P) :- in(P, Col), !params.bg(Col).
+
+pin($StrayPinCasts(), P, Id, D, Q) :-
+    pin_cast.stop($U(), Q, D_cast, _, P), boxes.label(_, Q, Id),
+    opposite(D_cast, D).
+
+// --- $UnpinnedErased ---
+cleared([L, R, S, $UnpinnedErased()], P) :-
+    impl_choice([L, R, S, $UnpinnedErased()]), boxes.label(Col, P, _), params.erase(Col).
+
+// --- $UnpinnedBoxKept ---
+cleared([L, R, S, $UnpinnedBoxKept()], P) :-
+    impl_choice([L, R, S, $UnpinnedBoxKept()]),
+    boxes.label(Col, P, Id), params.erase(Col), pin(R, _, Id, _, _).
+
+// --- $StrayPinErased ---
+cleared([L, R, $StrayPinErased(), U], P) :-
+    impl_choice([L, R, $StrayPinErased(), U]), stray(R, P).
+
+.comp Determine {
+    .decl example(e: Example)
+    example(E) :- ex_in(E, _, _).
+
+    .init color_count = Mode<Example, Color, Position>
+    color_count.item(E, C, P) :- ex_in(E, P, C).
+
+    .init count_rank = ArgExtremes<Example, Color>
+    count_rank.cand(E, C, N) :- color_count.tally(E, C, N).
+
+    // Color c is not the commonest color of some input.
+    .decl not_commonest(c: Color)
+    not_commonest(C) :- color_count.tally(_, C, _), example(E), !count_rank.high(E, C, _).
+
+    .decl bg(c: Color)
+    bg(C) :- color_count.tally(_, C, _), !not_commonest(C).
+
+    // Color c is not the rarest color of some input.
+    .decl not_rarest(c: Color)
+    not_rarest(C) :- color_count.tally(_, C, _), example(E), !count_rank.low(E, C, _).
+
+    .decl pin(c: Color)
+    pin(C) :- color_count.tally(_, C, _), !not_rarest(C).
+
+    // A train cell of color c keeps c.
+    .decl survives(c: Color)
+    survives(C) :- ex_in(E, P, C), ex_out(E, P, C).
+
+    // A train cell of color c turns to color c2.
+    .decl turns(c: Color, c2: Color)
+    turns(C, C2) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // Every train cell of the erase color changes.
+    .decl erase(c: Color)
+    erase(C) :- turns(C, _), !survives(C).
+
+    // A train cell of color c turns to a color other than the pin color.
+    .decl turns_off_pin(c: Color)
+    turns_off_pin(C) :- turns(C, C2), !pin(C2).
+
+    // Some train cells of the keep color change, and each takes the pin color.
+    .decl keep(c: Color)
+    keep(C) :- turns(C, _), !turns_off_pin(C).
+}

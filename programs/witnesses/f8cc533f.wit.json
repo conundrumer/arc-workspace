@@ -1,0 +1,42 @@
+{
+  "id": "f8cc533f",
+  "witnesses": [
+    {
+      "id": "asymmetric-overlay",
+      "separates": "every copy lacks the same cells, so the overlay of the aligned copies is an L that is not symmetric under SYM_D4; the concept closes it under SYM_D4 into the 3x3 ring and restores each copy to that ring, $Union keeps the L as the pattern and leaves the input unchanged",
+      "input": [
+        [3,3,3,3,3,3,3,3,3],
+        [3,1,1,1,3,2,2,2,3],
+        [3,1,3,3,3,2,3,3,3],
+        [3,1,3,3,3,2,3,3,3],
+        [3,3,3,3,3,3,3,3,3]
+      ],
+      "output": [
+        {
+          "cases": [
+            "concept"
+          ],
+          "grid": [
+            [3,3,3,3,3,3,3,3,3],
+            [3,1,1,1,3,2,2,2,3],
+            [3,1,3,1,3,2,3,2,3],
+            [3,1,1,1,3,2,2,2,3],
+            [3,3,3,3,3,3,3,3,3]
+          ]
+        },
+        {
+          "cases": [
+            "$Union"
+          ],
+          "grid": [
+            [3,3,3,3,3,3,3,3,3],
+            [3,1,1,1,3,2,2,2,3],
+            [3,1,3,3,3,2,3,3,3],
+            [3,1,3,3,3,2,3,3,3],
+            [3,3,3,3,3,3,3,3,3]
+          ]
+        }
+      ]
+    }
+  ]
+}

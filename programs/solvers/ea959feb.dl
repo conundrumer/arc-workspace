@@ -1,0 +1,181 @@
+// ea959feb
+// @draft
+// @keywords: wallpaper symmetry repair color-class
+// @scene periodic-pattern: the grid is a pattern that repeats along each axis, with a
+//  period on each axis shorter than the grid, so each cell's row phase and column
+//  phase recur elsewhere in the grid.
+// @scene mask-patches: solid rectangles of `mask_color` cover parts of the pattern,
+//  and they cover fewer cells than the pattern shows elsewhere at each phase pair.
+// @scene mask-color-in-pattern: `mask_color` is also one of the pattern's own colors,
+//  so a cell of that color is a masked cell or a pattern cell.
+// @scene phase-uncovered: each pair of a row phase and a column phase has a cell
+//  outside every patch.
+// @rule restore-period: the output is the pattern under the patches, each cell in the
+//  color the pattern has there.
+//     @approximated: each cell of the output takes the color the pattern has at its row
+//      phase and column phase, which the cells outside the patches show; a cell outside
+//      the patches keeps its color.
+//     @witness fully-covered-phase: borderline other
+//         @relaxed phase-uncovered
+
+// What structure the pattern has along `cycle_axis`.
+.type VStruct =
+    // @claim periodic-pattern
+    Periodic {}
+    // @scene periodic-pattern: along `cycle_axis`, each line steps through one cyclic
+    //  order of all the input's colors, read off adjacent known cells and completed
+    //  through `mask_color`; the pattern repeats along the other axis.
+    // @rule restore-period: a cell takes the cycle step from a known cell of its line
+    //  along `cycle_axis`, or else of a line of its phase on the other axis; undefined
+    //  where the known cells admit no single cycle.
+    // @witness cycle-restores-covered-phase: borderline $ColorCycle
+    //     @relaxed phase-uncovered
+  | ColorCycle {}
+
+// Which cells are a cell's counterparts.
+.type Counterparts =
+    // @claim restore-period
+    Translations {}
+    // @rule restore-period: the counterparts also include the images under the row and
+    //  column reflections, taken modulo the periods, that some pair of known cells
+    //  witnesses and none contradicts; undefined where the concept is undefined.
+    // @witness mirror-restores-covered-column: borderline $MirrorSymmetry
+    //     @relaxed phase-uncovered
+  | MirrorSymmetry {}
+
+.type Choice = [v: VStruct, c: Counterparts]
+
+// A frame position under one case.
+.type CasePos = [ch: Choice, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The color of the patches.
+    // @derive DominantColor: borderline concept
+    .decl mask_color(c: Color) mask_color(1).
+
+    // --- $ColorCycle ---
+    // The axis along which the colors cycle.
+    .decl cycle_axis(a: Axis) cycle_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl v_struct_choice(v: VStruct)
+v_struct_choice($Periodic()). v_struct_choice($ColorCycle()).
+
+// The cells outside the patches.
+.decl known(p: Position, col: Color)
+known(P, Col) :- in(P, Col), !params.mask_color(Col).
+
+// The pattern's period on each axis, read off the known cells.
+// @claim periodic-pattern
+.init si = OffsetInvariance<Unit, Color>
+si.cell($U(), P, Col) :- known(P, Col).
+
+// The translations by the periods.
+// @claim periodic-pattern
+.init wp_t = Wallpaper<VStruct, Color>
+wp_t.grid(V, P) :- v_struct_choice(V), in(P, _).
+
+// The translations by the periods, with the row and column reflections.
+// @claim restore-period
+// @ignore period: store — the axis of each period follows from `cycle_axis`
+.init wp_m = Wallpaper<VStruct, Color>
+wp_m.transform(D) :- flip_of(_, D).
+wp_m.cell(V, P, Col) :- v_struct_choice(V), known(P, Col).
+wp_m.grid(V, P) :- v_struct_choice(V), in(P, _).
+
+// The counterpart pairs of each case.
+.decl action(ch: Choice, p: Position, q: Position)
+
+.init orbit = Canon<CasePos>
+orbit.edge([Ch, P], [Ch, Q]) :- action(Ch, P, Q).
+
+// The period translations each structure has on each axis.
+.decl period(v: VStruct, a: Axis, k: number)
+wp_t.period(V, A, K) :- period(V, A, K).
+wp_m.period(V, A, K) :- period(V, A, K).
+
+// --- $Translations ---
+action([V, $Translations()], P, Q) :- wp_t.action(V, P, Q).
+
+// --- $MirrorSymmetry ---
+action([V, $MirrorSymmetry()], P, Q) :- wp_m.action(V, P, Q).
+
+// --- $Periodic ---
+period($Periodic(), A, K) :- si.min_period($U(), A, K).
+
+// The color the known cells of an orbit hold.
+.decl orbit_color(id: Ident, col: Color)
+orbit_color(Id, Col) :- orbit.id([_, Q], Id), known(Q, Col).
+
+out(P, Col, [$Periodic(), C]) :-
+    orbit.id([[$Periodic(), C], P], Id),
+    ( orbit_color(Id, Col)
+    ; !orbit_color(Id, _), in(P, Col)       // no known cell: the cell keeps its color
+    ).
+
+// --- $ColorCycle ---
+period($ColorCycle(), A2, K) :- params.cycle_axis(A), perp(A, A2), si.min_period($U(), A2, K).
+
+// One cycle step toward d: two adjacent known cells.
+.decl seen_succ(d: Dir, c: Color, c_next: Color)
+seen_succ(D, C1, C2) :-
+    params.cycle_axis(A), axis_of(D, A),
+    known(P, C1), neighbor(P, D, Q), known(Q, C2).
+
+// The cycle toward each direction of the axis, completed through the mask color.
+// @claim periodic-pattern
+.init cyc = CycleWalk<Dir, Color>
+cyc.succ(D, C1, C2) :- seen_succ(D, C1, C2).
+cyc.succ(D, C1, C2) :-
+    params.cycle_axis(A), axis_of(D, A), known(_, C), params.mask_color(M),
+    ( !seen_succ(D, C, _), C1 = C, C2 = M       // no seen successor: the mask color
+    ; !seen_succ(D, _, C), C1 = M, C2 = C       // no seen predecessor: the mask color
+    ).
+
+// Some known cell shares p's line along the cycle axis.
+// @store: variant concept
+.decl line_known(p: Position)
+line_known(P) :- params.cycle_axis(A), in(P, _), same_line(A, P, Q), known(Q, _).
+
+// p takes its cycle step from the line along the cycle axis through p2: p's own line
+// where it has a known cell, and otherwise the line of a counterpart of p.
+.decl step_line(ch: Choice, p: Position, p2: Position)
+step_line(Ch, P, P2) :-
+    Ch = [$ColorCycle(), _], orbit.id([Ch, P], Id),
+    ( line_known(P), P2 = P
+    ; !line_known(P), orbit.id([Ch, P2], Id), line_known(P2)
+    ).
+
+// p's color is k cycle steps toward d from c0.
+.decl reach(ch: Choice, p: Position, d: Dir, k: number, c0: Color)
+reach(Ch, P, D, K, C0) :-
+    step_line(Ch, P, P2), params.cycle_axis(A), same_line(A, P2, Q), known(Q, C0),
+    relative(Q, P2, V), axis_of(D, A), opposite(D, D_opp),     // V: from q to p2
+    dist(V, D_opp, K), K >= 0.                                  // p2 is k cells from q toward d
+
+cyc.step(D, K) :- reach(_, _, D, K, _).
+
+out(P, Col, Ch) :- reach(Ch, P, D, K, C0), cyc.walk(D, C0, K, Col).
+out(P, Col, Ch) :-
+    Ch = [$ColorCycle(), _], orbit.id([Ch, P], _), !step_line(Ch, P, _),
+    in(P, Col).                             // no known cell: the cell keeps its color
+
+.comp Determine {
+    // The input color of the cells the output changes.
+    .decl mask_color(c: Color)
+    mask_color(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // Some output color has two different successors toward a direction on the axis.
+    .decl branching(a: Axis)
+    branching(A) :-
+        axis_of(D, A), ex_out(E, P, C), neighbor(P, D, Q), ex_out(E, Q, C2),
+        ex_out(E, P2, C), neighbor(P2, D, Q2), ex_out(E, Q2, C3), C2 != C3.
+
+    // The axes along which each output's colors step through one cycle.
+    .decl cycle_axis(a: Axis)
+    cycle_axis(A) :- axis_elem(A), !branching(A).
+}

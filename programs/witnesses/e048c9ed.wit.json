@@ -1,0 +1,71 @@
+{
+  "id": "e048c9ed",
+  "witnesses": [{
+    "id": "two-cell-marker",
+    "separates": "the marker is two cells stacked in one column on the top row: the single-cell marker is missing and the concept is undefined, and the edge-row marker gives that column, marking 4 and 1",
+    "input": [
+      [0,0,0,0,5],
+      [0,0,0,0,5],
+      [0,0,0,0,0],
+      [2,2,2,0,0],
+      [0,0,0,0,0],
+      [1,1,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$SingleCell"],
+      "grid": null
+    }, {
+      "cases": ["$MarkerOnEdge"],
+      "grid": [
+        [0,0,0,0,5],
+        [0,0,0,0,5],
+        [0,0,0,0,0],
+        [2,2,2,0,4],
+        [0,0,0,0,0],
+        [1,1,0,0,1]
+      ]
+    }]
+  }, {
+    "id": "turned-scene",
+    "separates": "the scene turned a quarter, bars along columns and the marker on the left column: the stored horizontal axis is undefined, and bars along either axis are marked in the marker row with 1 and 4",
+    "input": [
+      [0,0,2,0,1],
+      [0,0,2,0,1],
+      [0,0,0,0,1],
+      [5,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$AlongAxis"],
+      "grid": null
+    }, {
+      "cases": ["$EitherAxis"],
+      "grid": [
+        [0,0,2,0,1],
+        [0,0,2,0,1],
+        [0,0,0,0,1],
+        [5,0,1,0,4]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "`bg=DominantColor` from the stored value: train 0 with 0 and 2 swapped",
+    "input": [
+      [2,2,5],
+      [2,2,2],
+      [1,1,2],
+      [2,2,2]
+    ],
+    "output": [{
+      "cases": ["bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [2,2,5],
+        [2,2,2],
+        [1,1,1],
+        [2,2,2]
+      ]
+    }]
+  }]
+}

@@ -12,12 +12,8 @@
 //  one pair of hollow squares overlap
 // @rule select-hollow: the output keeps the hollow squares and drops the
 //  solid squares
-// @rule axis: the output lines the kept squares up in the direction along
-//  which they lie in the input
-//     @approximated: the output lines the kept squares up along the axis on
-//      which their extents are pairwise disjoint
-//     @witness diagonal: borderline $AxisBbox
-//         @relaxed one-separating-axis
+// @rule axis: the output lines the kept squares up along the axis on which
+//  no two kept squares share a line
 // @rule order: along that axis, the kept squares keep the order they have in
 //  the input
 // @rule concatenate: the output is the kept squares, each copied unchanged,
@@ -71,6 +67,7 @@
     //  undefined when the box is square
     // @witness spread-rows: ordinary concept
     // @witness diagonal: borderline $AxisBbox
+    //     @relaxed one-separating-axis
     // @witness spread-tie: ordinary concept
     // @witness wide-rings: borderline concept
     //     @relaxed squares

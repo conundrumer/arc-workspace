@@ -1,0 +1,76 @@
+// f3cdc58f
+// @draft
+// @keywords: color-class count rank
+// @scene scattered-marks: a grid on the background color (0) holds single cells, each in one of the palette colors (1, 2, 3, 4), scattered without structure.
+// @scene counts-fit-height: each palette color has at most as many cells as the grid has rows.
+// @rule bar-per-color: the output has the input's size and is background everywhere except the bars.
+// @rule bar-position: the bar of the color at rank k in bar_order is the line k cells from the start_side edge, perpendicular to that edge.
+// @rule bar-height: the bar starts on the base_side edge and reaches as many cells into the grid as the input has cells of its color, painted in that color.
+
+// what a color with no cell does to the slots
+.type Choice =
+    // @claim bar-position
+    KeepSlot {}
+    // @rule bar-position: a color's bar stands at its rank among the bar_order colors the input holds.
+    // @witness absent-color: variant concept
+  | PackBars {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed scattered-marks
+    .decl bg(c: Color) bg(0).
+    // the palette colors at their rank in the order their bars stand, from start_side
+    .decl bar_order(c: Color, r: number)
+    bar_order(1, 0). bar_order(2, 1). bar_order(3, 2). bar_order(4, 3).
+    // the edge the bars stand on
+    .decl base_side(d: Dir) base_side(DIR_B).
+    // the edge the first bar sits against
+    .decl start_side(d: Dir) start_side(DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($KeepSlot()). impl_choice($PackBars()).
+
+// the output's cells: the input's frame
+.decl frame(p: Position)
+frame(P) :- in(P, _).
+
+// the cell count of each bar_order color
+// @claim bar-height
+.init color_count = Tally<Color, Position>
+color_count.item(Col, P) :- in(P, Col), params.bar_order(Col, _).
+
+// the slot each color's bar takes, as its distance from the start_side edge
+.decl slot(ch: Choice, col: Color, r: number)
+
+// --- $KeepSlot ---
+slot($KeepSlot(), Col, R) :- params.bar_order(Col, R).
+
+// --- $PackBars ---
+// the colors the input holds, in bar_order
+// @claim bar-position
+.init held = Order<Unit, Color>
+held.elem($U(), Col) :- color_count.tally(Col, _).
+held.score($U(), Col, R) :- color_count.tally(Col, _), params.bar_order(Col, R).
+
+slot($PackBars(), Col, R) :- held.rank($U(), Col, R).
+
+// --- $KeepSlot, $PackBars ---
+.decl bar(ch: Choice, p: Position, col: Color)
+bar(Ch, P, Col) :-
+    frame(P), slot(Ch, Col, R),
+    params.start_side(S), dist(P, S, R),                       // on the color's slot
+    params.base_side(B), dist(P, B, K), color_count.tally(Col, N), K < N.  // within its count of the base edge
+
+out(P, Col, Ch) :- bar(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), frame(P), !bar(Ch, P, _), params.bg(Col).
+
+.comp Determine {
+    // each bar's color at its distance from the start_side edge
+    .decl bar_order(c: Color, r: number)
+    bar_order(Col, R) :- ex_out(_, P, Col), !params.bg(Col), params.start_side(S), dist(P, S, R).
+}

@@ -1,0 +1,188 @@
+// e69241bd
+// @draft
+// @keywords: objects markers flood
+// @scene floor-and-walls: every cell is a floor cell of color background or a
+//  wall cell of color wall, apart from a few seed cells.
+// @scene seeds: each seed is a single cell of a color other than background
+//  and wall, and no two seeds share a room.
+// @scene rooms: a room is a 4-connected component of the floor cells and seeds.
+// @rule seed-fills-room: each floor cell of a room that holds a seed takes that
+//  seed's color.
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// What the floor of a room with seeds of two colors takes
+.type SharedRoom =
+    // @claim seeds
+    OneSeed {}
+    // @scene seeds: a room may hold seeds of different colors.
+    // @rule seed-fills-room: each floor cell of a room takes the color of the
+    //  seed that a fewest-step 4-adjacent walk through the room reaches first;
+    //  undefined where seeds of two colors tie at a cell.
+    // @witness two-seeds-one-room: borderline $NearestSeed
+    //     @relaxed seeds
+  | NearestSeed {}
+
+// Which cells seed a room
+.type SeedSet =
+    // @claim seeds
+    AnyColor {}
+    // @scene seeds: a seed is a single cell of a color in the stored set
+    //  seed_colors; a cell of any other color seeds nothing and keeps its color.
+    // @witness unseen-seed-color: ordinary concept
+  | StoredSeedColors {}
+    // @scene seeds: a seed is a cell of a color other than background and wall
+    //  with no such cell beside it; a 4-connected piece of two or more such cells
+    //  seeds nothing and keeps its colors.
+    // @witness two-cell-seed: borderline concept
+    //     @relaxed seeds
+  | SingleCell {}
+
+// Where the wall color comes from
+.type WallSource =
+    // @claim floor-and-walls
+    StoredWall {}
+    // @scene floor-and-walls: the wall color is the second commonest color of
+    //  the input; undefined where two colors tie for that place.
+    // @witness walls-outnumber-floor: variant concept
+    // @witness seeds-outnumber-walls: borderline concept
+  | SecondCommonest {}
+
+.type Choice = [r: SharedRoom, s: SeedSet, w: WallSource]
+
+// A cell, under one reading of the seeds and the walls.
+.type SeedCell = [s: SeedSet, w: WallSource, p: Position]
+
+// A seed color, under one reading of the seeds and the walls.
+.type SeedColor = [s: SeedSet, w: WallSource, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl background(c: Color) background(0).
+
+    // --- $StoredWall ---
+    .decl wall(c: Color) wall(5).
+
+    // --- $StoredSeedColors ---
+    // @derive RarestColor: ordinary concept
+    .decl seed_colors(c: Color)
+    seed_colors(1). seed_colors(3). seed_colors(4).
+    seed_colors(6). seed_colors(7). seed_colors(8).
+}
+
+.init params = Params
+
+.decl shared_room_choice(r: SharedRoom)
+shared_room_choice($OneSeed()). shared_room_choice($NearestSeed()).
+
+.decl seed_set_choice(s: SeedSet)
+seed_set_choice($AnyColor()). seed_set_choice($StoredSeedColors()).
+seed_set_choice($SingleCell()).
+
+.decl wall_source_choice(w: WallSource)
+wall_source_choice($StoredWall()). wall_source_choice($SecondCommonest()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, S, W]) :- shared_room_choice(R), seed_set_choice(S), wall_source_choice(W).
+
+.decl wall(w: WallSource, c: Color)
+
+// --- $StoredWall ---
+wall($StoredWall(), C) :- params.wall(C).
+
+// --- $SecondCommonest ---
+// The cell count of each color.
+// @claim floor-and-walls
+.init color_count = Tally<Color, Position>
+color_count.item(C, P) :- in(P, C).
+
+// The colors ordered by cell count.
+// @claim floor-and-walls
+.init by_count = Order<Unit, Color>
+by_count.elem($U(), C) :- in(_, C).
+by_count.score($U(), C, N) :- color_count.tally(C, N).
+
+wall($SecondCommonest(), C) :-
+    by_count.last($U(), C_top), by_count.next($U(), C, C_top).  // next below the commonest
+
+// --- $StoredWall, $SecondCommonest ---
+.decl room_cell(w: WallSource, p: Position)
+room_cell(W, P) :- wall(W, _), in(P, C), !wall(W, C).
+
+.decl floor(p: Position)
+floor(P) :- in(P, C), params.background(C).
+
+// @claim rooms
+.init rooms = Components<WallSource>
+rooms.node(W, P) :- room_cell(W, P).
+
+.decl seed(s: SeedSet, w: WallSource, p: Position, col: Color)
+
+// --- $AnyColor ---
+seed($AnyColor(), W, P, Col) :-
+    room_cell(W, P), in(P, Col), !params.background(Col).
+
+// --- $SingleCell ---
+seed($SingleCell(), W, P, Col) :-
+    room_cell(W, P), in(P, Col), !params.background(Col), !beside_mark(W, P).
+
+// A room cell not of the background color has another such cell beside it.
+.decl beside_mark(w: WallSource, p: Position)
+beside_mark(W, P) :-
+    room_cell(W, P), in(P, C), !params.background(C),
+    dir_elem(D), neighbor(P, D, Q), room_cell(W, Q), in(Q, C2), !params.background(C2).
+
+// --- $StoredSeedColors ---
+seed($StoredSeedColors(), W, P, Col) :-
+    room_cell(W, P), in(P, Col), params.seed_colors(Col).
+
+.decl fill(ch: Choice, p: Position, col: Color)
+
+// --- $OneSeed ---
+fill([$OneSeed(), S, W], P, Col) :-
+    impl_choice([$OneSeed(), S, W]), floor(P),
+    rooms.label(W, P, Id), rooms.label(W, Q, Id), seed(S, W, Q, Col).  // a seed of its room
+
+// --- $NearestSeed ---
+// The fewest steps through the room from a seed of each color.
+// @claim seed-fills-room
+.init reach = GraphDistance<SeedColor, Position>
+reach.seed([S, W, Col], P) :- seed(S, W, P, Col).
+reach.edge([S, W, Col], P, Q) :-
+    seed(S, W, _, Col), room_cell(W, P), dir_elem(D), neighbor(P, D, Q), room_cell(W, Q).
+
+// The seed colors nearest each floor cell.
+// @claim seed-fills-room
+.init nearest = ArgExtremes<SeedCell, Color>
+nearest.cand([S, W, P], Col, K) :- floor(P), reach.distance([S, W, Col], P, K).
+
+fill([$NearestSeed(), S, W], P, Col) :-
+    impl_choice([$NearestSeed(), S, W]), nearest.low([S, W, P], Col, _).
+
+// --- $OneSeed, $NearestSeed ---
+out(P, Col, Ch) :- fill(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !fill(Ch, P, _).
+
+.comp Determine {
+    // A cell that an example's output changes, with its input and output colors.
+    .decl changed(e: Example, p: Position, c_in: Color, c_out: Color)
+    changed(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), !ex_out(E, P, C_in).
+
+    // The floor is the color the fill paints over.
+    .decl background(c: Color)
+    background(C) :- changed(_, _, C, _).
+
+    // A color that some train input lacks.
+    .decl absent(c: Color)
+    absent(C) :- ex_in(_, _, C), ex_out(E, _, _), !ex_in(E, _, C).
+
+    // The walls stand in every train input, and are not the floor.
+    // @ignore: determine prediction — the floor and the wall colors both stand in every input and every output, and only the change from input to output tells them apart
+    .decl wall(c: Color)
+    wall(C) :- ex_in(_, _, C), !absent(C), !background(C).
+
+    // The seed colors are the colors the fill paints.
+    .decl seed_colors(c: Color)
+    seed_colors(C) :- changed(_, _, _, C).
+}

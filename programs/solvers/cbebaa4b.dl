@@ -12,15 +12,19 @@
 //  of two pieces share a place, and the whole assembly lies inside the grid.
 // @rule anchor-stays: the anchor piece and its `connector` cells keep their
 //  places.
-// @rule assemble: every other piece, with its `connector` cells, moves by its
-//  translation in that fit.
-//     @approximated: first, two pieces join at an offset at which two or more
-//      of their `connector` cells meet and no other cells of the two share a
-//      place, where a `connector` cell has one such join left; then the
-//      `connector` cells no join took pair up in the same way, one cell meeting
-//      one cell; each piece moves by the offsets of the joins on its way from
-//      the anchor piece, and the output stands where the result is a fit
-//     @witness twin-pairs: borderline other
+// @rule assemble: the pieces join by forced steps, and no step is undone.
+//  First, two pieces join at an offset at which two or more of their
+//  `connector` cells meet and no other cells of the two share a place, where
+//  some `connector` cell has that join alone left; a join that shares a
+//  `connector` cell, or the two pieces at another offset, with a join made is
+//  no longer left. Then, in the same way, each `connector` cell no join took
+//  meets the one `connector` cell no join took that is left for it. Every
+//  other piece, with its `connector` cells, moves by the offsets of the joins
+//  on its way from the anchor piece. Undefined where a step leaves a choice,
+//  so that a `connector` cell meets no cell, as where a `connector` cell has
+//  two cells left that it could meet; where two joins made share a
+//  `connector` cell or two pieces; where a piece takes no place or two; and
+//  where the result is no fit as `pieces-fit` gives it.
 // @rule rest-background: every other output cell is `background`.
 
 // which piece stays in place
@@ -216,13 +220,9 @@ matched.covers(C, J, D) :-
     meet(C, Oa, Ob, V, D2, _), D2 != D.
 matched.conflict(C, J, J2) :- rival(C, J, J2).
 
-// A dot that a join of the first step took.
-.decl taken(c: Connector, d: Position)
-taken(C, D) :- matched.forced(C, J), !matched.ruled_out(C, J), matched.covers(C, J, D).
-
-// A join that puts a dot already taken on another dot.
+// A join that puts a dot that a join of the first step took on another dot.
 .decl stale(c: Connector, j: Ident)
-stale(C, J) :- join_dot(C, J, D), taken(C, D).
+stale(C, J) :- join_dot(C, J, D), matched.forced(C, J2), matched.covers(C, J2, D).
 
 // Then the dots left pair up in the same way.
 // @claim pieces-fit assemble
@@ -230,16 +230,23 @@ stale(C, J) :- join_dot(C, J, D), taken(C, D).
 paired_up.covers(C, J, D) :- join_dot(C, J, D), !stale(C, J).
 paired_up.conflict(C, J, J2) :- rival(C, J, J2).
 
+// A join a step made, and a dot it took.
+.decl made(c: Connector, j: Ident, d: Position)
+made(C, J, D) :- matched.forced(C, J), matched.covers(C, J, D).
+made(C, J, D) :- paired_up.forced(C, J), paired_up.covers(C, J, D).
+
+// Two joins made share a dot or a pair of pieces.
+.decl clash(c: Connector)
+clash(C) :- made(C, J, D), made(C, J2, D), J != J2.
+clash(C) :- made(C, J, _), made(C, J2, _), rival(C, J, J2).
+
 // --- the assembly ---
 
-// The places the chosen joins lead to from the anchor piece.
+// The places the joins made lead to from the anchor piece.
 .init lead = Propagation<Choice, Place>
 lead.source(Ch, [Ob, V]) :- place(Ch, Ob, V), Ch = [A, C, _, _], anchor_piece(A, C, Ob).
 lead.edge(Ch, [Oa, V], [Ob, W]) :-
-    place(Ch, Oa, V), Ch = [_, C, _, _],
-    ( matched.forced(C, J), !matched.ruled_out(C, J)
-    ; paired_up.forced(C, J), !paired_up.ruled_out(C, J)
-    ),
+    place(Ch, Oa, V), Ch = [_, C, _, _], made(C, J, _),
     join.id([C, Oa, Ob, V2], J), compose(V, V2, W), place(Ch, Ob, W).    // b moved by v2 from a
 
 // A piece the joins lead to two places.
@@ -265,13 +272,16 @@ spot(Ch, [Ob, V], Q) :-
 .decl paired(ch: Choice, x: Place, p: Position)
 paired(Ch, X, P) :- spot(Ch, X, P), spot(Ch, Y, P), X != Y.
 
-// The assembly is no fit: a dot touches two pieces, two pieces are anchors,
-// a piece takes no place or two, a dot meets no other dot or two, or, for
-// $Disjoint, two pieces share another cell.
+// The steps leave a choice or the assembly is no fit: two joins made clash, a
+// dot meets no dot by a join made, a dot touches two pieces, two pieces are
+// anchors, a piece takes no place or two, a dot meets no other dot or two, or,
+// for $Disjoint, two pieces share another cell.
 .decl broken(ch: Choice)
 broken(Ch) :-
     impl_choice(Ch), Ch = [A, C, _, _],
-    ( shared_dot(C)
+    ( clash(C)
+    ; dot(C, _, D), !made(C, _, D)                       // a dot no join made took
+    ; shared_dot(C)
     ; anchor_rival(A, C)
     ; body(C, Ob, _, _), !placed_piece(Ch, Ob)
     ).

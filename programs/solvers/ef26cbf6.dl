@@ -1,0 +1,353 @@
+// ef26cbf6
+// @draft
+// @keywords: decompose markers
+// @scene divider-lines: full rows or columns of divider_color cut the grid into
+//  equal 3×3 tiles laid out two deep on one axis and one or more long on the
+//  other.
+// @scene tile-pairs: each pair of tiles that share a line across the two-deep
+//  axis holds one key tile and one pattern tile.
+// @scene key-tile: a key tile holds exactly one cell other than background, at
+//  its center, of a color that is neither pattern_color nor divider_color.
+// @scene pattern-tile: a pattern tile holds only background and pattern_color
+//  cells, at least one of them pattern_color.
+// @scene key-side: every key tile sits on the same side of the two-deep axis.
+// @rule paint-pattern: each pattern_color cell of a pattern tile takes the color
+//  of the key cell in the tile paired with it.
+// @rule keep-rest: every other cell keeps its input color.
+
+// which key tile a pattern tile takes its color from
+.type Pairing =
+    // @claim tile-pairs
+    Across {}
+    // @scene tile-pairs: a pattern tile is a tile with no key color, over any
+    //  tile layout; undefined where it has no key tile beside it, or more than one
+    // @scene key-side: every key tile sits on the same side of the two-deep axis.
+// @rule paint-pattern: a pattern tile takes the color of the one key tile
+    //  that shares a divider with it
+    // @witness shared-key-row: borderline $AdjacentKey
+    //     @relaxed divider-lines
+  | AdjacentKey {}
+    // @rule paint-pattern: the pattern tiles in reading order take the colors
+    //  of the key tiles in reading order, one each; undefined where a pattern
+    //  tile has no key tile of its rank
+    // @witness key-across-sides: borderline concept
+    //     @relaxed key-side
+  | ReadingOrder {}
+
+// which cells of the pattern tile are repainted
+.type Paint =
+    // @claim paint-pattern
+    PatternCells {}
+    // @scene key-side: every key tile sits on the same side of the two-deep axis.
+// @rule paint-pattern: every non-background cell of the pattern tile takes
+    //  the key color; undefined where $DotKey is
+    // @witness pattern-in-other-color: variant $PaintAllInk
+    //     @relaxed pattern-tile
+  | PaintAllInk {}
+
+// which tile of a pair is the key, and its color
+.type KeyId =
+    // @claim key-tile
+    ExtraColor {}
+    // @scene key-tile: the key tile is the tile holding exactly one
+    //  non-background cell, of any color; undefined where both tiles of a pair,
+    //  or neither, hold a lone cell
+    // @witness key-dot-in-pattern-color: borderline $DotKey
+    //     @relaxed key-tile
+  | DotKey {paint: Paint}
+    // @scene key-tile: the key tile is the tile whose center cell is neither
+    //  background nor pattern_color, and its color is that cell's; undefined
+    //  where both tiles of a pair, or neither, have such a center
+    // @witness extra-cell-in-key-tile: borderline $CenterKey
+    //     @relaxed key-tile
+  | CenterKey {}
+
+// the source of pattern_color
+.type PatternSource =
+    // @claim pattern-tile
+    StoredPattern {}
+    // @scene pattern-tile: pattern_color is the commonest color of the input
+    //  other than background and divider_color; undefined where that count ties
+    // @witness pattern-in-other-color: variant $PaintAllInk
+  | CommonestInk {}
+
+// the source of divider_color
+.type DividerSource =
+    // @claim divider-lines
+    StoredDivider {}
+    // @scene divider-lines: divider_color is the one non-background color that
+    //  fills whole rows or columns; undefined where no such color exists or
+    //  several do
+    // @witness divider-in-other-color: variant $LineDivider
+    //     @relaxed divider-lines
+  | LineDivider {}
+
+.type Choice = [pg: Pairing, ky: KeyId, ps: PatternSource, dv: DividerSource]
+
+.type Line = [a: Axis, l: Position]
+.type TileKey = [dv: DividerSource, t: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed key-tile
+    .decl background(c: Color) background(0).
+
+    // --- $StoredPattern ---
+    // the color of the cells that are recolored
+    .decl pattern_color(c: Color) pattern_color(1).
+
+    // --- $ReadingOrder ---
+    // the corner reading order starts from, and the axis it reads first
+    .decl reading_corner(d: DiagDir) reading_corner(DIAG_TL).
+    .decl reading_axis(a: Axis) reading_axis(AXIS_V).
+
+    // --- $StoredDivider ---
+    // the color of the lines that cut the tiles
+    // @ignore: derive SharedColor — fails Subsumption: it gives every color of the input, so the cuts are the input's whole lines; a two-deep layout with no line of background and all of them of one color is the only place it pairs tiles, and there $LineDivider cuts the same lines
+    // @ignore: derive VanishedColor — fails Equivalence: on one input, with no output, it gives every color of the input, as SharedColor does
+    .decl divider_color(c: Color) divider_color(4).
+}
+
+.init params = Params
+
+.decl pairing_choice(pg: Pairing)
+pairing_choice($Across()). pairing_choice($AdjacentKey()). pairing_choice($ReadingOrder()).
+
+.decl key_id_choice(ky: KeyId)
+key_id_choice($ExtraColor()). key_id_choice($DotKey($PatternCells())).
+key_id_choice($DotKey($PaintAllInk())). key_id_choice($CenterKey()).
+
+.decl pattern_source_choice(ps: PatternSource)
+pattern_source_choice($StoredPattern()). pattern_source_choice($CommonestInk()).
+
+.decl divider_source_choice(dv: DividerSource)
+divider_source_choice($StoredDivider()). divider_source_choice($LineDivider()).
+
+// $PaintAllInk reads no pattern_color, so it takes no pattern source but the
+// stored one.
+.decl impl_choice(ch: Choice)
+impl_choice([Pg, Ky, Ps, Dv]) :-
+    pairing_choice(Pg), key_id_choice(Ky), pattern_source_choice(Ps), divider_source_choice(Dv),
+    ( Ky != $DotKey($PaintAllInk()) ; Ps = $StoredPattern() ).
+
+// --- divider lines and tiles ---
+
+// @claim divider-lines
+// @ignore value: store — the lines of divider_color are the dividers, so a stored line color restates divider_color
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+.decl divider(dv: DividerSource, col: Color)
+
+// --- $StoredDivider ---
+divider($StoredDivider(), Col) :- params.divider_color(Col).
+
+// --- $LineDivider ---
+// @claim divider-lines
+.init line_fill = Unanimous<Unit, Color>
+line_fill.item($U(), Col) :- line_color.value(_, Col), !params.background(Col).
+
+divider($LineDivider(), Col) :- line_fill.value($U(), Col).
+
+// --- tiles ---
+
+// @claim divider-lines
+.init tiles = DividerTiles<DividerSource>
+tiles.cell(Dv, P) :- divider_source_choice(Dv), in(P, _).
+tiles.divider(Dv, A, L) :- line_color.value([A, L], Col), divider(Dv, Col).
+
+.decl tile_cell(dv: DividerSource, t: Position, p: Position, col: Color)
+tile_cell(Dv, T, P, Col) :- tiles.tile_of(Dv, P, T), in(P, Col).
+
+// A non-background cell of a tile.
+.decl ink(dv: DividerSource, t: Position, p: Position)
+ink(Dv, T, P) :- tile_cell(Dv, T, P, Col), !params.background(Col).
+
+// T and T2 fill the two places of a two-deep axis A on one line across it.
+.decl partner(dv: DividerSource, a: Axis, t: Position, t2: Position)
+partner(Dv, A, T, T2) :-
+    tile_cell(Dv, T, _, _), axis_of(D, A), opposite(D, D2),
+    dist(T, D2, 0), neighbor(T, D, T2), dist(T2, D, 0).   // T on one edge, T2 beside it on the other
+
+// --- pattern color ---
+
+.decl pattern(ch: Choice, col: Color)
+
+// --- $StoredPattern ---
+pattern([Pg, Ky, $StoredPattern(), Dv], Col) :-
+    impl_choice([Pg, Ky, $StoredPattern(), Dv]), params.pattern_color(Col).
+
+// --- $CommonestInk ---
+// @claim pattern-tile
+.init ink_count = Mode<DividerSource, Color, Position>
+ink_count.item(Dv, Col, P) :-
+    in(P, Col), !params.background(Col), divider(Dv, _), !divider(Dv, Col).
+
+// @claim pattern-tile
+.init commonest = Unanimous<DividerSource, Color>
+commonest.item(Dv, Col) :- ink_count.mode(Dv, Col).
+
+pattern([Pg, Ky, $CommonestInk(), Dv], Col) :-
+    impl_choice([Pg, Ky, $CommonestInk(), Dv]), commonest.value(Dv, Col).
+
+// --- key tiles ---
+
+.decl key_color(ch: Choice, t: Position, col: Color)
+
+// --- $ExtraColor ---
+key_color([Pg, $ExtraColor(), Ps, Dv], T, Col) :-
+    impl_choice([Pg, $ExtraColor(), Ps, Dv]), tile_cell(Dv, T, _, Col),
+    !params.background(Col), !pattern([Pg, $ExtraColor(), Ps, Dv], Col).
+
+// --- $DotKey ---
+// A tile with two non-background cells.
+.decl crowded(dv: DividerSource, t: Position)
+crowded(Dv, T) :- ink(Dv, T, P), ink(Dv, T, Q), P != Q.
+
+key_color([Pg, $DotKey(Pt), Ps, Dv], T, Col) :-
+    impl_choice([Pg, $DotKey(Pt), Ps, Dv]), ink(Dv, T, P), !crowded(Dv, T), in(P, Col).
+
+// --- $CenterKey ---
+// @claim key-tile
+.init tile_box = Bbox<TileKey>
+tile_box.cell([Dv, T], P) :- tiles.tile_of(Dv, P, T).
+
+key_color([Pg, $CenterKey(), Ps, Dv], T, Col) :-
+    impl_choice([Pg, $CenterKey(), Ps, Dv]), tile_box.box([Dv, T], B),
+    tile_cell(Dv, T, P, Col), crop(P, B, P_inner), centered(P_inner),   // the tile's center cell
+    !params.background(Col), !pattern([Pg, $CenterKey(), Ps, Dv], Col).
+
+// --- shared ---
+
+.decl key_tile(ch: Choice, t: Position)
+key_tile(Ch, T) :- key_color(Ch, T, _).
+
+// --- pairing ---
+
+// Tile T takes its color from key tile K.
+.decl source(ch: Choice, t: Position, k: Position)
+
+// --- $Across ---
+// A pair on axis A with two key tiles or none.
+.decl axis_defect(ch: Choice, a: Axis)
+axis_defect([$Across(), Ky, Ps, Dv], A) :-
+    impl_choice([$Across(), Ky, Ps, Dv]), partner(Dv, A, T, T2),
+    ( key_tile([$Across(), Ky, Ps, Dv], T), key_tile([$Across(), Ky, Ps, Dv], T2)
+    ; !key_tile([$Across(), Ky, Ps, Dv], T), !key_tile([$Across(), Ky, Ps, Dv], T2)
+    ).
+
+// A two-deep axis whose every pair is well formed.
+.decl paired_axis(ch: Choice, a: Axis)
+paired_axis([$Across(), Ky, Ps, Dv], A) :-
+    impl_choice([$Across(), Ky, Ps, Dv]), partner(Dv, A, _, _),
+    !axis_defect([$Across(), Ky, Ps, Dv], A).
+
+source([$Across(), Ky, Ps, Dv], T, K) :-
+    paired_axis([$Across(), Ky, Ps, Dv], A), partner(Dv, A, T, K),
+    key_tile([$Across(), Ky, Ps, Dv], K), !key_tile([$Across(), Ky, Ps, Dv], T).
+
+// --- $AdjacentKey ---
+// A tile with key tiles beside it toward two directions.
+.decl beset(ch: Choice, t: Position)
+beset([$AdjacentKey(), Ky, Ps, Dv], T) :-
+    impl_choice([$AdjacentKey(), Ky, Ps, Dv]), tile_cell(Dv, T, _, _),
+    dir_elem(D1), neighbor(T, D1, K1), key_tile([$AdjacentKey(), Ky, Ps, Dv], K1),
+    dir_elem(D2), neighbor(T, D2, K2), key_tile([$AdjacentKey(), Ky, Ps, Dv], K2), D1 != D2.
+
+source([$AdjacentKey(), Ky, Ps, Dv], T, K) :-
+    impl_choice([$AdjacentKey(), Ky, Ps, Dv]), tile_cell(Dv, T, _, _),
+    !key_tile([$AdjacentKey(), Ky, Ps, Dv], T), !beset([$AdjacentKey(), Ky, Ps, Dv], T),
+    dir_elem(D), neighbor(T, D, K), key_tile([$AdjacentKey(), Ky, Ps, Dv], K).
+
+// --- $ReadingOrder ---
+// @claim paint-pattern
+.init key_order = LexOrder<Choice>
+key_order.corner(Ch, D) :-
+    impl_choice(Ch), Ch = [$ReadingOrder(), _, _, _], params.reading_corner(D).
+key_order.axis(Ch, A) :-
+    impl_choice(Ch), Ch = [$ReadingOrder(), _, _, _], params.reading_axis(A).
+key_order.cell(Ch, T) :- key_tile(Ch, T), Ch = [$ReadingOrder(), _, _, _].
+
+// @claim paint-pattern
+// @ignore corner: common-subexpr — the key tiles and the pattern tiles are ranked apart, in one reading order
+// @ignore axis: common-subexpr — the key tiles and the pattern tiles are ranked apart, in one reading order
+.init pattern_order = LexOrder<Choice>
+pattern_order.corner(Ch, D) :-
+    impl_choice(Ch), Ch = [$ReadingOrder(), _, _, _], params.reading_corner(D).
+pattern_order.axis(Ch, A) :-
+    impl_choice(Ch), Ch = [$ReadingOrder(), _, _, _], params.reading_axis(A).
+pattern_order.cell(Ch, T) :-
+    impl_choice(Ch), Ch = [$ReadingOrder(), _, _, Dv], tile_cell(Dv, T, _, _), !key_tile(Ch, T).
+
+source(Ch, T, K) :- pattern_order.rank(Ch, T, R), key_order.rank(Ch, K, R).
+
+// --- painted cells ---
+
+.decl paint_cell(ch: Choice, t: Position, p: Position)
+
+// --- $ExtraColor, $DotKey & $PatternCells, $CenterKey ---
+paint_cell(Ch, T, P) :-
+    impl_choice(Ch), Ch = [_, Ky, _, Dv], Ky != $DotKey($PaintAllInk()),
+    tile_cell(Dv, T, P, Col), pattern(Ch, Col), !key_tile(Ch, T).
+
+// --- $PaintAllInk ---
+paint_cell([Pg, $DotKey($PaintAllInk()), Ps, Dv], T, P) :-
+    impl_choice([Pg, $DotKey($PaintAllInk()), Ps, Dv]), ink(Dv, T, P),
+    !key_tile([Pg, $DotKey($PaintAllInk()), Ps, Dv], T).
+
+// --- shared ---
+
+// The model is undefined.
+.decl defect(ch: Choice)
+defect(Ch) :- key_color(Ch, T, Col1), key_color(Ch, T, Col2), Col1 != Col2.   // a key tile with two colors
+defect(Ch) :-
+    impl_choice(Ch), Ch = [_, _, _, Dv],
+    ( tile_cell(Dv, T, _, _), !key_tile(Ch, T), !source(Ch, T, _)   // a pattern tile with no key
+    ; !divider(Dv, _)                                               // no divider color
+    ).
+defect(Ch) :- impl_choice(Ch), !pattern(Ch, _).
+
+// --- $Across ---
+defect([$Across(), Ky, Ps, Dv]) :-
+    impl_choice([$Across(), Ky, Ps, Dv]), !paired_axis([$Across(), Ky, Ps, Dv], _).
+
+// --- shared ---
+
+out(P, Col, Ch) :- paint_cell(Ch, T, P), source(Ch, T, K), key_color(Ch, K, Col), !defect(Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint_cell(Ch, _, P), !defect(Ch).
+
+.comp Determine {
+    // the commonest color of each input
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !uncommon(Col).
+
+    // an input where Col is not the commonest color
+    .decl uncommon(c: Color)
+    uncommon(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    // the color of the cells some train pair changes
+    .decl pattern_color(c: Color)
+    pattern_color(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    // a line of input E holds a cell of a color other than Col
+    .decl off_line(e: Example, a: Axis, l: Position, c: Color)
+    off_line(E, A, L, Col) :-
+        ex_in(E, P, Col), axis_elem(A), split(P, A, L, _),
+        ex_in(E, Q, Col2), split(Q, A, L, _), Col != Col2.
+
+    // input E has a whole line of Col
+    .decl line_fill(e: Example, c: Color)
+    line_fill(E, Col) :- ex_in(E, P, Col), axis_elem(A), split(P, A, L, _), !off_line(E, A, L, Col).
+
+    .decl divider_color(c: Color)
+    divider_color(Col) :- line_fill(_, Col), !unfilled(Col).
+
+    // an input with no whole line of Col
+    .decl unfilled(c: Color)
+    unfilled(Col) :- line_fill(_, Col), ex_in(E, _, _), !line_fill(E, Col).
+}

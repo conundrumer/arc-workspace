@@ -1,0 +1,264 @@
+// de809cff
+// @draft
+// @keywords: objects noise bbox occlude stamp
+// @scene background: the field is `background` (0).
+// @scene two-colors: two colors other than `background` and `mark_color` (8) each
+//  paint one or more filled axis-aligned rectangles, and rectangles of one color
+//  do not touch.
+// @scene overlap: each rectangle overlaps a rectangle of the other color, and in
+//  each overlap one of the two is drawn over the other.
+// @scene pinholes: some cells of each rectangle's visible part are `background`:
+//  lone cells or two adjacent cells, some on the rectangle's edge.
+// @scene rings-apart: no cell lies within `ring_reach` (1) of pinholes of both
+//  colors.
+// @scene strays: stray cells of the two colors lie outside the rectangles, some
+//  touching a rectangle's edge, and a stray of the other color may lie inside a
+//  rectangle's visible part.
+// @rule clean: each rectangle's visible part fills with its color, and each cell
+//  outside every rectangle becomes `background`.
+//     @approximated: a rectangle is the box that bounds a 4-connected set of
+//      solid cells of one color, a solid cell lying in a 2×2 block of cells
+//      that have that color or have it on all four sides; a rectangle covers
+//      another where its solid cells lie in the other's box.
+//     @witness thin-strip: ordinary other
+// @rule ring: the box of reach `ring_reach` around each pinhole takes the other
+//  color of the two, clipped at the frame, over the rectangles and the field
+//  alike.
+// @rule mark: each pinhole becomes `mark_color`, over any ring.
+
+// what a cell of another color in a rectangle's visible part becomes
+.type Foreign =
+    // @claim clean
+    FillForeign {}
+    // @rule clean: a cell of the color of a rectangle drawn beneath at that cell
+    //  is not filled; undefined where the concept is.
+    // @scene pinholes: such a cell is a pinhole as well.
+    // @witness under-color-stray: ordinary any
+  | UnderColorHoles {}
+
+// which `background` cells of a visible part are pinholes
+.type Hole =
+    // @claim pinholes
+    AllHoles {}
+    // @scene pinholes: a `background` cell of a visible part is a pinhole when at
+    //  least three of its 4-neighbors have the rectangle's color; undefined where
+    //  the concept is.
+    // @witness corner-pinhole: ordinary concept
+  | NeighborHoles {}
+
+// the color of a pinhole's ring
+.type RingColor =
+    // @claim ring
+    OtherColor {}
+    // @rule ring: the ring takes the color of the rectangles of another color
+    //  that the pinhole's rectangle overlaps; undefined where that rectangle
+    //  overlaps none, or overlaps rectangles of two other colors, and where rings
+    //  of two colors share a cell.
+    // @witness four-colors: borderline $OverlapRingColor
+    //     @relaxed two-colors
+  | OverlapRingColor {}
+
+// what a cell that rings of two colors share becomes
+.type Clash =
+    // @claim rings-apart
+    ClashUndefined {}
+    // @rule own-ring: a cell that rings of two colors share takes the ring of
+    //  the pinhole in the rectangle whose visible part holds the cell; undefined
+    //  where such a cell lies outside every rectangle.
+    // @witness ring-clash: borderline any
+    //     @relaxed rings-apart
+  | OwnRingWins {}
+    // @rule foreign-ring: a cell that rings of two colors share takes the ring
+    //  of the pinhole in the other rectangle; undefined where such a cell lies
+    //  outside every rectangle.
+    // @witness ring-clash: borderline any
+  | ForeignRingWins {}
+
+.type Choice = [f: Foreign, h: Hole, rc: RingColor, cl: Clash]
+
+.type ExampleColor = [e: Example, col: Color]
+.type MarkRun = [e: Example, p: Position, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl background(c: Color) background(0).
+    .decl mark_color(c: Color) mark_color(8).
+    // the Chebyshev distance from the pinhole that the ring reaches
+    .decl ring_reach(k: number) ring_reach(1).
+}
+
+.init params = Params
+
+.decl foreign_choice(f: Foreign)
+foreign_choice($FillForeign()). foreign_choice($UnderColorHoles()).
+
+.decl hole_choice(h: Hole)
+hole_choice($AllHoles()). hole_choice($NeighborHoles()).
+
+.decl ring_color_choice(rc: RingColor)
+ring_color_choice($OtherColor()). ring_color_choice($OverlapRingColor()).
+
+.decl clash_choice(cl: Clash)
+clash_choice($ClashUndefined()). clash_choice($OwnRingWins()). clash_choice($ForeignRingWins()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, H, RC, CL]) :-
+    foreign_choice(F), hole_choice(H), ring_color_choice(RC), clash_choice(CL).
+
+// --- rectangles ---
+
+// A cell of a color other than `background`.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+// The 4-neighbor of p toward d has color col.
+.decl neighbor_in(p: Position, d: Dir, col: Color)
+neighbor_in(P, D, Col) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+// Some 4-neighbor of p lacks col, which another 4-neighbor has.
+.decl open_side(p: Position, col: Color)
+open_side(P, Col) :- neighbor_in(P, _, Col), dir_elem(D), !neighbor_in(P, D, Col).
+
+// A cell of col, or a cell whose four neighbors all have col: the
+// rectangle's color closed over its lone pinholes and foreign cells.
+.decl body(p: Position, col: Color)
+body(P, Col) :- ink(P, Col).
+body(P, Col) :- neighbor_in(P, _, Col), ink(_, Col), !open_side(P, Col).
+
+// A body cell in a 2×2 block of its color's body: a lone stray never is one.
+.decl solid(p: Position, col: Color)
+solid(P, Col) :-
+    body(P, Col), diag_dirs(Dg, _, D1, D2),
+    neighbor(P, D1, Q1), body(Q1, Col),
+    neighbor(P, D2, Q2), body(Q2, Col),
+    neighbor(P, Dg, Q3), body(Q3, Col).
+
+// A rectangle's solid cells, each rectangle under its own id.
+// @claim two-colors
+.init core = Components<Color>
+core.node(Col, P) :- solid(P, Col).
+
+.decl rect_color(r: Ident, col: Color)
+rect_color(R, Col) :- core.label(Col, _, R).
+
+// The rectangle: the box its solid cells bound.
+// @claim two-colors
+.init rect = Bbox<Ident>
+rect.cell(R, P) :- core.label(_, P, R).
+
+// Rectangle r is drawn over rectangle r2: its solid cells lie in r2's box.
+.decl over(r: Ident, r2: Ident)
+over(R, R2) :- core.label(_, P, R), rect.box(R2, B2), inside(P, B2), R != R2.
+
+// A cell of r's box that a rectangle drawn over r covers.
+.decl covered(p: Position, r: Ident)
+covered(P, R) :- over(R2, R), rect.box(R2, B2), in(P, _), inside(P, B2).
+
+// A cell of r's visible part.
+.decl visible(p: Position, r: Ident)
+visible(P, R) :- rect.box(R, B), in(P, _), inside(P, B), !covered(P, R).
+
+// A pinhole of rectangle r.
+.decl pinhole(p: Position, r: Ident, f: Foreign, h: Hole)
+
+.decl ring_color(r: Ident, col: Color, rc: RingColor)
+
+// Cell q lies in the ring, of color col, around a pinhole of rectangle r.
+.decl ring(q: Position, col: Color, r: Ident, f: Foreign, h: Hole, rc: RingColor)
+ring(Q, Col, R, F, H, RC) :-
+    pinhole(P, R, F, H), ring_color(R, Col, RC),
+    params.ring_reach(K), uniform_outset(K, O), compose(P, O, B),   // the box of reach K around p
+    in(Q, _), inside(Q, B).
+
+// Rings of two colors share q.
+.decl clash(q: Position, f: Foreign, h: Hole, rc: RingColor)
+clash(Q, F, H, RC) :- ring(Q, Col, _, F, H, RC), ring(Q, Col2, _, F, H, RC), Col != Col2.
+
+// The cell's color before the rings: its visible rectangle's color, or the field.
+.decl base(p: Position, col: Color)
+base(P, Col) :- visible(P, R), rect_color(R, Col).
+base(P, Col) :- in(P, _), !visible(P, _), params.background(Col).
+
+// A pinhole whose rectangle has a ring color takes `mark_color`.
+out(P, Col, [F, H, RC, CL]) :-
+    impl_choice([F, H, RC, CL]), pinhole(P, R, F, H), ring_color(R, _, RC),
+    params.mark_color(Col).
+
+out(P, Col, [F, H, RC, CL]) :-
+    impl_choice([F, H, RC, CL]), base(P, Col),
+    !ring(P, _, _, F, H, RC), !pinhole(P, _, F, H).
+
+// --- $AllHoles ---
+pinhole(P, R, F, $AllHoles()) :-
+    visible(P, R), in(P, Col), params.background(Col), foreign_choice(F).
+
+// --- $NeighborHoles ---
+
+// Two 4-neighbors of p lack the color of p's rectangle.
+.decl open_sides(p: Position, r: Ident)
+open_sides(P, R) :-
+    visible(P, R), rect_color(R, Col), dir_elem(D1), dir_elem(D2), D1 != D2,
+    !neighbor_in(P, D1, Col), !neighbor_in(P, D2, Col).
+
+pinhole(P, R, F, $NeighborHoles()) :-
+    visible(P, R), in(P, Col), params.background(Col), !open_sides(P, R), foreign_choice(F).
+
+// --- $UnderColorHoles ---
+pinhole(P, R, $UnderColorHoles(), H) :-
+    visible(P, R), over(R, R2), rect_color(R2, Col), in(P, Col),   // the color of the rectangle beneath
+    rect.box(R2, B2), inside(P, B2), hole_choice(H).
+
+// --- $OtherColor ---
+ring_color(R, Col2, $OtherColor()) :- rect_color(R, Col), ink(_, Col2), Col2 != Col.
+
+// --- $OverlapRingColor ---
+ring_color(R, Col2, $OverlapRingColor()) :-
+    rect_color(R, Col), rect_color(R2, Col2), Col2 != Col,
+    ( over(R, R2) ; over(R2, R) ).
+
+// --- $ClashUndefined ---
+out(Q, Col, [F, H, RC, $ClashUndefined()]) :-
+    impl_choice([F, H, RC, $ClashUndefined()]), ring(Q, Col, _, F, H, RC), !pinhole(Q, _, F, H).
+
+// --- $OwnRingWins, $ForeignRingWins ---
+out(Q, Col, [F, H, RC, CL]) :-
+    impl_choice([F, H, RC, CL]), CL != $ClashUndefined(),
+    ring(Q, Col, _, F, H, RC), !clash(Q, F, H, RC), !pinhole(Q, _, F, H).
+
+// --- $OwnRingWins ---
+out(Q, Col, [F, H, RC, $OwnRingWins()]) :-
+    impl_choice([F, H, RC, $OwnRingWins()]), clash(Q, F, H, RC), !pinhole(Q, _, F, H),
+    ring(Q, Col, R, F, H, RC), visible(Q, R).
+
+// --- $ForeignRingWins ---
+out(Q, Col, [F, H, RC, $ForeignRingWins()]) :-
+    impl_choice([F, H, RC, $ForeignRingWins()]), clash(Q, F, H, RC), !pinhole(Q, _, F, H),
+    ring(Q, Col, R, F, H, RC), visible(Q, R2), R != R2.
+
+.comp Determine {
+    // The runs of one color in each output.
+    .init runs = Slide<ExampleColor>
+    runs.node([E, Col], P) :- ex_out(E, P, Col).
+    runs.dir([E, Col], D) :- ex_out(E, _, Col), dir_elem(D).
+
+    // The run of one color that leaves a mark, a color its input lacks,
+    // toward d, and ends at a cell of another color that is no mark.
+    .decl mark_run(e: Example, p: Position, d: Dir, col: Color, q: Position)
+    mark_run(E, P, D, Col, Q1) :-
+        ex_out(E, P, M), !ex_in(E, _, M), dir_elem(D),        // a mark
+        neighbor(P, D, Q1), ex_out(E, Q1, Col), Col != M,     // the run's first cell
+        runs.rest([E, Col], Q1, D, Q),                        // its last cell
+        neighbor(Q, D, Q2), ex_out(E, Q2, Col2), Col2 != M.   // the cell past it, no mark
+
+    // The cells of each such run: the ring reaches at most that many cells.
+    .init run_size = Tally<MarkRun, Position>
+    run_size.item([E, P, D], Q1) :- mark_run(E, P, D, _, Q1).
+    run_size.item([E, P, D], Q) :- mark_run(E, P, D, Col, Q1), runs.run([E, Col], Q1, D, Q).
+
+    .init reach = Extremes<Unit>
+    reach.cand($U(), K) :- run_size.tally(_, K).
+
+    .decl ring_reach(k: number)
+    ring_reach(K) :- reach.low($U(), K).
+}

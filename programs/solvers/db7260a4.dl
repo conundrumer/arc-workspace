@@ -1,0 +1,280 @@
+// db7260a4
+// @draft
+// @keywords: walk cast enclose
+// @scene drop: one cell of color params.water on the edge opposite params.fall;
+//  every other cell is params.background or params.wall.
+// @scene cups: the params.wall cells draw cups open toward the drop's edge: two
+//  walls along params.fall, joined by a floor across their far ends. Some floors
+//  have a one-cell hole, and some walls stand alone.
+// @rule fall: water falls from the drop toward params.fall until the next cell
+//  is params.wall or the grid edge.
+// @rule spread: when the next cell is params.wall, the water spreads sideways
+//  along its line in both directions until it meets a params.wall cell on each
+//  side. When a cell it reaches has no params.wall cell beyond it toward
+//  params.fall, the water falls from that cell as in fall.
+// @rule fill: when the water spreads to a wall on each side and finds no hole,
+//  it fills the cup: every cell between the two walls, from the floor back up
+//  to the end of the shorter wall.
+// @rule pool: when the water reaches the grid edge toward params.fall, every
+//  cell that is not params.wall in the params.pool_depth lines at that edge
+//  takes params.water.
+// @rule erase-drop: the drop cell becomes params.background. The cells the
+//  water only passes through stay as they are, and a cup the water runs out of
+//  stays empty.
+
+// which cells of a held cup the water fills
+.type Fill =
+    // @claim fill
+    WallSpan {height: Height}
+    // @rule fill: a held cup fills every non-wall cell that a 4-walk from the
+    //  landing cell reaches, at the highest level line at which that set
+    //  touches neither the side edges nor the edge toward params.fall
+    // @witness floor-bump: borderline $FillBasinFlood
+    //     @relaxed cups
+  | FillBasinFlood {}
+
+// how high the water stands between the two walls of a held cup
+.type Height =
+    // @claim fill
+    ShorterWall {}
+    // @rule fill: the cup fills up to the end of the taller wall
+    // @witness unequal-walls: variant concept
+  | FillToTallerRim {}
+
+// where the water that reaches the edge toward params.fall lies
+.type Pool =
+    // @claim pool
+    EdgeLines {}
+    // @rule pool: the water spreads along the edge line from the cell where it
+    //  lands, in both directions, until it meets a params.wall cell
+    // @witness wall-on-edge-row: variant $PoolSpreadsToWalls
+  | PoolSpreadsToWalls {}
+
+// the direction the water falls
+.type Fall =
+    // @claim fall
+    StoredFall {}
+    // @scene drop: the water falls away from the grid edge the drop lies on;
+    //  undefined where the drop lies on a corner or on no edge
+    // @witness drop-on-side-edge: variant $FallFromDropEdge
+    //     @relaxed drop
+    //     @relaxed cups
+  | FallFromDropEdge {}
+
+.type Choice = [fill: Fill, pool: Pool, fall: Fall]
+
+// One level line of the flood from one landing cell.
+.type Basin = [f: Fall, l: Position, lv: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed drop
+    .decl water(c: Color) water(1).
+    .decl wall(c: Color) wall(2).
+    // @derive DominantColor: variant derived
+    //     @relaxed drop
+    .decl background(c: Color) background(0).
+
+    // --- $StoredFall ---
+    .decl fall(d: Dir) fall(DIR_B).
+
+    // --- $EdgeLines ---
+    // the number of lines the water covers at the edge toward fall
+    .decl pool_depth(n: number) pool_depth(1).
+}
+
+.init params = Params
+
+.decl fill_choice(f: Fill)
+fill_choice($WallSpan($ShorterWall())). fill_choice($WallSpan($FillToTallerRim())).
+fill_choice($FillBasinFlood()).
+
+.decl pool_choice(p: Pool)
+pool_choice($EdgeLines()). pool_choice($PoolSpreadsToWalls()).
+
+.decl fall_choice(f: Fall)
+fall_choice($StoredFall()). fall_choice($FallFromDropEdge()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Fi, Po, F]) :- fill_choice(Fi), pool_choice(Po), fall_choice(F).
+
+.decl drop(p: Position)
+drop(P) :- in(P, Col), params.water(Col).
+
+.decl wall(p: Position)
+wall(P) :- in(P, Col), params.wall(Col).
+
+// a cell the water may enter
+.decl open(p: Position)
+open(P) :- in(P, _), !wall(P).
+
+// the direction the water falls under each fall reading
+.decl fall_dir(f: Fall, d: Dir)
+
+// Q is the next cell from P toward the fall
+.decl next_cell(f: Fall, p: Position, q: Position)
+next_cell(F, P, Q) :- open(P), fall_dir(F, D), neighbor(P, D, Q).
+
+// a cell whose next cell toward the fall is a wall: the water lands there
+.decl floored(f: Fall, p: Position)
+floored(F, P) :- next_cell(F, P, Q), wall(Q).
+
+// @claim spread
+.init spread = Ray<Fall>
+spread.dir(F, D2) :- fall_dir(F, D), perp_dir(D, D2).
+spread.cell(F, P) :- fall_choice(F), open(P).
+spread.mark(F, P) :- floored(F, P).
+spread.blocked(F, P) :- fall_choice(F), wall(P).
+
+.init water = Propagation<Fall, Position>
+water.source(F, P) :- fall_dir(F, _), drop(P).
+water.edge(F, P, Q) :- next_cell(F, P, Q), open(Q).            // falls
+water.edge(F, L, Q) :- spread.clear(F, Q, _, _, L).           // spreads
+
+// A landing cell whose spread finds a wall on each side and no hole.
+.decl held(f: Fall, l: Position)
+.decl unbounded(f: Fall, l: Position)
+unbounded(F, L) :- floored(F, L), fall_dir(F, D), perp_dir(D, D2), !spread.stop(F, _, D2, _, L).
+.decl leaky(f: Fall, l: Position)
+leaky(F, L) :- spread.clear(F, Q, _, _, L), !floored(F, Q).
+held(F, L) :- water.reached(F, L), floored(F, L), !unbounded(F, L), !leaky(F, L).
+
+.decl filled(fi: Fill, f: Fall, p: Position)
+.decl pooled(po: Pool, f: Fall, p: Position)
+
+// the water reaches the edge toward the fall at P
+.decl edge_landing(f: Fall, p: Position)
+edge_landing(F, P) :- water.reached(F, P), fall_dir(F, D), dist(P, D, 0).
+
+.decl wet(ch: Choice, p: Position)
+wet([Fi, Po, F], P) :- filled(Fi, F, P), pool_choice(Po).
+wet([Fi, Po, F], P) :- pooled(Po, F, P), fill_choice(Fi).
+
+out(P, Col, Ch) :- wet(Ch, P), params.water(Col).
+out(P, Col, [Fi, Po, F]) :-
+    in(P, Col0), impl_choice([Fi, Po, F]), fall_dir(F, _), !wet([Fi, Po, F], P),
+    ( drop(P), params.background(Col)
+    ; !drop(P), Col = Col0
+    ).
+
+// --- $StoredFall ---
+fall_dir($StoredFall(), D) :- params.fall(D).
+
+// --- $FallFromDropEdge ---
+// @ignore: store — a stored drop edge gives back the stored fall of $StoredFall
+.decl drop_edge(p: Position, d: Dir)
+drop_edge(P, D) :- drop(P), dir_elem(D), dist(P, D, 0).
+.decl corner_drop(p: Position)
+corner_drop(P) :- drop_edge(P, D1), drop_edge(P, D2), D1 != D2.
+fall_dir($FallFromDropEdge(), D) :- drop_edge(P, E), !corner_drop(P), opposite(E, D).
+
+// --- $WallSpan ---
+// @claim fill
+.init rims = Slide<Fall>
+rims.node(F, P) :- fall_choice(F), wall(P).
+rims.dir(F, U) :- fall_dir(F, D), opposite(D, U).
+
+// T is the end of a wall the spread from L meets
+.decl rim_top(f: Fall, l: Position, t: Position)
+rim_top(F, L, T) :- held(F, L), spread.stop(F, W, _, _, L), rims.rest(F, W, _, T).
+
+// P lies between the walls of L's cup, at or above L's line
+.decl span(f: Fall, l: Position, p: Position)
+span(F, L, P) :-
+    held(F, L), spread.clear(F, Q, _, _, L), fall_dir(F, D), axis_of(D, A),
+    open(P), same_line(A, P, Q), !nearer(D, P, Q).
+
+// --- $ShorterWall ---
+.decl above_a_rim(f: Fall, l: Position, p: Position)
+above_a_rim(F, L, P) :- span(F, L, P), rim_top(F, L, T), rims.dir(F, U), nearer(U, P, T).
+filled($WallSpan($ShorterWall()), F, P) :- span(F, L, P), !above_a_rim(F, L, P).
+
+// --- $FillToTallerRim ---
+filled($WallSpan($FillToTallerRim()), F, P) :-
+    span(F, L, P), rim_top(F, L, T), rims.dir(F, U), !nearer(U, P, T).
+
+// --- $FillBasinFlood ---
+// @claim fill
+.init basin = Reach<Basin>
+basin.node([F, L, Lv], P) :-
+    held(F, L), fall_dir(F, D), axis_of(D, A), opposite(D, U),
+    in(Lv, _), same_line(A, Lv, L), !nearer(D, Lv, L),    // a level line at or above L
+    open(P), !nearer(U, P, Lv).                           // not above that line
+basin.seed([F, L, Lv], L) :- basin.node([F, L, Lv], L).
+
+// the flood at that level reaches a side edge or the edge toward the fall
+.decl spills(b: Basin)
+spills([F, L, Lv]) :-
+    basin.reach([F, L, Lv], P), fall_dir(F, D),
+    ( perp_dir(D, E) ; E = D ), dist(P, E, 0).
+
+.decl level(b: Basin)
+level([F, L, Lv]) :- basin.seed([F, L, Lv], _), !spills([F, L, Lv]).
+.decl higher_level(b: Basin)
+higher_level([F, L, Lv]) :-
+    level([F, L, Lv]), level([F, L, Lv2]), fall_dir(F, D), opposite(D, U), nearer(U, Lv2, Lv).
+filled($FillBasinFlood(), F, P) :-
+    level([F, L, Lv]), !higher_level([F, L, Lv]), basin.reach([F, L, Lv], P).
+
+// --- $EdgeLines ---
+pooled($EdgeLines(), F, P) :-
+    edge_landing(F, _), fall_dir(F, D), open(P), dist(P, D, K),
+    params.pool_depth(N), K < N.
+
+// --- $PoolSpreadsToWalls ---
+// @claim pool
+.init edge_spread = Ray<Fall>
+edge_spread.dir(F, D2) :- fall_dir(F, D), perp_dir(D, D2).
+edge_spread.cell(F, P) :- fall_choice(F), open(P).
+edge_spread.mark(F, P) :- edge_landing(F, P).
+edge_spread.blocked(F, P) :- fall_choice(F), wall(P).
+pooled($PoolSpreadsToWalls(), F, P) :- edge_spread.clear(F, P, _, _, _).
+
+.comp Determine {
+    .decl example(e: Example)
+    example(E) :- ex_out(E, _, _).
+
+    // a cell whose color another cell of its input shares
+    .decl shared(e: Example, p: Position)
+    shared(E, P) :- ex_in(E, P, C), ex_in(E, P2, C), P != P2.
+    // C has one cell in the input
+    .decl lone(e: Example, c: Color)
+    lone(E, C) :- ex_in(E, P, C), !shared(E, P).
+    .decl not_lone(c: Color)
+    not_lone(C) :- lone(_, C), example(E), !lone(E, C).
+    .decl water(c: Color)
+    water(C) :- lone(_, C), !not_lone(C).
+
+    // the color the drop cell takes
+    .decl background(c: Color)
+    background(C) :- water(W), ex_in(E, P, W), ex_out(E, P, C).
+
+    // the input color that is neither water nor background
+    // @ignore: determine prediction — the color is read from the inputs; the outputs enter only through the determined background
+    .decl wall(c: Color)
+    wall(C) :- example(E), ex_in(E, _, C), !water(C), !background(C).
+
+    // some drop does not lie on the edge opposite D
+    .decl off_edge(d: Dir)
+    off_edge(D) :- opposite(D, U), water(W), example(E), ex_in(E, P, W), !dist(P, U, 0).
+    .decl fall(d: Dir)
+    fall(D) :- dir_elem(D), !off_edge(D).
+
+    // the line at distance K from the fall edge holds a cell that is neither
+    // wall nor water
+    .decl gap(e: Example, k: number)
+    gap(E, K) :- fall(D), ex_out(E, P, Col), dist(P, D, K), !wall(Col), !water(Col).
+    .decl full(e: Example, k: number)
+    full(E, K) :- fall(D), ex_out(E, P, _), dist(P, D, K), !gap(E, K).
+    .init lines = Tally<Example, number>
+    lines.item(E, K) :- full(E, K).
+    lines.domain(E) :- full(E, _).
+    .decl disagree(n: number)
+    disagree(N) :- lines.tally(_, N), lines.tally(_, N2), N != N2.
+    // the count of edge lines the water covers, read from the outputs
+    // @ignore: determine prediction — the count is read from the outputs; the inputs enter only through the determined wall and water colors
+    .decl pool_depth(n: number)
+    pool_depth(N) :- lines.tally(_, N), !disagree(N).
+}

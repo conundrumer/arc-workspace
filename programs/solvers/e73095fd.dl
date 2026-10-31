@@ -1,0 +1,209 @@
+// e73095fd
+// @draft
+// @keywords: objects bbox enclose
+// @scene wire-network: on a field of `background`, cells of `wire` form 1-wide straight lines and hollow rectangular box outlines; each line runs from a box side or the grid edge to a box side or the grid edge, and lines cross or join one another at junctions.
+// @scene box-outline: a box is a rectangular outline of `wire`, 1 cell thick, whose inside holds only `background`; each side ends at the box's corners, where no line continues the side, and a line meets a box only part way along a side.
+// @scene clipped-box: a box may run past the grid edge, and then the grid edge stands in for the sides and corners that lie off the grid.
+// @rule fill-box-inside: each `background` cell inside a box becomes `fill`; every other cell keeps its color. A box is a `background` region that is a rectangle, whose ring of cells is `wire` where it lies on the grid, and whose ring corners on the grid are true corners, with no `wire` past the corner on either axis.
+
+// how much of a box that the grid edge cuts must lie on the grid
+.type Clip =
+    // @claim clipped-box
+    AnyPart {}
+    // @scene clipped-box: a box shows at least one ring corner on the grid
+    // @witness band-between-lines: borderline $CornerShown
+  | CornerShown {}
+    // @scene clipped-box: a box shows at least two ring corners on the grid, and so one whole side
+    // @witness grid-corner-box: borderline concept
+  | SideShown {}
+
+// what a box's ring corners on the grid must be
+.type Corner =
+    // @claim box-outline
+    EveryTrueCorner {}
+    // @scene box-outline: where ring corners show on the grid, at least one is a true corner, so a line may continue a side past a corner
+    // @witness side-continues-past-corner: borderline $SomeTrueCorner
+    //     @relaxed box-outline
+  | SomeTrueCorner {}
+
+// what a box's inside may hold
+.type Inside =
+    // @claim box-outline
+    BackgroundOnly {}
+    // @scene box-outline: a box is the rectangle its `wire` ring bounds, and its inside may be crossed by `wire` lines that run straight from side to side
+    // @witness line-through-box: borderline $OutlineBox
+    //     @relaxed box-outline
+  | OutlineBox {}
+
+// which boxes fill
+.type Linked =
+    // @claim fill-box-inside
+    EveryBox {}
+    // @rule fill-box-inside: only a box that some line meets fills
+    // @witness box-with-no-line: variant concept
+  | LinkedBox {}
+
+.type Choice = [clip: Clip, corner: Corner, inside: Inside, linked: Linked]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    // the color of the lines and the box outlines
+    // @derive RarestColor: borderline concept
+    .decl wire(c: Color) wire(5).
+    // the color the inside of a box takes
+    .decl fill(c: Color) fill(4).
+}
+
+.init params = Params
+
+.decl clip_choice(c: Clip)
+clip_choice($AnyPart()). clip_choice($CornerShown()). clip_choice($SideShown()).
+
+.decl corner_choice(c: Corner)
+corner_choice($EveryTrueCorner()). corner_choice($SomeTrueCorner()).
+
+.decl inside_choice(i: Inside)
+inside_choice($BackgroundOnly()). inside_choice($OutlineBox()).
+
+.decl linked_choice(l: Linked)
+linked_choice($EveryBox()). linked_choice($LinkedBox()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Cl, Co, I, L]) :- clip_choice(Cl), corner_choice(Co), inside_choice(I), linked_choice(L).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.background(Col).
+
+.decl wire_cell(p: Position)
+wire_cell(P) :- in(P, Col), params.wire(Col).
+
+// @claim box-outline
+.init region = Components<Unit>
+region.node($U(), P) :- bg_cell(P).
+
+// @claim box-outline
+.init region_box = Bbox<Ident>
+region_box.cell(Id, P) :- region.label($U(), P, Id).
+
+// A cell of the region's bounding box lies outside the region.
+.decl region_gap(id: Ident)
+region_gap(Id) :- region_box.box(Id, B), in(P, _), inside(P, B), !region.label($U(), P, Id).
+
+// A background region that fills its bounding box.
+.decl rect_region(id: Ident, b: Box)
+rect_region(Id, B) :- region_box.box(Id, B), !region_gap(Id).
+
+// The candidate boxes.
+.decl box(b: Box, i: Inside)
+
+// --- $BackgroundOnly ---
+box(B, $BackgroundOnly()) :- rect_region(_, B).
+
+// --- $OutlineBox ---
+.type RegionPair = [r1: Ident, r2: Ident]
+
+// The rectangle that two rectangular regions span, from one's top-left
+// cell to the other's bottom-right cell.
+// @claim box-outline
+.init span = Bbox<RegionPair>
+span.cell([Id1, Id2], B) :- rect_region(Id1, B), rect_region(Id2, _).
+span.cell([Id1, Id2], B) :- rect_region(Id1, _), rect_region(Id2, B).
+
+.decl span_cell(b: Box, p: Position)
+span_cell(B, P) :- span.box(_, B), in(P, _), inside(P, B).
+
+// A line of the span along axis A, keyed by its across part, holds a cell
+// that is not wire.
+.decl broken_line(b: Box, a: Axis, across: Position)
+broken_line(B, A, X) :- span_cell(B, P), !wire_cell(P), axis_elem(A), split(P, A, _, X).
+
+// A cell of the span that is not background and lies on no whole wire line
+// across the span.
+.decl stray(b: Box)
+stray(B) :-
+    span_cell(B, P), !bg_cell(P),
+    axis_elem(A), split(P, A, _, X), broken_line(B, A, X),
+    perp(A, A2), split(P, A2, _, X2), broken_line(B, A2, X2).
+
+box(B, $OutlineBox()) :- span.box(_, B), !stray(B).
+
+// --- concept, $CornerShown, $SideShown, $SomeTrueCorner, $OutlineBox, $LinkedBox ---
+
+// A ring cell beside a side that lies on the grid and is not wire.
+.decl open_side(b: Box, i: Inside)
+open_side(B, I) :-
+    box(B, I), in(P, _), box_edge(P, B, D),
+    neighbor(P, D, Q), in(Q, _), !wire_cell(Q).
+
+// The ring corner toward D, where it lies on the grid.
+.decl ring_corner(b: Box, i: Inside, d: DiagDir, q: Position)
+ring_corner(B, I, D, Q) :-
+    box(B, I), in(P, _), diag_dir_elem(D), box_corner(P, B, D),
+    neighbor(P, D, Q), in(Q, _).
+
+// A ring corner on the grid that is not wire.
+.decl ring_corner_open(b: Box, i: Inside)
+ring_corner_open(B, I) :- ring_corner(B, I, _, Q), !wire_cell(Q).
+
+// The ring is wire wherever it lies on the grid.
+.decl walled(b: Box, i: Inside)
+walled(B, I) :- box(B, I), !open_side(B, I), !ring_corner_open(B, I).
+
+// A line continues a side past the ring corner toward D.
+.decl junction(b: Box, i: Inside, d: DiagDir)
+junction(B, I, D) :- ring_corner(B, I, D, Q), dir_of(D, _, D1), neighbor(Q, D1, X), wire_cell(X).
+
+.decl clip_ok(b: Box, i: Inside, c: Clip)
+clip_ok(B, I, $AnyPart()) :- walled(B, I).
+clip_ok(B, I, $CornerShown()) :- walled(B, I), ring_corner(B, I, _, _).
+clip_ok(B, I, $SideShown()) :-
+    walled(B, I), ring_corner(B, I, D1, _), ring_corner(B, I, D2, _), D1 != D2.
+
+.decl corner_ok(b: Box, i: Inside, c: Corner)
+corner_ok(B, I, $EveryTrueCorner()) :- walled(B, I), !junction(B, I, _).
+corner_ok(B, I, $SomeTrueCorner()) :-
+    walled(B, I),
+    ( !ring_corner(B, I, _, _)                              // no ring corner on the grid
+    ; ring_corner(B, I, D, _), !junction(B, I, D)           // some true corner
+    ).
+
+// The ring cells on the grid: the cells beside the box, off it.
+.decl ring(b: Box, i: Inside, q: Position)
+ring(B, I, Q) :- box(B, I), in(P, _), inside(P, B), neighbor(P, _, Q), in(Q, _), !inside(Q, B).
+
+// A wire cell off the box and its ring touches the ring: a line meets the box.
+.decl met(b: Box, i: Inside)
+met(B, I) :-
+    ring(B, I, Q), dir_elem(D), neighbor(Q, D, W), wire_cell(W),
+    !inside(W, B), !ring(B, I, W).
+
+.decl linked_ok(b: Box, i: Inside, l: Linked)
+linked_ok(B, I, $EveryBox()) :- walled(B, I).
+linked_ok(B, I, $LinkedBox()) :- walled(B, I), met(B, I).
+
+.decl filled(p: Position, ch: Choice)
+filled(P, [Cl, Co, I, L]) :-
+    clip_ok(B, I, Cl), corner_ok(B, I, Co), linked_ok(B, I, L),
+    bg_cell(P), inside(P, B).
+
+out(P, Col, Ch) :- filled(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).
+
+.comp Determine {
+    // A cell the train output changes.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
+
+    .decl background(c: Color)
+    background(C) :- changed(E, P), ex_in(E, P, C).
+
+    .decl fill(c: Color)
+    fill(C) :- changed(E, P), ex_out(E, P, C).
+
+    // The color of an unchanged cell beside a changed one: the box's ring.
+    .decl wire(c: Color)
+    wire(C) :- changed(E, P), neighbor(P, _, Q), ex_in(E, Q, C), !changed(E, Q).
+}

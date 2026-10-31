@@ -1,0 +1,319 @@
+// e8593010
+// @draft
+// @keywords: objects count lookup rank congruent
+// @scene field-and-holes: every input is a field of `5` with cells of `hole_color` scattered on it.
+// @scene small-pieces: each 4-connected piece of `hole_color` cells has a size that is a key of `size_color`.
+// @rule keep-field: each cell not of `hole_color` keeps its color.
+// @rule color-by-size: each cell of a 4-connected piece of `hole_color` takes the color that `size_color`
+//  gives for the piece's cell count.
+
+// what keys a piece's color
+.type ColorKey =
+    // @claim color-by-size
+    SizeKey {}
+    // @rule color-by-size: the dense rank of the piece's size among the sizes of the input's pieces keys
+    //  the color, undefined where the input has more distinct piece sizes than the rank table has keys.
+    // @witness no-domino: variant concept
+  | RankBySize {dir: RankDir}
+    // @rule color-by-size: the piece's free shape, its cell set up to D4 and translation, keys
+    //  `shape_color`, undefined on a piece whose shape has no entry.
+    // @witness i-tromino-color: ordinary concept
+    //     @reassigned shape_color
+  | ShapeKey {}
+    // @rule color-by-size: the piece's shape up to translation alone keys `fixed_shape_color`, undefined
+    //  on a piece whose shape has no entry.
+    // @witness vertical-domino-color: ordinary concept
+    //     @reassigned fixed_shape_color
+  | FixedShapeKey {}
+
+// which end of the size order is rank 0
+.type RankDir =
+    // @claim color-by-size
+    RankAsc {}
+    // @rule color-by-size: the largest present size is rank 0, and `rank_color_desc` gives the color.
+    // @witness no-domino: variant concept
+  | RankDesc {}
+
+// which cells are ink
+.type Ink =
+    // @claim field-and-holes
+    HoleInk {}
+    // @scene field-and-holes: the ink is every cell not of `field_color`, whatever its color.
+    // @rule color-by-size: ink cells join into 4-connected pieces whatever their colors.
+    // @witness stray-third-color: borderline concept
+    //     @relaxed field-and-holes
+  | NonFieldInk {join: PieceJoin}
+
+// which ink cells join into one piece
+.type PieceJoin =
+    // @claim color-by-size
+    MixedPieces {}
+    // @rule color-by-size: an ink cell joins only the 4-connected ink cells of its own color.
+    // @witness touching-third-color: borderline concept
+    //     @relaxed field-and-holes
+  | SameColorPieces {}
+
+.type Choice = [k: ColorKey, i: Ink]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $HoleInk ---
+    // @derive RarestColor: borderline concept
+    //     @relaxed field-and-holes
+    // @ignore: case section — each case reads only the rows its own `Ink` branch derives
+    .decl hole_color(col: Color) hole_color(0).
+
+    // --- $NonFieldInk ---
+    // @derive DominantColor: variant concept
+    //     @relaxed field-and-holes
+    // @ignore: derive $HoleInk — these cases do not read field_color, so each is equivalent to the one that stores it
+    // @ignore: derive RarestColor — it gives `0` on each pair's input, so the field is ink, one piece with no entry, and every case that reads field_color fails Fit
+    // @ignore: derive SharedColor — it gives `0` and `5` on each pair's input, so no cell is ink, and every case that reads field_color fails Fit
+    // @ignore: derive VanishedColor — with no train output it gives `0` and `5` on each pair's input, so no cell is ink, and every case that reads field_color fails Fit
+    // @ignore: case section — each case reads only the rows its own `Ink` branch derives
+    .decl field_color(col: Color) field_color(5).
+
+    // --- $SizeKey ---
+    // the color each piece size maps to
+    .decl size_color(n: number, col: Color)
+    size_color(1, 3). size_color(2, 2). size_color(3, 1).
+
+    // --- $RankAsc ---
+    .decl rank_color(r: number, col: Color)
+    rank_color(0, 3). rank_color(1, 2). rank_color(2, 1).
+
+    // --- $RankDesc ---
+    .decl rank_color_desc(r: number, col: Color)
+    rank_color_desc(0, 1). rank_color_desc(1, 2). rank_color_desc(2, 3).
+
+    // --- $ShapeKey ---
+    RIGID(shape,
+        .decl member(id: Ident, p: Position)
+        GRID_MASK_1x1(member, 0,
+            1)
+        GRID_MASK_1x2(member, 1,
+            1, 1)
+        GRID_MASK_2x2(member, 2,
+            1, 1,
+            1, _)
+        GRID_MASK_1x3(member, 3,
+            1, 1, 1)
+    )
+    .decl shape_color(id: Ident, col: Color)
+    shape_color(0, 3). shape_color(1, 2). shape_color(2, 1). shape_color(3, 1).
+
+    // --- $FixedShapeKey ---
+    .decl fixed_shape_member(id: Ident, p: Position)
+    GRID_MASK_1x1(fixed_shape_member, 4,
+        1)
+    GRID_MASK_1x2(fixed_shape_member, 5,
+        1, 1)
+    GRID_MASK_2x1(fixed_shape_member, 6,
+        1,
+        1)
+    GRID_MASK_2x2(fixed_shape_member, 7,
+        1, 1,
+        _, 1)
+    GRID_MASK_2x2(fixed_shape_member, 8,
+        1, 1,
+        1, _)
+    GRID_MASK_2x2(fixed_shape_member, 9,
+        1, _,
+        1, 1)
+    GRID_MASK_2x2(fixed_shape_member, 10,
+        _, 1,
+        1, 1)
+    GRID_MASK_3x1(fixed_shape_member, 11,
+        1,
+        1,
+        1)
+    .decl fixed_shape_color(id: Ident, col: Color)
+    fixed_shape_color(4, 3). fixed_shape_color(5, 2). fixed_shape_color(6, 2). fixed_shape_color(7, 1).
+    fixed_shape_color(8, 1). fixed_shape_color(9, 1). fixed_shape_color(10, 1). fixed_shape_color(11, 1).
+}
+
+.init params = Params
+
+.decl rank_dir_choice(d: RankDir)
+rank_dir_choice($RankAsc()). rank_dir_choice($RankDesc()).
+
+.decl color_key_choice(k: ColorKey)
+color_key_choice($SizeKey()). color_key_choice($ShapeKey()). color_key_choice($FixedShapeKey()).
+color_key_choice($RankBySize(D)) :- rank_dir_choice(D).
+
+.decl piece_join_choice(j: PieceJoin)
+piece_join_choice($MixedPieces()). piece_join_choice($SameColorPieces()).
+
+.decl ink_choice(i: Ink)
+ink_choice($HoleInk()). ink_choice($NonFieldInk(J)) :- piece_join_choice(J).
+
+.decl impl_choice(ch: Choice)
+impl_choice([K, I]) :- color_key_choice(K), ink_choice(I).
+
+// the cells that form pieces
+// @ignore: case section — each case reads only the rows its own `Ink` branch derives
+.decl ink(i: Ink, p: Position)
+
+// each ink cell's 4-connected piece
+.decl piece_cell(i: Ink, p: Position, id: Ident)
+
+.type InkPiece = [i: Ink, id: Ident]
+
+out(P, Col, [K, I]) :- impl_choice([K, I]), in(P, Col), !ink(I, P).
+
+// --- $HoleInk ---
+ink($HoleInk(), P) :- in(P, Col), params.hole_color(Col).
+
+// --- $NonFieldInk ---
+ink($NonFieldInk(J), P) :- piece_join_choice(J), in(P, Col), !params.field_color(Col).
+
+// --- $HoleInk, $MixedPieces ---
+// @claim small-pieces color-by-size
+.init piece = Components<Ink>
+piece.node($HoleInk(), P) :- ink($HoleInk(), P).
+piece.node($NonFieldInk($MixedPieces()), P) :- ink($NonFieldInk($MixedPieces()), P).
+piece_cell(I, P, Id) :- piece.label(I, P, Id).
+
+// --- $SameColorPieces ---
+// @claim color-by-size
+.init color_piece = Components<Color>
+color_piece.node(Col, P) :- ink($NonFieldInk($SameColorPieces()), P), in(P, Col).
+piece_cell($NonFieldInk($SameColorPieces()), P, Id) :- color_piece.label(_, P, Id).
+
+// --- $SizeKey, $RankBySize ---
+// @claim small-pieces color-by-size
+.init size = Tally<InkPiece, Position>
+size.item([I, Id], P) :- piece_cell(I, P, Id).
+
+// --- $SizeKey ---
+out(P, Col, [$SizeKey(), I]) :-
+    piece_cell(I, P, Id), size.tally([I, Id], N), params.size_color(N, Col).
+
+// --- $RankBySize ---
+// @claim color-by-size
+.init size_rank = Ordinal<Ink>
+size_rank.idx_set(I, N) :- size.tally([I, _], N).
+
+// --- $RankAsc ---
+out(P, Col, [$RankBySize($RankAsc()), I]) :-
+    piece_cell(I, P, Id), size.tally([I, Id], N),
+    size_rank.rank(I, N, R), params.rank_color(R, Col).
+
+// --- $RankDesc ---
+out(P, Col, [$RankBySize($RankDesc()), I]) :-
+    piece_cell(I, P, Id), size.tally([I, Id], N),
+    size_rank.rank_desc(I, N, R), params.rank_color_desc(R, Col).
+
+// --- $ShapeKey, $FixedShapeKey ---
+// @claim color-by-size
+.init piece_box = Bbox<InkPiece>
+piece_box.cell([I, Id], P) :- piece_cell(I, P, Id).
+
+// the piece's cells in its bounding box's frame
+.decl piece_shape(ip: InkPiece, p_inner: Position)
+piece_shape(K, P_inner) :- piece_box.cell(K, P), piece_box.box(K, B), crop(P, B, P_inner).
+
+// --- $ShapeKey ---
+// a catalog shape in one of its orientations
+.type Pose = [id: Ident, d: D4]
+
+// @claim color-by-size
+.init free_match = KeyedSetCompare<InkPiece, Pose, Position>
+free_match.pattern_member([S, D], P) :- params.shape_member(D, S, P).
+free_match.observed_member(K, P) :- piece_shape(K, P).
+
+out(P, Col, [$ShapeKey(), I]) :-
+    piece_cell(I, P, Id), free_match.equals([I, Id], [S, _]), params.shape_color(S, Col).
+
+// --- $FixedShapeKey ---
+// @claim color-by-size
+.init fixed_match = KeyedSetCompare<InkPiece, Ident, Position>
+fixed_match.pattern_member(S, P) :- params.fixed_shape_member(S, P).
+fixed_match.observed_member(K, P) :- piece_shape(K, P).
+
+out(P, Col, [$FixedShapeKey(), I]) :-
+    piece_cell(I, P, Id), fixed_match.equals([I, Id], S), params.fixed_shape_color(S, Col).
+
+.comp Determine {
+    // the colors that change between a train input and its output
+    .decl hole_color(col: Color)
+    hole_color(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    // the colors some cell keeps in a train pair
+    .decl kept(e: Example, col: Color)
+    kept(E, Col) :- ex_in(E, P, Col), ex_out(E, P, Col).
+
+    // a kept color that some train pair keeps nowhere
+    .decl unkept(col: Color)
+    unkept(Col) :- kept(_, Col), ex_out(E, _, _), !kept(E, Col).
+
+    .decl field_color(col: Color)
+    field_color(Col) :- kept(_, Col), !unkept(Col).
+
+    .init piece = Components<Example>
+    piece.node(E, P) :- ex_in(E, P, Col), hole_color(Col), ex_out(E, _, _).
+
+    .type ExPiece = [e: Example, id: Ident]
+
+    .init size = Tally<ExPiece, Position>
+    size.item([E, Id], P) :- piece.label(E, P, Id).
+
+    // each piece's size, with the color its cells take
+    .decl piece_color(e: Example, n: number, col: Color)
+    piece_color(E, N, Col) :- size.tally([E, Id], N), piece.label(E, P, Id), ex_out(E, P, Col).
+
+    .decl size_color(n: number, col: Color)
+    size_color(N, Col) :- piece_color(_, N, Col).
+
+    .init size_rank = Ordinal<Example>
+    size_rank.idx_set(E, N) :- piece_color(E, N, _).
+
+    .decl rank_color(r: number, col: Color)
+    rank_color(R, Col) :- size_rank.rank(E, N, R), piece_color(E, N, Col).
+
+    .decl rank_color_desc(r: number, col: Color)
+    rank_color_desc(R, Col) :- size_rank.rank_desc(E, N, R), piece_color(E, N, Col).
+
+    .init piece_box = Bbox<ExPiece>
+    piece_box.cell([E, Id], P) :- piece.label(E, P, Id).
+
+    // each piece's cells in its bounding box's frame
+    .decl piece_shape(ep: ExPiece, p_inner: Position)
+    piece_shape(K, P_inner) :- piece_box.cell(K, P), piece_box.box(K, B), crop(P, B, P_inner).
+
+    // pieces whose shapes agree up to translation share an entry
+    .init same_shape = KeyedSetCompare<ExPiece, ExPiece, Position>
+    same_shape.pattern_member(K, P) :- piece_shape(K, P).
+    same_shape.observed_member(K, P) :- piece_shape(K, P).
+
+    .init entry = Canon<ExPiece>
+    entry.equiv(K, K2) :- same_shape.equals(K, K2).
+
+    .decl fixed_shape_member(id: Ident, p: Position)
+    fixed_shape_member(S, P) :- entry.id(K, S), piece_shape(K, P).
+
+    .decl fixed_shape_color(id: Ident, col: Color)
+    fixed_shape_color(S, Col) :- entry.id([E, Id], S), piece.label(E, P, Id), ex_out(E, P, Col).
+
+    // two pieces of one size, compared up to D4
+    .type PiecePair = [k: ExPiece, k2: ExPiece]
+
+    .init congruent = D4Map<PiecePair, Unit>
+    congruent.src([K, K2], P, $U()) :- piece_shape(K, P), size.tally(K, N), size.tally(K2, N).
+    congruent.dst([K, K2], P, $U()) :- piece_shape(K2, P), size.tally(K, N), size.tally(K2, N).
+
+    // a piece's free shape is named by the pair of the piece with itself, so that its id
+    // is another entity's than the fixed shapes' ids
+    .init free_entry = Canon<PiecePair>
+    free_entry.equiv([K, K], [K2, K2]) :- congruent.map([K, K2], _).
+
+    // each train piece is one copy of its entry, in its own pose
+    .decl shape_member(e: Example, piece: Ident, id: Ident, p: Position)
+    shape_member(E, Id, S, P) :- free_entry.id([K, K], S), K = [E, Id], piece_shape(K, P).
+
+    .decl shape_color(id: Ident, col: Color)
+    shape_color(S, Col) :-
+        free_entry.id([K, K], S), K = [E, Id],
+        piece.label(E, P, Id), ex_out(E, P, Col).
+}

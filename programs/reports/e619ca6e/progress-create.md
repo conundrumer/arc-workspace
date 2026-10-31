@@ -1,0 +1,3 @@
+# e619ca6e
+
+- interference: `uv run python scripts/run_dl.py store e619ca6e` printed, for `member[col]`, `own_copy[col]` and `paint[col]`, "make it a parameter" or `// @ignore: store — <reason>`, and printed no `@store` line. [Develop](#develop) says "Where `store` prints no line to add for a value, mark that value with a `@workaround` directive". That line and the command's own offer of `@ignore: store` disagree. Cost: about a minute of judgment. The solver takes `@ignore: store`, because the copy color comes from the block by `copy-keeps-block`. The output is not wrong, and the disagreement still stands.

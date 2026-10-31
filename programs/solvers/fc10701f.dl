@@ -1,0 +1,253 @@
+// fc10701f
+// @draft
+// @keywords: objects markers move span
+// @scene two-blocks: the grid is background 6 with one solid mover block of 7 and one
+//  solid target block of 9 of the same size, aligned so that they span the same rows or
+//  the same columns.
+// @scene corridor: the corridor is the cells strictly between the two blocks along the
+//  axis that joins them, across the blocks' common span; it holds only background.
+// @scene gates: gate cells of 0 stand in mirrored pairs on the two sides of the corridor's
+//  span, against it, some along the corridor and some elsewhere.
+// @rule vacate: the mover block's cells become background.
+// @rule land: the target block's cells become mover.
+// @rule stamp-gates: each corridor cell that has a gate cell on each side of it, in its
+//  line across the corridor's axis, becomes mark.
+// @rule keep: every other cell keeps its input color.
+
+// how many sides of a corridor cell need a gate post
+.type GateSides =
+    // @claim stamp-gates
+    BothSides {}
+    // @rule stamp-gates: a gate cell on at least one side is enough.
+    // @witness one-sided-gate: borderline concept
+    //     @relaxed gates
+  | EitherSide {}
+
+// which lines through a corridor cell are read for gate posts
+.type GateAxis =
+    // @claim stamp-gates
+    CrossLine {}
+    // @rule stamp-gates: a gate cell on each side along either axis is enough.
+    // @witness gate-on-motion-line: borderline concept
+    //     @relaxed gates
+  | AnyAxis {}
+
+// how far from the corridor a gate post may stand
+.type GateReach =
+    // @claim stamp-gates
+    AnyDistance {axis: GateAxis}
+    // @rule stamp-gates: the post cells must touch the corridor's sides, the line just
+    //  outside the blocks' common span.
+    // @witness gate-off-corridor: borderline concept
+    //     @relaxed gates
+  | AdjacentGate {}
+
+// which cells the stamp may fall on
+.type StampRegion =
+    // @claim stamp-gates
+    Corridor {}
+    // @rule stamp-gates: the mover's start cells are stamped too, under the same test,
+    //  after vacate.
+    // @witness gate-at-start: ordinary concept
+  | StampStart {}
+
+// how the mover lands on the target
+.type Landing =
+    // @claim land
+    Paint {}
+    // @rule land: the target cells become background, and the mover's shape moves along
+    //  the axis until its leading edge is on the target's far edge.
+    // @witness longer-target: borderline concept
+    //     @relaxed two-blocks
+  | TranslateMover {}
+    // @rule land: as $TranslateMover, but the mover's trailing edge lands on the target's
+    //  near edge.
+    // @witness longer-target: borderline concept
+  | TranslateNear {}
+
+.type Choice = [sides: GateSides, reach: GateReach, region: StampRegion, landing: Landing]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed two-blocks
+    .decl background(c: Color) background(6).
+    // the color of the block that moves
+    .decl mover(c: Color) mover(7).
+    // the color of the block it lands on
+    .decl target(c: Color) target(9).
+    .decl gate(c: Color) gate(0).
+    // the color a passed gate's corridor cells take
+    .decl mark(c: Color) mark(2).
+}
+
+.init params = Params
+
+.decl gate_sides_choice(s: GateSides)
+gate_sides_choice($BothSides()). gate_sides_choice($EitherSide()).
+
+.decl gate_reach_choice(r: GateReach)
+gate_reach_choice($AnyDistance($CrossLine())). gate_reach_choice($AnyDistance($AnyAxis())).
+gate_reach_choice($AdjacentGate()).
+
+.decl stamp_region_choice(r: StampRegion)
+stamp_region_choice($Corridor()). stamp_region_choice($StampStart()).
+
+.decl landing_choice(l: Landing)
+landing_choice($Paint()). landing_choice($TranslateMover()). landing_choice($TranslateNear()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, R, G, L]) :-
+    gate_sides_choice(S), gate_reach_choice(R), stamp_region_choice(G), landing_choice(L).
+
+.decl mover_cell(p: Position)
+mover_cell(P) :- in(P, C), params.mover(C).
+
+.decl target_cell(p: Position)
+target_cell(P) :- in(P, C), params.target(C).
+
+// the mover slides from each of its cells toward each direction, and stops at the target
+// @claim two-blocks corridor
+.init slide = Ray<Unit>
+slide.dir($U(), D) :- dir_elem(D).
+slide.cell($U(), P) :- in(P, _).
+slide.mark($U(), P) :- mover_cell(P).
+slide.blocked($U(), P) :- target_cell(P).
+
+// the direction the mover travels: its slides toward it meet the target
+.decl motion(d: Dir)
+motion(D) :- slide.stop(_, _, D, _, _), dir_elem(D).
+
+// a cell between the mover and the target along the motion
+.decl corridor(p: Position)
+corridor(P) :- slide.clear(_, P, D, _, Src), slide.stop(_, _, D, _, Src), !mover_cell(P).
+
+// the cells the mover covers on its way to the target
+.decl path(p: Position)
+path(P) :- corridor(P).
+path(P) :- mover_cell(P).
+
+// the cells a stamp may fall on
+.decl stamp_region(g: StampRegion, p: Position)
+// a gate post stands toward d from p
+.decl post(r: GateReach, p: Position, d: Dir)
+// the axes along which a cell's posts are read
+.decl line_axis(r: GateReach, a: Axis)
+
+// --- $Corridor ---
+stamp_region($Corridor(), P) :- corridor(P).
+
+// --- $StampStart ---
+stamp_region($StampStart(), P) :- path(P).
+
+// --- $AnyDistance ---
+// a gate casts along each line through it
+// @claim stamp-gates
+.init gate_cast = Ray<Unit>
+gate_cast.dir($U(), D) :- dir_elem(D).
+gate_cast.cell($U(), P) :- path(P).
+gate_cast.mark($U(), P) :- in(P, C), params.gate(C).
+
+post($AnyDistance(A), P, D) :-
+    gate_reach_choice($AnyDistance(A)),
+    gate_cast.ray(_, P, D_cast, _, _), opposite(D_cast, D).   // a gate casts back toward p
+
+// --- $AdjacentGate ---
+// a corridor cell runs across the path to the path's side
+// @claim stamp-gates
+.init path_run = Slide<Unit>
+path_run.dir($U(), D) :- dir_elem(D).
+path_run.node($U(), P) :- path(P).
+
+post($AdjacentGate(), P, D) :-
+    path_run.rest(_, P, D, Q), dir_elem(D), neighbor(Q, D, Q_out),   // the cell just past the path's side
+    in(Q_out, C), params.gate(C).
+
+// --- $CrossLine, $AdjacentGate ---
+// the axis across the motion
+line_axis($AnyDistance($CrossLine()), A) :- motion(D), axis_of(D, A_motion), perp(A_motion, A).
+line_axis($AdjacentGate(), A) :- motion(D), axis_of(D, A_motion), perp(A_motion, A).
+
+// --- $AnyAxis ---
+line_axis($AnyDistance($AnyAxis()), A) :- axis_elem(A).
+
+.decl stamped(s: GateSides, r: GateReach, g: StampRegion, p: Position)
+
+// --- $BothSides ---
+stamped($BothSides(), R, G, P) :-
+    stamp_region(G, P), line_axis(R, A), axis_of(D, A),
+    post(R, P, D), opposite(D, D2), post(R, P, D2).
+
+// --- $EitherSide ---
+stamped($EitherSide(), R, G, P) :-
+    stamp_region(G, P), line_axis(R, A), axis_of(D, A), post(R, P, D).
+
+// the cells that take the mover
+.decl landed(l: Landing, p: Position)
+// the cells that become background
+.decl cleared(l: Landing, p: Position)
+
+// --- $Paint ---
+landed($Paint(), P) :- target_cell(P).
+cleared($Paint(), P) :- mover_cell(P).
+
+// --- $TranslateMover, $TranslateNear ---
+// a cell of a block whose side toward e lies outside the block
+.decl block_edge(c: Color, p: Position, e: Dir)
+block_edge(C, P, E) :- in(P, C), dir_elem(E), neighbor(P, E, Q), !in(Q, C).
+
+// the mover's side toward e travels onto the target's side toward e
+.decl travel(l: Landing, d: Dir, k: number)
+cleared(L, P) :- travel(L, _, _), (mover_cell(P) ; target_cell(P)).
+landed(L, P) :- travel(L, D, K), mover_cell(P_start), jump(P_start, D, K, P), in(P, _).
+
+// --- $TranslateMover ---
+travel($TranslateMover(), D, K) :-
+    motion(D), params.mover(C_m), params.target(C_t),
+    block_edge(C_m, P_m, D), block_edge(C_t, P_t, D),   // the leading and far sides
+    slide.ray(_, P_t, D, K, P_m).
+
+// --- $TranslateNear ---
+travel($TranslateNear(), D, K) :-
+    motion(D), opposite(D, E), params.mover(C_m), params.target(C_t),
+    block_edge(C_m, P_m, E), block_edge(C_t, P_t, E),   // the trailing and near sides
+    slide.ray(_, P_t, D, K, P_m).
+
+// --- output ---
+out(P, C, [S, R, G, L]) :-
+    impl_choice([S, R, G, L]), in(P, C_in),
+    ( landed(L, P), params.mover(C)
+    ; !landed(L, P), stamped(S, R, G, P), params.mark(C)
+    ; !landed(L, P), !stamped(S, R, G, P), cleared(L, P), params.background(C)
+    ; !landed(L, P), !stamped(S, R, G, P), !cleared(L, P), C = C_in
+    ).
+
+.comp Determine {
+    .decl in_color(e: Example, c: Color)
+    in_color(E, C) :- ex_in(E, _, C).
+
+    .decl out_color(e: Example, c: Color)
+    out_color(E, C) :- ex_out(E, _, C).
+
+    // the input color that leaves no cell in the output
+    .decl target(c: Color)
+    target(C) :- in_color(E, C), out_color(E, _), !out_color(E, C).
+
+    // the color the target's cells take
+    .decl mover(c: Color)
+    mover(C) :- target(C_t), ex_in(E, P, C_t), ex_out(E, P, C).
+
+    // the color the mover's start cells take
+    .decl background(c: Color)
+    background(C) :- mover(C_m), ex_in(E, P, C_m), ex_out(E, P, C).
+
+    // the output color that its input lacks
+    .decl mark(c: Color)
+    mark(C) :- out_color(E, C), !in_color(E, C).
+
+    // the input color that is neither block nor background
+    // @ignore: determine prediction — the excluded colors are read from the pairs by the rules land and vacate, and the color left is read, not guessed
+    .decl gate(c: Color)
+    gate(C) :- in_color(E, C), out_color(E, _), !target(C), !mover(C), !background(C).
+}

@@ -1,0 +1,227 @@
+// db0c5428
+// @draft
+// @keywords: decompose move scale d4 grow
+// @scene one-square: on a field of color bg (8), one square of side 3 × block (3), which holds
+//  no bg cell outside its center block.
+// @scene block-grid: the square divides into 3×3 blocks of side block, and its center block
+//  (the hole) is all bg.
+// @scene d4-symmetric: the square is unchanged under each element of D4.
+// @scene room: the square stands at least block cells from each edge of the grid.
+// @rule keep-square: the eight outer blocks of the square stay as they are.
+// @rule copy-across: for each of the eight directions d, a copy of the block at -d from the
+//  hole, unturned, is drawn at the block place 2d from the hole.
+// @rule fill-hole: each hole cell at offset d from the hole's center cell takes the color of
+//  the input cell at offset 2d from that center, and the center cell takes the color of the
+//  frame cells at offsets (±1, ±2) and (±2, ±1).
+// @rule rest-background: every other cell is bg.
+
+// what the block place at 2d from the hole receives
+.type OuterCopy =
+    // @claim copy-across
+    Across {}
+    // @rule copy-across: the block place at 2d receives the block at d mirrored across the side
+    //  or the corner it faces: flipped on the axis of a cardinal d, on both axes for a corner d.
+    // @witness asymmetric-edge-block: borderline concept
+    //     @relaxed d4-symmetric
+  | MirrorOut {}
+    // @rule copy-across: the block place at 2d receives the block at d turned a half turn.
+    // @witness asymmetric-edge-block: borderline concept
+  | HalfTurnOut {}
+
+// the color of the hole's center cell
+.type HoleCenter =
+    // @claim fill-hole
+    KnightFrame {}
+    // @rule fill-hole: the center cell takes the commonest color of the square's eight outer
+    //  blocks; undefined where two colors tie for commonest.
+    // @witness rare-frame-color: ordinary concept
+  | CenterCommon {}
+
+// what happens to the cells of a copy that fall past the grid edge
+.type Overhang =
+    // @claim rest-background
+    Clip {}
+    // @rule grow-frame: the output frame extends past each edge by the copy rows or columns
+    //  that fall past it, and the new cells take the rules' colors.
+    // @witness edge-overhang: borderline concept
+    //     @relaxed room
+  | GrowFrame {}
+
+.type Choice = [copy: OuterCopy, center: HoleCenter, overhang: Overhang]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-square
+    .decl bg(c: Color) bg(8).
+    // the side of one block
+    .decl block(k: number) block(3).
+}
+
+.init params = Params
+
+.decl outer_copy_choice(c: OuterCopy)
+outer_copy_choice($Across()). outer_copy_choice($MirrorOut()). outer_copy_choice($HalfTurnOut()).
+
+.decl hole_center_choice(c: HoleCenter)
+hole_center_choice($KnightFrame()). hole_center_choice($CenterCommon()).
+
+.decl overhang_choice(o: Overhang)
+overhang_choice($Clip()). overhang_choice($GrowFrame()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Cp, Ce, Ov]) :- outer_copy_choice(Cp), hole_center_choice(Ce), overhang_choice(Ov).
+
+// the square: the box of the cells off the field
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+    .decl field(key: Key, col: Color)  // @input
+
+    // @claim one-square
+    .init square = Bbox<Key>
+    square.cell(Ky, P) :- cell(Ky, P, Col), !field(Ky, Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.field($U(), Col) :- params.bg(Col).
+
+// the hole: the square's center block
+.decl hole_box(b: Box)
+hole_box(H) :- parse.square.box($U(), B), params.block(K), uniform_inset(K, I), compose(B, I, H).
+
+.decl in_square(p: Position)
+in_square(P) :- in(P, _), parse.square.box($U(), B), inside(P, B).
+
+.decl hole(p: Position)
+hole(P) :- in(P, _), hole_box(H), crop(P, H, _).
+
+.decl hole_center(p: Position)
+hole_center(P) :- hole_box(H), hole(P), crop(P, H, P_rel), centered(P_rel).
+
+// the outer blocks of the square
+.decl outer(p: Position, col: Color)
+outer(P, Col) :- in(P, Col), in_square(P), !hole(P).
+
+// the block at d from the hole, and the block place at 2d
+.decl block(d: Dir8, b1: Box, b2: Box)
+block(D, B1, B2) :-
+    hole_box(H), params.block(K), dir8_elem(D), jump_offset(D, K, V),
+    compose(H, V, B1), compose(B1, V, B2).
+
+// the cells of the block places at 2d, past the grid edge included
+.decl place(p: Position)
+place(P) :- block(_, B1, B2), in(Q, _), crop(Q, B1, P_rel), compose(B2, P_rel, P).
+
+// the hole cells other than the center: offset d takes the cell at 2d
+.decl hole_ring(p: Position, col: Color)
+hole_ring(P, Col) :- hole_center(C), dir8_elem(D), neighbor(C, D, P), neighbor(P, D, Q), in(Q, Col).
+
+// --- $Across ---
+.decl copy(cp: OuterCopy, p: Position, col: Color)
+copy($Across(), P, Col) :-
+    block(D, _, B2), dir8_opposite(D, D_src), block(D_src, B1, _),
+    in(Q, Col), crop(Q, B1, P_rel), compose(B2, P_rel, P).
+
+// --- $MirrorOut, $HalfTurnOut ---
+// the flips on both axes together
+.decl half_turn(m: D4)
+half_turn(M) :- perp(A1, A2), flip_of(A1, F1), flip_of(A2, F2), d4_compose(F1, F2, M).
+
+// --- $MirrorOut ---
+// the reflection across the side or the corner that direction d faces
+.decl mirror(d: Dir8, m: D4)
+mirror(D, M) :- dir_elem(D), axis_of(D, A), flip_of(A, M).
+mirror(D, M) :- diag_dir_elem(D), half_turn(M).
+
+copy($MirrorOut(), P, Col) :-
+    block(D, B1, B2), mirror(D, M),
+    in(Q, Col), crop(Q, B1, Q_rel), apply(M, Q_rel, P_rel), compose(B2, P_rel, P).
+
+// --- $HalfTurnOut ---
+copy($HalfTurnOut(), P, Col) :-
+    block(_, B1, B2), half_turn(M),
+    in(Q, Col), crop(Q, B1, Q_rel), apply(M, Q_rel, P_rel), compose(B2, P_rel, P).
+
+// --- $KnightFrame ---
+.decl center_color(ce: HoleCenter, col: Color)
+center_color($KnightFrame(), Col) :-
+    hole_center(C), diag_dir_elem(Dg), neighbor(C, Dg, P), dir_of(Dg, _, D), neighbor(P, D, Q),
+    in(Q, Col).
+
+// --- $CenterCommon ---
+// @claim fill-hole
+.init outer_mode = Mode<Unit, Color, Position>
+outer_mode.item($U(), Col, P) :- outer(P, Col).
+
+center_color($CenterCommon(), Col) :- outer_mode.mode($U(), Col).
+
+// --- $Clip ---
+// each frame cell, and its position in the output frame
+// @ignore: head-repeat — under Clip the output frame is the input frame, so a cell keeps its position
+.decl frame_cell(o: Overhang, p: Position, p_out: Position)
+frame_cell($Clip(), P, P) :- in(P, _).
+
+// --- $GrowFrame ---
+.decl span_cell(p: Position)
+span_cell(P) :- in(P, _).
+span_cell(P) :- place(P).
+
+// @claim grow-frame
+.init grown = Bbox<Unit>
+grown.cell($U(), P) :- span_cell(P).
+
+// the lines of the grown frame on axis a, and the lines across it
+.decl grown_along(a: Axis, along: Box)
+grown_along(A, Al) :- span_cell(P), axis_elem(A), split(P, A, Al, _).
+
+.decl grown_across(a: Axis, across: Box)
+grown_across(A, Ac) :- span_cell(P), axis_elem(A), split(P, A, _, Ac).
+
+frame_cell($GrowFrame(), P, P_out) :-
+    grown_along(A, Al), grown_across(A, Ac), compose(Al, Ac, P),
+    grown.box($U(), G), crop(P, G, P_out).
+
+// --- output ---
+out(P_out, Col, [Cp, Ce, Ov]) :-
+    impl_choice([Cp, Ce, Ov]), frame_cell(Ov, P, P_out),
+    ( outer(P, Col)
+    ; hole_ring(P, Col)
+    ; hole_center(P), center_color(Ce, Col)
+    ; copy(Cp, P, Col)
+    ; !in_square(P), !place(P), params.bg(Col)
+    ).
+
+.comp Determine {
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    // the field: the commonest color of every train input
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col), train(E).
+
+    .decl bg(c: Color)
+    bg(Col) :- commonest.mode(_, Col), !bg_defect(Col).
+
+    .decl bg_defect(c: Color)
+    bg_defect(Col) :- commonest.mode(_, Col), train(E), !commonest.mode(E, Col).
+
+    // the hole: the field cells inside the box of the other cells
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), train(E).
+    parse.field(E, Col) :- train(E), bg(Col).
+
+    .init hole = Bbox<Example>
+    hole.cell(E, P) :- ex_in(E, P, Col), bg(Col), parse.square.box(E, B), inside(P, B).
+
+    .decl hole_side(e: Example, a: Axis, k: number)
+    hole_side(E, A, K) :- hole.box(E, H), ex_in(E, P, _), axis_elem(A), box_extent(H, P, A, K).
+
+    // the block side: the hole's side on each axis of every train input
+    .decl block(k: number)
+    block(K) :- hole_side(_, _, K), !block_defect(K).
+
+    .decl block_defect(k: number)
+    block_defect(K) :- hole_side(_, _, K), train(E), axis_elem(A), !hole_side(E, A, K).
+}

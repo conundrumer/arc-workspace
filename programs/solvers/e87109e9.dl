@@ -1,0 +1,420 @@
+// e87109e9
+// @draft
+// @keywords: crop markers objects walk cast
+// @scene legend-strip: a strip along the top side of the grid, drawn in 5, holds 4 boxes of extent 4. Each
+//  box is 0 except for one full line of one color, the marker, along one of the two box sides
+//  perpendicular to the top side.
+// @scene field: the rest of the grid, the scene, is a field of one background color, which differs
+//  between inputs.
+// @scene rectangles: the scene holds solid one-color rectangles. Each rectangle's color is the marker
+//  color of a legend box, and no two rectangles touch.
+// @scene block: the scene holds one solid square of 8, which touches no rectangle.
+// @scene square-hits: each beam that meets a rectangle meets it with its full width, and after each
+//  turn the beam has at least one free step.
+// @rule crop-scene: the output is the scene, the input without the legend strip.
+// @rule beam-each-way: from the block, a copy of the block slides one cell at a time toward each of the
+//  four cardinal directions.
+// @rule turn-at-rectangle: when the next step of a copy would cover a cell of a rectangle, the copy
+//  turns by the sense the legend box of that rectangle's color gives, and slides on from where it
+//  stopped. A marker on the box side that a quarter turn in sense s takes `legend_edge` to gives a turn
+//  in sense s. A copy whose next step would cover a cell of a color that no legend box holds stops
+//  there.
+// @rule exit-at-edge: a copy stops when its next step would leave the grid.
+// @rule paint-trace: each cell that a copy covers on its way takes `block_color`. Every other cell keeps
+//  its scene color. Beams cross each other and the block freely.
+
+// where the legend edge comes from
+.type LegendEdgeSource =
+    // @claim legend-strip
+    LegendEdgeStored {}
+    // @scene legend-strip: the legend edge is the edge whose outer line is all `legend_frame_color`
+    //  and whose next line is not. Undefined on an input with no such edge.
+    // @witness legend-on-other-edge: variant $LegendEdgeDerived
+    //     @relaxed legend-strip
+  | LegendEdgeDerived {}
+
+// where the legend frame color comes from
+.type LegendFrameColorSource =
+    // @claim legend-strip
+    LegendFrameColorStored {}
+    // @scene legend-strip: the frame color is the color of the outer line on the legend edge.
+    //  Undefined where that line holds two colors.
+    // @witness frame-of-other-color: variant $LegendFrameColorDerived
+    //     @relaxed legend-strip
+  | LegendFrameColorDerived {}
+
+// where the legend blank color comes from
+.type LegendBlankColorSource =
+    // @claim legend-strip
+    LegendBlankColorStored {}
+    // @scene legend-strip: the blank color is the commonest color among the strip's cells that are not
+    //  the frame color.
+    // @witness blank-of-other-color: variant $LegendBlankColorDerived
+    //     @relaxed legend-strip
+  | LegendBlankColorDerived {}
+
+// what a beam does at a cell of a color that no legend box holds
+.type UnlistedObstacle =
+    // @claim turn-at-rectangle
+    StopAtUnlistedColor {}
+    // @rule turn-at-rectangle: a cell of a color that no legend box holds is no obstacle, and the beam
+    //  paints it.
+    // @witness unlisted-rectangle: borderline concept
+    //     @relaxed rectangles
+  | PaintOverUnlistedColor {}
+    // @rule turn-at-rectangle: a cell of a color that no legend box holds is no obstacle, and it keeps
+    //  its color.
+    // @witness unlisted-rectangle: borderline concept
+  | PassUnderUnlistedColor {}
+
+// where the block color comes from
+.type BlockColorSource =
+    // @claim block
+    BlockColorStored {u: UnlistedObstacle}
+    // @scene block: the block color is the one scene color that is not the background and that no
+    //  legend box holds. Undefined where the scene holds two or more such colors.
+    // @witness block-of-other-color: variant $BlockColorDerived
+    //     @relaxed block
+  | BlockColorDerived {}
+
+// how the background is found
+.type BackgroundSource =
+    // @claim field
+    BackgroundSceneMode {}
+    // @scene field: the background is the commonest color of the whole input, legend included.
+    // @witness small-scene: borderline concept
+    //     @relaxed rectangles
+  | BackgroundWholeInputMode {}
+
+// which directions the block shoots beams toward
+.type BeamDirections =
+    // @claim beam-each-way
+    BeamDirectionsAll {}
+    // @rule beam-each-way: the beams start toward each direction of a stored set.
+    // @witness three-beams: ordinary concept
+    //     @reassigned beam_dirs
+  | BeamDirectionsStored {}
+
+// what a beam does when its first step after a turn is blocked
+.type BlockedAfterTurn =
+    // @claim turn-at-rectangle
+    TurnAgainWhenBlocked {}
+    // @rule turn-at-rectangle: a beam whose first step after a turn is blocked ends there.
+    // @witness turn-into-rectangle: borderline concept
+    //     @relaxed rectangles
+    //     @relaxed square-hits
+  | StopWhenTurnBlocked {}
+
+.type Choice = [edge: LegendEdgeSource, frame: LegendFrameColorSource,
+                blank: LegendBlankColorSource, block: BlockColorSource,
+                bg: BackgroundSource, dirs: BeamDirections, blocked: BlockedAfterTurn]
+
+// A beam: the box the sliding copy of the block covers, and its heading.
+.type Beam = [b: Box, w: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $LegendEdgeStored ---
+    // the side of the grid the legend strip sits on
+    .decl legend_edge(d: Dir) legend_edge(DIR_T).
+
+    // --- $LegendFrameColorStored ---
+    .decl legend_frame_color(c: Color) legend_frame_color(5).
+
+    // --- $LegendBlankColorStored ---
+    .decl legend_blank_color(c: Color) legend_blank_color(0).
+
+    // --- $BlockColorStored ---
+    // the color of the block and of the beams
+    .decl block_color(c: Color) block_color(8).
+
+    // --- $BeamDirectionsStored ---
+    .decl beam_dirs(d: Dir) beam_dirs(DIR_T). beam_dirs(DIR_B). beam_dirs(DIR_L). beam_dirs(DIR_R).
+}
+
+.init params = Params
+
+.decl legend_edge_source_choice(e: LegendEdgeSource)
+legend_edge_source_choice($LegendEdgeStored()). legend_edge_source_choice($LegendEdgeDerived()).
+
+.decl legend_frame_color_source_choice(f: LegendFrameColorSource)
+legend_frame_color_source_choice($LegendFrameColorStored()). legend_frame_color_source_choice($LegendFrameColorDerived()).
+
+.decl legend_blank_color_source_choice(l: LegendBlankColorSource)
+legend_blank_color_source_choice($LegendBlankColorStored()). legend_blank_color_source_choice($LegendBlankColorDerived()).
+
+.decl unlisted_obstacle_choice(u: UnlistedObstacle)
+unlisted_obstacle_choice($StopAtUnlistedColor()). unlisted_obstacle_choice($PaintOverUnlistedColor()).
+unlisted_obstacle_choice($PassUnderUnlistedColor()).
+
+.decl block_color_source_choice(k: BlockColorSource)
+block_color_source_choice($BlockColorStored(U)) :- unlisted_obstacle_choice(U).
+block_color_source_choice($BlockColorDerived()).
+
+.decl background_source_choice(g: BackgroundSource)
+background_source_choice($BackgroundSceneMode()). background_source_choice($BackgroundWholeInputMode()).
+
+.decl beam_directions_choice(d: BeamDirections)
+beam_directions_choice($BeamDirectionsAll()). beam_directions_choice($BeamDirectionsStored()).
+
+.decl blocked_after_turn_choice(t: BlockedAfterTurn)
+blocked_after_turn_choice($TurnAgainWhenBlocked()). blocked_after_turn_choice($StopWhenTurnBlocked()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([E, F, L, K, G, D, T]) :-
+    legend_edge_source_choice(E), legend_frame_color_source_choice(F), legend_blank_color_source_choice(L),
+    block_color_source_choice(K), background_source_choice(G), beam_directions_choice(D), blocked_after_turn_choice(T).
+
+// The legend edge and the frame color.
+.decl legend(ch: Choice, d: Dir, col: Color)
+
+// A line parallel to the legend edge that holds a cell of another color than the frame.
+.decl line_defect(ch: Choice, l: Position)
+line_defect(Ch, L) :-
+    legend(Ch, D, Col), axis_of(D, A), in(P, Col2), Col2 != Col, split(P, A, L, _).
+
+// A frame line: a line parallel to the legend edge, all of the frame color.
+.decl frame_line(ch: Choice, l: Position)
+frame_line(Ch, L) :-
+    legend(Ch, D, Col), axis_of(D, A), in(P, Col), split(P, A, L, _), !line_defect(Ch, L).
+
+// The cells nearer the legend edge than some frame line: the legend strip.
+.decl in_strip(ch: Choice, p: Position)
+in_strip(Ch, P) :- frame_line(Ch, L), legend(Ch, D, _), in(P, _), nearer(D, P, L).
+
+// The legend's box cells: strip cells not of the frame color.
+.decl box_cell(ch: Choice, p: Position, col: Color)
+box_cell(Ch, P, Col) :- in_strip(Ch, P), legend(Ch, _, Col_f), in(P, Col), Col != Col_f.
+
+// The blank color of the legend boxes.
+.decl blank(ch: Choice, col: Color)
+
+// A marker cell: a box cell not of the blank color.
+.decl marker(ch: Choice, p: Position, col: Color)
+marker(Ch, P, Col) :- box_cell(Ch, P, Col), !blank(Ch, Col).
+
+// The marker cell lies on its box's side D, a side perpendicular to the legend edge.
+.decl marker_side(ch: Choice, p: Position, d: Dir)
+marker_side(Ch, P, D) :-
+    marker(Ch, P, _), legend(Ch, E, Col_f), perp_dir(E, D),
+    neighbor(P, D, Q), in(Q, Col_f).                         // the frame lies beyond it
+
+// A box that is not blank except for a marker line on one of its sides.
+.decl malformed(ch: Choice)
+malformed(Ch) :- marker(Ch, P, _), !marker_side(Ch, P, _).
+
+// The turn sense the legend gives to each marker color.
+.decl sense(ch: Choice, col: Color, s: Sense)
+sense(Ch, Col, S) :- marker(Ch, P, Col), marker_side(Ch, P, D), legend(Ch, E, _), turn(S, E, D).
+
+.decl legend_color(ch: Choice, col: Color)
+legend_color(Ch, Col) :- sense(Ch, Col, _).
+
+// The scene: the cells beyond every frame line, in its own frame.
+.decl scene_in(ch: Choice, p: Position)
+scene_in(Ch, P) :-
+    legend(Ch, D, _), axis_of(D, A), in(P, _), split(P, A, L, _),
+    !frame_line(Ch, L), !in_strip(Ch, P).
+
+// @claim crop-scene
+.init scene_box = Bbox<Choice>
+scene_box.cell(Ch, P) :- scene_in(Ch, P).
+
+.decl scene(ch: Choice, p: Position, col: Color)
+scene(Ch, P_inner, Col) :- scene_in(Ch, P), in(P, Col), scene_box.box(Ch, B), crop(P, B, P_inner).
+
+// The background color.
+// @claim field
+.init bg_mode = Mode<Choice, Color, Position>
+
+// The block color.
+.decl block_color(ch: Choice, col: Color)
+
+// @claim block
+.init block_box = Bbox<Choice>
+block_box.cell(Ch, P) :- scene(Ch, P, Col), block_color(Ch, Col).
+
+// The translate B of the block that covers scene cell P: the one that takes block cell P0 to P.
+.decl cover(ch: Choice, p: Position, b: Box)
+cover(Ch, P, B) :-
+    block_box.box(Ch, B0), block_color(Ch, Col), scene(Ch, P0, Col),   // block cell
+    scene(Ch, P, _), relative(P0, P, V), compose(B0, V, B), inside(B, ZERO).
+
+.decl place(ch: Choice, b: Box)
+place(Ch, B) :- cover(Ch, _, B).
+
+// A scene cell of a color that is not the background, the block's, or a legend color.
+.decl unlisted(ch: Choice, p: Position, col: Color)
+unlisted(Ch, P, Col) :-
+    scene(Ch, P, Col), !bg_mode.mode(Ch, Col), !block_color(Ch, Col), !legend_color(Ch, Col).
+
+// A cell that stops or turns a beam.
+.decl obstacle(ch: Choice, p: Position, col: Color)
+obstacle(Ch, P, Col) :- scene(Ch, P, Col), legend_color(Ch, Col).
+
+// The step from B toward W would cover an obstacle of color Col.
+.decl hit(ch: Choice, b: Box, w: Dir, col: Color)
+hit(Ch, B, W, Col) :-
+    obstacle(Ch, P, Col), cover(Ch, P, B2),
+    opposite(W, W_back), neighbor(B2, W_back, B), place(Ch, B).
+
+// @claim beam-each-way turn-at-rectangle exit-at-edge
+.init walk = Propagation<Choice, Beam>
+
+walk.edge(Ch, [B, W], [B2, W]) :-
+    place(Ch, B), dir_elem(W), neighbor(B, W, B2), place(Ch, B2),   // a step within the scene
+    !hit(Ch, B, W, _).
+
+.decl kept(ch: Choice, p: Position)
+
+// The cells a beam covers and paints.
+// @claim paint-trace
+.decl trace(ch: Choice, p: Position)
+trace(Ch, P) :- walk.reached(Ch, [B, _]), cover(Ch, P, B), !kept(Ch, P).
+
+// A case is defined where the legend has a frame line, every box is well formed, and the block
+// color has a value.
+.decl defined(ch: Choice)
+defined(Ch) :- frame_line(Ch, _), !malformed(Ch), block_color(Ch, _).
+
+out(P, Col, Ch) :- trace(Ch, P), block_color(Ch, Col), defined(Ch).
+out(P, Col, Ch) :- scene(Ch, P, Col), !trace(Ch, P), defined(Ch).
+
+// --- $LegendEdgeDerived, $LegendFrameColorDerived ---
+// The color of each edge's outer line, where that line holds one color.
+// @claim legend-strip
+.init outer_line = Unanimous<Dir, Color>
+outer_line.item(D, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
+// --- $LegendEdgeDerived ---
+// The edge's outer line is all Col and the line next to it is not.
+.decl framed_edge(d: Dir, col: Color)
+framed_edge(D, Col) :-
+    outer_line.value(D, Col), in(P, _), dist(P, D, 0),
+    opposite(D, D_in), neighbor(P, D_in, Q), in(Q, Col2), Col2 != Col.   // next line breaks it
+
+// --- $LegendEdgeStored & $LegendFrameColorStored ---
+legend(Ch, D, Col) :-
+    impl_choice(Ch), Ch = [$LegendEdgeStored(), $LegendFrameColorStored(), _, _, _, _, _],
+    params.legend_edge(D), params.legend_frame_color(Col).
+
+// --- $LegendEdgeStored & $LegendFrameColorDerived ---
+legend(Ch, D, Col) :-
+    impl_choice(Ch), Ch = [$LegendEdgeStored(), $LegendFrameColorDerived(), _, _, _, _, _],
+    params.legend_edge(D), outer_line.value(D, Col).
+
+// --- $LegendEdgeDerived & $LegendFrameColorStored ---
+legend(Ch, D, Col) :-
+    impl_choice(Ch), Ch = [$LegendEdgeDerived(), $LegendFrameColorStored(), _, _, _, _, _],
+    params.legend_frame_color(Col), framed_edge(D, Col).
+
+// --- $LegendEdgeDerived & $LegendFrameColorDerived ---
+legend(Ch, D, Col) :-
+    impl_choice(Ch), Ch = [$LegendEdgeDerived(), $LegendFrameColorDerived(), _, _, _, _, _],
+    framed_edge(D, Col).
+
+// --- $LegendBlankColorStored ---
+blank(Ch, Col) :-
+    impl_choice(Ch), Ch = [_, _, $LegendBlankColorStored(), _, _, _, _],
+    params.legend_blank_color(Col).
+
+// --- $LegendBlankColorDerived ---
+// @claim legend-strip
+.init blank_mode = Mode<Choice, Color, Position>
+blank_mode.item(Ch, Col, P) :-
+    box_cell(Ch, P, Col), Ch = [_, _, $LegendBlankColorDerived(), _, _, _, _].
+blank(Ch, Col) :- blank_mode.mode(Ch, Col).
+
+// --- $BackgroundSceneMode ---
+bg_mode.item(Ch, Col, P) :- scene(Ch, P, Col), Ch = [_, _, _, _, $BackgroundSceneMode(), _, _].
+
+// --- $BackgroundWholeInputMode ---
+bg_mode.item(Ch, Col, P) :-
+    impl_choice(Ch), Ch = [_, _, _, _, $BackgroundWholeInputMode(), _, _], in(P, Col).
+
+// --- $BlockColorStored ---
+block_color(Ch, Col) :-
+    impl_choice(Ch), Ch = [_, _, _, $BlockColorStored(_), _, _, _], params.block_color(Col).
+
+// --- $BlockColorDerived ---
+// @claim block
+.init block_candidate = Unanimous<Choice, Color>
+block_candidate.item(Ch, Col) :-
+    scene(Ch, _, Col), Ch = [_, _, _, $BlockColorDerived(), _, _, _],
+    !bg_mode.mode(Ch, Col), !legend_color(Ch, Col).
+block_color(Ch, Col) :- block_candidate.value(Ch, Col).
+
+// --- $StopAtUnlistedColor ---
+obstacle(Ch, P, Col) :-
+    unlisted(Ch, P, Col), Ch = [_, _, _, $BlockColorStored($StopAtUnlistedColor()), _, _, _].
+
+// --- $PassUnderUnlistedColor ---
+kept(Ch, P) :-
+    unlisted(Ch, P, _), Ch = [_, _, _, $BlockColorStored($PassUnderUnlistedColor()), _, _, _].
+
+// --- $BeamDirectionsAll ---
+walk.source(Ch, [B, W]) :-
+    block_box.box(Ch, B), Ch = [_, _, _, _, _, $BeamDirectionsAll(), _], dir_elem(W).
+
+// --- $BeamDirectionsStored ---
+walk.source(Ch, [B, W]) :-
+    block_box.box(Ch, B), Ch = [_, _, _, _, _, $BeamDirectionsStored(), _], params.beam_dirs(W).
+
+// --- $TurnAgainWhenBlocked ---
+walk.edge(Ch, [B, W], [B, W2]) :-
+    hit(Ch, B, W, Col), Ch = [_, _, _, _, _, _, $TurnAgainWhenBlocked()],
+    sense(Ch, Col, S), turn(S, W, W2).
+
+// --- $StopWhenTurnBlocked ---
+walk.edge(Ch, [B, W], [B, W2]) :-
+    hit(Ch, B, W, Col), Ch = [_, _, _, _, _, _, $StopWhenTurnBlocked()],
+    sense(Ch, Col, S), turn(S, W, W2), !hit(Ch, B, W2, _).
+
+.comp Determine {
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    // A color of the input that the output drops.
+    .decl vanished(e: Example, c: Color)
+    vanished(E, C) :- train(E), ex_in(E, _, C), !ex_out(E, _, C).
+
+    .decl kept_somewhere(c: Color)
+    kept_somewhere(C) :- vanished(_, C), train(E), !vanished(E, C).
+
+    // A color every train output drops: the legend's frame and blank colors.
+    .decl dropped(c: Color)
+    dropped(C) :- vanished(_, C), !kept_somewhere(C).
+
+    // A color on the outer line along edge D of a train input.
+    .decl border_color(e: Example, d: Dir, c: Color)
+    border_color(E, D, C) :- train(E), ex_in(E, P, C), dir_elem(D), dist(P, D, 0).
+
+    .decl on_border(c: Color)
+    on_border(C) :- border_color(_, _, C).
+
+    .decl legend_frame_color(c: Color)
+    legend_frame_color(C) :- dropped(C), on_border(C).
+
+    .decl legend_blank_color(c: Color)
+    legend_blank_color(C) :- dropped(C), !on_border(C).
+
+    // An edge whose outer line holds two colors in some train input.
+    .decl edge_defect(d: Dir)
+    edge_defect(D) :- border_color(E, D, C), border_color(E, D, C2), C2 != C.
+
+    .decl legend_edge(d: Dir)
+    legend_edge(D) :- dir_elem(D), !edge_defect(D).
+
+    // The output holds C where the input cell at the same distances from corner D's edges does not.
+    .decl gained(e: Example, d: DiagDir, c: Color)
+    gained(E, D, C) :-
+        ex_out(E, Q, C), diag_dir_elem(D), ex_in(E, P, C2), corner_anchor(D, P, Q), C2 != C.
+
+    .decl gain_defect(c: Color)
+    gain_defect(C) :- gained(_, _, C), train(E), diag_dir_elem(D), !gained(E, D, C).
+
+    // The color every output adds under each corner's alignment: the beams' color.
+    .decl block_color(c: Color)
+    block_color(C) :- gained(_, _, C), !gain_defect(C).
+}

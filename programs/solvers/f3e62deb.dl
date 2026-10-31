@@ -1,0 +1,198 @@
+// f3e62deb
+// @draft
+// @keywords: objects move lookup
+// @scene one-object: the grid holds one object of a single color on a field
+//  of background (0), and nothing else.
+// @scene object-shape: the object is a 3×3 ring whose center is background, placed
+//  clear of every edge:
+//  1 1 1
+//  1 0 1
+//  1 1 1
+// @rule slide-to-edge: the object moves rigidly, unchanged, toward the edge
+//  that direction_of_color gives its color, until it touches that edge; every
+//  other cell is background.
+
+// What moves as one rigid body.
+.type Mover =
+    // @claim one-object slide-to-edge
+    Whole {}
+    // @scene one-object: the grid holds objects of one color each, the
+    //  8-connected parts of the content; undefined where an object holds two
+    //  colors.
+    // @rule slide-to-edge: each object slides toward its own color's heading;
+    //  objects with one heading fall together, each stopping at the edge or at
+    //  an object that has already stopped; undefined where objects with
+    //  different headings land on a common cell.
+    // @witness two-rings-one-color: variant $PerObject
+    //     @relaxed one-object
+  | PerObject {}
+    // @scene one-object: each color class of the content is one body.
+    // @rule slide-to-edge: each color class slides toward its color's heading
+    //  until it touches the edge; undefined where two classes land on a
+    //  common cell.
+    // @witness rings-of-two-colors: variant $PerColor
+    //     @relaxed one-object
+  | PerColor {}
+
+// How the body arrives.
+.type Arrival =
+    // @claim slide-to-edge
+    Unchanged {}
+    // @rule slide-to-edge: the body arrives mirrored within its bounding box
+    //  across the axis perpendicular to its heading.
+    // @witness asymmetric-object: variant concept
+    //     @relaxed object-shape
+  | Reflected {}
+
+.type Choice = [m: Mover, a: Arrival]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-object
+    .decl background(c: Color) background(0).
+    // The heading of each object color.
+    .decl direction_of_color(c: Color, d: Dir)
+    direction_of_color(8, DIR_R).
+    direction_of_color(4, DIR_B).
+    direction_of_color(6, DIR_T).
+    direction_of_color(3, DIR_L).
+}
+
+.init params = Params
+
+.decl mover_choice(m: Mover)
+mover_choice($Whole()). mover_choice($PerObject()). mover_choice($PerColor()).
+
+.decl arrival_choice(a: Arrival)
+arrival_choice($Unchanged()). arrival_choice($Reflected()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, A]) :- mover_choice(M), arrival_choice(A).
+
+// The cells that are not background.
+.decl content(p: Position, col: Color)
+content(P, Col) :- in(P, Col), !params.background(Col).
+
+// Each color class under one id.
+// @claim one-object
+.init class_id = IdentOf<Color>
+class_id.value(Col) :- content(_, Col).
+
+// A body b of color col under case ch, with its cells.
+.decl body(ch: Choice, col: Color, b: Ident, p: Position)
+
+// --- $Whole ---
+
+// @claim one-object
+.init one_color = Unanimous<Unit, Color>
+one_color.item($U(), Col) :- content(_, Col).
+
+body([$Whole(), A], Col, B, P) :-
+    arrival_choice(A), one_color.value($U(), Col), content(P, Col), class_id.id(Col, B).
+
+// --- $PerObject ---
+
+// @claim one-object
+.init objects = Components8<Unit>
+objects.node($U(), P) :- content(P, _).
+
+// @claim one-object
+.init object_color = Unanimous<Ident, Color>
+object_color.item(O, Col) :- objects.label($U(), P, O), content(P, Col).
+
+body([$PerObject(), A], Col, O, P) :-
+    arrival_choice(A), objects.label($U(), P, O), object_color.value(O, Col).
+
+// --- $PerColor ---
+
+body([$PerColor(), A], Col, B, P) :- arrival_choice(A), content(P, Col), class_id.id(Col, B).
+
+// --- shared ---
+
+.type BodyKey = [ch: Choice, b: Ident]
+
+// The cells of a body as they travel.
+.decl shape(ch: Choice, col: Color, b: Ident, p: Position)
+
+// --- $Unchanged ---
+
+shape([M, $Unchanged()], Col, B, P) :- body([M, $Unchanged()], Col, B, P).
+
+// --- $Reflected ---
+
+// @claim slide-to-edge
+.init box = Bbox<BodyKey>
+box.cell([Ch, B], P) :- body(Ch, _, B, P).
+
+shape([M, $Reflected()], Col, B, P2) :-
+    body([M, $Reflected()], Col, B, P), box.box([[M, $Reflected()], B], Bx),
+    params.direction_of_color(Col, D), axis_of(D, A), flip_of(A, F),  // the flip along the heading
+    crop(P, Bx, P_rel), apply(F, P_rel, P_rel2), compose(Bx, P_rel2, P2).
+
+// --- shared ---
+
+// The bodies of one color fall together toward that color's heading.
+.type FallKey = [ch: Choice, col: Color]
+
+// @claim slide-to-edge
+.init fall = Gravity<FallKey, Ident>
+fall.cell([Ch, Col], B, P) :- shape(Ch, Col, B, P).
+fall.dir([Ch, Col], D) :- shape(Ch, Col, _, _), params.direction_of_color(Col, D).
+
+.decl landed(ch: Choice, p: Position, col: Color)
+landed(Ch, P2, Col) :- fall.travel([Ch, Col], B, V), shape(Ch, Col, B, P), compose(P, V, P2).
+
+// A content cell that a body with a heading carries.
+.decl carried(ch: Choice, p: Position)
+carried(Ch, P) :- body(Ch, Col, B, P), fall.travel([Ch, Col], B, _).
+
+// Some content cell is in no body, or its body has no heading: the case is
+// undefined.
+.decl lost(ch: Choice)
+lost(Ch) :- impl_choice(Ch), content(P, _), !carried(Ch, P).
+
+.decl moved(ch: Choice)
+moved(Ch) :- landed(Ch, _, _), !lost(Ch).
+
+out(P, Col, Ch) :- moved(Ch), landed(Ch, P, Col).
+out(P, Col, Ch) :- moved(Ch), in(P, _), !landed(Ch, P, _), params.background(Col).
+
+.comp Determine {
+    // A color that some example's input lacks.
+    .decl partial(c: Color)
+    partial(Col) :- ex_in(_, _, Col), ex_in(E, _, _), !ex_in(E, _, Col).
+
+    .decl background(c: Color)
+    background(Col) :- ex_in(_, _, Col), !partial(Col).
+
+    // The object color of each example.
+    .decl ink(e: Example, c: Color)
+    ink(E, Col) :- ex_in(E, _, Col), !background(Col).
+
+    // A train pair's object arrives at edge d.
+    .decl seen(c: Color, d: Dir)
+    seen(Col, D) :- ink(E, Col), ex_out(E, P, Col), dir_elem(D), dist(P, D, 0).
+
+    // An object color that no train pair moves, and a heading that no train
+    // pair shows.
+    .decl unseen(c: Color)
+    unseen(Col) :- ink(_, Col), !seen(Col, _).
+
+    .decl unused(d: Dir)
+    unused(D) :- dir_elem(D), !seen(_, D).
+
+    // More than one of them is left, so the one-to-one table leaves the
+    // pairing open.
+    .decl unseen_tie(c: Color)
+    unseen_tie(Col) :- unseen(Col), unseen(Col2), Col != Col2.
+
+    .decl unused_tie(d: Dir)
+    unused_tie(D) :- unused(D), unused(D2), D != D2.
+
+    // @ignore: determine prediction — `seen` reads each heading from a train pair, as the edge its output object touches
+    .decl direction_of_color(c: Color, d: Dir)
+    direction_of_color(Col, D) :- seen(Col, D).
+    direction_of_color(Col, D) :- unseen(Col), !unseen_tie(Col), unused(D), !unused_tie(D).
+}

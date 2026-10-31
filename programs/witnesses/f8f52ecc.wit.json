@@ -1,0 +1,111 @@
+{
+  "id": "f8f52ecc",
+  "witnesses": [{
+    "id": "dot-on-line",
+    "separates": "a dot of another color on the straight run between two dots: the concept routes around it over background; $CrossDots runs straight and the dot keeps its color; $PaintOver runs straight and paints it",
+    "input": [
+      [1,1,1,1,1],
+      [1,1,1,1,1],
+      [2,1,3,1,2],
+      [1,8,8,8,1],
+      [1,1,1,1,1]
+    ],
+    "output": [{
+      "cases": ["$OverBackground"],
+      "grid": [
+        [1,1,1,1,1],
+        [2,2,2,2,2],
+        [2,1,3,1,2],
+        [1,8,8,8,1],
+        [1,1,1,1,1]
+      ]
+    }, {
+      "cases": ["$KeepDot"],
+      "grid": [
+        [1,1,1,1,1],
+        [1,1,1,1,1],
+        [2,2,3,2,2],
+        [1,8,8,8,1],
+        [1,1,1,1,1]
+      ]
+    }, {
+      "cases": ["$PaintOver"],
+      "grid": [
+        [1,1,1,1,1],
+        [1,1,1,1,1],
+        [2,2,2,2,2],
+        [1,8,8,8,1],
+        [1,1,1,1,1]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "an input whose commonest color is not 1: the stored background routes the 3s over the 1 strip; the derived background takes 2 as the field and runs the 3s straight across it",
+    "input": [
+      [1,1,1,1,1],
+      [3,2,2,2,3],
+      [2,2,2,2,2],
+      [2,2,8,2,2]
+    ],
+    "output": [{
+      "cases": ["$OverBackground & background=stored"],
+      "grid": [
+        [3,3,3,3,3],
+        [3,2,2,2,3],
+        [2,2,2,2,2],
+        [2,2,8,2,2]
+      ]
+    }, {
+      "cases": ["background=DominantColor","$PaintOver"],
+      "grid": [
+        [1,1,1,1,1],
+        [3,3,3,3,3],
+        [2,2,2,2,2],
+        [2,2,8,2,2]
+      ]
+    }, {
+      "cases": ["$KeepDot"],
+      "grid": [
+        [1,1,1,1,1],
+        [3,2,2,2,3],
+        [2,2,2,2,2],
+        [2,2,8,2,2]
+      ]
+    }]
+  }, {
+    "id": "two-walls-snake",
+    "separates": "two offset walls between two dots: the concept takes a fewest-step walk, which winds between the walls with four turns; $TurnsFirst takes the walk with two turns, the longer way round both walls by col 1",
+    "input": [
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,2,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,8,8,8],
+      [1,1,1,1,1,1,1],
+      [1,1,8,8,8,1,1],
+      [1,1,1,1,2,1,1]
+    ],
+    "output": [{
+      "cases": ["$StepsFirst"],
+      "grid": [
+        [1,1,1,1,1,1,1],
+        [1,1,1,2,2,2,1],
+        [1,1,1,2,1,1,1],
+        [1,1,1,2,8,8,8],
+        [1,1,1,2,2,2,1],
+        [1,1,8,8,8,2,1],
+        [1,1,1,1,2,2,1]
+      ]
+    }, {
+      "cases": ["$TurnsFirst"],
+      "grid": [
+        [1,1,1,1,1,1,1],
+        [1,2,2,2,2,2,1],
+        [1,2,1,1,1,1,1],
+        [1,2,1,1,8,8,8],
+        [1,2,1,1,1,1,1],
+        [1,2,8,8,8,1,1],
+        [1,2,2,2,2,1,1]
+      ]
+    }]
+  }]
+}

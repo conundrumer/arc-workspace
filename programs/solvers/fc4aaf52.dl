@@ -1,0 +1,198 @@
+// fc4aaf52
+// @draft
+// @keywords: objects bbox move mapping rank
+// @scene one-shape: every input holds one 4-connected shape of non-bg cells on
+//  a field of bg (8).
+// @scene two-colors: the shape holds exactly two colors, and each half holds
+//  both.
+// @scene contiguous-cut-row: each cut row is one unbroken run of shape cells.
+// @rule swap-colors: every shape cell takes the shape's other color; bg cells
+//  away from the shape stay bg.
+// @rule cut-at-middle: the shape splits on the line between its two middle
+//  rows across the moved_half axis, into the half on the moved_half side and
+//  the half on the opposite side.
+// @rule other-half-stays: the half opposite moved_half keeps its place.
+// @rule slide-to-clear: the moved half moves toward slide_dir by the least
+//  amount after which every cell of its cut row lies beyond every cell of the
+//  other half's cut row toward slide_dir.
+// @rule vacated-to-bg: cells the moved half leaves become bg, and a moved cell
+//  that lands past the frame is dropped.
+
+// how far the moved half slides
+.type Distance =
+    // @claim slide-to-clear
+    Clear {}
+    // @rule slide-to-clear: the least move at which no cell of the moved cut
+    //  row stands across the cut from a cell of the other cut row.
+    // @witness gapped-cut-row: borderline concept
+    //     @relaxed contiguous-cut-row
+  | CellClear {}
+    // @rule slide-to-clear: the move is the moved cut row's cell count.
+    // @witness gapped-cut-row: borderline concept
+  | CutCount {}
+
+// which color each shape cell takes
+.type Recolor =
+    // @claim swap-colors
+    Swap {}
+    // @rule swap-colors: the shape's colors, ordered outermost first by their
+    //  fewest steps from bg through touching colors, take their colors in
+    //  reverse order; undefined where two colors tie in that order.
+    // @witness three-layers: variant $LayerReverse
+    //     @relaxed two-colors
+  | LayerReverse {}
+    // @rule swap-colors: each color takes the next color inward, and the
+    //  innermost takes the outermost; undefined where two colors tie.
+    // @witness three-layers: variant $LayerReverse
+  | LayerShiftOut {}
+    // @rule swap-colors: each color takes the next color outward, and the
+    //  outermost takes the innermost; undefined where two colors tie.
+    // @witness three-layers: variant $LayerReverse
+  | LayerShiftIn {}
+
+.type Choice = [s: Distance, r: Recolor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(8).
+    // the side of the cut whose half moves
+    .decl moved_half(d: Dir) moved_half(DIR_T).
+    // the quarter turn from moved_half to the slide direction
+    .decl slide_sense(s: Sense) slide_sense(SENSE_CW).
+    .decl slide_dir(d: Dir)
+    slide_dir(D) :- moved_half(H), slide_sense(S), turn(S, H, D).
+}
+
+.init params = Params
+
+.decl distance_choice(s: Distance)
+distance_choice($Clear()). distance_choice($CellClear()). distance_choice($CutCount()).
+
+.decl recolor_choice(r: Recolor)
+recolor_choice($Swap()). recolor_choice($LayerReverse()).
+recolor_choice($LayerShiftOut()). recolor_choice($LayerShiftIn()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, R]) :- distance_choice(S), recolor_choice(R).
+
+.decl shape(p: Position, col: Color)
+shape(P, Col) :- in(P, Col), !params.bg(Col).
+
+// @claim cut-at-middle
+.init box = Bbox<Unit>
+box.cell($U(), P) :- shape(P, _).
+
+// A cell of the shape's box strictly nearer edge d than its opposite.
+.decl side(p: Position, d: Dir)
+side(P, D) :-
+    in(P, _), box.box($U(), B), crop(P, B, P_inner), dist_pair(P_inner, D, K1, K2), K1 < K2.
+
+// A shape cell of the d side whose neighbor across the cut is on the other side.
+.decl cut_row(p: Position, d: Dir)
+cut_row(P, D) :- side(P, D), shape(P, _), opposite(D, D2), neighbor(P, D2, Q), side(Q, D2).
+
+// The move the moved half takes.
+.decl move(s: Distance, v: Offset)
+
+// The color each shape color becomes.
+.decl recolor(r: Recolor, col: Color, col2: Color)
+
+// --- $Clear ---
+// The back-most cell of the moved cut row and the front-most cell of the
+// other, along slide_dir.
+// @claim slide-to-clear
+.init reach = ArgExtremes<Dir, Position>
+reach.cand(D, P, K) :- cut_row(P, D), params.slide_dir(S), dist(P, S, K).
+
+// The move takes the moved row's back-most cell one step past the other row's
+// front-most cell.
+move($Clear(), V) :-
+    params.moved_half(H), reach.high(H, P, _),
+    opposite(H, H2), reach.low(H2, Q, _),
+    params.slide_dir(S), neighbor(Q, S, Q_past),
+    relative(P, Q_past, W), axis_of(H, A), split(W, A, _, V).
+
+// --- $CellClear ---
+// A forward move that sets a moved cut cell across the cut from a cell of the
+// other cut row.
+.decl collide(v: Offset)
+collide(V) :-
+    params.moved_half(H), cut_row(P, H), opposite(H, H2), cut_row(Q, H2),
+    relative(P, Q, W), axis_of(H, A), split(W, A, _, V),
+    params.slide_dir(S), nearer(S, V, ZERO).
+
+// The least clearing move is one step, or one step past a colliding move.
+.decl clear_cand(v: Offset)
+clear_cand(V) :-
+    params.slide_dir(S),
+    ( step_offset(S, V)
+    ; collide(V0), neighbor(V0, S, V)
+    ), !collide(V).
+
+.decl farther(v: Offset)
+farther(V) :- clear_cand(V), clear_cand(V2), params.slide_dir(S), nearer(S, V, V2).
+
+move($CellClear(), V) :- clear_cand(V), !farther(V).
+
+// --- $CutCount ---
+// @claim slide-to-clear
+.init cut_size = Tally<Unit, Position>
+cut_size.item($U(), P) :- params.moved_half(H), cut_row(P, H).
+cut_size.domain($U()).
+
+move($CutCount(), V) :- cut_size.tally($U(), N), params.slide_dir(S), jump_offset(S, N, V).
+
+// --- $Swap ---
+recolor($Swap(), Col, Col2) :- shape(_, Col), shape(_, Col2), Col != Col2.
+
+// --- $LayerReverse, $LayerShiftOut, $LayerShiftIn ---
+// Each color's fewest steps from bg through touching colors.
+// @claim swap-colors
+.init depth = GraphDistance<Unit, Color>
+depth.seed($U(), Col) :- params.bg(Col).
+depth.edge($U(), Col, Col2) :-
+    in(P, Col), dir_elem(D), neighbor(P, D, Q), in(Q, Col2), Col != Col2.
+
+// The shape's colors, outermost first.
+// @claim swap-colors
+.init layer = Order<Unit, Color>
+layer.elem($U(), Col) :- shape(_, Col).
+layer.score($U(), Col, K) :- shape(_, Col), depth.distance($U(), Col, K).
+
+// --- $LayerReverse ---
+recolor($LayerReverse(), Col, Col2) :- layer.rank($U(), Col, R), layer.rank_desc($U(), Col2, R).
+
+// --- $LayerShiftOut ---
+recolor($LayerShiftOut(), Col, Col2) :-
+    ( layer.next($U(), Col, Col2)
+    ; layer.last($U(), Col), layer.first($U(), Col2)
+    ).
+
+// --- $LayerShiftIn ---
+recolor($LayerShiftIn(), Col, Col2) :-
+    ( layer.next($U(), Col2, Col)
+    ; layer.first($U(), Col), layer.last($U(), Col2)
+    ).
+
+// --- The output ---
+
+// Where each half's cells stand after the move, with their input colors.
+.decl placed(s: Distance, q: Position, col: Color)
+placed(S, Q, Col) :-
+    move(S, V), params.moved_half(H), shape(P, Col),
+    ( side(P, H), compose(P, V, Q)                   // the moved half
+    ; opposite(H, H2), side(P, H2), Q = P             // the other half, in place
+    ).
+
+// The shape, recolored, where it stands within the frame.
+out(Q, Col2, [S, R]) :-
+    placed(S, Q, Col), recolor(R, Col, Col2), in(Q, _).
+
+// bg cells and the moved half's cells that no shape cell stands on.
+out(P, Col, [S, R]) :-
+    impl_choice([S, R]), in(P, Col0), params.bg(Col),
+    ( Col0 = Col
+    ; params.moved_half(H), side(P, H)
+    ), !placed(S, P, _).

@@ -1,0 +1,317 @@
+{
+  "id": "ef26cbf6",
+  "witnesses": [{
+    "id": "shared-key-row",
+    "separates": "one row of three tiles, a key between two pattern tiles, so no axis is two deep: the concept finds no pairs and is undefined; $AdjacentKey paints both pattern tiles in the one key color beside them",
+    "input": [
+      [1,0,1,4,0,0,0,4,0,1,0],
+      [0,1,0,4,0,2,0,4,1,1,1],
+      [1,0,1,4,0,0,0,4,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$Across","$ReadingOrder"],
+      "grid": null
+    }, {
+      "cases": ["$AdjacentKey"],
+      "grid": [
+        [2,0,2,4,0,0,0,4,0,2,0],
+        [0,2,0,4,0,2,0,4,2,2,2],
+        [2,0,2,4,0,0,0,4,0,2,0]
+      ]
+    }]
+  }, {
+    "id": "key-dot-in-pattern-color",
+    "separates": "the middle key dot is the pattern color: the concept finds no key in that pair and is undefined; $DotKey and $PaintAllInk take the lone cell as the key and repaint that pattern in its own color, the other pairs as in train0",
+    "input": [
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [0,3,0,4,0,1,0,4,0,6,0],
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [1,0,0,4,0,1,0,4,1,0,1],
+      [0,1,0,4,1,1,1,4,1,0,1],
+      [1,1,1,4,1,0,1,4,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$ExtraColor","$CenterKey"],
+      "grid": null
+    }, {
+      "cases": ["$DotKey"],
+      "grid": [
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [0,3,0,4,0,1,0,4,0,6,0],
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,0,0,4,0,1,0,4,6,0,6],
+        [0,3,0,4,1,1,1,4,6,0,6],
+        [3,3,3,4,1,0,1,4,0,6,0]
+      ]
+    }]
+  }, {
+    "id": "pattern-in-other-color",
+    "separates": "the patterns are drawn in 5, not the pattern color: the concept sees two keys in every pair and is undefined; $DotKey and $AdjacentKey leave the 5 patterns unchanged; $PaintAllInk and $CommonestInk paint each in its key color",
+    "input": [
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [0,3,0,4,0,2,0,4,0,6,0],
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [5,0,0,4,0,5,0,4,5,0,5],
+      [0,5,0,4,5,5,5,4,5,0,5],
+      [5,5,5,4,5,0,5,4,0,5,0]
+    ],
+    "output": [{
+      "cases": [
+        "$Across & $ExtraColor & $StoredPattern",
+        "$Across & $CenterKey",
+        "$AdjacentKey & $CenterKey"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$CommonestInk","$PaintAllInk"],
+      "grid": [
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [0,3,0,4,0,2,0,4,0,6,0],
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,0,0,4,0,2,0,4,6,0,6],
+        [0,3,0,4,2,2,2,4,6,0,6],
+        [3,3,3,4,2,0,2,4,0,6,0]
+      ]
+    }, {
+      "cases": [
+        "$PatternCells",
+        "$AdjacentKey & $ExtraColor & $StoredPattern",
+        "$ReadingOrder & $StoredPattern"
+      ],
+      "grid": [
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [0,3,0,4,0,2,0,4,0,6,0],
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [5,0,0,4,0,5,0,4,5,0,5],
+        [0,5,0,4,5,5,5,4,5,0,5],
+        [5,5,5,4,5,0,5,4,0,5,0]
+      ]
+    }]
+  }, {
+    "id": "divider-in-other-color",
+    "separates": "the divider lines are 5, not the divider color: the concept finds one tile and is undefined; $LineDivider reads 5 as the divider and paints each pattern in its key color",
+    "input": [
+      [0,0,0,5,0,0,0,5,0,0,0],
+      [0,3,0,5,0,2,0,5,0,6,0],
+      [0,0,0,5,0,0,0,5,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5],
+      [1,0,0,5,0,1,0,5,1,0,1],
+      [0,1,0,5,1,1,1,5,1,0,1],
+      [1,1,1,5,1,0,1,5,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$CommonestInk","$Across & $StoredDivider","$ExtraColor & $StoredDivider"],
+      "grid": null
+    }, {
+      "cases": ["$LineDivider"],
+      "grid": [
+        [0,0,0,5,0,0,0,5,0,0,0],
+        [0,3,0,5,0,2,0,5,0,6,0],
+        [0,0,0,5,0,0,0,5,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5],
+        [3,0,0,5,0,2,0,5,6,0,6],
+        [0,3,0,5,2,2,2,5,6,0,6],
+        [3,3,3,5,2,0,2,5,0,6,0]
+      ]
+    }, {
+      "cases": ["$AdjacentKey & $CenterKey","$ReadingOrder & $CenterKey & $StoredPattern"],
+      "grid": [
+        [0,0,0,5,0,0,0,5,0,0,0],
+        [0,3,0,5,0,2,0,5,0,6,0],
+        [0,0,0,5,0,0,0,5,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5],
+        [1,0,0,5,0,1,0,5,1,0,1],
+        [0,1,0,5,1,1,1,5,1,0,1],
+        [1,1,1,5,1,0,1,5,0,1,0]
+      ]
+    }]
+  }, {
+    "id": "extra-cell-in-key-tile",
+    "separates": "the first key tile holds a stray 5 in its corner beside its center 3: the concept sees two key colors in that tile and is undefined, $DotKey finds no lone cell in that pair and is undefined; $CenterKey reads the center 3 and paints as in train0, the 5 kept",
+    "input": [
+      [5,0,0,4,0,0,0,4,0,0,0],
+      [0,3,0,4,0,2,0,4,0,6,0],
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [1,0,0,4,0,1,0,4,1,0,1],
+      [0,1,0,4,1,1,1,4,1,0,1],
+      [1,1,1,4,1,0,1,4,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$ExtraColor","$DotKey"],
+      "grid": null
+    }, {
+      "cases": ["$CenterKey"],
+      "grid": [
+        [5,0,0,4,0,0,0,4,0,0,0],
+        [0,3,0,4,0,2,0,4,0,6,0],
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,0,0,4,0,2,0,4,6,0,6],
+        [0,3,0,4,2,2,2,4,6,0,6],
+        [3,3,3,4,2,0,2,4,0,6,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the background is 5, not the stored background: the concept sees two key colors in every tile and is undefined; background=DominantColor reads 5 as the background and paints each pattern in its key color",
+    "input": [
+      [5,5,5,4,5,5,5,4,5,5,5],
+      [5,3,5,4,5,2,5,4,5,6,5],
+      [5,5,5,4,5,5,5,4,5,5,5],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [1,5,5,4,5,1,5,4,1,5,1],
+      [5,1,5,4,1,1,1,4,1,5,1],
+      [1,1,1,4,1,5,1,4,5,1,5]
+    ],
+    "output": [{
+      "cases": [
+        "$Across & background=stored",
+        "$ExtraColor & $StoredPattern & background=stored",
+        "$AdjacentKey & $StoredPattern"
+      ],
+      "grid": null
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [5,3,5,4,5,2,5,4,5,6,5],
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,5,5,4,5,2,5,4,6,5,6],
+        [5,3,5,4,2,2,2,4,6,5,6],
+        [3,3,3,4,2,5,2,4,5,6,5]
+      ]
+    }, {
+      "cases": ["$AdjacentKey & $CommonestInk","$ReadingOrder & $ExtraColor & $CommonestInk"],
+      "grid": [
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [5,3,5,4,5,2,5,4,5,6,5],
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [1,5,5,4,5,1,5,4,1,5,1],
+        [5,1,5,4,1,1,1,4,1,5,1],
+        [1,1,1,4,1,5,1,4,5,1,5]
+      ]
+    }, {
+      "cases": ["$CenterKey & $CommonestInk"],
+      "grid": [
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [5,3,5,4,5,2,5,4,5,6,5],
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [1,5,5,4,5,1,5,4,1,3,1],
+        [5,1,5,4,1,1,1,4,1,3,1],
+        [1,1,1,4,1,5,1,4,3,1,3]
+      ]
+    }, {
+      "cases": ["$ReadingOrder & $CenterKey & $StoredPattern"],
+      "grid": [
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [5,3,5,4,5,2,5,4,5,6,5],
+        [5,5,5,4,5,5,5,4,5,5,5],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,5,5,4,5,2,5,4,1,5,1],
+        [5,3,5,4,2,2,2,4,1,5,1],
+        [3,3,3,4,2,5,2,4,5,1,5]
+      ]
+    }]
+  }, {
+    "id": "key-across-sides",
+    "separates": "the first pair has its key tile below its pattern tile, the other keys above theirs: the concept paints each pattern across its own divider; $ReadingOrder ranks the keys 2, 6, 3 and the patterns top-left, middle, right, so the top-left pattern takes 2",
+    "input": [
+      [1,0,0,4,0,0,0,4,0,0,0],
+      [0,1,0,4,0,2,0,4,0,6,0],
+      [1,1,1,4,0,0,0,4,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [0,0,0,4,0,1,0,4,1,0,1],
+      [0,3,0,4,1,1,1,4,1,0,1],
+      [0,0,0,4,1,0,1,4,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$Across"],
+      "grid": [
+        [3,0,0,4,0,0,0,4,0,0,0],
+        [0,3,0,4,0,2,0,4,0,6,0],
+        [3,3,3,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [0,0,0,4,0,2,0,4,6,0,6],
+        [0,3,0,4,2,2,2,4,6,0,6],
+        [0,0,0,4,2,0,2,4,0,6,0]
+      ]
+    }, {
+      "cases": ["$AdjacentKey"],
+      "grid": null
+    }, {
+      "cases": ["$ReadingOrder"],
+      "grid": [
+        [2,0,0,4,0,0,0,4,0,0,0],
+        [0,2,0,4,0,2,0,4,0,6,0],
+        [2,2,2,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [0,0,0,4,0,6,0,4,3,0,3],
+        [0,3,0,4,6,6,6,4,3,0,3],
+        [0,0,0,4,6,0,6,4,0,3,0]
+      ]
+    }]
+  }, {
+    "id": "doubled-key-cell",
+    "separates": "the first key tile holds two 3 cells: the concept, $CenterKey and $CommonestInk read 3 as its key color and paint as in train0; $DotKey and $PaintAllInk find no lone cell in that pair and are undefined",
+    "input": [
+      [3,0,0,4,0,0,0,4,0,0,0],
+      [0,3,0,4,0,2,0,4,0,6,0],
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [1,0,0,4,0,1,0,4,1,0,1],
+      [0,1,0,4,1,1,1,4,1,0,1],
+      [1,1,1,4,1,0,1,4,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$ExtraColor","$CenterKey"],
+      "grid": [
+        [3,0,0,4,0,0,0,4,0,0,0],
+        [0,3,0,4,0,2,0,4,0,6,0],
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,0,0,4,0,2,0,4,6,0,6],
+        [0,3,0,4,2,2,2,4,6,0,6],
+        [3,3,3,4,2,0,2,4,0,6,0]
+      ]
+    }, {
+      "cases": ["$DotKey"],
+      "grid": null
+    }]
+  }, {
+    "id": "off-center-key",
+    "separates": "the first key dot sits in its tile's corner: the concept reads it as the key and paints as in train0; $CenterKey finds no key in that pair and is undefined",
+    "input": [
+      [3,0,0,4,0,0,0,4,0,0,0],
+      [0,0,0,4,0,2,0,4,0,6,0],
+      [0,0,0,4,0,0,0,4,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [1,0,0,4,0,1,0,4,1,0,1],
+      [0,1,0,4,1,1,1,4,1,0,1],
+      [1,1,1,4,1,0,1,4,0,1,0]
+    ],
+    "output": [{
+      "cases": ["$ExtraColor","$DotKey"],
+      "grid": [
+        [3,0,0,4,0,0,0,4,0,0,0],
+        [0,0,0,4,0,2,0,4,0,6,0],
+        [0,0,0,4,0,0,0,4,0,0,0],
+        [4,4,4,4,4,4,4,4,4,4,4],
+        [3,0,0,4,0,2,0,4,6,0,6],
+        [0,3,0,4,2,2,2,4,6,0,6],
+        [3,3,3,4,2,0,2,4,0,6,0]
+      ]
+    }, {
+      "cases": ["$CenterKey"],
+      "grid": null
+    }]
+  }]
+}

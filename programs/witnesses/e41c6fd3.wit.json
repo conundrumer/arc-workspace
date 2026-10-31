@@ -1,0 +1,201 @@
+{
+  "id": "e41c6fd3",
+  "witnesses": [{
+    "id": "two-copies-one-color",
+    "separates": "color 2 forms two copies at different heights; read as one color class, its cells slide together, so its top copy meets the anchor on one edge and its lower copy stays below; read as components, each copy aligns with the anchor",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,2,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,2,0,0,0,0,0,0,0,0],
+      [0,8,0,0,2,0,2,0,0,0,0,0,0,0,0],
+      [8,8,8,0,0,0,0,0,0,2,0,0,0,0,0],
+      [8,0,8,0,0,0,0,0,2,2,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,2,0,2,0,0,4,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,4,4,4],
+      [0,0,0,0,0,0,0,0,0,0,0,0,4,0,4],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ColorClass"],
+      "grid": null
+    }, {
+      "cases": ["$ObjectComponents"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,8,0,0,0,2,0,0,0,2,0,0,0,4,0],
+        [8,8,8,0,2,2,2,0,2,2,2,0,4,4,4],
+        [8,0,8,0,2,0,2,0,2,0,2,0,4,0,4],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "diagonal-shape",
+    "separates": "the shape joins at corners only; read by 4-adjacency, the anchor splits into three components and no one anchor exists, so the model is undefined; read as a color class or by 8-adjacency, every copy aligns with the anchor",
+    "input": [
+      [0,0,0,0,2,2,0,0,0,0,0,0],
+      [0,0,0,0,0,0,2,0,0,0,0,0],
+      [0,0,0,0,2,2,0,0,0,0,0,0],
+      [8,8,0,0,0,0,0,0,0,0,0,0],
+      [0,0,8,0,0,0,0,0,0,0,0,0],
+      [8,8,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,4,4,0,0],
+      [0,0,0,0,0,0,0,0,0,0,4,0],
+      [0,0,0,0,0,0,0,0,4,4,0,0]
+    ],
+    "output": [{
+      "cases": ["$ColorClass & $StoredAxis","$Adjacency8"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [8,8,0,0,2,2,0,0,4,4,0,0],
+        [0,0,8,0,0,0,2,0,0,0,4,0],
+        [8,8,0,0,2,2,0,0,4,4,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AxisFromLayout","$Adjacency4"],
+      "grid": null
+    }]
+  }, {
+    "id": "taller-copy",
+    "separates": "the 2 copy is two rows taller than the anchor; edge alignment gives the copy's top on the anchor's top or its bottom on the anchor's bottom, and the two differ, so the edge reading is undefined; center alignment puts it one row above and below the anchor's span",
+    "input": [
+      [0,0,0,0,0,2,0,0,0,0,0,0],
+      [0,0,0,0,2,2,2,0,0,0,0,0],
+      [0,0,0,0,2,2,2,0,0,0,0,0],
+      [0,8,0,0,2,2,2,0,0,0,0,0],
+      [8,8,8,0,2,0,2,0,0,0,0,0],
+      [8,0,8,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,4,0,0],
+      [0,0,0,0,0,0,0,0,4,4,4,0],
+      [0,0,0,0,0,0,0,0,4,0,4,0]
+    ],
+    "output": [{
+      "cases": ["$AlignEdges"],
+      "grid": null
+    }, {
+      "cases": ["$AlignCenter"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,0,0,0,0,0,0],
+        [0,8,0,0,2,2,2,0,0,4,0,0],
+        [8,8,8,0,2,2,2,0,4,4,4,0],
+        [8,0,8,0,2,2,2,0,4,0,4,0],
+        [0,0,0,0,2,0,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "stacked-copies",
+    "separates": "the copies are stacked in disjoint rows and share columns; a vertical slide makes the copies collide and is undefined; the axis from the layout is horizontal, and every copy slides into the anchor's columns",
+    "input": [
+      [0,0,8,0,8,0,0,0,0],
+      [0,0,0,8,0,0,0,0,0],
+      [0,0,8,0,8,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,0,0,0,0,0],
+      [0,2,0,0,0,0,0,0,0],
+      [2,0,2,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,4,0,4,0,0],
+      [0,0,0,0,0,4,0,0,0],
+      [0,0,0,0,4,0,4,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredAxis"],
+      "grid": null
+    }, {
+      "cases": ["$AxisFromLayout"],
+      "grid": [
+        [0,0,8,0,8,0,0,0,0],
+        [0,0,0,8,0,0,0,0,0],
+        [0,0,8,0,8,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,2,0,2,0,0,0,0],
+        [0,0,0,2,0,0,0,0,0],
+        [0,0,2,0,2,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,4,0,4,0,0,0,0],
+        [0,0,0,4,0,0,0,0,0],
+        [0,0,4,0,4,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "colors 8 and 2 each outnumber color 0; the stored background aligns the 2 copy with the anchor; the dominant-color derivation gives two colors and is undefined",
+    "input": [
+      [8,8,0,0],
+      [8,8,2,2],
+      [8,8,2,2],
+      [0,0,2,2]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [8,8,2,2],
+        [8,8,2,2],
+        [8,8,2,2],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "field-of-five",
+    "separates": "no cell has color 0 and color 5 fills the field; with the stored background 0, the field is a copy whose two edges meet the anchor's edges at different slides, so the stored reading is undefined; the dominant color 5 is the background, and the 2 copy slides up into the anchor's rows",
+    "input": [
+      [5,5,5,5,5],
+      [8,5,5,5,5],
+      [8,5,2,5,5],
+      [5,5,2,5,5],
+      [5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": null
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [5,5,5,5,5],
+        [8,5,2,5,5],
+        [8,5,2,5,5],
+        [5,5,5,5,5],
+        [5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "corner-touching-copies",
+    "separates": "two one-cell copies of color 2 touch at a corner; read by 4-adjacency they are two copies, and each slides up into the anchor's row; read by 8-adjacency or as one color class they are one copy two rows tall, whose two edges meet the one-row anchor at different slides, so those readings are undefined",
+    "input": [
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [8,0,0,0,0],
+      [0,0,2,0,0],
+      [0,0,0,2,0]
+    ],
+    "output": [{
+      "cases": ["$ColorClass","$Adjacency8"],
+      "grid": null
+    }, {
+      "cases": ["$Adjacency4"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [8,0,2,2,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ]
+    }]
+  }]
+}

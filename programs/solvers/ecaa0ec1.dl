@@ -1,0 +1,294 @@
+// ecaa0ec1
+// @draft
+// @keywords: markers d4 bbox
+// @scene tile: one 3×3 tile of cells of colors 1 and 8, the only cells that
+//  are neither params.bg nor params.marker
+// @scene pointer: one params.marker cell on the outward diagonal of one corner
+//  of the tile, params.pointer_gap cells out from the corner
+// @scene marks: three params.marker cells around one other corner of the
+//  tile, each params.mark_gap cells out: one on the corner's outward diagonal,
+//  and one in line with each of the corner's two sides, past the tile on that
+//  side's axis
+// @scene no-other-marker: the pointer and the three marks are the only
+//  params.marker cells
+// @rule turn-tile: the tile turns about its center by the rotation that takes
+//  the pointer's corner to the marked corner
+// @rule turn-pointer: the pointer turns with the tile, so it lands
+//  params.pointer_gap cells out on the marked corner's diagonal
+// @rule wipe-marks: the three marks become params.bg; every other cell outside
+//  the tile and the turned pointer is params.bg
+
+// which corner the marks pick
+.type Target =
+    // @claim marks
+    ThreeMarks {}
+    // @scene marks: the marked corner is the one corner with a params.marker
+    //  cell params.mark_gap out on its diagonal; undefined where no corner, or
+    //  more than one, has one
+    // @witness single-diagonal-mark: variant $TargetByDiagonal
+    //     @relaxed marks
+  | TargetByDiagonal {}
+    // @scene marks: the marked corner is the one corner with params.marker
+    //  cells params.mark_gap out in line with both of its sides, with no
+    //  diagonal mark needed; undefined where no corner, or more than one, has
+    //  them
+    // @witness side-marks-only: variant $TargetBySideMarks
+    //     @relaxed marks
+  | TargetBySideMarks {}
+    // @scene marks: the marked corner is the corner whose quadrant holds every
+    //  params.marker cell but the pointer, a corner's quadrant being the cells
+    //  on that corner's side of the tile, or in line with the corner, on both
+    //  axes; undefined where those cells span two quadrants, or one lies in no
+    //  quadrant
+    // @witness marks-three-out: variant $TargetByQuadrant
+    //     @relaxed marks
+    // @witness stray-marker: borderline concept
+    //     @relaxed no-other-marker
+  | TargetByQuadrant {}
+
+// where the turned pointer is drawn
+.type Placement =
+    // @claim turn-pointer
+    TurnWithTile {}
+    // @rule turn-pointer: the pointer is drawn params.pointer_gap out on the
+    //  marked corner's diagonal, wherever it stood
+    // @witness pointer-two-out: variant $PointerByQuadrant
+    //     @relaxed pointer
+  | PointerSnapsToDiagonal {}
+
+// which marker is the pointer
+.type Pointer =
+    // @claim pointer
+    DiagonalPointer {}
+    // @scene pointer: the pointer is the one params.marker cell outside the
+    //  marked corner's quadrant, and its corner is the quadrant it lies in;
+    //  with $TargetByQuadrant, it is the one params.marker cell alone in its
+    //  quadrant; undefined where no such cell, or more than one, exists, or the
+    //  pointer lies in no quadrant
+    // @witness pointer-two-out: variant $PointerByQuadrant
+    // @witness stray-marker: borderline concept
+  | PointerByQuadrant {placement: Placement}
+
+.type Choice = [target: Target, pointer: Pointer]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed tile
+    .decl bg(c: Color) bg(0).
+    .decl marker(c: Color) marker(4).
+
+    // --- $DiagonalPointer, $PointerSnapsToDiagonal ---
+    // the diagonal steps from the tile's corner to the pointer
+    .decl pointer_gap(k: number) pointer_gap(1).
+
+    // --- $ThreeMarks, $TargetByDiagonal, $TargetBySideMarks ---
+    // the steps out from the marked corner at which each mark stands
+    // @ignore: derive TileCount — fails Relational form: no tiling divides the grid, so a tile count of its extent counts nothing the task has
+    // @ignore: derive TileDim — fails Relational form: no tiling divides the grid, so a tile size of its extent counts nothing the task has
+    .decl mark_gap(k: number) mark_gap(2).
+}
+
+.init params = Params
+
+.decl target_choice(t: Target)
+target_choice($ThreeMarks()). target_choice($TargetByDiagonal()).
+target_choice($TargetBySideMarks()). target_choice($TargetByQuadrant()).
+
+.decl pointer_choice(pt: Pointer)
+pointer_choice($DiagonalPointer()).
+pointer_choice($PointerByQuadrant($TurnWithTile())).
+pointer_choice($PointerByQuadrant($PointerSnapsToDiagonal())).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, Pt]) :- target_choice(T), pointer_choice(Pt).
+
+// --- shared ---
+
+// The colors of the tile.
+// @store: variant concept
+//     @relaxed tile
+.decl tile_color(c: Color)
+tile_color(Col) :- in(_, Col), !params.bg(Col), !params.marker(Col).
+
+.decl tile_cell(p: Position, col: Color)
+tile_cell(P, Col) :- in(P, Col), tile_color(Col).
+
+// @claim tile
+.init tile_box = Bbox<Unit>
+tile_box.cell($U(), P) :- tile_cell(P, _).
+
+// The tile's corner cell at corner d.
+.decl corner(d: DiagDir, p: Position)
+corner(D, P) :- tile_box.box($U(), B), in(P, _), box_corner(P, B, D).
+
+.decl marker_cell(p: Position)
+marker_cell(P) :- in(P, Col), params.marker(Col).
+
+// The marker cell p lies past corner d's cell, away from d, on some axis.
+.decl off_quadrant(p: Position, d: DiagDir)
+off_quadrant(P, D) :-
+    marker_cell(P), corner(D, P_corner),
+    diag_dirs(D, _, D1, _), opposite(D1, D_away), nearer(D_away, P, P_corner).
+
+// The marker cell p lies in corner d's quadrant.
+.decl in_quadrant(p: Position, d: DiagDir)
+in_quadrant(P, D) :- marker_cell(P), corner(D, _), !off_quadrant(P, D).
+
+// The marked corner, for the targets that do not read the pointer.
+.decl marked(t: Target, d: DiagDir)
+
+// The pointer cell and its corner.
+.decl pointer(ch: Choice, p: Position, d: DiagDir)
+
+// The marked corner.
+.decl target(ch: Choice, d: DiagDir)
+
+// --- $ThreeMarks ---
+marked($ThreeMarks(), D) :-
+    corner(D, P), params.mark_gap(K),
+    jump(P, D, K, Q), marker_cell(Q),                              // diagonal mark
+    diag_dirs(D, _, D1, D2),
+    jump(P, D1, K, Q1), marker_cell(Q1), jump(P, D2, K, Q2), marker_cell(Q2).  // side marks
+
+// --- $TargetByDiagonal ---
+marked($TargetByDiagonal(), D) :-
+    corner(D, P), params.mark_gap(K), jump(P, D, K, Q), marker_cell(Q).
+
+// --- $TargetBySideMarks ---
+marked($TargetBySideMarks(), D) :-
+    corner(D, P), params.mark_gap(K), diag_dirs(D, _, D1, D2),
+    jump(P, D1, K, Q1), marker_cell(Q1), jump(P, D2, K, Q2), marker_cell(Q2).
+
+// --- $ThreeMarks, $TargetByDiagonal, $TargetBySideMarks ---
+target([T, Pt], D) :- impl_choice([T, Pt]), marked(T, D).
+
+// --- $DiagonalPointer ---
+pointer([T, $DiagonalPointer()], P, D) :-
+    impl_choice([T, $DiagonalPointer()]),
+    corner(D, P_corner), params.pointer_gap(K), jump(P_corner, D, K, P), marker_cell(P).
+
+// --- $PointerByQuadrant ---
+// The pointer candidates: the marker cells outside the marked corner's
+// quadrant, or with $TargetByQuadrant, the marker cells alone in their
+// quadrant.
+.decl candidate(ch: Choice, p: Position)
+candidate([T, $PointerByQuadrant(L)], P) :-
+    impl_choice([T, $PointerByQuadrant(L)]), marked(T, D), marker_cell(P), !in_quadrant(P, D).
+
+// The case has more than one pointer candidate.
+.decl ambiguous(ch: Choice)
+ambiguous(Ch) :- candidate(Ch, P), candidate(Ch, Q), P != Q.
+
+pointer(Ch, P, D) :- candidate(Ch, P), !ambiguous(Ch), in_quadrant(P, D).
+
+// --- $TargetByQuadrant & $PointerByQuadrant ---
+// The marker cell p shares its quadrant with another marker cell.
+.decl crowded(p: Position)
+crowded(P) :- in_quadrant(P, D), in_quadrant(Q, D), P != Q.
+
+candidate([$TargetByQuadrant(), $PointerByQuadrant(L)], P) :-
+    impl_choice([$TargetByQuadrant(), $PointerByQuadrant(L)]),
+    in_quadrant(P, _), !crowded(P).
+
+// --- $TargetByQuadrant ---
+// Some marker cell other than the pointer lies outside corner d's quadrant.
+.decl stray(ch: Choice, d: DiagDir)
+stray([$TargetByQuadrant(), Pt], D) :-
+    pointer([$TargetByQuadrant(), Pt], P_pointer, _),
+    marker_cell(P), P != P_pointer, corner(D, _), !in_quadrant(P, D).
+
+target([$TargetByQuadrant(), Pt], D) :-
+    pointer([$TargetByQuadrant(), Pt], _, _), corner(D, _), !stray([$TargetByQuadrant(), Pt], D).
+
+// --- shared ---
+
+// The rotation that takes the pointer's corner to the marked corner.
+.decl tile_turn(ch: Choice, r: C4)
+tile_turn(Ch, R) :-
+    target(Ch, D_to), pointer(Ch, _, D_from), c4_elem(R), apply_diag_dir(R, D_from, D_to).
+
+// The cell p turned by r about the tile's center.
+.decl turned(r: C4, p: Position, p_out: Position)
+turned(R, P, P_out) :-
+    tile_turn(_, R), tile_box.box($U(), B), in(P, _),
+    relative(B, P, P_rel), apply(R, P_rel, P_rel_out), compose(B, P_rel_out, P_out).
+
+.decl drawn(ch: Choice, p: Position, col: Color)
+drawn(Ch, P_out, Col) :- tile_turn(Ch, R), tile_cell(P, Col), turned(R, P, P_out).
+
+// --- $DiagonalPointer ---
+drawn([T, $DiagonalPointer()], P_out, Col) :-
+    tile_turn([T, $DiagonalPointer()], R), pointer([T, $DiagonalPointer()], P, _),
+    turned(R, P, P_out), in(P, Col).
+
+// --- $TurnWithTile ---
+drawn(Ch, P_out, Col) :-
+    tile_turn(Ch, R), Ch = [_, $PointerByQuadrant($TurnWithTile())], pointer(Ch, P, _),
+    turned(R, P, P_out), in(P, Col).
+
+// --- $PointerSnapsToDiagonal ---
+drawn(Ch, P_out, Col) :-
+    Ch = [_, $PointerByQuadrant($PointerSnapsToDiagonal())], pointer(Ch, P, _), in(P, Col),
+    target(Ch, D), corner(D, P_corner), params.pointer_gap(K), jump(P_corner, D, K, P_out).
+
+// --- shared ---
+out(P, Col, Ch) :- drawn(Ch, P, Col).
+out(P, Col, Ch) :- tile_turn(Ch, _), in(P, _), !drawn(Ch, P, _), params.bg(Col).
+
+.comp Determine {
+    // the commonest input color of each example
+    .init in_mode = Mode<Example, Color, Position>
+    in_mode.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .init bg_value = Unanimous<Unit, Color>
+    bg_value.item($U(), Col) :- in_mode.mode(_, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- bg_value.value($U(), Col).
+
+    // a color whose input cell is bg in the output
+    .init marker_value = Unanimous<Unit, Color>
+    marker_value.item($U(), Col) :- ex_in(E, P, Col), ex_out(E, P, Col_bg), bg(Col_bg), !bg(Col).
+
+    .decl marker(c: Color)
+    marker(Col) :- marker_value.value($U(), Col).
+
+    .decl tile_in(e: Example, p: Position)
+    tile_in(E, P) :- ex_in(E, P, Col), !bg(Col), !marker(Col).
+
+    .decl tile_out(e: Example, p: Position)
+    tile_out(E, P) :- ex_out(E, P, Col), !bg(Col), !marker(Col).
+
+    .init box_in = Bbox<Example>
+    box_in.cell(E, P) :- tile_in(E, P).
+
+    .init box_out = Bbox<Example>
+    box_out.cell(E, P) :- tile_out(E, P).
+
+    // a distance some cell of the example's input has to an edge
+    .decl extent_step(e: Example, k: number)
+    extent_step(E, K) :- ex_in(E, P, _), dir_elem(D), dist(P, D, K).
+
+    // the output's marker cell stands k steps out on a corner's diagonal
+    .init pointer_value = Unanimous<Unit, number>
+    pointer_value.item($U(), K) :-
+        box_out.box(E, B), ex_out(E, P_corner, _), box_corner(P_corner, B, D),
+        ex_out(E, P, Col), marker(Col), extent_step(E, K), jump(P_corner, D, K, P).
+
+    .decl pointer_gap(k: number)
+    pointer_gap(K) :- pointer_value.value($U(), K).
+
+    // the input's marker cells stand k steps out from a corner, on its
+    // diagonal and in line with both of its sides
+    .init mark_value = Unanimous<Unit, number>
+    mark_value.item($U(), K) :-
+        box_in.box(E, B), ex_in(E, P_corner, _), box_corner(P_corner, B, D),
+        extent_step(E, K), diag_dirs(D, _, D1, D2),
+        jump(P_corner, D, K, Q), ex_in(E, Q, Col), marker(Col),
+        jump(P_corner, D1, K, Q1), ex_in(E, Q1, Col), jump(P_corner, D2, K, Q2), ex_in(E, Q2, Col).
+
+    .decl mark_gap(k: number)
+    mark_gap(K) :- mark_value.value($U(), K).
+}

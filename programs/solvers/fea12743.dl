@@ -1,0 +1,398 @@
+// fea12743
+// @draft
+// @keywords: decompose overlay rank
+// @scene tile-layout: the grid is a 3 by 2 layout of square tiles of side
+//  tile_size, with a gutter-wide background border around and between them
+// @scene one-ink: every tile is drawn in ink 2 on background; nothing else
+//  is drawn
+// @scene one-union: exactly one tile is the cell-wise union of two other
+//  tiles, and the two shapes it is the union of are one pair of shapes,
+//  though a shape of the pair may be drawn in more than one tile
+// @rule paint-parts: for each of the two shapes whose union is another tile,
+//  the first tile in copy_order that holds that shape, other than the union
+//  tile, has its ink recolored part_color
+// @rule paint-union: the tile that is that union has its ink recolored
+//  union_color
+// @rule keep-rest: every other cell is copied from the input
+
+// how the union tile is found
+.type UnionTile =
+    // @claim one-union
+    OneUnion {}
+    // @scene one-union: a union whose shape equals one of its parts' shapes
+    //  is ignored; undefined where the remaining unions are not one tile
+    //  with one shape pair
+    // @witness frame-inside-copy: borderline $ProperUnion
+    //     @relaxed one-union
+  | ProperUnion {}
+    // @scene one-union: the union tile is the unique fullest tile, and its
+    //  parts are the one shape pair whose union it is; undefined where the
+    //  fullest count is tied, or where the fullest tile is not the union of
+    //  exactly one shape pair
+    // @witness two-proper-unions: borderline $MaxCountUnion
+    //     @relaxed one-union
+  | MaxCountUnion {}
+
+// which copy of a part shape drawn more than once gets painted
+.type DuplicateCopy =
+    // @claim paint-parts
+    FirstCopy {}
+    // @rule paint-parts: the painted copy is the one farthest from the union
+    //  tile, by taxicab distance over tile positions; undefined where the
+    //  farthest copies tie
+    // @witness duplicate-part-nearer-first: ordinary any
+  | FartherCopy {}
+
+// where the tiles are
+.type TileFrame =
+    // @claim tile-layout
+    StoredLayout {}
+    // @scene tile-layout: the tiles are the maximal blocks between
+    //  all-background rows and all-background columns; undefined where those
+    //  blocks differ in size
+    // @witness small-tiles: variant $GutterLayout
+    //     @relaxed tile-layout
+    // @witness blank-inner-column: ordinary concept
+  | GutterLayout {}
+
+.type Choice = [u: UnionTile, c: DuplicateCopy, f: TileFrame]
+
+// A tile of one layout.
+.type FT = [f: TileFrame, t: Position]
+
+// The union tile found by one union branch in one layout.
+.type UF = [u: UnionTile, f: TileFrame]
+
+// A part shape of the union found by one union branch in one layout.
+.type UFS = [u: UnionTile, f: TileFrame, s: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed one-ink
+    .decl background(c: Color) background(0).
+    .decl part_color(c: Color) part_color(8).
+    .decl union_color(c: Color) union_color(3).
+
+    // --- $FirstCopy ---
+    // The scan order of the tiles: its start corner and its primary axis.
+    .decl copy_order(d: DiagDir, a: Axis) copy_order(DIAG_TL, AXIS_V).
+
+    // --- $StoredLayout ---
+    // @derive TileCount: variant derived
+    //     @relaxed tile-layout
+    // @ignore: derive TileDim — fails Subsumption: no input found shows it defined and differing from tile_size=TileCount
+    .decl tile_size(k: number) tile_size(4).
+    // The width of the background border around and between the tiles.
+    // @derive SepThickness: variant derived
+    //     @relaxed tile-layout
+    .decl gutter(g: number) gutter(1).
+}
+
+.init params = Params
+
+.decl union_tile_choice(u: UnionTile)
+union_tile_choice($OneUnion()). union_tile_choice($ProperUnion()). union_tile_choice($MaxCountUnion()).
+
+.decl duplicate_copy_choice(c: DuplicateCopy)
+duplicate_copy_choice($FirstCopy()). duplicate_copy_choice($FartherCopy()).
+
+.decl tile_frame_choice(f: TileFrame)
+tile_frame_choice($StoredLayout()). tile_frame_choice($GutterLayout()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([U, C, F]) :- union_tile_choice(U), duplicate_copy_choice(C), tile_frame_choice(F).
+
+// --- the tiles ---
+
+// Cell p lies in tile t of layout f, at p_intile within the tile.
+// @ignore: store — the layout the program finds is the input's own; no witnessed case reads a stored copy of it
+.decl tile_cell(f: TileFrame, p_grid: Position, p_tile: Position, p_intile: Position)
+
+// @ignore: store — the layout the program finds is the input's own; no witnessed case reads a stored copy of it
+.decl tile(f: TileFrame, p_tile: Position)
+tile(F, T) :- tile_cell(F, _, T, _).
+
+.decl ink(f: TileFrame, p_tile: Position, p_intile: Position)
+ink(F, T, P_intile) :- tile_cell(F, P, T, P_intile), in(P, Col), !params.background(Col).
+
+// --- $StoredLayout ---
+
+tile_cell($StoredLayout(), P_grid, P_tile, P_intile) :-
+    in(P_grid, _), params.gutter(G),
+    uniform_inset(G, B), crop(P_grid, B, P_field),          // inside the border
+    params.tile_size(K), divide_by_size_2d(P_field, K, G, P_tile, P_intile).
+
+// --- $GutterLayout ---
+
+// Line l of axis a holds ink.
+.decl ink_line(a: Axis, l: Position)
+ink_line(A, L) :- in(P, Col), !params.background(Col), axis_elem(A), split(P, A, L, _).
+
+// @claim tile-layout
+.init gutters = DividerTiles<Unit>
+gutters.cell($U(), P) :- in(P, _).
+gutters.divider($U(), A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !ink_line(A, L).
+
+// @claim tile-layout
+.init block = Bbox<Position>
+block.cell(T, P) :- gutters.tile_of($U(), P, T).
+
+// @claim tile-layout
+.init block_size = Unanimous<Axis, number>
+block_size.item(A, N) :-
+    block.box(T, B), gutters.tile_of($U(), P, T),
+    axis_elem(A), box_extent(B, P, A, N).
+
+tile_cell($GutterLayout(), P_grid, P_tile, P_intile) :-
+    gutters.tile_of($U(), P_grid, P_tile), block.box(P_tile, B), crop(P_grid, B, P_intile),
+    !block_size.clash(_).
+
+// --- shapes and unions ---
+
+// @claim one-union paint-parts
+.init same = KeyedSetCompare<FT, FT, Position>
+same.pattern_member([F, T], P) :- ink(F, T, P).
+same.observed_member([F, T], P) :- ink(F, T, P).
+
+.init shape = Canon<FT>
+shape.equiv(X, Y) :- same.equals(X, Y).
+
+// Three distinct tiles: u, and the two tiles a and b it may be the union of.
+// @ignore: store — the layout the program finds is the input's own; no witnessed case reads a stored copy of it
+.decl triple(f: TileFrame, u: Position, a: Position, b: Position)
+triple(F, U, A, B) :- tile(F, U), tile(F, A), tile(F, B), U != A, U != B, A != B.
+
+// Some cell is in u and in neither part, or in a part and not in u.
+.decl union_defect(f: TileFrame, u: Position, a: Position, b: Position)
+union_defect(F, U, A, B) :-
+    triple(F, U, A, B),
+    ( ink(F, U, P), !ink(F, A, P), !ink(F, B, P)
+    ; ink(F, A, P), !ink(F, U, P)
+    ; ink(F, B, P), !ink(F, U, P)
+    ).
+
+// Tile u is the union of a tile of shape s_a and a tile of shape s_b.
+// @claim one-union
+.decl union_hit(f: TileFrame, u: Position, s_a: Ident, s_b: Ident)
+union_hit(F, U, S_a, S_b) :-
+    triple(F, U, A, B), !union_defect(F, U, A, B),
+    shape.id([F, A], S_a), shape.id([F, B], S_b).
+
+// The unions each union branch keeps.
+.decl union_cand(u: UnionTile, f: TileFrame, p_tile: Position, s_a: Ident, s_b: Ident)
+
+// The kept unions are more than one tile, or more than one shape pair.
+.decl union_clash(u: UnionTile, f: TileFrame)
+union_clash(Ub, F) :-
+    union_cand(Ub, F, U1, S1, _), union_cand(Ub, F, U2, S2, S3),
+    ( U1 != U2 ; S1 != S2, S1 != S3 ).
+
+// The union tile, with each of its part shapes.
+.decl union(u: UnionTile, f: TileFrame, p_tile: Position, s: Ident)
+union(Ub, F, U, S) :- union_cand(Ub, F, U, S, _), !union_clash(Ub, F).
+
+// --- $OneUnion ---
+
+union_cand($OneUnion(), F, U, S_a, S_b) :- union_hit(F, U, S_a, S_b).
+
+// --- $ProperUnion ---
+
+union_cand($ProperUnion(), F, U, S_a, S_b) :-
+    union_hit(F, U, S_a, S_b), shape.id([F, U], S_u), S_u != S_a, S_u != S_b.
+
+// --- $MaxCountUnion ---
+
+// @claim one-union
+.init ink_count = Tally<FT, Position>
+ink_count.item([F, T], P) :- ink(F, T, P).
+ink_count.domain([F, T]) :- tile(F, T).
+
+// @claim one-union
+.init fullest = ArgExtremes<TileFrame, Position>
+fullest.cand(F, T, N) :- ink_count.tally([F, T], N).
+
+.decl fullest_tie(f: TileFrame)
+fullest_tie(F) :- fullest.high(F, T1, _), fullest.high(F, T2, _), T1 != T2.
+
+union_cand($MaxCountUnion(), F, U, S_a, S_b) :-
+    fullest.high(F, U, _), !fullest_tie(F), union_hit(F, U, S_a, S_b).
+
+// --- the painted parts ---
+
+// Tile t, other than the union tile, holds part shape s.
+.decl part_copy(u: UnionTile, f: TileFrame, p_tile: Position, s: Ident)
+part_copy(Ub, F, T, S) :-
+    union(Ub, F, U, S), shape.id([F, T], S), T != U.
+
+// The tile painted for each part shape.
+.decl painted(ch: Choice, p_tile: Position)
+
+// Some part shape has no single copy to paint.
+.decl paint_tie(ch: Choice)
+
+// --- $FirstCopy ---
+
+// @claim paint-parts
+.init copy_order = LexOrder<TileFrame>
+copy_order.corner(F, D) :- tile(F, _), params.copy_order(D, _).
+copy_order.axis(F, A) :- tile(F, _), params.copy_order(_, A).
+copy_order.cell(F, T) :- tile(F, T).
+
+// Another copy of the same part shape comes earlier in copy order.
+.decl later_copy(u: UnionTile, f: TileFrame, p_tile: Position)
+later_copy(Ub, F, T) :-
+    part_copy(Ub, F, T, S), part_copy(Ub, F, T2, S), copy_order.before(F, T2, T).
+
+painted([Ub, $FirstCopy(), F], T) :- part_copy(Ub, F, T, _), !later_copy(Ub, F, T).
+
+// --- $FartherCopy ---
+
+// Tile t2 lies toward d from tile t1, in the same row or column of tiles.
+// @ignore: store — the layout the program finds is the input's own; no witnessed case reads a stored copy of it
+.decl ahead(f: TileFrame, p_tile: Position, d: Dir, q_tile: Position)
+ahead(F, T1, D, T2) :-
+    tile(F, T1), tile(F, T2), dir_elem(D), nearer(D, T2, T1),
+    perp_dir(D, D2), same_dist(D2, T1, T2).
+
+// Some tile lies between t1 and t2.
+// @ignore: store — the layout the program finds is the input's own; no witnessed case reads a stored copy of it
+.decl between_tile(f: TileFrame, p_tile: Position, d: Dir, q_tile: Position)
+between_tile(F, T1, D, T2) :- ahead(F, T1, D, T3), ahead(F, T3, D, T2).
+
+// Taxicab distance over the tiles: a step goes to the next tile in a row or
+// column of tiles.
+// @claim paint-parts
+// @ignore edge: store — the layout the program finds is the input's own; no witnessed case reads a stored copy of it
+.init tile_dist = GraphDistance<UF, Position>
+tile_dist.seed([Ub, F], U) :- union(Ub, F, U, _).
+tile_dist.edge([Ub, F], T1, T2) :-
+    union(Ub, F, _, _), ahead(F, T1, D, T2), !between_tile(F, T1, D, T2).
+
+// @claim paint-parts
+.init farthest = ArgExtremes<UFS, Position>
+farthest.cand([Ub, F, S], T, N) :- part_copy(Ub, F, T, S), tile_dist.distance([Ub, F], T, N).
+
+painted([Ub, $FartherCopy(), F], T) :- farthest.high([Ub, F, _], T, _).
+
+paint_tie([Ub, $FartherCopy(), F]) :-
+    farthest.high(K, T1, _), farthest.high(K, T2, _), T1 != T2, K = [Ub, F, _].
+
+// --- output ---
+
+// The color each recolored tile takes.
+.decl recolor(ch: Choice, p_tile: Position, col: Color)
+recolor([Ub, C, F], U, Col) :-
+    impl_choice([Ub, C, F]), union(Ub, F, U, _), params.union_color(Col).
+recolor(Ch, T, Col) :- painted(Ch, T), params.part_color(Col).
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([Ub, C, F], P, Col) :-
+    recolor([Ub, C, F], T, Col), ink(F, T, P_intile), tile_cell(F, P, T, P_intile).
+
+// The model is defined where a union is found and each part shape has one
+// painted copy.
+.decl found(ch: Choice)
+found([Ub, C, F]) :-
+    impl_choice([Ub, C, F]), union(Ub, F, _, _),
+    !paint_tie([Ub, C, F]), !unpainted([Ub, C, F]).
+
+// Some part shape has no painted copy.
+.decl unpainted(ch: Choice)
+unpainted([Ub, C, F]) :-
+    impl_choice([Ub, C, F]), union(Ub, F, _, S), !painted_shape([Ub, C, F], S).
+
+.decl painted_shape(ch: Choice, s: Ident)
+painted_shape([Ub, C, F], S) :- painted([Ub, C, F], T), shape.id([F, T], S).
+
+out(P, Col, Ch) :-
+    found(Ch), in(P, Col0),
+    ( paint(Ch, P, Col)                       // a recolored tile's ink
+    ; !paint(Ch, P, _), Col = Col0            // copied from the input
+    ).
+
+// An edge of one example.
+.type ED = [e: Example, d: Dir]
+
+// A color of one example.
+.type EC = [e: Example, c: Color]
+
+.comp Determine {
+    .decl train(e: Example)
+    train(E) :- ex_out(E, _, _).
+
+    // --- background: the commonest color of every input ---
+
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- train(E), ex_in(E, P, Col).
+
+    .decl background_defect(c: Color)
+    background_defect(Col) :- commonest.mode(_, Col), train(E), !commonest.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !background_defect(Col).
+
+    // --- part_color, union_color: the colors the output has and its input
+    // lacks; the two parts hold at least as many cells as their union ---
+
+    .decl new_color(e: Example, c: Color)
+    new_color(E, Col) :- train(E), ex_out(E, _, Col), !ex_in(E, _, Col).
+
+    .init new_count = Tally<EC, Position>
+    new_count.item([E, Col], P) :- new_color(E, Col), ex_out(E, P, Col).
+    new_count.domain([E, Col]) :- new_color(E, Col).
+
+    // In example e, new color c has more cells than new color c2.
+    .decl outnumbers(e: Example, c: Color, c2: Color)
+    outnumbers(E, Col, Col2) :-
+        new_count.tally([E, Col], N), new_count.tally([E, Col2], N2), N > N2.
+
+    .decl part_defect(c: Color)
+    part_defect(Col) :-
+        new_color(_, Col), train(E), ( !new_color(E, Col) ; outnumbers(E, _, Col) ).
+
+    .decl part_color(c: Color)
+    part_color(Col) :- new_color(_, Col), !part_defect(Col).
+
+    .decl union_defect(c: Color)
+    union_defect(Col) :-
+        new_color(_, Col), train(E), ( !new_color(E, Col) ; outnumbers(E, Col, _) ).
+
+    .decl union_color(c: Color)
+    union_color(Col) :- new_color(_, Col), !union_defect(Col).
+
+    // --- gutter: the blank margin from the first ink to every edge ---
+
+    .init margin = Extremes<ED>
+    margin.cand([E, D], K) :-
+        train(E), ex_in(E, P, Col), !params.background(Col), dir_elem(D), dist(P, D, K).
+
+    .init border = Unanimous<Unit, number>
+    border.item($U(), K) :- margin.low(_, K).
+
+    .decl gutter(g: number)
+    gutter(G) :- border.value($U(), G).
+
+    // --- tile_size: the tiles inside the border hold every ink cell ---
+
+    .decl tile_size_cand(k: number)
+    tile_size_cand(K) :- train(E), ex_in(E, P, _), axis_elem(A), sub_extent(P, A, K).
+
+    // Cell p falls in a tile of side k.
+    .decl covered(e: Example, k: number, p: Position)
+    covered(E, K, P) :-
+        train(E), ex_in(E, P, _), params.gutter(G),
+        uniform_inset(G, B), crop(P, B, P_field),
+        tile_size_cand(K), divide_by_size_2d(P_field, K, G, _, _).
+
+    .decl tile_size_defect(k: number)
+    tile_size_defect(K) :-
+        tile_size_cand(K), train(E),
+        ( !covered(E, K, _)
+        ; ex_in(E, P, Col), !params.background(Col), !covered(E, K, P)
+        ).
+
+    .decl tile_size(k: number)
+    tile_size(K) :- tile_size_cand(K), !tile_size_defect(K).
+}

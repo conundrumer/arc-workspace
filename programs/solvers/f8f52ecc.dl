@@ -1,0 +1,317 @@
+// f8f52ecc
+// @draft
+// @keywords: markers route
+// @scene background: a field of 1.
+// @scene walls: straight segments of 8, which no route crosses.
+// @scene dots: scattered cells of other colors; some colors have one cell,
+//  and the cells of each color with several can all be joined by one
+//  4-connected route over background cells that avoids the walls.
+// @rule join-dots: for each color other than the background 1 and the wall
+//  color 8, the color's cells fall into 4-connected pieces. The length of
+//  the link between two pieces is the fewest steps between them over
+//  background cells and the color's own cells, and two pieces are linked
+//  when no chain of shorter links joins them. A piece with one link is an
+//  end. Between each two ends, the output paints in that color the walks
+//  that follow the chain of links between them, run each link by one of
+//  its fewest-step walks and cross each piece over its own cells, and of
+//  those, make the fewest steps and quarter turns together.
+// @rule keep-rest: every other cell keeps its input color; a color with one
+//  cell, and the wall color, are left as they are.
+
+// what blocks a route
+.type Obstacle =
+    // @claim join-dots
+    OverBackground {}
+    // @rule join-dots: only wall cells block a route, and a route may run over
+    //  a dot of another color; undefined where the concept is.
+    // @rule keep-rest: a dot of another color on a route keeps its color.
+    // @witness dot-on-line: borderline $KeepDot
+  | CrossDots {crossed: Crossed}
+
+// what a route does to a dot of another color it runs over
+.type Crossed =
+    // @claim keep-rest
+    KeepDot {}
+    // @rule keep-rest: the route paints the crossed dot in its own color.
+    // @witness dot-on-line: borderline $KeepDot
+  | PaintOver {}
+
+// which count a walk between two ends keeps fewest first
+.type Measure =
+    // @claim join-dots
+    StepsFirst {}
+    // @rule join-dots: a walk runs each link over any cells a route may step
+    //  on, passing on to the next link where it first meets a cell of the
+    //  piece the link leads to, and of the walks between two ends, the
+    //  output paints those with the fewest quarter turns, and of those, the
+    //  fewest steps; undefined where the concept is.
+    // @witness two-walls-snake: ordinary concept
+  | TurnsFirst {}
+
+.type Choice = [o: Obstacle, m: Measure]
+
+// A piece of one color's dots, at one case.
+.type PieceKey = [ch: Choice, col: Color, piece: Ident]
+
+// Two pieces of one color's dots, at one case.
+.type LinkKey = [ch: Choice, col: Color, a: Ident, b: Ident]
+
+// One color's cells a route may step on, at one case.
+.type ColorKey = [ch: Choice, col: Color]
+
+// A state of a walk along a chain of links: a cell, the heading there, and
+// the link from piece a to piece b that the walk runs.
+.type Stage = [p: Position, d: Dir, a: Ident, b: Ident]
+
+// The states a straight run reaches from one state, at one case.
+.type RunKey = [ch: Choice, col: Color, s: Stage]
+
+// A state of a walk, and the state its current straight run started from.
+.type OnRun = [s: Stage, o: Stage]
+
+// One color in one example.
+.type ExampleColor = [e: Example, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the field color, the only color a route paints over
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    //     @relaxed dots
+    .decl background(c: Color) background(1).
+    // the color whose cells block a route and are never joined
+    .decl wall_color(c: Color) wall_color(8).
+}
+
+.init params = Params
+
+.decl obstacle_choice(o: Obstacle)
+obstacle_choice($OverBackground()).
+obstacle_choice($CrossDots($KeepDot())). obstacle_choice($CrossDots($PaintOver())).
+
+.decl measure_choice(m: Measure)
+measure_choice($StepsFirst()). measure_choice($TurnsFirst()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([O, M]) :- obstacle_choice(O), measure_choice(M).
+
+// A cell of a color that is neither the background nor the wall color.
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- in(P, Col), !params.background(Col), !params.wall_color(Col).
+
+// The 4-connected pieces of each color's dots.
+// @claim join-dots
+.init piece = Components<Color>
+piece.node(Col, P) :- dot(P, Col).
+
+// A cell a route of color Col may step on.
+.decl open(ch: Choice, col: Color, p: Position)
+
+// The fewest steps from each piece to each open cell.
+// @claim join-dots
+.init near = GraphDistance<PieceKey, Position>
+near.seed([Ch, Col, Id], P) :- impl_choice(Ch), piece.label(Col, P, Id).
+near.edge([Ch, Col, Id], P, Q) :-
+    piece.label(Col, _, Id), open(Ch, Col, P),
+    dir_elem(D), neighbor(P, D, Q), open(Ch, Col, Q).
+
+// The length of the link between two pieces: the fewest steps from A to a
+// cell of B.
+// @claim join-dots
+.init gap = Extremes<LinkKey>
+gap.cand([Ch, Col, A, B], K) :-
+    near.distance([Ch, Col, A], P, K), piece.label(Col, P, B), B != A.
+
+// The pieces that links shorter than the link from A to B join to A.
+.init shorter = Propagation<LinkKey, Ident>
+shorter.source([Ch, Col, A, B], A) :- gap.low([Ch, Col, A, B], _).
+shorter.edge([Ch, Col, A, B], X, Y) :-
+    gap.low([Ch, Col, A, B], K), gap.low([Ch, Col, X, Y], K2), K2 < K.
+
+// A and B are linked: no chain of shorter links joins them.
+.decl link(ch: Choice, col: Color, a: Ident, b: Ident)
+link(Ch, Col, A, B) :- gap.low([Ch, Col, A, B], _), !shorter.reached([Ch, Col, A, B], B).
+
+// A piece with two links.
+.decl branched(ch: Choice, col: Color, a: Ident)
+branched(Ch, Col, A) :- link(Ch, Col, A, B1), link(Ch, Col, A, B2), B1 != B2.
+
+// A piece with one link: an end of the route.
+.decl end(ch: Choice, col: Color, a: Ident)
+end(Ch, Col, A) :- link(Ch, Col, A, _), !branched(Ch, Col, A).
+
+// The cells of the walks between two ends.
+.decl path(ch: Choice, col: Color, p: Position)
+
+// The cells a route paints, with the color it paints.
+.decl paint(ch: Choice, col: Color, p: Position)
+
+out(P, Col, Ch) :- paint(Ch, Col, P).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(Ch, _, P).
+
+// --- $OverBackground ---
+open([$OverBackground(), M], Col, P) :-
+    measure_choice(M), dot(_, Col), in(P, C),
+    ( params.background(C) ; C = Col ).   // the field, or the color's own dots
+
+paint([$OverBackground(), M], Col, P) :- path([$OverBackground(), M], Col, P).
+
+// --- $CrossDots ---
+open([$CrossDots(X), M], Col, P) :-
+    impl_choice([$CrossDots(X), M]), dot(_, Col), in(P, C), !params.wall_color(C).
+
+// --- $KeepDot ---
+paint([$CrossDots($KeepDot()), M], Col, P) :-
+    path([$CrossDots($KeepDot()), M], Col, P), in(P, B), params.background(B).
+
+// --- $PaintOver ---
+paint([$CrossDots($PaintOver()), M], Col, P) :- path([$CrossDots($PaintOver()), M], Col, P).
+
+// --- $StepsFirst ---
+
+// The cells on a fewest-step walk of a link, traced back from B's nearest
+// cells.
+.init corridor = Propagation<LinkKey, Position>
+corridor.source([[O, $StepsFirst()], Col, A, B], P) :-
+    link([O, $StepsFirst()], Col, A, B), gap.low([[O, $StepsFirst()], Col, A, B], K),
+    piece.label(Col, P, B), near.distance([[O, $StepsFirst()], Col, A], P, K).
+corridor.edge([[O, $StepsFirst()], Col, A, B], Q, P) :-
+    link([O, $StepsFirst()], Col, A, B), near.pred([[O, $StepsFirst()], Col, A], Q, P).
+
+// From an end, the fewest steps plus quarter turns to each state of a walk
+// along its chain of links.
+// @claim join-dots
+.init walk = GraphDistance<PieceKey, Stage>
+walk.seed([[O, $StepsFirst()], Col, E], [P, D, E, B]) :-
+    end([O, $StepsFirst()], Col, E), link([O, $StepsFirst()], Col, E, B),
+    piece.label(Col, P, E), dir_elem(D).
+walk.edge([[O, $StepsFirst()], Col, E], [P, D, A, B], [Q, D, A, B]) :-   // a step
+    end([O, $StepsFirst()], Col, E), link([O, $StepsFirst()], Col, A, B),
+    ( corridor.reached([[O, $StepsFirst()], Col, A, B], Q),           // on a fewest-step walk of the link
+      near.pred([[O, $StepsFirst()], Col, A], Q, P)
+    ; piece.label(Col, P, A), piece.label(Col, Q, A) ),               // within the piece the link leaves
+    dir_elem(D), neighbor(P, D, Q).
+walk.edge([[O, $StepsFirst()], Col, E], [P, D, A, B], [P, D2, A, B]) :-  // a quarter turn
+    end([O, $StepsFirst()], Col, E), link([O, $StepsFirst()], Col, A, B),
+    ( corridor.reached([[O, $StepsFirst()], Col, A, B], P) ; piece.label(Col, P, A) ),
+    dir_elem(D), perp_dir(D, D2).
+walk.edge([[O, $StepsFirst()], Col, E], [P, D, A, B], [P, D, B, C]) :-   // on to the next link
+    end([O, $StepsFirst()], Col, E), link([O, $StepsFirst()], Col, A, B),
+    link([O, $StepsFirst()], Col, B, C), C != A, piece.label(Col, P, B), dir_elem(D).
+
+// The states at which the walk from an end first arrives at another end.
+// @claim join-dots
+.init arrive = ArgExtremes<LinkKey, Stage>
+arrive.cand([Ch, Col, E, F], [P, D, A, F], K) :-
+    walk.distance([Ch, Col, E], [P, D, A, F], K),
+    end(Ch, Col, F), F != E, piece.label(Col, P, F).
+
+// The states of the walks that arrive, traced back to the end they start
+// from.
+.init route = Propagation<PieceKey, Stage>
+route.source([Ch, Col, E], S) :- arrive.low([Ch, Col, E, _], S, _).
+route.edge(Ky, S2, S) :- walk.pred(Ky, S2, S).
+
+path(Ch, Col, P) :- route.reached([Ch, Col, _], [P, _, _, _]).
+
+// --- $TurnsFirst ---
+
+// The straight runs over the cells a route may step on.
+// @claim join-dots
+.init line = Slide<ColorKey>
+line.node([[O, $TurnsFirst()], Col], P) :- open([O, $TurnsFirst()], Col, P).
+line.dir([[O, $TurnsFirst()], Col], D) :- open([O, $TurnsFirst()], Col, _), dir_elem(D).
+
+// A state of a walk at a cell a route may step on.
+.decl state(ch: Choice, col: Color, p: Position, d: Dir, a: Ident, b: Ident)
+state(Ch, Col, P, D, A, B) :- link(Ch, Col, A, B), line.node([Ch, Col], P), dir_elem(D).
+
+// The state one step ahead of a state. On reaching a cell of the piece B,
+// the walk runs B's next link, or stays where B is the last piece.
+.decl ahead(ch: Choice, col: Color, p: Position, d: Dir, a: Ident, b: Ident,
+            q: Position, a2: Ident, b2: Ident)
+ahead(Ch, Col, P, D, A, B, Q, A2, B2) :-
+    state(Ch, Col, P, D, A, B), neighbor(P, D, Q), line.node([Ch, Col], Q),
+    ( ( !piece.label(Col, Q, B) ; end(Ch, Col, B) ), A2 = A, B2 = B
+    ; piece.label(Col, Q, B), link(Ch, Col, B, B2), B2 != A, A2 = B ).
+
+// The states a straight run reaches from each state, that state included.
+.init run = Propagation<RunKey, Stage>
+run.source([Ch, Col, [P, D, A, B]], [P, D, A, B]) :- state(Ch, Col, P, D, A, B).
+run.edge([Ch, Col, [P0, D, A0, B0]], [P, D, A, B], [Q, D, A2, B2]) :-
+    state(Ch, Col, P0, D, A0, B0),
+    ( P = P0 ; line.run([Ch, Col], P0, D, P) ),
+    ahead(Ch, Col, P, D, A, B, Q, A2, B2).
+
+// From an end, the fewest quarter turns to each state that starts a run.
+// @claim join-dots
+.init bends = GraphDistance<PieceKey, Stage>
+bends.seed([Ch, Col, E], [P, D, E, B]) :-
+    end(Ch, Col, E), link(Ch, Col, E, B), piece.label(Col, P, E),
+    line.node([Ch, Col], P), dir_elem(D).
+bends.edge([Ch, Col, E], S, [Q, D2, A, B]) :-   // a run, then a quarter turn
+    end(Ch, Col, E), run.reached([Ch, Col, S], [Q, D, A, B]), perp_dir(D, D2).
+
+// A run from S reaches a cell of the end F that the link it runs leads to.
+.decl arrival(ch: Choice, col: Color, s: Stage, f: Ident)
+arrival(Ch, Col, S, F) :-
+    run.reached([Ch, Col, S], [Q, _, _, F]), end(Ch, Col, F), piece.label(Col, Q, F).
+
+// The fewest quarter turns of a walk from an end to another end.
+// @claim join-dots
+.init fewest_bends = Extremes<LinkKey>
+fewest_bends.cand([Ch, Col, E, F], K) :-
+    bends.distance([Ch, Col, E], S, K), arrival(Ch, Col, S, F), F != E.
+
+// From an end, the fewest steps plus quarter turns to each state of a walk
+// that starts each of its runs with the fewest turns that state takes.
+// @claim join-dots
+.init ride = GraphDistance<PieceKey, OnRun>
+ride.seed(Ky, [S, S]) :- bends.distance(Ky, S, 0).
+ride.edge([Ch, Col, E], [S, S0], [S2, S0]) :-       // a step on the run
+    run.reached([Ch, Col, S0], S), bends.distance([Ch, Col, E], S0, _),
+    run.edge([Ch, Col, S0], S, S2).
+ride.edge(Ky, [[Q, D, A, B], [P0, D, A0, B0]], [[Q, D2, A, B], [Q, D2, A, B]]) :-   // a turn
+    bends.pred(Ky, [Q, D2, A, B], [P0, D, A0, B0]).
+
+// The states at which a walk with the fewest turns first arrives at another
+// end.
+// @claim join-dots
+.init ride_end = ArgExtremes<LinkKey, OnRun>
+ride_end.cand([Ch, Col, E, F], [[Q, D, A, F], S0], K) :-
+    ride.distance([Ch, Col, E], [[Q, D, A, F], S0], K),
+    end(Ch, Col, F), F != E, piece.label(Col, Q, F),
+    bends.distance([Ch, Col, E], S0, T), fewest_bends.low([Ch, Col, E, F], T).
+
+// The states of the walks that arrive, traced back to the end they start
+// from.
+.init ride_route = Propagation<PieceKey, OnRun>
+ride_route.source([Ch, Col, E], R) :- ride_end.low([Ch, Col, E, _], R, _).
+ride_route.edge(Ky, R2, R) :- ride.pred(Ky, R2, R).
+
+path(Ch, Col, P) :- ride_route.reached([Ch, Col, _], [[P, _, _, _], _]).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some input.
+    .decl outnumbered(col: Color)
+    outnumbered(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !outnumbered(Col).
+
+    // The pieces of each color in each train output.
+    .init out_piece = Components<ExampleColor>
+    out_piece.node([E, Col], P) :- ex_out(E, P, Col).
+
+    // A color that some train output leaves in more than one piece.
+    .decl split(col: Color)
+    split(Col) :- out_piece.label([E, Col], _, Id), out_piece.label([E, Col], _, Id2), Id != Id2.
+
+    .decl wall_color(c: Color)
+    wall_color(Col) :- split(Col), !background(Col).
+}

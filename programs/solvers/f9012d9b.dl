@@ -1,0 +1,184 @@
+// f9012d9b
+// @draft
+// @keywords: wallpaper repair crop symmetry
+// @scene periodic-pattern: every cell outside the patch belongs to a pattern
+//  that repeats with one period along the rows and one along the columns, each
+//  period shorter than the grid on its axis.
+// @scene one-rectangular-hole: the cells of `hole_color` (0) form one solid
+//  rectangle, and no other cell has that color.
+// @rule least-period: the periods are the least pair, the row period first, at
+//  which every two non-hole cells whose row distance is a multiple of the row
+//  period and whose column distance is a multiple of the column period hold one
+//  color.
+// @rule fill-from-period: each hole cell takes the color of a non-hole cell at
+//  a distance from it that is a multiple of the period on each axis.
+// @rule crop-to-hole: the output is the hole's rectangle, filled, cut out of
+//  the grid.
+
+// which cells are the hole
+.type Hole =
+    // @claim one-rectangular-hole
+    ColorHole {}
+    // @scene one-rectangular-hole: the hole is the one color whose cells form a
+    //  single solid rectangle; undefined where no color does, or more than one.
+    // @witness hole-in-other-color: variant $HoleByShape
+    //     @relaxed one-rectangular-hole
+  | HoleByShape {}
+
+// which cells a hole cell reads its color from
+.type Source =
+    // @claim fill-from-period
+    Lattice {}
+    // @rule fill-from-period: a hole cell also reads its images under the
+    //  grid's symmetries that the visible cells witness and none contradicts,
+    //  closed under the periods; undefined where a cell stays unreached or two
+    //  sources disagree.
+    // @witness hidden-residue: borderline $PeriodAndSymmetry
+  | PeriodAndSymmetry {}
+    // @rule fill-from-period: a hole cell takes the color of a visible cell
+    //  exactly one period away on one axis or both; undefined where all eight
+    //  such cells are hidden or off the grid.
+    // @witness hole-beyond-neighbor-tile: variant concept
+    // @witness rows-no-period: borderline $CopyNeighborTile
+    //     @relaxed periodic-pattern
+    // @witness split-residue: foreign $CopyNeighborTile
+    //     @relaxed periodic-pattern
+  | CopyNeighborTile {}
+
+.type Choice = [h: Hole, r: Source]
+
+// A cell of the grid under one hole case.
+.type HoleCell = [h: Hole, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $ColorHole ---
+    // the color that marks the blanked-out cells
+    // @derive RarestColor: variant derived
+    //     @relaxed one-rectangular-hole
+    .decl hole_color(c: Color) hole_color(0).
+}
+
+.init params = Params
+
+.decl hole_choice(h: Hole)
+hole_choice($ColorHole()). hole_choice($HoleByShape()).
+
+.comp Parse<Key> {
+    .type KeyColor = [k: Key, col: Color]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // Each color's bounding box.
+    // @claim one-rectangular-hole
+    .init color_box = Bbox<KeyColor>
+    color_box.cell([K, Col], P) :- cell(K, P, Col).
+
+    // A color with a cell of another color inside its bounding box.
+    .decl gapped(k: Key, col: Color)
+    gapped(K, Col) :- color_box.box([K, Col], B), cell(K, P, _), crop(P, B, _), !cell(K, P, Col).
+
+    // A color whose cells form one solid rectangle.
+    .decl solid(k: Key, col: Color)
+    solid(K, Col) :- color_box.box([K, Col], _), !gapped(K, Col).
+}
+
+// The hole's cells, per hole case.
+.decl hole(h: Hole, p: Position)
+
+// The cells outside the hole, with their colors.
+.decl intact(h: Hole, p: Position, col: Color)
+intact(H, P, Col) :- hole_choice(H), in(P, Col), !hole(H, P).
+
+// The pattern's least period on each axis.
+// @claim least-period
+.init si = OffsetInvariance<Hole, Color>
+si.cell(H, P, Col) :- intact(H, P, Col).
+
+// @claim crop-to-hole
+.init hole_box = Bbox<Hole>
+hole_box.cell(H, P) :- hole(H, P).
+
+// The color each hole cell takes, per case.
+.decl fill(ch: Choice, p: Position, col: Color)
+
+out(P_inner, Col, [H, R]) :- fill([H, R], P, Col), hole_box.box(H, B), crop(P, B, P_inner).
+
+// --- $ColorHole ---
+
+hole($ColorHole(), P) :- in(P, Col), params.hole_color(Col).
+
+// --- $HoleByShape ---
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The one color that fills its bounding box.
+// @claim one-rectangular-hole
+.init solid = Unanimous<Unit, Color>
+solid.item($U(), Col) :- parse.solid($U(), Col).
+
+hole($HoleByShape(), P) :- solid.value($U(), Col), in(P, Col).
+
+// --- $Lattice ---
+
+// A cell's residue class under the periods: toward each edge, its distance
+// from that edge within the period.
+.init residue = DirPack<HoleCell>
+residue.edge([H, P], D, R) :-
+    in(P, _), axis_of(D, A), si.min_period(H, A, K), dist(P, D, T), stride(T, K, 0, _, R).
+
+// The color the intact cells of a residue class hold; b is the class's
+// residues toward the four edges.
+// @ignore: single-consumer — one row per class, where a join in `fill` holds one per pair of cells in a class
+.decl residue_color(h: Hole, b: Box, col: Color)
+residue_color(H, B, Col) :- residue.box([H, Q], B), intact(H, Q, Col).
+
+fill([H, $Lattice()], P, Col) :- hole(H, P), residue.box([H, P], B), residue_color(H, B, Col).
+
+// --- $PeriodAndSymmetry ---
+
+// The pattern's symmetries, each with its period translations.
+// @claim fill-from-period
+.init wp = Wallpaper<Hole, Color>
+wp.transform(D) :- d4_elem(D).
+wp.cell(H, P, Col) :- intact(H, P, Col).
+wp.grid(H, P) :- hole_choice(H), in(P, _).
+wp.period(H, A, K) :- si.min_period(H, A, K).
+
+// The orbits of the frame positions under the symmetries.
+.init orbit = Canon<HoleCell>
+orbit.edge([H, P], [H, Q]) :- wp.action(H, P, Q).
+
+// The color the intact cells of an orbit hold.
+// @ignore: single-consumer — one row per orbit, where a join in `fill` holds one per pair of cells in an orbit
+.decl orbit_color(id: Ident, col: Color)
+orbit_color(Id, Col) :- orbit.id([H, Q], Id), intact(H, Q, Col).
+
+fill([H, $PeriodAndSymmetry()], P, Col) :- hole(H, P), orbit.id([H, P], Id), orbit_color(Id, Col).
+
+// --- $CopyNeighborTile ---
+
+// A visible cell one period away on one axis, or on both.
+fill([H, $CopyNeighborTile()], P, Col) :-
+    hole(H, P), axis_of(D, A), si.min_period(H, A, K), jump(P, D, K, Q1),
+    ( Q = Q1                                                        // one axis
+    ; perp(A, A2), axis_of(D2, A2), si.min_period(H, A2, K2),       // both axes
+      jump(Q1, D2, K2, Q)
+    ),
+    intact(H, Q, Col).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // A color that some train input lacks, or holds in other than one solid
+    // rectangle.
+    .decl not_solid(c: Color)
+    not_solid(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !ex.solid(E, Col).
+
+    // The color whose cells form one solid rectangle in every train input.
+    .decl hole_color(c: Color)
+    hole_color(Col) :- ex_in(_, _, Col), !not_solid(Col).
+}

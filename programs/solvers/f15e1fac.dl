@@ -1,0 +1,120 @@
+// f15e1fac
+// @draft
+// @keywords: markers cast walk
+// @scene seeds-on-one-edge: cells of the seed color (8) lie on one edge of the
+//  grid, the seed edge, and on no other edge line.
+// @scene markers-on-adjacent-edge: cells of the marker color (2) lie on one edge
+//  perpendicular to the seed edge, the marker edge, and not on the seed edge.
+// @rule ray-across: each seed starts a line of the seed color that runs from
+//  the seed edge across the grid, perpendicular to the seed edge.
+// @rule kink-at-marker: at each marker's line across the rays (the row or
+//  column it sits on, parallel to the seed edge), every ray, from that line on,
+//  steps `step` cells away from that marker's own edge; the steps add up marker
+//  by marker.
+// @rule clip-off-grid: the part of a ray that steps past the grid's edge is
+//  dropped, with no wrap.
+// @rule markers-kept: markers stay as they are, and every other cell is
+//  background.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl seed_color(c: Color) seed_color(8).
+    .decl marker_color(c: Color) marker_color(2).
+    // the cells each ray steps sideways at each marker
+    .decl step(k: number) step(1).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // The edge the seeds lie on.
+    .decl seed_edge(k: Key, d: Dir)
+    seed_edge(K, D) :- params.seed_color(Col), cell(K, P, Col), dir_elem(D), dist(P, D, 0).
+
+    // A marker cell and the edge it lies on, perpendicular to the seed edge.
+    .decl marker(k: Key, m: Position, d: Dir)
+    marker(K, M, D) :-
+        params.marker_color(Col), cell(K, M, Col),
+        seed_edge(K, D_s), perp_dir(D_s, D), dist(M, D, 0).
+
+    // Cell p's line, parallel to the seed edge, holds a marker on edge d_m.
+    .decl marker_line(k: Key, p: Position, d_m: Dir)
+    marker_line(K, P, D_m) :-
+        cell(K, P, _), seed_edge(K, D_s), marker(K, M, D_m), same_dist(D_s, P, M).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// A marker on p's line steps the rays toward d, away from the marker's edge.
+.decl kink(p: Position, d: Dir)
+kink(P, D) :- parse.marker_line($U(), P, D_m), opposite(D_m, D).
+
+// The net step on p's line: a kink that no kink the other way cancels.
+.decl kinked(p: Position, d: Dir)
+kinked(P, D) :- kink(P, D), opposite(D, D2), !kink(P, D2).
+
+// Each ray advances one line away from the seed edge, and steps sideways on a
+// kinked line. A ray cell off the grid advances no further.
+.init ray = Propagation<Unit, Position>
+ray.source($U(), P) :- params.seed_color(Col), in(P, Col).
+ray.edge($U(), P, Q) :-
+    in(P, _), parse.seed_edge($U(), D_s), opposite(D_s, D_r),
+    neighbor(P, D_r, Q0),                                // the next line
+    ( kinked(Q0, D), params.step(K), jump(Q0, D, K, Q)  // stepped sideways
+    ; !kinked(Q0, _), Q = Q0                            // straight on
+    ).
+
+out(P, Col) :- ray.reached($U(), P), in(P, _), params.seed_color(Col).
+out(P, Col) :- in(P, Col), !ray.reached($U(), P).
+
+.comp Determine {
+    // Train pairs only: the ex_out atom holds the test inputs out.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // The color the output paints over cells of another color: the rays.
+    .decl seed_color(c: Color)
+    seed_color(Col) :- ex_out(E, P, Col), !ex_in(E, P, Col).
+
+    // A color some of whose input cells the output changes.
+    .decl changed(c: Color)
+    changed(Col) :- ex_in(E, P, Col), ex_out(E, P, _), !ex_out(E, P, Col).
+
+    // The markers keep every cell, and the output paints none.
+    // @ignore: determine prediction — the background is told from the markers
+    //  only by the cells the rays paint over, a test of inputs and outputs
+    //  together.
+    .decl marker_color(c: Color)
+    marker_color(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !changed(Col), !seed_color(Col).
+
+    .decl ray_out(e: Example, p: Position)
+    ray_out(E, P) :- ex_out(E, P, Col), seed_color(Col).
+
+    // A ray cell p before a marker's line advances to q0 on that line, and
+    // steps toward d there.
+    .decl advance(e: Example, p: Position, q0: Position, d: Dir)
+    advance(E, P, Q0, D) :-
+        parse.marker_line(E, Q0, D_m), opposite(D_m, D),
+        parse.seed_edge(E, D_s), opposite(D_s, D_r), neighbor(P, D_r, Q0), ray_out(E, P).
+
+    // The steps the grid has room for.
+    .decl cand(k: number)
+    cand(K) :- advance(E, _, Q0, D), axis_of(D, A), sub_extent(Q0, A, K).
+
+    // A step that takes an advanced ray cell onto a grid cell the rays miss,
+    // or that no advanced ray cell reaches a ray cell on a marker's line from.
+    .decl contradicted(k: number)
+    contradicted(K) :-
+        cand(K), advance(E, _, Q0, D), jump(Q0, D, K, Q),
+        ex_out(E, Q, _), !ray_out(E, Q).
+    contradicted(K) :-
+        cand(K), parse.marker_line(E, Q, D_m), ray_out(E, Q),
+        jump(Q, D_m, K, Q0), opposite(D_m, D), !advance(E, _, Q0, D).
+
+    .decl step(k: number)
+    step(K) :- cand(K), !contradicted(K).
+}

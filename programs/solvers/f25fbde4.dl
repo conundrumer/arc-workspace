@@ -1,0 +1,171 @@
+// f25fbde4
+// @draft
+// @keywords: crop scale objects rank count
+// @scene blank-field: the grid is filled with the background color bg (0)
+//  apart from a drawing.
+// @scene one-drawing: the non-background cells form one small drawing of one
+//  color, ink (4), whose cells all join, at an edge or at a corner, set
+//  somewhere inside the grid.
+// @rule crop-to-drawing: the output frame is the bounding box of the
+//  non-background cells.
+// @rule scale-up: each cell of the bounding box becomes a factor × factor
+//  block of the same color in the output.
+
+// Which cells the cropped box bounds.
+.type CropCells =
+    // @claim crop-to-drawing
+    NonBg {}
+    // @rule crop-to-drawing: the bounding box of the cells of the stored color
+    //  ink; undefined where no cell has the color ink.
+    // @witness second-color-joined: variant concept
+    //     @relaxed one-drawing
+  | CropInkColor {}
+
+// How much of the selected cells the box bounds.
+.type CropExtent =
+    // @claim crop-to-drawing
+    AllSelected {}
+    // @rule crop-to-drawing: the bounding box of the largest 8-connected
+    //  component of the selected cells; undefined where two components tie
+    //  for largest, or where no cell is selected.
+    // @witness second-drawing-apart: variant concept
+    //     @relaxed one-drawing
+  | CropObject8 {}
+
+// Where the scale factor comes from.
+.type FactorSource =
+    // @claim scale-up
+    SharedFactor {}
+    // @rule scale-up: the block side is the number of distinct colors in the
+    //  input, background included.
+    // @witness two-color-drawing: variant concept
+    //     @relaxed one-drawing
+    // @witness second-color-joined: variant concept
+  | FactorColorCount {}
+    // @rule scale-up: each cell becomes a block whose side on each axis is
+    //  that axis's own stored factor.
+    // @witness uneven-scale: ordinary $FactorPerAxis
+    //     @reassigned axis_factor
+  | FactorPerAxis {}
+
+.type Choice = [cells: CropCells, extent: CropExtent, factor: FactorSource]
+
+// The selected cells, and the extent of them the box bounds.
+.type CropKey = [cells: CropCells, extent: CropExtent]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $NonBg ---
+    // @derive DominantColor: borderline concept
+    //     @relaxed one-drawing
+    //     @relaxed blank-field
+    .decl bg(c: Color) bg(0).
+
+    // --- $CropInkColor ---
+    // @derive RarestColor: variant concept
+    //     @relaxed one-drawing
+    .decl ink(c: Color) ink(4).
+
+    // --- $SharedFactor ---
+    // The side of the block each cell of the cropped drawing becomes.
+    .decl factor(k: number) factor(2).
+
+    // --- $FactorPerAxis ---
+    .decl axis_factor(a: Axis, k: number)
+    axis_factor(AXIS_V, 2).
+    axis_factor(AXIS_H, 2).
+}
+
+.init params = Params
+
+// The cells the box may bound.
+.decl selected(c: CropCells, p: Position)
+
+// The cells the box bounds.
+.decl bounded(k: CropKey, p: Position)
+
+// @claim crop-to-drawing
+.init box = Bbox<CropKey>
+box.cell(K, P) :- bounded(K, P).
+
+// The box's cells, in the box's own frame.
+.decl cropped(k: CropKey, p_inner: Position, col: Color)
+cropped(K, P_inner, Col) :- box.box(K, B), in(P, Col), crop(P, B, P_inner).
+
+// The block each cell becomes.
+.init block = Frame2D<FactorSource>
+
+out(P_grid_out, Col, [C, E, F]) :-
+    cropped([C, E], P_tile, Col),                   // cropped cell as tile pos
+    block.cell(F, P_intile),                        // cell within its block
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// --- $NonBg ---
+selected($NonBg(), P) :- in(P, Col), !params.bg(Col).
+
+// --- $CropInkColor ---
+selected($CropInkColor(), P) :- in(P, Col), params.ink(Col).
+
+// --- $AllSelected ---
+bounded([C, $AllSelected()], P) :- selected(C, P).
+
+// --- $CropObject8 ---
+// @claim crop-to-drawing
+.init piece = Components8<CropCells>
+piece.node(C, P) :- selected(C, P).
+
+// The pieces with the most cells.
+// @claim crop-to-drawing
+.init size = Mode<CropCells, Ident, Position>
+size.item(C, Id, P) :- piece.label(C, P, Id).
+
+// The largest piece, where no other ties it.
+// @claim crop-to-drawing
+.init largest = Unanimous<CropCells, Ident>
+largest.item(C, Id) :- size.mode(C, Id).
+
+bounded([C, $CropObject8()], P) :- largest.value(C, Id), piece.label(C, P, Id).
+
+// --- $SharedFactor ---
+block.extent($SharedFactor(), A, K) :- axis_elem(A), params.factor(K).
+
+// --- $FactorColorCount ---
+// @claim scale-up
+.init palette = Tally<Unit, Color>
+palette.item($U(), Col) :- in(_, Col).
+
+block.extent($FactorColorCount(), A, N) :- axis_elem(A), palette.tally($U(), N).
+
+// --- $FactorPerAxis ---
+block.extent($FactorPerAxis(), A, K) :- params.axis_factor(A, K).
+
+.comp Determine {
+    // Each train input's drawing box.
+    .init box = Bbox<Example>
+    box.cell(E, P) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
+
+    // The drawing box's extent on axis a, cut into blocks of side k, fills
+    // the output's extent on that axis.
+    .decl fits(e: Example, a: Axis, k: number)
+    fits(E, A, K) :-
+        box.box(E, B), box.cell(E, P), box_extent(B, P, A, N),   // box extent
+        ex_out(E, Q, _), axis_dim(Q, A, Ext),                    // output extent
+        tile_size(Ext, N, 0, K).
+
+    // Some train pair on axis a admits no block of side k.
+    .decl misfit(a: Axis, k: number)
+    misfit(A, K) :- fits(_, _, K), axis_elem(A), box.box(E, _), !fits(E, A, K).
+
+    // The drawing's color.
+    .decl ink(c: Color)
+    ink(Col) :- ex_in(_, _, Col), !params.bg(Col).
+
+    // @ignore: determine prediction — tile_size reads the block side from the box and output extents; misfit drops a side some pair contradicts
+    .decl factor(k: number)
+    factor(K) :- fits(_, _, K), !misfit(_, K).
+
+    // @ignore: determine prediction — tile_size reads the block side from the box and output extents; misfit drops a side some pair contradicts
+    .decl axis_factor(a: Axis, k: number)
+    axis_factor(A, K) :- fits(_, A, K), !misfit(A, K).
+}

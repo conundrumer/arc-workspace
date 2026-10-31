@@ -1,0 +1,193 @@
+// f3e14006
+// @draft
+// @keywords: lines markers span wallpaper parity cross
+// @scene two-crossing-lines: on a field of params.background, one straight
+//  line runs along params.bar_axis (the bar line) and one runs across it (the
+//  cross line), and the two meet at one cell.
+// @scene line-colors: each line has a base color and exactly two cells of a
+//  mark color of its own; the four colors are distinct, and the crossing cell
+//  holds one line's base color.
+// @scene cross-marks-one-side: both marks of the cross line lie on one side of
+//  the bar line.
+// @rule rectangle: the output keeps only a rectangle on a field of
+//  params.background; its extent along params.bar_axis is the span between
+//  the bar line's two marks, and its extent across is the span from the bar
+//  line to the farther mark of the cross line.
+// @rule lattice: the hole lines along params.bar_axis are those a whole
+//  number of params.period lines from the bar line, and the hole lines across
+//  it are those a whole number of params.period lines from the rectangle's
+//  params.along_start edge; a cell on hole lines of both axes is a hole, a
+//  line along params.bar_axis that is no hole line is a bar thread, and a line
+//  across it that is no hole line is a cross thread.
+// @rule thread-colors: a bar thread takes the bar line's base color and a
+//  cross thread the cross line's base color; where two threads cross, the
+//  cell takes the base color the input's crossing cell shows.
+// @rule hole-colors: a hole on a line along params.bar_axis that meets the
+//  cross line within the span of the cross line's two marks takes the cross
+//  line's mark color, and every other hole takes the bar line's mark color.
+
+// which end of the rectangle, across the bar axis, starts with a hole line
+.type AnchorAcross =
+    // @claim lattice
+    AnchorAcrossBarLine {}
+    // @rule lattice: the hole lines along params.bar_axis start at the
+    //  rectangle's params.across_start edge in place of the bar line.
+    // @witness anchor-across-bar-line: ordinary concept
+  | AnchorAcrossSide {}
+
+// which end of the rectangle, along the bar axis, starts with a hole line
+.type AnchorAlong =
+    // @claim lattice
+    AnchorAlongSide {}
+    // @rule lattice: the hole lines across params.bar_axis start at the bar
+    //  mark nearer the cross line in place of the params.along_start edge, and
+    //  at both bar marks where the two are equally near.
+    // @witness anchor-along-near-cross: ordinary concept
+  | AnchorAlongNearCross {}
+
+.type Choice = [across: AnchorAcross, along: AnchorAlong]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed two-crossing-lines
+    .decl background(c: Color) background(0).
+    // the axis the bar line runs along, whose marks give the rectangle's width
+    .decl bar_axis(a: Axis) bar_axis(AXIS_H).
+    // the lattice repeats every period lines on each axis
+    .decl period(k: number) period(2).
+
+    // --- $AnchorAcrossSide ---
+    // the rectangle's edge, across the bar axis, that hole lines start from
+    .decl across_start(d: Dir) across_start(DIR_T).
+
+    // --- $AnchorAlongSide ---
+    // the rectangle's edge, along the bar axis, that hole lines start from
+    .decl along_start(d: Dir) along_start(DIR_L).
+}
+
+.init params = Params
+
+.decl anchor_across_choice(f: AnchorAcross)
+anchor_across_choice($AnchorAcrossBarLine()). anchor_across_choice($AnchorAcrossSide()).
+
+.decl anchor_along_choice(f: AnchorAlong)
+anchor_along_choice($AnchorAlongSide()). anchor_along_choice($AnchorAlongNearCross()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Fa, Fl]) :- anchor_across_choice(Fa), anchor_along_choice(Fl).
+
+// The cells of the two lines.
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background(Col).
+
+// A cell of the line that runs along axis a: it shares that line with another
+// line cell.
+.decl line_cell(a: Axis, p: Position)
+line_cell(A, P) :- ink(P), ink(Q), P != Q, axis_elem(A), same_line(A, P, Q).
+
+// The cell where the two lines meet.
+.decl crossing(p: Position, col: Color)
+crossing(P, Col) :- line_cell(A, P), perp(A, A2), line_cell(A2, P), in(P, Col).
+
+// A line's base color is the commonest color of its cells off the crossing.
+// @claim line-colors
+.init line_color = Mode<Axis, Color, Position>
+line_color.item(A, Col, P) :- line_cell(A, P), !crossing(P, _), in(P, Col).
+
+// A mark of the line along axis a: a cell off the crossing that is not of the
+// line's base color.
+.decl mark(a: Axis, p: Position, col: Color)
+mark(A, P, Col) :- line_color.item(A, Col, P), !line_color.mode(A, Col).
+
+// The rectangle bounds the bar marks and the cells where a bar mark's line
+// across the bar axis meets a cross mark's line along it.
+// @claim rectangle
+.init rect = Bbox<Unit>
+rect.cell($U(), M) :- params.bar_axis(A), mark(A, M, _).
+rect.cell($U(), Q) :-
+    perp(A, A2), mark(A, M, _), mark(A2, N, _),
+    in(Q, _), same_line(A, Q, N), same_line(A2, Q, M).
+
+// A cell of the rectangle, in the rectangle's own frame.
+.decl rect_cell(p: Position, p_inner: Position)
+rect_cell(P, P_inner) :- in(P, _), rect.box($U(), B), crop(P, B, P_inner).
+
+// The rectangle's edge, across the bar axis, that its hole lines start from.
+.decl anchor_across(d: Dir, f: AnchorAcross)
+
+// --- $AnchorAcrossBarLine ---
+// The edge the bar line lies on.
+anchor_across(D, $AnchorAcrossBarLine()) :-
+    params.bar_axis(A), perp(A, A2), axis_of(D, A2),
+    mark(A, M, _), rect.box($U(), B), box_edge(M, B, D).
+
+// --- $AnchorAcrossSide ---
+anchor_across(D, $AnchorAcrossSide()) :- params.across_start(D).
+
+// The rectangle's edge, along the bar axis, that its hole lines start from.
+.decl anchor_along(d: Dir, f: AnchorAlong)
+
+// --- $AnchorAlongSide ---
+anchor_along(D, $AnchorAlongSide()) :- params.along_start(D).
+
+// --- $AnchorAlongNearCross ---
+// The edge whose bar mark the crossing is no farther from than from the other.
+anchor_along(D, $AnchorAlongNearCross()) :-
+    params.bar_axis(A), axis_of(D, A), crossing(X, _), rect.box($U(), B),
+    relative(B, X, X_rel), dist_pair(X_rel, D, K, K2), K <= K2.
+
+// --- $AnchorAcrossBarLine, $AnchorAcrossSide ---
+// A rectangle cell a whole number of periods from edge d.
+.decl even(p: Position, d: Dir)
+even(P, D) :-
+    rect_cell(P, P_inner), dir_elem(D), dist(P_inner, D, K),
+    params.period(W), stride(K, W, 0, _, 0).
+
+// A rectangle cell whose line across the bar axis is even from the anchor edge.
+.decl even_across(p: Position, f: AnchorAcross)
+even_across(P, F) :- anchor_across(D, F), even(P, D).
+
+// A rectangle cell whose line along the bar axis is even from the anchor edge.
+.decl even_along(p: Position, f: AnchorAlong)
+even_along(P, F) :- anchor_along(D, F), even(P, D).
+
+// The span of the cross line's marks.
+// @claim hole-colors
+.init cross_span = Bbox<Unit>
+cross_span.cell($U(), N) :- params.bar_axis(A), perp(A, A2), mark(A2, N, _).
+
+// A rectangle cell whose line along the bar axis meets the cross line within
+// the span of its marks.
+.decl in_cross_span(p: Position)
+in_cross_span(P) :-
+    rect_cell(P, _), params.bar_axis(A), perp(A, A2), line_cell(A2, Q),
+    same_line(A, P, Q), cross_span.box($U(), B), inside(Q, B).
+
+.decl woven(p: Position, col: Color, ch: Choice)
+woven(P, Col, [Fa, Fl]) :-
+    rect_cell(P, _), impl_choice([Fa, Fl]), params.bar_axis(A), perp(A, A2),
+    ( even_across(P, Fa), even_along(P, Fl), in_cross_span(P), mark(A2, _, Col)     // hole in the cross marks' span
+    ; even_across(P, Fa), even_along(P, Fl), !in_cross_span(P), mark(A, _, Col)     // other hole
+    ; !even_across(P, Fa), even_along(P, Fl), line_color.mode(A, Col)               // bar thread
+    ; even_across(P, Fa), !even_along(P, Fl), line_color.mode(A2, Col)              // cross thread
+    ; !even_across(P, Fa), !even_along(P, Fl), crossing(_, Col)                     // threads crossing
+    ).
+
+out(P, Col, Ch) :- woven(P, Col, Ch).
+out(P, Col, Ch) :-
+    in(P, _), rect.box($U(), _), !rect_cell(P, _), impl_choice(Ch), params.background(Col).
+
+.comp Determine {
+    // The commonest color of each train input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col), ex_out(E, _, _).
+
+    // A color that some train input's commonest color is not.
+    .decl background_defect(c: Color)
+    background_defect(Col) :- common.mode(_, Col), common.item(E, _, _), !common.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- common.mode(_, Col), !background_defect(Col).
+}

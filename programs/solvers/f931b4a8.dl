@@ -1,0 +1,184 @@
+// f931b4a8
+// @draft
+// @keywords: decompose tile-arrangement count scale
+// @scene four-quadrants: the input is a square of even side, cut into four equal square quadrants.
+// @scene pattern-quadrant: the `pattern_quad` quadrant holds a pattern of non-`bg` colors with at
+//  least one `bg` hole.
+// @scene fill-quadrant: the `fill_quad` quadrant has no `bg` cell; each of its cells is a fill color.
+// @scene count-quadrants: each quadrant in `count_quad` holds at least one non-`bg` cell on `bg`,
+//  and at most as many as the quadrant has cells.
+// @rule output-size: the output's extent along each axis is the number of non-`bg` cells in that
+//  axis's `count_quad` quadrant.
+// @rule tile-pattern: the output is covered by copies of the pattern quadrant, laid edge to edge
+//  from the `anchor` corner of the output, and cut off at the far edges.
+// @rule fill-holes-scaled: in the tile i tiles down and j tiles across from the `anchor` corner,
+//  each `bg` cell takes the color of the fill quadrant's cell i rows down and j columns across
+//  from its own `anchor` corner. Every other cell keeps the pattern's color.
+
+// what one tile of the output is
+.type Tile =
+    // @claim tile-pattern
+    Quadrant {}
+    // @rule tile-pattern: the tile is the bounding box of the pattern quadrant's non-`bg` cells;
+    //  undefined where the pattern quadrant has no non-`bg` cell
+    // @witness hole-row-at-pattern-edge: ordinary concept
+  | TileByBbox {}
+
+// how a tile index that passes the fill grid reads it
+.type FillPast =
+    // @claim fill-holes-scaled
+    Direct {}
+    // @rule fill-holes-scaled: the tile index wraps around the fill grid's extent on each axis
+    // @witness fill-index-past-fill-grid: foreign $FillIndexWrap
+    //     @relaxed four-quadrants
+  | FillIndexWrap {}
+
+// the corner the fill grid's cells are counted from
+.type FillCorner =
+    // @claim fill-holes-scaled
+    SharedAnchor {}
+    // @rule fill-holes-scaled: the fill grid's cells are counted from `fill_anchor`, a corner
+    //  stored apart from `anchor`
+    // @witness fill-read-from-other-corner: borderline $SeparateFillAnchor
+    //     @reassigned fill_anchor
+  | SeparateFillAnchor {}
+
+.type Choice = [t: Tile, f: FillPast, c: FillCorner]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    // the tile count of the quadrant split on each axis
+    .decl quads(n: number) quads(2).
+    .decl pattern_quad(q: DiagDir) pattern_quad(DIAG_BR).
+    .decl fill_quad(q: DiagDir) fill_quad(DIAG_BL).
+    // the quadrant whose non-bg count gives the output's extent along each axis
+    .decl count_quad(a: Axis, q: DiagDir)
+    count_quad(AXIS_V, DIAG_TL).
+    count_quad(AXIS_H, DIAG_TR).
+    // the corner the tiling starts from
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+
+    // --- $SeparateFillAnchor ---
+    .decl fill_anchor(d: DiagDir) fill_anchor(DIAG_TL).
+}
+
+.init params = Params
+
+.decl tile_choice(t: Tile)
+tile_choice($Quadrant()). tile_choice($TileByBbox()).
+
+.decl fill_past_choice(f: FillPast)
+fill_past_choice($Direct()). fill_past_choice($FillIndexWrap()).
+
+.decl fill_corner_choice(c: FillCorner)
+fill_corner_choice($SharedAnchor()). fill_corner_choice($SeparateFillAnchor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, F, R]) :- tile_choice(T), fill_past_choice(F), fill_corner_choice(R).
+
+.comp Parse<Key> {
+    .type KeyQuad = [key: Key, q: DiagDir]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // Each cell with its quadrant and its place in that quadrant.
+    .decl quad_cell(key: Key, q: DiagDir, p: Position, col: Color)
+    quad_cell(K, Q, P_intile, Col) :-
+        cell(K, P_grid, Col), params.quads(N), divide_2d(P_grid, N, 0, P_tile, P_intile),
+        box_corner(P_tile, ZERO, Q).
+
+    // The non-bg cells of each quadrant.
+    // @claim output-size
+    .init ink_count = Tally<KeyQuad, Position>
+    ink_count.item([K, Q], P) :- quad_cell(K, Q, P, Col), !params.bg(Col).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The output frame: one line per non-bg cell of the axis's count quadrant.
+.init frame = Frame2D<Unit>
+frame.extent($U(), A, N) :- params.count_quad(A, Q), parse.ink_count.tally([$U(), Q], N).
+
+// The cells of one tile, in the tile's own frame.
+.decl tile_cell(t: Tile, p: Position, col: Color)
+
+// Each output cell's tile, counted in tiles from the anchor corner along axis A, and its
+// place in that tile, counted in cells from the same corner.
+.decl tile_place(t: Tile, p: Position, a: Axis, n: number, k: number)
+tile_place(T, P, A, N, K) :-
+    frame.cell($U(), P), params.anchor(D), dir_of(D, A, E), dist(P, E, X),
+    tile_cell(T, Q, _), axis_dim(Q, A, W), stride(X, W, 0, N, K).   // W: the tile's extent
+
+// The fill-grid line a tile index reads.
+// @ignore: head-repeat — under $Direct the line is the tile index itself; $FillIndexWrap changes it
+.decl fill_index(f: FillPast, t: Tile, a: Axis, n: number, m: number)
+
+// The corner the fill grid's cells are counted from.
+.decl fill_corner(c: FillCorner, d: DiagDir)
+
+// The fill color M1 lines from the corner's edge on axis A and M2 across.
+.decl fill_cell(c: FillCorner, a: Axis, m1: number, m2: number, col: Color)
+fill_cell(R, A, M1, M2, Col) :-
+    fill_corner(R, D), params.fill_quad(Q), parse.quad_cell($U(), Q, P, Col), diag_dist(P, D, A, M1, M2).
+
+out(P, Col, [T, F, R]) :-
+    impl_choice([T, F, R]),
+    tile_place(T, P, A, N1, K1), perp(A, A2), tile_place(T, P, A2, N2, K2),
+    params.anchor(D), tile_cell(T, Q, C), diag_dist(Q, D, A, K1, K2),   // the tile cell there
+    ( !params.bg(C), Col = C                                            // pattern color kept
+    ; params.bg(C), fill_index(F, T, A, N1, M1), fill_index(F, T, A2, N2, M2),
+      fill_cell(R, A, M1, M2, Col)                                      // hole filled
+    ).
+
+// --- $Quadrant ---
+tile_cell($Quadrant(), P, Col) :- params.pattern_quad(Q), parse.quad_cell($U(), Q, P, Col).
+
+// --- $TileByBbox ---
+// @claim tile-pattern
+.init ink_box = Bbox<Unit>
+ink_box.cell($U(), P) :- params.pattern_quad(Q), parse.quad_cell($U(), Q, P, Col), !params.bg(Col).
+
+tile_cell($TileByBbox(), P_inner, Col) :-
+    params.pattern_quad(Q), parse.quad_cell($U(), Q, P, Col), ink_box.box($U(), B), crop(P, B, P_inner).
+
+// --- $Direct ---
+fill_index($Direct(), T, A, N, N) :- tile_place(T, _, A, N, _).
+
+// --- $FillIndexWrap ---
+fill_index($FillIndexWrap(), T, A, N, M) :-
+    tile_place(T, _, A, N, _),
+    params.fill_quad(Q), parse.quad_cell($U(), Q, P, _), axis_dim(P, A, W),   // W: the fill grid's extent
+    stride(N, W, 0, _, M).
+
+// --- $SharedAnchor ---
+fill_corner($SharedAnchor(), D) :- params.anchor(D).
+
+// --- $SeparateFillAnchor ---
+fill_corner($SeparateFillAnchor(), D) :- params.fill_anchor(D).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // Quadrant q of input e holds a bg cell.
+    .decl bg_at(e: Example, q: DiagDir)
+    bg_at(E, Q) :- ex.quad_cell(E, Q, _, Col), params.bg(Col).
+
+    // Quadrant q of input e holds a non-bg cell.
+    .decl ink_at(e: Example, q: DiagDir)
+    ink_at(E, Q) :- ex.quad_cell(E, Q, _, Col), !params.bg(Col).
+
+    // The quadrant no input has a bg cell in.
+    .decl fill_quad(q: DiagDir)
+    fill_quad(Q) :- ex.quad_cell(_, Q, _, _), !bg_at(_, Q).
+
+    // Some input's quadrant q lacks a bg cell or a non-bg cell.
+    .decl not_pattern(q: DiagDir)
+    not_pattern(Q) :- ex.quad_cell(E, Q, _, _), ( !bg_at(E, Q) ; !ink_at(E, Q) ).
+
+    .decl pattern_quad(q: DiagDir)
+    pattern_quad(Q) :- ex.quad_cell(_, Q, _, _), !not_pattern(Q).
+}

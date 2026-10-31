@@ -1,0 +1,77 @@
+{
+  "id": "fd4b2b02",
+  "witnesses": [{
+    "id": "two-bars",
+    "separates": "two 6 bars, the second where the first's down-right chain puts a 6 bar: the concept takes the bounding box of every non-background cell as one bar and runs chains from that 5x4 box; $PerBar runs each bar's own chains, which coincide where they meet",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,6,0,0,0,0,0,0,0],
+      [0,0,6,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,6,0,0,0,0],
+      [0,0,0,0,0,6,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": [
+        [3,3,0,0,0,0,3,3,3,3],
+        [3,3,0,0,0,0,3,3,3,3],
+        [0,0,6,0,0,0,0,0,0,0],
+        [0,0,6,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,6,0,0,0,0],
+        [0,0,0,0,0,6,0,0,0,0],
+        [3,3,0,0,0,0,3,3,3,3],
+        [3,3,0,0,0,0,3,3,3,3],
+        [3,3,0,0,0,0,3,3,3,3]
+      ]
+    }, {
+      "cases": ["$PerBar"],
+      "grid": [
+        [0,0,0,0,0,6,0,0,0,0],
+        [3,3,0,3,3,0,0,0,0,3],
+        [0,0,6,0,0,0,0,0,6,0],
+        [0,0,6,0,0,0,0,0,6,0],
+        [3,3,0,3,3,0,3,3,0,0],
+        [0,0,0,0,0,6,0,0,0,0],
+        [0,0,0,0,0,6,0,0,0,0],
+        [0,0,0,3,3,0,3,3,0,0],
+        [0,0,6,0,0,0,0,0,6,0],
+        [0,0,6,0,0,0,0,0,6,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "a 6 bar on a background of 1: under the stored background 0 every cell is non-background and holds two colors, so the concept and $PerBar are undefined; the derived background 1 leaves the bar, and its chains are drawn on 1",
+    "input": [
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,6,1,1,1,1],
+      [1,1,1,6,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": null
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [6,1,1,1,1,1,6,1],
+        [6,1,1,1,1,1,6,1],
+        [1,3,3,1,3,3,1,1],
+        [1,1,1,6,1,1,1,1],
+        [1,1,1,6,1,1,1,1],
+        [1,3,3,1,3,3,1,1],
+        [6,1,1,1,1,1,6,1],
+        [6,1,1,1,1,1,6,1]
+      ]
+    }]
+  }]
+}

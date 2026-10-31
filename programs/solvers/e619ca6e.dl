@@ -1,0 +1,177 @@
+// e619ca6e
+// @draft
+// @keywords: objects cast
+// @scene solid-blocks: the input holds one or more solid rectangles of color
+//  3 on a field of params.background, each its own component, apart from one
+//  another.
+// @rule diagonal-copies: from each block, for each direction in
+//  params.cast_dir, the output adds copies of that block, the k-th copy moved
+//  k times the block's height along the vertical part of the direction and k
+//  times its width along the horizontal part, for k = 1, 2, … while any of
+//  the copy is in the grid.
+// @rule copy-keeps-block: each copy has the shape and the color of its block,
+//  and the part of a copy that falls past the frame edge is dropped.
+// @rule union: the output is the input with every copy painted over it, and
+//  copies that overlap one another or a block leave the cell in the block
+//  color.
+
+// what shape an object may have
+.type Shape =
+    // @claim solid-blocks
+    Rect {}
+    // @scene solid-blocks: an object may have any shape, and its copies are
+    //  stepped by the height and width of its bounding box
+    // @rule copy-keeps-block: a copy holds the object's own cells
+    // @witness l-shape: variant $AnyShape
+    //     @relaxed solid-blocks
+  | AnyShape {c: Content}
+
+// what a copy of an object holds
+.type Content =
+    // @claim copy-keeps-block
+    OwnCells {}
+    // @rule copy-keeps-block: a copy is the object's bounding box filled in
+    //  its color; undefined on an object of more than one color
+    // @witness l-shape: variant $AnyShape
+  | BboxFill {}
+
+// which neighbors join the cells of an object
+.type Adjacency =
+    // @claim solid-blocks
+    Adj4 {}
+    // @scene solid-blocks: 8-adjacency joins the cells of an object, so
+    //  blocks that meet at a corner form one object
+    // @witness corner-touch: borderline concept
+    //     @relaxed solid-blocks
+  | Adj8 {}
+
+// which cells one object may hold
+.type ObjColor =
+    // @claim solid-blocks
+    AnyInk {}
+    // @scene solid-blocks: an object is a component of the cells of one color
+    // @witness two-color-block: borderline concept
+    //     @relaxed solid-blocks
+  | PerColor {}
+
+.type Choice = [shape: Shape, adj: Adjacency, oc: ObjColor]
+
+// The cells one component may join: under $AnyInk every non-background cell,
+// keyed by the background color, and under $PerColor the cells of one color,
+// keyed by that color.
+.type Part = [oc: ObjColor, col: Color]
+
+.type Obj = [adj: Adjacency, part: Part, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed solid-blocks
+    .decl background(c: Color) background(0).
+    .decl cast_dir(d: DiagDir) cast_dir(DIAG_BL). cast_dir(DIAG_BR).
+}
+
+.init params = Params
+
+.decl shape_choice(s: Shape)
+shape_choice($Rect()). shape_choice($AnyShape($OwnCells())). shape_choice($AnyShape($BboxFill())).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adj4()). adjacency_choice($Adj8()).
+
+.decl obj_color_choice(c: ObjColor)
+obj_color_choice($AnyInk()). obj_color_choice($PerColor()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Rect(), $Adj4(), C]) :- obj_color_choice(C).
+impl_choice([$AnyShape(K), A, C]) :-
+    shape_choice($AnyShape(K)), adjacency_choice(A), obj_color_choice(C).
+
+.decl part_cell(pt: Part, p: Position)
+
+// --- $AnyInk ---
+part_cell([$AnyInk(), Bg], P) :- in(P, Col), !params.background(Col), params.background(Bg).
+
+// --- $PerColor ---
+part_cell([$PerColor(), Col], P) :- in(P, Col), !params.background(Col).
+
+// --- $Adj4 ---
+// @claim solid-blocks
+.init objs4 = Components<Part>
+objs4.node(Pt, P) :- part_cell(Pt, P).
+
+// --- $Adj8 ---
+// @claim solid-blocks
+.init objs8 = Components8<Part>
+objs8.node(Pt, P) :- part_cell(Pt, P).
+
+// @ignore: store — an object's cells keep their input colors
+.decl member(o: Obj, p: Position, col: Color)
+
+// --- $Adj4 ---
+member([$Adj4(), Pt, Id], P, Col) :- objs4.label(Pt, P, Id), in(P, Col).
+
+// --- $Adj8 ---
+member([$Adj8(), Pt, Id], P, Col) :- objs8.label(Pt, P, Id), in(P, Col).
+
+// --- $Rect, $AnyShape ---
+
+// @claim diagonal-copies
+.init box = Bbox<Obj>
+box.cell(O, P) :- member(O, P, _).
+
+// Q lies in a copy of O's box, past O toward a cast direction, I cells from
+// the copy's edge on axis A and J cells from its edge across, the two edges
+// of the copy's corner D_back that faces back toward O.
+.decl reach(o: Obj, d_back: DiagDir, q: Position, a: Axis, i: number, j: number)
+reach(O, D_back, Q, A, I, J) :-
+    box.box(O, B), in(Q, _), params.cast_dir(D), diag_opposite(D, D_back),
+    relative(B, Q, Q_rel), diag_dist(Q_rel, D_back, A, T1, T2),         // Q's distances from O's back edges
+    box_extent(B, Q, A, K1), perp(A, A2), box_extent(B, Q, A2, K2),     // O's extent on each axis
+    stride(T1, K1, 0, N, I), stride(T2, K2, 0, N, J), N > 0.            // one copy on both axes, past O
+
+// The color a copy of O holding O's own cells gives Q.
+// @ignore: store — a copy takes its object's colors
+.decl own_copy(o: Obj, q: Position, col: Color)
+
+// --- $Rect, $OwnCells ---
+own_copy(O, Q, Col) :-
+    reach(O, D_back, Q, A, I, J), box.box(O, B),
+    member(O, P, Col), crop(P, B, P_rel), diag_dist(P_rel, D_back, A, I, J).  // O's cell at the same place
+
+// An object whose box holds a cell outside it is no solid rectangle.
+.decl hollow(adj: Adjacency, oc: ObjColor)
+hollow(A, C) :-
+    box.box([A, [C, K], Id], B), in(P, _), crop(P, B, _), !member([A, [C, K], Id], P, _).
+
+// The cases defined on the input.
+.decl live(ch: Choice)
+
+// @ignore: store — a copy takes its object's colors
+.decl paint(ch: Choice, p: Position, col: Color)
+
+// --- $Rect ---
+live([$Rect(), A, C]) :- impl_choice([$Rect(), A, C]), !hollow(A, C).
+paint([$Rect(), A, C], Q, Col) :- live([$Rect(), A, C]), own_copy([A, [C, _], _], Q, Col).
+
+// --- $AnyShape ---
+live([$AnyShape(K), A, C]) :- impl_choice([$AnyShape(K), A, C]).
+
+// --- $OwnCells ---
+paint([$AnyShape($OwnCells()), A, C], Q, Col) :- own_copy([A, [C, _], _], Q, Col).
+
+// --- $BboxFill ---
+paint([$AnyShape($BboxFill()), A, C], Q, Col) :-
+    reach([A, [C, K], Id], _, Q, _, _, _), member([A, [C, K], Id], _, Col).  // the box of O in O's color
+
+// --- $Rect, $AnyShape ---
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, Ch) :- live(Ch), in(P, Col), !paint(Ch, P, _).
+
+.comp Determine {
+    // The color the copies paint over.
+    .decl background(c: Color)
+    background(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+}

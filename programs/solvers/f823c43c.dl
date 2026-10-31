@@ -1,0 +1,205 @@
+// f823c43c
+// @draft
+// @keywords: wallpaper repair noise
+// @scene periodic-pattern: the grid is a pattern that repeats with one period
+//  on each axis: the period shortest on both axes among those at which every
+//  two cells not of `noise_color` at the same place of the tile agree; that
+//  period varies from input to input
+// @scene noise-overwrites: some cells of the pattern are overwritten with
+//  `noise_color` (6), scattered with no structure, and `noise_color` is no
+//  color of the pattern
+// @scene phase-visible: each place of the repeating tile has at least one
+//  copy in the grid that the noise leaves showing
+// @rule restore-by-phase: each output cell takes the color that the cells not
+//  of `noise_color` hold at the same place of the repeating tile; the output
+//  has the input's size
+
+// where the noise color comes from
+.type Noise =
+    // @claim noise-overwrites
+    NoiseStored {}
+    // @rule noise-by-period: `noise_color` is the one color whose cells, left
+    //  out, let the rest repeat with a period at most half the grid on each
+    //  axis; undefined where no color or more than one color qualifies
+    // @witness noise-of-another-color: variant $NoiseByPeriod
+    //     @relaxed noise-overwrites
+  | NoiseByPeriod {}
+
+// what a tile place with no visible copy takes
+.type Hidden =
+    // @claim phase-visible
+    HiddenUndefined {}
+    // @rule hidden-keeps-noise: a fully hidden tile place keeps `noise_color`
+    // @witness tile-place-all-hidden: borderline $IsometryOrbit
+    //     @relaxed phase-visible
+  | HiddenPhaseKeepsNoise {}
+    // @rule hidden-takes-dominant: a fully hidden tile place takes the
+    //  commonest color not of `noise_color`
+    // @witness tile-place-all-hidden: borderline $IsometryOrbit
+  | HiddenPhaseTakesDominant {}
+    // @rule restore-by-phase: each cell takes its orbit's color under the
+    //  periods and under the D4 maps of the tile that some visible pair shows
+    //  and none contradicts; undefined where no such map reaches a hidden place
+    // @witness tile-place-all-hidden: borderline $IsometryOrbit
+  | IsometryOrbit {}
+
+.type Choice = [n: Noise, h: Hidden]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl noise_color(c: Color) noise_color(6).
+}
+
+.init params = Params
+
+.decl noise_choice(n: Noise)
+noise_choice($NoiseStored()). noise_choice($NoiseByPeriod()).
+
+.decl hidden_choice(h: Hidden)
+hidden_choice($HiddenUndefined()). hidden_choice($HiddenPhaseKeepsNoise()).
+hidden_choice($HiddenPhaseTakesDominant()). hidden_choice($IsometryOrbit()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([N, H]) :- noise_choice(N), hidden_choice(H).
+
+// The colors whose cells may be left out as noise: the input's colors and
+// the stored noise color.
+.decl left_out(x: Color)
+left_out(X) :- in(_, X).
+left_out(X) :- params.noise_color(X).
+
+// The cells left showing when the cells of X are left out.
+.decl visible(x: Color, p: Position, col: Color)
+visible(X, P, Col) :- left_out(X), in(P, Col), Col != X.
+
+// A period that may be tried along the axis of D: 1 up to the extent.
+.decl cand_k(d: Dir, k: number)
+cand_k(D, K) :- in(P, _), axis_of(D, A), ( sub_extent(P, A, K) ; axis_dim(P, A, K) ).
+
+// Cell P lies in copy N of the tile along D, at place R of period K.
+.decl phase(p: Position, d: Dir, k: number, n: number, r: number)
+phase(P, D, K, N, R) :- in(P, _), cand_k(D, K), dist(P, D, T), stride(T, K, 0, N, R).
+
+// The places of the tile, one per pair of periods on the two axes: what the
+// cells left showing hold at each.
+.type Place = [x: Color, d1: Dir, k1: number, r1: number, d2: Dir, k2: number, r2: number]
+// @claim periodic-pattern restore-by-phase
+.init place = Unanimous<Place, Color>
+place.item([X, D1, K1, R1, D2, K2, R2], Col) :-
+    visible(X, P, Col), perp_dir(D1, D2),
+    phase(P, D1, K1, _, R1), phase(P, D2, K2, _, R2).
+
+// The periods K1 along D1 and K2 along D2 at which the cells left showing at
+// some place of the tile disagree.
+.decl clashing(x: Color, d1: Dir, k1: number, d2: Dir, k2: number)
+clashing(X, D1, K1, D2, K2) :- place.clash([X, D1, K1, _, D2, K2, _]).
+
+// The periods at which the cells left showing at each place agree.
+.decl fits(x: Color, d1: Dir, k1: number, d2: Dir, k2: number)
+fits(X, D1, K1, D2, K2) :-
+    left_out(X), cand_k(D1, K1), perp_dir(D1, D2), cand_k(D2, K2),
+    !clashing(X, D1, K1, D2, K2).
+
+// The least period along each side among those that fit.
+.type Side = [x: Color, d: Dir]
+// @claim periodic-pattern
+.init least = Extremes<Side>
+least.cand([X, D1], K1) :- fits(X, D1, K1, _, _).
+
+// The period along D when the cells of X are left out: least on both axes.
+.decl period(x: Color, d: Dir, k: number)
+period(X, D1, K1) :-
+    least.low([X, D1], K1), perp_dir(D1, D2), least.low([X, D2], K2),
+    fits(X, D1, K1, D2, K2).
+
+// The noise color under each noise branch.
+// @ignore: case section — `wp` is keyed by the noise color, and a case reads it at its own noise branch's color
+.decl noise(n: Noise, x: Color)
+
+// --- $NoiseStored ---
+
+noise($NoiseStored(), X) :- params.noise_color(X).
+
+// --- $NoiseByPeriod ---
+
+// Some place of the tile along D has a second copy.
+// @ignore: case section — `wp` is keyed by the noise color, and a case reads it at its own noise branch's color
+.decl repeated(d: Dir, k: number, r: number)
+repeated(D, K, R) :- phase(_, D, K, N, R), N > 0.
+
+// Period K is at most half the extent along D: every place has a second copy.
+// @ignore: case section — `wp` is keyed by the noise color, and a case reads it at its own noise branch's color
+.decl short(d: Dir, k: number)
+short(D, K) :- cand_k(D, K), !lone(D, K).
+
+// A place of the tile along D with one copy only.
+// @ignore: case section — `wp` is keyed by the noise color, and a case reads it at its own noise branch's color
+.decl lone(d: Dir, k: number)
+lone(D, K) :- phase(_, D, K, _, R), !repeated(D, K, R).
+
+// The colors whose cells, left out, let the rest repeat with short periods.
+// @claim noise-by-period
+// @ignore: case section — `wp` is keyed by the noise color, and a case reads it at its own noise branch's color
+.init by_period = Unanimous<Unit, Color>
+by_period.item($U(), X) :-
+    in(_, X), fits(X, D1, K1, D2, K2), short(D1, K1), short(D2, K2).
+
+noise($NoiseByPeriod(), X) :- by_period.value($U(), X).
+
+// --- $HiddenUndefined, $HiddenPhaseKeepsNoise, $HiddenPhaseTakesDominant ---
+
+// The place of the tile that P sits at, under the case's noise color.
+.decl cell_place(n: Noise, q: Position, key: Place)
+cell_place(N, P, [X, D1, K1, R1, D2, K2, R2]) :-
+    noise(N, X), period(X, D1, K1), perp_dir(D1, D2), period(X, D2, K2),
+    phase(P, D1, K1, _, R1), phase(P, D2, K2, _, R2).
+
+out(P, Col, [N, H]) :-
+    impl_choice([N, H]), H != $IsometryOrbit(),
+    cell_place(N, P, Key), place.value(Key, Col).
+
+// --- $HiddenPhaseKeepsNoise ---
+
+out(P, X, [N, $HiddenPhaseKeepsNoise()]) :-
+    impl_choice([N, $HiddenPhaseKeepsNoise()]),
+    cell_place(N, P, Key), !place.item(Key, _), noise(N, X).
+
+// --- $HiddenPhaseTakesDominant ---
+
+// @claim hidden-takes-dominant
+.init dominant = Mode<Color, Color, Position>
+dominant.item(X, Col, P) :- visible(X, P, Col).
+
+out(P, Col, [N, $HiddenPhaseTakesDominant()]) :-
+    impl_choice([N, $HiddenPhaseTakesDominant()]),
+    cell_place(N, P, Key), !place.item(Key, _), noise(N, X), dominant.mode(X, Col).
+
+// --- $IsometryOrbit ---
+
+// @claim restore-by-phase
+.init wp = Wallpaper<Color, Color>
+wp.transform(D) :- d4_elem(D).
+wp.cell(X, P, Col) :- noise(_, X), visible(X, P, Col).
+wp.grid(X, P) :- noise(_, X), in(P, _).
+wp.period(X, A, K) :- noise(_, X), period(X, D, K), axis_of(D, A).
+
+// The orbits of the frame positions under the symmetries.
+.type Node = [x: Color, p: Position]
+.init orbit = Canon<Node>
+orbit.edge([X, P], [X, Q]) :- wp.action(X, P, Q).
+
+// The color the cells left showing in an orbit hold.
+// @ignore: single-consumer — one row per orbit, where a join in `out` holds one per pair of cells in an orbit
+.decl orbit_color(id: Ident, col: Color)
+orbit_color(Id, Col) :- orbit.id([X, Q], Id), visible(X, Q, Col).
+
+out(P, Col, [N, $IsometryOrbit()]) :-
+    impl_choice([N, $IsometryOrbit()]), noise(N, X),
+    orbit.id([X, P], Id), orbit_color(Id, Col).
+
+.comp Determine {
+    // The noise color: the color an input holds where its output differs.
+    .decl noise_color(c: Color)
+    noise_color(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+}

@@ -1,0 +1,187 @@
+// df978a02
+// @draft
+// @keywords: objects color-class count rank
+// @scene four-pointers: on a field of `background` 8, four shapes of one color each, one on each
+//  side of a center cell; each shape's line nearest the center, across the row or column through
+//  the center, holds a single cell, its tip, which lies on that row or column.
+// @scene one-largest: one shape has more cells than each of the others.
+// @rule others-lose-tip: each shape other than the one with the most cells loses its tip cell,
+//  which becomes `background`.
+// @rule largest-grows-back: the shape with the most cells gains one cell per tip taken, laid as a
+//  line across its axis, centered on the line through the center, one step beyond its far edge.
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// Which shape grows
+.type Winner =
+    // @claim others-lose-tip largest-grows-back
+    MostCells {}
+    // @rule others-lose-tip: the winner is the shape whose back line, its line farthest from the
+    //  center, holds the most cells; undefined where two back lines tie.
+    // @witness widest-back: ordinary concept
+  | WidestBack {}
+
+// What a bitten shape loses
+.type Bite =
+    // @claim others-lose-tip
+    BiteTip {}
+    // @rule others-lose-tip: each bitten shape loses its whole front line, its line nearest the
+    //  center.
+    // @witness flat-front: borderline concept
+    //     @relaxed four-pointers
+  | BiteFrontLine {}
+
+// Where the grown line goes
+.type Anchor =
+    // @claim largest-grows-back
+    GrowPastBack {}
+    // @rule largest-grows-back: the line goes one step beyond the winner's farthest cell on the
+    //  line through the center.
+    // @witness notched-back: ordinary concept
+  | GrowPastAxisEnd {}
+
+.type Choice = [w: Winner, b: Bite, a: Anchor]
+
+// The cases that place the grown line, and a half-width of that line.
+.type GrowKey = [w: Winner, a: Anchor]
+.type Span = [g: GrowKey, k: number]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed four-pointers
+    .decl background(col: Color) background(8).
+}
+
+.init params = Params
+
+.decl winner_choice(w: Winner)
+winner_choice($MostCells()). winner_choice($WidestBack()).
+
+.decl bite_choice(b: Bite)
+bite_choice($BiteTip()). bite_choice($BiteFrontLine()).
+
+.decl anchor_choice(a: Anchor)
+anchor_choice($GrowPastBack()). anchor_choice($GrowPastAxisEnd()).
+
+// A shape is the cells of one color other than the background.
+.decl shape(p: Position, s: Color)
+shape(P, S) :- in(P, S), !params.background(S).
+
+// The shape cells that another cell of their shape is nearer edge d than.
+.decl behind(d: Dir, p: Position)
+behind(D, P) :- shape(P, S), shape(Q, S), dir_elem(D), nearer(D, Q, P).
+
+// The cells of shape s on its extreme line toward edge d.
+.decl front(s: Color, d: Dir, p: Position)
+front(S, D, P) :- shape(P, S), dir_elem(D), !behind(D, P).
+
+// Each front cell looks toward its edge across the background.
+// @claim four-pointers
+.init facing = Ray<Unit>
+facing.dir($U(), D) :- dir_elem(D).
+facing.mark($U(), P) :- front(_, _, P).
+facing.blocked($U(), P) :- shape(P, _).
+
+// A tip: a front cell that faces another shape's front cell across the background.
+.decl tip(s: Color, d: Dir, p: Position)
+tip(S, D, P) :-
+    front(S, D, P), facing.stop($U(), Q, D, _, P),
+    opposite(D, D_back), front(_, D_back, Q).
+
+// The shapes with the highest score of the winner's measure.
+// @claim others-lose-tip largest-grows-back
+.init pick = ArgExtremes<Winner, Color>
+
+// @claim one-largest
+.init sole = Unanimous<Winner, Color>
+sole.item(W, S) :- pick.high(W, S, _).
+
+// The winner's tip, toward the direction the winner points.
+.decl lead(w: Winner, s: Color, d: Dir, p: Position)
+lead(W, S, D, P) :- sole.value(W, S), tip(S, D, P).
+
+// The shapes that lose their tip, and their tips.
+.decl bitten(w: Winner, s: Color, d: Dir, p: Position)
+bitten(W, S, D, P) :- sole.value(W, S_win), tip(S, D, P), S != S_win.
+
+// @claim largest-grows-back
+.init taken = Tally<Winner, Position>
+taken.item(W, P) :- bitten(W, _, _, P).
+
+// The length of the grown line.
+// @store: borderline concept
+//     @relaxed four-pointers
+.decl grow_width(w: Winner, n: number)
+grow_width(W, N) :- taken.tally(W, N).
+
+// The cells a bitten shape loses.
+.decl bite(w: Winner, b: Bite, p: Position)
+
+// The middle cell of the grown line.
+.decl anchor(w: Winner, a: Anchor, p: Position)
+
+// The cells of the grown line: the run across the winner's axis, centered on the anchor, whose
+// size is the line's length.
+// @claim largest-grows-back
+.init spread = Ray<GrowKey>
+spread.dir([W, A], D_across) :- anchor(W, A, _), lead(W, _, D, _), perp_dir(D, D_across).
+spread.cell([W, A], P) :- anchor(W, A, _), in(P, _).
+spread.mark([W, A], B) :- anchor(W, A, B).
+
+// Half-widths k at which the run reaches k cells on both sides of the anchor.
+.decl reach(g: GrowKey, k: number)
+reach(G, K) :- spread.ray(G, _, D, K, _), spread.ray(G, _, D_opp, K, _), opposite(D, D_opp).
+
+// @claim largest-grows-back
+.init run = Tally<Span, Position>
+run.item([G, K], P) :- reach(G, K), spread.ray(G, P, _, K_p, _), K_p <= K.
+
+.decl line(w: Winner, a: Anchor, p: Position)
+line(W, A, P) :- run.tally([[W, A], K], N), grow_width(W, N), run.item([[W, A], K], P).
+
+out(P, Col, [W, B, A]) :-
+    bite_choice(B), line(W, A, _), in(P, C_in),          // defined where the line fits
+    ( line(W, A, P), sole.value(W, Col)
+    ; !line(W, A, P), bite(W, B, P), params.background(Col)
+    ; !line(W, A, P), !bite(W, B, P), Col = C_in
+    ).
+
+// --- $MostCells ---
+// @claim one-largest
+.init size = Tally<Color, Position>
+size.item(S, P) :- shape(P, S).
+
+pick.cand($MostCells(), S, N) :- winner_choice($MostCells()), size.tally(S, N).
+
+// --- $WidestBack ---
+// @claim others-lose-tip
+.init back = Tally<Color, Position>
+back.item(S, P) :- tip(S, D, _), opposite(D, D_back), front(S, D_back, P).
+
+pick.cand($WidestBack(), S, N) :- winner_choice($WidestBack()), back.tally(S, N).
+
+// --- $BiteTip ---
+bite(W, $BiteTip(), P) :- bite_choice($BiteTip()), bitten(W, _, _, P).
+
+// --- $BiteFrontLine ---
+bite(W, $BiteFrontLine(), P) :- bite_choice($BiteFrontLine()), bitten(W, S, D, _), front(S, D, P).
+
+// --- $GrowPastBack ---
+anchor(W, $GrowPastBack(), B) :-
+    anchor_choice($GrowPastBack()), lead(W, S, D, T), opposite(D, D_back),
+    front(S, D_back, Q), neighbor(Q, D_back, Q_past),                  // one step past the back line
+    axis_of(D, A), in(B, _), same_line(A, T, B), same_dist(D_back, Q_past, B).  // on the tip's line
+
+// --- $GrowPastAxisEnd ---
+// The winner's cells on its tip's line, and those with another such cell farther back.
+.decl axis_cell(w: Winner, p: Position)
+axis_cell(W, Q) :- lead(W, S, D, T), axis_of(D, A), shape(Q, S), same_line(A, T, Q).
+
+.decl axis_inner(w: Winner, p: Position)
+axis_inner(W, Q) :-
+    axis_cell(W, Q), axis_cell(W, Q2), lead(W, _, D, _), opposite(D, D_back), nearer(D_back, Q2, Q).
+
+anchor(W, $GrowPastAxisEnd(), B) :-
+    anchor_choice($GrowPastAxisEnd()), axis_cell(W, Q), !axis_inner(W, Q),
+    lead(W, _, D, _), opposite(D, D_back), neighbor(Q, D_back, B).

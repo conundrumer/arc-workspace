@@ -1,0 +1,157 @@
+// f83cb3f6
+// @draft
+// @keywords: move lines
+// @scene one-wall: one straight line of `wall_color` cells crosses the grid from edge to edge along one axis, at neither border, so both sides have cells; some cells of the line may be missing, and those are its holes.
+// @scene dots: every other non-`background` cell is a single dot of one color, other than `wall_color`, the same for all dots of an input; dots lie on both sides of the wall.
+// @rule keep-wall: the wall cells stay as they are.
+// @rule pull-to-wall: for each line perpendicular to the wall, and each side of the wall, where that line has a wall cell and at least one dot on that side, the cell next to the wall cell on that side takes the color of the dot on that line and side nearest the wall.
+// @rule hole-drops: dots on a line that meets a hole in the wall leave no mark.
+// @rule clear-rest: every other cell is `background`.
+
+// How the wall's cells are found
+.type WallFinding =
+    // @claim one-wall
+    WallColor {}
+    // @scene one-wall: the wall is the one non-background color whose cells, two or more, all lie on one row or one column; undefined where no color or more than one color does so.
+    // @witness wall-recolored: variant $WallByLine
+    //     @relaxed one-wall
+  | WallByLine {}
+
+// Which dot of a pile gives its color
+.type PileColor =
+    // @claim pull-to-wall
+    NearestDot {}
+    // @rule pull-to-wall: the cell next to the wall cell takes the color of the dot on that line and side farthest from the wall.
+    // @witness two-dot-colors: borderline concept
+    //     @relaxed dots
+  | FarthestDot {}
+
+.type Choice = [w: WallFinding, p: PileColor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed dots
+    .decl background(c: Color) background(0).
+
+    // --- $WallColor ---
+    // @derive RarestColor: ordinary concept
+    .decl wall_color(c: Color) wall_color(8).
+}
+
+.init params = Params
+
+.decl wall_finding_choice(w: WallFinding)
+wall_finding_choice($WallColor()). wall_finding_choice($WallByLine()).
+
+.decl pile_color_choice(p: PileColor)
+pile_color_choice($NearestDot()). pile_color_choice($FarthestDot()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([W, C]) :- wall_finding_choice(W), pile_color_choice(C).
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // Two cells of a color lie on different lines along axis a.
+    .decl off_line(key: Key, col: Color, a: Axis)
+    off_line(Ky, Col, A) :-
+        grid(Ky, P, Col), grid(Ky, Q, Col),
+        perp(A, A2), axis_of(D, A2), !same_dist(D, P, Q).
+
+    // A non-background color whose cells, two or more, all lie on one line along axis a.
+    // @ignore: store — the color it holds on every input is the wall's, which the concept case stores as `wall_color`
+    .decl color_line(key: Key, col: Color, a: Axis)
+    color_line(Ky, Col, A) :-
+        grid(Ky, P, Col), !params.background(Col), grid(Ky, Q, Col), P != Q,
+        axis_elem(A), !off_line(Ky, Col, A).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+.decl wall_color(w: WallFinding, col: Color)
+
+// --- $WallColor ---
+wall_color($WallColor(), Col) :- params.wall_color(Col).
+
+// --- $WallByLine ---
+// A color on one line, beside another such color.
+.decl rival_line(col: Color)
+rival_line(Col) :- parse.color_line($U(), Col, _), parse.color_line($U(), Col2, _), Col != Col2.
+
+wall_color($WallByLine(), Col) :- parse.color_line($U(), Col, _), !rival_line(Col).
+
+// --- $WallColor, $WallByLine ---
+.decl wall(w: WallFinding, p: Position)
+wall(W, P) :- wall_color(W, Col), in(P, Col).
+
+// The axis the wall runs along.
+.decl wall_axis(w: WallFinding, a: Axis)
+wall_axis(W, A) :- wall_color(W, Col), parse.color_line($U(), Col, A).
+
+.decl dot(w: WallFinding, p: Position)
+dot(W, P) :- wall_finding_choice(W), in(P, Col), !params.background(Col), !wall(W, P).
+
+// Dot p lies on side d of wall cell f, on f's line across the wall. A dot
+// whose line across the wall meets a hole has no such f (hole-drops).
+.decl approach(w: WallFinding, p: Position, d: Dir, f: Position)
+approach(W, P, D, F) :-
+    dot(W, P), wall_axis(W, A), perp(A, A2),
+    wall(W, F), same_line(A2, P, F),
+    axis_of(D, A2), nearer(D, P, F).
+
+// Another dot of p's pile lies past p toward edge e.
+.decl past(w: WallFinding, p: Position, e: Dir)
+past(W, P, E) :-
+    approach(W, P, D, F), approach(W, Q, D, F),
+    dir_elem(E), nearer(E, Q, P).
+
+// The color the pile on side d of wall cell f gives.
+.decl pile_color(w: WallFinding, c: PileColor, f: Position, d: Dir, col: Color)
+
+// --- $NearestDot ---
+pile_color(W, $NearestDot(), F, D, Col) :-
+    approach(W, P, D, F), in(P, Col),
+    opposite(D, E), !past(W, P, E).                // no dot of the pile nearer the wall
+
+// --- $FarthestDot ---
+pile_color(W, $FarthestDot(), F, D, Col) :-
+    approach(W, P, D, F), in(P, Col), !past(W, P, D).   // no dot of the pile farther from the wall
+
+// --- $NearestDot, $FarthestDot ---
+// The cell against the wall each pile lands on.
+.decl landed(w: WallFinding, c: PileColor, p: Position, col: Color)
+landed(W, C, T, Col) :- pile_color(W, C, F, D, Col), neighbor(F, D, T).
+
+out(P, Col, [W, C]) :-
+    impl_choice([W, C]), wall_axis(W, _),          // undefined where no wall line is found
+    in(P, _),
+    ( wall(W, P), in(P, Col)
+    ; landed(W, C, P, Col)
+    ; !wall(W, P), !landed(W, C, P, _), params.background(Col)
+    ).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    // The commonest color of each train output.
+    .init out_mode = Mode<Example, Color, Position>
+    out_mode.item(E, Col, P) :- ex_out(E, P, Col).
+
+    // Some train output's commonest color is another.
+    .decl background_defect(c: Color)
+    background_defect(Col) :- out_mode.mode(_, Col), out_mode.mode(E, _), !out_mode.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- out_mode.mode(_, Col), !background_defect(Col).
+
+    // Some input's cells of the color lie on no one line.
+    .decl wall_defect(c: Color)
+    wall_defect(Col) :- ex.color_line(_, Col, _), ex_in(E, _, _), !ex.color_line(E, Col, _).
+
+    .decl wall_color(c: Color)
+    wall_color(Col) :- ex.color_line(_, Col, _), !wall_defect(Col).
+}

@@ -1,0 +1,134 @@
+{
+  "id": "de1cd16c",
+  "witnesses": [{
+    "id": "edge-speck",
+    "separates": "Two specks sit on the edge column of region 1, beside region 2. Counted by the region whose box holds them, region 1 has 3 specks and region 2 has 2, so the output is 1; counted toward every fill color beside them, region 2 has 4, so the output is 2.",
+    "input": [
+      [1,1,1,1,1,2,2,2,2,2],
+      [1,1,1,1,4,2,2,2,2,2],
+      [1,1,4,1,1,2,2,4,2,2],
+      [1,1,1,1,1,2,2,2,2,2],
+      [1,1,1,1,1,2,2,2,2,2],
+      [1,1,1,1,4,2,2,2,2,2],
+      [1,1,1,1,1,2,2,4,2,2],
+      [1,1,1,1,1,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": ["$BoxOwner"],
+      "grid": [
+        [1]
+      ]
+    }, {
+      "cases": ["$NeighborOwner"],
+      "grid": [
+        [2]
+      ]
+    }]
+  }, {
+    "id": "split-region",
+    "separates": "Color 3 fills two separate rectangles with one speck each, and region 8 between them has 3. Read as one region, color 3's box spans the grid and holds all 5 specks, so the output is 3; read as connected regions, each part of color 3 holds 1, so the output is 8.",
+    "input": [
+      [3,3,3,3,8,8,8,8,8,3,3,3,3],
+      [3,3,3,3,8,8,1,8,8,3,3,3,3],
+      [3,3,3,3,8,8,8,8,8,3,3,3,3],
+      [3,1,3,3,8,8,8,8,8,3,3,3,3],
+      [3,3,3,3,8,1,8,8,8,3,3,3,3],
+      [3,3,3,3,8,8,8,8,8,3,3,1,3],
+      [3,3,3,3,8,8,8,1,8,3,3,3,3],
+      [3,3,3,3,8,8,8,8,8,3,3,3,3]
+    ],
+    "output": [{
+      "cases": ["$ColorRegion & $BoxOwner"],
+      "grid": [
+        [3]
+      ]
+    }, {
+      "cases": ["$NeighborOwner","$ComponentRegion"],
+      "grid": [
+        [8]
+      ]
+    }]
+  }, {
+    "id": "tiny-region",
+    "separates": "Region 3 is 2x2, 4 cells, fewer than the 5 specks of color 4. The isolated-cell color is 4, and region 1 holds 3 specks, so the output is 1; the rarest color is 3, so color 4 is read as a region whose box holds the 4 cells of 3, and the output is 4.",
+    "input": [
+      [1,1,1,1,1,5,5,8,8,8,8,8],
+      [1,1,1,1,1,5,5,8,8,8,8,8],
+      [1,1,4,1,1,5,5,8,8,8,8,8],
+      [1,1,1,1,1,5,5,8,8,4,8,8],
+      [1,1,1,1,1,5,5,8,8,8,8,8],
+      [1,1,4,1,1,3,3,8,8,8,8,8],
+      [1,1,1,1,1,3,3,8,8,8,8,8],
+      [1,1,1,1,1,6,6,8,8,8,8,8],
+      [1,1,1,1,1,6,6,8,8,4,8,8],
+      [1,1,4,1,1,6,6,8,8,8,8,8],
+      [1,1,1,1,1,6,6,8,8,8,8,8],
+      [1,1,1,1,1,6,6,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$IsolatedSpeck"],
+      "grid": [
+        [1]
+      ]
+    }, {
+      "cases": ["$RarestSpeck & $ColorRegion"],
+      "grid": [
+        [4]
+      ]
+    }, {
+      "cases": ["$RarestSpeck & $ComponentRegion"],
+      "grid": null
+    }]
+  }, {
+    "id": "tied-most",
+    "separates": "Regions 2 and 8 each hold 2 specks, and region 3 holds 1. With a unique most-speck region required, no output is defined; with every tied region given, the output holds a grid of 2 and a grid of 8.",
+    "input": [
+      [2,2,2,2,2,3,3,3,3,3],
+      [2,2,2,2,2,3,3,6,3,3],
+      [2,2,6,2,2,3,3,3,3,3],
+      [2,2,2,2,2,3,3,3,3,3],
+      [2,2,2,2,2,8,8,8,8,8],
+      [2,6,2,2,2,8,6,8,8,8],
+      [2,2,2,2,2,8,8,8,6,8],
+      [2,2,2,2,2,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$UniqueMost"],
+      "grid": null
+    }, {
+      "cases": ["$TieAll"],
+      "grid": [
+        [
+          [2]
+        ],
+        [
+          [8]
+        ]
+      ]
+    }]
+  }, {
+    "id": "corner-block",
+    "separates": "A 2x2 block of 3 fills the corner of region 1, inside region 1's bounding box, and the 4 specks number 5: 2 in region 1 and 3 in region 8. Under connected regions, with the isolated-cell color 4 as the speck color, region 8 holds the most specks, so the output is 8; with the rarest color 3 as the speck color, the 3 block's 4 cells lie in region 1's box and no other box, so the output is 1.",
+    "input": [
+      [1,1,1,1,1,8,8,8,8,8],
+      [1,4,1,1,1,8,8,4,8,8],
+      [1,1,1,1,1,8,8,8,8,8],
+      [1,1,1,4,1,8,4,8,8,8],
+      [1,1,1,1,1,8,8,8,4,8],
+      [1,1,1,1,1,8,8,8,8,8],
+      [1,1,1,3,3,8,8,8,8,8],
+      [1,1,1,3,3,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$IsolatedSpeck"],
+      "grid": [
+        [8]
+      ]
+    }, {
+      "cases": ["$RarestSpeck"],
+      "grid": [
+        [1]
+      ]
+    }]
+  }]
+}

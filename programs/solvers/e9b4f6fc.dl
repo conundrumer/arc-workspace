@@ -1,0 +1,221 @@
+// e9b4f6fc
+// @draft
+// @keywords: objects crop select markers mapping rank
+// @scene background: every cell outside the objects is background
+// @scene one-picture: one connected object of more than two cells, the
+//  picture, a filled rectangle of a field color with a drawing of other
+//  colors on it
+// @scene domino-keys: the other objects are keys, each two cells of two
+//  colors side by side on the axis of new-side, with background at
+//  every other cell that touches it at a side or a corner
+// @scene key-names-picture-color: the old cell of each key, the cell
+//  opposite new-side, holds a color of the picture's drawing, and the new
+//  cell holds a color the picture does not hold
+// @rule crop-picture: the output is the picture's bounding box, cut out of
+//  the input
+// @rule recolor-by-key: each cell of the picture whose color is the old color
+//  of a key takes that key's new color; each other cell keeps its color
+
+// how a key's old cell is told from its new cell
+.type KeyReading =
+    // @claim domino-keys
+    KeyNewSide {}
+    // @scene domino-keys: the other objects are keys, each two cells side by
+    //  side on either axis; the old cell is the one whose color the picture
+    //  holds and the new cell the other, a key with neither color in the
+    //  picture is ignored, and the model is undefined where the picture holds
+    //  both colors of a key
+    // @witness key-old-in-picture: variant $KeyOldInPicture
+    //     @relaxed key-names-picture-color
+  | KeyOldInPicture {}
+
+// which cells join into one object
+.type Adjacency =
+    // @claim one-picture
+    SideAdjacent {}
+    // @scene one-picture: the objects join cells that touch at a side or a
+    //  corner
+    // @scene domino-keys: a key touches no other object at a side or a corner
+    // @witness diagonal-key: borderline concept
+    //     @relaxed domino-keys
+  | Picture8Adjacent {}
+
+// which object is the picture
+.type Selection =
+    // @claim one-picture
+    OnlyLargeObject {}
+    // @scene one-picture: the picture is the largest object, of more than two
+    //  cells, and objects that are neither the picture nor keys are ignored;
+    //  the model is undefined where two objects tie for largest
+    // @witness two-pictures: foreign $PictureLargest
+    //     @relaxed one-picture
+  | PictureLargest {}
+
+// how often a cell is recolored
+.type Recolor =
+    // @claim recolor-by-key
+    RecolorOnce {}
+    // @rule recolor-by-key: each cell follows the chain of keys from its color
+    //  until no key applies, stopping before a color repeats
+    // @witness chained-keys: borderline concept
+    //     @relaxed key-names-picture-color
+  | RecolorTransitive {}
+
+.type Choice = [r: KeyReading, a: Adjacency, s: Selection, t: Recolor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl background(c: Color) background(0).
+
+    // --- $KeyNewSide ---
+
+    // The direction from a key's old cell to its new cell.
+    .decl new_side(d: Dir) new_side(DIR_L).
+}
+
+.init params = Params
+
+.decl key_reading_choice(r: KeyReading)
+key_reading_choice($KeyNewSide()). key_reading_choice($KeyOldInPicture()).
+
+.decl selection_choice(s: Selection)
+selection_choice($OnlyLargeObject()). selection_choice($PictureLargest()).
+
+// The object each non-background cell belongs to.
+.decl obj(p: Position, id: Ident, a: Adjacency)
+
+// --- $SideAdjacent ---
+
+// @claim one-picture domino-keys
+.init side_objects = Components<Unit>
+side_objects.node($U(), P) :- in(P, Col), !params.background(Col).
+
+obj(P, Id, $SideAdjacent()) :- side_objects.label($U(), P, Id).
+
+// --- $Picture8Adjacent ---
+
+// @claim one-picture domino-keys
+.init corner_objects = Components8<Unit>
+corner_objects.node($U(), P) :- in(P, Col), !params.background(Col).
+
+obj(P, Id, $Picture8Adjacent()) :- corner_objects.label($U(), P, Id).
+
+// --- shared ---
+
+// An object of more than two cells.
+.decl large(id: Ident, a: Adjacency)
+large(Id, A) :- obj(P, Id, A), obj(Q, Id, A), obj(R, Id, A), P != Q, P != R, Q != R.
+
+// The picture.
+.decl picture(id: Ident, a: Adjacency, s: Selection)
+
+// --- $OnlyLargeObject ---
+
+// More than one object of more than two cells, which leaves the model undefined.
+.decl two_large(a: Adjacency)
+two_large(A) :- large(Id1, A), large(Id2, A), Id1 != Id2.
+
+picture(Id, A, $OnlyLargeObject()) :- large(Id, A), !two_large(A).
+
+// --- $PictureLargest ---
+
+.type ObjKey = [a: Adjacency, id: Ident]
+
+// @claim one-picture
+.init size = Tally<ObjKey, Position>
+size.item([A, Id], P) :- obj(P, Id, A).
+
+// @claim one-picture
+.init largest = ArgExtremes<Adjacency, Ident>
+largest.cand(A, Id, N) :- size.tally([A, Id], N).
+
+// Two objects tie for largest, which leaves the model undefined.
+.decl largest_tie(a: Adjacency)
+largest_tie(A) :- largest.high(A, Id1, _), largest.high(A, Id2, _), Id1 != Id2.
+
+picture(Id, A, $PictureLargest()) :- largest.high(A, Id, _), large(Id, A), !largest_tie(A).
+
+// --- shared ---
+
+.decl picture_color(c: Color, a: Adjacency, s: Selection)
+picture_color(Col, A, S) :- picture(Id, A, S), obj(P, Id, A), in(P, Col).
+
+// The colors of the two cells of a two-cell object, the cell of c2 one step
+// toward d from the cell of c1.
+.decl domino(c1: Color, c2: Color, d: Dir, a: Adjacency)
+domino(C1, C2, D, A) :-
+    obj(P, Id, A), obj(Q, Id, A), !large(Id, A),
+    dir_elem(D), neighbor(P, D, Q), in(P, C1), in(Q, C2).
+
+// A key's old and new colors.
+.decl key(old: Color, new: Color, r: KeyReading, a: Adjacency, s: Selection)
+
+// A key both of whose colors the picture holds, which leaves the model
+// undefined.
+.decl key_clash(r: KeyReading, a: Adjacency, s: Selection)
+
+// --- $KeyNewSide ---
+
+key(Old, New, $KeyNewSide(), A, S) :-
+    params.new_side(D), domino(Old, New, D, A), selection_choice(S).
+
+// --- $KeyOldInPicture ---
+
+key(Old, New, $KeyOldInPicture(), A, S) :- domino(Old, New, _, A), picture_color(Old, A, S).
+
+key_clash($KeyOldInPicture(), A, S) :-
+    key(_, New, $KeyOldInPicture(), A, S), picture_color(New, A, S).
+
+// --- shared ---
+
+// The picture under one adjacency and selection.
+.type View = [a: Adjacency, s: Selection]
+
+// @claim crop-picture
+.init frame = Bbox<View>
+frame.cell([A, S], P) :- picture(Id, A, S), obj(P, Id, A).
+
+// The picture's bounding box, cut out of the input.
+.decl cut(p_inner: Position, col: Color, a: Adjacency, s: Selection)
+cut(P_inner, Col, A, S) :- frame.box([A, S], B), in(P, Col), crop(P, B, P_inner).
+
+// --- $RecolorOnce ---
+
+out(P, C2, [R, A, S, $RecolorOnce()]) :-
+    cut(P, C, A, S), key_reading_choice(R), !key_clash(R, A, S),
+    ( key(C, C2, R, A, S)                  // a key's old color takes its new color
+    ; !key(C, _, R, A, S), C2 = C          // every other color stays
+    ).
+
+// --- $RecolorTransitive ---
+
+.type Chain = [r: KeyReading, a: Adjacency, s: Selection, c: Color]
+
+// @claim recolor-by-key
+.init chain = GraphDistance<Chain, Color>
+chain.seed([R, A, S, C], C) :- cut(_, C, A, S), key_reading_choice(R).
+chain.edge([R, A, S, C], Old, New) :- cut(_, C, A, S), key(Old, New, R, A, S).
+
+// @claim recolor-by-key
+.init chain_end = ArgExtremes<Chain, Color>
+chain_end.cand(K, C, N) :- chain.distance(K, C, N).
+
+// The color farthest along the chain of keys from the cell's color.
+out(P, C2, [R, A, S, $RecolorTransitive()]) :-
+    cut(P, C, A, S), chain_end.high([R, A, S, C], C2, _), !key_clash(R, A, S).
+
+.comp Determine {
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // An input whose commonest colors leave out Col.
+    .decl not_commonest(c: Color)
+    not_commonest(Col) :- commonest.mode(_, Col), ex_in(E, _, _), !commonest.mode(E, Col).
+
+    // The color that is commonest in every input.
+    .decl background(c: Color)
+    background(Col) :- commonest.mode(_, Col), !not_commonest(Col).
+}

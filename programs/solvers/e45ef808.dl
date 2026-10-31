@@ -1,0 +1,487 @@
+// e45ef808
+// @draft
+// @keywords: lines rank markers
+// @scene border-row: the line at the edge opposite params.ground_side is all
+//  0, the border color.
+// @scene sky-and-ground: every other cell is params.sky_color or
+//  params.ground_color.
+// @scene solid-ground: in each column, the params.ground_color cells are one
+//  run that starts at the params.ground_side edge, so each column has a
+//  ground height.
+// @scene sky-in-every-column: each column has at least one params.sky_color
+//  cell, and at least one params.ground_color cell.
+// @scene one-deepest-valley: exactly one column has the least ground height.
+// @rule peak-line: the column with the greatest ground height takes
+//  params.peak_color in each of its params.sky_color cells. Where columns tie
+//  for the greatest height, the one nearest the params.tie_side edge takes it.
+// @rule valley-line: the column with the least ground height takes
+//  params.valley_color in each of its params.sky_color cells.
+// @rule rest-kept: every other cell keeps its input color.
+
+// how a tie for the highest peak is broken
+.type PeakTie =
+    // @claim peak-line
+    NearTieSide {}
+    // @rule peak-line: the tied column farthest from the valley column wins;
+    //  undefined where two tied columns are equally far from it, or where the
+    //  valley is undefined
+    // @witness peak-tie-valley-right: ordinary concept
+  | TieFarFromValley {}
+    // @rule peak-line: the tied column nearest a grid edge, whichever edge,
+    //  wins; undefined where two tied columns are equally near the edges
+    // @witness peak-tie-edge: ordinary concept
+  | TieNearEdge {}
+
+// how a tie for the deepest valley is broken
+.type ValleyTie =
+    // @claim one-deepest-valley
+    UniqueValley {}
+    // @scene one-deepest-valley: columns may tie for the least ground height
+    // @rule valley-line: among the tied columns, the one nearest the
+    //  params.tie_side edge takes the valley line
+    // @witness valley-tie: variant $ValleyTieSide
+    //     @relaxed one-deepest-valley
+  | ValleyTieSide {}
+    // @scene one-deepest-valley: columns may tie for the least ground height
+    // @rule valley-line: every tied column takes the valley line
+    // @witness valley-tie: variant $ValleyTieSide
+  | ValleyTieAll {}
+    // @scene one-deepest-valley: columns may tie for the least ground height
+    // @rule valley-line: the tied column farthest from the peak column takes
+    //  the valley line; undefined where two tied columns are equally far from
+    //  it, or where the peak is undefined
+    // @witness valley-tie: variant $ValleyTieSide
+  | ValleyTieFarFromPeak {}
+
+// what a column's height measures
+.type Height =
+    // @claim solid-ground
+    GroundBased {m: GroundMeasure}
+    // @rule peak-line: a column's height is the distance from the
+    //  params.ground_side edge to its params.sky_color cell nearest that edge;
+    //  valley-line likewise
+    // @witness ground-hole: foreign $CastFromBorder
+    //     @relaxed solid-ground
+  | LowestSky {}
+
+// how the ground of a column gives its height
+.type GroundMeasure =
+    // @claim solid-ground
+    FarthestGround {}
+    // @rule peak-line: a column's height is its count of params.ground_color
+    //  cells; valley-line likewise
+    // @witness ground-hole: foreign $CastFromBorder
+  | GroundCount {}
+
+// which cells of the chosen column take the line color
+.type Extent =
+    // @claim peak-line
+    EverySky {}
+    // @rule peak-line: the line runs from the border edge toward
+    //  params.ground_side, paints params.sky_color cells, and stops at the
+    //  first params.ground_color cell; valley-line likewise
+    // @witness ground-hole: foreign $CastFromBorder
+  | CastFromBorder {}
+
+// where the ground side comes from
+.type Side =
+    // @claim border-row
+    StoredSide {}
+    // @scene border-row: the ground side is the edge opposite the one edge
+    //  line that is all 0; undefined where no edge line, or more than one, is
+    //  all 0
+    // @witness ground-side-from-border: variant $GroundSideFromBorder
+    //     @relaxed border-row
+    //     @relaxed solid-ground
+  | GroundSideFromBorder {}
+
+// where the sky color comes from
+.type Sky =
+    // @claim sky-and-ground
+    StoredSky {}
+    // @scene sky-and-ground: the sky color is the color of the line next to
+    //  the border line, on the ground side; undefined where that line has more
+    //  than one color
+    // @witness sky-recolored: variant $SkyColorFromLayout
+    //     @relaxed sky-and-ground
+  | SkyColorFromLayout {}
+
+// where the ground color comes from
+.type Ground =
+    // @claim sky-and-ground
+    StoredGround {}
+    // @scene sky-and-ground: the ground color is the color of the line at the
+    //  ground edge; undefined where that line has more than one color
+    // @witness ground-recolored: variant $GroundColorFromLayout
+    //     @relaxed sky-and-ground
+    //     @relaxed sky-in-every-column
+  | GroundColorFromLayout {}
+
+.type Choice = [peak: PeakTie, valley: ValleyTie, height: Height, extent: Extent,
+                side: Side, sky: Sky, ground: Ground]
+
+// A column of one case.
+.type ColKey = [ch: Choice, col: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl peak_color(c: Color) peak_color(4).
+    .decl valley_color(c: Color) valley_color(9).
+
+    // --- $NearTieSide, $ValleyTieSide ---
+    // The edge whose nearest column wins a tie.
+    .decl tie_side(d: Dir) tie_side(DIR_R).
+
+    // --- $StoredSide ---
+    // The edge the ground rises from.
+    .decl ground_side(d: Dir) ground_side(DIR_B).
+
+    // --- $GroundSideFromBorder ---
+    // @derive RarestColor: variant derived
+    //     @relaxed border-row
+    .decl border_color(c: Color) border_color(0).
+
+    // --- $StoredSky ---
+    // @derive DominantColor: ordinary concept
+    .decl sky_color(c: Color) sky_color(1).
+
+    // --- $StoredGround ---
+    .decl ground_color(c: Color) ground_color(6).
+}
+
+.init params = Params
+
+.decl peak_tie_choice(t: PeakTie)
+peak_tie_choice($NearTieSide()). peak_tie_choice($TieFarFromValley()).
+peak_tie_choice($TieNearEdge()).
+
+.decl valley_tie_choice(t: ValleyTie)
+valley_tie_choice($UniqueValley()). valley_tie_choice($ValleyTieSide()).
+valley_tie_choice($ValleyTieAll()). valley_tie_choice($ValleyTieFarFromPeak()).
+
+.decl height_choice(h: Height)
+height_choice($GroundBased($FarthestGround())). height_choice($GroundBased($GroundCount())).
+height_choice($LowestSky()).
+
+.decl extent_choice(e: Extent)
+extent_choice($EverySky()). extent_choice($CastFromBorder()).
+
+.decl side_choice(s: Side)
+side_choice($StoredSide()). side_choice($GroundSideFromBorder()).
+
+.decl sky_choice(k: Sky)
+sky_choice($StoredSky()). sky_choice($SkyColorFromLayout()).
+
+.decl ground_choice(g: Ground)
+ground_choice($StoredGround()). ground_choice($GroundColorFromLayout()).
+
+// Under $LowestSky with $EverySky, no case reads the ground color. A case that
+// takes $UniqueValley and another branch gives the output of the same case
+// with a tie-breaking valley branch wherever it is defined, so the concept
+// case alone takes $UniqueValley.
+.decl impl_choice(ch: Choice)
+impl_choice([Pk, V, H, E, S, K, G]) :-
+    peak_tie_choice(Pk), valley_tie_choice(V), height_choice(H), extent_choice(E),
+    side_choice(S), sky_choice(K), ground_choice(G),
+    V != $UniqueValley(), !lowest_sky_ground_unread(H, E, G).
+impl_choice([$NearTieSide(), $UniqueValley(), $GroundBased($FarthestGround()), $EverySky(),
+             $StoredSide(), $StoredSky(), $StoredGround()]).
+
+.decl lowest_sky_ground_unread(h: Height, e: Extent, g: Ground)
+lowest_sky_ground_unread($LowestSky(), $EverySky(), $GroundColorFromLayout()).
+
+// --- the ground side ---
+
+.decl ground_side(d: Dir, ch: Choice)
+
+// --- $StoredSide ---
+ground_side(D, Ch) :-
+    impl_choice(Ch), Ch = [_, _, _, _, $StoredSide(), _, _], params.ground_side(D).
+
+// --- $GroundSideFromBorder ---
+
+// An edge line holds a cell of another color than the border's.
+// @ignore: store — a stored value fixes the ground side, as $StoredSide does, and fails Equivalence
+.decl off_border(e: Dir)
+off_border(E) :- dir_elem(E), in(P, Col), dist(P, E, 0), !params.border_color(Col).
+
+// @ignore: store — a stored value fixes the ground side, as $StoredSide does, and fails Equivalence
+.decl border_edge(e: Dir)
+border_edge(E) :- dir_elem(E), !off_border(E).
+
+.decl two_borders()
+two_borders() :- border_edge(E), border_edge(E2), E != E2.
+
+ground_side(D, Ch) :-
+    impl_choice(Ch), Ch = [_, _, _, _, $GroundSideFromBorder(), _, _],
+    border_edge(E), !two_borders(), opposite(E, D).
+
+// --- shared ---
+
+// The column a cell stands in: its cells across the ground axis.
+.decl column(p: Position, c: Position, ch: Choice)
+column(P, C, Ch) :- ground_side(D, Ch), axis_of(D, A), in(P, _), split(P, A, _, C).
+
+// A cell of the border line.
+.decl border_cell(p: Position, ch: Choice)
+border_cell(P, Ch) :- ground_side(D, Ch), opposite(D, E), in(P, _), dist(P, E, 0).
+
+// --- the sky and ground colors ---
+
+.decl sky_color(c: Color, ch: Choice)
+
+// --- $StoredSky ---
+sky_color(Col, Ch) :-
+    impl_choice(Ch), Ch = [_, _, _, _, _, $StoredSky(), _], params.sky_color(Col).
+
+// --- $SkyColorFromLayout ---
+// @ignore item: store — a stored value fixes the sky color, as $StoredSky does, and fails Equivalence
+// @claim sky-and-ground
+.init layout_sky = Unanimous<Choice, Color>
+layout_sky.item(Ch, Col) :-
+    Ch = [_, _, _, _, _, $SkyColorFromLayout(), _],
+    border_cell(P, Ch), ground_side(D, Ch), neighbor(P, D, Q), in(Q, Col).   // the line next to the border
+
+sky_color(Col, Ch) :- layout_sky.value(Ch, Col).
+
+.decl ground_color(c: Color, ch: Choice)
+
+// --- $StoredGround ---
+ground_color(Col, Ch) :-
+    impl_choice(Ch), Ch = [_, _, _, _, _, _, $StoredGround()], params.ground_color(Col).
+
+// --- $GroundColorFromLayout ---
+// @ignore item: store — a stored value fixes the ground color, as $StoredGround does, and fails Equivalence
+// @claim sky-and-ground
+.init layout_ground = Unanimous<Choice, Color>
+layout_ground.item(Ch, Col) :-
+    impl_choice(Ch), Ch = [_, _, _, _, _, _, $GroundColorFromLayout()],
+    ground_side(D, Ch), in(P, Col), dist(P, D, 0).                          // the ground edge line
+
+ground_color(Col, Ch) :- layout_ground.value(Ch, Col).
+
+// --- shared ---
+
+.decl sky_cell(p: Position, ch: Choice)
+sky_cell(P, Ch) :- sky_color(Col, Ch), in(P, Col).
+
+.decl ground_cell(p: Position, ch: Choice)
+ground_cell(P, Ch) :- ground_color(Col, Ch), in(P, Col).
+
+// --- the column heights ---
+
+.decl col_height(c: Position, k: number, ch: Choice)
+
+// --- $FarthestGround ---
+// @claim solid-ground
+.init ground_top = Extremes<ColKey>
+ground_top.cand([Ch, C], K) :-
+    Ch = [_, _, $GroundBased($FarthestGround()), _, _, _, _],
+    ground_cell(P, Ch), column(P, C, Ch), ground_side(D, Ch), dist(P, D, K).
+
+// A column's height counts its cells from the ground edge through its
+// farthest ground cell, so a column with no ground counts 0.
+// @claim solid-ground
+.init ground_span = Tally<ColKey, Position>
+ground_span.domain([Ch, C]) :-
+    Ch = [_, _, $GroundBased($FarthestGround()), _, _, _, _], column(_, C, Ch).
+ground_span.item([Ch, C], Q) :-
+    ground_top.high([Ch, C], K), column(Q, C, Ch), ground_side(D, Ch), dist(Q, D, J), J <= K.
+
+col_height(C, N, Ch) :- ground_span.tally([Ch, C], N).
+
+// --- $GroundCount ---
+// @claim solid-ground
+.init ground_count = Tally<ColKey, Position>
+ground_count.domain([Ch, C]) :-
+    Ch = [_, _, $GroundBased($GroundCount()), _, _, _, _], column(_, C, Ch).
+ground_count.item([Ch, C], P) :-
+    Ch = [_, _, $GroundBased($GroundCount()), _, _, _, _], ground_cell(P, Ch), column(P, C, Ch).
+
+col_height(C, K, Ch) :- ground_count.tally([Ch, C], K).
+
+// --- $LowestSky ---
+// @claim solid-ground
+.init sky_bottom = Extremes<ColKey>
+sky_bottom.cand([Ch, C], K) :-
+    Ch = [_, _, $LowestSky(), _, _, _, _],
+    sky_cell(P, Ch), column(P, C, Ch), ground_side(D, Ch), dist(P, D, K).
+
+col_height(C, K, Ch) :- sky_bottom.low([Ch, C], K).
+
+// --- shared ---
+
+// @claim peak-line valley-line
+.init rank = ArgExtremes<Choice, Position>
+rank.cand(Ch, C, K) :- col_height(C, K, Ch).
+
+// The columns that tie for the greatest height, and for the least.
+.decl peak_cand(c: Position, ch: Choice)
+peak_cand(C, Ch) :- rank.high(Ch, C, _).
+
+.decl valley_cand(c: Position, ch: Choice)
+valley_cand(C, Ch) :- rank.low(Ch, C, _).
+
+.decl peak_tied(ch: Choice)
+peak_tied(Ch) :- peak_cand(C, Ch), peak_cand(C2, Ch), C != C2.
+
+.decl valley_tied(ch: Choice)
+valley_tied(Ch) :- valley_cand(C, Ch), valley_cand(C2, Ch), C != C2.
+
+// The peak and valley columns that each rule picks without the other line.
+.decl peak_first(c: Position, ch: Choice)
+.decl valley_first(c: Position, ch: Choice)
+
+// --- $NearTieSide ---
+.decl peak_side_beaten(c: Position, ch: Choice)
+peak_side_beaten(C, Ch) :-
+    Ch = [$NearTieSide(), _, _, _, _, _, _],
+    peak_cand(C, Ch), peak_cand(C2, Ch), params.tie_side(D), nearer(D, C2, C).
+
+peak_first(C, Ch) :-
+    Ch = [$NearTieSide(), _, _, _, _, _, _], peak_cand(C, Ch), !peak_side_beaten(C, Ch).
+
+// --- $TieFarFromValley ---
+peak_first(C, Ch) :-
+    Ch = [$TieFarFromValley(), _, _, _, _, _, _], peak_cand(C, Ch), !peak_tied(Ch).
+
+// --- $TieNearEdge ---
+// The tied columns, scored by their distance to each edge across the ground axis.
+// @claim peak-line
+.init near_edge = ArgExtremes<Choice, Position>
+near_edge.cand(Ch, C, K) :-
+    Ch = [$TieNearEdge(), _, _, _, _, _, _],
+    peak_cand(C, Ch), ground_side(G, Ch), perp_dir(G, D), dist(C, D, K).
+
+peak_first(C, Ch) :- near_edge.low(Ch, C, _).
+
+// --- $UniqueValley ---
+valley_first(C, Ch) :-
+    Ch = [_, $UniqueValley(), _, _, _, _, _], valley_cand(C, Ch), !valley_tied(Ch).
+
+// --- $ValleyTieSide ---
+.decl valley_side_beaten(c: Position, ch: Choice)
+valley_side_beaten(C, Ch) :-
+    Ch = [_, $ValleyTieSide(), _, _, _, _, _],
+    valley_cand(C, Ch), valley_cand(C2, Ch), params.tie_side(D), nearer(D, C2, C).
+
+valley_first(C, Ch) :-
+    Ch = [_, $ValleyTieSide(), _, _, _, _, _], valley_cand(C, Ch), !valley_side_beaten(C, Ch).
+
+// --- $ValleyTieAll ---
+valley_first(C, Ch) :- Ch = [_, $ValleyTieAll(), _, _, _, _, _], valley_cand(C, Ch).
+
+.decl every_valley(ch: Choice)
+every_valley(Ch) :- impl_choice(Ch), Ch = [_, $ValleyTieAll(), _, _, _, _, _].
+
+// --- $ValleyTieFarFromPeak ---
+valley_first(C, Ch) :-
+    Ch = [_, $ValleyTieFarFromPeak(), _, _, _, _, _], valley_cand(C, Ch), !valley_tied(Ch).
+
+// --- shared ---
+
+.decl peak_first_multi(ch: Choice)
+peak_first_multi(Ch) :- peak_first(C, Ch), peak_first(C2, Ch), C != C2.
+
+.decl valley_first_multi(ch: Choice)
+valley_first_multi(Ch) :- valley_first(C, Ch), valley_first(C2, Ch), C != C2.
+
+// --- $TieFarFromValley ---
+// Each tied peak column's distance from the valley column.
+// @claim peak-line
+.init from_valley = Ray<Choice>
+from_valley.mark(Ch, V) :-
+    Ch = [$TieFarFromValley(), _, _, _, _, _, _],
+    peak_tied(Ch), valley_first(V, Ch), !valley_first_multi(Ch).
+from_valley.dir(Ch, D) :- from_valley.mark(Ch, _), ground_side(G, Ch), perp_dir(G, D).
+from_valley.cell(Ch, C) :- Ch = [$TieFarFromValley(), _, _, _, _, _, _], peak_cand(C, Ch).
+
+// @claim peak-line
+.init far_from_valley = ArgExtremes<Choice, Position>
+far_from_valley.cand(Ch, C, K) :- from_valley.ray(Ch, C, _, K, _).
+
+// --- $ValleyTieFarFromPeak ---
+// Each tied valley column's distance from the peak column.
+// @claim valley-line
+.init from_peak = Ray<Choice>
+from_peak.mark(Ch, V) :-
+    Ch = [_, $ValleyTieFarFromPeak(), _, _, _, _, _],
+    valley_tied(Ch), peak_first(V, Ch), !peak_first_multi(Ch).
+from_peak.dir(Ch, D) :- from_peak.mark(Ch, _), ground_side(G, Ch), perp_dir(G, D).
+from_peak.cell(Ch, C) :- Ch = [_, $ValleyTieFarFromPeak(), _, _, _, _, _], valley_cand(C, Ch).
+
+// @claim valley-line
+.init far_from_peak = ArgExtremes<Choice, Position>
+far_from_peak.cand(Ch, C, K) :- from_peak.ray(Ch, C, _, K, _).
+
+// --- shared ---
+
+.decl peak(c: Position, ch: Choice)
+peak(C, Ch) :- peak_first(C, Ch).
+peak(C, Ch) :- far_from_valley.high(Ch, C, _).
+
+.decl valley(c: Position, ch: Choice)
+valley(C, Ch) :- valley_first(C, Ch).
+valley(C, Ch) :- far_from_peak.high(Ch, C, _).
+
+.decl peak_multi(ch: Choice)
+peak_multi(Ch) :- peak(C, Ch), peak(C2, Ch), C != C2.
+
+.decl valley_multi(ch: Choice)
+valley_multi(Ch) :- valley(C, Ch), valley(C2, Ch), C != C2, !every_valley(Ch).
+
+// The input has one peak line, and the valley lines its case allows.
+.decl defined(ch: Choice)
+defined(Ch) :- peak(_, Ch), valley(_, Ch), !peak_multi(Ch), !valley_multi(Ch).
+
+// Each line's column and color.
+.decl line(c: Position, col: Color, ch: Choice)
+line(C, Col, Ch) :- defined(Ch), peak(C, Ch), params.peak_color(Col).
+line(C, Col, Ch) :- defined(Ch), valley(C, Ch), params.valley_color(Col).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+
+// --- $EverySky ---
+paint(P, Col, Ch) :-
+    Ch = [_, _, _, $EverySky(), _, _, _], line(C, Col, Ch), column(P, C, Ch), sky_cell(P, Ch).
+
+// --- $CastFromBorder ---
+// Each line runs from the border toward the ground until a ground cell.
+// @claim peak-line valley-line
+.init drop = Ray<Choice>
+drop.mark(Ch, P) :-
+    Ch = [_, _, _, $CastFromBorder(), _, _, _],
+    line(C, _, Ch), column(P, C, Ch), border_cell(P, Ch).
+drop.dir(Ch, D) :- Ch = [_, _, _, $CastFromBorder(), _, _, _], ground_side(D, Ch).
+drop.cell(Ch, P) :- Ch = [_, _, _, $CastFromBorder(), _, _, _], sky_cell(P, Ch).
+drop.blocked(Ch, P) :- Ch = [_, _, _, $CastFromBorder(), _, _, _], ground_cell(P, Ch).
+
+paint(P, Col, Ch) :- drop.clear(Ch, P, _, _, Src), column(Src, C, Ch), line(C, Col, Ch).
+
+// --- shared ---
+
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- defined(Ch), in(P, Col), !paint(P, _, Ch).
+
+.comp Determine {
+    // The input color of the cells the lines repaint.
+    .decl sky_color(c: Color)
+    sky_color(Col) :- ex_out(E, P, Col2), ex_in(E, P, Col), Col != Col2.
+
+    // A train input's edge-d line holds two colors, or its color stands off
+    // that line.
+    .decl edge_mixed(d: Dir)
+    edge_mixed(D) :-
+        dir_elem(D), ex_out(E, _, _), ex_in(E, P, Col), dist(P, D, 0),
+        ( ex_in(E, P2, Col2), dist(P2, D, 0), Col != Col2    // a second color on the line
+        ; ex_in(E, Q, Col), !dist(Q, D, 0)                   // its color off the line
+        ).
+
+    // The border: an edge line of one color found nowhere else.
+    .decl border_color(c: Color)
+    border_color(Col) :- dir_elem(D), !edge_mixed(D), ex_in(_, P, Col), dist(P, D, 0).
+
+    .decl ground_side(d: Dir)
+    ground_side(G) :- dir_elem(D), !edge_mixed(D), opposite(D, G).
+}

@@ -1,0 +1,205 @@
+// eb5a1d5d
+// @draft
+// @keywords: objects rings rank count bbox lines
+// @scene background-field: the outermost layer is one color that fills the
+//  grid border and everything outside the first rectangle
+// @scene nested-rectangles: one or more solid filled rectangles, each strictly
+//  inside the one before it, touching none of its edges, so the layers form
+//  one chain by containment
+// @scene layer-differs-from-container: each layer's color differs from the
+//  color of the layer that contains it; a color may recur at layers further
+//  apart
+// @rule depth-chain: the layers, from the background inward, are numbered by
+//  depth 0 to n-1
+// @rule concentric-output: the output is a square of side
+//  (2n-1)·ring_width; a cell takes the color of the layer whose
+//  depth equals its ring, its distance from the output's border counted in
+//  rings of ring_width cells
+// @rule sizes-dropped: the rectangles' sizes, margins and positions do not
+//  reach the output; only the order of their colors does
+
+// How the output is built from the input.
+.type Choice =
+    // @claim depth-chain concentric-output sizes-dropped
+    Concentric {u: LayerUnit, o: LayerOrder}
+    // @rule depth-chain: dropped
+    // @rule sizes-dropped: dropped
+    // @rule concentric-output: replaced: the output is the input with each run
+    //  of identical consecutive rows, and each run of identical consecutive
+    //  columns, collapsed to one line; defined on every input
+    // @witness flush-inner: variant concept
+    //     @relaxed nested-rectangles
+  | CompressRuns {}
+
+// What one layer is.
+.type LayerUnit =
+    // @claim depth-chain
+    Layers4Connected {}
+    // @rule depth-chain: a layer is one same-color 8-connected component;
+    //  undefined where those do not chain by containment
+    // @witness diagonal-contact: foreign concept
+    //     @relaxed nested-rectangles
+  | Layers8Connected {}
+
+// How the layers are ordered from the background inward.
+.type LayerOrder =
+    // @claim depth-chain
+    LayersByContainment {}
+    // @rule depth-chain: the layers are ordered by their cell counts,
+    //  descending; undefined where two layers of different colors tie
+    // @witness thin-ring: ordinary concept
+  | LayersByCellCount {}
+    // @rule depth-chain: the layers are ordered by their bounding-box areas,
+    //  descending, with no chain needed; undefined where two layers of
+    //  different colors tie
+    // @witness sibling-rectangles: foreign any
+    //     @relaxed nested-rectangles
+  | LayersByBboxArea {}
+
+// One layer of one layer unit.
+.type Layer = [u: LayerUnit, l: Ident]
+
+// One line of the grid across an axis.
+.type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $Concentric ---
+    // The width in cells of each output ring, the center square included.
+    .decl ring_width(k: number) ring_width(1).
+}
+
+.init params = Params
+
+.decl layer_unit_choice(u: LayerUnit)
+layer_unit_choice($Layers4Connected()). layer_unit_choice($Layers8Connected()).
+
+.decl layer_order_choice(o: LayerOrder)
+layer_order_choice($LayersByContainment()). layer_order_choice($LayersByCellCount()).
+layer_order_choice($LayersByBboxArea()).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Concentric(U, O)) :- layer_unit_choice(U), layer_order_choice(O).
+impl_choice($CompressRuns()).
+
+// --- $Layers4Connected ---
+
+// @claim depth-chain
+.init layers4 = Components<Color>
+layers4.node(Col, P) :- in(P, Col).
+
+.decl layer(u: LayerUnit, p: Position, l: Ident)
+layer($Layers4Connected(), P, L) :- layers4.label(_, P, L).
+
+// --- $Layers8Connected ---
+
+// @claim depth-chain
+.init layers8 = Components8<Color>
+layers8.node(Col, P) :- in(P, Col).
+
+layer($Layers8Connected(), P, L) :- layers8.label(_, P, L).
+
+// --- $Concentric ---
+
+// @claim depth-chain
+.init extent = Bbox<Layer>
+extent.cell([U, L], P) :- layer(U, P, L).
+
+// The layers of each case, ordered from the background inward.
+// @claim depth-chain
+.init depth_order = Order<Choice, Ident>
+depth_order.elem($Concentric(U, O), L) :- impl_choice($Concentric(U, O)), layer(U, _, L).
+
+// A layer's depth: its rank from the background inward.
+.decl depth(ch: Choice, l: Ident, k: number)
+
+// --- $LayersByContainment ---
+
+// A layer comes before each layer its bounding box contains.
+depth_order.before($Concentric(U, $LayersByContainment()), L1, L2) :-
+    extent.box([U, L1], B1), extent.box([U, L2], B2), inside(B2, B1), B1 != B2.
+
+depth($Concentric(U, $LayersByContainment()), L, K) :-
+    depth_order.rank($Concentric(U, $LayersByContainment()), L, K).
+
+// --- $LayersByCellCount ---
+
+// @claim depth-chain
+.init cells = Tally<Layer, Position>
+cells.item([U, L], P) :- layer(U, P, L).
+
+depth_order.score($Concentric(U, $LayersByCellCount()), L, N) :- cells.tally([U, L], N).
+
+// --- $LayersByBboxArea ---
+
+// @claim depth-chain
+.init area = Tally<Layer, Position>
+area.item([U, L], P) :- extent.box([U, L], B), in(P, _), inside(P, B).
+
+depth_order.score($Concentric(U, $LayersByBboxArea()), L, N) :- area.tally([U, L], N).
+
+// --- $LayersByCellCount, $LayersByBboxArea ---
+
+// The larger layer lies outside.
+depth(Ch, L, K) :- depth_order.score(Ch, L, _), depth_order.rank_desc(Ch, L, K).
+
+// --- $Concentric ---
+
+// @claim concentric-output
+.init deepest = Extremes<Choice>
+deepest.cand(Ch, K) :- depth(Ch, _, K).
+
+// The square of rings, one cell per ring width: its center lies as deep as the
+// deepest layer, and every cell lies within that depth of it on each axis.
+.decl square(ch: Choice, p_tile: Position)
+square(Ch, P_tile) :-
+    deepest.high(Ch, K), uniform_inset(K, P_center),
+    depth(Ch, _, K1), jump(P_center, _, K1, Q),
+    depth(Ch, _, K2), jump(Q, _, K2, P_tile).
+
+// The ring a square cell lies on: inside the box inset by k, and on its edge.
+.decl ring(ch: Choice, p_tile: Position, k: number)
+ring(Ch, P_tile, K) :-
+    square(Ch, P_tile), depth(Ch, _, K), uniform_inset(K, B),
+    inside(P_tile, B), !interior(P_tile, B).
+
+// Each ring is ring_width cells wide.
+.init ring_cell = Frame2D<Unit>
+ring_cell.extent($U(), A, W) :- axis_elem(A), params.ring_width(W).
+
+out(P_grid, Col, $Concentric(U, O)) :-
+    ring($Concentric(U, O), P_tile, K), depth($Concentric(U, O), L, K),
+    layer(U, P_layer, L), in(P_layer, Col),                   // the layer at the ring's depth
+    ring_cell.cell($U(), P_intile), concat_2d(P_tile, P_intile, 0, P_grid).
+
+// --- $CompressRuns ---
+
+.decl line(a: Axis, l: Position)
+line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+// Two neighboring lines across axis a differ at some cell.
+.decl line_differs(a: Axis, l1: Position, l2: Position)
+line_differs(A, L1, L2) :-
+    in(P1, C1), axis_elem(A), split(P1, A, L1, _),
+    axis_of(D, A), neighbor(P1, D, P2), in(P2, C2), C1 != C2, split(P2, A, L2, _).
+
+// A run of identical consecutive lines.
+.init runs = Canon<Line>
+runs.equiv([A, L], [A, L]) :- line(A, L).
+runs.edge([A, L1], [A, L2]) :-
+    line(A, L1), neighbor(L1, _, L2), line(A, L2),         // the next line
+    !line_differs(A, L1, L2).
+
+// Each run collapses to one line.
+// @claim concentric-output
+.init run_frame = OrderFrame<Axis, Ident>
+run_frame.axis(A, A) :- axis_elem(A).
+run_frame.member(A, R, L) :- runs.id([A, L], R).
+
+out(P_grid_out, Col, $CompressRuns()) :-
+    in(P_grid_in, Col),
+    axis_elem(A), perp(A, A2), split(P_grid_in, A, L1, L2),
+    runs.id([A, L1], R1), run_frame.pos(A, R1, Q1),
+    runs.id([A2, L2], R2), run_frame.pos(A2, R2, Q2),
+    compose(Q1, Q2, P_grid_out).

@@ -1,0 +1,212 @@
+// e509e548
+// @draft
+// @keywords: objects classify lookup count
+// @scene thin-drawings: the input holds drawings of color 3 on a field of `bg`, each a connected
+//  set of 1-wide straight segments, and no two drawings touch, even at a corner.
+// @scene three-kinds: each drawing is an L (a path with one bend), a U (a path with two bends
+//  that turn the same way, so both ends point to the same side), or a branched drawing (a path
+//  with a side segment that leaves it at a T junction).
+// @rule recolor-by-kind: the output is the input with each drawing's cells in the color of the
+//  drawing's kind: `l_color` for an L, `u_color` for a U, and `other_color` for any other drawing.
+
+// What decides a drawing's color.
+.type Class =
+    // @claim recolor-by-kind
+    Kind {}
+    // @scene three-kinds: dropped: a drawing may be any shape.
+    // @rule recolor-by-kind: the color is `corner_color` at the drawing's corner count: at each
+    //  cell, the pairs of one vertical and one horizontal neighbor. A T junction counts two.
+    //  Undefined on a drawing whose count has no entry.
+    // @witness t-no-bend: variant concept
+  | CornerCount {}
+    // @scene three-kinds: dropped: a drawing may be any shape.
+    // @rule recolor-by-kind: every unbranched path with two bends is `u_color`, whichever way
+    //  the bends turn.
+    // @witness z-path: variant concept
+    //     @relaxed three-kinds
+  | AnyTwoBends {}
+    // @scene three-kinds: dropped: a drawing may be any shape.
+    // @rule recolor-by-kind: a drawing with a junction is `other_color`, an L is `l_color`, and
+    //  every other drawing is `u_color`.
+    // @witness three-bend-path: variant concept
+    //     @relaxed three-kinds
+  | PathNotL {}
+
+// Which cells join into one drawing.
+.type Join =
+    // @claim thin-drawings
+    Edge4 {}
+    // @scene thin-drawings: cells that touch at a corner join into one drawing, which is
+    //  classed as the `Class` branch classes it.
+    // @witness corner-contact: borderline concept
+    //     @relaxed thin-drawings
+  | Corner8 {}
+
+.type Choice = [c: Class, j: Join]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(0).
+
+    // --- $Kind, $AnyTwoBends, $PathNotL ---
+    .decl l_color(c: Color) l_color(1).
+    .decl u_color(c: Color) u_color(6).
+    .decl other_color(c: Color) other_color(2).
+
+    // --- $CornerCount ---
+    .decl corner_color(n: number, c: Color)
+    corner_color(1, 1).
+    corner_color(2, 6).
+    corner_color(3, 2).
+}
+
+.init params = Params
+
+.decl class_choice(c: Class)
+class_choice($Kind()). class_choice($CornerCount()). class_choice($AnyTwoBends()).
+class_choice($PathNotL()).
+
+.decl join_choice(j: Join)
+join_choice($Edge4()). join_choice($Corner8()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, J]) :- class_choice(C), join_choice(J).
+
+.comp Parse<Key> {
+    // A drawing cell.
+    .decl cell(k: Key, p: Position)
+
+    // Cell p has a drawing cell next to it toward d.
+    .decl link(k: Key, p: Position, d: Dir)
+    link(K, P, D) :- cell(K, P), dir_elem(D), neighbor(P, D, Q), cell(K, Q).
+
+    // Cell p has three or four neighbors.
+    .decl junction(k: Key, p: Position)
+    junction(K, P) :-
+        link(K, P, D), opposite(D, O), link(K, P, O),   // straight through
+        perp_dir(D, D3), link(K, P, D3).                // and a side arm
+
+    .type Drawing = [k: Key, j: Join, id: Ident]
+
+    .decl drawing(d: Drawing, p: Position)
+
+    // --- $Edge4 ---
+    // @claim thin-drawings
+    .init drawing4 = Components<Key>
+    drawing4.node(K, P) :- cell(K, P).
+    drawing([K, $Edge4(), Id], P) :- drawing4.label(K, P, Id).
+
+    // --- $Corner8 ---
+    // @claim thin-drawings
+    .init drawing8 = Components8<Key>
+    drawing8.node(K, P) :- cell(K, P).
+    drawing([K, $Corner8(), Id], P) :- drawing8.label(K, P, Id).
+
+    // --- $Kind, $AnyTwoBends, $PathNotL ---
+    // Cell p has exactly two neighbors, at a right angle, and d is one of them.
+    .decl bend_dir(k: Key, p: Position, d: Dir)
+    bend_dir(K, P, D1) :-
+        link(K, P, D1), link(K, P, D2), perp_dir(D1, D2),
+        opposite(D1, O1), !link(K, P, O1), opposite(D2, O2), !link(K, P, O2).
+
+    .decl bend(d: Drawing, p: Position)
+    bend([K, J, Id], P) :- drawing([K, J, Id], P), bend_dir(K, P, _).
+
+    .decl two_bends(d: Drawing)
+    two_bends(D) :- bend(D, P1), bend(D, P2), P1 != P2.
+
+    .decl branched(d: Drawing)
+    branched([K, J, Id]) :- drawing([K, J, Id], P), junction(K, P).
+
+    // A path with one bend.
+    .decl l_drawing(d: Drawing)
+    l_drawing(D) :- bend(D, _), !two_bends(D), !branched(D).
+
+    // --- $Kind, $AnyTwoBends ---
+    .decl three_bends(d: Drawing)
+    three_bends(D) :- bend(D, P1), bend(D, P2), bend(D, P3), P1 != P2, P1 != P3, P2 != P3.
+
+    // --- $Kind ---
+    // A path with two bends that share an arm direction, so both ends point to one side.
+    .decl u_drawing(d: Drawing)
+    u_drawing([K, J, Id]) :-
+        bend([K, J, Id], P1), bend([K, J, Id], P2), P1 != P2,
+        bend_dir(K, P1, D), bend_dir(K, P2, D),
+        !three_bends([K, J, Id]), !branched([K, J, Id]).
+
+    // --- $AnyTwoBends ---
+    // A path with two bends.
+    .decl two_bend_path(d: Drawing)
+    two_bend_path(D) :- two_bends(D), !three_bends(D), !branched(D).
+
+    // --- $CornerCount ---
+    .type Corner = [p: Position, d: DiagDir]
+
+    // @claim recolor-by-kind
+    .init corners = Tally<Drawing, Corner>
+    corners.item([K, J, Id], [P, Dg]) :-
+        drawing([K, J, Id], P), diag_dirs(Dg, _, D1, D2), link(K, P, D1), link(K, P, D2).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P) :- in(P, Col), !params.bg(Col).
+
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), params.bg(Col).
+
+// --- $Kind ---
+out(P, Col, [$Kind(), J]) :-
+    parse.drawing([$U(), J, Id], P),
+    ( parse.l_drawing([$U(), J, Id]), params.l_color(Col)
+    ; parse.u_drawing([$U(), J, Id]), params.u_color(Col)
+    ; !parse.l_drawing([$U(), J, Id]), !parse.u_drawing([$U(), J, Id]), params.other_color(Col)
+    ).
+
+// --- $CornerCount ---
+out(P, Col, [$CornerCount(), J]) :-
+    parse.drawing([$U(), J, Id], P),
+    parse.corners.tally([$U(), J, Id], N), params.corner_color(N, Col).
+
+// --- $AnyTwoBends ---
+out(P, Col, [$AnyTwoBends(), J]) :-
+    parse.drawing([$U(), J, Id], P),
+    ( parse.l_drawing([$U(), J, Id]), params.l_color(Col)
+    ; parse.two_bend_path([$U(), J, Id]), params.u_color(Col)
+    ; !parse.l_drawing([$U(), J, Id]), !parse.two_bend_path([$U(), J, Id]), params.other_color(Col)
+    ).
+
+// --- $PathNotL ---
+out(P, Col, [$PathNotL(), J]) :-
+    parse.drawing([$U(), J, Id], P),
+    ( parse.branched([$U(), J, Id]), params.other_color(Col)
+    ; parse.l_drawing([$U(), J, Id]), params.l_color(Col)
+    ; !parse.branched([$U(), J, Id]), !parse.l_drawing([$U(), J, Id]), params.u_color(Col)
+    ).
+
+.comp Determine {
+    // The color the output keeps from the input.
+    .decl bg(c: Color)
+    bg(Col) :- ex_in(E, P, Col), ex_out(E, P, Col).
+
+    .init parse = Parse<Example>
+    parse.cell(E, P) :- ex_in(E, P, Col), !bg(Col).
+
+    // A drawing's output color, with drawings joined as the concept joins them.
+    .decl drawing_color(e: Example, id: Ident, c: Color)
+    drawing_color(E, Id, Col) :- parse.drawing([E, $Edge4(), Id], P), ex_out(E, P, Col).
+
+    .decl l_color(c: Color)
+    l_color(Col) :- parse.l_drawing([E, $Edge4(), Id]), drawing_color(E, Id, Col).
+
+    .decl u_color(c: Color)
+    u_color(Col) :- parse.u_drawing([E, $Edge4(), Id]), drawing_color(E, Id, Col).
+
+    .decl other_color(c: Color)
+    other_color(Col) :-
+        drawing_color(E, Id, Col),
+        !parse.l_drawing([E, $Edge4(), Id]), !parse.u_drawing([E, $Edge4(), Id]).
+
+    .decl corner_color(n: number, c: Color)
+    corner_color(N, Col) :- parse.corners.tally([E, $Edge4(), Id], N), drawing_color(E, Id, Col).
+}

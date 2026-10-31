@@ -1,0 +1,220 @@
+// e40b9e2f
+// @draft
+// @keywords: symmetry repair d4 rank
+// @scene one-figure: the grid holds one figure of non-bg cells on a field of
+//  bg (0), which may be disconnected at corners.
+// @scene square-core: the figure holds one largest solid square block that
+//  each element of group (SYM_C4) about its own center maps onto itself,
+//  colors included; this is the core.
+// @scene consistent-images: the quarter-turn images of the figure about the
+//  core center fall inside the grid, and no two of them give one cell two
+//  different colors.
+// @rule quarter-turn-completion: each figure cell, under each element of group
+//  about the center of the whole pattern the generator drew, paints its color
+//  at its image cell.
+//     @approximated: each figure cell, under each element of group about the
+//      core center (a quarter, a half and three quarters turn), paints its
+//      color at its image cell.
+//     @witness tied-cores: variant other
+//         @relaxed square-core
+// @rule rest-unchanged: every other cell keeps its input color.
+
+// how the turning center is found
+.type Center =
+    // @claim square-core
+    CoreCenter {s: CoreSquare}
+    // @scene square-core: the center is the point about which the most figure
+    //  cells have every group image in their own color; undefined at a tie.
+    // @witness arm-agreement: variant concept
+  | MostAgreement {}
+
+// which square is the core
+.type CoreSquare =
+    // @claim square-core
+    SymmetricCore {}
+    // @scene square-core: the core is the largest solid square, symmetric or
+    //  not; undefined where it ties, and where its own cells conflict under
+    //  the turn.
+    // @witness unsymmetric-square: ordinary concept
+  | AnySolidCore {}
+    // @scene square-core: the core is the largest solid square that every
+    //  element of D4 maps onto itself, while the images stay under group;
+    //  undefined where that square ties.
+    // @witness chiral-core: borderline concept
+  | MirrorCore {}
+    // @scene square-core: the core is the largest square that holds a figure
+    //  cell and that group maps onto itself, bg cells included; undefined
+    //  where that square ties.
+    // @witness sparse-square: variant concept
+  | OpenCore {}
+
+// an image that falls on a cell of another color
+.type Conflict =
+    // @claim consistent-images
+    NoConflict {}
+    // @scene consistent-images: an image paints only a bg cell, and each
+    //  input cell keeps its color; undefined where two images give one bg
+    //  cell two colors.
+    // @witness conflicting-cell: foreign $InputWins
+    //     @relaxed consistent-images
+  | InputWins {}
+
+// an image that falls outside the grid
+.type OffGrid =
+    // @claim consistent-images
+    InGrid {}
+    // @scene consistent-images: an image outside the grid is dropped.
+    // @witness image-off-grid: borderline $ClipImages
+    //     @relaxed consistent-images
+  | ClipImages {}
+
+.type Choice = [c: Center, k: Conflict, g: OffGrid]
+
+// a square's two corner cells on one diagonal
+.type CellPair = [p: Position, q: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl bg(c: Color) bg(0).
+    // the symmetry group whose images the figure gains
+    .decl group(s: Sym) group(SYM_C4).
+}
+
+.init params = Params
+
+.decl center_choice(c: Center)
+center_choice($CoreCenter($SymmetricCore())). center_choice($CoreCenter($AnySolidCore())).
+center_choice($CoreCenter($MirrorCore())). center_choice($CoreCenter($OpenCore())).
+center_choice($MostAgreement()).
+
+.decl conflict_choice(k: Conflict)
+conflict_choice($NoConflict()). conflict_choice($InputWins()).
+
+.decl off_grid_choice(g: OffGrid)
+off_grid_choice($InGrid()). off_grid_choice($ClipImages()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, K, G]) :-
+    center_choice(C), conflict_choice(K), off_grid_choice(G), C != $CoreCenter($AnySolidCore()).
+// Under $NoConflict, $AnySolidCore is defined only where its core is the concept's.
+impl_choice([$CoreCenter($AnySolidCore()), $InputWins(), G]) :- off_grid_choice(G).
+
+.decl figure(p: Position, col: Color)
+figure(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The squares of the grid, each the bounding box of two cells on a diagonal.
+// @claim square-core
+.init square = Bbox<CellPair>
+square.cell([P, Q], P), square.cell([P, Q], Q) :-
+    in(P, _), in(Q, _), diag_axis_elem(A), same_line(A, P, Q).
+
+.decl side(b: Box, n: number)
+side(B, N) :- square.box([P, _], B), axis_elem(A), box_extent(B, P, A, N).
+
+// A square holding a field cell.
+.decl hole(b: Box)
+hole(B) :- side(B, _), in(P, Col), params.bg(Col), inside(P, B).
+
+.decl solid(b: Box)
+solid(B) :- side(B, _), !hole(B).
+
+// The squares holding a figure cell.
+.decl holds_figure(b: Box)
+holds_figure(B) :- side(B, _), figure(P, _), inside(P, B).
+
+// The symmetries of each such square, its cells read in its own frame.
+// @claim square-core
+.init self = D4Map<Box, Color>
+self.src(B, P_inner, Col), self.dst(B, P_inner, Col) :-
+    holds_figure(B), in(P, Col), crop(P, B, P_inner).
+
+// A square that some element of group does not map onto itself.
+.decl asym(b: Box)
+asym(B) :- holds_figure(B), params.group(S), sym_member(S, D), !self.map(B, D).
+
+// The core of each core branch: the largest candidate square, with no tie.
+// @claim square-core
+.init core = ArgExtremes<CoreSquare, Box>
+
+.decl core_tie(s: CoreSquare)
+core_tie(S) :- core.high(S, B1, _), core.high(S, B2, _), B1 != B2.
+
+// The turning center of each center branch, as a square about whose center
+// the images turn.
+.decl center(c: Center, b: Box)
+center($CoreCenter(S), B) :- core.high(S, B, _), !core_tie(S).
+
+// Each figure cell's color at each of its images about the center.
+.decl image(c: Center, q: Position, col: Color)
+image(C, Q, Col) :-
+    center(C, B), figure(P, Col), params.group(S), sym_member(S, D),
+    relative(B, P, P_rel), apply(D, P_rel, P_rel2), compose(B, P_rel2, Q).
+
+// The images each case paints inside the grid.
+.decl paint(c: Center, k: Conflict, q: Position, col: Color)
+
+// A case whose paints give one cell two colors, or whose images leave the
+// grid where that is undefined.
+.decl broken(ch: Choice)
+broken([C, K, G]) :-
+    impl_choice([C, K, G]),
+    paint(C, K, Q, Col1), paint(C, K, Q, Col2), Col1 != Col2.
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [C, K, _], center(C, _), !broken(Ch),
+    ( paint(C, K, P, Col)
+    ; in(P, Col), !paint(C, K, P, _)    // unpainted: keeps its input color
+    ).
+
+// --- $SymmetricCore ---
+core.cand($SymmetricCore(), B, N) :- solid(B), !asym(B), side(B, N).
+
+// --- $AnySolidCore ---
+core.cand($AnySolidCore(), B, N) :- solid(B), side(B, N).
+
+// --- $MirrorCore ---
+// A square that some element of D4 does not map onto itself.
+.decl mirror_asym(b: Box)
+mirror_asym(B) :- holds_figure(B), d4_elem(D), !self.map(B, D).
+
+core.cand($MirrorCore(), B, N) :- solid(B), !mirror_asym(B), side(B, N).
+
+// --- $OpenCore ---
+core.cand($OpenCore(), B, N) :- holds_figure(B), !asym(B), side(B, N).
+
+// --- $MostAgreement ---
+// The candidate centers: a cell, or the four cells around a corner.
+.decl point(b: Box)
+point(P) :- in(P, _).
+point(B) :- square.box([P, Q], B), diag_dir_elem(D), neighbor(P, D, Q).
+
+// A figure cell some group image of which does not hold its color.
+.decl disagree(b: Box, p: Position)
+disagree(B, P) :-
+    point(B), figure(P, Col), params.group(S), sym_member(S, D),
+    relative(B, P, P_rel), apply(D, P_rel, P_rel2), compose(B, P_rel2, Q), !in(Q, Col).
+
+// @claim square-core
+.init agreement = Tally<Box, Position>
+agreement.domain(B) :- point(B).
+agreement.item(B, P) :- point(B), figure(P, _), !disagree(B, P).
+
+// @claim square-core
+.init most = ArgExtremes<Unit, Box>
+most.cand($U(), B, N) :- agreement.tally(B, N).
+
+.decl most_tie()
+most_tie() :- most.high($U(), B1, _), most.high($U(), B2, _), B1 != B2.
+
+center($MostAgreement(), B) :- most.high($U(), B, _), !most_tie().
+
+// --- $NoConflict ---
+paint(C, $NoConflict(), Q, Col) :- image(C, Q, Col), in(Q, _).
+
+// --- $InputWins ---
+paint(C, $InputWins(), Q, Col) :- image(C, Q, Col), in(Q, Col0), params.bg(Col0).
+
+// --- $InGrid ---
+broken([C, K, $InGrid()]) :- impl_choice([C, K, $InGrid()]), image(C, Q, _), !in(Q, _).

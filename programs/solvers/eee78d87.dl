@@ -1,0 +1,405 @@
+// eee78d87
+// @draft
+// @keywords: wallpaper stamp bbox symmetry
+// @scene field: every input is a 6×6 grid of one background color
+// @scene one-shape: the cells off the background all share one other color
+//  and together fit a box of 3×3 cells, touching all four sides of it; the
+//  cells need not be connected
+// @rule canvas: the output is a params.canvas_size × params.canvas_size grid
+// @rule stencil-tiling: the shape's box, whose own extent is the period,
+//  repeats across the output edge to edge, the copies laid symmetric about
+//  the canvas center, each copy with a center cell; a box cell the shape
+//  holds gives params.hole_color, and any other box cell gives the input's
+//  background color
+// @rule center-window: within the centered params.window_size ×
+//  params.window_size window of the output, each params.hole_color cell
+//  becomes params.window_color; every other cell there keeps its stencil
+//  color
+// @rule shape-color-dropped: neither the shape's color nor its place in the
+//  input reaches the output
+
+// how the canvas extent is set
+.type Canvas =
+    // @claim canvas
+    CanvasStored {}
+    // @rule canvas: the canvas holds one stencil copy per input cell, with
+    //  the outer half-copies cropped
+    // @witness wider-field: variant concept
+    //     @relaxed field
+  | CanvasPerInputCell {}
+    // @rule canvas: the canvas is the input extended by params.canvas_margin
+    //  past every side
+    // @witness wider-field: variant concept
+  | CanvasGrowsByMargin {}
+
+// how the window extent is set
+.type WindowExtent =
+    // @claim center-window
+    WindowSized {}
+    // @rule center-window: the window is the two central stencil copies on
+    //  each axis
+    // @witness five-wide-stencil: variant concept
+    //     @relaxed one-shape
+  | WindowTwoStencils {}
+
+// where the window is placed
+.type WindowPlace =
+    // @claim center-window
+    WindowCentered {}
+    // @rule center-window: the window runs from the stored corner cell
+    //  params.window_corner, in place of the canvas center
+    // @witness off-center-window: variant $WindowOffsetStored
+    //     @reassigned window_corner
+  | WindowOffsetStored {}
+
+// how a canvas cell reads the stencil
+.type Reading =
+    // @claim stencil-tiling
+    StencilCells {}
+    // @rule stencil-tiling: the output is a lattice of lines every period,
+    //  and each canvas cell reads its stencil cell's lattice element: the
+    //  cell's images under the stencil's flips; undefined off a stencil whose
+    //  center touches each side
+    // @witness asymmetric-stencil: variant concept
+  | LatticeElements {c: Combine}
+
+// when a lattice element is a hole
+.type Combine =
+    // @claim stencil-tiling
+    LatticeAny {}
+    // @rule stencil-tiling: a lattice element is a hole only when the shape
+    //  holds each of its stencil cells
+    // @witness asymmetric-stencil: variant concept
+  | LatticeAll {}
+
+.type Choice = [c: Canvas, x: WindowExtent, w: WindowPlace, r: Reading]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl hole_color(c: Color) hole_color(0).
+    .decl window_color(c: Color) window_color(9).
+
+    // --- $CanvasStored ---
+    .decl canvas_size(n: number) canvas_size(16).
+
+    // --- $CanvasGrowsByMargin ---
+    // the cells the canvas extends past each side of the input
+    .decl canvas_margin(k: number) canvas_margin(5).
+
+    // --- $WindowSized ---
+    // @derive TileCount: variant concept
+    //     @relaxed field
+    // @ignore: derive ConstInDim — TileCount gives the input extent too, and its
+    //  windows nest, so ConstInDim's output is TileCount's wherever it is defined
+    .decl window_size(n: number) window_size(6).
+
+    // --- $WindowOffsetStored ---
+    // each corner of the window, and its cell in the canvas
+    .decl window_corner(d: DiagDir, p: Position)
+    window_corner(DIAG_TL, [5, 10, 5, 10]). window_corner(DIAG_TR, [5, 10, 10, 5]).
+    window_corner(DIAG_BL, [10, 5, 5, 10]). window_corner(DIAG_BR, [10, 5, 10, 5]).
+
+    // --- $LatticeElements ---
+    // the flips whose images of a stencil cell form its lattice element
+    .decl element_sym(s: Sym) element_sym(SYM_BOX).
+}
+
+.init params = Params
+
+.decl canvas_choice(c: Canvas)
+canvas_choice($CanvasStored()). canvas_choice($CanvasPerInputCell()). canvas_choice($CanvasGrowsByMargin()).
+
+.decl window_extent_choice(x: WindowExtent)
+window_extent_choice($WindowSized()). window_extent_choice($WindowTwoStencils()).
+
+.decl window_place_choice(w: WindowPlace)
+window_place_choice($WindowCentered()). window_place_choice($WindowOffsetStored()).
+
+.decl combine_choice(m: Combine)
+combine_choice($LatticeAny()). combine_choice($LatticeAll()).
+
+.decl reading_choice(r: Reading)
+reading_choice($StencilCells()). reading_choice($LatticeElements(M)) :- combine_choice(M).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, X, W, R]) :-
+    canvas_choice(C), window_extent_choice(X), window_place_choice(W), reading_choice(R).
+
+// --- the stencil ---
+
+// @ignore mode: store — the background is read from each input
+// @claim field
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// the input's background color
+// @ignore: store — the background is read from each input
+.decl field_color(col: Color)
+field_color(Col) :- commonest.mode($U(), Col).
+
+// @claim one-shape stencil-tiling
+.init shape_box = Bbox<Unit>
+shape_box.cell($U(), P) :- in(P, Col), !field_color(Col).
+
+// A cell of the shape's box, in the box's own frame.
+.decl stencil_cell(q: Position)
+stencil_cell(Q) :- shape_box.box($U(), B), in(P, _), crop(P, B, Q).
+
+// A stencil cell the shape holds.
+.decl held(q: Position)
+held(Q) :- shape_box.box($U(), B), in(P, Col), !field_color(Col), crop(P, B, Q).
+
+.decl stencil_center(q: Position)
+stencil_center(Q) :- stencil_cell(Q), centered(Q).
+
+// The period: the extent of the shape's box.
+// @store: variant stored
+.decl period(n: number)
+period(N) :- shape_box.box($U(), B), in(P, _), box_extent(B, P, _, N).
+
+// --- the tiling ---
+
+// One tile of the period's extent.
+.init tile = Frame2D<Unit>
+tile.extent($U(), A, N) :- period(N), axis_elem(A).
+
+.decl tile_center(t: Position)
+tile_center(T) :- tile.cell($U(), T), centered(T).
+
+// Tile cell T reads stencil cell Q: both lie at one offset from their centers.
+.decl tile_reads(t: Position, q: Position)
+tile_reads(T, Q) :-
+    tile_center(C_t), tile.cell($U(), T), relative(C_t, T, V),
+    stencil_center(C_s), stencil_cell(Q), relative(C_s, Q, V).
+
+// Some stencil cell lies outside the tile.
+.decl cut_stencil()
+cut_stencil() :- stencil_cell(Q), !tile_reads(_, Q).
+
+// The cells of each canvas.
+// @ignore: case section — the window's mirror boxes read every canvas's cells,
+//  and each case keeps the boxes of its own canvas
+.decl canvas(p: Position, cv: Canvas)
+.init canvas_frame = Frame2D<Canvas>
+canvas(P, Cv) :- canvas_frame.cell(Cv, P).
+
+// --- $CanvasStored ---
+canvas_frame.extent($CanvasStored(), A, N) :- params.canvas_size(N), axis_elem(A).
+
+// --- $CanvasGrowsByMargin ---
+canvas_frame.extent($CanvasGrowsByMargin(), A, N) :-
+    params.canvas_margin(K), uniform_outset(K, B), in(P, _), box_extent(B, P, A, N).
+
+// --- $CanvasPerInputCell ---
+// One stencil copy per input cell, cropped by the stencil center's distance
+// to the box edge on every side.
+canvas(P, $CanvasPerInputCell()) :-
+    in(P_in, _), stencil_cell(Q), concat_2d(P_in, Q, 0, P_grid),
+    stencil_center(C), dir_elem(D), dist(C, D, H), uniform_inset(H, B),
+    crop(P_grid, B, P).
+
+// --- every canvas ---
+
+// The line of the tile that canvas cell P takes, counted from edge D, when the
+// tiling starts K lines into a tile at that edge; I counts the tiles before it.
+.decl tile_line(cv: Canvas, p: Position, d: Dir, k: number, i: number, s: number)
+tile_line(Cv, P, D, K, I, S) :-
+    canvas(P, Cv), dir_elem(D), opposite(D, D2), period(N),
+    tile.cell($U(), T), dist(T, D, K),                    // a start within one tile
+    jump(P, D2, K, Q), dist(Q, D, L), stride(L, N, 0, I, S).
+
+// A start whose tiling some canvas cell reads differently from the two edges
+// of axis A.
+.decl asymmetric(cv: Canvas, a: Axis, k: number)
+asymmetric(Cv, A, K) :-
+    tile_line(Cv, P, D, K, _, S1), axis_of(D, A), opposite(D, D2),
+    tile_line(Cv, P, D2, K, _, S2),
+    tile.cell($U(), T), dist_pair(T, D, S1, S3), S3 != S2.
+
+// The start that lays the copies symmetric about the canvas center, each copy
+// with a center cell and the whole stencil.
+.decl phase(cv: Canvas, a: Axis, k: number)
+phase(Cv, A, K) :-
+    tile_line(Cv, _, D, K, _, _), axis_of(D, A), !asymmetric(Cv, A, K),
+    tile_center(_), !cut_stencil().
+
+// The tile cell each canvas cell takes.
+.decl canvas_tile(cv: Canvas, p: Position, t: Position)
+canvas_tile(Cv, P, T) :-
+    diag_dirs(Dg, A, D1, D2), perp(A, A2),
+    phase(Cv, A, K1), tile_line(Cv, P, D1, K1, _, S1),
+    phase(Cv, A2, K2), tile_line(Cv, P, D2, K2, _, S2),
+    tile.cell($U(), T), diag_dist(T, Dg, A, S1, S2).
+
+// The stencil cell each canvas cell reads.
+.decl canvas_reads(cv: Canvas, p: Position, q: Position)
+canvas_reads(Cv, P, Q) :- canvas_tile(Cv, P, T), tile_reads(T, Q).
+
+// A canvas cell that is a hole under each reading.
+.decl hole(cv: Canvas, p: Position, r: Reading)
+
+// The canvas cells each reading colors.
+.decl decided(cv: Canvas, p: Position, r: Reading)
+
+// --- $StencilCells ---
+hole(Cv, P, $StencilCells()) :- canvas_reads(Cv, P, Q), held(Q).
+decided(Cv, P, $StencilCells()) :- canvas_tile(Cv, P, _).
+
+// --- $LatticeElements ---
+
+// The stencil center sits more than one step from some edge of the box.
+.decl wide_stencil()
+wide_stencil() :- stencil_center(C), dir_elem(D), neighbor(C, D, Q), !dist(Q, D, 0).
+
+// Q2 is in the lattice element of Q.
+.decl element(q: Position, q2: Position)
+element(Q, Q2) :-
+    stencil_cell(Q), params.element_sym(Sy), sym_member(Sy, D), apply(D, Q, Q2).
+
+// Some cell of Q's lattice element is not held.
+.decl unheld_element(q: Position)
+unheld_element(Q) :- element(Q, Q2), !held(Q2).
+
+decided(Cv, P, $LatticeElements(M)) :- canvas_tile(Cv, P, _), combine_choice(M), !wide_stencil().
+
+// --- $LatticeAny ---
+hole(Cv, P, $LatticeElements($LatticeAny())) :- canvas_reads(Cv, P, Q), element(Q, Q2), held(Q2).
+
+// --- $LatticeAll ---
+hole(Cv, P, $LatticeElements($LatticeAll())) :- canvas_reads(Cv, P, Q), !unheld_element(Q).
+
+// --- the window ---
+
+// The extent of the window along each axis.
+.decl window_extent(cv: Canvas, x: WindowExtent, a: Axis, n: number)
+
+// --- $WindowSized ---
+window_extent(Cv, $WindowSized(), A, N) :- canvas_choice(Cv), params.window_size(N), axis_elem(A).
+
+// --- $WindowTwoStencils ---
+
+// A copy along edge D that holds a canvas cell beside the canvas's center line.
+.decl central_copy(cv: Canvas, d: Dir, i: number)
+central_copy(Cv, D, I) :-
+    canvas(P, Cv), axis_of(D, A), flip_of(A, F), apply(F, P, P2),
+    ( P2 = P ; axis_of(D3, A), neighbor(P, D3, P2) ),    // beside the center line
+    phase(Cv, A, K), tile_line(Cv, P, D, K, I, _).
+
+// A canvas cell outside the central copies along some axis.
+.decl off_center(cv: Canvas, p: Position)
+off_center(Cv, P) :-
+    tile_line(Cv, P, D, K, I, _), axis_of(D, A), phase(Cv, A, K), !central_copy(Cv, D, I).
+
+// @claim center-window
+.init central = Bbox<Canvas>
+central.cell(Cv, P) :- canvas(P, Cv), !off_center(Cv, P).
+
+window_extent(Cv, $WindowTwoStencils(), A, N) :-
+    central.box(Cv, B), canvas(P, Cv), box_extent(B, P, A, N).
+
+// --- every window extent ---
+
+// The cells of the window.
+.decl window(cv: Canvas, x: WindowExtent, w: WindowPlace, p: Position)
+
+// --- $WindowCentered ---
+
+// The box of a canvas cell's images under the canvas's flips.
+// @claim center-window
+.init mirror_box = Bbox<Position>
+mirror_box.cell(C, C) :- canvas(C, _).
+mirror_box.cell(C, C2) :- canvas(C, _), flip_of(_, F), apply(F, C, C2).
+
+window(Cv, X, $WindowCentered(), P) :-
+    canvas(C, Cv), mirror_box.box(C, B), axis_elem(A), perp(A, A2),
+    box_extent(B, C, A, N1), window_extent(Cv, X, A, N1),
+    box_extent(B, C, A2, N2), window_extent(Cv, X, A2, N2),
+    canvas(P, Cv), inside(P, B).
+
+// --- $WindowOffsetStored ---
+window(Cv, X, $WindowOffsetStored(), P) :-
+    params.window_corner(Dg, C), canvas(P, Cv), relative(C, P, V),
+    diag_dirs(Dg, A, D1, D2), perp(A, A2),
+    dist(V, D1, K1), K1 >= 0, window_extent(Cv, X, A, N1), K1 < N1,
+    dist(V, D2, K2), K2 >= 0, window_extent(Cv, X, A2, N2), K2 < N2.
+
+// --- every case ---
+
+out(P, Col, [Cv, X, W, R]) :-
+    impl_choice([Cv, X, W, R]), window(Cv, X, W, _), decided(Cv, P, R),   // the canvas has a window
+    ( hole(Cv, P, R), window(Cv, X, W, P), params.window_color(Col)
+    ; hole(Cv, P, R), !window(Cv, X, W, P), params.hole_color(Col)
+    ; !hole(Cv, P, R), field_color(Col)
+    ).
+
+.comp Determine {
+    // A color of an example output that its input lacks.
+    .decl new_color(e: Example, col: Color)
+    new_color(E, Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+
+    // A new color with a cell on an edge of the output.
+    .decl edge_color(e: Example, col: Color)
+    edge_color(E, Col) :- new_color(E, Col), ex_out(E, P, Col), dir_elem(D), dist(P, D, 0).
+
+    .decl window_candidate(e: Example, col: Color)
+    window_candidate(E, Col) :- new_color(E, Col), !edge_color(E, Col).
+
+    // A color some example rules out.
+    .decl not_hole(col: Color)
+    not_hole(Col) :- edge_color(_, Col), ex_out(E, _, _), !edge_color(E, Col).
+
+    .decl not_window(col: Color)
+    not_window(Col) :- window_candidate(_, Col), ex_out(E, _, _), !window_candidate(E, Col).
+
+    .decl hole_color(c: Color)
+    hole_color(Col) :- edge_color(_, Col), !not_hole(Col).
+
+    .decl window_color(c: Color)
+    window_color(Col) :- window_candidate(_, Col), !not_window(Col).
+
+    // The extent of each example output.
+    .decl out_extent(e: Example, n: number)
+    out_extent(E, N) :- ex_out(E, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    .decl canvas_size(n: number)
+    canvas_size(N) :- out_extent(_, N), !out_extent_missing(N).
+
+    .decl out_extent_missing(n: number)
+    out_extent_missing(N) :- out_extent(_, N), ex_out(E, _, _), !out_extent(E, N).
+
+    // A margin that extends an example input to its output's extent.
+    .decl margin(e: Example, k: number)
+    margin(E, K) :-
+        ex_out(E, Q, _), dir_elem(D), dist(Q, D, K), uniform_outset(K, B),
+        ex_in(E, P, _), axis_elem(A), box_extent(B, P, A, N), axis_dim(Q, A, N).
+
+    .decl margin_missing(k: number)
+    margin_missing(K) :- margin(_, K), ex_out(E, _, _), !margin(E, K).
+
+    .decl canvas_margin(k: number)
+    canvas_margin(K) :- margin(_, K), !margin_missing(K).
+
+    // The box of the window color's cells in each example output.
+    .init window_box = Bbox<Example>
+    window_box.cell(E, P) :- ex_out(E, P, Col), window_color(Col).
+
+    // The window's extent in each example output.
+    .decl extent(e: Example, n: number)
+    extent(E, N) :- window_box.box(E, B), ex_out(E, P, _), axis_elem(A), box_extent(B, P, A, N).
+
+    .decl extent_missing(n: number)
+    extent_missing(N) :- extent(_, N), ex_out(E, _, _), !extent(E, N).
+
+    .decl window_size(n: number)
+    window_size(N) :- extent(_, N), !extent_missing(N).
+
+    .decl corner(e: Example, d: DiagDir, p: Position)
+    corner(E, D, P) :- window_box.box(E, B), ex_out(E, P, _), diag_dir_elem(D), box_corner(P, B, D).
+
+    .decl corner_missing(d: DiagDir, p: Position)
+    corner_missing(D, P) :- corner(_, D, P), ex_out(E, _, _), !corner(E, D, P).
+
+    .decl window_corner(d: DiagDir, p: Position)
+    window_corner(D, P) :- corner(_, D, P), !corner_missing(D, P).
+}

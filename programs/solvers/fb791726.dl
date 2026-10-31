@@ -1,0 +1,195 @@
+// fb791726
+// @draft
+// @keywords: tile-arrangement markers span
+// @scene square-field: each input is a square field of `background`.
+// @scene marks-in-pairs: the marks, the input's non-background cells, come in
+//  pairs on one column, `pair_gap` cells apart along the `pair_axis` axis,
+//  with background between them.
+// @rule diagonal-copies: the output is `copy_count` times the input's extent
+//  on each axis; the input is copied into each block on the `copy_diag`
+//  diagonal, and every other block is background.
+// @rule bridge-lines: in every row that lies between two marks of one column
+//  standing `pair_gap` apart along `pair_axis`, in any copy, each cell across
+//  the whole output's width takes `line_color`.
+
+// how far apart the two marks around a line stand
+.type Distance =
+    // @claim bridge-lines
+    ExactGap {}
+    // @rule bridge-lines: every row strictly between two consecutive marks of
+    //  one column takes the line, whatever their distance.
+    // @witness bridge-wide-gap: variant $BridgeAnyGap
+    //     @relaxed marks-in-pairs
+  | BridgeAnyGap {}
+
+// whether the two marks around a line share a column
+.type Alignment =
+    // @claim bridge-lines
+    SameColumn {}
+    // @rule bridge-lines: within each copy, a row that lies between two rows
+    //  standing `pair_gap` apart that each hold a mark, in any columns, takes
+    //  the line.
+    // @witness bridge-unaligned-marks: borderline concept
+    //     @relaxed marks-in-pairs
+  | PerCopy {}
+
+// the axes along which a pair of marks bridges
+.type Axes =
+    // @claim bridge-lines
+    StoredAxis {}
+    // @rule bridge-lines: pairs along either axis bridge, and a pair along
+    //  the other axis draws its line across the output on that axis.
+    // @witness bridge-horizontal-pair: variant $BridgeBothAxes
+    //     @relaxed marks-in-pairs
+  | BridgeBothAxes {}
+
+// which cells of a line row take the line color
+.type Overwrite =
+    // @claim bridge-lines
+    Paint {}
+    // @rule bridge-lines: the line paints only background cells, and a mark
+    //  in a line row keeps its color.
+    // @witness line-crosses-mark: ordinary any
+  | LineKeepsMarks {}
+
+.type Choice = [d: Distance, al: Alignment, ax: Axes, ow: Overwrite]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed square-field
+    .decl bg(c: Color) bg(0).
+    .decl line_color(c: Color) line_color(3).
+    // the number of copies, and the output's scale on each axis
+    .decl copy_count(n: number) copy_count(2).
+    // the diagonal of blocks that receives the copies
+    .decl copy_diag(da: DiagAxis) copy_diag(DAXIS_DG).
+
+    // --- $ExactGap ---
+    // the distance between the two marks of a pair
+    // @ignore: derive SepTileCount — fails Relational form: it reads the gap off a separator tiling the task does not have
+    // @ignore: derive TileCount — fails Relational form: it reads the gap off a tiling of the input's extent the task does not have
+    .decl pair_gap(k: number) pair_gap(2).
+
+    // --- $StoredAxis ---
+    // the axis along which the two marks of a pair stand
+    .decl pair_axis(a: Axis) pair_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl distance_choice(d: Distance)
+distance_choice($ExactGap()). distance_choice($BridgeAnyGap()).
+
+.decl alignment_choice(al: Alignment)
+alignment_choice($SameColumn()). alignment_choice($PerCopy()).
+
+.decl axes_choice(ax: Axes)
+axes_choice($StoredAxis()). axes_choice($BridgeBothAxes()).
+
+.decl overwrite_choice(ow: Overwrite)
+overwrite_choice($Paint()). overwrite_choice($LineKeepsMarks()).
+
+.decl impl_choice(ch: Choice)
+// Lines across columns at any gap along both axes fail train0.
+impl_choice([D, Al, Ax, Ow]) :-
+    distance_choice(D), alignment_choice(Al), axes_choice(Ax), overwrite_choice(Ow),
+    ( D = $ExactGap() ; Al = $SameColumn() ; Ax = $StoredAxis() ).
+
+// The output canvas: a copy_count by copy_count arrangement of input-sized
+// blocks, with the input in each block on the copy_diag diagonal.
+.init blocks = Frame2D<Unit>
+blocks.extent($U(), A, N) :- axis_elem(A), params.copy_count(N).
+
+// @claim diagonal-copies
+.init copies = Diagonal<Unit>
+copies.cell($U(), P) :- blocks.cell($U(), P).
+copies.corner($U(), D) :- params.copy_diag(Da), diag_axis_of(D, Da).
+
+.decl canvas(p_grid_out: Position, p_tile: Position, p_intile: Position)
+canvas(P_grid_out, P_tile, P_intile) :-
+    blocks.cell($U(), P_tile), in(P_intile, _),
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+.decl base(p: Position, col: Color)
+base(P, Col) :- canvas(P, P_tile, P_intile), copies.diagonal($U(), P_tile, _), in(P_intile, Col).
+base(P, Col) :- canvas(P, P_tile, _), !copies.diagonal($U(), P_tile, _), params.bg(Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !params.bg(Col).
+
+// The axes along which a pair bridges.
+.decl pair_axes(a: Axis, ax: Axes)
+
+// Cells that count as marks when pairing along axis a.
+.decl marked(a: Axis, p: Position, al: Alignment)
+
+// Input cell p lies strictly between marked cells m1 and m2 of one line
+// along d's axis, m2 nearer edge d.
+.decl between(p: Position, m1: Position, m2: Position, d: Dir, al: Alignment)
+between(P, M1, M2, D, Al) :-
+    marked(A, M1, Al), marked(A, M2, Al), axis_of(D, A),
+    same_line(A, M1, M2),
+    in(P, _), same_line(A, P, M1), nearer(D, M2, P), nearer(D, P, M1).
+
+// @ignore: store — fails Equivalence: in every variant task the stored axis is pair_axis, so it is no second parameter
+// bridged(p, a, d, al): input cell p lies between a pair of marks along a.
+.decl bridged(p: Position, a: Axis, d: Distance, al: Alignment)
+
+// A line of the output: the row through the image of a bridged cell in a copy.
+.decl line(p: Position, ch: Choice)
+line(Q, [D, Al, Ax, Ow]) :-
+    impl_choice([D, Al, Ax, Ow]), pair_axes(A, Ax), bridged(P, A, D, Al),
+    canvas(P_img, P_tile, P), copies.diagonal($U(), P_tile, _),   // P's image in a copy
+    perp(A, A2), canvas(Q, _, _), same_line(A2, Q, P_img).         // across the whole output
+
+out(P, Col, Ch) :- base(P, Col), impl_choice(Ch), !line(P, Ch).
+
+// --- $ExactGap ---
+bridged(P, A, $ExactGap(), Al) :-
+    between(P, M1, M2, D, Al), axis_of(D, A), params.pair_gap(K), jump(M1, D, K, M2).
+
+// --- $BridgeAnyGap ---
+// A marked cell between m1 and m2 along their line.
+.decl interrupted(m1: Position, m2: Position, al: Alignment)
+interrupted(M1, M2, Al) :- between(M, M1, M2, D, Al), axis_of(D, A), marked(A, M, Al).
+
+bridged(P, A, $BridgeAnyGap(), Al) :-
+    between(P, M1, M2, D, Al), axis_of(D, A), !interrupted(M1, M2, Al).
+
+// --- $SameColumn ---
+marked(A, P, $SameColumn()) :- axis_elem(A), mark(P).
+
+// --- $PerCopy ---
+// Every cell of a line across axis a that holds a mark.
+marked(A, P, $PerCopy()) :-
+    in(P, _), mark(M), perp(A, A2), same_line(A2, P, M).
+
+// --- $StoredAxis ---
+pair_axes(A, $StoredAxis()) :- params.pair_axis(A).
+
+// --- $BridgeBothAxes ---
+pair_axes(A, $BridgeBothAxes()) :- axis_elem(A).
+
+// --- $Paint ---
+out(P, Col, [D, Al, Ax, $Paint()]) :- line(P, [D, Al, Ax, $Paint()]), params.line_color(Col).
+
+// --- $LineKeepsMarks ---
+out(P, Col, [D, Al, Ax, $LineKeepsMarks()]) :-
+    line(P, [D, Al, Ax, $LineKeepsMarks()]), base(P, B),
+    ( params.bg(B), params.line_color(Col)   // background takes the line
+    ; !params.bg(B), Col = B                 // a mark keeps its color
+    ).
+
+.comp Determine {
+    // Each mark casts along pair_axis, stopped by the next mark of its line.
+    .init ray = Ray<Example>
+    ray.dir(E, D) :- ex_in(E, _, _), params.pair_axis(A), axis_of(D, A).
+    ray.mark(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+    ray.blocked(E, P) :- ray.mark(E, P).
+
+    // The distance from a mark to the next mark of its line.
+    .decl pair_gap(k: number)
+    pair_gap(K) :- ray.stop(_, _, _, K, _).
+}

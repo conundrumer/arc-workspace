@@ -30,17 +30,6 @@
     //     @relaxed enlarged-copy
   | ScaleDerived {}
 
-// One factor for both axes, or one per axis.
-.type ScaleAxes =
-    // @claim enlarged-copy
-    Uniform {}
-    // @scene enlarged-copy: each cell scales to a block of one factor down and
-    //  another across (`scale_axis`); undefined where no small shape matches
-    // @witness stretched-copy: borderline $ScalePerAxis
-    //     @relaxed enlarged-copy
-    //     @reassigned scale_axis
-  | ScalePerAxis {}
-
 // Which shape is the copy.
 .type CopyIdentity =
     // @claim pick-shown-shape
@@ -56,7 +45,7 @@
     //     @relaxed edge-cut
   | LargeByEdge {}
 
-.type Choice = [s: ScaleSource, a: ScaleAxes, c: CopyIdentity]
+.type Choice = [s: ScaleSource, c: CopyIdentity]
 
 // Where two shapes show, each is one output.
 .type TiebreakResolution = [shown: Color]
@@ -67,19 +56,13 @@
 .decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
 .comp Params {
-    // --- $Stored & $Uniform ---
+    // --- $Stored ---
     // @derive TileCount: variant derived
     //     @relaxed enlarged-copy
     // @derive TileDim: variant derived
     //     @relaxed enlarged-copy
     // @ignore: case section — the match is keyed by scale and shared; each case reads it only at its own scales
     .decl scale(k: number) scale(2).
-
-    // --- $Stored & $ScalePerAxis ---
-    // @ignore: derive ConstInDimAxis — the grid's extents as factors match no copy: Fit fails at every pair
-    // @ignore: case section — the match is keyed by scale and shared; each case reads it only at its own scales
-    .decl scale_axis(a: Axis, k: number)
-    scale_axis(AXIS_V, 2). scale_axis(AXIS_H, 2).
 }
 
 .init params = Params
@@ -87,16 +70,13 @@
 .decl scale_source_choice(s: ScaleSource)
 scale_source_choice($Stored()). scale_source_choice($ScaleDerived()).
 
-.decl scale_axes_choice(a: ScaleAxes)
-scale_axes_choice($Uniform()). scale_axes_choice($ScalePerAxis()).
-
 .decl copy_identity_choice(c: CopyIdentity)
 copy_identity_choice($AnyShape()). copy_identity_choice($LargeByCount()).
 copy_identity_choice($LargeByEdge()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([S, A, C]) :-
-    scale_source_choice(S), scale_axes_choice(A), copy_identity_choice(C).
+impl_choice([S, C]) :-
+    scale_source_choice(S), copy_identity_choice(C).
 
 .comp Parse<Key> {
     .type KeyColor = [k: Key, s: Color]
@@ -200,7 +180,7 @@ out(P_inner, Col, Ch, [S]) :-
     ).
 
 // --- $AnyShape ---
-copy([F, A, $AnyShape()], L) :- impl_choice([F, A, $AnyShape()]), shape_cell(L, _).
+copy([F, $AnyShape()], L) :- impl_choice([F, $AnyShape()]), shape_cell(L, _).
 
 // --- $LargeByCount ---
 
@@ -212,31 +192,21 @@ size.item(S, P) :- shape_cell(S, P).
 .init largest = ArgExtremes<Unit, Color>
 largest.cand($U(), S, N) :- size.tally(S, N).
 
-copy([F, A, $LargeByCount()], L) :-
-    impl_choice([F, A, $LargeByCount()]), largest.high($U(), L, _).
+copy([F, $LargeByCount()], L) :-
+    impl_choice([F, $LargeByCount()]), largest.high($U(), L, _).
 
 // --- $LargeByEdge ---
-copy([F, A, $LargeByEdge()], L) :-
-    impl_choice([F, A, $LargeByEdge()]), shape_cell(L, P), dir_elem(D), dist(P, D, 0).
+copy([F, $LargeByEdge()], L) :-
+    impl_choice([F, $LargeByEdge()]), shape_cell(L, P), dir_elem(D), dist(P, D, 0).
 
-// --- $Stored & $Uniform ---
-factor([$Stored(), $Uniform(), C], L, [A, K, K]) :-
-    copy([$Stored(), $Uniform(), C], L), params.scale(K), axis_elem(A).
+// --- $Stored ---
+factor([$Stored(), C], L, [A, K, K]) :-
+    copy([$Stored(), C], L), params.scale(K), axis_elem(A).
 
-// --- $Stored & $ScalePerAxis ---
-factor([$Stored(), $ScalePerAxis(), C], L, [A, K, K2]) :-
-    copy([$Stored(), $ScalePerAxis(), C], L),
-    params.scale_axis(A, K), perp(A, A2), params.scale_axis(A2, K2).
-
-// --- $ScaleDerived & $Uniform ---
-factor([$ScaleDerived(), $Uniform(), C], L, [A, K, K]) :-
-    copy([$ScaleDerived(), $Uniform(), C], L),
+// --- $ScaleDerived ---
+factor([$ScaleDerived(), C], L, [A, K, K]) :-
+    copy([$ScaleDerived(), C], L),
     parse.enlarging($U(), L, A, K), perp(A, A2), parse.enlarging($U(), L, A2, K).
-
-// --- $ScaleDerived & $ScalePerAxis ---
-factor([$ScaleDerived(), $ScalePerAxis(), C], L, [A, K, K2]) :-
-    copy([$ScaleDerived(), $ScalePerAxis(), C], L),
-    parse.enlarging($U(), L, A, K), perp(A, A2), parse.enlarging($U(), L, A2, K2).
 
 .comp Determine {
     .init parse = Parse<Example>

@@ -1,0 +1,204 @@
+// e88171ec
+// @draft
+// @keywords: noise rank depth
+// @scene one-largest-hole: one rectangle made only of params.hole_color cells
+//  has a larger area than every other such rectangle, and it is at least 3
+//  cells on each axis
+// @rule fill-inset: the cells of the box of params.hole_color that the
+//  generator placed among the noise, params.margin or more cells in from each
+//  of its edges, take params.fill_color
+//     @approximated: the cells of the largest params.hole_color rectangle that
+//      are params.margin or more cells in from each of its edges take
+//      params.fill_color
+//     @witness grown-hole: ordinary other
+// @rule copy-input: every cell that fill-inset does not paint keeps its input
+//  color
+
+// which rectangle of params.hole_color is the hole
+.type Ranking =
+    // @claim one-largest-hole
+    LargestArea {}
+    // @scene one-largest-hole: one rectangle has more inside cells, those
+    //  params.margin or more in from each edge, than every other
+    // @rule fill-inset: the hole is the rectangle with the most inside cells
+    // @witness thin-extension: ordinary $RankInterior
+  | RankInterior {}
+    // @scene one-largest-hole: one rectangle has the longest shorter side,
+    //  and the larger area breaks a tie
+    // @rule fill-inset: the hole is the rectangle with the longest shorter
+    //  side, and the larger area breaks a tie
+    // @witness thin-extension: ordinary $RankInterior
+    // @witness wide-noise: ordinary $RankMinSide
+  | RankMinSide {}
+    // @scene one-largest-hole: one rectangle spans more rows and columns
+    //  together than every other
+    // @rule fill-inset: the hole is the rectangle that spans the most rows and
+    //  columns together
+    // @witness perimeter-run: ordinary concept
+    // @witness two-holes: variant concept
+    //     @relaxed one-largest-hole
+  | RankPerimeter {}
+
+// the margin on a side of the hole that lies on the grid edge
+.type FrameEdge =
+    // @claim fill-inset
+    MarginEverySide {}
+    // @rule fill-inset: cells past the grid edge count as params.hole_color,
+    //  so a side of the hole on the grid edge keeps no margin
+    // @witness frame-edge-hole: ordinary concept
+  | FrameAsHole {}
+
+.type Choice = [ranking: Ranking, edge: FrameEdge]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl hole_color(c: Color) hole_color(0).
+    .decl fill_color(c: Color) fill_color(8).
+    // the width of the hole's edge band that keeps params.hole_color
+    .decl margin(k: number) margin(1).
+}
+
+.init params = Params
+
+.decl ranking_choice(r: Ranking)
+ranking_choice($LargestArea()). ranking_choice($RankInterior()).
+ranking_choice($RankMinSide()). ranking_choice($RankPerimeter()).
+
+.decl frame_edge_choice(e: FrameEdge)
+frame_edge_choice($MarginEverySide()). frame_edge_choice($FrameAsHole()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, E]) :- ranking_choice(R), frame_edge_choice(E).
+
+// The runs of hole-color cells.
+// @claim one-largest-hole
+.init open_run = Slide<Unit>
+open_run.node($U(), P) :- in(P, Col), params.hole_color(Col).
+open_run.dir($U(), D) :- dir_elem(D).
+
+// The hole-color run from P toward D ends K cells from edge D.
+.decl reach(d: Dir, p: Position, k: number)
+reach(D, P, K) :- open_run.rest(_, P, D, E), dir_elem(D), dist(E, D, K).
+
+.type Base = [d: Dir, p: Position]
+
+// The cells of P's line across D whose runs reach at least as far toward D
+// as P's run, joined to P along the line.
+// @claim one-largest-hole
+.init base = Reach<Base>
+base.node([D, P], Q) :- reach(D, P, K), same_dist(D, P, Q), reach(D, Q, K2), K2 <= K.
+base.seed([D, P], P) :- reach(D, P, _).
+
+// A hole-color rectangle: the base run, and the end of P's run.
+// @claim one-largest-hole
+.init hull = Bbox<Base>
+hull.cell(B, Q) :- base.reach(B, Q).
+hull.cell([D, P], E) :- open_run.rest(_, P, D, E), dir_elem(D).
+
+.decl rect(b: Box)
+rect(B) :- hull.box(_, B).
+
+.decl rect_cell(b: Box, p: Position)
+rect_cell(B, P) :- rect(B), in(P, _), inside(P, B).
+
+// Cell P of rectangle B lies within the margin of B's side D.
+.decl rim(b: Box, p: Position, d: Dir)
+rim(B, P, D) :-
+    rect_cell(B, P), crop(P, B, P_rel), dir_elem(D), dist(P_rel, D, K),
+    params.margin(M), K < M.
+
+// @claim one-largest-hole
+.init area = Tally<Box, Position>
+area.item(B, P) :- rect_cell(B, P).
+
+// The hole under each ranking: the rectangle no other outscores.
+// @claim one-largest-hole
+.init rank = Order<Ranking, Box>
+rank.elem(R, B) :- ranking_choice(R), rect(B).
+
+// The sides of the hole that keep the margin.
+.decl kept(e: FrameEdge, b: Box, d: Dir)
+
+.decl edge_rim(e: FrameEdge, b: Box, p: Position)
+edge_rim(E, B, P) :- kept(E, B, D), rim(B, P, D).
+
+// @claim fill-inset
+.decl paint(r: Ranking, e: FrameEdge, p: Position)
+paint(R, E, P) :- frame_edge_choice(E), rank.last(R, B), rect_cell(B, P), !edge_rim(E, B, P).
+
+out(P, Col, [R, E]) :-
+    impl_choice([R, E]), in(P, Col_in),
+    ( paint(R, E, P), params.fill_color(Col)
+    ; !paint(R, E, P), Col = Col_in
+    ).
+
+// --- $LargestArea ---
+rank.score($LargestArea(), B, N) :- area.tally(B, N).
+
+// --- $RankInterior ---
+// The cells of a rectangle outside its rim.
+// @claim one-largest-hole
+.init inner = Tally<Box, Position>
+inner.item(B, P) :- rect_cell(B, P), !rim(B, P, _).
+inner.domain(B) :- rect(B).
+
+rank.score($RankInterior(), B, N) :- inner.tally(B, N).
+
+// --- $RankMinSide ---
+// @claim one-largest-hole
+.init side = Extremes<Box>
+side.cand(B, N) :- rect_cell(B, P), axis_elem(A), box_extent(B, P, A, N).
+
+rank.score($RankMinSide(), B, N) :- side.low(B, N).
+rank.secondary_score($RankMinSide(), B, N) :- area.tally(B, N).
+
+// --- $RankPerimeter ---
+.type Line = [a: Axis, l: Position]
+
+// The rows and the columns a rectangle spans.
+// @claim one-largest-hole
+.init span = Tally<Box, Line>
+span.item(B, [A, L]) :- rect_cell(B, P), axis_elem(A), split(P, A, L, _).
+
+rank.score($RankPerimeter(), B, N) :- span.tally(B, N).
+
+// --- $MarginEverySide ---
+kept($MarginEverySide(), B, D) :- rank.last(_, B), dir_elem(D).
+
+// --- $FrameAsHole ---
+kept($FrameAsHole(), B, D) :- rank.last(_, B), dir_elem(D), !dist(B, D, 0).
+
+.type Side = [e: Example, p: Position, d: Dir]
+
+.comp Determine {
+    // The cells a pair's output changes.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    .decl hole_color(c: Color)
+    hole_color(C) :- changed(E, P), ex_in(E, P, C).
+
+    .decl fill_color(c: Color)
+    fill_color(C) :- changed(E, P), ex_out(E, P, C).
+
+    // Casts from the painted cells over the input's hole color.
+    .init gap = Ray<Example>
+    gap.dir(E, D) :- changed(E, _), dir_elem(D).
+    gap.cell(E, P) :- changed(E, _), ex_in(E, P, _).
+    gap.mark(E, P) :- changed(E, P).
+    gap.blocked(E, P) :- changed(E, _), ex_in(E, P, C), !hole_color(C).
+
+    // The hole-color cells between a painted cell on the painted block's
+    // side D and the first other color toward D.
+    .init run = Extremes<Side>
+    run.cand([E, P, D], K) :-
+        gap.clear(E, _, D, K, P), dir_elem(D), neighbor(P, D, Q), !changed(E, Q).
+
+    // The narrowest such run: the band the fill leaves.
+    .init narrowest = Extremes<Unit>
+    narrowest.cand($U(), K) :- run.high(_, K).
+
+    .decl margin(k: number)
+    margin(K) :- narrowest.low(_, K).
+}

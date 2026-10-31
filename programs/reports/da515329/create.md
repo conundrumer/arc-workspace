@@ -14,7 +14,7 @@
 - A blocked lane is read as `walk.taken ; walk.excluded`. Taken, untaken and excluded together partition the cells, so this is the positive form of "not free" that the recursion allows.
 
 ## Unsettled
-- `walk_arm` is a `@workaround`: the principled form starts a walk from every arm, and the relabelings audit reports that `walk_arm` changes no output. The four-walk form ran into the 20 s per-pair limit when the domain was smaller. A run of the four-walk form inside the limit would settle it.
+- `walk_arm` is a `@workaround`: the principled form starts a walk from every arm, and the relabelings audit reports that `walk_arm` changes no output. The four-walk form (`walk.start($U(), [P, D]) :- tip(D, P).`, with `walk_arm` removed) reaches the 20 s per-pair limit on train 0 and test 0, and passes train 1 and train 2. A run of the four-walk form inside the limit would settle it.
 - `$TakeTurns` has no case. It cannot use the quarter-turn reduction, because its order breaks the symmetry. It would need a lib construction for a walk whose state holds several tips.
 - `background=DominantColor`: the audit reports that `bg=DominantColor` fits and has no `@derive` line. A `// @derive DominantColor: variant derived` line on `bg`, with its witness recorded, would settle it.
 - `wall_color=stored`: the audit's store check reports the plus color as 8 on every input. A `@store` line with verdict `concept` (plausibility `variant`) would settle it.

@@ -1,0 +1,317 @@
+// f3b10344
+// @draft
+// @keywords: objects match span
+// @scene solid-rectangles: every input holds axis-aligned solid
+//  single-colored rectangles on a params.bg field, each a 4-connected
+//  component of its color
+// @scene rectangles-apart: no two rectangles touch, even at a corner; each
+//  gap between two rectangles is at least one cell
+// @scene bridge-color-absent: no input cell holds params.bridge
+// @rule facing-pair: two rectangles face each other along an axis when their
+//  spans on the other axis overlap and the band between them over that
+//  overlap holds only params.bg
+// @rule same-color-bridge: a facing pair of one color is joined; a facing
+//  pair of two colors is not
+// @rule bridge-band: the bridge fills the gap between the pair, over the
+//  shared span less params.inset cells at each end; where that leaves no
+//  cell, no bridge is drawn
+// @rule keep-rest: every other cell keeps its input color
+
+// which cells in the band between a pair block it
+.type Block =
+    // @claim facing-pair
+    Opaque {}
+    // @rule facing-pair: only a cell of the pair's own color in the band
+    //  blocks it; the bridge paints the band's params.bg cells
+    // @witness sandwiched-other-color: ordinary concept
+  | ThroughOtherColors {obstacle: Obstacle}
+
+// what the bridge does to another color's cells in its band
+.type Obstacle =
+    // @claim keep-rest
+    KeepCells {}
+    // @rule keep-rest: the bridge overwrites every cell of its band
+    // @witness sandwiched-other-color: ordinary concept
+  | PaintOver {}
+
+// the part of the band between a pair that must be clear
+.type Region =
+    // @claim facing-pair
+    WholeBand {}
+    // @rule facing-pair: only the cells the bridge would fill must be clear
+    // @witness edge-of-band-obstacle: borderline concept
+    // @witness edge-of-band-own-color: borderline concept
+  | ClearBridgeOnly {}
+
+// the span a bridge covers, and which pairs get one
+.type Span =
+    // @claim bridge-band
+    SharedSpan {}
+    // @rule bridge-band: the bridge covers the narrower face's span less
+    //  params.inset at each end
+    // @witness partial-overlap: ordinary concept
+  | NarrowerFace {}
+    // @rule nested-only: a pair whose spans do not nest, neither holding
+    //  the other, gets no bridge
+    // @witness partial-overlap: ordinary concept
+  | NestedOnly {}
+    // @rule interior-nested: a pair gets a bridge only when its two faces
+    //  have one span, or one face's span holds the other's and reaches past
+    //  it at both ends
+    // @witness partial-overlap: ordinary concept
+    // @witness flush-nested: ordinary any
+  | InteriorNested {}
+
+// how an object's cells join
+.type Adjacency =
+    // @claim solid-rectangles
+    Comp4 {}
+    // @scene solid-rectangles: an object is an 8-connected same-colored
+    //  component, and facing and spans are read from its bounding box
+    // @witness corner-touching: borderline concept
+    //     @relaxed rectangles-apart
+  | Components8 {}
+
+.type Choice = [block: Block, region: Region, span: Span, adj: Adjacency]
+
+.type AdjObj = [a: Adjacency, o: Ident]
+
+.type Face = [a: Adjacency, o: Ident, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(0).
+    .decl bridge(c: Color) bridge(8).
+    // the cells the bridge leaves at each end of the shared span
+    .decl inset(k: number) inset(1).
+}
+
+.init params = Params
+
+.decl block_choice(b: Block)
+block_choice($Opaque()).
+block_choice($ThroughOtherColors($KeepCells())).
+block_choice($ThroughOtherColors($PaintOver())).
+
+.decl region_choice(r: Region)
+region_choice($WholeBand()). region_choice($ClearBridgeOnly()).
+
+.decl span_choice(s: Span)
+span_choice($SharedSpan()). span_choice($NarrowerFace()). span_choice($NestedOnly()).
+span_choice($InteriorNested()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Comp4()). adjacency_choice($Components8()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([B, R, S, A]) :-
+    block_choice(B), region_choice(R), span_choice(S), adjacency_choice(A).
+
+// The across line of each cell of the object's box face toward d.
+.decl face_line(a: Adjacency, o: Ident, d: Dir, x: Position)
+face_line(A, O, D, X) :-
+    bbox.box([A, O], B), in(P, _), box_edge(P, B, D),  // a face cell
+    axis_of(D, Ax), split(P, Ax, _, X).               // its line across the face
+
+.decl obj_color(a: Adjacency, o: Ident, col: Color)
+obj_color(A, O, Col) :- obj(A, O, _, Col).
+
+// @claim solid-rectangles
+.init bbox = Bbox<AdjObj>
+bbox.cell([A, O], P) :- obj(A, O, P, _).
+
+// The object's box margin toward d.
+.decl margin(a: Adjacency, o: Ident, d: Dir, k: number)
+margin(A, O, D, K) :- bbox.box([A, O], B), dir_elem(D), dist(B, D, K).
+
+// A line of o1's face toward d that o2's face toward o1 also holds.
+.decl shared(a: Adjacency, o1: Ident, o2: Ident, d: Dir, x: Position)
+shared(A, O1, O2, D, X) :-
+    face_line(A, O1, D, X), opposite(D, D_opp), face_line(A, O2, D_opp, X).
+
+// Two objects of one color with a shared line, o2 beyond o1 toward d.
+.decl facing(a: Adjacency, o1: Ident, o2: Ident, d: Dir)
+facing(A, O1, O2, D) :-
+    shared(A, O1, O2, D, _), O1 != O2,
+    obj_color(A, O1, Col), obj_color(A, O2, Col),
+    margin(A, O1, D, K1), margin(A, O2, D, K2), K2 < K1.  // o2 lies further toward d
+
+// The cells between the two faces of a facing pair, on any line.
+.decl gap(a: Adjacency, o1: Ident, o2: Ident, d: Dir, p: Position)
+gap(A, O1, O2, D, P) :-
+    facing(A, O1, O2, D), opposite(D, D_opp),
+    margin(A, O1, D, K1), margin(A, O2, D_opp, K2),
+    in(P, _), dist(P, D, K), K < K1,                  // past o1's face
+    dist(P, D_opp, K_opp), K_opp < K2.                // short of o2's face
+
+// The gap over the lines both faces share.
+.decl lane(a: Adjacency, o1: Ident, o2: Ident, d: Dir, p: Position)
+lane(A, O1, O2, D, P) :-
+    gap(A, O1, O2, D, P), axis_of(D, Ax), split(P, Ax, _, X), shared(A, O1, O2, D, X).
+
+// A zone cell within params.inset of a side of the zone.
+.decl trimmed(a: Adjacency, s: Span, o1: Ident, o2: Ident, d: Dir, p: Position)
+trimmed(A, S, O1, O2, D, P) :-
+    zone(A, S, O1, O2, D, P), perp_dir(D, E),
+    params.inset(K), jump(P, E, K, Q), !zone(A, S, O1, O2, D, Q).
+
+.decl bridge(a: Adjacency, s: Span, o1: Ident, o2: Ident, d: Dir, p: Position)
+bridge(A, S, O1, O2, D, P) :-
+    zone(A, S, O1, O2, D, P), !trimmed(A, S, O1, O2, D, P).
+
+// A cell of the checked region that blocks the pair.
+.decl blocker(ch: Choice, o1: Ident, o2: Ident, d: Dir, p: Position)
+
+// The bridge cells of the unblocked pairs.
+.decl crossing(ch: Choice, p: Position)
+crossing([B, R, S, A], P) :-
+    impl_choice([B, R, S, A]), bridge(A, S, O1, O2, D, P),
+    !blocker([B, R, S, A], O1, O2, D, _).
+
+.decl paint(ch: Choice, p: Position)
+
+out(P, Col, Ch) :- paint(Ch, P), params.bridge(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(Ch, P).
+
+// --- $Comp4 ---
+// @claim solid-rectangles
+.init comp4 = Components<Color>
+comp4.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl obj(a: Adjacency, o: Ident, p: Position, col: Color)
+obj($Comp4(), O, P, Col) :- comp4.label(Col, P, O).
+
+// --- $Components8 ---
+// @claim solid-rectangles
+.init comp8 = Components8<Color>
+comp8.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+obj($Components8(), O, P, Col) :- comp8.label(Col, P, O).
+
+// --- $SharedSpan ---
+// The cells the bridge spans, before the inset.
+.decl zone(a: Adjacency, s: Span, o1: Ident, o2: Ident, d: Dir, p: Position)
+zone(A, $SharedSpan(), O1, O2, D, P) :- lane(A, O1, O2, D, P).
+
+// --- $NarrowerFace ---
+// The count of lines of each face.
+// @claim bridge-band
+.init face_width = Tally<Face, Position>
+face_width.item([A, O, D], X) :- face_line(A, O, D, X).
+
+// The lines of the face of the pair that has no more lines than the other.
+.decl narrow_line(a: Adjacency, o1: Ident, o2: Ident, d: Dir, x: Position)
+narrow_line(A, O1, O2, D, X) :-
+    facing(A, O1, O2, D), opposite(D, D_opp),
+    face_width.tally([A, O1, D], N1), face_width.tally([A, O2, D_opp], N2),
+    ( N1 <= N2, face_line(A, O1, D, X)
+    ; N2 <= N1, face_line(A, O2, D_opp, X)
+    ).
+
+zone(A, $NarrowerFace(), O1, O2, D, P) :-
+    gap(A, O1, O2, D, P), axis_of(D, Ax), split(P, Ax, _, X), narrow_line(A, O1, O2, D, X).
+
+// --- $NestedOnly, $InteriorNested ---
+// Some line of o1's face is not a line of o2's face.
+.decl near_overhang(a: Adjacency, o1: Ident, o2: Ident, d: Dir)
+near_overhang(A, O1, O2, D) :-
+    facing(A, O1, O2, D), face_line(A, O1, D, X), !shared(A, O1, O2, D, X).
+
+// Some line of o2's face is not a line of o1's face.
+.decl far_overhang(a: Adjacency, o1: Ident, o2: Ident, d: Dir)
+far_overhang(A, O1, O2, D) :-
+    facing(A, O1, O2, D), opposite(D, D_opp),
+    face_line(A, O2, D_opp, X), !shared(A, O1, O2, D, X).
+
+zone(A, $NestedOnly(), O1, O2, D, P) :-
+    lane(A, O1, O2, D, P),
+    ( !near_overhang(A, O1, O2, D)
+    ; !far_overhang(A, O1, O2, D)
+    ).
+
+// --- $InteriorNested ---
+// Toward e, across the band, o's box reaches no further than o2's.
+.decl no_further(a: Adjacency, o: Ident, o2: Ident, e: Dir)
+no_further(A, O, O2, E) :-
+    ( facing(A, O, O2, D) ; facing(A, O2, O, D) ), perp_dir(D, E),
+    margin(A, O, E, K), margin(A, O2, E, K2), K >= K2.
+
+zone(A, $InteriorNested(), O1, O2, D, P) :-
+    lane(A, O1, O2, D, P),
+    ( !near_overhang(A, O1, O2, D), !far_overhang(A, O1, O2, D)  // one span
+    ; !no_further(A, O1, O2, _)       // o1's box reaches past o2's at both sides
+    ; !no_further(A, O2, O1, _)       // o2's box reaches past o1's at both sides
+    ).
+
+// --- $WholeBand ---
+// The cells that must be clear for the pair to be joined.
+.decl checked(ch: Choice, o1: Ident, o2: Ident, d: Dir, p: Position)
+checked([B, $WholeBand(), S, A], O1, O2, D, P) :-
+    impl_choice([B, $WholeBand(), S, A]), lane(A, O1, O2, D, P).
+
+// --- $ClearBridgeOnly ---
+checked([B, $ClearBridgeOnly(), S, A], O1, O2, D, P) :-
+    impl_choice([B, $ClearBridgeOnly(), S, A]), bridge(A, S, O1, O2, D, P).
+
+// --- $Opaque ---
+blocker([$Opaque(), R, S, A], O1, O2, D, P) :-
+    checked([$Opaque(), R, S, A], O1, O2, D, P), in(P, Col), !params.bg(Col).
+
+paint([$Opaque(), R, S, A], P) :- crossing([$Opaque(), R, S, A], P).
+
+// --- $ThroughOtherColors ---
+blocker([$ThroughOtherColors(Ob), R, S, A], O1, O2, D, P) :-
+    checked([$ThroughOtherColors(Ob), R, S, A], O1, O2, D, P),
+    in(P, Col), obj_color(A, O1, Col).
+
+// --- $KeepCells ---
+paint([$ThroughOtherColors($KeepCells()), R, S, A], P) :-
+    crossing([$ThroughOtherColors($KeepCells()), R, S, A], P),
+    in(P, Col), params.bg(Col).
+
+// --- $PaintOver ---
+paint([$ThroughOtherColors($PaintOver()), R, S, A], P) :-
+    crossing([$ThroughOtherColors($PaintOver()), R, S, A], P).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init palette = Mode<Example, Color, Position>
+    palette.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .init common = Unanimous<Unit, Color>
+    common.item($U(), Col) :- palette.mode(_, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- common.value($U(), Col).
+
+    // The color an output holds that its input does not.
+    .decl bridge(c: Color)
+    bridge(Col) :- ex_out(E, _, Col), !ex_in(E, _, Col).
+
+    // A bridge cell whose neighbor toward e is no bridge cell.
+    .decl bridge_side(e: Example, p: Position, d: Dir)
+    bridge_side(E, P, D) :-
+        bridge(Col), ex_out(E, P, Col), dir_elem(D), neighbor(P, D, Q), !ex_out(E, Q, Col).
+
+    // The face cell such a side cell meets across the bridge's run.
+    .decl face_end(e: Example, r: Position, d: Dir, col: Color)
+    face_end(E, R, D, Col) :-
+        bridge_side(E, P, D), perp_dir(D, D_face), neighbor(P, D_face, R),
+        ex_out(E, R, Col), !bridge(Col), !bg(Col).
+
+    .decl cand(k: number)
+    cand(K) :- ex_in(_, P, _), dir_elem(D), dist(P, D, K), K > 0.
+
+    // The face runs fewer than k cells past the bridge's side.
+    .decl short(k: number)
+    short(K) :- cand(K), face_end(E, R, D, Col), jump(R, D, K, R2), !ex_out(E, R2, Col).
+
+    // The least run of a face past the bridge's side.
+    // @ignore: determine prediction — the run is measured on the outputs; the inputs enter only to name the bridge color, which no output alone shows
+    .decl inset(k: number)
+    inset(K) :-
+        cand(K), !short(K),
+        face_end(E, R, D, Col), jump(R, D, K, R2), neighbor(R2, D, R3), !ex_out(E, R3, Col).
+}

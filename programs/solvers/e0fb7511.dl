@@ -1,0 +1,115 @@
+// e0fb7511
+// @draft
+// @keywords: objects count
+// @scene field-with-marks: the grid is a field of 1 with scattered cells of
+//  params.mark, and holds no other color
+// @rule recolor-groups: each 4-connected component of params.mark cells with
+//  at least params.min_size cells takes params.fill in every cell
+// @rule keep-rest: every other cell keeps its input color
+
+// which mark cells recolor
+.type Choice =
+    // @claim recolor-groups
+    GroupSize {}
+    // @rule recolor-groups: each params.mark cell with at least
+    //  params.min_neighbors 4-neighbors of params.mark takes params.fill
+    // @witness domino-and-tromino: ordinary concept
+    //     @reassigned min_neighbors
+  | NeighborCount {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: borderline concept
+    //     @relaxed field-with-marks
+    .decl mark(c: Color) mark(0).
+    .decl fill(c: Color) fill(8).
+
+    // --- $GroupSize ---
+    // @ignore: derive TileCount — fails Relational form: the task cuts the
+    //  grid into no tiles, so a tile count counts nothing the task has
+    .decl min_size(n: number) min_size(2).
+
+    // --- $NeighborCount ---
+    // @ignore: derive TileDim — fails Relational form: the task cuts the
+    //  grid into no tiles, so a tile size counts nothing the task has
+    .decl min_neighbors(n: number) min_neighbors(1).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($GroupSize()). impl_choice($NeighborCount()).
+
+// The groups of mark cells with their sizes, and each mark cell's count of
+// mark 4-neighbors.
+.comp Parse<Key> {
+    .type KI = [k: Key, id: Ident]
+    .type KP = [k: Key, p: Position]
+
+    .decl mark_cell(k: Key, p: Position)
+
+    // --- $GroupSize ---
+    // @claim recolor-groups
+    .init groups = Components<Key>
+    groups.node(K, P) :- mark_cell(K, P).
+
+    // @claim recolor-groups
+    .init group_size = Tally<KI, Position>
+    group_size.item([K, Id], P) :- groups.label(K, P, Id).
+
+    // --- $NeighborCount ---
+    // @claim recolor-groups
+    .init neighbors = Tally<KP, Position>
+    neighbors.domain([K, P]) :- mark_cell(K, P).
+    neighbors.item([K, P], Q) :-
+        mark_cell(K, P), dir_elem(D), neighbor(P, D, Q), mark_cell(K, Q).   // a mark 4-neighbor
+}
+
+.init parse = Parse<Unit>
+parse.mark_cell($U(), P) :- in(P, Col), params.mark(Col).
+
+// The mark cells each case recolors.
+.decl recolor(p: Position, ch: Choice)
+
+out(P, Col, Ch) :- recolor(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).
+
+// --- $GroupSize ---
+recolor(P, $GroupSize()) :-
+    parse.groups.label($U(), P, Id), parse.group_size.tally([$U(), Id], N),   // mark cell with its group's size
+    params.min_size(M), N >= M.
+
+// --- $NeighborCount ---
+recolor(P, $NeighborCount()) :-
+    parse.neighbors.tally([$U(), P], N), params.min_neighbors(M), N >= M.
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.mark_cell(E, P) :- ex_in(E, P, Col), params.mark(Col).
+
+    // A cell the output recolors, with its input and output colors.
+    .decl changed(e: Example, p: Position, c_in: Color, c_out: Color)
+    changed(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_in != C_out.
+
+    .decl mark(c: Color)
+    mark(Col) :- changed(_, _, Col, _).
+
+    .decl fill(c: Color)
+    fill(Col) :- changed(_, _, _, Col).
+
+    // The sizes of the recolored groups.
+    .init recolored_size = Extremes<Unit>
+    recolored_size.cand($U(), N) :-
+        changed(E, P, _, _), parse.groups.label(E, P, Id), parse.group_size.tally([E, Id], N).
+
+    .decl min_size(n: number)
+    min_size(N) :- recolored_size.low($U(), N).
+
+    // The mark-neighbor counts of the recolored cells.
+    .init recolored_neighbors = Extremes<Unit>
+    recolored_neighbors.cand($U(), N) :- changed(E, P, _, _), parse.neighbors.tally([E, P], N).
+
+    .decl min_neighbors(n: number)
+    min_neighbors(N) :- recolored_neighbors.low($U(), N).
+}

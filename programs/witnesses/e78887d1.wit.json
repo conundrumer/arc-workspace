@@ -1,0 +1,263 @@
+{
+  "id": "e78887d1",
+  "witnesses": [{
+    "id": "bands-move-right",
+    "separates": "each band is the band before it with the patterns moved one slot to the right; the concept moves the last band's patterns one slot to the left, $StepFromBandsOrStored reads the move from the bands and moves them one slot to the right, and $FromFirstBand moves the first band's patterns two slots to the left, which gives the last band unchanged",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,3,0,0,0,1,1,1],
+      [0,2,0,0,3,3,3,0,0,1,0],
+      [2,0,2,0,0,0,3,0,0,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,2,2,0,3,0,3,0,1,0,0],
+      [0,2,0,0,0,3,0,0,1,1,1],
+      [0,2,0,0,3,0,3,0,0,0,1],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Stored & $LastBand"],
+      "grid": [
+        [2,0,2,0,3,0,0,0,1,1,1],
+        [0,2,0,0,3,3,3,0,0,1,0],
+        [2,0,2,0,0,0,3,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$PermutationFromBandsOrStored","$StepFromBandsOrStored"],
+      "grid": [
+        [2,0,0,0,3,3,3,0,1,0,1],
+        [2,2,2,0,0,3,0,0,0,1,0],
+        [0,0,2,0,0,3,0,0,1,0,1]
+      ]
+    }, {
+      "cases": ["$FromFirstBand"],
+      "grid": [
+        [2,2,2,0,3,0,3,0,1,0,0],
+        [0,2,0,0,0,3,0,0,1,1,1],
+        [0,2,0,0,3,0,3,0,0,0,1]
+      ]
+    }]
+  }, {
+    "id": "bands-unrelated",
+    "separates": "the second band holds none of the first band's patterns; the concept moves the last band's patterns one slot to the left, $FromFirstBand moves the first band's patterns two slots to the left, and $StepFromBandsOrStored finds no move from one band to the next and is undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,3,0,0,0,1,1,1],
+      [0,2,0,0,3,3,3,0,0,1,0],
+      [2,0,2,0,0,0,3,0,0,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,0,3,0,0,1,1,1],
+      [2,0,2,0,3,3,3,0,0,0,0],
+      [2,2,2,0,0,3,0,0,1,1,1],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Stored & $LastBand"],
+      "grid": [
+        [0,2,0,0,3,3,3,0,1,0,1],
+        [2,2,2,0,0,0,0,0,1,0,1],
+        [0,2,0,0,3,3,3,0,1,1,1]
+      ]
+    }, {
+      "cases": ["$PermutationFromBandsOrStored","$StepFromBandsOrStored"],
+      "grid": null
+    }, {
+      "cases": ["$FromFirstBand"],
+      "grid": [
+        [2,2,2,0,3,0,3,0,1,0,0],
+        [0,2,0,0,0,3,0,0,1,1,1],
+        [0,2,0,0,3,0,3,0,0,0,1]
+      ]
+    }]
+  }, {
+    "id": "bands-swap-two",
+    "separates": "the second band is the first band with the patterns of its first two slots swapped; the concept moves the last band's patterns one slot to the left, $PermutationFromBandsOrStored reads the swap off the bands and swaps them back, and $StepFromBandsOrStored finds no cyclic move from one band to the next and is undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,3,0,0,0,1,1,1],
+      [0,2,0,0,3,3,3,0,0,1,0],
+      [2,0,2,0,0,0,3,0,0,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,0,0,3,0,3,0,1,1,1],
+      [2,2,2,0,0,3,0,0,0,1,0],
+      [0,0,2,0,3,0,3,0,0,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$Stored & $LastBand"],
+      "grid": [
+        [2,0,2,0,3,3,3,0,1,0,0],
+        [0,2,0,0,0,3,0,0,1,1,1],
+        [2,0,2,0,0,3,0,0,0,0,1]
+      ]
+    }, {
+      "cases": ["$PermutationFromBandsOrStored"],
+      "grid": [
+        [2,0,2,0,3,0,0,0,1,1,1],
+        [0,2,0,0,3,3,3,0,0,1,0],
+        [2,0,2,0,0,0,3,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$StepFromBandsOrStored"],
+      "grid": null
+    }, {
+      "cases": ["$FromFirstBand"],
+      "grid": [
+        [2,2,2,0,3,0,3,0,1,0,0],
+        [0,2,0,0,0,3,0,0,1,1,1],
+        [0,2,0,0,3,0,3,0,0,0,1]
+      ]
+    }]
+  }, {
+    "id": "slot-colors-change",
+    "separates": "the second band draws its slots in colors the first band does not use; the concept draws the moved patterns in the last band's slot colors, and $SlotColorFromFirstBand in the first band's",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,3,0,0,0,1,1,1],
+      [0,2,0,0,3,3,3,0,0,1,0],
+      [2,0,2,0,0,0,3,0,0,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [5,0,0,0,6,6,6,0,7,0,7],
+      [5,5,5,0,0,6,0,0,0,7,0],
+      [0,0,5,0,0,6,0,0,7,0,7],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$LandingSlot"],
+      "grid": [
+        [5,5,5,0,6,0,6,0,7,0,0],
+        [0,5,0,0,0,6,0,0,7,7,7],
+        [0,5,0,0,6,0,6,0,0,0,7]
+      ]
+    }, {
+      "cases": ["$SlotColorFromFirstBand"],
+      "grid": [
+        [2,2,2,0,3,0,3,0,1,0,0],
+        [0,2,0,0,0,3,0,0,1,1,1],
+        [0,2,0,0,3,0,3,0,0,0,1]
+      ]
+    }]
+  }, {
+    "id": "gap=SepThickness",
+    "separates": "the slots are two columns apart, and two rows border the band; the stored gap of one line fits no tiling of the grid and the concept is undefined, and the derived gap of two lines cuts the band and moves its patterns one slot to the left",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,0,3,0,0,0,0,1,1,1,0,0,0,5,0],
+      [0,2,0,0,0,3,3,3,0,0,0,1,0,0,0,5,5,5],
+      [2,0,2,0,0,0,0,3,0,0,0,1,0,0,0,0,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["gap=stored"],
+      "grid": null
+    }, {
+      "cases": ["gap=SepThickness & shift_step=stored"],
+      "grid": [
+        [2,0,0,0,0,3,3,3,0,0,0,1,0,0,0,5,0,5],
+        [2,2,2,0,0,0,3,0,0,0,1,1,1,0,0,0,5,0],
+        [0,0,2,0,0,0,3,0,0,0,0,1,0,0,0,5,0,5]
+      ]
+    }, {
+      "cases": ["gap=SepThickness & shift_step=SepThickness"],
+      "grid": [
+        [2,2,2,0,0,0,3,0,0,0,1,0,1,0,0,5,0,0],
+        [0,2,0,0,0,3,3,3,0,0,0,1,0,0,0,5,5,5],
+        [0,2,0,0,0,0,3,0,0,0,1,0,1,0,0,0,0,5]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "the field is 8 in place of 0; at the stored background 0 the blank lines hold 8 and the concept is undefined, and the derived background 8 cuts the bands and moves their patterns one slot to the left on a field of 8",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8,8],
+      [2,8,2,8,3,8,8,8,1,1,1],
+      [8,2,8,8,3,3,3,8,8,1,8],
+      [2,8,2,8,8,8,3,8,8,1,8],
+      [8,8,8,8,8,8,8,8,8,8,8],
+      [2,8,8,8,3,3,3,8,1,8,1],
+      [2,2,2,8,8,3,8,8,8,1,8],
+      [8,8,2,8,8,3,8,8,1,8,1],
+      [8,8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [2,2,2,8,3,8,3,8,1,8,8],
+        [8,2,8,8,8,3,8,8,1,1,1],
+        [8,2,8,8,3,8,3,8,8,8,1]
+      ]
+    }]
+  }, {
+    "id": "patterns-repeat",
+    "separates": "two slots hold one pattern, so two permutations of the slots take the first band onto the second and one cyclic move does; $StepFromBandsOrStored moves the last band's patterns one slot to the left, and $PermutationFromBandsOrStored gives a grid for each permutation",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,3,0,3,0,1,1,1],
+      [0,2,0,0,0,3,0,0,0,1,0],
+      [2,0,2,0,3,0,3,0,0,1,0],
+      [0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,3,3,3,0,1,0,1],
+      [0,2,0,0,0,3,0,0,0,1,0],
+      [2,0,2,0,0,3,0,0,1,0,1],
+      [0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StepFromBandsOrStored","$Stored"],
+      "grid": [
+        [2,2,2,0,3,0,3,0,1,0,1],
+        [0,2,0,0,0,3,0,0,0,1,0],
+        [0,2,0,0,3,0,3,0,1,0,1]
+      ]
+    }, {
+      "cases": ["$PermutationFromBandsOrStored"],
+      "grid": [
+        [
+          [2,2,2,0,3,0,3,0,1,0,1],
+          [0,2,0,0,0,3,0,0,0,1,0],
+          [0,2,0,0,3,0,3,0,1,0,1]
+        ],
+        [
+          [2,0,2,0,3,0,3,0,1,1,1],
+          [0,2,0,0,0,3,0,0,0,1,0],
+          [2,0,2,0,3,0,3,0,0,1,0]
+        ]
+      ]
+    }]
+  }, {
+    "id": "shift_step=SepThickness",
+    "separates": "the blank lines are two wide; the concept moves the patterns the stored one slot to the left, and shift_step=SepThickness moves them two slots, the separator thickness",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [2,0,2,0,0,3,0,0,0,0,1,1,1,0,0,0,5,0],
+      [0,2,0,0,0,3,3,3,0,0,0,1,0,0,0,5,5,5],
+      [2,0,2,0,0,0,0,3,0,0,0,1,0,0,0,0,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "gap": [
+        [2]
+      ]
+    },
+    "output": [{
+      "cases": ["shift_step=stored"],
+      "grid": [
+        [2,0,0,0,0,3,3,3,0,0,0,1,0,0,0,5,0,5],
+        [2,2,2,0,0,0,3,0,0,0,1,1,1,0,0,0,5,0],
+        [0,0,2,0,0,0,3,0,0,0,0,1,0,0,0,5,0,5]
+      ]
+    }, {
+      "cases": ["shift_step=SepThickness"],
+      "grid": [
+        [2,2,2,0,0,0,3,0,0,0,1,0,1,0,0,5,0,0],
+        [0,2,0,0,0,3,3,3,0,0,0,1,0,0,0,5,5,5],
+        [0,2,0,0,0,0,3,0,0,0,1,0,1,0,0,0,0,5]
+      ]
+    }]
+  }]
+}

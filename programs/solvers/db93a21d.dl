@@ -1,0 +1,244 @@
+// db93a21d
+// @draft
+// @keywords: objects bbox cast border
+// @scene squares: solid squares of params.square_color (9), each of even side,
+//  apart from each other; a square can be cut off by the grid edge, and its
+//  side is then its longer extent
+// @scene own-columns: no two squares share a column
+// @scene clear-halo: no square has a cell in the ring of another square's halo
+// @rule keep-squares: each square stays as it is
+// @rule halo: around each square, the ring of cells out to a distance of half
+//  its side takes params.frame_color (3): its outer box is the square's box
+//  grown on each side by one of params.frame_scale (2) equal parts of its
+//  side, cut at the grid edge
+// @rule trail: the cells in each square's columns, from the square toward
+//  params.trail_dir (bottom) to the grid edge, take params.trail_color (1)
+// @rule layers: a square cell is drawn over a halo cell, and a halo cell over
+//  a trail cell; every other cell keeps its input color
+
+// the halo width of a square whose measure is odd
+.type OddSide =
+    // @claim halo
+    OddUndefined {}
+    // @rule halo: a square of odd measure gets a halo of half its measure,
+    //  rounded down
+    // @witness odd-side: borderline any
+    //     @relaxed squares
+  | HaloFloor {}
+    // @rule halo: a square of odd measure gets a halo of half its measure,
+    //  rounded up
+    // @witness odd-side: borderline any
+  | HaloCeil {}
+
+// which extent of a square the halo width halves
+.type HaloMeasure =
+    // @claim halo
+    Longer {}
+    // @rule halo: the halo width is half the square's extent across
+    //  params.trail_dir, its visible width; undefined where that extent is odd
+    // @witness cut-at-side: ordinary concept
+  | HaloByWidth {}
+
+// which of a square cell, a halo cell and a trail cell shows where they meet
+.type LayerOrder =
+    // @claim layers
+    SquareOverHalo {}
+    // @rule layers: a halo cell is drawn over a square cell, and a square cell
+    //  over a trail cell
+    // @witness square-in-halo: borderline concept
+    //     @relaxed clear-halo
+  | HaloOverSquares {}
+    // @rule layers: a halo cell is drawn over a trail cell, and a trail cell
+    //  over a square cell
+    // @witness square-below: borderline concept
+    //     @relaxed own-columns
+  | SquaresUnderAll {}
+
+.type Choice = [o: OddSide, m: HaloMeasure, l: LayerOrder]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed squares
+    .decl square_color(c: Color) square_color(9).
+    .decl frame_color(c: Color) frame_color(3).
+    .decl trail_color(c: Color) trail_color(1).
+    .decl trail_dir(d: Dir) trail_dir(DIR_B).
+
+    // The count of equal parts a square's measure is cut into; the halo is
+    // one part wide.
+    // @derive TileCount: borderline any
+    //     @relaxed squares
+    .decl frame_scale(n: number) frame_scale(2).
+}
+
+.init params = Params
+
+.decl odd_side_choice(o: OddSide)
+odd_side_choice($OddUndefined()). odd_side_choice($HaloFloor()). odd_side_choice($HaloCeil()).
+
+.decl halo_measure_choice(m: HaloMeasure)
+halo_measure_choice($Longer()). halo_measure_choice($HaloByWidth()).
+
+// --- squares ---
+
+.decl square_cell(p: Position)
+square_cell(P) :- in(P, C), params.square_color(C).
+
+// @claim squares
+.init squares = Components<Unit>
+squares.node($U(), P) :- square_cell(P).
+
+// @claim squares
+.init box = Bbox<Ident>
+box.cell(Id, P) :- squares.label(_, P, Id).
+
+// The visible extent of each square along each axis.
+.decl extent(id: Ident, a: Axis, n: number)
+extent(Id, A, N) :- box.box(Id, B), squares.label(_, P, Id), axis_elem(A), box_extent(B, P, A, N).
+
+// The longer visible extent: a square's side, also where the grid edge cuts it.
+// @claim squares
+.init side = ArgExtremes<Ident, Axis>
+side.cand(Id, A, N) :- extent(Id, A, N).
+
+// The extent that each reading halves, with its axis.
+.decl measure(m: HaloMeasure, id: Ident, a: Axis, n: number)
+
+// The halo width of each square: one of params.frame_scale equal parts of
+// its measure.
+.decl halo_width(o: OddSide, m: HaloMeasure, id: Ident, k: number)
+halo_width(O, M, Id, K) :-
+    odd_side_choice(O), measure(M, Id, _, N), params.frame_scale(Parts),
+    tile_size(N, Parts, 0, K).
+
+// A reading that gives some square no halo width: its output is undefined.
+.decl unmeasured(o: OddSide, m: HaloMeasure)
+unmeasured(O, M) :-
+    odd_side_choice(O), halo_measure_choice(M), box.box(Id, _), !halo_width(O, M, Id, _).
+
+// The halo's cells: within the square's box grown by the halo width on each
+// side, outside the square's own box.
+.decl halo(o: OddSide, m: HaloMeasure, p: Position)
+halo(O, M, P) :-
+    halo_width(O, M, Id, K), box.box(Id, B),
+    uniform_outset(K, Grow), compose(B, Grow, Outer),     // the halo's outer box
+    in(P, _), inside(P, Outer), !inside(P, B).
+
+// The cells from each square toward params.trail_dir to the grid edge.
+// @claim trail
+.init cast = Ray<Unit>
+cast.dir($U(), D) :- params.trail_dir(D).
+cast.cell($U(), P) :- in(P, _).
+cast.mark($U(), P) :- square_cell(P).
+
+.decl trail(p: Position)
+trail(P) :-
+    cast.ray(_, P, _, _, Src), squares.label(_, Src, Id), box.box(Id, B),
+    !inside(P, B).                                        // past the square
+
+// --- $Longer ---
+measure($Longer(), Id, A, N) :- side.high(Id, A, N).
+
+// --- $HaloByWidth ---
+measure($HaloByWidth(), Id, A, N) :-
+    params.trail_dir(D), axis_of(D, A_trail), perp(A_trail, A), extent(Id, A, N).
+
+// --- $HaloFloor, $HaloCeil ---
+// The middle line of a square of odd measure, across the measure's axis, in
+// the square's frame, with an edge on that axis.
+.decl middle_line(m: HaloMeasure, id: Ident, d: Dir, l: Position)
+middle_line(M, Id, D, L) :-
+    measure(M, Id, A, _), box.box(Id, B), squares.label(_, P, Id), crop(P, B, P_rel),
+    split(P_rel, A, L, _), centered(L), axis_of(D, A).
+
+// --- $HaloFloor ---
+// The lines strictly between the middle line and the edge.
+halo_width($HaloFloor(), M, Id, K) :- middle_line(M, Id, D, L), dist(L, D, K).
+
+// --- $HaloCeil ---
+// The lines from the middle line to the edge.
+halo_width($HaloCeil(), M, Id, K) :-
+    middle_line(M, Id, D, L), opposite(D, D2), neighbor(L, D2, L2), dist(L2, D, K).
+
+// --- $SquareOverHalo ---
+out(P, C, [O, M, $SquareOverHalo()]) :-
+    odd_side_choice(O), halo_measure_choice(M), !unmeasured(O, M), in(P, C_in),
+    ( square_cell(P), C = C_in
+    ; !square_cell(P), halo(O, M, P), params.frame_color(C)
+    ; !square_cell(P), !halo(O, M, P), trail(P), params.trail_color(C)
+    ; !square_cell(P), !halo(O, M, P), !trail(P), C = C_in
+    ).
+
+// --- $HaloOverSquares ---
+out(P, C, [O, M, $HaloOverSquares()]) :-
+    odd_side_choice(O), halo_measure_choice(M), !unmeasured(O, M), in(P, C_in),
+    ( halo(O, M, P), params.frame_color(C)
+    ; !halo(O, M, P), square_cell(P), C = C_in
+    ; !halo(O, M, P), !square_cell(P), trail(P), params.trail_color(C)
+    ; !halo(O, M, P), !square_cell(P), !trail(P), C = C_in
+    ).
+
+// --- $SquaresUnderAll ---
+out(P, C, [O, M, $SquaresUnderAll()]) :-
+    odd_side_choice(O), halo_measure_choice(M), !unmeasured(O, M), in(P, C_in),
+    ( halo(O, M, P), params.frame_color(C)
+    ; !halo(O, M, P), trail(P), params.trail_color(C)
+    ; !halo(O, M, P), !trail(P), C = C_in
+    ).
+
+.comp Determine {
+    // A cell the output keeps, beside a cell of another input color that
+    // the output changes.
+    .decl square_color(c: Color)
+    square_color(C) :-
+        ex_in(E, P, C), ex_out(E, P, C), neighbor(P, _, Q),
+        ex_in(E, Q, C_in), C_in != C, ex_out(E, Q, C_out), C_out != C_in.
+
+    .decl square_cell(e: Example, p: Position)
+    square_cell(E, P) :- ex_in(E, P, C), square_color(C).
+
+    // The output color of a cell beside a square.
+    .decl frame_color(c: Color)
+    frame_color(C) :- square_cell(E, P), neighbor(P, _, Q), !square_cell(E, Q), ex_out(E, Q, C).
+
+    // A color the output gives a changed cell, other than the halo's.
+    // @ignore: determine prediction — the halo's color is read first, and the
+    //  trail's is the one other color a changed cell takes
+    .decl trail_color(c: Color)
+    trail_color(C) :-
+        ex_in(E, P, C_in), ex_out(E, P, C), C != C_in, !frame_color(C).
+
+    // The edge whose cell in a square's line takes the trail color.
+    .decl trail_dir(d: Dir)
+    trail_dir(D) :-
+        square_cell(E, P), dir_elem(D), dist(P, D, K), jump(P, D, K, Q),
+        ex_out(E, Q, C), trail_color(C).
+
+    // From a square's edge cell toward d: the square's extent s behind it
+    // and the run of k halo cells before it, where both end inside the grid.
+    .decl observed(s: number, k: number)
+    observed(S, K) :-
+        square_cell(E, P), neighbor(P, D, P1), !square_cell(E, P1),
+        frame_color(F), opposite(D, D2),
+        ex_out(E, Q, F), same_line(A, P, Q), axis_of(D, A), nearer(D, Q, P),
+        neighbor(Q, D, R), ex_out(E, R, C), C != F,               // the halo run's end
+        relative(P, Q, V), dist(V, D2, K),                        // its length
+        ex_in(E, Q2, _), !square_cell(E, Q2), neighbor(Q2, D, Q3), square_cell(E, Q3),
+        same_line(A, P, Q2), nearer(D2, Q2, P),                   // past the square's far side
+        relative(P, Q2, V2), dist(V2, D, S).                      // the square's extent
+
+    // A count of parts at which some observed run is one part long.
+    .decl part_count(n: number)
+    part_count(N) :-
+        observed(S, K), ex_in(_, P, _), axis_elem(A), sub_extent(P, A, N),
+        tile_size(S, N, 0, K).
+
+    // A count of parts at which some observed run is shorter than one part.
+    .decl short_run(n: number)
+    short_run(N) :- part_count(N), observed(S, K), tile_size(S, N, 0, K2), K < K2.
+
+    .decl frame_scale(n: number)
+    frame_scale(N) :- part_count(N), !short_run(N).
+}

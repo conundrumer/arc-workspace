@@ -1,0 +1,136 @@
+// e376de54
+// @draft
+// @keywords: objects rank cast
+// @scene field: the grid is a field of color params.bg
+// @scene parallel-lines: the field holds an odd number of straight segments,
+//  each one cell wide and of one color, all on one line axis (row, column, or
+//  one of the two diagonals); no two segments touch, and two segments can
+//  share a color
+// @scene common-start: one end of each segment lies on one common line
+//  perpendicular to the segments' axis; that end is the segment's start, and
+//  the other end is its free end
+// @scene middle-line: ordered along the common line, one segment has as many
+//  segments on one side as on the other; that segment is the middle line
+// @rule match-middle: each segment keeps its color, its axis and its start,
+//  and runs from its start toward its free end for the length of the middle
+//  line: a longer segment loses the cells past that length, and a shorter one
+//  gains cells of its color up to that length
+// @rule keep-field: every other cell is params.bg
+
+// which length every line takes
+.type Choice =
+    // @claim match-middle
+    Middle {}
+    // @scene middle-line: dropped
+    // @rule match-middle: every line takes the second-largest distinct length
+    //  among the lines; undefined where the lines all have one length
+    // @witness second-longest-length: ordinary concept
+  | SecondLongest {}
+
+.type Cell = [e: Example, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl bg(c: Color) bg(7).
+}
+
+.init params = Params
+
+// --- $Middle, $SecondLongest ---
+
+// The segments: the pieces of the non-field cells.
+// @claim parallel-lines
+.init shape = Components8<Unit>
+shape.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// The axis two neighboring cells of one segment lie on.
+.decl line_axis(a: Axis4)
+line_axis(A) :-
+    shape.label($U(), P, I), neighbor(P, D, Q), shape.label($U(), Q, I),
+    axis4_of(D, A).
+
+// The axis of the common start line.
+.decl cross_axis(a: Axis4)
+cross_axis(A2) :- line_axis(A), ( perp(A, A2) ; diag_perp(A, A2) ).
+
+// P is the end of segment I toward D, a direction along the line axis.
+.decl end(i: Ident, d: Dir8, p: Position)
+end(I, D, P) :-
+    shape.label($U(), P, I), line_axis(A), axis4_of(D, A),
+    neighbor(P, D, Q), !shape.label($U(), Q, I).
+
+// Two segment ends lie on one cross line.
+.decl aligned(p: Position, q: Position)
+aligned(P, Q) :- end(_, _, P), end(_, _, Q), cross_axis(A), same_line(A, P, Q).
+
+// Two segment ends toward D lie on different cross lines.
+.decl scattered(d: Dir8)
+scattered(D) :- end(_, D, P), end(_, D, Q), !aligned(P, Q).
+
+// The direction from each segment's free end to its start.
+.decl start_dir(s: Dir8)
+start_dir(S) :- end(_, S, _), !scattered(S).
+
+// The segments ordered along the common line, in each of its directions.
+// @claim middle-line
+.init across = Order<Dir8, Ident>
+across.elem(O, I) :- cross_axis(A), axis4_of(O, A), shape.label($U(), _, I).
+across.before(O, I, J) :-
+    cross_axis(A), axis4_of(O, A),
+    shape.label($U(), P, I), shape.label($U(), Q, J), nearer(O, P, Q).
+
+// The cells from each start toward its free end.
+// @claim match-middle
+.init cast = Ray<Dir8>
+cast.dir(S, F) :- start_dir(S), dir8_opposite(S, F).
+cast.cell(S, P) :- start_dir(S), in(P, _).
+cast.mark(S, P) :- start_dir(S), end(_, S, P).
+
+// K is the step count from the start of segment I to its free end.
+.decl seg_reach(s: Dir8, i: Ident, k: number)
+seg_reach(S, I, K) :-
+    end(I, S, Src), cast.ray(S, P, F, K, Src), end(I, F, P).
+
+// The step count every line takes from its start.
+.decl reach(ch: Choice, s: Dir8, k: number)
+
+// --- $Middle ---
+// the middle segment: as many segments before it as after it
+reach($Middle(), S, K) :-
+    seg_reach(S, I, K), across.rank(O, I, R), across.rank_desc(O, I, R).
+
+// --- $SecondLongest ---
+// @claim match-middle
+.init longest = Extremes<Dir8>
+longest.cand(S, K) :- seg_reach(S, _, K).
+
+// @claim match-middle
+.init second = Extremes<Dir8>
+second.cand(S, K) :- seg_reach(S, _, K), longest.high(S, H), K < H.
+
+reach($SecondLongest(), S, K) :- second.high(S, K).
+
+// --- $Middle, $SecondLongest ---
+
+.decl line_cell(ch: Choice, p: Position, col: Color)
+line_cell(Ch, P, Col) :-
+    reach(Ch, S, K_ref), end(I, S, Src),
+    shape.label($U(), Q, I), in(Q, Col),                  // the segment's color
+    cast.ray(S, P, _, K, Src), K <= K_ref.
+
+out(P, Col, Ch) :-
+    reach(Ch, _, _), in(P, _),
+    ( line_cell(Ch, P, Col)
+    ; !line_cell(Ch, P, _), params.bg(Col) ).
+
+.comp Determine {
+    // The field: the commonest color over the input cells.
+    .init field = Mode<Unit, Color, Cell>
+    field.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- field.mode($U(), Col).
+}

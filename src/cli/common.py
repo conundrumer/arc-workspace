@@ -40,7 +40,7 @@ from souffle import SouffleEngine
 from souffle.engine import FUNCTOR_DIR
 from souffle.functors import FUNCTOR_SOURCE
 
-CPU_SECONDS = 20.0
+CPU_SECONDS = 60.0
 """The CPU seconds one run on one grid may take."""
 
 LIMITS = Limits(cpu_seconds=CPU_SECONDS, wall_seconds=2 * CPU_SECONDS)

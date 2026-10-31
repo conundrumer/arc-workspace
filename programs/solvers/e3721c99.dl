@@ -1,0 +1,204 @@
+// e3721c99
+// @draft
+// @keywords: objects enclose count match
+// @scene divider: a line of params.divider_color, straight or bent once, the
+//  one object of that color that touches the grid edge, runs to the grid edge
+//  and cuts off a legend region at one side or corner of the grid.
+// @scene legend-keys: the legend region holds keys in a row or a column, each
+//  a block of one color other than params.shape_color, with single
+//  params.background cells as holes; no two keys have the same hole count.
+// @scene shapes: outside the legend, shapes of params.shape_color on
+//  params.background, each a 4-connected set of cells that encloses zero or
+//  more holes.
+// @scene hole: a hole of an object is a 4-connected region of the cells
+//  outside that object that no walk of cardinal steps through the cells
+//  outside that object reaches from the grid edge.
+// @rule recolor-by-holes: each shape takes the color of the key whose hole
+//  count equals the shape's hole count.
+// @rule erase-unmatched: a shape whose hole count no key has becomes
+//  params.background.
+// @rule rest-kept: the divider, the keys and the background stay as they are.
+
+// how the cells of params.shape_color join into shapes
+.type Shape =
+    // @claim shapes
+    Shape4 {}
+    // @scene shapes: a shape is an 8-connected set, so shapes that touch at a
+    //  corner are one shape.
+    // @witness shapes-touch-at-corner: borderline concept
+  | Shape8 {}
+
+// what closes off a hole
+.type Hole =
+    // @claim hole
+    OwnHoles {}
+    // @scene hole: a hole is a closed region of params.background cells in
+    //  the whole grid that touches the object, so the divider, keys and other
+    //  shapes can close it off.
+    // @witness pocket-against-divider: borderline concept
+  | HoleByAllContent {}
+
+// which object of params.divider_color is the divider
+.type Divider =
+    // @claim divider
+    EdgeDivider {}
+    // @scene divider: the divider is the object of params.divider_color with
+    //  the most cells, wherever it lies.
+    // @witness key-outweighs-divider: borderline concept
+  | LargestDivider {}
+
+.type Choice = [s: Shape, h: Hole, d: Divider]
+
+// An object under one shape reading: its color and its component id.
+.type Obj = [s: Shape, c: Color, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl background(c: Color) background(0).
+    .decl shape_color(c: Color) shape_color(5).
+    // the color of the line that cuts off the legend
+    // @ignore: derive VanishedColor — on one input it gives every color there,
+    //  as SharedColor does, so its model is SharedColor's
+    // @derive SharedColor: variant derived
+    // @ignore: derive $LargestDivider — fails Fit at train0: the largest object
+    //  of any color is a shape, and the divider stays a key
+    .decl divider_color(c: Color) divider_color(1).
+}
+
+.init params = Params
+
+.decl shape_choice(s: Shape)
+shape_choice($Shape4()). shape_choice($Shape8()).
+
+.decl hole_choice(h: Hole)
+hole_choice($OwnHoles()). hole_choice($HoleByAllContent()).
+
+.decl divider_choice(d: Divider)
+divider_choice($EdgeDivider()). divider_choice($LargestDivider()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, H, D]) :- shape_choice(S), hole_choice(H), divider_choice(D).
+
+// The 4-connected one-color pieces of each color but the background.
+// @claim legend-keys shapes
+.init pieces = Components<Color>
+pieces.node(C, P) :- in(P, C), !params.background(C).
+
+.decl object(o: Obj, p: Position)
+object([S, C, Id], P) :- shape_choice(S), pieces.label(C, P, Id), !params.shape_color(C).
+
+.decl shape(o: Obj)
+shape([S, C, Id]) :- object([S, C, Id], _), params.shape_color(C).
+
+// The objects that are the divider and not keys.
+.decl divider(d: Divider, o: Obj)
+
+.decl key(d: Divider, o: Obj)
+key(D, [S, C, Id]) :-
+    divider_choice(D), object([S, C, Id], _), !params.shape_color(C),
+    !divider(D, [S, C, Id]).
+
+// The hole count of each object.
+// @ignore: chain-join — the rule matches a shape to a key by equal hole counts
+.decl hole_count(h: Hole, o: Obj, n: number)
+
+// --- $Shape4 ---
+
+object([$Shape4(), C, Id], P) :- pieces.label(C, P, Id), params.shape_color(C).
+
+// --- $Shape8 ---
+
+// @claim shapes
+.init shapes8 = Components8<Color>
+shapes8.node(C, P) :- in(P, C), params.shape_color(C).
+
+object([$Shape8(), C, Id], P) :- shapes8.label(C, P, Id).
+
+// --- $OwnHoles ---
+
+// The cells outside each object.
+// @claim hole
+.init outside = Closed<Obj>
+outside.cell(O, P) :- object(O, _), in(P, _), !object(O, P).
+
+// @claim recolor-by-holes
+.init own = Tally<Obj, Ident>
+own.domain(O) :- object(O, _).
+own.item(O, Id) :- outside.region(O, _, Id).
+
+hole_count($OwnHoles(), O, N) :- own.tally(O, N).
+
+// --- $HoleByAllContent ---
+
+// The background regions the grid edge cannot reach.
+// @claim hole
+.init enclosed = Closed<Unit>
+enclosed.cell($U(), P) :- in(P, C), params.background(C).
+
+// @claim recolor-by-holes
+.init joint = Tally<Obj, Ident>
+joint.domain(O) :- object(O, _).
+joint.item(O, Id) :-
+    object(O, P), dir_elem(D), neighbor(P, D, Q),    // a cardinal neighbor
+    enclosed.region($U(), Q, Id).                    // in an enclosed region
+
+hole_count($HoleByAllContent(), O, N) :- joint.tally(O, N).
+
+// --- $EdgeDivider ---
+
+divider($EdgeDivider(), [S, C, Id]) :-
+    object([S, C, Id], P), params.divider_color(C),
+    dir_elem(D), dist(P, D, 0).                      // on the grid edge
+
+// --- $LargestDivider ---
+
+// @claim divider
+.init divider_size = Tally<Obj, Position>
+divider_size.item([S, C, Id], P) :- object([S, C, Id], P), params.divider_color(C).
+
+// @claim divider
+.init largest = ArgExtremes<Shape, Obj>
+largest.cand(S, [S, C, Id], N) :- divider_size.tally([S, C, Id], N).
+
+divider($LargestDivider(), O) :- largest.high(_, O, _).
+
+// --- concept, $Shape8, $HoleByAllContent, $LargestDivider ---
+
+// The color each shape takes: that of the key with as many holes.
+.decl hue(h: Hole, d: Divider, o: Obj, col: Color)
+hue(H, D, [S, C, Id], Col) :-
+    shape([S, C, Id]), hole_count(H, [S, C, Id], N),
+    key(D, [S, Col, K]), hole_count(H, [S, Col, K], N).
+
+// Every cell outside the shapes keeps its color.
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !params.shape_color(Col).
+
+// A shape takes its key's color, and a shape no key matches is erased.
+out(P, Col, [S, H, D]) :-
+    impl_choice([S, H, D]), shape([S, C, Id]), object([S, C, Id], P),
+    ( hue(H, D, [S, C, Id], Col)
+    ; !hue(H, D, [S, C, Id], _), params.background(Col)
+    ).
+
+.comp Determine {
+    // The shape cells are the cells the output changes.
+    .decl shape_color(c: Color)
+    shape_color(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    // The background surrounds every shape.
+    .decl background(c: Color)
+    background(C) :-
+        shape_color(S), ex_in(E, P, S),
+        dir_elem(D), neighbor(P, D, Q), ex_in(E, Q, C), C != S.
+
+    // The divider runs to the grid edge, where only it and the background
+    // and shapes stand.
+    // @ignore: determine prediction — shape_color and background name the two
+    //  other colors on the grid edge, and their values are those the sweep gives
+    .decl divider_color(c: Color)
+    divider_color(C) :-
+        ex_in(_, P, C), dir_elem(D), dist(P, D, 0),     // on the grid edge
+        !shape_color(C), !background(C).
+}

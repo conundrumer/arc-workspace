@@ -1,0 +1,283 @@
+// e84fef15
+// @draft
+// @keywords: decompose wallpaper repair crop
+// @scene divided-grid: full lines of params.divider (3) cut the grid into
+//  equal square tiles, with one line between each two tiles on each axis
+// @scene repeated-tile: every tile but one holds the same pattern of marks on
+//  a field of 8
+// @scene damaged-tile: one tile differs from the pattern, and each cell where
+//  it differs is a mark of the pattern that is 8 in that tile
+// @rule output-tile: the output is the pattern, at the size of one tile
+// @rule mark-lost: each cell where the damaged tile differs from the pattern
+//  takes params.fill
+
+// how the grid is cut into tiles
+.type TileCut =
+    // @claim divided-grid
+    ByLines {}
+    // @scene divided-grid: tiles of params.tile_size on each axis with
+    //  params.gap between each two, read without the divider; undefined where
+    //  an axis is no whole number of tiles and gaps, or where the cut tiles do
+    //  not hold one pattern and one damaged tile
+    // @witness divider-broken: borderline $CutBySize
+    //     @relaxed divided-grid
+    // @witness smaller-tiles: ordinary concept
+  | CutBySize {}
+    // @scene divided-grid: params.tile_count tiles on each axis with
+    //  params.gap between each two, read without the divider; undefined where
+    //  an axis does not divide into that count
+    // @witness divider-broken: borderline $CutBySize
+    // @witness fewer-tiles: ordinary concept
+  | CutByCount {}
+
+// how many tiles may differ
+.type DamageCount =
+    // @claim damaged-tile
+    OneDamaged {}
+    // @scene repeated-tile: the tiles need not hold one pattern
+    // @scene damaged-tile: any number of tiles may differ
+    // @rule output-tile: the output is one tile's frame, each cell the value
+    //  every tile holds there; undefined where the tiles are unequal in size
+    //  or agree at every cell
+    // @rule mark-lost: each cell where the tiles disagree takes params.fill
+    // @witness two-damaged-tiles: variant $Disagreement
+    //     @relaxed damaged-tile
+  | Disagreement {}
+
+// which differing cells take the fill
+.type DamageKind =
+    // @claim mark-lost
+    AnyDifference {}
+    // @rule mark-lost: each cell where the pattern is not params.background
+    //  and the damaged tile is params.background takes params.fill, and each
+    //  other cell keeps the pattern
+    // @witness added-mark: variant concept
+    //     @relaxed damaged-tile
+  | LostMarkOnly {}
+
+.type Choice = [c: TileCut, n: DamageCount, k: DamageKind]
+
+.type Line = [a: Axis, l: Position]
+.type CutCell = [c: TileCut, q: Position]
+.type ExampleAxis = [e: Example, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the color of a lost mark in the output
+    .decl fill(c: Color) fill(1).
+
+    // --- $ByLines ---
+    // @derive SharedColor: variant derived
+    //     @relaxed divided-grid
+    // @ignore: derive VanishedColor — on an input alone, with no train output,
+    //  it gives every color of the input, as SharedColor does, so its model is
+    //  SharedColor's and fails Equivalence
+    .decl divider(c: Color) divider(3).
+
+    // --- $CutBySize, $CutByCount ---
+    .decl gap(k: number) gap(1).
+
+    // --- $CutBySize ---
+    .decl tile_size(k: number) tile_size(5).
+
+    // --- $CutByCount ---
+    .decl tile_count(n: number) tile_count(5).
+
+    // --- $LostMarkOnly ---
+    // @derive DominantColor: variant derived
+    //     @relaxed repeated-tile
+    .decl background(c: Color) background(8).
+}
+
+.init params = Params
+
+// Each cell of tile t, as cell q of the tile's own frame, with its color.
+.decl tile_cell(c: TileCut, t: Position, q: Position, col: Color)
+
+.decl tile(c: TileCut, t: Position)
+tile(C, T) :- tile_cell(C, T, _, _).
+
+// Tile t and tile t2 differ at cell q of t: t2 holds another color there, or
+// lacks it.
+.decl differ_at(c: TileCut, t: Position, t2: Position, q: Position)
+differ_at(C, T, T2, Q) :-
+    tile_cell(C, T, Q, Col), tile(C, T2), T != T2,
+    ( tile_cell(C, T2, Q, Col2), Col != Col2
+    ; !tile_cell(C, T2, Q, _)
+    ).
+
+// --- $ByLines ---
+// Each line, as its place on its axis, with the color that fills it.
+// @ignore value: store — the line color the cut reads is the parameter divider
+// @claim divided-grid
+.init line = Unanimous<Line, Color>
+line.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// @ignore tile_of: store — on a grid of the train size the stored lattice is
+//  the cut by tile size, and on another size it matches no cell, so its model
+//  is subsumed by $CutBySize
+// @ignore divider: store — the stored lines cut a grid of the train size as
+//  the cut by tile size does, and cut no other size, so their model is
+//  subsumed by $CutBySize
+// @claim divided-grid
+.init panels = DividerTiles<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- line.value([A, L], Col), params.divider(Col).
+
+// @claim divided-grid
+.init tile_box = Bbox<Position>
+tile_box.cell(T, P) :- panels.tile_of($U(), P, T).
+
+tile_cell($ByLines(), T, Q, Col) :-
+    panels.tile_of($U(), P, T), tile_box.box(T, B), crop(P, B, Q), in(P, Col).
+
+// --- $CutBySize ---
+tile_cell($CutBySize(), T, Q, Col) :-
+    in(P, Col), params.tile_size(K), params.gap(G), divide_by_size_2d(P, K, G, T, Q).
+
+// --- $CutByCount ---
+tile_cell($CutByCount(), T, Q, Col) :-
+    in(P, Col), params.tile_count(N), params.gap(G), divide_2d(P, N, G, T, Q).
+
+// --- $OneDamaged ---
+// Tile t and tile t2 differ somewhere.
+.decl differ(c: TileCut, t: Position, t2: Position)
+differ(C, T, T2) :- ( differ_at(C, T, T2, _) ; differ_at(C, T2, T, _) ).
+
+// Two differing tiles, neither of them t.
+.decl other_clash(c: TileCut, t: Position)
+other_clash(C, T) :- tile(C, T), differ(C, T1, T2), T1 != T, T2 != T.
+
+// The damaged tile: it differs from the others, and they all agree.
+// @claim repeated-tile damaged-tile
+.decl damaged(c: TileCut, t: Position)
+damaged(C, T) :- differ(C, T, _), !other_clash(C, T).
+
+// The pattern: the cells of every tile but the damaged one.
+.decl pattern(c: TileCut, q: Position, col: Color)
+pattern(C, Q, Col) :- damaged(C, D), tile_cell(C, T, Q, Col), T != D.
+
+// --- $OneDamaged & $AnyDifference ---
+// @claim output-tile mark-lost
+out(Q, Col, [C, $OneDamaged(), $AnyDifference()]) :-
+    damaged(C, D), pattern(C, Q, Col0),
+    ( differ_at(C, T, D, Q), T != D, params.fill(Col)  // a cell the damaged tile lost
+    ; !differ_at(C, _, D, Q), Col = Col0
+    ).
+
+// --- $OneDamaged & $LostMarkOnly ---
+// A mark of the pattern that is the background in the damaged tile.
+.decl lost_mark(c: TileCut, q: Position)
+lost_mark(C, Q) :-
+    damaged(C, D), pattern(C, Q, Col0), !params.background(Col0),
+    tile_cell(C, D, Q, Col1), params.background(Col1).
+
+out(Q, Col, [C, $OneDamaged(), $LostMarkOnly()]) :-
+    pattern(C, Q, Col0),
+    ( lost_mark(C, Q), params.fill(Col)
+    ; !lost_mark(C, Q), Col = Col0
+    ).
+
+// --- $Disagreement ---
+// Some tile lacks a cell another tile holds.
+.decl ragged(c: TileCut)
+ragged(C) :- differ_at(C, _, T2, Q), !tile_cell(C, T2, Q, _).
+
+// The tiles disagree at cell q.
+.decl disagree(c: TileCut, q: Position)
+disagree(C, Q) :- differ_at(C, _, _, Q), !ragged(C).
+
+// --- $Disagreement & $AnyDifference ---
+out(Q, Col, [C, $Disagreement(), $AnyDifference()]) :-
+    tile_cell(C, _, Q, Col0), disagree(C, _),
+    ( disagree(C, Q), params.fill(Col)
+    ; !disagree(C, Q), Col = Col0
+    ).
+
+// --- $Disagreement & $LostMarkOnly ---
+// The value most tiles hold at each cell.
+// @claim output-tile
+.init majority = Mode<CutCell, Color, Position>
+majority.item([C, Q], Col, T) :- tile_cell(C, T, Q, Col), disagree(C, _).
+
+// A disputed cell where some tile holds the background and most tiles hold a
+// mark.
+.decl lost_mark_major(c: TileCut, q: Position)
+lost_mark_major(C, Q) :-
+    disagree(C, Q), majority.mode([C, Q], Col0), !params.background(Col0),
+    tile_cell(C, _, Q, Col1), params.background(Col1).
+
+out(Q, Col, [C, $Disagreement(), $LostMarkOnly()]) :-
+    majority.mode([C, Q], Col0),
+    ( lost_mark_major(C, Q), params.fill(Col)
+    ; !lost_mark_major(C, Q), Col = Col0
+    ).
+
+.comp Determine {
+    // The commonest color of each input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that some input does not hold most.
+    .decl uncommon(c: Color)
+    uncommon(Col) :- common.mode(_, Col), ex_in(E, _, _), !common.mode(E, Col).
+
+    .decl background(c: Color)
+    background(Col) :- common.mode(_, Col), !uncommon(Col).
+
+    // A color some train input lacks.
+    .decl missing(c: Color)
+    missing(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !ex_in(E, _, Col).
+
+    // The color in every train input and in no train output.
+    .decl divider(c: Color)
+    divider(Col) :- ex_in(_, _, Col), !missing(Col), !ex_out(_, _, Col).
+
+    // The color the train outputs hold and no input holds.
+    .decl fill(c: Color)
+    fill(Col) :- ex_out(_, _, Col), !ex_in(_, _, Col).
+
+    // The one extent of the train outputs on either axis.
+    .init extent = Unanimous<Unit, number>
+    extent.item($U(), N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    .decl tile_size(k: number)
+    tile_size(K) :- extent.value($U(), K).
+
+    // A gap no wider than the grid.
+    .decl gap_cand(g: number)
+    gap_cand(G) :- ex_in(_, P, _), dir_elem(D), dist(P, D, G).
+
+    // A cell that the cut at tile_size and gap g places in a tile.
+    .decl tiled(e: Example, g: number, p: Position)
+    tiled(E, G, P) :- gap_cand(G), tile_size(K), ex_in(E, P, _), divide_by_size_2d(P, K, G, _, _).
+
+    // A gap at which some tile cell holds the divider, or some gap cell
+    // holds another color.
+    .decl gap_misfit(g: number)
+    gap_misfit(G) :-
+        gap_cand(G), divider(Div), ex_in(E, P, Col),
+        ( tiled(E, G, P), Col = Div
+        ; !tiled(E, G, P), Col != Div
+        ).
+
+    // The gap the cut at the tile size the outputs give takes.
+    // @ignore: determine prediction — the outputs give the tile size, and the
+    //  gap is the one at which the cut at that size meets the input's lines
+    .decl gap(k: number)
+    gap(G) :- gap_cand(G), !gap_misfit(G).
+
+    // The tiles along each axis of each input.
+    .init parts = Tally<ExampleAxis, Position>
+    parts.item([E, A], T_a) :-
+        ex_in(E, P, _), tile_size(K), gap(G), divide_by_size_2d(P, K, G, T, _),
+        axis_elem(A), split(T, A, T_a, _).
+    parts.domain([E, A]) :- ex_in(E, _, _), axis_elem(A).
+
+    .init tiles = Unanimous<Unit, number>
+    tiles.item($U(), N) :- parts.tally(_, N).
+
+    .decl tile_count(n: number)
+    tile_count(N) :- tiles.value($U(), N).
+}

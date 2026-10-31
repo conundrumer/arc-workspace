@@ -1,0 +1,179 @@
+// fd096ab6
+// @draft
+// @keywords: objects repair stamp rank color-class
+// @scene background-field: the grid is a field of background (1).
+// @scene one-template: exactly one shape is drawn in template_color (4), and it is the whole shape.
+// @scene fragments: every other non-background cell belongs to a fragment, a set of cells of one color that lie on one translated copy of the template and are a proper part of it; no other translated copy of the template holds every cell of the fragment.
+// @scene copies-clear: each fragment's completed copy lies inside the grid, on background cells apart from the fragment's own cells, and meets no other copy.
+// @rule keep-input: every input cell keeps its color.
+// @rule complete-fragment: each fragment is completed into the translated copy of the template it was cut from, drawn in the fragment's color.
+//     @approximated: for each fragment color, every translated copy of the template whose cells of that color no other copy's cells of that color strictly contain is drawn in that color.
+//     @witness fragment-fits-several-copies: borderline other
+//         @relaxed fragments
+
+// which shape is the template
+.type Template =
+    // @claim one-template
+    TemplateStored {}
+    // @scene one-template: the template is the largest one-colored 8-connected non-background object, and its color is the template's color; undefined where two objects tie for largest.
+    // @witness template-in-another-color: variant $TemplateLargestObject
+    //     @relaxed one-template
+  | TemplateLargestObject {}
+    // @scene one-template: the template is the cells of the non-background color with the most cells; undefined where two colors tie.
+    // @witness template-in-another-color: variant $TemplateLargestObject
+    // @witness fragment-color-outnumbers-template: ordinary concept
+  | TemplateLargestColor {}
+
+// what a copy does on a cell of another color
+.type Overlap =
+    // @claim copies-clear
+    CopiesClear {}
+    // @scene copies-clear: each fragment's completed copy lies inside the grid and meets no other copy.
+    // @rule keep-input: a cell a copy covers takes the copy's color, and every other input cell keeps its color.
+    // @witness copy-meets-template: borderline any
+    //     @relaxed copies-clear
+  | CopyOverwrites {}
+    // @scene copies-clear: each fragment's completed copy lies inside the grid and meets no other copy.
+    // @rule complete-fragment: a copy is drawn only on background cells.
+    // @witness copy-meets-template: borderline any
+  | InputKept {}
+
+.type Choice = [t: Template, o: Overlap]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant bg=DominantColor
+    //     @relaxed background-field
+    .decl bg(c: Color) bg(1).
+
+    // --- $TemplateStored ---
+    .decl template_color(c: Color) template_color(4).
+}
+
+.init params = Params
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($CopiesClear()). overlap_choice($CopyOverwrites()). overlap_choice($InputKept()).
+
+// The template's cells, and its color.
+.decl template_cell(t: Template, p: Position, col: Color)
+
+// --- $TemplateStored ---
+template_cell($TemplateStored(), P, Col) :- in(P, Col), params.template_color(Col).
+
+// --- $TemplateLargestObject ---
+// @claim one-template
+.init objects = Components8<Color>
+objects.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+// @claim one-template
+.init object_size = Tally<Ident, Position>
+object_size.item(Id, P) :- objects.label(_, P, Id).
+
+// @claim one-template
+.init largest_object = ArgExtremes<Unit, Ident>
+largest_object.cand($U(), Id, N) :- object_size.tally(Id, N).
+
+// @claim one-template
+.init sole_largest_object = Unanimous<Unit, Ident>
+sole_largest_object.item($U(), Id) :- largest_object.high($U(), Id, _).
+
+template_cell($TemplateLargestObject(), P, Col) :-
+    sole_largest_object.value($U(), Id), objects.label(Col, P, Id).
+
+// --- $TemplateLargestColor ---
+// @claim one-template
+.init color_size = Tally<Color, Position>
+color_size.item(Col, P) :- in(P, Col), !params.bg(Col).
+
+// @claim one-template
+.init largest_color = ArgExtremes<Unit, Color>
+largest_color.cand($U(), Col, N) :- color_size.tally(Col, N).
+
+// @claim one-template
+.init sole_largest_color = Unanimous<Unit, Color>
+sole_largest_color.item($U(), Col) :- largest_color.high($U(), Col, _).
+
+template_cell($TemplateLargestColor(), P, Col) :-
+    sole_largest_color.value($U(), Col), in(P, Col).
+
+// --- $TemplateStored, $TemplateLargestObject, $TemplateLargestColor ---
+.decl template_color(t: Template, col: Color)
+template_color(T, Col) :- template_cell(T, _, Col).
+
+// A cell of a fragment color: neither background nor the template's color.
+.decl fragment_cell(t: Template, p: Position, col: Color)
+fragment_cell(T, P, Col) :-
+    template_color(T, _), in(P, Col), !params.bg(Col), !template_color(T, Col).
+
+// The copy at offset V holds fragment cell P of its color.
+.decl held(t: Template, col: Color, v: Offset, p: Position)
+held(T, Col, V, P) :- fragment_cell(T, P, Col), template_cell(T, Q, _), relative(Q, P, V).
+
+// Some cell the copy at V holds is not held by the copy at V2.
+.decl not_within(t: Template, col: Color, v: Offset, v2: Offset)
+not_within(T, Col, V, V2) :- held(T, Col, V, P), held(T, Col, V2, _), !held(T, Col, V2, P).
+
+// The copy at V2 holds every cell the copy at V holds, and one more.
+.decl dominated(t: Template, col: Color, v: Offset)
+dominated(T, Col, V) :-
+    held(T, Col, V, _), held(T, Col, V2, P), !held(T, Col, V, P),
+    !not_within(T, Col, V, V2).
+
+// Cell P of a completed copy, inside the grid or past its edge: a copy no
+// other copy of its color dominates.
+.decl paint(t: Template, p: Position, col: Color)
+paint(T, P, Col) :-
+    held(T, Col, V, _), !dominated(T, Col, V), template_cell(T, Q, _), compose(Q, V, P).
+
+// --- $CopiesClear, $CopyOverwrites, $InputKept ---
+// A cell no copy covers keeps its color.
+out(P, Col, [T, O]) :- template_color(T, _), overlap_choice(O), in(P, Col), !paint(T, P, _).
+
+// A copy on a background cell.
+out(P, Col, [T, O]) :- overlap_choice(O), paint(T, P, Col), in(P, Col0), params.bg(Col0).
+
+// --- $CopiesClear ---
+// A copy on a cell of another color leaves both colors there, so no grid.
+out(P, Col, [T, $CopiesClear()]) :-
+    paint(T, P, Col1), in(P, Col0), !params.bg(Col0),
+    ( Col = Col0
+    ; Col = Col1
+    ).
+
+// --- $CopyOverwrites ---
+// A copy on a non-background cell replaces it.
+out(P, Col, [T, $CopyOverwrites()]) :- paint(T, P, Col), in(P, Col0), !params.bg(Col0).
+
+// --- $InputKept ---
+// A non-background cell under a copy keeps its color.
+out(P, Col, [T, $InputKept()]) :- paint(T, P, _), in(P, Col), !params.bg(Col).
+
+.comp Determine {
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    .decl in_color(e: Example, col: Color)
+    in_color(E, Col) :- ex_in(E, _, Col).
+
+    // A color some input does not hold as its commonest.
+    .decl not_commonest(col: Color)
+    not_commonest(Col) :- commonest.mode(_, Col), in_color(E, _), !commonest.mode(E, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- commonest.mode(_, Col), !not_commonest(Col).
+
+    // A color some input lacks.
+    .decl absent(col: Color)
+    absent(Col) :- in_color(_, Col), in_color(E, _), !in_color(E, Col).
+
+    // A color some output draws on a cell where the input lacks it.
+    .decl grown(col: Color)
+    grown(Col) :- ex_out(E, P, Col), !ex_in(E, P, Col).
+
+    // The one non-background color that every input holds and no output adds to.
+    // @ignore: determine prediction — the template is the one shape the pairs leave unchanged, which is a read of input and output together
+    .decl template_color(c: Color)
+    template_color(Col) :- in_color(_, Col), !bg(Col), !absent(Col), !grown(Col).
+}

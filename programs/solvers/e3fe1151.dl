@@ -1,0 +1,169 @@
+// e3fe1151
+// @draft
+// @keywords: decompose count repair
+// @scene cross: one full row and one full column of divider_color (7) split the grid into four quadrants of 2 × 2 cells.
+// @scene blanks: each quadrant holds 1 cell of divider_color (7), and its other cells hold no divider_color.
+// @scene shared-multiset: each quadrant, with its blanks filled, holds the same multiset of colors, and the quadrants' blanks sit so that each color of that multiset shows its full count in some quadrant.
+// @rule keep: every cell that is not a blank keeps its color.
+// @rule fill-missing: each blank takes the color its quadrant lacks against the multiset union of the four quadrants' non-blank colors (each color at the highest count it has in one quadrant).
+
+// what marks a blank cell
+.type Blank =
+    // @claim blanks
+    DividerBlank {}
+    // @scene blanks: each quadrant holds 1 cell of blank_color, stored apart from divider_color; undefined where the concept is undefined, at blank_color in place of divider_color.
+    // @witness blank-color-apart: variant $OwnBlankColor
+    //     @relaxed blanks
+    //     @reassigned blank_color
+  | OwnBlankColor {}
+
+// where the cross lies
+.type Cross =
+    // @claim cross
+    CenterCross {}
+    // @scene cross: the one full row and the one full column of divider_color split the grid into four quadrants; undefined where the grid holds no full row or column of that color, or more than one.
+    // @witness blank-row-across-top: borderline concept
+    //     @relaxed blanks
+    // @witness cross-at-top: borderline $LineCross
+    //     @relaxed cross
+  | LineCross {}
+
+.type Choice = [b: Blank, x: Cross]
+
+// a quadrant's count of one color
+.type QuadColor = [ch: Choice, q: DiagDir, c: Color]
+// a color's count across the quadrants
+.type ChoiceColor = [ch: Choice, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $DividerBlank, $LineCross ---
+    // @derive DominantColor: variant derived
+    //     @relaxed cross
+    //     @relaxed blanks
+    .decl divider_color(c: Color) divider_color(7).
+
+    // --- $OwnBlankColor ---
+    // @derive DominantColor: borderline derived
+    //     @relaxed cross
+    //     @relaxed blanks
+    // @ignore: derive $CenterCross — with the center cross, divider_color is read only as the blank color, so these cases are equivalent to `$DividerBlank & divider_color=DominantColor`
+    .decl blank_color(c: Color) blank_color(7).
+}
+
+.init params = Params
+
+.decl blank_choice(b: Blank)
+blank_choice($DividerBlank()). blank_choice($OwnBlankColor()).
+
+.decl cross_choice(x: Cross)
+cross_choice($CenterCross()). cross_choice($LineCross()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([B, X]) :- blank_choice(B), cross_choice(X).
+
+// P is a cell of a cross line that runs along axis A
+.decl cross(ch: Choice, a: Axis, p: Position)
+
+// --- $CenterCross ---
+cross([B, $CenterCross()], A, P) :-
+    impl_choice([B, $CenterCross()]),
+    in(P, _), dist_pair(P, D, K, K),          // midway between edge D and its opposite
+    axis_of(D, A2), perp(A2, A).
+
+// --- $LineCross ---
+// a cell of a line along A that holds a cell of another color than divider_color
+.decl broken_line(a: Axis, p: Position)
+broken_line(A, P) :-
+    in(P, _), axis_elem(A), same_line(A, P, Q),
+    in(Q, C), !params.divider_color(C).
+
+cross([B, $LineCross()], A, P) :-
+    impl_choice([B, $LineCross()]),
+    in(P, _), axis_elem(A), !broken_line(A, P).
+
+// --- concept, $OwnBlankColor, $LineCross ---
+// the cross has no line along some axis, or two lines along one axis
+.decl bad_cross(ch: Choice)
+bad_cross(Ch) :- impl_choice(Ch), axis_elem(A), !cross(Ch, A, _).
+bad_cross(Ch) :-
+    cross(Ch, A, P), cross(Ch, A, Q),
+    axis_of(D, A2), perp(A, A2), nearer(D, P, Q).   // two distinct parallel lines
+
+// P lies on the D side of the cross line across D's axis
+.decl side(ch: Choice, p: Position, d: Dir)
+side(Ch, P, D) :-
+    axis_of(D, A2), perp(A2, A), cross(Ch, A, Q),
+    in(P, _), nearer(D, P, Q).
+
+// the quadrant P sits in, by its corner
+.decl quad(ch: Choice, p: Position, q: DiagDir)
+quad(Ch, P, Q) :- diag_dirs(Q, _, D1, D2), side(Ch, P, D1), side(Ch, P, D2).
+
+// the color that marks a blank
+.decl blank_color(ch: Choice, c: Color)
+
+// --- $DividerBlank ---
+blank_color([$DividerBlank(), X], C) :- impl_choice([$DividerBlank(), X]), params.divider_color(C).
+
+// --- $OwnBlankColor ---
+blank_color([$OwnBlankColor(), X], C) :- impl_choice([$OwnBlankColor(), X]), params.blank_color(C).
+
+// --- concept, $OwnBlankColor, $LineCross ---
+.decl blank(ch: Choice, p: Position)
+blank(Ch, P) :- quad(Ch, P, _), in(P, C), blank_color(Ch, C).
+
+// a quadrant cell that is not a blank, with its color
+.decl content(ch: Choice, p: Position, q: DiagDir, c: Color)
+content(Ch, P, Q, C) :- quad(Ch, P, Q), in(P, C), !blank(Ch, P).
+
+// each quadrant's count of each content color
+// @claim fill-missing
+.init counts = Tally<QuadColor, Position>
+counts.item([Ch, Q, C], P) :- content(Ch, P, Q, C).
+counts.domain([Ch, Q, C]) :- quad(Ch, _, Q), content(Ch, _, _, C).
+
+// the multiset union: each color at its highest count in one quadrant
+// @claim fill-missing
+.init union = Extremes<ChoiceColor>
+union.cand([Ch, C], N) :- counts.tally([Ch, _, C], N).
+
+// the colors each blank takes: those its quadrant holds fewer of than the union
+.decl fill(ch: Choice, p: Position, c: Color)
+fill(Ch, P, C) :-
+    blank(Ch, P), quad(Ch, P, Q),
+    counts.tally([Ch, Q, C], N), union.high([Ch, C], M), N < M.
+
+// each quadrant's count of each color once its blanks are filled
+// @claim fill-missing
+.init filled = Tally<QuadColor, Position>
+filled.item([Ch, Q, C], P) :- content(Ch, P, Q, C).
+filled.item([Ch, Q, C], P) :- fill(Ch, P, C), quad(Ch, P, Q).
+filled.domain(K) :- counts.domain(K).
+
+// a filled quadrant that differs from the union: its blanks do not match its missing colors
+.decl mismatch(ch: Choice)
+mismatch(Ch) :- filled.tally([Ch, _, C], N), union.high([Ch, C], M), N != M.
+
+out(P, C, Ch) :-
+    impl_choice(Ch), !bad_cross(Ch), !mismatch(Ch),
+    ( in(P, C), !blank(Ch, P)     // keep
+    ; fill(Ch, P, C)              // fill-missing
+    ).
+
+.comp Determine {
+    // the color of the center lines, across every input
+    .init center = Unanimous<Unit, Color>
+    center.item($U(), C) :- ex_in(_, P, C), dist_pair(P, _, K, K).
+
+    .decl divider_color(c: Color)
+    divider_color(C) :- center.value($U(), C).
+
+    // the color of the cells the outputs change
+    .init changed = Unanimous<Unit, Color>
+    changed.item($U(), C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
+    .decl blank_color(c: Color)
+    blank_color(C) :- changed.value($U(), C).
+}

@@ -1,0 +1,131 @@
+{
+  "id": "e8686506",
+  "witnesses": [{
+    "id": "dotted-rows",
+    "separates": "Two dotted rows each tile the other's box: the row of four 3 cells has three gaps the three 1 cells fill, and the row of three 1 cells has four gaps the four 3 cells fill. The search finds both frames and gives both boxes; the most-cells reading takes the 3 row alone and gives one box.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8],
+      [8,3,8,3,8,3,8,3,8],
+      [8,8,8,8,8,8,8,8,8],
+      [8,1,8,8,1,8,8,1,8],
+      [8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Search"],
+      "grid": [
+        [
+          [1,3,3,1,3,3,1]
+        ],
+        [
+          [3,1,3,1,3,1,3]
+        ]
+      ]
+    }, {
+      "cases": ["$FrameMostCells"],
+      "grid": [
+        [3,1,3,1,3,1,3]
+      ]
+    }]
+  }, {
+    "id": "diagonal-piece",
+    "separates": "Two 4 cells touch at a corner beside a frame whose three gaps are a diagonal pair and a lone corner cell. As 4-connected parts they are two single cells, so the 6 cell can take any gap and three grids result; as one 8-connected piece they fill the diagonal pair and the 6 takes the corner.",
+    "input": [
+      [8,8,8,8,8,8,8,8],
+      [8,3,8,3,3,8,8,8],
+      [8,3,3,8,3,8,4,8],
+      [8,3,3,3,3,8,8,4],
+      [8,8,3,3,3,8,8,8],
+      [8,8,8,8,8,8,6,8],
+      [8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Parts4"],
+      "grid": [
+        [
+          [3,6,3,3],
+          [3,3,4,3],
+          [3,3,3,3],
+          [4,3,3,3]
+        ],
+        [
+          [3,4,3,3],
+          [3,3,6,3],
+          [3,3,3,3],
+          [4,3,3,3]
+        ],
+        [
+          [3,4,3,3],
+          [3,3,4,3],
+          [3,3,3,3],
+          [6,3,3,3]
+        ]
+      ]
+    }, {
+      "cases": ["$Pieces8"],
+      "grid": [
+        [3,4,3,3],
+        [3,3,4,3],
+        [3,3,3,3],
+        [6,3,3,3]
+      ]
+    }]
+  }, {
+    "id": "accent-frame",
+    "separates": "train0 with its bottom frame row recolored 2: the frame has ten 3 cells and four 2 cells. The search finds the frame colors {2, 3} and fills that box; the most-cells reading takes {3} alone, whose box the pieces cannot cover, and is undefined.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,4,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,3,3,8,3,3,8,8,4,8,8,8],
+      [8,8,3,8,8,8,3,8,8,8,8,8,8],
+      [8,8,3,8,8,8,3,8,8,8,8,8,8],
+      [8,8,8,3,8,3,8,8,8,8,8,4,8],
+      [8,8,2,2,8,2,2,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,1,1,1,8,8,8,6,8,8,8,8],
+      [8,8,1,1,1,8,8,8,6,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Search"],
+      "grid": [
+        [3,3,4,3,3],
+        [3,1,1,1,3],
+        [3,1,1,1,3],
+        [4,3,6,3,4],
+        [2,2,6,2,2]
+      ]
+    }, {
+      "cases": ["$FrameMostCells"],
+      "grid": null
+    }]
+  }, {
+    "id": "corner-field",
+    "separates": "A large frame of 3 fills most of the grid, so 3 outnumbers the field of 8 that holds the four corners. The corner reading takes 8 as the background, finds the frame {3}, and puts the two 4 pieces in its two gaps; the commonest-color reading takes 3 as the background, finds no frame the other cells cover, and is undefined.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8],
+      [8,3,3,3,3,3,3,3,8],
+      [8,3,3,8,3,3,3,3,8],
+      [8,3,3,3,3,3,3,3,8],
+      [8,3,3,3,3,3,8,3,8],
+      [8,3,3,3,3,3,3,3,8],
+      [8,3,3,3,3,3,3,3,8],
+      [8,8,4,8,8,8,4,8,8]
+    ],
+    "output": [{
+      "cases": ["$Commonest"],
+      "grid": null
+    }, {
+      "cases": ["$CornerColor"],
+      "grid": [
+        [3,3,3,3,3,3,3],
+        [3,3,4,3,3,3,3],
+        [3,3,3,3,3,3,3],
+        [3,3,3,3,3,4,3],
+        [3,3,3,3,3,3,3],
+        [3,3,3,3,3,3,3]
+      ]
+    }]
+  }]
+}

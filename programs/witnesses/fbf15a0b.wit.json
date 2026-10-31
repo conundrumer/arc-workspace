@@ -1,0 +1,194 @@
+{
+  "id": "fbf15a0b",
+  "witnesses": [{
+    "id": "marker-count",
+    "separates": "three markers down one column of an 18-row grid: the concept cuts by the stored part count into halves and keeps the top 9 rows; $CountMarkers cuts into as many parts as there are markers and keeps the top 6 rows",
+    "input": [
+      [5,8,8,8],
+      [8,8,1,8],
+      [5,8,8,8],
+      [8,8,1,8],
+      [5,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8]
+    ],
+    "output": [{
+      "cases": ["$Stored","$MarkerSpacing"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8]
+      ]
+    }, {
+      "cases": ["$CountMarkers"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8]
+      ]
+    }]
+  }, {
+    "id": "marker-spacing",
+    "separates": "two markers three apart down one column of a 12-row grid: the concept keeps the top half, 6 rows; $MarkerSpacing cuts into as many parts as the markers are apart and keeps the top 4 rows",
+    "input": [
+      [5,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [5,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8],
+      [8,8,8,8],
+      [8,8,1,8]
+    ],
+    "output": [{
+      "cases": ["$Stored","$CountMarkers"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8]
+      ]
+    }, {
+      "cases": ["$MarkerSpacing"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,1,8],
+        [8,8,8,8],
+        [8,8,1,8]
+      ]
+    }]
+  }, {
+    "id": "odd-extent",
+    "separates": "a 7-row grid with the pair down its right column: the concept and every exact cut are undefined; $FloorPart keeps the top 3 rows, dropping the middle row; $CeilPart keeps the top 4 rows, middle row included",
+    "input": [
+      [8,8,8,5],
+      [8,1,8,8],
+      [8,8,8,5],
+      [8,1,8,8],
+      [8,8,8,8],
+      [8,1,8,8],
+      [8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Exact"],
+      "grid": null
+    }, {
+      "cases": ["$FloorPart"],
+      "grid": [
+        [8,8,8,8],
+        [8,1,8,8],
+        [8,8,8,8]
+      ]
+    }, {
+      "cases": ["$CeilPart"],
+      "grid": [
+        [8,8,8,8],
+        [8,1,8,8],
+        [8,8,8,8],
+        [8,1,8,8]
+      ]
+    }]
+  }, {
+    "id": "marker_color=RarestColor",
+    "separates": "the pattern color has as few cells as the marker color, two dots in the marker column: the concept erases only the 5 markers and keeps the 1 dots; the rarest-color derivation takes both colors as markers and erases all four cells",
+    "input": [
+      [5,8,8,8],
+      [8,8,8,8],
+      [5,8,8,8],
+      [8,8,8,8],
+      [1,8,8,8],
+      [8,8,8,8],
+      [1,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8],
+      [8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["marker_color=stored"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [1,8,8,8],
+        [8,8,8,8],
+        [1,8,8,8],
+        [8,8,8,8]
+      ]
+    }, {
+      "cases": ["marker_color=RarestColor"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the pattern color outnumbers the background: the concept erases the markers to 8; the dominant-color derivation takes 1 as background and erases the markers to 1",
+    "input": [
+      [5,1,8,1],
+      [8,1,8,1],
+      [5,1,8,1],
+      [8,1,8,1],
+      [8,1,8,1],
+      [8,1,8,1],
+      [8,1,8,1],
+      [8,1,8,1]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [8,1,8,1],
+        [8,1,8,1],
+        [8,1,8,1],
+        [8,1,8,1]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [1,1,8,1],
+        [8,1,8,1],
+        [1,1,8,1],
+        [8,1,8,1]
+      ]
+    }]
+  }]
+}

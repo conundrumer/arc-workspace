@@ -6,17 +6,15 @@
 //  and an interior of at least 1×1 cells, and no two rooms touch
 // @scene facing-network-connected: the rooms are linked into one group through
 //  facing pairs, as `facing-pair` defines them
+// @scene unique-largest-gap: in every loop of facing pairs, the largest gap
+//  belongs to one pair only
 // @rule facing-pair: two rooms face each other when, on one axis, their
 //  interiors share a span of lines, and the band between their facing walls
 //  across that span holds only `background`; the gap of the pair is the count
 //  of cells between the two facing walls
-// @rule shortest-joins: the corridors are those of one spanning tree of the
-//  facing pairs with the least total gap; where several such trees exist, any
-//  one of them
-//     @approximated: a facing pair gets a corridor unless the two rooms are
-//      linked by a chain of facing pairs whose gaps are each strictly smaller
-//      than its gap
-//     @witness tied-loop: borderline other
+// @rule shortest-joins: a facing pair gets a corridor unless its two rooms are
+//  linked by a chain of facing pairs whose gaps are each strictly smaller than
+//  its gap
 // @rule corridor-shape: a corridor covers the span the two interiors share;
 //  across the gap, the two outermost lines of that span become `room_color`,
 //  and on the two facing walls, the lines strictly between those two become

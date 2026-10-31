@@ -1,0 +1,108 @@
+// ecb67b6d
+// @draft
+// @keywords: objects lines count classify
+// @scene marks-on-field: every input is a field of 7 with cells of mark_color
+//  scattered over it, and holds no other color
+// @scene clumps: the mark_color cells group into clumps, each a set of cells
+//  joined through side and corner contact (8-adjacency)
+// @rule diagonal-run: a clump holds a diagonal run when min_run of its cells
+//  lie one after another along a diagonal line of either diagonal axis, each
+//  next to the one before it at a corner
+// @rule recolor-clump: every cell of a clump that holds a diagonal run takes
+//  fill_color
+// @rule keep-rest: every other cell keeps its input color
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // @derive RarestColor: borderline concept
+    //     @relaxed marks-on-field
+    .decl mark_color(c: Color) mark_color(5).
+    .decl fill_color(c: Color) fill_color(8).
+    // The fewest cells of a diagonal run that makes its clump recolor.
+    .decl min_run(n: number) min_run(3).
+}
+
+.init params = Params
+
+// The clumps, and the length of each diagonal run of mark cells.
+.comp Parse<Key> {
+    // A run of mark cells cast from one cell toward one corner.
+    .type Cast = [k: Key, src: Position, d: DiagDir]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    // @claim clumps
+    .init clump = Components8<Key>
+    clump.node(K, P) :- cell(K, P, Col), params.mark_color(Col).
+
+    // The mark cells in line with each mark cell toward each corner, up to
+    // the first cell of another color.
+    // @claim diagonal-run
+    .init line = Ray<Key>
+    line.dir(K, D) :- cell(K, _, _), diag_dir_elem(D).
+    line.cell(K, P) :- cell(K, P, _).
+    line.mark(K, P) :- clump.node(K, P).
+    line.blocked(K, P) :- cell(K, P, Col), !params.mark_color(Col).
+
+    // @claim diagonal-run
+    .init run_size = Tally<Cast, Position>
+    run_size.item([K, Src, D], P) :- line.clear(K, P, D, _, Src), diag_dir_elem(D).
+
+    // Clump id holds a run of n cells.
+    .decl run(k: Key, id: Ident, n: number)
+    run(K, Id, N) :- run_size.tally([K, Src, _], N), clump.label(K, Src, Id).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The cells of the clumps that hold a run of at least min_run cells.
+.decl recolored(p: Position)
+recolored(P) :-
+    parse.run($U(), Id, N), params.min_run(M), N >= M,
+    parse.clump.label($U(), P, Id).
+
+out(P, Col) :-
+    in(P, Col_in),
+    ( recolored(P), params.fill_color(Col)
+    ; !recolored(P), Col = Col_in
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The cells the output changes, with their input and output colors.
+    .decl changed(e: Example, p: Position, c_in: Color, c_out: Color)
+    changed(E, P, C_in, C_out) :- ex_in(E, P, C_in), ex_out(E, P, C_out), C_out != C_in.
+
+    .decl mark_color(c: Color)
+    mark_color(C) :- changed(_, _, C, _).
+
+    .decl fill_color(c: Color)
+    fill_color(C) :- changed(_, _, _, C).
+
+    // The clumps the output recolors.
+    .decl recolored(e: Example, id: Ident)
+    recolored(E, Id) :- changed(E, P, _, _), parse.clump.label(E, P, Id).
+
+    // A recolored clump's run lengths are the candidate thresholds.
+    .decl cand(n: number)
+    cand(N) :- recolored(E, Id), parse.run(E, Id, N).
+
+    // Clump id holds a run of at least n cells.
+    .decl reaches(e: Example, id: Ident, n: number)
+    reaches(E, Id, M) :- cand(M), parse.run(E, Id, N), N >= M.
+
+    // A kept clump reaches the threshold, or a recolored clump falls short.
+    .decl defect(n: number)
+    defect(M) :-
+        cand(M), ex_out(E, _, _),
+        ( reaches(E, Id, M), !recolored(E, Id)
+        ; recolored(E, Id), !reaches(E, Id, M)
+        ).
+
+    .decl min_run(n: number)
+    min_run(M) :- cand(M), !defect(M).
+}

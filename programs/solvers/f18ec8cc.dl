@@ -1,0 +1,225 @@
+// f18ec8cc
+// @draft
+// @keywords: lines permutation noise
+// @scene stripes: the grid is cut, along the axis of `from` (DIR_L), into full-length stripes,
+//  each a run of whole lines filled by one background color, the stripes' colors pairwise distinct.
+// @scene dots: inside a stripe, single cells of other colors, each the background color of another
+//  stripe; a stripe's two edge lines hold no dot, so each line's commonest color is its stripe's color.
+// @rule cycle-stripes: the output has the input's size, and its stripes are the input's stripes,
+//  each copied cell for cell with its dots, in their input order moved `shift` places toward `from`,
+//  the stripes that pass that edge wrapping round to the opposite end.
+
+// How the stripes are found
+.type StripeParse =
+    // @claim stripes
+    Commonest {}
+    // @scene stripes: a cut falls between two adjacent solid lines of different colors, and the
+    //  stripes are the runs between cuts; undefined where a run it reads holds solid lines of two colors.
+    // @scene dots: no claim; the parse reads no line's commonest color.
+    // @witness tie-in-first-stripe: borderline $SolidLines
+    //     @relaxed dots
+    // @witness edge-dots-first-stripe: borderline concept
+    //     @relaxed dots
+    // @witness mixed-later-run: borderline concept
+    //     @relaxed dots
+  | SolidLines {}
+
+// How the stripe sequence is reordered
+.type Rearrangement =
+    // @claim cycle-stripes
+    Cycle {}
+    // @rule cycle-stripes: only the first `shift` stripes at the `from` edge are found, and the
+    //  lines are rotated toward `from` by their combined width; undefined where the parse cannot
+    //  read one of those stripes.
+    // @witness tie-in-later-stripe: borderline $RotateColumns
+    //     @relaxed dots
+  | RotateColumns {}
+
+.type Choice = [p: StripeParse, r: Rearrangement]
+
+// A line under one parse.
+.type ParseLine = [p: StripeParse, l: Position]
+
+// A line of one example.
+.type ExampleLine = [e: Example, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The edge from which stripes move to the opposite end.
+    .decl from(d: Dir) from(DIR_L).
+    // How many stripes move from that edge to the opposite end.
+    .decl shift(n: number) shift(1).
+}
+
+.init params = Params
+
+.decl stripe_parse_choice(p: StripeParse)
+stripe_parse_choice($Commonest()). stripe_parse_choice($SolidLines()).
+
+.decl rearrangement_choice(r: Rearrangement)
+rearrangement_choice($Cycle()). rearrangement_choice($RotateColumns()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Commonest(), R]) :- rearrangement_choice(R).
+impl_choice([$SolidLines(), $RotateColumns()]).
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    // Each cell with its color, split into its line, along the axis of `from`, and its place
+    // across the lines.
+    .decl cell_line(key: Key, p: Position, col: Color, l: Position, p_across: Position)
+    cell_line(K, P, Col, L, X) :- cell(K, P, Col), params.from(D), axis_of(D, A), split(P, A, L, X).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl line(l: Position)
+line(L) :- parse.cell_line(_, _, _, L, _).
+
+// A cut falls before line L2, between it and its neighbor L1 toward `from`.
+.decl cut(pa: StripeParse, l: Position)
+
+// A line's stripe index: the cuts between it and the `from` edge.
+// @claim stripes
+.init stripe_index = Tally<ParseLine, Position>
+stripe_index.domain([Pa, L]) :- stripe_parse_choice(Pa), line(L).
+stripe_index.item([Pa, L], L_cut) :-
+    cut(Pa, L_cut), line(L), params.from(D),
+    ( L_cut = L ; nearer(D, L_cut, L) ).
+
+.decl stripe(pa: StripeParse, l: Position, n: number)
+stripe(Pa, L, N) :- stripe_index.tally([Pa, L], N).
+
+// A stripe the parse cannot read: it holds a line with no unique commonest color, or solid
+// lines of two colors.
+.decl bad(pa: StripeParse, n: number)
+
+// --- $Commonest ---
+// Each line's commonest color.
+// @claim dots
+.init line_mode = Mode<Position, Color, Position>
+line_mode.item(L, Col, P) :- parse.cell_line(_, P, Col, L, _).
+
+// A line's commonest color, unique or clashing.
+// @claim dots
+.init line_color = Unanimous<Position, Color>
+line_color.item(L, Col) :- line_mode.mode(L, Col).
+
+cut($Commonest(), L2) :-
+    params.from(D), neighbor(L2, D, L1),
+    line_color.value(L1, C1), line_color.value(L2, C2), C1 != C2.
+
+bad($Commonest(), N) :- line_color.clash(L), stripe($Commonest(), L, N).
+
+// --- $SolidLines ---
+// The color of a line all of one color.
+// @claim stripes
+.init solid = Unanimous<Position, Color>
+solid.item(L, Col) :- parse.cell_line(_, _, Col, L, _).
+
+cut($SolidLines(), L2) :-
+    params.from(D), neighbor(L2, D, L1),
+    solid.value(L1, C1), solid.value(L2, C2), C1 != C2.
+
+// The solid lines of one run share their color.
+// @claim stripes
+.init run_color = Unanimous<number, Color>
+run_color.item(N, Col) :- stripe($SolidLines(), L, N), solid.value(L, Col).
+
+bad($SolidLines(), N) :- run_color.clash(N).
+
+// --- $Cycle ---
+// Stripe n2 steps toward `from` to n1, and the stripe at the `from` edge wraps to the far end.
+// @claim cycle-stripes
+.init stripe_cycle = CycleWalk<StripeParse, number>
+stripe_cycle.succ(Pa, N2, N1) :-
+    cut(Pa, L2), params.from(D), neighbor(L2, D, L1), stripe(Pa, L1, N1), stripe(Pa, L2, N2).
+stripe_cycle.succ(Pa, N_first, N_last) :-
+    params.from(D), opposite(D, D_far),
+    stripe(Pa, L1, N_first), dist(L1, D, 0),
+    stripe(Pa, L2, N_last), dist(L2, D_far, 0).
+stripe_cycle.step(Pa, K) :- stripe_parse_choice(Pa), params.shift(K).
+
+// The output lines in order: by the slot each stripe takes, then by place within the stripe.
+// @claim cycle-stripes
+.init line_order = Order<StripeParse, Position>
+line_order.elem(Pa, L) :- stripe(Pa, L, _).
+line_order.score(Pa, L, N_slot) :-
+    stripe(Pa, L, N), params.shift(K), stripe_cycle.walk(Pa, N, K, N_slot).
+line_order.secondary_score(Pa, L, K) :- stripe(Pa, L, _), params.from(D), dist(L, D, K).
+
+out(P_out, Col, [Pa, $Cycle()]) :-
+    impl_choice([Pa, $Cycle()]), !bad(Pa, _),
+    parse.cell_line(_, _, Col, L, X),
+    line_order.rank(Pa, L, R), params.from(D), line(L_out), dist(L_out, D, R),
+    compose(L_out, X, P_out).
+
+// --- $RotateColumns ---
+// The lines step toward `from`, and the line at the `from` edge wraps to the far end.
+// @claim cycle-stripes
+.init line_cycle = CycleWalk<Unit, Position>
+line_cycle.succ($U(), L2, L1) :- line(L2), params.from(D), neighbor(L2, D, L1), line(L1).
+line_cycle.succ($U(), L1, L2) :-
+    params.from(D), opposite(D, D_far), line(L1), dist(L1, D, 0), line(L2), dist(L2, D_far, 0).
+line_cycle.step($U(), W) :- moved.tally(_, W).
+
+// The combined width of the first `shift` stripes.
+// @claim cycle-stripes
+.init moved = Tally<StripeParse, Position>
+moved.item(Pa, L) :- stripe(Pa, L, N), params.shift(K), N < K.
+
+// A stripe among the first `shift` that the parse cannot read.
+.decl bad_moved(pa: StripeParse)
+bad_moved(Pa) :- bad(Pa, N), params.shift(K), N < K.
+
+out(P_out, Col, [Pa, $RotateColumns()]) :-
+    impl_choice([Pa, $RotateColumns()]), !bad_moved(Pa),
+    parse.cell_line(_, _, Col, L, X),
+    moved.tally(Pa, W), line_cycle.walk($U(), L, W, L_out),
+    compose(L_out, X, P_out).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // An input line that differs from the output's line at the `from` edge.
+    // The output has the input's size, so an input cell's split also splits the output cell.
+    .decl edge_mismatch(e: Example, l: Position)
+    edge_mismatch(E, L) :-
+        ex.cell_line(E, _, Col, L, X),
+        ex.cell_line(E, Q, _, L_out, X), params.from(D), dist(L_out, D, 0),
+        ex_out(E, Q, Col_out), Col != Col_out.
+
+    // An input line equal to the output's line at the `from` edge.
+    .decl lands_at_edge(e: Example, l: Position)
+    lands_at_edge(E, L) :- ex.cell_line(E, _, _, L, _), ex_out(E, _, _), !edge_mismatch(E, L).
+
+    // The nearest such line to `from`: the first line of the stripe the output leads with.
+    .decl lead(e: Example, l: Position)
+    lead(E, L) :- lands_at_edge(E, L), !nearer_landing(E, L).
+
+    .decl nearer_landing(e: Example, l: Position)
+    nearer_landing(E, L) :-
+        lands_at_edge(E, L), lands_at_edge(E, L2), params.from(D), nearer(D, L2, L).
+
+    // The color of a line all of one color.
+    .init solid = Unanimous<ExampleLine, Color>
+    solid.item([E, L], Col) :- ex.cell_line(E, _, Col, L, _).
+
+    // The stripes that pass the `from` edge: the colors of the solid lines before the lead line.
+    .init passed = Tally<Example, Color>
+    passed.domain(E) :- lead(E, _).
+    passed.item(E, Col) :- lead(E, L), solid.value([E, L2], Col), params.from(D), nearer(D, L2, L).
+
+    .decl shift_contradicted(n: number)
+    shift_contradicted(N) :- passed.tally(_, N), ex_out(E, _, _), !passed.tally(E, N).
+
+    // The count every pair reads.
+    // @ignore: determine prediction — edge_mismatch finds the input line the output leads with, and
+    //  the value is read from the evidence as the count of stripes before that line, not guessed.
+    .decl shift(n: number)
+    shift(N) :- passed.tally(_, N), !shift_contradicted(N).
+}

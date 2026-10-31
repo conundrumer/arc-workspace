@@ -1,0 +1,403 @@
+// dc46ea44
+// @draft
+// @keywords: decompose objects move bbox
+// @scene background: every cell that is not the divider, the hook or the
+//  object has the background color
+// @scene divider: one full line of the divider color, across the lift
+//  direction, cuts the grid into two halves of equal size, and the half toward
+//  the lift direction is all background
+// @scene hook: the other half holds one 8-connected object of the hook color:
+//  a stem of three cells along the lift direction, a foot cell one step past
+//  the stem's end away from the lift direction and one step toward the tip
+//  side, and a tip cell one step from the foot toward the lift direction and
+//  one step toward the tip side; at lift up and tip side left, its cells are
+//  (0,0), (1,0), (2,0), (3,-1), (2,-2) from the stem's top cell
+// @scene object: that half holds one more 8-connected object apart from the
+//  hook, of one color that is not the hook, divider or background color
+// @rule clear-source: every cell of the half that held the hook becomes
+//  background
+// @rule keep-divider: the divider stays as it is
+// @rule hook-across: the hook is translated toward the lift direction by the
+//  size of one half plus the divider, so that it takes the same place in the
+//  other half that it had in its own
+// @rule hang-object: the object is translated so that one corner of its
+//  bounding box lies on the hook's tip, the hook's cell farthest toward the
+//  tip side; that corner is the one away from the lift direction and away
+//  from the tip side; the object's cells are drawn over the hook
+
+// what tells the hook from the object
+.type Hook =
+    // @claim hook
+    ByColor {}
+    // @scene hook: the hook is the object of the stored shape, placed by the
+    //  lift direction and the tip side, whatever its color; undefined where no
+    //  object or more than one object has that shape
+    // @witness hook-color-swapped: variant $HookByShape
+    //     @relaxed hook
+  | HookByShape {}
+    // @scene hook: the hook is the one of the two colors of the hook's half
+    //  with more cells; undefined where the two counts are equal
+    // @witness large-object: ordinary concept
+  | HookLarger {}
+
+// how far the hook travels
+.type Travel =
+    // @claim hook-across
+    Across {}
+    // @rule hook-across: the hook slides toward the lift direction until it
+    //  meets the frame edge
+    // @witness hook-off-divider: borderline concept
+  | LiftToEdge {}
+
+// which cell is the hook's tip
+.type Tip =
+    // @claim hang-object
+    Farthest {}
+    // @rule hang-object: the tip is the cell two steps away from the lift
+    //  direction and two steps toward the tip side from the stem's top cell
+    // @witness hook-long-stem: variant concept
+    //     @relaxed hook
+  | TipByOffset {}
+
+// what the divider is
+.type Divider =
+    // @claim divider
+    DividerStored {}
+    // @scene divider: the divider is the one full line of one color that is
+    //  not background; undefined where no such line or more than one exists
+    // @witness divider-recolored: variant $DividerDerived
+    //     @relaxed divider
+  | DividerDerived {}
+
+// the lift direction
+.type Lift =
+    // @claim divider
+    LiftStored {}
+    // @scene divider: the lift direction is the direction from the half that
+    //  holds content to the half that is all background; undefined where both
+    //  halves or neither are all background
+    // @witness content-above: variant $LiftTowardEmpty
+    //     @relaxed divider
+  | LiftTowardEmpty {}
+
+// the tip side
+.type Side =
+    // @claim hook
+    SideStored {}
+    // @scene hook: the tip side is the side of the stem, the hook's line along
+    //  the lift direction with the most cells, on which the hook's other cells
+    //  lie; undefined where they lie on both sides
+    // @witness hook-mirrored: variant $TipSideDerived
+    //     @relaxed hook
+  | TipSideDerived {}
+
+.type Choice = [h: Hook, r: Travel, x: Tip, dv: Divider, l: Lift, s: Side]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    .decl bg(col: Color) bg(7).
+
+    // --- $DividerStored ---
+    .decl divider(col: Color) divider(4).
+
+    // --- $ByColor ---
+    .decl hook(col: Color) hook(6).
+
+    // --- $HookByShape ---
+    // The hook's cells from the stem's top cell, with the lift direction and
+    // the tip side of that pose.
+    RIGID(hook,
+        .decl shape(v: Offset)
+        GRID_STAMP_4x3(shape,
+            _, _, @1,
+            _, _, 1,
+            1, _, 1,
+            _, 1, _)
+        .decl up(d: Dir) up(DIR_T).
+        .decl side(d: Dir) side(DIR_L).
+    )
+
+    // --- $LiftStored ---
+    // The direction from the hook's half to the empty half.
+    .decl lift_dir(d: Dir) lift_dir(DIR_T).
+
+    // --- $SideStored ---
+    // The side of the hook's stem that holds its tip.
+    .decl tip_dir(d: Dir) tip_dir(DIR_L).
+
+    // --- $TipByOffset ---
+    // The tip's steps from the stem's top cell: away from the lift direction,
+    // then toward the tip side.
+    .decl tip_offset(k_back: number, k_side: number) tip_offset(2, 2).
+}
+
+.init params = Params
+
+.decl hook_choice(h: Hook)
+hook_choice($ByColor()). hook_choice($HookByShape()). hook_choice($HookLarger()).
+
+.decl travel_choice(r: Travel)
+travel_choice($Across()). travel_choice($LiftToEdge()).
+
+.decl tip_choice(x: Tip)
+tip_choice($Farthest()). tip_choice($TipByOffset()).
+
+.decl divider_choice(dv: Divider)
+divider_choice($DividerStored()). divider_choice($DividerDerived()).
+
+.decl lift_choice(l: Lift)
+lift_choice($LiftStored()). lift_choice($LiftTowardEmpty()).
+
+.decl side_choice(s: Side)
+side_choice($SideStored()). side_choice($TipSideDerived()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([H, R, X, Dv, L, S]) :-
+    hook_choice(H), travel_choice(R), tip_choice(X),
+    divider_choice(Dv), lift_choice(L), side_choice(S).
+
+// A half of the grid: the divider as each Divider branch finds it, and the
+// edge the half lies toward.
+.type HalfKey = [dv: Divider, d: Dir]
+
+// The divider's cells.
+.decl divider(dv: Divider, p: Position)
+
+// p lies on a divider cell's line or beyond it, seen from edge d.
+// @ignore: store — the divider's cells fix it, so storing it stores the divider's cells
+.decl short_of(dv: Divider, d: Dir, p: Position)
+short_of(Dv, D, P) :- divider(Dv, Q), in(P, _), dir_elem(D), !nearer(D, P, Q).
+
+// The half toward edge d: the cells nearer d than every divider cell.
+// @ignore: store — the divider's cells fix it, so storing it stores the divider's cells
+.decl half(dv: Divider, d: Dir, p: Position)
+half(Dv, D, P) :- divider(Dv, _), in(P, _), dir_elem(D), !short_of(Dv, D, P).
+
+// The ink of each half.
+.decl ink(k: HalfKey, p: Position, col: Color)
+ink([Dv, D], P, Col) :- half(Dv, D, P), in(P, Col), !params.bg(Col).
+
+// The lift direction.
+.decl lift(dv: Divider, l: Lift, d: Dir)
+
+// Each case's lift direction and the half the hook starts in.
+// @ignore: head-repeat — the half key is the key the ink, components and boxes are keyed by
+.decl lifting(ch: Choice, d: Dir, k: HalfKey)
+lifting([H, R, X, Dv, L, S], D, [Dv, D_src]) :-
+    impl_choice([H, R, X, Dv, L, S]), lift(Dv, L, D), opposite(D, D_src).
+
+// The hook's cells.
+.decl hook(ch: Choice, p: Position)
+
+// The tip side.
+.decl tip_side(ch: Choice, d: Dir)
+
+// The hook's tip, before the lift.
+.decl tip(ch: Choice, p: Position)
+
+// The translation that lifts the hook.
+.decl travel(ch: Choice, v: Offset)
+
+// The object: the ink of the hook's half that is not the hook.
+.decl obj(ch: Choice, p: Position, col: Color)
+obj(Ch, P, Col) :- lifting(Ch, _, K), ink(K, P, Col), !hook(Ch, P).
+
+// The corner of the object's box that goes on the tip: away from the lift
+// direction and away from the tip side.
+// @store: variant concept
+.decl hang_corner(ch: Choice, c: DiagDir)
+hang_corner(Ch, C) :-
+    lifting(Ch, Up, _), opposite(Up, D1),
+    tip_side(Ch, Side), opposite(Side, D2),
+    diag_dirs(C, _, D1, D2).
+
+// @claim hang-object
+.init objbox = Bbox<Choice>
+objbox.cell(Ch, P) :- obj(Ch, P, _).
+
+// The translation that puts the object's corner on the lifted tip.
+.decl place(ch: Choice, w: Offset)
+place(Ch, W) :-
+    objbox.box(Ch, B), hang_corner(Ch, C), in(P_c, _), box_corner(P_c, B, C),  // the object's corner
+    tip(Ch, P_t), travel(Ch, V), compose(P_t, V, P_lift),                     // the lifted tip
+    relative(P_c, P_lift, W).
+
+// A case that finds two placements.
+.decl two_places(ch: Choice)
+two_places(Ch) :- place(Ch, W1), place(Ch, W2), W1 != W2.
+
+.decl lifted(ch: Choice, p: Position, col: Color)
+lifted(Ch, Q, Col) :- hook(Ch, P), in(P, Col), travel(Ch, V), compose(P, V, Q).
+
+.decl hung(ch: Choice, p: Position, col: Color)
+hung(Ch, Q, Col) :- obj(Ch, P, Col), place(Ch, W), compose(P, W, Q).
+
+// The half the hook starts in.
+.decl source(ch: Choice, p: Position)
+source(Ch, P) :- lifting(Ch, _, [Dv, D_src]), half(Dv, D_src, P).
+
+out(P, Col, Ch) :-
+    place(Ch, _), !two_places(Ch), in(P, C0),                         // one placement
+    ( hung(Ch, P, Col)                                                // the object
+    ; !hung(Ch, P, _), lifted(Ch, P, Col)                             // the hook
+    ; !hung(Ch, P, _), !lifted(Ch, P, _), source(Ch, P), params.bg(Col)
+    ; !hung(Ch, P, _), !lifted(Ch, P, _), !source(Ch, P), Col = C0
+    ).
+
+// --- $DividerStored ---
+
+divider($DividerStored(), P) :- in(P, Col), params.divider(Col).
+
+// --- $DividerDerived ---
+
+// A line across axis a, named by its cells' component on a, that holds two
+// colors.
+.decl line_clash(a: Axis, l: Position)
+line_clash(A, L) :-
+    in(P, C1), in(Q, C2), C1 != C2,
+    axis_elem(A), split(P, A, L, _), split(Q, A, L, _).
+
+// A line of one ink color.
+// @ignore: store — it fixes the divider's cells, so storing it stores the divider's cells
+.decl full_line(a: Axis, l: Position)
+full_line(A, L) :-
+    in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _), !line_clash(A, L).
+
+.decl second_line(a: Axis, l: Position)
+second_line(A, L) :-
+    full_line(A, L), full_line(A2, L2),
+    ( A != A2 ; L != L2 ).
+
+divider($DividerDerived(), P) :-
+    full_line(A, L), !second_line(A, L), in(P, _), split(P, A, L, _).
+
+// --- $LiftStored ---
+
+lift(Dv, $LiftStored(), D) :- divider(Dv, _), params.lift_dir(D).
+
+// --- $LiftTowardEmpty ---
+
+.decl inked_half(dv: Divider, d: Dir)
+inked_half(Dv, D) :- ink([Dv, D], _, _).
+
+lift(Dv, $LiftTowardEmpty(), D) :-
+    half(Dv, D, _), !inked_half(Dv, D),          // an empty half
+    opposite(D, D_src), inked_half(Dv, D_src).   // facing the inked one
+
+// --- $ByColor ---
+
+hook([$ByColor(), R, X, Dv, L, S], P) :-
+    lifting([$ByColor(), R, X, Dv, L, S], _, K), ink(K, P, Col), params.hook(Col).
+
+// --- $HookByShape ---
+
+// @claim hook
+.init comps = Components8<HalfKey>
+comps.node(K, P) :- ink(K, P, _).
+
+// One key per object and pose of the stored shape.
+.type ShapeKey = [k: HalfKey, id: Ident, g: D4]
+
+// @claim hook
+.init occ = Occurrences<ShapeKey, Unit>
+occ.cell([K, Id, G], P, $U()) :- comps.label(K, P, Id), params.hook_shape(G, _).
+occ.shape([K, Id, G], S, $U()) :- comps.label(K, _, Id), params.hook_shape(G, S).
+
+// A placed shape that leaves out a cell of its object.
+.decl spare(k: ShapeKey, m: Position)
+spare([K, Id, G], M) :-
+    occ.occurrence([K, Id, G], M), comps.label(K, P, Id),
+    relative(M, P, S), !params.hook_shape(G, S).
+
+// An object that is the stored shape, in the pose with that lift direction
+// and tip side.
+.decl posed(k: HalfKey, id: Ident, up: Dir, side: Dir)
+posed(K, Id, Up, Side) :-
+    occ.occurrence([K, Id, G], M), !spare([K, Id, G], M),
+    params.hook_up(G, Up), params.hook_side(G, Side).
+
+// --- $HookByShape & $SideStored ---
+
+hook([$HookByShape(), R, X, Dv, L, $SideStored()], P) :-
+    lifting([$HookByShape(), R, X, Dv, L, $SideStored()], Up, K),
+    params.tip_dir(Side), posed(K, Id, Up, Side), comps.label(K, P, Id).
+
+// --- $HookByShape & $TipSideDerived ---
+
+hook([$HookByShape(), R, X, Dv, L, $TipSideDerived()], P) :-
+    lifting([$HookByShape(), R, X, Dv, L, $TipSideDerived()], Up, K),
+    posed(K, Id, Up, _), comps.label(K, P, Id).
+
+// --- $HookLarger ---
+
+// @claim hook
+.init larger = Mode<HalfKey, Color, Position>
+larger.item(K, Col, P) :- ink(K, P, Col).
+
+hook([$HookLarger(), R, X, Dv, L, S], P) :-
+    lifting([$HookLarger(), R, X, Dv, L, S], _, K), larger.mode(K, Col), ink(K, P, Col).
+
+// --- $SideStored ---
+
+tip_side([H, R, X, Dv, L, $SideStored()], D) :-
+    impl_choice([H, R, X, Dv, L, $SideStored()]), params.tip_dir(D).
+
+// --- $TipSideDerived ---
+
+// The hook's lines along the lift direction, each named by its cells'
+// component across it.
+// @claim hook
+.init stem = Mode<Choice, Position, Position>
+stem.item([H, R, X, Dv, L, $TipSideDerived()], L_stem, P) :-
+    hook([H, R, X, Dv, L, $TipSideDerived()], P),
+    lifting([H, R, X, Dv, L, $TipSideDerived()], Up, _), axis_of(Up, A),
+    split(P, A, _, L_stem).
+
+tip_side(Ch, D) :-
+    stem.mode(Ch, L_stem), hook(Ch, P_stem),
+    lifting(Ch, Up, _), axis_of(Up, A), split(P_stem, A, _, L_stem),   // a stem cell
+    perp_dir(Up, D), hook(Ch, Q), nearer(D, Q, P_stem).               // a hook cell beside it
+
+// --- $Farthest ---
+
+// A hook cell that another hook cell lies beyond, toward the tip side.
+.decl outdone(ch: Choice, p: Position)
+outdone(Ch, P) :- hook(Ch, P), tip_side(Ch, D), hook(Ch, Q), nearer(D, Q, P).
+
+tip([H, R, $Farthest(), Dv, L, S], P) :-
+    hook([H, R, $Farthest(), Dv, L, S], P), !outdone([H, R, $Farthest(), Dv, L, S], P).
+
+// --- $TipByOffset ---
+
+// A hook cell that another hook cell lies beyond, toward the lift direction.
+.decl below_top(ch: Choice, p: Position)
+below_top(Ch, P) :- hook(Ch, P), lifting(Ch, Up, _), hook(Ch, Q), nearer(Up, Q, P).
+
+tip([H, R, $TipByOffset(), Dv, L, S], P_t) :-
+    hook([H, R, $TipByOffset(), Dv, L, S], P_top),
+    !below_top([H, R, $TipByOffset(), Dv, L, S], P_top),         // the stem's top
+    lifting([H, R, $TipByOffset(), Dv, L, S], Up, _), opposite(Up, Back),
+    tip_side([H, R, $TipByOffset(), Dv, L, S], Side),
+    params.tip_offset(K_back, K_side), jump(P_top, Back, K_back, Q), jump(Q, Side, K_side, P_t).
+
+// --- $Across ---
+
+// @claim hook-across
+.init halfbox = Bbox<HalfKey>
+halfbox.cell([Dv, D], P) :- half(Dv, D, P).
+
+travel([H, $Across(), X, Dv, L, S], V) :-
+    lifting([H, $Across(), X, Dv, L, S], Up, K),
+    halfbox.box(K, B_src), halfbox.box([Dv, Up], B_dst), relative(B_src, B_dst, V).
+
+// --- $LiftToEdge ---
+
+// @claim hook-across
+.init slide = Gravity<Choice, Unit>
+slide.cell([H, $LiftToEdge(), X, Dv, L, S], $U(), P) :- hook([H, $LiftToEdge(), X, Dv, L, S], P).
+slide.dir([H, $LiftToEdge(), X, Dv, L, S], Up) :- lifting([H, $LiftToEdge(), X, Dv, L, S], Up, _).
+
+travel(Ch, V) :- slide.travel(Ch, $U(), V).

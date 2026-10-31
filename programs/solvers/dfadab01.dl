@@ -1,0 +1,201 @@
+// dfadab01
+// @draft
+// @keywords: markers lookup stamp bbox
+// @scene markers: single cells on the background field, each of a color that
+//  is a key of `stamp`.
+// @scene legend: at most one sample: the `stamp` of some key drawn in a 4×4
+//  box, with a marker of that key at the cell one step past the box's
+//  `key_corner` corner on both axes. A marker can sit in the box of the sample,
+//  at a cell where the sample has background.
+// @scene stamps-apart: with the sample's key marker left out, the boxes of two
+//  markers' stamps do not overlap, and the box of a marker's stamp does not
+//  overlap the box of the sample unless the two boxes coincide.
+// @rule stamp-at-marker: each marker that is not the sample's key marker draws
+//  its key's `stamp`, with the stamp's anchor corner at the marker; a stamp
+//  cell that falls past the grid edge is dropped.
+// @rule wipe-rest: every other cell of the output is background, so the sample
+//  and its key marker are wiped.
+
+// what gives the picture that the sample's key draws
+.type SamplePicture =
+    // @claim stamp-at-marker
+    Table {}
+    // @rule stamp-at-marker: the sample's key draws the sample's picture, read
+    //  relative to the `anchor` corner of the sample's box, and every other key
+    //  draws its `stamp`. Undefined where the key markers differ in color.
+    // @witness sample-picture: borderline $SampleStamp
+    //     @relaxed legend
+  | SampleStamp {}
+
+// which markers are the sample's key markers
+.type KeyMarker =
+    // @claim legend
+    PastKeyCorner {}
+    // @scene legend: every marker outside the sample's box that touches the
+    //  box at a side or a corner is a key marker.
+    // @witness marker-beside-sample: ordinary concept
+    // @witness marker-past-other-corner: ordinary concept
+    // @witness key-color-past-other-corner: ordinary concept
+  | KeyByContact {}
+    // @scene legend: every marker one step past any corner of the sample's box
+    //  on both axes is a key marker.
+    // @witness marker-past-other-corner: ordinary concept
+    // @witness key-color-past-other-corner: ordinary concept
+  | KeyAnyCorner {}
+
+// what makes a cell a marker
+.type MarkerIdentity =
+    // @claim markers
+    KeyColor {}
+    // @scene markers: a marker is a non-background cell that touches no cell
+    //  of its own color at a side or a corner, whatever its color. Undefined on
+    //  an input with such a cell of a color that has no picture.
+    // @witness touching-markers: foreign concept
+    //     @relaxed stamps-apart
+  | MarkerBySingleton {}
+
+.type Choice = [s: SamplePicture, k: KeyMarker, m: MarkerIdentity]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed markers
+    .decl background(c: Color) background(0).
+
+    // The picture each marker color draws, as offsets from the marker, `@` on
+    // the anchor corner.
+    .decl stamp(k: Color, v: Offset, col: Color)
+    GRID_STAMP_SPARSE_4x4(stamp, 2,
+        @4, 4, 4, 4,
+        4, _, _, 4,
+        4, _, _, 4,
+        4, 4, 4, 4)
+    GRID_STAMP_SPARSE_4x4(stamp, 3,
+        @_, 1, 1, _,
+        1, _, _, 1,
+        1, _, _, 1,
+        _, 1, 1, _)
+    GRID_STAMP_SPARSE_4x4(stamp, 5,
+        @6, 6, _, _,
+        6, 6, _, _,
+        _, _, 6, 6,
+        _, _, 6, 6)
+    GRID_STAMP_SPARSE_4x4(stamp, 8,
+        @7, _, _, 7,
+        _, 7, 7, _,
+        _, 7, 7, _,
+        7, _, _, 7)
+
+    // --- $PastKeyCorner ---
+    // The corner of the sample's box that its key marker sits diagonally past.
+    .decl key_corner(d: DiagDir) key_corner(DIAG_BR).
+
+    // --- $SampleStamp ---
+    // The corner of the sample's box that sits on a marker.
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+}
+
+.init params = Params
+
+.decl sample_picture_choice(s: SamplePicture)
+sample_picture_choice($Table()). sample_picture_choice($SampleStamp()).
+
+.decl key_marker_choice(k: KeyMarker)
+key_marker_choice($PastKeyCorner()). key_marker_choice($KeyByContact()). key_marker_choice($KeyAnyCorner()).
+
+.decl marker_identity_choice(m: MarkerIdentity)
+marker_identity_choice($KeyColor()). marker_identity_choice($MarkerBySingleton()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, K, M]) :- sample_picture_choice(S), key_marker_choice(K), marker_identity_choice(M).
+
+.decl marker(p: Position, k: Color, m: MarkerIdentity)
+
+// The cells of the sample: every other cell off the background.
+.decl sample_cell(p: Position, col: Color, m: MarkerIdentity)
+sample_cell(P, Col, M) :-
+    marker_identity_choice(M), in(P, Col), !params.background(Col), !marker(P, _, M).
+
+// @claim legend
+.init sample = Bbox<MarkerIdentity>
+sample.cell(M, P) :- sample_cell(P, _, M).
+
+.decl key_marker(p: Position, k: Color, km: KeyMarker, m: MarkerIdentity)
+
+// The picture each key draws under a case, as offsets from its marker.
+.decl picture(ch: Choice, k: Color, v: Offset, col: Color)
+
+.decl undefined(ch: Choice)
+
+// A marker that is no key marker draws its key's picture, clipped to the grid.
+.decl drawn(p: Position, col: Color, ch: Choice)
+drawn(P, Col, [S, Km, M]) :-
+    marker(P0, K, M), picture([S, Km, M], K, V, Col), !key_marker(P0, _, Km, M),
+    compose(P0, V, P), in(P, _).
+
+out(P, Col, Ch) :- drawn(P, Col, Ch), !undefined(Ch).
+out(P, Col, Ch) :-
+    impl_choice(Ch), !undefined(Ch),
+    in(P, _), !drawn(P, _, Ch), params.background(Col).
+
+// --- $KeyColor ---
+marker(P, K, $KeyColor()) :- in(P, K), params.stamp(K, _, _).
+
+// --- $MarkerBySingleton ---
+// A cell touches a cell of its own color at a side or a corner.
+.decl touches_own(p: Position)
+touches_own(P) :- in(P, Col), neighbor(P, _, Q), in(Q, Col).
+
+marker(P, K, $MarkerBySingleton()) :- in(P, K), !params.background(K), !touches_own(P).
+
+undefined([S, Km, $MarkerBySingleton()]) :-
+    impl_choice([S, Km, $MarkerBySingleton()]),
+    marker(_, K, $MarkerBySingleton()), !picture([S, Km, $MarkerBySingleton()], K, _, _).
+
+// --- $PastKeyCorner ---
+key_marker(P, K, $PastKeyCorner(), M) :-
+    sample.box(M, B), params.key_corner(D),
+    in(Q, _), box_corner(Q, B, D),                // the box's key corner
+    neighbor(Q, D, P), marker(P, K, M).           // the marker one step past it
+
+// --- $KeyByContact ---
+key_marker(P, K, $KeyByContact(), M) :-
+    sample.box(M, B), marker(P, K, M), !inside(P, B),
+    neighbor(P, _, Q), inside(Q, B).              // touches the box
+
+// --- $KeyAnyCorner ---
+key_marker(P, K, $KeyAnyCorner(), M) :-
+    sample.box(M, B), in(Q, _), box_corner(Q, B, D),
+    neighbor(Q, D, P), marker(P, K, M).
+
+// --- $Table ---
+picture([$Table(), Km, M], K, V, Col) :-
+    impl_choice([$Table(), Km, M]), params.stamp(K, V, Col).
+
+// --- $SampleStamp ---
+// The sample's key: the color its key markers share.
+// @claim stamp-at-marker
+.init sample_key = Unanimous<Choice, Color>
+sample_key.item([$SampleStamp(), Km, M], K) :- key_marker(_, K, Km, M).
+
+picture([$SampleStamp(), Km, M], K, V, Col) :-
+    sample_key.value([$SampleStamp(), Km, M], K),
+    sample.box(M, B), params.anchor(D), in(C, _), box_corner(C, B, D),
+    sample_cell(S, Col, M), relative(C, S, V).    // offset from the anchor corner
+picture([$SampleStamp(), Km, M], K, V, Col) :-
+    impl_choice([$SampleStamp(), Km, M]), params.stamp(K, V, Col),
+    !sample_key.value([$SampleStamp(), Km, M], K).
+
+undefined(Ch) :- sample_key.clash(Ch).
+
+.type Cell = [e: Example, p: Position]
+
+.comp Determine {
+    // The field: the commonest color of the inputs.
+    .init field = Mode<Unit, Color, Cell>
+    field.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl background(c: Color)
+    background(Col) :- field.mode($U(), Col).
+}

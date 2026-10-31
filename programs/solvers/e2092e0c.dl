@@ -1,0 +1,361 @@
+// e2092e0c
+// @draft
+// @keywords: crop match border
+// @scene corner-key: a 3 × 3 key sits at the top-left corner, and a line of 5 cells
+//  runs along its two inner sides and meets at the corner cell diagonal to the key,
+//  which fences it off from the rest of the grid.
+// @scene scattered-field: every other cell is background 0 or a scattered color, in no shape.
+// @scene one-copy: outside the fenced region, the key's pattern occurs exactly once,
+//  cell for cell with background included, at a place where a ring one cell outside
+//  it stays in the grid.
+// @rule ring-copy: a one-cell-wide square ring of 5 is drawn just outside the copy,
+//  over whatever the ring's cells held.
+// @rule keep-rest: every other cell keeps its input color.
+
+// which cells of a placement must equal the key's
+.type MatchCells =
+    // @claim one-copy
+    AllCells {}
+    // @scene one-copy: the key's non-background cells occur outside the fence, the
+    //  key's background cells free.
+    // @rule ring-copy: the ring is drawn around each place that holds the key's
+    //  non-background cells.
+    // @witness near-copy: borderline concept
+  | MatchMarks {}
+
+// the transforms under which a placement matches the key
+.type MatchTransform =
+    // @claim one-copy
+    SameOrientation {}
+    // @scene one-copy: the copy is any D4 image of the key.
+    // @witness turned-copy: variant $MatchTurned
+    //     @relaxed one-copy
+  | MatchTurned {}
+
+// the placements that are searched
+.type SearchRegion =
+    // @claim one-copy
+    OutsideFence {}
+    // @scene one-copy: the copy is at any place other than the key's own.
+    // @witness mark-color-key: foreign concept
+  | SearchWholeGrid {}
+
+// the width of the ring
+.type RingWidth =
+    // @claim ring-copy
+    OneCell {}
+    // @rule ring-copy: the ring is as wide as the fence, the count of lines of the
+    //  fence color that run around the key from the key's side outward; undefined
+    //  where no fence line stands at the key's side.
+    // @witness thick-fence: variant $RingFenceWidth
+    //     @relaxed corner-key
+  | RingFenceWidth {}
+
+// the ring's color
+.type RingColor =
+    // @claim ring-copy
+    StoredColor {}
+    // @rule ring-copy: the ring takes the one color of the fence line at the key's
+    //  side in the key's corner; undefined where that line has more than one color.
+    // @witness fence-recolored: variant $RingFenceColor
+    //     @relaxed corner-key
+  | RingFenceColor {}
+
+// the key's side
+.type KeySize =
+    // @claim corner-key
+    StoredSize {}
+    // @scene corner-key: the key's side is the least k at which the line k cells out
+    //  from the key's corner, row k, cols 0..k, and col k, rows 0..k, holds the
+    //  fence color; undefined where there is none.
+    // @witness bigger-key: variant $KeySizeFromFence
+    //     @relaxed corner-key
+  | KeySizeFromFence {}
+
+// the corner that holds the key
+.type KeyCorner =
+    // @claim corner-key
+    StoredCorner {}
+    // @scene corner-key: the key's corner is the one corner whose line at the key's
+    //  side holds the fence color; undefined where no corner, or more than one, has it.
+    // @witness turned-grid: variant $KeyCornerFromFence
+    //     @relaxed corner-key
+  | KeyCornerFromFence {}
+
+.type Choice = [
+    cells: MatchCells, xform: MatchTransform, region: SearchRegion, width: RingWidth,
+    color: RingColor, size: KeySize, corner: KeyCorner]
+
+// The key's place: its corner and its side.
+.type KeyPlace = [corner: DiagDir, size: number]
+
+// A fence: the key's place and the fence color.
+.type FenceKey = [corner: DiagDir, size: number, col: Color]
+
+// The pattern a placement is matched against: the key at its place, the cells that
+// must match, and the image of the key under a D4 transform.
+.type ShapeKey = [corner: DiagDir, size: number, cells: MatchCells, image: D4]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $StoredCorner ---
+    // @ignore: case section — the $StoredCorner clause of key_at alone reads it
+    .decl key_corner(d: DiagDir) key_corner(DIAG_TL).
+
+    // --- $StoredSize ---
+    .decl key_size(k: number) key_size(3).
+
+    // --- $StoredColor ---
+    .decl mark_color(c: Color) mark_color(5).
+
+    // --- $MatchMarks ---
+    // @derive DominantColor: foreign concept
+    //     @relaxed scattered-field
+    // @derive RarestColor: borderline concept
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl match_cells_choice(c: MatchCells)
+match_cells_choice($AllCells()). match_cells_choice($MatchMarks()).
+
+.decl match_transform_choice(x: MatchTransform)
+match_transform_choice($SameOrientation()). match_transform_choice($MatchTurned()).
+
+.decl search_region_choice(r: SearchRegion)
+search_region_choice($OutsideFence()). search_region_choice($SearchWholeGrid()).
+
+.decl ring_width_choice(w: RingWidth)
+ring_width_choice($OneCell()). ring_width_choice($RingFenceWidth()).
+
+.decl ring_color_choice(c: RingColor)
+ring_color_choice($StoredColor()). ring_color_choice($RingFenceColor()).
+
+.decl key_size_choice(s: KeySize)
+key_size_choice($StoredSize()). key_size_choice($KeySizeFromFence()).
+
+.decl key_corner_choice(c: KeyCorner)
+key_corner_choice($StoredCorner()). key_corner_choice($KeyCornerFromFence()).
+
+// The fence branches that find the key: every combination but $RingFenceColor &
+// $KeySizeFromFence & $KeyCornerFromFence, which fails Fit, as some other corner of
+// train 1 also has a line of one color.
+.decl fence_choice(cl: RingColor, s: KeySize, co: KeyCorner)
+fence_choice(Cl, S, Co) :-
+    ring_color_choice(Cl), key_size_choice(S), key_corner_choice(Co),
+    !excluded_fence_choice(Cl, S, Co).
+
+.decl excluded_fence_choice(cl: RingColor, s: KeySize, co: KeyCorner)
+excluded_fence_choice($RingFenceColor(), $KeySizeFromFence(), $KeyCornerFromFence()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Cells, X, R, W, Cl, S, Co]) :-
+    match_cells_choice(Cells), match_transform_choice(X), search_region_choice(R),
+    ring_width_choice(W), fence_choice(Cl, S, Co).
+
+// The line k cells out from corner C: the cells whose larger distance to C's two
+// edges is k.
+.decl corner_line(c: DiagDir, k: number, p: Position)
+corner_line(C, K, P) :-
+    in(P, _), diag_dir_elem(C), axis_elem(A), diag_dist(P, C, A, K, K2), K2 <= K.
+
+// Line k out from corner C holds two colors.
+.decl mixed_line(c: DiagDir, k: number)
+mixed_line(C, K) :- corner_line(C, K, P), in(P, Col), corner_line(C, K, Q), !in(Q, Col).
+
+// Line k out from corner C is all one color: a fence line of that color.
+.decl fence(c: DiagDir, k: number, col: Color)
+fence(C, K, Col) :- corner_line(C, K, P), in(P, Col), !mixed_line(C, K).
+
+// The key's corner, its side and the fence color, under the fence branches.
+// @ignore: store — its one value is the product of the stored key_size and mark_color at the
+//  stored corner, so a stored copy repeats the stored branches
+.decl key_base(cl: RingColor, s: KeySize, c: DiagDir, k: number, col: Color)
+
+// The corners whose line at the key's side is a fence line of the fence color.
+.decl fenced_corner(cl: RingColor, s: KeySize, c: DiagDir)
+fenced_corner(Cl, S, C) :- key_base(Cl, S, C, K, Col), fence(C, K, Col).
+
+// More than one corner is fenced.
+.decl two_fenced(cl: RingColor, s: KeySize)
+two_fenced(Cl, S) :- fenced_corner(Cl, S, C1), fenced_corner(Cl, S, C2), C1 != C2.
+
+// @ignore: case section — each clause derives the rows of its own corner branch alone
+.decl key_at(cl: RingColor, s: KeySize, co: KeyCorner, c: DiagDir, k: number, col: Color)
+
+// The cells of the key: nearer than its side to both edges of its corner.
+.decl key_cell(c: DiagDir, k: number, p: Position)
+key_cell(C, K, P) :-
+    key_at(_, _, _, C, K, _), in(P, _), axis_elem(A),
+    diag_dist(P, C, A, K1, K2), K1 < K, K2 < K.
+
+// The fenced region: the key and its fence line.
+.decl fenced(c: DiagDir, k: number, p: Position)
+fenced(C, K, P) :- ( key_cell(C, K, P) ; corner_line(C, K, P) ).
+
+// @claim corner-key
+.init key_box = Bbox<KeyPlace>
+key_box.cell([C, K], P) :- key_cell(C, K, P).
+
+// The transforms under which a placement matches the key.
+// @ignore: case section — each clause derives the rows of its own transform branch alone
+.decl xform_image(x: MatchTransform, d: D4)
+
+// A key cell's color, at its place in the image of the key under D.
+.decl key_image(c: DiagDir, k: number, d: D4, p_inner: Position, col: Color)
+key_image(C, K, D, P_inner, Col) :-
+    key_cell(C, K, P), in(P, Col), key_box.box([C, K], B), crop(P, B, P_rel),
+    xform_image(_, D), apply(D, P_rel, P_inner).
+
+// @claim one-copy
+.init occ = Occurrences<ShapeKey, Color>
+occ.cell([C, K, Cells, D], P, Col) :-
+    key_image(C, K, D, _, _), match_cells_choice(Cells), in(P, Col).
+
+// The copies found at each match and search branch, as the box each covers.
+.decl copy(c: DiagDir, k: number, cells: MatchCells, x: MatchTransform, r: SearchRegion, m: Box)
+
+// A placement that covers a cell of the fenced region.
+.decl overlaps_fence(c: DiagDir, k: number, m: Box)
+overlaps_fence(C, K, M) :- occ.occurrence([C, K, _, _], M), fenced(C, K, P), inside(P, M).
+
+// Each case's key place and the fence color.
+.decl case_key(ch: Choice, c: DiagDir, k: number, col: Color)
+case_key([Cells, X, R, W, Cl, S, Co], C, K, Col) :-
+    key_at(Cl, S, Co, C, K, Col), impl_choice([Cells, X, R, W, Cl, S, Co]).
+
+.decl case_copy(ch: Choice, m: Box)
+case_copy(Ch, M) :-
+    case_key(Ch, C, K, _), Ch = [Cells, X, R, _, _, _, _], copy(C, K, Cells, X, R, M).
+
+.decl ring_cell(ch: Choice, p: Position)
+
+// The case's model gives no output.
+.decl undefined(ch: Choice)
+
+out(P, Col, Ch) :- case_key(Ch, _, _, Col), ring_cell(Ch, P), !undefined(Ch).
+out(P, Col, Ch) :- case_key(Ch, _, _, _), in(P, Col), !ring_cell(Ch, P), !undefined(Ch).
+
+// --- $StoredColor & $StoredSize ---
+key_base($StoredColor(), $StoredSize(), C, K, Col) :-
+    diag_dir_elem(C), params.key_size(K), params.mark_color(Col).
+
+// --- $RingFenceColor & $StoredSize ---
+key_base($RingFenceColor(), $StoredSize(), C, K, Col) :- params.key_size(K), fence(C, K, Col).
+
+// --- $StoredColor & $KeySizeFromFence ---
+// @claim corner-key
+// @ignore cand: store — a stored least line at the top left gives the stored side there, so
+//  it repeats $StoredSize or is undefined where $StoredSize is not, and fails Equivalence or
+//  Subsumption
+// @ignore low: store — as for cand
+.init least_mark = Extremes<DiagDir>
+least_mark.cand(C, K) :- fence(C, K, Col), params.mark_color(Col), K > 0.  // a key of some cell
+key_base($StoredColor(), $KeySizeFromFence(), C, K, Col) :-
+    least_mark.low(C, K), params.mark_color(Col).
+
+// --- $RingFenceColor & $KeySizeFromFence ---
+// The fence is found by its shape alone: the least line of one color.
+// @claim corner-key
+.init least_any = Extremes<DiagDir>
+least_any.cand(C, K) :- fence(C, K, _), K > 0.  // a key of some cell
+key_base($RingFenceColor(), $KeySizeFromFence(), C, K, Col) :-
+    least_any.low(C, K), fence(C, K, Col).
+
+// --- $StoredCorner ---
+key_at(Cl, S, $StoredCorner(), C, K, Col) :- key_base(Cl, S, C, K, Col), params.key_corner(C).
+
+// --- $KeyCornerFromFence ---
+key_at(Cl, S, $KeyCornerFromFence(), C, K, Col) :-
+    fenced_corner(Cl, S, C), key_base(Cl, S, C, K, Col), !two_fenced(Cl, S).
+
+// --- $SameOrientation ---
+xform_image($SameOrientation(), D) :- d4_compose(D, D, D).  // the identity, its own square
+
+// --- $MatchTurned ---
+xform_image($MatchTurned(), D) :- d4_elem(D).
+
+// --- $AllCells ---
+occ.shape([C, K, $AllCells(), D], P_inner, Col) :- key_image(C, K, D, P_inner, Col).
+
+// --- $MatchMarks ---
+occ.shape([C, K, $MatchMarks(), D], P_inner, Col) :-
+    key_image(C, K, D, P_inner, Col), !params.bg(Col).
+
+// --- $OutsideFence ---
+copy(C, K, Cells, X, $OutsideFence(), M) :-
+    xform_image(X, D), occ.occurrence([C, K, Cells, D], M), !overlaps_fence(C, K, M).
+
+// --- $SearchWholeGrid ---
+copy(C, K, Cells, X, $SearchWholeGrid(), M) :-
+    xform_image(X, D), occ.occurrence([C, K, Cells, D], M), !key_box.box([C, K], M).
+
+// --- $OneCell ---
+ring_cell(Ch, Q) :-
+    case_copy(Ch, M), Ch = [_, _, _, $OneCell(), _, _, _],
+    in(Q, _), !inside(Q, M), dir8_elem(D), neighbor(Q, D, P), inside(P, M).
+
+// --- $RingFenceWidth ---
+// A line from the key's side outward that is no fence line of the fence color.
+.decl fence_gap(c: DiagDir, k: number, col: Color, k_gap: number)
+fence_gap(C, K, Col, K_gap) :-
+    key_at(_, _, _, C, K, Col), corner_line(C, K_gap, _), K_gap >= K, !fence(C, K_gap, Col).
+
+// The fence lines from the key's side outward, up to the first gap.
+// @ignore: store — a stored corner of the fence repeats $StoredCorner, or is undefined where
+//  the key's corner is another, and fails Equivalence or Subsumption
+.decl fence_run(c: DiagDir, k: number, col: Color, k_line: number)
+fence_run(C, K, Col, K_line) :-
+    key_at(_, _, _, C, K, Col), fence(C, K_line, Col), K_line >= K,
+    !gap_before(C, K, Col, K_line).
+
+// A gap lies between the key's side and fence line k_line.
+.decl gap_before(c: DiagDir, k: number, col: Color, k_line: number)
+gap_before(C, K, Col, K_line) :-
+    fence_gap(C, K, Col, K_gap), fence(C, K_line, Col), K_gap < K_line.
+
+// @claim ring-copy
+// @ignore item: store — as for fence_run, whose rows it holds
+.init fence_width = Tally<FenceKey, number>
+fence_width.item([C, K, Col], K_line) :- fence_run(C, K, Col, K_line).
+
+ring_cell(Ch, Q) :-
+    case_copy(Ch, M), Ch = [_, _, _, $RingFenceWidth(), _, _, _],
+    case_key(Ch, C, K, Col), fence_width.tally([C, K, Col], W),
+    uniform_outset(W, O), compose(M, O, G), in(Q, _), inside(Q, G), !inside(Q, M).
+
+undefined(Ch) :-
+    case_key(Ch, C, K, Col), Ch = [_, _, _, $RingFenceWidth(), _, _, _],
+    !fence_width.tally([C, K, Col], _).
+
+.comp Determine {
+    // The color the ring gives the cells it changes.
+    .decl mark_color(c: Color)
+    mark_color(C) :- ex_in(E, P, C1), ex_out(E, P, C), C1 != C.
+
+    // The line k cells out from corner D, in each example with an output.
+    .decl line(e: Example, d: DiagDir, k: number, p: Position)
+    line(E, D, K, P) :-
+        ex_out(E, P, _), ex_in(E, P, _), diag_dir_elem(D), axis_elem(A),
+        diag_dist(P, D, A, K, K2), K2 <= K.
+
+    // Some example holds another color than the mark color on the line.
+    .decl unfenced(d: DiagDir, k: number)
+    unfenced(D, K) :- line(E, D, K, P), ex_in(E, P, C), !mark_color(C).
+
+    // The fence lines of every example.
+    .decl fence(d: DiagDir, k: number)
+    fence(D, K) :- line(_, D, K, _), !unfenced(D, K).
+
+    .decl key_corner(d: DiagDir)
+    key_corner(D) :- fence(D, _).
+
+    .init least = Extremes<DiagDir>
+    least.cand(D, K) :- fence(D, K), K > 0.  // a key of some cell
+
+    // The key's side: the least fence line out from its corner.
+    .decl key_size(k: number)
+    key_size(K) :- least.low(_, K).
+}

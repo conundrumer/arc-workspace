@@ -1,0 +1,297 @@
+// e6721834
+// @draft
+// @keywords: decompose objects markers move match pack select
+// @scene two-halves: the grid is cut along one axis into two halves of equal
+//  size, each filled with its own background color, which the other half lacks.
+// @scene dot-half: one half holds single dots on its background, no two of them
+//  4-adjacent.
+// @scene object-half: the other half holds solid rectangles apart from one
+//  another, each of one body color with some cells of another color, its marks.
+// @scene exact-cover: in one way only, the dots split into groups, each group a
+//  translated copy of the marks, with their colors, of a different rectangle.
+// @scene placed-fit: each rectangle, moved by its group's translation, lies
+//  inside the dot half and overlaps no other moved rectangle.
+// @rule output-is-dot-half: the output is the dot half, with its background
+//  kept and its dots erased.
+// @rule move-rectangle: each rectangle that has a group is drawn, body and
+//  marks, at the translation that puts its marks on that group.
+// @rule drop-unmatched: a rectangle that has no group is not drawn.
+
+// whether a cover is discarded when its moved rectangles do not fit
+.type Filter =
+    // @claim placed-fit
+    AllCovers {}
+    // @rule fit-filter: a cover is discarded when its moved rectangles overlap
+    //  or leave the dot half. Undefined where no cover is left.
+    // @witness edge-cover: borderline $FitFiltersCovers
+    //     @relaxed exact-cover
+  | FitFiltersCovers {}
+
+// what a mark must land on
+.type MarkColors =
+    // @claim exact-cover
+    ColorMatch {}
+    // @scene exact-cover: marks match dots by position alone, whatever their
+    //  colors.
+    // @witness same-shape-two-colors: ordinary concept
+  | MatchShapeOnly {}
+
+// which cells join one rectangle
+.type Adjacency =
+    // @claim object-half
+    Objects4 {}
+    // @scene object-half: rectangles are the 8-connected parts of the object
+    //  half, so rectangles that touch at a corner move as one object.
+    // @witness corner-touch: borderline $Objects8
+    //     @relaxed object-half
+  | Objects8 {}
+
+// where the grid is cut
+.type Split =
+    // @claim two-halves
+    Halves {}
+    // @scene two-halves: the two parts need not be of equal size; the cut is
+    //  at any line where each part's background is absent from the other part.
+    // @witness unequal-parts: variant $SplitAtColorChange
+    //     @relaxed two-halves
+    // @witness shifted-cut: foreign concept
+    //     @relaxed exact-cover
+  | SplitAtColorChange {}
+
+// which cells of a rectangle are its marks
+.type MarkCells =
+    // @claim object-half
+    OffColor {}
+    // @scene object-half: the marks are the cells of the rectangle whose color
+    //  some dot has.
+    // @witness extra-mark-color: variant concept
+    //     @relaxed object-half
+  | MarksByDotColor {}
+
+.type Choice = [f: Filter, m: MarkColors, a: Adjacency, s: Split, c: MarkCells]
+
+// A cut with its dot side: the dots lie in the part nearer edge d, whose last
+// line is l.
+.type Cut = [s: Split, d: Dir, l: Position]
+// The rectangles of a cut.
+.type Obj = [k: Cut, a: Adjacency]
+.type Rect = [o: Obj, r: Ident]
+// The marks of the rectangles.
+.type Mk = [o: Obj, c: MarkCells]
+.type Shape = [k: Mk, r: Ident]
+// The matching of marks to dots.
+.type Hyp = [k: Mk, m: MarkColors]
+// A dot taken by mark m of rectangle r.
+.type Use = [r: Ident, m: Position]
+
+.type TiebreakResolution =
+    End {} | Sit {dot: Position, use: Use, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {}
+
+.init params = Params
+
+.decl filter_choice(f: Filter)
+filter_choice($AllCovers()). filter_choice($FitFiltersCovers()).
+
+.decl mark_colors_choice(m: MarkColors)
+mark_colors_choice($ColorMatch()). mark_colors_choice($MatchShapeOnly()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Objects4()). adjacency_choice($Objects8()).
+
+.decl split_choice(s: Split)
+split_choice($Halves()). split_choice($SplitAtColorChange()).
+
+.decl mark_cells_choice(c: MarkCells)
+mark_cells_choice($OffColor()). mark_cells_choice($MarksByDotColor()).
+
+// --- the two parts ---
+
+// The lines across axis a.
+.decl line(a: Axis, l: Position)
+line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+// A candidate cut, between line l and the next line away from edge d.
+.decl cut(k: Cut)
+
+// The cells of the part nearer d, up to line l, and of the part beyond it.
+.decl dot_part(k: Cut, p: Position, col: Color)
+dot_part([S, D, L], P, Col) :-
+    cut([S, D, L]), axis_of(D, A), in(P, Col), split(P, A, L_p, _),
+    ( L_p = L ; nearer(D, L_p, L) ).
+
+.decl obj_part(k: Cut, p: Position, col: Color)
+obj_part([S, D, L], P, Col) :-
+    cut([S, D, L]), axis_of(D, A), opposite(D, O), in(P, Col), split(P, A, L_p, _),
+    nearer(O, L_p, L).
+
+// @claim two-halves
+.init dot_ground = Mode<Cut, Color, Position>
+dot_ground.item(K, Col, P) :- dot_part(K, P, Col).
+
+// @claim two-halves
+.init obj_ground = Mode<Cut, Color, Position>
+obj_ground.item(K, Col, P) :- obj_part(K, P, Col).
+
+// A cut whose parts each have a background the other part lacks.
+.decl halves(k: Cut)
+halves(K) :-
+    dot_ground.mode(K, Col1), obj_ground.mode(K, Col2),
+    !dot_part(K, _, Col2), !obj_part(K, _, Col1).
+
+.decl dot(k: Cut, p: Position, col: Color)
+dot(K, P, Col) :- halves(K), dot_part(K, P, Col), !dot_ground.mode(K, Col).
+
+.decl obj_ink(k: Cut, p: Position)
+obj_ink(K, P) :- halves(K), obj_part(K, P, Col), !obj_ground.mode(K, Col).
+
+// --- the rectangles and their marks ---
+
+.decl rect_cell(o: Obj, r: Ident, p: Position, col: Color)
+
+// @claim object-half
+.init body = Mode<Rect, Color, Position>
+body.item([O, R], Col, P) :- rect_cell(O, R, P, Col).
+
+.decl mark(mk: Mk, r: Ident, p: Position, col: Color)
+
+// --- the covers ---
+
+// The translations that put every mark of a rectangle on a dot.
+.decl occurs(h: Hyp, r: Ident, v: Offset)
+
+// The marks that can take each dot.
+.decl take(h: Hyp, p_dot: Position, u: Use)
+take([[[K, A], C], M], P_dot, [R, P_mark]) :-
+    occurs([[[K, A], C], M], R, V),
+    mark([[K, A], C], R, P_mark, _), compose(V, P_mark, P_dot).
+
+// A matching with a dot that no mark can take, which no cover holds.
+.decl bare(h: Hyp)
+bare([[[K, A], C], M]) :-
+    take([[[K, A], C], M], _, _), dot(K, P, _), !take([[[K, A], C], M], P, _).
+
+// A matching whose dots outnumber the marks that can take one, which no cover
+// holds: a cover gives each dot a mark of its own.
+// @claim exact-cover
+.init short = Excess<Hyp, Position>
+short.plus([[[K, A], C], M], P) :- take([[[K, A], C], M], _, _), dot(K, P, _).
+short.minus(H, P_mark) :- take(H, _, [_, P_mark]).
+
+.init ties = TiebreakResolutions<Hyp, Position, Use>
+ties.cand(H, P_dot, U) :- take(H, P_dot, U), !bare(H), !short.excess(H, _).
+
+// The translation each rectangle a resolution uses takes.
+.decl placed(h: Hyp, res: TiebreakResolution, r: Ident, v: Offset)
+placed(H, Res, R, V) :- ties.assign(H, Res, P_dot, [R, P_mark]), relative(P_mark, P_dot, V).
+
+// A resolution that is no exact cover.
+.decl defect(h: Hyp, res: TiebreakResolution)
+defect([[[K, A], C], M], Res) :-                                    // a dot left uncovered
+    ties.resolution([[[K, A], C], M], Res), dot(K, P, _),
+    !ties.assign([[[K, A], C], M], Res, P, _).
+defect(H, Res) :- placed(H, Res, R, V1), placed(H, Res, R, V2), V1 != V2.   // a rectangle used twice
+defect([Mk, M], Res) :-                                             // a group short of a mark
+    placed([Mk, M], Res, R, V), mark(Mk, R, P_mark, _), compose(V, P_mark, P_dot),
+    !ties.assign([Mk, M], Res, P_dot, [R, P_mark]).
+
+.decl cover(h: Hyp, res: TiebreakResolution)
+cover(H, Res) :- ties.resolution(H, Res), !defect(H, Res).
+
+// The cells the moved rectangles of a resolution paint.
+.decl draw(h: Hyp, res: TiebreakResolution, p: Position, col: Color)
+draw([[O, C], M], Res, Q, Col) :-
+    placed([[O, C], M], Res, R, V), rect_cell(O, R, P, Col), compose(V, P, Q).
+
+.decl kept(f: Filter, h: Hyp, res: TiebreakResolution)
+
+// --- the output ---
+
+// @claim output-is-dot-half
+.init dot_box = Bbox<Cut>
+dot_box.cell(K, P) :- halves(K), dot_part(K, P, _).
+
+out(P_inner, Col, [F, M, A, S, C], Res) :-
+    kept(F, [[[[S, D, L], A], C], M], Res),
+    dot_part([S, D, L], Q, _), dot_box.box([S, D, L], B), crop(Q, B, P_inner),
+    ( draw([[[[S, D, L], A], C], M], Res, Q, Col)                                  // a moved rectangle
+    ; !draw([[[[S, D, L], A], C], M], Res, Q, _), dot_ground.mode([S, D, L], Col)  // the background
+    ).
+
+// --- $Halves ---
+
+// The cut at the midline: line l's mirror image is the next line.
+cut([$Halves(), D, L]) :-
+    split_choice($Halves()), line(A, L), axis_of(D, A), opposite(D, O),
+    neighbor(L, O, L2), flip_of(A, F), apply(F, L, L2).
+
+// --- $SplitAtColorChange ---
+
+cut([$SplitAtColorChange(), D, L]) :-
+    split_choice($SplitAtColorChange()), line(A, L), axis_of(D, A), opposite(D, O),
+    neighbor(L, O, L2), line(A, L2).
+
+// --- $Objects4 ---
+
+// @claim object-half
+.init piece4 = Components<Cut>
+piece4.node(K, P) :- adjacency_choice($Objects4()), obj_ink(K, P).
+
+rect_cell([K, $Objects4()], R, P, Col) :- piece4.label(K, P, R), in(P, Col).
+
+// --- $Objects8 ---
+
+// @claim object-half
+.init piece8 = Components8<Cut>
+piece8.node(K, P) :- adjacency_choice($Objects8()), obj_ink(K, P).
+
+rect_cell([K, $Objects8()], R, P, Col) :- piece8.label(K, P, R), in(P, Col).
+
+// --- $OffColor ---
+
+mark([O, $OffColor()], R, P, Col) :-
+    mark_cells_choice($OffColor()), rect_cell(O, R, P, Col), !body.mode([O, R], Col).
+
+// --- $MarksByDotColor ---
+
+mark([[K, A], $MarksByDotColor()], R, P, Col) :-
+    mark_cells_choice($MarksByDotColor()), rect_cell([K, A], R, P, Col), dot(K, _, Col).
+
+// --- $ColorMatch ---
+
+// @claim exact-cover
+.init fit_color = Occurrences<Shape, Color>
+fit_color.shape([Mk, R], P, Col) :- mark_colors_choice($ColorMatch()), mark(Mk, R, P, Col).
+fit_color.cell([[[K, A], C], R], P, Col) :-
+    mark_colors_choice($ColorMatch()), mark([[K, A], C], R, _, _), dot(K, P, Col).
+
+occurs([Mk, $ColorMatch()], R, V) :- fit_color.occurrence([Mk, R], V).
+
+// --- $MatchShapeOnly ---
+
+// @claim exact-cover
+.init fit_shape = Occurrences<Shape, Unit>
+fit_shape.shape([Mk, R], P, $U()) :- mark_colors_choice($MatchShapeOnly()), mark(Mk, R, P, _).
+fit_shape.cell([[[K, A], C], R], P, $U()) :-
+    mark_colors_choice($MatchShapeOnly()), mark([[K, A], C], R, _, _), dot(K, P, _).
+
+occurs([Mk, $MatchShapeOnly()], R, V) :- fit_shape.occurrence([Mk, R], V).
+
+// --- $AllCovers ---
+
+kept($AllCovers(), H, Res) :- filter_choice($AllCovers()), cover(H, Res).
+
+// --- $FitFiltersCovers ---
+
+// A cover whose moved rectangles leave the dot half or overlap.
+.decl misfit(h: Hyp, res: TiebreakResolution)
+misfit([[[K, A], C], M], Res) :- draw([[[K, A], C], M], Res, Q, _), !dot_part(K, Q, _).
+misfit([[O, C], M], Res) :-
+    placed([[O, C], M], Res, R1, V1), rect_cell(O, R1, P1, _), compose(V1, P1, Q),
+    placed([[O, C], M], Res, R2, V2), R1 != R2, rect_cell(O, R2, P2, _), compose(V2, P2, Q).
+
+kept($FitFiltersCovers(), H, Res) :-
+    filter_choice($FitFiltersCovers()), cover(H, Res), !misfit(H, Res).

@@ -1,0 +1,146 @@
+// f9d67f8b
+// @draft
+// @keywords: symmetry repair occlude latent-canvas
+// @scene mirror-picture: the grid is cut from a square canvas whose picture is mirror symmetric left to right and top to bottom; the grid's margins within the canvas are `canvas_margin` ([0, 2, 0, 2]: the canvas extends two lines past the bottom and the right edge), and every cell whose canvas mirror image lies in the grid holds that image's color, where neither cell is covered
+// @scene diagonal-picture: every cell with one coordinate in the band of rows and columns 8–23 and the other outside it holds the color of its image across the main diagonal, where neither is covered; the picture inside the band on both coordinates is not diagonal symmetric
+// @scene covering-blocks: some solid rectangles of `mask_color` lie over the picture, and the picture itself holds no `mask_color`
+// @rule uncovered-kept: each cell not of `mask_color` keeps its color
+// @rule mirror-restore: each covered cell takes the color that its row-mirror, column-mirror and half-turn images share, of those that are in the grid and not covered
+// @rule diagonal-restore: a covered cell with no such image shows the cell of the hidden picture under it
+//     @approximated: a covered cell with no such image takes the color that its image across the diagonal through the mirror center and that image's mirror images share, of those visible
+//     @witness full-orbit-cover: borderline other
+
+// Where the canvas, and so the mirror center, comes from.
+.type Choice =
+    // @claim mirror-picture
+    StoredCenter {}
+    // @scene mirror-picture: the canvas margin on each axis is the one margin at which the uncovered cells are mirror symmetric; undefined where no margin or more than one qualifies
+    // @witness shifted-center: variant $DerivedCenter
+    //     @relaxed mirror-picture
+  | DerivedCenter {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl mask_color(c: Color) mask_color(9).
+
+    // --- $StoredCenter ---
+    // The grid's margins within the canvas.
+    .decl canvas_margin(b: Box) canvas_margin([0, 2, 0, 2]).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($StoredCenter()). impl_choice($DerivedCenter()).
+
+.decl visible(p: Position, col: Color)
+visible(P, Col) :- in(P, Col), !params.mask_color(Col).
+
+// The canvas margins on each axis at which the visible cells are mirror
+// symmetric.
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position)  // @input
+    .decl visible(key: Key, p: Position, col: Color)  // @input
+
+    // The axis positions of the grid.
+    .decl apos(key: Key, a: Axis, along: Position)
+    apos(Ky, A, Along) :- grid(Ky, P), axis_elem(A), split(P, A, Along, _).
+
+    .decl cell_split(key: Key, a: Axis, along: Position, across: Position, col: Color)
+    cell_split(Ky, A, Along, Across, Col) :-
+        visible(Ky, P, Col), axis_elem(A), split(P, A, Along, Across).
+
+    // Candidate canvas margins on each axis: k lines past one edge, k short
+    // of the axis extent.
+    .decl ext_cand(key: Key, a: Axis, b: Box)
+    ext_cand(Ky, A, B) :- apos(Ky, A, Along), axis_of(D, A), dist(Along, D, K), edge_inset(D, K, B).
+
+    // The candidate's mirror, as a map on axis positions.
+    .decl ext_map(key: Key, a: Axis, b: Box, along: Position, along2: Position)
+    ext_map(Ky, A, B, L, L2) :-
+        ext_cand(Ky, A, B), apos(Ky, A, L), flip_of(A, F),
+        compose(L, B, Lc), apply(F, Lc, L_img),        // mirror image in the canvas
+        apos(Ky, A, L2), compose(L2, B, L_img).        // back in the grid
+
+    // The candidate's mirror maps two visible cells to different colors.
+    .decl mismatch(key: Key, a: Axis, b: Box)
+    mismatch(Ky, A, B) :-
+        ext_map(Ky, A, B, L1, L2),
+        cell_split(Ky, A, L1, X, C1), cell_split(Ky, A, L2, X, C2), C2 != C1.
+
+    // The candidate's mirror relates two distinct visible cells.
+    .decl paired(key: Key, a: Axis, b: Box)
+    paired(Ky, A, B) :-
+        ext_map(Ky, A, B, L1, L2), L1 != L2,
+        cell_split(Ky, A, L1, X, _), cell_split(Ky, A, L2, X, _).
+
+    .decl symmetric(key: Key, a: Axis, b: Box)
+    symmetric(Ky, A, B) :- paired(Ky, A, B), !mismatch(Ky, A, B).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P) :- in(P, _).
+parse.visible($U(), P, Col) :- visible(P, Col).
+
+// The group the two axis flips generate: the flips, the half turn, the identity.
+.decl mirror(d: D4)
+mirror(D) :- flip_of(_, D).
+mirror(D) :- flip_of(_, F1), flip_of(_, F2), d4_compose(F1, F2, D).
+
+// The grid's margins within the canvas, per case.
+.decl margin(c: Choice, b: Box)
+
+// Each grid cell's position in the canvas.
+.decl canvas(c: Choice, p_grid: Position, p_canvas: Position)
+canvas(C, P_grid, P_canvas) :- in(P_grid, _), margin(C, B), compose(P_grid, B, P_canvas).
+
+// A covered cell's visible image under the canvas transform d: a mirror, or
+// a diagonal flip or quarter turn.
+.decl image(c: Choice, p: Position, d: D4, col: Color)
+image(C, P, D, Col) :-
+    in(P, M), params.mask_color(M),                        // covered cell
+    canvas(C, P, Pc), d4_elem(D), apply(D, Pc, Qc),
+    canvas(C, Q, Qc), visible(Q, Col).
+
+// The covered cell has a visible mirror image.
+.decl has_mirror(c: Choice, p: Position)
+has_mirror(C, P) :- image(C, P, D, _), mirror(D).
+
+out(P, Col, Ch) :- impl_choice(Ch), visible(P, Col).
+out(P, Col, C) :- image(C, P, D, Col), mirror(D).
+out(P, Col, C) :- image(C, P, _, Col), !has_mirror(C, P).      // the other coset
+
+// --- $StoredCenter ---
+margin($StoredCenter(), B) :- params.canvas_margin(B).
+
+// --- $DerivedCenter ---
+// @claim mirror-picture
+.init axis_margin = Unanimous<Axis, Box>
+axis_margin.item(A, B) :- parse.symmetric($U(), A, B).
+
+margin($DerivedCenter(), B) :-
+    axis_margin.value(A1, B1), perp(A1, A2), axis_margin.value(A2, B2), compose(B1, B2, B).
+
+.comp Determine {
+    // The color the outputs change.
+    .decl mask_color(c: Color)
+    mask_color(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col2 != Col.
+
+    // The train outputs, whose pictures are whole.
+    .init parse = Parse<Example>
+    parse.grid(E, P) :- ex_out(E, P, _).
+    parse.visible(E, P, Col) :- ex_out(E, P, Col).
+
+    // A margin some output breaks, or one an output's grid does not offer.
+    .decl broken(a: Axis, b: Box)
+    broken(A, B) :- parse.mismatch(_, A, B).
+    broken(A, B) :- parse.ext_cand(_, A, B), ex_out(E, _, _), !parse.ext_cand(E, A, B).
+
+    .decl axis_margin(a: Axis, b: Box)
+    axis_margin(A, B) :- parse.paired(_, A, B), !broken(A, B).
+
+    .decl canvas_margin(b: Box)
+    canvas_margin(B) :-
+        axis_margin(A1, B1), perp(A1, A2), axis_margin(A2, B2), compose(B1, B2, B).
+}

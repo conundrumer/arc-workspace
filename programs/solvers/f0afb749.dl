@@ -1,0 +1,102 @@
+// f0afb749
+// @draft
+// @keywords: scale cast
+// @scene single-cell-marks: the marks, the cells not of background 0, are isolated single cells, no two touching, even at a corner.
+// @scene one-mark-color: all marks of an input share one color, which differs between inputs.
+// @scene one-mark-per-diagonal: no two marks lie on one main diagonal, top-left to bottom-right.
+// @rule scale-up: the output is the input scaled by 2: each input cell becomes a 2×2 block of its color.
+// @rule diagonal-through-block: for each mark's block, every background cell of the output on the main diagonal that runs through the block's corner-to-corner diagonal takes 1, on both sides of the block out to the grid edge.
+
+// What a mark's line does where it meets another mark's block
+.type Crossing =
+    // @claim diagonal-through-block
+    PassBehind {}
+    // @rule diagonal-through-block: each mark's line takes 1 on every cell of its diagonal outside the mark's own block, so it paints over other marks' blocks.
+    // @witness shared-diagonal: variant concept
+    //     @relaxed one-mark-per-diagonal
+  | LineOverBlocks {}
+
+// Where the scale factor comes from
+.type ScaleSource =
+    // @claim scale-up
+    StoredScale {}
+    // @rule scale-up: the scale factor is the number of distinct colors of the input, background included.
+    // @witness two-mark-colors: variant concept
+    //     @relaxed one-mark-color
+  | ScaleByColorCount {}
+
+.type Choice = [l: Crossing, s: ScaleSource]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed single-cell-marks
+    .decl bg(c: Color) bg(0).
+    .decl line_color(c: Color) line_color(1).
+    // The diagonal axis the lines follow.
+    .decl line_axis(da: DiagAxis) line_axis(DAXIS_DG).
+
+    // --- $StoredScale ---
+    .decl scale(k: number) scale(2).
+}
+
+.init params = Params
+
+.decl crossing_choice(l: Crossing)
+crossing_choice($PassBehind()). crossing_choice($LineOverBlocks()).
+
+.decl scale_source_choice(s: ScaleSource)
+scale_source_choice($StoredScale()). scale_source_choice($ScaleByColorCount()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, S]) :- crossing_choice(L), scale_source_choice(S).
+
+// The side of the block each input cell becomes.
+.decl block_size(s: ScaleSource, k: number)
+
+.init block = Frame2D<ScaleSource>
+block.extent(S, A, K) :- block_size(S, K), axis_elem(A).
+
+// Each output cell, with the input cell whose block holds it.
+.decl scaled(s: ScaleSource, p_grid_out: Position, p_tile: Position, p_intile: Position)
+scaled(S, P_grid_out, P_tile, P_intile) :-
+    in(P_tile, _), block.cell(S, P_intile),
+    concat_2d(P_tile, P_intile, 0, P_grid_out).
+
+// The output cells on each mark's line: in line with a corner of the
+// mark's block on the line axis.
+.decl on_line(s: ScaleSource, p_tile: Position, p: Position)
+on_line(S, P_tile, Q) :-
+    in(P_tile, Col), !params.bg(Col),                              // a mark
+    scaled(S, P, P_tile, P_intile),
+    params.line_axis(DA), diag_axis_of(D, DA), corner_dist(P_intile, D, 0),  // its block's corner on the axis
+    scaled(S, Q, _, _), same_line(DA, P, Q).
+
+// The output cells a mark's line paints.
+.decl painted(l: Crossing, s: ScaleSource, p: Position)
+
+out(Q, Col, [L, S]) :-
+    impl_choice([L, S]), scaled(S, Q, P_tile, _),
+    ( painted(L, S, Q), params.line_color(Col)
+    ; !painted(L, S, Q), in(P_tile, Col)
+    ).
+
+// --- $StoredScale ---
+block_size($StoredScale(), K) :- params.scale(K).
+
+// --- $ScaleByColorCount ---
+// @claim scale-up
+.init colors = Tally<Unit, Color>
+colors.item($U(), Col) :- in(_, Col).
+colors.domain($U()).
+
+block_size($ScaleByColorCount(), N) :- colors.tally($U(), N).
+
+// --- $PassBehind ---
+painted($PassBehind(), S, Q) :-
+    on_line(S, _, Q), scaled(S, Q, P_tile, _), in(P_tile, Col), params.bg(Col).
+
+// --- $LineOverBlocks ---
+painted($LineOverBlocks(), S, Q) :-
+    on_line(S, P_mark, Q), scaled(S, Q, P_tile, _), P_tile != P_mark.   // outside the mark's own block

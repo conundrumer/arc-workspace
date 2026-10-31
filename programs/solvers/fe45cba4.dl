@@ -1,0 +1,287 @@
+// fe45cba4
+// @draft
+// @keywords: objects move pack
+// @scene background-field: every cell outside the shapes holds the background color.
+// @scene one-pair-color: exactly one color has two 4-connected components, the key
+//  and the lock; every other non-background color is one component.
+// @scene key-on-mover-side: the key lies wholly toward mover_side of the lock, with
+//  no column in common.
+// @scene pieces-interlock: some translation of the key is disjoint from the lock and
+//  the union of the two is a solid rectangle, and only one translation does this.
+// @rule erase-key: the key's cells become background.
+// @rule plug-key: the key is painted at the translation at which it fills the lock's
+//  notch, so the lock and the key together form a solid rectangle in the pair color.
+// @rule keep-rest: the lock and every shape of another color are copied unchanged.
+
+// which of the two pieces moves
+.type Mover =
+    // @claim key-on-mover-side
+    SideMoves {}
+    // @scene key-on-mover-side: the piece that stays is the one whose bounding-box
+    //  gap is nonempty and reaches no corner of its bounding box, and the other
+    //  piece moves; undefined where both pieces, or neither, have such a gap
+    // @witness lock-on-key-side: variant $NotchedStays
+  | NotchedStays {}
+
+// which colors are plugged
+.type PairColors =
+    // @claim one-pair-color
+    OnePairColor {}
+    // @scene one-pair-color: every color that comes in two pieces is plugged;
+    //  undefined where a color has more than two pieces
+    // @witness two-pair-colors: variant $EveryPairColor
+    //     @relaxed one-pair-color
+  | EveryPairColor {}
+
+// what fixes the translation of the key
+.type FitTest =
+    // @claim pieces-interlock
+    Interlock {}
+    // @scene pieces-interlock: some translation of the key is disjoint from the
+    //  lock and covers every cell of the lock's bounding-box gap, and only one
+    //  translation does this
+    // @rule plug-key: the key is painted at that translation; undefined where the
+    //  lock has no gap, or where no such translation exists or more than one does
+    // @witness key-with-spur: borderline $FillsNotch
+    //     @relaxed pieces-interlock
+  | FillsNotch {}
+
+// how the pair's color is placed on the lock
+.type Placement =
+    // @claim plug-key
+    Plug {f: FitTest}
+    // @rule plug-key: the pair's color is painted as a solid rectangle on the lock's
+    //  rows, flush with the lock's side away from the key, holding as many cells as
+    //  the two pieces; undefined where no such rectangle fits in the grid
+    // @witness key-caps-lock: borderline concept
+  | AreaRectangle {}
+
+.type Choice = [m: Mover, pc: PairColors, pl: Placement]
+
+// a key piece and the lock piece it plugs into
+.type Pair = [key: Ident, lock: Ident]
+// a pair with one translation of its key
+.type Placed = [pair: Pair, v: Offset]
+// a pair with one cell that a candidate rectangle reaches
+.type Probe = [pair: Pair, q: Position]
+// a pair with one candidate rectangle
+.type Rect = [pair: Pair, r: Box]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(7).
+
+    // --- $SideMoves ---
+    // the side the moving piece lies on, relative to the piece that stays
+    .decl mover_side(d: Dir) mover_side(DIR_L).
+}
+
+.init params = Params
+
+.decl mover_choice(m: Mover)
+mover_choice($SideMoves()). mover_choice($NotchedStays()).
+
+.decl pair_colors_choice(pc: PairColors)
+pair_colors_choice($OnePairColor()). pair_colors_choice($EveryPairColor()).
+
+.decl placement_choice(pl: Placement)
+placement_choice($Plug($Interlock())). placement_choice($Plug($FillsNotch())).
+placement_choice($AreaRectangle()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([M, Pc, Pl]) :- mover_choice(M), pair_colors_choice(Pc), placement_choice(Pl).
+
+// --- the pieces ---
+
+// @claim one-pair-color
+.init pieces = Components<Color>
+pieces.node(Col, P) :- in(P, Col), !params.background(Col).
+
+.decl piece(col: Color, id: Ident)
+piece(Col, I) :- pieces.label(Col, _, I).
+
+// two pieces of one color
+.decl piece_pair(col: Color, id: Ident, id2: Ident)
+piece_pair(Col, I1, I2) :- piece(Col, I1), piece(Col, I2), I1 != I2.
+
+// a color that comes in more than one piece
+.decl split_color(col: Color)
+split_color(Col) :- piece_pair(Col, _, _).
+
+// a color that comes in more than two pieces
+.decl crowded(col: Color)
+crowded(Col) :- piece_pair(Col, I1, I2), piece(Col, I3), I1 != I3, I2 != I3.
+
+// two pieces of one color that comes in two pieces
+.decl cand_pair(pr: Pair)
+cand_pair([K, L]) :- piece_pair(Col, K, L), !crowded(Col).
+
+.decl key_cell(pr: Pair, p: Position)
+key_cell([K, L], P) :- cand_pair([K, L]), pieces.label(_, P, K).
+
+.decl lock_cell(pr: Pair, p: Position)
+lock_cell([K, L], P) :- cand_pair([K, L]), pieces.label(_, P, L).
+
+.decl pair_color(pr: Pair, col: Color)
+pair_color([K, L], Col) :- cand_pair([K, L]), piece(Col, K).
+
+// the key lies wholly toward d of the lock
+.decl not_toward(pr: Pair, d: Dir)
+not_toward(Pr, D) :- key_cell(Pr, P), lock_cell(Pr, Q), dir_elem(D), !nearer(D, P, Q).
+
+.decl toward(pr: Pair, d: Dir)
+toward(Pr, D) :- cand_pair(Pr), dir_elem(D), !not_toward(Pr, D).
+
+// --- $OnePairColor ---
+
+// another color also comes in more than one piece
+.decl rival(col: Color)
+rival(Col) :- split_color(Col), split_color(Col2), Col != Col2.
+
+.decl plugged_color(pc: PairColors, col: Color)
+plugged_color($OnePairColor(), Col) :- split_color(Col), !crowded(Col), !rival(Col).
+
+.decl colors_defined(pc: PairColors)
+colors_defined($OnePairColor()) :- plugged_color($OnePairColor(), _).
+
+// --- $EveryPairColor ---
+
+plugged_color($EveryPairColor(), Col) :- split_color(Col), !crowded(Col).
+
+colors_defined($EveryPairColor()) :- !crowded(_).
+
+// --- $SideMoves ---
+
+.decl mover(m: Mover, pr: Pair)
+mover($SideMoves(), Pr) :- params.mover_side(D), toward(Pr, D).
+
+// --- $NotchedStays, $FillsNotch, $AreaRectangle ---
+
+// @claim key-on-mover-side pieces-interlock plug-key
+.init piece_box = Bbox<Ident>
+piece_box.cell(I, P) :- pieces.label(_, P, I).
+
+// a cell of the piece's bounding box outside the piece
+.decl gap(id: Ident, p: Position)
+gap(I, P) :- piece_box.box(I, B), in(P, _), inside(P, B), !pieces.label(_, P, I).
+
+// --- $NotchedStays ---
+
+.decl corner_gap(id: Ident)
+corner_gap(I) :- gap(I, P), piece_box.box(I, B), box_corner(P, B, _).
+
+// the piece's gap is nonempty and reaches no corner of its box
+.decl notched(id: Ident)
+notched(I) :- gap(I, _), !corner_gap(I).
+
+mover($NotchedStays(), [K, L]) :- cand_pair([K, L]), notched(L), !notched(K).
+
+// --- $Plug ---
+
+// the translations that land the key in the grid, off the lock
+// @claim plug-key
+.init landing = Occurrences<Pair, Unit>
+landing.shape(Pr, P, $U()) :- key_cell(Pr, P).
+landing.cell(Pr, P, $U()) :- cand_pair(Pr), in(P, _), !lock_cell(Pr, P).
+
+.decl moved_cell(pl: Placed, p: Position)
+moved_cell([Pr, V], P) :- landing.occurrence(Pr, V), key_cell(Pr, S), compose(V, S, P).
+
+.decl fit(f: FitTest, pr: Pair, v: Offset)
+
+// two translations pass the fit test
+.decl ambiguous(f: FitTest, pr: Pair)
+ambiguous(F, Pr) :- fit(F, Pr, V1), fit(F, Pr, V2), V1 != V2.
+
+// --- $Interlock ---
+
+// @claim pieces-interlock
+.init union_box = Bbox<Placed>
+union_box.cell([Pr, V], P) :- landing.occurrence(Pr, V), lock_cell(Pr, P).
+union_box.cell(Pl, P) :- moved_cell(Pl, P).
+
+// a cell of the union's box that neither piece covers
+.decl hole(pl: Placed)
+hole([Pr, V]) :-
+    union_box.box([Pr, V], B), in(P, _), inside(P, B),
+    !lock_cell(Pr, P), !moved_cell([Pr, V], P).
+
+fit($Interlock(), Pr, V) :- landing.occurrence(Pr, V), !hole([Pr, V]).
+
+// --- $FillsNotch ---
+
+// a cell of the lock's gap that the moved key leaves open
+.decl open_gap(pl: Placed)
+open_gap([Pr, V]) :- landing.occurrence(Pr, V), Pr = [_, L], gap(L, P), !moved_cell([Pr, V], P).
+
+fit($FillsNotch(), [K, L], V) :- landing.occurrence([K, L], V), gap(L, _), !open_gap([[K, L], V]).
+
+// --- $Plug ---
+
+.decl placed(pl: Placement, pr: Pair, p: Position)
+placed($Plug(F), Pr, P) :- fit(F, Pr, V), !ambiguous(F, Pr), moved_cell([Pr, V], P).
+
+// --- $AreaRectangle ---
+
+// a cell outside the lock's slab: beyond the lock's box on a side other than
+// the one the key lies toward
+.decl off_slab(pr: Pair, q: Position)
+off_slab([K, L], Q) :-
+    cand_pair([K, L]), piece_box.box(L, B), in(Q, _), dir_elem(D), !toward([K, L], D),
+    dist(Q, D, K_q), dist(B, D, K_b), K_q < K_b.
+
+.decl slab_cell(pr: Pair, q: Position)
+slab_cell(Pr, Q) :- cand_pair(Pr), in(Q, _), !off_slab(Pr, Q).
+
+// the box of the lock together with one cell of its slab
+// @claim plug-key
+.init reach_box = Bbox<Probe>
+reach_box.cell([Pr, Q], Q) :- slab_cell(Pr, Q).
+reach_box.cell([Pr, Q], P) :- slab_cell(Pr, Q), lock_cell(Pr, P).
+
+// @claim plug-key
+.init rect_area = Tally<Rect, Position>
+rect_area.item([Pr, R], P) :- reach_box.box([Pr, _], R), in(P, _), inside(P, R).
+
+// @claim plug-key
+.init pair_area = Tally<Pair, Position>
+pair_area.item(Pr, P) :- key_cell(Pr, P).
+pair_area.item(Pr, P) :- lock_cell(Pr, P).
+
+placed($AreaRectangle(), Pr, P) :-
+    rect_area.tally([Pr, R], N), pair_area.tally(Pr, N),  // as many cells as the pair
+    in(P, _), inside(P, R).
+
+// --- shared: the output ---
+
+// the pairs a case plugs
+.decl plug(ch: Choice, pr: Pair)
+plug([M, Pc, Pl], Pr) :-
+    impl_choice([M, Pc, Pl]), plugged_color(Pc, Col), pair_color(Pr, Col), mover(M, Pr).
+
+.decl has_mover(m: Mover, col: Color)
+has_mover(M, Col) :- mover(M, Pr), pair_color(Pr, Col).
+
+// a plugged color with no moving piece, or a plugged pair with no placement
+.decl unresolved(ch: Choice)
+unresolved([M, Pc, Pl]) :-
+    impl_choice([M, Pc, Pl]), plugged_color(Pc, Col), !has_mover(M, Col).
+unresolved([M, Pc, Pl]) :- plug([M, Pc, Pl], Pr), !placed(Pl, Pr, _).
+
+.decl defined(ch: Choice)
+defined([M, Pc, Pl]) :- impl_choice([M, Pc, Pl]), colors_defined(Pc), !unresolved([M, Pc, Pl]).
+
+.decl painted(ch: Choice, p: Position, col: Color)
+painted([M, Pc, Pl], P, Col) :- plug([M, Pc, Pl], Pr), placed(Pl, Pr, P), pair_color(Pr, Col).
+
+.decl erased(ch: Choice, p: Position)
+erased(Ch, P) :- plug(Ch, Pr), key_cell(Pr, P).
+
+out(P, Col, Ch) :-
+    defined(Ch), in(P, Col_in),
+    ( painted(Ch, P, Col)
+    ; !painted(Ch, P, _), erased(Ch, P), params.background(Col)
+    ; !painted(Ch, P, _), !erased(Ch, P), Col = Col_in
+    ).

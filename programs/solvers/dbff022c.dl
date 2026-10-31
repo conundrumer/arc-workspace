@@ -1,0 +1,152 @@
+// dbff022c
+// @draft
+// @keywords: objects enclose mapping
+// @scene legend: one block of cells of several colors, two lines thick, with
+//  one of its long sides on the grid edge; each cross line of the block is one
+//  pair of colors
+// @scene key-line: the line of the legend that lies on the grid edge holds
+//  the keys, and the other line holds the paints
+// @scene outlines: apart from the legend, each object is drawn in one color
+//  on a field of params.bg, and encloses one or more holes of bg cells
+//  that no 4-adjacent walk through bg cells reaches from the grid edge
+// @scene hole-wall: each hole meets the cells of one outline color only
+// @rule fill-keyed-holes: each hole whose wall color is a key of the legend
+//  takes the paint paired with that key
+// @rule keep-rest: every other cell, the legend and the holes of outlines
+//  whose color is no key included, keeps its input color
+
+// which line of the legend holds the keys
+.type KeyLine =
+    // @claim key-line
+    OnEdge {}
+    // @scene key-line: among the legend's lines, the key line is the one with
+    //  the least distance to the grid edge beyond it, and the other line holds
+    //  the paints; undefined where two lines tie
+    // @witness legend-off-edge: variant $KeyLineNearEdge
+    //     @relaxed legend
+  | KeyLineNearEdge {}
+
+// which cells an outline paints
+.type Hole =
+    // @claim outlines
+    Enclosed {}
+    // @scene outlines: apart from the legend, each object is drawn in one
+    //  color on a field of params.bg
+    // @scene hole-wall: for each key color, the bg cells that no 4-adjacent
+    //  walk through cells of other colors reaches from the grid edge are that
+    //  key's holes; undefined where a cell is a hole of two keys
+    // @witness stray-cell-in-hole: borderline $PerColorWalls
+    //     @relaxed hole-wall
+  | PerColorWalls {}
+
+.type Choice = [k: KeyLine, h: Hole]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed outlines
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl key_line_choice(k: KeyLine)
+key_line_choice($OnEdge()). key_line_choice($KeyLineNearEdge()).
+
+.decl hole_choice(h: Hole)
+hole_choice($Enclosed()). hole_choice($PerColorWalls()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([K, H]) :- key_line_choice(K), hole_choice(H).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// @claim outlines legend
+.init objects = Components<Unit>
+objects.node($U(), P) :- ink(P, _).
+
+// The colors of each object: an outline has one, the legend several.
+// @claim outlines legend
+.init object_color = Unanimous<Ident, Color>
+object_color.item(Id, Col) :- objects.label($U(), P, Id), ink(P, Col).
+
+.decl legend(p: Position, col: Color)
+legend(P, Col) :- objects.label($U(), P, Id), object_color.clash(Id), ink(P, Col).
+
+// @claim legend
+.init legend_box = Bbox<Unit>
+legend_box.cell($U(), P) :- legend(P, _).
+
+// The cross lines of the legend that end at side D of its box: the cell P
+// on side D, and the legend cell Q beside it, on the opposite side.
+.decl cross_line(d: Dir, p: Position, q: Position)
+cross_line(D, P, Q) :-
+    legend_box.box($U(), B), legend(P, _), box_edge(P, B, D),
+    opposite(D, D2), neighbor(P, D2, Q), legend(Q, _), box_edge(Q, B, D2).
+
+// A side at which the legend is two lines thick.
+.decl thin_side(d: Dir)
+thin_side(D) :- cross_line(D, _, _).
+
+// The side of the legend's box whose line holds the keys.
+.decl key_side(k: KeyLine, d: Dir)
+
+// Two key sides: the key line is undefined.
+.decl key_tie(k: KeyLine)
+key_tie(K) :- key_side(K, D), key_side(K, D2), D != D2.
+
+// The legend's pairs: a key on the key line, and the paint beside it.
+.decl key_paint(k: KeyLine, c_key: Color, c_paint: Color)
+key_paint(K, C_key, C_paint) :-
+    key_side(K, D), !key_tie(K), cross_line(D, P, Q), legend(P, C_key), legend(Q, C_paint).
+
+// The cells a case repaints, and the cells where it is undefined.
+.decl painted(p: Position, col: Color, ch: Choice)
+.decl unsettled(p: Position, h: Hole)
+
+out(P, Col, [K, H]) :-
+    impl_choice([K, H]), key_paint(K, _, _),
+    ( painted(P, Col, [K, H])
+    ; in(P, Col), !painted(P, _, [K, H]), !unsettled(P, H) ).
+
+// --- $OnEdge ---
+key_side($OnEdge(), D) :- thin_side(D), legend_box.box($U(), B), dist(B, D, 0).
+
+// --- $KeyLineNearEdge ---
+// @claim key-line
+.init nearest = ArgExtremes<Unit, Dir>
+nearest.cand($U(), D, N) :- thin_side(D), legend_box.box($U(), B), dist(B, D, N).
+
+key_side($KeyLineNearEdge(), D) :- nearest.low($U(), D, _).
+
+// --- $Enclosed ---
+// @claim outlines
+.init holes = Closed<Unit>
+holes.cell($U(), P) :- in(P, Col), params.bg(Col).
+
+// The color of each hole's wall.
+// @claim hole-wall
+.init wall = Unanimous<Ident, Color>
+wall.item(Id, Col) :- holes.region($U(), P, Id), dir_elem(D), neighbor(P, D, Q), ink(Q, Col).
+
+painted(P, Col, [K, $Enclosed()]) :-
+    holes.region($U(), P, Id), wall.value(Id, C_key), key_paint(K, C_key, Col).
+
+unsettled(P, $Enclosed()) :- holes.region($U(), P, Id), wall.clash(Id).
+
+// --- $PerColorWalls ---
+// The cells that the cells of one legend color close off from the grid edge.
+// @claim hole-wall
+.init walled = Closed<Color>
+walled.cell(C_key, P) :- legend(_, C_key), in(P, Col), Col != C_key.
+
+painted(P, Col, [K, $PerColorWalls()]) :-
+    walled.region(C_key, P, _), in(P, Bg), params.bg(Bg), key_paint(K, C_key, Col).
+
+.comp Determine {
+    // The color of the hole cells the output repaints.
+    .decl bg(c: Color)
+    bg(Col) :- ex_in(E, P, Col), ex_out(E, P, Col_out), Col != Col_out.
+}

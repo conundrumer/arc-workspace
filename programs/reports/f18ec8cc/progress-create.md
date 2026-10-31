@@ -1,0 +1,4 @@
+# f18ec8cc
+
+- interference: command `run_dl.py determination-plan f18ec8cc`, the line "write a determination relation for each value here that a proposer derives from a fact other than any the concept derives it from". It listed `shift (DivisorRatio exact)` and `from (domain enumerable(4), ...)` under one instruction. The line does not say whether an entry already covered by a proposer or by enumeration needs a relation. Reading it cost about 1 min. I wrote a relation for `shift`, because DivisorRatio reads it from the equal input and output sizes. I wrote none for `from`. After that, the next plan run listed `from` alone, under the same line. Still ambiguous.
+- delay: [Simplify](#simplify), "Run `deletions` once, after the last solver edit before the report". The first `deletions` run showed two redundant atoms. Removing them was a solver edit, so `deletions` ran a second time (6 s).

@@ -1,0 +1,307 @@
+// edcc2ff0
+// @draft
+// @keywords: objects markers count select
+// @scene legend-panel: a full-width panel of params.panel_color sits on one side
+//  of the grid (DIR_T, 7 rows deep) and holds one single-cell marker per listed
+//  color at the edge opposite params.bar_dir, on rows 1, 3 and 5, each marker a
+//  distinct color.
+// @scene field: the rest of the grid, the cells with a row or column that holds
+//  no params.panel_color cell, is a field of one background color, its
+//  commonest color, which varies by input and is neither params.panel_color nor
+//  a listed color; the field holds no params.panel_color cell.
+// @scene field-objects: the field holds separate solid objects, each of one
+//  color, no two of a color touching; some are of listed colors and some of
+//  unlisted ones.
+// @rule drop-unlisted: every field object whose color no legend marker has
+//  becomes field background; objects of listed colors stay as they are.
+// @rule tally-bars: each legend marker becomes a bar on its line, starting at
+//  the marker's cell and running toward params.bar_dir, whose length is the
+//  number of field objects of the marker's color; a count of zero erases the
+//  marker to params.panel_color.
+// @rule keep-rest: every other cell keeps its input color.
+
+// how cells join into one object
+.type Adjacency =
+    // @claim field-objects
+    Objects4 {}
+    // @scene field-objects: an object is an 8-connected component of one color.
+    // @rule tally-bars: the count is of 8-connected components.
+    // @witness corner-touching-objects: borderline concept
+    //     @relaxed field-objects
+  | Objects8 {}
+
+// which colors one object holds
+.type Grouping =
+    // @claim tally-bars
+    OneColor {}
+    // @rule tally-bars: an object is a 4-connected component of non-background
+    //  field cells of any color, counted once under each color it holds.
+    // @witness chained-objects: borderline concept
+    //     @relaxed field-objects
+  | ObjectsAnyColor {}
+
+// where the direction of a bar comes from
+.type BarDir =
+    // @claim tally-bars
+    BarDirStored {}
+    // @rule tally-bars: each bar runs away from the one grid edge its marker
+    //  lies on; undefined where a marker lies on no edge or on a corner.
+    // @witness markers-on-right-edge: variant $BarDirFromEdge
+    //     @relaxed legend-panel
+  | BarDirFromEdge {}
+
+// where the panel's color comes from
+.type PanelColor =
+    // @claim legend-panel
+    PanelColorStored {}
+    // @scene legend-panel: the panel's color is the color of the grid's corner
+    //  cell at params.panel_corner.
+    // @witness panel-of-another-color: variant $PanelColorFromCorner
+    //     @relaxed legend-panel
+  | PanelColorFromCorner {}
+
+// which field cells give the field background
+.type FieldBg =
+    // @claim field
+    FieldBgCommonest {}
+    // @scene field: the background is the commonest color of the field cells
+    //  next to the panel; undefined where those cells tie or there is no panel.
+    // @witness listed-color-outnumbers-background: foreign $FieldBgFromBoundaryRow
+    //     @relaxed field
+  | FieldBgFromBoundaryRow {}
+    // @scene field: the background is the commonest color of the whole grid.
+    // @witness cluttered-field: borderline concept
+  | FieldBgGridCommonest {}
+
+.type Choice = [adj: Adjacency, group: Grouping, dir: BarDir, panel: PanelColor, bg: FieldBg]
+
+// the choices the field background depends on
+.type BgKey = [panel: PanelColor, bg: FieldBg]
+// the choices one color's objects depend on, and that color
+.type ObjKey = [group: Grouping, panel: PanelColor, bg: FieldBg, c: Color]
+// the same, with the adjacency the objects are joined by
+.type CountKey = [adj: Adjacency, obj: ObjKey]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $PanelColorStored ---
+    .decl panel_color(c: Color) panel_color(0).
+
+    // --- $BarDirStored ---
+    // the direction a bar runs from its marker
+    .decl bar_dir(d: Dir) bar_dir(DIR_R).
+
+    // --- $PanelColorFromCorner ---
+    // the grid corner whose cell holds the panel's color
+    .decl panel_corner(d: DiagDir) panel_corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Objects4()). adjacency_choice($Objects8()).
+
+.decl grouping_choice(g: Grouping)
+grouping_choice($OneColor()). grouping_choice($ObjectsAnyColor()).
+
+.decl bar_dir_choice(d: BarDir)
+bar_dir_choice($BarDirStored()). bar_dir_choice($BarDirFromEdge()).
+
+.decl panel_color_choice(p: PanelColor)
+panel_color_choice($PanelColorStored()). panel_color_choice($PanelColorFromCorner()).
+
+.decl field_bg_choice(b: FieldBg)
+field_bg_choice($FieldBgCommonest()). field_bg_choice($FieldBgFromBoundaryRow()).
+field_bg_choice($FieldBgGridCommonest()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, G, D, P, B]) :-
+    adjacency_choice(A), grouping_choice(G), bar_dir_choice(D),
+    panel_color_choice(P), field_bg_choice(B).
+
+// --- Panel and field ---
+
+// The panel's color.
+.decl panel_color(c: Color, pa: PanelColor)
+
+// The line through p along axis a holds a panel cell.
+// @store: variant $BarDirFromEdge
+//     @relaxed legend-panel
+// @ignore: store $FieldBgFromBoundaryRow — subsumed by field=stored: on a 20x10 grid the two stored values give one field, and on any other grid no stored line matches, so every cell is field, no cell borders a panel, and the case is undefined
+.decl line_has_panel(p: Position, a: Axis, pa: PanelColor)
+line_has_panel(P, A, Pa) :-
+    panel_color(C, Pa), in(Q, C), in(P, _), axis_elem(A), same_line(A, P, Q).
+
+// A field cell: some line through it holds no panel cell.
+// @store: variant $BarDirFromEdge
+//     @relaxed legend-panel
+.decl field(p: Position, pa: PanelColor)
+field(P, Pa) :- in(P, _), panel_color(_, Pa), axis_elem(A), !line_has_panel(P, A, Pa).
+
+.decl panel(p: Position, pa: PanelColor)
+panel(P, Pa) :- in(P, _), panel_color(_, Pa), !field(P, Pa).
+
+// A legend marker: a panel cell of another color than the panel's.
+.decl marker(p: Position, c: Color, pa: PanelColor)
+marker(P, C, Pa) :- panel(P, Pa), in(P, C), !panel_color(C, Pa).
+
+.decl listed(c: Color, pa: PanelColor)
+listed(C, Pa) :- marker(_, C, Pa).
+
+// @claim field
+.init field_mode = Mode<BgKey, Color, Position>
+
+.decl field_bg(c: Color, pa: PanelColor, bg: FieldBg)
+field_bg(C, Pa, Bg) :- field_mode.mode([Pa, Bg], C).
+
+// A field cell of another color than the background.
+.decl object_cell(p: Position, c: Color, pa: PanelColor, bg: FieldBg)
+object_cell(P, C, Pa, Bg) :- field(P, Pa), in(P, C), field_bg(_, Pa, Bg), !field_bg(C, Pa, Bg).
+
+// The cells that join into the objects counted under color c.
+.decl object_node(k: ObjKey, p: Position)
+
+// The objects of each color: those holding a cell of that color. A color with
+// no object has no tally, so its marker draws no bar.
+// @claim tally-bars
+.init objects = Tally<CountKey, Ident>
+
+// The direction marker m's bar runs.
+.decl marker_dir(m: Position, d: Dir, pa: PanelColor, bd: BarDir)
+
+// @claim tally-bars
+// @store cell: variant $BarDirFromEdge
+//     @relaxed legend-panel
+// @store mark: variant $BarDirFromEdge
+//     @relaxed legend-panel
+// @ignore ray: store — equivalent to ray.mark=stored: both cast only from the stored marker cells toward DIR_R across the stored frame
+.init ray = Ray<BarDir>
+ray.dir(Bd, D) :- marker_dir(_, D, _, Bd).
+ray.cell(Bd, P) :- bar_dir_choice(Bd), in(P, _).
+ray.mark(Bd, M) :- marker_dir(M, _, _, Bd).
+
+.decl bar(p: Position, c: Color, ch: Choice)
+bar(P, C, [A, G, Bd, Pa, Bg]) :-
+    marker(M, C, Pa), marker_dir(M, D, Pa, Bd),
+    objects.tally([A, [G, Pa, Bg, C]], N),
+    ray.ray(Bd, P, D, K, M), K < N.               // within the count from the marker
+
+out(P, C, Ch) :- bar(P, C, Ch).
+
+// A panel cell off every bar; a marker with no direction gives no cell.
+out(P, Pc, [A, G, Bd, Pa, Bg]) :-
+    impl_choice([A, G, Bd, Pa, Bg]), panel(P, Pa), !bar(P, _, [A, G, Bd, Pa, Bg]),
+    panel_color(Pc, Pa),
+    ( !marker(P, _, Pa)
+    ; marker_dir(P, _, Pa, Bd)
+    ).
+
+// A field cell keeps a listed color and takes the background otherwise.
+out(P, Col, [A, G, Bd, Pa, Bg]) :-
+    impl_choice([A, G, Bd, Pa, Bg]), field(P, Pa), in(P, C), field_bg(B, Pa, Bg),
+    ( listed(C, Pa), Col = C
+    ; !listed(C, Pa), Col = B
+    ).
+
+// --- $PanelColorStored ---
+panel_color(C, $PanelColorStored()) :- params.panel_color(C).
+
+// --- $PanelColorFromCorner ---
+panel_color(C, $PanelColorFromCorner()) :-
+    params.panel_corner(D), box_corner(P, ZERO, D), in(P, C).
+
+// --- $FieldBgCommonest ---
+field_mode.item([Pa, $FieldBgCommonest()], C, P) :- field(P, Pa), in(P, C).
+
+// --- $FieldBgFromBoundaryRow ---
+field_mode.item([Pa, $FieldBgFromBoundaryRow()], C, P) :-
+    field(P, Pa), in(P, C), neighbor(P, D, Q), dir_elem(D), panel(Q, Pa).
+
+// --- $FieldBgGridCommonest ---
+field_mode.item([Pa, $FieldBgGridCommonest()], C, P) :- panel_color(_, Pa), in(P, C).
+
+// --- $OneColor ---
+object_node([$OneColor(), Pa, Bg, C], P) :- object_cell(P, C, Pa, Bg).
+
+// --- $ObjectsAnyColor ---
+object_node([$ObjectsAnyColor(), Pa, Bg, C], P) :-
+    object_cell(P, _, Pa, Bg), object_cell(_, C, Pa, Bg).
+
+// --- $Objects4 ---
+// @claim field-objects
+.init comps4 = Components<ObjKey>
+comps4.node(K, P) :- object_node(K, P).
+objects.item([$Objects4(), [G, Pa, Bg, C]], Id) :- comps4.label([G, Pa, Bg, C], P, Id), in(P, C).
+
+// --- $Objects8 ---
+// @claim field-objects
+.init comps8 = Components8<ObjKey>
+comps8.node(K, P) :- object_node(K, P).
+objects.item([$Objects8(), [G, Pa, Bg, C]], Id) :- comps8.label([G, Pa, Bg, C], P, Id), in(P, C).
+
+// --- $BarDirStored ---
+marker_dir(M, D, Pa, $BarDirStored()) :- marker(M, _, Pa), params.bar_dir(D).
+
+// --- $BarDirFromEdge ---
+.decl on_two_edges(m: Position)
+on_two_edges(M) :-
+    marker(M, _, _), dir_elem(E1), dist(M, E1, 0), dir_elem(E2), dist(M, E2, 0), E1 != E2.
+
+marker_dir(M, D, Pa, $BarDirFromEdge()) :-
+    marker(M, _, Pa), !on_two_edges(M),
+    dir_elem(E), dist(M, E, 0), opposite(E, D).    // away from the edge it lies on
+
+.comp Determine {
+    // Some two cells on a line through p, along axis a, differ in color.
+    .decl line_mixed(e: Example, p: Position, a: Axis)
+    line_mixed(E, P, A) :-
+        ex_in(E, P, C1), ex_in(E, Q, C2), C1 != C2, axis_elem(A), same_line(A, P, Q).
+
+    // Input e has a line of the single color c.
+    .decl line_color(e: Example, c: Color)
+    line_color(E, C) :- ex_in(E, P, C), axis_elem(A), !line_mixed(E, P, A).
+
+    // Some input has no line of color c.
+    .decl panel_color_defect(c: Color)
+    panel_color_defect(C) :- ex_in(_, _, C), ex_in(E, _, _), !line_color(E, C).
+
+    // The color that every input has a line of.
+    .decl panel_color(c: Color)
+    panel_color(C) :- ex_in(_, _, C), !panel_color_defect(C).
+
+    // The line through p along axis a holds a panel-colored cell.
+    .decl line_has_panel(e: Example, p: Position, a: Axis)
+    line_has_panel(E, P, A) :-
+        ex_in(E, P, _), panel_color(Pc), ex_in(E, Q, Pc), axis_elem(A), same_line(A, P, Q).
+
+    // A cell of another color than the panel's, on a line through it of each axis that holds a panel cell.
+    .decl marker(e: Example, p: Position)
+    marker(E, P) :-
+        ex_in(E, P, C), !panel_color(C), !field_cell(E, P).
+
+    .decl field_cell(e: Example, p: Position)
+    field_cell(E, P) :- ex_in(E, P, _), axis_elem(A), !line_has_panel(E, P, A).
+
+    // Input e has a marker on the edge d.
+    .decl marker_edge(e: Example, d: Dir)
+    marker_edge(E, D) :- marker(E, P), dir_elem(D), dist(P, D, 0).
+
+    // Some input has no marker on the edge opposite d.
+    .decl bar_dir_defect(d: Dir)
+    bar_dir_defect(D) :- dir_elem(D), opposite(D, O), ex_in(E, _, _), !marker_edge(E, O).
+
+    .decl bar_dir(d: Dir)
+    bar_dir(D) :- dir_elem(D), !bar_dir_defect(D).
+
+    // Some input's corner d holds a color other than the panel's, or corner d
+    // is not on the edge the markers lie on.
+    .decl panel_corner_defect(d: DiagDir)
+    panel_corner_defect(D) :-
+        box_corner(P, ZERO, D), ex_in(E, P, C), !panel_color(C).
+    panel_corner_defect(D) :-
+        diag_dir_elem(D), bar_dir(B), opposite(B, O), ex_in(_, P, _), box_corner(P, ZERO, D), !dist(P, O, 0).
+
+    .decl panel_corner(d: DiagDir)
+    panel_corner(D) :- diag_dir_elem(D), !panel_corner_defect(D).
+}

@@ -1,0 +1,111 @@
+// e4888269
+// @draft
+// @keywords: objects mapping rank walk lines
+// @scene background: the commonest color fills the field.
+// @scene legend: one solid block of non-background cells, two cells wide and
+//  one or more entries long, shares no side with any other non-background
+//  cell; it is the one 4-connected group of non-background cells that holds
+//  more than one color.
+// @scene legend-entry: each line of the legend across its width is one entry:
+//  the cell on the params.source_dir side holds the source color, and the
+//  other cell the target color.
+// @rule legend-kept: the legend is unchanged.
+// @rule sequential-replace: the entries apply in order, from the entry nearest
+//  the params.order_dir edge to the farthest; each entry recolors every cell
+//  outside the legend that holds its source color at that step to its target
+//  color.
+// @rule rest-kept: a cell whose color no step changes keeps its color.
+
+// which cells outside the legend recolor
+.type Choice =
+    // @claim sequential-replace
+    RecolorAll {}
+    // @rule divider-kept: a cell on a row or column that the input fills with
+    //  one non-background color keeps its color.
+    // @witness divider-source: borderline $KeepDivider
+  | KeepDivider {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the edge of the legend whose entry applies first
+    .decl order_dir(d: Dir) order_dir(DIR_T).
+    // the side of each entry that holds the source color
+    .decl source_dir(d: Dir) source_dir(DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($RecolorAll()). impl_choice($KeepDivider()).
+
+// @claim background
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+// @claim legend
+.init groups = Components<Unit>
+groups.node($U(), P) :- in(P, Col), !field.mode($U(), Col).
+
+// @claim legend
+.init group_color = Unanimous<Ident, Color>
+group_color.item(Id, Col) :- groups.label($U(), P, Id), in(P, Col).
+
+// The legend: the group that holds more than one color.
+.decl legend(p: Position)
+legend(P) :- groups.label($U(), P, Id), group_color.clash(Id).
+
+// Each entry's source cell, and its target cell across the legend.
+.decl entry(e: Position, t: Position)
+entry(E, T) :-
+    legend(E), params.source_dir(D), neighbor(E, D, Q), !legend(Q),   // on the source side
+    opposite(D, D2), neighbor(E, D2, T).
+
+// @claim sequential-replace
+.init entries = Order<Unit, Position>
+entries.elem($U(), E) :- entry(E, _).
+entries.before($U(), E1, E2) :-
+    entry(E1, _), entry(E2, _), params.order_dir(D), nearer(D, E1, E2).
+
+// The color C2 that a cell holding C before entry E holds after it.
+.decl after(e: Position, c: Color, c2: Color)
+after(E, C, C2) :-
+    entry(E, T), in(E, C_src), in(_, C),
+    ( C = C_src, in(T, C2)
+    ; C != C_src, C2 = C
+    ).
+
+// A cell that starts with color c0 holds c as entry e applies.
+.type Visit = [c0: Color, c: Color, e: Position]
+
+.init replace = Propagation<Unit, Visit>
+replace.source($U(), [C0, C0, E]) :- entries.first($U(), E), in(_, C0).
+replace.edge($U(), [C0, C, E], [C0, C2, E2]) :-
+    entries.next($U(), E, E2), after(E, C, C2), in(_, C0).
+
+// The color a cell outside the legend ends with.
+.decl recolor(p: Position, col: Color)
+recolor(P, Col) :-
+    in(P, C0), !legend(P),
+    replace.reached($U(), [C0, C, E]), entries.last($U(), E), after(E, C, Col).
+
+out(P, Col, Ch) :- impl_choice(Ch), legend(P), in(P, Col).
+
+// --- $RecolorAll ---
+out(P, Col, $RecolorAll()) :- recolor(P, Col).
+
+// --- $KeepDivider ---
+.type Line = [a: Axis, l: Position]
+
+// @claim divider-kept
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// A cell on a line that one non-background color fills.
+.decl divider(p: Position)
+divider(P) :-
+    in(P, _), axis_elem(A), split(P, A, L, _),
+    line_color.value([A, L], Col), !field.mode($U(), Col).
+
+out(P, Col, $KeepDivider()) :- recolor(P, Col), !divider(P).
+out(P, Col, $KeepDivider()) :- divider(P), in(P, Col).

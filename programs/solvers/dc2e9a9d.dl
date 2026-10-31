@@ -1,0 +1,287 @@
+// dc2e9a9d
+// @draft
+// @keywords: objects markers bbox d4 lookup
+// @scene background-field: a field of params.background
+// @scene nubbed-boxes: each object is a hollow rectangle outline, one cell
+//  thick, of 3, with one single-cell nub outside the middle cell of one
+//  side; that side has odd length
+// @scene room-for-copy: the cells the copy of each box covers inside the
+//  frame are params.background and are covered by no other copy, and the
+//  copy's rectangle lies inside the frame; only the copy's nub may fall past
+//  the frame edge
+// @rule keep-input: every input cell keeps its color in the output
+// @rule mirror-away-from-nub: each object is mirrored across the axis
+//  parallel to the side of its box opposite the nub, placed so that
+//  params.gap lines of cells part the copy's box from that side; the copy's
+//  nub points away from the original
+// @rule color-by-axis: the copy takes the color params.copy_color gives the
+//  axis it moves along
+// @rule clip-at-frame: copy cells past the frame edge are dropped
+
+// how the copy is transformed
+.type Transform =
+    // @claim mirror-away-from-nub
+    Mirror {}
+    // @rule mirror-away-from-nub: the copy is the half turn of the object,
+    //  placed at the mirror copy's box
+    // @witness off-center-nub: borderline concept
+    //     @relaxed nubbed-boxes
+  | Rotate {}
+
+// what the copy's color is keyed by
+.type ColorKey =
+    // @claim color-by-axis
+    AxisColor {}
+    // @rule color-by-axis: the copy takes the color params.copy_color_dir
+    //  gives the direction it moves
+    // @witness dir-keyed-color: ordinary $ColorByDir
+    //     @reassigned copy_color_dir
+  | ColorByDir {}
+
+// which cells a copy paints
+.type Overlap =
+    // @claim keep-input
+    KeepInput {}
+    // @rule keep-input: copy cells paint over input cells; every other input
+    //  cell keeps its color
+    // @witness copy-lands-on-shape: borderline any
+    //     @relaxed room-for-copy
+  | CopyOver {}
+
+// which cells touch to form one object
+.type Adjacency =
+    // @claim nubbed-boxes
+    Adjacency4 {}
+    // @scene nubbed-boxes: objects are the 8-connected components
+    // @witness corner-touching-boxes: borderline concept
+  | Adjacency8 {}
+
+// which cells objects are made of
+.type ObjectCells =
+    // @claim nubbed-boxes
+    AllCells {}
+    // @scene nubbed-boxes: objects are the components of params.shape_color
+    //  cells
+    // @witness other-color-box: borderline concept
+    //     @relaxed nubbed-boxes
+  | ShapeColorObjects {}
+
+// what the copy holds
+.type Extent =
+    // @claim mirror-away-from-nub
+    ObjectOnly {}
+    // @rule mirror-away-from-nub: the copy holds the whole box, its interior
+    //  cells in their input colors; undefined where a copy's interior covers
+    //  a cell of another copy
+    // @witness nested-copies: borderline concept
+    //     @relaxed room-for-copy
+  | WholeBox {}
+
+.type Choice = [t: Transform, k: ColorKey, o: Overlap, a: Adjacency,
+                s: ObjectCells, e: Extent]
+
+// An object: the parse it is found under, and its label there.
+.type Object = [a: Adjacency, s: ObjectCells, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the number of background lines between the original box and its
+    // copy's box
+    .decl gap(k: number) gap(1).
+
+    // --- $AxisColor ---
+    // the copy's color, keyed by the axis along which it moves
+    .decl copy_color(a: Axis, c: Color)
+    copy_color(AXIS_H, 1).
+    copy_color(AXIS_V, 8).
+
+    // --- $KeepInput, $AllCells, $WholeBox ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background-field
+    .decl background(c: Color) background(0).
+
+    // --- $ColorByDir ---
+    // the copy's color, keyed by the direction it moves
+    .decl copy_color_dir(d: Dir, c: Color)
+    copy_color_dir(DIR_L, 1).
+    copy_color_dir(DIR_R, 1).
+    copy_color_dir(DIR_T, 8).
+    copy_color_dir(DIR_B, 8).
+
+    // --- $ShapeColorObjects ---
+    // @derive RarestColor: variant derived
+    //     @relaxed nubbed-boxes
+    .decl shape_color(c: Color) shape_color(3).
+}
+
+.init params = Params
+
+.decl transform_choice(t: Transform)
+transform_choice($Mirror()). transform_choice($Rotate()).
+
+.decl color_key_choice(k: ColorKey)
+color_key_choice($AxisColor()). color_key_choice($ColorByDir()).
+
+.decl overlap_choice(o: Overlap)
+overlap_choice($KeepInput()). overlap_choice($CopyOver()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+.decl object_cells_choice(s: ObjectCells)
+object_cells_choice($AllCells()). object_cells_choice($ShapeColorObjects()).
+
+.decl extent_choice(e: Extent)
+extent_choice($ObjectOnly()). extent_choice($WholeBox()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, K, O, A, S, E]) :-
+    transform_choice(T), color_key_choice(K), overlap_choice(O),
+    adjacency_choice(A), object_cells_choice(S), extent_choice(E).
+
+// The cells objects are made of.
+.decl ink(s: ObjectCells, p: Position)
+
+// --- $AllCells ---
+ink($AllCells(), P) :- in(P, Col), !params.background(Col).
+
+// --- $ShapeColorObjects ---
+ink($ShapeColorObjects(), P) :- in(P, Col), params.shape_color(Col).
+
+// --- $Adjacency4, $Adjacency8 ---
+.decl obj(k: Object, p: Position)
+
+// --- $Adjacency4 ---
+// @claim nubbed-boxes
+.init comp4 = Components<ObjectCells>
+comp4.node(S, P) :- ink(S, P).
+
+obj([$Adjacency4(), S, Id], P) :- comp4.label(S, P, Id).
+
+// --- $Adjacency8 ---
+// @claim nubbed-boxes
+.init comp8 = Components8<ObjectCells>
+comp8.node(S, P) :- ink(S, P).
+
+obj([$Adjacency8(), S, Id], P) :- comp8.label(S, P, Id).
+
+// --- shared ---
+// Object cell P has a cell of its object one step toward D.
+.decl link(k: Object, p: Position, d: Dir)
+link(K, P, D) :- obj(K, P), dir_elem(D), neighbor(P, D, Q), obj(K, Q).
+
+// Object cell P has cells of its object toward two directions.
+.decl branching(k: Object, p: Position)
+branching(K, P) :- link(K, P, D1), link(K, P, D2), D1 != D2.
+
+// The nub: a cell joined to its object toward D alone, the side the copy
+// moves to.
+.decl nub(k: Object, p: Position, d: Dir)
+nub(K, P, D) :- link(K, P, D), !branching(K, P).
+
+// The object has two nubs.
+.decl nubs(k: Object)
+nubs(K) :- nub(K, P1, _), nub(K, P2, _), P1 != P2.
+
+// The box: the bounding box of the object's cells other than its nub.
+// @claim nubbed-boxes
+.init box = Bbox<Object>
+box.cell(K, P) :- obj(K, P), !nub(K, P, _).
+
+// The cells of the outline of the object's box.
+.decl outline(k: Object, p: Position)
+outline(K, P) :- box.box(K, B), in(P, _), box_edge(P, B, _).
+
+// The object's cells other than its nub are not the outline of its box.
+.decl unboxed(k: Object)
+unboxed(K) :- outline(K, P), !obj(K, P).                  // a gap in the outline
+unboxed(K) :- box.cell(K, P), !outline(K, P).             // a cell off the outline
+
+// The transform each copy reading applies in the box's frame, for a copy
+// that moves toward D.
+.decl copy_transform(t: Transform, d: Dir, g: D4)
+
+// --- $Mirror ---
+// The reflection across the axis parallel to the side the copy moves away
+// from.
+copy_transform($Mirror(), D, G) :- axis_of(D, A), flip_of(A, G).
+
+// --- $Rotate ---
+// The half turn: the reflections across both axes.
+copy_transform($Rotate(), D, G) :-
+    dir_elem(D), flip_of(A1, G1), perp(A1, A2), flip_of(A2, G2), d4_compose(G1, G2, G).
+
+// --- shared ---
+// The cells inside the outline of the object's box.
+.decl hollow(k: Object, p: Position)
+hollow(K, P) :- box.box(K, B), in(P, _), inside(P, B), !outline(K, P).
+
+// Each copy cell inside the frame: the image of cell P0 of an object or its
+// box, in the box's frame, moved toward D by the box's extent and the gap.
+.decl copy(t: Transform, k: Object, d: Dir, p0: Position, p: Position)
+copy(T, K, D, P, Q) :-
+    nub(K, _, D), !nubs(K), !unboxed(K), box.box(K, B),
+    ( obj(K, P) ; hollow(K, P) ), relative(B, P, P_rel),     // the cell in the box's frame
+    copy_transform(T, D, G), apply(G, P_rel, R_rel), compose(B, R_rel, R),
+    axis_of(D, A), box_extent(B, P, A, N), jump(R, D, N, R1),  // past the box
+    params.gap(Gp), jump(R1, D, Gp, Q),                        // and the gap
+    in(Q, _).
+
+// The color each color-key reading gives a copy that moves toward D.
+.decl tint(k: ColorKey, d: Dir, col: Color)
+
+// --- $AxisColor ---
+tint($AxisColor(), D, Col) :- axis_of(D, A), params.copy_color(A, Col).
+
+// --- $ColorByDir ---
+tint($ColorByDir(), D, Col) :- params.copy_color_dir(D, Col).
+
+// --- shared ---
+// A copy covers P with Col.
+.decl cover(t: Transform, k: ColorKey, a: Adjacency, s: ObjectCells, e: Extent,
+            p: Position, col: Color)
+cover(T, K, A, S, E, P, Col) :-
+    copy(T, [A, S, Id], D, P0, P), obj([A, S, Id], P0), extent_choice(E),
+    color_key_choice(K), tint(K, D, Col).
+
+// --- $WholeBox ---
+cover(T, K, A, S, $WholeBox(), P, Col) :-
+    copy(T, [A, S, Id], _, P0, P), hollow([A, S, Id], P0), in(P0, Col),
+    color_key_choice(K).
+
+// The cells each overlap reading paints.
+.decl shown(ch: Choice, p: Position, col: Color)
+
+// --- $KeepInput ---
+shown([T, K, $KeepInput(), A, S, E], P, Col) :-
+    cover(T, K, A, S, E, P, Col), in(P, B), params.background(B).
+
+// --- $CopyOver ---
+shown([T, K, $CopyOver(), A, S, E], P, Col) :- cover(T, K, A, S, E, P, Col).
+
+// --- shared ---
+out(P, Col, Ch) :- impl_choice(Ch), shown(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shown(Ch, P, _).
+
+.comp Determine {
+    // A cell a copy paints: its input color differs from its output color.
+    .decl painted(e: Example, p: Position)
+    painted(E, P) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
+
+    // The color every painted cell held in the input.
+    .init field = Unanimous<Unit, Color>
+    field.item($U(), Col) :- painted(E, P), ex_in(E, P, Col).
+
+    .decl background(c: Color)
+    background(Col) :- field.value($U(), Col).
+
+    // The color of every input cell that is not background.
+    .init ink = Unanimous<Unit, Color>
+    ink.item($U(), Col) :- ex_in(_, _, Col), !background(Col).
+
+    // @ignore: determine prediction — the value is read from the inputs, at
+    //  the background the pairs give
+    .decl shape_color(c: Color)
+    shape_color(Col) :- ink.value($U(), Col).
+}

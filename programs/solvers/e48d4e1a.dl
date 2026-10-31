@@ -1,0 +1,217 @@
+// e48d4e1a
+// @draft
+// @keywords: lines markers count move
+// @scene full-cross: one row and one column of one color, each running edge
+//  to edge, cross on a params.bg field
+// @scene mark-stack: cells of params.mark_color stand in a run down the right
+//  edge from its top-right corner, and no other cell has that color
+// @rule count-marks: the shift is the number of params.mark_color cells
+// @rule shift-cross: the cross's row moves shift cells toward one edge of
+//  params.shift_dir, and its column moves shift cells toward the other edge,
+//  and each line still runs edge to edge; a moved line that passes the frame
+//  edge is dropped, and the output keeps the other line
+// @rule erase-marks: every cell off the moved lines is params.bg
+
+// which corner the cross moves toward
+.type Heading =
+    // @claim shift-cross
+    FixedCorner {}
+    // @rule shift-cross: the cross moves toward the corner diagonally
+    //  opposite the corner that holds a params.mark_color cell; undefined
+    //  where no corner, or more than one corner, holds one
+    // @witness marks-top-left: borderline $ShiftFromMarkCorner
+    //     @relaxed mark-stack
+  | ShiftFromMarkCorner {}
+
+// which marks the shift counts
+.type Count =
+    // @claim count-marks
+    CountAll {}
+    // @rule count-marks: the shift is the length of the unbroken run of
+    //  params.mark_color cells down params.mark_edge from params.mark_corner
+    // @witness gapped-marks: borderline concept
+    //     @relaxed mark-stack
+  | CountMarkRun {}
+
+// what happens to a moved line that passes the frame edge
+.type Edge =
+    // @claim shift-cross
+    DropPastEdge {}
+    // @rule shift-cross: a moved line that passes an edge comes back at the
+    //  opposite edge
+    // @witness shift-past-edge: borderline concept
+  | WrapShift {}
+
+.type Choice = [h: Heading, c: Count, e: Edge]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed full-cross
+    .decl bg(col: Color) bg(0).
+    // @derive RarestColor: variant derived
+    //     @relaxed mark-stack
+    .decl mark_color(col: Color) mark_color(5).
+
+    // --- $FixedCorner ---
+    // The corner the crossing point moves toward.
+    .decl shift_dir(d: DiagDir) shift_dir(DIAG_BL).
+
+    // --- $CountMarkRun ---
+    // The corner the marks run from, and the edge they run along.
+    .decl mark_corner(d: DiagDir) mark_corner(DIAG_TR).
+    .decl mark_edge(d: Dir) mark_edge(DIR_R).
+}
+
+.init params = Params
+
+.decl count_choice(c: Count)
+count_choice($CountAll()). count_choice($CountMarkRun()).
+
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    // A line of one grid, as the key of a set of cells.
+    .type Line = [key: Key, a: Axis, l: Position]
+
+    // @claim full-cross
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([Ky, A, L], Col) :- grid(Ky, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // A line of the cross: one non-bg color runs edge to edge.
+    .decl cross_line(key: Key, a: Axis, l: Position, col: Color)
+    cross_line(Ky, A, L, Col) :- line_color.value([Ky, A, L], Col), !params.bg(Col).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark_color(Col).
+
+// The corner the crossing point moves toward.
+.decl heading(d: DiagDir, h: Heading)
+
+// The marks the shift counts.
+// @claim count-marks
+.init marks = Tally<Count, Position>
+marks.domain(C) :- count_choice(C).
+
+// Each line of axis A moves n cells toward D.
+.decl shift(a: Axis, d: Dir, n: number, h: Heading, c: Count)
+shift(A, D, N, H, C) :- heading(D_corner, H), dir_of(D_corner, A, D), marks.tally(C, N).
+
+// The moved lines of each case, past the frame or not.
+.decl moved(a: Axis, l: Position, col: Color, ch: Choice)
+
+// The cells of the moved lines.
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :- moved(A, L, Col, Ch), in(P, _), split(P, A, L, _).
+
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- moved(_, _, _, Ch), in(P, _), !paint(P, _, Ch), params.bg(Col).
+
+// --- $FixedCorner ---
+
+heading(D, $FixedCorner()) :- params.shift_dir(D).
+
+// --- $ShiftFromMarkCorner ---
+
+heading(D, $ShiftFromMarkCorner()) :-
+    mark(P), box_corner(P, ZERO, D_mark), diag_opposite(D_mark, D).
+
+// --- $CountAll ---
+
+marks.item($CountAll(), P) :- mark(P).
+
+// --- $CountMarkRun ---
+
+// @claim count-marks
+.init run = Reach<Unit>
+run.node($U(), P) :- mark(P), params.mark_edge(D), dist(P, D, 0).
+run.seed($U(), P) :- in(P, _), params.mark_corner(D), box_corner(P, ZERO, D).
+
+marks.item($CountMarkRun(), P) :- run.reach($U(), P).
+
+// --- $DropPastEdge ---
+
+moved(A, L2, Col, [H, C, $DropPastEdge()]) :-
+    parse.cross_line($U(), A, L, Col), shift(A, D, N, H, C), jump(L, D, N, L2).
+
+// --- $WrapShift ---
+
+// The lines of the frame: a line of axis A is the cells that share their
+// axis-A component L.
+.decl line(a: Axis, l: Position)
+line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
+
+// The lines of each axis in a cycle toward D: one step toward D, and from
+// the line on edge D to the line on the opposite edge.
+// @claim shift-cross
+.init wrap = CycleWalk<Dir, Position>
+wrap.succ(D, L, L2) :-
+    line(A, L), axis_of(D, A),
+    ( neighbor(L, D, L2), line(A, L2)                                  // the next line
+    ; dist(L, D, 0), opposite(D, D_opp), line(A, L2), dist(L2, D_opp, 0) // round the edge
+    ).
+wrap.step(D, N) :- shift(_, D, N, _, _).
+
+moved(A, L2, Col, [H, C, $WrapShift()]) :-
+    parse.cross_line($U(), A, L, Col), shift(A, D, N, H, C), wrap.walk(D, L, N, L2).
+
+.comp Determine {
+    // The colors of each example's input that its output lacks.
+    .decl gone(e: Example, col: Color)
+    gone(E, Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(E, _, Col).
+
+    // A color that every output erases.
+    .decl kept(col: Color)
+    kept(Col) :- gone(_, Col), ex_out(E, _, _), !gone(E, Col).
+
+    .decl mark_color(col: Color)
+    mark_color(Col) :- gone(_, Col), !kept(Col).
+
+    // The commonest colors of each input.
+    .init common = Mode<Example, Color, Position>
+    common.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A commonest color of some input that another input's commonest
+    // colors leave out.
+    .decl rare(col: Color)
+    rare(Col) :- common.mode(_, Col), ex_in(E, _, _), !common.mode(E, Col).
+
+    .decl bg(col: Color)
+    bg(Col) :- common.mode(_, Col), !rare(Col).
+
+    .decl mark(e: Example, p: Position)
+    mark(E, P) :- ex_in(E, P, Col), params.mark_color(Col).
+
+    // The corners of the frame that hold a mark.
+    .decl mark_corner(d: DiagDir)
+    mark_corner(D) :- mark(_, P), box_corner(P, ZERO, D).
+
+    // An edge some mark stands off.
+    .decl off_edge(d: Dir)
+    off_edge(D) :- mark(_, P), dir_elem(D), !dist(P, D, 0).
+
+    .decl mark_edge(d: Dir)
+    mark_edge(D) :- mark(_, P), dir_elem(D), dist(P, D, 0), !off_edge(D).
+
+    .init ex_in_parse = Parse<Example>
+    ex_in_parse.grid(E, P, Col) :- ex_in(E, P, Col).
+
+    .init ex_out_parse = Parse<Example>
+    ex_out_parse.grid(E, P, Col) :- ex_out(E, P, Col).
+
+    // The edge each cross line of an example moves toward, from the input
+    // to the output.
+    .decl toward(e: Example, a: Axis, d: Dir)
+    toward(E, A, D) :-
+        ex_in_parse.cross_line(E, A, L, Col), ex_out_parse.cross_line(E, A, L2, Col),
+        axis_of(D, A), nearer(D, L2, L).
+
+    // The corner of the two edges an example's lines move toward.
+    .decl shift_dir(d: DiagDir)
+    shift_dir(D) :- toward(E, A, D1), toward(E, A2, D2), A != A2, diag_dirs(D, A, D1, D2).
+}

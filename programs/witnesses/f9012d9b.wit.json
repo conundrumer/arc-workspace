@@ -1,0 +1,145 @@
+{
+  "id": "f9012d9b",
+  "witnesses": [{
+    "id": "hole_color=RarestColor",
+    "separates": "the patch is drawn in 4, the input's rarest color, and no cell is 0: the rarest-color hole fills the patch from the checkerboard and gives [[8]]; at the stored hole_color 0 the concept finds no hole and is undefined",
+    "input": [
+      [8,6,4,6],
+      [6,8,6,8],
+      [8,6,8,6],
+      [6,8,6,8]
+    ],
+    "output": [{
+      "cases": ["$ColorHole & hole_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["hole_color=RarestColor","$HoleByShape"],
+      "grid": [
+        [8]
+      ]
+    }]
+  }, {
+    "id": "hole-in-other-color",
+    "separates": "the patch is drawn in 4 and the tile's color 3 is rarer than the patch: the one-solid-rectangle color is 4 and the patch fills to one tile; the concept (no 0 cell) and the rarest-color hole (3, scattered) are undefined",
+    "input": [
+      [3,1,1,3,1,1],
+      [1,2,2,1,2,2],
+      [1,2,2,1,2,2],
+      [3,1,1,4,4,4],
+      [1,2,2,4,4,4],
+      [1,2,2,4,4,4]
+    ],
+    "output": [{
+      "cases": ["$ColorHole"],
+      "grid": null
+    }, {
+      "cases": ["$HoleByShape"],
+      "grid": [
+        [3,1,1],
+        [1,2,2],
+        [1,2,2]
+      ]
+    }]
+  }, {
+    "id": "hidden-residue",
+    "separates": "the 4x4 hole covers every copy of the tile cell at residue (1,1) of the 3x3 period: the grid's mirror symmetries restore it from (1,5), (5,1) and the rest; the period alone leaves it unfilled and every other branch is undefined",
+    "input": [
+      [3,1,1,3,1,1,3],
+      [1,0,0,0,0,2,1],
+      [1,0,0,0,0,2,1],
+      [3,0,0,0,0,1,3],
+      [1,0,0,0,0,2,1],
+      [1,2,2,1,2,2,1],
+      [3,1,1,3,1,1,3]
+    ],
+    "output": [{
+      "cases": ["$Lattice","$CopyNeighborTile"],
+      "grid": null
+    }, {
+      "cases": ["$PeriodAndSymmetry"],
+      "grid": [
+        [2,2,1,2],
+        [2,2,1,2],
+        [1,1,3,1],
+        [2,2,1,2]
+      ]
+    }]
+  }, {
+    "id": "hole-beyond-neighbor-tile",
+    "separates": "the 5x5 hole is wider than twice the 2x2 period: its center cell (3,3) has no visible cell one period away, so copying the neighboring tile is undefined, while the full period lattice reaches (7,7) and fills it; the rarest-color hole is 2 and is undefined",
+    "input": [
+      [2,1,2,1,2,1,2,1],
+      [1,0,0,0,0,0,1,1],
+      [2,0,0,0,0,0,2,1],
+      [1,0,0,0,0,0,1,1],
+      [2,0,0,0,0,0,2,1],
+      [1,0,0,0,0,0,1,1],
+      [2,1,2,1,2,1,2,1],
+      [1,1,1,1,1,1,1,1]
+    ],
+    "output": [{
+      "cases": ["$Lattice & hole_color=stored","$PeriodAndSymmetry"],
+      "grid": [
+        [1,1,1,1,1],
+        [1,2,1,2,1],
+        [1,1,1,1,1],
+        [1,2,1,2,1],
+        [1,1,1,1,1]
+      ]
+    }, {
+      "cases": ["hole_color=RarestColor","$CopyNeighborTile"],
+      "grid": null
+    }]
+  }, {
+    "id": "rows-no-period",
+    "separates": "the two rows differ, so the rows have no period shorter than the grid, while the columns repeat every 2: copying the cell one column period away fills the hole with 3; the full period lattice needs a row period and is undefined",
+    "input": [
+      [1,2,1,2,1,2],
+      [3,4,0,4,3,4]
+    ],
+    "output": [{
+      "cases": ["$Lattice"],
+      "grid": null
+    }, {
+      "cases": ["$PeriodAndSymmetry","$CopyNeighborTile"],
+      "grid": [
+        [3]
+      ]
+    }]
+  }, {
+    "id": "second-solid-color",
+    "separates": "the 4x4 tile holds a 2x2 block of 5 that shows once, and the one-cell patch is drawn in 4: the rarest-color hole is 4 and fills it with 2; two colors form one solid rectangle, so the hole by shape is undefined, and at the stored hole_color 0 there is no hole",
+    "input": [
+      [1,4,1,2,1],
+      [2,1,2,1,2],
+      [1,2,5,5,1],
+      [2,1,5,5,2],
+      [1,2,1,2,1]
+    ],
+    "output": [{
+      "cases": ["hole_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["hole_color=RarestColor"],
+      "grid": [
+        [2]
+      ]
+    }]
+  }, {
+    "id": "split-residue",
+    "separates": "the columns repeat every 2, but the visible cells of one column residue left of the hole are 3 and those right of it are 5: copying the cell one period away fills the hole's left cell from the 3 and its right cell from the 5; reading the whole residue class or the symmetries finds two colors and is undefined",
+    "input": [
+      [1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1],
+      [3,4,3,4,3,4,3,4,0,0,0,4,5,4,5,4,5,4,5]
+    ],
+    "output": [{
+      "cases": ["$Lattice","$PeriodAndSymmetry"],
+      "grid": null
+    }, {
+      "cases": ["$CopyNeighborTile"],
+      "grid": [
+        [3,4,5]
+      ]
+    }]
+  }]
+}

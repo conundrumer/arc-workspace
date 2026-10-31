@@ -1,0 +1,254 @@
+// e76a88a6
+// @draft
+// @keywords: objects stamp bbox scale wallpaper d4
+// @scene field: the cells of color 0 form the field.
+// @scene one-pattern: one object, a 4-connected set of non-field cells that
+//  holds no cell of color 5, is the pattern; its cells fill its bounding box
+//  and take more than one color.
+// @scene placeholder-blocks: every other object is a solid block of color 5
+//  whose bounding box has the extent of the pattern's bounding box.
+// @rule stamp-pattern: each cell of a placeholder object takes the color of
+//  the cell at the same place in the pattern's bounding box; every other cell
+//  keeps its input color.
+
+// How the blocks are told apart from the pattern
+.type Find =
+    // @claim one-pattern placeholder-blocks
+    Placeholder {}
+    // @scene one-pattern: the pattern is the one object of more than one
+    //  color; undefined where the count of multicolored objects is not one.
+    // @scene placeholder-blocks: every other object is a one-color block of
+    //  the pattern's extent, in any color.
+    // @witness blocks-in-another-color: variant $MonoPlaceholder
+    //     @relaxed one-pattern
+    //     @relaxed placeholder-blocks
+  | MonoPlaceholder {}
+
+// The steps that join an object's cells
+.type Adjacency =
+    // @claim one-pattern
+    Adjacency4 {}
+    // @scene one-pattern: objects are 8-connected; undefined where a
+    //  placeholder object meets the pattern at a corner.
+    // @witness split-block: foreign $Adjacency8
+    //     @relaxed placeholder-blocks
+  | Adjacency8 {}
+
+// A placeholder object whose cells are not a copy of the pattern's box
+.type Shape =
+    // @claim placeholder-blocks stamp-pattern
+    SameExtent {}
+    // @scene placeholder-blocks: the blocks have any extent.
+    // @rule stamp-pattern: a block whose extent differs from the pattern's
+    //  keeps its color.
+    // @witness smaller-block: foreign $SkipMismatched
+    //     @relaxed placeholder-blocks
+  | SkipMismatched {}
+    // @scene placeholder-blocks: each block's extent is a whole multiple of
+    //  the pattern's on each axis.
+    // @rule stamp-pattern: a block takes the pattern scaled by those
+    //  multiples; undefined on another extent.
+    // @witness larger-block: foreign $ScaleToBlock
+    //     @relaxed placeholder-blocks
+  | ScaleToBlock {}
+    // @scene placeholder-blocks: each block's extent is a whole multiple of
+    //  the pattern's on each axis.
+    // @rule stamp-pattern: a block takes the pattern repeated across it;
+    //  undefined on another extent.
+    // @witness larger-block: foreign $ScaleToBlock
+  | TileRegion {}
+    // @scene placeholder-blocks: the blocks have any extent.
+    // @rule stamp-pattern: each block cell takes the pattern cell at the same
+    //  offset from a corner of the two boxes, where one exists, and keeps its
+    //  color otherwise; undefined where the four corners give different
+    //  outputs.
+    // @witness corner-clip: foreign $SkipMismatched
+    //     @relaxed placeholder-blocks
+  | ClipAtCorner {}
+    // @scene placeholder-blocks: each block has the pattern's extent or its
+    //  transposed extent.
+    // @rule stamp-pattern: a transposed block takes the pattern under each
+    //  D4 element that transposes it; undefined on another extent, and where
+    //  those elements give different outputs.
+    // @witness turned-symmetric: foreign $TurnToBlock
+    //     @relaxed placeholder-blocks
+  | TurnToBlock {}
+
+.type Choice = [f: Find, a: Adjacency, s: Shape]
+
+// An object of the parse under one adjacency.
+.type Obj = [a: Adjacency, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(col: Color) background(0).
+
+    // --- $Placeholder ---
+    // The color of the blocks that the pattern replaces.
+    .decl placeholder(col: Color) placeholder(5).
+}
+
+.init params = Params
+
+.decl find_choice(f: Find)
+find_choice($Placeholder()). find_choice($MonoPlaceholder()).
+
+.decl adjacency_choice(a: Adjacency)
+adjacency_choice($Adjacency4()). adjacency_choice($Adjacency8()).
+
+.decl shape_choice(s: Shape)
+shape_choice($SameExtent()). shape_choice($SkipMismatched()). shape_choice($ScaleToBlock()).
+shape_choice($TileRegion()). shape_choice($ClipAtCorner()). shape_choice($TurnToBlock()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, A, S]) :- find_choice(F), adjacency_choice(A), shape_choice(S).
+
+// The non-field cells.
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.background(Col).
+
+// Each object, under the adjacency that joins its cells.
+// @ignore: case section — a case reads only the objects of its own adjacency, through the Adjacency field of Obj
+.decl object(o: Obj, p: Position)
+
+// --- $Adjacency4 ---
+// @claim one-pattern placeholder-blocks
+// @ignore: case section — only $Adjacency4 reads these objects, through the Adjacency field of Obj
+.init objects4 = Components<Unit>
+objects4.node($U(), P) :- ink(P).
+object([$Adjacency4(), Id], P) :- objects4.label($U(), P, Id).
+
+// --- $Adjacency8 ---
+// @claim one-pattern placeholder-blocks
+// @ignore: case section — only $Adjacency8 reads these objects, through the Adjacency field of Obj
+.init objects8 = Components8<Unit>
+objects8.node($U(), P) :- ink(P).
+object([$Adjacency8(), Id], P) :- objects8.label($U(), P, Id).
+
+// --- $Placeholder, $MonoPlaceholder ---
+// @claim one-pattern placeholder-blocks
+.init object_box = Bbox<Obj>
+object_box.cell(O, P) :- object(O, P).
+
+.decl pattern(f: Find, o: Obj)
+.decl block(f: Find, o: Obj)
+
+// --- $Placeholder ---
+.decl holds_placeholder(o: Obj)
+holds_placeholder(O) :- object(O, P), in(P, Col), params.placeholder(Col).
+pattern($Placeholder(), O) :- object(O, _), !holds_placeholder(O).
+block($Placeholder(), O) :- holds_placeholder(O).
+
+// --- $MonoPlaceholder ---
+.decl multicolored(o: Obj)
+multicolored(O) :- object(O, P), object(O, Q), in(P, Col), in(Q, Col2), Col != Col2.
+pattern($MonoPlaceholder(), O) :- multicolored(O).
+block($MonoPlaceholder(), O) :- object(O, _), !multicolored(O).
+
+// --- $Placeholder, $MonoPlaceholder ---
+.decl pattern_box(f: Find, a: Adjacency, b: Box)
+pattern_box(F, A, B) :- pattern(F, O), O = [A, _], object_box.box(O, B).
+
+// Each pattern cell, as a cell of the pattern's box, with its color.
+.decl pattern_cell(f: Find, a: Adjacency, p_rel: Position, col: Color)
+pattern_cell(F, A, P_rel, Col) :-
+    pattern(F, O), O = [A, _], object(O, P), in(P, Col),
+    object_box.box(O, B), crop(P, B, P_rel).
+
+// Each block cell, as a cell of its block's box.
+.decl block_cell(f: Find, a: Adjacency, o: Obj, p: Position, p_rel: Position)
+block_cell(F, A, O, P, P_rel) :-
+    block(F, O), O = [A, _], object(O, P), object_box.box(O, B), crop(P, B, P_rel).
+
+// A second pattern, which leaves the output undefined.
+.decl extra_pattern(f: Find, a: Adjacency)
+extra_pattern(F, A) :- pattern(F, O), pattern(F, O2), O = [A, _], O2 = [A, _], O != O2.
+
+// Every cell outside a block keeps its color.
+out(P, Col, [F, A, S]) :-
+    impl_choice([F, A, S]), !extra_pattern(F, A), in(P, Col), !block_cell(F, A, _, P, _).
+
+// --- $SameExtent, $SkipMismatched, $TurnToBlock ---
+// A block cell takes the pattern cell at the same place in the pattern's box.
+.decl aligned(f: Find, a: Adjacency, p: Position, col: Color)
+aligned(F, A, P, Col) :- block_cell(F, A, _, P, P_rel), pattern_cell(F, A, P_rel, Col).
+
+// --- $SkipMismatched, $TurnToBlock ---
+// A block whose box differs in extent from the pattern's on some axis.
+.decl mismatched(f: Find, a: Adjacency, o: Obj)
+mismatched(F, A, O) :-
+    block_cell(F, A, O, P, _), object_box.box(O, B), pattern_box(F, A, B2),
+    axis_elem(Ax), box_extent(B, P, Ax, N), box_extent(B2, P, Ax, N2), N != N2.
+
+// --- $SameExtent ---
+out(P, Col, [F, A, $SameExtent()]) :- aligned(F, A, P, Col).
+
+// --- $SkipMismatched ---
+out(P, Col, [F, A, $SkipMismatched()]) :-
+    ( aligned(F, A, P, Col)
+    ; block_cell(F, A, O, P, _), mismatched(F, A, O), in(P, Col)  // a mismatched block keeps its color
+    ).
+
+// --- $ScaleToBlock ---
+// A block cell takes the pattern cell of the part it falls in, when the
+// block's box is cut into as many equal parts as the pattern's box has lines
+// on each axis.
+out(P, Col, [F, A, $ScaleToBlock()]) :-
+    block_cell(F, A, _, P, P_rel),
+    pattern_box(F, A, B), axis_elem(Ax), perp(Ax, Ax2),
+    box_extent(B, P, Ax, N), box_extent(B, P, Ax2, N2),
+    divide(P_rel, Ax, N, 0, P_outer, _), divide(P_rel, Ax2, N2, 0, P_outer2, _),
+    pattern_cell(F, A, Q_rel, Col), split(Q_rel, Ax, P_outer, _), split(Q_rel, Ax2, P_outer2, _).
+
+// --- $TileRegion ---
+// A block cell takes the pattern cell at its place within its tile, when the
+// block's box is cut into tiles of the pattern's extent.
+out(P, Col, [F, A, $TileRegion()]) :-
+    block_cell(F, A, _, P, P_rel),
+    pattern_box(F, A, B), axis_elem(Ax), perp(Ax, Ax2),
+    box_extent(B, P, Ax, N), box_extent(B, P, Ax2, N2),
+    divide_by_size(P_rel, Ax, N, 0, _, P_inner), divide_by_size(P_rel, Ax2, N2, 0, _, P_inner2),
+    pattern_cell(F, A, Q_rel, Col), split(Q_rel, Ax, P_inner, _), split(Q_rel, Ax2, P_inner2, _).
+
+// --- $ClipAtCorner ---
+// A block cell at the same offset from corner D of its box as a pattern cell
+// from corner D of the pattern's box. Every corner applies, so corners that
+// disagree leave the output undefined.
+.decl clipped(f: Find, a: Adjacency, d: DiagDir, p: Position, col: Color)
+clipped(F, A, D, P, Col) :-
+    diag_dir_elem(D), block_cell(F, A, _, P, P_rel), pattern_cell(F, A, Q_rel, Col),
+    corner_anchor(D, P_rel, Q_rel).
+
+out(P, Col, [F, A, $ClipAtCorner()]) :-
+    block_cell(F, A, _, P, _), diag_dir_elem(D),
+    ( clipped(F, A, D, P, Col)
+    ; !clipped(F, A, D, P, _), in(P, Col)  // past the pattern's box: keeps its color
+    ).
+
+// --- $TurnToBlock ---
+// A mismatched block takes the pattern under each D4 element that carries the
+// pattern's box onto the block's box, which only a transposed block admits.
+out(P, Col, [F, A, $TurnToBlock()]) :-
+    ( aligned(F, A, P, Col)
+    ; block_cell(F, A, O, P, P_rel), mismatched(F, A, O),  // a transposed block
+      d4_elem(T), pattern_cell(F, A, Q_rel, Col), apply(T, Q_rel, P_rel)
+    ).
+
+.comp Determine {
+    // The commonest color of each example's input.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_in(E, P, Col).
+
+    // A color that is not the commonest of some input.
+    .decl not_commonest(col: Color)
+    not_commonest(Col) :- commonest.mode(_, Col), commonest.mode(E, _), !commonest.mode(E, Col).
+
+    .decl background(col: Color)
+    background(Col) :- commonest.mode(_, Col), !not_commonest(Col).
+
+    // The color of the cells that a train output changes.
+    .decl placeholder(col: Color)
+    placeholder(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+}
