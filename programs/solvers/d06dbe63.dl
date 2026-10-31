@@ -290,9 +290,13 @@ blocked(A, C, U) :- arm_cell(A, U), A = [_, C, _], in(U, Col), !params.bg(Col).
     .decl marker_color(c: Color)
     marker_color(Col) :- ex_in(_, _, Col), !params.bg(Col).
 
+    // The color the output gives a background cell of the input.
+    .decl repainted(e: Example, p: Position, col: Color)
+    repainted(E, P, Col) :- ex_in(E, P, Bg), params.bg(Bg), ex_out(E, P, Col).
+
     // The color the output paints over background.
     .decl path_color(c: Color)
-    path_color(Col) :- ex_in(E, P, Bg), params.bg(Bg), ex_out(E, P, Col), !params.bg(Col).
+    path_color(Col) :- repainted(_, _, Col), !params.bg(Col).
 
     // The path's run that leaves the marker, toward each direction.
     .init first = Ray<Example>
@@ -323,4 +327,64 @@ blocked(A, C, U) :- arm_cell(A, U), A = [_, C, _], in(U, Col), !params.bg(Col).
     leg2(N) :-
         second.clear(T, P, D, N, M), second.stop(T, Q, D, _, M), neighbor(P, D, Q),
         nearer(D, P, M).
+
+    // A marker of a train input.
+    .decl mark(e: Example, m: Position)
+    mark(E, M) :- ex_out(E, _, _), ex_in(E, M, Col), !params.bg(Col).
+
+    // A background cell the output paints with the path color.
+    .decl path(e: Example, p: Position)
+    path(E, P) :- repainted(E, P, Col), params.path_color(Col).
+
+    // A path cell, with the marker and corner c's two cardinal directions.
+    .decl toward(e: Example, c: DiagDir, m: Position, p: Position, d1: Dir, d2: Dir)
+    toward(E, C, M, P, D1, D2) :- mark(E, M), path(E, P), diag_dirs(C, _, D1, D2).
+
+    // A corner with a path cell beyond the marker on both of its edges.
+    .decl corners(c: DiagDir)
+    corners(C) :- toward(_, C, M, P, D1, D2), nearer(D1, P, M), nearer(D2, P, M).
+
+    // The first leg leaves the marker along a: the marker's neighbor toward
+    // corner c on axis a is on the path.
+    .decl corner_first_axis(c: DiagDir, a: Axis)
+    corner_first_axis(C, A) :-
+        corners(C), dir_of(C, A, D), mark(E, M), neighbor(M, D, Q), path(E, Q).
+
+    // An arm: the path cells no farther than the marker from either edge of
+    // corner c.
+    .decl arm(e: Example, c: DiagDir, m: Position, p: Position)
+    arm(E, C, M, P) :-
+        corners(C), toward(E, C, M, P, D1, D2),
+        opposite(D1, O1), opposite(D2, O2), !nearer(O1, P, M), !nearer(O2, P, M).
+
+    // The move by the offset from m to arm cell t takes arm cell p onto q.
+    .decl moved(e: Example, c: DiagDir, m: Position, t: Position, p: Position, q: Position)
+    moved(E, C, M, T, P, Q) :-
+        arm(E, C, M, T), relative(M, T, V), arm(E, C, M, P), compose(P, V, Q).
+
+    // Moving the arm by the offset from m to t takes some arm cell onto a
+    // cell of the frame off the arm.
+    .decl unrepeated(e: Example, c: DiagDir, m: Position, t: Position)
+    unrepeated(E, C, M, T) :- moved(E, C, M, T, _, Q), ex_in(E, Q, _), !arm(E, C, M, Q).
+
+    // An arm cell the arm repeats onto: the end of some count of steps.
+    .decl repeat_end(e: Example, c: DiagDir, m: Position, t: Position)
+    repeat_end(E, C, M, T) :- arm(E, C, M, T), !unrepeated(E, C, M, T).
+
+    // A repeat end with another farther from the marker.
+    .decl later_end(e: Example, c: DiagDir, m: Position, t: Position)
+    later_end(E, C, M, T) :-
+        repeat_end(E, C, M, T), repeat_end(E, C, M, T2), nearer(C, T, T2).
+
+    // Each arm's first step is one copy of the chart, in its own pose: the
+    // arm cells that the move by one step reaches from no arm cell, as
+    // offsets from the marker.
+    .decl step_cell(e: Example, c: DiagDir, v: Offset)
+    step_cell(E, C, V) :-
+        repeat_end(E, C, M, T), !later_end(E, C, M, T),
+        arm(E, C, M, P), relative(M, P, V), !shifted(E, C, M, T, P).
+
+    // Arm cell p is an arm cell moved by the offset from m to t.
+    .decl shifted(e: Example, c: DiagDir, m: Position, t: Position, p: Position)
+    shifted(E, C, M, T, P) :- moved(E, C, M, T, _, P), arm(E, C, M, P).
 }

@@ -284,4 +284,27 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shown(Ch, P, _).
     //  the background the pairs give
     .decl shape_color(c: Color)
     shape_color(Col) :- ink.value($U(), Col).
+
+    // Painted cell P is joined toward D to a painted cell of its output
+    // color.
+    .decl copy_link(e: Example, p: Position, d: Dir)
+    copy_link(E, P, D) :-
+        painted(E, P), ex_out(E, P, Col),
+        dir_elem(D), neighbor(P, D, Q), painted(E, Q), ex_out(E, Q, Col).
+
+    // Painted cell P is joined toward two directions.
+    .decl copy_branching(e: Example, p: Position)
+    copy_branching(E, P) :- copy_link(E, P, D1), copy_link(E, P, D2), D1 != D2.
+
+    // A copy's nub: joined to its copy toward D alone, the side the copy
+    // moved from.
+    .decl copy_nub(e: Example, p: Position, d: Dir)
+    copy_nub(E, P, D) :- copy_link(E, P, D), !copy_branching(E, P).
+
+    .decl copy_color(a: Axis, c: Color)
+    copy_color(A, Col) :- copy_nub(E, P, D), axis_of(D, A), ex_out(E, P, Col).
+
+    .decl copy_color_dir(d: Dir, c: Color)
+    copy_color_dir(D, Col) :-
+        copy_nub(E, P, D_back), opposite(D_back, D), ex_out(E, P, Col).
 }

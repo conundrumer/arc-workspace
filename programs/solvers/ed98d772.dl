@@ -104,3 +104,29 @@ transform(D, T, $StepProduct()) :-
       params.axis_step(A, T1), params.axis_step(A2, T2),    // in either order
       d4_compose(T1, T2, T), d4_compose(T2, T1, T)
     ).
+
+.comp Determine {
+    // Each example's input side.
+    .decl ex_side(e: Example, n: number)
+    ex_side(E, N) :- ex_in(E, P, _), axis_elem(A), axis_dims(P, A, N, N).
+
+    // Some cell of the input under transform T, placed in the quadrant at corner D, differs
+    // from the output.
+    .decl clash(d: DiagDir, t: D4)
+    clash(D, T) :-
+        ex_side(E, N), diag_opposite(D, D_opp), edge_inset(D_opp, N, B),   // the quadrant
+        ex_in(E, P, Col), d4_elem(T), apply(T, P, P_img),                  // image of the input cell
+        compose(B, P_img, P_out), ex_out(E, P_out, Col2), Col != Col2.
+
+    .decl quadrant_transform(c: DiagDir, d: D4)
+    quadrant_transform(D, T) :- diag_dir_elem(D), d4_elem(T), !clash(D, T).
+
+    // The corner one quadrant over from the anchor along axis A.
+    .decl step_corner(a: Axis, d: DiagDir)
+    step_corner(A, D) :-
+        params.anchor(D0), dir_of(D0, A, X0), dir_of(D, A, X), opposite(X0, X),
+        perp(A, A2), dir_of(D0, A2, Y), dir_of(D, A2, Y).
+
+    .decl axis_step(a: Axis, d: D4)
+    axis_step(A, T) :- step_corner(A, D), quadrant_transform(D, T).
+}

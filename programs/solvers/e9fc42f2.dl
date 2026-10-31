@@ -311,4 +311,11 @@ overlap(Ky) :-
 
     .decl body(col: Color)
     body(Col) :- drawn.mode(_, Col), !drawn_miss(Col).
+
+    // A connector: a color, neither the field nor the body, whose two cells
+    // of a pair sit side by side in some output.
+    .decl connector(col: Color)
+    connector(Col) :-
+        ex_out(E, P, Col), !bg(Col), !body(Col),
+        dir_elem(D), neighbor(P, D, Q), ex_out(E, Q, Col).
 }

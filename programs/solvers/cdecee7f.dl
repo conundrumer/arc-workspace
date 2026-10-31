@@ -232,4 +232,28 @@ slot(U, $StoredPath(), P, R) :- dot_unit_choice(U), params.fill_order(P, R).
 
     .decl out_size(a: Axis, n: number)
     out_size(A, N) :- ex_out(_, P, _), axis_elem(A), axis_dim(P, A, N).
+
+    // The dots of each train input, ranked by their distance from the scan
+    // edge.
+    .init dot_order = Order<Example, Position>
+    dot_order.elem(E, P) :- ex_in(E, P, Col), ex_out(E, _, _), !params.bg(Col).
+    dot_order.score(E, P, K) :- dot_order.elem(E, P), params.scan_dir(D), dist(P, D, K).
+
+    .init last_dot = Extremes<Example>
+    last_dot.cand(E, R) :- dot_order.rank(E, _, R).
+
+    // An output cell and a rank that some example gives it.
+    .decl order_cand(p: Position, r: number)
+    order_cand(P, R) :- ex_out(_, P, _), dot_order.rank(_, _, R).
+
+    // Some example's output at P is not what the dot of rank R gives.
+    .decl order_clash(p: Position, r: number)
+    order_clash(P, R) :-
+        order_cand(P, R), ex_out(E, P, Col),
+        ( dot_order.rank(E, Q, R), ex_in(E, Q, Col2), Col != Col2   // another dot's color
+        ; last_dot.high(E, R2), R > R2, !params.bg(Col)             // past the last dot, not bg
+        ).
+
+    .decl fill_order(p: Position, r: number)
+    fill_order(P, R) :- order_cand(P, R), !order_clash(P, R).
 }

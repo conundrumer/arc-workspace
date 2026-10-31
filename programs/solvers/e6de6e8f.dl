@@ -578,4 +578,41 @@ out(P, Col, [Sg, Pp, H, W, Sp]) :-
 
     .decl source_at(d: Dir, k: number)
     source_at(D, K) :- source_cand(D, K), !source_defect(D, K).
+
+    // --- piece_glyph: the glyphs of the pieces in the inputs ---
+
+    // A piece of an example's input.
+    .type EI = [e: Example, t: Ident]
+
+    // An input cell and its line across params.read_from.
+    .decl line_cell(e: Example, p: Position, col: Color, l: Position)
+    line_cell(E, P, Col, L) :-
+        ex_in(E, P, Col), params.read_from(D), axis_of(D, A), split(P, A, L, _).
+
+    // A run of lines that hold the pipe color.
+    .init runs = Components<Example>
+    runs.node(E, L) :- line_cell(E, _, Col, L), params.pipe_color(Col).
+
+    .decl piece_cell(pc: EI, p: Position)
+    piece_cell([E, T], P) :- line_cell(E, P, _, L), runs.label(E, L, T).
+
+    .init piece_box = Bbox<EI>
+    piece_box.cell(Pc, P) :- piece_cell(Pc, P).
+
+    // The cells of a piece's glyph frame that hold the pipe color.
+    .decl glyph_cell(pc: EI, q: Position)
+    glyph_cell([E, T], Q) :-
+        piece_cell([E, T], P), ex_in(E, P, Col), params.pipe_color(Col),
+        piece_box.box([E, T], B), crop(P, B, Q).
+
+    // Pieces with one glyph.
+    .init same_glyph = KeyedSetCompare<EI, EI, Position>
+    same_glyph.pattern_member(Pc, Q) :- glyph_cell(Pc, Q).
+    same_glyph.observed_member(Pc, Q) :- glyph_cell(Pc, Q).
+
+    .init glyph_class = Canon<EI>
+    glyph_class.equiv(Pc, Pc2) :- same_glyph.equals(Pc, Pc2).
+
+    .decl piece_glyph(id: Ident, p: Position)
+    piece_glyph(Id, Q) :- glyph_class.id(Pc, Id), glyph_cell(Pc, Q).
 }

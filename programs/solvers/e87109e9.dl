@@ -417,4 +417,29 @@ walk.edge(Ch, [B, W], [B, W2]) :-
     // The color every output adds under each corner's alignment: the beams' color.
     .decl block_color(c: Color)
     block_color(C) :- gained(_, _, C), !gain_defect(C).
+
+    // Output cell Q has a counterpart in the input under corner D's alignment.
+    .decl has_counterpart(e: Example, d: DiagDir, q: Position)
+    has_counterpart(E, D, Q) :-
+        ex_out(E, Q, _), diag_dir_elem(D), ex_in(E, P, _), corner_anchor(D, P, Q).
+
+    // Under corner D's alignment, some output cell not of the block color has no input
+    // counterpart, or one of another color.
+    .decl misaligned(e: Example, d: DiagDir)
+    misaligned(E, D) :-
+        ex_out(E, Q, C), block_color(Cb), C != Cb, diag_dir_elem(D),
+        ( !has_counterpart(E, D, Q)
+        ; ex_in(E, P, C2), corner_anchor(D, P, Q), C2 != C   // a counterpart of another color
+        ).
+
+    // In an aligned train pair, a cell next to the block toward W keeps a color other than the
+    // block color: no beam starts toward W.
+    .decl dir_defect(d: Dir)
+    dir_defect(W) :-
+        diag_dir_elem(D), !misaligned(E, D), block_color(Cb),
+        ex_in(E, P, Cb), dir_elem(W), neighbor(P, W, P2), ex_in(E, P2, C2), C2 != Cb,
+        corner_anchor(D, P2, Q2), ex_out(E, Q2, C3), C3 != Cb.
+
+    .decl beam_dirs(d: Dir)
+    beam_dirs(W) :- dir_elem(W), !dir_defect(W).
 }

@@ -46,6 +46,7 @@
 .type PanelKey = [pa: PanelParse, p_tile: Position]
 .type CellKey = [pa: PanelParse, p: Position]
 .type ExampleTile = [e: Example, p_tile: Position]
+.type ExampleCell = [e: Example, p: Position]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -288,4 +289,35 @@ out(P, Col, [$OrderByPanel(), $CombinationTable(), Pa]) :-
 
     .decl panel_order(p_tile: Position, r: number)
     panel_order(T, R) :- panel_rank.rank($U(), T, R).
+
+    // the output cells of each train example whose sets of mark colors are equal
+    .init color_set = KeyedSetCompare<ExampleCell, ExampleCell, Color>
+    color_set.pattern_member([E, P], Col) :- mark(E, _, P, Col), ex_out(E, P, _).
+    color_set.observed_member([E, P], Col) :- mark(E, _, P, Col), ex_out(E, P, _).
+
+    // one id per set of mark colors
+    .init color_entry = Canon<ExampleCell>
+    color_entry.equiv(X, Y) :- color_set.equals(X, Y).
+
+    .decl stack_member(id: Ident, c: Color)
+    stack_member(Id, Col) :- color_entry.id([E, P], Id), mark(E, _, P, Col).
+
+    .decl stack_out(id: Ident, c: Color)
+    stack_out(Id, Col) :- color_entry.id([E, P], Id), ex_out(E, P, Col).
+
+    // the output cells of each train example whose sets of marked panels are equal
+    .init panel_set = KeyedSetCompare<ExampleCell, ExampleCell, Position>
+    panel_set.pattern_member([E, P], T) :- mark(E, T, P, _), ex_out(E, P, _).
+    panel_set.observed_member([E, P], T) :- mark(E, T, P, _), ex_out(E, P, _).
+
+    // one id per set of marked panels
+    .init panel_entry = Canon<ExampleCell>
+    panel_entry.equiv(X, Y) :- panel_set.equals(X, Y).
+
+    .decl panel_stack_member(id: Ident, p_tile: Position)
+    panel_stack_member(Id, T) :- panel_entry.id([E, P], Id), mark(E, T, P, _).
+
+    // the panel whose mark color the output shows
+    .decl panel_stack_out(id: Ident, p_tile: Position)
+    panel_stack_out(Id, T) :- panel_entry.id([E, P], Id), mark(E, T, P, Col), ex_out(E, P, Col).
 }

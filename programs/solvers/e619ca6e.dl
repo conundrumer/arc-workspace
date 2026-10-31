@@ -174,4 +174,19 @@ out(P, Col, Ch) :- live(Ch), in(P, Col), !paint(Ch, P, _).
     // The color the copies paint over.
     .decl background(c: Color)
     background(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl ink(e: Example, p: Position)
+    ink(E, P) :- ex_in(E, P, Col), !background(Col).
+
+    // A block's corner toward D whose diagonal neighbor, blank in the input,
+    // is painted in the output while the cells beside the corner stay blank:
+    // the back corner of a copy of the block toward D.
+    .decl cast_dir(d: DiagDir)
+    cast_dir(D) :-
+        ink(E, P), diag_dirs(D, _, D1, D2),
+        neighbor(P, D1, P1), !ink(E, P1), neighbor(P, D2, P2), !ink(E, P2),  // P is the block's corner toward D
+        neighbor(P, D, Q), ex_in(E, Q, Bg), background(Bg),                  // the cell past it is blank
+        ex_out(E, Q, Col), !background(Col),                                 // and painted in the output
+        ex_out(E, P1, Col1), background(Col1),                               // the cells beside P stay blank
+        ex_out(E, P2, Col2), background(Col2).
 }

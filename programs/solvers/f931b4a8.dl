@@ -181,4 +181,17 @@ fill_corner($SeparateFillAnchor(), D) :- params.fill_anchor(D).
 
     .decl pattern_quad(q: DiagDir)
     pattern_quad(Q) :- ex.quad_cell(_, Q, _, _), !not_pattern(Q).
+
+    // Quadrant q of input e has as many non-bg cells as output e has lines along axis a.
+    .decl count_fits(e: Example, a: Axis, q: DiagDir)
+    count_fits(E, A, Q) :-
+        ex_out(E, P, _), axis_elem(A), axis_dim(P, A, N), ex.ink_count.tally([E, Q], N).
+
+    // Some example's output contradicts quadrant q as the count of axis a.
+    .decl count_miss(a: Axis, q: DiagDir)
+    count_miss(A, Q) :-
+        ex_out(E, _, _), axis_elem(A), ex.quad_cell(E, Q, _, _), !count_fits(E, A, Q).
+
+    .decl count_quad(a: Axis, q: DiagDir)
+    count_quad(A, Q) :- axis_elem(A), ex.quad_cell(_, Q, _, _), !count_miss(A, Q).
 }

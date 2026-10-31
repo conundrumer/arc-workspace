@@ -104,12 +104,41 @@ out(P_grid, Col, $TileTable()) :-
     .decl copies(n: number)
     copies(N) :- half.tally(_, N).
 
+    // A train output's cell, in its input-sized tile.
+    .decl out_tile(e: Example, p_tile: Position, p_intile: Position, col: Color)
+    out_tile(E, P_tile, P_intile, Col) :-
+        ex_out(E, P_grid, Col), side(E, K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
+
     // A train output's cell, in its input-sized tile, and that tile's
     // quadrant in the 2 × 2 arrangement.
     .decl tile_cell(e: Example, p_quad: Position, p_intile: Position, col: Color)
     tile_cell(E, P_quad, P_intile, Col) :-
-        ex_out(E, P_grid, Col), side(E, K), divide_by_size_2d(P_grid, K, 0, P_tile, P_intile),
-        params.copies(N), divide_by_size_2d(P_tile, N, 0, P_quad, _).
+        out_tile(E, P_tile, P_intile, Col), params.copies(N), divide_by_size_2d(P_tile, N, 0, P_quad, _).
+
+    // The D4 elements that take an example's input onto a tile, or onto a
+    // quadrant, of its output.
+    .type ExamplePlace = [e: Example, p: Position]
+    .init tile_fit = D4Map<ExamplePlace, Color>
+    tile_fit.src([E, P_tile], P, Col) :- out_tile(E, P_tile, _, _), ex_in(E, P, Col).
+    tile_fit.dst([E, P_tile], P_intile, Col) :- out_tile(E, P_tile, P_intile, Col).
+
+    .init quadrant_fit = D4Map<ExamplePlace, Color>
+    quadrant_fit.src([E, P_quad], P, Col) :- tile_cell(E, P_quad, _, _), ex_in(E, P, Col).
+    quadrant_fit.dst([E, P_quad], P_intile, Col) :- tile_cell(E, P_quad, P_intile, Col).
+
+    // A tile some train output does not show the input in under d.
+    .decl tile_off(p_tile: Position, d: D4)
+    tile_off(P_tile, D) :- tile_fit.mismatch([_, P_tile], D).
+
+    .decl tile_transform(p: Position, d: D4)
+    tile_transform(P_tile, D) :- tile_fit.map([_, P_tile], D), !tile_off(P_tile, D).
+
+    // A quadrant some train output does not show the input in under d.
+    .decl quadrant_off(p_quad: Position, d: D4)
+    quadrant_off(P_quad, D) :- quadrant_fit.mismatch([_, P_quad], D).
+
+    .decl quadrant_transform(p: Position, d: D4)
+    quadrant_transform(P_quad, D) :- quadrant_fit.map([_, P_quad], D), !quadrant_off(P_quad, D).
 
     // A quadrant that shows the input turned.
     .decl turned(e: Example, p_quad: Position)

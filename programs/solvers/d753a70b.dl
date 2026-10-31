@@ -208,4 +208,12 @@ out(P, Col, Ch) :-
 
     .decl grow_color(c: Color)
     grow_color(Col) :- resized(Col, K, K2), K2 > K.
+
+    // The steps from the input diamond's vertex toward D to the output
+    // diamond's vertex toward D, both as offsets from the shared center.
+    .decl radius_change(c: Color, k: number)
+    radius_change(Col, R) :-
+        resized(Col, K, K2), dir_elem(D),
+        jump_offset(D, K, A), jump_offset(D, K2, B),         // the two vertices
+        relative(A, B, V), opposite(D, O), dist(V, O, R).    // steps toward D
 }

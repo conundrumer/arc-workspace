@@ -177,3 +177,45 @@ undefined([$Runs(), Mc]) :-
 drawn(Pa, D, C, Q) :-
     bar_cell(Pa, C, M, P), turned_by(Pa, D),
     relative(M, P, V), apply(D, V, W), compose(M, W, Q).  // p's offset from m, turned
+
+.comp Determine {
+    .type Mk = [e: Example, c: Color]   // the cells of one mark color in one example
+    .type Obj = [k: Mk, id: Ident]      // one part
+
+    .init ex_parts = Components<Mk>
+    ex_parts.node([E, C], P) :- ex_in(E, P, C), !params.background(C).
+
+    .decl part_cell(o: Obj, p: Position)
+    part_cell([K, Id], P) :- ex_parts.label(K, P, Id).
+
+    .init ex_box = Bbox<Obj>
+    ex_box.cell(O, P) :- part_cell(O, P).
+
+    // the square box with the centre of the part's box
+    .decl ex_square(o: Obj, s: Box)
+    ex_square(O, S) :-
+        ex_box.box(O, B), part_cell(O, P),
+        ( S = B
+        ; axis_elem(A), sub_extent(P, A, K), axis_of(D, A),
+          axis_outset(D, K, K, X), compose(B, X, S)  // grown by k on both sides along a
+        ),
+        perp(A1, A2), box_extent(S, P, A1, N), box_extent(S, P, A2, N).
+
+    // the D4 elements that take each part of a train input onto the output
+    // cells of its color, within the part's square
+    .init part_map = D4Map<Obj, Color>
+    part_map.src([[E, C], Id], P_rel, C) :-
+        part_cell([[E, C], Id], P), ex_square([[E, C], Id], S), crop(P, S, P_rel).
+    part_map.dst(O, Q_rel, C) :-
+        ex_square(O, S), O = [[E, _], _], ex_out(E, Q, C), crop(Q, S, Q_rel).
+
+    // some part of a train input that element d does not take onto the output
+    .decl turn_defect(d: D4)
+    turn_defect(D) :- part_map.mismatch([[E, _], _], D), ex_out(E, _, _).
+
+    // @ignore: determine prediction — the test runs no step of the program:
+    //  it reads, per part, the D4 elements under which the output shows that
+    //  part's image
+    .decl obj_turn(d: D4)
+    obj_turn(D) :- d4_elem(D), !turn_defect(D).
+}

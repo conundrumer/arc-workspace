@@ -73,6 +73,7 @@
 .type Hit = [id: Ident, b: Box]
 .type OrderKey = [order: SlotOrder, sharing: OrderSharing, d: Dir]
 .type CornerAxis = [c: DiagDir, a: Axis]
+.type ExComp = [e: Example, id: Ident]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
@@ -419,4 +420,48 @@ table_entry($SlotOrderPerDir(), D, N, P) :- params.dir_count_table(D, N, P).
 
     .decl slot_stride(w: number, g: number)
     slot_stride(W, G) :- axis_stride(C, _, W, G), !axis_disagree(C, W, G).
+    // A corner of a direction's panel that a train output marks.
+    .decl corner_mark(e: Example, d: Dir, p: Position)
+    corner_mark(E, D, P_inner) :-
+        ex_out(E, P, Col), params.dir_mark(D, Col), params.dir_panel(P_tile, D),
+        panels.tile($U(), P, P_tile, P_inner), box_corner(P_inner, ZERO, _).
+
+    .init corner_order = LexOrder<CornerAxis>
+    corner_order.corner([C, A], C) :- diag_dir_elem(C), axis_elem(A).
+    corner_order.axis([C, A], A) :- diag_dir_elem(C), axis_elem(A).
+    corner_order.cell([C, A], P) :-
+        panel_frame(P), box_corner(P, ZERO, _), diag_dir_elem(C), axis_elem(A).
+
+    // An output that marks a corner of a direction's panel and leaves blank
+    // one the order puts before it: its marks are no prefix of the order.
+    .decl order_defect(d: Dir, a: Axis, c: DiagDir)
+    order_defect(D, A, C) :-
+        corner_mark(E, D, P), corner_order.rank([C, A], P, R),
+        corner_order.rank([C, A], Q, R2), R2 < R, !corner_mark(E, D, Q).
+
+    .decl dir_order(d: Dir, a: Axis, c: DiagDir)
+    dir_order(D, A, C) :-
+        params.dir_panel(_, D), axis_elem(A), diag_dir_elem(C), !order_defect(D, A, C).
+
+    // The distinct pictures of the inputs' components, each cropped to its
+    // bounding box.
+    .init ex_comps = Components<Example>
+    ex_comps.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .init ex_box = Bbox<ExComp>
+    ex_box.cell([E, Id], P) :- ex_comps.label(E, P, Id).
+
+    .decl ex_picture(c: ExComp, p: Position)
+    ex_picture([E, Id], P_inner) :-
+        ex_comps.label(E, P, Id), ex_box.box([E, Id], B), crop(P, B, P_inner).
+
+    .init same_picture = KeyedSetCompare<ExComp, ExComp, Position>
+    same_picture.pattern_member(C, P) :- ex_picture(C, P).
+    same_picture.observed_member(C, P) :- ex_picture(C, P).
+
+    .init picture_class = Canon<ExComp>
+    picture_class.equiv(C, C2) :- same_picture.equals(C, C2).
+
+    .decl shape_table(id: Ident, p: Position)
+    shape_table(Id, P) :- picture_class.id(C, Id), ex_picture(C, P).
 }

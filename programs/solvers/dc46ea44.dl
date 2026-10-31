@@ -401,3 +401,34 @@ slide.cell([H, $LiftToEdge(), X, Dv, L, S], $U(), P) :- hook([H, $LiftToEdge(), 
 slide.dir([H, $LiftToEdge(), X, Dv, L, S], Up) :- lifting([H, $LiftToEdge(), X, Dv, L, S], Up, _).
 
 travel(Ch, V) :- slide.travel(Ch, $U(), V).
+
+// Each example's hook is one copy of the chart, in its own pose.
+.comp Determine {
+    .decl hook_in(e: Example, p: Position)
+    hook_in(E, P) :- ex_in(E, P, Col), params.hook(Col).
+
+    // The lift direction: a divider cell lies on a hook cell's line along
+    // it, nearer its edge.
+    .decl up(e: Example, d: Dir)
+    up(E, D) :-
+        hook_in(E, P), ex_in(E, Q, Col), params.divider(Col),
+        dir_elem(D), axis_of(D, A), split(P, A, _, L), split(Q, A, _, L), nearer(D, Q, P).
+
+    // A hook cell that another hook cell lies beyond, toward the lift direction.
+    .decl below_top(e: Example, p: Position)
+    below_top(E, P) :- hook_in(E, P), up(E, D), hook_in(E, Q), nearer(D, Q, P).
+
+    // The stem's top cell.
+    .decl top(e: Example, p: Position)
+    top(E, P) :- hook_in(E, P), up(E, _), !below_top(E, P).
+
+    .decl hook_shape(e: Example, v: Offset)
+    hook_shape(E, V) :- top(E, T), hook_in(E, P), relative(T, P, V).
+
+    .decl hook_up(e: Example, d: Dir)
+    hook_up(E, D) :- up(E, D).
+
+    // The side of the stem's top cell that holds the hook's other cells.
+    .decl hook_side(e: Example, d: Dir)
+    hook_side(E, D) :- top(E, T), up(E, Up), perp_dir(Up, D), hook_in(E, Q), nearer(D, Q, T).
+}

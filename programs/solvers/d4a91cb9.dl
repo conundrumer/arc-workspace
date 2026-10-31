@@ -44,4 +44,24 @@ out(P, Col) :- in(P, Col), !leg.between(_, P).
     // The path is the one color the outputs add to the inputs.
     .decl path_color(c: Color)
     path_color(C) :- ex_out(_, _, C), !ex_in(_, _, C).
+
+    // A cell the output paints.
+    .decl painted(e: Example, p: Position)
+    painted(E, P) :- path_color(C), ex_out(E, P, C), !ex_in(E, P, C).
+
+    // An input cell one step along axis A from a painted cell.
+    .decl beside(e: Example, p: Position, a: Axis)
+    beside(E, P, A) :- painted(E, Q), dir_elem(D), axis_of(D, A), neighbor(Q, D, P), ex_in(E, P, _).
+
+    // Some cell of color C has no painted cell beside it along axis A.
+    .decl contradicted(a: Axis, c: Color)
+    contradicted(A, C) :- ex_out(E, _, _), ex_in(E, P, C), axis_elem(A), !beside(E, P, A).
+
+    // The leg along each axis leaves the color whose every cell has a
+    // painted cell beside it along that axis.
+    // @ignore: determine prediction — the color is read from the evidence, as the unpainted color whose every cell lies beside a painted cell along the axis, and the test reads the outputs only through the painted cells
+    .decl leg_mark(a: Axis, c: Color)
+    leg_mark(A, C) :-
+        ex_out(E, _, _), beside(E, P, A), ex_in(E, P, C), !painted(E, P),
+        !contradicted(A, C).
 }
