@@ -106,16 +106,6 @@ impl Default for ParameterValues {
 }
 
 impl ParameterValues {
-    /// A digest for the statistics ([`crate::stats::seen`]) of the identity of
-    /// the determined values: the same for the same `Arc`s under the same
-    /// names, whatever the order of the map.
-    pub(crate) fn stats_digest(&self) -> u64 {
-        match &self.source {
-            ParameterSource::Determined(values) => values.iter().fold(0, |sum: u64, (name, rows)| sum.wrapping_add(crate::stats::digest(&(name, Arc::as_ptr(rows) as usize)))),
-            ParameterSource::Stored { .. } => 0,
-        }
-    }
-
     /// The values of the solver's stored `param` records. A `DET` whose every
     /// form is a `DET` clause with a body, no proposer and no `ONE` mark reads
     /// the rows its clause gives, not its record. A `DET` with no record takes

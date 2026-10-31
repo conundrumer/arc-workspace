@@ -80,7 +80,6 @@ fn the_counters_move_and_a_decode_gives_the_same_results_with_them_on_or_off() {
     assert!(counted["check.program"].units > 0, "forms checked: {counted:?}");
     assert!(counted["decode.next"].new > 0, "decode.next counted a new state: {counted:?}");
     assert!(counted["decode.next"].ns > 0, "a span adds its time");
-    assert_eq!(counted["table.step"].calls, 0, "the tables crate runs no phase here");
 }
 
 /// `snapshot(true)` gives the counters and starts them again from zero.

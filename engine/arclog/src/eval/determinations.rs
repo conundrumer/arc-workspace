@@ -112,6 +112,18 @@ impl<'a> Evaluation<'a> {
     }
 }
 
+impl super::ParameterValues {
+    /// A digest for the statistics ([`crate::stats::seen`]) of the identity of
+    /// the determined values: the same for the same `Arc`s under the same
+    /// names, whatever the order of the map.
+    fn stats_digest(&self) -> u64 {
+        match &self.source {
+            super::ParameterSource::Determined(values) => values.iter().fold(0, |sum: u64, (name, rows)| sum.wrapping_add(stats::digest(&(name, Arc::as_ptr(rows) as usize)))),
+            super::ParameterSource::Stored { .. } => 0,
+        }
+    }
+}
+
 impl Evaluation<'_> {
     /// The domain of the `DET` node `node`, task-wide, at the values
     /// these parameter values give the `DET`s its forms read. A `DET` that
