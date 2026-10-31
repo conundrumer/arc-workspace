@@ -26,6 +26,7 @@ from arclog_convert import libmap, out
 from arclog_convert.lint_alts import (
     CLAIMS, DECL_HEADS, Placed, alt_blocks, alt_repeats, alts_map, claims_of, placements, reads, restated_outs, unstated_combinations)
 from arclog_convert.lint_read import L, Str, Sym, flat, leaves, read, walk
+from arclog_convert.lint_source import bare_read_source
 from arclog_convert.lib import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
 GEN = out() / "gen"
@@ -1164,6 +1165,11 @@ class Ctx:
             self.err(a.line, "atom", f"{rel} stands where an atom does")
             return
         fixed, tparam = self.columns(rel, a.line)
+        missing = bare_read_columns(a, fixed, tparam)
+        if missing:
+            src = bare_read_source(self.lt.path.stem, self.self_name, rel) if not self.lt.scene else None
+            self.err(a.line, "bare-read", f"{rel} is read with no site, and it has the columns {' '.join(missing)}"
+                     + (f"; solver: {src}" if src else "; solver: not found"))
         # a site may hold 0 on a column of a number, a Box, a Position or an Offset
         for x in a.items[1:]:
             if isinstance(x, Sym) and x.text in ("*0", "^0"):
@@ -1387,6 +1393,14 @@ class Ctx:
                                  "that the body makes with (= *X 0)")
                     elif not scope.visible(leaf.text):
                         self.err(leaf.line, "unbound", f"head site {leaf.text}: no site made it")
+
+
+def bare_read_columns(a: L, fixed: set[str] | None, tparam: set[str] | None) -> list[str]:
+    """The columns of a relation that an atom with no site reads, sorted; none where the atom has a site or the
+    relation has no column. The column E, which a read of a relation over the examples adds, is no column here."""
+    if len(a.items) > 1:
+        return []
+    return sorted(((fixed or set()) - {"E"}) | (tparam or set()))
 
 
 def or_start(f: L) -> int:
