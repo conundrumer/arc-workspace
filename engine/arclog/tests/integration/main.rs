@@ -16,7 +16,6 @@ mod decoder;
 mod det_proposer_names;
 mod det_read_columns;
 mod determination;
-mod engine_stats;
 mod evaluation_bounds;
 mod factorized_bodies;
 mod filter_body_order;
