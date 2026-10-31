@@ -208,6 +208,7 @@
 .decl apply_dir8(d: D4, dir: Dir8, dir_out: Dir8)
 .decl gap(d: Dir8, p: Position, q: Position, k: number) inline
 .decl divide(t: number, side: number, gap: number, part: number, remainder: number) inline
+.decl tile_size(ext: number, n: number, g: number, k: number) inline
 .decl frame_offset(p: Position, a: Axis, k: number, v: Offset) inline
 .decl same_dist(d: Dir, p1: Box, p2: Box) inline
 .decl same_line(a: Axis4, p: Position, q: Position) inline

@@ -49,6 +49,7 @@ mod scope_checks;
 mod scope_types;
 mod shared_form_content;
 mod site_column_once;
+mod tile_size;
 mod token_stream;
 mod traces;
 mod verdicts_exclude;
