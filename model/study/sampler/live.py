@@ -35,6 +35,10 @@ test input is seen, so its grid there is a function of e's input and the other p
 output. A fit needs a pass on one pair at least, since a gold program can lose a pair: a DET determined by all pairs may not be
 determined by fewer. A task with one train pair has no such run. The counts have loo:<outcome> per pair.
 
+A table request that runs to the session's deadline ends the draw (Spent), and a candidate that does ends the OUT search at that form:
+each later read of what it read costs one more deadline. A table that the table work cap stopped goes on, since gold has them: of 284
+gold programs, 6 have OUT read such a relation, and body prefixes hit the cap 62 times.
+
 The steers of S's proposal (README: Proposal) run on these draws, each from its file in the models directory. STEERS names them,
 and Sampler's steers argument picks them; S's P settings that their fits had ('struct') go with them. A row's fields come from the
 program drawn so far. A RULE's point group takes its depth as 1 + the deepest clause so far (gold's RULE on dev has that depth in
@@ -82,6 +86,7 @@ KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against tho
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
+DEADLINE_SHARE = 0.9  # a request that took this share of the session's deadline ran to it
 SUIT_COLUMNS = 2  # a relation's Position columns, and its Color columns, that Gate.suits reads
 STEERS = 'struct', 'tilt', 'rel', 'choice'
 STEER_FILES = dict(tilt='tilt_v1.json', rel='relR4_o.pkl', choice='choice5_o.pkl')
@@ -293,6 +298,10 @@ class Drop(Exception):
     """A draw that cannot go on; the message is the reason."""
 
 
+class Spent(Drop):
+    """A table request ran to the session's deadline: the draw ends, as the next read of what it read costs one more deadline."""
+
+
 class Deadline(Exception):
     """The deadline passed inside a draw."""
 
@@ -386,6 +395,7 @@ class Run:
     def __init__(self, pri, session, seed, deadline, task, limits):
         self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
         self.V = V = session.vocabulary
+        self.spent_after = DEADLINE_SHARE * (session.settings.deadline_seconds or math.inf)
         self.root = session.decoder()
         self.rng = random.Random(seed)
         self.orc = or_counts(pri['compound'])
@@ -540,6 +550,8 @@ class Run:
             try:
                 f = self.open_form(pg, dec, kind)
                 return self.rule(pg, f) if kind == 'RULE' else self.det(pg, f) if kind == 'DET' else self.init(pg, f)
+            except Spent:
+                raise
             except (Drop, arclog.Refusal) as e:
                 pg.__dict__.update(saved.__dict__)
                 why = str(e) if isinstance(e, Drop) else 'refused: ' + re.sub(r'\d+', 'N', str(e))[:70]
@@ -548,8 +560,11 @@ class Run:
 
     def close(self, pg, f):
         """Records the form that the last step of decoder f ended: its relations' tables, for types and columns."""
+        t0 = time.monotonic()
         pg.before = b = arclog.step_tables(f, *TABLES, True, pg.before)
         T = b.tables
+        if not len(T['form']):
+            self.spent(t0)
         rel = M.col(b, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
         for j in range(len(T['form'])):
             if T['fault'][j]:
@@ -561,6 +576,20 @@ class Run:
                 if cs:
                     for k in KIND_TOK:
                         pg.pending[k][s] = list(zip(cs, ts))
+
+    def spent(self, t0):
+        """Raises Spent where a table request that began at t0 ran to the session's deadline. A step that gives no table in less time
+        is no stop: 17 steps of gold's bodies give none, and the longest table call of 284 gold programs took 2.65 s of 10 s."""
+        if time.monotonic() - t0 >= self.spent_after:
+            raise Spent('table past the deadline')
+
+    def table(self, fr, dec, pg):
+        """S.body_table's (table, error) at decoder dec, with Spent where it ran to the deadline."""
+        t0 = time.monotonic()
+        got = S.body_table(fr, *TABLES, dec, pg.before)
+        if got[0] is None:
+            self.spent(t0)
+        return got
 
     def declared(self, pg, forced):
         for t in forced:
@@ -773,7 +802,7 @@ class Run:
                 done = self.or_form(dr, cur, toks, text, scope, nlab, k)
                 if done is not None:  # the body goes on after the OR, or ends there
                     cur, ctoks, ctext, hide = done
-                    tb = S.body_table(dr.fr, *TABLES, cur, pg.before)[0]
+                    tb = self.table(dr.fr, cur, pg)[0]
                     sm = S.summary(tb)
                     if sm is not None and sm['empty_inputs']:
                         c['or:empty'] += 1
@@ -812,7 +841,7 @@ class Run:
                 if kind != 'INIT' and not self.can_end(res[0].dec):  # at a port's END this check runs a search over head sites
                     c['try:unsafe'] += 1
                     continue
-                tb = None if kind == 'INIT' else S.body_table(fr, *TABLES, res[0].dec, pg.before)[0]  # the engine gives no table inside a port
+                tb = None if kind == 'INIT' else self.table(fr, res[0].dec, pg)[0]  # the engine gives no table inside a port
                 sm = S.summary(tb)
                 if sm is not None and sm['empty_inputs']:
                     c['try:empty'] += 1
@@ -1152,10 +1181,14 @@ class Run:
                     if time.monotonic() >= self.deadline:
                         raise Deadline
                     n += 1
+                    t0 = time.monotonic()
                     if toks is None:
                         yield from self.finish_pair(dec, self.rel0 + s, p, c, label)
                     else:
                         yield from self.candidate(dec, toks, label)
+                    if time.monotonic() - t0 >= self.spent_after:  # the next candidate reads the same tables
+                        self.c['out:past the deadline'] += 1
+                        return
             full = [(p, c) for p, c in pairs if c is not None]
             if full:
                 pg.grids = best(pg.grids + [(s, *full[0])])

@@ -141,7 +141,7 @@ class Walk:
                 cur, hide = self.compound(dr, cur, k, labs, text, pfx, scope)
                 labs = nlab + sum(x in (M.STAR, M.CARET) for x in self.t[self.start:self.i])
                 dr.fr.hidden = dr.fr.hidden | frozenset(run.ff0.label_tok[i] for i in hide if i in run.ff0.label_tok)
-                tb = S.body_table(dr.fr, *TABLES, cur, pg.before)[0]
+                tb = run.table(dr.fr, cur, pg)[0]
                 sm = S.summary(tb)
                 if sm is not None and sm['empty_inputs']:
                     self.hard['or:empty'] += 1
@@ -158,7 +158,7 @@ class Walk:
             text.append(a or '')
             if kind != 'INIT':
                 fr = dr.frontier(cur, labs)
-                tb = S.body_table(fr, *TABLES, cur, pg.before)[0]
+                tb = run.table(fr, cur, pg)[0]
                 sm = S.summary(tb)
                 if sm is not None and sm['empty_inputs']:
                     self.hard['try:empty'] += 1
