@@ -52,6 +52,7 @@ class Limits:
     atom_tries: int = S.ATOM_TRIES  # redraws of an atom
     cheap_tries: int = S.CHEAP_TRIES  # further redraws for a repeated or unjoined atom
     max_atoms: int = S.MAX_ATOMS  # atoms of a body
+    port_atoms: int = 6  # atoms of a port's body; 0.4% of gold's are longer, and the checks of a long one cost most
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
     out_pairs: int = 6  # (Position, Color) column pairs of a relation that the OUT search tries
@@ -83,6 +84,22 @@ class LiveDrawer(S.Drawer):
     def __init__(self, V, counts, rng, regcols, fr, regtypes, limits):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
         self.root_cap, self.node_cap = limits.root_cap, limits.node_cap
+
+
+class LiveFrontier(S.FastFrontier):
+    """S's FastFrontier less the tokens that the decoder refuses only at the body's END, which would end the draw of the body
+    there: a fresh label at a site of a NOT atom, and a label of the form that this body cannot read."""
+
+    hidden = frozenset()  # the label tokens of the form that this body cannot read
+
+    def candidates(self, n):
+        c = super().candidates(n)
+        if n.phase in ('val', 'fval', 'op'):
+            drop = self.hidden | {M.STAR} if n.neg else self.hidden
+            c = [t for t in c if t not in drop]
+        elif n.phase == 'root' and M.NOT in c and n.labs == len(self.hidden):  # no label for a NOT atom to join
+            c.remove(M.NOT)
+        return c
 
 
 class Program:
@@ -123,9 +140,10 @@ class Run:
         self.rng = random.Random(seed)
         self.t0 = time.monotonic()
         self.c = collections.Counter()
-        self.ff0 = S.FastFrontier(V, 0, pri['regcols'])
+        self.ff0 = LiveFrontier(V, 0, pri['regcols'])
         self.first = {}  # a kind's token -> the decoder after it as a program's first token, and its step_tables result
         self.jc = collections.defaultdict(dict)  # a kind -> Drawer.jcache: its True entries on lib relations hold at every state of the run
+        self.stopped = False  # whether an OUT candidate over the relation that the OUT search is at hit a limit
         nv = len(V)
         self.rel0 = V.id('&r0')
         self.tok = {V.name(i): i for i in range(nv) if V.kind(i) in ('component', 'proposer')}
@@ -315,6 +333,7 @@ class Run:
                 for _, t in bound if t not in params or t == 'Point']
         dr = self.drawer(pg, 'INIT', f)
         dr.want = set(keys)
+        dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want  # a port's body reads its own labels and the key
         cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, keys)
         made = list(range(nlab, nlab + toks.count(M.STAR)))
         nlab = made[-1] + 1 if made else nlab
@@ -376,7 +395,8 @@ class Run:
         types in scope). Each atom passes the gates that read the decoder alone; a stop passes MIN2_KINDS and the head's needs."""
         lim, c, hz = self.lim, self.c, self.pri['hazard'][kind]
         cur, toks, text, scope = dec, [], [], ()
-        for k in range(1, lim.max_atoms + 1):
+        top = lim.port_atoms if kind == 'INIT' else lim.max_atoms
+        for k in range(1, top + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
             fr = dr.frontier(cur, nlab + toks.count(M.STAR), tuple(toks))
@@ -414,7 +434,7 @@ class Run:
             toks += list(got[0].toks)
             text.append(got[3])
             scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + self.atom_scope(dr, got[3])
-            if not self.rng.random() < hz.get(k, hz[max(hz)]) and k < lim.max_atoms:
+            if not self.rng.random() < hz.get(k, hz[max(hz)]) and k < top:
                 continue
             if need and any(not x & set(scope) for x in need):
                 c['gate:port head'] += 1
@@ -429,7 +449,7 @@ class Run:
                 c['gate:key unread'] += 1
                 continue
             return cur, toks, text, scope
-        raise Drop('body: no stop in %d atoms' % lim.max_atoms)
+        raise Drop('body: no stop in %d atoms' % top)
 
     # ---------------------------------------------------------------- the OUT search
 
@@ -460,8 +480,13 @@ class Run:
         f = dec.fork()
         for t in (OUT_TOK, rtok, pairs[0][0], M.CARET, pairs[0][1], M.CARET):
             f.step(t)
-        cons = f.step(M.END)[1]
-        self.c['out:%s' % str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]] += 1
+        yield from self.judged(f, f.step(M.END)[1], label)
+
+    def judged(self, f, cons, label):
+        """Counts the consistency cons of the OUT that decoder f ended: yields f where it is consistent."""
+        kind = str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]
+        self.c['out:%s' % kind] += 1
+        self.stopped = self.stopped or kind == 'Stopped'
         if f.ended:
             self.c['consistent'] += 1
             self.c['consistent:' + label] += 1
@@ -525,8 +550,12 @@ class Run:
             if not {'Position', 'Box'} & set(ts):
                 continue
             pairs = self.out_pairs(dec, self.rel0 + s, lim.out_pairs)
+            self.stopped = False
             for p, c in pairs:
                 for label, toks in self.cands(pg, s, p, c):
+                    if self.stopped:  # the candidates after it read the same table, and hit the same limit at the same cost
+                        self.c['out:after a stop'] += 1
+                        break
                     if n >= lim.out_cands:
                         self.c['out:capped'] += 1
                         return
@@ -556,8 +585,4 @@ class Run:
         except arclog.Fault:
             self.c['out:fault ' + label] += 1
             return
-        self.c['out:%s' % str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]] += 1
-        if f.ended:
-            self.c['consistent'] += 1
-            self.c['consistent:' + label] += 1
-            yield f
+        yield from self.judged(f, cons, label)
