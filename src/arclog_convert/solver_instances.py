@@ -1118,7 +1118,13 @@ class InstancesMixin:
         w = ClauseWriter(c, p.scope, sub, {})
         item = w.lits([AtomLiteral(p.item, False)], set(heads))
         reads |= w.reads
-        # the candidate's labels named as the chosen relation's columns
+        nevers: list[tuple[list[str], list[str]]] = []
+        for body in p.aparts:
+            wn = ClauseWriter(c, p.scope, sub, {})
+            ls = wn.lits(list(body), set())
+            reads |= wn.reads
+            nevers.append((self.todo.take(), ls))
+        # the labels of the candidate and of the row named as the chosen relation's columns
         _, pcols, _, _ = c.resolve(RelationName((), p.name), p.scope, sub)
         vars_ = p.fold or p.cvars
         if pcols is not None and len(pcols) == len(vars_):
@@ -1131,18 +1137,19 @@ class InstancesMixin:
                 for l, t in zip(leaves, terms):
                     if l.kind == "keep" and isinstance(t, Variable):
                         ren[w.label(t.name)] = l.name if nkeep > 1 else col.name
-            made = label_names(item)
-            ren = {a: b for a, b in ren.items() if a != b and a not in heads and b not in made
-                   and list(ren.values()).count(b) == 1}
+            made = label_names(item) | label_names(slot) | set().union(set(), *(label_names(ls) for _, ls in nevers))
+            ren = {a: b for a, b in ren.items() if a != b and b not in made and list(ren.values()).count(b) == 1}
             if ren:
-                item = relabel(item, lambda mark, x: mark + ren.get(x, x))
+                def rename(mark, x):
+                    return mark + ren.get(x, x)
+                item = relabel(item, rename)
+                slot = relabel(slot, rename)
+                nevers = [(todos, relabel(ls, rename)) for todos, ls in nevers]
+                heads = {ren.get(x, x) for x in heads}
         lines.extend(nest_keyed(slot if heads else None, [["  (@@in " + " ".join(item) + ")"]],
                                 sorted(heads), "for"))
-        for body in p.aparts:
-            w = ClauseWriter(c, p.scope, sub, {})
-            ls = w.lits(list(body), set())
-            reads |= w.reads
-            lines.extend("  " + t for t in self.todo.take())
+        for todos, ls in nevers:
+            lines.extend("  " + t for t in todos)
             lines.append("  (never")
             lines.extend("    " + l for l in ls)
             close(lines, ")")
