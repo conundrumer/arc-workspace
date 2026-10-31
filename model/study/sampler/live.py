@@ -2,10 +2,10 @@
 """S from an empty prefix on a task it has never seen: whole programs through a live decoder.
 
     sampler = Sampler(models_dir)            # loads the frozen priors (live_priors.py) once
-    for result in sampler.draws(session, seed, deadline, **limits): ...
+    for result in sampler.draws(session, seed, deadline, task, **limits): ...
 
 The worker makes the arclog.Session and passes it in; a session on Kaggle data is World.Open, and draws make no second
-session. deadline is a time.monotonic() value. limits are Limits' fields. A Result is yielded as soon as it exists: a decoder
+session. task is the task's JSON as a dict, with no test outputs. deadline is a time.monotonic() value. limits are Limits' fields. A Result is yielded as soon as it exists: a decoder
 that ended at a consistent OUT with its attempts, and a last Result with no decoder when the deadline passes. Each has the
 counts so far: draws, finished programs, drops by reason, errors by type, and the limits.
 
@@ -17,12 +17,25 @@ gold and no path but the priors.
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
 the draw goes on past it. At each form end, for each relation R the form declared, in this order: R over the input (R plus the
 input's cells where R has none), R alone, then for a Position column with no Color column, the same with a Color relation's
-value or the input's color, then unions with earlier relations. Any fit counts.
+value or the input's color, then unions with earlier relations. A fit counts where it passes Gate, in two steps. The cheap step reads
+the attempts on the test inputs: GATE_RULES refuse it, and the counts have refused:<rule> for each rule of Gate that the OUT breaks,
+GATE_RULES or not, so each rule's count is its own. The second step is leave-one-out: for each train pair e, the program runs on the
+task with e's output removed, so e is one more test input, and its attempt on e is compared with e's output. That run sees e as a real
+test input is seen, so its grid there is a function of e's input and the other pairs, and no program can pass on e by reading e's
+output. A fit needs a pass on one pair at least, since a gold program can lose a pair: a DET determined by all pairs may not be
+determined by fewer. A task with one train pair has no such run. The counts have loo:<outcome> per pair.
+
+The steers of S's proposal (README: Proposal) run on these draws, each from its file in the models directory. STEERS names them,
+and Sampler's steers argument picks them; S's P settings that their fits had ('struct') go with them. A row's fields come from the
+program drawn so far. A RULE's point group takes its depth as 1 + the deepest clause so far (gold's RULE on dev has that depth in
+2961 of 3144 clauses, where 'RULE depth 3+' counts as one depth), and a relation's dag fields read the drawn forms. An INIT body has
+the tilt alone, as S's ports have.
 """
 import collections
 import copy
 import dataclasses
 import gc
+import json
 import math
 import os
 import pickle
@@ -32,7 +45,10 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault('STRUCT_B', '1')  # S imports the terms of STRUCT_B only under this setting; set_steers sets the flag itself
 import sample2_col as S  # noqa: E402
+from fractions import Fraction  # noqa: E402
+
 from sample2_col import M, arclog  # noqa: E402
 
 S.ADMITS = True  # one Decoder.admits call per node, with no mask and no per-token call
@@ -43,6 +59,98 @@ KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK)
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the next-kind counts over all buckets, against those of the clause count's bucket
+GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
+GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
+FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
+STEERS = 'struct', 'tilt', 'rel', 'choice'
+STEER_FILES = dict(tilt='tilt_v1.json', rel='relR3_rk2.pkl', choice='choice3_ch.pkl')
+
+
+def size(grid):
+    return len(grid), len(grid[0]) if grid else 0
+
+
+class Gate:
+    """What a task's train pairs say of a program. refused gives the rules that attempts break. A rule on the grids reads each test
+    input, and holds there where a grid of its attempts passes it, since an attempt has up to two grids. leave_one_out gives the
+    outcome on each train pair."""
+
+    def __init__(self, task, settings):
+        self.task, self.settings, self.folds = task, settings, None
+        self.inputs = [t['input'] for t in task['test']]
+        pairs = [(size(p['input']), size(p['output'])) for p in task['train']]
+        self.identity = any(p['input'] == p['output'] for p in task['train'])  # a train output that equals its input
+        self.same_size = all(a == b for a, b in pairs)
+        self.fixed_size = pairs[0][1] if len({b for _, b in pairs}) == 1 else None
+        ratios = {(Fraction(b[0], a[0]), Fraction(b[1], a[1])) for a, b in pairs}
+        self.ratio = next(iter(ratios)) if len(ratios) == 1 else None
+        self.out_colors = {c for p in task['train'] for row in p['output'] for c in row}
+
+    def holds(self, rule, g, x):
+        """Whether grid g, an attempt on test input x, passes the rule."""
+        if rule == 'malformed':
+            w = size(g)[1]
+            return 1 <= len(g) <= 30 and 1 <= w <= 30 and all(len(r) == w and all(isinstance(c, int) and 0 <= c <= 9 for c in r) for r in g)
+        if rule == 'equals input':
+            return self.identity or g != x
+        if rule == 'same size':
+            return not self.same_size or size(g) == size(x)
+        if rule == 'fixed size':
+            return self.fixed_size is None or size(g) == self.fixed_size
+        if rule == 'size ratio':
+            return self.ratio is None or (self.ratio[0] * len(x), self.ratio[1] * len(x[0])) == size(g)
+        return {c for r in g for c in r} <= self.out_colors | {c for r in x for c in r}  # 'colors'
+
+    def refused(self, attempts):
+        got = [] if all(any(size(g)[0] and size(g)[1] for g in att) for att in attempts) else ['no attempt']
+        return got + [r for r in GRID_RULES if not all(any(self.holds(r, g, x) for g in att) for att, x in zip(attempts, self.inputs) if att)]
+
+    def fold_sessions(self):
+        """[(a session of the task with train pair e's output removed, e's output)] for each train pair e; none with one train pair,
+        where no pair is left to fit."""
+        if self.folds is None:
+            train, self.folds = self.task['train'], []
+            for i, e in enumerate(train if len(train) > 1 else ()):
+                d = dict(self.task, train=train[:i] + train[i + 1:], test=self.task['test'] + [dict(input=e['input'])])
+                self.folds.append((arclog.Session(arclog.Task.from_json(json.dumps(d), arclog.World.Open), self.settings, session_bytes=FOLD_BYTES), e['output']))
+        return self.folds
+
+    def leave_one_out(self, text):
+        """The outcome of program text on each train pair: 'pass', 'wrong' (a grid that is not the pair's output), 'no attempt',
+        'refused' (the decoder refuses it, or it faults, on the fewer pairs) or 'not ended' (it is not consistent on them)."""
+        ids, model, _ = arclog.StudyProgram.from_sexp(text, self.settings).decode_stream()
+        return [fold_outcome(sess, ids, model, y) for sess, y in self.fold_sessions()]
+
+
+def fold_outcome(session, ids, model, y):
+    dec = session.decoder()
+    try:
+        for t, m in zip(ids, model):
+            if m:
+                dec.step(t)
+    except (arclog.Refusal, arclog.Fault):
+        return 'refused'
+    if not dec.ended:
+        return 'not ended'
+    att = dec.attempts()[-1]
+    return 'pass' if y in att else 'wrong' if att else 'no attempt'
+
+
+def set_steers(models_dir, on):
+    """S's module settings of the steers in on, a subset of STEERS; the others are off. One process has one set."""
+    S.COL_FREQ = S.STRUCT_P = S.STRUCT_B = S.STRUCT_C = 'struct' in on
+    for w in S.REL_W, S.REL_WB, S.VAL_W:  # a relation's or label's recency is written order, which a DAG does not have
+        w.update({k: 0.0 for k in ('recency0', 'recency_log', 'newest') if k in w})
+    path = {k: os.path.join(models_dir, f) if k in on else '' for k, f in STEER_FILES.items()}
+    S.STEER_REL, S.STEER_CHOICE = path['rel'], path['choice']
+    S.TILT_STOP = 'lw'
+    S.TILT_TABLE = json.load(open(path['tilt']))['groups'] if path['tilt'] else None
+    for tab in (S.TILT_TABLE or {}).values():  # pos: and bi: read an atom's written place and its predecessor; a body's atoms have no order
+        tab['theta'] = {k: v for k, v in tab['theta'].items() if not k.startswith(('pos:', 'bi:'))}
+    if S.STEER_REL:  # the models load here, before a deadline runs
+        S.rel_scorer()
+    if S.STEER_CHOICE:
+        S.choice_scorer()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -111,19 +219,22 @@ class Program:
         self.decl_types, self.decl_slots = {}, {}
         self.colmap, self.arity, self.record_col, self.names = {}, {}, {}, {}
         self.pending = {}  # relation slot -> (table slot, type) of a relation that colmap lacks
+        self.forms = []  # the parsed forms before the clause being drawn
+        self.toks = []  # the model tokens of the bodies so far, for prior_uses
         self.new = []  # the relation slots the last form declared, with their tables
         self.grids, self.colors = [], []  # the OUT search's relations so far: (slot, Position token, Color token); (slot, Color token)
         self.kinds = []
 
 
 class Sampler:
-    def __init__(self, models_dir):
+    def __init__(self, models_dir, steers=STEERS):
+        set_steers(models_dir, steers)
         with open(os.path.join(models_dir, 'live_priors.pkl'), 'rb') as f:
             self.pri = pickle.load(f)
         gc.set_threshold(100000, 50, 100)  # as S: the data is long-lived and holds few cycles
 
-    def draws(self, session, seed, deadline, **limits):
-        run = Run(self.pri, session, seed, deadline, Limits(**limits))
+    def draws(self, session, seed, deadline, task, **limits):
+        run = Run(self.pri, session, seed, deadline, task, Limits(**limits))
         while time.monotonic() < deadline:
             for got in run.one():
                 yield run.result(got)
@@ -133,13 +244,14 @@ class Sampler:
 class Run:
     """One task's draws."""
 
-    def __init__(self, pri, session, seed, deadline, limits):
-        self.pri, self.session, self.deadline, self.lim = pri, session, deadline, limits
+    def __init__(self, pri, session, seed, deadline, task, limits):
+        self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
         self.V = V = session.vocabulary
         self.root = session.decoder()
         self.rng = random.Random(seed)
         self.t0 = time.monotonic()
         self.c = collections.Counter()
+        self.steer_stats = dict(rel=collections.Counter(), choice=collections.Counter())  # the Drawers' rel_stats and choice_stats
         self.ff0 = LiveFrontier(V, 0, pri['regcols'])
         self.first = {}  # a kind's token -> the decoder after it as a program's first token, and its step_tables result
         self.jc = collections.defaultdict(dict)  # a kind -> Drawer.jcache: its True entries on lib relations hold at every state of the run
@@ -153,7 +265,7 @@ class Run:
         self.fact_starts = [i for i in self.ff0.starts_list if i in facts]
 
     def result(self, dec):
-        counts = dict(self.c, limits=dataclasses.asdict(self.lim))
+        counts = dict(self.c, limits=dataclasses.asdict(self.lim), steer_stats={k: dict(v) for k, v in self.steer_stats.items()})
         t = time.monotonic() - self.t0
         return Result(None, None, None, counts, t) if dec is None else Result(dec, dec.attempts(), dec.program_form(), counts, t)
 
@@ -216,6 +328,7 @@ class Run:
 
     def form(self, pg, dec, kind):
         """The decoder after a clause of the kind at dec, redrawn where a draw of it fails."""
+        pg.forms = S.strata.sexprs(dec.program_form())
         for attempt in range(self.lim.form_tries):
             pg.new = []
             saved = copy.copy(pg)
@@ -253,6 +366,7 @@ class Run:
         f = cur.fork()
         forced = f.step(M.END)[0]
         self.declared(pg, forced)
+        pg.names = pg.names | {self.V.name(t): self.V.name(t) for t in forced if self.V.kind(t) == 'relation'}
         self.close(pg, f)
         return f
 
@@ -286,7 +400,7 @@ class Run:
         forced = f.step(self.tok[comp])[0]
         self.declared(pg, forced)
         slots = [M.slot_no(self.V.name(t)) for t in forced if self.V.kind(t) == 'relation']
-        pg.names.update({'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)})  # a '.' tells a method (one_call)
+        pg.names = pg.names | {'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)}  # a '.' tells a method (one_call)
         params, ports = pri['comp_ports'][comp]
         keyed = rng.random() < pri['keyed'][comp] / pri['comps'][comp]
         nlab, keys = 0, []
@@ -375,7 +489,32 @@ class Run:
         dr = LiveDrawer(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
         dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmap, self.jc[kind]
         dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
+        self.steer(pg, dr, kind)
         return dr
+
+    def closed(self, d, ends):
+        """The program text that decoder d gives when `ends` END tokens close it, or None where the decoder refuses."""
+        f = d.fork()
+        try:
+            for _ in range(ends):
+                f.step(M.END)
+        except arclog.Refusal:
+            return None
+        return f.program_form()
+
+    def steer(self, pg, dr, kind):
+        """The fields that the steers read on Drawer dr of a body of the kind, from the forms drawn so far."""
+        fields, adj = S.dag_info(pg.forms, len(pg.forms))
+        depth = 1 + max((fields(f[1])['depth'] for f in pg.forms), default=0)
+        group = 'INIT port' if kind == 'INIT' else kind if kind == 'DET' else 'RULE depth %s' % (depth if depth < 3 else '3+')
+        tab = (S.TILT_TABLE or {}).get(group)
+        dr.tilt, dr.stop_tab = (tab['theta'], tab) if tab else (None, None)
+        dr.rel_closed, dr.rel_base, dr.rel_off = self.closed, len(pg.forms), kind == 'INIT'
+        dr.rel_pg, dr.row_pg = dict(point_group=group, depth=depth, d_out=None), dict(kind=kind)
+        dr.rel_dag, dr.rel_stats, dr.choice_stats = (fields, adj), self.steer_stats['rel'], self.steer_stats['choice']
+        dr.hist = collections.defaultdict(list)
+        for t, cols in S.atom_uses(self.V, pg.toks):
+            dr.hist[t].append(dict(same_clause=False, cols=cols))
 
     def can_end(self, d):
         try:
@@ -396,6 +535,7 @@ class Run:
         lim, c, hz = self.lim, self.c, self.pri['hazard'][kind]
         cur, toks, text, scope = dec, [], [], ()
         top = lim.port_atoms if kind == 'INIT' else lim.max_atoms
+        labels = None
         for k in range(1, top + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
@@ -405,7 +545,7 @@ class Run:
             for n_try in range(lim.atom_tries + lim.cheap_tries):
                 if n_try - free >= lim.atom_tries:
                     break
-                dr.p_k, dr.p_scope, dr.p_key, dr.p_last = k, tuple(scope), tuple(toks), ()
+                dr.p_k, dr.p_scope, dr.p_key, dr.p_last, dr.p_labels = k, tuple(scope), tuple(toks), (), labels
                 res, why = dr.atom(fr, k, scope, tuple(toks))
                 if res is None:
                     c['try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
@@ -434,7 +574,8 @@ class Run:
             toks += list(got[0].toks)
             text.append(got[3])
             scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + self.atom_scope(dr, got[3])
-            if not self.rng.random() < hz.get(k, hz[max(hz)]) and k < top:
+            labels = tb.get('labels') if tb is not None else None
+            if not self.rng.random() < self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb) and k < top:
                 continue
             if need and any(not x & set(scope) for x in need):
                 c['gate:port head'] += 1
@@ -448,8 +589,20 @@ class Run:
             if keys and not set(keys) & set(toks):
                 c['gate:key unread'] += 1
                 continue
+            pg.toks = pg.toks + toks
             return cur, toks, text, scope
         raise Drop('body: no stop in %d atoms' % top)
+
+    def stop_chance(self, dr, k, h, toks, got, tb):
+        """q's stop hazard after atom k: P's hazard h, its odds shifted by the tilt and the choice steer, as S's draw has it. got is
+        the atom's result, toks the clause's tokens with it, tb the prefix table with it."""
+        if k >= self.lim.max_atoms:
+            return h
+        hq = h
+        if dr.stop_tab and 0 < h < 1:
+            hq = h / (h + (1 - h) * math.exp(-S.tilt_stop_odds(dr.stop_tab, k)))
+        d = dr.stop_shift(got[0].dec, tuple(toks), k, list(got[0].toks), got[2], got[3], tb, h)
+        return hq * math.exp(d) / (1 - hq + hq * math.exp(d))
 
     # ---------------------------------------------------------------- the OUT search
 
@@ -483,14 +636,27 @@ class Run:
         yield from self.judged(f, f.step(M.END)[1], label)
 
     def judged(self, f, cons, label):
-        """Counts the consistency cons of the OUT that decoder f ended: yields f where it is consistent."""
+        """Counts the consistency cons of the OUT that decoder f ended: yields f where it is a fit that counts."""
         kind = str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]
         self.c['out:%s' % kind] += 1
         self.stopped = self.stopped or kind == 'Stopped'
-        if f.ended:
-            self.c['consistent'] += 1
-            self.c['consistent:' + label] += 1
-            yield f
+        if not f.ended:
+            return
+        broken = self.gate.refused(f.attempts())
+        self.c.update('refused:' + r for r in broken)
+        if GATE_RULES.intersection(broken):
+            self.c['refused'] += 1
+            return
+        got = self.gate.leave_one_out(f.program_form())
+        self.c.update('loo:' + r for r in got)
+        self.c['loo:all pairs'] += all(r == 'pass' for r in got)
+        if got and 'pass' not in got:
+            self.c['refused'] += 1
+            self.c['refused:loo'] += 1
+            return
+        self.c['consistent'] += 1
+        self.c['consistent:' + label] += 1
+        yield f
 
     def candidate(self, dec, toks, label):
         """The clause of tokens toks at dec, then OUT over its relation."""
