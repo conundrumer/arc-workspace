@@ -200,8 +200,11 @@ impl<'a> Materializer<'a> {
 
     /// Conservative per-row owned storage, including hash/vector headers and
     /// allocator slack. Callers supply their actual scalar payload layout.
+    /// The row's slot (a boxed slice or vector header, or a hash bucket at
+    /// its load factor) takes at most 32 bytes, and each heap allocation adds
+    /// at most 32 bytes of header and size-class slack.
     pub fn row_bytes(payload:usize, allocations:usize)->usize {
-        payload.saturating_add(256).saturating_add(allocations.saturating_mul(64))
+        payload.saturating_add(32).saturating_add(allocations.saturating_mul(32))
     }
 
     /// Admits all rows and returns the owner of their retained bytes.
