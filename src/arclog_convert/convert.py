@@ -673,9 +673,9 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
             corpus.mkdir(exist_ok=True)
             (corpus / f"{stem}.arclog").write_text(checked[0])
             (corpus / f"{stem}.arcdata").write_text(checked[1])
-        if any(k.startswith("no-det-") or k == "unresolved" for k in kinds):
-            # a `(DET &x)` with no body has no columns, and the engine reads no relation of an unresolved name, so
-            # each case of the solver fails its checks
+        if any(k.startswith("no-det-") or k in ("unresolved", "parse-key") for k in kinds):
+            # a `(DET &x)` with no body has no columns, and the engine reads no relation of an unresolved name or of
+            # a parse the key of a read widens, so each case of the solver fails its checks
             stubbed.append(stem)
             _drop_cases(stem)
         elif answers is not None:
