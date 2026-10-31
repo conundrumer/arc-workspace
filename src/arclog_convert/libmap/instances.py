@@ -18,6 +18,10 @@ its name, `{Key}`, `{T}`, as the instance's type arguments:
   once, the atom is that body, unified with the clause's head; otherwise it
   reads `{x}_<input>`, a relation derived from the input's clauses, as
   the rules of `work/arclog/lib-map.md` give for a body repeated.
+- `shared`: each input, by the input whose head variables its clauses share:
+  a variable of the first input's clause named as a variable of the head of
+  the second's is that variable, so that the shape reads what both fill once
+  where they read it alike.
 - `grounded`: the inputs whose shape clause reads the key's `dir` or `axis`
   rows only to bind the key in Souffle. The lowering leaves out of such an
   input, where it reads no key label, each atom that shares no variable with
@@ -86,6 +90,7 @@ class Spec:
     reads: dict[str, str] = field(default_factory=dict)
     clauses: str = ""
     derive: frozenset[str] = frozenset()   # inputs the shape reads through `{x}_<input>` even where one atom would do
+    shared: dict[str, str] = field(default_factory=dict)   # each input, by the input whose head variables its clauses share
     moved: dict[str, str] = field(default_factory=dict)   # each relation of the instance, by the shape's relation
     grounded: frozenset[str] = frozenset()   # inputs whose shape clause reads the key's `dir` or `axis` rows only to bind the key
     pairs: tuple[tuple[str, str, str], ...] = ()   # each pair of reads, a positive pattern, a negated pattern and the text that replaces both
@@ -202,10 +207,12 @@ def match(pattern: Atom, site: Atom) -> dict | None:
     return {p.name: s for p, s in zip(pattern.args, site.args) if isinstance(p, Variable)}
 
 
-def apart(u: Unit, taken: set[str]) -> Unit:
-    """u with each variable a name in `taken` renamed."""
+def apart(u: Unit, taken: set[str], keep: frozenset[str] = frozenset()) -> Unit:
+    """u with each variable a name in `taken` renamed, but for those in `keep`."""
     m = {}
     for v in term_vars((u.head, u.body), []):
+        if v in keep:
+            continue
         if v in taken:
             n = 2
             while f"{v}{n}" in taken:
@@ -476,6 +483,7 @@ class Expander:
             ins = inputs_of[key]
             extra = _parse(self.fmt(spec.clauses, inst)).units if spec.clauses.strip() else ()
             self.derive_now = spec.derive
+            self.shared_now = spec.shared
             for u in extra:
                 for v in self.instantiate(u, inst, ins, extra, rels):
                     self.own[v.id] = key
@@ -520,7 +528,9 @@ class Expander:
         own_vars = term_vars((u.head, u.body), [])
         aside = {v: Variable(f"T__{v}") for v in own_vars}
         u = replace(u, head=subst(u.head, aside, False), body=subst(u.body, aside, False))
-        taken = {f"T__{v}" for v in own_vars}
+        shared = getattr(self, "shared_now", {})
+        heads = {name: frozenset(term_vars(tuple(c.head.args for c in ins.get(name, [])), [])) for name in set(shared.values())}
+        taken = {f"T__{v}" for v in own_vars}.union(*heads.values())
         m: dict = {}
 
         def lits(body) -> tuple:
@@ -537,18 +547,19 @@ class Expander:
                 cs = ins.get(name, [])
                 one = len(cs) == 1 and cs[0].body is not None
                 spec_derive = getattr(self, "derive_now", frozenset())
+                keep = heads.get(shared.get(name, name), frozenset())
                 hvars = [x.name for x in cs[0].head.args if isinstance(x, Variable)] if one else []
                 plain = one and len(hvars) == len(cs[0].head.args) == len(set(hvars))
                 # a head that repeats a variable or holds a term is unfolded, since a derived
                 # relation's clause cannot repeat a head label
                 if one and not lit.negated and name not in spec_derive and \
                         (len(cs[0].body or ()) == 1 or count.get(name, 0) == 1 or not plain):
-                    c = apart(cs[0], taken)
+                    c = apart(cs[0], taken, keep)
                     if all(unify(y, x, m) for x, y in zip(c.head.args, lit.atom.args)):
                         out.extend(self.marked(self.output_reads(c).body or (), c))   # the input's reads, as the solver's
                         continue
                 if lit.negated and name not in spec_derive and _one_atom(cs):
-                    c = self.output_reads(apart(cs[0], taken))
+                    c = self.output_reads(apart(cs[0], taken, keep))
                     if _one_atom([c]) and all(unify(y, x, m) for x, y in zip(c.head.args, lit.atom.args)):
                         # a column the read leaves unread is unread in the negated atom too
                         unread = {x.name: Wildcard() for x, y in zip(c.head.args, lit.atom.args)

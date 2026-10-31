@@ -117,7 +117,8 @@ def dir_frame(inst, ex):
                  "dir(D)": "in_dir(D)", "dist_set(Ky, K)": "in_dist_set(Ky, K)"},
                 "{x}_size.item(Ky, K) :- in_dist_set(Ky, K).\n"
                 "{x}_frame.extent(Ky, A, N) :- in_dir(D), axis_of(D, A), {x}_size.tally(Ky, N).\n"
-                "{x}_pos(Ky, K, P) :- {x}_frame.cell(Ky, P), in_dir(D), dist(P, D, K), in_dist_set(Ky, K).")
+                "{x}_pos(Ky, K, P) :- {x}_frame.cell(Ky, P), in_dir(D), dist(P, D, K), in_dist_set(Ky, K).",
+                shared={"dist_set": "dir"})
 
 
 def dir_pack(inst, ex):
