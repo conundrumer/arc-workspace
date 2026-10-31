@@ -287,6 +287,9 @@ class Hoist:
         self.judgment: dict[Atom, str] = {}
         self.names: set[tuple[tuple[str, ...], str]] = {(d.scope.components, d.name)
                                                         for d in (*prog.relations, *prog.instances, *prog.types)}
+        # the parameters a `@derive` line gives a derived reading, which may hold several values
+        above = {c.above for c in prog.comments if c.own_line and c.text.strip().startswith("@derive")}
+        self.derived = {r.name for r in prog.relations if r.scope.components == ("Params",) and r.id in above}
 
     def did(self):
         from engine.program import DeclId
@@ -470,8 +473,9 @@ class Hoist:
 
     def single(self, v: str, key: set[str], avoid: frozenset = frozenset()) -> bool:
         """v takes one value per key: its grounding literals are stored
-        parameters, orientation tables and `=` comparisons over a key column,
-        a constant, or another such variable."""
+        parameters that no `@derive` line gives a derived reading, orientation
+        tables and `=` comparisons over a key column, a constant, or another
+        such variable."""
         if v in key:
             return True
         if v in avoid:
@@ -487,6 +491,8 @@ class Hoist:
                     return False
             others = [w for w in _vars(lit) if w != v]
             if isinstance(lit, AtomLiteral) and lit.atom.relation.instances == ("params",):
+                if lit.atom.relation.name in self.derived:
+                    return False
                 continue
             if not all(self.single(w, key, avoid | {v}) for w in others):
                 return False
