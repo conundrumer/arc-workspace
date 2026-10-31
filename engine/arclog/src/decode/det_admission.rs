@@ -5,6 +5,7 @@ use super::{Decoder, Refusal, State};
 use crate::eval::{Cancellation, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
 use crate::judge::determination::{descend_assignments, held_dets, written_dets, End, EvaluationInputs};
 use crate::session::TaskSession;
+use crate::stats::{self, Phase};
 use crate::stream::{Control, Token};
 use crate::types::GraphRelation;
 
@@ -28,12 +29,19 @@ impl Decoder<'_> {
         let compute = || self.det_liveness(&closed).map_err(Refusal::DetAdmission);
         let form = closed.program().value().forms.last().expect("a closed DET");
         match super::prefix_key::key(form, None) {
-            Some(key) => self.state.cached_det_prefix(key, compute),
+            Some(key) => {
+                let digest = stats::enabled().then(|| stats::digest(&key));
+                self.state.cached_det_prefix(key, || {
+                    stats::seen(Phase::DetLiveness, || digest.unwrap_or(0));
+                    compute()
+                })
+            }
             None => compute(),
         }
     }
 
     fn det_liveness(&self, closed: &State) -> Result<(), DetRefusal> {
+        let _timed = stats::span(Phase::DetLiveness);
         let program = self.finished_checked(&self.state, closed).as_ref()
             .map_err(|fault| DetRefusal::Fault(format!("{fault:?}")))?;
         let written = written_dets(program);
@@ -53,6 +61,7 @@ impl Decoder<'_> {
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[_]| {
             // Undefined domains remain visible in the canonical walker as missing
             // bindings. A partial leaf cannot certify that the written DETs live.
+            stats::units(Phase::DetLiveness, 1);
             if assigned.len() != dets.len() { return Ok(()); }
             for pick in &picks {
                 let mut found = false;

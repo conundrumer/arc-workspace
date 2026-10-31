@@ -8,6 +8,7 @@ use arclog::eval::pool::Pool;
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section};
 use arclog::registry::Registry;
+use arclog::stats::{self, Phase};
 use arclog::stream::Token;
 use arclog::task::Task;
 use arclog::terms::Example;
@@ -123,6 +124,7 @@ impl PyDecoder {
     /// The tokens that may come next: bit `id % 8` of byte `id // 8` is set
     /// where the token with that id is admissible.
     fn admissible<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        let _timed = stats::span(Phase::PyAdmissible);
         let decoder = self.decoder();
         PyBytes::new(py, &mask_bytes(&decoder.admissible(), decoder.vocabulary().len()))
     }
@@ -133,6 +135,7 @@ impl PyDecoder {
     /// `RULE` clause that it ends under the rule tests, or `None`. Raises
     /// `Refusal` for a token outside the mask, and leaves the decode as it was.
     fn step(&mut self, id: u32) -> PyResult<StepResult> {
+        let _timed = stats::span(Phase::PyStep);
         let token = self.token(id)?;
         let result = self.decoder_mut().step(token);
         self.step_result(result)
@@ -144,12 +147,14 @@ impl PyDecoder {
     /// it reads them from the mask. Raises `Refusal` for a token outside the
     /// mask, as `step` does.
     fn forced(&self, id: u32) -> PyResult<Vec<u32>> {
+        let _timed = stats::span(Phase::PyForced);
         let token = self.token(id)?;
         self.decoder().forced(&token).map(|forced| self.forced_ids(&forced)).map_err(|refusal| refusal_error(&refusal))
     }
 
     /// A second decode from the same state, which shares this one's caches.
     pub(crate) fn fork(&self) -> PyDecoder {
+        let _timed = stats::span(Phase::PyFork);
         PyDecoder { decoder: Some(self.decoder().fork()), data: Arc::clone(&self.data) }
     }
 

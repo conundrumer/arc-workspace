@@ -16,6 +16,7 @@ use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Ins
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
 use crate::resolver::{resolve_last, DependencyKind, ResolvedProgram, Side};
+use crate::stats::{self, Phase};
 use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
 
@@ -89,7 +90,38 @@ fn partial_path(form: &Form, at: &NodePath) -> NodePath {
 /// complete, and whose open node is at `open`. `clauses` holds the clauses
 /// of `program`'s solver, or of `program` alone for a synthesized program.
 pub fn check_prefix(program: &ResolvedProgram, clauses: &SolverClauses, registry: &Registry, open: Option<&NodePath>) -> Vec<(CheckId, PrefixResult)> {
-    with_prefix(program, clauses, registry, None, None, None, open, false, |prefix| checks().iter().map(|check| (check.id(), check.check_prefix(prefix))).collect())
+    with_prefix(program, clauses, registry, None, None, None, open, false, |prefix| checks().iter().map(|check| (check.id(), timed_check(*check, prefix))).collect())
+}
+
+/// `check` on `prefix`, timed as the phase of the check.
+fn timed_check(check: &dyn Check, prefix: &Prefix<'_>) -> PrefixResult {
+    let _timed = stats::span(check_phase(check.id()));
+    check.check_prefix(prefix)
+}
+
+/// The phase of the statistics that times the prefix check `id`.
+fn check_phase(id: CheckId) -> Phase {
+    match id {
+        CheckId::Grammar => Phase::PrefixCheckGrammar,
+        CheckId::Scope => Phase::PrefixCheckScope,
+        CheckId::SiteColumns => Phase::PrefixCheckSiteColumns,
+        CheckId::Types => Phase::PrefixCheckTypes,
+        CheckId::PoseRule => Phase::PrefixCheckPoseRule,
+        CheckId::MadeAndExportedLabels => Phase::PrefixCheckMadeAndExportedLabels,
+        CheckId::Safety => Phase::PrefixCheckSafety,
+        CheckId::UnfoldReads => Phase::PrefixCheckUnfoldReads,
+        CheckId::Cycles => Phase::PrefixCheckCycles,
+        CheckId::InstanceInputs => Phase::PrefixCheckInstanceInputs,
+        CheckId::PooledAndLiftedReads => Phase::PrefixCheckPooledAndLiftedReads,
+        CheckId::EqualityAndZero => Phase::PrefixCheckEqualityAndZero,
+        CheckId::ConstraintMarks => Phase::PrefixCheckConstraintMarks,
+        CheckId::OneClause => Phase::PrefixCheckOneClause,
+        CheckId::InstanceSites => Phase::PrefixCheckInstanceSites,
+        CheckId::Spelling => Phase::PrefixCheckSpelling,
+        CheckId::Picks => Phase::PrefixCheckPicks,
+        CheckId::RigidPartsAndProposers => Phase::PrefixCheckRigidPartsAndProposers,
+        CheckId::Out => Phase::PrefixCheckOut,
+    }
 }
 
 /// The checks that read no label type: in mask mode they run before the
@@ -428,12 +460,12 @@ impl PrefixChecks<'_> {
         let key = head.and_then(|head| {
             Some((head, self.shared_by(check.id(), matches!(prefix.partial, Form::Out(_)), open_atom(prefix).map(|atom| &atom.relation), class)?))
         });
-        let Some((head, key)) = key else { return check.check_prefix(prefix) };
+        let Some((head, key)) = key else { return timed_check(check, prefix) };
         let key = (check.id(), key);
         if let Some(found) = head.results.borrow().get(&key) {
             return found.clone();
         }
-        let result = check.check_prefix(prefix);
+        let result = timed_check(check, prefix);
         head.results.borrow_mut().insert(key, result.clone());
         result
     }

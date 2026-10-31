@@ -789,6 +789,15 @@ impl State {
         self.labels
     }
 
+    /// A digest for the statistics ([`crate::stats::seen`]) of the identity
+    /// of the finished forms, which the states that share their resolution
+    /// share, and of the source of the form in progress, or of the last
+    /// finished form where none is in progress.
+    pub fn stats_digest(&self) -> u64 {
+        let source = self.partial().and_then(|(program, open)| super::prefix_key::key(program.value().forms.last()?, open.as_ref()));
+        crate::stats::digest(&(Arc::as_ptr(&self.resolved) as usize, source))
+    }
+
     /// The program with the form in progress as its last form, and the path
     /// in that form of the innermost open node, or none where the last form
     /// is complete; or none where the form in progress shows no node yet.

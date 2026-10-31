@@ -107,6 +107,7 @@ pub mod relations;
 pub mod resolver;
 pub mod session;
 pub mod solver;
+pub mod stats;
 pub mod stream;
 pub mod task;
 pub mod terms;

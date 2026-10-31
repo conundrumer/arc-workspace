@@ -24,6 +24,7 @@ use crate::relations::{Relation, Row, RowSet};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::session::{same_rows, TaskSession};
 use crate::solver::CaseName;
+use crate::stats::{self, Phase};
 use crate::task::{JudgedTask, Task};
 use crate::types::GraphRelation;
 
@@ -367,6 +368,11 @@ pub(crate) fn descend_assignments(
     cap: u64,
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
 ) -> (Vec<ProgramRelation>, Result<(), End>) {
+    let _timed = stats::span(Phase::TableWalk);
+    stats::seen(Phase::TableWalk, || {
+        let program = &inputs.program.program;
+        stats::digest(&(program.stats_finished_id(), program.program.value().forms.len(), dets.iter().map(|det| &det.relation).collect::<Vec<_>>()))
+    });
     let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf };
     let end = walk.descend(0, &mut Vec::new());
     (walk.branching, end)
@@ -394,6 +400,7 @@ impl Walk<'_, '_> {
         let Some(det) = self.dets.get(at) else {
             let evaluation = self.inputs.at(&parameters);
             self.count += 1;
+            stats::units(Phase::TableWalk, 1);
             let cap = self.cap;
             if self.count > cap {
                 let program = &self.inputs.program.program;
@@ -408,6 +415,7 @@ impl Walk<'_, '_> {
             }
         }
         let evaluation = self.inputs.at(&parameters);
+        stats::units(Phase::TableWalk, 1);
         let domain = if det.pick {
             let mut values: Vec<Arc<Relation>> = Vec::new();
             let mut stop = None;

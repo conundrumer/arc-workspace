@@ -19,6 +19,7 @@ use crate::program::{Clause, ClauseKeyword, ProgramRelation, RelationName};
 use crate::registry::Registry;
 use crate::resolver::registry_columns::{is_domain, proposer_columns};
 use crate::relations::{Relation, Row, RowSet};
+use crate::stats::{self, Phase};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::types::GraphRelation;
 
@@ -133,6 +134,8 @@ impl Evaluation<'_> {
         if let Some((concept, node)) = self.in_concept(node) {
             return concept.domain(node);
         }
+        let _timed = stats::span(Phase::EvalDomain);
+        stats::seen(Phase::EvalDomain, || stats::digest(&(node.0, self.parameters.stats_digest())));
         let relation = GraphRelation { node, output: None };
         let types = self.program.types.columns(&relation).ok_or_else(|| RunFault {
             message: "the `DET`'s columns have no types".into(),
@@ -184,6 +187,9 @@ impl Evaluation<'_> {
             });
         }
         kept.dedup();
+        if stats::enabled() {
+            stats::units(Phase::EvalDomain, kept.iter().map(Vec::len).sum());
+        }
         let values = kept.into_iter().map(|rows| {
             let mut set = RowSet::empty(types.len() as u16);
             for row in rows {

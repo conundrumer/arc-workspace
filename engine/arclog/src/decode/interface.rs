@@ -344,6 +344,7 @@ impl<'a> Decoder<'a> {
     /// The sub-body of the clause in progress, or `None` where none is in
     /// progress.
     pub fn sub_body(&self) -> Option<Outcome<SubBody>> {
+        let _timed = crate::stats::span(crate::stats::Phase::TableSubBody);
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");

@@ -60,6 +60,7 @@ use arclog::resolver::{DependencyKind, GraphNodeIndex};
 use arclog::task::Task;
 use arclog::terms::{Constant, Example, Term};
 use arclog::types::{GraphRelation, ValueType};
+use arclog::stats::{self, Phase};
 use arclog::write::label_names;
 
 use crate::columns::{column_frames, fact_frames, names_of};
@@ -277,6 +278,7 @@ pub fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
 /// order and without the evidence tables, which a table's frames and extents
 /// read.
 pub fn step_tables(decoder: &Decoder<'_>, points: Points, earlier: &[&Table]) -> Vec<Table> {
+    let _timed = stats::span(Phase::TableStep);
     let Some(before) = decoder.before() else { return Vec::new() };
     if decoder.program().value().forms.len() > before.program().value().forms.len() {
         relation_tables(decoder, before, earlier)
@@ -308,6 +310,11 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Opti
     if Some(point) == body_point(decoder, before) || point == (Point::Body { conjuncts: 0, sites: 0 }) {
         return None;
     }
+    let _timed = stats::span(Phase::TableBody);
+    stats::seen(Phase::TableBody, || decoder.state().stats_digest());
+    if let Point::Body { conjuncts, .. } = point {
+        stats::units(Phase::TableBody, conjuncts as usize);
+    }
     let sub = decoder.sub_body()?;
     let form = NodePath::top(decoder.program().value().forms.len() as u32);
     let contents = sub.map(|sub| {
@@ -324,6 +331,7 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Opti
 /// for each that gets no table ([`gives_no_table`]); `before` is the state
 /// before the step, and `earlier` the tables of the steps before it.
 fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Vec<Table> {
+    let _timed = stats::span(Phase::TableRelation);
     let registry = decoder.registry();
     let program = decoder.program();
     let form = NodePath::top(program.value().forms.len() as u32 - 1);
@@ -362,7 +370,12 @@ fn made(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relati
 }
 
 fn made_with_context(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents, context: AssignmentContext<'_>) -> Contents {
-    let frames = column_frames(&names_of(decoder.registry(), seen), &contents);
+    let names = {
+        let _timed = stats::span(Phase::TableNames);
+        stats::units(Phase::TableNames, seen.len());
+        names_of(decoder.registry(), seen)
+    };
+    let frames = column_frames(&names, &contents);
     let contents = Contents { frames, assignment_layout:context.layout(), ..contents };
     let extents = table_extents_with_context(decoder, seen, checked, relation, &contents, context);
     Contents { extents, ..contents }
@@ -401,7 +414,11 @@ pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, f
     let names = names.unwrap_or_else(|| (0..types.len()).map(|index| format!("c{index}")).collect());
     let placements = column_placements(program, relation.node, relation.output.as_deref(), form, types.len(), registry);
     let top = form.0.first().expect("a table's form is a top-level form").0 as usize;
-    let named = label_names(&program.program.program, registry).swap_remove(top);
+    let named = {
+        let _timed = stats::span(Phase::TableLabelNames);
+        stats::units(Phase::TableLabelNames, program.program.program.value().forms.len());
+        label_names(&program.program.program, registry).swap_remove(top)
+    };
     let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone()).expect("every label of the form is named");
     let columns = names
         .into_iter()
@@ -472,6 +489,7 @@ fn projections_of(decoder: &Decoder<'_>, examples: &[ExampleRows], form: &NodePa
 /// as the one model. A grid holds at most 900 cells, so no entry passes a
 /// projection cap of 900 or more, and the function applies no cap.
 pub fn evidence_tables(task: &Task, registry: &Registry) -> Vec<Table> {
+    let _timed = stats::span(Phase::TableEvidence);
     EVIDENCE_FACTS.into_iter().map(|fact| evidence_table(task, registry, fact)).collect()
 }
 

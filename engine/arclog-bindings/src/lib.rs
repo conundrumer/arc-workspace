@@ -1,7 +1,8 @@
 //! The Python bindings of the arclog engine that the streams export runs:
 //! the task, the session, the decoder, the vocabulary, the replay progress,
-//! the streams of a corpus and the files of a solver's cases. [`register`]
-//! adds their names to the module that `arclog-py` builds.
+//! the streams of a corpus, the files of a solver's cases and the counters of
+//! the engine's phases. [`register`] adds their names to the module that
+//! `arclog-py` builds.
 //!
 //! Each class wraps a value of the core crate and restates no rule of it. A
 //! task session owns the data that its decoders borrow, so a `PyDecoder`
@@ -18,6 +19,7 @@
 mod case_files;
 mod corpus;
 mod decoder;
+mod engine_stats;
 mod errors;
 mod names;
 mod results;
@@ -74,6 +76,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.value("RecordedIdentityError", module.py().get_type::<errors::RecordedIdentityError>().into_any())?;
     names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
+    names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
     names.class::<PyReplayProgress>()?;
     names.function(wrap_pyfunction!(streams::corpus_streams, module)?)?;
     names.function(wrap_pyfunction!(study::empty_gold_json, module)?)?;

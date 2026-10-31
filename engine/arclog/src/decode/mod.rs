@@ -69,6 +69,7 @@ use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
 use crate::resolver::resolve_last;
 use crate::session::TaskSession;
+use crate::stats::{self, Phase};
 use crate::judge::run::Tested;
 use crate::stream::{Control, DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::Task;
@@ -368,6 +369,7 @@ impl<'a> Decoder<'a> {
     /// state's finished forms, which resolve, and whose clauses and types
     /// are made, once.
     fn with_checks<R>(&self, body: impl FnOnce(&PrefixChecks<'_>) -> R) -> R {
+        let _timed = stats::span(Phase::DecodeWithChecks);
         let registry = self.context.registry;
         let resolved = self.state.resolved(registry);
         self.state.with_clauses(registry, |clauses| PrefixChecks::with(&resolved, clauses, registry, body))
@@ -534,6 +536,7 @@ impl<'a> Decoder<'a> {
     /// The state after `token`, and the tokens the engine emits after it,
     /// where `token` is in the mask.
     fn next(&self, token: &Token, checks: &PrefixChecks<'_>, order: &RefCell<Order>) -> Result<(state::State, Vec<Token>), Refusal> {
+        let _timed = stats::span(Phase::DecodeNext);
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
             return Err(Refusal::Grammar("the decode has ended at its `OUT` form"));
@@ -544,6 +547,7 @@ impl<'a> Decoder<'a> {
         let earlier = || self.state.resolved(self.context.registry);
         let reads_example = |program: &Node<Program>, at: &NodePath, relation: &RelationRef| checks.reads_example_column(&earlier(), program, at, relation);
         let (state, forced, opened) = self.state.step(&self.context, token, &reads_example).map_err(Refusal::Grammar)?;
+        stats::seen(Phase::DecodeNext, || state.stats_digest());
         if forced.iter().any(|token| vocabulary.id(token).is_none()) {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
@@ -564,8 +568,10 @@ impl<'a> Decoder<'a> {
             }
         }
         if state.open_constraint().is_some() {
+            let _timed = stats::span(Phase::DecodeCompletes);
             self.completes(&state, checks, &reads_example, order)?;
         } else if state.head_site_completions(usize::MAX).is_some() {
+            let _timed = stats::span(Phase::DecodeCompletes);
             let steps = &mut { PROJECTION_STEPS };
             // A site of one argument first: the sets of labels it can hold are many, and one label passes where any does.
             self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
@@ -583,6 +589,7 @@ impl<'a> Decoder<'a> {
         open: Option<&NodePath>,
         checks: &PrefixChecks<'_>,
     ) -> Result<(), Refusal> {
+        let _timed = stats::span(Phase::DecodeStaticPrune);
         fn completed<'a>(program: &'a Node<Program>, open: Option<&NodePath>) -> Option<(&'a crate::program::Body, usize)> {
             let crate::program::Form::Clause(clause) = program.value().forms.last()? else { return None };
             let body = clause.value().body.value();
@@ -725,6 +732,7 @@ impl<'a> Decoder<'a> {
                 return Err(Refusal::Grammar("the completion search of a projection spent its budget"));
             }
             *steps -= 1;
+            stats::units(Phase::DecodeCompletes, 1);
             // The refused label still spends its search step, as the original
             // refuses it at `check_state` with no deeper search.
             if matches!(&token, Token::Label(label) if conflicts.contains(label)) {
@@ -747,6 +755,7 @@ impl<'a> Decoder<'a> {
 
     /// [`Decoder::completes`] of the state after `token` from `state`.
     fn completes_with(&self, state: &state::State, token: &Token, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
+        stats::units(Phase::DecodeCompletes, 1);
         match state.step(&self.context, token, reads_example) {
             Ok((next, _, _)) => self.completes(&next, checks, reads_example, order),
             Err(unexpected) => Err(Refusal::Grammar(unexpected)),

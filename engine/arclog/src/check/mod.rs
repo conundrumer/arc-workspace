@@ -49,6 +49,7 @@ use crate::program::{Form, LabelId, PortName};
 use crate::solver::{Case, FileOwner, Solver};
 use crate::registry::Registry;
 use crate::resolver::{DependencyGraph, ResolvedContent, ResolvedProgram, Signature};
+use crate::stats::{self, Phase};
 use crate::types::{ProgramTypes, ValueType};
 
 mod clauses;
@@ -601,6 +602,7 @@ fn check_program_with_open(
     program: Arc<ResolvedProgram>, clauses: &SolverClauses, registry: &Registry,
     cache: &mut CheckCache, files: Option<&CaseFiles<'_>>, open: Option<&NodePath>,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
+    let _timed = stats::span(Phase::CheckProgram);
     let mut refused = Vec::new();
     let cycles_key = CheckCacheKey { check: CheckId::Cycles, canonical_form: graph_form(&program), signatures: Box::new([]) };
     if let CheckResult::Refuse(refusals) = cached(cache, cycles_key, || check_cycles(&program.graph, &program)) {
@@ -629,6 +631,7 @@ fn check_program_with_open(
             TopLevelForm { path, form, order, canonical, signatures: signatures.into(), untyped }
         })
         .collect();
+    stats::units(Phase::CheckProgram, forms.len());
     let mut refused_by_form = vec![Vec::new(); forms.len()];
     let form_types: Vec<Arc<types::ScopeTypes>> = {
         let cases = inference::CaseInferences::new(clauses, registry);
@@ -648,6 +651,7 @@ fn check_program_with_open(
                     Some(types_key) => match (cache.get(&types_key).cloned(), cache.types(&types_key)) {
                         (Some(result), Some(types)) => (result, types),
                         _ => {
+                            stats::tick(Phase::CheckCacheMiss);
                             let (result, types) = infer();
                             cache.insert(types_key.clone(), result.clone());
                             cache.insert_types(types_key, Arc::clone(&types));
@@ -750,6 +754,7 @@ fn cached(cache: &mut CheckCache, key: CheckCacheKey, run: impl FnOnce() -> Chec
     if let Some(result) = cache.get(&key) {
         return result.clone();
     }
+    stats::tick(Phase::CheckCacheMiss);
     let result = run();
     cache.insert(key, result.clone());
     result

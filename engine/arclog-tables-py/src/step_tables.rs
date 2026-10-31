@@ -58,6 +58,7 @@ use crate::case_tables::{Base, PyCaseTables, Step};
 #[pyfunction]
 #[pyo3(signature = (decoder, task, case, bodies=false, before=None))]
 pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool, before: Option<PyRef<'_, PyCaseTables>>) -> PyResult<PyCaseTables> {
+    let _timed = arclog::stats::span(arclog::stats::Phase::PyStepTables);
     let points = if bodies { Points::All } else { Points::Relations };
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
@@ -82,6 +83,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         (columns.with_copies(&engine.take_copy_violations()), stream)
     });
     let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });
+    let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
+    arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
     Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index }))
 }
 

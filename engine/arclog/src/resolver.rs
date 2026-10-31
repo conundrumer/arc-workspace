@@ -296,6 +296,13 @@ impl ResolvedProgram {
         resolved
     }
 
+    /// An identity for the statistics ([`crate::stats`]) of the forms this
+    /// resolution layers over: the resolution that [`resolve_last`] took as
+    /// `earlier`, or this one where it is no layered resolution.
+    pub fn stats_finished_id(&self) -> usize {
+        self.names.earlier.as_deref().map_or(self as *const ResolvedProgram, |earlier| earlier as *const ResolvedProgram) as usize
+    }
+
     /// Whether `path` stands in one of the forms before the last, where
     /// this resolution is [`resolve_last`]'s.
     pub(crate) fn in_earlier_forms(&self, path: &NodePath) -> bool {
@@ -667,6 +674,8 @@ pub fn resolve(
 /// declares, or `earlier` is itself a layered resolution or was resolved with a
 /// concept program, the result is [`resolve`]'s on `program`.
 pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+    let _timed = crate::stats::span(crate::stats::Phase::ResolveLast);
+    crate::stats::units(crate::stats::Phase::ResolveLast, earlier.graph.nodes.len());
     build::resolve_last(earlier, program, registry)
 }
 

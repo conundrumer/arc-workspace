@@ -757,6 +757,8 @@ impl<'a> Inference<'a> {
     }
 
     fn infer_new(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
+        // A layered inference infers only the forms its earlier layer does not hold: the form in progress.
+        let _timed = crate::stats::span(if self.earlier.is_some() { crate::stats::Phase::InferFormOpen } else { crate::stats::Phase::InferFormFinished });
         if self.fast {
             if let Some(inferred) = self.flat_form(form, path) { return inferred; }
         }

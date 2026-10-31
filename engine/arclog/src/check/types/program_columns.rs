@@ -41,6 +41,8 @@ pub fn program_types(
     _clauses: &SolverClauses,
     forms: &[(NodePath, Arc<ScopeTypes>, CanonicalOrder)],
 ) -> ProgramTypes {
+    let _timed = crate::stats::span(crate::stats::Phase::CheckProgramTypes);
+    crate::stats::units(crate::stats::Phase::CheckProgramTypes, program.graph.nodes.len());
     let mut types = ProgramTypes::default();
     let own_idents = own_idents(program, registry);
     let mut fixed: StableHashMap<(NodePath, Arc<[OutputStep]>), &[ValueType]> = StableHashMap::default();

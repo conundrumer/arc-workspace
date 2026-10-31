@@ -575,6 +575,7 @@ pub fn step_case_columns(before: Option<&StreamTables>, evidence: &[Table], tabl
 /// Step packing under the current operation's native limits.
 pub fn step_case_columns_in(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:usize)->(CaseColumns,StreamTables) {
     let mut columns = CaseColumns::default();
+    let _timed = arclog::stats::span(arclog::stats::Phase::TablePack);
     let mut runs = Runs::default();
     let mut names = Vec::new();
     let first = match before {
