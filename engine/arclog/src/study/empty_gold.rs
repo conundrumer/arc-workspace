@@ -77,7 +77,7 @@ pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Durati
     let vocabulary = Vocabulary::new(registry, &program_settings);
     let session = corpus_session();
     let evaluator = Evaluator { task: &task, session: &session, registry, constructions, settings: DecodeSettings { deadline, ..program_settings } };
-    let streams = match solver_streams(corpus, id, WantedCases::All, &vocabulary, false) {
+    let streams = match solver_streams(corpus, id, WantedCases::Cases, &vocabulary, false) {
         Ok(streams) => streams,
         Err(fault) => {
             return Ok(json!({"schema": SCHEMA, "task": id, "selection": "original", "reason": format!("the solver gives no streams: {fault}"),
