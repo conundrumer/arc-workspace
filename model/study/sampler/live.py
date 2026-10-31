@@ -23,7 +23,7 @@ counts them over random dependency orders of gold). A RULE's atoms and a DET's c
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
 alone, and other labels stay in their branch. A branch may take an OR as its last atom, from that place's counts (one level deep); the
-labels that OR exports are the branch's, and its other labels stay in it. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
+labels that OR exports are the branch's, and its other labels stay in it. The first operand of `=` may be a fresh label (EQ_FRESH). A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
@@ -91,6 +91,7 @@ BRANCHES = 'RULE', 'key', 'port'  # the places of a body that may hold an OR, ea
 BIND_QUIT = 0.8  # the chance that a later branch with an unbound exported label fails, at each atom past bind_atoms
 KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of 907 gold ports of keys of two or more labels read them all
 EXAMPLE_READ = dict(DET=0.2, INIT=0.03)  # the factor on a declared relation's Example column in a body of the kind: gold's atoms on declared relations read it in 32% of DETs' and 3.9% of INITs'; draws read it in 41% and 8% at these factors
+EQ_FRESH = 0.14  # the chance that the first operand of `=` is a fresh label: 99 of 685 gold `=` atoms
 FIELD_AGAIN = 0.01  # the factor on a field that a record site repeats: 15 of 1570 gold record sites have one
 HEAD_FITS = dict(Position={'Position', 'Box'}, Offset={'Offset', 'Box'}, Axis={'Axis', 'Axis4'}, DiagAxis={'DiagAxis', 'Axis4'}, Dir={'Dir', 'Dir8'}, DiagDir={'DiagDir', 'Dir8'},
                  Point={'Position', 'Offset', 'Box'})  # the label types that a head column of a type takes, where a family's other members do not: the engine's lattice has no value in both of two siblings
@@ -368,6 +369,9 @@ class LiveDrawer(S.Drawer):
         ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
         if n.phase == 'fcol':
             return [w * FIELD_AGAIN if self.fr.colpos.get(o) == n.need else w for o, w in zip(os, ws)]
+        if n.phase == 'op' and M.STAR in os:  # S's weights give a fresh label no weight; here it has gold's share of the first operand of `=`
+            rest = sum(w for o, w in zip(os, ws) if o != M.STAR)
+            return [rest * EQ_FRESH / (1 - EQ_FRESH) if o == M.STAR else w for o, w in zip(os, ws)]
         if n.phase == 'cols':
             return [w * self.example_read if self.example_column(n, o) else w for o, w in zip(os, ws)]
         return ws
@@ -394,11 +398,31 @@ class LiveFrontier(S.FastFrontier):
 
     hidden = frozenset()  # the label tokens of the form that this body cannot read
 
+    def child(self, n, tok):
+        """S's, with a fresh label as the first operand of `=`: it is one more label, and the decoder gives its token."""
+        if n.phase != 'op' or tok != M.STAR:
+            return super().child(n, tok)
+        if tok not in n.kids:
+            f = n.dec.fork()
+            try:
+                r = f.step(tok)
+            except arclog.Refusal:
+                n.kids[tok] = None
+                return None
+            self.created += 1
+            n.kids[tok] = S.FNode(n.toks + (tok,), f, 'op', n.last, n.need - 1, '%s *%s' % (n.text, self.V.name(r[0][0])), n.neg, n.labs + 1, n.rtok)
+        return n.kids[tok]
+
     def candidates(self, n):
         c = super().candidates(n)
         if n.phase in ('val', 'fval', 'op'):
             drop = self.hidden | {M.STAR} if n.neg else self.hidden
             c = [t for t in c if t not in drop and not (n.phase == 'op' and n.need == 1 and t == n.toks[-1])]  # a comparison of an operand with itself says nothing
+            if n.phase == 'op' and not n.neg:
+                if n.need == 2 and n.toks[-1] == M.CMP[0]:  # `=` may make a label: its first operand is a fresh one
+                    c = [M.STAR] + c
+                elif n.toks[-1] == M.STAR:  # and its second operand is not that label
+                    c = [t for t in c if t != self.label_tok.get(n.labs - 1)]
         elif n.phase == 'root' and M.NOT in c and n.labs == len(self.hidden):  # no label for a NOT atom to join
             c.remove(M.NOT)
         elif n.phase == 'fcol':  # a key's record may hold one column name twice, and no gold site repeats one twice
@@ -919,6 +943,10 @@ class Run:
         decoder judges its labels at the head. A label of a declared relation's Example column has no type here."""
         out = {}
         for atom in atoms:
+            made = re.match(r'\(= \*(L\d+) ', atom)
+            if made:  # `=` makes a label of the type of its other operand, which the decoder judges at the head
+                out[made[1]] = ANY_TYPE
+                continue
             m = re.match(r'\((?:NOT \()?(\S+)', atom)
             rtok = self.V.id(m[1]) if m else None
             if rtok is not None:
