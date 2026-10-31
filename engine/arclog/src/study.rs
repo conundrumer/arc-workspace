@@ -199,7 +199,12 @@ impl StudyProgram {
         });
         if !ambiguous { return Ok(()); }
         let read = Self::from_sexp_cached(&self.sexp(registry), registry, cache)?;
-        let before = self.decode_stream(registry, settings)?;
+        // The text writes the sites of a read in slot order, which the AST
+        // need not hold, so the stream of the AST is not the one to compare.
+        // The same writer's text with generated names, which no two labels
+        // of a scope share, gives the bindings of the AST.
+        let plain = crate::write::write_synthesized_named(self.program(), registry, None);
+        let before = Self::from_sexp_cached(&plain, registry, cache)?.decode_stream(registry, settings)?;
         let after = read.decode_source(registry, settings)?.decode_stream(registry, settings)?;
         if before.ids != after.ids || before.model != after.model {
             return Err("gold display names would change native bindings after the edit".into());

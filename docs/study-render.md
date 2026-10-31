@@ -36,6 +36,9 @@ they are unrelated to stream-token positions. `sexp` is display text from
 the engine writer. Bodies have a display list wrapper. Source names are
 preserved; decoded names use the engine's synthesized spelling. Presentation
 wrappers for named record fields never create fictitious source paths.
+The text of a decoded atom that reads a derived relation lists its sites in
+ascending slot order, which can differ from the order of its AST sites; each
+site node keeps its AST path and its own `sexp`.
 
 `data` contains the original AST values: atom relation references and sites,
 comparison operator/operands, declaration names/columns, INIT component and

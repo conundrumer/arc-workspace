@@ -72,6 +72,19 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// `:a`, the label at `:key` is written `A` and the label at
 /// `:a` is written `A2`.
 ///
+/// The sites of a read of a derived relation (`&rn`), each on a column named
+/// by its slot, are written in ascending order of the relation's slots as the
+/// text gives them: the columns of a clause are the labels its written body
+/// makes, in the order of the text, so a body that reads a relation with its
+/// sites reordered can move its own columns, and the reads of that clause
+/// follow the moved slots. A read stays in the order of the program where the
+/// new order would change the order of its `^` labels, which is the order of
+/// key columns, and where a join of the read would then stand before the site
+/// that makes its label.
+/// The labels are named in the order the text makes them, so the text reads
+/// back to a program that writes the same text. Reads of the outputs of an
+/// instance or of a `RIGID_DET`, and of lib relations, keep their order.
+///
 /// Two labels take one name only where [`Node::apply`](crate::program::Node::apply)
 /// gives them one, so the file reads back to the same labels:
 /// `(OR ((r (:key *X))) ((s (:key *X))))` is written with `X` at each site,
@@ -97,7 +110,7 @@ pub(crate) fn write_synthesized_named(program: &Node<Program>, registry: &Regist
 
 pub(crate) fn label_names_named(program: &Node<Program>, registry: &Registry,
     preferred: Option<&LabelNames>) -> LabelNames {
-    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names)| names).collect()
+    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names, _)| names).collect()
 }
 
 /// The name of each label of each form of `program`, in form order, as
@@ -119,11 +132,12 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
         Some(layout) => program.value().forms.iter().enumerate().map(|(i,f)| {
             let names = layout.node(crate::layout::SourceFile::Arclog,&NodePath::top(i as u32))
                 .map(|n|n.label_names.to_vec()).unwrap_or_default();
-            (f.clone(),names)
+            (f.clone(),names,None)
         }).collect(),
-        None => synthesized::named_forms(program,registry,preferred),
+        None => synthesized::named_forms(program,registry,preferred).into_iter()
+            .map(|(form,names,slots)| (form,names,Some(slots))).collect::<Vec<_>>(),
     };
-    fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath,
+    fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath, slots: Option<&synthesized::Slots>,
         names: &[(LabelId,Box<str>)], out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
         // NamedLabel at a decoded record field is printed as (:field LABEL).
         // Its source node is still LABEL, at the original argument path.
@@ -137,14 +151,18 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
         if original_children.len()!=display_children.len() {
             return Err(format!("display child count mismatch at {at:?}"));
         }
-        for (i,(original,display)) in original_children.into_iter().zip(display_children).enumerate() {
-            walk(original,display,&at.child(i as u32),names,out)?;
+        // The sites of a read that the writer put in slot order: the site at
+        // position `k` of the display is the original's site `order[k]`.
+        let order = original.atom().zip(slots).and_then(|(atom, slots)| synthesized::read_order(atom, slots));
+        for (k,display) in display_children.into_iter().enumerate() {
+            let i = order.as_ref().map_or(k, |order| order[k]);
+            walk(original_children[i],display,&at.child(i as u32),slots,names,out)?;
         }
         Ok(())
     }
     let mut out=std::collections::BTreeMap::new();
-    for (i,(original,(display,names))) in program.value().forms.iter().zip(named).enumerate() {
-        walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),&names,&mut out)?;
+    for (i,(original,(display,names,slots))) in program.value().forms.iter().zip(named).enumerate() {
+        walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),slots.as_ref(),&names,&mut out)?;
     }
     out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized_named(program,registry,preferred)});
     Ok(out)
@@ -207,15 +225,19 @@ mod synthesized {
         program: &Node<Program>,
         registry: &Registry,
         preferred: Option<&super::LabelNames>,
-    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>)> {
+    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>, Slots)> {
         let mut synth = Synthesizer {
             registry,
             columns: StableHashMap::default(),
             records: StableHashMap::default(),
+            slots: Slots::default(),
         };
         let mut named = Vec::new();
         for (index, form) in program.value().forms.iter().enumerate() {
-            let generated = synth.label_names(form);
+            let slots = synth.slots.clone();
+            let (form, ranks) = synth.in_slot_order(form);
+            let form = &form;
+            let generated = synth.label_names(form, &ranks);
             // Existing labels keep gold's spellings, including names no longer
             // used after a deletion. Only genuinely new IDs allocate a name.
             // Keep the canonical site's field spelling: the ordinary writer
@@ -233,7 +255,7 @@ mod synthesized {
                 }
             };
             let written = synth.form(form, &Names(&names));
-            named.push((written, names));
+            named.push((written, names, slots));
         }
         named
     }
@@ -241,7 +263,7 @@ mod synthesized {
     pub(super) fn write(program: &Node<Program>, registry: &Registry, preferred: Option<&super::LabelNames>) -> String {
         let mut forms = Vec::new();
         let mut layout = Layout::default();
-        for (index, (form, names)) in named_forms(program, registry, preferred).into_iter().enumerate() {
+        for (index, (form, names, _)) in named_forms(program, registry, preferred).into_iter().enumerate() {
             let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
             let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
             layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
@@ -251,6 +273,147 @@ mod synthesized {
             forms.push(form);
         }
         super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
+    }
+
+    /// The slot each column of a derived relation takes in the text: the
+    /// entry at an old slot is the new slot. A relation with no entry, or a
+    /// slot past its entry, keeps its slots.
+    pub(crate) type Slots = StableHashMap<RelationName, Vec<u32>>;
+
+    /// The place of a label in the order the text makes the labels of its
+    /// form, where that is not the order of the ids.
+    type Ranks = StableHashMap<LabelId, u32>;
+
+    /// The labels that the site makes (`*X`, `^X`) and the labels it joins,
+    /// the sites of its fields included.
+    fn site_labels(site: &Site, made: &mut Vec<LabelId>, joined: &mut Vec<LabelId>) {
+        for arg in site.value.args.iter() {
+            match arg {
+                SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => match label {
+                    LabelUse::Fresh(id) | LabelUse::Key(id) => made.push(*id),
+                    LabelUse::Join(id) => joined.push(*id),
+                    LabelUse::Zero => {}
+                },
+                SiteArg::Field(field) => site_labels(field, made, joined),
+            }
+        }
+    }
+
+    /// The `^` labels that the site, or a field site of it, makes.
+    fn site_keys(site: &Site, keys: &mut Vec<LabelId>) {
+        for arg in site.value.args.iter() {
+            match arg {
+                SiteArg::Label(LabelUse::Key(id)) | SiteArg::NamedLabel { label: LabelUse::Key(id), .. } => keys.push(*id),
+                SiteArg::Field(field) => site_keys(field, keys),
+                _ => {}
+            }
+        }
+    }
+
+    /// The order in which the text writes the sites of `atom`, where that is
+    /// not the order of the program: the position `k` of the text holds the
+    /// atom's site `order[k]`. A read of a derived relation, with each site
+    /// on a column named by its slot, is written in ascending order of the
+    /// slots the text gives (`slots`), sites on one slot keeping their
+    /// order. A read stays as it is where the order would change the order of
+    /// its `^` labels, which is the order of the key columns of a key body
+    /// or an `OUT` form, and where a join of the atom would otherwise stand
+    /// before the site of the atom that makes its label, since the stream
+    /// names a label after it makes it.
+    pub(crate) fn read_order(atom: &Atom, slots: &Slots) -> Option<Vec<usize>> {
+        let RelationRef::Declared(name) = &atom.relation else { return None };
+        let keys: Option<Vec<u32>> = atom.sites.iter().map(|site| match &site.column {
+            ColumnName::Slot(slot) => Some(slots.get(name).and_then(|new| new.get(*slot as usize)).copied().unwrap_or(*slot)),
+            ColumnName::Written(_) => None,
+        }).collect();
+        let keys = keys?;
+        let mut order: Vec<usize> = (0..keys.len()).collect();
+        order.sort_by_key(|&index| keys[index]);
+        if order.iter().enumerate().all(|(position, &index)| position == index) {
+            return None;
+        }
+        let key_order = |indices: &mut dyn Iterator<Item = usize>| {
+            let mut keys = Vec::new();
+            for index in indices {
+                site_keys(&atom.sites[index], &mut keys);
+            }
+            keys
+        };
+        if key_order(&mut (0..order.len())) != key_order(&mut order.iter().copied()) {
+            return None;
+        }
+        let labels: Vec<(Vec<LabelId>, Vec<LabelId>)> = atom.sites.iter().map(|site| {
+            let (mut made, mut joined) = (Vec::new(), Vec::new());
+            site_labels(site, &mut made, &mut joined);
+            (made, joined)
+        }).collect();
+        let mut seen: Vec<LabelId> = Vec::new();
+        for &index in &order {
+            let (made, joined) = &labels[index];
+            let early = joined.iter().any(|id| !seen.contains(id) && labels.iter().any(|(made, _)| made.contains(id)));
+            if early {
+                return None;
+            }
+            seen.extend(made);
+        }
+        Some(order)
+    }
+
+    /// `atom` with its sites in the order `read_order` gives. `ranks` takes
+    /// the places of the labels the atom makes: the ids of those labels, in
+    /// ascending order, go to them in the order of the new sites.
+    fn in_order(atom: &Node<Atom>, slots: &Slots, ranks: &mut Ranks) -> Node<Atom> {
+        let Some(order) = read_order(atom.value(), slots) else { return atom.clone() };
+        let sites = &atom.value().sites;
+        let made = |indices: &[usize]| {
+            let mut made = Vec::new();
+            for &index in indices {
+                site_labels(&sites[index], &mut made, &mut Vec::new());
+            }
+            made
+        };
+        let program_order: Vec<usize> = (0..order.len()).collect();
+        let mut places: Vec<u32> = made(&program_order).iter().map(|label| ranks.get(label).copied().unwrap_or(label.0)).collect();
+        places.sort_unstable();
+        for (label, place) in made(&order).into_iter().zip(places) {
+            ranks.insert(label, place);
+        }
+        Node::new(Atom { relation: atom.value().relation.clone(), sites: order.iter().map(|&index| sites[index].clone()).collect() })
+    }
+
+    fn body_in_order(body: &Node<Body>, slots: &Slots, ranks: &mut Ranks) -> Node<Body> {
+        Node::new(Body { conjuncts: body.value().conjuncts.iter().map(|conjunct| conjunct_in_order(conjunct, slots, ranks)).collect() })
+    }
+
+    fn conjunct_in_order(conjunct: &Conjunct, slots: &Slots, ranks: &mut Ranks) -> Conjunct {
+        match conjunct {
+            Conjunct::Atom(atom) => Conjunct::Atom(in_order(atom, slots, ranks)),
+            Conjunct::Not(Negated::Atom(atom)) => Conjunct::Not(Negated::Atom(in_order(atom, slots, ranks))),
+            Conjunct::Not(Negated::Form(inner)) => Conjunct::Not(Negated::Form(Arc::new(conjunct_in_order(inner, slots, ranks)))),
+            Conjunct::Constraint(_) => conjunct.clone(),
+            Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(|branch| body_in_order(branch, slots, ranks)).collect()),
+            Conjunct::If { test, then, otherwise } => Conjunct::If {
+                test: body_in_order(test, slots, ranks),
+                then: body_in_order(then, slots, ranks),
+                otherwise: body_in_order(otherwise, slots, ranks),
+            },
+            Conjunct::All { domain, body } => Conjunct::All { domain: body_in_order(domain, slots, ranks), body: body_in_order(body, slots, ranks) },
+        }
+    }
+
+    fn key_in_order(key: &KeyBody, slots: &Slots, ranks: &mut Ranks) -> KeyBody {
+        KeyBody { body: body_in_order(&key.body, slots, ranks), columns: key.columns.clone() }
+    }
+
+    fn input_in_order(input: &Node<InstanceInput>, slots: &Slots, ranks: &mut Ranks) -> Node<InstanceInput> {
+        let input = input.value();
+        Node::new(InstanceInput { name: input.name.clone(), head: input.head.clone(), body: body_in_order(&input.body, slots, ranks) })
+    }
+
+    /// The slot of each of `old`, the columns of a relation, among `new`,
+    /// the columns of the relation as the text makes them.
+    fn moved(old: &[LabelId], new: &[LabelId]) -> Vec<u32> {
+        old.iter().enumerate().map(|(slot, label)| new.iter().position(|own| own == label).unwrap_or(slot) as u32).collect()
     }
 
     struct Names<'n>(&'n [(LabelId, Box<str>)]);
@@ -269,6 +432,9 @@ mod synthesized {
         /// Record field names belong to the parameter's binding, not to the
         /// label a later read happens to use for the field's value.
         records: StableHashMap<(ProgramRelation, ColumnName), Vec<(ColumnName, ColumnName)>>,
+        /// The slot each column of a relation a form before the current one
+        /// declares takes in the text, by the column's slot in the program.
+        slots: Slots,
     }
 
     fn slot_text(slot: u32) -> String {
@@ -346,7 +512,7 @@ mod synthesized {
         /// other labels in the order of their ids. A label of an `OUT` form
         /// takes the name of the column of its site whatever other label
         /// takes it, since the form writes each such site as `^<column>`.
-        fn label_names(&self, form: &Form) -> Vec<(LabelId, Box<str>)> {
+        fn label_names(&self, form: &Form, ranks: &Ranks) -> Vec<(LabelId, Box<str>)> {
             let mut uses = Uses::default();
             self.form_uses(form, &mut uses);
             if matches!(form, Form::Out(_)) {
@@ -356,7 +522,7 @@ mod synthesized {
             let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
             let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
             names.dedup_by_key(|(id, _)| *id);
-            uses.made.sort_by_key(|(label, _)| label.0);
+            uses.made.sort_by_key(|(label, _)| ranks.get(label).copied().unwrap_or(label.0));
             for (label, base) in &uses.made {
                 if names.iter().any(|(id, _)| id == label) {
                     continue;
@@ -365,6 +531,65 @@ mod synthesized {
                 names.push((*label, label_name(base, taken).into()));
             }
             names
+        }
+
+        /// `form` with the sites of each read of a derived relation in the
+        /// order `read_order` gives, and the place of each label the change
+        /// moves. The slots that the form's own relation takes in the text
+        /// follow from the order of its labels, and the reads of a later
+        /// form take them.
+        fn in_slot_order(&mut self, form: &Form) -> (Form, Ranks) {
+            let mut ranks = Ranks::default();
+            let slots = &self.slots;
+            let (form, declared) = match form {
+                Form::Clause(clause) => {
+                    let clause = clause.value();
+                    let body = body_in_order(&clause.body, slots, &mut ranks);
+                    let declared = match &clause.derives {
+                        ProgramRelation::Declared(name) => {
+                            let old: Vec<LabelId> = clause.columns.iter().map(|column| column.label).collect();
+                            Some((name.clone(), moved(&old, &crate::read::columns::made_labels(body.value()))))
+                        }
+                        ProgramRelation::Output(_) => None,
+                    };
+                    (Form::Clause(Node::new(Clause { body, ..clause.clone() })), declared)
+                }
+                Form::Instance(instance) => {
+                    let instance = instance.value();
+                    let key = instance.key.as_ref().map(|key| {
+                        let key = key.value();
+                        Node::new(KeyClause {
+                            key: key_in_order(&key.key, slots, &mut ranks),
+                            inputs: key.inputs.iter().map(|input| input_in_order(input, slots, &mut ranks)).collect(),
+                        })
+                    });
+                    let inputs = instance.inputs.iter().map(|input| input_in_order(input, slots, &mut ranks)).collect();
+                    (Form::Instance(Node::new(Instance { key, inputs, ..instance.clone() })), None)
+                }
+                Form::Choose(choose) => {
+                    let choose = choose.value();
+                    let rows = choose.rows.as_ref().map(|rows| key_in_order(rows, slots, &mut ranks));
+                    let from = body_in_order(&choose.from, slots, &mut ranks);
+                    let never = choose.never.iter().map(|never| body_in_order(never, slots, &mut ranks)).collect();
+                    let old: Vec<LabelId> = choose.rows.iter().flat_map(|rows| rows.columns.iter()).chain(choose.candidate_columns.iter()).map(|column| column.label).collect();
+                    let mut new = rows.as_ref().map_or_else(Vec::new, |rows| crate::read::columns::key_labels(rows.body.value()));
+                    new.extend(crate::read::columns::made_labels(from.value()));
+                    let declared = Some((choose.name.clone(), moved(&old, &new)));
+                    (Form::Choose(Node::new(Choose { rows, from, never, ..choose.clone() })), declared)
+                }
+                Form::RigidDet(rigid) => {
+                    let rigid = rigid.value();
+                    let key = rigid.key.as_ref().map(|key| key_in_order(key, slots, &mut ranks));
+                    let instance = rigid.instance.as_ref().map(|instance| key_in_order(instance, slots, &mut ranks));
+                    (Form::RigidDet(Node::new(RigidDet { key, instance, ..rigid.clone() })), None)
+                }
+                Form::Out(out) => (Form::Out(Node::new(Out { key: key_in_order(&out.value().key, slots, &mut ranks) })), None),
+                other => (other.clone(), None),
+            };
+            if let Some((name, new)) = declared {
+                self.slots.insert(name, new);
+            }
+            (form, ranks)
         }
 
         fn form_uses(&self, form: &Form, uses: &mut Uses) {
