@@ -561,8 +561,6 @@ class Rewriter:
                 return ([(key_s, k)] if keyed else []) + [(slot_s, sl), (item_s, x)]
             m1, m2, s_ = self.unify_apart(pairs(*ka), pairs(*kb), taken)
             return at(fill(m1, pat_s)), at(fill(m2, pat_s)), s_
-        self.key_plain = not keyed or (self.record(ktype) is not None and self.plain(self.record(ktype))) \
-            or not isinstance(self.types.get(((), ktype)), (AdtType, RecordType))
         reads = (comp, keyed, pat_s, cvars, spread, item_at)
         return new_rels, new_units, pick, reads
 
@@ -753,7 +751,7 @@ class Rewriter:
                     for o in lits:
                         if o is not l and isinstance(o, AtomLiteral) and not o.negated:
                             term_vars(o.atom.args, others)
-                    if not keyed or not self.key_plain or term_vars(a[0], set()) <= others:
+                    if not keyed or term_vars(a[0], set()) <= others:
                         continue
                     out.append(picked(a[0], Wildcard(), Wildcard()))
                 elif rn == GENERATORS[comp].relation:
