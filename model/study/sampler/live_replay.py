@@ -115,32 +115,39 @@ class Walk:
             d.step(sep)
             if sep == M.END:
                 break
-        if len(branches) not in [x for x, _ in run.orc['shapes']]:
+        if len(branches) not in [x for x, _ in dr.orc['shapes']]:
             self.hard['or:parts'] += 1
         made = [set(re.findall(r'\*L(\d+)', ' '.join(b))) for b in branches]
         read = [set(re.findall(r'(?<![*\w])L(\d+)', ' '.join(b))) for b in branches]
         exported = {x for x in made[0] if all(x in m | r for m, r in zip(made[1:], read[1:]))}
-        if made[0] - read[0] - exported:
+        if made[0] - read[0] - exported and dr.place != 'key':
             self.hard['or:first branch keeps an unread label'] += 1
-        if any(m - r for m, r in zip(made[1:], read[1:])):
+        if any(m - r for m, r in zip(made[1:], read[1:])) and dr.place != 'key':
             self.soft['or:later branch leaves a label unread'] += 1
-        return d, {int(x) for m in made for x in m} - {int(x) for x in exported}
+        return d, {int(x) for m in made for x in m} - {int(x) for x in exported}, [a for b in branches for a in b]
 
     def body(self, pg, dr, kind, cur, nlab, keys=()):
         """The body at self.i through its END: gates as in Run.body. (decoder before the END, atom texts, types in scope)."""
         run, t, top = self.run, self.t, run_top(self.run, kind)
         text, scope, k, pfx, labs, tb = [], [], 0, (), nlab, None
         dr.want = set(keys)
+        dr.drawn = []
         while t[self.i] != M.END:
             if t[self.i] in HEADS:
                 raise Refused('%s in a %s' % (HEADS[t[self.i]], kind))
             k += 1
             if t[self.i] == M.OR:
-                if kind not in live.BRANCHES:
-                    raise Refused('OR in a %s' % ('port' if kind == 'INIT' else kind))
-                cur, hide = self.compound(dr, cur, k, labs, text, pfx, scope)
+                if dr.orc is None:
+                    raise Refused('OR in a %s' % kind)
+                cur, hide, atoms = self.compound(dr, cur, k, labs, text, pfx, scope)
                 labs = nlab + sum(x in (M.STAR, M.CARET) for x in self.t[self.start:self.i])
                 dr.fr.hidden = dr.fr.hidden | frozenset(run.ff0.label_tok[i] for i in hide if i in run.ff0.label_tok)
+                dr.drawn += atoms
+                if kind == 'INIT':
+                    seen = run.label_types(dr, atoms)
+                    scope = list(scope) + [x for y, x in seen.items() if int(y[1:]) not in hide]
+                    text.append('(OR)')
+                    continue
                 tb = run.table(dr.fr, cur, pg)[0]
                 sm = S.summary(tb)
                 if sm is not None and sm['empty_inputs']:
@@ -156,6 +163,7 @@ class Walk:
             pfx += tuple(t[self.i:end])
             self.i, cur = end, d
             text.append(a or '')
+            dr.drawn.append(a or '')
             if kind != 'INIT':
                 fr = dr.frontier(cur, labs)
                 tb = run.table(fr, cur, pg)[0]
@@ -211,8 +219,8 @@ class Walk:
             self.i += 1
         else:  # the key
             self.start = self.i
-            dr = run.drawer(pg, 'INIT', f)
-            cur, text, _ = self.body(pg, dr, 'INIT', f, 0)
+            dr = run.drawer(pg, 'INIT', f, 'key')
+            self.body(pg, dr, 'INIT', f, 0)
             carets = [x for x in t[self.start:self.i] if x in (M.STAR, M.CARET)]
             where = [i for i, x in enumerate(carets) if x == M.CARET]
             if len(where) != 1:
@@ -224,7 +232,7 @@ class Walk:
             self.i += 1
             f, nlab = g, len(carets)
             lab = run.ff0.label_tok[where[0]]
-            keys = {lab: run.label_types(dr, text).get('L%d' % where[0])}
+            keys = {lab: run.label_types(dr, dr.drawn).get('L%d' % where[0])}
         for pname, cols in ports:
             if t[self.i] == SKIP_TOK:
                 f = f.fork()
@@ -245,7 +253,7 @@ class Walk:
 
     def port(self, f, pname, cols, params, nlab, keys):
         pg, run, t, pri = self.pg, self.run, self.t, self.run.pri
-        dr = run.drawer(pg, 'INIT', f)
+        dr = run.drawer(pg, 'INIT', f, 'port')
         dr.want_types = frozenset(x for x in keys.values() if x)
         dr.fr.hidden = frozenset(run.ff0.label_tok[i] for i in range(nlab)) - set(keys)
         self.start = self.i

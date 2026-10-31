@@ -20,7 +20,8 @@ A draw walks the program form by form. Clause order does not matter: what a step
 next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how many clauses of each kind exist (live_priors.py
 counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an
 INIT takes a component, and each of its ports takes
-a body and a head. The decoder gives every read of the task: its checks, and tables through step_tables; this module reads no
+a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the key
+alone, and other labels stay in their branch. The decoder gives every read of the task: its checks, and tables through step_tables; this module reads no
 gold and no path but the priors.
 
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
@@ -80,7 +81,7 @@ READER_OUT = '(OUT (input ^P ^Col))'  # the reader takes whole programs; this cl
 NEED_RESCUE = 64.0  # a port's boost for those types after a stop that the head's needs refused
 NEED_STOP = 0.1  # the factor on an atom's stop chance where it holds a column of a type that the head needs
 ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
-BRANCHES = ('RULE',)  # the kinds of body that may hold an OR
+BRANCHES = 'RULE', 'key', 'port'  # the places of a body that may hold an OR, each with its counts in the priors
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against those of the program's state
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
@@ -398,7 +399,7 @@ class Run:
         self.spent_after = DEADLINE_SHARE * (session.settings.deadline_seconds or math.inf)
         self.root = session.decoder()
         self.rng = random.Random(seed)
-        self.orc = or_counts(pri['compound'])
+        self.orcs = {'RULE': or_counts(pri['compound'])} | {k: or_counts(v) for k, v in pri.get('compounds', {}).items()}
         self.t0 = time.monotonic()
         self.c = collections.Counter()
         self.steer_stats = dict(rel=collections.Counter(), choice=collections.Counter())  # the Drawers' rel_stats and choice_stats
@@ -640,13 +641,15 @@ class Run:
         keyed = rng.random() < pri['keyed'][comp] / pri['comps'][comp]
         nlab, keys = 0, {}
         if keyed:  # the key port: one label of its body becomes the key
-            dr = self.drawer(pg, 'INIT', f)
-            cur, toks, text = self.body(pg, dr, f, 'INIT', 0)[:3]
+            dr = self.drawer(pg, 'INIT', f, 'key')
+            cur, toks = self.body(pg, dr, f, 'INIT', 0)[:2]
             stars = [i for i, t in enumerate(toks) if t == M.STAR]
-            if not stars:
+            free = [j for j in range(len(stars)) if self.ff0.label_tok[j] not in dr.fr.hidden]  # a label local to a branch is no key
+            if not free:
                 raise Drop('key body makes no label')
-            i = stars[rng.randrange(len(stars))]
-            keys = {self.ff0.label_tok[stars.index(i)]: self.label_types(dr, text).get('L%d' % stars.index(i))}
+            n = free[rng.randrange(len(free))]
+            i = stars[n]
+            keys = {self.ff0.label_tok[n]: self.label_types(dr, dr.drawn).get('L%d' % n)}
             g = f.fork()
             for j, t in enumerate(toks):
                 g.step(M.CARET if j == i else t)
@@ -680,7 +683,7 @@ class Run:
         bound = [(c, t) for c, t in cols if rng.random() < (pri['heads'][comp, name, c] + 0.1) / (uses + 0.2)]
         need = [{'Position', 'Box'} if t == 'Point' else next((set(x) for x in pri['families'] if t in x), {t})
                 for _, t in bound if t not in params or t == 'Point']
-        dr = self.drawer(pg, 'INIT', f)
+        dr = self.drawer(pg, 'INIT', f, 'port')
         dr.want, dr.want_types = set(keys), frozenset(t for t in keys.values() if t)
         dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want  # a port's body reads its own labels and the key
         cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, keys)
@@ -716,8 +719,9 @@ class Run:
                 pg.arity[self.rel0 + s] = len({c for c, _ in e}) + 2
             pg.pending[kind] = {}
 
-    def drawer(self, pg, kind, dec):
-        """A Drawer of one body at decoder dec, an atom start, over the relations pg declares."""
+    def drawer(self, pg, kind, dec, place=None):
+        """A Drawer of one body at decoder dec, an atom start, over the relations pg declares. place is the kind of body within an
+        INIT, 'key' or 'port'; its Drawer has that place's OR counts, as orc, or None where the place has no OR."""
         ff = copy.copy(self.ff0)
         decl = list(range(self.rel0, self.rel0 + pg.ndecl))
         ff.starts_list = self.lib_starts + decl + self.fact_starts
@@ -727,6 +731,8 @@ class Run:
         dr = LiveDrawer(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
         dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmaps[kind], self.jc[kind]
         dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
+        dr.place = place or kind
+        dr.orc = self.orcs.get(dr.place)
         self.steer(pg, dr, kind)
         return dr
 
@@ -794,68 +800,60 @@ class Run:
         cur, toks, text, scope = dec, [], [], ()
         top = lim.port_atoms if kind == 'INIT' else lim.max_atoms
         labels = None
+        dr.drawn = []  # the text of each atom drawn, an OR's by its branches' atoms
         for k in range(1, top + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
-            if kind in BRANCHES and self.rng.random() < self.p_or(k):
+            dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
+            ored = None
+            if dr.orc and self.rng.random() < self.p_or(dr.orc, k):
                 dr.p_labels = labels
-                done = self.or_form(dr, cur, toks, text, scope, nlab, k)
-                if done is not None:  # the body goes on after the OR, or ends there
-                    cur, ctoks, ctext, hide = done
-                    tb = self.table(dr.fr, cur, pg)[0]
+                ored = self.or_atom(pg, dr, cur, toks, text, scope, nlab, k)
+            if ored is not None:  # the body goes on after the OR, or ends there
+                c['or:drawn'] += 1
+                cur, ctoks, ctext, scope, labels = ored
+                toks += ctoks
+                text.append(ctext)
+                stop = self.rng.random() >= dr.orc['after']
+            else:
+                fr = dr.frontier(cur, nlab + toks.count(M.STAR), tuple(toks))
+                got, free = None, 0
+                for n_try in range(lim.atom_tries + lim.cheap_tries):
+                    if n_try - free >= lim.atom_tries:
+                        break
+                    dr.p_k, dr.p_scope, dr.p_key, dr.p_last, dr.p_labels = k, tuple(scope), tuple(toks), (), labels
+                    res, why = dr.atom(fr, max(k, 2) if keys else k, tuple(dr.want_types) + tuple(scope), tuple(toks))  # 98% of gold's keyed ports read the key, and a body's atoms have no order, so the atom drawn first joins it
+                    if res is None:
+                        c['try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
+                        continue
+                    if (k > 1 or keys) and not res[4] and res[5]:
+                        c['try:unjoined'] += 1
+                        free += 1
+                        continue
+                    if res[3] in text:
+                        c['try:repeat'] += 1
+                        free += 1
+                        continue
+                    if kind != 'INIT' and not self.can_end(res[0].dec):  # at a port's END this check runs a search over head sites
+                        c['try:unsafe'] += 1
+                        continue
+                    tb = None if kind == 'INIT' else self.table(fr, res[0].dec, pg)[0]  # the engine gives no table inside a port
                     sm = S.summary(tb)
                     if sm is not None and sm['empty_inputs']:
-                        c['or:empty'] += 1
-                    elif not self.can_end(cur):
-                        c['or:unsafe'] += 1
-                    else:
-                        c['or:drawn'] += 1
-                        toks += ctoks
-                        text.append(ctext)
-                        scope = [str(t) for t in tb['types']] if tb is not None else list(scope)
-                        labels = tb.get('labels') if tb is not None else None
-                        dr.fr.hidden = dr.fr.hidden | hide
-                        if self.rng.random() >= self.orc['after'] or k == top:
-                            pg.toks = pg.toks + toks
-                            return cur, toks, text, scope
+                        c['try:empty'] += 1
                         continue
-            fr = dr.frontier(cur, nlab + toks.count(M.STAR), tuple(toks))
-            dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
-            got, free = None, 0
-            for n_try in range(lim.atom_tries + lim.cheap_tries):
-                if n_try - free >= lim.atom_tries:
+                    got = res
                     break
-                dr.p_k, dr.p_scope, dr.p_key, dr.p_last, dr.p_labels = k, tuple(scope), tuple(toks), (), labels
-                res, why = dr.atom(fr, max(k, 2) if keys else k, tuple(dr.want_types) + tuple(scope), tuple(toks))  # 98% of gold's keyed ports read the key, and a body's atoms have no order, so the atom drawn first joins it
-                if res is None:
-                    c['try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
-                    continue
-                if (k > 1 or keys) and not res[4] and res[5]:
-                    c['try:unjoined'] += 1
-                    free += 1
-                    continue
-                if res[3] in text:
-                    c['try:repeat'] += 1
-                    free += 1
-                    continue
-                if kind != 'INIT' and not self.can_end(res[0].dec):  # at a port's END this check runs a search over head sites
-                    c['try:unsafe'] += 1
-                    continue
-                tb = None if kind == 'INIT' else self.table(fr, res[0].dec, pg)[0]  # the engine gives no table inside a port
-                sm = S.summary(tb)
-                if sm is not None and sm['empty_inputs']:
-                    c['try:empty'] += 1
-                    continue
-                got = res
-                break
-            if got is None:
-                raise Drop('atom: no atom in tries')
-            cur = got[0].dec
-            toks += list(got[0].toks)
-            text.append(got[3])
-            scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + list(self.label_types(dr, [got[3]]).values())
-            labels = tb.get('labels') if tb is not None else None
-            if not self.rng.random() < self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb) and k < top:
+                if got is None:
+                    raise Drop('atom: no atom in tries')
+                cur = got[0].dec
+                toks += list(got[0].toks)
+                text.append(got[3])
+                dr.drawn.append(got[3])
+                scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + list(self.label_types(dr, [got[3]]).values())
+                labels = tb.get('labels') if tb is not None else None
+                stop = self.rng.random() < self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb)
+            if not stop and k < top:
                 continue
             if need and ANY_TYPE not in scope and any(not x & set(scope) for x in need):
                 c['gate:port head'] += 1
@@ -864,7 +862,7 @@ class Run:
             if kind == 'INIT' and not self.port_can_end(cur):
                 c['gate:unsafe'] += 1
                 continue
-            if k == 1 and kind in S.MIN2_KINDS and not S.one_call(dr, text):
+            if k == 1 and kind in S.MIN2_KINDS and ored is None and not S.one_call(dr, text):
                 c['gate:one atom'] += 1
                 continue
             if keys and not set(keys) & set(toks):
@@ -887,10 +885,35 @@ class Run:
 
     # ---------------------------------------------------------------- an OR
 
-    def p_or(self, k):
-        """P(the body's k-th atom is an OR | it has a k-th atom). The counts have an IF among the compounds."""
-        o = self.orc
+    def p_or(self, o, k):
+        """P(the body's k-th atom is an OR | it has a k-th atom) by the counts o. The counts have an IF among the compounds."""
         return (o['comp'].get(k, 0)) / (o['reach'].get(k, 0) + 1.0) * o['share']
+
+    def or_atom(self, pg, dr, cur, toks, text, scope, nlab, k):
+        """An OR at decoder cur that passes the gates of a body's table, where the body has one: (decoder, tokens, text, types in
+        scope, labels of the table), or None."""
+        done = self.or_form(dr, cur, toks, text, scope, nlab, k)
+        if done is None:
+            return None
+        d, ctoks, ctext, hide, atoms = done
+        if dr.place != 'RULE':  # the engine gives no table inside a port: the types are those of the labels the OR keeps
+            seen = self.label_types(dr, atoms)
+            kept = [t for x, t in seen.items() if self.ff0.label_tok.get(int(x[1:])) not in hide]
+            types, labels = list(scope) + kept, None
+        else:
+            tb = self.table(dr.fr, d, pg)[0]
+            sm = S.summary(tb)
+            if sm is not None and sm['empty_inputs']:
+                self.c['or:empty'] += 1
+                return None
+            if not self.can_end(d):
+                self.c['or:unsafe'] += 1
+                return None
+            types = [str(t) for t in tb['types']] if tb is not None else list(scope)
+            labels = tb.get('labels') if tb is not None else None
+        dr.fr.hidden = dr.fr.hidden | hide
+        dr.drawn += atoms
+        return d, ctoks, ctext, types, labels
 
     def can_close(self, d):
         """Whether a branch can close at decoder d."""
@@ -928,8 +951,9 @@ class Run:
             return None
         return f, out, '(NOT (%s %s))' % (V.name(rel), ' '.join('(%s %s)' % (V.name(c), V.name(v)) for c, v in zip(keep[::2], keep[1::2])))
 
-    def branch_atom(self, dr, d, labs, pkey, k, types, scope, outer):
-        """One atom of a branch at decoder d, with labs labels in the clause: (Drawer.atom's result, or None) after its tries."""
+    def branch_atom(self, dr, d, labs, pkey, k, types, scope, outer, joins):
+        """One atom of a branch at decoder d, with labs labels in the clause: (Drawer.atom's result, or None) after its tries. joins
+        says that the atom may not stand unjoined."""
         lim, c, free = self.lim, self.c, 0
         fr = dr.frontier(d, labs)
         for n_try in range(lim.atom_tries + lim.cheap_tries):
@@ -941,7 +965,7 @@ class Run:
                 c['or:try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
             elif not self.can_close(res[0].dec):
                 c['or:try:unsafe'] += 1
-            elif k > 1 and not res[4] and res[5]:
+            elif joins and not res[4] and res[5]:
                 c['or:try:unjoined'] += 1
                 free += 1
             elif res[3] in outer or opposite(res[3]) in outer:
@@ -951,15 +975,18 @@ class Run:
                 return res
         return None
 
-    def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local):
+    def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local, want, want_types):
         """One branch at decoder d: (decoder, tokens, atom texts, label numbers made, numbers bound) or (None, reason). It holds S's
         rules of draw_compound: a branch may stop only where it can close, and a later branch closes where it binds every exported
         label and reads every label it makes, or with S's small chance where it breaks one of those. With exported None, the
-        branch is the first and first takes its atoms' tokens."""
-        hz, later = self.orc['hazard'], exported is not None
+        branch is the first and first takes its atoms' tokens. A key's labels are its keys alone, so a key's later branch may leave the
+        labels it makes unread. want and want_types are the labels and types that the body wants: a
+        port's key, which the first branch's first atom joins, as a body's first atom does."""
+        hz, later = dr.orc['hazard'], exported is not None
+        strict = dr.place != 'key'
         toks, text, made, read, bound, types = [], [], [], collections.Counter(), set(), {}
         start = 1
-        if later and first and self.rng.random() < self.orc['neg1']:  # the else branch: NOT of a first-branch atom
+        if later and first and self.rng.random() < dr.orc['neg1']:  # the else branch: NOT of a first-branch atom
             got = self.negated(d, first[self.rng.randrange(len(first))], local)
             if got is not None:
                 d, ntoks, ntext = got
@@ -972,11 +999,12 @@ class Run:
         for j in range(start, self.lim.branch_atoms + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
-            wanted = (exported - bound) | {x for x in made if not read[x]} if later else set()
-            dr.want = {self.ff0.label_tok[i] for i in wanted if i in self.ff0.label_tok}
-            wtypes = [types[i] for i in wanted if types.get(i, ANY_TYPE) != ANY_TYPE]
+            wanted = (exported - bound) | ({x for x in made if not read[x]} if strict else set()) if later else set()
+            dr.want = want | {self.ff0.label_tok[i] for i in wanted if i in self.ff0.label_tok}
+            wtypes = [types[i] for i in wanted if types.get(i, ANY_TYPE) != ANY_TYPE] + list(want_types)
             dr.want_types = frozenset(wtypes)
-            res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer + text)
+            joins = k + j > 2 or (bool(want) and not later)
+            res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer + text, joins)
             if res is None:
                 return None, 'no atom'
             d = res[0].dec
@@ -990,7 +1018,7 @@ class Run:
             if not later and not res[3].startswith('(NOT'):
                 first.append(list(res[0].toks))
             bound |= set(fresh) | (set(joins) & (exported or set()))
-            named, unread = not later or exported <= bound, later and any(not read[x] for x in made)
+            named, unread = not later or exported <= bound, later and strict and any(not read[x] for x in made)
             soft = None if named and not unread else S.P_UNREAD_LOCAL if named else S.P_UNNAMED if not unread else 0.0
             if self.rng.random() < hz.get(j, 1.0) and (soft is None or self.rng.random() < soft):
                 self.c['or:soft close'] += soft is not None
@@ -1001,15 +1029,16 @@ class Run:
 
     def or_form(self, dr, dec, toks, text, scope, nlab, k):
         """An OR at decoder dec, the k-th atom of a body with tokens toks and atom texts text, by S's rules (draw_compound): (decoder
-        after its END, tokens, text, the label tokens that are local to a branch), or None. The labels the first branch makes and does
-        not read again are exported, and each label it reads again with chance P_REEXPORT."""
+        after its END, tokens, text, the label tokens that are local to a branch, the branches' atom texts), or None. The labels the
+        first branch makes and does not read again are exported, and each label it reads again with chance P_REEXPORT. In a key, the
+        key alone is exported."""
         rng, c = self.rng, self.c
-        nparts = self.pick(*zip(*self.orc['shapes']))
+        nparts = self.pick(*zip(*dr.orc['shapes']))
         d = dec.fork()
         d.step(M.OR)
         ctoks, parts, exported, first, first_made, base = [M.OR], [], None, [], set(), nlab + toks.count(M.STAR)
         closed = dr.rel_closed
-        hidden0 = dr.fr.hidden
+        hidden0, want, want_types = dr.fr.hidden, dr.want, dr.want_types
         dr.rel_closed = lambda x, ends: self.closed(x, ends + 1)  # one more END closes the OR
         all_made = set()
         try:
@@ -1017,7 +1046,7 @@ class Run:
                 for attempt in range(S.BRANCH_TRIES if b else 1):
                     if attempt:
                         c['or:branch retry'] += 1
-                    got = self.branch(dr, d, base + ctoks.count(M.STAR), tuple(toks + ctoks), k, scope, list(text), exported, first, first_made)
+                    got = self.branch(dr, d, base + ctoks.count(M.STAR), tuple(toks + ctoks), k, scope, list(text), exported, first, first_made, want, want_types)
                     if got[0] is not None:
                         break
                     c['or:fail branch %d %s' % (min(b + 1, 3), got[1])] += 1
@@ -1038,13 +1067,13 @@ class Run:
                     exported &= bound
                 else:
                     first_made = set(made)
-                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT}
+                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(rng.sample(made, min(len(made), 1)))
                 dr.fr.hidden = hidden0 | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
         finally:
             dr.rel_closed, dr.fr.hidden = closed, hidden0
-            dr.want, dr.want_types = set(), frozenset()
+            dr.want, dr.want_types = want, want_types
         hide = frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
-        return d, ctoks, '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts), hide
+        return d, ctoks, '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts), hide, [a for p in parts for a in p]
 
     # ---------------------------------------------------------------- the OUT search
 
