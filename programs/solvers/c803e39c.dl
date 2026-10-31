@@ -291,7 +291,7 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
     // block, and its cell in the block.
     .decl tiling(e: Example, p_tile: Position, p_intile: Position, p: Position)
     tiling(E, P_tile, P_intile, P_grid_out) :-
-        ex_out(E, _, _), frame_pos(E, P_tile), frame_pos(E, P_intile),
+        ex_out(E, P_grid_out, _), frame_pos(E, P_tile), frame_pos(E, P_intile),
         concat_2d(P_tile, P_intile, 0, P_grid_out).
 
     // The cells that a map square of extents (nm1, nm2) and a tile square of
