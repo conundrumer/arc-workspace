@@ -210,7 +210,7 @@ fn relation_estimate(relation: &Relation) -> usize {
 
 /// Makes in `session` the events `events`, recorded in a session that shares
 /// its intern table, where each would do in `session` what it did there, as
-/// [`crate::session::ResultCache::replay`] gives, and gives whether it made
+/// `ResultCache::replay` gives, and gives whether it made
 /// them.
 pub fn replay(session: &TaskSession, events: &[Recorded]) -> bool {
     session.results.replay(events, cache_bytes_bound(session))

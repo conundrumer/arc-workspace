@@ -2,7 +2,7 @@
 //! variable `ARCLOG_STATS` is set (to anything but the empty string and `0`).
 //!
 //! Each timing point is one call of this module. While the statistics are
-//! off, a call costs one relaxed load of [`STATE`] and one branch: no clock is
+//! off, a call costs one relaxed load of an atomic flag and one branch: no clock is
 //! read, no key is computed and no lock is taken. They change no result of
 //! the engine, which never reads a counter.
 //!
