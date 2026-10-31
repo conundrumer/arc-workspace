@@ -535,8 +535,12 @@ class CasesMixin:
                     chosen.append(q)
             return [f"(exclude ({' '.join('$' + n for n in sorted(q, key=order.__getitem__))}){why})"
                     for q in chosen]
-        cases = {tuple(p[1] for p in (v[1:] if v[0] == "[]" else (v,))) for v in held}
         ctors = [[k.name for k in adt.constructors] for _, adt in points]
+        # a case's alts in the points' order, which is the types' declaration
+        # order and not the order of the Choice record's fields
+        at = {k: i for i, ks in enumerate(ctors) for k in ks}
+        cases = {tuple(sorted((p[1] for p in (v[1:] if v[0] == "[]" else (v,))), key=at.__getitem__))
+                 for v in held}
         full = set(itertools.product(*ctors))
         gone = full - cases
         if not gone:
