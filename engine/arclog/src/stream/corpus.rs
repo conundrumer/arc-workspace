@@ -203,13 +203,22 @@ fn case_stream_with(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &
     if case.case.reads_alone_as_it_stands() {
         return written(checked);
     }
-    let resolved = resolve_alone(&case.case).map_err(|fault| format!("the writer gives no stream: {fault}"))?;
-    let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
-    let alone = check_shared_program(resolved, &clauses, Registry::get(), cache).map_err(|refusals| {
-        let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
-        format!("the writer gives no stream: the case program read alone is refused: {}", messages.join("; "))
-    })?;
+    let alone = check_alone(&case.case, cache).map_err(|fault| format!("the writer gives no stream: {fault}"))?;
     written(&alone)
+}
+
+/// The checked program of `case` read alone, or the fault of
+/// [`resolve_alone`], or the refusals of the checker for that program, with
+/// `cache`: what [`case_stream`] writes for a case that does not read alone
+/// as it stands, and what [`case_files`] needs of such a case before it gives
+/// its texts.
+fn check_alone(case: &Case, cache: &mut CheckCache) -> Result<CheckedProgram, String> {
+    let resolved = resolve_alone(case)?;
+    let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
+    check_shared_program(resolved, &clauses, Registry::get(), cache).map_err(|refusals| {
+        let messages: Vec<&str> = refusals.iter().map(|d| &*d.message).collect();
+        format!("the case program read alone is refused: {}", messages.join("; "))
+    })
 }
 
 /// The program of `case` read alone, resolved, or the fault of
