@@ -31,6 +31,9 @@
     - `paint_color=stored`: stores `paint_color` (2) apart from `ref_color`, replacing `ref_color` in `recolor-match`. Undefined nowhere the concept is defined. Fits every pair. Witness `paint_color=stored`: a train0-like scene with one stretched U that matches, and `paint_color` reassigned to 3. It breaks no scene claim, `foreign`, verdict `concept`. Invariant it breaks: the input breaks none, and the assignment breaks the tie of the paint to the reference's color.
 - `shape-match` & `adjacency`, `shape-match` & `candidate-shapes`, `shape-match` & `ref_color`, `shape-match` & `paint_color`, `adjacency` & `candidate-shapes`, `adjacency` & `ref_color`, `adjacency` & `paint_color`, `candidate-shapes` & `ref_color`, `candidate-shapes` & `paint_color`, `ref_color` & `paint_color`: the two branches' changes applied together
 
+## Open parameters
+- `match_group`: `SYM_C4` and `SYM_D4`. Under `SYM_C4`, a mark shape matches when its reduced box is a rotation of the reference's reduced box. Under `SYM_D4`, it matches when its reduced box is a rotation or a reflection of the reference's. The two values give the same output on every pair, and the test output has no alt.
+
 ## Not formed
 - A derivation of `ref_color` by `SharedColor`, `DominantColor`, `CountRankAsc` or another color proposer other than `RarestColor`: on a single input none of them gives 2 alone (`SharedColor` gives 0, 1 and 2; `DominantColor` gives 0), so none has a reading as the reference color.
 - A derivation of `mark_color` by a proposer: no proposer gives 1 alone on an input. The derived form of the candidate set is `$AnyColor`.
