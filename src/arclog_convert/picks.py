@@ -77,6 +77,7 @@ class Pick:
     notes: list[str] = field(default_factory=list)
     cvars: list[str] = field(default_factory=list)
     ones: list[list[str]] | None = None   # the ONE keys; None for a CHOOSE
+    spread: dict = field(default_factory=dict)   # per column variable, the term of its item atom: a variable or a record of variables
     fold: list[str | None] | None = None  # per column of the folded relation, its cvar
 
 
@@ -296,7 +297,9 @@ class Rewriter:
             if inst.component == "TiebreakResolutions":
                 units = self.defect_aparts(inst, pick, reads, units, rels)
             pick.cvars = list(reads[3])
-            if all(isinstance(t, Variable) for t in reads[4].values()):
+            pick.spread = reads[4]
+            if all(isinstance(t, Variable) or isinstance(t, RecordTerm) and all(isinstance(a, Variable) for a in t.args)
+                   for t in reads[4].values()):
                 pick.ones = self.one_keys(pick)
             if pick.ones is not None:
                 units, rels = self.fold(inst, pick, units, rels)
@@ -319,7 +322,7 @@ class Rewriter:
         agree on some columns and differ on the rest; else None."""
         keys = [[v for v in pick.cvars if v in pick.slot]]
         for body in pick.aparts:
-            k = self.never_key(body, pick.item, pick.cvars)
+            k = self.never_key(body, pick.item, pick.cvars, pick.spread)
             if k is None:
                 return None
             if k not in keys:
@@ -327,7 +330,7 @@ class Rewriter:
         return keys
 
     @staticmethod
-    def never_key(body, item: Atom, cvars: list[str]) -> list[str] | None:
+    def never_key(body, item: Atom, cvars: list[str], spread: dict) -> list[str] | None:
         atoms = [l for l in body if isinstance(l, AtomLiteral)]
         rest = [l for l in body if not isinstance(l, AtomLiteral)]
         if len(atoms) != 2 or any(a.negated or a.atom.relation != item.relation
@@ -335,15 +338,23 @@ class Rewriter:
             return None
         joined: set[str] = set()
         differ: set[frozenset] = set()
-        for p, x, y in zip(item.args, atoms[0].atom.args, atoms[1].atom.args):
+        def align(p, x, y) -> bool:
+            """Whether the item's term `p` read at `x` and at `y` is joined or differs variable by variable."""
+            if isinstance(p, RecordTerm):
+                return (isinstance(x, RecordTerm) and isinstance(y, RecordTerm) and len(p.args) == len(x.args) == len(y.args)
+                        and all(align(*q) for q in zip(p.args, x.args, y.args)))
             if not isinstance(p, Variable):
-                continue
+                return True
             if not (isinstance(x, Variable) and isinstance(y, Variable)):
-                return None
+                return False
             if x == y:
                 joined.add(p.name)
             else:
                 differ.add(frozenset((x.name, y.name)))
+            return True
+        for p, x, y in zip(item.args, atoms[0].atom.args, atoms[1].atom.args):
+            if not align(p, x, y):
+                return None
 
         def pair(c):
             if isinstance(c, Comparison) and c.op == ComparisonOperator.NE and \
@@ -360,7 +371,7 @@ class Rewriter:
                 return None
         if len(groups) != 1 or groups[0] != differ:
             return None
-        return [v for v in cvars if v in joined]
+        return [v for v in cvars if (vs := term_vars(spread.get(v, Variable(v)), set())) and vs <= joined]
 
     def fold(self, inst, pick: Pick, units, rels):
         """The item relation's clauses as the picked relation's, where the
@@ -373,7 +384,8 @@ class Rewriter:
             return units, rels
         if any(rn.name in reads_of(u.body) for u in units if u not in mine and u.body):
             return units, rels
-        pick.fold = [a.name if isinstance(a, Variable) else None for a in pick.item.args]
+        pick.fold = [a.name if isinstance(a, Variable) else
+                     next((v for v, s in pick.spread.items() if s == a), None) for a in pick.item.args]
         rels = [dc_replace(r, name=inst.name) if x is r else x for x in rels
                 if not (x.name == inst.name and x.scope.components == sc)]
         units = [dc_replace(u, head=dc_replace(u.head, relation=RelationName((), inst.name)))

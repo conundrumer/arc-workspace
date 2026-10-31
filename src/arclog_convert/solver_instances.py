@@ -272,12 +272,12 @@ class InstancesMixin:
         if len(col_names) != len(p.fold):
             self.todo.add("one", "the picked relation's columns")
             return []
-        name = {}
+        name: dict[str, list[str]] = {}   # a column variable -> the labels of its column
         gone = set()   # a column the clause drops: a case's or a lifted key
         for v, ns in zip(p.fold, col_names):
-            if v is not None and len(ns) == 1:
-                name[v] = ns[0]
-            elif v is not None and not ns:
+            if v is not None and ns:
+                name[v] = ns
+            elif v is not None:
                 gone.add(v)
         out = []
         for key in p.ones:
@@ -285,7 +285,7 @@ class InstancesMixin:
             if any(v not in name for v in key):
                 self.todo.add("one", f"a key column of {' '.join(key)}")
                 continue
-            out.append("(" + " ".join(["ONE"] + [name[v] for v in key]) + ")")
+            out.append("(" + " ".join(["ONE"] + [x for v in key for x in name[v]]) + ")")
         return out
 
     # ---- the set of an open parameter
@@ -1101,8 +1101,18 @@ class InstancesMixin:
             body = w.lits([AtomLiteral(p.item, False)], set())
             lines[0] = f"(RULE {amp}"
             lines.extend("  " + l for l in body)
-            made = label_names(body)   # a case's or a lifted key is not written
-            lines.extend("  (" + " ".join(["ONE"] + [v for v in key if v in made]) + ")" for key in p.ones)
+            item_vars = set(term_vars(p.item.args, []))
+
+            def key_labels(v: str) -> list[str]:
+                """The labels the item atom writes for the column variable `v`: its own where it is a scalar, those
+                of its fields where it is a record. A case's or a lifted key is not written."""
+                keep = set(term_vars(p.spread.get(v, Variable(v)), []))
+                only = {n: Wildcard() for n in item_vars - keep}
+                saved = list(self.todo.pending), Counter(self.todo.kinds)
+                text = ClauseWriter(c, p.scope, sub, {}).lits([AtomLiteral(subst_terms(p.item, only), False)], set())
+                self.todo.pending, self.todo.kinds = saved
+                return list(dict.fromkeys(re.findall(r"\*(\w+)", " ".join(text))))
+            lines.extend("  (" + " ".join(["ONE"] + [x for v in key for x in key_labels(v)]) + ")" for key in p.ones)
             close(lines, ")")
             f = Form(lines, amp, w.reads - {amp}, line=p.line)
             f.comments = [";; " + t for t in self.plain_comments(f.line)]
