@@ -629,7 +629,9 @@ class Rewriter:
             # the first read leaves out the slot-only variables: the third read tests the piece at a cell
             m_x = {**ident, **{v: Wildcard() for v in only_slot}}
             pick.aparts.append((at(m_x), at(m_s2x2), at(m_s2x), ne(item_s, X2)))
-        if comp == "TiebreakResolutions" and only_slot:
+        # an item whose term holds its slot's stands in one slot, also under a generic pattern
+        item_holds_slot = len(gens) == 1 and term_vars(parts(gens[0])[1], set()) <= term_vars(parts(gens[0])[2], set())
+        if comp == "TiebreakResolutions" and only_slot and not item_holds_slot:
             m2 = {**ident, **{v: Variable(v + "2") for v in only_slot}}
             pick.aparts.append((at(ident), at(m2), ne(slot_s, two(slot_s, only_slot))))
         def item_at(ka, kb, taken: set[str]):
@@ -831,6 +833,9 @@ class Rewriter:
                     if not keyed or term_vars(a[0], set()) <= others:
                         continue
                     out.append(picked(a[0], Wildcard(), Wildcard()))
+                elif comp == "TiebreakResolutions" and rn == "resolution" and isinstance(a[1], Wildcard):
+                    # no resolution at the key: the key has no model
+                    out.append(dc_replace(picked(a[0], Wildcard(), Wildcard()), negated=True))
                 elif rn == GENERATORS[comp].relation:
                     k, s, x = (a[i] for i in GENERATORS[comp].order)
                     out.append(dc_replace(generated(k, s, x), negated=l.negated))
