@@ -125,14 +125,25 @@
       },
       "section": "Relations"
     },
+    "lib:tile_size": {
+      "status": "authored_contract",
+      "summary": "The tile size k at which n tiles of size k, with a gap of g between each two, fill an extent of ext exactly: k is ext less the n - 1 gaps, divided by n. The relation gives a row only where that length is positive and n divides it evenly.",
+      "contract_markdown": "The tile size k at which n tiles of size k, with a gap of g between each\ntwo, fill an extent of ext exactly: k is ext less the n - 1 gaps, divided\nby n. The relation gives a row only where that length is positive and n\ndivides it evenly.",
+      "source": {
+        "document": "programs/lib/box.dl",
+        "start_line": 167,
+        "end_line": 170
+      },
+      "section": "Relations"
+    },
     "lib:dir_elem": {
       "status": "authored_contract",
       "summary": "Enumerates every value of Dir.",
       "contract_markdown": "Enumerates every value of Dir.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 54,
-        "end_line": 54
+        "start_line": 56,
+        "end_line": 56
       },
       "section": "Relations"
     },
@@ -142,8 +153,8 @@
       "contract_markdown": "Enumerates every value of Axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 56,
-        "end_line": 56
+        "start_line": 58,
+        "end_line": 58
       },
       "section": "Relations"
     },
@@ -153,8 +164,8 @@
       "contract_markdown": "Enumerates every value of DiagDir.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 58,
-        "end_line": 58
+        "start_line": 60,
+        "end_line": 60
       },
       "section": "Relations"
     },
@@ -164,8 +175,8 @@
       "contract_markdown": "Enumerates every value of DiagAxis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 60,
-        "end_line": 60
+        "start_line": 62,
+        "end_line": 62
       },
       "section": "Relations"
     },
@@ -175,8 +186,8 @@
       "contract_markdown": "Enumerates every value of D4.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 62,
-        "end_line": 62
+        "start_line": 64,
+        "end_line": 64
       },
       "section": "Relations"
     },
@@ -186,8 +197,8 @@
       "contract_markdown": "Enumerates every value of C4.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 64,
-        "end_line": 64
+        "start_line": 66,
+        "end_line": 66
       },
       "section": "Relations"
     },
@@ -197,8 +208,8 @@
       "contract_markdown": "Enumerates every value of Sense.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 66,
-        "end_line": 66
+        "start_line": 68,
+        "end_line": 68
       },
       "section": "Relations"
     },
@@ -208,8 +219,8 @@
       "contract_markdown": "Enumerates every value of Sym.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 68,
-        "end_line": 68
+        "start_line": 70,
+        "end_line": 70
       },
       "section": "Relations"
     },
@@ -219,8 +230,8 @@
       "contract_markdown": "Enumerates every value of Dir8.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 70,
-        "end_line": 70
+        "start_line": 72,
+        "end_line": 72
       },
       "section": "Relations"
     },
@@ -230,8 +241,8 @@
       "contract_markdown": "Enumerates every value of Axis4.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 72,
-        "end_line": 72
+        "start_line": 74,
+        "end_line": 74
       },
       "section": "Relations"
     },
@@ -241,8 +252,8 @@
       "contract_markdown": "- `sym_member(S: Sym, D: D4)`: D is an element of group S.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 74,
-        "end_line": 74
+        "start_line": 76,
+        "end_line": 76
       },
       "section": "Relations"
     },
@@ -252,8 +263,8 @@
       "contract_markdown": "- `axis_of(D: Dir, A: Axis)`: edge D lies on axis A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 76,
-        "end_line": 76
+        "start_line": 78,
+        "end_line": 78
       },
       "section": "Relations"
     },
@@ -263,8 +274,8 @@
       "contract_markdown": "- `diag_axis_of(D: DiagDir, Da: DiagAxis)`: corner D lies on diagonal Da.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 78,
-        "end_line": 78
+        "start_line": 80,
+        "end_line": 80
       },
       "section": "Relations"
     },
@@ -274,8 +285,8 @@
       "contract_markdown": "- `axis4_of(D: Dir8, A: Axis4)`: D lies on A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 80,
-        "end_line": 80
+        "start_line": 82,
+        "end_line": 82
       },
       "section": "Relations"
     },
@@ -296,8 +307,8 @@
       "contract_markdown": "The edge opposite D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 84,
-        "end_line": 84
+        "start_line": 86,
+        "end_line": 86
       },
       "section": "Relations"
     },
@@ -307,8 +318,8 @@
       "contract_markdown": "The corner opposite D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 86,
-        "end_line": 86
+        "start_line": 88,
+        "end_line": 88
       },
       "section": "Relations"
     },
@@ -318,8 +329,8 @@
       "contract_markdown": "The edge or corner opposite D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 88,
-        "end_line": 88
+        "start_line": 90,
+        "end_line": 90
       },
       "section": "Relations"
     },
@@ -329,8 +340,8 @@
       "contract_markdown": "The other cardinal axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 90,
-        "end_line": 90
+        "start_line": 92,
+        "end_line": 92
       },
       "section": "Relations"
     },
@@ -340,8 +351,8 @@
       "contract_markdown": "The other diagonal axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 92,
-        "end_line": 92
+        "start_line": 94,
+        "end_line": 94
       },
       "section": "Relations"
     },
@@ -373,8 +384,8 @@
       "contract_markdown": "- `reflection(A: Axis4, T: D4)`: T reflects across a line along A, and fixes that line: V gives LR, H gives TB, DG gives DG, AD gives AD.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 98,
-        "end_line": 98
+        "start_line": 100,
+        "end_line": 100
       },
       "section": "Relations"
     },
@@ -384,8 +395,8 @@
       "contract_markdown": "- `axis_inversion(A: Axis4, T: D4)`: T reverses axis A, swapping its two directions: V gives TB, H gives LR, DG gives AD, AD gives DG.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 100,
-        "end_line": 100
+        "start_line": 102,
+        "end_line": 102
       },
       "section": "Relations"
     },
@@ -406,8 +417,8 @@
       "contract_markdown": "- `d4_inverse(D: D4, D_inv: D4)`: D_inv undoes D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 104,
-        "end_line": 104
+        "start_line": 106,
+        "end_line": 106
       },
       "section": "Relations"
     },
@@ -417,8 +428,8 @@
       "contract_markdown": "- `d4_identity(D: D4)`: the identity.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 106,
-        "end_line": 106
+        "start_line": 108,
+        "end_line": 108
       },
       "section": "Relations"
     },
@@ -428,8 +439,8 @@
       "contract_markdown": "- `pose_difference(A: Pose, B: Pose, D: D4)`: D takes the placement of a `RIGID_DET` shape at pose A onto its placement at pose B. A and B are poses of one shape.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 108,
-        "end_line": 108
+        "start_line": 110,
+        "end_line": 110
       },
       "section": "Relations"
     },
@@ -516,8 +527,8 @@
       "contract_markdown": "- **Unfold**: the items taken and left at each state of a walk over states.\n  - in `start(key, t)`, `initial_taken(key, item)`, `initial_untaken(key, item)`.\n  - in `conflict(key, item, item2)`: when item is taken, item2 leaves the untaken items without being taken.\n  - in `score(key, t, item, S)`: with a score, the item taken at a state is the untaken item of least score.\n  - in `step(key, t, t2)`: a step from t to t2 takes one item. `skip(key, t, t2)`: a step that takes none. `take(key, t, item)`: the item taken at t. These three may read the outputs.\n  - out `taken(key, t, item)`, `untaken(key, t, item)`, `excluded(key, t, item)`, and `take` where `score` gives it.\n  - With `score`, a tie forks the walk. An item taken on one branch and left on another is in both `taken` and `untaken` at a state both branches reach.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 170,
-        "end_line": 176
+        "start_line": 172,
+        "end_line": 178
       },
       "section": "Components"
     },
@@ -670,8 +681,8 @@
       "contract_markdown": "- **DemonstrationConsistency**: the rules a demonstrated pair confirms. An input of a nested task holds pairs that demonstrate a rule, and an object that the same rule completes.\n  - in `value(key, o, i, v)`: object o holds v at index i.\n  - in `prediction(key, c, o, i, v)`: rule c predicts that the object paired with o holds v at i.\n  - in `demonstration(key, o, o2)`: a demonstrated pair, o and its partner o2.\n  - out `consistent(key, c, o, o2)`: c's prediction for o is o2. `counterexample(key, c, o, o2)`: it is not.\n  - A prediction holds every index of the object it predicts. An index it leaves out counts as one that object lacks.\n  - out `confirmed(key, c)`: c predicts every demonstrated pair. `unconfirmed(key, c)`: it fails some pair. A rule that predicts nothing for any object is in neither.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 287,
-        "end_line": 293
+        "start_line": 289,
+        "end_line": 295
       },
       "section": "Components"
     },
@@ -736,8 +747,8 @@
       "contract_markdown": "- `input(P: Position, Col: Color)`: each cell of the input and its color.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 365,
-        "end_line": 365
+        "start_line": 367,
+        "end_line": 367
       },
       "section": "Facts"
     },
@@ -747,8 +758,8 @@
       "contract_markdown": "- `ex_input(E: Example, P: Position, Col: Color)`: each cell of each example's input, train and test. DET only.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 367,
-        "end_line": 367
+        "start_line": 369,
+        "end_line": 369
       },
       "section": "Facts"
     },
@@ -758,8 +769,8 @@
       "contract_markdown": "- `ex_output(E: Example, P: Position, Col: Color)`: each cell of each train output. DET only.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 369,
-        "end_line": 369
+        "start_line": 371,
+        "end_line": 371
       },
       "section": "Facts"
     },
@@ -835,8 +846,8 @@
       "contract_markdown": "- `nearer(D: Dir8, P: Box, Q: Box)`, needs P Q: P is strictly nearer edge D than Q is. For a corner, the distances compared are `corner_dist`.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 433,
-        "end_line": 433
+        "start_line": 435,
+        "end_line": 435
       },
       "section": "Relations"
     },
@@ -923,8 +934,8 @@
       "contract_markdown": "- `corner_inset(Diag: DiagDir, K: number, B: Box)`, needs K: the grid with K lines cut from each edge of corner Diag.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 481,
-        "end_line": 481
+        "start_line": 483,
+        "end_line": 483
       },
       "section": "Relations"
     },
@@ -945,8 +956,8 @@
       "contract_markdown": "- `corner_outset(Diag: DiagDir, K: number, B: Box)`, needs K: the grid with K lines added past each edge of corner Diag.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 493,
-        "end_line": 493
+        "start_line": 495,
+        "end_line": 495
       },
       "section": "Relations"
     },
@@ -978,8 +989,8 @@
       "contract_markdown": "- `jump(P: Box, D: Dir8, K: number, Q: Box)`, needs P K: Q is K steps from P toward D. Q can lie off the grid.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 505,
-        "end_line": 505
+        "start_line": 507,
+        "end_line": 507
       },
       "section": "Relations"
     },
@@ -989,8 +1000,8 @@
       "contract_markdown": "- `jump_offset(D: Dir8, K: number, V: Offset)`, needs K: V is K steps toward D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 509,
-        "end_line": 509
+        "start_line": 511,
+        "end_line": 511
       },
       "section": "Relations"
     },
@@ -1000,8 +1011,8 @@
       "contract_markdown": "- `frame_offset(P: Position, A: Axis, K: number, V: Offset)`, needs P: V is K steps along A, for each K that `sub_extent` gives. Each K has two rows, one toward each edge of A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 513,
-        "end_line": 513
+        "start_line": 515,
+        "end_line": 515
       },
       "section": "Relations"
     },
@@ -1011,8 +1022,8 @@
       "contract_markdown": "- `neighbor(P: Box, D: Dir8, Q: Box)`, needs P: Q is one step from P toward D. Q can lie off the grid, with a margin below 0. Such a Q matches no `input` row.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 518,
-        "end_line": 518
+        "start_line": 520,
+        "end_line": 520
       },
       "section": "Relations"
     },
@@ -1022,8 +1033,8 @@
       "contract_markdown": "`Along` keeps P's margins on A and sets the other margins to zero. `Across` is P relative to Along: it keeps the perpendicular margins and has zero margins on A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 522,
-        "end_line": 522
+        "start_line": 524,
+        "end_line": 524
       },
       "section": "Relations"
     },
@@ -1066,8 +1077,8 @@
       "contract_markdown": "The corner obtained by applying D to Dir.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 552,
-        "end_line": 552
+        "start_line": 554,
+        "end_line": 554
       },
       "section": "Relations"
     },
@@ -1077,8 +1088,8 @@
       "contract_markdown": "The edge or corner obtained by applying D to Dir.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 560,
-        "end_line": 560
+        "start_line": 562,
+        "end_line": 562
       },
       "section": "Relations"
     },
@@ -1088,8 +1099,8 @@
       "contract_markdown": "- `AxisDomain(A)`: each axis, V and H.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 570,
-        "end_line": 570
+        "start_line": 572,
+        "end_line": 572
       },
       "section": "Proposers"
     },
@@ -1099,8 +1110,8 @@
       "contract_markdown": "- `ColorDomain(C)`: each color of the grids it reads.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 572,
-        "end_line": 572
+        "start_line": 574,
+        "end_line": 574
       },
       "section": "Proposers"
     },
@@ -1110,8 +1121,8 @@
       "contract_markdown": "- `D4Domain(D)`: each of the eight symmetries.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 574,
-        "end_line": 574
+        "start_line": 576,
+        "end_line": 576
       },
       "section": "Proposers"
     },
@@ -1121,8 +1132,8 @@
       "contract_markdown": "- `DiagAxisDomain(Da)`: each diagonal axis, DG and AD.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 576,
-        "end_line": 576
+        "start_line": 578,
+        "end_line": 578
       },
       "section": "Proposers"
     },
@@ -1132,8 +1143,8 @@
       "contract_markdown": "- `DiagDirDomain(D)`: each corner, TL TR BL BR.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 578,
-        "end_line": 578
+        "start_line": 580,
+        "end_line": 580
       },
       "section": "Proposers"
     },
@@ -1143,8 +1154,8 @@
       "contract_markdown": "- `DirDomain(D)`: each edge, T B L R.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 580,
-        "end_line": 580
+        "start_line": 582,
+        "end_line": 582
       },
       "section": "Proposers"
     },
@@ -1154,8 +1165,8 @@
       "contract_markdown": "- `NumberDomain(N)`: each number from 0 to the largest extent of the grids it reads.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 582,
-        "end_line": 582
+        "start_line": 584,
+        "end_line": 584
       },
       "section": "Proposers"
     },
@@ -1165,8 +1176,8 @@
       "contract_markdown": "- `SenseDomain(S)`: CW and CC.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 584,
-        "end_line": 584
+        "start_line": 586,
+        "end_line": 586
       },
       "section": "Proposers"
     },
@@ -1176,8 +1187,8 @@
       "contract_markdown": "- `SymDomain(S)`: each symmetry group that `Sym` lists.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 586,
-        "end_line": 586
+        "start_line": 588,
+        "end_line": 588
       },
       "section": "Proposers"
     },
@@ -1187,8 +1198,8 @@
       "contract_markdown": "Every ordered pair of colors present in the grids read by the domain.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 588,
-        "end_line": 588
+        "start_line": 590,
+        "end_line": 590
       },
       "section": "Proposers"
     },
@@ -1198,8 +1209,8 @@
       "contract_markdown": "Every pair of a corner and a cardinal axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 590,
-        "end_line": 590
+        "start_line": 592,
+        "end_line": 592
       },
       "section": "Proposers"
     },
@@ -1209,8 +1220,8 @@
       "contract_markdown": "Every pair of a number admitted by NumberDomain and a cardinal edge.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 592,
-        "end_line": 592
+        "start_line": 594,
+        "end_line": 594
       },
       "section": "Proposers"
     },
@@ -1539,8 +1550,8 @@
       "contract_markdown": "- `PanelCombine(Id, C_out, P, C)`: the input is two panels of the output's size along one axis, with any number of separator lines between. Each output cell has the cell at the same place in each panel. An entry Id has two rows, one per panel, that share C_out: P is the panel's place as a cell of the frame of two parts along that axis, C is the color of that panel's cell, and C_out is the output cell's color. There is one entry per combination of the two panel colors and the output color in the train pairs.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 652,
-        "end_line": 652
+        "start_line": 654,
+        "end_line": 654
       },
       "section": "Proposers"
     }

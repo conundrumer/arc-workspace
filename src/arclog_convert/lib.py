@@ -228,7 +228,8 @@ ALGEBRA_MODES: dict[str, list[set[str]]] = {
     "uniform_inset": [{"k"}, {"b"}], "edge_outset": [{"k"}], "corner_outset": [{"k"}],
     "axis_outset": [{"k1", "k2"}], "uniform_outset": [{"k"}], "jump_offset": [{"k"}], "step_offset": [set()],
     "neighbor": [{"p"}], "jump": [{"p", "k"}], "apply": [{"p"}], "gap": [{"p", "q"}],
-    "divide": [{"t", "side", "gap"}], "frame_offset": [{"p"}], "same_dist": [{"p1", "p2"}],
+    "divide": [{"t", "side", "gap"}], "tile_size": [{"ext", "n", "g"}, {"k", "n", "g"}],
+    "frame_offset": [{"p"}], "same_dist": [{"p1", "p2"}],
     "same_line": [{"p", "q"}], "nearer": [{"p", "q"}], "same_corner": [{"p1", "p2"}],
     "same_slab": [{"p1", "p2"}], "centered": [{"p"}],
 }

@@ -51,6 +51,8 @@
 (relation gap (columns (D Dir8) (P Position) (Q Position) (K Nat)) (modes (P Q)))
 ;;; The part and within-part offset of a nonnegative coordinate among parts of Side cells separated by Gap cells. A coordinate in a gap, or a nonpositive Side + Gap, gives no row. No upper frame boundary is imposed.
 (relation divide (columns (T Nat) (Side Nat) (Gap Int) (Part Nat) (Remainder Nat)) (modes (T Side Gap)))
+;;; @doc programs/lib/box.dl#tile_size
+(relation tile_size (columns (Ext Nat) (N Nat) (G Int) (K Nat)) (modes (Ext N G) (K N G)))
 ;;; Enumerates every value of Dir.
 (relation dir_elem (columns (D Dir)))
 ;;; Enumerates every value of Axis.

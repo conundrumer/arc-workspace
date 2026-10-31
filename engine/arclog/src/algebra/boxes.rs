@@ -50,6 +50,7 @@ box_relations! {
     SubExtent => "sub_extent",
     Gap => "gap",
     Divide => "divide",
+    TileSize => "tile_size",
     Inside => "inside",
     Interior => "interior",
     SameDist => "same_dist",
@@ -110,6 +111,31 @@ pub fn divide(t: i32, side: i32, gap: i32) -> Option<(i32, i32)> {
     let part = i32::try_from(t / period).expect("a part no greater than the coordinate");
     let remainder = i32::try_from(t % period).expect("a remainder less than the side");
     Some((part, remainder))
+}
+
+/// The tile size `k` at which `n` tiles of size `k`, with `gap` between each
+/// two, fill an extent of `ext` exactly, as the `tile_size` relation gives
+/// it: `ext` less the `n - 1` gaps, divided by `n`. None where that length is
+/// not positive, `n` does not divide it, or `k` is outside 32 bits.
+pub fn tile_size(ext: i32, n: i32, gap: i32) -> Option<i32> {
+    let (ext, n, gap) = (i64::from(ext), i64::from(n), i64::from(gap));
+    let rem = ext - (n - 1) * gap;
+    if n == 0 || rem <= 0 || rem % n != 0 {
+        return None;
+    }
+    i32::try_from(rem / n).ok()
+}
+
+/// The extent that `n` tiles of size `k`, with `gap` between each two, fill:
+/// the `ext` at which `tile_size(ext, n, gap)` is `k`. None where there is no
+/// such extent, or it is outside 32 bits.
+pub fn tile_extent(k: i32, n: i32, gap: i32) -> Option<i32> {
+    let (k, n, gap) = (i64::from(k), i64::from(n), i64::from(gap));
+    let rem = n * k;
+    if n == 0 || rem <= 0 {
+        return None;
+    }
+    i32::try_from(rem + (n - 1) * gap).ok()
 }
 
 fn subtract(a: Margins, b: Margins) -> Margins {
@@ -288,6 +314,18 @@ impl Algebra for BoxRelation {
             BoxRelation::Divide => {
                 if let Some((part, remainder)) = divide(c.number(0), c.number(1), c.number(2)) {
                     row(&[id(0), id(1), id(2), n(part), n(remainder)])?;
+                }
+            }
+            BoxRelation::TileSize => {
+                // The mode of Ext, N and G gives K; the mode of K, N and G
+                // gives Ext. Where all four are bound, the first decides and
+                // the join keeps the row that agrees with K.
+                if bound[0].is_some() {
+                    if let Some(k) = tile_size(c.number(0), c.number(1), c.number(2)) {
+                        row(&[id(0), id(1), id(2), n(k)])?;
+                    }
+                } else if let Some(ext) = tile_extent(c.number(3), c.number(1), c.number(2)) {
+                    row(&[n(ext), id(1), id(2), id(3)])?;
                 }
             }
             BoxRelation::Inside => {
