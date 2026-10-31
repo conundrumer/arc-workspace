@@ -84,7 +84,7 @@ GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 SUIT_COLUMNS = 2  # a relation's Position columns, and its Color columns, that Gate.suits reads
 STEERS = 'struct', 'tilt', 'rel', 'choice'
-STEER_FILES = dict(tilt='tilt_v1.json', rel='relR3_rk2.pkl', choice='choice5_o.pkl')
+STEER_FILES = dict(tilt='tilt_v1.json', rel='relR4_o.pkl', choice='choice5_o.pkl')
 
 
 def size(grid):
