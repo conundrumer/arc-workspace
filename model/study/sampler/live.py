@@ -3,21 +3,31 @@
 
     sampler = Sampler(models_dir)            # loads the frozen priors (live_priors.py) once
     for result in sampler.draws(session, seed, deadline, task, **limits): ...
+    clause = sampler.clause(session, seed, deadline, task, forms, kind, **limits)
 
 The worker makes the arclog.Session and passes it in; a session on Kaggle data is World.Open, and draws make no second
 session. task is the task's JSON as a dict, with no test outputs. deadline is a time.monotonic() value. limits are Limits' fields. A Result is yielded as soon as it exists: a decoder
 that ended at a consistent OUT with its attempts, and a last Result with no decoder when the deadline passes. Each has the
 counts so far: draws, finished programs, drops by reason, errors by type, and the limits.
 
-A draw walks the program form by form. The next clause's kind and the program's length come from corpus counts (P alone), a
-RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an INIT takes a component, and each of its ports takes
+clause draws one clause of the kind over a scope that the caller picks: forms, the text of one form each in dependency order, with
+no OUT. The forms are replayed into a decoder and a Program as if this module had drawn them, so what a clause reads of the scope
+comes from the decoder. A form's relation slot is its place among the scope's declarations, so the written name of a relation
+means nothing to a decoder: two forms need two head names, any names, and a Clause's text uses the names of forms. The Run stays
+between calls on one session, seed sets its draws for each call, and sampler.run.c has the counts of its calls.
+
+A draw walks the program form by form. Clause order does not matter: what a step of the walk reads is what the program has. The
+next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how many clauses of each kind exist (live_priors.py
+counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an
+INIT takes a component, and each of its ports takes
 a body and a head. The decoder gives every read of the task: its checks, and tables through step_tables; this module reads no
 gold and no path but the priors.
 
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
-the draw goes on past it. At each form end, for each relation R the form declared, in this order: R over the input (R plus the
+the draw goes on past it. At each form end, for each relation R the form declared, the best suited first (Gate.suits): R over the
+input (R plus the
 input's cells where R has none), R alone, then for a Position column with no Color column, the same with a Color relation's
-value or the input's color, then unions with earlier relations. A fit counts where it passes Gate, in two steps. The cheap step reads
+value or the input's color, then unions with earlier relations, again the best suited. A fit counts where it passes Gate, in two steps. The cheap step reads
 the attempts on the test inputs: GATE_RULES refuse it, and the counts have refused:<rule> for each rule of Gate that the OUT breaks,
 GATE_RULES or not, so each rule's count is its own. The second step is leave-one-out: for each train pair e, the program runs on the
 task with e's output removed, so e is one more test input, and its attempt on e is compared with e's output. That run sees e as a real
@@ -35,14 +45,18 @@ import collections
 import copy
 import dataclasses
 import gc
+import itertools
 import json
 import math
 import os
 import pickle
 import random
 import re
+import statistics
 import sys
 import time
+
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('STRUCT_B', '1')  # S imports the terms of STRUCT_B only under this setting; set_steers sets the flag itself
@@ -56,15 +70,19 @@ S.REACH = False  # no look-ahead below a column or a value: an atom that cannot 
 
 RULE_TOK, DET_TOK, INIT_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 7, 12, 13
 KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK)
+EXAMPLE_TASK, EXAMPLE_TRAIN = 0, 1  # the example_kind of a task-wide table entry, and of a train pair's
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
+READER_OUT = '(OUT (input ^P ^Col))'  # the reader takes whole programs; this closes a scope's text and is not stepped
 NEED_RESCUE = 64.0  # a port's boost for those types after a stop that the head's needs refused
 NEED_STOP = 0.1  # the factor on an atom's stop chance where it holds a column of a type that the head needs
 ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
+BRANCHES = ('RULE',)  # the kinds of body that may hold an OR
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
-KIND_BACKOFF = 2.0  # the weight of the next-kind counts over all buckets, against those of the clause count's bucket
+KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against those of the program's state
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
+SUIT_COLUMNS = 2  # a relation's Position columns, and its Color columns, that Gate.suits reads
 STEERS = 'struct', 'tilt', 'rel', 'choice'
 STEER_FILES = dict(tilt='tilt_v1.json', rel='relR3_rk2.pkl', choice='choice5_o.pkl')
 
@@ -73,10 +91,46 @@ def size(grid):
     return len(grid), len(grid[0]) if grid else 0
 
 
+def head_of(form):
+    """The relation name that form text declares."""
+    return S.strata.sexprs(form)[0][1]
+
+
+def cell_masks(pair):
+    """{mask size: (the cells a train pair wants, the cells that are right)}. A cell is a key: (y, x, color), (y, x) or color, by
+    the mask's size. Where input and output have one size, the wanted cells are those that differ, since a relation can overlay the
+    input; else they are the output's. A position or a color alone is right where it is wanted."""
+    x, y = pair['input'], pair['output']
+    want, right = np.zeros(9000, bool), np.zeros(9000, bool)
+    for i, row in enumerate(y):
+        for j, c in enumerate(row):
+            right[300 * i + 10 * j + c] = True
+            want[300 * i + 10 * j + c] = size(x) != size(y) or x[i][j] != c
+    cells = want.reshape(900, 10)
+    wp, wc = cells.any(1), cells.any(0)
+    return {9000: (want, right), 900: (wp, wp), 10: (wc, wc)}
+
+
+def overlap(rows, p, c, masks):
+    """How well rows, an array with one row per table row, suit a train pair: wanted cells hit / (cells wanted + wrong cells). p is
+    the column of a Position or Box's top, whose left is two columns on, and c that of a Color; either may be None. 1 means an
+    overlay of the rows gives the pair's output."""
+    ok, key, n = np.ones(len(rows), bool), 0, 1
+    if p is not None:
+        i, j = rows[:, p], rows[:, p + 2]
+        ok, key, n = (i >= 0) & (i < 30) & (j >= 0) & (j < 30), 30 * i + j, 900
+    if c is not None:
+        ok, key, n = ok & (rows[:, c] >= 0) & (rows[:, c] < 10), 10 * key + rows[:, c], 10 * n
+    seen = np.zeros(n, bool)
+    seen[key[ok]] = True
+    want, right = masks[n]
+    return int((seen & want).sum()) / max(int(want.sum() + (seen & ~right).sum() + (~ok).sum()), 1)
+
+
 class Gate:
     """What a task's train pairs say of a program. refused gives the rules that attempts break. A rule on the grids reads each test
     input, and holds there where a grid of its attempts passes it, since an attempt has up to two grids. leave_one_out gives the
-    outcome on each train pair."""
+    outcome on each train pair. suits ranks relations by their rows."""
 
     def __init__(self, task, settings):
         self.task, self.settings, self.folds = task, settings, None
@@ -88,6 +142,7 @@ class Gate:
         ratios = {(Fraction(b[0], a[0]), Fraction(b[1], a[1])) for a, b in pairs}
         self.ratio = next(iter(ratios)) if len(ratios) == 1 else None
         self.out_colors = {c for p in task['train'] for row in p['output'] for c in row}
+        self.masks = [cell_masks(p) for p in task['train']]
 
     def holds(self, rule, g, x):
         """Whether grid g, an attempt on test input x, passes the rule."""
@@ -107,6 +162,33 @@ class Gate:
     def refused(self, attempts):
         got = [] if all(any(size(g)[0] and size(g)[1] for g in att) for att in attempts) else ['no attempt']
         return got + [r for r in GRID_RULES if not all(any(self.holds(r, g, x) for g in att) for att, x in zip(attempts, self.inputs) if att)]
+
+    def suits(self, ct):
+        """{relation slot: how well its rows suit the train outputs} over step_tables result ct, at its best pair of columns: the mean
+        overlap over its train entries. A task-wide table has an entry per DET assignment, of which one holds, so it takes the
+        best entry, with the mean overlap over the train pairs. An entry with no rows to read counts for nothing."""
+        T, base, out = ct.tables, ct.base_tables or 0, {}
+        rel = M.col(ct, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
+        V = np.frombuffer(ct.values, np.int32)
+        et, ex, ei = M.col(ct, 'entries', 'table'), M.col(ct, 'entries', 'example_kind'), M.col(ct, 'entries', 'example_index')
+        ek, er, eo = M.col(ct, 'entries', 'kind'), M.col(ct, 'entries', 'rows'), M.col(ct, 'entries', 'offset')
+        stop, vstop, fault = ct.entries['stop_bound'], ct.entries['value_stop_bound'], ct.entries['fault']
+        train = collections.defaultdict(list)  # a table -> its entries
+        for e in range(len(et)):
+            if ex[e] in (EXAMPLE_TASK, EXAMPLE_TRAIN) and ek[e] == 0 and not (stop[e] or vstop[e] or fault[e]):
+                train[et[e] - base].append(e)
+        for j, es in train.items():
+            types = [str(t) for t in T['column_types'][j]]
+            at = list(itertools.accumulate((4 if t in M.WIDE else 1 for t in types), initial=0))
+            ps = [a for a, t in zip(at, types) if t in ('Position', 'Box')][:SUIT_COLUMNS]
+            cs = [a for a, t in zip(at, types) if t == 'Color'][:SUIT_COLUMNS]
+            if rel[j] < 0 or not ps + cs:
+                continue
+            tabs = [(self.masks if ex[e] == EXAMPLE_TASK else [self.masks[ei[e]]], V[eo[e]:eo[e] + er[e] * at[-1]].reshape(-1, at[-1])) for e in es]
+            pick = max if ex[es[0]] == EXAMPLE_TASK else statistics.fmean
+            sites = [(p, c) for p in ps or [None] for c in cs or [None]]
+            out[int(rel[j])] = max(pick([statistics.fmean(overlap(v, p, c, m) for m in ms) for ms, v in tabs]) for p, c in sites)
+        return out
 
     def fold_sessions(self):
         """[(a session of the task with train pair e's output removed, e's output)] for each train pair e; none with one train pair,
@@ -139,6 +221,24 @@ def fold_outcome(session, ids, model, y):
     return 'pass' if y in att else 'wrong' if att else 'no attempt'
 
 
+def opposite(atom):
+    """The text of NOT of atom text, or of the atom that a NOT holds: both in one list hold nowhere."""
+    return atom[5:-1] if atom.startswith('(NOT ') else '(NOT %s)' % atom
+
+
+def or_counts(cc):
+    """What a draw of an OR reads of the compound counts cc (S.compound_counts): a body's chance of one, the part counts, the stop
+    hazard of a branch, the chance that a later branch opens with a negation and the chance that an atom follows the OR."""
+    shapes = {x[1]: v for x, v in cc.items() if x[0] == 'shape'}
+    lens = {x[1]: v for x, v in cc.items() if x[0] == 'blen'}
+    both = lambda name: {k: cc[(name, False, k)] + cc[(name, True, k)] for k in {x[2] for x in cc if x[0] == name}}  # noqa: E731
+    comp = both('comp')
+    return dict(comp=comp, reach=both('reach'), share=sum(v for k, v in shapes.items() if k.startswith('OR')) / sum(shapes.values()),
+                shapes=[(int(k[2:]), v) for k, v in shapes.items() if k.startswith('OR') and v > 0],
+                hazard={j: (lens.get(j, 0) + 0.5) / (sum(v for n, v in lens.items() if n >= j) + 1.0) for j in lens},
+                neg1=(cc[('neg1',)] + 0.5) / (cc[('later',)] + 1.0), after=(cc[('after',)] + 0.5) / (sum(comp.values()) + 1.0))
+
+
 def set_steers(models_dir, on):
     """S's module settings of the steers in on, a subset of STEERS; the others are off. One process has one set."""
     S.COL_FREQ = S.STRUCT_P = S.STRUCT_B = S.STRUCT_C = 'struct' in on
@@ -163,12 +263,13 @@ class Limits:
     atom_tries: int = S.ATOM_TRIES  # redraws of an atom
     cheap_tries: int = S.CHEAP_TRIES  # further redraws for a repeated or unjoined atom
     max_atoms: int = S.MAX_ATOMS  # atoms of a body
+    branch_atoms: int = 12  # atoms of an OR's branch, the most that gold has
     port_atoms: int = 6  # atoms of a port's body; 0.4% of gold's are longer, and the checks of a long one cost most
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
     out_pairs: int = 6  # (Position, Color) column pairs of a relation that the OUT search tries
-    out_colors: int = 4  # Color relations a Position column is painted with
-    out_unions: int = 3  # earlier relations a relation is joined with in a union
+    out_colors: int = 4  # the best suited Color relations, that a Position column is painted with
+    out_unions: int = 3  # the best suited earlier relations, that a relation is joined with in a union
     out_cands: int = 40  # candidates of the OUT search at one form end
 
 
@@ -179,6 +280,13 @@ class Result:
     program: str  # decoder.program_form()
     counts: dict  # the draw counts so far
     seconds: float  # since draws began
+
+
+@dataclasses.dataclass
+class Clause:
+    text: str  # the clause, reading the scope by the names of forms; its head is a name forms do not use
+    decoder: object  # the decoder at the clause's end; its slots are the scope's
+    tables: object  # arclog.step_tables' result at that decoder
 
 
 class Drop(Exception):
@@ -227,13 +335,26 @@ class Program:
         self.ndecl = 0
         self.before = None
         self.decl_types, self.decl_slots = {}, {}
-        self.colmap, self.arity, self.record_col, self.names = {}, {}, {}, {}
-        self.pending = {}  # relation slot -> (table slot, type) of a relation that colmap lacks
+        self.colmaps = {k: {} for k in KIND_TOK}  # a form kind -> column_positions there: a RULE's column tokens leave out the Example column that a DET's or an INIT's read has
+        self.colmap = self.colmaps['RULE']
+        self.arity, self.names = {}, {}
+        self.record_cols = {k: {} for k in KIND_TOK}  # a form kind -> FastFrontier.record_col there
+        self.pending = {k: {} for k in KIND_TOK}  # a form kind -> relation slot -> (table slot, type) of a relation that its colmap lacks
         self.forms = []  # the parsed forms before the clause being drawn
         self.toks = []  # the model tokens of the bodies so far, for prior_uses
         self.new = []  # the relation slots the last form declared, with their tables
-        self.grids, self.colors = [], []  # the OUT search's relations so far: (slot, Position token, Color token); (slot, Color token)
-        self.kinds = []
+        self.grids, self.colors = [], []  # the OUT search's relations so far, the best suited first: (slot, Position token, Color token); (slot, Color token)
+        self.suit = {}  # relation slot -> its rank in the OUT search: (Gate.suits, a random tie break)
+        self.kinds = []  # the kind of each clause, which only next_kind reads, as counts
+        self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
+
+    def fork(self):
+        """A copy whose dicts can change with no effect on this Program."""
+        g = copy.copy(self)
+        g.decl_types, g.decl_slots, g.arity = dict(self.decl_types), dict(self.decl_slots), dict(self.arity)
+        g.colmaps, g.pending = {k: dict(v) for k, v in self.colmaps.items()}, {k: dict(v) for k, v in self.pending.items()}
+        g.colmap = g.colmaps['RULE']
+        return g
 
 
 class Sampler:
@@ -242,6 +363,7 @@ class Sampler:
         with open(os.path.join(models_dir, 'live_priors.pkl'), 'rb') as f:
             self.pri = pickle.load(f)
         gc.set_threshold(100000, 50, 100)  # as S: the data is long-lived and holds few cycles
+        self.run = None  # the Run of the last clause call, kept for the next call on its session
 
     def draws(self, session, seed, deadline, task, **limits):
         run = Run(self.pri, session, seed, deadline, task, Limits(**limits))
@@ -249,6 +371,13 @@ class Sampler:
             for got in run.one():
                 yield run.result(got)
         yield run.result(None)
+
+    def clause(self, session, seed, deadline, task, forms, kind='RULE', **limits):
+        """A Clause of the kind over the scope forms, or None if no clause came (the module docstring has the rest)."""
+        lim = Limits(**limits)
+        if self.run is None or self.run.session is not session or self.run.lim != lim:
+            self.run = Run(self.pri, session, seed, deadline, task, lim)
+        return self.run.clause(seed, deadline, forms, kind)
 
 
 class Run:
@@ -259,6 +388,7 @@ class Run:
         self.V = V = session.vocabulary
         self.root = session.decoder()
         self.rng = random.Random(seed)
+        self.orc = or_counts(pri['compound'])
         self.t0 = time.monotonic()
         self.c = collections.Counter()
         self.steer_stats = dict(rel=collections.Counter(), choice=collections.Counter())  # the Drawers' rel_stats and choice_stats
@@ -266,6 +396,9 @@ class Run:
         self.first = {}  # a kind's token -> the decoder after it as a program's first token, and its step_tables result
         self.jc = collections.defaultdict(dict)  # a kind -> Drawer.jcache: its True entries on lib relations hold at every state of the run
         self.stopped = False  # whether an OUT candidate over the relation that the OUT search is at hit a limit
+        self.scoped = None  # (forms, decoder, Program) of the last scope
+        self.walk = pri['walk']
+        self.walk_all = sum(self.walk['after'].values(), collections.Counter())
         nv = len(V)
         self.rel0 = V.id('&r0')
         self.tok = {V.name(i): i for i in range(nv) if V.kind(i) in ('component', 'proposer')}
@@ -284,27 +417,51 @@ class Run:
         self.c['draws'] += 1
         try:
             yield from self.program()
-        except Deadline:
-            self.c['drop:deadline'] += 1
-        except Drop as e:
-            self.c['drop:' + str(e)] += 1
-        except arclog.Refusal:
-            self.c['drop:refused'] += 1
         except Exception as e:  # noqa: BLE001
+            self.failed(e)
+
+    def failed(self, e):
+        """Counts exception e, the end of a draw."""
+        if isinstance(e, Deadline):
+            self.c['drop:deadline'] += 1
+        elif isinstance(e, Drop):
+            self.c['drop:' + str(e)] += 1
+        elif isinstance(e, arclog.Refusal):
+            self.c['drop:refused'] += 1
+        else:
             self.c['error:%s: %s' % (type(e).__name__, re.sub(r'\d+', 'N', str(e))[:60])] += 1
+
+    def clause(self, seed, deadline, forms, kind):
+        """One clause of the kind over the scope forms: a Clause, or None with the reason counted."""
+        self.rng.seed(seed)
+        self.deadline = deadline
+        self.c['draws'] += 1
+        try:
+            dec, pg = self.scope(forms)
+            f = self.form(pg, dec, kind)
+        except Exception as e:  # noqa: BLE001
+            self.failed(e)
+            return None
+        self.c['forms'] += 1
+        line = f.program_form().split('\n')[len(forms)]
+        head, used = head_of(line), set(pg.written.values())
+        free = next(x for x in itertools.chain([head], ('&r%d' % i for i in itertools.count())) if x not in used)
+        names = pg.written | {head: free}
+        return Clause(re.sub(r'&r\d+', lambda m: names.get(m[0], m[0]), line), f, pg.before)
 
     # ---------------------------------------------------------------- a program
 
     def pick(self, opts, weights):
         return self.rng.choices(opts, weights=weights)[0]
 
-    def next_kind(self, dec, prev, n):
-        pri = self.pri
-        names = [k for k in KIND_TOK if dec.admits([KIND_TOK[k]])[0]]
-        here, all_ = pri['kinds'].get((prev, min(n // 2, 12)), {}), pri['kinds1'].get(prev, {})
-        tot = sum(all_.values()) or 1
-        ws = [here.get(k, 0) + KIND_BACKOFF * all_.get(k, 0) / tot + 0.01 for k in names]
-        return self.pick(names, ws)
+    def next_kind(self, pg, dec):
+        """The next clause's kind at dec, or None for the stop, from how many clauses of each kind pg has. The empty program has no stop."""
+        w, top = self.walk, sum(self.walk_all.values())
+        here = w['after'].get(tuple(min(pg.kinds.count(k), w['top']) for k in w['kinds']), {})
+        names = [k for k in KIND_TOK if dec.admits([KIND_TOK[k]])[0]] + ['stop'] * bool(pg.kinds)
+        ws = [here.get(k, 0) + KIND_BACKOFF * self.walk_all[k] / top + 0.01 for k in names]
+        kind = self.pick(names, ws)
+        return None if kind == 'stop' else kind
 
     def open_form(self, pg, dec, kind):
         """The decoder after kind's token at dec, a fork. A program's first model step has step_tables' first result."""
@@ -320,16 +477,54 @@ class Run:
         f, pg.before = self.first[tok]
         return f.fork()
 
-    def program(self):
-        pg, dec, prev, n = Program(), self.root.fork(), '^', 0
-        stop = self.pri['stop']
+    def forget_slots(self):
+        """Drops what the Drawers keep of relation slots, which mean another relation in another program."""
         for k, j in self.jc.items():
             self.jc[k] = {x: v for x, v in j.items() if v and max(t for t in x if isinstance(t, int)) < self.rel0}
-        while n < self.lim.max_forms and not (n and self.rng.random() < stop.get(n, 1.0)):
-            kind = self.next_kind(dec, prev, n)
-            pg.kinds.append(kind)
+
+    def scope(self, forms):
+        """(decoder, Program) at the end of forms, as a draw of those forms leaves them. The last scope's stay, so more clauses over
+        one scope replay it once."""
+        t0, forms = time.perf_counter(), tuple(forms)
+        if self.scoped is not None and self.scoped[0] == forms:
+            return self.scoped[1], self.scoped[2].fork()
+        self.forget_slots()
+        pg, dec = Program(), self.root
+        if forms:
+            ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*forms, READER_OUT)), self.session.settings).decode_stream()
+            stream = [(p[0], t) for t, m, p in zip(ids, model, paths) if m]
+            for i, group in itertools.groupby(stream, lambda x: x[0]):
+                if i == len(forms):
+                    break
+                first, *toks = [t for _, t in group]
+                kind = self.V.name(first)
+                if kind not in KIND_TOK:  # a form that no draw makes
+                    raise Drop('scope: a %s form' % kind)
+                f = self.open_form(pg, dec, kind)
+                for t in toks:
+                    rels = [x for x in f.step(t)[0] if self.V.kind(x) == 'relation']
+                    if rels:
+                        self.declared(pg, rels)
+                        at = M.slot_no(self.V.name(rels[0]))
+                        pg.names = pg.names | {self.V.name(x): '&r%d.%d' % (at, j) if kind == 'INIT' else self.V.name(x) for j, x in enumerate(rels)}
+                pg.toks = pg.toks + toks
+                pg.kinds = pg.kinds + [kind]
+                dec = f
+                self.close(pg, f)
+            pg.written = {head_of(a): head_of(b) for a, b in zip(dec.program_form().split('\n'), forms)}
+            f = dec.fork()
+            f.step(RULE_TOK)
+            self.fill_columns(pg, f)
+        self.c['scope_seconds'] += time.perf_counter() - t0
+        self.scoped = forms, dec, pg
+        return dec, pg.fork()
+
+    def program(self):
+        pg, dec = Program(), self.root.fork()
+        self.forget_slots()
+        while len(pg.kinds) < self.lim.max_forms and (kind := self.next_kind(pg, dec)):
+            pg.kinds = pg.kinds + [kind]
             dec = self.form(pg, dec, kind)
-            prev, n = kind, n + 1
             self.c['forms'] += 1
             t0 = time.perf_counter()
             yield from self.search(pg, dec)
@@ -364,7 +559,8 @@ class Run:
                 pg.decl_types[s], pg.decl_slots[s] = ts, cs
                 pg.new.append(s)
                 if cs:
-                    pg.pending[s] = list(zip(cs, ts))
+                    for k in KIND_TOK:
+                        pg.pending[k][s] = list(zip(cs, ts))
 
     def declared(self, pg, forced):
         for t in forced:
@@ -480,15 +676,16 @@ class Run:
 
     # ---------------------------------------------------------------- a body
 
-    def fill_columns(self, pg, dec):
-        """colmap and arity of the relations that lack them, at decoder dec, an atom start."""
-        if pg.pending:
-            pg.colmap.update(S.column_positions(dec, self.V, pg.pending, pg.ndecl))
-            rest = {s: [x for x in e if x[1] != 'Example'] for s, e in pg.pending.items() if s not in pg.colmap}  # the decoder refuses a read of a table's Example column here, so column_positions counts one column too few
-            pg.colmap.update(S.column_positions(dec, self.V, rest, pg.ndecl))
-            for s, e in pg.pending.items():
+    def fill_columns(self, pg, dec, kind='RULE'):
+        """colmap of the form kind and arity of the relations that lack them, at decoder dec, an atom start of that kind."""
+        pending, cm = pg.pending[kind], pg.colmaps[kind]
+        if pending:
+            cm.update(S.column_positions(dec, self.V, pending, pg.ndecl))
+            rest = {s: [x for x in e if x[1] != 'Example'] for s, e in pending.items() if s not in cm}  # the decoder refuses a read of a table's Example column here, so column_positions counts one column too few
+            cm.update(S.column_positions(dec, self.V, rest, pg.ndecl))
+            for s, e in pending.items():
                 pg.arity[self.rel0 + s] = len({c for c, _ in e}) + 2
-            pg.pending = {}
+            pg.pending[kind] = {}
 
     def drawer(self, pg, kind, dec):
         """A Drawer of one body at decoder dec, an atom start, over the relations pg declares."""
@@ -496,10 +693,10 @@ class Run:
         decl = list(range(self.rel0, self.rel0 + pg.ndecl))
         ff.starts_list = self.lib_starts + decl + self.fact_starts
         ff.starts = set(ff.starts_list)
-        ff.arity, ff.record_col, ff.root, ff.created = pg.arity, pg.record_col, None, 0
-        self.fill_columns(pg, dec)
+        ff.arity, ff.record_col, ff.root, ff.created = pg.arity, pg.record_cols[kind], None, 0
+        self.fill_columns(pg, dec, kind)
         dr = LiveDrawer(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
-        dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmap, self.jc[kind]
+        dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmaps[kind], self.jc[kind]
         dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
         self.steer(pg, dr, kind)
         return dr
@@ -571,6 +768,28 @@ class Run:
         for k in range(1, top + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
+            if kind in BRANCHES and self.rng.random() < self.p_or(k):
+                dr.p_labels = labels
+                done = self.or_form(dr, cur, toks, text, scope, nlab, k)
+                if done is not None:  # the body goes on after the OR, or ends there
+                    cur, ctoks, ctext, hide = done
+                    tb = S.body_table(dr.fr, *TABLES, cur, pg.before)[0]
+                    sm = S.summary(tb)
+                    if sm is not None and sm['empty_inputs']:
+                        c['or:empty'] += 1
+                    elif not self.can_end(cur):
+                        c['or:unsafe'] += 1
+                    else:
+                        c['or:drawn'] += 1
+                        toks += ctoks
+                        text.append(ctext)
+                        scope = [str(t) for t in tb['types']] if tb is not None else list(scope)
+                        labels = tb.get('labels') if tb is not None else None
+                        dr.fr.hidden = dr.fr.hidden | hide
+                        if self.rng.random() >= self.orc['after'] or k == top:
+                            pg.toks = pg.toks + toks
+                            return cur, toks, text, scope
+                        continue
             fr = dr.frontier(cur, nlab + toks.count(M.STAR), tuple(toks))
             dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
             got, free = None, 0
@@ -637,6 +856,167 @@ class Run:
         d = dr.stop_shift(got[0].dec, tuple(toks), k, list(got[0].toks), got[2], got[3], tb, h)
         return hq * math.exp(d) / (1 - hq + hq * math.exp(d))
 
+    # ---------------------------------------------------------------- an OR
+
+    def p_or(self, k):
+        """P(the body's k-th atom is an OR | it has a k-th atom). The counts have an IF among the compounds."""
+        o = self.orc
+        return (o['comp'].get(k, 0)) / (o['reach'].get(k, 0) + 1.0) * o['share']
+
+    def can_close(self, d):
+        """Whether a branch can close at decoder d."""
+        for t in (ALSO_TOK, M.END):
+            try:
+                d.forced(t)
+                return True
+            except arclog.Refusal:
+                pass
+        return False
+
+    def negated(self, d, atom, local):
+        """NOT of the first branch's atom tokens atom at decoder d, as S's negation_of: the sites that read a label from outside the
+        branch or 0 stay and the others drop. (decoder, tokens, text), or None where the atom has a record site, no site stays, or
+        the decoder refuses it."""
+        V, rel, rest = self.V, atom[0], atom[1:]
+        if V.kind(rel) not in S.RELATION_KINDS or len(rest) % 2:
+            return None
+        keep = []
+        for c, v in zip(rest[::2], rest[1::2]):
+            if V.kind(c) != 'column' or V.kind(v) == 'column':
+                return None
+            if v == M.ZERO or (V.kind(v) == 'label' and int(V.name(v)[1:]) not in local):
+                keep += [c, v]
+        if not keep:
+            return None
+        out = [M.NOT, rel] + keep
+        f = d.fork()
+        try:
+            for t in out:
+                f.step(t)
+        except arclog.Refusal:
+            return None
+        if not self.can_close(f):
+            return None
+        return f, out, '(NOT (%s %s))' % (V.name(rel), ' '.join('(%s %s)' % (V.name(c), V.name(v)) for c, v in zip(keep[::2], keep[1::2])))
+
+    def branch_atom(self, dr, d, labs, pkey, k, types, scope, outer):
+        """One atom of a branch at decoder d, with labs labels in the clause: (Drawer.atom's result, or None) after its tries."""
+        lim, c, free = self.lim, self.c, 0
+        fr = dr.frontier(d, labs)
+        for n_try in range(lim.atom_tries + lim.cheap_tries):
+            if n_try - free >= lim.atom_tries:
+                break
+            dr.p_k, dr.p_scope, dr.p_key, dr.p_last = k, tuple(scope), pkey, ()
+            res, why = dr.atom(fr, max(k, 2) if types else k, types or scope, pkey)
+            if res is None:
+                c['or:try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
+            elif not self.can_close(res[0].dec):
+                c['or:try:unsafe'] += 1
+            elif k > 1 and not res[4] and res[5]:
+                c['or:try:unjoined'] += 1
+                free += 1
+            elif res[3] in outer or opposite(res[3]) in outer:
+                c['or:try:repeat'] += 1
+                free += 1
+            else:
+                return res
+        return None
+
+    def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local):
+        """One branch at decoder d: (decoder, tokens, atom texts, label numbers made, numbers bound) or (None, reason). It holds S's
+        rules of draw_compound: a branch may stop only where it can close, and a later branch closes where it binds every exported
+        label and reads every label it makes, or with S's small chance where it breaks one of those. With exported None, the
+        branch is the first and first takes its atoms' tokens."""
+        hz, later = self.orc['hazard'], exported is not None
+        toks, text, made, read, bound, types = [], [], [], collections.Counter(), set(), {}
+        start = 1
+        if later and first and self.rng.random() < self.orc['neg1']:  # the else branch: NOT of a first-branch atom
+            got = self.negated(d, first[self.rng.randrange(len(first))], local)
+            if got is not None:
+                d, ntoks, ntext = got
+                toks += ntoks
+                text.append(ntext)
+                read.update(int(x) for x in re.findall(r'(?<![*\w])L(\d+)', ntext))
+                bound |= set(read) & exported
+                start = 2
+                self.c['or:else negation'] += 1
+        for j in range(start, self.lim.branch_atoms + 1):
+            if time.monotonic() >= self.deadline:
+                raise Deadline
+            wanted = (exported - bound) | {x for x in made if not read[x]} if later else set()
+            dr.want = {self.ff0.label_tok[i] for i in wanted if i in self.ff0.label_tok}
+            wtypes = [types[i] for i in wanted if types.get(i, ANY_TYPE) != ANY_TYPE]
+            dr.want_types = frozenset(wtypes)
+            res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer + text)
+            if res is None:
+                return None, 'no atom'
+            d = res[0].dec
+            toks += list(res[0].toks)
+            text.append(res[3])
+            fresh = [int(x) for x in re.findall(r'\*L(\d+)', res[3])]
+            joins = [int(x) for x in re.findall(r'(?<![*\w])L(\d+)', res[3])]
+            types.update({int(x[1:]): t for x, t in self.label_types(dr, [res[3]]).items()})
+            made += fresh
+            read.update(joins)
+            if not later and not res[3].startswith('(NOT'):
+                first.append(list(res[0].toks))
+            bound |= set(fresh) | (set(joins) & (exported or set()))
+            named, unread = not later or exported <= bound, later and any(not read[x] for x in made)
+            soft = None if named and not unread else S.P_UNREAD_LOCAL if named else S.P_UNNAMED if not unread else 0.0
+            if self.rng.random() < hz.get(j, 1.0) and (soft is None or self.rng.random() < soft):
+                self.c['or:soft close'] += soft is not None
+                return d, toks, text, made, read, bound
+        if soft is None:
+            return d, toks, text, made, read, bound
+        return None, 'unbound' if not named else 'unread'
+
+    def or_form(self, dr, dec, toks, text, scope, nlab, k):
+        """An OR at decoder dec, the k-th atom of a body with tokens toks and atom texts text, by S's rules (draw_compound): (decoder
+        after its END, tokens, text, the label tokens that are local to a branch), or None. The labels the first branch makes and does
+        not read again are exported, and each label it reads again with chance P_REEXPORT."""
+        rng, c = self.rng, self.c
+        nparts = self.pick(*zip(*self.orc['shapes']))
+        d = dec.fork()
+        d.step(M.OR)
+        ctoks, parts, exported, first, first_made, base = [M.OR], [], None, [], set(), nlab + toks.count(M.STAR)
+        closed = dr.rel_closed
+        hidden0 = dr.fr.hidden
+        dr.rel_closed = lambda x, ends: self.closed(x, ends + 1)  # one more END closes the OR
+        all_made = set()
+        try:
+            for b in range(nparts):
+                for attempt in range(S.BRANCH_TRIES if b else 1):
+                    if attempt:
+                        c['or:branch retry'] += 1
+                    got = self.branch(dr, d, base + ctoks.count(M.STAR), tuple(toks + ctoks), k, scope, list(text), exported, first, first_made)
+                    if got[0] is not None:
+                        break
+                    c['or:fail branch %d %s' % (min(b + 1, 3), got[1])] += 1
+                else:
+                    return None
+                d, btoks, btext, made, read, bound = got
+                sep = M.END if b == nparts - 1 else ALSO_TOK
+                try:
+                    d = d.fork()
+                    d.step(sep)
+                except arclog.Refusal:
+                    c['or:fail close'] += 1
+                    return None
+                ctoks += btoks + [sep]
+                parts.append(btext)
+                all_made |= set(made)
+                if b:
+                    exported &= bound
+                else:
+                    first_made = set(made)
+                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT}
+                dr.fr.hidden = hidden0 | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
+        finally:
+            dr.rel_closed, dr.fr.hidden = closed, hidden0
+            dr.want, dr.want_types = set(), frozenset()
+        hide = frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
+        return d, ctoks, '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts), hide
+
     # ---------------------------------------------------------------- the OUT search
 
     def out_pairs(self, dec, rtok, cap):
@@ -650,8 +1030,12 @@ class Run:
         for p, ok in zip(self.columns, f.admits(self.columns)):
             if ok and len(out) < cap:
                 g = f.fork()
-                g.step(p)
-                g.step(M.CARET)
+                try:
+                    g.step(p)
+                    g.step(M.CARET)
+                except arclog.Refusal:  # a column OUT admits alone: the engine asks for a Position or Box column first
+                    self.c['out:column refused'] += 1
+                    continue
                 cs = [c for c, y in zip(self.columns, g.admits(self.columns)) if y]
                 out += [(p, c) for c in cs] or [(p, None)]
         return out[:cap]
@@ -698,7 +1082,11 @@ class Run:
             forced = []
             for t in toks:
                 forced = f.step(t)[0]
-            yield from self.finish(f, next(t for t in forced if self.V.kind(t) == 'relation'), label)
+            rtok = next((t for t in forced if self.V.kind(t) == 'relation'), None)
+            if rtok is None:
+                self.c['out:no relation ' + label] += 1
+                return
+            yield from self.finish(f, rtok, label)
         except arclog.Refusal:
             self.c['out:refused ' + label] += 1
         except arclog.Fault:
@@ -740,11 +1128,14 @@ class Run:
         f = dec.fork()
         f.step(RULE_TOK)
         self.fill_columns(pg, f)
-        for s in reversed(pg.new):
+        suits = self.gate.suits(pg.before)
+        pg.suit = pg.suit | {s: (suits.get(s, 0.0), self.rng.random()) for s in pg.new}
+        best = lambda rels: sorted(rels, key=lambda r: pg.suit[r[0]], reverse=True)  # noqa: E731
+        for s in sorted(pg.new, key=pg.suit.get, reverse=True):
             ts = pg.decl_types.get(s, ())
             if 'Color' in ts and not ({'Position', 'Box'} & set(ts)):
                 if len(ts) == 1 and (0, None) in pg.colmap.get(s, {}):
-                    pg.colors.insert(0, (s, self.ff0.col_by_pos[0]))
+                    pg.colors = best(pg.colors + [(s, self.ff0.col_by_pos[0])])
                 continue
             if not {'Position', 'Box'} & set(ts):
                 continue
@@ -767,8 +1158,7 @@ class Run:
                         yield from self.candidate(dec, toks, label)
             full = [(p, c) for p, c in pairs if c is not None]
             if full:
-                pg.grids.insert(0, (s, *full[0]))
-                pg.grids = [g for i, g in enumerate(pg.grids) if g[0] != s or not i]
+                pg.grids = best(pg.grids + [(s, *full[0])])
 
     def finish_pair(self, dec, rtok, p, c, label):
         """OUT over rtok at the column tokens p and c, on a fork of dec."""
