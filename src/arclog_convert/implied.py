@@ -21,7 +21,9 @@ The pass leaves B where:
   enters the body at B, and A joins it;
 - B stands in the body of a `RULE` or `DET` and makes a label: the label is a
   column of the clause's relation (`docs/arclog/arclog.md#sites`), which
-  other forms may read.
+  other forms may read;
+- the atom that implies B stands after a `NOT` or an `ALL` that follows B: with B gone, that `NOT` would stand
+  before the atom that binds its labels.
 
 The pass repeats until it removes no atom, since an atom it removes no longer
 implies another. The text stays as it is where it removes none."""
@@ -122,6 +124,14 @@ def _implies(a: L, b: L, named: set[str], clause: bool) -> bool:
     return True
 
 
+def _binds_before(items: list, a: L, b: L) -> bool:
+    """Whether the atom `a` that implies `b` stands before `b` or has no `NOT` or `ALL` between them: `b` leaves,
+    and a `NOT` between would stand before the atom that binds its labels."""
+    order = [id(x) for x in items]
+    i, j = order.index(id(a)), order.index(id(b))
+    return i < j or not any(isinstance(x, L) and x.head in ("NOT", "ALL") for x in items[j:i])
+
+
 def _step(text: str) -> str | None:
     """`text` without one implied atom; none where no atom is implied."""
     for placed in placements(read(text)):
@@ -131,7 +141,7 @@ def _step(text: str) -> str | None:
             for b in reversed(atoms):
                 peers = [a for a in atoms if a is not b and a.head == b.head]
                 named = _names(form, b) if peers else set()
-                if any(_implies(a, b, named, clause) for a in peers):
+                if any(_implies(a, b, named, clause) and _binds_before(items, a, b) for a in peers):
                     start = b.start
                     while text[start - 1].isspace():
                         start -= 1
