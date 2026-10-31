@@ -21,8 +21,10 @@ from engine.program import (
     RecordTerm,
     RecordType,
     RelationName,
+    Scope,
     UnionType,
     Unit,
+    UnitId,
     Variable,
     Wildcard,
     ComparisonOperator,
@@ -272,7 +274,16 @@ class Converter:
         # for each arclog name, the label and field of each site that a read of it writes, since a
         # label of a `DET` that no read names is existential and the relation holds no column for it
         self.read_sites: dict[str, set[tuple[str, str | None]]] = {}
+        # a `never` body of a pick reads the lib's relations as the units do, so the rewrite takes them as units
+        aparts = [(p, i, Unit(UnitId(-1 - n), Scope(p.scope), Atom(RelationName((), f"@apart{n}"), (), 0), body, None, None))
+                  for n, (p, i, body) in enumerate((p, i, body) for p in self.picks.values()
+                                                   for i, body in enumerate(p.aparts))]
+        prog = dc_replace(prog, units=prog.units + tuple(u for _, _, u in aparts))
         prog, judgment, self.lib_moved, lib_held = libmap_rewrite(prog, lib)
+        rewritten = {u.head.relation.name: u for u in prog.units if u.head.relation.name.startswith("@apart")}
+        for n, (p, i, _) in enumerate(aparts):
+            p.aparts[i] = tuple(rewritten[f"@apart{n}"].body or ())
+        prog = dc_replace(prog, units=tuple(u for u in prog.units if not u.head.relation.name.startswith("@apart")))
         MOVED_RELS.clear()
         MOVED_RELS.update({f"{was}.{r}": new for was, moves in self.lib_moved.values() for r, new in moves.items()})
         self.lib_judgment |= judgment
