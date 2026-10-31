@@ -276,6 +276,10 @@ class Form:
         super().__setattr__(key, value)
 
 
+ZERO_LINE = re.compile(r"  \(= \*(\w+) 0\)(\)*)")
+"""A top-level `(= *X 0)` of a form's lines, with the parentheses that close the form on its line."""
+
+
 class Dead(Exception):
     """A clause that reads a relation the current alt leaves empty."""
 
@@ -333,6 +337,31 @@ def nest_keyed(key_body: list[str] | None, blocks: list[list[str]], knames, head
             broad.append(b)
     close(out, ")")
     return out + [l for b in broad for l in b]
+
+
+def zero_heads(forms: list[Form]) -> None:
+    """Move to its reads each `(= *X 0)` that makes a column of a relation in every clause, which the checker refuses
+    at the top level of a clause: the clauses lose it, and a read at the top level of a body leaves out its site on `X`
+    and makes the site's label with a `(= *L 0)` after it. The rows of the relation's readers stay. A relation with a
+    read of another shape stays as it is."""
+    for name in dict.fromkeys(f.name for f in forms):
+        clauses = [f for f in forms if f.name == name]
+        made = [{m.group(1) for line in f.lines if (m := ZERO_LINE.fullmatch(line))} for f in clauses]
+        for x in set.intersection(*made):
+            read = re.compile(rf"(  \({re.escape(name)})((?: (?:[^()]|\([^()]*\))*)?)\)(\)*)")
+            site = rf" (?:\*{x}|\(:{x} \*(\w+)\))(?=[ )]|$)"
+            reads = [(f, i, line) for f in forms for i, line in enumerate(f.lines) if f"({name} " in line or f"({name})" in line]
+            if not all((m := read.fullmatch(line)) and re.search(site, m.group(2)) for _, _, line in reads):
+                continue
+            for f, i, line in reversed(reads):
+                m = read.fullmatch(line)
+                label = re.search(site, m.group(2))
+                f.lines[i:i + 1] = [f"{m.group(1)}{re.sub(site, '', m.group(2))})", f"  (= *{label.group(1) or x} 0){m.group(3)}"]
+            for f in clauses:
+                i = next(i for i, line in enumerate(f.lines) if (m := ZERO_LINE.fullmatch(line)) and m.group(1) == x)
+                closing = ZERO_LINE.fullmatch(f.lines.pop(i)).group(2)
+                if closing:
+                    close(f.lines, closing)
 
 
 def zero_domains(forms: list[Form]) -> None:

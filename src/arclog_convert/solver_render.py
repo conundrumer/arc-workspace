@@ -25,6 +25,7 @@ from arclog_convert.forms import (
     topo,
     without_repeats,
     zero_domains,
+    zero_heads,
 )
 from arclog_convert.terms import ctor_names
 
@@ -68,6 +69,7 @@ class RenderMixin:
     # ---- placement and rendering
 
     def render(self, forms: list[Form], claims: list[Claim], points, concept, all_ctors) -> str:
+        zero_heads(forms)
         zero_domains(forms)
         slugs = [cl.slug for cl in claims]
         idx = {s: i for i, s in enumerate(slugs)}
