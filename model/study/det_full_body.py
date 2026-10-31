@@ -151,7 +151,7 @@ def acquire_det_full_body_train_point(ev,record,adapter,ntrain,ntest,side='mutan
                 source=dict(side='gold',layout=LAYOUT,gold_source_kind=kind),
                 cached_acquisition=packet['receipt'],cache=dict(path=str(path),**_file(path))))
         else:
-            packet=_packet_complete(_acquire_original_gold_train(ev,record,binding,ntrain,
+            packet=_packet_complete(_acquire_original_gold_train(ev,record,binding,ntrain,ntest=ntest,test_rows=True,
                 source=dict(layout=LAYOUT,gold_source_kind='fresh_original_scope',judge_admission=False),copy_rows=copy_rows))
             kind='fresh_original_scope'
     if kind!='persisted_full' and not path.exists():
@@ -205,6 +205,8 @@ def inherit_available(old,stage,record,task_path,producer):
     tables=[deepcopy(t) for t in point['tables'] if t['id']!='G']
     if any('available' not in t['roles'] or not t.get('complete') or t.get('missing') for t in tables):
         raise ValueError('inherited point includes incomplete or nonavailable table')
+    if task['test'] and any(t.get('test_rows') is not False and not any('test' in e for e in t['entry_counts']) for t in tables):
+        raise ValueError('inherited available table lacks TEST entries')
     paths={t['path'] for t in tables}|{point['train'],point['libraries'],point['programs']['gold']}
     refs={}
     for relative in sorted(paths):

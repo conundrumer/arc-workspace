@@ -481,7 +481,7 @@ def _body(ev,bundle,body_path,full_det,cache):
         source=_sha(record['gold_sexp']),normalized=_sha(program.sexp()),body_path=mapped['body_path'],
         mapper_sha256=_sha(view.proof),kept_sha256=_sha(record['evaluation']['kept_assignments']),
         task_input=_file(Path(ev.cfg['tasks'])/(record['task']+'.json')),runtime_settings=ev.receipt,
-        transport='full-physical-body-shared-layouts-v2',enabled_decoder_evidence=bundle['key']['enabled_decoder_evidence'])
+        transport='full-physical-body-shared-layouts-v3',enabled_decoder_evidence=bundle['key']['enabled_decoder_evidence'])
     saved=Path(cache)/'normalized-gold/bodies'/(_sha(cache_key)+'.json.gz')
     saved_key=cache_key
     if not saved.exists():

@@ -979,13 +979,13 @@ def acquire_train_point(ev, record, adapter, ntrain, ntest, side='mutant', *, co
     return _acquire_original_gold_train(ev, record, binding, ntrain, copy_rows=copy_rows)
 
 
-def _acquire_original_gold_train(ev, record, binding, ntrain, *, source=None, copy_rows=True):
+def _acquire_original_gold_train(ev, record, binding, ntrain, *, ntest=0, test_rows=True, source=None, copy_rows=True):
     from tables import Incomplete
     from gold_body import capture,projection,projection_fields
     with capture(ev,record) as body:
         indices=projection(body,record,binding)
         fields=projection_fields(body,binding,indices)
-        packet=acquire_train_table(body['ev'],body['native'],body['table'],record,ntrain=ntrain,
+        packet=acquire_train_table(body['ev'],body['native'],body['table'],record,ntrain=ntrain,ntest=ntest,test_rows=test_rows,
             fields=fields,projection=indices,
             held_entries=body['held_entries'],source=dict(source or {},side='gold',observation=body['receipt']),
             copy_rows=copy_rows)
