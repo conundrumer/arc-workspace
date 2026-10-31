@@ -661,6 +661,7 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
     else:
         pool, results = None, map(convert_one, stems)
     asked: dict[str, Answers] = {}
+    stubbed: list[str] = []
     for stem, arclog, arcdata, kinds, m, um, mis, err, checked, answers in results:
         if err is not None:
             failed.append((stem, err))
@@ -672,7 +673,11 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
             corpus.mkdir(exist_ok=True)
             (corpus / f"{stem}.arclog").write_text(checked[0])
             (corpus / f"{stem}.arcdata").write_text(checked[1])
-        if answers is not None:
+        if any(k.startswith("no-det-") for k in kinds):
+            # a `(DET &x)` with no body has no columns, so a read of it fails the checks of every case
+            stubbed.append(stem)
+            _drop_cases(stem)
+        elif answers is not None:
             asked[stem] = answers
         merges += m
         unmerged += um
@@ -696,6 +701,8 @@ def convert_into(stems: list[str], out: Path, require_current_code: bool = False
     print(f"case files: {sum(c.written for c in ok)} cases of {sum(1 for c in ok if c.written)} solvers; "
           f"the passes ran on the cases of {sum(1 for c in ok if not c.kept)} solvers; "
           f"kept the case files of {sum(1 for c in ok if c.kept)} solvers")
+    if stubbed:
+        print(f"case files skipped, no determination plan: {len(stubbed)} stems ({', '.join(sorted(stubbed))})")
     print(f"merged {merges['relation']} relations and {merges['input']} inputs; "
           f"unmerged {merges['unmerged']} relations ({', '.join(sorted(set(unmerged)))}) "
           f"and {merges['input-unmerged']} inputs")
