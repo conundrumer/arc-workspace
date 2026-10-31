@@ -59,7 +59,7 @@ def table_packet(acquired, *, table_id, source_name, case, roles,
     Empty rows are real empty relations; missing contexts remain explicit.
     A native TASK entry must have been broadcast by the evaluator, not here.
     A TEST entry (example_kind 2) is written as `test`, a TRAIN entry as `train`.
-    The packet carries the evaluator's `test_rows` flag when it has one: False
+    The packet has the evaluator's `test_rows` flag when it has one: False
     marks a table that has no test rows, such as one that reads the test output.
     `test_rows_fallback` (the reason) says the table was over the cell cap with its test
     entries and holds its train entries only.

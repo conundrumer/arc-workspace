@@ -8,7 +8,7 @@ Run with the study runtime, through run_heavy:
     measure.py --points points.json --out OUT.jsonl [--only 0,3] [--mutants]
 
 `--points` is a JSON list of objects with `task`, `case`, `point` (the layout of
-feat-exp/sample/points.json, whose entries also carry `kind` and `pairs`).
+feat-exp/sample/points.json, whose entries also have `kind` and `pairs`).
 Outputs:
   OUT.jsonl           one row per (point, step, candidate atom)
   OUT.steps.jsonl     one row per (point, step): counts and sample sizes

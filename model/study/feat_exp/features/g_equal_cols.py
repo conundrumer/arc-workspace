@@ -10,7 +10,7 @@ from featlib import feature
 
 def _pairs(x):
     """Pairs of columns that hold one known type, other than Example, with one frame tag. A Position, Box or Offset
-    value carries its frame tag, so two values of different frames are never equal."""
+    value has its frame tag, so two values of different frames are never equal."""
     cols = [c for c in x.columns() if c.type is not None and c.type != 'Example' and c.frame is not None]
     return [(a.index, b.index) for a, b in itertools.combinations(cols, 2)
             if a.type == b.type and a.frame == b.frame]

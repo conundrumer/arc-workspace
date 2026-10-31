@@ -24,7 +24,7 @@ def _flat(p):
 
 @feature
 def a1_degenerate_cols(p):
-    """A1: columns of X that carry no information, over all rows of all entries (None below 2 rows).
+    """A1: columns of X that give no information, over all rows of all entries (None below 2 rows).
 
     dups: pairs of fields with the same type and frame tag (not Ident or Example) whose values are equal in every row.
     dups_varying: the dups whose column takes at least 2 distinct values.

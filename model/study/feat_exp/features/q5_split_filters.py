@@ -82,7 +82,7 @@ def _positive(atom):
 def _btype(arg, declared=False):
     """The type of the label at arg: the column type of the first site that makes the label, if that site comes at or
     before arg in the text; else None. Sites placed later cannot change it. With declared, the first site must be a column
-    of a declared table or a component port: a library relation types a column Box that can carry a Position, and the
+    of a declared table or a component port: a library relation types a column Box that can hold a Position, and the
     label then takes the type of the columns it is read at."""
     v = arg.variable
     if arg.label is None or v is None:
@@ -386,7 +386,7 @@ def q5f_atom_laws(p):
     `dp_box_at_position_f` (SP, H): atoms of a declared table or a component port with a label at a Position column whose
     first binder is a Box column of a declared table or a port (`_btype`; split of `q4b_geometry.dp_box_at_position`,
     which reads the meet over all sites). A first binder in a library relation does not count: `neighbor.Q` is a Box
-    column that carries a Position when P is one.
+    column that holds a Position when P is one.
 
     Needs: form. Monotone: yes.
     """

@@ -270,7 +270,7 @@ def _cell_set(rows, ci, size):
 
 @feature
 def p5_source_loss(p):
-    """P5: for each Position column of X whose variable an atom outside OR, NOT, IF and ALL binds from a Position column of an available table, per context whose cells carry the grid's frame size: the share of the matter cells that the source column holds and X's column does not, over the matter cells that the source holds. The matter cells are the cells where the train output differs from the input (lost; contexts where the two grids have one size) and the input cells off its most common color (fg). Sums over contexts. lost_max and lost_min over the pairs, n their number; fg_max, fg_min and fg_n the same for the foreground. None without such a pair or without a matter cell in a source. None at a Det point: X there is the task-level body table without its Example column, and every train example's entry holds the rows of all examples, so a row would be compared with another example's grids."""
+    """P5: for each Position column of X whose variable an atom outside OR, NOT, IF and ALL binds from a Position column of an available table, per context whose cells have the grid's frame size: the share of the matter cells that the source column holds and X's column does not, over the matter cells that the source holds. The matter cells are the cells where the train output differs from the input (lost; contexts where the two grids have one size) and the input cells off its most common color (fg). Sums over contexts. lost_max and lost_min over the pairs, n their number; fg_max, fg_min and fg_n the same for the foreground. None without such a pair or without a matter cell in a source. None at a Det point: X there is the task-level body table without its Example column, and every train example's entry holds the rows of all examples, so a row would be compared with another example's grids."""
     if p.kind == 'Det':
         return None
     xctx = _contexts(p.x)
@@ -332,7 +332,7 @@ def _in_boxes(cell, boxes, size):
 
 @feature
 def p8_box_source_loss(p):
-    """P8: for each Box column of X whose variable an atom outside OR, NOT, IF and ALL binds from a Box column of an available table, per context where the train input and output have one size and the boxes carry the grid's frame size: the share of the changed cells that lie in a box of the source column and in no box of X's column, over the changed cells that lie in a box of the source column; summed over contexts. lost_max and lost_min over the pairs. None without such a pair or without a changed cell in a source box. None at a Det point: X there is the task-level body table without its Example column, and every train example's entry holds the rows of all examples, so a row would be compared with another example's grids."""
+    """P8: for each Box column of X whose variable an atom outside OR, NOT, IF and ALL binds from a Box column of an available table, per context where the train input and output have one size and the boxes have the grid's frame size: the share of the changed cells that lie in a box of the source column and in no box of X's column, over the changed cells that lie in a box of the source column; summed over contexts. lost_max and lost_min over the pairs. None without such a pair or without a changed cell in a source box. None at a Det point: X there is the task-level body table without its Example column, and every train example's entry holds the rows of all examples, so a row would be compared with another example's grids."""
     if p.kind == 'Det':
         return None
     xctx = _contexts(p.x)
@@ -389,7 +389,7 @@ def p9_color_source_loss(p):
 
 @feature
 def p6_region_touch(p):
-    """P6: for each Position column of X whose frame is the input (or whose cells all carry the frame size of the grid), on contexts where the train input and output have one size: the share of the 8-connected regions of changed cells that the column holds a cell of (chg), and the share of the 8-connected regions of input cells off the most common color that it holds a cell of (fg); the column with the largest chg, then the largest fg. None without such a column or without a changed cell. None at a Det point: X there is the task-level body table without its Example column, and every train example's entry holds the rows of all examples, so a row would be compared with another example's grids."""
+    """P6: for each Position column of X whose frame is the input (or whose cells all have the frame size of the grid), on contexts where the train input and output have one size: the share of the 8-connected regions of changed cells that the column holds a cell of (chg), and the share of the 8-connected regions of input cells off the most common color that it holds a cell of (fg); the column with the largest chg, then the largest fg. None without such a column or without a changed cell. None at a Det point: X there is the task-level body table without its Example column, and every train example's entry holds the rows of all examples, so a row would be compared with another example's grids."""
     if p.kind == 'Det':
         return None
     x = p.x

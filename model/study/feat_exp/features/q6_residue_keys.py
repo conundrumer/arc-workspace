@@ -20,7 +20,7 @@ Keys:
     q6a_link_atoms: `link_strict` and `link_loose`, the uses of a label that lack a link atom that gold nearly always
         has (share 0.98 and 0.90 of the uses in other tasks). Rule points only.
         Class SC, soundness H. Needs: form, finished. Monotone: no (a later atom can be the link).
-    q6b_link_specific: the static form of the link rules that carry most of q6a, with no counts. Rule points only.
+    q6b_link_specific: the static form of the link rules that give most of q6a, with no counts. Rule points only.
         `relative_base_no_inside`: `relative` Base site, label made by a `port box` B column, no positive `inside` that
         reads the label at B.
         `relative_x_input_no_test`: `relative` X site, label made by `input.P`, no atom that tests the label.

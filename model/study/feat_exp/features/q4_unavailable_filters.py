@@ -76,7 +76,7 @@ def q4b_geometry(p):
     """Q4b Position sites. `zero_site_strict`: atoms (comparisons left out) with the literal 0 at a Position, Box or
     Offset column that is not a frame site (`featlib.frame_zero`), except `relative.X`. `dp_box_at_position`: atoms of
     a declared table or a port with a label of type Box at a Position column. The label counts whether the site makes
-    it or joins it, because which site of a label carries the `*` depends on the order of the OR branches.
+    it or joins it, because which site of a label has the `*` depends on the order of the OR branches.
 
     Needs: form. Monotone: yes.
     """

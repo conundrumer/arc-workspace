@@ -135,7 +135,7 @@ def j3_dead_derived(p):
     or more rows, that collapse varying inputs.
 
     dead: such columns; share: dead over computed geometric columns; cols: computed geometric columns; multi: the share
-    of examples with two or more rows. A computed column that does not vary while the table varies carries no row
+    of examples with two or more rows. A computed column that does not vary while the table varies gives no row
     information, but one that is constant because every input of its makers is a constant column is not counted, and
     neither is an Offset between two different varying cells (see `_collapses`). A column is computed when the label it holds is made by a library atom at a site whose declared type
     is Box, Position or Offset; `p.clause.x_columns` says which label each column of X holds, in RULE, DET and INIT

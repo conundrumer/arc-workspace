@@ -37,7 +37,7 @@ numbers). A table that reads no DET is as without the option, and so is G. The d
 option: build into a fresh output root and cache.
 
 With --test-rows, a visible table that is over the cell cap only because of its test entries (at every assignment, then
-at the kept ones) is written with its train entries only, at the kept assignments: it carries `"test_rows": false` and
+at the kept ones) is written with its train entries only, at the kept assignments: it has `"test_rows": false` and
 `"test_rows_fallback"` (the reason, with the cell count and the cap). A table that is over the cap without test entries
 fails as without the option, and so does G.
 
