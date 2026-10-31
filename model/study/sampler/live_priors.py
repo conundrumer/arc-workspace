@@ -136,6 +136,26 @@ def body_compounds(tasks):
     return out
 
 
+def nested_counts(tasks):
+    """{place: counts} of the ORs that stand inside a branch of an OR, in the bodies of RULEs and of an INIT's key and ports: 'branches'
+    is the branches of ORs, 'nests' the ORs inside a branch past its first atom, 'after' the nests with an atom after them in their
+    branch, ('parts', n) the nests of n branches."""
+    out = {k: collections.Counter() for k in ('RULE', 'key', 'port')}
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            bodies = [('RULE', [a for a in f[2:] if isinstance(a, list)])] if f[0] == 'RULE' else init_bodies(f) if f[0] == 'INIT' else []
+            for place, body in bodies:
+                for a in body:
+                    for b in [b for b in a[1:] if isinstance(b, list)] if a and a[0] == 'OR' else ():
+                        out[place]['branches'] += 1
+                        for i, x in enumerate(b):
+                            if i and isinstance(x, list) and x and x[0] == 'OR':
+                                out[place]['nests'] += 1
+                                out[place]['after'] += i < len(b) - 1
+                                out[place]['parts', len([y for y in x[1:] if isinstance(y, list)])] += 1
+    return out
+
+
 def registry_types(regcols):
     """S.lib_types over the registry's entries, which the engine exports with any program."""
     program = S.arclog.StudyProgram.from_sexp(READER_PROGRAM, S.arclog.DecodeSettings())
@@ -202,7 +222,7 @@ def fit():
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)

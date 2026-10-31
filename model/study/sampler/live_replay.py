@@ -103,18 +103,31 @@ class Walk:
             self.hard[one + 'unsafe'] += 1
         return d, a
 
-    def compound(self, dr, cur, k, labs, text, pfx, scope):
-        """The OR at self.i: the decoder after its END, its label numbers that the OR keeps local."""
+    def compound(self, dr, cur, k, labs, text, pfx, scope, nested=False):
+        """The OR at self.i: the decoder after its END, its label numbers that the OR keeps local (those of ORs inside it too), its atom
+        texts, and (the labels it exports, those every branch reads, those some branch reads) of the labels the OR does not make. An OR
+        inside a branch gives atom texts of its own atoms, and the branch has it as one atom."""
         run, t = self.run, self.t
         d = cur.fork()
         d.step(t[self.i])
         self.i += 1
-        branches, loc = [], labs
+        branches, loc, lost, inner, reads = [], labs, set(), [], []
         while True:
             btext, j = [], 0
             while t[self.i] not in (ALSO_TOK, M.END):
-                if t[self.i] in (M.OR, *HEADS):
+                if t[self.i] in HEADS or (t[self.i] == M.OR and nested):
                     raise Refused('compound inside a compound')
+                if t[self.i] == M.OR:
+                    j, start = j + 1, self.i
+                    if j < 2 or not dr.orc.get('nest'):
+                        self.hard['or:nested'] += 1
+                    d, hide, atoms, (exp, rall, rany) = self.compound(dr, d, k + j - 1, loc, [*text, *btext], pfx, scope, True)
+                    loc += sum(x in (M.STAR, M.CARET) for x in t[start:self.i])
+                    lost |= hide
+                    inner += atoms
+                    dr.fr.hidden = dr.fr.hidden | frozenset(run.ff0.label_tok[i] for i in hide if i in run.ff0.label_tok)
+                    btext.append('(OR %s)' % ' '.join(['*L%d' % x for x in exp] + ['L%d' % x for x in rany]))
+                    continue
                 end, j = self.atom_end(self.i), j + 1
                 d, a = self.flat(dr, d, btext, end, self.i, k + j - 1, loc, pfx, scope, run.can_close, 'or:try:', text)
                 loc += sum(x in (M.STAR, M.CARET) for x in t[self.i:end])
@@ -146,7 +159,10 @@ class Walk:
             self.hard['or:first branch keeps an unread label'] += 1
         if any(m - r for m, r in zip(made[1:], read[1:])) and dr.place != 'key':
             self.soft['or:later branch leaves a label unread'] += 1
-        return d, {int(x) for m in made for x in m} - {int(x) for x in exported}, [a for b in branches for a in b]
+        every = {int(x) for m in made for x in m}
+        rd = [{int(x) for x in r} for r in read]
+        atoms = [a for b in branches for a in b if not a.startswith('(OR ')] + inner
+        return d, every - {int(x) for x in exported} | lost, atoms, ({int(x) for x in exported}, set.intersection(*rd) - every, set.union(*rd) - every)
 
     def body(self, pg, dr, kind, cur, nlab, keys=()):
         """The body at self.i through its END: gates as in Run.body. (decoder before the END, atom texts, types in scope)."""
@@ -161,7 +177,7 @@ class Walk:
             if t[self.i] == M.OR:
                 if dr.orc is None:
                     raise Refused('OR in a %s' % kind)
-                cur, hide, atoms = self.compound(dr, cur, k, labs, text, pfx, scope)
+                cur, hide, atoms, _ = self.compound(dr, cur, k, labs, text, pfx, scope)
                 labs = nlab + sum(x in (M.STAR, M.CARET) for x in self.t[self.start:self.i])
                 dr.fr.hidden = dr.fr.hidden | frozenset(run.ff0.label_tok[i] for i in hide if i in run.ff0.label_tok)
                 dr.drawn += atoms

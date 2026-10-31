@@ -21,7 +21,8 @@ next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how
 counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
-alone, and other labels stay in their branch. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
+alone, and other labels stay in their branch. A branch may take an OR as its last atom, from that place's counts (one level deep); the
+labels that OR exports are the branch's, and its other labels stay in it. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
@@ -467,6 +468,8 @@ class Run:
         self.root = session.decoder()
         self.rng = random.Random(seed)
         self.orcs = {'RULE': or_counts(pri['compound'])} | {k: or_counts(v) for k, v in pri['compounds'].items()}
+        for place, n in pri.get('nested', {}).items():  # an OR inside a branch: a branch's chance of one, and the chance that an atom follows it
+            self.orcs[place] |= dict(nest=n['nests'] / max(n['branches'], 1), nest_after=(n['after'] + 0.5) / (n['nests'] + 1.0))
         self.key_labels = sorted(pri.get('key_labels', {1: 1}).items())  # a key's count of ^ labels, and its gold count
         self.t0 = time.monotonic()
         self.c = collections.Counter()
@@ -1099,7 +1102,7 @@ class Run:
                 return res
         return None
 
-    def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local, want, want_types):
+    def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local, want, want_types, nests=0.0):
         """One branch at decoder d: (decoder, tokens, atom texts, label numbers made, numbers bound) or (None, reason). It holds S's
         rules of draw_compound: a branch may stop only where it can close, and a later branch closes where it binds every exported
         label and reads every label it makes, or with S's small chance where it breaks one of those. With exported None, the
@@ -1120,6 +1123,7 @@ class Run:
                 bound |= set(read) & exported
                 start = 2
                 self.c['or:else negation'] += 1
+        nest_due, nest_next = bool(nests) and self.rng.random() < nests, False  # a branch with an OR inside takes it as its last atom, as gold's mostly do
         for j in range(start, self.lim.branch_atoms + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
@@ -1128,32 +1132,54 @@ class Run:
             wtypes = [types[i] for i in wanted if types.get(i, ANY_TYPE) != ANY_TYPE] + list(want_types)
             dr.want_types = frozenset(wtypes)
             joins = k + j > 2 or (bool(want) and not later)
-            res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer, text, joins)
-            if res is None:
-                return None, 'no atom'
-            d = res[0].dec
-            toks += list(res[0].toks)
-            text.append(res[3])
-            fresh = [int(x) for x in re.findall(r'\*L(\d+)', res[3])]
-            joins = [int(x) for x in re.findall(r'(?<![*\w])L(\d+)', res[3])]
-            types.update({int(x[1:]): t for x, t in self.label_types(dr, [res[3]]).items()})
+            nest = None
+            if nest_next:
+                nest = self.or_form(dr, d, [*pkey, *toks], outer + text, scope, labs - pkey.count(M.STAR), k + j - 1, True)
+                self.c['or:nested' if nest else 'or:nested failed'] += 1
+                nest_due = False
+                if nest is None:  # the branch closes as it could before
+                    self.c['or:soft close'] += soft is not None
+                    return d, toks, text, made, read, bound
+            if nest is not None:
+                d, ntoks, ntext, hide, atoms, (exports, read_all, read_any) = nest
+                toks += ntoks
+                text.append(ntext)
+                dr.fr.hidden = dr.fr.hidden | hide
+                types.update({int(x[1:]): t for x, t in self.label_types(dr, atoms).items()})
+                self.inner += atoms
+                fresh, joins, binds, stop = sorted(exports), sorted(read_any), read_all, 1 - dr.orc['nest_after']
+            else:
+                res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer, text, joins)
+                if res is None:
+                    return None, 'no atom'
+                d = res[0].dec
+                toks += list(res[0].toks)
+                text.append(res[3])
+                fresh = [int(x) for x in re.findall(r'\*L(\d+)', res[3])]
+                joins = [int(x) for x in re.findall(r'(?<![*\w])L(\d+)', res[3])]
+                types.update({int(x[1:]): t for x, t in self.label_types(dr, [res[3]]).items()})
+                if not later and not res[3].startswith('(NOT'):
+                    first.append(list(res[0].toks))
+                binds, stop = set(joins), hz.get(j, 1.0)
             made += fresh
             read.update(joins)
-            if not later and not res[3].startswith('(NOT'):
-                first.append(list(res[0].toks))
-            bound |= set(fresh) | (set(joins) & (exported or set()))
+            bound |= set(fresh) | (binds & (exported or set()))
             named, unread = not later or exported <= bound, later and strict and any(not read[x] for x in made)
             if not named and j >= self.lim.bind_atoms and self.rng.random() < BIND_QUIT:
                 return None, 'unbound'
             soft = None if named and not unread else S.P_UNREAD_LOCAL if named else S.P_UNNAMED if not unread else 0.0
-            if self.rng.random() < hz.get(j, 1.0) and (soft is None or self.rng.random() < soft):
+            nest_next = False
+            if self.rng.random() < stop and (soft is None or self.rng.random() < soft):
+                if nest_due and nest is None and j < self.lim.branch_atoms:
+                    nest_due = nest_next = True
+                    continue
                 self.c['or:soft close'] += soft is not None
                 return d, toks, text, made, read, bound
         if soft is None:
             return d, toks, text, made, read, bound
         return None, 'unbound' if not named else 'unread'
 
-    def or_form(self, dr, dec, toks, text, scope, nlab, k):
+    def or_form(self, dr, dec, toks, text, scope, nlab, k, nested=False):
         """An OR at decoder dec, the k-th atom of a body with tokens toks and atom texts text, by S's rules (draw_compound): (decoder
         after its END, tokens, text, the label tokens that are local to a branch, the branches' atom texts), or None. The labels the
         first branch makes and does not read again are exported, and each label it reads again with chance P_REEXPORT. In a key, the
@@ -1165,20 +1191,25 @@ class Run:
         ctoks, parts, exported, first, first_made, base = [M.OR], [], None, [], set(), nlab + toks.count(M.STAR)
         closed = dr.rel_closed
         hidden0, want, want_types = dr.fr.hidden, dr.want, dr.want_types
-        dr.rel_closed = lambda x, ends: self.closed(x, ends + 1)  # one more END closes the OR
-        all_made = set()
+        dr.rel_closed = lambda x, ends: closed(x, ends + 1)  # one more END closes the OR
+        all_made, reads = set(), []
+        if not nested:
+            self.lost, self.inner = frozenset(), []  # the label tokens that the ORs inside this one keep local, and their atoms' texts
         try:
             for b in range(nparts):
                 for attempt in range(S.BRANCH_TRIES if b else 1):
                     if attempt:
                         c['or:branch retry'] += 1
-                    got = self.branch(dr, d, base + ctoks.count(M.STAR), tuple(toks + ctoks), k, scope, list(text), exported, first, first_made, want, want_types)
+                    kept = self.lost, len(self.inner)
+                    got = self.branch(dr, d, base + ctoks.count(M.STAR), tuple(toks + ctoks), k, scope, list(text), exported, first, first_made, want, want_types, 0.0 if nested else dr.orc.get('nest', 0.0))
                     if got[0] is not None:
                         break
+                    self.lost, self.inner[kept[1]:] = kept[0], []  # the failed branch's nested ORs are not part of the retry
                     c['or:fail branch %d %s' % (min(b + 1, 3), got[1])] += 1
                 else:
                     return None
                 d, btoks, btext, made, read, bound = got
+                reads.append({x for x, v in read.items() if v})
                 sep = M.END if b == nparts - 1 else ALSO_TOK
                 try:
                     d = d.fork()
@@ -1194,12 +1225,17 @@ class Run:
                 else:
                     first_made = set(made)
                     exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(rng.sample(made, min(len(made), dr.key_labels)))
-                dr.fr.hidden = hidden0 | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
+                dr.fr.hidden = hidden0 | self.lost | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
         finally:
             dr.rel_closed, dr.fr.hidden = closed, hidden0
             dr.want, dr.want_types = want, want_types
         hide = frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
-        return d, ctoks, '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts), hide, [a for p in parts for a in p]
+        atoms = [a for p in parts for a in p if not a.startswith('(OR ')]
+        ctext = '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts)
+        if nested:
+            self.lost |= hide
+            return d, ctoks, ctext, hide, atoms, (exported, set.intersection(*reads) - all_made, set.union(*reads) - all_made)
+        return d, ctoks, ctext, hide | self.lost, atoms + self.inner
 
     # ---------------------------------------------------------------- the OUT search
 
