@@ -506,8 +506,32 @@ class ClauseWriter:
         collect_vars(list(lits), vs)
         self.clause_vars |= {self.label(v) for v in vs}
         out: list[str] = []
-        for l in self.reorder(list(lits), bound if bound_before is None else bound_before):
+        for l in self.equals_first(self.reorder(list(lits), bound if bound_before is None else bound_before), bound):
             out.extend(self.lit(l, bound))
+        return out
+
+    def equals_first(self, lits: list, bound: set[str]) -> list:
+        """`lits` with each `X = Y` whose `Y` stands in `bound`, and whose `X` a later site would make, before the
+        first atom that holds `X`: the `=` makes `X`, `(= *X Y)`, and the atom reads it. A site that makes `X` would
+        leave the `=` a test of a label its own list makes, which arclog writes at the site."""
+        out = list(lits)
+        for l in lits:
+            if not (isinstance(l, Comparison) and l.op.value == "=" and isinstance(l.lhs, Variable)
+                    and isinstance(l.rhs, Variable)):
+                continue
+            made = [x for x in (l.lhs.name, l.rhs.name) if self.label(x) not in bound]
+            if len(made) != 1:
+                continue
+
+            def holds(x) -> bool:
+                held: set[str] = set()
+                collect_vars([x], held)
+                return made[0] in held
+            binders = [i for i, x in enumerate(out[:out.index(l)])
+                       if isinstance(x, AtomLiteral) and not x.negated and holds(x)]
+            if binders:
+                out.remove(l)
+                out.insert(binders[0], l)
         return out
 
     def reorder(self, lits, bound: set[str]):
