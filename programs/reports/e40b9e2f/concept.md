@@ -5,7 +5,7 @@
 
 ## Scene
 - `one-figure`: the grid holds one figure of non-`bg` cells on a field of `bg`, which may be disconnected at corners.
-- `square-core`: the figure holds one largest solid square block that each element of `group` about its own center maps onto itself, colors included; this is the core.
+- `square-core`: the figure holds one largest solid square block that each element of `group` about its own center maps onto itself, colors included, once the squares tied for largest about which `consistent-images` fails drop out; this is the core.
 - `consistent-images`: the quarter-turn images of the figure about the core center fall inside the grid, and no two of them give one cell two different colors.
 
 ## Rules

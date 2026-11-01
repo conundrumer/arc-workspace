@@ -2,11 +2,8 @@
 
 ## Concept
 - Fits every pair: the core is the 3x3 at rows 4-6, cols 3-5 in train0, the 2x2 at rows 4-5, cols 2-3 in train1, the 3x3 at rows 3-5, cols 3-5 in train2 and test0, and no image conflicts or leaves the grid.
-- The rule as the generator applies it: the generator draws a whole pattern with four-fold rotational symmetry about a center, erases arm cells and never core cells, and pairs the input with the whole pattern. The concept's core, the largest solid square that `group` maps onto itself, approximates that center.
+- The generator draws a whole pattern with four-fold rotational symmetry about a center, erases arm cells and never core cells, and pairs the input with the whole pattern. The concept's core gives that center.
 - On every erasure of the train patterns (keep the core, cut each arm orbit down to a nonempty subset; 224, 224 and 14 inputs), every fitting branch gives the generator's output.
-- Witness `tied-cores`, verdict `other`: train1's input with 6 at (3,2) and (3,3). The 2x2 blocks of 6 at rows 3-4 and rows 4-5, cols 2-3 tie for the core, so the concept and every branch are undefined. The generator gives the whole pattern about (4.5, 2.5): `3 6 6 3 / 6 6 6 6 / 6 6 6 6 / 3 6 6 3` at rows 3-6, cols 1-4.
-    - breaks `square-core`
-    - plausibility `variant`; the invariant it breaks: no arm cell joins core-colored cells into a second square as large as the core
 
 ## Choice points
 - `center`: how the turning center is found
@@ -18,6 +15,8 @@
             - `$MirrorCore`: replaces `square-core`; the core is the largest solid square that every element of D4 maps onto itself, while the images stay under `group`. It is undefined where that square ties, and where the concept is undefined at its center. Fits every pair.
                 - witness `chiral-core`: 16x16, a 4x4 pinwheel core and a solid 3x3 arm block of 1; `$MirrorCore` turns about the arm block
                 - plausibility `borderline`, verdict `concept`; the invariants it breaks: 10x10 grids, a core of side 2 or 3 that mirrors map onto itself, arms of single cells
+                - witness `tied-cores`: train1's input with 6 at (3,2) and (3,3). The 2x2 blocks of 6 at rows 3-4 and rows 4-5, cols 2-3 tie, and the turn about rows 3-4 paints the 3 at (3,1) on the 6 at (5,2), so the concept turns about (4.5, 2.5): `3 6 6 3 / 6 6 6 6 / 6 6 6 6 / 3 6 6 3` at rows 3-6, cols 1-4. `$MirrorCore` is undefined there.
+                - plausibility `variant`, verdict `concept`; the invariant it breaks: no arm cell joins core-colored cells into a second square as large as the core
             - `$OpenCore`: replaces `square-core`; the core is the largest square that holds a figure cell and that `group` maps onto itself, `bg` cells included. It is undefined where that square ties, which happens on any input with two isolated figure cells. Fits every pair.
                 - witness `sparse-square`: the 3x3 of field around the lone 2 at (6,3) is larger than the 2x2 of 1, so `$OpenCore` turns about (6,3)
                 - plausibility `variant`, verdict `concept`; the invariant it breaks: every arm cell touches the rest of the figure at a side or a corner

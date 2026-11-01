@@ -5,18 +5,14 @@
 //  bg (0), which may be disconnected at corners.
 // @scene square-core: the figure holds one largest solid square block that
 //  each element of group (SYM_C4) about its own center maps onto itself,
-//  colors included; this is the core.
+//  colors included, once the squares tied for largest about which
+//  consistent-images fails drop out; this is the core.
 // @scene consistent-images: the quarter-turn images of the figure about the
 //  core center fall inside the grid, and no two of them give one cell two
 //  different colors.
 // @rule quarter-turn-completion: each figure cell, under each element of group
-//  about the center of the whole pattern the generator drew, paints its color
-//  at its image cell.
-//     @approximated: each figure cell, under each element of group about the
-//      core center (a quarter, a half and three quarters turn), paints its
-//      color at its image cell.
-//     @witness tied-cores: variant other
-//         @relaxed square-core
+//  about the core center (a quarter, a half and three quarters turn), paints
+//  its color at its image cell.
 // @rule rest-unchanged: every other cell keeps its input color.
 
 // how the turning center is found
@@ -41,6 +37,8 @@
     //  element of D4 maps onto itself, while the images stay under group;
     //  undefined where that square ties.
     // @witness chiral-core: borderline concept
+    // @witness tied-cores: variant concept
+    // @witness tied-core-off-grid: variant concept
   | MirrorCore {}
     // @scene square-core: the core is the largest square that holds a figure
     //  cell and that group maps onto itself, bg cells included; undefined
@@ -134,7 +132,8 @@ self.src(B, P_inner, Col), self.dst(B, P_inner, Col) :-
 .decl asym(b: Box)
 asym(B) :- holds_figure(B), params.group(S), sym_member(S, D), !self.map(B, D).
 
-// The core of each core branch: the largest candidate square, with no tie.
+// The core of each core branch: the largest candidate square. A tie leaves it
+// undefined, unless the branch resolves the tie.
 // @claim square-core
 .init core = ArgExtremes<CoreSquare, Box>
 
@@ -170,6 +169,27 @@ out(P, Col, Ch) :-
 
 // --- $SymmetricCore ---
 core.cand($SymmetricCore(), B, N) :- solid(B), !asym(B), side(B, N).
+
+// Each figure cell's color at each of its images about a tied square.
+.decl tied_image(b: Box, q: Position, col: Color)
+tied_image(B, Q, Col) :-
+    core_tie($SymmetricCore()), core.high($SymmetricCore(), B, _), figure(P, Col),
+    params.group(S), sym_member(S, D),
+    relative(B, P, P_rel), apply(D, P_rel, P_rel2), compose(B, P_rel2, Q).
+
+// A tied square whose images leave the grid or give one cell two colors.
+.decl inconsistent(b: Box)
+inconsistent(B) :- tied_image(B, Q, _), !in(Q, _).
+inconsistent(B) :- tied_image(B, Q, Col1), tied_image(B, Q, Col2), Col1 != Col2.
+
+// The tied squares left once the inconsistent ones drop out.
+.decl left(b: Box)
+left(B) :- core_tie($SymmetricCore()), core.high($SymmetricCore(), B, _), !inconsistent(B).
+
+.decl left_tie()
+left_tie() :- left(B1), left(B2), B1 != B2.
+
+center($CoreCenter($SymmetricCore()), B) :- left(B), !left_tie().
 
 // --- $AnySolidCore ---
 core.cand($AnySolidCore(), B, N) :- solid(B), side(B, N).

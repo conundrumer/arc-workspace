@@ -2,7 +2,7 @@
   "id": "e40b9e2f",
   "witnesses": [{
     "id": "tied-cores",
-    "separates": "two equal solid 2x2 blocks of 6 tie for the core: the concept is undefined, and the generator gives the whole pattern about the center of the 2x2 at rows 4-5, cols 2-3",
+    "separates": "two equal solid 2x2 blocks of 6 tie for the core, and the turn about the block at rows 3-4 paints the 3 at (3,1) on the 6 at (5,2): the concept turns about the block at rows 4-5, and $MirrorCore, which takes no tied square out, is undefined",
     "input": [
       [0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0],
@@ -15,18 +15,24 @@
       [0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0]
     ],
-    "output": [
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,3,6,6,3,0,0,0,0,0],
-      [0,6,6,6,6,0,0,0,0,0],
-      [0,6,6,6,6,0,0,0,0,0],
-      [0,3,6,6,3,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0]
-    ]
+    "output": [{
+      "cases": ["$SymmetricCore"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,3,6,6,3,0,0,0,0,0],
+        [0,6,6,6,6,0,0,0,0,0],
+        [0,6,6,6,6,0,0,0,0,0],
+        [0,3,6,6,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MirrorCore","$OpenCore","$MostAgreement","$AnySolidCore"],
+      "grid": null
+    }]
   }, {
     "id": "unsymmetric-square",
     "separates": "the largest solid square, rows 4-6 cols 4-6, is not symmetric: the concept turns about the 2x2 of 6, and $AnySolidCore turns about the 3x3, whose own cells conflict under the turn, so it is undefined",
@@ -314,6 +320,39 @@
       ]
     }, {
       "cases": ["$AnySolidCore"],
+      "grid": null
+    }]
+  }, {
+    "id": "tied-core-off-grid",
+    "separates": "two equal solid 2x2 blocks of 6 tie for the core, and the half turn of the 6 at (3,5) about the block at rows 0-1 falls on row -2: the concept turns about the block at rows 1-2, and $MirrorCore, which takes no tied square out, is undefined",
+    "input": [
+      [0,0,0,0,6,6,0,0,0,0],
+      [0,0,0,0,6,6,0,0,0,0],
+      [0,0,0,0,6,6,0,0,0,0],
+      [0,0,0,0,0,6,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$SymmetricCore"],
+      "grid": [
+        [0,0,0,0,6,6,0,0,0,0],
+        [0,0,0,6,6,6,6,0,0,0],
+        [0,0,0,6,6,6,6,0,0,0],
+        [0,0,0,0,6,6,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$MirrorCore","$OpenCore","$MostAgreement","$AnySolidCore"],
       "grid": null
     }]
   }]
