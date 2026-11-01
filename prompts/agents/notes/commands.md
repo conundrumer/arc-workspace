@@ -19,8 +19,9 @@
 * inline: #waiting-on-commands
 * inline: #ending-commands
 * unless: codex
-    - Run in the background each command whose run time, as your brief or a ticket it gives estimates it, passes the timeout of a foreground Bash call, under a `timeout` of about twice that estimate.
-        * comment: Code editor a79711fe1c59dd1f4 on change 9-1741 left unfinished the run its item asked for, of `scripts/corpus_survey.py`, estimated at about 30 minutes, under the `timeout 180` bound of foreground-commands and the 240000 ms foreground timeout: ticket 9-1933.
+    - Run no command in the background, and no command whose run time, as your brief estimates it or as its first items show it, passes about 30 s. Where your work needs such a command, write it in full with its ETA from a measured rate, and hand it to your launcher at the end of your turn: the launcher runs it and reads its output as it lands.
+        * comment: The user's words, 2026-11-01, through the supervisor session: "avoid bg work, and long commands are forbidden in subagents". A subagent in a long command produces nothing while it waits, and its prompt cache expires. The supervisor's scan of 13 subagents on 2026-11-01 found 11 in background commands, polls or foreground calls past 40 s.
+        * comment: Superseded: code editor a79711fe1c59dd1f4 on change 9-1741 left unfinished the run its item asked for, of `scripts/corpus_survey.py`, estimated at about 30 minutes, under the `timeout 180` bound of foreground-commands and the 240000 ms foreground timeout: ticket 9-1933. The handback above is the resolution.
 
 ## foreground-commands
 - Run each command, one you wrote included, at the least load that shows what your work needs: on only the inputs it needs and at the smallest size or cap that shows it. Reuse saved output while it still shows what your work needs.
