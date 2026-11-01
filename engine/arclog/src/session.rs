@@ -203,6 +203,13 @@ const INDEX_SHARE: usize = 16;
 const SUM_MARGIN: usize = 16;
 const SUM_INTERVAL: usize = 1024;
 
+/// An eviction that finds the bytes over the bound drops down to
+/// `bound - bound / EVICT_MARGIN`. That target lies under the line
+/// `bound - bound / SUM_MARGIN` of the quick return, so the stores after an
+/// eviction return early until the bytes grow back to that line.
+const EVICT_MARGIN: usize = 8;
+const _: () = assert!(EVICT_MARGIN < SUM_MARGIN);
+
 impl ResultCache {
     /// The value cached under `key`, if any. A value found counts as a use
     /// of its entry.
@@ -392,8 +399,9 @@ impl ResultCache {
         self.state.lock().expect(UNPOISONED).id_of(relation)
     }
 
-    /// Drops the relations that no entry holds, then the entries least
-    /// recently used, while the cache's bytes exceed `bound`.
+    /// Where the cache's bytes exceed `bound`, drops the relations that no
+    /// entry holds, then the entries least recently used, until the bytes
+    /// are under `bound - bound / EVICT_MARGIN`.
     pub fn evict(&self, bound: usize) {
         self.state.lock().expect(UNPOISONED).evict(bound);
     }
@@ -637,6 +645,7 @@ impl CacheState {
             return;
         }
         self.evicted = true;
+        let target = bound - bound / EVICT_MARGIN;
         let unheld: Vec<RelationId> = self.relations.iter().filter(|(_, held)| held.holders == 0).map(|(&id, _)| id).collect();
         for id in unheld {
             self.drop_relation(id);
@@ -646,13 +655,13 @@ impl CacheState {
         let mut indexed: Vec<(usize, RelationId)> = self.relations.iter().map(|(&id, held)| (held.relation.index_bytes().1, id)).collect();
         indexed.sort_unstable_by_key(|&(bytes, id)| std::cmp::Reverse((bytes, id.0)));
         for (bytes, id) in indexed {
-            if bytes < bound / INDEX_SHARE || self.bytes + self.index_bytes <= bound {
+            if bytes < bound / INDEX_SHARE || self.bytes + self.index_bytes <= target {
                 break;
             }
             self.relations[&id].relation.drop_indexes();
             self.index_bytes = self.index_bytes.saturating_sub(bytes);
         }
-        while self.bytes + self.index_bytes > bound {
+        while self.bytes + self.index_bytes > target {
             let Some((_, key)) = self.recency.pop_first() else { break };
             let entry = self.entries.remove(&key).expect("an entry for each recency tick");
             self.bytes -= entry_bytes(&key);
