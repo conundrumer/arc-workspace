@@ -1,13 +1,15 @@
 #!/usr/bin/env python
-"""Gold's clause through the live walk (live.py) with every choice taken to be gold's: its q by part, in bits.
+"""Gold's clause through the live walk (live.py) with every choice taken to be gold's: its q by part, in bits, over the orders of the clause.
 
-  <runtime python> or_q.py STEMS OUT.json [--steers struct,tilt,rel,choice] [--set NAME=value ...]
+  <runtime python> or_q.py STEMS OUT.json [--steers struct,tilt,rel,choice] [--set NAME=value ...] [--order-cap N] [--order-budget N]
 
-STEMS is a stems file of search_gold.py. A point's record in OUT.json has `parts` (bits by part: the OR taken or not, the branch count, the
-relation and the rest of each atom by place, the stops, the link coins), `total`, `atoms` (place, text, bits), `bad` (a choice to which the walk
-gives gold chance 0), `dead` (a gate or a refusal that ends gold's path) and `fell_back` (what the priors lack and the walk went on without, see Guide). Gold's atoms are forced through Drawer.atom with the steers and the
-join coin on, as S.gold_q does, and each rng call of the walk takes gold's side. The bits are those of gold's written atom order and of the first
-try of each choice, as the search counts a path. With UNREAD_BETA, a relation pick raises the forms that no form of the scope reads (live.unread_forms).
+STEMS is a stems file of search_gold.py. A point's record in OUT.json has `total`, -log2 of the sum of the chances of the clause's valid orders; `parts` (bits by part: the OR
+taken or not, the branch count, the relation and the rest of each atom by place, the stops, the link coins), the mean of each part over the orders, weighted by each order's chance,
+with the part ORDER_PART that makes the parts sum to `total`; `atoms` (place in the form, text with no label marks, bits), one row per atom, each the same mean, sorted by place and
+text; `detail`, likewise; `bad` (a choice to which the walk gives gold chance 0) and `dead` (a gate or a refusal that ends gold's path), of the written order where no order is valid;
+`orders`, how the orders were taken (see form_orders.sum_orders, and `walk`); and `fell_back` (what the priors lack and the walk went on without, see Guide).
+Gold's atoms are forced through Drawer.atom with the steers and the join coin on, as S.gold_q does, and each rng call of the walk takes gold's side. Each order's bits are those of the
+first try of each choice, as the search counts a path. With UNREAD_BETA, a relation pick raises the forms that no form of the scope reads (live.unread_forms).
 A coin is told from the line of live.py that makes it, so a change to those lines needs a change
 here. `--set` replaces a number in live.py before the run (for example MIRROR_NOT=0.8).
 
@@ -27,6 +29,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import form_orders as O  # noqa: E402
 import live  # noqa: E402
 import live_try  # noqa: E402
 import sampler_paths as P  # noqa: E402
@@ -40,6 +43,8 @@ L2 = math.log(2)
 COIN_ALT = os.environ.get('COIN_ALT', '1') == '1'  # gold's chance under a must_join coin that is true takes the weights that coin gives; 0 reads them as the free coin's
 SEP = (ALSO_TOK, M.END)
 SKIP = live.SKIP_TOK
+ORDER_PART = 'orders: entropy credit'  # the part of a record by which -log2 of the sum over orders is under the mean of the orders' bits: minus the entropy of the orders' chances
+ORDER_CAP, ORDER_BUDGET, ORDER_SECONDS = 256, 256, 300.0  # a clause with at most ORDER_CAP orders has all of them walked; another, ORDER_BUDGET walks of a guided draw; a clause's seconds
 
 
 def bits(p):
@@ -69,6 +74,7 @@ class Guide(search.Chooser):
         self.rows = None  # with a list here, the rows that the steers score on gold's path: (kind, row) per consult, in walk order (see emit)
         self.stop = None  # the stop row that waits for the coin of its atom
         self.in_all = 0  # the ALLs being drawn
+        self.marks = []  # the running bits after each atom of the walk
         self.fell_back = set()  # what the priors lack and the walk went on without: 'rigid' (a RIGID_DET's coins take 1/2), 'RIGID_DET atoms' (its parts take INIT's), 'empty_ports' (gold's empty port has no coin)
 
     def start(self, path):
@@ -350,10 +356,13 @@ class Guide(search.Chooser):
         return [n]
 
     def randrange(self, n):
-        """The else negation's pick among the first branch's atoms."""
+        """The else negation's pick among the first branch's atoms, which takes the atom with no call of Drawer.atom."""
         for _ in range(self.neg_toks):
             self.rest.popleft()
         self.add(self.where + 'br:else-NOT pick', 1.0 / n)
+        self.atoms.append((self.ctx, 'else-NOT', round(bits(1.0 / n), 2)))
+        self.detail.append(dict(k=None, joined=True, lj=None, lf=None, cur={'else-NOT pick': round(bits(1.0 / n), 3)}))
+        self.marks.append(sum(self.parts.values()))
         return self.neg_idx
 
     def pick(self, opts, weights):
@@ -443,6 +452,7 @@ class GuidedDrawer(search.SearchDrawer):
         if total != math.inf:
             g.parts['%s atom: join mix' % g.ctx] += total - sum(g.cur.values())
         g.atoms.append((g.ctx, res[3], None if total == math.inf else round(total, 2)))
+        g.marks.append(sum(g.parts.values()))
         d = self.deltas.get(id(res))  # the join coin: log q given must_join, and given not
         g.detail.append(dict(k=self.p_k, joined=bool(res[4]), lj=None if d is None else round(d[1] / math.log(2), 3), lf=None if d is None else round(d[2] / math.log(2), 3),
                              cur={ph: round(b, 3) for ph, b in g.cur.items()}))
@@ -573,20 +583,22 @@ def gold_rest(sess, scope, target, kind='RULE'):
     return collections.deque(t for t, _ in toks[1:-1])
 
 
-def one(sampler, task, case, point, kind=None, rows=None):
+def one(sampler, task, case, point, kind=None):
     """The record of the point's walk. kind is that of gold's clause, from its text where None."""
     d, lines = G.gold_of(task, case, point)
     scope, target = lines[:point[0]], lines[point[0]]
     sess, task_json, _ = live_try.session_of(task)
-    return walk(sampler, task, case, point, scope, target, sess, task_json, kind, rows)
+    return walk(sampler, task, case, point, scope, target, sess, task_json, kind)
 
 
-def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, rows=None, atoms=None):
-    """The record of the walk of the target clause over the scope forms on the session. With a list as rows, the rows that the steers score on
-    gold's path, (kind, row) for each consult, are added to it (the Drawers' sink; STEER_COVER decides where INIT bodies and later branches count).
-    atoms are the token lists of the target's atoms in another order, in place of the written one."""
+def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=None, rows=None, atoms=None, scoped=None, seconds=120):
+    """The record of the walk of one order, the target text as written, over the scope forms on the session. With a list as rows, the rows that the
+    steers score on gold's path, (kind, row) for each consult, are added to it (the Drawers' sink; STEER_COVER decides where INIT bodies and later
+    branches count). atoms are the token lists of the target's atoms in another order, in place of the written one. scoped is a `Run.scoped` of these
+    forms on this session, which saves the replay of the scope."""
     kind = kind or target.split()[0].lstrip('(')
-    run = GuidedRun(sampler.pri, sess, time.monotonic() + 120, task_json, live.Limits(form_tries=1))
+    run = GuidedRun(sampler.pri, sess, time.monotonic() + seconds, task_json, live.Limits(form_tries=1))
+    run.scoped = scoped
     dec, pg = run.scope(scope)
     g = run.rng = Guide(run, collections.deque(t for a in atoms for t in a) if atoms else gold_rest(sess, scope, target, kind), kind)
     g.rows = rows
@@ -604,9 +616,106 @@ def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, 
     except Exception as e:  # noqa: BLE001
         dead = '%s: %s | %s' % (type(e).__name__, str(e)[:100], [k for k in run.c if k.startswith(('form:', 'try:', 'or:'))][:4])
     rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(g.parts.items())}, counts=dict(g.counts),
-               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back))
+               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back), marks=g.marks, scoped=run.scoped)
     if kind in FORMS:
         rec['match'] = match
+    return rec
+
+
+def clean(rec):
+    """Whether a record of one order is valid."""
+    return not rec['bad'] and rec['dead'] is None and not rec['left']
+
+
+def order_walker(sampler, task, case, point, scope, kind, sess, task_json, seconds=120):
+    """form_orders' walk of an order's text. A walk that isn't valid has its marks up to where it stopped, so that the guided draw learns the choice that ended it."""
+    scoped = [None]
+
+    def go(text):
+        try:
+            rec = walk_order(sampler, task, case, point, scope, text, sess, task_json, kind, scoped=scoped[0], seconds=seconds)
+        except Exception as e:  # noqa: BLE001
+            refused = isinstance(e, live.arclog.Refusal) or 'Check(' in str(e)  # a mode, type or safety check of the engine
+            return dict(bits=None, marks=None, why='decoder' if refused else 'error', detail='%s: %s' % (type(e).__name__, str(e)[:160]))
+        scoped[0] = rec.pop('scoped')
+        if not clean(rec):
+            return dict(bits=None, marks=rec['marks'], why='walk', detail=str((rec['bad'] or [rec['dead']] if (rec['bad'] or rec['dead']) else ['left %d' % rec['left']])[0])[:120], rec=rec)
+        return dict(bits=sum(rec['parts'].values()), marks=rec['marks'], rec=rec)
+    return go
+
+
+def weighted(rows):
+    """The mean of each key of the dicts of rows, a list of (weight, dict), with a key that a dict lacks at 0."""
+    out = collections.Counter()
+    for w, d in rows:
+        for k, v in d.items():
+            if v is not None:
+                out[k] += w * v
+    return out
+
+
+def atom_means(form, valid):
+    """The rows of `atoms` and `detail`: for each atom of the form, the mean of its row over the orders, weighted by each order's chance. valid is a list of (weight, order, record)."""
+    rows = {leaf.leaf_id: [] for leaf in form.leaves}
+    for w, order, rec in valid:
+        emitted = form.emission(order)
+        if len(emitted) != len(rec['atoms']):  # a form of one proposer has no atom rows
+            continue
+        for leaf, (_, _, b), det in zip(emitted, rec['atoms'], rec['detail']):
+            rows[leaf.leaf_id].append((w, b, det))
+    done = []
+    for leaf in form.leaves:
+        got = rows[leaf.leaf_id]
+        if not got:
+            continue
+        total = sum(w for w, _, _ in got)
+        mean = sum(w * b for w, b, _ in got) / total
+        k = [x for x in got if x[2]['k'] is not None]
+        lj, lf = [x for x in got if x[2]['lj'] is not None], [x for x in got if x[2]['lf'] is not None]
+        det = dict(k=round(sum(w * d['k'] for w, _, d in k) / total, 3) if k else None, joined=round(sum(w * d['joined'] for w, _, d in got) / total, 3),
+                   lj=round(sum(w * d['lj'] for w, _, d in lj) / sum(w for w, _, _ in lj), 3) if lj else None, lf=round(sum(w * d['lf'] for w, _, d in lf) / sum(w for w, _, _ in lf), 3) if lf else None,
+                   cur={p: round(v / total, 3) for p, v in sorted(weighted([(w, d['cur']) for w, _, d in got]).items())})
+        done.append((leaf.place, O.unparse(O.strip_marks(leaf.tree)), round(mean, 2), det))
+    done.sort(key=lambda r: r[:2])
+    return [r[:3] for r in done], [r[3] for r in done]
+
+
+def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, cap=None, budget=None, seconds=None, seed=None):
+    """The record of the target clause over the scope forms on the session, read over its valid orders. `total` is -log2 of the sum of their chances,
+    and `parts`, `counts`, `atoms` and `detail` are means weighted by each order's chance (see the head of this file). A clause with at most cap orders has
+    each walked, and `orders.exact` is true. Another has budget walks of a guided draw, its `total` is an estimate and its means read the paths walked.
+    `orders` has the order counts (`orders`, an estimate where `orders_exact` is false), `walked` and `valid` paths, `refused` by reason, `written`, the bits of the
+    written order, which reads one order; `best`, those of the cheapest order walked; and for an estimate `walked_bits`, -log2 of the sum over the paths walked; `se_bits`; `ess`."""
+    kind = kind or target.split()[0].lstrip('(')
+    cap, budget, seconds = cap or ORDER_CAP, budget or ORDER_BUDGET, seconds or ORDER_SECONDS
+    go = order_walker(sampler, task, case, point, scope, kind, sess, task_json)
+    form = O.Form(target)
+    got = O.sum_orders(form, go, cap, budget, seconds, search.stable('%s %s' % (task, target)))
+    valid = [(o, r) for o, r in got['walks'] if r['bits'] is not None]
+    refused = collections.Counter(r['why'] for _, r in got['walks'] if r['bits'] is None)
+    written = got['written']
+    orders = dict(orders=got['orders'], orders_exact=got['orders_exact'], exact=got['exact'], walked=len(got['walks']), valid=len(valid), refused=dict(refused), written=written and written['bits'], best=min((r['bits'] for _, r in valid), default=None), stopped=got['stopped'], draws=got['draws'])
+    orders['refused_examples'] = {w: sorted({r['detail'][:100] for _, r in got['walks'] if r.get('why') == w})[:2] for w in refused}
+    if not valid:  # no order has a record to read: the written order's says why
+        rec = written['rec'] if written and written.get('rec') else dict(task=task, case=case, point=point, target=target, parts={}, counts={}, total=0.0, bad=[written['detail'] if written else 'no order'], dead=None, left=0, atoms=[], detail=[], fell_back=[])
+        rec.pop('marks', None)
+        rec.pop('scoped', None)
+        rec['orders'] = orders
+        return rec
+    if not got['exact']:
+        orders.update(walked_bits=round(got['walked_bits'], 3), se_bits=round(got['se_bits'], 3), ess=None if got['ess'] is None else round(got['ess'], 1))
+    low = min(r['bits'] for _, r in valid)
+    shares = [2 ** (low - r['bits']) for _, r in valid]
+    total = sum(shares)
+    means = [(w / total, o, r['rec']) for w, (o, r) in zip(shares, valid)]
+    parts = weighted([(w, r['parts']) for w, _, r in means])
+    parts[ORDER_PART] = got['bits'] - sum(parts.values())
+    atoms, detail = atom_means(form, means)
+    rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(parts.items())}, counts={k: round(v, 3) for k, v in sorted(weighted([(w, r['counts']) for w, _, r in means]).items())},
+               total=round(got['bits'], 2), bad=[], dead=None, left=0, atoms=atoms, detail=detail, fell_back=sorted({x for _, _, r in means for x in r['fell_back']}), orders=orders)
+    if kind in FORMS:
+        rec['match'] = any(r.get('match') for _, _, r in means)
+        orders['text_differs'] = sum(r.get('match') is False for _, _, r in means)
     return rec
 
 
@@ -616,7 +725,10 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--steers', default=','.join(live.STEERS))
     ap.add_argument('--set', nargs='*', default=[], help='NAME=value: a number of live.py or search.py, replaced for the run')
+    ap.add_argument('--order-cap', type=int, default=ORDER_CAP, help='a clause with at most this many orders has all of them walked')
+    ap.add_argument('--order-budget', type=int, default=ORDER_BUDGET, help='the walks of a clause with more')
     a = ap.parse_args()
+    globals().update(ORDER_CAP=a.order_cap, ORDER_BUDGET=a.order_budget)
     for kv in a.set:
         k, v = kv.split('=')
         setattr(search if hasattr(search, k) and not hasattr(live, k) else live, k, float(v))

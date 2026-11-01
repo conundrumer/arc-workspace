@@ -199,7 +199,7 @@ def form_rows(sampler, task, lines, i, sess, task_json, scope_mode, orders):
         walks += orders_of(run0, sess, task, i, scope, target, orders)
     for order, atoms in walks:
         rows = []
-        rec = or_q.walk(sampler, task, 'live', [i, 0], scope, target, sess, task_json, kind, rows, atoms)
+        rec = or_q.walk_order(sampler, task, 'live', [i, 0], scope, target, sess, task_json, kind, rows, atoms)
         clean = not rec['bad'] and rec['dead'] is None and not rec['left']
         if order == 0:
             status.update(bad=rec['bad'][:3], dead=rec['dead'], left=rec['left'], total=rec['total'], clean=clean)
