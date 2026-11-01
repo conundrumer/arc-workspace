@@ -830,11 +830,12 @@ class Rewriter:
                 elif comp == "TiebreakResolutions" and rn == "assign":
                     out.append(dc_replace(picked(a[0], a[2], a[3]), negated=l.negated))
                 elif comp == "TiebreakResolutions" and rn == "resolution" and not l.negated:
-                    others = set()
-                    for o in lits:
-                        if o is not l and isinstance(o, AtomLiteral) and not o.negated:
-                            term_vars(o.atom.args, others)
-                    if not keyed or term_vars(a[0], set()) <= others:
+                    # a positive `assign` at the same key reads the pick there, so it
+                    # already says the key has a model; any other literal that binds
+                    # the key does not
+                    if any(o is not l and isinstance(o, AtomLiteral) and not o.negated
+                           and o.atom.relation.instances == path and o.atom.relation.name == "assign"
+                           and o.atom.args[0] == a[0] for o in lits):
                         continue
                     out.append(picked(a[0], Wildcard(), Wildcard()))
                 elif comp == "TiebreakResolutions" and rn == "resolution" and isinstance(a[1], Wildcard):
