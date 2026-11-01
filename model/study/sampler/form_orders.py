@@ -9,7 +9,8 @@ These keep their places: a form's ports and key group, a port's head, and an ALL
 
 An order is one permutation of each set. A label's mark (`*` or `^`) goes on its first occurrence in the order, as in the decoder's tokens. An
 order is valid here where a NOT or a comparison comes after the labels it reads, a `=` of two labels comes after one of them (it makes the other), and an
-ALL comes after the labels it shares with the rest of the form. No label's mark is read from the text, so no written order is read. The rest of validity is the caller's walk: the decoder's checks, and a chance above 0 at each choice.
+ALL comes after the labels it shares with the rest of the form. No label's mark is read from the text, so no written order is read. The rest of validity
+is the caller's walk: the decoder's checks, and a chance above 0 at each choice.
 
 Two orders of a form with like atoms can give one token stream, which is one path of the proposal. A path counts once: `Form.path` is its key and
 `Form.multiplicity` is how many orders give it.
@@ -280,16 +281,20 @@ class Form:
 
     def orders(self):
         """Yields every order by the rule above, the written one where it comes."""
+        trail = []  # (stack, bound, item) of each choice of the prefix
+
         def go(stack, bound, prefix):
             if not stack:
                 yield tuple(prefix)
                 return
             for i in self.choices(stack, bound):
-                if self.refused and i not in self.choices(stack, bound):  # a rule that the orders so far taught
+                if self.refused and (i not in self.choices(stack, bound) or any(x not in self.choices(st, bo) for st, bo, x in trail)):  # a rule that the orders so far taught, here or at a choice before this one
                     continue
                 s, b = self.choose(stack, bound, i, [])
                 prefix.append(i)
+                trail.append((stack, bound, i))
                 yield from go(s, b, prefix)
+                trail.pop()
                 prefix.pop()
         stack, bound = self.start()
         yield from go(stack, bound, [])
