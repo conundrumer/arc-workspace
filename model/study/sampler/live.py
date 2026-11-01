@@ -384,6 +384,7 @@ class Limits:
     out_cands: int = int(os.environ.get('OUT_CANDS', 100))  # candidates of the OUT search at one form end
     one_repair: float = float(os.environ.get('ONE_REPAIR', 0))  # seconds that the ONE repair of one candidate may take (one_repair.py); 0 is off
     one_share: float = 0.25  # the share of the Run's time that the ONE repairs may take, besides the limit of one repair
+    one_det_tries: int = 25  # the ONE repairs that a Run may try on the trigger DET several, which is broad: legitimate sets look the same
     choose_lift: float = float(os.environ.get('CHOOSE_LIFT', 0))  # seconds that the CHOOSE lift of one candidate may take (choose_lift.py); 0 is off
     choose_share: float = 0.25  # the share of the Run's time that the CHOOSE lifts may take, besides the limit of one lift
 
@@ -1753,7 +1754,8 @@ class Run:
         forms = f.program_form().rstrip().split('\n')
         t0 = time.monotonic()
         text = '\n'.join(forms[:-1] if why == 'DET several' else forms)  # a DET's marks do not depend on the OUT form's columns
-        if text in self.one_done or self.one_seconds > self.lim.one_repair + self.lim.one_share * (t0 - self.t0):
+        spent = why == 'DET several' and self.c['one:tried DET several'] >= self.lim.one_det_tries
+        if spent or text in self.one_done or self.one_seconds > self.lim.one_repair + self.lim.one_share * (t0 - self.t0):
             self.c['one:skipped'] += 1
             return
         self.one_done.add(text)
