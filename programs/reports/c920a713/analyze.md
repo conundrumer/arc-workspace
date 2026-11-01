@@ -3,15 +3,8 @@
 ## Concept
 - Fits every pair (`probe.py` reproduces train0–2 and test0).
 - train2 input (16,6) shows 9 and (16,13) shows 4, and both cells lie on outlines 4 and 9. The `layer-order` rule therefore gives the pair 4, 9 no direct order, and the closure orders it through 3 (4 < 3 < 9). This is the stack the output shows.
-- The generator's rule: each outline is drawn whole, in stack order from the bottom, and covers what lies under it; one outline is above another when it was drawn later. The concept file's `layer-order` approximates this rule: an outline is the border of its color's bounding box, and the order is read from the cells that two such borders share.
-- Witness `hidden-side` (verdict `other`)
-    - Outline 3's top side lies wholly under outline 2's bottom side, so the box of 3's cells stops one row short. Outline 4 lies inside 3 and shows on that row.
-    - The concept reads 4 over 3, and with 3 over 5 over 4 this closes a cycle, so the concept is undefined. No branch is defined on it.
-    - The generator stacks 4, 5, 3, 2 from the bottom, which gives a 7×7 output with rings 4, 5, 3 and centre 2.
-    - Scene claim broken: `visible-extent`.
-    - Assignment: the stored one.
-    - Plausibility: `borderline`.
-    - Invariant of the inputs it breaks: in every input, the order read from the colors' boxes, with conflicting pairs dropped, ranks every outline with no cycle.
+- No drawing order renders train2 with each outline whole: its output's stack puts 9 over 4, and (16,13), on both outlines, shows 4. So the order is read from the shared cells, with conflicting pairs dropped, as `layer-order` states.
+- `outline-box` recovers a side that lies wholly under other outlines: the least box with every cell of the color on its border and no background on its border. On every pair that box is the color's bounding box.
 
 ## Choice points
 - `conflict-resolution`: how a pair of outlines is ordered when their shared cells show both colors.
@@ -36,7 +29,7 @@
 - `background`
     - `concept`: stored, 0.
     - `background=DominantColor`: derives the background as the input's commonest color. Undefined where two colors tie for commonest. Fits every pair.
-        - Witness `background=DominantColor`: two overlapping outlines cover 14 of 16 cells, so the derived background is 2. The derived model then finds 0 as an outline under 3.
+        - Witness `background=DominantColor`: three overlapping outlines cover 13 of 15 cells, so the derived background is 4. The derived model then finds 0 as an outline under 2.
             - Scene claim broken: none.
             - Assignment: the stored one.
             - Plausibility: `variant`.

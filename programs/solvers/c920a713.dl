@@ -1,22 +1,18 @@
 // c920a713
 // @draft
-// @keywords: color-class bbox occlude rank rings
+// @keywords: color-class occlude rank rings
 // @scene background: every cell that no outline covers is background.
 // @scene stacked-outlines: the input holds several rectangle outlines, one per
 //  color, each one cell wide; a cell where two or more outlines meet shows the
 //  color of one of them.
-// @scene visible-extent: each outline shows a cell on each of its four sides,
-//  so the bounding box of its color's cells is the outline.
 // @scene one-stack: the order that layer-order gives ranks every outline, with
 //  no two outlines left unordered and no cycle.
-// @rule layer-order: each outline is drawn whole, in stack order from the
-//  bottom, and covers what lies under it; one outline is above another when it
-//  was drawn later.
-//     @approximated: an outline is above another when some cell on both
-//      outlines shows its color and no cell on both shows the other's; the
-//      stack is that order closed under transitivity.
-//     @witness hidden-side: borderline other
-//         @relaxed visible-extent
+// @rule outline-box: an outline is the least box with every cell of its color
+//  on its border and no background on its border, so a side that lies wholly
+//  under other outlines still counts.
+// @rule layer-order: an outline is above another when some cell on both
+//  outlines shows its color and no cell on both shows the other's; the stack
+//  is that order closed under transitivity.
 // @rule nested-rings: the output is a square of side 2n-1 for n outlines; the
 //  ring at depth k from the edge, 1 cell wide, takes the outline with k
 //  outlines below it, so the bottom outline is the outer ring and the top
@@ -67,16 +63,40 @@
 .decl conflict_choice(c: Conflict)
 conflict_choice($Drop()). conflict_choice($Majority()).
 
-// An outline is the border of the box its color's cells bound.
-// @claim stacked-outlines visible-extent
-.init rect = Bbox<Color>
-rect.cell(Col, P) :- in(P, Col), !params.background(Col).
+// A color of the outlines.
+.decl ink(c: Color)
+ink(C) :- in(_, C), !params.background(C).
+
+// The rectangles drawn in the cells that show an outline.
+// @claim stacked-outlines outline-box
+.init frames = Outlines<Unit>
+frames.node($U(), P) :- in(P, C), ink(C).
+
+// A cell on the border of a rectangle.
+.decl on_border(p: Position, b: Box)
+on_border(P, B) :- in(P, _), frames.box($U(), B), box_edge(P, B, _).
+
+// A cell of color C lies off the border of rectangle B.
+.decl stray(c: Color, b: Box)
+stray(C, B) :- in(P, C), ink(C), frames.box($U(), B), !on_border(P, B).
+
+// The rectangles that hold all of color C's cells on their border.
+.decl fitting(c: Color, b: Box)
+fitting(C, B) :- ink(C), frames.box($U(), B), !stray(C, B).
+
+// Rectangle B does not lie inside some other fitting rectangle.
+.decl not_least(c: Color, b: Box)
+not_least(C, B) :- fitting(C, B), fitting(C, B2), !inside(B, B2).
+
+// The outline of color C.
+.decl outline(c: Color, b: Box)
+outline(C, B) :- fitting(C, B), !not_least(C, B).
 
 // A cell on the outlines of two colors.
 .decl shared(c: Color, c2: Color, p: Position)
 shared(C, C2, P) :-
-    in(P, _), rect.box(C, B), box_edge(P, B, _),
-    rect.box(C2, B2), C != C2, box_edge(P, B2, _).
+    outline(C, B), on_border(P, B),
+    outline(C2, B2), C != C2, on_border(P, B2).
 
 // C2 lies directly above C.
 .decl above(x: Conflict, c2: Color, c: Color)
@@ -100,7 +120,7 @@ above($Majority(), C2, C) :- votes.excess([C2, C], _).
 // --- shared ---
 
 .decl base(r: Layer)
-base([X, C]) :- conflict_choice(X), rect.box(C, _).
+base([X, C]) :- conflict_choice(X), ink(C).
 
 // The stack: the outlines above each outline, through a run of direct orders.
 .init over = Propagation<Layer, Color>
@@ -115,7 +135,7 @@ loose(X) :-
 
 // @claim nested-rings
 .init outlines = Tally<Unit, Color>
-outlines.item($U(), C) :- rect.box(C, _).
+outlines.item($U(), C) :- ink(C).
 
 .init strip = AxisFrame<Unit>
 strip.extent($U(), A, N) :- axis_elem(A), outlines.tally($U(), N).
