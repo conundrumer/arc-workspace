@@ -50,6 +50,8 @@ candidate, and a share one_share of the Run's time besides one such limit. With 
 With the limit choose_lift above 0 (env CHOOSE_LIFT), the OUT search of a form end that found no fit also ends with the CHOOSE lift (choose_lift.py) of the candidates that read
 a RULE whose table has keys with several rows: it adds a CHOOSE over that RULE's rows and judges the program as an OUT test is, with label + ' choose', and draws nothing.
 The lifts take at most choose_lift seconds a candidate, and a share choose_share of the Run's time besides one such limit. With the limit at 0 the search is as without the lift.
+A form end lifts only where one pair of a Position column and a Color column of a relation that the form declared covers at least choose_cover (env CHOOSE_COVER) of the cells that the train pairs want
+(choose_lift.cover); the counts have choose:skipped cover for the candidates of the form ends that do not. With choose_cover at 0 every form end lifts.
 
 A table request that runs to the session's deadline ends the draw (Spent), and a candidate that does ends the OUT search at that form:
 each later read of what it read costs one more deadline. A table that the table work cap stopped goes on, since gold has them: of 284
@@ -387,6 +389,7 @@ class Limits:
     one_det_tries: int = 25  # the ONE repairs that a Run may try on the trigger DET several, which is broad: legitimate sets look the same
     choose_lift: float = float(os.environ.get('CHOOSE_LIFT', 0))  # seconds that the CHOOSE lift of one candidate may take (choose_lift.py); 0 is off
     choose_share: float = 0.25  # the share of the Run's time that the CHOOSE lifts may take, besides the limit of one lift
+    choose_cover: float = float(os.environ.get('CHOOSE_COVER', 0.45))  # the least choose_lift.cover of a form end at which the CHOOSE lift runs; 0 is any form end
 
 
 @dataclasses.dataclass
@@ -1956,6 +1959,11 @@ class Run:
         if queue and self.c['consistent'] > fits:  # a search that found a fit has no stalled program to lift
             self.c['choose:skipped fit'] += len(queue)
             return
+        if queue and self.lim.choose_cover:
+            import choose_lift
+            if choose_lift.cover(pg.before, self.gate.masks, pg.new) < self.lim.choose_cover:  # the form end explains too little of the train outputs for a CHOOSE to finish it
+                self.c['choose:skipped cover'] += len(queue)
+                return
         for f, label in queue:
             yield from self.lifted(f, label)
 

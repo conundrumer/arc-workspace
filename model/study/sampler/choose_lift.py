@@ -3,6 +3,8 @@
 
     for forms, (index, key, shape), got in choose_lift.lifts(session, forms, tables, deadline): ...    # forms: the text of each form of the program, OUT last
 
+cover(ct, masks, new) reads the tables of a form end: the live Run lifts only at a form end whose cover is at least its choose_cover.
+
 key_facts(ct, masks) reads a RULE's table when its clause closes: for each key of columns under which a train or test entry has a value of several rows, the count of keys
 with several rows, of keys with one row (solo), over those entries, and of cells that a train pair wants and no row holds (empty, for a key of one cell column). The keys go in this order: one column,
 then more; no empty cell, then some; a cell column, then another; more solo keys first. A key whose rows leave no candidate column (every other column is a function of the
@@ -19,6 +21,9 @@ import collections
 import itertools
 import re
 
+import numpy as np
+
+import live
 import one_repair as O
 from sample2_col import M
 
@@ -84,6 +89,46 @@ def key_facts(ct, masks=None):
         out.append((cols, several, solo, empty, decided))
     out.sort(key=lambda k: (len(k[0]) > 1, k[3] > 0, types[k[0][0]] not in CELLS, -k[2]))
     return labels, types, out
+
+
+def cover(ct, masks, new):
+    """The most that one pair of a Position or Box column and a Color column covers, as a fraction of the cells that the train pairs want, over the relations of slots new
+    in step_tables result ct; 0.0 where no such pair exists. A cell is wanted as live.cell_masks says (a train output's cell that differs from the input, or any cell where the
+    sizes differ), and a pair covers it where a row of the train pair's entry holds the cell's Position and its output color. A task-wide table is read against every train pair,
+    and its entry of most cover stands."""
+    T, base = ct.tables, ct.base_tables or 0
+    rel = M.col(ct, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
+    values = np.frombuffer(ct.values, np.int32)
+    table, kind, pair = M.col(ct, 'entries', 'table'), M.col(ct, 'entries', 'example_kind'), M.col(ct, 'entries', 'example_index')
+    sub, rows, offset = M.col(ct, 'entries', 'kind'), M.col(ct, 'entries', 'rows'), M.col(ct, 'entries', 'offset')
+    stop, vstop, fault = ct.entries['stop_bound'], ct.entries['value_stop_bound'], ct.entries['fault']
+    entries = collections.defaultdict(list)  # table -> its train entries
+    for e in range(len(table)):
+        if kind[e] in (live.EXAMPLE_TASK, live.EXAMPLE_TRAIN) and sub[e] == 0 and not (stop[e] or vstop[e] or fault[e]):
+            entries[table[e] - base].append(e)
+    best = 0.0
+    for j, es in entries.items():
+        if int(rel[j]) not in new:
+            continue
+        types = [str(t) for t in T['column_types'][j]]
+        at = list(itertools.accumulate((4 if t in M.WIDE else 1 for t in types), initial=0))
+        if kind[es[0]] == live.EXAMPLE_TASK:  # each entry is read against every pair
+            reads = [[(e, m[9000][0]) for m in masks] for e in es]
+        else:
+            reads = [[(e, masks[k][9000][0]) for k, e in {int(pair[e]): e for e in es}.items()]]
+        for p in (a for a, t in zip(at, types) if t in CELLS):
+            for c in (a for a, t in zip(at, types) if t == 'Color'):
+                for read in reads:
+                    hit = total = 0
+                    for e, want in read:
+                        rs = values[offset[e]:offset[e] + rows[e] * at[-1]].reshape(-1, at[-1])
+                        i, k, color = rs[:, p], rs[:, p + 2], rs[:, c]
+                        ok = (i >= 0) & (i < 30) & (k >= 0) & (k < 30) & (color >= 0) & (color < 10)
+                        seen = np.zeros(9000, bool)
+                        seen[(10 * (30 * i + k) + color)[ok]] = True
+                        hit, total = hit + int((seen & want).sum()), total + int(want.sum())
+                    best = max(best, hit / total if total else 1.0)
+    return best
 
 
 class Names:
