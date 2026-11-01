@@ -49,9 +49,12 @@
 // A non-background color, under a reading of the background.
 .type Inked = [b: Background, col: Color]
 
-// A frame candidate: one or two frame colors, a single color written twice, under the readings of
-// the background and the pieces.
-.type FrameSet = [b: Background, pa: PieceParts, c1: Color, c2: Color]
+// Two frame colors in order, a single color written twice.
+.type ColorPair = [c1: Color, c2: Color]
+
+// A frame candidate: the class of the color pairs that hold one set of one or two frame colors,
+// under the readings of the background and the pieces.
+.type FrameSet = [b: Background, pa: PieceParts, id: Ident]
 
 // Piece o turned by d inside the box of frame candidate k.
 .type Pose = [k: FrameSet, o: Ident, d: D4]
@@ -87,12 +90,19 @@ ink(Bk, Col) :- background_choice(Bk), in(_, Col), !bg(Bk, Col).
 
 // --- the frame candidates ---
 
+// One class per set of colors: a pair and its reverse hold the same colors.
+.init pairs = Canon<ColorPair>
+pairs.equiv([C1, C2], [C2, C1]) :- ink(_, C1), ink(_, C2).
+
+.decl frame_color(id: Ident, col: Color)
+frame_color(Id, Col) :- pairs.id([Col, _], Id).
+
 .decl frame_set(k: FrameSet)
-frame_set([Bk, Pa, C1, C2]) :- piece_parts_choice(Pa), ink(Bk, C1), ink(Bk, C2).
+frame_set([Bk, Pa, Id]) :-
+    piece_parts_choice(Pa), ink(Bk, C1), ink(Bk, C2), pairs.id([C1, C2], Id).
 
 .decl frame_cell(k: FrameSet, p: Position, col: Color)
-frame_cell([Bk, Pa, C1, C2], P, Col) :-
-    frame_set([Bk, Pa, C1, C2]), in(P, Col), ( Col = C1 ; Col = C2 ).
+frame_cell([Bk, Pa, Id], P, Col) :- frame_set([Bk, Pa, Id]), frame_color(Id, Col), in(P, Col).
 
 // @claim crop
 .init frame_box = Bbox<FrameSet>
@@ -100,13 +110,12 @@ frame_box.cell(K, P) :- frame_cell(K, P, _).
 
 // The background cells of the candidate frame's box.
 .decl gap(k: FrameSet, p: Position)
-gap([Bk, Pa, C1, C2], P) :-
-    frame_box.box([Bk, Pa, C1, C2], B), in(P, Col), bg(Bk, Col), inside(P, B).
+gap([Bk, Pa, Id], P) :- frame_box.box([Bk, Pa, Id], B), in(P, Col), bg(Bk, Col), inside(P, B).
 
 // The pieces left when the candidate's colors make the frame.
 .decl piece(k: FrameSet, o: Ident)
-piece([Bk, Pa, C1, C2], O) :-
-    frame_set([Bk, Pa, C1, C2]), piece_cell([Bk, Pa, O], Col, _), Col != C1, Col != C2.
+piece([Bk, Pa, Id], O) :-
+    frame_set([Bk, Pa, Id]), piece_cell([Bk, Pa, O], Col, _), !frame_color(Id, Col).
 
 // --- the exact cover ---
 
@@ -116,7 +125,7 @@ gap_count.item(K, P) :- gap(K, P).
 
 // @claim exact-fit
 .init piece_count = Tally<FrameSet, Position>
-piece_count.item([Bk, Pa, C1, C2], P) :- piece([Bk, Pa, C1, C2], O), piece_cell([Bk, Pa, O], _, P).
+piece_count.item([Bk, Pa, Id], P) :- piece([Bk, Pa, Id], O), piece_cell([Bk, Pa, O], _, P).
 
 // A piece's footprint, read from its own box and turned by each element of piece_turns.
 // @claim exact-fit
@@ -133,12 +142,12 @@ shape(Pc, D, P_t) :-
 .init occ = Occurrences<Pose, Unit>
 occ.shape([K, O, D], P, $U()) :-
     gap_count.tally(K, N), piece_count.tally(K, N),   // the pieces hold as many cells as the gaps
-    piece(K, O), K = [Bk, Pa, _, _], shape([Bk, Pa, O], D, P).
+    piece(K, O), K = [Bk, Pa, _], shape([Bk, Pa, O], D, P).
 occ.cell([K, O, D], P, $U()) :- occ.shape([K, O, D], _, _), gap(K, P).
 
 .decl covers(k: FrameSet, pl: Placement, p: Position)
-covers([Bk, Pa, C1, C2], [O, D, B], P) :-
-    occ.occurrence([[Bk, Pa, C1, C2], O, D], B), shape([Bk, Pa, O], D, S), compose(B, S, P).
+covers([Bk, Pa, Id], [O, D, B], P) :-
+    occ.occurrence([[Bk, Pa, Id], O, D], B), shape([Bk, Pa, O], D, S), compose(B, S, P).
 
 // The placements some exact cover may hold.
 // @claim exact-fit
@@ -165,7 +174,7 @@ clash(K, R) :- laid(K, R, O, P), laid(K, R, O2, P), O != O2.
 .decl chosen(f: FrameColors, k: FrameSet)
 
 out(P_inner, Col, [Bk, F, Pa], R) :-
-    chosen(F, K), K = [Bk, Pa, _, _],
+    chosen(F, K), K = [Bk, Pa, _],
     ties.resolution(K, R), !clash(K, R),   // with as many piece cells as gaps, an exact cover
     frame_box.box(K, B), crop(P, B, P_inner),
     ( frame_cell(K, P, Col)                                // the frame stays
@@ -217,10 +226,9 @@ chosen($Search(), K) :- frame_set(K).
 .init most = Mode<Background, Color, Position>
 most.item(Bk, Col, P) :- in(P, Col), ink(Bk, Col).
 
-// A color with the most cells lies outside the candidate.
-.decl most_outside(k: FrameSet)
-most_outside([Bk, Pa, C1, C2]) :- frame_set([Bk, Pa, C1, C2]), most.mode(Bk, C), C != C1, C != C2.
+// The candidate's colors are not the colors with the most cells.
+.decl off_most(k: FrameSet)
+off_most([Bk, Pa, Id]) :- frame_set([Bk, Pa, Id]), most.mode(Bk, Col), !frame_color(Id, Col).
+off_most([Bk, Pa, Id]) :- frame_set([Bk, Pa, Id]), frame_color(Id, Col), !most.mode(Bk, Col).
 
-chosen($FrameMostCells(), [Bk, Pa, C1, C2]) :-
-    frame_set([Bk, Pa, C1, C2]), most.mode(Bk, C1), most.mode(Bk, C2),
-    !most_outside([Bk, Pa, C1, C2]).
+chosen($FrameMostCells(), K) :- frame_set(K), !off_most(K).
