@@ -1991,7 +1991,7 @@ class Drawer:
         else:
             fresh = c['kind'][(rel, 'fresh')] + ALPHA
             join = c['kind'][(rel, 'join')] + c['kind'][(rel, 'rep')] + ALPHA
-            zero = c['kind'][(rel, 'zero')] * 0.1
+            zero = max(c['kind'][(rel, 'zero')] * 0.1, ZERO_FLOOR)  # a relation that gold never wrote with a 0 has the floor too, as a column with counts does
         labs = [o for o in os if fr.KIND[o] == 'label']
         newest = max(labs, key=lambda t: int(self.V.name(t)[1:])) if labs else None
         ws = []
