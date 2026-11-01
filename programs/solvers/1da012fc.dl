@@ -15,6 +15,7 @@
 //     @approximated: a shape and a marker have the same place when
 //      they have the same rank in the reading order
 //     @witness spanning-shape: variant other
+//         @relaxed bands
 // @rule keep: every cell outside the shapes keeps its color
 
 // a shape's place in the reading order — a marker is one cell, but a shape
