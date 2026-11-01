@@ -17,7 +17,8 @@ use crate::types::GraphRelation;
 pub enum DetRefusal {
     /// No leaf gives every assignable DET a value and every pick a model.
     NoLiveAssignment,
-    /// The native walk reached a deterministic resource bound.
+    /// The native walk reached a deterministic resource bound that the
+    /// consistency test reads too.
     Bound(ReachedBound),
     /// A native check or evaluation failed.
     Fault(String),
@@ -65,7 +66,12 @@ impl Decoder<'_> {
         }
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
-        self.walked(program, &dets, &picks, root).1
+        match self.walked(program, &dets, &picks, root).1 {
+            // The table work cap bounds this walk's time. The consistency test
+            // does not read it, so a walk it stops says nothing of the program.
+            Err(DetRefusal::Bound(ReachedBound::TableWork { .. })) => Ok(()),
+            verdict => verdict,
+        }
     }
 
     /// The verdict on a program whose joint walk is larger than the
