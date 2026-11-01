@@ -1431,6 +1431,7 @@ class Logs:
 class Drawer:
     root_cap, node_cap = ROOT_CAP, NODE_CAP
     cache_cap = 4096  # entries of rel_cache and of choice_cache, at which each is emptied
+    join_context = ()  # the tokens of the key group that the body reads: a key on another source gives other answers to joinable and completable, whose keys hold the body's tokens alone
 
     def __init__(self, V, counts, rng, regcols, fr, regtypes):
         self.V, self.c, self.rng, self.reg, self.fr, self.types = V, counts, rng, regcols, fr, regtypes
@@ -1572,8 +1573,8 @@ class Drawer:
         (featlib's for a lib, macro or fact relation, the prefix tables' for a declared one) against the types in scope,
         else (a column with no one type) by the decoder one step ahead, cached by (token, types in scope). With Ident sources on,
         a relation with an Ident column goes to the decoder too while the scope holds an Ident, because the types alone do not
-        tell the sources apart: its cache key adds key (the clause's tokens), and the step ahead also looks at the first token
-        of each field of a record column."""
+        tell the sources apart: its cache key adds key (the clause's tokens) and join_context (the key group's, which fix the sources
+        of the key's labels), and the step ahead also looks at the first token of each field of a record column."""
         fr = self.fr
         out, pending = set(), []
         tset = frozenset(scope_types)
@@ -1593,7 +1594,7 @@ class Drawer:
             else:
                 pending.append((o, False))
         for o, sourced in pending:
-            ck = (o, tset, key) if sourced else (o, tset)
+            ck = (o, tset, (key, self.join_context)) if sourced else (o, tset)
             hit = self.jcache.get(ck)
             if hit is None:
                 hit = False
@@ -1674,8 +1675,8 @@ class Drawer:
         bounded depth-first search (a search past its budget counts as completable). The search reads root's decoder
         state, which the clause's tokens so far (key) fix, and root's phase. A True is cached by (o, phase, whether the
         clause has a label) and holds at every later state: a stale True only makes atom() redraw. A False is cached by
-        (o, phase, key), because a stale False removes the relation's mass."""
-        ck_true, ck_false = ('complete', o, root.phase, root.labs > 0), ('complete', o, root.phase, key)
+        (o, phase, key, join_context), because a stale False removes the relation's mass."""
+        ck_true, ck_false = ('complete', o, root.phase, root.labs > 0), ('complete', o, root.phase, (key, self.join_context))
         if ck_true in self.jcache:
             return True
         if ck_false in self.jcache:

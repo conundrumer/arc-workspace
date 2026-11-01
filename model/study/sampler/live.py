@@ -929,6 +929,7 @@ class Run:
         params, ports = pri['comp_ports'][comp]
         keyed = rng.random() < pri['keyed'][comp] / pri['comps'][comp]
         nlab, keys, fields = 0, {}, {}
+        self.key_context = ()
         if keyed:  # the key port: one label of its body becomes the key
             f, nlab, keys = self.key_body(pg, f)
         else:
@@ -971,12 +972,14 @@ class Run:
 
     def key_body(self, pg, f, nlab=0, outer=None):
         """(decoder after a key body and its END at f, the labels so far, {label token: type} of its keys): one label of the body, or more by the priors' count, becomes a key.
-        outer has the keys of the key group that this body stands in, which it reads."""
+        outer has the keys of the key group that this body stands in, which it reads. The body's tokens, after those of the key group's earlier bodies,
+        are the key_context that the ports and a later body read."""
         dr = self.drawer(pg, 'INIT', f, 'key')
         dr.key_labels = self.pick(*zip(*self.key_labels))
         if outer:
             dr.want, dr.want_types = set(outer), frozenset(t for t in outer.values() if t)
             dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want
+            dr.join_context = self.key_context
         cur, toks = self.body(pg, dr, f, 'INIT', nlab, (), outer or ())[:2]
         stars = [i for i, t in enumerate(toks) if t == M.STAR]
         free = [j for j in range(len(stars)) if self.ff0.label_tok[nlab + j] not in dr.fr.hidden]  # a label local to a branch is no key
@@ -987,9 +990,11 @@ class Run:
         keys = {self.ff0.label_tok[nlab + n]: types.get('L%d' % (nlab + n)) for n in picked}
         carets = {stars[n] for n in picked}
         g = f.fork()
-        for j, t in enumerate(toks):
-            g.step(M.CARET if j in carets else t)
+        keyed = [M.CARET if j in carets else t for j, t in enumerate(toks)]
+        for t in keyed:
+            g.step(t)
         g.step(M.END)
+        self.key_context += tuple(keyed)
         return g, nlab + len(stars), keys
 
     def key_pick(self, dr, labels, k):
@@ -1009,6 +1014,7 @@ class Run:
         is a key body, and the parts are atoms that read the keys, as a port's body is; the form's relations come with its last END."""
         rg = self.pri.get('rigid') or dict(forms=0, keyed=0, instance=0)  # priors fitted before RIGID_DET was counted have none: the shares are 1/2
         nlab, keys = 0, {}
+        self.key_context = ()
         if self.rng.random() < (rg['keyed'] + 0.1) / (rg['forms'] + 0.2):
             f, nlab, keys = self.key_body(pg, f)
         else:
@@ -1064,7 +1070,8 @@ class Run:
 
     def port(self, pg, f, comp, name, cols, params, nlab, keys, fields, outside=False):
         """The decoder after port name's body and head at f, with the labels of the INIT so far. fields has each type parameter's label
-        types so far, and gets those of the columns that this head binds first. outside says that the port follows the key group."""
+        types so far, and gets those of the columns that this head binds first. outside says that the port follows the key group. With keys, the body's
+        Drawer has the key group's tokens as its join_context."""
         pri, rng = self.pri, self.rng
         empties = pri.get('empty_ports')  # priors fitted before an empty port was counted have none: they draw none
         if empties is not None and not keys and not outside and comp != 'RIGID_DET' and f.fork().admits([M.END])[0] and rng.random() < (empties.get((comp, name), 0) + 0.1) / (pri['ports'][comp, False, name] + 0.2):
@@ -1089,6 +1096,8 @@ class Run:
         dr.labs_wanted = nlab + max(sizes.values(), default=0)
         want = {} if waive else keys
         dr.want, dr.want_types = set(want), frozenset(t for t in want.values() if t)
+        if keys:
+            dr.join_context = self.key_context
         dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want  # a port's body reads its own labels and the key
         cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, want)
         made = list(range(nlab, nlab + toks.count(M.STAR)))
