@@ -148,9 +148,12 @@ struct CacheState {
     rows: StableHashMap<SharedRows, (usize, usize)>,
     /// The bytes of the held relations, of their rows and of the entries.
     bytes: usize,
-    /// The bytes of the held relations' indexes, as of the last eviction.
-    /// An index is built after its relation is held, so an eviction sums them.
+    /// The bytes of the held relations' indexes, as of the last sum. An
+    /// index is built after its relation is held, so an eviction sums them
+    /// where it could matter, see [`SUM_MARGIN`] and [`SUM_INTERVAL`].
     index_bytes: usize,
+    /// The evictions since the last sum of `index_bytes`.
+    since_sum: usize,
     /// Whether the bytes have passed the bound of an eviction.
     evicted: bool,
 }
@@ -190,6 +193,15 @@ const UNPOISONED: &str = "a result cache that no panic poisoned";
 /// fraction of its bound before it drops an entry. Provisional: one soak run
 /// on one task, where one relation's indexes held most of the bound.
 const INDEX_SHARE: usize = 16;
+
+/// An eviction sums the held relations' index bytes only where the last
+/// known bytes are within `1 / SUM_MARGIN` of the bound or past it, or when
+/// [`SUM_INTERVAL`] evictions have passed since the last sum. An index grows
+/// after its relation is held, so between sums the bytes can pass the bound
+/// unseen: the cache can stay over its bound by the index growth of up to
+/// [`SUM_INTERVAL`] stores, until the next sum evicts as usual.
+const SUM_MARGIN: usize = 16;
+const SUM_INTERVAL: usize = 1024;
 
 impl ResultCache {
     /// The value cached under `key`, if any. A value found counts as a use
@@ -615,6 +627,11 @@ impl CacheState {
     }
 
     fn evict(&mut self, bound: usize) {
+        self.since_sum += 1;
+        if self.bytes + self.index_bytes < bound - bound / SUM_MARGIN && self.since_sum < SUM_INTERVAL {
+            return;
+        }
+        self.since_sum = 0;
         self.index_bytes = self.relations.values().map(|held| held.relation.index_bytes().1).sum();
         if self.bytes + self.index_bytes <= bound {
             return;
