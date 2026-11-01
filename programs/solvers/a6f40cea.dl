@@ -15,12 +15,10 @@
 //  its checkerboard class
 // @rule crop-interior: the output is the window interior, filled with the
 //  interior's fill color
-// @rule group-outline: each outline is one rectangle the generator drew in
-//  full before the window covered it
-//     @approximated: an outline is the set of non-background cells outside
-//      the window whose colors connect by adjacency; pieces that share a
-//      color belong to one outline
-//     @witness same-color: variant other
+// @rule group-outline: a piece is a connected set of non-background cells
+//  outside the window; two pieces that share a color form one outline when
+//  the perimeter of their joint bounding box holds no background cell outside
+//  the window
 // @rule complete-rectangle: the rectangle of an outline is the bounding box
 //  of its visible cells, and the outline is the perimeter of that box
 // @rule draw-hidden: each perimeter cell inside the window interior is
@@ -92,6 +90,7 @@
     // @rule group-outline: only one-color pieces join by a shared color, and
     //  each piece of two or more colors stands alone
     // @witness split-pattern: variant concept
+    // @witness same-color: variant concept
   | MonoMerge {}
 
 .type Choice = [src: FrameSource, pick: WindowPick, part: HiddenPart, group: Grouping]
@@ -101,6 +100,9 @@
 
 // A piece or an outline around one window, under one grouping.
 .type Piece = [win: Box, g: Grouping, id: Ident]
+
+// Two pieces around one window.
+.type PiecePair = [win: Box, id: Ident, id2: Ident]
 
 // An outline's perimeter, walked in one sense.
 .type Loop = [o: Piece, s: Sense]
@@ -202,7 +204,21 @@ occluding(B) :-
 window.item([Src, $OccludedWindow()], B, P) :- candidate(Src, B), occluding(B), hole(B, P).
 
 // --- $ByColor ---
-joined(B, $ByColor(), Id, Id2) :- piece_color(B, Id, Col), piece_color(B, Id2, Col).
+
+// The bounding box of two pieces that share a color.
+// @claim group-outline
+.init joint_box = Bbox<PiecePair>
+joint_box.cell([B, Id, Id2], P) :-
+    piece_color(B, Id, Col), piece_color(B, Id2, Col),
+    ( pieces.label(B, P, Id) ; pieces.label(B, P, Id2) ).
+
+// That box's perimeter holds a background cell outside the window.
+.decl gapped(q: PiecePair)
+gapped([B, Id, Id2]) :-
+    joint_box.box([B, Id, Id2], B_joint), commonest.mode($U(), Col), in(P, Col),
+    box_edge(P, B_joint, _), !inside(P, B).
+
+joined(B, $ByColor(), Id, Id2) :- joint_box.box([B, Id, Id2], _), !gapped([B, Id, Id2]).
 
 // --- $MonoMerge ---
 
