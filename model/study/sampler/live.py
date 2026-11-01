@@ -494,12 +494,18 @@ class Sampler:
 
     def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, eager=True, **limits):
         """search.Search over the scope forms: iterating it gives distinct Clauses in about descending q until the deadline. A call
-        with the same session, forms, kind and limits gives that Search again with the new deadline, and it goes on where it
-        stopped. The search draws nothing at random, so seed has no effect. With eager, a clause is given as soon as a run makes it, so the
+        with the same task, forms, kind and limits gives that Search again with the new deadline, and it goes on where it
+        stopped. The search draws nothing at random, so seed has no effect: what a restart must not repeat is kept in the search's
+        state (search_store). With eager, a clause is given as soon as a run makes it, so the
         clauses come in about descending logq. Without it, a clause waits until no entry of the frontier has a greater bound, and the clauses come in
         exact descending logq."""
         import search
         return search.search(self, session, deadline, task, forms, kind, Limits(**limits), frontier_cap, eager)
+
+    def search_store(self, directory=None, **options):
+        """Sets where the searches keep their state, and how many keep their caches (search.Manager has the options). Call it before the first search."""
+        import search
+        return search.configure(self, directory, **options)
 
 
 class Run:
