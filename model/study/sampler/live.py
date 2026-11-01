@@ -347,6 +347,8 @@ def set_steers(models_dir, on):
     S.COL_FREQ = S.STRUCT_P = S.STRUCT_B = S.STRUCT_C = 'struct' in on
     for w in S.REL_W, S.REL_WB, S.VAL_W:  # a relation's or label's recency is written order, which a DAG does not have
         w.update({k: 0.0 for k in ('recency0', 'recency_log', 'newest') if k in w})
+    if 'col' in S.ORDER_FREE:  # an atom's sites are a set, so a column named below the last one is no event
+        S.COL_W['back'] = 0.0
     path = {k: os.path.join(models_dir, f) if k in on else '' for k, f in STEER_FILES.items()}
     S.STEER_REL, S.STEER_CHOICE = path['rel'], path['choice']
     S.TILT_STOP = 'lw'
@@ -457,7 +459,7 @@ class LiveDrawer(S.Drawer):
 
     def weights(self, n, os, rel, joined, leaf, steer, jset=None, must_join=False):
         """S's, with the field that a record site repeats at gold's share, and a declared relation's Example column, which S's column
-        weights take for the first column, at example_read."""
+        weights take for the first column, at example_read (not with ORDER_FREE col, whose table counts the Example type by place)."""
         ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
         if steer and self.mirror and n.phase == 'root2':
             ws = self.mirrored(os, ws, MIRROR_NOT)
@@ -469,7 +471,7 @@ class LiveDrawer(S.Drawer):
         if n.phase == 'op' and M.STAR in os:  # S's weights give a fresh label no weight; here it has gold's share of the first operand of `=`
             rest = sum(w for o, w in zip(os, ws) if o != M.STAR)
             return [(rest * EQ_FRESH / (1 - EQ_FRESH) if rest else 1.0) if o == M.STAR else w for o, w in zip(os, ws)]  # with no label to read, a fresh label is the only operand
-        if n.phase == 'cols':
+        if n.phase == 'cols' and 'col' not in S.ORDER_FREE:  # with col, COL_TYPE counts the Example type by place
             return [w * self.example_read if self.example_column(n, o) else w for o, w in zip(os, ws)]
         return ws
 
@@ -494,7 +496,7 @@ class LiveDrawer(S.Drawer):
         fm, stq = super().steer_choice(fr, n, popts, opts, k, rel, joined, leaf, stop, key)
         if stop is not None and (n.labs < self.labs_wanted or any(self.col_needed(n.rtok, fr.colpos[o]) for o in opts)):
             stq *= NEED_STOP
-        if stop is not None and opts and all(self.example_column(n, o) for o in opts):  # weights rank columns, so a lone Example column is read unless the atom stops
+        if stop is not None and opts and 'col' not in S.ORDER_FREE and all(self.example_column(n, o) for o in opts):  # weights rank columns, so a lone Example column is read unless the atom stops
             stq = 1 - (1 - stq) * self.example_read
         return fm, stq
 

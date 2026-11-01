@@ -104,6 +104,10 @@ Changes from sample.py (v1):
 - COL_FREQ=1 names the columns of an atom of a relation with gold counts by each column's rate in gold atoms of that
   relation (each column independently, in order): the next column and the stop take those rates in place of the
   position decay and the site-count stop;
+- ORDER_FREE=col,tie,key (default unset: none) turns on the readings of a body as a DAG that the walk had in written order: `col` gives the columns of a derived
+  relation a coin each by (place, type, in scope) (COL_TYPE, counted by col_type_counts.py), so that a set of columns has one chance in any column order, and
+  zeroes COL_W's back; `tie` breaks the tie of equal chances in a search by the options' facts, not their order (search.py); `key` picks a key's labels by the
+  types of their sites (live.Run.key_pick, with the priors' key_types from key_type_counts.py). A setting that is unset keeps the draws and the chances as they were;
 - SEED_TAG (default v2) seeds each point's draws, so a run with another tag draws other programs at the same points; with
   ARCLOG_STATS set, a point's info gives its CPU ms per engine phase (`engine`);
 - a DET assignment's row set in a table is kept by its packed rows (DROWS), since a point's tables repeat the same
@@ -285,6 +289,9 @@ STEER_CHOICE_PHASES = frozenset(os.environ.get('STEER_CHOICE_PHASES', 'cols,fcol
 CHOICE_CHECK = os.environ.get('CHOICE_CHECK', '')
 STEER_REL_MODEL = os.environ.get('STEER_REL_MODEL', 'hgb')  # 'hgb' (the tree) or 'logit'
 STEER_COVER = frozenset(filter(None, os.environ.get('STEER_COVER', '').split(',')))  # places where the steers go beyond S's draw: 'init' (the bodies of an INIT's key and ports, which the prefix text gives), 'branch' (the first atom of a later branch of an OR, whose clause cannot close)
+ORDER_FREE = frozenset(filter(None, os.environ.get('ORDER_FREE', '').split(',')))  # 'col', 'tie', 'key': a body read as a DAG where the walk read its written order (see the module docstring)
+COL_TYPE = {}  # ORDER_FREE col: (place, column type, type in scope) -> the chance that an atom of a derived relation names a column of that type (col_type_counts.py counts it from the rows)
+COL_TYPE_DEFAULT = {(place, scoped): 0.5 for place in ('RULE', 'DET', 'key', 'port') for scoped in (False, True)}  # the chance for a type that COL_TYPE has no entry for, by place and type in scope
 UNREAD_BETA = float(os.environ.get('UNREAD_BETA', '0'))  # nats added to the log weight of a derived option whose form no kept form reads (Drawer.unread); 0: off
 UNREAD_BOOST = math.exp(UNREAD_BETA)
 TILT = os.environ.get('TILT', '')  # path of a JSON file of score tilts (tilt_fit.py): q's weight of a choice is multiplied by exp(TILT_BETA * TILT_SCALE * theta); unset: no tilt, the draws are unchanged
@@ -1761,6 +1768,7 @@ class Drawer:
         return out
 
     prog_names = {}  # '&rN' -> the program's name of a derived relation
+    place = None  # the kind of body: RULE, DET, or an INIT's key or port (live.py sets it)
     p_k, p_scope, p_key, p_last = 1, (), (), ()  # the atom's index, the types in scope, the clause's tokens before it, the last atom's
 
     def last_atom(self):
@@ -2083,9 +2091,19 @@ class Drawer:
         if self.force is not None and self.parts is not None:
             self.parts[name] += lp
 
-    def col_rates(self, rel, os):
+    def col_rates(self, n, rel, os):
         """With COL_FREQ, each column option's rate in gold atoms of rel (named / atoms), smoothed; None where rel has no
-        gold atoms or a column has no registry name."""
+        gold atoms or a column has no registry name. With ORDER_FREE col, a derived relation's columns take COL_TYPE's rate
+        for the column's type, by place and by whether the type is in scope, at the atom n."""
+        if 'col' in ORDER_FREE and rel == 'declared':
+            ts = [str(t) for t in (self.rel_types(n.rtok) or [])]
+            out = []
+            for o in os:
+                c = self.fr.colpos[o]
+                t = ts[c] if c < len(ts) else None
+                scoped = t in self.p_scope
+                out.append(COL_TYPE.get((self.place, t, scoped), COL_TYPE_DEFAULT[self.place, scoped]))
+            return out
         names = self.reg.get(rel)
         uses = sum(v for (r_, _), v in self.c['nsites'].items() if r_ == rel)
         if not COL_FREQ or not names or uses < 3:
@@ -2104,7 +2122,7 @@ class Drawer:
         fr = self.fr
         fwd = [o for o in os if fr.colpos[o] > n.last]
         back = [o for o in os if fr.colpos[o] <= n.last]
-        rates = self.col_rates(rel, fwd) if fwd else None
+        rates = self.col_rates(n, rel, fwd) if fwd else None
         if rates is not None:
             w = dict(zip(fwd, self.col_weights(rates)[0]))
         else:
@@ -2115,12 +2133,15 @@ class Drawer:
 
     def struct_col(self, n, os, w, stop=None):
         """STRUCT_C at cols node n: the weight of each column option in os from P's weights w (a dict), and, given P's
-        chance to stop here, the new chance to stop (a softmax over the columns and the stop)."""
+        chance to stop here, the new chance to stop (a softmax over the columns and the stop). With ORDER_FREE col, a derived relation's
+        weights and stop stay as they are."""
         W, fr = COL_W, self.fr
         ts = [str(t) for t in (self.rel_types(n.rtok) or [])] if n.rtok is not None else []
         st = list(self.p_scope)
         name = self.V.name(n.rtok) if n.rtok is not None else ''
         derived, inp, k1 = name.startswith('&r'), name == 'input', self.p_k == 1
+        if derived and 'col' in ORDER_FREE:  # the coins of col_rates are a product over the columns: a softmax over the options would break it
+            return {o: w[o] for o in os}, stop
         named = [int(x) for x in re.findall(r'\(:(\d+)', n.text)]
         last = named[-1] if named else -1
         tot = sum(w[o] for o in os) or 1.0
@@ -2435,7 +2456,7 @@ class Drawer:
                 at_j = self.c['nsites'][(rel, j)] + 0.05
                 at_least = sum(v for (r_, i), v in self.c['nsites'].items() if r_ == rel and i >= j) + 0.1
                 stop = min(at_j / at_least, 0.98)
-                if (rates := self.col_rates(rel, [o for o in popts if fr.colpos[o] > n.last])) is not None:
+                if (rates := self.col_rates(n, rel, [o for o in popts if fr.colpos[o] > n.last])) is not None:
                     stop = min(max(self.col_weights(rates)[1], 0.02), 0.98)
                 if STRUCT_C and leaf and popts:
                     stop = min(max(self.struct_col(n, popts, self.col_base(n, popts, rel, leaf), stop)[1], 0.01), 0.99)
