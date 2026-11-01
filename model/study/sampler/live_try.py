@@ -8,6 +8,9 @@ With --clause N, each task gets Sampler.clause in place of draws: N RULEs from a
 scope of the first SCOPE of them, each checked by replaying its text, then N RULEs over that scope and one of those clauses. A line
 gives ms per call, where calls after the first over a scope reuse its replay, and the ms of one replay.
 
+With --one N, each task's gold clauses with their ONE marks removed are the scope, and the OUT search at their end runs with the ONE repair off and on (N seconds
+a candidate). A line gives the candidates and the right ones of both runs, and the last line gives (right off, right on) per task.
+
 With --gold, every gold program of each task in the corpus is stepped on the same session in place of draws. A line gives whether
 it ended, whether its attempts are right, the gate's rules that it breaks and its leave-one-out outcomes, and the last line counts
 them.
@@ -17,6 +20,7 @@ import collections
 import gzip
 import json
 import os
+import re
 import resource
 import time
 
@@ -72,6 +76,42 @@ def gold_lines(task, tally):
         yield '%s right=%s refused=%s loo=%s' % (task, right, broken, loo)
 
 
+MARK = re.compile(r'\s*\(ONE(?: [^()]*)?\)')
+
+
+def gold_sexp(task, points):
+    """Gold's program for task: from the corpus, else from points, a JSON file of {task, gold_sexp}."""
+    path = live.S.CORPUS + task + '/pairs.jsonl.gz'
+    if points is None and os.path.exists(path):
+        with gzip.open(path, 'rt') as f:
+            return json.loads(f.readline())['gold_sexp']
+    return next(r['gold_sexp'] for r in json.load(open(points)) if r['task'] == task)
+
+
+def one_run(sampler, task, points, seconds):
+    """The candidates, (program, attempts, whether each test input has its output among them), of the OUT search at the end of task's gold clauses with their ONE
+    marks removed, and the Run's counts. seconds is the ONE repair's limit; 0 is off."""
+    sess, d, outs = session_of(task)
+    forms = [MARK.sub('', x) for x in gold_sexp(task, points).splitlines() if x.strip() and not x.startswith('(OUT')]
+    run = live.Run(sampler.pri, sess, 0, time.monotonic() + 120, d, live.Limits(one_repair=seconds))
+    dec, pg = run.scope(forms)
+    t0 = time.monotonic()
+    got = [(f.program_form(), f.attempts(), [o in a for o, a in zip(outs, f.attempts())]) for f in run.search(pg, dec)]
+    return got, run.c, time.monotonic() - t0
+
+
+def one_try(sampler, task, points, seconds):
+    """--one on one task: the OUT search at the end of the gold clauses without ONE marks runs with the ONE repair off and on. With it on, the candidates
+    of the repair-off run come first and unchanged, and none that was right is lost."""
+    off, _, t_off = one_run(sampler, task, points, 0)
+    on, c, t_on = one_run(sampler, task, points, seconds)
+    assert on[:len(off)] == off, task
+    right = lambda cands: sum(all(r) for _, _, r in cands)  # noqa: E731
+    print('%s candidates %d -> %d, right %d -> %d, search %.2f -> %.2f s, %s' % (
+        task, len(off), len(on), right(off), right(on), t_off, t_on, {k: v for k, v in sorted(c.items()) if k.startswith('one:')}), flush=True)
+    return right(off), right(on)
+
+
 def clause_calls(sampler, sess, d, seeds, deadline, forms, kind):
     """The Clauses of a clause call per seed, and the line of those calls."""
     t0 = time.perf_counter()
@@ -117,6 +157,8 @@ def main():
     ap.add_argument('--steers', default=','.join(live.STEERS), help='the steers that are on, by name; empty: none')
     ap.add_argument('--gold', action='store_true', help='check the gate on gold in place of draws')
     ap.add_argument('--clause', type=int, default=0, help='N: try Sampler.clause in place of draws')
+    ap.add_argument('--one', type=float, default=0, help='N: the ONE repair check, with a limit of N seconds a candidate, in place of draws; see one_try')
+    ap.add_argument('--points', help='with --one: a JSON file of {task, gold_sexp} that has the gold of tasks the corpus lacks')
     a = ap.parse_args()
     if a.gold:
         tally = collections.Counter()
@@ -128,6 +170,9 @@ def main():
     t0 = time.time()
     sampler = live.Sampler(a.models, tuple(filter(None, a.steers.split(','))))
     print('loaded %.2fs' % (time.time() - t0), flush=True)
+    if a.one:
+        print(dict(zip(a.tasks, (one_try(sampler, task, a.points, a.one) for task in a.tasks))), flush=True)
+        return
     for task in a.tasks if a.clause else ():
         clause_try(sampler, task, a.clause, a.seed, a.seconds)
     for task in () if a.clause else a.tasks:

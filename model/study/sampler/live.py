@@ -43,6 +43,10 @@ test input is seen, so its grid there is a function of e's input and the other p
 output. A fit needs a pass on one pair at least, since a gold program can lose a pair: a DET determined by all pairs may not be
 determined by fewer. A task with one train pair has no such run. The counts have loo:<outcome> per pair.
 
+With the limit one_repair above 0 (env ONE_REPAIR), the OUT search of a form end ends with the ONE repair (one_repair.py) of the candidates that have a trigger: it adds
+ONE marks to a clause of the program and judges the program as an OUT test is, with label + ' one', and draws nothing. The repairs take at most one_repair seconds a
+candidate, and a share one_share of the Run's time besides one such limit. With the limit at 0 the search is as without the repair.
+
 A table request that runs to the session's deadline ends the draw (Spent), and a candidate that does ends the OUT search at that form:
 each later read of what it read costs one more deadline. A table that the table work cap stopped goes on, since gold has them: of 284
 gold programs, 6 have OUT read such a relation, and body prefixes hit the cap 62 times.
@@ -110,6 +114,7 @@ GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio
 GATE_RECORDS = os.environ.get('GATE_RECORDS', '')  # a run folder: each form at the gate gets a record there (GateRecords); empty writes none
 GATE_RECORD_TASK = os.environ.get('GATE_RECORD_TASK', 'task')  # the task id of this process's records
 GATE_RECORD_BYTES = 64 << 20  # a task's records stop at this size
+ONE_LABEL = ' one'  # what a ONE repair adds to the label of the candidate that it repairs
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 DEADLINE_SHARE = 0.9  # a request that took this share of the session's deadline ran to it
@@ -363,6 +368,8 @@ class Limits:
     out_unions: int = 3  # the best suited earlier relations, that a relation is joined with in a union
     out_positions: int = 3  # the best suited earlier relations with no Color column to read, whose cells take a color of a Color relation
     out_cands: int = int(os.environ.get('OUT_CANDS', 100))  # candidates of the OUT search at one form end
+    one_repair: float = float(os.environ.get('ONE_REPAIR', 0))  # seconds that the ONE repair of one candidate may take (one_repair.py); 0 is off
+    one_share: float = 0.25  # the share of the Run's time that the ONE repairs may take, besides the limit of one repair
 
 
 @dataclasses.dataclass
@@ -511,6 +518,7 @@ class Program:
         self.scope_grids, self.scope_colors, self.scope_positions = [], [], []  # the best suited entries of grids, colors and positions from the relations of a replayed scope, which the OUT search takes in on its first call
         self.kinds = []  # the kind of each clause, which only next_kind reads, as counts
         self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
+        self.facts = {}  # a relation slot -> one_repair.facts of its table; kept where the ONE repair is on
 
     def fork(self):
         """A copy whose dicts can change with no effect on this Program."""
@@ -584,6 +592,8 @@ class Run:
         self.first = {}  # a kind's token -> the decoder after it as a program's first token, and its step_tables result
         self.jc = collections.defaultdict(dict)  # a kind -> Drawer.jcache: its True entries on lib relations hold at every state of the run
         self.stopped = False  # whether an OUT candidate over the relation that the OUT search is at hit a limit
+        self.pg = None  # the Program at the form end that the OUT search is at
+        self.one_seconds, self.one_done, self.one_view, self.one_queue = 0.0, set(), (None, None), []  # the time of the ONE repairs; the programs they ran on; (a step_tables result, its two_colors answers); the candidates to repair at the end of the OUT search
         self.scoped = None  # (forms, decoder, Program) of the last scope
         self.walk = pri['walk']
         self.head_sizes = sum(map(collections.Counter, pri.get('head_labels', {}).values()), collections.Counter())  # a head column's count of labels -> uses, over all sites
@@ -785,6 +795,11 @@ class Run:
                 if cs:
                     for k in KIND_TOK:
                         pg.pending[k][s] = list(zip(cs, ts))
+        if self.lim.one_repair and len(pg.new) == 1:
+            import one_repair
+            got = one_repair.facts(b)
+            if got[0] or got[1] or got[3]:
+                pg.facts = pg.facts | {pg.new[0]: got}
 
     def spent(self, t0):
         """Raises Spent where a table request that began at t0 ran to the session's deadline. A step that gives no table in less time
@@ -1611,7 +1626,10 @@ class Run:
         kind = str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]
         self.c['out:%s' % kind] += 1
         self.stopped = self.stopped or kind == 'Stopped'
+        repair = self.lim.one_repair and not label.endswith(ONE_LABEL)
         if not f.ended:
+            if repair and (why := self.one_wants(f, kind, label)):
+                self.one_queue.append((f, label, why))
             return
         attempts = f.attempts()
         broken = self.gate.refused(attempts)
@@ -1619,6 +1637,8 @@ class Run:
         if GATE_RULES.intersection(broken):
             self.c['refused'] += 1
             self.gate_record(f, attempts, broken, None, 'refused:' + next(r for r in broken if r in GATE_RULES), label)
+            if repair and 'no attempt' in broken:
+                self.one_queue.append((f, label, 'no attempt'))
             return
         got = self.gate.leave_one_out(f.program_form())
         self.c.update('loo:' + r for r in got)
@@ -1632,6 +1652,63 @@ class Run:
         self.c['consistent'] += 1
         self.c['consistent:' + label] += 1
         yield f
+        if repair and self.one_chain(f, lambda got: got[0] or got[1]):
+            self.one_queue.append((f, label, 'keyed'))
+
+    def one_chain(self, f, test):
+        """[(index of a form that OUT of decoder f reads, directly or not, its one_repair.facts)] nearest first, for the forms whose facts pass test."""
+        import one_repair
+        forms = f.program_form().rstrip().split('\n')
+        slots = {str(s): got for s, got in self.pg.facts.items()} if self.pg is not None else {}
+        return [(i, slots[s]) for i in one_repair.nearest(forms) if test(slots.get(s := one_repair.NAME.search(forms[i])[0][2:], (0, 0, 0, 0)))]
+
+    def one_wants(self, f, kind, label):
+        """The name of the trigger that decoder f has, which ended at an OUT test of this kind, or None: SeveralValues; NotConsistent where OUT reads the last form's
+        relation directly and that relation holds two Colors for one Position in a train entry; NotConsistent where a DET that OUT reads has a value of several
+        rows (the cheap reads of the tables that one_repair.plans makes in full)."""
+        if kind == 'SeveralValues':
+            return kind
+        if kind != 'NotConsistent' or label != 'plain' or self.pg is None or self.pg.before is None:
+            return None
+        import one_repair
+        if self.one_view[0] is not self.pg.before:
+            self.one_view = self.pg.before, {}
+        columns = tuple(one_repair.out_columns(f.program_form().rstrip().split('\n')[-1]))
+        if columns not in self.one_view[1]:
+            self.one_view[1][columns] = one_repair.two_colors(self.pg.before, columns, self.gate.masks)
+        return 'two colors' if self.one_view[1][columns] else 'DET several' if self.one_chain(f, lambda got: got[3]) else None
+
+    def repaired(self, f, label, why):
+        """Yields the decoders that the ONE repair of the program of decoder f makes (one_repair.py), each judged as an OUT test is. why is the trigger's name, which
+        the counts keep. A repair runs once for a program, for at most the limit's seconds, and not once the repairs have taken their share of the Run's time and one more limit."""
+        import one_repair
+        forms = f.program_form().rstrip().split('\n')
+        t0 = time.monotonic()
+        text = '\n'.join(forms[:-1] if why == 'DET several' else forms)  # a DET's marks do not depend on the OUT form's columns
+        if text in self.one_done or self.one_seconds > self.lim.one_repair + self.lim.one_share * (t0 - self.t0):
+            self.c['one:skipped'] += 1
+            return
+        self.one_done.add(text)
+        self.c['one:tried'] += 1
+        self.c['one:tried ' + why] += 1
+        plan = None  # the triggers that pg.facts decide have their marks from it, and need no tables
+        if why == 'DET several':
+            plan = [(i, [[()]]) for i, _ in self.one_chain(f, lambda got: got[3]) if forms[i].startswith('(DET')]
+        elif why == 'keyed':
+            plan = [(i, one_repair.keys(got[0], got[2], False, got[1])) for i, got in self.one_chain(f, lambda got: got[0] or got[1]) if not forms[i].startswith('(DET')]
+        found = one_repair.repairs(self.session, forms, min(t0 + self.lim.one_repair, self.deadline), self.gate.masks, plan)
+        while True:
+            t = time.monotonic()
+            try:
+                got = next(found, None)
+            finally:
+                self.one_seconds += time.monotonic() - t
+                self.c['one_seconds'] = self.one_seconds
+            if got is None:
+                return
+            self.c['one:found'] += 1
+            self.c['one:found ' + why] += 1
+            yield from self.judged(got[2].dec, got[2].last, label + ONE_LABEL)
 
     def gate_record(self, f, attempts, broken, loo, decision, label):
         """Writes the gate's record of the form that decoder f ended, where GATE_RECORDS is set. No decision reads it."""
@@ -1760,8 +1837,16 @@ class Run:
         return n
 
     def search(self, pg, dec):
-        """The OUT search at a form's end, dec: yields each consistent decoder. The clauses of layers come after all the others, so
-        they take only what those leave of the cap."""
+        """The OUT search at a form's end, dec: yields each consistent decoder, then those of the ONE repairs (one_repair.py) of the candidates that
+        triggered one."""
+        self.pg, self.one_queue = pg, []
+        yield from self.out_search(pg, dec)
+        queue, self.one_queue = self.one_queue, []
+        for f, label, why in queue:
+            yield from self.repaired(f, label, why)
+
+    def out_search(self, pg, dec):
+        """The tries of the OUT search at a form's end, dec. The clauses of layers come after all the others, so they take only what those leave of the cap."""
         lim, n, tested = self.lim, 0, []
         f = dec.fork()
         f.step(RULE_TOK)
