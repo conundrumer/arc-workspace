@@ -32,7 +32,7 @@
 - `color-match` & `dot-count`, `color-match` & `frame-parse`, `color-match` & `unmatched-dots`, `color-match` & `background`, `dot-count` & `frame-parse`, `dot-count` & `unmatched-dots`, `dot-count` & `background`, `frame-parse` & `unmatched-dots`, `frame-parse` & `background`, `unmatched-dots` & `background`: the two branches' changes applied together
 
 ## Open parameters
-- `anchor`: `DIAG_TL` and `DIAG_TR`. The checkerboard fills the cell at the interior's top-left corner, or at its top-right corner. Every train interior is odd wide, so the two values give the same output on every train pair. The test's 2×2 interior separates them, and the test output has no alt.
+- `anchor`: `DIAG_TL` and `DIAG_TR`. The checkerboard fills the cell at the interior's top-left corner, or at its top-right corner. Every train interior is odd wide, so the two values give the same output on every train pair. The test's 2×2 interior separates them, and the test pair's rule alt accepts the grid of each.
 
 ## Not formed
 - `anchor` at `DIAG_TR`, `DIAG_BL` or `DIAG_BR`: these are values of the stored orientation parameter `anchor`, not branches. `DIAG_BL` and `DIAG_BR` fail train0 and train1 (2-row interiors), and `DIAG_TR` fails test0.
