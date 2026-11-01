@@ -199,6 +199,8 @@ ROW_ORDERS = int(os.environ.get('ROW_ORDERS', '0'))  # REL_ROWS and CHOICE_ROWS:
 GOLD_ORDERS = os.environ.get('GOLD_ORDERS', '') == 'all'  # GOLD_Q: logq_orders, gold's log q summed over its valid orders
 GOLD_ORDER_CAP = int(os.environ.get('GOLD_ORDER_CAP', '24'))  # the orders scored for a clause of more than 5 atoms
 ORDER_SHUFFLES = 2000  # the random orders tried for a clause of more than 5 atoms
+ORDER_EXACT = 12  # BodyOrders: a body of at most this many atoms has its orders' law in full
+ORDER_SAMPLES = 1024  # BodyOrders: the orders drawn for a longer body
 ANCESTOR_PREFIX = os.environ.get('ANCESTOR_PREFIX', '') == '1' or ROW_ORDERS > 0 or GOLD_ORDERS  # a point's prefix holds only its clause's ancestors by reads (ancestor_spec)
 SEED_TAG = os.environ.get('SEED_TAG', 'v2')  # a point's draws follow seed_of(task, case, point, SEED_TAG); another tag gives other draws
 HAZARD_GROUP = os.environ.get('HAZARD_GROUP', '') == '1'  # a RULE point's stop factors come from the gold bodies of its own point group
@@ -768,12 +770,44 @@ def project(tb, cols):
                 frames=[(tb.get('frames') or [''] * len(tb['types']))[i] for _, i, _ in cols], entries=entries)
 
 
+def count_compound(c, body, out):
+    """Adds to the Counter c what compound_counts gives for one body, as the mean over BodyOrders(body). The compound of an order is its
+    first OR or IF, and an atom after it is left out."""
+    law = BodyOrders(body)
+    comps = {i for i, a in enumerate(law.atoms) if a and a[0] in ('OR', 'IF')}
+    for (done, i), w in law.steps.items():
+        if done & comps:
+            continue
+        k, a = len(done) + 1, law.atoms[i]
+        c['reach', out, k] += w
+        if i not in comps:
+            continue
+        parts = [b for b in a[1:] if isinstance(b, list)]
+        c['comp', out, k] += w
+        c['shape', a[0] + str(len(parts))] += w
+        c['after', ] += w * (k < len(law.atoms))
+        if a[0] == 'OR':  # branches are a set: each is the first in the same share of their orders
+            c['later', ] += w * (len(parts) - 1)
+            c['neg1', ] += w * negating_branches(parts) / len(parts)
+        for b in parts:
+            if b:
+                c['blen', len(b)] += w
+
+
+def negating_branches(parts):
+    """The count of pairs (x, y) of branches of an OR where y negates a relation that x holds positively."""
+    pairs = 0
+    for i, x in enumerate(parts):
+        held = {a[0] for a in x if isinstance(a, list) and a and a[0] != 'NOT'}
+        pairs += sum(any(isinstance(a, list) and a and a[0] == 'NOT' and isinstance(a[1], list) and a[1][0] in held for a in y) for j, y in enumerate(parts) if j != i)
+    return pairs
+
+
 def compound_counts(dev):
-    """{task: Counter} over the gold RULE bodies of the dev tasks, for a final OR or IF (the compound): ('reach', out, k)
-    bodies whose k-th atom exists, ('comp', out, k) bodies whose k-th atom is the compound, where out tells whether the
-    clause is the one OUT reads; ('shape', 'OR2' ...) the compound's kind and part count; ('blen', n) part lengths;
-    ('later',) OR branches after the first and ('neg1',) those that negate a relation the first branch holds positively.
-    Atoms after a compound are left out."""
+    """{task: Counter} over the gold RULE bodies of the dev tasks, for a body's OR or IF (the compound), as count_compound counts them: ('reach',
+    out, k) bodies whose k-th atom exists, ('comp', out, k) bodies whose k-th atom is the compound, where out tells whether the clause is the
+    one OUT reads; ('shape', 'OR2' ...) the compound's kind and part count; ('blen', n) part lengths; ('after',) compounds with an atom after them;
+    ('later',) OR branches past one and ('neg1',) those that negate a relation that another branch holds positively."""
     per = collections.defaultdict(collections.Counter)
     for t in dev:
         forms = corpus_forms(t)
@@ -781,26 +815,8 @@ def compound_counts(dev):
             continue
         outs = {f[1][0] for f in forms if f and f[0] == 'OUT' and len(f) > 1 and isinstance(f[1], list) and f[1]}
         for e in forms:
-            if not e or e[0] != 'RULE':
-                continue
-            out = e[1] in outs
-            body = [a for a in e[2:] if isinstance(a, list)]
-            ci = next((i for i, a in enumerate(body) if a and a[0] in ('OR', 'IF')), None)
-            for k in range(1, (len(body) if ci is None else ci + 1) + 1):
-                per[t][('reach', out, k)] += 1
-            if ci is not None:
-                parts = [b for b in body[ci][1:] if isinstance(b, list)]
-                per[t][('comp', out, ci + 1)] += 1
-                per[t][('shape', body[ci][0] + str(len(parts)))] += 1
-                if body[ci][0] == 'OR':
-                    pos1 = {x[0] for x in parts[0] if isinstance(x, list) and x and x[0] != 'NOT'}
-                    for b in parts[1:]:
-                        per[t][('later',)] += 1
-                        per[t][('neg1',)] += any(isinstance(x, list) and x and x[0] == 'NOT' and isinstance(x[1], list) and
-                                                 x[1][0] in pos1 for x in b)
-                for b in parts:
-                    if b:
-                        per[t][('blen', len(b))] += 1
+            if e and e[0] == 'RULE':
+                count_compound(per[t], [a for a in e[2:] if isinstance(a, list)], e[1] in outs)
     return per
 
 
@@ -836,11 +852,12 @@ def kind_hazard(bodies):
     return h
 
 
-def atom_shape(a):
+def atom_shape(a, bound=None):
     """An atom s-expression as a shape in the form of gold-shapes.jsonl: {neg, rel, args [(column, kind)]}, or None for
     a compound atom (OR, IF). A declared relation is `declared` and its columns `_`; a comparison is its OPS name; a
-    record binder is left out of args."""
-    neg = False
+    record binder is left out of args. A site's kind is the mark that the text gives it. With bound, the labels bound before the atom, a
+    site of an atom that binds its labels has the kind that those labels give it."""
+    neg, seen = False, None if bound is None else set(bound)
     if a and a[0] == 'NOT' and len(a) > 1 and isinstance(a[1], list):
         neg, a = True, a[1]
     if not a or not isinstance(a[0], str) or a[0] in ('OR', 'IF', 'ALSO', 'NOT'):
@@ -850,19 +867,144 @@ def atom_shape(a):
     rel = 'declared' if a[0].startswith('&') else a[0]
     args = []
     for site in a[1:]:
-        if not (isinstance(site, list) and len(site) == 2 and isinstance(site[0], str) and site[0].startswith(':')):
+        if not (isinstance(site, list) and len(site) == 2 and isinstance(site[0], str) and site[0].startswith(':') and isinstance(site[1], str)):
+            if seen is not None:
+                seen |= atom_labels(site)
             continue
         b = site[1]
-        if not isinstance(b, str):
-            continue
         kind = 'zero' if b == '0' else 'fresh' if b.startswith('*') else 'caret' if b.startswith('^') else 'join'
+        if seen is not None and kind != 'zero' and not neg:
+            kind = 'join' if b.lstrip('*^') in seen else 'fresh'
+            seen.add(b.lstrip('*^'))
         args.append(('_' if rel == 'declared' else site[0][1:], kind))
     return dict(neg=neg, rel=rel, args=args)
 
 
+def atom_labels(x, marked=False):
+    """The labels of an atom or of a list of atoms; with marked, those that a * or ^ marks somewhere in x."""
+    if isinstance(x, str):
+        name = x.lstrip('*^')
+        return {name} if name[:1].isupper() and (not marked or name != x) else set()
+    return set().union(*[atom_labels(y, marked) for y in (x[1:] if x and isinstance(x[0], str) else x)])
+
+
+@functools.lru_cache(maxsize=None)
+def mode_holds(rel, bound, unbound):
+    """Whether an atom of a lib relation may stand where its sites at the columns bound are bound and those at the columns unbound aren't,
+    by the engine's safety check, which alone knows a relation macro's modes."""
+    atom = [(c, 'B%d' % j) for j, c in enumerate(sorted(bound))] + [(c, '*U%d' % j) for j, c in enumerate(sorted(unbound))]
+    text = '(RULE &x %s (%s %s))\n(RULE &y (input (:P *P) (:Col *Col)))\n(OUT (&y ^P ^Col))' % (' '.join('(= *%s 0)' % x for _, x in atom if x[0] == 'B'), rel, ' '.join('(:%s %s)' % x for x in atom))
+    try:
+        arclog.StudyProgram.from_sexp(text, arclog.DecodeSettings())
+    except ValueError as e:
+        return 'no mode of the atom' not in str(e)
+    return True
+
+
+def atom_binds(a, bound, outer):
+    """The labels that the atom a binds where the labels of bound are bound, or None where a may not stand there. outer is the labels that
+    stand outside a, in the rest of its body or before the body; a label of a compound that outer doesn't hold is local to a part of it.
+    A positive atom binds its labels once a mode of its relation holds. `=` binds its labels once one of them is bound. A NOT, an ALL and
+    another comparison bind none, and need the labels they read from outside. An OR or an IF binds what every part binds, and needs
+    each outer label that some part leaves unbound."""
+    if not a or a[0] in ('ONE', 'SET'):
+        return set()
+    labels = atom_labels(a)
+    if a[0] == '=':
+        return labels if labels & bound or len(labels) < 2 else None
+    if a[0] in OPS or a[0] == 'NOT':
+        return set() if labels <= bound else None
+    if a[0] == 'ALL':
+        return set() if labels & outer <= bound else None
+    if a[0] in ('OR', 'IF'):
+        parts = [p for p in a[1:] if isinstance(p, list)]
+        parts = [parts[0] + parts[1], parts[2]] if a[0] == 'IF' else parts
+        got = [atoms_bound(p, bound, outer) for p in parts]
+        shared = set.intersection(*got)
+        return shared if labels & outer <= bound | shared else None
+    if a[0].startswith('&'):
+        return labels
+    sites = [(x[0][1:], atom_labels(x)) for x in a[1:] if isinstance(x, list) and x]
+    held = frozenset(c for c, ls in sites if ls <= bound)
+    return labels if mode_holds(a[0], held, frozenset(c for c, _ in sites) - held) else None
+
+
+def atoms_bound(atoms, bound, outer):
+    """The labels bound after the atoms of a list that may stand in some order, where the labels of bound are bound."""
+    atoms = [a for a in atoms if isinstance(a, list)]
+    bound, left = set(bound), list(range(len(atoms)))
+    while left:
+        kept = []
+        for i in left:
+            got = atom_binds(atoms[i], bound, outer | atom_labels(atoms[:i] + atoms[i + 1:]))
+            if got is None:
+                kept.append(i)
+            else:
+                bound |= got
+        if len(kept) == len(left):
+            break
+        left = kept
+    return bound
+
+
+class BodyOrders:
+    """The law of the orders of a body's atoms, a fact of the set of atoms: the next atom is uniform over those that may stand after the atoms
+    before it (atom_binds), as a next clause is in live_priors' walk counts. atoms is the body sorted by text with no * or ^, steps maps (positions
+    of the atoms before, position of the atom) to the chance that an order has those atoms first and this atom next, and bounds maps the former to
+    the labels bound after them. A label that a body reads and never marks is bound before the body. Over ORDER_EXACT atoms, steps are the
+    mean of ORDER_SAMPLES draws."""
+
+    def __init__(self, body):
+        self.atoms = sorted((a for a in body if isinstance(a, list)), key=lambda a: re.sub(r'[*^]', '', sx(a)))
+        free = atom_labels(self.atoms) - atom_labels(self.atoms, True)
+        self.outer = [free | atom_labels(self.atoms[:i] + self.atoms[i + 1:]) for i in range(len(self.atoms))]
+        self.bounds = {frozenset(): free}
+        self.steps = collections.Counter()
+        if len(self.atoms) > ORDER_EXACT:
+            rng = random.Random(0)
+            for _ in range(ORDER_SAMPLES):
+                done = frozenset()
+                for _ in self.atoms:
+                    opts = self.ready(done)
+                    i = rng.choice(sorted(opts))
+                    self.steps[done, i] += 1 / ORDER_SAMPLES
+                    done = self.after(done, i, opts[i])
+            return
+        layer = {frozenset(): 1.0}
+        for _ in self.atoms:
+            nxt = collections.Counter()
+            for done, w in layer.items():
+                opts = self.ready(done)
+                for i, binds in opts.items():
+                    self.steps[done, i] += w / len(opts)
+                    nxt[self.after(done, i, binds)] += w / len(opts)
+            layer = nxt
+
+    def ready(self, done):
+        """{position: labels it binds} of the atoms that may come after those at the positions done."""
+        rest = [i for i in range(len(self.atoms)) if i not in done]
+        got = {i: atom_binds(self.atoms[i], self.bounds[done], self.outer[i]) for i in rest}
+        return {i: b for i, b in got.items() if b is not None} or {i: atom_labels(self.atoms[i]) for i in rest}
+
+    def after(self, done, i, binds):
+        out = done | {i}
+        self.bounds.setdefault(out, self.bounds[done] | binds)
+        return out
+
+
+def body_kinds(body):
+    """{(relation, column, kind): sites} of a body's plain atoms, as the mean over BodyOrders(body) of atom_shape's kinds."""
+    law, out = BodyOrders(body), collections.Counter()
+    for (done, i), w in law.steps.items():
+        sh = atom_shape(law.atoms[i], law.bounds[done])
+        for col, k in sh['args'] if sh else ():
+            out[sh['rel'], col, k] += w
+    return out
+
+
 class Prior:
     """Production counts of gold atoms by task (so that a point's task can be held out): of RULE atoms from
-    gold-shapes.jsonl, or of the atoms of the given bodies ({task: [body]})."""
+    gold-shapes.jsonl, whose kinds read gold's written order, or of the atoms of the given bodies ({task: [body]}), whose kinds read no order."""
 
     FIELDS = ('rel', 'neg', 'kind', 'ckind', 'nsites')
 
@@ -880,10 +1022,15 @@ class Prior:
             self.rel[t][rel] += n
             self.neg[t][rel] += n * sh['neg']
             self.nsites[t][(rel, len(sh['args']))] += n
-            for col, k in sh['args']:
+            for col, k in sh['args'] if bodies is None else ():
                 k = k.split(':')[0]
                 self.kind[t][(rel, k)] += n
                 self.ckind[t][(rel, col, k)] += n
+        for t, bs in (bodies or {}).items():  # a site's kind depends on the atoms before it, so a body counts it over its orders
+            for b in bs:
+                for (rel, col, k), n in body_kinds(b).items():
+                    self.kind[t][(rel, k)] += n
+                    self.ckind[t][(rel, col, k)] += n
         self.total = {f: sum(getattr(self, f).values(), collections.Counter()) for f in self.FIELDS}
 
     def held_out(self, task):

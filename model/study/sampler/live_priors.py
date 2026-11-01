@@ -4,7 +4,7 @@ DATA/sampler/models/live_priors.pkl. The file holds what S reads from disk at a 
 the compound counts of RULE bodies and of an INIT's key and port bodies, the registry's columns and types), and the program-level counts that a draw from an empty prefix
 needs: the next clause's kind or the stop, by how many clauses of each kind exist, a RULE's or a DET's proposer and marks, and an INIT's
 component, ports and head sites. A clause comes after what it reads and written order counts for nothing: each program is walked in WALK_ORDERS
-random orders that keep its reads.
+random orders that keep its reads, and a count that depends on the order of a body's atoms is its mean over S.BodyOrders.
 
 A sparse kind borrows signal from anywhere, at any point. Its prior takes counts from the kind itself, from the parent kind it is a sibling of (DET for RIGID_DET), from the docs' statement of what the kind does, and from the solvers that a survey names. Its trigger takes engine verdicts (SeveralValues, NotConsistent up to a pose, rows several where not determined) and table content. The same signals apply whether the kind is drawn, lifted as a repair, or rewritten into gold. Thin counts are a reason to borrow signal, not a reason to leave a kind flat or out.
 
@@ -207,36 +207,20 @@ def key_labels(tasks):
 
 
 def body_compounds(tasks):
-    """{'key', 'port' or 'DET': counts in the form of S.compound_counts, with ('after',) as compound has it, over the bodies of that place.
-    A place has no output clause, so the flag of 'reach' and 'comp' is False."""
+    """{'key', 'port' or 'DET': counts in the form of S.compound_counts, over the bodies of that place. A place has no output clause, so the
+    flag of 'reach' and 'comp' is False."""
     out = dict(key=collections.Counter(), port=collections.Counter(), DET=collections.Counter())
     for t in tasks:
         for f in S.corpus_forms(t):
             for place, body in init_bodies(f) if f[0] == 'INIT' else [('DET', [a for a in f[2:] if isinstance(a, list) and a[0] not in ('ONE', 'SET')])] if f[0] == 'DET' else ():
-                c, ci = out[place], next((i for i, a in enumerate(body) if a and a[0] in ('OR', 'IF')), None)
-                for k in range(1, (len(body) if ci is None else ci + 1) + 1):
-                    c['reach', False, k] += 1
-                if ci is None:
-                    continue
-                parts = [b for b in body[ci][1:] if isinstance(b, list)]
-                c['comp', False, ci + 1] += 1
-                c['shape', body[ci][0] + str(len(parts))] += 1
-                c['after', ] += ci < len(body) - 1
-                if body[ci][0] == 'OR':
-                    pos1 = {x[0] for x in parts[0] if isinstance(x, list) and x and x[0] != 'NOT'}
-                    for b in parts[1:]:
-                        c['later', ] += 1
-                        c['neg1', ] += any(isinstance(x, list) and x and x[0] == 'NOT' and isinstance(x[1], list) and x[1][0] in pos1 for x in b)
-                for b in parts:
-                    if b:
-                        c['blen', len(b)] += 1
+                S.count_compound(out[place], body, False)
     return out
 
 
 def nested_counts(tasks):
-    """{place: counts} of the ORs that stand inside a branch of an OR, in the bodies of RULEs and of an INIT's key and ports: 'branches'
-    is the branches of ORs, 'nests' the ORs inside a branch past its first atom, 'first' those that are a branch's first atom, 'after' the
-    nests with an atom after them in their branch, ('parts', n) the nests of n branches."""
+    """{place: counts} of the ORs that stand inside a branch of an OR, in the bodies of RULEs and of an INIT's key and ports, each the mean
+    over S.BodyOrders of the branch: 'branches' is the branches of ORs, 'nests' the ORs inside a branch past its first atom, 'first' those that
+    are a branch's first atom, 'after' the nests with an atom after them in their branch, ('parts', n) the nests of n branches."""
     out = {k: collections.Counter(first=0) for k in ('RULE', 'key', 'port')}
     for t in tasks:
         for f in S.corpus_forms(t):
@@ -245,31 +229,39 @@ def nested_counts(tasks):
                 for a in body:
                     for b in [b for b in a[1:] if isinstance(b, list)] if a and a[0] == 'OR' else ():
                         out[place]['branches'] += 1
-                        for i, x in enumerate(b):
-                            if not i and isinstance(x, list) and x and x[0] == 'OR':
-                                out[place]['first'] += 1
-                            elif i and isinstance(x, list) and x and x[0] == 'OR':
-                                out[place]['nests'] += 1
-                                out[place]['after'] += i < len(b) - 1
-                                out[place]['parts', len([y for y in x[1:] if isinstance(y, list)])] += 1
+                        law = S.BodyOrders(b)
+                        for (done, i), w in law.steps.items():
+                            x = law.atoms[i]
+                            if not x or x[0] != 'OR':
+                                continue
+                            if not done:
+                                out[place]['first'] += w
+                                continue
+                            out[place]['nests'] += w
+                            out[place]['after'] += w * (len(done) + 1 < len(law.atoms))
+                            out[place]['parts', len([y for y in x[1:] if isinstance(y, list)])] += w
     return out
 
 
 def all_counts(tasks):
     """Counts of the ALLs in the bodies of RULEs, DETs and an INIT's key and ports, and in their ORs' branches. ('atoms', place) is the atoms
-    of the place (a compound is one), ('alls', place) its ALLs, ('more', place) the ALLs with an atom after them in their body, and ('guard', n)
-    the ALLs of n guard atoms. place is 'body' for a RULE or a DET, 'key', 'port', or 'branch' for an atom inside a branch of an OR."""
+    of the place (a compound is one), ('alls', place) its ALLs, ('more', place) the ALLs with an atom after them in their body, as the mean over
+    S.BodyOrders of the body, and ('guard', n) the ALLs of n guard atoms. place is 'body' for a RULE or a DET, 'key', 'port', or 'branch' for an atom
+    inside a branch of an OR."""
     out = collections.Counter()
 
     def count(atoms, place):
-        for i, a in enumerate(atoms):
-            if not (isinstance(a, list) and a):
+        law = S.BodyOrders(atoms)
+        for (done, i), w in law.steps.items():
+            if law.atoms[i] and law.atoms[i][0] == 'ALL':
+                out['more', place] += w * (len(done) + 1 < len(law.atoms))
+        for a in law.atoms:
+            if not a:
                 continue
             out['atoms', place] += 1
             if a[0] == 'ALL':
                 guard = a[1] if len(a) > 1 and isinstance(a[1], list) else []
                 out['alls', place] += 1
-                out['more', place] += i < len(atoms) - 1
                 out['guard', len(guard)] += 1
             elif a[0] == 'OR':
                 for b in a[1:]:
@@ -287,17 +279,18 @@ def all_counts(tasks):
 
 
 def single_rates(tasks):
-    """{kind: P(the body stops at one atom | its first atom is no compound and no method call)} over the RULE and DET bodies of the tasks.
-    The kind's hazard at one atom counts the compound bodies too, which a draw makes by the compound counts."""
+    """{kind: P(the body stops at one atom | its first atom is no compound and no method call)} over the RULE and DET bodies of the tasks, as the
+    mean over S.BodyOrders of the body. The kind's hazard at one atom counts the compound bodies too, which a draw makes by the compound counts."""
     one, total = collections.Counter(), collections.Counter()
     for t in tasks:
         for f in S.corpus_forms(t):
             if f[0] not in ('RULE', 'DET'):
                 continue
-            body = [a for a in f[2:] if isinstance(a, list) and a[0] not in ('ONE', 'SET')]
-            if body and body[0][0] not in ('OR', 'IF', 'ALL') and '.' not in str(body[0][0]):
-                total[f[0]] += 1
-                one[f[0]] += len(body) == 1
+            law = S.BodyOrders([a for a in f[2:] if isinstance(a, list) and a[0] not in ('ONE', 'SET')])
+            for (done, i), w in law.steps.items():
+                if not done and law.atoms[i][0] not in ('OR', 'IF', 'ALL') and '.' not in str(law.atoms[i][0]):
+                    total[f[0]] += w
+                    one[f[0]] += w * (len(law.atoms) == 1)
     return {k: (one[k] + 0.5) / (total[k] + 1.0) for k in total}
 
 
@@ -366,10 +359,6 @@ def fit(leave_out=()):
     compound = collections.Counter()
     for c in S.compound_counts(tasks).values():
         compound.update(c)
-    for t in tasks:  # S's counts leave out the atoms after a compound: ('after',) has the RULE compounds with an atom after them
-        for f in S.corpus_forms(t):
-            body = [a for a in f[2:] if isinstance(a, list)] if f[0] == 'RULE' else []
-            compound['after', ] += next((i < len(body) - 1 for i, a in enumerate(body) if a and a[0] in ('OR', 'IF')), False)
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
