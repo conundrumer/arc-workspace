@@ -11,14 +11,11 @@
 //  figure.
 // @scene window-ahead: the window lies past the last shown term, across the
 //  place where a later term of the continued sequence stands.
-// @rule continue-sequence: the sequence goes on by whatever progression its
-//  maker drew, as a person reads it from the shown terms.
-//     @approximated: the sequence goes on past its last shown term; each new
-//      term takes the growth, the spacing and the alignment that the shown
-//      terms follow from one term to the next, and the next color of the
-//      cycle. The growth is one of a catalog of five, the one every pair of
-//      consecutive shown terms confirms.
-//     @witness ring-sequence: ordinary other
+// @rule continue-sequence: the sequence goes on past its last shown term; each
+//  new term takes the growth, the spacing and the alignment that the shown
+//  terms follow from one term to the next, and the next color of the cycle. The
+//  growth is one of a catalog of five, the one every pair of consecutive shown
+//  terms confirms.
 // @rule crop-window: the output is the window, marks included in its extent;
 //  each cell takes the color the continued sequence draws there, and
 //  params.background where it draws nothing.

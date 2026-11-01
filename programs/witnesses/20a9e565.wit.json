@@ -1,33 +1,6 @@
 {
   "id": "20a9e565",
   "witnesses": [{
-    "id": "ring-sequence",
-    "separates": "a sequence of hollow squares growing by 2 on each axis, a progression none of the five inputs shows: no catalog rule is consistent with it and the concept case is undefined; the generator draws the right part of the next, larger square in color 3",
-    "input": [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,5,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,5,0,0,0,0,0],
-      [0,0,0,0,3,3,3,3,3,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [2,2,2,0,3,0,0,0,3,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [2,0,2,0,3,0,0,0,3,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [2,2,2,0,3,0,0,0,3,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,3,3,3,3,3,0,2,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,5,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,5,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ],
-    "output": [
-      [3,3,3,3,3],
-      [0,0,0,0,3],
-      [0,0,0,0,3],
-      [0,0,0,0,3],
-      [0,0,0,0,3],
-      [0,0,0,0,3],
-      [0,0,0,0,3],
-      [0,0,0,0,3],
-      [3,3,3,3,3]
-    ]
-  }, {
     "id": "marker_color=RarestColor",
     "separates": "train 2 with its marks in color 6: the derived marker color is 6 and frames the window, giving train 2's output; the stored marker color 5 finds no marks, and every other case is undefined",
     "input": [

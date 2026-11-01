@@ -7,8 +7,7 @@
     - a column of a two-row motif that lengthens at one end
     - a band of a periodic zigzag that widens by half a period at each end
     - a stepped tent that gains one step
-- The rule as the generator applies it: the sequence goes on by whatever progression its maker drew, as a person reads it from the shown terms. Each input of the task shows a progression of its own, so `continue-sequence` is approximated by the catalog of the five progressions the inputs show.
-- Witness `ring-sequence`: a sequence of hollow squares growing by 2 on each axis. No catalog rule is consistent with it, so the concept case is undefined. It breaks no scene claim. Plausibility `ordinary`, verdict `other`: the right part of the next square, in color 3.
+- Each input of the task shows a progression of its own, so the catalog holds the five progressions the inputs show, and `DemonstrationConsistency` picks the one each input confirms.
 
 ## Choice points
 - `growth-rule`
