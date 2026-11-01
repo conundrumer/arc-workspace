@@ -217,6 +217,7 @@ class Counts(collections.Counter):
 SHARED = 'rel_pre', 'srel_cache', 'rel_dag_f', 'rel_dag_p'  # the Drawer caches that the Drawers of one scope and kind share
 SHARED_HIDDEN = 'rel_cache', 'choice_cache', 'roots'  # those whose entries also depend on the labels that a frontier hides
 MEMO_CAP = 3000  # decoders whose table, or whose END check, Run keeps
+INIT_STORES = 64  # paths to INIT bodies whose caches the run keeps
 ROOT_CAP = 512  # atom-start frontiers that the Drawers of a scope share
 
 
@@ -281,22 +282,26 @@ class SearchRun(Run):
         self.rng = Chooser()
         self.c = Counts(self.c)
         self.seen = {}  # hash of (body context, atoms as a set) -> hash of the path that reached it
-        self.shared = collections.defaultdict(dict)  # kind -> the caches that Drawers of one scope share
+        self.shared = collections.defaultdict(dict)  # (kind, place, path) -> the caches that Drawers of one scope share
         self.memo = {}  # (what, id of a decoder) -> (the decoder, the answer): a decoder of a node that a shared root keeps stays the same one
 
     def drawer(self, pg, kind, dec, place=None):
         dr = super().drawer(pg, kind, dec, place)
         dr.ctx = self.rng.hash
-        if kind != 'INIT':  # an INIT port's Drawer has its own hidden labels, which a node of a root remembers
-            sh = self.shared[kind]
-            for name in SHARED:
-                if name in sh:
-                    setattr(dr, name, sh[name])
-                else:
-                    sh[name] = getattr(dr, name)
-            for name in SHARED_HIDDEN:
-                setattr(dr, name, Hidden(sh.setdefault(name, {}), dr.fr))
-            dr.root_cap, dr.node_cap = ROOT_CAP, 1 << 30
+        if kind == 'INIT':  # an INIT body reads what its component and the bodies before it fixed, so a store is for one path to the body
+            if len(self.shared) >= INIT_STORES:
+                self.shared = collections.defaultdict(dict, {k: v for k, v in self.shared.items() if k[0] != 'INIT'})
+            sh = self.shared['INIT', place, dr.ctx]
+        else:
+            sh = self.shared[kind, None, None]
+        for name in SHARED:
+            if name in sh:
+                setattr(dr, name, sh[name])
+            else:
+                sh[name] = getattr(dr, name)
+        for name in SHARED_HIDDEN:
+            setattr(dr, name, Hidden(sh.setdefault(name, {}), dr.fr))
+        dr.root_cap, dr.node_cap = ROOT_CAP, 1 << 30
         return dr
 
     def memoed(self, what, dec, make):
@@ -339,7 +344,7 @@ class SearchRun(Run):
 class Search:
     """The frontier of one scope and kind. Iterating gives Clauses until `deadline`; a later iteration goes on."""
 
-    def __init__(self, run, forms, kind, cap, eager=False):
+    def __init__(self, run, forms, kind, cap, eager=True):
         self.run, self.forms, self.kind, self.cap, self.eager = run, tuple(forms), kind, cap or FRONTIER_CAP, eager
         self.deadline = run.deadline
         self.heap = [(0.0, 0, None, None)]  # (-log bound, tie, path, clause): a path to run, or a clause
@@ -413,6 +418,7 @@ class Search:
             st['dead'] += 1
             st['dead:' + re.sub(r'\d+', 'N', str(e))[:30]] += 1
             st['seconds dead'] += live.time.process_time() - t0
+            st['seconds dead:' + re.sub(r'\d+', 'N', str(e))[:30]] += live.time.process_time() - t0
         except live.Deadline:
             st['runs'] -= 1
             return False, None
@@ -450,7 +456,7 @@ def time_up(deadline):
     return live.time.monotonic() >= deadline
 
 
-def search(sampler, session, deadline, task, forms, kind, lim, cap, eager=False):
+def search(sampler, session, deadline, task, forms, kind, lim, cap, eager=True):
     """Sampler.search: the Search of the scope, new or the earlier one with the new deadline."""
     key = id(session), tuple(forms), kind, lim, eager
     got = sampler.searches.get(key)

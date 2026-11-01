@@ -61,6 +61,9 @@ def gold_of(task, case, point):
     for d, e in idx['points'].items():
         if d.startswith(task + '-') and e[0] == case and e[1] == point:
             return d, [x for x in idx['golds'][e[2]].splitlines() if x.strip()]
+    for d, e in idx['points'].items():  # a clause that no stored point names: the program of the task and case
+        if d.startswith(task + '-') and e[0] == case:
+            return d, [x for x in idx['golds'][e[2]].splitlines() if x.strip()]
     raise KeyError((task, case, point))
 
 
@@ -76,6 +79,7 @@ def job(task, case, point, arm, out, budget, eager=True):
     d, lines = gold_of(task, case, point)
     scope, target = lines[:point[0]], lines[point[0]]
     tk = search.clause_key(target)
+    kind = target.split()[0].lstrip('(')  # the kind of gold's clause: RULE, DET or INIT
     sampler = live.Sampler(P.SAMPLER_DATA + '/models')
     sess, task_json, _ = live_try.session_of(task)
     res = dict(task=task, case=case, point=point, arm=arm, budget=budget, eager=eager, target=target, forms=len(scope), setup_cpu=round(time.process_time() - t0, 2), hit=False)
@@ -85,7 +89,7 @@ def job(task, case, point, arm, out, budget, eager=True):
     if arm == 'draw':
         calls = ok = 0
         while cpu() < budget:
-            c = sampler.clause(sess, calls, time.monotonic() + 30, task_json, scope, 'RULE')
+            c = sampler.clause(sess, calls, time.monotonic() + 30, task_json, scope, kind)
             calls += 1
             if c is None:
                 continue
@@ -98,7 +102,7 @@ def job(task, case, point, arm, out, budget, eager=True):
         res.update(tried=calls, clauses=ok, distinct=len(seen), counts={k: v for k, v in sampler.run.c.items() if not k.startswith('scope')} if sampler.run else {})
     else:
         emitted, gen = 0, [None]
-        se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, 'RULE', eager=eager)
+        se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, kind, eager=eager)
 
         def on_leaf(key):
             if key == tk and gen[0] is None:
@@ -112,7 +116,7 @@ def job(task, case, point, arm, out, budget, eager=True):
                     break
             if se.exhausted or not se.heap:
                 break
-            se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, 'RULE', eager=eager)
+            se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, kind, eager=eager)
             se.on_leaf = on_leaf
         res.update(tried=se.stats['runs'], clauses=emitted, distinct=emitted, gen_cpu=None if gen[0] is None else round(gen[0], 3),
                    counts=dict(se.stats) | {k: v for k, v in se.run.c.items() if not k.startswith('scope')}, frontier=len(se.heap), dropped_bits=None if se.dropped == -float('inf') else round(se.dropped / -0.6931471805599453, 2))

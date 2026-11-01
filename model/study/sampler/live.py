@@ -484,7 +484,7 @@ class Sampler:
             self.run = Run(self.pri, session, seed, deadline, task, lim)
         return self.run.clause(seed, deadline, forms, kind)
 
-    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, eager=False, **limits):
+    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, eager=True, **limits):
         """search.Search over the scope forms: iterating it gives distinct Clauses in about descending q until the deadline. A call
         with the same session, forms, kind and limits gives that Search again with the new deadline, and it goes on where it
         stopped. The search draws nothing at random, so seed has no effect. With eager, a clause is given as soon as a run makes it, so the
@@ -1035,7 +1035,8 @@ class Run:
                 dr.drawn.append(got[3])
                 scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + list(self.label_types(dr, [got[3]]).values())
                 labels = tb.get('labels') if tb is not None else None
-                stop = self.rng.random() < self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb)
+                chance = self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb)
+                stop = False if self.stop_barred(dr, kind, k, top, nlab, toks, text, scope, need, keys) else self.rng.random() < chance
             if not stop and k < top:
                 continue
             if nlab + toks.count(M.STAR) < dr.labs_wanted and k < top:
@@ -1060,6 +1061,15 @@ class Run:
             pg.toks = pg.toks + toks
             return cur, toks, text, scope
         raise Drop('body: no stop in %d atoms' % top)
+
+    def stop_barred(self, dr, kind, k, top, nlab, toks, text, scope, need, keys):
+        """Whether a gate that reads the body alone would refuse a stop after atom k, which then is not drawn: the body goes on, as it does where
+        a drawn stop is refused. A refused port head also sets the boost that the refusal sets."""
+        if need and ANY_TYPE not in scope and any(not x & set(scope) for x in need):
+            dr.need_boost = NEED_RESCUE
+            return True
+        return bool(nlab + toks.count(M.STAR) < dr.labs_wanted and k < top or k == 1 and kind in S.MIN2_KINDS and not S.one_call(dr, text)
+                    or keys and not set(keys) & set(toks))
 
     def stop_chance(self, dr, k, h, toks, got, tb):
         """q's stop hazard after atom k: P's hazard h, its odds shifted by the tilt and the choice steer, as S's draw has it. got is
