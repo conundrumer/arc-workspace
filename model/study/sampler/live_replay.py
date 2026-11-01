@@ -323,25 +323,29 @@ class Walk:
         self.start = self.i
         cur, text, scope = self.body(pg, dr, 'INIT', f, nlab, keys)
         ptoks = t[self.start:self.i]
-        if keys and not set(keys) & set(ptoks):
-            raise Refused('keyed port reads no key label')
+        unread = bool(keys) and not set(keys) & set(ptoks)
         g = cur.fork()
         g.step(M.END)
         self.i += 1
         made = list(range(nlab, nlab + ptoks.count(M.STAR)))
         nlab = made[-1] + 1 if made else nlab
-        bound, types, before = [], run.label_types(dr, dr.drawn), dict(fields)
+        bound, types, before, named = [], run.label_types(dr, dr.drawn), dict(fields), False
         for c, ty in cols:
             g, labs = self.head_column(g)
             if not labs:
                 continue
-            bound.append((c, ty))
-            if not set(labs) <= {run.ff0.label_tok.get(i) for i in made}:
-                raise Refused('head names a key label')
+            if not set(labs) <= {run.ff0.label_tok.get(i) for i in made} | set(keys):
+                raise Refused('head names a label its body does not make')
+            if set(labs) & set(keys):  # a head column that names a key label has no need of a label from the body
+                named = True
+            else:
+                bound.append((c, ty))
             if len(labs) > 1 and len(labs) not in run.pri.get('head_labels', {}).get((comp, pname, c), ()) and ty not in fields:
                 self.hard['head: record size'] += 1
             if ty in params and ty not in fields:
-                fields[ty] = [types.get(self.V.name(x), live.ANY_TYPE) for x in labs]
+                fields[ty] = [types.get(self.V.name(x)) or keys.get(x) or live.ANY_TYPE for x in labs]
+        if unread and not named:
+            raise Refused('keyed port reads no key label')
         need = run.head_need(bound, params, before)
         if need and live.ANY_TYPE not in scope and any(not x & set(scope) for x in need):
             self.hard['gate:port head'] += 1

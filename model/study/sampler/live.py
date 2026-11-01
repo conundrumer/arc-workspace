@@ -25,7 +25,7 @@ a body and a head. The body of a RULE, a key or a port may hold an OR, from that
 alone, and other labels stay in their branch. A branch may take an OR as its last atom, from that place's counts (one level deep); the
 labels that OR exports are the branch's, and its other labels stay in it. The first operand of `=` may be a fresh label (EQ_FRESH). A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
-priors' counts of those: such a port reads no key, so it holds for every key. A head column of a type parameter may take a record of several labels, its count from the
+priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
 sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. The decoder gives every read of the task: its checks, and tables through step_tables;
 this module reads no gold and no path but the priors.
@@ -808,19 +808,24 @@ class Run:
         family = lambda t: HEAD_FITS.get(t) or next((set(x) for x in self.pri['families'] if t in x), {t})  # noqa: E731
         return [family(t) for _, t in bound if t not in params or t == 'Point'] + [family(x) for _, t in bound for x in fields.get(t, ()) if x != ANY_TYPE]
 
+    def key_fits(self, t, keys, params):
+        """Whether a head column of type t may name a label of the key, whose label tokens and types are keys: a key of no known type does."""
+        family = HEAD_FITS.get(t) or next((set(x) for x in self.pri['families'] if t in x), {t})
+        return t in params or any(k is None or k in family for k in keys.values())
+
     def record_size(self, comp, name, c):
         """A head column's count of labels, from the priors."""
         sizes = self.pri.get('head_labels', {}).get((comp, name, c))
         return self.pick(*zip(*sizes.items())) if sizes else 1
 
-    def head_column(self, f, labs, n):
+    def head_column(self, f, labs, n, keys=()):
         """(decoder after a head column at f that takes n labels of the label tokens labs, labels taken). Two labels or more are a record:
-        each field's token, then its label."""
+        each field's token, then its label. With keys, the label tokens of the key, the first field's label is one of them."""
         f, got = f.fork(), []
         for j in range(n):
             if n > 1:
                 f.step(self.ff0.col_by_pos[j])
-            some = [x for x, y in zip(labs, f.admits(labs)) if y]
+            some = [x for x, y in zip(keys if j == 0 and keys else labs, f.admits(keys if j == 0 and keys else labs)) if y]
             if not some:
                 raise Drop('head: no label for a field')
             got.append(self.rng.choice([x for x in some if x not in got] or some))
@@ -837,15 +842,21 @@ class Run:
         uses = pri.get('outside', {}).get((comp, name), 0) if outside else sum(pri['ports'][comp, k, name] for k in (False, True))
         heads = pri.get('heads_out', {}) if outside else pri['heads']
         bound = [(c, t) for c, t in cols if rng.random() < (heads.get((comp, name, c), 0) + 0.1) / (uses + 0.2)]
-        need = self.head_need(bound, params, fields)
+        hk = pri.get('head_key')
+        named = {c for c, t in bound if keys and hk and rng.random() < hk['key', comp, name, c] / (hk['cols', comp, name, c] + 1.0) and self.key_fits(t, keys, params)}  # head columns that name a key label
+        self.c['head:names a key label'] += bool(named)
+        waive = bool(named) and rng.random() < hk['unread'] / hk['ports']  # and a body that reads no key
+        rest = [x for x in bound if x[0] not in named]
+        need = self.head_need(rest, params, fields)
         sizes = {}  # a type -> the count of labels that a head column of it takes
-        for c, t in bound:
+        for c, t in rest:
             sizes[t] = len(fields[t]) if t in fields else sizes.get(t) or self.record_size(comp, name, c)
         dr = self.drawer(pg, 'INIT', f, 'port')
         dr.labs_wanted = nlab + max(sizes.values(), default=0)
-        dr.want, dr.want_types = set(keys), frozenset(t for t in keys.values() if t)
+        want = {} if waive else keys
+        dr.want, dr.want_types = set(want), frozenset(t for t in want.values() if t)
         dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want  # a port's body reads its own labels and the key
-        cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, keys)
+        cur, toks, _, _ = self.body(pg, dr, f, 'INIT', nlab, need, want)
         made = list(range(nlab, nlab + toks.count(M.STAR)))
         nlab = made[-1] + 1 if made else nlab
         f = cur.fork()
@@ -855,7 +866,12 @@ class Run:
         for c, t in cols:
             ok = f.admits(labs + [M.END])
             some = [x for x, y in zip(labs, ok) if y]
-            if some and (c in names or not ok[-1]):  # the decoder refuses END at a column whose type an earlier port bound
+            if c in named:
+                n = len(fields[t]) if t in fields else self.record_size(comp, name, c)
+                f, got = self.head_column(f, labs, n, list(keys))
+                if t in params:
+                    fields[t] = [types.get(self.V.name(x)) or keys.get(x) or ANY_TYPE for x in got]
+            elif some and (c in names or not ok[-1]):  # the decoder refuses END at a column whose type an earlier port bound
                 n = len(fields[t]) if t in fields else min(sizes.get(t, 1), len(some))
                 f, got = self.head_column(f, some, n)
                 if t in params:

@@ -50,6 +50,43 @@ def outside_ports(form):
     return [(p[0], {h[0][1:]: len(h) - 1 for h in p[1] if isinstance(h, list)}) for p in parts[1:]]
 
 
+def head_key_counts(tasks):
+    """Counts over the ports in an INIT's key group: ('cols', component, port, column) -> head columns, ('key', component, port, column) -> head
+    columns that name a key label, 'ports' -> ports with such a column, 'unread' -> those whose body reads no key label."""
+    out = collections.Counter()
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            parts = [g for g in f[3:] if isinstance(g, list) and g] if f[0] == 'INIT' else []
+            if not parts or parts[0][0] != 'key':
+                continue
+            keys = carets(parts[0][1], set())
+            for p in parts[0][2:]:
+                if not (isinstance(p, list) and p):
+                    continue
+                named = False
+                for h in p[1]:
+                    if isinstance(h, list):
+                        labs = [z for z in h[1:] if isinstance(z, str)] + [y[1] for z in h[1:] if isinstance(z, list) for y in [z] if len(y) > 1]
+                        out['cols', f[2], p[0], h[0][1:]] += 1
+                        if keys & set(labs):
+                            out['key', f[2], p[0], h[0][1:]] += 1
+                            named = True
+                if named:
+                    out['ports'] += 1
+                    out['unread'] += not keys & set(text_labels(p[2:], set()))
+    return out
+
+
+def text_labels(x, out):
+    """The labels that the atoms x read or make, with no * or ^, added to the set out."""
+    if isinstance(x, str):
+        out.add(x.lstrip('*^'))
+    else:
+        for y in x:
+            text_labels(y, out)
+    return out
+
+
 def walk_counts(tasks):
     """The counts of a draw's walk: 'after' maps a state, the capped clause counts of WALK_KINDS, to the next kind or 'stop' -> counts."""
     rng, after = random.Random(0), collections.defaultdict(collections.Counter)
@@ -222,7 +259,7 @@ def fit():
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
