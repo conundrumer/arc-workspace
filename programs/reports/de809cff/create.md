@@ -1,7 +1,7 @@
 # de809cff
 
 ## Departures
-- `clean` has an `@approximated:` line, and the witness file has a new witness, `thin-strip` (`ordinary other`): the analyze files give `clean` no approximation. The program has to find each rectangle from noisy cells. It takes a rectangle as the box that bounds a 4-connected set of solid cells of one color. A solid cell lies in a 2×2 block of cells that have the color, or that have it on all four 4-neighbors. A one-cell-wide visible strip of a lower rectangle that holds a pinhole has no solid cell. Its cells are then indistinguishable from strays attached to a rectangle's edge, so no set of clauses agrees with the generator there. On `thin-strip`, every case cleans the strip to `background`. The generator rings and marks the pinhole.
+- `clean` has an `@approximated:` line, and the witness file has a new witness, `thin-strip` (`ordinary other`): the analyze files give `clean` no approximation. The program has to find each rectangle from noisy cells. It takes a rectangle as the box that bounds a 4-connected set of solid cells of one color. A solid cell lies in a 2×2 block of cells that have the color, or that have it on all four 4-neighbors. `clean` has no relational form, because the input does not always fix a rectangle's extent. Where a rectangle's last line shows three cells, as the `1` rectangle of test0 does at row 19, a line that holds one ink cell and two `background` cells has two readings that satisfy every scene claim: a stray touching the rectangle's edge, or the rectangle's last line with two adjacent pinholes. The two readings give different outputs on one input, so no set of clauses agrees with the rule on both. A narrow visible strip that two adjacent pinholes cut across has no solid cell in the cut row, so the parse leaves that row out of every rectangle. On `thin-strip`, every case cleans that row to `background`. One layout of rectangles explains that input, and the generator rings and marks both pinholes.
 - The witness file and `witnesses.json` agree on every analyze witness. `witness --file` printed no difference.
 
 ## Judgments
@@ -16,7 +16,7 @@
 - No hint was left open. I resolved the single-consumer hint on `ink_color` by inlining it, and the case-section hints by moving the shared `ring`, `clash` and `out` clauses above the case markers. I wrote the negated-use findings in the form the lint gives.
 
 ## Unsettled
-- `thin-strip` stands for a class of inputs on which the parse is wrong: a narrow visible strip whose pinholes leave it no solid cell. A parse that finds rectangles by line spans would settle whether a better relational form exists.
+- `thin-strip` stands for a class of inputs on which the parse is wrong: a narrow visible strip whose pinholes leave it no solid cell. A parse that grows each box through the lines beyond it, skipping the cells another rectangle covers, and merges the boxes of one color fits every pair and `thin-strip`. That parse is a larger approximation of `clean`: it cannot separate the two readings above.
 
 ## Concept faults
 - none
