@@ -21,8 +21,8 @@ A draw walks the program form by form. Clause order does not matter: what a step
 next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how many clauses of each kind exist (live_priors.py
 counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a RULE or a DET may take a proposer, an
 INIT takes a component, and each of its ports takes
-a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
-alone, and other labels stay in their branch. A branch may take an OR as its last atom, from that place's counts (one level deep); the
+a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches export the keys
+alone, and the other labels stay in the OR: a later branch may read the first branch's. A branch may take an OR as its last atom, from that place's counts (one level deep); the
 labels that OR exports are the branch's, and its other labels stay in it. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
@@ -1332,7 +1332,7 @@ class Run:
         """An OR at decoder dec, the k-th atom of a body with tokens toks and atom texts text, by S's rules (draw_compound): (decoder
         after its END, tokens, text, the label tokens that are local to a branch, the branches' atom texts), or None. The labels the
         first branch makes and does not read again are exported, and each label it reads again with chance P_REEXPORT. In a key, the
-        key's labels alone are exported."""
+        key's labels alone are exported, and a later branch may read the first branch's other labels."""
         rng, c = self.rng, self.c
         nparts = self.pick(*zip(*dr.orc['shapes']))
         d = dec.fork()
@@ -1341,7 +1341,7 @@ class Run:
         closed = dr.rel_closed
         hidden0, want, want_types = dr.fr.hidden, dr.want, dr.want_types
         dr.rel_closed = lambda x, ends: closed(x, ends + 1)  # one more END closes the OR
-        all_made, reads, held = set(), [], set()
+        all_made, reads, held, shown = set(), [], set(), set()
         mirror0 = dr.mirror
         if not nested:
             self.lost, self.inner = frozenset(), []  # the label tokens that the ORs inside this one keep local, and their atoms' texts
@@ -1377,7 +1377,8 @@ class Run:
                 else:
                     first_made = set(made)
                     exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(rng.sample(made, min(len(made), dr.key_labels)))
-                dr.fr.hidden = hidden0 | self.lost | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
+                    shown = first_made - exported if dr.place == 'key' else set()  # a later branch of a key's OR reads the first branch's other labels too, and the body after the OR does not
+                dr.fr.hidden = hidden0 | self.lost | frozenset(self.ff0.label_tok[i] for i in all_made - exported - shown if i in self.ff0.label_tok)
         finally:
             dr.rel_closed, dr.fr.hidden = closed, hidden0
             dr.want, dr.want_types, dr.mirror = want, want_types, mirror0
