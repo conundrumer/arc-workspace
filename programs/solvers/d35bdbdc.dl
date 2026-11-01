@@ -8,15 +8,12 @@
 // @scene wire: one line of params.wire_color, of cells joined at sides or
 //  corners, that overlaps no box and has two ends; each end is next to the
 //  middle cell of one side of a box
-// @rule linked-boxes: a box is linked when one of the wire's two ends, its
-//  first and last drawn cells, is next to the middle cell of one of its sides,
-//  and its center color is the outer color of another box
-//     @approximated: a box is linked when a wire end is next to the middle
-//      cell of one of its sides, and its center color is the outer color of
-//      another box; a wire end is a wire cell with at most one neighbor in
-//      the wire, where two wire cells that touch at a corner are neighbors
-//      only when no wire cell touches both of them by a side
-//     @witness hooked-wire-end: variant other
+// @scene unhooked-ends: each end of the wire has one neighbor in the wire,
+//  where two wire cells that touch at a corner are neighbors only when no wire
+//  cell touches both of them by a side
+// @rule linked-boxes: a box is linked when a wire end is next to the middle
+//  cell of one of its sides, and its center color is the outer color of
+//  another box; a wire end is a wire cell with at most one neighbor in the wire
 // @rule center-lookup: a linked box's center takes the center color of the box
 //  whose outer color equals the linked box's center color
 // @rule erase-others: every cell of a box that is not linked becomes
@@ -64,9 +61,8 @@ wire_link(P, Q) :-
 .decl wire_through(p: Position)
 wire_through(P) :- wire_link(P, Q1), wire_link(P, Q2), Q1 != Q2.
 
-// The wire end the approximation of linked-boxes reads.
-// @ignore: single-consumer — the wire end is what the @approximated line
-//  names, the relation the hooked-wire-end witness turns on
+// The wire end that linked-boxes reads.
+// @ignore: single-consumer — the wire end is what linked-boxes and unhooked-ends name
 .decl wire_end(p: Position)
 wire_end(P) :- wire(P), !wire_through(P).
 
