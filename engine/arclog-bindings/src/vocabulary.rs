@@ -7,7 +7,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 
 /// The token ids of a decode and their names. The name of a token is its
-/// spelling in `docs/arclog/arclog.md#token-stream`: a control token's text,
+/// spelling in `docs/engine/arclog-stream.md#token-stream`: a control token's text,
 /// a lib relation, relation macro, component, proposer or fact relation's
 /// name, and `&r<slot>`, `:<position>` or `L<slot>` for a relation, column
 /// or label slot. The kind of a token is `control`, `lib relation`,

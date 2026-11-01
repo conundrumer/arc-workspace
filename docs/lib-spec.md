@@ -303,7 +303,7 @@ A nested order of any depth is a composition over Order: the outer Order's rank 
 
 ## Task structure
 
-- `Choose`, as [Constraints](arclog/constraints.md#implementation) specifies it: the compile target of the arclog `CHOOSE` form, propagation then enumeration of the residual under a cap.
+- `Choose`, as [Constraints](engine/constraints.md#implementation) specifies it: the compile target of the arclog `CHOOSE` form, propagation then enumeration of the residual under a cap.
 - `DemonstrationConsistency`, as the solver-file document and the `DemonstrationConsistency` entry specify it.
 
 ## Performance

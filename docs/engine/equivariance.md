@@ -102,7 +102,7 @@ Quotient exports `class` alone. Each use as a representative is a `RIGID_DET` wi
 
 ### The `RIGID_DET` frame
 
-Where the instances admit a common reading, each of its D4 images is one too, and the choice among them is the frame, as [Semantics](../../docs/arclog/rigid.md#semantics) gives. The engine takes one instance's reading, as [Implementation](../../docs/arclog/rigid.md#implementation) gives, and a type rule keeps every read from seeing that choice:
+Where the instances admit a common reading, each of its D4 images is one too, and the choice among them is the frame, as [Semantics](../../docs/arclog/rigid.md#semantics) gives. The engine takes one instance's reading, as [Implementation](../../docs/engine/rigid.md#implementation) gives, and a type rule keeps every read from seeing that choice:
 
 - A `:Pose` column has the type Pose of its assembly.
 - A Pose label may stand at a `:Pose` column of the same assembly, at a column of a derived relation or of an instance's input, which then takes the type, in `=` and `!=`, and in `d4_elem`, whose column takes the type of its label, since every D4 element is a pose.

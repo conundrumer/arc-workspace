@@ -1,4 +1,4 @@
-//! The token stream of each program of `docs/arclog/arclog.md#trace-form`
+//! The token stream of each program of `docs/engine/arclog-stream.md#trace-form`
 //! gives the tokens of its trace form, the bracketed ones the engine's, a
 //! site on a record-valued column gives one `END`, after its field sites, and
 //! a program that passes a vocabulary cap is refused.

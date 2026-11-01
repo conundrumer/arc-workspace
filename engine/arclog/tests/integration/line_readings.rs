@@ -1,7 +1,7 @@
 //! A `DET_OR_RULE` line splits only the cases whose forms read its relation,
 //! and its derived reading by a proposer gives the relation the columns that
 //! the proposer declares, as `docs/engine/cases.md#cases` and
-//! `docs/arclog/arclog.md#the-alts-form` give. The stored reading of a
+//! `docs/arclog/arclog.md#stored-readings` give. The stored reading of a
 //! `RULE_OR_DET` line is a `DET` over the rows its derivation gives at every
 //! train example, and a lifted read bound by `ex_output` reads the train
 //! examples alone.

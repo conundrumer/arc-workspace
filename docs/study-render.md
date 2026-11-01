@@ -190,9 +190,12 @@ values; render2 may store identical immutable definitions once in artifacts.
 
 Signatures are not marked as meanings. Each registry entry now has `semantics`,
 looked up by its exact resolved ID (`lib:Walk`, `lib:apply`, `fact:input`, …).
-The frozen authored source is `docs/study-library-meanings.source.md`; the
-explicit ID catalogue is `engine/lib/study-meanings.json`. Each entry carries
-its authored summary/full contract, source lines and section. All 140 current
+The explicit ID catalogue is `engine/lib/study-meanings.json`, which
+`scripts/generate_study_meanings.py` generates from the registry's `;;;` prose
+and its `;;; @doc` links to the `///` docs of Souffle and Rust declarations and
+the `;;;` docs of arclog proposers. Each entry carries its authored
+summary/full contract, source lines and section. `docs/study-library-meanings.source.md`
+is the lib catalogue that the arclog-editor agent reads. All 140 current
 registry declarations have authored coverage. A future unmapped ID is
 `status=pending`; `definitions.semantic_coverage` and `parts.native_semantics`
 report this separately from structural reader completeness. There is no runtime

@@ -62,7 +62,7 @@ pub struct RigidDetName(pub DeclaredName);
 /// fixed type, `key`, `t`, `item` for a column of a type parameter. In a
 /// decoded program, a column of a relation the program declares is the slot
 /// of its label among the relation's columns
-/// (`docs/arclog/arclog.md#token-stream`).
+/// (`docs/engine/arclog-stream.md#token-stream`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ColumnName {
     Written(Box<str>),

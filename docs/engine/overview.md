@@ -2,7 +2,7 @@
 
 What the engine does, what it must meet, and the order it is built in. Each step of the build has a scope doc that designs it.
 
-The engine runs [arclog](../../docs/arclog/arclog.md) and [arcdata](../../docs/arclog/arcdata.md) files over the lib of [lib-spec.md](../../docs/lib-spec.md). The language is defined by those docs and by [constraints](../../docs/arclog/constraints.md) and [rigid](../../docs/arclog/rigid.md). The corpus numbers that the design rests on are in [corpus-survey.md](corpus-survey.md). The corpus is the solvers under `work/arclog/gen/`, called `gen/` in these docs.
+The engine runs [arclog](../../docs/arclog/arclog.md) and [arcdata](../../docs/arclog/arcdata.md) files over the lib of [lib-spec.md](../../docs/lib-spec.md). The language is defined by those docs and by [constraints](../../docs/arclog/constraints.md) and [rigid](../../docs/arclog/rigid.md). The forms the engine shows of a program, and the decoder's reading of a few forms, are in [arclog-stream.md](arclog-stream.md) and [arclog-expansion.md](arclog-expansion.md), and the replaced Souffle forms, the evidence and the implementation of the two forms are in [constraints.md](constraints.md) and [rigid.md](rigid.md). The corpus numbers that the design rests on are in [corpus-survey.md](corpus-survey.md). The corpus is the solvers under `work/arclog/gen/`, called `gen/` in these docs.
 
 ## Uses
 
@@ -47,7 +47,7 @@ The engine also meets these requirements:
 
 The engine reads synthesized programs, solvers, and tasks. A task is the train pairs and the test inputs that a program runs on.
 
-- A synthesized program is a token stream, as [Token stream](../../docs/arclog/arclog.md#token-stream) gives. It has one case, since it holds no alt, as [Alts](../../docs/arclog/arclog.md#alts) gives, and no `DEMONSTRATED` form. It may have an open parameter, as [Open parameters](synthesis.md#open-parameters) gives. It has no arcdata file.
+- A synthesized program is a token stream, as [Token stream](../../docs/engine/arclog-stream.md#token-stream) gives. It has one case, since it holds no alt, as [Alts](../../docs/arclog/arclog.md#alts) gives, and no `DEMONSTRATED` form. It may have an open parameter, as [Open parameters](synthesis.md#open-parameters) gives. It has no arcdata file.
 - A solver is read from its `.arclog` and `.arcdata` files, and never from a token stream. Each case of a solver is a program with one case, and that program has a token-stream form, as a synthesized program has.
 - A scene file is not an input, as [Scenes](#scenes) gives.
 

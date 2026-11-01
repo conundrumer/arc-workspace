@@ -380,7 +380,7 @@ impl<'a> Builder<'a> {
     /// a port, on an input the input's node reads the `DET`'s parameter
     /// node, made where the `INIT` form writes no clause of that input, and
     /// on an output the `DET` reads nothing of the instance, as
-    /// `docs/arclog/arclog.md#the-alts-form` gives.
+    /// `docs/engine/arclog-expansion.md#stored-readings` gives.
     pub(super) fn read_instance_line(&mut self, clause: &Clause, node: GraphNodeIndex, scope: &NameScope) {
         let ProgramRelation::Output(output) = &clause.derives else { return };
         let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return };

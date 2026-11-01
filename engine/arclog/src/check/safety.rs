@@ -166,7 +166,7 @@ pub(crate) struct FormBody<'a> {
     /// The labels of the columns that the body gives. A clause of no
     /// conjuncts, as a case's reading of a `DET_OR_RULE` or `RULE_OR_DET`
     /// line takes it, gives its columns from its proposers or from its
-    /// stored parameter (`docs/arclog/arclog.md#the-alts-form`), and its
+    /// stored parameter (`docs/arclog/arclog.md#stored-readings`), and its
     /// body gives none.
     pub columns: Vec<LabelId>,
     /// The labels of the fields of the `DEMO_RULE` whose scope the body's

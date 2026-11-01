@@ -1,5 +1,5 @@
 //! The writer from a case program to its token stream, each token with the
-//! side that emits it, in the order of `docs/arclog/arclog.md#token-stream`.
+//! side that emits it, in the order of `docs/engine/arclog-stream.md#token-stream`.
 //!
 //! A name that the engine emits, an input's or a named clause's, is a
 //! [`Token::Column`] at the name's position: an instance's `key` at 0 and
@@ -688,7 +688,7 @@ impl Writer<'_> {
 
 /// Whether the read at `read` gives the Example column the column token 0,
 /// with the columns of its relation after it, as
-/// `docs/arclog/arclog.md#token-stream` gives: a clause's read where it is
+/// `docs/engine/arclog-stream.md#token-stream` gives: a clause's read where it is
 /// lifted, and a read in an `INIT`, a `CHOOSE` or a `RIGID_DET` form of a
 /// per-input relation that is no fact and no relation of the form, lifted
 /// or not. The side of such a form follows from its reads, a site on `E`

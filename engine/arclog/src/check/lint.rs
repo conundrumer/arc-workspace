@@ -15,7 +15,7 @@
 //! Each diagnostic's location is [`crate::diagnostic::Location::Places`].
 //!
 //! No check of the lint refuses a second spelling
-//! (`docs/arclog/arclog.md#second-spellings`).
+//! (`docs/engine/arclog-stream.md#second-spellings`).
 
 use std::sync::Arc;
 

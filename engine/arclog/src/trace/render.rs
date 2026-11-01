@@ -1,4 +1,4 @@
-//! The trace form of `docs/arclog/arclog.md#trace-form`. The renderer reads a
+//! The trace form of `docs/engine/arclog-stream.md#trace-form`. The renderer reads a
 //! trace and changes nothing in it.
 //!
 //! The trace form parses the stream the records give, by the grammar that

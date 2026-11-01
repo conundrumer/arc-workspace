@@ -1,7 +1,7 @@
 //! A case program read alone drops each column that is `0` in every clause of
 //! its relation in the case, through the readers that the other `ALTS` form
 //! gives, at a key site as well, and keeps a column that `0` may not stand
-//! for, as `docs/arclog/arclog.md#negation-and-constraints` gives.
+//! for, as `docs/engine/arclog-expansion.md#zero-columns` gives.
 
 use std::sync::Arc;
 

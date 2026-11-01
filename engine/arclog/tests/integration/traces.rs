@@ -1,5 +1,5 @@
 //! The trace of a decode: one record per accepted token, rendered as the
-//! trace form of `docs/arclog/arclog.md#trace-form`, with the top-k braces
+//! trace form of `docs/engine/arclog-stream.md#trace-form`, with the top-k braces
 //! under a flag; the stop of a decode counted under the bound it reached; and
 //! the program form that `write_synthesized` gives.
 

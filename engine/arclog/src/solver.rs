@@ -47,7 +47,7 @@ pub struct Solver {
 /// reads, as [`Solver::case_names`] gives.
 ///
 /// A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form, with the readings
-/// `docs/arclog/arclog.md#the-alts-form` gives.
+/// `docs/arclog/arclog.md#stored-readings` gives.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CaseName(pub Box<[AltsName]>);
 
@@ -76,7 +76,7 @@ pub enum Exclusion {
 ///
 /// Of a `DET_OR_RULE` or `RULE_OR_DET` line on a port of an instance,
 /// `&<instance>.<port>`, a case holds what its reading of the line gives, as
-/// `docs/arclog/arclog.md#the-alts-form` gives it.
+/// `docs/arclog/arclog.md#stored-readings` gives it.
 #[derive(Clone, Debug)]
 pub struct Case {
     pub name: CaseName,
@@ -143,7 +143,7 @@ impl Case {
     ///   `RULE_OR_DET` line at its stored reading reads the derivation of the
     ///   line's body, the line's helper, as the concept program reads it.
     /// - The columns that the zero-column lowering drops, as
-    ///   `docs/arclog/arclog.md#negation-and-constraints` gives, each with the
+    ///   `docs/engine/arclog-expansion.md#zero-columns` gives, each with the
     ///   `(= *X 0)` that made it. A form that the drop rewrites keeps its
     ///   place, so [`Case::file_path`] names its form of the file.
     ///
@@ -879,7 +879,7 @@ enum Reading {
 }
 
 /// The readings of a line, each with its name, the concept case's first, as
-/// `docs/arclog/arclog.md#the-alts-form` gives.
+/// `docs/arclog/arclog.md#stored-readings` gives.
 fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
     let relation = relation_ref(&relation_of(&line.derives), crate::write::declared);
     let named = |reading: &str| AltsName(format!("{relation}={reading}").into());
@@ -898,7 +898,7 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 /// A line's clause in one reading: the stored reading a `DET`, and a derived
 /// reading a `RULE`. Each reading keeps the line's `ONE` marks and its
 /// columns; the stored reading alone keeps its `SET` mark. The line's body is
-/// one reading's, as `docs/arclog/arclog.md#the-alts-form` gives, and the
+/// one reading's, as `docs/arclog/arclog.md#stored-readings` gives, and the
 /// other reading holds no body. The reading that owns a body names no
 /// proposer, as a `DET` or `RULE` that names a proposer has no body; the other
 /// reading keeps the line's proposers. The derived reading by a proposer other
@@ -971,7 +971,7 @@ impl Rename {
 }
 
 /// The stored reading of a `RULE_OR_DET` line: its forms in place of the
-/// line's one clause, as `docs/arclog/arclog.md#the-alts-form` gives.
+/// line's one clause, as `docs/engine/arclog-expansion.md#stored-readings` gives.
 struct StoredReading {
     /// The helper `RULE` where the reading has one, then the `DET`.
     forms: Vec<Form>,

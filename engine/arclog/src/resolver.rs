@@ -35,12 +35,12 @@ pub enum DependencyKind {
     /// An input of an instance. The node reads the input's clause in its
     /// `INIT` form, or, where the case holds a `DET` of
     /// `&<instance>.<input>`, that `DET`'s [`DependencyKind::Parameter`]
-    /// node, as `docs/arclog/arclog.md#the-alts-form` gives.
+    /// node, as `docs/engine/arclog-expansion.md#stored-readings` gives.
     InstanceInput { instance: InstanceName, input: PortName },
     /// An output of an instance. Where the case holds a `DET` of
     /// `&<instance>.<output>`, each read of that relation resolves to the
     /// `DET`'s [`DependencyKind::Parameter`] node, and none to this node, as
-    /// `docs/arclog/arclog.md#the-alts-form` gives.
+    /// `docs/engine/arclog-expansion.md#stored-readings` gives.
     InstanceOutput { instance: InstanceName, output: PortName },
     /// A parameter: a `DET` relation with no `ONE` mark, read as one node and
     /// never through its body, as a `DET` of the concept program is read in
@@ -52,7 +52,7 @@ pub enum DependencyKind {
     /// For a `DET` of a port of an instance, `&<instance>.<port>`, each read
     /// of the relation resolves to this node, and on an input the input's
     /// [`DependencyKind::InstanceInput`] node reads it, as
-    /// `docs/arclog/arclog.md#the-alts-form` gives.
+    /// `docs/engine/arclog-expansion.md#stored-readings` gives.
     Parameter(ProgramRelation),
     /// A chosen relation: a `CHOOSE` form's, or a clause's with `ONE` marks,
     /// a `DET` with `(ONE)` included, which is a chosen relation at the task

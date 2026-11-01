@@ -56,5 +56,5 @@ search-path = [".", "src"]
 [tool.controlled_markdown]
 # The agent-facing documents. `check` and `fmt` read this set when no path is
 # given, so the command that guards them is one word wherever it is written.
-paths = ["CLAUDE.md", "docs/handbook", "prompts", ".claude/skills",
-         "src/controlled_markdown"]
+paths = ["CLAUDE.md", "docs/handbook", "docs/arclog", "docs/study-library-meanings.source.md",
+         "prompts", ".claude/skills", "src/controlled_markdown"]

@@ -1,7 +1,7 @@
 //! A `RIGID_DET` assembly: its outputs `&marker.<part>` and
 //! `&marker.pose`, as `docs/arclog/rigid.md#semantics` gives, computed from
 //! its instances' readings by the method of
-//! `docs/arclog/rigid.md#implementation`.
+//! `docs/engine/rigid.md#implementation`.
 //!
 //! An assembly's instances are the rows of its `instance` clause, and a form
 //! with none has one instance at each key. An instance's reading is its

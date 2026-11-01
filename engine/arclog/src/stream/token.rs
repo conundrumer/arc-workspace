@@ -1,5 +1,5 @@
 //! The tokens of a stream, one variant per token set of
-//! `docs/arclog/arclog.md#token-stream`, and which side emits each token.
+//! `docs/engine/arclog-stream.md#token-stream`, and which side emits each token.
 
 use std::fmt;
 
@@ -10,7 +10,7 @@ use crate::registry::LibName;
 /// A token of the stream.
 ///
 /// `Display` writes the token's name, its spelling in
-/// `docs/arclog/arclog.md#token-stream`: a control token its text, a lib
+/// `docs/engine/arclog-stream.md#token-stream`: a control token its text, a lib
 /// relation, relation macro, component or proposer its name, a fact
 /// relation its name, and a relation, column or label, which has no text,
 /// `&r<slot>`, `:<position>` or `L<slot>`. The names of the tokens of one
@@ -33,7 +33,7 @@ pub enum Token {
 }
 
 /// The kind of a token: the token set of
-/// `docs/arclog/arclog.md#token-stream` that it belongs to, with that doc's
+/// `docs/engine/arclog-stream.md#token-stream` that it belongs to, with that doc's
 /// set of lib relations, relation macros and components split by the
 /// registry's entry.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -167,7 +167,7 @@ impl Control {
 }
 
 /// Which side emits a token: the language model, or the engine, as the
-/// forced tokens of `docs/arclog/arclog.md#token-stream` are.
+/// forced tokens of `docs/engine/arclog-stream.md#token-stream` are.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Emitter {
     Model,

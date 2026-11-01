@@ -1,4 +1,4 @@
-//! The token stream of a program, as `docs/arclog/arclog.md#token-stream`
+//! The token stream of a program, as `docs/engine/arclog-stream.md#token-stream`
 //! gives it: its tokens in [`token`], the decode settings in [`settings`],
 //! the ids of the tokens in [`vocabulary`], and the writer from a case
 //! program to its stream in [`write`](mod@write).

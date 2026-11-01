@@ -1,7 +1,7 @@
 //! The zero-column lowering of a case program, the program that
 //! [`crate::solver::Case::program_alone`] gives: each column that is `0` in
 //! every clause of its relation is dropped, as
-//! `docs/arclog/arclog.md#negation-and-constraints` gives the rule.
+//! `docs/engine/arclog-expansion.md#zero-columns` gives the rule.
 //!
 //! A case program has one clause for each relation, so a column is `0` in
 //! every clause of its relation where its clause makes it `0`. An instance

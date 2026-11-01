@@ -54,7 +54,7 @@ pub enum ClauseKeyword {
     /// `DET`: a determination clause, task-wide.
     Det,
     /// `DET_OR_RULE`: an `ALTS` form on the relation, the stored reading
-    /// first, as `docs/arclog/arclog.md#the-alts-form` gives.
+    /// first, as `docs/arclog/arclog.md#stored-readings` gives.
     DetOrRule,
     /// `RULE_OR_DET`: an `ALTS` form on the relation, the derived reading
     /// first.
@@ -129,7 +129,7 @@ pub struct Clause {
     /// by the canonical positions of their labels. A `DET` with a proposer
     /// and no body takes the proposer's columns, which the registry gives,
     /// and holds none here. So does a `DET_OR_RULE` or `RULE_OR_DET` line
-    /// with proposers and no body (`docs/arclog/arclog.md#the-alts-form`),
+    /// with proposers and no body (`docs/arclog/arclog.md#stored-readings`),
     /// whose columns are named as the line's first proposer names them. A
     /// line with no proposer and no body derives a fact, a relation of no
     /// columns. Edits: [`crate::program::Node::apply`].
@@ -159,7 +159,7 @@ pub enum Conjunct {
     Atom(Node<Atom>),
     /// `NOT` before an atom
     /// (`docs/arclog/arclog.md#negation-and-constraints`), or before a form
-    /// (`docs/arclog/arclog.md#second-spellings`).
+    /// (`docs/engine/arclog-stream.md#second-spellings`).
     Not(Negated),
     Constraint(Constraint),
     /// An `OR` form: its branches, as `docs/arclog/arclog.md#disjunction`
