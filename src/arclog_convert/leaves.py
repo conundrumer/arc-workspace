@@ -927,7 +927,12 @@ class Converter:
         that the program's fit passes, and the determination's clauses that
         only that test reads drop out. A determination clause that reads the
         parse at the kept value reads the program's parse, lifted, with the
-        parameter in place of the candidate."""
+        parameter in place of the candidate. Where the solver's clause reads
+        the parse at each candidate, that binding narrows the relation it heads:
+        `ground_prog` takes the same binding and `cand_bound` holds the
+        relation, so that row parity compares the rows at the kept value
+        (`parity_text`)."""
+        self.cand_bound: set[ScopedName] = set()
         self.cand_params: set[str] = set()
         self.cand_insts: dict[str, str] = {}   # a Determine parse instance -> its key type
         self.cand_key_fields: dict[str, set[int]] = {}   # its key type -> the fields that hold a candidate
@@ -1039,6 +1044,8 @@ class Converter:
         drop = {x for x in heads if x not in need}
         for x in drop:
             self.insts.pop((det, x), None)
+        ground = {u.id: u for u in self.ground_prog.units}
+        bound: dict[UnitId, list[AtomLiteral]] = {}
         units = []
         for u in prog.units:
             if u.scope.components == det:
@@ -1065,7 +1072,12 @@ class Converter:
                                     extra.append(lit)
                 if extra:
                     u = dc_replace(u, body=tuple(u.body) + tuple(extra))
+                    if not rn.instances and u.id in ground and ground[u.id].head.relation == rn:
+                        bound[u.id] = extra
+                        self.cand_bound.add((det, rn.name))
             units.append(u)
+        self.ground_prog = dc_replace(self.ground_prog, units=tuple(
+            dc_replace(u, body=(*u.body, *bound[u.id])) if u.id in bound else u for u in self.ground_prog.units))
         return dc_replace(prog, units=tuple(units),
                           relations=tuple(r for r in prog.relations
                                           if not (r.scope.components == det and r.name in drop)),

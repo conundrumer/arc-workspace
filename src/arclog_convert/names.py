@@ -19,7 +19,7 @@ column map entry of each check relation, or the reason it has none.
 An arclog relation the converter adds that holds no Souffle relation of the
 solver's program, such as an output of an instance the lib rewrite hoists, or a
 copy of a relation of `Parse` that the determination or another instance of
-`Parse` takes, has its path in the Souffle text that `parity_text` writes (`parity`, `placed`), and its entry in
+`Parse` takes, or a relation of `Determine` narrowed to a parameter's stored value, has its path in the Souffle text that `parity_text` writes (`parity`, `placed`), and its entry in
 the column map (`_parity_columns`); a relation of the text that the determination
 run adds is given the component `Determine`. An `equal` line of such a
 relation proves that the converter's arclog relation holds the rows that the
@@ -226,8 +226,11 @@ def name_map(s: "Solver", insts: dict[str, str], arclog: str, arcdata: str) -> d
 def parity(s: "Solver", names: dict, insts: dict[str, str]) -> ParityText:
     """The Souffle text (`parity_text`) for each arclog relation of the name
     map `names` that holds no Souffle relation of the solver's program: each
-    in `unmapped` and each with no Souffle relation."""
-    roots = {n for n, sources in names["relations"].items() if not sources} | set(names["unmapped"])
+    in `unmapped`, each with no Souffle relation, and each that narrows its
+    Souffle relation to a parameter's stored value (`Converter.cand_bound`)."""
+    roots = {n for n, sources in names["relations"].items()
+             if not sources or any((tuple(x["component"]), x["relation"]) in s.c.cand_bound for x in sources)}
+    roots |= set(names["unmapped"])
     return parity_text(s.c, lambda n: _renamed_name(n, insts), roots)
 
 

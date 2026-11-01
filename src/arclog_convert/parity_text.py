@@ -47,6 +47,10 @@ Souffle run derives the rows of each such relation from the solver's own:
   `ADT` of a component or a relation that a pick chooses: a `CHOOSE` relation,
   which no clause of the rewrite's ground program heads, or a relation whose
   clauses end in `ONE` marks. A root that is such a relation needs it itself.
+- A relation of `Determine` that reads a candidate parse of the solver at each
+  candidate is not held where the converter binds that candidate to the
+  parameter (`Converter.candidate_parse`): the arclog relation holds its rows at
+  the stored value alone, and the solver's relation holds them at every candidate.
 """
 
 from __future__ import annotations
@@ -369,8 +373,10 @@ class _Lift:
     # ---- reading
 
     def held(self, at: At) -> bool:
-        """The solver declares the same node in the same scope; for an instance, its component declares each relation named through it."""
+        """The solver declares the same node in the same scope and the converter does not narrow it; for an instance, its component declares each relation named through it."""
         node = at.node
+        if (node.scope, node.name) in self.c.cand_bound:
+            return False
         ours, theirs = self.ground.decls[node], self.solver.decls.get(node)
         if theirs is None or printer.declaration(ours) != printer.declaration(theirs):
             return False
@@ -593,7 +599,7 @@ class _Lift:
 
 def parity_text(c: Converter, renamed: Callable[[str], str], roots: Iterable[str]) -> ParityText:
     """The text for the arclog relations `roots`, each without a Souffle
-    relation of the solver's program; `renamed` gives the final arclog name
+    relation of the solver's program that holds its rows; `renamed` gives the final arclog name
     of a name `Converter.names` makes. A root with no place in the program of
     the rewrite, or that reads what no component of the text declares, has none."""
     if c.ground_prog is None:
