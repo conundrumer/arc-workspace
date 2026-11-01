@@ -7,9 +7,8 @@
 // @scene copies-clear: each fragment's completed copy lies inside the grid, on background cells apart from the fragment's own cells, and meets no other copy.
 // @rule keep-input: every input cell keeps its color.
 // @rule complete-fragment: each fragment is completed into the translated copy of the template it was cut from, drawn in the fragment's color.
-//     @approximated: for each fragment color, every translated copy of the template whose cells of that color no other copy's cells of that color strictly contain is drawn in that color.
-//     @witness fragment-fits-several-copies: borderline other
-//         @relaxed fragments
+//     @approximated: for each fragment color, every translated copy of the template whose cells of that color no other copy's cells of that color strictly contain is drawn in that color, apart from a copy that shares a cell of that color with a drawn copy that is the only one left on some cell of that color.
+//     @witness two-splits-of-one-color: borderline other
 
 // which shape is the template
 .type Template =
@@ -121,11 +120,20 @@ dominated(T, Col, V) :-
     held(T, Col, V, _), held(T, Col, V2, P), !held(T, Col, V, P),
     !not_within(T, Col, V, V2).
 
+// A color's cells under one template.
+.type TemplateColor = [t: Template, col: Color]
+
+// A copy is out once it shares a cell with a copy that alone holds some cell.
+// @claim complete-fragment
+.init copy_cover = CoverForcing<TemplateColor, Offset>
+copy_cover.covers([T, Col], V, P) :- held(T, Col, V, P), !dominated(T, Col, V).
+
 // Cell P of a completed copy, inside the grid or past its edge: a copy no
-// other copy of its color dominates.
+// other copy of its color dominates, and that no forced copy rules out.
 .decl paint(t: Template, p: Position, col: Color)
 paint(T, P, Col) :-
-    held(T, Col, V, _), !dominated(T, Col, V), template_cell(T, Q, _), compose(Q, V, P).
+    held(T, Col, V, _), !dominated(T, Col, V), !copy_cover.ruled_out([T, Col], V),
+    template_cell(T, Q, _), compose(Q, V, P).
 
 // --- $CopiesClear, $CopyOverwrites, $InputKept ---
 // A cell no copy covers keeps its color.

@@ -3,7 +3,7 @@
 ## Concept
 - Fits every pair: train0, train1 and test0 (probe `work/task/fd096ab6/probe.py fit`). In every pair, each fragment lies on exactly one inclusion-maximal translated copy of the template, and painting those copies gives the output.
 - How the generator applies the rule: it draws the template, draws a translated copy of it in a new color for each fragment, then erases cells of that copy until what is left is a fragment that one copy alone holds. The concept's rule (for each color, the copies whose held cells of that color no other copy strictly exceeds) approximates "the copy the fragment was cut from".
-- No witness with verdict `other` stands for the concept case apart from the one `$AmbiguousUndefined` lists.
+- The witness with verdict `other` of the concept case is `two-splits-of-one-color`.
 
 ## Choice points
 - `background`
@@ -21,7 +21,7 @@
     - `$TemplateLargestColor`: the template is the cells of the color with the most non-background cells, which replaces `one-template`. Undefined on a tie. Fits every pair. Witness `fragment-color-outnumbers-template`: train0's input with two more two-cell fragments of 3, so color 3 has 6 cells against the template's 5. It breaks no scene claim and stands at the stored assignment. Plausibility `ordinary`, verdict `concept`.
     - `$TemplateTopmost`: the template is the object reaching the top row first, which replaces `one-template`. Fails Fit at train1: the template and the 6 fragment both reach row 4, so the model is undefined. At test0 the 8 fragment reaches row 1, above the template.
 - `fragment-grouping`
-    - `concept`: for each fragment color, the copies whose held cells of that color no other copy strictly exceeds (`fragments`, `complete-fragment`)
+    - `concept`: for each fragment color, the copies whose held cells of that color no other copy strictly exceeds, apart from those a forced copy rules out (`fragments`, `complete-fragment`)
     - `$FragmentComponents`: a fragment is an 8-connected one-colored component, completed by every copy that holds it all, which replaces `fragments`. Undefined where no copy holds a component. Fails Fit at train0: the 6 fragment (7,15), (9,15) is two components, and each single cell lies on five copies.
     - `$FragmentColorClass`: each color is one fragment, which replaces `fragments`. Undefined where no copy holds all of a color's cells. Fails Fit at test0, where color 2 has two fragments.
     - `$PlacementMostCells`: per color, only the copies that hold the most cells of the color, which replaces `complete-fragment`. Fails Fit at test0: the 2 fragment (21,21), (21,22) is not completed.
