@@ -25,3 +25,4 @@ These settings steer the proposal. Each takes a file in `sampler/models/`:
 - `gold_q_ab.sh`, `gold_q_d3.sh`, `gold_q_fresh.sh` and `gold_q_out.sh` run an arm into `sampler/runs/`. Each script's first lines give its point set and usage.
 - `gq_pair.py A B` pairs two runs by point, `gq_parts.py A B` splits gold's bits by part, and `gold_q_report.py` gives the bits and the CPU-hours to hit gold.
 - `or_q.py STEMS OUT.json` gives gold's bits under the walk of `live.py` (the walk that `search.py` explores), by part: the OR, its branches' atoms, the stops and the link coins. It runs gold's clause with each choice set to gold's.
+- `scripts/arclog_bits.py PROGRAM.arclog TASK [--fast]` gives the bits of each form and atom of a program, in the walk of `or_q.py` over every earlier form. `--help` has the columns and the options.
