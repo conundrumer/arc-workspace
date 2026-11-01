@@ -188,6 +188,20 @@ impl InputClause {
         super::join::each_row(rows,&mut |row|{expanded.insert(row.into());});
         expanded
     }
+    /// `rows`, the rows of a broadcast input, at each of `groups`: the key's
+    /// `key_width` columns of the group, then the row. A broadcast input's rows
+    /// hold at every key group, as [`InputClause::grouped`] gives them.
+    pub(super) fn broadcast_rows(&self,key_width:usize,groups:&[Row],rows:&crate::relations::Relation)->RowSet {
+        let mut laid=RowSet::empty(key_width as u16+rows.arity());
+        for group in groups {
+            super::join::each_row(rows,&mut |row|{laid.insert(group.iter().chain(row).copied().collect());});
+        }
+        laid
+    }
+    /// Whether the clause's rows hold key columns.
+    pub(super) fn keyed(&self)->bool {
+        self.key!=0
+    }
     /// The number of columns of the clause's rows.
     pub(super) fn arity(&self) -> usize {
         self.key + self.head.iter().flatten().count()

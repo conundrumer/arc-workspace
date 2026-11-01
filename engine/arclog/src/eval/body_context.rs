@@ -1,7 +1,7 @@
 //! State-local body queries of recursive instances. The selected model
 //! retains its reached states, so a NOT reads one state rather than the
 //! union of unrelated states along the walk.
-use super::{driver::Driver,body_view::BodyView,init_form::InstanceShape,models,unfold::UnfoldOutput,Outcome,RelationValue,RunFault};
+use super::{driver::Driver,body_view::BodyView,init_form::{key_group_rows,key_relation,InstanceShape},models,unfold::UnfoldOutput,Outcome,RelationValue,RunFault};
 use crate::program::path::{node_at,NodeRef};
 use crate::program::{OutputStep,PortName};
 use crate::resolver::{registry_columns,DependencyKind};
@@ -61,11 +61,20 @@ pub(super) fn input_value(driver:&Driver<'_, '_>,relation:&GraphRelation,port:&P
     let declared=component.inputs.iter().find(|i|i.port.name==*port).ok_or_else(||fault(format!("recursive instance declares no relation port {}",port.0)))?;
     let shape=InstanceShape::of(evaluation.program,form,instance,component);
     let input=shape.input_clause(evaluation.program,form,declared).map_err(fault)?.ok_or_else(||fault("recursive input is not written".into()))?;
+    // A broadcast input's clause holds no key columns, and its port does.
+    let key=if !input.keyed()&&shape.key_width()>0 {
+        match key_relation(evaluation,&driver.bodies(),form,&shape.key_body,&shape.key_labels(),example)? {Ok(key)=>key,Err(value)=>return Ok(value)}
+    } else {None};
     let scope=super::examples::scope_of(evaluation.program,relation);
     let view=BodyView {form:form.clone(),clause:(*input.clause).clone(),paths:(*input.paths).clone(),scope,input:Some(port.clone())};
     match value(driver,&view,example)? {
         RelationValue::Rows(rows)=>{
             if let Err(stop)=super::join::charge_walk(evaluation,&rows,form) {return Ok(RelationValue::Stopped(stop));}
+            if let Some(key)=key {
+                let count=key.len().saturating_mul(rows.len());
+                if let Err(bound)=super::join::Budget::new(evaluation.limits,evaluation.session).charge_rows(count) {return Ok(RelationValue::Stopped(super::Stop {bound,form:form.clone()}));}
+                return Ok(RelationValue::Rows(Arc::new(super::join::one_part(input.broadcast_rows(shape.key_width(),&key_group_rows(Some(&key)),&rows)))));
+            }
             Ok(RelationValue::Rows(Arc::new(super::join::one_part(input.expanded_rows(&rows)))))
         }
         other=>Ok(other),
