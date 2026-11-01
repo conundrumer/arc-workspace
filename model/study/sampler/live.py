@@ -325,8 +325,10 @@ class Limits:
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
     out_pairs: int = 6  # (Position, Color) column pairs of a relation that the OUT search tries
+    out_layer_pairs: int = 24  # (Position, Color) column pairs of a relation that the clauses of Run.layers try, after the others have tried out_pairs
     out_colors: int = 8  # the best suited Color relations, that a Position column is painted with
     out_unions: int = 3  # the best suited earlier relations, that a relation is joined with in a union
+    out_positions: int = 3  # the best suited earlier relations with no Color column to read, whose cells take a color of a Color relation
     out_cands: int = 100  # candidates of the OUT search at one form end
 
 
@@ -470,9 +472,10 @@ class Program:
         self.forms = []  # the parsed forms before the clause being drawn
         self.toks = []  # the model tokens of the bodies so far, for prior_uses
         self.new = []  # the relation slots the last form declared, with their tables
-        self.grids, self.colors = [], []  # the OUT search's relations so far, the best suited first: (slot, Position token, Color token); (slot, Color token)
+        self.grids, self.colors, self.positions = [], [], []  # the OUT search's relations so far, the best suited first: (slot, Position token, Color token); (slot, Color token); (slot, Position token)
+        self.grid_pairs = {}  # a relation slot of grids or scope_grids -> its OUT pairs that have a Color column
         self.suit = {}  # relation slot -> its rank in the OUT search: (Gate.suits, a random tie break)
-        self.scope_grids, self.scope_colors = [], []  # the best suited entries of grids and colors from the relations of a replayed scope, which the OUT search takes in on its first call
+        self.scope_grids, self.scope_colors, self.scope_positions = [], [], []  # the best suited entries of grids, colors and positions from the relations of a replayed scope, which the OUT search takes in on its first call
         self.kinds = []  # the kind of each clause, which only next_kind reads, as counts
         self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
 
@@ -678,9 +681,10 @@ class Run:
         return dec, pg.fork()
 
     def scope_partners(self, pg, dec):
-        """Fills pg.scope_grids and pg.scope_colors from the relations that pg declares, as the OUT search fills pg.grids and pg.colors over
-        the forms of a whole-program draw, the best suited first. Each list keeps the entries that cands reads, and one more for each
-        relation of the last form, which the search leaves out where it tests that form."""
+        """Fills pg.scope_grids, pg.scope_colors and pg.scope_positions from the relations that pg declares, as the OUT search fills
+        pg.grids, pg.colors and pg.positions over the forms of a whole-program draw, the best suited first. Each list keeps the entries
+        that cands and layers read, and one more for each relation of the last form, which the search leaves out where it tests that
+        form."""
         spare, lim = len(pg.new), self.lim
         for s in sorted(pg.decl_types, key=pg.suit.get, reverse=True):
             ts = pg.decl_types[s]
@@ -688,10 +692,15 @@ class Run:
                 at = [k for (k, field), t in pg.colmap.get(s, {}).items() if field is None and t == 'Color']  # a relation of one Color column, which other columns may go with, as a port of an INIT has
                 if ts.count('Color') == 1 and len(at) == 1 and len(pg.scope_colors) < lim.out_colors + spare:
                     pg.scope_colors.append((s, self.ff0.col_by_pos[at[0]]))
-            elif {'Position', 'Box'} & set(ts) and len(pg.scope_grids) < lim.out_unions + spare:
-                full = [(p, c) for p, c in self.out_pairs(dec, self.rel0 + s, lim.out_pairs) if c is not None]
-                if full:
+            elif {'Position', 'Box'} & set(ts) and (len(pg.scope_grids) < lim.out_unions + spare or len(pg.scope_positions) < lim.out_positions + spare):
+                pairs = self.out_pairs(dec, self.rel0 + s, lim.out_pairs)
+                full = [(p, c) for p, c in pairs if c is not None]
+                if not full:
+                    if len(pg.scope_positions) < lim.out_positions + spare and (p := self.position_column(pg, s, pairs)):
+                        pg.scope_positions.append((s, p))
+                elif len(pg.scope_grids) < lim.out_unions + spare:
                     pg.scope_grids.append((s, *full[0]))
+                    pg.grid_pairs = pg.grid_pairs | {s: full}
 
     def program(self):
         pg, dec = Program(), self.root.fork()
@@ -1396,6 +1405,11 @@ class Run:
                 out += [(p, c) for c in cs] or [(p, None)]
         return out[:cap]
 
+    def position_column(self, pg, s, pairs):
+        """The first column token of pairs, the OUT pairs of relation slot s, that holds a Position; None where none does."""
+        at = {self.ff0.col_by_pos[k] for (k, field), t in pg.colmap.get(s, {}).items() if field is None and t == 'Position'}
+        return next((p for p, _ in pairs if p in at), None)
+
     def finish(self, dec, rtok, label):
         """OUT over rtok's first pair on a fork of dec: yields the fork where it ends consistent."""
         self.c['out:tried'] += 1
@@ -1480,19 +1494,92 @@ class Run:
             yield 'paint over', [RULE_TOK, M.OR] + paint + [ALSO_TOK] + read0 + [self.site(1, lab[1])[0], lab[1]] + cover + [M.END, M.END]
             yield 'paint', [RULE_TOK] + paint + [M.END]
 
+    def layers(self, pg, s, pairs):
+        """(label, tokens, None) of the clauses of more than two parts that read relation slot s at its column pairs, by the rank of the
+        partners, then of the pairs: a top layer, then a Position relation's cells in a color of a Color relation, then the input's
+        other cells; or s's cells as the whole output, a partner's where it has them and else a color of a Color relation."""
+        col, lab, inp = self.ff0.colpos, self.ff0.label_tok, self.V.id('input')
+        lim = self.lim
+        colors = pg.colors[:lim.out_colors]
+        grids = [x[0] for x in pg.grids if x[0] != s][:lim.out_unions]
+        positions = [x for x in pg.positions if x[0] != s][:lim.out_positions]
+        full = [x for x in pairs if x[1] is not None]
+        alone = [p for p, c in pairs if c is None]
+
+        def three(top, cover, q, pq, lp, lc, s2, c2):
+            read = [inp, self.site(0, lp)[0], lp]  # in the top layer, it keeps the cells on the input's grid
+            middle = [self.rel0 + q, pq, lp] + cover + [self.rel0 + s2, c2, lc]
+            rest = read + [self.site(1, lc)[0], lc] + cover + [M.NOT, self.rel0 + q, pq, lp]
+            return [RULE_TOK, M.OR] + top + read + [ALSO_TOK] + middle + [ALSO_TOK] + rest + [M.END, M.END]
+
+        def grid(s1, p1, c1):
+            """A relation with a Color column as a top layer: (its atom, the NOT of its atom, the Position label, the Color label)."""
+            first, second = (p1, c1) if col[p1] < col[c1] else (c1, p1)
+            lp, lc = (lab[0], lab[1]) if first == p1 else (lab[1], lab[0])
+            return [self.rel0 + s1, first, M.STAR, second, M.STAR], [M.NOT, self.rel0 + s1, p1, lp], lp, lc
+
+        for q, pq in positions:
+            for s2, c2 in colors:
+                for p, c in full:
+                    top = grid(s, p, c)
+                    yield 'overlay paint', three(*top[:2], q, pq, *top[2:], s2, c2), None
+        for g in grids:
+            top = grid(g, *pg.grid_pairs[g][0])
+            for s2, c2 in colors:
+                for p in alone:  # s is the middle layer
+                    yield 'overlay paint', three(*top[:2], s, p, *top[2:], s2, c2), None
+        for q, pq in positions:
+            for s1, c1 in colors:
+                for s2, c2 in colors:
+                    for p in alone:
+                        if s2 != s1:
+                            yield 'paint over2', three([self.rel0 + s, p, M.STAR, self.rel0 + s1, c1, M.STAR], [M.NOT, self.rel0 + s, p, lab[0]], q, pq, lab[0], lab[1], s2, c2), None
+        for g in grids:
+            for pc, cc in pg.grid_pairs[g]:
+                other = [self.rel0 + g] + sum(sorted(([pc, lab[0]], [cc, M.STAR]), key=lambda x: col[x[0]]), [])
+                for s2, c2 in colors:
+                    for p in alone:
+                        yield 'frame fill', [RULE_TOK, self.rel0 + s, p, M.STAR, M.OR] + other + [ALSO_TOK, M.NOT, self.rel0 + g, pc, lab[0], self.rel0 + s2, c2, lab[1], M.END, M.END], None
+
+    def tries(self, dec, s, clauses, n):
+        """Tries clauses, (label, tokens, column tokens), over relation slot s, after n tries of this search: tokens None is OUT over s
+        at the column tokens. Yields each consistent decoder, and returns the tries so far, or None where the search ends here."""
+        self.stopped = False
+        for label, toks, pair in clauses:
+            if self.stopped:  # the candidates after it read the same table, and hit the same limit at the same cost
+                self.c['out:after a stop'] += 1
+                break
+            if n >= self.lim.out_cands:
+                self.c['out:capped'] += 1
+                return None
+            if time.monotonic() >= self.deadline:
+                raise Deadline
+            n += 1
+            t0 = time.monotonic()
+            if toks is None:
+                yield from self.finish_pair(dec, self.rel0 + s, *pair, label)
+            else:
+                yield from self.candidate(dec, toks, label)
+            if time.monotonic() - t0 >= self.spent_after:  # the next candidate reads the same tables
+                self.c['out:past the deadline'] += 1
+                return None
+        return n
+
     def search(self, pg, dec):
-        """The OUT search at a form's end, dec: yields each consistent decoder."""
-        lim, n = self.lim, 0
+        """The OUT search at a form's end, dec: yields each consistent decoder. The clauses of layers come after all the others, so
+        they take only what those leave of the cap."""
+        lim, n, tested = self.lim, 0, []
         f = dec.fork()
         f.step(RULE_TOK)
         self.fill_columns(pg, f)
         suits = self.gate.suits(pg.before)
         pg.suit = pg.suit | {s: (suits.get(s, 0.0), self.rng.random()) for s in pg.new}
         best = lambda rels: sorted(rels, key=lambda r: pg.suit[r[0]], reverse=True)  # noqa: E731
-        if pg.scope_grids or pg.scope_colors:  # a replayed scope: its relations are partners, except the last form's, which this search tests
+        if pg.scope_grids or pg.scope_colors or pg.scope_positions:  # a replayed scope: its relations are partners, except the last form's, which this search tests
             pg.grids = best(pg.grids + [x for x in pg.scope_grids if x[0] not in pg.new])
             pg.colors = best(pg.colors + [x for x in pg.scope_colors if x[0] not in pg.new])
-            pg.scope_grids, pg.scope_colors = [], []
+            pg.positions = best(pg.positions + [x for x in pg.scope_positions if x[0] not in pg.new])
+            pg.scope_grids, pg.scope_colors, pg.scope_positions = [], [], []
         for s in sorted(pg.new, key=pg.suit.get, reverse=True):
             ts = pg.decl_types.get(s, ())
             if 'Color' in ts and not ({'Position', 'Box'} & set(ts)):
@@ -1502,29 +1589,20 @@ class Run:
             if not {'Position', 'Box'} & set(ts):
                 continue
             pairs = self.out_pairs(dec, self.rel0 + s, lim.out_pairs)
-            self.stopped = False
-            for p, c in pairs:
-                for label, toks in self.cands(pg, s, p, c):
-                    if self.stopped:  # the candidates after it read the same table, and hit the same limit at the same cost
-                        self.c['out:after a stop'] += 1
-                        break
-                    if n >= lim.out_cands:
-                        self.c['out:capped'] += 1
-                        return
-                    if time.monotonic() >= self.deadline:
-                        raise Deadline
-                    n += 1
-                    t0 = time.monotonic()
-                    if toks is None:
-                        yield from self.finish_pair(dec, self.rel0 + s, p, c, label)
-                    else:
-                        yield from self.candidate(dec, toks, label)
-                    if time.monotonic() - t0 >= self.spent_after:  # the next candidate reads the same tables
-                        self.c['out:past the deadline'] += 1
-                        return
+            n = yield from self.tries(dec, s, ((label, toks, (p, c)) for p, c in pairs for label, toks in self.cands(pg, s, p, c)), n)
+            if n is None:
+                return
+            tested.append(s)
             full = [(p, c) for p, c in pairs if c is not None]
             if full:
                 pg.grids = best(pg.grids + [(s, *full[0])])
+                pg.grid_pairs = pg.grid_pairs | {s: full}
+            elif p := self.position_column(pg, s, pairs):
+                pg.positions = best(pg.positions + [(s, p)])
+        for s in tested:
+            n = yield from self.tries(dec, s, self.layers(pg, s, self.out_pairs(dec, self.rel0 + s, lim.out_layer_pairs)), n)
+            if n is None:
+                return
 
     def finish_pair(self, dec, rtok, p, c, label):
         """OUT over rtok at the column tokens p and c, on a fork of dec."""
