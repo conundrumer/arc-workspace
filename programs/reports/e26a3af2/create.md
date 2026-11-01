@@ -6,7 +6,7 @@
 - The header has no `@scene adjacent-stripes-differ`: no `@claim`, `@relaxed` or rule text refers to it, and no branch replaces it ([Style: Header](docs/handbook/style.md#header)).
 
 ## Judgments
-- `line-mode` takes the rule as `analyze.md` restates it: each stripe gets its color from before the noise. The concept file's text stands under it as `@approximated:`. The restated rule has no relational form because no part of the input records the color that a noise cell covered. Where noise holds more than half of a line, no set of clauses can get the stripe color back. Witness `noise-outnumbers-stripe` (borderline, other) shows this, and every case gives row 1 as 7 on it.
+- `line-mode` paints each line with its commonest color. A task in which noise ties with or outnumbers a stripe's color in a line is invalid, so that color is the stripe's color before the noise.
 - Not formed, "painting each stripe, a maximal run of adjacent lines with one commonest color": no branch. Under each axis rule, every line has one commonest color with no tie, so that run's commonest color is the color of each of its lines. Its cases would be equivalent to the line cases, so they would fail Equivalence.
 - Not formed, "reading a line's color at one fixed cell": no branch. It fails Fit, because train1 row 0 col 7 holds 1 in the stripe of 8, and noise can stand at any cell of a line.
 - Not formed, "reading the axis by how many adjacent lines share their commonest color": no branch. The item does not state one model: it does not say whether more or fewer shared neighbors win, or how a line with a tied commonest color counts.

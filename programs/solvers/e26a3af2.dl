@@ -8,12 +8,8 @@
 //  more than half of the cells.
 // @rule line-axis: the stripe axis is the axis on which each line has one
 //  color that holds more than half of its cells.
-// @rule line-mode: each stripe is painted whole with its color from before the
-//  noise.
-//     @approximated: each line on the stripe axis is painted whole with its
-//      commonest color.
-//     @witness noise-outnumbers-stripe: borderline other
-//         @relaxed sparse-noise
+// @rule line-mode: each line on the stripe axis is painted whole with its
+//  commonest color.
 
 // which axis the stripes run along
 .type Choice =

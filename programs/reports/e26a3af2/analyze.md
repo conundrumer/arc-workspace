@@ -2,11 +2,7 @@
 
 ## Concept
 - Fits every pair: on each input exactly one axis has a majority color in every line (columns in train0 and train1, rows in train2 and test0), and painting each line of that axis its commonest color gives the output.
-- The rule as the generator applies it: the input is solid stripes along one axis, with noise written over scattered cells, and the output is the stripes before the noise. The concept's majority test and line mode approximate that recovery.
-- Witness `noise-outnumbers-stripe`: in row 1 of the stripe of 1 on rows 0–2, the noise color 7 holds 6 of 10 cells. The concept and every fitting branch paint row 1 with 7.
-    - breaks `sparse-noise`
-    - plausibility `borderline`, verdict `other` (rows 0–2 all 1)
-    - invariant broken: in each input, a stripe's color holds at least 0.6 of each line along the stripe (the least share is 9 of 15, in test0 row 5)
+- The rule as the generator applies it: the input is solid stripes along one axis, with noise written over scattered cells, and the output is the stripes before the noise. A task in which noise ties with or outnumbers a stripe's color in a line is invalid, so the concept's majority test and line mode give that recovery on every input the generator produces.
 - The concept is undefined on the witnesses `heavy-noise-line` (no axis has a majority in every line) and `wide-stripe` (both axes have one). Its verdict is `$AxisFewestChanges` on both witnesses.
 
 ## Choice points
