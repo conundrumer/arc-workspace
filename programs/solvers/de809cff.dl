@@ -11,16 +11,16 @@
 //  lone cells or two adjacent cells, some on the rectangle's edge.
 // @scene rings-apart: no cell lies within `ring_reach` (1) of pinholes of both
 //  colors.
-// @scene strays: stray cells of the two colors lie outside the rectangles, some
-//  touching a rectangle's edge, and a stray of the other color may lie inside a
-//  rectangle's visible part.
-// @rule clean: each rectangle's visible part fills with its color, and each cell
-//  outside every rectangle becomes `background`.
-//     @approximated: a rectangle is the box that bounds a 4-connected set of
-//      solid cells of one color, a solid cell lying in a 2×2 block of cells
-//      that have that color or have it on all four sides; a rectangle covers
-//      another where its solid cells lie in the other's box.
-//     @witness thin-strip: ordinary other
+// @scene strays: stray cells of the two colors may lie outside the rectangles,
+//  some touching a rectangle's edge, and a stray of the other color may lie
+//  inside a rectangle's visible part.
+// @scene solid-rectangles: a solid cell lies in a 2×2 block of cells that have
+//  its color or have it on all four sides, and the solid cells of each
+//  rectangle's visible part form one 4-connected set whose box is the rectangle.
+// @rule clean: a rectangle is the box that bounds a 4-connected set of solid
+//  cells of one color, and it covers another where its solid cells lie in the
+//  other's box. Each rectangle's visible part fills with its color, and each
+//  cell outside every rectangle becomes `background`.
 // @rule ring: the box of reach `ring_reach` around each pinhole takes the other
 //  color of the two, clipped at the frame, over the rectangles and the field
 //  alike.
