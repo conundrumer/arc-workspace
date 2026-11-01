@@ -17,7 +17,7 @@
     // the marks holds, by elimination
   | Packed {}
     // a plus lies anywhere, the crosses are the maximal placements, and the
-    // shortest arm that works is the one
+    // shortest arm that works, no longer than the longest backed arm, is the one
   | Free {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -26,7 +26,7 @@
     .decl mark(col: Color) mark(2).
     .decl fill(col: Color) fill(8).
 
-    // --- $Backed, $Packed ---
+    // --- $Backed, $Packed, $Free ---
     .decl bg(col: Color) bg(0).
 }
 
@@ -75,10 +75,14 @@ unmatched(Ch, K, C, C2) :-
 .decl dominated(ch: Choice, k: number, c: Position)
 dominated(Ch, K, C) :- rival(Ch, K, C, C2), !unmatched(Ch, K, C, C2), unmatched(Ch, K, C2, C).
 
-// --- $Backed, $Packed: the backing ---
+// --- $Backed, $Packed, $Free: the backing ---
 
 .decl off(k: number, c: Position)                  // a bg cell inside the plus
 off(K, C) :- arm(K), in(C, _), in(P, Col), params.bg(Col), axial(C, P, J), J <= K.
+
+// A plus on non-bg cells throughout, reaching a mark.
+.decl backed(k: number, c: Position)
+backed(K, C) :- arm(K), mark_distance(C, _, J), J <= K, !off(K, C).
 
 // --- the arm the marks bear out ---
 
@@ -105,7 +109,7 @@ out(P, Col, Ch) :- completed(Ch, P), params.fill(Col).
 
 // --- $Backed ---
 
-place($Backed(), K, C) :- arm(K), mark_distance(C, _, J), J <= K, !off(K, C).
+place($Backed(), K, C) :- backed(K, C).
 
 cross($Backed(), K, C) :- place($Backed(), K, C), !dominated($Backed(), K, C).
 
@@ -113,7 +117,7 @@ span($Backed(), K) :- arm(K), !orphan($Backed(), K).
 
 // --- $Packed ---
 
-place($Packed(), K, C) :- arm(K), mark_distance(C, _, J), J <= K, !off(K, C).
+place($Packed(), K, C) :- backed(K, C).
 
 // The placements every exact cover of the marks holds, arm by arm.
 .init packing = CoverForcing<number, Position>
@@ -125,11 +129,18 @@ span($Packed(), K) :- arm(K), !orphan($Packed(), K).
 
 // --- $Free ---
 
-place($Free(), K, C) :- arm(K), mark_distance(C, _, J), J <= K.
+// The arms a free plus may take: none longer than the longest backed arm.
+.init longest = Extremes<Unit>
+longest.cand($U(), K) :- backed(K, _).
+
+.decl free_arm(k: number)
+free_arm(K) :- arm(K), longest.high($U(), K2), K <= K2.
+
+place($Free(), K, C) :- free_arm(K), mark_distance(C, _, J), J <= K.
 
 cross($Free(), K, C) :- place($Free(), K, C), !dominated($Free(), K, C).
 
 .init shortest = Extremes<Unit>
-shortest.cand($U(), K) :- arm(K), !orphan($Free(), K).
+shortest.cand($U(), K) :- free_arm(K), !orphan($Free(), K).
 
 span($Free(), K) :- shortest.low($U(), K).
