@@ -557,27 +557,32 @@ def _id_signatures(rows_by_param: Mapping[str, Rows],
                    ) -> dict[Value, tuple[_Key, ...]]:
     """Each id's rows across the parameters, the id left out, as a sorted
     multiset: two sides with equal signatures differ by a renaming of ids
-    alone. A parameter of `placed`, stored by a RIGID call, holds placed rows,
-    and each id's assembly is its own: its part of the id's signature is the
-    orbit of its placed rows at the id, the set over the poses of its rows at
-    the pose, so that the id's assembly in any pose gives the same part
+    alone. The parameters of `placed`, stored by a RIGID call, hold placed
+    rows, and each id's assembly is its own: its part of the id's signature
+    is one orbit over all of those parameters, the set over the poses of the
+    id's rows of every such parameter at the pose, so that the id's assembly
+    in any pose gives the same part, and the parameters agree on one joint
+    pose
     (docs/handbook/patterns.md#rigid-a-stored-shape-and-its-attached-parts-in-every-orientation)."""
     by_id: dict[Value, list[_Key]] = {}
+    names = sorted(n for n in ident_cols if n in placed)
+    joint: dict[Value, dict[Value, list[set[_Key]]]] = {}
     for name, col in ident_cols.items():
         if name not in placed:
             for row in rows_by_param.get(name, ()):
                 rest = tuple(v for i, v in enumerate(row) if i != col)
                 by_id.setdefault(row[col], []).append((name, row_key(rest)))
             continue
-        poses: dict[Value, dict[Value, set[_Key]]] = {}
         for row in rows_by_param.get(name, ()):
             rest = tuple(v for i, v in enumerate(row)
                          if i not in (POSE_COLUMN, col))
-            poses.setdefault(row[col], {}).setdefault(row[POSE_COLUMN], set()).add(
-                row_key(rest))
-        for id_, at in poses.items():
-            orbit = sorted({tuple(sorted(rows)) for rows in at.values()})
-            by_id.setdefault(id_, []).append((name, tuple(orbit)))
+            poses = joint.setdefault(row[col], {}).setdefault(
+                row[POSE_COLUMN], [set() for _ in names])
+            poses[names.index(name)].add(row_key(rest))
+    for id_, at in joint.items():
+        orbit = sorted({tuple(tuple(sorted(rows)) for rows in sets)
+                        for sets in at.values()})
+        by_id.setdefault(id_, []).append(("+".join(names), tuple(orbit)))
     return {id_: tuple(sorted(rows)) for id_, rows in by_id.items()}
 
 
