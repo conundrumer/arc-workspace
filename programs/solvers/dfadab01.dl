@@ -63,16 +63,17 @@
     //     @relaxed markers
     .decl background(c: Color) background(0).
 
-    // The placement of the legend: the one that takes the train pose onto
-    // itself, the element that composed with itself gives itself.
-    .decl placed(d: D4)
-    placed(D) :- legend_pose(D, R), d4_compose(R, R, R).
+    // The corner of the sample's box that sits on a marker.
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+
+    // The placements of the legend that put the key corner opposite the anchor.
+    .decl placed(d: D4, key: DiagDir)
+    placed(D, Diag) :- anchor(A), diag_opposite(A, Diag), legend_key_corner(D, Diag).
 
     .decl stamp(k: Color, v: Offset, col: Color)
-    stamp(K, V, Col) :- placed(D), legend_stamp(D, K, V, Col).
+    stamp(K, V, Col) :- placed(D, _), legend_stamp(D, K, V, Col).
 
-    // The pictures with the sample's key corner, with the pose of the train
-    // samples.
+    // The pictures with the sample's key corner.
     RIGID(legend,
         // The picture each marker color draws, as offsets from the marker, `@`
         // on the anchor corner.
@@ -98,21 +99,13 @@
             _, 7, 7, _,
             7, _, _, 7)
 
-        .decl pose(d: D4)
-        pose(D4_ID).
-
-        // --- $PastKeyCorner ---
         // The corner of the sample's box that its key marker sits diagonally past.
         .decl key_corner(d: DiagDir) key_corner(DIAG_BR).
     )
 
     // --- $PastKeyCorner ---
     .decl key_corner(d: DiagDir)
-    key_corner(Diag) :- placed(D), legend_key_corner(D, Diag).
-
-    // --- $SampleStamp ---
-    // The corner of the sample's box that sits on a marker.
-    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+    key_corner(Diag) :- placed(_, Diag).
 }
 
 .init params = Params
@@ -239,23 +232,11 @@ undefined(Ch) :- sample_key.clash(Ch).
         sample.box(E, B), marker(E, P, K), !inside(P, B),
         neighbor(P, _, Q), inside(Q, B).
 
-    // The corner of a sample's box that its key marker sits diagonally past.
-    .decl legend_key_corner(d: DiagDir)
-    legend_key_corner(D) :-
-        sample.box(E, B), key_marker(E, P, _),
-        ex_in(E, Q, _), box_corner(Q, B, D), neighbor(Q, D, P).
-
-    // The picture a sample gives its key, read relative to the box's corner
-    // opposite the key corner.
+    // The picture a sample gives its key, read relative to the anchor corner
+    // of its box.
     .decl legend_stamp(k: Color, v: Offset, col: Color)
     legend_stamp(K, V, Col) :-
-        key_marker(E, _, K), sample.box(E, B),
-        legend_key_corner(D), diag_opposite(D, A),
+        key_marker(E, _, K), sample.box(E, B), params.anchor(A),
         ex_in(E, C, _), box_corner(C, B, A),          // the anchor corner
         sample_cell(E, S, Col), relative(C, S, V).    // offset from that corner
-
-    // The legend is read in the pose of the train samples: the identity, the
-    // element that composed with itself gives itself.
-    .decl legend_pose(d: D4)
-    legend_pose(D) :- d4_compose(D, D, D).
 }
