@@ -10,13 +10,9 @@
 //  so a cell of that color is a masked cell or a pattern cell.
 // @scene phase-uncovered: each pair of a row phase and a column phase has a cell
 //  outside every patch.
-// @rule restore-period: the output is the pattern under the patches, each cell in the
-//  color the pattern has there.
-//     @approximated: each cell of the output takes the color the pattern has at its row
-//      phase and column phase, which the cells outside the patches show; a cell outside
-//      the patches keeps its color.
-//     @witness fully-covered-phase: borderline other
-//         @relaxed phase-uncovered
+// @rule restore-period: each cell of the output takes the color the pattern has at its
+//  row phase and column phase, which the cells outside the patches show; a cell outside
+//  the patches keeps its color.
 
 // What structure the pattern has along `cycle_axis`.
 .type VStruct =
@@ -24,11 +20,15 @@
     Periodic {}
     // @scene periodic-pattern: along `cycle_axis`, each line steps through one cyclic
     //  order of all the input's colors, read off adjacent known cells and completed
-    //  through `mask_color`; the pattern repeats along the other axis.
+    //  through `mask_color`; the pattern repeats along the other axis, where each step
+    //  from a cell to the next goes one fixed count of cycle steps past the step before.
     // @rule restore-period: a cell takes the cycle step from a known cell of its line
-    //  along `cycle_axis`, or else of a line of its phase on the other axis; undefined
-    //  where the known cells admit no single cycle.
+    //  along `cycle_axis`, or else of a line of its phase on the other axis, or else
+    //  the next step along the other axis from the two stepped cells beside it or
+    //  beside a cell of its phase; undefined where the known cells admit no single cycle.
     // @witness cycle-restores-covered-phase: borderline $ColorCycle
+    //     @relaxed phase-uncovered
+    // @witness fully-covered-phase: borderline $ColorCycle
     //     @relaxed phase-uncovered
   | ColorCycle {}
 
@@ -120,11 +120,13 @@ out(P, Col, [$Periodic(), C]) :-
 // --- $ColorCycle ---
 period($ColorCycle(), A2, K) :- params.cycle_axis(A), perp(A, A2), si.min_period($U(), A2, K).
 
+// Two adjacent known cells: q is one step from p toward d.
+.decl known_step(d: Dir, p: Position, c: Color, q: Position, c_next: Color)
+known_step(D, P, C1, Q, C2) :- dir_elem(D), known(P, C1), neighbor(P, D, Q), known(Q, C2).
+
 // One cycle step toward d: two adjacent known cells.
 .decl seen_succ(d: Dir, c: Color, c_next: Color)
-seen_succ(D, C1, C2) :-
-    params.cycle_axis(A), axis_of(D, A),
-    known(P, C1), neighbor(P, D, Q), known(Q, C2).
+seen_succ(D, C1, C2) :- params.cycle_axis(A), axis_of(D, A), known_step(D, _, C1, _, C2).
 
 // The cycle toward each direction of the axis, completed through the mask color.
 // @claim periodic-pattern
@@ -159,10 +161,40 @@ reach(Ch, P, D, K, C0) :-
 
 cyc.step(D, K) :- reach(_, _, D, K, _).
 
-out(P, Col, Ch) :- reach(Ch, P, D, K, C0), cyc.walk(D, C0, K, Col).
+// A direction of the cycle axis, with a direction across it.
+.decl across(d: Dir, e: Dir)
+across(D, E) :- params.cycle_axis(A), axis_of(D, A), perp_dir(D, E).
+
+// The cycle steps toward d that each step across the cycle axis goes past the step
+// before it: three adjacent known cells on a line across the axis.
+.decl growth(d: Dir, g: number)
+growth(D, G) :-
+    across(D, E), known_step(E, _, C1, P, C2), known_step(E, P, C2, _, C3),
+    cyc.walk(D, C1, S, C2), cyc.walk(D, C2, S, X), cyc.walk(D, X, G, C3).
+
+// p's color by its cycle step.
+.decl stepped(ch: Choice, p: Position, col: Color)
+stepped(Ch, P, Col) :- reach(Ch, P, D, K, C0), cyc.walk(D, C0, K, Col).
+
+// The cells with no known cell on their line or on a line of their phase.
+.decl unstepped(ch: Choice, p: Position)
+unstepped(Ch, P) :-
+    Ch = [$ColorCycle(), _], orbit.id([Ch, P], _), !step_line(Ch, P, _).
+
+// p's color by the next step across the cycle axis from the two cells beside it, or
+// beside a counterpart of p.
+.decl grown(ch: Choice, p: Position, col: Color)
+grown(Ch, P, Col) :-
+    unstepped(Ch, P), orbit.id([Ch, P], Id), orbit.id([Ch, P2], Id),
+    across(D, E), neighbor(P2, E, Q1), neighbor(Q1, E, Q2),
+    stepped(Ch, Q1, C1), stepped(Ch, Q2, C2),
+    cyc.walk(D, C2, S, C1), cyc.walk(D, C1, S, X), growth(D, G), cyc.walk(D, X, G, Col).
+
+out(P, Col, Ch) :- stepped(Ch, P, Col).
+out(P, Col, Ch) :- grown(Ch, P, Col).
 out(P, Col, Ch) :-
-    Ch = [$ColorCycle(), _], orbit.id([Ch, P], _), !step_line(Ch, P, _),
-    in(P, Col).                             // no known cell: the cell keeps its color
+    unstepped(Ch, P), !grown(Ch, P, _),
+    in(P, Col).                             // nothing beside it: the cell keeps its color
 
 .comp Determine {
     // The input color of the cells the output changes.
