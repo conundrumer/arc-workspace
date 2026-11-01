@@ -355,8 +355,9 @@ class ReplayEvaluator:
         if metadata_only and (metadata.get('metadata_only') is not True or
                               metadata.get('projection_payload_omitted') is not True):
             raise ValueError('native metadata-only packing report differs from request')
-        if (metadata.get('status') != 'complete' or
-                metadata.get('entry_metadata_complete') is not True or
+        if metadata.get('status') != 'complete':
+            raise ValueError('native gold tables did not complete: '+canonical(metadata))
+        if (metadata.get('entry_metadata_complete') is not True or
                 not metadata.get('tables_ref')):
             raise ValueError('native packing metadata incomplete: '+canonical(metadata))
         native = self.legacy.native(payload)
