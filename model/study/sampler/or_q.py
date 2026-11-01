@@ -666,29 +666,65 @@ def decoder_check(sess, scope, kind):
 
 
 def sorted_fields(text, sess, scope):
-    """The text with the fields of each atom that reads a relation of the scope (`&r..`) in the column order of that relation over the scope. A relation's column order is set by the
-    atom order of its form, and the walk pays for the fields of a reader that stand out of that order. A column's position is read from the decoder on a one-field probe of the
-    relation, so an atom with a field that the probe can't place keeps its order. Labels are marked again on their first occurrence."""
+    """The text with the fields of each atom that reads a relation of the scope (`&r..`) in the column order of that relation over the scope, and the fields of a record port, to any depth,
+    in the column order of the record's key. A relation's column order is set by the atom order of its form, and the walk pays for the fields of a reader that stand out of that order.
+    A port's column, and a record's field columns, are read from the decoder on a probe of the port with fresh labels, so an atom with a port that the probe can't place keeps its order.
+    Labels are marked again on their first occurrence."""
     cache, V = {}, sess.vocabulary
 
-    def position(rel, name):
-        if (rel, name) not in cache:
+    def is_port(f):
+        return isinstance(f, list) and bool(f) and isinstance(f[0], str) and f[0].startswith(':')
+
+    def is_record(f):
+        return is_port(f) and len(f) > 1 and all(is_port(g) for g in f[1:])
+
+    def skeleton(f, n):
+        """The port with a fresh label for each value."""
+        if is_record(f):
+            return [f[0], *[skeleton(g, n) for g in f[1:]]]
+        n[0] += 1
+        return [f[0], '*Zq%d' % n[0]]
+
+    def read(toks, k):
+        """(column, the columns of its record's fields or None, next index) of the port at toks[k]."""
+        col, k = int(toks[k][0][1:]), k + 1
+        if k < len(toks) and toks[k][1] == 'column':  # a record: its fields run to the END
+            kids = []
+            while k < len(toks) and toks[k][0] != 'END':
+                c, sub, k = read(toks, k)
+                kids.append((c, sub))
+            return col, kids, k + 1
+        return col, None, k + 1
+
+    def columns(rel, port):
+        """(column, [(column, ...) of each field, or None for a field that is no record]) of the port in the relation, or None."""
+        probe = '(RULE &rzz (%s %s))' % (rel, O.unparse(skeleton(port, [0])))
+        if probe not in cache:
             try:
-                ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, '(RULE &rzz (%s (%s *Zq)))' % (rel, name), live.READER_OUT)), sess.settings).decode_stream()
-                cols = [V.name(t) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope) and V.kind(t) == 'column']
-                cache[rel, name] = int(cols[0][1:]) if cols else None
+                ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, probe, live.READER_OUT)), sess.settings).decode_stream()
+                toks = [(V.name(t), V.kind(t)) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope)]
+                at = next(k for k, (_, kind) in enumerate(toks) if kind == 'relation')
+                cache[probe] = read(toks, at + 1)[:2]
             except Exception:  # noqa: BLE001
-                cache[rel, name] = None
-        return cache[rel, name]
+                cache[probe] = None
+        return cache[probe]
+
+    def order(port, kids):
+        """The port with its fields, and theirs, in column order; the port itself if the probe's fields do not match its own."""
+        if not is_record(port) or kids is None or len(kids) != len(port) - 1:
+            return port
+        fields = [order(g, sub) for g, (_, sub) in zip(port[1:], kids)]
+        return [port[0], *[g for _, g in sorted(zip([c for c, _ in kids], fields), key=lambda t: t[0])]]
 
     def fix(x):
         if not isinstance(x, list):
             return x
         x = [fix(y) for y in x]
-        if len(x) > 2 and isinstance(x[0], str) and x[0].startswith('&r') and all(isinstance(f, list) and f and isinstance(f[0], str) and f[0].startswith(':') for f in x[1:]):
-            pos = [position(x[0], f[0]) for f in x[1:]]
-            if None not in pos and pos != sorted(pos):
-                x = [x[0], *[f for _, f in sorted(zip(pos, x[1:]), key=lambda t: t[0])]]
+        if len(x) > 1 and isinstance(x[0], str) and x[0].startswith('&r') and all(is_port(f) for f in x[1:]):
+            got = [columns(x[0], f) for f in x[1:]]
+            if None not in got:
+                ports = [order(f, kids) for f, (_, kids) in zip(x[1:], got)]
+                x = [x[0], *[f for _, f in sorted(zip([c for c, _ in got], ports), key=lambda t: t[0])]]
         return x
     try:
         out = O.unparse(fix(O.parse(text)[0]))
@@ -699,7 +735,7 @@ def sorted_fields(text, sess, scope):
 
 
 def canonical_lines(lines, sess):
-    """(lines with each drawable form in its first order, items sorted, that the decoder takes over its canonical ancestors, and with the fields of its atoms in the column order of the relations they read (sorted_fields); the count of forms that keep their written text). lines has no OUT form. A CHOOSE keeps its text."""
+    """(lines with each drawable form in its first order, items sorted, that the decoder takes over its canonical ancestors, and with the fields of its atoms, and of their records, in the column order of the relations they read (sorted_fields); the count of forms that keep their written text). lines has no OUT form. A CHOOSE keeps its text."""
     out, kept = list(lines), 0
     forms = live.S.strata.sexprs('\n'.join(lines))
     for i in sorted(range(len(lines)), key=lambda i: len(live.S.ancestor_order(forms, i))):
