@@ -77,23 +77,18 @@ stencil_box.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
 
 // --- cutouts ---
 
-.decl cutout(ch: Choice, p: Position, id: Ident)
-
-// --- $Box ---
-.init boxed = Components<Stencil>
-boxed.node(S, P) :- stencil_box.box(S, B), field_cell(P), inside(P, B).
-
-cutout([S, $Box()], P, Id) :- boxed.label(S, P, Id).
-
-// --- $Closed ---
-cutout([S, $Closed()], P, Id) :- stencil_choice(S), closed.region($U(), P, Id).
+// The cells of each cutout, labeled by component, from one instance for both
+// readings.
+.init cutout = Components<Choice>
+cutout.node([S, $Box()], P) :- stencil_box.box(S, B), field_cell(P), inside(P, B).   // inside the box
+cutout.node([S, $Closed()], P) :- stencil_choice(S), closed.region($U(), P, _).      // closed off
 
 // --- shapes ---
 
 // Each cutout and each object, read in its own box.
 .type Cut = [ch: Choice, id: Ident]
 .init cut_shape = Bbox<Cut>
-cut_shape.cell([Ch, Id], P) :- cutout(Ch, P, Id).
+cut_shape.cell([Ch, Id], P) :- cutout.label(Ch, P, Id).
 
 .init obj_shape = Bbox<Ident>
 obj_shape.cell(Id, P) :- obj.label(_, P, Id).
@@ -130,5 +125,5 @@ fill.item(C, Col, O) :-
 out(P_inner, Col, [S, R]) :-
     stencil_box.box(S, B), crop(P, B, P_inner), region_choice(R),
     ( obj.label(Col, P, Id), stencil(Id, S)                        // the block itself
-    ; cutout([S, R], P, Id), fill.mode([[S, R], Id], Col)          // a filled cutout
+    ; cutout.label([S, R], P, Id), fill.mode([[S, R], Id], Col)    // a filled cutout
     ).
