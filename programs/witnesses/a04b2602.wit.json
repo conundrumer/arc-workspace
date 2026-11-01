@@ -60,7 +60,7 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$FourConnected","$NonzeroBox","$ThreeNeighbours"],
+      "cases": ["$Spanned","$FourConnected","$NonzeroBox","$ThreeNeighbours"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0],
         [0,1,1,1,0,0,0,0,0,0],
@@ -90,7 +90,7 @@
     }]
   }, {
     "id": "split-narrow",
-    "separates": "$NonzeroBox from the concept: a row of marks crosses a two-wide rectangle and splits its 3 cells in two. The concept boxes each half and leaves the row outside both; $NonzeroBox grows each half across the row and haloes both marks.",
+    "separates": "$FourConnected from the concept: a row of marks crosses a two-wide rectangle and splits its 3 cells in two. $FourConnected boxes each half and leaves the row outside both; the concept spans the two boxes, finds no field cell in the span, and haloes both marks.",
     "input": [
       [0,0,0,0,0,0,0,0,0],
       [0,0,3,3,0,3,3,3,0],
@@ -102,6 +102,18 @@
       [0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
+      "cases": ["$Spanned","$NonzeroBox","$ThreeNeighbours"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,3,3,0,3,3,3,0],
+        [0,1,1,1,1,1,1,1,0],
+        [0,1,2,2,1,1,2,1,0],
+        [0,1,1,1,1,1,1,1,0],
+        [0,0,3,3,0,3,3,3,0],
+        [0,0,3,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
       "cases": ["$FourConnected","$EightConnected"],
       "grid": [
         [0,0,0,0,0,0,0,0,0],
@@ -109,18 +121,6 @@
         [0,0,3,3,0,1,1,1,0],
         [0,0,2,2,0,1,2,1,0],
         [0,0,3,3,0,1,1,1,0],
-        [0,0,3,3,0,3,3,3,0],
-        [0,0,3,3,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": ["$NonzeroBox","$ThreeNeighbours"],
-      "grid": [
-        [0,0,0,0,0,0,0,0,0],
-        [0,0,3,3,0,3,3,3,0],
-        [0,1,1,1,1,1,1,1,0],
-        [0,1,2,2,1,1,2,1,0],
-        [0,1,1,1,1,1,1,1,0],
         [0,0,3,3,0,3,3,3,0],
         [0,0,3,3,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0]
@@ -139,7 +139,7 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$FourConnected","$EightConnected","$ThreeNeighbours"],
+      "cases": ["$Spanned","$FourConnected","$EightConnected","$ThreeNeighbours"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0],
         [0,0,0,1,1,1,0,0,0,0],
@@ -305,7 +305,7 @@
       [4,4,4,4,4,4,2,4,3,2,3,3,3,3,3,3,3,2,4,4]
     ],
     "output": [{
-      "cases": ["concept","$EightConnected","$ThreeNeighbours"],
+      "cases": ["concept","$FourConnected","$EightConnected","$ThreeNeighbours"],
       "grid": [
         [4,4,4,4,4,4,2,2,4,4,4,4,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
@@ -332,7 +332,31 @@
       "cases": ["$DerivedRoles & mark_ink.value=derived"],
       "grid": null
     }, {
-      "cases": ["$NonzeroBox","mark_ink.value=stored"],
+      "cases": ["mark_ink.value=stored"],
+      "grid": [
+        [4,4,4,4,4,4,2,2,4,4,4,4,4,4,4,4,4,4,4,4],
+        [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+        [4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4],
+        [4,4,4,3,3,2,3,3,3,3,3,3,3,3,3,4,4,4,4,4],
+        [4,4,4,3,3,3,3,3,3,3,2,3,3,3,3,4,4,4,4,4],
+        [4,4,4,3,3,3,3,3,3,3,3,3,3,3,2,4,4,4,4,4],
+        [2,4,2,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4],
+        [4,4,4,3,2,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4],
+        [4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,4,2,4,4,4],
+        [4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4],
+        [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+        [4,4,4,4,4,4,4,2,4,4,4,4,2,4,4,4,4,4,4,4],
+        [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+        [4,4,2,4,4,4,4,4,2,3,3,3,3,3,3,3,3,4,4,4],
+        [4,4,4,4,4,2,4,4,3,3,3,3,3,3,3,3,3,4,4,4],
+        [4,4,4,4,4,4,2,4,3,3,3,3,3,3,3,3,2,4,4,4],
+        [4,4,4,4,4,4,4,4,3,3,2,3,3,3,3,3,3,4,4,4],
+        [4,4,4,4,4,4,4,4,3,3,3,2,3,3,3,3,3,4,4,4],
+        [4,4,4,4,4,2,4,4,3,3,3,3,3,3,3,3,3,4,4,4],
+        [4,4,4,4,4,4,2,4,3,2,3,3,3,3,3,3,3,2,4,4]
+      ]
+    }, {
+      "cases": ["$NonzeroBox"],
       "grid": [
         [4,4,4,4,4,1,2,2,1,4,4,4,4,4,4,4,4,4,4,4],
         [4,4,4,4,4,1,1,1,1,4,4,4,4,4,4,4,4,4,4,4],

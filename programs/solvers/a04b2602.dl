@@ -3,15 +3,14 @@
 // @keywords: objects bbox stamp noise
 // @scene field: the grid is a field of params.background
 // @scene blocks: solid rectangles of params.block_color stand on the field;
-//  each rectangle is the bounding box of one 4-connected component of
-//  params.block_color, and every cell in that box is params.block_color or
-//  params.mark_color
-// @rule inside-mark: a params.mark_color cell is an inside mark when it lies
-//  inside a rectangle; a params.mark_color cell outside every rectangle is a
-//  stray mark and triggers nothing
-//     @approximated: a params.mark_color cell is an inside mark when it lies
-//      in the bounding box of a 4-connected component of params.block_color
-//     @witness split-narrow: borderline $NonzeroBox
+//  every cell of a rectangle is params.block_color or params.mark_color, and
+//  each of its four sides holds a params.block_color cell
+// @rule inside-mark: a rectangle is the smallest box that holds the bounding
+//  boxes of one or two 4-connected components of params.block_color and holds
+//  only params.block_color and params.mark_color cells; a params.mark_color
+//  cell is an inside mark when it lies inside a rectangle; a
+//  params.mark_color cell outside every rectangle is a stray mark and
+//  triggers nothing
 // @rule halo: each inside mark paints params.halo_color on the eight cells
 //  around it, clipped to the grid; the halo covers block, field, and stray
 //  mark cells alike
@@ -22,7 +21,12 @@
 // the region that counts as a rectangle
 .type BoxRegion =
     // @claim inside-mark
-    FourConnected {}
+    Spanned {}
+    // @rule inside-mark: a params.mark_color cell is an inside mark when it
+    //  lies in the bounding box of a 4-connected component of
+    //  params.block_color
+    // @witness split-narrow: borderline concept
+  | FourConnected {}
     // @rule inside-mark: a params.mark_color cell is an inside mark when it
     //  lies in the bounding box of an 8-connected component of
     //  params.block_color
@@ -32,7 +36,6 @@
     //  smallest box that holds it and the bounding box of a 4-connected
     //  component of params.block_color holds no params.background cell
     //  outside that component's box
-    // @witness split-narrow: borderline $NonzeroBox
     // @witness flush-strays: borderline concept
   | NonzeroBox {}
 
@@ -61,6 +64,9 @@
 
 // A block under one reading of the colors.
 .type Block = [r: Roles, id: Ident]
+
+// Two blocks, or one block twice, under one reading of the colors.
+.type Span = [r: Roles, a: Ident, b: Ident]
 
 // A block's box together with a mark cell.
 .type Hull = [r: Roles, id: Ident, p: Position]
@@ -93,6 +99,7 @@ mark(R, P) :- in(P, Col), roles(R, _, Col).
 .decl inside_mark(p: Position, ch: Choice)
 
 .decl trigger_choice(t: Trigger)
+trigger_choice($InBox($Spanned())).
 trigger_choice($InBox($FourConnected())).
 trigger_choice($InBox($EightConnected())).
 trigger_choice($InBox($NonzeroBox())).
@@ -132,7 +139,7 @@ mark_ink.item($U(), Col) :- ink(_, Col), !block_ink.value($U(), Col).
 
 roles($DerivedRoles(), C1, C2) :- block_ink.value($U(), C1), mark_ink.value($U(), C2).
 
-// --- $FourConnected, $NonzeroBox ---
+// --- $Spanned, $FourConnected, $NonzeroBox ---
 // @claim inside-mark
 .init block4 = Components<Roles>
 block4.node(R, P) :- block(R, P).
@@ -140,6 +147,21 @@ block4.node(R, P) :- block(R, P).
 // @claim inside-mark
 .init box4 = Bbox<Block>
 box4.cell([R, Id], P) :- block4.label(R, P, Id).
+
+// --- $Spanned ---
+// The smallest box that holds the boxes of a span's blocks.
+// @claim inside-mark
+.init span = Bbox<Span>
+span.cell([R, A, B], B_part) :-
+    box4.box([R, A], B_a), box4.box([R, B], B_b), (B_part = B_a ; B_part = B_b).
+
+// The box holds a cell of neither role.
+.decl span_field(s: Span)
+span_field([R, A, B]) :-
+    span.box([R, A, B], B_s), in(Q, _), inside(Q, B_s), !block(R, Q), !mark(R, Q).
+
+inside_mark(P, [$InBox($Spanned()), R]) :-
+    mark(R, P), span.box([R, A, B], B_s), !span_field([R, A, B]), inside(P, B_s).
 
 // --- $FourConnected ---
 inside_mark(P, [$InBox($FourConnected()), R]) :- mark(R, P), box4.box([R, _], B), inside(P, B).
