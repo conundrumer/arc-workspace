@@ -666,7 +666,7 @@ fn push_row(builder: &mut IdentRowsBuilder<u32, TermId>, relation: usize, values
 /// Whether each of `labels`, whose types are `types`, is a column of the
 /// assembly's own Idents.
 fn own_flags(types_of: &FormTypes, labels: &[LabelId], types: &[ValueType]) -> Vec<bool> {
-    labels.iter().zip(types).map(|(&label, ty)| *ty == ValueType::Ident && types_of.is_own_ident(label)).collect()
+    labels.iter().zip(types).map(|(&label, ty)| matches!(ty, ValueType::Ident(_)) && types_of.is_own_ident(label)).collect()
 }
 
 /// The type of `label`, or the fault of a label with none.

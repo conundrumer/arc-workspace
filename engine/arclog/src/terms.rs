@@ -260,7 +260,7 @@ impl Term {
             ValueType::Example => Term::Constant(Constant::Example(Example(bits as u16))),
             ValueType::Unit => Term::Constant(Constant::Unit),
             ty if ty.is_box() => Term::Box(Term::decode_box(id)),
-            ValueType::Ident => Term::Ident(Ident(bits)),
+            ValueType::Ident(_) => Term::Ident(Ident(bits)),
             ValueType::Pose(_) => Term::decode(id, &ValueType::D4),
             ValueType::Record(_) => panic!("a record's value takes one column per field"),
             orientation_type => orientation(
@@ -386,7 +386,7 @@ impl MemberSet {
 /// value of type `ty`, and gives the count of columns the value takes.
 fn ident_columns(ty: &ValueType, start: usize, positions: &mut Vec<usize>) -> usize {
     match ty {
-        ValueType::Ident => {
+        ValueType::Ident(_) => {
             positions.push(start);
             1
         }
@@ -409,7 +409,7 @@ pub(crate) fn content_order(types: &[ValueType], a: &[TermId], b: &[TermId], tab
     use std::cmp::Ordering;
     for ((ty, x), y) in types.iter().zip(a).zip(b) {
         let order = match ty {
-            ValueType::Ident if x != y => ident_order(Ident(x.0), Ident(y.0), table),
+            ValueType::Ident(_) if x != y => ident_order(Ident(x.0), Ident(y.0), table),
             _ => x.0.cmp(&y.0),
         };
         if order != Ordering::Equal {
@@ -514,9 +514,9 @@ pub fn encode_data_value(
             }
             _ => Err(not_of_type()),
         },
-        (ValueType::Ident, DataValue::Integer(n)) => {
+        (ValueType::Ident(_), DataValue::Integer(n)) => {
             let written = WrittenIdent(u32::try_from(*n).map_err(|_| not_of_type())?);
-            one(Term::Ident(table.intern(Content::FromFile { ty: ValueType::Ident, written })))
+            one(Term::Ident(table.intern(Content::FromFile { ty: ValueType::OPEN_IDENT, written })))
         }
         (ValueType::C4, _) => orientation(&|constant| registry.c4_constants().contains(constant)),
         (ValueType::Pose(_), _) => orientation(&of_type(ValueType::D4.orientation_types().expect("D4 is an orientation type"))),

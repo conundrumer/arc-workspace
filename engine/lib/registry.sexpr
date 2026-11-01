@@ -41,7 +41,7 @@
 (type Position)
 ;;; A Box that moves another Box.
 (type Offset)
-;;; A label of one thing, such as one object. It holds nothing but the thing's identity.
+;;; A label of one thing, such as one object. It holds nothing but the thing's identity. While `ARCLOG_IDENT_SOURCE` is set, an `Ident` column has one source: the `INIT` form and output that makes it, or the `DET` form of a proposer that makes it. A label stands at `Ident` columns of one source only, so the checker refuses a join, a `NOT`, an `=` or `!=`, a union and a type parameter that meet two sources.
 (type Ident)
 ;;; The four turns: D4_ID, D4_CW, D4_HT and D4_CC. A type under `D4`.
 (type C4)

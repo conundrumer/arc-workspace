@@ -19,7 +19,7 @@ use super::types::{
     try_map_key_rows, try_map_labels, zero_typed_heads, PoseOr,
 };
 use super::{ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
-use crate::hash::{StableHashMap, StableHashSet};
+use crate::hash::{StableHash, StableHashMap, StableHashSet, StableHasher};
 use crate::program::canonical::{form_scope_labels, scope_labels, CanonicalOrder, LabelScope};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
@@ -31,7 +31,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{column_label, flat_label_types, fresh_in_nested_form, label_type_cached, list_class, settle_label_types, typed, TypedLabels, WalkCache, scope_lists, use_label, AssemblyId, KeyRow, LabelFault, ValueType};
+use crate::types::{column_label, flat_label_types, fresh_in_nested_form, label_type_cached, list_class, settle_label_types, sources_on, typed, TypedLabels, WalkCache, scope_lists, use_label, AssemblyId, IdentSource, KeyRow, LabelFault, SourceId, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -217,6 +217,9 @@ pub(super) struct FormInference<'a> {
     /// alone, so that a column of a relation that such a label gives takes
     /// a Pose type as that column does.
     given: Vec<LabelId>,
+    /// A hash of the owner form's name and canonical form, kept for
+    /// [`FormInference::ident_source`].
+    source_base: std::cell::OnceCell<StableHash>,
 }
 
 /// The types of one label scope that a [`FormInference`] holds beyond its
@@ -240,7 +243,7 @@ impl<'a> FormInference<'a> {
             _ => None,
         };
         let InferredTypes { labels, bindings, zero_typed, given } = types;
-        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk: FormWalk::of(form), component, zero_typed, given }
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk: FormWalk::of(form), component, zero_typed, given, source_base: Default::default() }
     }
 
     /// The inference of the scope of `owner` at `path` whose types are
@@ -251,9 +254,34 @@ impl<'a> FormInference<'a> {
             ScopeOwner::Form(form) => Self::of_types(types, form, path, registry),
             ScopeOwner::DemoRule(rule) => {
                 let InferredTypes { labels, bindings, zero_typed, given } = types;
-                FormInference { owner, path: path.clone(), labels, bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed, given }
+                FormInference { owner, path: path.clone(), labels, bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed, given, source_base: Default::default() }
             }
         }
+    }
+
+    /// The source of the Ident values that the form makes at the output
+    /// `port`, or at its declared columns where `port` is `None`:
+    /// [`IdentSource::Open`] while sources are off.
+    fn ident_source(&self, port: Option<&PortName>) -> IdentSource {
+        use std::hash::Hash;
+        let ScopeOwner::Form(form) = self.owner else { return IdentSource::Open };
+        if !sources_on() {
+            return IdentSource::Open;
+        }
+        let base = self.source_base.get_or_init(|| {
+            let mut hasher = StableHasher::new();
+            match form {
+                Form::Instance(instance) => instance.value().name.hash(&mut hasher),
+                Form::Clause(clause) => clause.value().derives.hash(&mut hasher),
+                _ => {}
+            }
+            super::canonical_form(form).hash.hash(&mut hasher);
+            hasher.finish128()
+        });
+        let mut hasher = StableHasher::new();
+        base.hash(&mut hasher);
+        port.hash(&mut hasher);
+        IdentSource::Form(SourceId(hasher.finish128()))
     }
 
     /// The types of this inference, see [`InferredTypes`].
@@ -274,6 +302,7 @@ impl<'a> FormInference<'a> {
             component: self.component,
             zero_typed: self.zero_typed.clone(),
             given: self.given.clone(),
+            source_base: Default::default(),
         }
     }
 
@@ -333,6 +362,19 @@ impl<'a> FormInference<'a> {
                 if let Err(second) = joined_projections(site, &later, &|label| self.label(label)) {
                     if let Some(at) = path_to(root, NodeRef::Site(second), NodePath::default()) {
                         faults.push((at, format!("the projections onto the type parameter `{}` give types with no join", sites.parameter.name)));
+                    }
+                    continue;
+                }
+            }
+            if let (None, ParameterSite::Head { site, .. }) = (&sites.parameter.bound, sites.binding) {
+                let projections: Vec<(&Site, ValueType)> = std::iter::once(site)
+                    .chain(sites.later.iter().map(|(_, site)| *site))
+                    .filter_map(|site| Some((site, site_value_type(site, &|label| self.label(label))?)))
+                    .collect();
+                let second = (1..projections.len()).find(|&at| projections[..at].iter().any(|(_, earlier)| ident_sources_clash(earlier, &projections[at].1)));
+                if let Some(second) = second {
+                    if let Some(at) = path_to(root, NodeRef::Site(projections[second].0), NodePath::default()) {
+                        faults.push((at, format!("the projections onto the type parameter `{}` give Ident columns of two sources", sites.parameter.name)));
                     }
                     continue;
                 }
@@ -741,7 +783,7 @@ impl<'a> Inference<'a> {
             (*label, Ok(ty))
         }).collect();
         self.share_pose(SiteReading { path, walk: &walk, labels: &[], component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut labels);
-        Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels })
+        Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels, source_base: Default::default() })
     }
 
     /// A scalar column type fixed by the already finished forms. No type
@@ -996,7 +1038,7 @@ impl<'a> Inference<'a> {
             }
         }
         self.share_pose(SiteReading { path, walk: &walk, labels: &[], component: scope.component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut types);
-        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels }
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels, source_base: Default::default() }
     }
 
     /// The types of the scope of `rule`, the `DEMO_RULE` at `path`: each
@@ -1022,7 +1064,7 @@ impl<'a> Inference<'a> {
             }
         }
         let no_bindings = StableHashMap::default();
-        FormInference { owner: ScopeOwner::DemoRule(rule), path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given }
+        FormInference { owner: ScopeOwner::DemoRule(rule), path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given, source_base: Default::default() }
     }
 
     /// The type that the column at `path` of the relation `atom` reads gives
@@ -1361,7 +1403,10 @@ impl<'a> Inference<'a> {
                 let ty = project(&self.infer(at)?.label_under(column.label, pose_or)?, rest)?;
                 try_map_labels(&ty, &|label| target(&columns.iter().find(|column| column.label == label)?.name))
             }
-            ClauseColumns::Declared(columns) => declared_type(columns, path, pose_or),
+            ClauseColumns::Declared(columns) => match declared_type(columns, path, pose_or)? {
+                ValueType::Ident(IdentSource::Open) if sources_on() => Some(ValueType::Ident(self.infer(at)?.ident_source(None))),
+                ty => Some(ty),
+            },
             ClauseColumns::InstanceOutput(instance, port) => self.instance_output(&instance, port, path, &|_, _| None),
         }
     }
@@ -1509,6 +1554,11 @@ fn port_column(
     let (first, rest) = path.split_first()?;
     let column = port.columns.iter().find(|column| column.name == *first)?;
     let ty = column_type(&column.ty, rest, &inference.bindings, PoseOr::Open)?;
+    let makes = inference.component.is_some_and(|component| component.outputs.iter().any(|output| output.name == port.name));
+    let ty = match ty {
+        ValueType::Ident(IdentSource::Open) if makes && matches!(column.ty, ColumnType::Fixed(_)) => ValueType::Ident(inference.ident_source(Some(&port.name))),
+        ty => ty,
+    };
     try_map_key_rows(&ty, &|labels| key_row(first, &labels.iter().map(|label| inference.bound_field(&column.ty, *label)).collect::<Option<Vec<_>>>()?))
 }
 
@@ -1583,6 +1633,17 @@ fn path_to(root: NodeRef<'_>, target: NodeRef<'_>, at: NodePath) -> Option<NodeP
         }
     }
     None
+}
+
+/// Whether `a` and `b` hold Ident types of two different sources at one
+/// place: two such types, or two records that have such types in fields of
+/// one name.
+fn ident_sources_clash(a: &ValueType, b: &ValueType) -> bool {
+    match (a, b) {
+        (ValueType::Ident(IdentSource::Form(x)), ValueType::Ident(IdentSource::Form(y))) => x != y,
+        (ValueType::Record(a), ValueType::Record(b)) => a.iter().any(|(name, a)| b.iter().any(|(other, b)| name == other && ident_sources_clash(a, b))),
+        _ => false,
+    }
 }
 
 /// The type each parameter of `component` takes by `instance`'s binding

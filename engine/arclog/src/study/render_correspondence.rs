@@ -34,7 +34,7 @@ fn label(node: NodeRef<'_>) -> Option<LabelId> {
     }
 }
 pub fn type_json(ty: &ValueType) -> Value {
-    json!({"type":format!("{ty:?}"),"wire_type":format!("{:?}",if matches!(ty,ValueType::Pose(_)){&ValueType::D4}else{ty}),
+    json!({"type":format!("{:?}",ty.without_source()),"wire_type":format!("{:?}",if matches!(ty,ValueType::Pose(_)){ValueType::D4}else{ty.without_source()}),
         "cell_width":if ty.is_box(){4}else{1},"nominal":matches!(ty,ValueType::Pose(_))})
 }
 

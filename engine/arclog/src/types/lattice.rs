@@ -1,14 +1,17 @@
 //! The static types of columns and labels, and their lattice: `Nat` under `Int`, `C4` under
 //! `D4`, `Dir` and `DiagDir` under `Dir8`, `Axis` and `DiagAxis` under
 //! `Axis4`, and `Position` and `Offset` under `Box`. A Pose type is below and
-//! above no other type.
+//! above no other type. The Ident type of one source stands under the Ident
+//! type of no source, and is below and above no other source.
+
+use super::ident_source::IdentSource;
 
 /// The type of a column or a label, which the type check infers for each
 /// label over the lattice of the types.
 ///
 /// `Position` and `Offset` are the two interpretations of a `Box`, a cell and
 /// a translation, and stand under it.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum ValueType {
     /// Signed 32-bit integer; the historical `number` spelling reads this type.
     Int,
@@ -20,7 +23,10 @@ pub enum ValueType {
     Box,
     Position,
     Offset,
-    Ident,
+    /// An identity that a maker makes; the field is the maker. The Ident
+    /// types of two makers have an empty meet. `Ident(IdentSource::Open)`
+    /// stands above the Ident type of each maker.
+    Ident(IdentSource),
     C4,
     D4,
     Dir,
@@ -40,6 +46,38 @@ pub enum ValueType {
     Record(Box<[(crate::program::ColumnName, ValueType)]>),
 }
 
+impl std::fmt::Debug for ValueType {
+    /// The type's name: `Ident` alone for an Ident of no source, and
+    /// `Ident(<source>)` for an Ident of a source.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            ValueType::Int => "Int",
+            ValueType::Nat => "Nat",
+            ValueType::Color => "Color",
+            ValueType::Example => "Example",
+            ValueType::Unit => "Unit",
+            ValueType::Box => "Box",
+            ValueType::Position => "Position",
+            ValueType::Offset => "Offset",
+            ValueType::Ident(IdentSource::Open) => "Ident",
+            ValueType::Ident(IdentSource::Form(id)) => return write!(f, "Ident({id:?})"),
+            ValueType::C4 => "C4",
+            ValueType::D4 => "D4",
+            ValueType::Dir => "Dir",
+            ValueType::DiagDir => "DiagDir",
+            ValueType::Dir8 => "Dir8",
+            ValueType::Axis => "Axis",
+            ValueType::DiagAxis => "DiagAxis",
+            ValueType::Axis4 => "Axis4",
+            ValueType::Sym => "Sym",
+            ValueType::Sense => "Sense",
+            ValueType::Pose(assembly) => return f.debug_tuple("Pose").field(assembly).finish(),
+            ValueType::Record(fields) => return f.debug_tuple("Record").field(fields).finish(),
+        };
+        f.write_str(name)
+    }
+}
+
 /// The result of the meet of two types.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Meet {
@@ -50,6 +88,19 @@ pub enum Meet {
 }
 
 impl ValueType {
+    /// The Ident type of no source.
+    pub const OPEN_IDENT: ValueType = ValueType::Ident(IdentSource::Open);
+
+    /// The type with the source of each Ident in it dropped, so that it
+    /// prints and compares as the type of a column that an input names.
+    pub fn without_source(&self) -> ValueType {
+        match self {
+            ValueType::Ident(_) => ValueType::OPEN_IDENT,
+            ValueType::Record(fields) => ValueType::Record(fields.iter().map(|(name, field)| (name.clone(), field.without_source())).collect()),
+            other => other.clone(),
+        }
+    }
+
     /// The meet of two types: the type of a label with both types' sites.
     pub fn meet(&self, other: &ValueType) -> Meet {
         if self.is_below(other) {
@@ -70,6 +121,11 @@ impl ValueType {
         }
         if other.is_below(self) {
             return Some(self.clone());
+        }
+        if let (ValueType::Ident(IdentSource::Form(a)), ValueType::Ident(IdentSource::Form(b))) = (self, other) {
+            if a != b {
+                return None;
+            }
         }
         match (self.parent(), other.parent()) {
             (Some(a), Some(b)) if a == b => Some(a),
@@ -114,6 +170,7 @@ impl ValueType {
             ValueType::Dir | ValueType::DiagDir => Some(ValueType::Dir8),
             ValueType::Axis | ValueType::DiagAxis => Some(ValueType::Axis4),
             ValueType::Position | ValueType::Offset => Some(ValueType::Box),
+            ValueType::Ident(IdentSource::Form(_)) => Some(ValueType::OPEN_IDENT),
             _ => None,
         }
     }
@@ -142,7 +199,7 @@ impl ValueType {
             | ValueType::Box
             | ValueType::Position
             | ValueType::Offset
-            | ValueType::Ident
+            | ValueType::Ident(_)
             | ValueType::Pose(_)
             | ValueType::Record(_) => return None,
         })

@@ -55,7 +55,7 @@ pub fn scalar_type(name: &str) -> Result<ValueType, String> {
         "box" => ValueType::Box,
         "position" => ValueType::Position,
         "offset" => ValueType::Offset,
-        "ident" => ValueType::Ident,
+        "ident" => ValueType::OPEN_IDENT,
         "c4" => ValueType::C4,
         "d4" => ValueType::D4,
         "dir" => ValueType::Dir,

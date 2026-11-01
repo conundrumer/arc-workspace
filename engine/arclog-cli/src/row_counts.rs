@@ -217,7 +217,7 @@ pub(crate) fn column_names(evaluation: &Evaluation<'_>, relation: &GraphRelation
 
 /// The name of a column type in a rows file.
 fn type_name(ty: &ValueType) -> String {
-    format!("{ty:?}")
+    format!("{:?}", ty.without_source())
 }
 
 /// The line of the clause at `form` of `node`: the rows of its body over

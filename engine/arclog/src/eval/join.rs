@@ -973,7 +973,7 @@ impl<'c> Search<'c> {
         if early {
             candidates.sort_by_key(|value| value.encoding());
         }
-        let stops = early && self.clause.variables[usize::from(variable.0)].ty != ValueType::Ident;
+        let stops = early && !matches!(self.clause.variables[usize::from(variable.0)].ty, ValueType::Ident(_));
         let mut passed = false;
         for value in candidates {
             self.tried.count(budget, 1)?;

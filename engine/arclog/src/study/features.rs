@@ -22,7 +22,7 @@ pub fn type_json(ty: &ValueType) -> Value {
         ValueType::Pose(assembly) => {
             json!({"kind":"Pose","native_identity":format!("{assembly:?}")})
         }
-        _ => json!({"kind":format!("{ty:?}")}),
+        _ => json!({"kind":format!("{:?}", ty.without_source())}),
     }
 }
 

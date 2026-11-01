@@ -1469,7 +1469,7 @@ mod tests {
 
     fn idents(count: u32) -> Vec<Ident> {
         let mut table = InternTable::default();
-        (0..count).map(|i| table.intern(Content::FromFile { ty: arclog::types::ValueType::Ident, written: WrittenIdent::new(i) })).collect()
+        (0..count).map(|i| table.intern(Content::FromFile { ty: arclog::types::ValueType::OPEN_IDENT, written: WrittenIdent::new(i) })).collect()
     }
 
     #[test]

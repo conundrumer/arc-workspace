@@ -81,7 +81,7 @@ impl TypeName {
             TypeName::Box => ValueType::Box,
             TypeName::Position => ValueType::Position,
             TypeName::Offset => ValueType::Offset,
-            TypeName::Ident => ValueType::Ident,
+            TypeName::Ident => ValueType::OPEN_IDENT,
             TypeName::C4 => ValueType::C4,
             TypeName::D4 => ValueType::D4,
             TypeName::Dir => ValueType::Dir,

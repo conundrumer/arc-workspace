@@ -14,7 +14,7 @@
 - `Box`: A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column.
 - `Position`: A Box of one cell. A label at a Box column and a Position column is a Position. A label never stands at a Position column and an Offset column.
 - `Offset`: A Box that moves another Box.
-- `Ident`: A label of one thing, such as one object. It holds nothing but the thing's identity.
+- `Ident`: A label of one thing, such as one object. It holds nothing but the thing's identity. While `ARCLOG_IDENT_SOURCE` is set, an `Ident` column has one source: the `INIT` form and output that makes it, or the `DET` form of a proposer that makes it. A label stands at `Ident` columns of one source only, so the checker refuses a join, a `NOT`, an `=` or `!=`, a union and a type parameter that meet two sources.
 - `C4`: The four turns: D4_ID, D4_CW, D4_HT and D4_CC. A type under `D4`.
 - `D4`: The eight symmetries of a square. D4_ID is the identity. D4_CW, D4_HT and D4_CC are the quarter turn clockwise, the half turn and the quarter turn counterclockwise. D4_LR swaps the left and the right (a reflection across the vertical axis), and D4_TB the top and the bottom. D4_DG and D4_AD reflect across the diagonals of those names.
 - `Dir`: The four edges of the grid: DIR_T, DIR_B, DIR_L and DIR_R. A type under `Dir8`.

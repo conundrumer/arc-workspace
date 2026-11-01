@@ -802,7 +802,7 @@ pub(crate) fn fault_spelled(fault: &RunFault) -> String {
 }
 
 fn type_names(types: &[ValueType]) -> Vec<String> {
-    types.iter().map(|ty| format!("{ty:?}")).collect()
+    types.iter().map(|ty| format!("{:?}", ty.without_source())).collect()
 }
 
 /// The names of a column's path as a file writes them, or their slots, joined
