@@ -21,9 +21,9 @@ A draw walks the program form by form. Clause order does not matter: what a step
 next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how many clauses of each kind exist (live_priors.py
 counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an
 INIT takes a component, and each of its ports takes
-a body and a head. The body of a RULE, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
+a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
 alone, and other labels stay in their branch. A branch may take an OR as its last atom, from that place's counts (one level deep); the
-labels that OR exports are the branch's, and its other labels stay in it. The first operand of `=` may be a fresh label (EQ_FRESH). A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
+labels that OR exports are the branch's, and its other labels stay in it. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
@@ -93,6 +93,7 @@ BIND_QUIT = 0.8  # the chance that a later branch with an unbound exported label
 KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of 907 gold ports of keys of two or more labels read them all
 EXAMPLE_READ = dict(DET=0.2, INIT=0.03)  # the factor on a declared relation's Example column in a body of the kind: gold's atoms on declared relations read it in 32% of DETs' and 3.9% of INITs'; draws read it in 41% and 8% at these factors
 EQ_FRESH = 0.14  # the chance that the first operand of `=` is a fresh label: 99 of 685 gold `=` atoms
+EQ_BRANCH = dict(RULE=0.5, DET=0.28, key=0.12, port=0.5)  # the share of `=` among the atoms drawn in an OR's branch, by place. The priors count the atoms outside an OR alone (`=`: 10 of 20539 RULE atoms; inside branches, 452 of 5577). Most draws of `=` fail for want of a second operand, so RULE's is the share at which draws make `=` at gold's 1.8% of RULE atoms; the others keep its ratio to gold's branch shares (8.1%, 4.5%, 2.0%, 7.9%)
 FIELD_AGAIN = 0.01  # the factor on a field that a record site repeats: 15 of 1570 gold record sites have one
 HEAD_FITS = dict(Position={'Position', 'Box'}, Offset={'Offset', 'Box'}, Axis={'Axis', 'Axis4'}, DiagAxis={'DiagAxis', 'Axis4'}, Dir={'Dir', 'Dir8'}, DiagDir={'DiagDir', 'Dir8'},
                  Point={'Position', 'Offset', 'Box'})  # the label types that a head column of a type takes, where a family's other members do not: the engine's lattice has no value in both of two siblings
@@ -359,6 +360,7 @@ class LiveDrawer(S.Drawer):
 
     labs_wanted = 0  # the count of labels of the clause at which a port's body has as many as its head takes
     example_read = 1.0  # the factor on the weight of a declared relation's Example column
+    eq_share = 0.0  # the share of `=` among the atoms drawn now: nonzero inside an OR's branch, where `=` binds a label that the branches share
 
     def __init__(self, V, counts, rng, regcols, fr, regtypes, limits):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
@@ -368,6 +370,9 @@ class LiveDrawer(S.Drawer):
         """S's, with the field that a record site repeats at gold's share, and a declared relation's Example column, which S's column
         weights take for the first column, at example_read."""
         ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
+        if n.phase == 'root' and self.eq_share and M.CMP[0] in os:  # the priors count the atoms outside an OR alone, and `=` is rare there
+            rest = sum(w for o, w in zip(os, ws) if o != M.CMP[0])
+            return [rest * self.eq_share / (1 - self.eq_share) if o == M.CMP[0] else w for o, w in zip(os, ws)]
         if n.phase == 'fcol':
             return [w * FIELD_AGAIN if self.fr.colpos.get(o) == n.need else w for o, w in zip(os, ws)]
         if n.phase == 'op' and M.STAR in os:  # S's weights give a fresh label no weight; here it has gold's share of the first operand of `=`
@@ -1100,7 +1105,7 @@ class Run:
         if done is None:
             return None
         d, ctoks, ctext, hide, atoms = done
-        if dr.place != 'RULE':  # the engine gives no table inside a port: the types are those of the labels the OR keeps
+        if dr.place not in ('RULE', 'DET'):  # the engine gives no table inside a port: the types are those of the labels the OR keeps
             seen = self.label_types(dr, atoms)
             kept = [t for x, t in seen.items() if self.ff0.label_tok.get(int(x[1:])) not in hide]
             types, labels = list(scope) + kept, None
@@ -1160,23 +1165,27 @@ class Run:
         the branch's atoms and outer the body's. joins says that the atom may not stand unjoined."""
         lim, c, free = self.lim, self.c, 0
         fr = dr.frontier(d, labs)
-        for n_try in range(lim.atom_tries + lim.cheap_tries):
-            if n_try - free >= lim.atom_tries:
-                break
-            dr.p_k, dr.p_scope, dr.p_key, dr.p_last = k, tuple(scope), pkey, ()
-            res, why = dr.atom(fr, max(k, 2) if types else k, types or scope, pkey)
-            if res is None:
-                c['or:try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
-            elif not self.can_close(res[0].dec):
-                c['or:try:unsafe'] += 1
-            elif joins and not res[4] and res[5]:
-                c['or:try:unjoined'] += 1
-                free += 1
-            elif res[3] in outer + text or opposite(res[3]) in outer + text or clash(res[3], text, outer):
-                c['or:try:repeat'] += 1
-                free += 1
-            else:
-                return res
+        dr.eq_share = EQ_BRANCH.get(dr.place, 0.0)
+        try:
+            for n_try in range(lim.atom_tries + lim.cheap_tries):
+                if n_try - free >= lim.atom_tries:
+                    break
+                dr.p_k, dr.p_scope, dr.p_key, dr.p_last = k, tuple(scope), pkey, ()
+                res, why = dr.atom(fr, max(k, 2) if types else k, types or scope, pkey)
+                if res is None:
+                    c['or:try:construct:' + re.sub(r'refused .*', 'refused', why)] += 1
+                elif not self.can_close(res[0].dec):
+                    c['or:try:unsafe'] += 1
+                elif joins and not res[4] and res[5]:
+                    c['or:try:unjoined'] += 1
+                    free += 1
+                elif res[3] in outer + text or opposite(res[3]) in outer + text or clash(res[3], text, outer):
+                    c['or:try:repeat'] += 1
+                    free += 1
+                else:
+                    return res
+        finally:
+            dr.eq_share = 0.0
         return None
 
     def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local, want, want_types, nests=0.0):

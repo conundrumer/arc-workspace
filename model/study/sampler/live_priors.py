@@ -147,12 +147,12 @@ def key_labels(tasks):
 
 
 def body_compounds(tasks):
-    """{'key' or 'port': counts in the form of S.compound_counts, with ('after',) as compound has it, over the bodies of that place.
+    """{'key', 'port' or 'DET': counts in the form of S.compound_counts, with ('after',) as compound has it, over the bodies of that place.
     A place has no output clause, so the flag of 'reach' and 'comp' is False."""
-    out = dict(key=collections.Counter(), port=collections.Counter())
+    out = dict(key=collections.Counter(), port=collections.Counter(), DET=collections.Counter())
     for t in tasks:
         for f in S.corpus_forms(t):
-            for place, body in init_bodies(f) if f[0] == 'INIT' else ():
+            for place, body in init_bodies(f) if f[0] == 'INIT' else [('DET', [a for a in f[2:] if isinstance(a, list) and a[0] not in ('ONE', 'SET')])] if f[0] == 'DET' else ():
                 c, ci = out[place], next((i for i, a in enumerate(body) if a and a[0] in ('OR', 'IF')), None)
                 for k in range(1, (len(body) if ci is None else ci + 1) + 1):
                     c['reach', False, k] += 1
