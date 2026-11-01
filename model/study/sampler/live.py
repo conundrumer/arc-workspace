@@ -325,12 +325,12 @@ class Limits:
     port_atoms: int = 12  # atoms of a port's body; 5 of gold's 7696 ports are longer
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
-    out_pairs: int = 6  # (Position, Color) column pairs of a relation that the OUT search tries
+    out_pairs: int = int(os.environ.get('OUT_PAIRS', 6))  # (Position, Color) column pairs of a relation that the OUT search tries
     out_layer_pairs: int = 24  # (Position, Color) column pairs of a relation that the clauses of Run.layers try, after the others have tried out_pairs
     out_colors: int = 8  # the best suited Color relations, that a Position column is painted with
     out_unions: int = 3  # the best suited earlier relations, that a relation is joined with in a union
     out_positions: int = 3  # the best suited earlier relations with no Color column to read, whose cells take a color of a Color relation
-    out_cands: int = 100  # candidates of the OUT search at one form end
+    out_cands: int = int(os.environ.get('OUT_CANDS', 100))  # candidates of the OUT search at one form end
 
 
 @dataclasses.dataclass
