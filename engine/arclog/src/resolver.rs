@@ -196,6 +196,11 @@ pub struct ResolvedContent {
 }
 
 impl ResolvedContent {
+    /// The bytes of the content's canonical form.
+    pub fn bytes(&self) -> usize {
+        self.form.bytes.len()
+    }
+
     /// The hash of the content's canonical form.
     pub fn content_hash(&self) -> StableHash {
         self.form.hash

@@ -27,7 +27,7 @@ pub fn read_grid(relation: &Relation, columns: GridColumns) -> Option<Grid> {
     let index = relation.index(&ColumnOrder(Box::new([columns.position, columns.color])));
     let mut frame: Option<(usize, usize)> = None;
     let mut cells: Vec<Option<Color>> = Vec::new();
-    for (position, colors) in index.entries() {
+    for (position, colors) in index.root().entries() {
         let margins = Term::decode_box(position);
         let (row, column) = (usize::try_from(margins.top).ok()?, usize::try_from(margins.left).ok()?);
         let extent = (row + usize::try_from(margins.bottom).ok()? + 1, column + usize::try_from(margins.right).ok()? + 1);

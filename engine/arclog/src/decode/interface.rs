@@ -322,7 +322,7 @@ impl<'a> Decoder<'a> {
         };
         // A table's walk takes the domains that the session's table walks
         // kept (`det_memo::SessionMemo`), where they would compute the same.
-        let memo = work.map(|_| self.session.det_domains().get_or_init(|| SessionMemo::new(self.det_scope())));
+        let memo = work.map(|_| self.session.det_domains().get_or_init(|| SessionMemo::new(self.det_scope(), self.session)));
         let domains = memo.and_then(|memo| memo.domains(self.det_scope(), program, dets));
         match descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains.as_ref().map(|domains| domains as &dyn Domains)).1 {
             Ok(()) => Ok(Assigned { at: found, stop: None }),

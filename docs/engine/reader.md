@@ -34,7 +34,7 @@ The step ends when the engine and the Python lint agree on `gen/` for the checks
 
 ### Relations
 
-- A relation is a set of rows of one arity. A body's relation is held as its parts, as [Factorized bodies](synthesis.md#factorized-bodies) gives, and each part is stored row by row with a hash set over the rows. An index is a trie over the columns in one order, as a hash trie of [Free Join](https://arxiv.org/abs/2301.10841) is, built on first use in the order that a clause's variable order asks for, and kept with the relation.
+- A relation is a set of rows of one arity. A body's relation is held as its parts, as [Factorized bodies](synthesis.md#factorized-bodies) gives, and each part is stored row after row in one array with a hash table of row numbers over it. An index is a trie over the columns in one order, held as sorted arrays with one level per column, built on first use in the order that a clause's variable order asks for, and kept with the relation.
 
 ### Programs as values
 

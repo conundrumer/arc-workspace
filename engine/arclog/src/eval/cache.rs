@@ -205,7 +205,7 @@ impl Recorded {
 
 /// The bytes of `relation`'s rows, an estimate.
 pub(crate) fn relation_estimate(relation: &Relation) -> usize {
-    relation.parts().iter().map(|part| part.rows.len() * (32 + usize::from(part.rows.arity()) * 8)).sum::<usize>() + 256
+    relation.parts().iter().map(|part| part.rows.bytes()).sum::<usize>() + 256
 }
 
 /// Makes in `session` the events `events`, recorded in a session that shares

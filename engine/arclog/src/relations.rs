@@ -1,9 +1,10 @@
 //! Rows, relations and their indexes.
 //!
 //! A relation is a set of rows of one arity. A body's relation is held as
-//! its parts, each stored row by row with a hash set over the rows. An index
-//! is a trie over the columns in one order, built on first use in the order
-//! that a clause's variable order asks for, and kept with the relation.
+//! its parts, each stored row after row in one array with a hash table of
+//! row numbers over it. An index is a trie over the columns in one order, as
+//! sorted arrays, built on first use in the order that a clause's variable
+//! order asks for, and kept with the relation.
 //!
 //! A relation is a set: each function here that gives its rows gives them
 //! in an order of encodings and no order of the content.
@@ -27,12 +28,64 @@ pub struct ColumnGroup {
     pub len: u16,
 }
 
-/// A set of rows of one arity, stored row by row with a hash set over the
-/// rows. Its clones share its rows until one of them takes a row.
+/// A set of rows of one arity, stored row after row in one array with a hash
+/// table of row numbers over it. Its clones share its rows until one of them
+/// takes a row.
 #[derive(Clone, Debug, Default)]
 pub struct RowSet {
     arity: u16,
-    rows: std::sync::Arc<StableHashSet<Row>>,
+    rows: std::sync::Arc<Rows>,
+}
+
+/// The rows of a [`RowSet`] in the order they were first inserted.
+#[derive(Clone, Debug, Default)]
+struct Rows {
+    /// The values of the rows, row after row.
+    values: Vec<TermId>,
+    count: u32,
+    /// An open-addressing table of 1 + a row's number, 0 in an empty slot.
+    /// Its length is 0 or a power of two.
+    slots: Box<[u32]>,
+}
+
+/// The largest share of a [`Rows`] table's slots in use, as a fraction.
+const SLOTS_USED: (usize, usize) = (3, 4);
+
+fn row_hash(row: &[TermId]) -> usize {
+    let mut hash = 0x9E37_79B9_7F4A_7C15_u64;
+    for value in row {
+        hash = (hash.rotate_left(5) ^ u64::from(value.encoding())).wrapping_mul(0x517C_C1B7_2722_0A95);
+    }
+    (hash ^ (hash >> 32)) as usize
+}
+
+impl Rows {
+    fn row(&self, number: u32, arity: usize) -> &[TermId] {
+        &self.values[number as usize * arity..(number as usize + 1) * arity]
+    }
+
+    /// The slot that holds `row`, or the empty slot where it would go. The
+    /// table has an empty slot.
+    fn slot(&self, row: &[TermId]) -> usize {
+        let mask = self.slots.len() - 1;
+        let mut at = row_hash(row) & mask;
+        while self.slots[at] != 0 && self.row(self.slots[at] - 1, row.len()) != row {
+            at = (at + 1) & mask;
+        }
+        at
+    }
+
+    fn grow(&mut self, arity: usize) {
+        self.slots = vec![0; (self.slots.len() * 2).max(8)].into();
+        for number in 0..self.count {
+            let at = self.slot(self.row(number, arity));
+            self.slots[at] = number + 1;
+        }
+    }
+
+    fn bytes(&self) -> usize {
+        (self.values.capacity() + self.slots.len()) * 4
+    }
 }
 
 impl RowSet {
@@ -49,28 +102,52 @@ impl RowSet {
     /// Adds `row`. The row's length is the set's arity.
     pub fn insert(&mut self, row: Row) -> bool {
         assert_eq!(row.len(), usize::from(self.arity), "a row of the set's arity");
-        std::sync::Arc::make_mut(&mut self.rows).insert(row)
+        let rows = std::sync::Arc::make_mut(&mut self.rows);
+        if (rows.count as usize + 1) * SLOTS_USED.1 > rows.slots.len() * SLOTS_USED.0 {
+            rows.grow(row.len());
+        }
+        let at = rows.slot(&row);
+        if rows.slots[at] != 0 {
+            return false;
+        }
+        rows.values.extend_from_slice(&row);
+        rows.count = rows.count.checked_add(1).expect("a set of fewer than 2^32 rows");
+        rows.slots[at] = rows.count;
+        true
     }
 
     /// Whether the set holds `row`.
     pub fn contains(&self, row: &[TermId]) -> bool {
-        self.rows.contains(row)
+        !self.rows.slots.is_empty() && row.len() == usize::from(self.arity) && self.rows.slots[self.rows.slot(row)] != 0
     }
 
-    /// Each row of the set, in an order of encodings and no order of the
-    /// content.
+    /// Each row of the set, in the order of their first insertion, which is
+    /// an order of encodings and no order of the content.
     pub fn rows(&self) -> impl Iterator<Item = &[TermId]> + '_ {
-        self.rows.iter().map(|row| &**row)
+        let arity = usize::from(self.arity);
+        (0..self.rows.count).map(move |number| self.rows.row(number, arity))
     }
 
     /// The count of rows.
     pub fn len(&self) -> usize {
-        self.rows.len()
+        self.rows.count as usize
     }
 
     /// Whether the set holds no row.
     pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
+        self.rows.count == 0
+    }
+
+    /// The heap bytes of the rows.
+    pub fn bytes(&self) -> usize {
+        self.rows.bytes()
+    }
+
+    /// Gives back the spare capacity of the rows, where no clone shares them.
+    fn shrink(&mut self) {
+        if let Some(rows) = std::sync::Arc::get_mut(&mut self.rows) {
+            rows.values.shrink_to_fit();
+        }
     }
 
     /// The identity of the rows this set shares with its clones: two sets
@@ -81,12 +158,11 @@ impl RowSet {
     }
 
     /// Whether `other` holds its rows as this set does: the same rows in the
-    /// same order, in a hash set of the same capacity, so that each read of
-    /// either, and each set made from a clone of either by the same changes,
-    /// gives the same rows in the same order.
+    /// same order, so that each read of either, and each set made from a
+    /// clone of either by the same changes, gives the same rows in the same
+    /// order.
     pub(crate) fn laid_out_as(&self, other: &RowSet) -> bool {
-        std::sync::Arc::ptr_eq(&self.rows, &other.rows)
-            || (self.arity == other.arity && self.rows.len() == other.rows.len() && self.rows.capacity() == other.rows.capacity() && self.rows.iter().eq(other.rows.iter()))
+        std::sync::Arc::ptr_eq(&self.rows, &other.rows) || (self.arity == other.arity && self.rows.count == other.rows.count && self.rows.values == other.rows.values)
     }
 }
 
@@ -121,6 +197,9 @@ pub struct Relation {
     /// The indexes built so far, one per column order, each added on its
     /// first use and kept, shared by the clones of the relation.
     indexes: std::sync::Arc<std::sync::RwLock<StableHashMap<ColumnOrder, std::sync::Arc<Index>>>>,
+    /// The bytes of the indexes built so far, shared by the clones of the
+    /// relation.
+    index_bytes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     /// The rows hash, computed on first use and shared by the clones of the
     /// relation.
     rows_hash: std::sync::Arc<std::sync::OnceLock<StableHash>>,
@@ -132,6 +211,13 @@ pub struct Relation {
 pub(crate) struct StorageTag(std::sync::Weak<std::sync::OnceLock<StableHash>>);
 
 impl StorageTag {
+    /// The bytes a tag keeps: its own, and the allocation of the rows hash
+    /// that the tag points at, its two counts and the hash's cell, which
+    /// stays until the tag goes, also after the last relation on that storage
+    /// goes.
+    pub(crate) const BYTES: usize =
+        std::mem::size_of::<StorageTag>() + 2 * std::mem::size_of::<usize>() + std::mem::size_of::<std::sync::OnceLock<StableHash>>();
+
     /// Whether some relation still stands on this storage.
     pub(crate) fn live(&self) -> bool {
         self.0.strong_count() > 0
@@ -170,7 +256,9 @@ impl Relation {
             }
         }
         assert!(covered.iter().all(|&c| c), "parts that cover every column");
-        Relation { arity, parts, indexes: Default::default(), rows_hash: Default::default() }
+        let mut parts = parts;
+        parts.iter_mut().for_each(|part| part.rows.shrink());
+        Relation { arity, parts, indexes: Default::default(), index_bytes: Default::default(), rows_hash: Default::default() }
     }
 
     /// The hash of the relation's rows, which depends on its rows alone: no order
@@ -225,6 +313,20 @@ impl Relation {
         self.parts.iter().any(|part| part.rows.is_empty())
     }
 
+    /// The count of indexes built so far and their bytes, an estimate from
+    /// the capacity of each level's hash table.
+    pub fn index_bytes(&self) -> (usize, usize) {
+        (self.indexes.read().expect(UNPOISONED).len(), self.index_bytes.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// Drops the indexes built so far, in the clones of the relation too. An
+    /// index that an evaluation holds lives until that evaluation ends, and
+    /// the next read of an order builds its index again.
+    pub fn drop_indexes(&self) {
+        self.indexes.write().expect(UNPOISONED).clear();
+        self.index_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// The index of the relation in `order`, built on first use and kept
     /// with the relation.
     pub fn index(&self, order: &ColumnOrder) -> std::sync::Arc<Index> {
@@ -232,7 +334,14 @@ impl Relation {
             return index.clone();
         }
         let mut indexes = self.indexes.write().expect(UNPOISONED);
-        indexes.entry(order.clone()).or_insert_with(|| std::sync::Arc::new(self.build_index(order))).clone()
+        indexes
+            .entry(order.clone())
+            .or_insert_with(|| {
+                let index = self.build_index(order);
+                self.index_bytes.fetch_add(index.bytes(), std::sync::atomic::Ordering::Relaxed);
+                std::sync::Arc::new(index)
+            })
+            .clone()
     }
 
     /// The index of the relation in `order`. It reads the parts that hold a
@@ -241,34 +350,24 @@ impl Relation {
     /// projections onto the columns of `order`, so the walk takes one step
     /// for each combination of them.
     ///
-    /// Each level of the index holds its keys in the order of their first
-    /// insertion. A key of `order` first occurs in the walk of the product of
-    /// all parts where each part that holds no column of `order` stands at
-    /// its first row and each read part stands at its first row with that
-    /// key's projection. So the walk of the read parts' first projections
-    /// inserts the keys in the order in which the walk of all parts first
-    /// inserts them.
     fn build_index(&self, order: &ColumnOrder) -> Index {
         for column in &order.0 {
             assert!(column.0 < self.arity, "an order of the relation's columns");
         }
-        let mut index = Index::default();
-        if self.is_empty() {
-            return index;
+        if self.is_empty() || order.0.is_empty() {
+            return Index::default();
         }
         let read: Vec<&RelationPart> = self.parts.iter().filter(|part| part.columns.iter().any(|column| order.0.contains(column))).collect();
         let walked: Vec<WalkedPart> = match read[..] {
             [only] => vec![WalkedPart { columns: only.columns.clone(), rows: WalkedRows::All(&only.rows) }],
             _ => read.iter().map(|part| WalkedPart::new(part, order)).collect(),
         };
+        let mut flat: Vec<TermId> = Vec::new();
         let mut row = vec![TermId::from_encoding(0); usize::from(self.arity)];
         Self::each_row(&walked, &mut row, &mut |row| {
-            let mut level = &mut index;
-            for column in &order.0 {
-                level = level.children.entry(row[usize::from(column.0)]).or_default();
-            }
+            flat.extend(order.0.iter().map(|column| row[usize::from(column.0)]));
         });
-        index
+        Index::from_rows(&flat, order.0.len())
     }
 
     /// Calls `visit` on each combination of a row of each of `parts`, the
@@ -341,35 +440,108 @@ const UNPOISONED: &str = "an index lock that no panic of a builder poisoned";
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ColumnOrder(pub Box<[ColumnIndex]>);
 
-/// A trie over a relation's columns in one [`ColumnOrder`], as a hash trie of
-/// Free Join (<https://arxiv.org/abs/2301.10841>) is: each level maps a value
-/// of its column to the trie of the rows that hold it.
+/// A trie over a relation's columns in one [`ColumnOrder`], as sorted arrays
+/// with one level per column: a node of a level is a run of that level's
+/// keys, ascending by encoding, and a key's subtrie is a run of the next
+/// level's keys. A lookup is a binary search of a run.
 #[derive(Debug, Default)]
 pub struct Index {
-    children: StableHashMap<TermId, Index>,
+    levels: Box<[Level]>,
+}
+
+#[derive(Debug, Default)]
+struct Level {
+    /// The keys of the level's nodes, node after node.
+    keys: Box<[TermId]>,
+    /// For each key, the end of its subtrie in the next level's keys, which
+    /// the end for the key before it starts. The last level holds none.
+    ends: Box<[u32]>,
 }
 
 impl Index {
+    /// The trie of the rows of `flat`, each `width` values long and in the
+    /// index's column order.
+    fn from_rows(flat: &[TermId], width: usize) -> Index {
+        let count = flat.len() / width;
+        let row = |at: u32| &flat[at as usize * width..(at as usize + 1) * width];
+        let mut sorted: Vec<u32> = (0..u32::try_from(count).expect("an index of fewer than 2^32 rows")).collect();
+        sorted.sort_unstable_by(|&a, &b| row(a).iter().map(|v| v.encoding()).cmp(row(b).iter().map(|v| v.encoding())));
+        let mut keys: Vec<Vec<TermId>> = vec![Vec::new(); width];
+        let mut ends: Vec<Vec<u32>> = vec![Vec::new(); width - 1];
+        let mut previous: Option<&[TermId]> = None;
+        for &at in &sorted {
+            let this = row(at);
+            let first = previous.map_or(Some(0), |previous| (0..width).find(|&column| previous[column] != this[column]));
+            previous = Some(this);
+            let Some(first) = first else { continue };
+            for column in first..width {
+                keys[column].push(this[column]);
+                if column + 1 < width {
+                    ends[column].push(0);
+                }
+            }
+            for column in first.saturating_sub(1)..width - 1 {
+                *ends[column].last_mut().expect("a key at each level above the new key") = u32::try_from(keys[column + 1].len()).expect("an index of fewer than 2^32 keys");
+            }
+        }
+        ends.push(Vec::new());
+        Index { levels: keys.into_iter().zip(ends).map(|(keys, ends)| Level { keys: keys.into(), ends: ends.into() }).collect() }
+    }
+
+    /// The heap bytes of the trie.
+    fn bytes(&self) -> usize {
+        let levels = self.levels.len() * std::mem::size_of::<Level>();
+        levels + self.levels.iter().map(|level| level.keys.len() * std::mem::size_of::<TermId>() + level.ends.len() * 4).sum::<usize>()
+    }
+
+    /// The root of the trie.
+    pub fn root(&self) -> IndexNode<'_> {
+        IndexNode { index: self, depth: 0, start: 0, end: self.levels.first().map_or(0, |level| level.keys.len()) }
+    }
+}
+
+/// A node of an [`Index`]: the run of keys of one level.
+#[derive(Clone, Copy, Debug)]
+pub struct IndexNode<'i> {
+    index: &'i Index,
+    depth: usize,
+    start: usize,
+    end: usize,
+}
+
+impl<'i> IndexNode<'i> {
+    /// The subtrie of the key at `at`.
+    fn below(self, at: usize) -> IndexNode<'i> {
+        let ends = &self.index.levels[self.depth].ends;
+        let (start, end) = match ends.is_empty() {
+            true => (0, 0),
+            false => (at.checked_sub(1).map_or(0, |before| ends[before] as usize), ends[at] as usize),
+        };
+        IndexNode { index: self.index, depth: self.depth + 1, start, end }
+    }
+
     /// The subtrie at `value` of the first column, or `None` where no row
     /// holds it.
-    pub fn child(&self, value: TermId) -> Option<&Index> {
-        self.children.get(&value)
+    pub fn child(self, value: TermId) -> Option<IndexNode<'i>> {
+        let keys = &self.index.levels.get(self.depth)?.keys[self.start..self.end];
+        let at = keys.binary_search_by_key(&value.encoding(), |key| key.encoding()).ok()?;
+        Some(self.below(self.start + at))
     }
 
     /// Each value at this level, with its subtrie, for a join that walks
-    /// the level, in an order of encodings and no order of the content.
-    pub fn entries(&self) -> impl Iterator<Item = (TermId, &Index)> + '_ {
-        self.children.iter().map(|(&value, child)| (value, child))
+    /// the level, ascending by encoding.
+    pub fn entries(self) -> impl Iterator<Item = (TermId, IndexNode<'i>)> {
+        (self.start..self.end).map(move |at| (self.index.levels[self.depth].keys[at], self.below(at)))
     }
 
     /// The count of values at this level.
-    pub fn len(&self) -> usize {
-        self.children.len()
+    pub fn len(self) -> usize {
+        self.end - self.start
     }
 
     /// Whether no value stands at this level.
-    pub fn is_empty(&self) -> bool {
-        self.children.is_empty()
+    pub fn is_empty(self) -> bool {
+        self.start == self.end
     }
 }
 

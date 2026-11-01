@@ -29,7 +29,7 @@ use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::program::ConstraintOp;
 use crate::registry::{LibName, Registry};
-use crate::relations::{ColumnIndex, ColumnOrder, Index, Relation, RelationPart, Row, RowSet};
+use crate::relations::{ColumnIndex, ColumnOrder, Index, IndexNode, Relation, RelationPart, Row, RowSet};
 use crate::session::{Counts, TaskSession};
 use crate::terms::{Term, TermId};
 use crate::types::ValueType;
@@ -896,12 +896,12 @@ impl<'c> Search<'c> {
     fn run(mut self, projected: &[Variable], budget: &mut Budget<'_>) -> Result<RowSet, ReachedBound> {
         let mut rows = RowSet::empty(projected.len() as u16);
         let plan = self.plan;
-        let mut cursors: Vec<(&Index, usize)> = Vec::with_capacity(plan.atoms.len());
+        let mut cursors: Vec<(IndexNode<'_>, usize)> = Vec::with_capacity(plan.atoms.len());
         for atom in &plan.atoms {
             if atom.empty {
                 return Ok(rows);
             }
-            let mut at: &Index = &atom.index;
+            let mut at = atom.index.root();
             let mut depth = 0;
             while let Some(&argument) = atom.levels.get(depth) {
                 let term = match argument {
@@ -933,7 +933,7 @@ impl<'c> Search<'c> {
         &mut self,
         rank: usize,
         atoms: &'t [AtomTrie],
-        cursors: &mut Vec<(&'t Index, usize)>,
+        cursors: &mut Vec<(IndexNode<'t>, usize)>,
         projected: &[Variable],
         rows: &mut RowSet,
         budget: &mut Budget<'_>,
@@ -975,7 +975,7 @@ impl<'c> Search<'c> {
         let mut passed = false;
         for value in candidates {
             self.tried.count(budget, 1)?;
-            let saved: Vec<(usize, (&'t Index, usize))> = sources.iter().map(|&a| (a, cursors[a])).collect();
+            let saved: Vec<(usize, (IndexNode<'t>, usize))> = sources.iter().map(|&a| (a, cursors[a])).collect();
             let mut held = true;
             for &a in &sources {
                 while held && at(&atoms[a], cursors[a].1) {

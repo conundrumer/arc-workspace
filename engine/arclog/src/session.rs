@@ -135,9 +135,9 @@ impl Drop for ThreadRecording<'_> {
 
 #[derive(Debug, Default)]
 struct CacheState {
-    entries: StableHashMap<ResultKey, Entry>,
+    entries: StableHashMap<Arc<ResultKey>, Entry>,
     /// The key of each entry by the tick of its last use.
-    recency: BTreeMap<u64, ResultKey>,
+    recency: BTreeMap<u64, Arc<ResultKey>>,
     clock: u64,
     relations: StableHashMap<RelationId, HeldRelation>,
     /// The ids of the held relations by the hash of their rows.
@@ -148,6 +148,9 @@ struct CacheState {
     rows: StableHashMap<SharedRows, (usize, usize)>,
     /// The bytes of the held relations, of their rows and of the entries.
     bytes: usize,
+    /// The bytes of the held relations' indexes, as of the last eviction.
+    /// An index is built after its relation is held, so an eviction sums them.
+    index_bytes: usize,
     /// Whether the bytes have passed the bound of an eviction.
     evicted: bool,
 }
@@ -172,7 +175,8 @@ struct HeldRelation {
     /// relation's, at most [`SAME_STORAGE`] of them, so that a later lookup
     /// of one of them compares no rows. No relation with these rows has
     /// another id while this one is held, so a lookup gives the id it would
-    /// give by comparing. The tags keep no rows and count in no bytes.
+    /// give by comparing. The tags keep no rows, and `bytes` counts each of
+    /// them at [`StorageTag::BYTES`].
     same: Vec<StorageTag>,
 }
 
@@ -181,6 +185,11 @@ struct HeldRelation {
 const SAME_STORAGE: usize = 8;
 
 const UNPOISONED: &str = "a result cache that no panic poisoned";
+
+/// An eviction drops the indexes of a relation whose indexes pass this
+/// fraction of its bound before it drops an entry. Provisional: one soak run
+/// on one task, where one relation's indexes held most of the bound.
+const INDEX_SHARE: usize = 16;
 
 impl ResultCache {
     /// The value cached under `key`, if any. A value found counts as a use
@@ -389,7 +398,16 @@ impl ResultCache {
     /// The bytes the cache holds, which count toward the task session's
     /// bound.
     pub fn bytes(&self) -> usize {
-        self.state.lock().expect(UNPOISONED).bytes
+        let state = self.state.lock().expect(UNPOISONED);
+        state.bytes + state.index_bytes
+    }
+
+    /// The cache's entries, its relations, the bytes it counts, the indexes
+    /// of its relations and their bytes, which it does not count.
+    pub fn stats(&self) -> (usize, usize, usize, usize, usize) {
+        let state = self.state.lock().expect(UNPOISONED);
+        let (indexes, index_bytes) = state.relations.values().map(|held| held.relation.index_bytes()).fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+        (state.entries.len(), state.relations.len(), state.bytes, indexes, index_bytes)
     }
 
     /// The count of requests that found their entry in the cache.
@@ -506,11 +524,15 @@ impl CacheState {
         let id = self.find(hash, relation)?;
         let held = self.relations.get_mut(&id).expect("a held relation");
         if !held.relation.shares_storage(relation) && !held.same.iter().any(|tag| relation.has_storage(tag)) {
+            let before = held.same.len() * StorageTag::BYTES;
             held.same.retain(StorageTag::live);
             if held.same.len() == SAME_STORAGE {
                 held.same.remove(0);
             }
             held.same.push(relation.storage_tag());
+            let after = held.same.len() * StorageTag::BYTES;
+            held.bytes = held.bytes - before + after;
+            self.bytes = self.bytes - before + after;
         }
         Some(id)
     }
@@ -521,7 +543,7 @@ impl CacheState {
         let bytes = relation_bytes(&relation);
         self.bytes += bytes;
         for part in relation.parts() {
-            let (holders, rows) = self.rows.entry(part.rows.shared()).or_insert((0, rows_bytes(part)));
+            let (holders, rows) = self.rows.entry(part.rows.shared()).or_insert((0, part.rows.bytes()));
             if *holders == 0 {
                 self.bytes += *rows;
             }
@@ -550,6 +572,7 @@ impl CacheState {
         }
         self.bytes += entry_bytes(&key);
         let used = self.tick();
+        let key = Arc::new(key);
         self.recency.insert(used, key.clone());
         self.entries.insert(key, Entry { value, rows, used });
     }
@@ -574,6 +597,7 @@ impl CacheState {
     fn drop_relation(&mut self, id: RelationId) {
         let held = self.relations.remove(&id).expect("a held relation");
         self.bytes -= held.bytes;
+        self.index_bytes = self.index_bytes.saturating_sub(held.relation.index_bytes().1);
         for part in held.relation.parts() {
             let shared = part.rows.shared();
             let (holders, rows) = self.rows.get_mut(&shared).expect("the rows of a held relation's part");
@@ -591,7 +615,8 @@ impl CacheState {
     }
 
     fn evict(&mut self, bound: usize) {
-        if self.bytes <= bound {
+        self.index_bytes = self.relations.values().map(|held| held.relation.index_bytes().1).sum();
+        if self.bytes + self.index_bytes <= bound {
             return;
         }
         self.evicted = true;
@@ -599,7 +624,18 @@ impl CacheState {
         for id in unheld {
             self.drop_relation(id);
         }
-        while self.bytes > bound {
+        // An index is built again from its rows with no evaluation, so the
+        // largest go before any entry.
+        let mut indexed: Vec<(usize, RelationId)> = self.relations.iter().map(|(&id, held)| (held.relation.index_bytes().1, id)).collect();
+        indexed.sort_unstable_by_key(|&(bytes, id)| std::cmp::Reverse((bytes, id.0)));
+        for (bytes, id) in indexed {
+            if bytes < bound / INDEX_SHARE || self.bytes + self.index_bytes <= bound {
+                break;
+            }
+            self.relations[&id].relation.drop_indexes();
+            self.index_bytes = self.index_bytes.saturating_sub(bytes);
+        }
+        while self.bytes + self.index_bytes > bound {
             let Some((_, key)) = self.recency.pop_first() else { break };
             let entry = self.entries.remove(&key).expect("an entry for each recency tick");
             self.bytes -= entry_bytes(&key);
@@ -677,15 +713,15 @@ fn relation_bytes(relation: &Relation) -> usize {
         + relation.parts().iter().map(|part| std::mem::size_of::<RelationPart>() + std::mem::size_of_val(&*part.columns)).sum::<usize>()
 }
 
-/// The bytes of the rows of `part`.
-fn rows_bytes(part: &RelationPart) -> usize {
-    part.rows.len() * (std::mem::size_of::<crate::relations::Row>() + usize::from(part.rows.arity()) * std::mem::size_of::<crate::terms::TermId>())
-}
-
 /// The bytes of an entry beside the relations it holds.
 fn entry_bytes(key: &ResultKey) -> usize {
+    let clause = match &key.clause {
+        ResultContent::Form(content) | ResultContent::Node(content) => content.bytes(),
+        ResultContent::Body(ir) => std::mem::size_of_val(&*ir.variables) + std::mem::size_of_val(&*ir.nodes) + std::mem::size_of_val(&*ir.columns),
+    };
     std::mem::size_of::<ResultKey>()
         + std::mem::size_of::<Entry>()
+        + clause
         + std::mem::size_of_val(&*key.reads)
         + std::mem::size_of_val(&*key.parameters)
 }
@@ -775,6 +811,12 @@ impl TaskSession {
     /// The domains that the liveness walks of this session's decodes keep.
     pub(crate) fn det_probes(&self) -> &OnceLock<crate::decode::det_memo::ProbeMemo> {
         &self.det_probes
+    }
+
+    /// What the liveness walks' memo counts ([`crate::decode::det_memo::ProbeMemo::stats`])
+    /// and what the table walks' memo counts, each zero where no walk made it.
+    pub fn memo_stats(&self) -> ((usize, usize, usize, usize), (usize, usize)) {
+        (self.det_probes.get().map_or((0, 0, 0, 0), |memo| memo.stats()), self.det_domains.get().map_or((0, 0), |memo| memo.stats()))
     }
 
     /// The domains that the table walks of this session's decodes keep.

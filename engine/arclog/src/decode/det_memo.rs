@@ -52,13 +52,14 @@ use crate::session::{same_rows, ResultKey, TaskSession};
 use crate::types::ValueType;
 use crate::types::GraphRelation;
 
-/// The most bytes that the kept domains hold, by [`Recorded::bytes`]; past
-/// it, the walks keep none of those kept so far.
-const KEPT_BYTES: usize = 1 << 28;
+/// The fraction of the session's byte bound that the kept domains may hold,
+/// by [`Recorded::bytes`]; past it, the walks keep none of those kept so far.
+const KEPT_SHARE: usize = 16;
 
-/// The most bytes of the shared intern table; past it, the next walk starts
-/// a new intern table, and no domain kept with the old one is taken.
-const TERM_BYTES: usize = 1 << 28;
+/// The fraction of the session's byte bound that the shared intern table may
+/// hold; past it, the next walk starts a new intern table, and no domain kept
+/// with the old one is taken.
+const TERM_SHARE: usize = 16;
 
 /// The most computations kept for one key, each with its own lookups.
 const PER_KEY: usize = 4;
@@ -82,6 +83,8 @@ pub(crate) struct Scope {
 /// The domains kept for the liveness walks of one task session.
 pub(crate) struct ProbeMemo {
     scope: Scope,
+    kept_bytes: usize,
+    term_bytes: usize,
     kept: Mutex<Kept>,
     parts: Mutex<StableHashMap<PartKey, PartWalk>>,
 }
@@ -170,7 +173,17 @@ impl ProbeMemo {
     pub(crate) fn new(scope: Scope, session: &TaskSession) -> Self {
         let terms = TaskSession::new(session.bound, session.caps);
         let kept = Kept { generation: 0, terms, domains: StableHashMap::default(), relations: StableHashMap::default(), bytes: 0 };
-        ProbeMemo { scope, kept: Mutex::new(kept), parts: Mutex::default() }
+        let bytes = session.bound.bytes;
+        ProbeMemo { scope, kept_bytes: bytes / KEPT_SHARE, term_bytes: bytes / TERM_SHARE, kept: Mutex::new(kept), parts: Mutex::default() }
+    }
+
+    /// The bytes the memo counts, its count of relations, the bytes of their
+    /// indexes, and the bytes of the shared intern table.
+    pub(crate) fn stats(&self) -> (usize, usize, usize, usize) {
+        let kept = self.kept.lock().expect("the kept domains are not poisoned");
+        let relations = kept.relations.values().flatten();
+        let intern = kept.terms.intern.read().expect("an intern table that no panic poisoned").bytes();
+        (kept.bytes, kept.relations.values().map(Vec::len).sum(), relations.map(|relation| relation.index_bytes().1).sum(), intern)
     }
 
     /// What the walk of `key` gave under `scope`, where the memo keeps it.
@@ -199,7 +212,7 @@ impl ProbeMemo {
             return None;
         }
         let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
-        if kept.terms.intern.read().expect("an intern table that no panic poisoned").bytes() > TERM_BYTES {
+        if kept.terms.intern.read().expect("an intern table that no panic poisoned").bytes() > self.term_bytes {
             kept.generation += 1;
             kept.terms = TaskSession::new(session.bound, session.caps);
             kept.clear();
@@ -221,10 +234,10 @@ impl ProbeMemo {
     fn keep(&self, generation: u64, key: Key, computed: Computed) -> Option<Domain> {
         let bytes = computed.events.iter().map(Recorded::bytes).sum::<usize>() + 1024;
         let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
-        if kept.generation != generation || bytes > KEPT_BYTES {
+        if kept.generation != generation || bytes > self.kept_bytes {
             return None;
         }
-        if kept.bytes + bytes > KEPT_BYTES {
+        if kept.bytes + bytes > self.kept_bytes {
             kept.clear();
         }
         let kept = &mut *kept;
@@ -409,7 +422,7 @@ impl Domains for ProbeDomains<'_> {
 /// The most bytes that the domains kept for a session's table walks hold,
 /// by [`Recorded::bytes`] and the estimate of each value's rows; past it,
 /// the walks keep none of those kept so far.
-const SESSION_KEPT_BYTES: usize = 1 << 26;
+const SESSION_KEPT_SHARE: usize = 64;
 
 /// The domains that the table walks of one task session's decodes compute
 /// in the session itself ([`super::Decoder::assigned`]), kept across those
@@ -433,6 +446,7 @@ const SESSION_KEPT_BYTES: usize = 1 << 26;
 /// Otherwise it computes the domain.
 pub(crate) struct SessionMemo {
     scope: Scope,
+    kept_bytes: usize,
     kept: Mutex<SessionKept>,
 }
 
@@ -451,8 +465,8 @@ impl std::fmt::Debug for SessionMemo {
 impl SessionMemo {
     /// The memo of the table walks of a session under `scope`, with
     /// nothing kept.
-    pub(crate) fn new(scope: Scope) -> Self {
-        SessionMemo { scope, kept: Mutex::new(SessionKept::default()) }
+    pub(crate) fn new(scope: Scope, session: &TaskSession) -> Self {
+        SessionMemo { scope, kept_bytes: session.bound.bytes / SESSION_KEPT_SHARE, kept: Mutex::new(SessionKept::default()) }
     }
 
     /// The domains of `dets`, the `DET`s of `program` in the order of a
@@ -460,6 +474,12 @@ impl SessionMemo {
     /// serves another scope.
     pub(crate) fn domains<'p>(&'p self, scope: Scope, program: &CheckedProgram, dets: &'p [Det]) -> Option<SessionDomains<'p>> {
         (scope == self.scope).then(|| SessionDomains { memo: self, dets, keys: det_keys(program, dets) })
+    }
+
+    /// The bytes the memo counts and its count of domains.
+    pub(crate) fn stats(&self) -> (usize, usize) {
+        let kept = self.kept.lock().expect("the kept domains are not poisoned");
+        (kept.bytes, kept.domains.values().map(Vec::len).sum())
     }
 
     fn computed(&self, key: &Key) -> Vec<Arc<Computed>> {
@@ -473,10 +493,10 @@ impl SessionMemo {
         };
         let bytes = computed.events.iter().map(Recorded::bytes).sum::<usize>() + values + 1024;
         let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
-        if bytes > SESSION_KEPT_BYTES {
+        if bytes > self.kept_bytes {
             return;
         }
-        if kept.bytes + bytes > SESSION_KEPT_BYTES {
+        if kept.bytes + bytes > self.kept_bytes {
             *kept = SessionKept::default();
         }
         let computations = kept.domains.entry(key).or_default();

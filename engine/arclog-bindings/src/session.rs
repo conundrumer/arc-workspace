@@ -59,6 +59,20 @@ impl PySession {
         Ok(PySession { data: Arc::new(SessionData { task: Arc::clone(&task.data), session, settings, derived: Mutex::default() }), program_replay: Mutex::default() })
     }
 
+    /// The result cache's entries, relations, counted bytes, indexes and
+    /// index bytes, and the intern table's bytes.
+    fn cache_stats(&self, py: Python<'_>) -> (usize, usize, usize, usize, usize, usize) {
+        py.detach(|| {
+            let (entries, relations, bytes, indexes, index_bytes) = self.data.session.results.stats();
+            (entries, relations, bytes, indexes, index_bytes, self.data.session.intern.read().expect("an intern table outside a panic").bytes())
+        })
+    }
+
+    /// What the walk memos count, as `TaskSession::memo_stats` gives it.
+    fn memo_stats(&self, py: Python<'_>) -> ((usize, usize, usize, usize), (usize, usize)) {
+        py.detach(|| self.data.session.memo_stats())
+    }
+
     /// End a complete-program round-trip batch. No parsed/checkpoint state
     /// from the preceding case remains rooted by this session.
     fn reset_program_replay(&self,py:Python<'_>) {
