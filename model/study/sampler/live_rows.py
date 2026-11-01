@@ -2,7 +2,7 @@
 """Rows for the rel steer and the choice steer from gold's walk through live.py, in the files that relcheap.py and choicecheap.py read.
 
   [SAMPLER_CORPUS=VIEW/] <runtime python> live_rows.py run --out DIR [--part train|test|all] [--models DIR | --models-fold TEMPLATE --folds N] [--orders N] [--jobs N]
-                                    [--scope parents|before] [--tasks FILE] [--limit N] [--leave-out FILE] [--gold-revision NAME]
+                                    [--scope parents|before|cut] [--tasks FILE] [--limit N] [--leave-out FILE] [--gold-revision NAME]
   <runtime python> live_rows.py folds --out DIR [--folds N] [--leave-out FILE]
 
 A row is the row that a steer scores at that pick of a draw, built by the Drawer's own function (sample2_col's rel_row, choice_consult_row and
@@ -18,7 +18,8 @@ file appears whole, by rename. A run skips each task whose file holds the sha256
 again, and a later run with a longer --tasks list adds to DIR. At its end a run rebuilds DIR/relrows.jsonl.zst, DIR/choices.jsonl.zst and DIR/tasks.jsonl from all of DIR/stems, in
 task order. Those are the files that the fits read. A run stops where DIR holds rows of other priors, another scope, other orders or another STEER_COVER: such rows need their own DIR.
 
-The scope of a form is its ancestors by reads (parents) or every gold form before it (before). A form's walk uses the priors of its task's fold, fit
+The scope of a form is its ancestors by reads (parents), every gold form before it in the text (before), or the forms before it in a random order of all the forms that keeps reads (cut), as
+live_priors.walk_counts draws the forms of a program, so that a form's place in gold's text is no part of its options. A form's walk uses the priors of its task's fold, fit
 without that fold's tasks and the leave-out tasks (`folds` writes the lists), so that P at a row is not fit on the row's own task. With --orders n, a form gives the rows of up to n random valid orders (body_order.py), each a walk that ends cleanly, with `order` 1 and up. A form that has no such order gives its written order, with `order` 0. The live draw's atoms have no order, so a fit reads no written order.
 
   scripts/run_heavy.py --cpus N --need soon <runtime python> -u live_rows.py run --out DIR --jobs N
@@ -155,11 +156,24 @@ def parents(lines, i):
     return sorted(got)
 
 
+def cut(lines, i, rng):
+    """The indexes, in order, of the forms that stand before form i in a random order of all the forms that keeps reads (a form comes after every form it reads), as live_priors.walk_counts
+    draws it. The OUT line is no form."""
+    forms = [j for j, x in enumerate(lines) if not x.startswith('(OUT')]
+    head = {NAME.search(lines[j])[0]: j for j in forms if NAME.search(lines[j])}
+    needs = {j: {head[n] for n in NAME.findall(lines[j]) if n in head and head[n] < j} for j in forms}
+    left, before = set(needs), []
+    while (j := rng.choice(sorted(k for k in left if not needs[k] & left))) != i:
+        left.remove(j)
+        before.append(j)
+    return before
+
+
 def form_rows(sampler, task, lines, i, sess, task_json, scope_mode, orders):
     """([(kind, row)], status) of the walks of form i: up to orders random valid orders, each a walk that ends cleanly, with `order` 1 and up. A form with no such order gives its
     written order, with `order` 0 and the reason in status['written']."""
     kind = lines[i].split()[0].lstrip('(')
-    keep = parents(lines, i) if scope_mode == 'parents' else list(range(i))
+    keep = parents(lines, i) if scope_mode == 'parents' else cut(lines, i, random.Random(M.seed_of(task, i, 'cut'))) if scope_mode == 'cut' else list(range(i))
     scope, target = [lines[j] for j in keep], lines[i]
     t0 = time.time()
     out, status = [], dict(i=i, kind=kind, scope=len(scope), orders=0)
@@ -332,7 +346,7 @@ def main():
     ap.add_argument('--models', default='', help='a models directory (live_priors.pkl) for every task')
     ap.add_argument('--models-fold', default='', help='a models directory with {} for the task fold, as in DIR/fold{}')
     ap.add_argument('--folds', type=int, default=FOLDS)
-    ap.add_argument('--scope', default='parents', choices=('parents', 'before'))
+    ap.add_argument('--scope', default='parents', choices=('parents', 'before', 'cut'))
     ap.add_argument('--orders', type=int, default=1, help='random valid orders of each form')
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--tasks', default='', help='a file of tasks, one a line, in place of the corpus')
