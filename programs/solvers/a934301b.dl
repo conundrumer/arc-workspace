@@ -5,13 +5,9 @@
 //  rectangles, each made of cells of 1 and params.mark cells, and no two
 //  rectangles touch, so each rectangle is one connected component of
 //  non-params.background cells
-// @rule count-marks: an object is one rectangle, and its mark count is the
-//  number of its params.mark cells
-//     @approximated: an object is a 4-connected component of
-//      non-params.background cells, and its mark count is the number of its
-//      params.mark cells
-//     @witness touching-rectangles: borderline other
-//         @relaxed rectangles
+// @rule count-marks: an object is a 4-connected component of
+//  non-params.background cells, and its mark count is the number of its
+//  params.mark cells
 // @rule erase-crowded: an object whose mark count exceeds params.max_marks
 //  becomes params.background
 // @rule keep-rest: every other cell of the output is the input cell

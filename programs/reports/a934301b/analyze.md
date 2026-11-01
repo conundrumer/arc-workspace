@@ -2,12 +2,9 @@
 
 ## Concept
 - Fits every pair: on each train and test input, erasing each 4-adjacent object of non-0 cells that holds more than one 8 gives the paired output.
-- `touching-rectangles`, verdict `other`: two rectangles that share an edge, each holding one 8.
-    - It breaks the scene claim `rectangles`: no two rectangles touch.
-    - It stands at the stored assignment.
-    - Plausibility `borderline`. It breaks this invariant of the inputs: every rectangle has a 0 cell between it and every other rectangle.
-    - Every case reads the two rectangles as one component holding two marks, and erases both. The generator's rule erases a rectangle that holds more than one mark, so both rectangles stay and the output is the input.
-- The generator applies the rule per rectangle: a rectangle that holds more than one `mark` cell becomes `background`. The concept's `count-marks` rule counts per connected component instead, which approximates that rule only where no two rectangles touch.
+- Every rectangle is one connected component of non-`background` cells, so the concept's per-component `count-marks` rule is the generator's rule.
+    - The four inputs hold 25 components, each a solid rectangle, and each two rectangles on an input have an empty row or column between them.
+    - At the rectangles' sizes, placement that forbids only overlap gives no shared edge on all four inputs with odds of about 1 in 10 million.
 
 ## Choice points
 - `object adjacency`: which cells join one object
@@ -43,7 +40,7 @@
 - none
 
 ## Not formed
-- Erasing per rectangle, where touching rectangles form one component: a component made of edge-touching rectangles of one `body` color does not fix how it divides into rectangles, so the rule has no relational form over such a component. `touching-rectangles` records the generator's output.
+- Erasing per rectangle, where touching rectangles form one component: a component made of edge-touching rectangles of one `body` color does not fix how it divides into rectangles, and two divisions of one component can give different outputs, so the input gives no one output. The scene claim `rectangles` rules such an input out.
 - Copying the kept objects onto a blank grid: no non-`background` cell lies outside an object, so this model is equivalent to the concept.
 - Erasing by mark density (marks per object cell): a ratio counts nothing the task has, so the claim has no relational form. It also fails Fit at test0: the object at rows 8–11, cols 1–6 holds 2 marks in 24 cells and is erased, while the train1 object at rows 2–4, cols 0–3 holds 1 in 12 and stays.
 - `body` derived under `$NonBody`: on an input alone, no proposer gives 1. SharedColor gives 0, 1 and 8, and DominantColor gives 0.
