@@ -184,7 +184,8 @@ ATOM_TRIES = 8
 CHEAP_TRIES = 24  # redraws for a repeated atom or an unjoined one (a few ms each), apart from ATOM_TRIES
 SP_CUT_EXEMPT = frozenset()  # SP keys that fire on a gold clause cut after some atom: the per-atom check leaves them out
 MAX_FIELDS = 6
-COMPLETE = os.environ.get('COMPLETE', '1') == '1'
+IDENT_SOURCE = os.environ.get('ARCLOG_IDENT_SOURCE', '') not in ('', '0')  # the engine gives each Ident column one source, so the decoder says which labels a column admits
+COMPLETE =os.environ.get('COMPLETE', '1') == '1'
 COMPLETE_BUDGET = 80
 REACH = os.environ.get('REACH', '1') == '1'
 # What reachable()'s cache is keyed by, beside (relation, negation, phase, last column, need, column): 'state' the frontier root (the clause's tokens before
@@ -1562,10 +1563,14 @@ class Drawer:
     def joinable(self, root, opts, scope_types, key):
         """The relation tokens among opts with some column whose binder can be an existing label: by the column types
         (featlib's for a lib, macro or fact relation, the prefix tables' for a declared one) against the types in scope,
-        else (a column with no one type) by the decoder one step ahead, cached by (token, types in scope)."""
+        else (a column with no one type) by the decoder one step ahead, cached by (token, types in scope). With Ident sources on,
+        a relation with an Ident column goes to the decoder too while the scope holds an Ident, because the types alone do not
+        tell the sources apart: its cache key adds key (the clause's tokens), and the step ahead also looks at the first token
+        of each field of a record column."""
         fr = self.fr
         out, pending = set(), []
         tset = frozenset(scope_types)
+        by_source = IDENT_SOURCE and 'Ident' in tset
         for o in opts:
             if o == M.NOT or o in M.CMP:
                 continue
@@ -1573,13 +1578,15 @@ class Drawer:
                 ts = self.decl_types.get(M.slot_no(self.V.name(o)))
             else:
                 ts = self.types.get(self.V.name(o)) if fr.KIND[o] in ('lib relation', 'relation macro', 'fact relation') else None
-            if ts is not None:
+            if ts is not None and by_source and any(str(t) == 'Ident' for t in ts):
+                pending.append((o, True))
+            elif ts is not None:
                 if compat_any(tset, tuple(ts)):
                     out.add(o)
             else:
-                pending.append(o)
-        for o in pending:
-            ck = (o, tset)
+                pending.append((o, False))
+        for o, sourced in pending:
+            ck = (o, tset, key) if sourced else (o, tset)
             hit = self.jcache.get(ck)
             if hit is None:
                 hit = False
@@ -1589,13 +1596,28 @@ class Drawer:
                     for col in fr.admitted(c):
                         v = fr.child(c, col)
                         self.lookahead_forks += 1
-                        if v is not None and any(True for _ in fr.admitted(v, lambda t: fr.KIND[t] != 'label')):
+                        if v is not None and self.label_ahead(v, sourced):
                             hit = True
                             break
                 self.jcache[ck] = hit
             if hit:
                 out.add(o)
         return out
+
+    def label_ahead(self, v, fields):
+        """Whether the decoder admits a label at node v, a column's value: directly, or, where fields, as the value of a
+        field of the column, at the first token of the field's site."""
+        fr = self.fr
+        no_label = lambda t: fr.KIND[t] != 'label'  # noqa: E731
+        if any(True for _ in fr.admitted(v, no_label)):
+            return True
+        if fields:
+            for f in fr.admitted(v, lambda t: fr.KIND[t] != 'column'):
+                w = fr.child(v, f)
+                self.lookahead_forks += 1
+                if w is not None and any(True for _ in fr.admitted(w, no_label)):
+                    return True
+        return False
 
     def has_type(self, o, types):
         """Whether relation token o has a column of one of the types (by the prefix tables for a declared relation and
