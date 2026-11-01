@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Rows for the rel steer and the choice steer from gold's walk through live.py, in the files that relcheap.py and choicecheap.py read.
 
-  <runtime python> live_rows.py run --out DIR [--part train|test|all] [--models DIR | --models-fold TEMPLATE --folds N] [--orders N] [--jobs N]
-                                    [--scope parents|before] [--tasks FILE] [--limit N] [--leave-out FILE]
+  [SAMPLER_CORPUS=VIEW/] <runtime python> live_rows.py run --out DIR [--part train|test|all] [--models DIR | --models-fold TEMPLATE --folds N] [--orders N] [--jobs N]
+                                    [--scope parents|before] [--tasks FILE] [--limit N] [--leave-out FILE] [--gold-revision NAME]
   <runtime python> live_rows.py folds --out DIR [--folds N] [--leave-out FILE]
 
 A row is the row that a steer scores at that pick of a draw, built by the Drawer's own function (sample2_col's rel_row, choice_consult_row and
@@ -10,8 +10,12 @@ stop_consult_row), with gold's pick as `gold`. Gold's clause is walked as or_q.p
 wherever the walk consults a steer: the atoms of a RULE's or a DET's body, of an INIT's key and ports, of the branches of an OR (nested ones
 too) and of an ALL, with the stops after the atoms of a body. A row has `where` ('body', 'branch', 'nested', 'ALL'), `place` ('RULE', 'DET', 'key',
 'port'), `kind` (the form's), `order` and `point` ([form index, 0]). STEER_COVER is 'init,branch' here, so that the rows of an INIT body and of a
-later branch's first atom exist; a draw consults them only under the same setting. Rows go to DIR/relrows.jsonl.zst and DIR/choices.jsonl.zst, and
-a task's status line to DIR/tasks.jsonl, which a restart reads to skip the tasks it holds.
+later branch's first atom exist; a draw consults them only under the same setting.
+
+A task's rows go to DIR/stems/<task>.jsonl.gz as soon as they exist, with its status on the first line and a line [k, row] for each row, where k is 'rel' or 'choice'. The
+file appears whole, by rename. A run skips each task whose file holds the sha256 of the task's text in the corpus, so a restart skips the finished tasks, a task with new text runs
+again, and a later run with a longer --tasks list adds to DIR. At its end a run rebuilds DIR/relrows.jsonl.zst, DIR/choices.jsonl.zst and DIR/tasks.jsonl from all of DIR/stems, in
+task order. Those are the files that the fits read. A run stops where DIR holds rows of other priors, another scope, other orders or another STEER_COVER: such rows need their own DIR.
 
 The scope of a form is its ancestors by reads (parents) or every gold form before it (before). A form's walk uses the priors of its task's fold, fit
 without that fold's tasks and the leave-out tasks (`folds` writes the lists), so that P at a row is not fit on the row's own task. Order 0 is
@@ -26,6 +30,9 @@ os.environ['STEER_COVER'] = 'init,branch'  # sample2_col reads this when it is i
 
 import argparse
 import collections
+import glob
+import gzip
+import hashlib
 import json
 import multiprocessing
 import random
@@ -79,10 +86,59 @@ def task_list(a):
 
 def gold_lines(task):
     """The lines of the first gold program of the task in the corpus, less its OUT."""
-    import gzip
     with gzip.open(S.CORPUS + task + '/pairs.jsonl.gz', 'rt') as f:
         sexp = json.loads(f.readline())['gold_sexp']
     return [x for x in sexp.splitlines() if x.strip()]
+
+
+def text_sha(task):
+    return hashlib.sha256('\n'.join(gold_lines(task)).encode()).hexdigest()
+
+
+def stem_path(out, task):
+    return os.path.join(out, 'stems', task + '.jsonl.gz')
+
+
+def stem_status(path):
+    with gzip.open(path, 'rt') as f:
+        return json.loads(f.readline())
+
+
+def write_stem(out, status, rows):
+    """Writes a task's file: to a temporary name, then a rename, so a crash leaves the whole file or none."""
+    path = stem_path(out, status['task'])
+    tmp = path + '.tmp'
+    with open(tmp, 'wb') as raw:
+        with gzip.GzipFile(fileobj=raw, mode='wb', mtime=0) as z:
+            z.write((json.dumps(status) + '\n').encode())
+            for x in rows:
+                z.write((json.dumps(x) + '\n').encode())
+        raw.flush()
+        os.fsync(raw.fileno())
+    os.replace(tmp, path)
+
+
+def join(out):
+    """Rebuilds the fits' files of DIR from DIR/stems. The new files replace the old ones once they are whole. Returns the task count."""
+    tmp = os.path.join(out, 'join-tmp')
+    os.makedirs(tmp, exist_ok=True)
+    names = 'relrows.jsonl.zst', 'choices.jsonl.zst'
+    for n in names:
+        for p in (n, n + '.idx.jsonl'):
+            if os.path.exists(os.path.join(tmp, p)):
+                os.remove(os.path.join(tmp, p))
+    paths = sorted(glob.glob(os.path.join(out, 'stems', '*.jsonl.gz')))
+    with JsonlWriter(os.path.join(tmp, names[0])) as rel, JsonlWriter(os.path.join(tmp, names[1])) as ch, open(os.path.join(tmp, 'tasks.jsonl'), 'w') as sf:
+        for path in paths:
+            with gzip.open(path, 'rt') as f:
+                sf.write(f.readline())
+                for x in f:
+                    k, row = json.loads(x)
+                    (rel if k == 'rel' else ch).write(row)
+    for n in (*names, *(x + '.idx.jsonl' for x in names), 'tasks.jsonl'):
+        os.replace(os.path.join(tmp, n), os.path.join(out, n))
+    os.rmdir(tmp)
+    return len(paths)
 
 
 def parents(lines, i):
@@ -189,7 +245,7 @@ def task_rows(args):
         rows += got
         status['rows'] = dict(collections.Counter(k for k, _ in got))
         statuses.append(status)
-    return task, rows, statuses, round(time.time() - t0, 1), round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e9, 2)
+    return task, rows, statuses, round(time.time() - t0, 1), round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e9, 2), hashlib.sha256('\n'.join(lines).encode()).hexdigest()
 
 
 def task_rows_or_error(args):
@@ -207,52 +263,69 @@ def git(*cmd):
         return None
 
 
+def file_sha(path):
+    with open(path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def priors_sha(a):
+    """The sha256 of each priors file of the run."""
+    return sorted(file_sha(os.path.join(a.models_fold.format(i) if a.models_fold else a.models, 'live_priors.pkl')) for i in range(a.folds if a.models_fold else 1))
+
+
 def manifest(a, tasks, extra=None):
     m = dict(command=' '.join(sys.argv), commit=git('rev-parse', 'HEAD'), uncommitted=bool(git('status', '--porcelain', '--', HERE)),
-             task_set='corpus-v3mix tasks with gold, less the %d leave-out tasks of %s; part %s: %d tasks' % (len(set(open(a.leave_out).read().split())), a.leave_out, a.part, len(tasks)),
+             task_set='the tasks of %s, less the %d leave-out tasks of %s; part %s: %d tasks' % (a.tasks or S.CORPUS, len(set(open(a.leave_out).read().split())), a.leave_out, a.part, len(tasks)),
              budget='no search budget: a teacher-forced walk of each gold form', measures=['rows for the rel steer and the choice steer'],
-             corpus=S.CORPUS, gold_revision=GOLD_REVISION, scope=a.scope, orders=a.orders, models=a.models or a.models_fold, folds=a.folds, steer_cover=sorted(S.STEER_COVER),
+             corpus=S.CORPUS, gold_revision=a.gold_revision, scope=a.scope, orders=a.orders, models=a.models or a.models_fold, folds=a.folds, steer_cover=sorted(S.STEER_COVER),
+             priors_sha256=priors_sha(a), engine_sha256=[file_sha(p) for p in glob.glob(os.path.join(os.path.dirname(live.arclog.__file__), '*.so'))],
              started=time.strftime('%Y-%m-%d %H:%M:%S'))
     return m | (extra or {})
 
 
+def same_rows(old, new):
+    """Stops the run where DIR holds rows that differ from the run's in more than their tasks."""
+    for k in ('scope', 'orders', 'steer_cover', 'priors_sha256'):
+        if old.get(k) != new[k]:
+            sys.exit('%s differs from the manifest in this folder: %s against %s. Such rows need their own --out.' % (k, new[k], old.get(k)))
+
+
 def run(a):
     tasks = task_list(a)
-    os.makedirs(a.out, exist_ok=True)
-    done = set()
-    sp = os.path.join(a.out, 'tasks.jsonl')
-    if os.path.exists(sp):
-        done = {json.loads(x)['task'] for x in open(sp) if x.strip()}
-    todo = [t for t in tasks if t not in done]
+    os.makedirs(os.path.join(a.out, 'stems'), exist_ok=True)
     mp = os.path.join(a.out, 'manifest.json')
-    if not os.path.exists(mp):
-        json.dump(manifest(a, tasks), open(mp, 'w'), indent=1)
+    now = manifest(a, tasks)
+    if os.path.exists(mp):
+        same_rows(json.load(open(mp)), now)
+    else:
+        json.dump(now, open(mp, 'w'), indent=1)
+    done = {t for t in tasks if os.path.exists(stem_path(a.out, t)) and stem_status(stem_path(a.out, t)).get('text_sha256') == text_sha(t)}
+    todo = [t for t in tasks if t not in done]
     print('%d tasks, %d done, %d to do, %d jobs' % (len(tasks), len(done), len(todo), a.jobs), flush=True)
     work = [(t, (a.models_fold.format(fold_of(t, a.folds)) if a.models_fold else a.models), a.scope, a.orders) for t in todo]
-    t0, total = time.time(), collections.Counter()
-    with (multiprocessing.get_context('spawn').Pool(a.jobs, maxtasksperchild=TASKS_PER_WORKER) as pool, JsonlWriter(os.path.join(a.out, 'relrows.jsonl.zst')) as rel, JsonlWriter(os.path.join(a.out, 'choices.jsonl.zst')) as ch,
-          open(sp, 'a') as sf):
+    t0, total, failed = time.time(), collections.Counter(), []
+    with multiprocessing.get_context('spawn').Pool(a.jobs, maxtasksperchild=TASKS_PER_WORKER) as pool:
         for n, got in enumerate(pool.imap_unordered(task_rows_or_error, work), 1):
             if got[1] is None:
                 print('FAILED %s: %s' % (got[0], got[2]), flush=True)
+                failed.append(got[0])
                 continue
-            task, rows, statuses, secs, rss = got
-            c = collections.Counter()
-            for k, row in rows:
-                (rel if k == 'rel' else ch).write(row)
-                c[k, row.get('kind'), row['place'], row['where']] += 1
-            rel.flush()
-            ch.flush()
-            sf.write(json.dumps(dict(task=task, seconds=secs, maxrss_gb=rss, forms=statuses, rows={'|'.join(map(str, k)): v for k, v in c.items()})) + '\n')
-            sf.flush()
+            task, rows, statuses, secs, rss, sha = got
+            c = collections.Counter((k, row.get('kind'), row['place'], row['where']) for k, row in rows)
+            write_stem(a.out, dict(task=task, text_sha256=sha, seconds=secs, maxrss_gb=rss, forms=statuses, rows={'|'.join(map(str, k)): v for k, v in c.items()}), rows)
             total.update(c)
             el = time.time() - t0
             print('[%d/%d %.0fs %.2f tasks/s eta %.0fs] %s %d rows, %d forms, %.1fs, rss %.1f GB' % (
                 n, len(todo), el, n / el, el / n * (len(todo) - n), task, len(rows), len(statuses), secs, rss), flush=True)
+    joined = join(a.out)
     m = json.load(open(mp))
-    m.update(finished=time.strftime('%Y-%m-%d %H:%M:%S'), rows_this_run={'|'.join(map(str, k)): v for k, v in sorted(total.items())})
+    m.setdefault('runs', []).append(dict(command=now['command'], commit=now['commit'], uncommitted=now['uncommitted'], corpus=now['corpus'], gold_revision=now['gold_revision'], engine_sha256=now['engine_sha256'], task_set=now['task_set'],
+                                         started=now['started'], finished=time.strftime('%Y-%m-%d %H:%M:%S'), tasks_written=len(todo) - len(failed), failed=failed,
+                                         rows_written={'|'.join(map(str, k)): v for k, v in sorted(total.items())}))
+    m.update(tasks_joined=joined)
     json.dump(m, open(mp, 'w'), indent=1)
     print('TOTAL', dict(sorted(total.items())), flush=True)
+    print('%d tasks in %s, %d failed' % (joined, a.out, len(failed)), flush=True)
 
 
 def folds(a):
@@ -280,6 +353,7 @@ def main():
     ap.add_argument('--tasks', default='', help='a file of tasks, one a line, in place of the corpus')
     ap.add_argument('--limit', type=int, default=0, help='the first n tasks')
     ap.add_argument('--leave-out', default=LEAVE_OUT)
+    ap.add_argument('--gold-revision', default=GOLD_REVISION, help='the name of the text in the corpus, for the manifest')
     a = ap.parse_args()
     if a.cmd == 'folds':
         return folds(a)
