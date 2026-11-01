@@ -24,8 +24,8 @@
     // a stored periodic banner: params.slot the period's slots, params.banner
     // the lit radius at each
   | Banner {s: Seat}
-    // params.template, the whole trail as one stored shape of offsets,
-    // seated on each marker
+    // params.stamp, the whole trail as one stored shape of offsets, seated on
+    // each marker in the pose that aims it away from params.dir
   | Stamp {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -34,7 +34,7 @@
     // --- shared ---
     .decl bg(c: Color) bg(0).
 
-    // --- $Dir ---
+    // --- $Dir, $Stamp ---
     .decl dir(d: Dir) dir(DIR_T).   // the marker edge
 
     // --- $Parity, $Walk ---
@@ -47,14 +47,23 @@
     .decl banner(k: number, r: number) banner(0, 0). banner(1, 1).   // lit radius per slot
 
     // --- $Stamp ---
-    .decl template(delta: Offset)   // trail cells, as offsets from the marker
-    GRID_STAMP_6x3(template,
-        _, @1, _,
-        1,  _, 1,
-        _,  1, _,
-        1,  _, 1,
-        _,  1, _,
-        1,  _, 1)
+    // The trail, in the frame where it runs toward `aim` from its marker.
+    RIGID(trail,
+        .decl aim(d: Dir) aim(DIR_B).
+        .decl template(delta: Offset)   // trail cells, as offsets from the marker
+        GRID_STAMP_6x3(template,
+            _, @1, _,
+            1,  _, 1,
+            _,  1, _,
+            1,  _, 1,
+            _,  1, _,
+            1,  _, 1)
+    )
+
+    // The template's offsets for a trail that runs toward D: the one rotation
+    // that takes the aim there, which keeps the template's hand.
+    .decl stamp(d: Dir, delta: Offset)
+    stamp(D, Off) :- c4_elem(G), trail_aim(G, D), trail_template(G, Off).
 }
 
 .init params = Params
@@ -138,8 +147,8 @@ lit(Q, Col, $Banner(S)) :-
 // --- $Stamp ---
 
 lit(Q, Col, $Stamp()) :-
-    marker(P, Col), params.template(Off),   // a marker, a template offset
-    compose(P, Off, Q), in(Q, _).           // seated on the marker, on-grid
+    seed($Dir(), Col, D, P), params.stamp(D, Off),   // a marker, a template offset posed to its heading
+    compose(P, Off, Q), in(Q, _).                    // seated on the marker, on-grid
 
 // --- Output ---
 
@@ -202,6 +211,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
     .decl banner(k: number, r: number)
     banner(K, R) :- radius(_, _, I, R), period(N), stride(I, N, 0, _, K).
 
-    .decl template(delta: Offset)
-    template(Delta) :- offset(_, _, Delta).
+    .decl trail_aim(d: Dir)
+    trail_aim(D) :- dir(E), opposite(E, D).
+
+    .decl trail_template(delta: Offset)
+    trail_template(Delta) :- offset(_, _, Delta).
 }
