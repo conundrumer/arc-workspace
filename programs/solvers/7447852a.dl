@@ -11,36 +11,41 @@
     // edge; a rhythm over that order says which of them fill
     Rank {}
     // a stored stamp of mark cells, one period wide, seats on the anchor edge
-    // and repeats along the strip, over the input
+    // in the hand whose marks all fall on bg, and repeats along the strip,
+    // over the input
   | Stamp {}
 
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl mark(c: Color) mark(4).
+    .decl bg(c: Color) bg(0).
 
     // The repetition runs from this edge.
     .decl anchor(d: Dir) anchor(DIR_L).
 
     // --- $Rank ---
-    .decl bg(c: Color) bg(0).
-
     // The rhythm along the pocket sequence: mark_run marked pockets, then
     // keep_run kept, repeating.
     .decl mark_run(k: number) mark_run(1).
     .decl keep_run(g: number) keep_run(2).
 
     // --- $Stamp ---
-    // One period of the marks, in the strip's frame.
-    .decl stamp(p: Position)
-    GRID_MASK_3x12(stamp,
-        _, _, _, _, _, 1, 1, 1, _, _, _, _,
-        1, _, _, _, _, _, 1, _, _, _, _, _,
-        1, 1, _, _, _, _, _, _, _, _, _, 1)
+    RIGID(strip,
+        // One period of the marks, in the strip's frame.
+        .decl stamp(p: Position)
+        GRID_MASK_3x12(stamp,
+            _, _, _, _, _, 1, 1, 1, _, _, _, _,
+            1, _, _, _, _, _, 1, _, _, _, _, _,
+            1, 1, _, _, _, _, _, _, _, _, _, 1)
 
-    // The stamp's extent along the anchor's axis.
+        // The edge of that frame that the stamp seats on.
+        .decl seat(d: Dir) seat(DIR_L).
+    )
+
+    // The stamp's extent along the seat's axis.
     .decl period(k: number)
-    period(K) :- stamp(P), anchor(D), axis_of(D, A), axis_dim(P, A, K).
+    period(K) :- strip_stamp(D, P), strip_seat(D, S), axis_of(S, A), axis_dim(P, A, K).
 }
 
 .init params = Params
@@ -74,12 +79,21 @@ mark_cell($Rank(), P) :- marked_pocket(Id), pockets.label(_, P, Id).
 
 // --- $Stamp ---
 
-// The stamp seats on the anchor edge and repeats along the strip: a cell
-// takes the stamp cell on its across line at its place within the period.
-mark_cell($Stamp(), Q) :-
-    in(Q, _), params.stamp(Pm),
-    params.anchor(D), axis_of(D, A), same_line(A, Q, Pm),                    // one across line
+// The stamp seats on the anchor edge and repeats along the strip: at each pose
+// whose seat is that edge, a cell takes the stamp cell on its across line at
+// its place within the period.
+.decl placed(pose: D4, q: Position)
+placed(Pose, Q) :-
+    in(Q, _), params.strip_stamp(Pose, Pm),
+    params.anchor(D), params.strip_seat(Pose, D),                            // seated on the anchor
+    axis_of(D, A), same_line(A, Q, Pm),                                      // one across line
     dist(Pm, D, R), params.period(K), dist(Q, D, T), stride(T, K, 0, _, R).   // one place in the period
+
+// A pose with a mark on a cell that is not bg.
+.decl fouled(pose: D4)
+fouled(Pose) :- placed(Pose, Q), in(Q, Col), !params.bg(Col).
+
+mark_cell($Stamp(), Q) :- placed(Pose, Q), !fouled(Pose).
 
 out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
@@ -104,6 +118,10 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
     marked(E, Q) :- ex_in(E, Q, C_in), ex_out(E, Q, C_out), C_in != C_out.
 
     // Marked cells within the first period, in the stamp's frame.
-    .decl stamp(p: Position)
-    stamp(Pm) :- frame.cell(E, Pm), params.anchor(D), slab_anchor(D, Pm, Q), marked(E, Q).
+    .decl strip_stamp(p: Position)
+    strip_stamp(Pm) :- frame.cell(E, Pm), params.anchor(D), slab_anchor(D, Pm, Q), marked(E, Q).
+
+    // That frame's seat is the anchor.
+    .decl strip_seat(d: Dir)
+    strip_seat(D) :- params.anchor(D).
 }
