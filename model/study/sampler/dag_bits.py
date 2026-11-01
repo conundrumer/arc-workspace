@@ -15,7 +15,7 @@ Each record also has `other_context_written`: the bits of the written order of t
 
 A shard writes OUT_DIR/orders-shardKofN.jsonl, a line per form, flushed after each. At start every orders-shard*.jsonl of OUT_DIR is read and the forms with a
 record are skipped, so a run with another shard count resumes. `--reuse DIR` takes the record of a form from the records of DIR where the task, the target text and
-the scope (`scope_sha`) are the same. Read the records, partial or whole, with dag_bits_read.py.
+the scope (`scope_sha`) are the same. In context `parents` the target is walked with the fields of its atoms in the column order of the relations they read (or_q.sorted_fields); the record's `target` is the written text, and `target_rendered` the text walked where it differs. Read the records, partial or whole, with dag_bits_read.py.
 """
 import argparse
 import datetime
@@ -169,8 +169,11 @@ def one(sampler, a, task, lines, source, canon, i, reuse):
         else:
             gc.collect()
             sess, task_json, _ = live_try.session_of(task)
-            q = or_q.walk(sampler, task, kind, [len(scope), 0], scope, target, sess, task_json, kind, a.cap, a.budget, a.seconds)
-            rec.update(q)
+            walked = or_q.sorted_fields(target, sess, scope) if a.context == 'parents' else target  # the target's fields in the column order of the relations it reads
+            q = or_q.walk(sampler, task, kind, [len(scope), 0], scope, walked, sess, task_json, kind, a.cap, a.budget, a.seconds)
+            rec.update(q, target=target)
+            if walked != target:
+                rec['target_rendered'] = walked
         rec['valid'] = not rec['bad'] and rec['dead'] is None
         rec['other_context_written'] = None
         try:

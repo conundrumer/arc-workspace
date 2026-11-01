@@ -665,8 +665,41 @@ def decoder_check(sess, scope, kind):
     return check
 
 
+def sorted_fields(text, sess, scope):
+    """The text with the fields of each atom that reads a relation of the scope (`&r..`) in the column order of that relation over the scope. A relation's column order is set by the
+    atom order of its form, and the walk pays for the fields of a reader that stand out of that order. A column's position is read from the decoder on a one-field probe of the
+    relation, so an atom with a field that the probe can't place keeps its order. Labels are marked again on their first occurrence."""
+    cache, V = {}, sess.vocabulary
+
+    def position(rel, name):
+        if (rel, name) not in cache:
+            try:
+                ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, '(RULE &rzz (%s (%s *Zq)))' % (rel, name), live.READER_OUT)), sess.settings).decode_stream()
+                cols = [V.name(t) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope) and V.kind(t) == 'column']
+                cache[rel, name] = int(cols[0][1:]) if cols else None
+            except Exception:  # noqa: BLE001
+                cache[rel, name] = None
+        return cache[rel, name]
+
+    def fix(x):
+        if not isinstance(x, list):
+            return x
+        x = [fix(y) for y in x]
+        if len(x) > 2 and isinstance(x[0], str) and x[0].startswith('&r') and all(isinstance(f, list) and f and isinstance(f[0], str) and f[0].startswith(':') for f in x[1:]):
+            pos = [position(x[0], f[0]) for f in x[1:]]
+            if None not in pos and pos != sorted(pos):
+                x = [x[0], *[f for _, f in sorted(zip(pos, x[1:]), key=lambda t: t[0])]]
+        return x
+    try:
+        out = O.unparse(fix(O.parse(text)[0]))
+        form = O.Form(out)
+    except ValueError:
+        return text
+    return text if form.written is None else form.text(form.written)
+
+
 def canonical_lines(lines, sess):
-    """(lines with each drawable form in its first order, items sorted, that the decoder takes over its canonical ancestors; the count of forms that keep their written text). lines has no OUT form. A CHOOSE keeps its text."""
+    """(lines with each drawable form in its first order, items sorted, that the decoder takes over its canonical ancestors, and with the fields of its atoms in the column order of the relations they read (sorted_fields); the count of forms that keep their written text). lines has no OUT form. A CHOOSE keeps its text."""
     out, kept = list(lines), 0
     forms = live.S.strata.sexprs('\n'.join(lines))
     for i in sorted(range(len(lines)), key=lambda i: len(live.S.ancestor_order(forms, i))):
@@ -674,7 +707,7 @@ def canonical_lines(lines, sess):
         if kind not in live.KIND_TOK:
             continue
         scope = canonical_scope(out, i)
-        check, form = decoder_check(sess, scope, kind), O.Form(lines[i])
+        check, form = decoder_check(sess, scope, kind), O.Form(sorted_fields(lines[i], sess, scope))
         for order in itertools.islice(form.orders(), CANON_TRIES):
             got = check(form.text(order))
             if got is None:
@@ -693,12 +726,12 @@ def canonical_scope(lines, i):
 
 
 def order_walker(sampler, task, case, point, scope, kind, sess, task_json, seconds=120):
-    """form_orders' walk of an order's text. A walk that isn't valid has its marks up to where it stopped, so that the guided draw learns the choice that ended it."""
-    scoped = [None]
-
+    """form_orders' walk of an order's text, on a new session each time, with the scope replayed: the bits of an order on a session that earlier walks used differ
+    (check_session.py: up to 18 bits), and so do the bits with a scope replay that an earlier walk saved. A walk that isn't valid has its marks up to where it stopped, so that the guided draw learns the choice that ended it."""
     def go(text):
         try:
-            rec = walk_order(sampler, task, case, point, scope, text, sess, task_json, kind, scoped=scoped, seconds=seconds)
+            fresh, fresh_json, _ = live_try.session_of(task)
+            rec = walk_order(sampler, task, case, point, scope, text, fresh, fresh_json, kind, scoped=[None], seconds=seconds)
         except Exception as e:  # noqa: BLE001
             refused = isinstance(e, live.arclog.Refusal) or 'Check(' in str(e)  # a mode, type or safety check of the engine
             return dict(bits=None, marks=None, why='decoder' if refused else 'error', detail='%s: %s' % (type(e).__name__, str(e)[:160]))
