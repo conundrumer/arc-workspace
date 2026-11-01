@@ -705,17 +705,9 @@ impl<'a> Decoder<'a> {
 
         let ordering = first.is_none() && matches!(op, ConstraintOp::Lt | ConstraintOp::Le | ConstraintOp::Gt | ConstraintOp::Ge);
         if ordering {
-            match order.replace(Order::Unknown) {
-                Order::Refused(refusal) => {
-                    *order.borrow_mut() = Order::Refused(refusal.clone());
-                    return Err(refusal);
-                }
-                Order::Passes(first) => {
-                    *order.borrow_mut() = Order::Passes(first.clone());
-                    if self.completes_with(state, &first, checks, reads_example, order).is_ok() {
-                        return Ok(());
-                    }
-                }
+            match &*order.borrow() {
+                Order::Refused(refusal) => return Err(refusal.clone()),
+                Order::Passes => return Ok(()),
                 Order::Unknown => {}
             }
         }
@@ -731,7 +723,7 @@ impl<'a> Decoder<'a> {
             match self.completes_with(state, &token, checks, reads_example, order) {
                 Ok(()) => {
                     if ordering {
-                        *order.borrow_mut() = Order::Passes(token);
+                        *order.borrow_mut() = Order::Passes;
                     }
                     return Ok(());
                 }
@@ -798,13 +790,13 @@ impl<'a> Decoder<'a> {
 const PROJECTION_STEPS: usize = 256;
 
 /// What the mask has found at a state of the order operators `<`, `<=`, `>`
-/// and `>=`, which the checks read alike: their first labels, and the first
-/// label that a completion passes with, are the same for all four.
+/// and `>=`. No check tells them apart, so the first of them that the mask
+/// tries gives the verdict of all four.
 
 #[derive(Default)]
 enum Order {
     #[default]
     Unknown,
     Refused(Refusal),
-    Passes(Token),
+    Passes,
 }
