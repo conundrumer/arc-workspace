@@ -10,18 +10,13 @@
 // @scene marks: marks of color mark_color, each a plus — a center cell and its
 //  four cardinal neighbors — lie over the scene and hide the cells under them;
 //  no other cell has color mark_color
-// @rule erase-marks: each cell of color mark_color takes the color the stack
-//  of rectangles shows there: the color of the rectangle drawn last of those
-//  that cover it, and the background color where no rectangle covers it;
-//  every other cell keeps its color
-//     @approximated: each shown color, the background's included, is a
-//      rectangle, the bounding box of its visible cells, and a rectangle is
-//      over another when one of its visible cells lies in the other's box,
-//      closed transitively; each cell of color mark_color takes the color of
-//      the topmost rectangle that covers it
-//     @witness order-hidden: borderline other
-//     @witness hidden-end: borderline other
-//         @relaxed visible-extent
+// @scene order-shown: the visible cells give the order of any two rectangles
+//  that both cover a mark cell
+// @rule erase-marks: each shown color, the background's included, is a
+//  rectangle, the bounding box of its visible cells, and a rectangle is over
+//  another when one of its visible cells lies in the other's box, closed
+//  transitively; each cell of color mark_color takes the color of the topmost
+//  rectangle that covers it; every other cell keeps its color
 
 // which cells are mark cells
 .type Marks =

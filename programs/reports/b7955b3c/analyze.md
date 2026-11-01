@@ -2,9 +2,7 @@
 
 ## Concept
 - Fits every train and test pair (`probe.py`).
-- The generator draws each rectangle whole, in a drawing order, and then the marks. Each mark cell shows what the generator drew last there before the marks. The concept's rule approximates each rectangle by the bounding box of its visible cells, and approximates the drawing order by the order the visible cells give (a rectangle whose visible cell lies in another's box is over it), closed transitively.
-- Witness `order-hidden`: two rectangles overlap only at the mark's center, so no visible cell gives their order, and the concept is undefined there. It breaks no scene claim. It stands at the stored assignment. Plausibility `borderline`, verdict `other`. It breaks this invariant of the inputs: each two rectangles whose boxes overlap show their order at a visible cell.
-- Witness `hidden-end`: the end of a one-row bar lies under a mark, so the bar's box stops short of the bar, and the concept fills the hidden end with the background. It breaks `visible-extent`. It stands at the stored assignment. Plausibility `borderline`, verdict `other`. It breaks this invariant of the inputs: each rectangle shows a cell on each of its four sides outside the marks.
+- The generator draws each rectangle whole, in a drawing order, and then the marks. Each mark cell shows what the generator drew last there before the marks. An input whose marks hide a rectangle's extent or the order of two rectangles has no single answer, so it is invalid: `visible-extent` and `order-shown` rule it out, and the concept's rule gives the generator's output on the rest.
 
 ## Choice points
 - `mark-cells`

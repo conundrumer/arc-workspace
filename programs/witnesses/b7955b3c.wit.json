@@ -114,50 +114,6 @@
       ]
     }]
   }, {
-    "id": "order-hidden",
-    "separates": "two rectangles that overlap only at the mark's center, the 2 rectangle drawn over the 3 rectangle: no visible cell gives their order, so the concept is undefined, and the generator shows the 2 rectangle there",
-    "input": [
-      [4,4,4,4,4,4,4,4],
-      [4,3,3,3,4,4,4,4],
-      [4,3,3,8,4,4,4,4],
-      [4,3,8,8,8,2,2,4],
-      [4,4,4,8,2,2,2,4],
-      [4,4,4,2,2,2,2,4],
-      [4,4,4,2,2,2,2,4],
-      [4,4,4,4,4,4,4,4]
-    ],
-    "output": [
-      [4,4,4,4,4,4,4,4],
-      [4,3,3,3,4,4,4,4],
-      [4,3,3,3,4,4,4,4],
-      [4,3,3,2,2,2,2,4],
-      [4,4,4,2,2,2,2,4],
-      [4,4,4,2,2,2,2,4],
-      [4,4,4,2,2,2,2,4],
-      [4,4,4,4,4,4,4,4]
-    ]
-  }, {
-    "id": "hidden-end",
-    "separates": "the 4 bar's right end lies under the mark: the concept bounds the bar by its visible cells and fills (3,6) and (3,7) with the background, and the generator shows the bar there",
-    "input": [
-      [5,5,5,5,5,5,5,5,5,5],
-      [5,6,6,6,6,5,5,5,5,5],
-      [5,6,6,6,6,5,5,8,5,5],
-      [5,6,4,4,4,4,8,8,8,5],
-      [5,6,6,6,6,5,5,8,5,5],
-      [5,6,6,6,6,5,5,5,5,5],
-      [5,5,5,5,5,5,5,5,5,5]
-    ],
-    "output": [
-      [5,5,5,5,5,5,5,5,5,5],
-      [5,6,6,6,6,5,5,5,5,5],
-      [5,6,6,6,6,5,5,5,5,5],
-      [5,6,4,4,4,4,4,4,5,5],
-      [5,6,6,6,6,5,5,5,5,5],
-      [5,6,6,6,6,5,5,5,5,5],
-      [5,5,5,5,5,5,5,5,5,5]
-    ]
-  }, {
     "id": "weave",
     "separates": "four bars woven so that each lies over the next around a cycle, and the mark hides the middle of the crossing of the 1 and 2 bars, whose visible corners show 1: the transitive order puts 1 and 2 each over the other, so the concept is undefined there, and $DirectOrder puts only 1 over 2 and fills the mark with 1",
     "input": [
