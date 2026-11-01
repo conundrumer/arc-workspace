@@ -11,6 +11,10 @@ gives ms per call, where calls after the first over a scope reuse its replay, an
 With --one N, each task's gold clauses with their ONE marks removed are the scope, and the OUT search at their end runs with the ONE repair off and on (N seconds
 a candidate). A line gives the candidates and the right ones of both runs, and the last line gives (right off, right on) per task.
 
+With --choose N, each task's gold clauses with each CHOOSE replaced by the RULE that holds its candidates (plain_rule) are the scope, and the OUT search at their end runs
+with the CHOOSE lift off and on (N seconds a candidate). A line gives the candidates and the right ones of both runs, and the last line gives (right off, right on) per task.
+With CHOOSE_LIFT=N in the environment, --one runs both of its runs with the lift on, and its line gives a digest of the candidates, which the lift must leave as they were.
+
 With --gold, every gold program of each task in the corpus is stepped on the same session in place of draws. A line gives whether
 it ended, whether its attempts are right, the gate's rules that it breaks and its leave-one-out outcomes, and the last line counts
 them.
@@ -18,6 +22,7 @@ them.
 import argparse
 import collections
 import gzip
+import hashlib
 import json
 import os
 import re
@@ -82,22 +87,66 @@ MARK = re.compile(r'\s*\(ONE(?: [^()]*)?\)')
 def gold_sexp(task, points):
     """Gold's program for task: from the corpus, else from points, a JSON file of {task, gold_sexp}."""
     path = live.S.CORPUS + task + '/pairs.jsonl.gz'
-    if points is None and os.path.exists(path):
+    if os.path.exists(path):
         with gzip.open(path, 'rt') as f:
             return json.loads(f.readline())['gold_sexp']
     return next(r['gold_sexp'] for r in json.load(open(points)) if r['task'] == task)
 
 
-def one_run(sampler, task, points, seconds):
-    """The candidates, (program, attempts, whether each test input has its output among them), of the OUT search at the end of task's gold clauses with their ONE
-    marks removed, and the Run's counts. seconds is the ONE repair's limit; 0 is off."""
+def sexp(text):
+    """The nested lists of an s-expression's text."""
+    stack = [[]]
+    for t in re.findall(r'\(|\)|[^\s()]+', text):
+        if t == '(':
+            stack.append([])
+        elif t == ')':
+            top = stack.pop()
+            stack[-1].append(top)
+        else:
+            stack[-1].append(t)
+    return stack[0][0]
+
+
+def render(x):
+    return x if isinstance(x, str) else '(%s)' % ' '.join(map(render, x))
+
+
+def starred(x):
+    """x, nested lists, with each (:Label Var) as (:Label *Var), and each bare label of a key record."""
+    if isinstance(x, str):
+        return x
+    if len(x) == 2 and x[0].startswith(':') and isinstance(x[1], str) and re.match(r'[A-Z]\w*\Z', x[1]):
+        return [x[0], '*' + x[1]]
+    if x and x[0] == ':key':  # a key record: its bare labels are variables too
+        return [x[0]] + [('*' + y if re.match(r'[A-Z]\w*\Z', y) else y) if isinstance(y, str) else starred(y) for y in x[1:]]
+    return [starred(y) for y in x]
+
+
+def plain_rule(form):
+    """A CHOOSE form as the RULE that holds its candidates: the same head, and the atoms of its `from` with each label starred. Another form stays."""
+    if not form.startswith('(CHOOSE'):
+        return form
+    _, head, *clauses = sexp(form)
+    atoms = next(c[2][1:] for c in clauses if c[0] == 'for')
+    return render(['RULE', head, *starred(atoms)])
+
+
+def one_run(sampler, task, points, seconds, lift=None):
+    """The candidates, (program, attempts, whether each test input has its output among them), of the OUT search at the end of task's gold clauses, and the Run's counts.
+    With lift None the clauses have their ONE marks removed and seconds is the ONE repair's limit (0 is off); else each CHOOSE is a plain RULE, the ONE marks stay, and
+    lift is the CHOOSE lift's limit (0 is off)."""
     sess, d, outs = session_of(task)
-    forms = [MARK.sub('', x) for x in gold_sexp(task, points).splitlines() if x.strip() and not x.startswith('(OUT')]
-    run = live.Run(sampler.pri, sess, 0, time.monotonic() + 120, d, live.Limits(one_repair=seconds))
+    lines = [x for x in gold_sexp(task, points).splitlines() if x.strip() and not x.startswith('(OUT')]
+    forms = [MARK.sub('', x) for x in lines] if lift is None else [plain_rule(x) for x in lines]
+    run = live.Run(sampler.pri, sess, 0, time.monotonic() + 120, d, live.Limits(one_repair=seconds, **({} if lift is None else {'choose_lift': lift})))
     dec, pg = run.scope(forms)
     t0 = time.monotonic()
     got = [(f.program_form(), f.attempts(), [o in a for o, a in zip(outs, f.attempts())]) for f in run.search(pg, dec)]
     return got, run.c, time.monotonic() - t0
+
+
+def digest(cands):
+    return hashlib.sha1(repr([(p, a) for p, a, _ in cands]).encode()).hexdigest()[:8]
 
 
 def one_try(sampler, task, points, seconds):
@@ -105,10 +154,24 @@ def one_try(sampler, task, points, seconds):
     of the repair-off run come first and unchanged, and none that was right is lost."""
     off, _, t_off = one_run(sampler, task, points, 0)
     on, c, t_on = one_run(sampler, task, points, seconds)
+    assert on[:len(off)] == off or live.Limits().choose_lift, task  # with the lift on in both runs, its candidates follow the ONE repairs' in the second
+    right = lambda cands: sum(all(r) for _, _, r in cands)  # noqa: E731
+    print('%s candidates %d -> %d, right %d -> %d, search %.2f -> %.2f s, digest %s, %s' % (
+        task, len(off), len(on), right(off), right(on), t_off, t_on, digest(on), {k: v for k, v in sorted(c.items()) if k.startswith(('one:', 'choose'))}), flush=True)
+    return right(off), right(on)
+
+
+def choose_try(sampler, task, points, seconds):
+    """--choose on one task: the OUT search at the end of the gold clauses, each CHOOSE a plain RULE, runs with the CHOOSE lift off and on. With it on, the candidates
+    of the lift-off run come first and unchanged."""
+    off, _, t_off = one_run(sampler, task, points, 0, 0)
+    on, c, t_on = one_run(sampler, task, points, 0, seconds)
     assert on[:len(off)] == off, task
     right = lambda cands: sum(all(r) for _, _, r in cands)  # noqa: E731
     print('%s candidates %d -> %d, right %d -> %d, search %.2f -> %.2f s, %s' % (
-        task, len(off), len(on), right(off), right(on), t_off, t_on, {k: v for k, v in sorted(c.items()) if k.startswith('one:')}), flush=True)
+        task, len(off), len(on), right(off), right(on), t_off, t_on, {k: v for k, v in sorted(c.items()) if k.startswith('choose')}), flush=True)
+    for p, a, r in on[len(off):]:
+        print('  lift right=%s' % all(r), ' '.join(x[:400] for x in p.split('\n') if x.startswith('(CHOOSE')), flush=True)
     return right(off), right(on)
 
 
@@ -158,6 +221,7 @@ def main():
     ap.add_argument('--gold', action='store_true', help='check the gate on gold in place of draws')
     ap.add_argument('--clause', type=int, default=0, help='N: try Sampler.clause in place of draws')
     ap.add_argument('--one', type=float, default=0, help='N: the ONE repair check, with a limit of N seconds a candidate, in place of draws; see one_try')
+    ap.add_argument('--choose', type=float, default=0, help='N: the CHOOSE lift check, with a limit of N seconds a candidate, in place of draws; see choose_try')
     ap.add_argument('--points', help='with --one: a JSON file of {task, gold_sexp} that has the gold of tasks the corpus lacks')
     a = ap.parse_args()
     if a.gold:
@@ -172,6 +236,9 @@ def main():
     print('loaded %.2fs' % (time.time() - t0), flush=True)
     if a.one:
         print(dict(zip(a.tasks, (one_try(sampler, task, a.points, a.one) for task in a.tasks))), flush=True)
+        return
+    if a.choose:
+        print(dict(zip(a.tasks, (choose_try(sampler, task, a.points, a.choose) for task in a.tasks))), flush=True)
         return
     for task in a.tasks if a.clause else ():
         clause_try(sampler, task, a.clause, a.seed, a.seconds)

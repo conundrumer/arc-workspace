@@ -47,6 +47,10 @@ With the limit one_repair above 0 (env ONE_REPAIR), the OUT search of a form end
 ONE marks to a clause of the program and judges the program as an OUT test is, with label + ' one', and draws nothing. The repairs take at most one_repair seconds a
 candidate, and a share one_share of the Run's time besides one such limit. With the limit at 0 the search is as without the repair.
 
+With the limit choose_lift above 0 (env CHOOSE_LIFT), the OUT search of a form end that found no fit also ends with the CHOOSE lift (choose_lift.py) of the candidates that read
+a RULE whose table has keys with several rows: it adds a CHOOSE over that RULE's rows and judges the program as an OUT test is, with label + ' choose', and draws nothing.
+The lifts take at most choose_lift seconds a candidate, and a share choose_share of the Run's time besides one such limit. With the limit at 0 the search is as without the lift.
+
 A table request that runs to the session's deadline ends the draw (Spent), and a candidate that does ends the OUT search at that form:
 each later read of what it read costs one more deadline. A table that the table work cap stopped goes on, since gold has them: of 284
 gold programs, 6 have OUT read such a relation, and body prefixes hit the cap 62 times.
@@ -116,6 +120,7 @@ GATE_RECORDS = os.environ.get('GATE_RECORDS', '')  # a run folder: each form at 
 GATE_RECORD_TASK = os.environ.get('GATE_RECORD_TASK', 'task')  # the task id of this process's records
 GATE_RECORD_BYTES = 64 << 20  # a task's records stop at this size
 ONE_LABEL = ' one'  # what a ONE repair adds to the label of the candidate that it repairs
+CHOOSE_LABEL = ' choose'  # what a CHOOSE lift adds to the label of the candidate that it lifts
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 FILLS_HELD = 1000  # the most refused forms a Run keeps for its caller
@@ -379,6 +384,8 @@ class Limits:
     out_cands: int = int(os.environ.get('OUT_CANDS', 100))  # candidates of the OUT search at one form end
     one_repair: float = float(os.environ.get('ONE_REPAIR', 0))  # seconds that the ONE repair of one candidate may take (one_repair.py); 0 is off
     one_share: float = 0.25  # the share of the Run's time that the ONE repairs may take, besides the limit of one repair
+    choose_lift: float = float(os.environ.get('CHOOSE_LIFT', 0))  # seconds that the CHOOSE lift of one candidate may take (choose_lift.py); 0 is off
+    choose_share: float = 0.25  # the share of the Run's time that the CHOOSE lifts may take, besides the limit of one lift
 
 
 @dataclasses.dataclass
@@ -530,6 +537,7 @@ class Program:
         self.kinds = []  # the kind of each clause, which only next_kind reads, as counts
         self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
         self.facts = {}  # a relation slot -> one_repair.facts of its table; kept where the ONE repair is on
+        self.lifts = {}  # a RULE's relation slot -> choose_lift.key_facts of its table; kept where the CHOOSE lift is on
 
     def fork(self):
         """A copy whose dicts can change with no effect on this Program."""
@@ -605,6 +613,7 @@ class Run:
         self.stopped = False  # whether an OUT candidate over the relation that the OUT search is at hit a limit
         self.pg = None  # the Program at the form end that the OUT search is at
         self.one_seconds, self.one_done, self.one_view, self.one_queue = 0.0, set(), (None, None), []  # the time of the ONE repairs; the programs they ran on; (a step_tables result, its two_colors answers); the candidates to repair at the end of the OUT search
+        self.lift_seconds, self.lift_done, self.lift_queue, self.fit_attempts = 0.0, set(), [], set()  # the time of the CHOOSE lifts; the programs they ran on; the candidates to lift at the end of the OUT search; the attempts of the fits so far (kept where the lift is on)
         self.fills = []  # (program, attempts) of forms leave-one-out refused, for Pool.test
         self.scoped = None  # (forms, decoder, Program) of the last scope
         self.walk = pri['walk']
@@ -812,6 +821,12 @@ class Run:
             got = one_repair.facts(b)
             if got[0] or got[1] or got[3]:
                 pg.facts = pg.facts | {pg.new[0]: got}
+        if self.lim.choose_lift and len(pg.new) == 1 and pg.kinds and pg.kinds[-1] == 'RULE':
+            import choose_lift
+            t1 = time.perf_counter()
+            if got := choose_lift.key_facts(b, self.gate.masks):
+                pg.lifts = pg.lifts | {pg.new[0]: got}
+            self.c['choose_facts_seconds'] += time.perf_counter() - t1
 
     def spent(self, t0):
         """Raises Spent where a table request that began at t0 ran to the session's deadline. A step that gives no table in less time
@@ -1673,7 +1688,9 @@ class Run:
         kind = str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]
         self.c['out:%s' % kind] += 1
         self.stopped = self.stopped or kind == 'Stopped'
-        repair = self.lim.one_repair and not label.endswith(ONE_LABEL)
+        repair = self.lim.one_repair and not label.endswith((ONE_LABEL, CHOOSE_LABEL))
+        if self.lim.choose_lift and label == 'plain' and self.lift_plans(f):
+            self.lift_queue.append((f, label))
         if not f.ended:
             if repair and (why := self.one_wants(f, kind, label)):
                 self.one_queue.append((f, label, why))
@@ -1700,6 +1717,8 @@ class Run:
         self.gate_record(f, attempts, broken, got, 'passed', label)
         self.c['consistent'] += 1
         self.c['consistent:' + label] += 1
+        if self.lim.choose_lift:
+            self.fit_attempts.add(repr(attempts))
         yield f
         if repair and self.one_chain(f, lambda got: got[0] or got[1]):
             self.one_queue.append((f, label, 'keyed'))
@@ -1758,6 +1777,43 @@ class Run:
             self.c['one:found'] += 1
             self.c['one:found ' + why] += 1
             yield from self.judged(got[2].dec, got[2].last, label + ONE_LABEL)
+
+    def lift_plans(self, f):
+        """choose_lift.plans for the program of decoder f: the RULEs that OUT reads, directly or not, that have a key with several rows (their key_facts)."""
+        import choose_lift
+        return choose_lift.plans(f.program_form().rstrip().split('\n'), {str(s): got for s, got in self.pg.lifts.items()} if self.pg is not None else {})
+
+    def lifted(self, f, label):
+        """Yields the decoders that the CHOOSE lift of the program of decoder f makes (choose_lift.py), each judged as an OUT test is. A lift runs once for a program, for at most
+        the limit's seconds, and not once the lifts have taken their share of the Run's time and one more limit. The counts keep the lifts tried, found, and the outcome of each try."""
+        import choose_lift
+        forms = f.program_form().rstrip().split('\n')
+        t0 = time.monotonic()
+        text = '\n'.join(forms)
+        if text in self.lift_done or self.lift_seconds > self.lim.choose_lift + self.lim.choose_share * (t0 - self.t0):
+            self.c['choose:skipped'] += 1
+            return
+        self.lift_done.add(text)
+        self.c['choose:tried'] += 1
+        tally = collections.Counter()
+        found = choose_lift.lifts(self.session, forms, {str(s): got for s, got in self.pg.lifts.items()}, min(t0 + self.lim.choose_lift, self.deadline), tally)
+        try:
+            while True:
+                t = time.monotonic()
+                try:
+                    got = next(found, None)
+                finally:
+                    self.lift_seconds += time.monotonic() - t
+                    self.c['choose_seconds'] = self.lift_seconds
+                if got is None:
+                    return
+                if repr(got[2].attempts) in self.fit_attempts:  # a lift adds only attempts that no fit has
+                    self.c['choose:duplicate'] += 1
+                    continue
+                self.c['choose:found'] += 1
+                yield from self.judged(got[2].dec, got[2].last, label + CHOOSE_LABEL)
+        finally:
+            self.c.update({'choose:try ' + k: n for k, n in tally.items()})
 
     def gate_record(self, f, attempts, broken, loo, decision, label):
         """Writes the gate's record of the form that decoder f ended, where GATE_RECORDS is set. No decision reads it."""
@@ -1887,12 +1943,19 @@ class Run:
 
     def search(self, pg, dec):
         """The OUT search at a form's end, dec: yields each consistent decoder, then those of the ONE repairs (one_repair.py) of the candidates that
-        triggered one."""
-        self.pg, self.one_queue = pg, []
+        triggered one, then, where no fit came, those of the CHOOSE lifts (choose_lift.py)."""
+        self.pg, self.one_queue, self.lift_queue = pg, [], []
+        fits = self.c['consistent']
         yield from self.out_search(pg, dec)
         queue, self.one_queue = self.one_queue, []
         for f, label, why in queue:
             yield from self.repaired(f, label, why)
+        queue, self.lift_queue = self.lift_queue, []
+        if queue and self.c['consistent'] > fits:  # a search that found a fit has no stalled program to lift
+            self.c['choose:skipped fit'] += len(queue)
+            return
+        for f, label in queue:
+            yield from self.lifted(f, label)
 
     def out_search(self, pg, dec):
         """The tries of the OUT search at a form's end, dec. The clauses of layers come after all the others, so they take only what those leave of the cap."""
