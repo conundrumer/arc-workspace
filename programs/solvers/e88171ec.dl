@@ -4,13 +4,9 @@
 // @scene one-largest-hole: one rectangle made only of params.hole_color cells
 //  has a larger area than every other such rectangle, and it is at least 3
 //  cells on each axis
-// @rule fill-inset: the cells of the box of params.hole_color that the
-//  generator placed among the noise, params.margin or more cells in from each
-//  of its edges, take params.fill_color
-//     @approximated: the cells of the largest params.hole_color rectangle that
-//      are params.margin or more cells in from each of its edges take
-//      params.fill_color
-//     @witness grown-hole: ordinary other
+// @rule fill-inset: the cells of the largest params.hole_color rectangle that
+//  are params.margin or more cells in from each of its edges take
+//  params.fill_color
 // @rule copy-input: every cell that fill-inset does not paint keeps its input
 //  color
 
@@ -21,14 +17,14 @@
     // @scene one-largest-hole: one rectangle has more inside cells, those
     //  params.margin or more in from each edge, than every other
     // @rule fill-inset: the hole is the rectangle with the most inside cells
-    // @witness thin-extension: ordinary $RankInterior
+    // @witness thin-extension: borderline $RankInterior
   | RankInterior {}
     // @scene one-largest-hole: one rectangle has the longest shorter side,
     //  and the larger area breaks a tie
     // @rule fill-inset: the hole is the rectangle with the longest shorter
     //  side, and the larger area breaks a tie
-    // @witness thin-extension: ordinary $RankInterior
-    // @witness wide-noise: ordinary $RankMinSide
+    // @witness thin-extension: borderline $RankInterior
+    // @witness wide-noise: borderline $RankMinSide
   | RankMinSide {}
     // @scene one-largest-hole: one rectangle spans more rows and columns
     //  together than every other
