@@ -5,8 +5,8 @@
 //  counted from the params.panel_from edge and split by full lines of
 //  params.divider_color across that axis, each panel in the role
 //  params.panel_role gives its rank; each panel holds its content in an n×n
-//  square one cell in from the panel's top and its near side, where n is the
-//  side of the solid squares, and the grid is n+2 high
+//  square one cell in from the panel's top and its params.near_side edge, where
+//  n is the side of the solid squares, and the grid is n+2 high
 // @scene tile-shape: the tile panel holds a shape of 1 in its n×n square
 // @scene map-shape: the map panel holds a shape of 2 in its n×n square
 // @scene shapes-span-square: each of the two shapes touches all four sides of
@@ -49,7 +49,8 @@
   | ShapeBbox {}
     // @scene four-panels: n is the count of lines along the panel axis that
     //  lie on neither edge of the grid; each shape's square covers those lines
-    //  and the n cells that follow the first cell from the panel's near side
+    //  and the n cells that follow the first cell from the panel's
+    //  params.near_side edge
     // @witness extra-bottom-row: borderline concept
     //     @relaxed four-panels
   | HeightSide {}
@@ -75,11 +76,15 @@
     // @derive DominantColor: variant derived
     //     @relaxed four-panels
     .decl background(c: Color) background(0).
-    // the edge the panels are counted from, which is each panel's near side
+    // the edge the panels are counted from
     .decl panel_from(d: Dir) panel_from(DIR_L).
     // the rank from panel_from of the panel in each role
     .decl panel_role(k_tile: number, k_map: number, k_fill: number, k_ground: number)
     panel_role(0, 1, 2, 3).
+
+    // --- $Square, $HeightSide ---
+    // the panel edge that every panel's content lies at one distance from
+    .decl near_side(d: Dir) near_side(DIR_L).
 
     // --- $StoredDivider ---
     .decl divider_color(c: Color) divider_color(5).
@@ -151,7 +156,7 @@ panel_axis(A) :- params.panel_from(D), axis_of(D, A).
     square_cell(Ky, K, P) :-
         panel_rel(Ky, K, P, P_rel),
         ink(Ky, K2, Q, _), !hole(Ky, K2), panel_rel(Ky, K2, Q, Q_rel),  // a solid square's cell
-        panel_axis(A), same_line(A, P, Q), params.panel_from(D), same_dist(D, P_rel, Q_rel).
+        panel_axis(A), same_line(A, P, Q), params.near_side(D), same_dist(D, P_rel, Q_rel).
 
     // @claim four-panels
     .init square_box = Bbox<PanelKey>
@@ -224,7 +229,7 @@ inner_lines.domain($U()).
 .init height_square = Bbox<ShapeKey>
 height_square.cell([Dv, K], P) :-
     parse.panel_rel(Dv, K, P, P_rel), !cross_edge(P),
-    params.panel_from(D), dist(P_rel, D, J), J > 0, inner_lines.tally($U(), N), J <= N.
+    params.near_side(D), dist(P_rel, D, J), J > 0, inner_lines.tally($U(), N), J <= N.
 
 frame_box($HeightSide(), Dv, K, B) :- height_square.box([Dv, K], B).
 
@@ -262,6 +267,19 @@ parse.divider_color($DividerByLines(), Col) :- line_ink.value($U(), Col).
     // The color that fills lines and lies on nothing else.
     .decl divider_color(c: Color)
     divider_color(Col) :- ex.line.value(_, Col), !off_line(Col).
+
+    // A solid square's distance from its panel's edge d on the panel axis.
+    .decl solid_dist(e: Example, d: Dir, k: number)
+    solid_dist(E, D, J) :-
+        ex.ink_box.box([E, K], B), !ex.hole(E, K), panel_axis(A), axis_of(D, A),
+        box_edge(P, B, D), ex.panel_rel(E, K, P, P_rel), dist(P_rel, D, J).
+
+    // An edge that two solid squares of one input lie at different distances from.
+    .decl off_side(d: Dir)
+    off_side(D) :- solid_dist(E, D, J), solid_dist(E, D, J2), J != J2.
+
+    .decl near_side(d: Dir)
+    near_side(D) :- panel_axis(A), axis_of(D, A), !off_side(D).
 
     // Each cell of a panel's square, in the square's own coordinates, and the
     // cells its ink sets.
