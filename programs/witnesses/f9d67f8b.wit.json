@@ -2,7 +2,7 @@
   "id": "f9d67f8b",
   "witnesses": [{
     "id": "full-orbit-cover",
-    "separates": "train0 output with one 2x2 block and its three mirror blocks covered (rows 9-10 and 21-22, cols 12-13 and 18-19), inside the middle band where the picture is not diagonal symmetric; no covered cell has a visible mirror image. The concept restores from the diagonal images and gets 16 cells wrong; the generator pairs it with the uncovered picture",
+    "separates": "train0 output with one 2x2 block and its three mirror blocks covered (rows 9-10 and 21-22, cols 12-13 and 18-19), inside the middle band where the picture is not diagonal symmetric; no covered cell has a visible mirror image. The concept finds no image in the tile's group and is undefined. $DiagonalFallback restores from the diagonal images and gets 16 cells wrong. The generator pairs the input with the uncovered picture.",
     "input": [
       [6,1,2,2,4,6,2,6,8,2,8,3,3,2,3,5,5,3,2,3,3,8,2,8,6,2,6,4,2,2],
       [6,6,2,7,6,4,6,2,2,8,3,8,3,3,5,5,5,5,3,3,8,3,8,2,2,6,4,6,7,2],
@@ -103,7 +103,7 @@
       [2,2,4,6,2,6,8,2,8,3,3,2,3,5,5,3,2,3,3,8,2,8,6,2,6,4,2,2,1,6]
     ],
     "output": [{
-      "cases": ["concept"],
+      "cases": ["$StoredCenter"],
       "grid": null
     }, {
       "cases": ["$DerivedCenter"],

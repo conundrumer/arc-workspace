@@ -5,13 +5,13 @@
 
 ## Scene
 - `mirror-picture`: every cell whose image under the row mirror `r -> mirror_sum_v - r` or the column mirror `c -> mirror_sum_h - c` lies in the grid holds the color of that image, where neither cell is covered
-- `diagonal-picture`: every cell with one coordinate in the band `diag_band` and the other outside it holds the color of its image across the main diagonal `(r, c) -> (c, r)`, where neither is covered; the picture inside the band on both coordinates is not diagonal symmetric
+- `tiled-picture`: the canvas cuts into `tile_count` × `tile_count` tiles, and `tile_sym` gives each tile the group of canvas mirrors and turns that holds on its cells: the mirrors across the canvas's center lines in every tile, and also its two diagonals in each tile with one coordinate in the band of rows and columns 8–23 and the other outside it
+- `mask-recoverable`: each covered cell has an image, under a member of its tile's group, that is in the grid and not covered
 - `covering-blocks`: some solid rectangles of `mask_color` lie over the picture, and the picture itself holds no `mask_color`
 
 ## Rules
 - `uncovered-kept`: each cell not of `mask_color` keeps its color
-- `mirror-restore`: each covered cell takes the color that its row-mirror, column-mirror and half-turn images share, of those that are in the grid and not covered
-- `diagonal-restore`: a covered cell with no such image takes the color that its image across the diagonal through the mirror center and that image's mirror images share, of those visible
+- `restore`: each covered cell takes the color of its images, under the members of its tile's group, that are in the grid and not covered
 
 ## Parameters
 - `mask_color`: 9
@@ -21,5 +21,5 @@
     - the sum of a column and its mirror column
 
 ## Scene parameters
-- `diag_band`: rows and columns 8–23
+- `tile_sym`: a 4 × 4 table of groups, `SYM_D4` on tiles with one coordinate in the rows and columns 8–23 and the other outside them, and `SYM_BOX` elsewhere
     - the middle band of rows and columns; the cells with exactly one coordinate in it are symmetric across the main diagonal

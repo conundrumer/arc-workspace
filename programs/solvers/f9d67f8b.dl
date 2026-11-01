@@ -2,16 +2,24 @@
 // @draft
 // @keywords: symmetry repair occlude latent-canvas
 // @scene mirror-picture: the grid is cut from a square canvas whose picture is mirror symmetric left to right and top to bottom; the grid's margins within the canvas are `canvas_margin` ([0, 2, 0, 2]: the canvas extends two lines past the bottom and the right edge), and every cell whose canvas mirror image lies in the grid holds that image's color, where neither cell is covered
-// @scene diagonal-picture: every cell with one coordinate in the band of rows and columns 8–23 and the other outside it holds the color of its image across the main diagonal, where neither is covered; the picture inside the band on both coordinates is not diagonal symmetric
+// @scene tiled-picture: the canvas cuts into `tile_count` × `tile_count` tiles, and `tile_sym` gives each tile the group of canvas mirrors and turns that holds on its cells: the mirrors across the canvas's center lines in every tile, and also its two diagonals in each tile with one coordinate in the band of rows and columns 8–23 and the other outside it
 // @scene covering-blocks: some solid rectangles of `mask_color` lie over the picture, and the picture itself holds no `mask_color`
+// @scene mask-recoverable: each covered cell has an image, under a member of its tile's group, that is in the grid and not covered
 // @rule uncovered-kept: each cell not of `mask_color` keeps its color
-// @rule mirror-restore: each covered cell takes the color that its row-mirror, column-mirror and half-turn images share, of those that are in the grid and not covered
-// @rule diagonal-restore: a covered cell with no such image shows the cell of the hidden picture under it
-//     @approximated: a covered cell with no such image takes the color that its image across the diagonal through the mirror center and that image's mirror images share, of those visible
-//     @witness full-orbit-cover: borderline other
+// @rule restore: each covered cell takes the color of its images, under the members of its tile's group, that are in the grid and not covered
+
+// Which images restore a covered cell.
+.type Restore =
+    // @claim tiled-picture
+    TileGroups {}
+    // @scene tiled-picture: no tiles; the picture holds the mirrors across the canvas's center lines everywhere, and its diagonals and quarter turns where they serve
+    // @rule restore: a covered cell takes the color that its row-mirror, column-mirror and half-turn images share, of those that are in the grid and not covered; where it has none, the color that its images under the other transforms share, of those visible
+    // @witness full-orbit-cover: borderline other
+    //     @relaxed mask-recoverable
+  | DiagonalFallback {}
 
 // Where the canvas, and so the mirror center, comes from.
-.type Choice =
+.type Center =
     // @claim mirror-picture
     StoredCenter {}
     // @scene mirror-picture: the canvas margin on each axis is the one margin at which the uncovered cells are mirror symmetric; undefined where no margin or more than one qualifies
@@ -19,10 +27,25 @@
     //     @relaxed mirror-picture
   | DerivedCenter {}
 
+.type Choice = [r: Restore, ce: Center]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mask_color(c: Color) mask_color(9).
+
+    // --- $TileGroups ---
+    // Per tile of the canvas, the subgroup of canvas transforms holding on its cells.
+    .decl tile_sym(p_tile: Position, s: Sym)
+    GRID_4x4(tile_sym,
+        SYM_BOX, SYM_D4,  SYM_D4,  SYM_BOX,
+        SYM_D4,  SYM_BOX, SYM_BOX, SYM_D4,
+        SYM_D4,  SYM_BOX, SYM_BOX, SYM_D4,
+        SYM_BOX, SYM_D4,  SYM_D4,  SYM_BOX)
+
+    // The tiles along each axis.
+    .decl tile_count(n: number)
+    tile_count(N) :- tile_sym(T, _), axis_elem(A), axis_dim(T, A, N).
 
     // --- $StoredCenter ---
     // The grid's margins within the canvas.
@@ -32,7 +55,13 @@
 .init params = Params
 
 .decl impl_choice(ch: Choice)
-impl_choice($StoredCenter()). impl_choice($DerivedCenter()).
+impl_choice([R, Ce]) :- restore_choice(R), center_choice(Ce).
+
+.decl restore_choice(r: Restore)
+restore_choice($TileGroups()). restore_choice($DiagonalFallback()).
+
+.decl center_choice(ce: Center)
+center_choice($StoredCenter()). center_choice($DerivedCenter()).
 
 .decl visible(p: Position, col: Color)
 visible(P, Col) :- in(P, Col), !params.mask_color(Col).
@@ -83,33 +112,40 @@ visible(P, Col) :- in(P, Col), !params.mask_color(Col).
 parse.grid($U(), P) :- in(P, _).
 parse.visible($U(), P, Col) :- visible(P, Col).
 
+// The grid's margins within the canvas, per case.
+.decl margin(ce: Center, b: Box)
+
+// Each grid cell's position in the canvas.
+.decl canvas(ce: Center, p_grid: Position, p_canvas: Position)
+canvas(Ce, P_grid, P_canvas) :- in(P_grid, _), margin(Ce, B), compose(P_grid, B, P_canvas).
+
+// A covered cell's visible image under the canvas transform d.
+.decl image(ce: Center, p: Position, d: D4, col: Color)
+image(Ce, P, D, Col) :-
+    in(P, M), params.mask_color(M),                        // covered cell
+    canvas(Ce, P, Pc), d4_elem(D), apply(D, Pc, Qc),
+    canvas(Ce, Q, Qc), visible(Q, Col).
+
+out(P, Col, Ch) :- impl_choice(Ch), visible(P, Col).
+
+// --- $TileGroups ---
+out(P, Col, [$TileGroups(), Ce]) :-
+    image(Ce, P, D, Col), canvas(Ce, P, Pc),
+    params.tile_count(N), divide_2d(Pc, N, 0, T, _),       // its tile
+    params.tile_sym(T, S), sym_member(S, D).               // a transform holding there
+
+// --- $DiagonalFallback ---
 // The group the two axis flips generate: the flips, the half turn, the identity.
 .decl mirror(d: D4)
 mirror(D) :- flip_of(_, D).
 mirror(D) :- flip_of(_, F1), flip_of(_, F2), d4_compose(F1, F2, D).
 
-// The grid's margins within the canvas, per case.
-.decl margin(c: Choice, b: Box)
-
-// Each grid cell's position in the canvas.
-.decl canvas(c: Choice, p_grid: Position, p_canvas: Position)
-canvas(C, P_grid, P_canvas) :- in(P_grid, _), margin(C, B), compose(P_grid, B, P_canvas).
-
-// A covered cell's visible image under the canvas transform d: a mirror, or
-// a diagonal flip or quarter turn.
-.decl image(c: Choice, p: Position, d: D4, col: Color)
-image(C, P, D, Col) :-
-    in(P, M), params.mask_color(M),                        // covered cell
-    canvas(C, P, Pc), d4_elem(D), apply(D, Pc, Qc),
-    canvas(C, Q, Qc), visible(Q, Col).
-
 // The covered cell has a visible mirror image.
-.decl has_mirror(c: Choice, p: Position)
-has_mirror(C, P) :- image(C, P, D, _), mirror(D).
+.decl has_mirror(ce: Center, p: Position)
+has_mirror(Ce, P) :- image(Ce, P, D, _), mirror(D).
 
-out(P, Col, Ch) :- impl_choice(Ch), visible(P, Col).
-out(P, Col, C) :- image(C, P, D, Col), mirror(D).
-out(P, Col, C) :- image(C, P, _, Col), !has_mirror(C, P).      // the other coset
+out(P, Col, [$DiagonalFallback(), Ce]) :- image(Ce, P, D, Col), mirror(D).
+out(P, Col, [$DiagonalFallback(), Ce]) :- image(Ce, P, _, Col), !has_mirror(Ce, P).      // the other coset
 
 // --- $StoredCenter ---
 margin($StoredCenter(), B) :- params.canvas_margin(B).
@@ -143,4 +179,41 @@ margin($DerivedCenter(), B) :-
     .decl canvas_margin(b: Box)
     canvas_margin(B) :-
         axis_margin(A1, B1), perp(A1, A2), axis_margin(A2, B2), compose(B1, B2, B).
+
+    // The cells of the train outputs, in the canvas.
+    .decl canvas_cell(e: Example, p: Position, col: Color)
+    canvas_cell(E, Pc, Col) :- ex_out(E, P, Col), canvas_margin(B), compose(P, B, Pc).
+
+    // A transform takes the canvas cell onto a cell of another color.
+    // @ignore: comp-idiom — a tile's group needs the cell a transform breaks at, which D4Map.conflict leaves out
+    .decl broken_at(p: Position, d: D4)
+    broken_at(P, D) :-
+        canvas_cell(E, P, Col), d4_elem(D), apply(D, P, Q),
+        canvas_cell(E, Q, Col2), Col2 != Col.
+
+    // Canvas cell to tile, at every candidate tile count.
+    .decl cand_count(n: number)
+    cand_count(N) :- canvas_cell(_, P, _), axis_elem(A), sub_extent(P, A, N).
+
+    .decl cand_tile(n: number, p: Position, p_tile: Position)
+    cand_tile(N, P, T) :- canvas_cell(_, P, _), cand_count(N), divide_2d(P, N, 0, T, _).
+
+    // The transforms a candidate's tile breaks, and the ones it holds.
+    .decl cand_broken(n: number, p_tile: Position, d: D4)
+    cand_broken(N, T, D) :- cand_tile(N, P, T), broken_at(P, D).
+
+    .decl cand_sym(n: number, p_tile: Position, d: D4)
+    cand_sym(N, T, D) :- cand_tile(N, _, T), d4_elem(D), !cand_broken(N, T, D).
+
+    // The tile count is the coarsest decomposition whose tiles hold different groups.
+    .init nonuniform = Extremes<Unit>
+    nonuniform.cand($U(), N) :- cand_sym(N, T1, D), cand_tile(N, _, T2), !cand_sym(N, T2, D).
+
+    // Each tile's group is the named subgroup that equals its unbroken set.
+    .init symid = KeyedSetCompare<Position, Sym, D4>
+    symid.pattern_member(S, D) :- sym_member(S, D).
+    symid.observed_member(T, D) :- nonuniform.low($U(), N), cand_sym(N, T, D).
+
+    .decl tile_sym(p_tile: Position, s: Sym)
+    tile_sym(T, S) :- symid.equals(T, S).
 }
