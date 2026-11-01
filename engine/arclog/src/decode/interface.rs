@@ -37,8 +37,10 @@ pub enum Consistency {
     Consistent { assignments: Vec<Vec<(ProgramRelation, Arc<Relation>)>> },
     /// M_open does not solve every train pair.
     NotConsistent,
-    /// A `DET` without `(ONE)` that the relation reads takes more than one
-    /// value over the consistent assignments.
+    /// Of a rule test: a `DET` without `(ONE)` that the relation reads takes
+    /// more than one value over the consistent assignments. An `OUT` form
+    /// gives no such verdict: M_open reads those values, as
+    /// `docs/engine/synthesis.md#open-parameters` gives.
     SeveralValues { relation: ProgramRelation, values: Vec<Arc<Relation>> },
     /// A run faults, or, in a rule test, the grid columns of M_open are
     /// underdetermined.
@@ -463,10 +465,12 @@ impl<'a> Decoder<'a> {
         if kept.is_empty() {
             return Consistency::NotConsistent;
         }
-        for det in dets.iter().filter(|det| !det.open) {
-            let values = distinct_values(&kept, &det.relation);
-            if values.len() > 1 {
-                return Consistency::SeveralValues { relation: det.relation.clone(), values };
+        if tested == Tested::Rule {
+            for det in dets.iter().filter(|det| !det.open) {
+                let values = distinct_values(&kept, &det.relation);
+                if values.len() > 1 {
+                    return Consistency::SeveralValues { relation: det.relation.clone(), values };
+                }
             }
         }
         let parameters: Vec<_> = kept.iter().map(|assignment| ParameterValues::determined(assignment.values.clone())).collect();
