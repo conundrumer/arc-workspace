@@ -10,7 +10,8 @@
 //  wholly ahead along the reading axis, or they meet there and it lies wholly
 //  ahead across
 // @rule place: each shape takes the color of the marker whose place in the
-//  marker constellation matches the shape's place in the shape constellation
+//  marker constellation matches the shape's place in the shape constellation;
+//  an object's place is the midpoint of its box
 //     @approximated: a shape and a marker have the same place when
 //      they have the same rank in the reading order
 //     @witness spanning-shape: variant other
