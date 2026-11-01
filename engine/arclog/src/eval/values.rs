@@ -94,11 +94,15 @@ pub enum ReachedBound {
     SessionBytes(ReachedSessionBound),
     Deadline,
     Cancelled,
+    /// A variable of a search's order that no node of the clause gives values
+    /// at any place of the order. The search has no relation to give.
+    NoValues,
 }
 
 impl ReachedBound {
     /// Whether the result cache stores a stop at this bound: a stop at the
-    /// binding cap, the row cap or a margin, which is the same at every later
+    /// binding cap, the row cap, a margin or a variable with no values, which
+    /// is the same at every later
     /// request of its entry. A stop at the session's byte bound, at the
     /// deadline or by a cancellation depends on the machine or the
     /// session's history, and is stored nowhere. A stop at the model cap,
@@ -107,7 +111,7 @@ impl ReachedBound {
     /// requests of one decode alone, in [`HeldStops`].
     pub fn is_stored(self) -> bool {
         match self {
-            ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) => true,
+            ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) | ReachedBound::NoValues => true,
             ReachedBound::Models { .. }
             | ReachedBound::Nodes { .. }
             | ReachedBound::Assignments { .. }
@@ -133,6 +137,7 @@ impl ReachedBound {
             }
             ReachedBound::Deadline => "the deadline".to_owned(),
             ReachedBound::Cancelled => "a cancellation".to_owned(),
+            ReachedBound::NoValues => "a variable that no node gives values".to_owned(),
         }
     }
 }

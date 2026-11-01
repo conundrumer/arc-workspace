@@ -228,6 +228,55 @@ fn mode_waiting(clause: &ClauseIr, direct: &[bool], binders: &[Option<(usize, &U
     waiting
 }
 
+/// `order`, the variables that a search of the nodes `nodes` of `clause` binds
+/// with `bound` bound before it, with each variable that would have no values
+/// at its place moved to the first place where it has them. A variable has
+/// values at a place where an atom of `nodes` or of `tries` holds it, a union of
+/// `nodes` exports it, it is of an orientation type, an `=` gives it from `0` or
+/// from a placed variable, or an algebra relation that holds it has a mode at
+/// the placed variables. These are the sources of the search, so where each
+/// variable of `order` has values at its place, the result is `order`.
+///
+/// [`variable_order`] does not see what the search sees: a union that grounds at
+/// no placement leaves its variables to [`next_left`], which places a variable
+/// that a comparison holds before the mode of an algebra relation gives it, and
+/// a search of a branch leaves out nodes ([`kept_nodes`]). A variable that has
+/// values at no place keeps the order of the variables left, and the search
+/// stops there ([`NoValues`](super::ReachedBound::NoValues)).
+pub(super) fn values_first(clause: &ClauseIr, nodes: &[usize], tries: &[&Arguments], order: Vec<Variable>, bound: &[Variable]) -> Vec<Variable> {
+    let registry = Registry::get();
+    let index = |variable: &Variable| usize::from(variable.0);
+    let nodes: Vec<&IrNode> = nodes.iter().map(|&node| &clause.nodes[node]).collect();
+    let mut always: Vec<bool> = clause.variables.iter().map(|variable| orientation_domain(&variable.ty).is_some()).collect();
+    for arguments in nodes.iter().filter_map(|node| if let IrNode::Atom(atom) = node { Some(&atom.arguments) } else { None }).chain(tries.iter().copied()) {
+        variables_of(arguments).for_each(|variable| always[index(&variable)] = true);
+    }
+    for union in nodes.iter().filter_map(|node| if let IrNode::Or(union) = node { Some(union) } else { None }) {
+        union.exported.iter().for_each(|variable| always[index(variable)] = true);
+    }
+    let gives = |node: &IrNode, variable: Variable, placed: &[bool]| match node {
+        IrNode::Lib(atom) => {
+            variables_of(&atom.arguments).any(|held| held == variable) && mode_holds(algebra_relation(registry, &atom.relation), &atom.arguments, clause, placed)
+        }
+        IrNode::Comparison(comparison) if comparison.op == ConstraintOp::Eq => match comparison.second {
+            Operand::Zero => comparison.first == variable,
+            Operand::Variable(second) => (comparison.first == variable && placed[index(&second)]) || (second == variable && placed[index(&comparison.first)]),
+        },
+        _ => false,
+    };
+    let mut placed = vec![false; clause.variables.len()];
+    bound.iter().for_each(|variable| placed[index(variable)] = true);
+    let mut left = order;
+    let mut sourced = Vec::with_capacity(left.len());
+    while !left.is_empty() {
+        let next = left.iter().position(|variable| always[index(variable)] || nodes.iter().any(|node| gives(node, *variable, &placed))).unwrap_or(0);
+        let variable = left.remove(next);
+        placed[index(&variable)] = true;
+        sourced.push(variable);
+    }
+    sourced
+}
+
 /// Whether `variable` has a binding or a native finite orientation domain.
 /// Availability does not turn a finite-domain variable into a physical binding.
 fn bound_or_finite(clause: &ClauseIr, variable: Variable, bound: &[bool]) -> bool {

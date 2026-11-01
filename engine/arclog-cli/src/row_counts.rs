@@ -291,6 +291,7 @@ fn stopped(bound: ReachedBound) -> String {
         ReachedBound::SessionBytes(reached) => format!("session-bytes:{}", reached.bound.bytes),
         ReachedBound::Deadline => "deadline".to_owned(),
         ReachedBound::Cancelled => "cancelled".to_owned(),
+        ReachedBound::NoValues => "no-values".to_owned(),
     };
     format!("stopped:{bound}")
 }

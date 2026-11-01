@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
 use super::plan::{
-    algebra_relation, bound_variables, kept_nodes, mode_holds, variable_order, NodeSize, RelationSizes,
+    algebra_relation, bound_variables, kept_nodes, mode_holds, values_first, variable_order, NodeSize, RelationSizes,
     VariableOrder,
 };
 use super::{Caps, Evaluation, Limits, ReachedBound, Stop};
@@ -661,6 +661,8 @@ impl Plan {
         inputs: &JoinInputs,
         budget: &mut Budget<'_>,
     ) -> Result<Self, ReachedBound> {
+        let atoms: Vec<&Arguments> = tries.iter().map(|(_, arguments)| arguments).collect();
+        let order = values_first(clause, nodes, &atoms, order, bound);
         let mut rank = vec![usize::MAX; clause.variables.len()];
         for (r, v) in order.iter().enumerate() {
             rank[usize::from(v.0)] = r;
@@ -964,7 +966,7 @@ impl<'c> Search<'c> {
             values
         } else {
             let ty = &self.clause.variables[usize::from(variable.0)].ty;
-            domain(self.registry, ty).expect("a variable of the order that a node of the clause binds")
+            domain(self.registry, ty).ok_or(ReachedBound::NoValues)?
         };
         let early = rank >= self.plan.stop_from;
         let mut candidates = candidates;

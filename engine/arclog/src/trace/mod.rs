@@ -128,6 +128,7 @@ pub enum Stop {
     SessionBytes,
     Deadline,
     Cancelled,
+    NoValues,
 }
 
 impl From<ReachedBound> for Stop {
@@ -143,6 +144,7 @@ impl From<ReachedBound> for Stop {
             ReachedBound::SessionBytes(_) => Stop::SessionBytes,
             ReachedBound::Deadline => Stop::Deadline,
             ReachedBound::Cancelled => Stop::Cancelled,
+            ReachedBound::NoValues => Stop::NoValues,
         }
     }
 }

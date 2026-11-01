@@ -23,6 +23,7 @@ pub(crate) enum PyStopKind {
     SessionBytes,
     Deadline,
     Cancelled,
+    NoValues,
 }
 
 impl From<Stop> for PyStopKind {
@@ -38,6 +39,7 @@ impl From<Stop> for PyStopKind {
             Stop::SessionBytes => PyStopKind::SessionBytes,
             Stop::Deadline => PyStopKind::Deadline,
             Stop::Cancelled => PyStopKind::Cancelled,
+            Stop::NoValues => PyStopKind::NoValues,
         }
     }
 }
