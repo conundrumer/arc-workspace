@@ -1,16 +1,16 @@
 // 3618c87e
 // @keywords: lines lookup move
-// input: Slices run along axis_of(params.fall_to).
-// output: Each cell of color params.marker falls to the params.fall_to edge
-//  of its slice; the original marker position clears to params.bg.
+// input: Slices run along the fall axis, in the pose of the training inputs.
+// output: Each cell of color params.marker falls to the fall edge of its slice;
+//  the original marker position clears to params.bg.
 
 // two models of the fall
 .type Choice =
     // the fall composed: clear the marker; fill the fall edge of a marker
     // slice; else passthrough
     PerCell {}
-    // the fall as data: a slice matching params.slice_in is replaced by
-    // params.slice_out; unmatched slices pass through
+    // the fall as data: a slice matching the stored input slice is replaced by
+    // the stored output slice; unmatched slices pass through
   | SliceMap {}
 
 .type SliceMember = [p: Position, col: Color]
@@ -18,30 +18,49 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    .decl fall_to(d: Dir) fall_to(DIR_B).
+    // The placement in the training pose: R, which takes that pose onto the
+    // placement, is the identity, the one element that is its own square.
+    .decl stance(d: D4)
+    stance(D) :- slice_pose(D, R), d4_compose(R, R, R).
+
+    .decl fall_dir(d: Dir)
+    fall_dir(Dir) :- stance(D), slice_fall_to(D, Dir).
+
+    // The fall and the slice it changes, in one frame, with the pose of the
+    // training slices.
+    RIGID(slice,
+        .decl fall_to(d: Dir) fall_to(DIR_B).
+        .decl pose(d: D4) pose(D4_ID).
+
+        // --- $SliceMap ---
+
+        .decl input(p: Position, col: Color)
+        GRID_5x1(input,
+            0,
+            0,
+            1,
+            5,
+            5)
+
+        .decl output(p: Position, col: Color)
+        GRID_5x1(output,
+            0,
+            0,
+            0,
+            5,
+            1)
+    )
+
+    .decl slice_before(p: Position, col: Color)
+    slice_before(P, Col) :- stance(D), slice_input(D, P, Col).
+
+    .decl slice_after(p: Position, col: Color)
+    slice_after(P, Col) :- stance(D), slice_output(D, P, Col).
 
     // --- $PerCell ---
 
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(1).
-
-    // --- $SliceMap ---
-
-    .decl slice_in(p: Position, col: Color)
-    GRID_5x1(slice_in,
-        0,
-        0,
-        1,
-        5,
-        5)
-
-    .decl slice_out(p: Position, col: Color)
-    GRID_5x1(slice_out,
-        0,
-        0,
-        0,
-        5,
-        1)
 }
 
 .init params = Params
@@ -52,7 +71,7 @@
     // Each cell paired with its along/across split on the fall axis.
     .decl cell_split(k: Key, p: Position, col: Color, p_inner: Position, p_across: Position)
     cell_split(K, P, Col, P_inner, P_across) :-
-        cell(K, P, Col), params.fall_to(D), axis_of(D, A), split(P, A, P_inner, P_across).
+        cell(K, P, Col), params.fall_dir(D), axis_of(D, A), split(P, A, P_inner, P_across).
 }
 
 .init parse = Parse<Unit>
@@ -66,7 +85,7 @@ cleared(P) :- parse.cell_split($U(), P, Col, _, _), params.marker(Col).
 // Each marker cell falls on its own to the fall edge of its slice.
 .init fall = Gravity<Position, Unit>
 fall.cell(P, $U(), P) :- cleared(P).
-fall.dir(P, D) :- cleared(P), params.fall_to(D).
+fall.dir(P, D) :- cleared(P), params.fall_dir(D).
 
 .decl landed(p: Position)
 landed(Q) :- fall.travel(P, $U(), V), compose(P, V, Q).
@@ -81,13 +100,13 @@ out(P, Col, $PerCell()) :-
 // --- $SliceMap ---
 
 .init slice_match = KeyedSetCompare<Position, Unit, SliceMember>
-slice_match.pattern_member($U(), [P, Col]) :- params.slice_in(P, Col).
+slice_match.pattern_member($U(), [P, Col]) :- params.slice_before(P, Col).
 slice_match.observed_member(P_across, [P_inner, Col]) :-
     parse.cell_split($U(), _, Col, P_inner, P_across).
 
 out(P, Col, $SliceMap()) :-
     parse.cell_split($U(), P, Col_in, P_inner, P_across),
-    ( slice_match.equals(P_across, _), params.slice_out(P_inner, Col)   // slice replaced
+    ( slice_match.equals(P_across, _), params.slice_after(P_inner, Col) // slice replaced
     ; !slice_match.equals(P_across, _), Col = Col_in                    // slice passes through
     ).
 
@@ -108,12 +127,16 @@ out(P, Col, $SliceMap()) :-
 
     // @ignore: determine prediction — the test runs no step of the program at
     //  the slice: it reads the input content of each slice the output changes
-    .decl slice_in(p: Position, col: Color)
-    slice_in(P_inner, Col) :-
+    .decl slice_input(p: Position, col: Color)
+    slice_input(P_inner, Col) :-
         replaced(E, P_across), parse.cell_split(E, _, Col, P_inner, P_across).
 
     // @ignore: determine prediction — the test runs no step of the program at
     //  the slice: it reads the output content of each slice the output changes
-    .decl slice_out(p: Position, col: Color)
-    slice_out(P_inner, Col) :- replaced(E, P_across), out_slice(E, P_across, P_inner, Col).
+    .decl slice_output(p: Position, col: Color)
+    slice_output(P_inner, Col) :- replaced(E, P_across), out_slice(E, P_across, P_inner, Col).
+
+    // The slices are read in the pose of the training slices.
+    .decl slice_pose(d: D4)
+    slice_pose(D) :- d4_compose(D, D, D).
 }
