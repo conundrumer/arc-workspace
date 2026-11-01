@@ -126,12 +126,36 @@ pub struct Relation {
     rows_hash: std::sync::Arc<std::sync::OnceLock<StableHash>>,
 }
 
+/// The identity of a relation's storage ([`Relation::shares_storage`]), which
+/// keeps none of its rows or indexes.
+#[derive(Clone, Debug)]
+pub(crate) struct StorageTag(std::sync::Weak<std::sync::OnceLock<StableHash>>);
+
+impl StorageTag {
+    /// Whether some relation still stands on this storage.
+    pub(crate) fn live(&self) -> bool {
+        self.0.strong_count() > 0
+    }
+}
+
 impl Relation {
     /// Exact storage identity of immutable Relation clones. The OnceLock's
     /// owner is allocated only by from_parts and shared only by Clone;
     /// comparing its address neither computes nor compares a rows hash.
     pub(crate) fn shares_storage(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.rows_hash, &other.rows_hash)
+    }
+
+    /// The tag of this relation's storage, which its clones share.
+    pub(crate) fn storage_tag(&self) -> StorageTag {
+        StorageTag(std::sync::Arc::downgrade(&self.rows_hash))
+    }
+
+    /// Whether `tag` is the tag of this relation's storage. A tag keeps its
+    /// address from being given to any later relation, so an equal address
+    /// is the same storage, and so the same rows.
+    pub(crate) fn has_storage(&self, tag: &StorageTag) -> bool {
+        std::ptr::eq(std::sync::Arc::as_ptr(&self.rows_hash), tag.0.as_ptr())
     }
 
     /// The relation that `parts` hold. The parts' columns are disjoint and

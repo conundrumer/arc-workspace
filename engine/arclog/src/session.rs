@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use crate::eval::pool::InFlight;
 use crate::eval::{Caps, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap};
-use crate::relations::{Relation, RelationPart, SharedRows};
+use crate::relations::{Relation, RelationPart, SharedRows, StorageTag};
 use crate::program::FactRelation;
 use crate::task::Task;
 use crate::terms::{Example, InternTable, TermId};
@@ -168,7 +168,17 @@ struct HeldRelation {
     /// The count of entries whose key reads the relation or whose value it
     /// is.
     holders: usize,
+    /// The storage of relations whose rows a comparison found equal to this
+    /// relation's, at most [`SAME_STORAGE`] of them, so that a later lookup
+    /// of one of them compares no rows. No relation with these rows has
+    /// another id while this one is held, so a lookup gives the id it would
+    /// give by comparing. The tags keep no rows and count in no bytes.
+    same: Vec<StorageTag>,
 }
+
+/// The most relations a held relation keeps the storage of. Past it the
+/// oldest goes, which costs a comparison of rows and no correctness.
+const SAME_STORAGE: usize = 8;
 
 const UNPOISONED: &str = "a result cache that no panic poisoned";
 
@@ -342,8 +352,8 @@ impl ResultCache {
     /// `None` where it holds none.
     pub(crate) fn held_relation(&self, relation: &Relation) -> Option<Arc<Relation>> {
         let hash = relation.rows_hash();
-        let state = self.state.lock().expect(UNPOISONED);
-        let id = state.find(hash, relation)?;
+        let mut state = self.state.lock().expect(UNPOISONED);
+        let id = state.identify(hash, relation)?;
         Some(Arc::clone(&state.relations[&id].relation))
     }
 
@@ -351,7 +361,7 @@ impl ResultCache {
     /// `relation`, or `None` where it holds none.
     pub fn find_id(&self, relation: &Relation) -> Option<RelationId> {
         let hash = relation.rows_hash();
-        self.state.lock().expect(UNPOISONED).find(hash, relation)
+        self.state.lock().expect(UNPOISONED).identify(hash, relation)
     }
 
     /// The id of `relation`: that of a relation the cache holds with its
@@ -413,7 +423,7 @@ impl CacheState {
     /// copy of `relation` that the cache then holds.
     fn id_of(&mut self, relation: &Relation) -> RelationId {
         let hash = relation.rows_hash();
-        match self.find(hash, relation) {
+        match self.identify(hash, relation) {
             Some(id) => id,
             None => self.add(hash, Arc::new(relation.clone())),
         }
@@ -486,7 +496,23 @@ impl CacheState {
 
     fn find(&self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
         let ids = self.by_rows.get(&hash)?;
-        ids.iter().copied().find(|id| same_rows(&self.relations[id].relation, relation))
+        let same = ids.iter().copied().find(|id| self.relations[id].same.iter().any(|tag| relation.has_storage(tag)));
+        same.or_else(|| ids.iter().copied().find(|id| same_rows(&self.relations[id].relation, relation)))
+    }
+
+    /// [`CacheState::find`], which keeps the storage of `relation` with the
+    /// held relation it found.
+    fn identify(&mut self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
+        let id = self.find(hash, relation)?;
+        let held = self.relations.get_mut(&id).expect("a held relation");
+        if !held.relation.shares_storage(relation) && !held.same.iter().any(|tag| relation.has_storage(tag)) {
+            held.same.retain(StorageTag::live);
+            if held.same.len() == SAME_STORAGE {
+                held.same.remove(0);
+            }
+            held.same.push(relation.storage_tag());
+        }
+        Some(id)
     }
 
     fn add(&mut self, hash: StableHash, relation: Arc<Relation>) -> RelationId {
@@ -502,7 +528,7 @@ impl CacheState {
             *holders += 1;
         }
         self.by_rows.entry(hash).or_default().push(id);
-        self.relations.insert(id, HeldRelation { relation, hash, bytes, holders: 0 });
+        self.relations.insert(id, HeldRelation { relation, hash, bytes, holders: 0, same: Vec::new() });
         id
     }
 
@@ -513,7 +539,7 @@ impl CacheState {
         let (value, rows) = match value {
             RelationValue::Rows(relation) => {
                 let hash = relation.rows_hash();
-                let id = self.find(hash, &relation).unwrap_or_else(|| self.add(hash, relation));
+                let id = self.identify(hash, &relation).unwrap_or_else(|| self.add(hash, relation));
                 self.hold(id);
                 (RelationValue::Rows(self.relations[&id].relation.clone()), Some(id))
             }
