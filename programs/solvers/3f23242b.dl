@@ -18,87 +18,100 @@
 .comp Params {
     .decl mark(col: Color) mark(3).
 
-    // The bracket cell that lands on the mark.
-    .decl seat(p: Position) seat([2, 2, 2, 2]).
-
-    // The bracket edge the line runs along, and the line's color.
+    // The side of the mark the line runs along, which fixes the bracket's
+    // pose, and the line's color.
     .decl ground_dir(d: Dir) ground_dir(DIR_B).
     .decl ground_paint(col: Color) ground_paint(2).
 
-    // --- $Lookup ---
-    .decl shape(p: Position, col: Color)
-    GRID_SPARSE_5x5(shape,
-        5, 5, 5, 5, 5,
-        2, _, 5, _, 2,
-        2, _, 3, _, 2,
-        2, _, _, _, 2,
-        8, 8, 8, 8, 8)
+    // The bracket in its own frame.
+    RIGID(bracket,
+        // The bracket cell that lands on the mark.
+        .decl seat(p: Position) seat([2, 2, 2, 2]).
+
+        // The bracket edge the line runs along.
+        .decl ground(d: Dir) ground(DIR_B).
+
+        // --- $Lookup ---
+        .decl shape(p: Position, col: Color)
+        GRID_SPARSE_5x5(shape,
+            5, 5, 5, 5, 5,
+            2, _, 5, _, 2,
+            2, _, 3, _, 2,
+            2, _, _, _, 2,
+            8, 8, 8, 8, 8)
+
+        // --- $Frame ---
+        .decl edge_paint(d: Dir, col: Color)
+        edge_paint(DIR_T, 5). edge_paint(DIR_B, 8). edge_paint(DIR_L, 2). edge_paint(DIR_R, 2).
+
+        // The axis whose edges take the corners.
+        .decl face_axis(a: Axis) face_axis(AXIS_V).
+
+        // The stalk the mark sends out.
+        .decl arm_dir(d: Dir) arm_dir(DIR_T).
+    )
 
     // --- $Frame ---
-    .decl edge_paint(d: Dir, col: Color)
-    edge_paint(DIR_T, 5). edge_paint(DIR_B, 8). edge_paint(DIR_L, 2). edge_paint(DIR_R, 2).
-
-    // The axis whose edges take the corners.
-    .decl face_axis(a: Axis) face_axis(AXIS_V).
-
-    // The stalk the mark sends out, and its color.
-    .decl arm_dir(d: Dir) arm_dir(DIR_T).
+    // The stalk's color.
     .decl arm_paint(col: Color) arm_paint(5).
 }
 
 .init params = Params
 
-// The bracket's own frame, read off the seat.
-.init box = Frame2D<Unit>
-box.extent($U(), A, N) :- params.seat(P), axis_elem(A), axis_dim(P, A, N).
-
 .decl impl_choice(ch: Choice)
 impl_choice($Lookup()). impl_choice($Frame()).
 
+// The bracket's own frame, read off the seat, at each pose whose ground edge
+// faces the line's side.
+.init box = Frame2D<D4>
+box.extent(G, A, N) :-
+    params.bracket_ground(G, D), params.ground_dir(D),
+    params.bracket_seat(G, P), axis_elem(A), axis_dim(P, A, N).
+
 // The bracket seated on each mark: a bracket cell and the grid cell it
 // lands on.
-.decl placed(p_box: Position, p_grid: Position)
-placed(P_box, P_grid) :-
-    in(Q, Col_mark), params.mark(Col_mark), box.cell($U(), P_box),  // a mark, a bracket cell
-    params.seat(P_seat), relative(P_seat, P_box, Off),  // its offset from the seat
-    compose(Q, Off, P_grid), in(P_grid, _).             // seated on the mark, on-grid
+.decl placed(g: D4, p_box: Position, p_grid: Position)
+placed(G, P_box, P_grid) :-
+    in(Q, Col_mark), params.mark(Col_mark), box.cell(G, P_box),    // a mark, a bracket cell
+    params.bracket_seat(G, P_seat), relative(P_seat, P_box, Off),  // its offset from the seat
+    compose(Q, Off, P_grid), in(P_grid, _).                        // seated on the mark, on-grid
 
 // The line the brackets stand on: the ground edge run out across the grid,
 // where no bracket covers it.
 .decl line_cell(p: Position)
 line_cell(P) :-
-    placed(P_box, P_ground), params.ground_dir(D), dist(P_box, D, 0),  // a ground-edge cell
-    same_dist(D, P_ground, P), in(P, _), !placed(_, P).                // out across the grid
+    placed(G, P_box, P_ground), params.bracket_ground(G, D), dist(P_box, D, 0),  // a ground-edge cell
+    same_dist(D, P_ground, P), in(P, _), !placed(_, _, P).                       // out across the grid
 
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :- line_cell(P), params.ground_paint(Col), impl_choice(Ch).
 
 // --- $Lookup ---
-paint(P_grid, Col, $Lookup()) :- placed(P_box, P_grid), params.shape(P_box, Col).
+paint(P_grid, Col, $Lookup()) :- placed(G, P_box, P_grid), params.bracket_shape(G, P_box, Col).
 
 // --- $Frame ---
 // The stalk the mark casts, which the bracket's edges halt.
-.init stalk = Ray<Unit>
-stalk.cell($U(), P) :- box.cell($U(), P).
-stalk.mark($U(), P) :- params.seat(P).
-stalk.dir($U(), D) :- params.arm_dir(D).
-stalk.blocked($U(), P) :- on_edge(P, _).
+.init stalk = Ray<D4>
+stalk.cell(G, P) :- box.cell(G, P).
+stalk.mark(G, P) :- params.bracket_seat(G, P).
+stalk.dir(G, D) :- params.bracket_arm_dir(G, D).
+stalk.blocked(G, P) :- on_edge(G, P, _).
 
-.decl on_edge(p_box: Position, d: Dir)
-on_edge(P, D) :- box.cell($U(), P), dir_elem(D), dist(P, D, 0).
+.decl on_edge(g: D4, p_box: Position, d: Dir)
+on_edge(G, P, D) :- box.cell(G, P), dir_elem(D), dist(P, D, 0).
 
-.decl on_face(p_box: Position)
-on_face(P) :- on_edge(P, D), params.face_axis(A), axis_of(D, A).
+.decl on_face(g: D4, p_box: Position)
+on_face(G, P) :- on_edge(G, P, D), params.bracket_face_axis(G, A), axis_of(D, A).
 
-.decl frame_ink(p_box: Position, col: Color)
-frame_ink(P, Col) :-
-    on_edge(P, D), params.edge_paint(D, Col), params.face_axis(A),
+.decl frame_ink(g: D4, p_box: Position, col: Color)
+frame_ink(G, P, Col) :-
+    on_edge(G, P, D), params.bracket_edge_paint(G, D, Col), params.bracket_face_axis(G, A),
     ( axis_of(D, A)      // a face edge, corners included
-    ; !on_face(P)        // a side edge, corners excluded
+    ; !on_face(G, P)     // a side edge, corners excluded
     ).
-frame_ink(P, Col) :- stalk.clear($U(), P, _, K, _), K != 0, params.arm_paint(Col).
+frame_ink(G, P, Col) :- stalk.clear(G, P, _, K, _), K != 0, params.arm_paint(Col).
 
-paint(P_grid, Col, $Frame()) :- placed(P_box, P_grid), frame_ink(P_box, Col).
+paint(P_grid, Col, $Frame()) :- placed(G, P_box, P_grid), frame_ink(G, P_box, Col).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
@@ -134,26 +147,32 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
     .init frame = Bbox<Unit>
     frame.cell($U(), Off) :- cand(Off, Col), !missed(Off, Col).
 
-    .decl seat(p: Position)
-    seat(P) :- frame.box($U(), B), crop(ZERO, B, P).
+    .decl bracket_seat(p: Position)
+    bracket_seat(P) :- frame.box($U(), B), crop(ZERO, B, P).
 
     // The bracket, in its own frame: the paint each mark holds under it.
-    .decl shape(p: Position, col: Color)
-    shape(P_box, Col) :-
-        box.cell($U(), P_box), params.seat(P_seat),  // a bracket cell
-        relative(P_seat, P_box, Off),                // its offset from the seat
-        mark_at(E, M), compose(M, Off, P),           // seated on a mark
-        painted(E, P, Col).                          // the paint there
+    .decl bracket_shape(p: Position, col: Color)
+    bracket_shape(P_box, Col) :-
+        painted(E, P, Col), mark_at(E, M), relative(M, P, Off),  // paint, from a mark
+        frame.box($U(), B), crop(Off, B, P_box).                 // inside the frame
 
     .decl corner(p_box: Position)
-    corner(P) :- box.cell($U(), P), diag_dir_elem(Diag), corner_anchor(Diag, P, ZERO).
+    corner(P) :- bracket_shape(P, _), diag_dir_elem(Diag), corner_anchor(Diag, P, ZERO).
 
     // A corner lies on two edges, so an edge's color reads off its other cells.
-    .decl edge_paint(d: Dir, col: Color)
-    edge_paint(D, Col) :- shape(P, Col), on_edge(P, D), !corner(P).
+    .decl bracket_edge_paint(d: Dir, col: Color)
+    bracket_edge_paint(D, Col) :-
+        bracket_shape(P, Col), dir_elem(D), dist(P, D, 0), !corner(P).
 
-    .decl arm_dir(d: Dir)
-    arm_dir(D) :-
-        shape(P, _), interior(P, ZERO),                            // ink off the edges
-        params.seat(P_seat), dir_elem(D), neighbor(P_seat, D, P).  // beside the mark
+    // The ink off the edges beside the mark.
+    .decl arm(d: Dir, col: Color)
+    arm(D, Col) :-
+        bracket_shape(P, Col), interior(P, ZERO),
+        bracket_seat(P_seat), dir_elem(D), neighbor(P_seat, D, P).
+
+    .decl bracket_arm_dir(d: Dir)
+    bracket_arm_dir(D) :- arm(D, _).
+
+    .decl arm_paint(col: Color)
+    arm_paint(Col) :- arm(_, Col).
 }
