@@ -12,6 +12,8 @@ These settings steer the proposal. Each takes a file in `sampler/models/`:
 - `STEER_REL`: the relation-pick ranker. `relcheap.py` fits it, `relsteer.py` loads it, and `relfeat.py` and `plugins/rk2/` give its features.
 - `STEER_CHOICE`: the choice-pick ranker for columns, values, operators and the stop. `choicecheap.py` fits it, and `choicefeat.py` and `plugins/chplug/` give its features.
 
+`UNREAD_BETA` takes no file. It is in nats, with default 0, which is off. At an atom start, a derived option whose form no kept form reads has its log weight in q raised by that many nats. P and the steers' rows stay as they are. A pool gives `Sampler.search` the forms that none of its forms read, and a caller with no pool takes the forms of the scope as all the kept forms (`live.unread_forms`).
+
 `REL_ROWS=1` and `CHOICE_ROWS=1` write the rows those fits read. `ROW_ORDERS=n` writes them for n random valid atom orders per clause, and each row has `order`.
 
 `live_rows.py` writes the same rows from gold's walk through `live.py`, so a row exists wherever a draw consults a steer: the atoms of a RULE's or a DET's body, of an INIT's key and ports, of the branches of an OR (nested ones too) and of an ALL, and the stops after a body's atoms. Each row is the row that the steer scores, built by the Drawer's own function, with gold's pick, and has `where` and `place`. `STEER_COVER=init,branch` makes a draw consult the steers at an INIT's bodies and at the first atom of a later branch of an OR, which they leave alone otherwise; the rows are written under it. `relcheap.py` and `choicecheap.py` take `--exclude FILE` for tasks that no fit may read.

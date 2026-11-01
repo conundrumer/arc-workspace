@@ -7,7 +7,8 @@ STEMS is a stems file of search_gold.py. A point's record in OUT.json has `parts
 relation and the rest of each atom by place, the stops, the link coins), `total`, `atoms` (place, text, bits), `bad` (a choice to which the walk
 gives gold chance 0), `dead` (a gate or a refusal that ends gold's path) and `fell_back` (what the priors lack and the walk went on without, see Guide). Gold's atoms are forced through Drawer.atom with the steers and the
 join coin on, as S.gold_q does, and each rng call of the walk takes gold's side. The bits are those of gold's written atom order and of the first
-try of each choice, as the search counts a path. A coin is told from the line of live.py that makes it, so a change to those lines needs a change
+try of each choice, as the search counts a path. With UNREAD_BETA, a relation pick raises the forms that no form of the scope reads (live.unread_forms).
+A coin is told from the line of live.py that makes it, so a change to those lines needs a change
 here. `--set` replaces a number in live.py before the run (for example MIRROR_NOT=0.8).
 
 The kind of the clause is that of gold's form, RULE or INIT. An INIT has the parts of Run.init: the component, the keyed coin, the key's count of

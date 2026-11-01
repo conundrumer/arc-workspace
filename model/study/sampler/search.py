@@ -24,6 +24,8 @@ the estimate of a clause's rank does. The counts of the Run name each refusal (R
 With OR_BITS above 0, the bound of a path that takes a body's OR is lower by that many bits (a clause's logq too), so a run that takes an OR
 comes after plain runs of about the same chance. The order of the options at a choice stays the order of their chances.
 
+A path's ranks give the same options only under the same weights, so a Search reads the forms that UNREAD_BETA raises once, when it is made, and keeps them (Search.unread).
+
 A clause whose atoms, read as a set with their labels renamed, were reached by another path stops there (Run.seen). clause_key
 gives the same key to a clause whatever the order of its atoms and the names of its labels.
 
@@ -31,7 +33,7 @@ A worker restarts, and has memory for few searches. So the state of a search is 
 which searches keep their caches:
     sampler.search_store(directory, hot=64, limit_mib=None, save_every=10.0, keep_cold=4, retries=0)   # before the first search
 The state is the frontier (a heap entry is a run's ranks and the index of a choice in them), the seen atom sets, the answers of
-Run.jc (a walk reads them, so a path gives the same clause only with them), the keys of the clauses given, and the paths that
+Run.jc (a walk reads them, so a path gives the same clause only with them), Search.unread, the keys of the clauses given, and the paths that
 a death ended. Everything else (the caches of the Drawers, the decoders in memo, the Clauses waiting in the heap) is made again from the
 state, at the cost of the first runs being slower. Keys are numbers that stable() makes, the same in every process. The Journal keeps
 what a death would lose, so that a restart does not try the path of the run in flight, keeps that run's siblings, and does not give a clause
@@ -400,7 +402,7 @@ PATH_MAX, SIB_MAX, HAND_MAX, EMIT_MAX = 2048, 2048, 8192, 1 << 13  # what the Jo
 @functools.cache
 def fingerprint():
     """A number for the code and the data that a walk reads: a state of another one does not fit this process's walk."""
-    parts = [VERSION]
+    parts = [VERSION, S.UNREAD_BETA]
     for mod in (sys.modules[__name__], live, live.S):
         with open(mod.__file__, 'rb') as f:
             parts.append(hashlib.blake2b(f.read(), digest_size=8).hexdigest())
@@ -457,8 +459,9 @@ class Search:
     the caller's hand is never given again (`casualties` names them).
     """
 
-    def __init__(self, run, forms, kind, cap, eager=True):
+    def __init__(self, run, forms, kind, cap, eager=True, unread=None):
         self.run, self.forms, self.kind, self.cap, self.eager = run, tuple(forms), kind, cap or FRONTIER_CAP, eager
+        self.unread = unread  # Run.unread of each run of this Search
         self.deadline = run.deadline
         self.heap = [(0.0, 0, (), None, None)]
         self.nties = 0
@@ -573,6 +576,7 @@ class Search:
     def execute(self, path):
         """Runs the path: (False, None) where the deadline passed in it, else (True, the clause it made or None)."""
         run, ch, st, jr = self.run, self.run.rng, self.stats, self.jr
+        run.unread = self.unread
         ch.start(path)
         ch.jr = jr
         st['runs'] += 1
@@ -684,7 +688,7 @@ class Search:
         meta = dict(v=VERSION, scope=self.disk.scope, gen=gen, nties=self.nties, floor=None if self.floor == -math.inf else self.floor,
                     dropped=None if self.dropped == -math.inf else self.dropped, stats=dict(self.stats), fp=self.fp,
                     poison=[list(x) for x in self.poison], casualties=self.casualties,
-                    strikes=[[list(k), n] for k, n in self.strikes.items()], jc={kind: jc_encode(d) for kind, d in jc.items()})
+                    strikes=[[list(k), n] for k, n in self.strikes.items()], jc={kind: jc_encode(d) for kind, d in jc.items()}, unread=self.unread)
         buf = io.BytesIO()
         np.savez_compressed(buf, meta=np.frombuffer(json.dumps(meta).encode(), 'u1'), negb=negb, tie=tie, bid=bid, j=jj, kind=isclause, lens=lens, flat=flat,
                             seen_k=np.fromiter(seen.keys(), '<u8', len(seen)), seen_v=np.fromiter(seen.values(), '<u4', len(seen)),
@@ -722,6 +726,8 @@ class Search:
             self.stats['state rejected'] += 1
             self.heap, self.floor, self.dropped, self.pending, self.nties = [(0.0, 0, (), None, None)], -math.inf, -math.inf, {}, 0
             self.seen_kept, self.jc_kept = {}, collections.defaultdict(dict)
+        else:
+            self.unread = meta['unread']
         return meta['gen']
 
     def save(self):
@@ -969,7 +975,7 @@ class Manager:
             got = self.tasks[id(task)] = task, stable(json.dumps(task, sort_keys=True))
         return got[1]
 
-    def get(self, session, deadline, task, forms, kind, lim, cap, eager):
+    def get(self, session, deadline, task, forms, kind, lim, cap, eager, unread=None):
         """Sampler.search's Search: the one of the scope, or a new one that goes on from the scope's file."""
         forms = tuple(forms)
         key = self.digest(task), forms, kind, lim, eager
@@ -978,7 +984,7 @@ class Manager:
         if got is not None and got.run is not None and got.run.session is not session:
             got.demote()
         if got is None:
-            got = Search(SearchRun(self.sampler.pri, session, deadline, task, lim), forms, kind, cap, eager)
+            got = Search(SearchRun(self.sampler.pri, session, deadline, task, lim), forms, kind, cap, eager, unread)
             got.mgr, got.ctx, got.retries, got.fp = self, ctx, self.retries, self.fp
             if self.directory:
                 got.disk = Disk(self.directory, '%016x' % stable(repr((key[0], forms, kind, lim, eager, VERSION))))
@@ -1078,7 +1084,7 @@ def configure(sampler, directory=None, **options):
     return sampler.search_manager
 
 
-def search(sampler, session, deadline, task, forms, kind, lim, cap, eager=True):
+def search(sampler, session, deadline, task, forms, kind, lim, cap, eager=True, unread=None):
     """Sampler.search: the Search of the scope, new or the earlier one with the new deadline."""
     mgr = getattr(sampler, 'search_manager', None) or configure(sampler)
-    return mgr.get(session, deadline, task, forms, kind, lim, cap, eager)
+    return mgr.get(session, deadline, task, forms, kind, lim, cap, eager, unread)

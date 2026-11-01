@@ -59,6 +59,8 @@ Changes from sample.py (v1):
   its site q, from STEER_GQ_R (default 8) replicates of the m - 1 other candidates Y drawn by the EXACT sampler on gold_q's own rng;
   the atom's parts gain steer_lf, steer_m, steer_r and steer_sd (the replicates' spread);
 - JOIN_BOOST, JOINABLE_BOOST, NEED_BOOST and WANT_BOOST are the proposal's boosts (default 1: none);
+- UNREAD_BETA (nats, default 0: off) raises the log weight of a derived option at an atom start where its form is one that no kept form
+  reads (Drawer.unread, which live.py sets). P stays as it is, so the steers' rows do not change;
 - STRUCT_P=1 gives P's relation weight at an atom start and value weight at a column the structural logits REL_W
   and VAL_W: P's count weight to a fitted power, times exp of the other features (the relation's kind by first atom, its
   column types in scope, arity, a repeat of a relation the clause read, a derived relation's recency; a value's kind, a
@@ -278,6 +280,8 @@ STEER_CHOICE_PHASES = frozenset(os.environ.get('STEER_CHOICE_PHASES', 'cols,fcol
 CHOICE_CHECK = os.environ.get('CHOICE_CHECK', '')
 STEER_REL_MODEL = os.environ.get('STEER_REL_MODEL', 'hgb')  # 'hgb' (the tree) or 'logit'
 STEER_COVER = frozenset(filter(None, os.environ.get('STEER_COVER', '').split(',')))  # places where the steers go beyond S's draw: 'init' (the bodies of an INIT's key and ports, which the prefix text gives), 'branch' (the first atom of a later branch of an OR, whose clause cannot close)
+UNREAD_BETA = float(os.environ.get('UNREAD_BETA', '0'))  # nats added to the log weight of a derived option whose form no kept form reads (Drawer.unread); 0: off
+UNREAD_BOOST = math.exp(UNREAD_BETA)
 TILT = os.environ.get('TILT', '')  # path of a JSON file of score tilts (tilt_fit.py): q's weight of a choice is multiplied by exp(TILT_BETA * TILT_SCALE * theta); unset: no tilt, the draws are unchanged
 TILT_BETA = float(os.environ.get('TILT_BETA', '0.5'))  # the beta of the target
 TILT_SCALE = float(os.environ.get('TILT_SCALE', '1'))  # 1: the fitted theta in full; below 1: shrunk
@@ -1284,6 +1288,7 @@ class Drawer:
         self.need_boost, self.want_boost = NEED_BOOST, WANT_BOOST  # run_point sets the OUT values at the clause that OUT reads
         self.want_types = frozenset()  # the types of the wanted labels: columns of those types get WANT_BOOST at a relation's columns
         self.want = set()  # label tokens to favour at a site (the labels a later OR branch must bind)
+        self.unread = frozenset()  # UNREAD_BETA: the relation tokens of the forms that no kept form reads
         self.need = set()  # column types to favour at an atom start (the output clause's missing Position or Color)
         self.decl_types = {}
         self.colmap = {}
@@ -1971,7 +1976,8 @@ class Drawer:
     def weights(self, n, os, rel, joined, leaf, steer, jset=None, must_join=False):
         """The weight of each option in os at node n: its weight under the count prior P, or with steer its weight in the
         proposal, which multiplies in the boosts for the needed types (NEED_BOOST), the joinable relations
-        (JOINABLE_BOOST), the first label join (JOIN_BOOST) and the wanted labels (WANT_BOOST), and where must_join zeroes
+        (JOINABLE_BOOST), the first label join (JOIN_BOOST), the wanted labels (WANT_BOOST) and the forms that no kept form
+        reads (UNREAD_BETA), and where must_join zeroes
         the options that cannot join a label. jset is the joinable relations at an atom start."""
         fr, c = self.fr, self.c
         if n.phase in ('root', 'root2'):
@@ -2002,6 +2008,8 @@ class Drawer:
                 if steer:
                     if self.need and o not in M.CMP and self.has_type(o, self.need):
                         w *= self.need_boost
+                    if o in self.unread:
+                        w *= UNREAD_BOOST
                     if jset is not None and o in jset:
                         w *= JOINABLE_BOOST
                     elif jset and must_join and o != M.NOT and o not in M.CMP:

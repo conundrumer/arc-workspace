@@ -62,6 +62,10 @@ and Sampler's steers argument picks them; S's P settings that their fits had ('s
 program drawn so far. A RULE's point group takes its depth as 1 + the deepest clause so far (gold's RULE on dev has that depth in
 2961 of 3144 clauses, where 'RULE depth 3+' counts as one depth), and a relation's dag fields read the drawn forms. An INIT body has
 the tilt alone, as S's ports have, unless STEER_COVER has `init` (S's setting), when the steers score it on the text of its atoms as the prefix; with `branch`, the first atom of a later branch of an OR, where the clause cannot close, also has its prefix from the text of the atoms drawn.
+
+UNREAD_BETA (S's setting, in nats, default 0: off) raises the log weight of a derived option at an atom start where no kept form reads the option's form, in q alone. A Run's unread
+gives those forms by their places in the scope, and where it is None the scope's forms are all the kept forms (unread_forms), as they are for or_q.py and search_gold.py. A pool has more
+forms than a scope, so it gives its own set to Sampler.search.
 """
 import collections
 import copy
@@ -139,6 +143,13 @@ def size(grid):
 def head_of(form):
     """The relation name that form text declares."""
     return S.strata.sexprs(form)[0][1]
+
+
+def unread_forms(forms):
+    """The places in forms, the texts of a scope, of the forms that no other form of the scope reads."""
+    heads = [head_of(x) for x in forms]
+    read = {r for x, h in zip(forms, heads) for r in re.findall(r'&\w+', x) if r != h}
+    return [i for i, h in enumerate(heads) if h not in read]
 
 
 def cell_masks(pair):
@@ -542,6 +553,7 @@ class Program:
         self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
         self.facts = {}  # a relation slot -> one_repair.facts of its table; kept where the ONE repair is on
         self.lifts = {}  # a RULE's relation slot -> choose_lift.key_facts of its table; kept where the CHOOSE lift is on
+        self.unread = frozenset()  # UNREAD_BETA: the relation tokens of the scope's forms that no kept form reads
 
     def fork(self):
         """A copy whose dicts can change with no effect on this Program."""
@@ -575,15 +587,15 @@ class Sampler:
             self.run = Run(self.pri, session, seed, deadline, task, lim)
         return self.run.clause(seed, deadline, forms, kind)
 
-    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, eager=True, **limits):
+    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, eager=True, unread=None, **limits):
         """search.Search over the scope forms: iterating it gives distinct Clauses in about descending q until the deadline. A call
         with the same task, forms, kind and limits gives that Search again with the new deadline, and it goes on where it
         stopped. The search draws nothing at random, so seed has no effect: what a restart must not repeat is kept in the search's
         state (search_store). With eager, a clause is given as soon as a run makes it, so the
         clauses come in about descending logq. Without it, a clause waits until no entry of the frontier has a greater bound, and the clauses come in
-        exact descending logq."""
+        exact descending logq. unread is Run.unread, as a list, and only the call that makes the Search reads it (Search.unread)."""
         import search
-        return search.search(self, session, deadline, task, forms, kind, Limits(**limits), frontier_cap, eager)
+        return search.search(self, session, deadline, task, forms, kind, Limits(**limits), frontier_cap, eager, unread)
 
     def search_store(self, directory=None, **options):
         """Sets where the searches keep their state, and how many keep their caches (search.Manager has the options). Call it before the first search."""
@@ -595,6 +607,7 @@ class Run:
     """One task's draws."""
 
     drawer_class = LiveDrawer
+    unread = None  # the places in a scope's forms of those that no kept form reads (UNREAD_BETA), read when the scope is made; None: unread_forms
 
     def __init__(self, pri, session, seed, deadline, task, limits):
         self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
@@ -719,6 +732,7 @@ class Run:
         self.forget_slots()
         pg, dec = Program(), self.root
         if forms:
+            made = collections.defaultdict(list)  # a form's place -> the relation tokens it declares
             ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*forms, READER_OUT)), self.session.settings).decode_stream()
             stream = [(p[0], t) for t, m, p in zip(ids, model, paths) if m]
             for i, group in itertools.groupby(stream, lambda x: x[0]):
@@ -734,6 +748,7 @@ class Run:
                     rels = [x for x in f.step(t)[0] if self.V.kind(x) == 'relation']
                     if rels:
                         self.declared(pg, rels)
+                        made[i] += rels
                         at = M.slot_no(self.V.name(rels[0]))
                         pg.names = pg.names | {self.V.name(x): '&r%d.%d' % (at, j) if kind in ('INIT', 'RIGID_DET') else self.V.name(x) for j, x in enumerate(rels)}
                 pg.toks = pg.toks + toks
@@ -747,6 +762,8 @@ class Run:
             f.step(RULE_TOK)
             self.fill_columns(pg, f)
             self.scope_partners(pg, dec)
+            if S.UNREAD_BETA:
+                pg.unread = frozenset(t for i in (unread_forms(forms) if self.unread is None else self.unread) for t in made[i])
         self.c['scope_seconds'] += time.perf_counter() - t0
         self.scoped = forms, dec, pg
         return dec, pg.fork()
@@ -1113,7 +1130,7 @@ class Run:
         prior = prior if prior in self.pri['atoms'] else kind
         dr = self.drawer_class(self.V, self.pri['atoms'][prior], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
         dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmaps[kind], self.jc[kind]
-        dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
+        dr.need_boost, dr.want_boost, dr.unread = NEED_BOOST, NEED_BOOST, pg.unread
         dr.place, dr.example_read, dr.prior = place or kind, EXAMPLE_READ.get(kind, 1.0), prior
         dr.orc = self.orcs.get(dr.place)
         self.steer(pg, dr, kind)
