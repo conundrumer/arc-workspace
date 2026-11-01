@@ -60,3 +60,12 @@ broken(D, $Ordered()) :-
     placed(D, P1, Q1), placed(D, P2, Q2), dir_elem(Dir),
     ( nearer(Dir, P1, P2), !nearer(Dir, Q1, Q2)            // turned only
     ; nearer(Dir, Q1, Q2), !nearer(Dir, P1, P2) ).         // outside only
+
+.comp Determine {
+    // Each train output is the panel, which the field covers for the most part.
+    .init commonest = Mode<Example, Color, Position>
+    commonest.item(E, Col, P) :- ex_out(E, P, Col).
+
+    .decl field(c: Color)
+    field(Col) :- commonest.mode(_, Col).
+}
