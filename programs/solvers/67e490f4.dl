@@ -124,6 +124,6 @@ fill.item(C, Col, O) :-
 
 out(P_inner, Col, [S, R]) :-
     stencil_box.box(S, B), crop(P, B, P_inner), region_choice(R),
-    ( obj.label(Col, P, Id), stencil(Id, S)                        // the block itself
-    ; cutout.label([S, R], P, Id), fill.mode([[S, R], Id], Col)    // a filled cutout
+    ( obj.label(Col, P, Id), stencil(Id, S)                          // the block itself
+    ; cutout.label([S, R], P, Hole), fill.mode([[S, R], Hole], Col)  // a filled cutout
     ).
