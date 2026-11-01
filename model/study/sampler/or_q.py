@@ -21,10 +21,12 @@ the walk. Where the walk cannot take gold's side, `bad` says so and the chance i
 """
 import argparse
 import collections
+import itertools
 import json
 import linecache
 import math
 import os
+import re
 import sys
 import time
 
@@ -594,12 +596,14 @@ def one(sampler, task, case, point, kind=None):
 def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=None, rows=None, atoms=None, scoped=None, seconds=120):
     """The record of the walk of one order, the target text as written, over the scope forms on the session. With a list as rows, the rows that the
     steers score on gold's path, (kind, row) for each consult, are added to it (the Drawers' sink; STEER_COVER decides where INIT bodies and later
-    branches count). atoms are the token lists of the target's atoms in another order, in place of the written one. scoped is a `Run.scoped` of these
-    forms on this session, which saves the replay of the scope."""
+    branches count). atoms are the token lists of the target's atoms in another order, in place of the written one. scoped is a list of one item, the `Run.scoped` of these
+    forms on this session, which saves the replay of the scope; the walk puts its own there. With it, the record has `marks`, the running bits after each atom."""
     kind = kind or target.split()[0].lstrip('(')
     run = GuidedRun(sampler.pri, sess, time.monotonic() + seconds, task_json, live.Limits(form_tries=1))
-    run.scoped = scoped
+    run.scoped = scoped[0] if scoped else None
     dec, pg = run.scope(scope)
+    if scoped is not None:
+        scoped[0] = run.scoped
     g = run.rng = Guide(run, collections.deque(t for a in atoms for t in a) if atoms else gold_rest(sess, scope, target, kind), kind)
     g.rows = rows
     dead = match = None
@@ -616,7 +620,9 @@ def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=
     except Exception as e:  # noqa: BLE001
         dead = '%s: %s | %s' % (type(e).__name__, str(e)[:100], [k for k in run.c if k.startswith(('form:', 'try:', 'or:'))][:4])
     rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(g.parts.items())}, counts=dict(g.counts),
-               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back), marks=g.marks, scoped=run.scoped)
+               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back))
+    if scoped is not None:
+        rec['marks'] = g.marks
     if kind in FORMS:
         rec['match'] = match
     return rec
@@ -627,17 +633,60 @@ def clean(rec):
     return not rec['bad'] and rec['dead'] is None and not rec['left']
 
 
+PATH = re.compile(r'PathStep\((\d+)\)')
+RULE_REASONS = O.RULE_REASONS
+CANON_TRIES = 3000  # the orders of a form that canonical_lines tries
+
+
+def decoder_check(sess, scope, kind):
+    """form_orders' check of an order's text."""
+    def check(text):
+        try:
+            gold_rest(sess, scope, text, kind)
+            return None
+        except Exception as e:  # noqa: BLE001
+            line = str(e).split('\n')[0]
+            return line.split('): ')[-1], [int(x) for x in PATH.findall(line)][1:]
+    return check
+
+
+def canonical_lines(lines, sess):
+    """(lines with each drawable form in its first order, items sorted, that the decoder takes over its canonical ancestors; the count of forms that keep their written text). lines has no OUT form. A CHOOSE keeps its text."""
+    out, kept = list(lines), 0
+    forms = live.S.strata.sexprs('\n'.join(lines))
+    for i in sorted(range(len(lines)), key=lambda i: len(live.S.ancestor_order(forms, i))):
+        kind = lines[i].split()[0].lstrip('(')
+        if kind not in live.KIND_TOK:
+            continue
+        scope = canonical_scope(out, i)
+        check, form = decoder_check(sess, scope, kind), O.Form(lines[i])
+        for order in itertools.islice(form.orders(), CANON_TRIES):
+            got = check(form.text(order))
+            if got is None:
+                out[i] = form.text(order)
+                break
+            if got[0].startswith(O.RULE_REASONS):
+                form.refuse(order, got[1])
+        else:
+            kept += 1
+    return out, kept
+
+
+def canonical_scope(lines, i):
+    """The forms that form i of lines reads, directly or not, in ancestor_order: depth in the read graph, then form text."""
+    return [lines[j] for j in live.S.ancestor_order(live.S.strata.sexprs('\n'.join(lines)), i)]
+
+
 def order_walker(sampler, task, case, point, scope, kind, sess, task_json, seconds=120):
     """form_orders' walk of an order's text. A walk that isn't valid has its marks up to where it stopped, so that the guided draw learns the choice that ended it."""
     scoped = [None]
 
     def go(text):
         try:
-            rec = walk_order(sampler, task, case, point, scope, text, sess, task_json, kind, scoped=scoped[0], seconds=seconds)
+            rec = walk_order(sampler, task, case, point, scope, text, sess, task_json, kind, scoped=scoped, seconds=seconds)
         except Exception as e:  # noqa: BLE001
             refused = isinstance(e, live.arclog.Refusal) or 'Check(' in str(e)  # a mode, type or safety check of the engine
             return dict(bits=None, marks=None, why='decoder' if refused else 'error', detail='%s: %s' % (type(e).__name__, str(e)[:160]))
-        scoped[0] = rec.pop('scoped')
         if not clean(rec):
             return dict(bits=None, marks=rec['marks'], why='walk', detail=str((rec['bad'] or [rec['dead']] if (rec['bad'] or rec['dead']) else ['left %d' % rec['left']])[0])[:120], rec=rec)
         return dict(bits=sum(rec['parts'].values()), marks=rec['marks'], rec=rec)
@@ -684,26 +733,37 @@ def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, 
     """The record of the target clause over the scope forms on the session, read over its valid orders. `total` is -log2 of the sum of their chances,
     and `parts`, `counts`, `atoms` and `detail` are means weighted by each order's chance (see the head of this file). A clause with at most cap orders has
     each walked, and `orders.exact` is true. Another has budget walks of a guided draw, its `total` is an estimate and its means read the paths walked.
-    `orders` has the order counts (`orders`, an estimate where `orders_exact` is false), `walked` and `valid` paths, `refused` by reason, `written`, the bits of the
-    written order, which reads one order; `best`, those of the cheapest order walked; and for an estimate `walked_bits`, -log2 of the sum over the paths walked; `se_bits`; `ess`."""
+    `orders` has the order counts (`orders`, an estimate where `orders_exact` is false), `walked` and `valid` paths, `refused` by reason, `rules` learned from the decoder, `written`, the bits of the
+    written order, which reads one order; `best`, those of the cheapest order walked; `tight`, -log2 of the sum over the paths walked and the written order; `only_written`, true where the clause has more orders than the cap, none of those walked is valid and the written order is; and for an estimate `walked_bits`, -log2 of the sum over the paths walked; `se_bits`; `ess`."""
     kind = kind or target.split()[0].lstrip('(')
     cap, budget, seconds = cap or ORDER_CAP, budget or ORDER_BUDGET, seconds or ORDER_SECONDS
     go = order_walker(sampler, task, case, point, scope, kind, sess, task_json)
-    form = O.Form(target)
-    got = O.sum_orders(form, go, cap, budget, seconds, search.stable('%s %s' % (task, target)))
+    try:
+        form = O.Form(target)
+    except ValueError as e:
+        rec = walk_order(sampler, task, case, point, scope, target, sess, task_json, kind)
+        rec['orders'] = dict(orders=1, orders_exact=False, exact=False, walked=1, valid=int(clean(rec)), why=str(e))
+        return rec
+    got = O.sum_orders(form, go, decoder_check(sess, scope, kind), cap, budget, seconds, search.stable('%s %s' % (task, form.canonical_key())))
     valid = [(o, r) for o, r in got['walks'] if r['bits'] is not None]
     refused = collections.Counter(r['why'] for _, r in got['walks'] if r['bits'] is None)
+    for reason, n in got['refused'].items():
+        refused[reason] += n
     written = got['written']
-    orders = dict(orders=got['orders'], orders_exact=got['orders_exact'], exact=got['exact'], walked=len(got['walks']), valid=len(valid), refused=dict(refused), written=written and written['bits'], best=min((r['bits'] for _, r in valid), default=None), stopped=got['stopped'], draws=got['draws'])
-    orders['refused_examples'] = {w: sorted({r['detail'][:100] for _, r in got['walks'] if r.get('why') == w})[:2] for w in refused}
+    only_written = not valid and not got['orders_exact'] and written['bits'] is not None and form.written is not None
+    if only_written:
+        valid = [(form.written, written)]
+        got = dict(got, bits=written['bits'])
+    orders = dict(orders=got['orders'], orders_exact=got['orders_exact'], exact=got['exact'], walked=len(got['walks']), valid=len(valid), refused=dict(refused), rules=got['rules'], written=written['bits'], best=min((r['bits'] for _, r in valid), default=None),
+                  tight=got['tight'] if got['tight'] != math.inf else None, only_written=only_written, stopped=got['stopped'], draws=got['draws'])
+    orders['refused_examples'] = {w: sorted({r['detail'][:100] for _, r in got['walks'] if r.get('why') == w})[:2] for w in set(r['why'] for _, r in got['walks'] if r['bits'] is None)}
     if not valid:  # no order has a record to read: the written order's says why
-        rec = written['rec'] if written and written.get('rec') else dict(task=task, case=case, point=point, target=target, parts={}, counts={}, total=0.0, bad=[written['detail'] if written else 'no order'], dead=None, left=0, atoms=[], detail=[], fell_back=[])
+        rec = written['rec'] if written.get('rec') else dict(task=task, case=case, point=point, target=target, parts={}, counts={}, total=0.0, bad=[written['detail']], dead=None, left=0, atoms=[], detail=[], fell_back=[])
         rec.pop('marks', None)
-        rec.pop('scoped', None)
         rec['orders'] = orders
         return rec
     if not got['exact']:
-        orders.update(walked_bits=round(got['walked_bits'], 3), se_bits=round(got['se_bits'], 3), ess=None if got['ess'] is None else round(got['ess'], 1))
+        orders.update(walked_bits=None if got['walked_bits'] == math.inf else round(got['walked_bits'], 3), se_bits=round(got['se_bits'], 3), ess=None if got['ess'] is None else round(got['ess'], 1))
     low = min(r['bits'] for _, r in valid)
     shares = [2 ** (low - r['bits']) for _, r in valid]
     total = sum(shares)
