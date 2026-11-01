@@ -269,8 +269,11 @@ class Chooser:
         pass
 
     def choices(self, population, weights=None, k=1):
+        """One of the population. A population of tuples is sets of label numbers (Run.key_pick), whose ties go by the keys of their labels."""
         assert k == 1
-        return [self.pick(list(population), list(weights) if weights is not None else [1.0] * len(population))[0]]
+        population = list(population)
+        key = self.keys.labels if self.keys is not None and isinstance(population[0], tuple) else None
+        return [self.pick(population, list(weights) if weights is not None else [1.0] * len(population), key)[0]]
 
     def choice(self, seq):
         """One of the label tokens seq."""
@@ -358,6 +361,10 @@ class TieKeys:
 
     def number(self, n):
         return self.color('L%d' % n)
+
+    def labels(self, numbers):
+        """The key of a set of labels, their numbers: their keys, sorted."""
+        return tuple(sorted(self.number(n) for n in numbers))
 
     def token(self, o):
         """The key of option token o of a Drawer's pick."""

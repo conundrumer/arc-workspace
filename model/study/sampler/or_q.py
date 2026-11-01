@@ -17,7 +17,7 @@ The kind of the clause is that of gold's form, RULE or INIT. An INIT has the par
 labels and which labels, then for each port its skip coin, its head columns (bound, names a key label, reads no key, count of labels, which labels)
 and its body, whose atoms and stops are in the parts `key ...` and `port ...` (`outside ...` for a port that comes again after the key group).
 The head columns follow the body in gold's tokens, and the walk draws them before the body, so Guide.look reads a port's head from gold ahead of
-the walk. Where the walk cannot take gold's side, `bad` says so and the chance is left out: a walk that cannot go on ends with `bad` and no `dead`.
+the walk. Where the walk collects rows (Guide.rows), a key pick adds a row `keypick`, the type sets of the labels offered and of those taken (key_type_counts.py counts them). Where the walk cannot take gold's side, `bad` says so and the chance is left out: a walk that cannot go on ends with `bad` and no `dead`.
 """
 import argparse
 import collections
@@ -368,6 +368,8 @@ class Guide(search.Chooser):
             name = 'key: count of labels'
             if n not in population:
                 self.stuck('key: %d labels are not among the counts that the priors have' % n)
+        elif who == 'key_pick':
+            return self.gold_key_pick(population, weights, sys._getframe(3))
         elif who == 'record_size':
             head = self.port['heads'][self.port['cols'].index(fr.f_locals['c'])]
             n = len(head) if head else None
@@ -415,12 +417,12 @@ class Guide(search.Chooser):
             self.add('head: which label', 1.0 / len(seq))
         return label
 
-    def sample(self, population, k):
-        """The key's labels among the labels of a key group (in init), or among the labels that an OR's first branch makes (in or_form)."""
-        who = sys._getframe(1).f_code.co_name
-        population = list(population)
+    def key_gold(self, fr, population, k):
+        """(gold's key labels among the population, the name of the part, the frame of the place) for Run.key_pick's caller fr, the place of the pick: the labels of a key group (in key_body), or the labels
+        that an OR's first branch makes (in or_form). The population is label numbers."""
+        who = fr.f_code.co_name
         if who == 'key_body':
-            nlab = sys._getframe(1).f_locals['nlab']  # the population is label numbers
+            nlab = fr.f_locals['nlab']
             gold, name = sorted(nlab + c for c in self.carets), 'key: which labels'
             if len(gold) != k or not set(gold) <= set(population):
                 self.stuck('key: the labels with a caret are %s, and the walk takes %d of %s' % (gold, k, population))
@@ -432,11 +434,38 @@ class Guide(search.Chooser):
             if len(gold) != k:
                 self.bad.append('%s: the first branch makes %d keys, the walk takes %d' % (name, len(gold), k))
         else:
-            raise RuntimeError('a sample that or_q.py does not know: ' + who)
+            raise RuntimeError('a key pick that or_q.py does not know: ' + who)
+        self.keypick(fr.f_locals['dr'], population, gold)
+        return gold, name
+
+    def keypick(self, dr, population, gold):
+        """The row `keypick` of a key pick: the type sets of the labels offered, in the order of the labels, and of those taken. key_type_counts.py counts them."""
+        if self.rows is not None:
+            sets = self.run.label_type_sets(dr, (*dr.drawn, *dr.or_done))
+            types = lambda n: sorted(sets['L%d' % n])  # noqa: E731
+            self.emit(dr, 'keypick', dict(offered=[types(n) for n in population], taken=[types(n) for n in gold], k=len(gold)), gold)
+
+    def sample(self, population, k):
+        """The key's labels among the labels of a key group (in init), or among the labels that an OR's first branch makes (in or_form), as Run.key_pick draws them with every set at one chance."""
+        fr = sys._getframe(1)
+        population = list(population)
+        gold, name = self.key_gold(fr.f_back, population, k)
         combos = math.comb(len(population), k)
         if combos > 1:
             self.add(name, 1.0 / combos)
         return gold
+
+    def gold_key_pick(self, sets, weights, fr):
+        """Run.key_pick's pick of a set of key labels with the weights of ORDER_FREE key: gold's set, with its share of the weights in the part."""
+        labels = sorted({n for c in sets for n in c})
+        gold, name = self.key_gold(fr, labels, len(sets[0]))
+        gold = tuple(gold)
+        if gold not in sets:
+            self.bad.append('%s: gold\'s set %s is not among the sets' % (name, gold))
+            return [sets[0]]
+        if len(sets) > 1:
+            self.add(name, weights[sets.index(gold)] / sum(weights))
+        return [gold]
 
     def begin_port(self, cols, keys, outside):
         self.where = 'outside ' if outside else 'port '

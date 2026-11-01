@@ -23,7 +23,7 @@ counts them over random dependency orders of gold). A RULE's atoms and a DET's c
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches export the keys
 alone, and the other labels stay in the OR: a later branch may read the first branch's. A branch may take an OR as its last atom, from that place's counts (one level deep); the
-labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
+labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and which labels are the keys is a draw with every set at one chance (Run.key_pick), unless ORDER_FREE has `key` and the priors have `key_types` (key_type_counts.py): then a label's weight is the largest odds, over the types of its sites, that a label of that type is a key. A keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A port of an INIT with no key may have no atoms and no head labels, from the priors' count of those (priors that lack it draw none). A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
@@ -982,7 +982,7 @@ class Run:
         free = [j for j in range(len(stars)) if self.ff0.label_tok[nlab + j] not in dr.fr.hidden]  # a label local to a branch is no key
         if not free:
             raise Drop('key body makes no label')
-        picked = [n - nlab for n in self.rng.sample([nlab + j for j in free], min(len(free), dr.key_labels))]
+        picked = [n - nlab for n in self.key_pick(dr, [nlab + j for j in free], min(len(free), dr.key_labels))]
         types = self.label_types(dr, dr.drawn)
         keys = {self.ff0.label_tok[nlab + n]: types.get('L%d' % (nlab + n)) for n in picked}
         carets = {stars[n] for n in picked}
@@ -991,6 +991,18 @@ class Run:
             g.step(M.CARET if j in carets else t)
         g.step(M.END)
         return g, nlab + len(stars), keys
+
+    def key_pick(self, dr, labels, k):
+        """The k of labels, label numbers, that become keys: a body's, or an OR's exports in a key. Every set has one chance. With ORDER_FREE key and priors that have key_types, a label's weight is
+        the largest odds, over the types of its sites, that a label of the type is a key, and a set has the product of its labels' weights."""
+        types = self.pri.get('key_types')
+        if 'key' not in S.ORDER_FREE or not types:
+            return self.rng.sample(labels, k)
+        sets = self.label_type_sets(dr, (*dr.drawn, *dr.or_done))
+        odds = {t: (taken + 0.5) / (offered - taken + 0.5) for t, (taken, offered) in types.items()}
+        weight = {n: max((odds.get(t, 1.0) for t in sets['L%d' % n]), default=1.0) for n in labels}
+        combos = list(itertools.combinations(labels, k))
+        return list(self.pick(combos, [math.prod(weight[n] for n in c) for c in combos]))
 
     def rigid(self, pg, f):
         """A RIGID_DET at f: a key group, an instance clause and the parts, each of the first two from the priors' share of forms that have it. The instance clause
@@ -1193,24 +1205,36 @@ class Run:
                 raise Drop('body: head search spent') from None
             return False
 
-    def label_types(self, dr, atoms):
-        """{label name: type} of the labels that drawn atom texts make, where the engine gives no table (inside a port). A relation
+    def site_types(self, dr, atom):
+        """[(label name, whether the site marks the label with *, the site's type)] for the sites of atom text that hold a label, where the site has a type. A relation
         with no known columns, as a proposer's or a component's output, or a library column of no one type, gives ANY_TYPE, so that the
-        decoder judges its labels at the head. A label of a declared relation's Example column has no type here."""
-        out = {}
+        decoder judges its labels at the head. A site of a declared relation's Example column has no type here."""
+        made = re.match(r'\(= \*(L\d+) ', atom)
+        if made:  # `=` makes a label of the type of its other operand, which the decoder judges at the head
+            return [(made[1], True, ANY_TYPE)]
+        m = re.match(r'\((?:NOT \()?(\S+)', atom)
+        rtok = self.V.id(m[1]) if m else None
+        if rtok is None:
+            return []
+        unknown = self.ff0.KIND[rtok] == 'relation' and M.slot_no(m[1]) not in dr.colmap
+        out = []
+        for p, field, v in sites(atom):
+            t = ANY_TYPE if unknown else dr.col_type(rtok, p, field) or (None if self.ff0.KIND[rtok] == 'relation' else ANY_TYPE)
+            if t is not None and re.fullmatch(r'\*?L\d+', v):
+                out.append((v.lstrip('*'), v[0] == '*', t))
+        return out
+
+    def label_types(self, dr, atoms):
+        """{label name: type} of the labels that drawn atom texts make, where the engine gives no table (inside a port): the type of the site marked `*`, which
+        is a mark of the written order."""
+        return {name: t for atom in atoms for name, star, t in self.site_types(dr, atom) if star}
+
+    def label_type_sets(self, dr, atoms):
+        """{label name: the set of the types of all its sites} over the drawn atom texts. It is a fact of the atoms as a set, with one value in every valid order."""
+        out = collections.defaultdict(set)
         for atom in atoms:
-            made = re.match(r'\(= \*(L\d+) ', atom)
-            if made:  # `=` makes a label of the type of its other operand, which the decoder judges at the head
-                out[made[1]] = ANY_TYPE
-                continue
-            m = re.match(r'\((?:NOT \()?(\S+)', atom)
-            rtok = self.V.id(m[1]) if m else None
-            if rtok is not None:
-                unknown = self.ff0.KIND[rtok] == 'relation' and M.slot_no(m[1]) not in dr.colmap
-                for p, field, v in sites(atom):
-                    t = ANY_TYPE if unknown else dr.col_type(rtok, p, field) or (None if self.ff0.KIND[rtok] == 'relation' else ANY_TYPE)
-                    if t is not None and v[0] == '*':
-                        out[v[1:]] = t
+            for name, _, t in self.site_types(dr, atom):
+                out[name].add(t)
         return out
 
     def body(self, pg, dr, dec, kind, nlab, need=(), keys=()):
@@ -1664,7 +1688,7 @@ class Run:
                     exported &= bound
                 else:
                     first_made = set(made)
-                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(rng.sample(made, min(len(made), dr.key_labels)))
+                    exported = {x for x in made if not read[x] or rng.random() < S.P_REEXPORT} if dr.place != 'key' else set(self.key_pick(dr, made, min(len(made), dr.key_labels)))
                     shown = first_made - exported if dr.place == 'key' else set()  # a later branch of a key's OR reads the first branch's other labels too, and the body after the OR does not
                 dr.fr.hidden = hidden0 | self.lost | frozenset(self.ff0.label_tok[i] for i in all_made - exported - shown if i in self.ff0.label_tok)
         finally:

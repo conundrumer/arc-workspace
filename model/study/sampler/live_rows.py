@@ -12,7 +12,8 @@ too) and of an ALL, with the stops after the atoms of a body. A row has `where` 
 'port'), `kind` (the form's), `order` and `point` ([form index, 0]). STEER_COVER is 'init,branch' here, so that the rows of an INIT body and of a
 later branch's first atom exist; a draw consults them only under the same setting.
 
-A task's rows go to DIR/stems/<task>.jsonl.gz as soon as they exist, with its status on the first line and a line [k, row] for each row, where k is 'rel' or 'choice'. The
+A task's rows go to DIR/stems/<task>.jsonl.gz as soon as they exist, with its status on the first line and a line [k, row] for each row, where k is 'rel', 'choice' or 'keypick'
+(the type sets of the labels offered and taken at a key pick, for key_type_counts.py; no fit reads it). The
 file appears whole, by rename. A run skips each task whose file holds the sha256 of the task's text in the corpus, so a restart skips the finished tasks, a task with new text runs
 again, and a later run with a longer --tasks list adds to DIR. At its end a run rebuilds DIR/relrows.jsonl.zst, DIR/choices.jsonl.zst and DIR/tasks.jsonl from all of DIR/stems, in
 task order. Those are the files that the fits read. A run stops where DIR holds rows of other priors, another scope, other orders or another STEER_COVER: such rows need their own DIR.
@@ -133,7 +134,8 @@ def join(out):
                 sf.write(f.readline())
                 for x in f:
                     k, row = json.loads(x)
-                    (rel if k == 'rel' else ch).write(row)
+                    if k in ('rel', 'choice'):  # a keypick row stays in the stems
+                        (rel if k == 'rel' else ch).write(row)
     for n in (*names, *(x + '.idx.jsonl' for x in names), 'tasks.jsonl'):
         os.replace(os.path.join(tmp, n), os.path.join(out, n))
     os.rmdir(tmp)
