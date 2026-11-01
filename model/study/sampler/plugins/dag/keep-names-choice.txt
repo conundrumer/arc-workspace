@@ -238,7 +238,6 @@ cn_X
 cn_X_rel
 distinct_rels
 dlogp
-field_col
 is_stop
 k_column
 k_end
