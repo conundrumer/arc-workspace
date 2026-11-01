@@ -76,8 +76,11 @@ fn parameter_column<'p>(port: &'p InputPort, column: &ColumnName) -> Option<&'p 
 
 
 /// The key position of each row field of the logical non-key `columns`
-/// of a `from-key` input. Each field needs exactly one key label of its
-/// type. A logical column with no fields has no key label to supply it,
+/// of a `from-key` input. Each field takes the one key label of its type,
+/// or, where the key has no label of that type, the one key label of a type
+/// below it, as a `Nat` label fills an `Int` field. A field that has no such
+/// label, or several, cannot be filled.
+/// A logical column with no fields has no key label to supply it,
 /// and cannot be filled. This differs from a declared input with no
 /// non-key columns, whose successful fill is the empty tuple.
 ///
@@ -88,9 +91,11 @@ pub fn key_fill<'a>(key_types: &[ValueType], columns: impl IntoIterator<Item=&'a
     for fields in columns {
         let (first, rest) = fields.split_first()?;
         for ty in std::iter::once(first).chain(rest) {
-            let mut matching = key_types.iter().enumerate().filter(|(_, key)| *key == ty).map(|(position, _)| position);
-            match (matching.next(), matching.next()) {
-                (Some(position), None) => positions.push(position),
+            let labels = |admits: &dyn Fn(&ValueType) -> bool| -> Vec<usize> { (0..key_types.len()).filter(|&position| admits(&key_types[position])).collect() };
+            let same = labels(&|key| key == ty);
+            let found = if same.is_empty() { labels(&|key| key.is_below(ty)) } else { same };
+            match found[..] {
+                [position] => positions.push(position),
                 _ => return None,
             }
         }
