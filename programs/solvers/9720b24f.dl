@@ -5,7 +5,8 @@
 // @scene outline-shape: each container is drawn as one 8-connected
 //  shape.
 // @rule inside: a non-bg cell is erased to bg when it lies inside a
-//  container it does not belong to
+//  container it does not belong to, the container closing about two-thirds of
+//  the circle around the cell
 //     @approximated: a cell lies inside a container when the
 //      container's cells are on both sides of it along one axis, and one
 //      is to a side of the other axis
