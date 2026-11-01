@@ -7,6 +7,8 @@
 //  through. Overlapping seats cover a bigger rectangle whole, so a rectangle
 //  recolors exactly when it reaches the footprint's size on both axes.
 
+.type SeatKey = [e: Example, col: Color, k: number]
+
 .decl out(p: Position, col: Color)
 
 .comp Params {
@@ -31,3 +33,32 @@ covered(P) :- occ.occurrence(_, M), square.cell($U(), S), compose(M, S, P).
 
 out(P, Col) :- covered(P), params.paint(Col).
 out(P, Col) :- in(P, Col), !covered(P).
+
+.comp Determine {
+    .decl cand(k: number)
+    cand(K) :- ex_in(_, P, _), axis_elem(A), sub_extent(P, A, K).
+
+    .init square = Frame2D<number>
+    square.extent(K, A, K) :- cand(K), axis_elem(A).
+
+    // Each square of one color in an input.
+    .init seats = Occurrences<SeatKey, Unit>
+    seats.cell([E, Col, K], P, $U()) :- ex_in(E, P, Col), cand(K).
+    seats.shape([E, Col, K], S, $U()) :- ex_in(E, _, Col), square.cell(K, S).
+
+    // A square that a train output leaves a cell of as it is.
+    .decl left_alone(k: number)
+    left_alone(K) :-
+        seats.occurrence([E, Col, K], M), square.cell(K, S), compose(M, S, P),
+        ex_out(E, P, Col).
+
+    .init least = Extremes<Unit>
+    least.cand($U(), K) :- cand(K), !left_alone(K).
+
+    // The least side at which no train output leaves a square alone.
+    // @ignore: determine prediction — the squares the outputs leave alone bound
+    //  the side from below, and the side is that bound: a solid square past
+    //  every square the noise forms is a rectangle
+    .decl side(k: number)
+    side(K) :- least.low($U(), K).
+}
