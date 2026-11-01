@@ -65,12 +65,12 @@
 
 .type Choice = [join: Join, conn: Connectivity, colors: ConnectorColors]
 
-// Under $NoOverlapJoin, the pair of color c joins with its connector on the
-// piece nearer the origin at `from`, and the other one step from it toward d.
-.type PairDir = [c: Color, from: Position, d: Dir]
+// Under $NoOverlapJoin, connector c's partner sits one step from it toward d.
+.type Side = [c: Position, d: Dir]
 
+// Under $NoOverlapJoin, each pair's color takes one class of sides.
 .type TiebreakResolution =
-    End {} | Sit {slot: Color, item: PairDir, rest: TiebreakResolution}
+    End {} | Sit {slot: Color, item: Ident, rest: TiebreakResolution}
 
 .decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
@@ -218,11 +218,14 @@ facing(K, F, O, P, D) :-
 key([Ch, C, $End()], K, F) :-
     impl_choice(Ch), Ch = [$Snap(_), K, F], origin(Ch, _, C).
 
+// The turns a placed piece may hold.
+.decl held_turn(ch: Choice, t: D4)
+
 // The second connector sits one step past the first's facing edge, and
 // faces back.
 .decl snap_step(ky: AsmKey, a: Ident, t1: D4, v1: Offset, b: Ident, c2: Position, d2_t: Dir, q: Offset)
 snap_step([Ch, C, R], A, T1, V1, B, C2, D2_t, Q) :-
-    key([Ch, C, R], K, F), Ch = [$Snap(_), _, _], shift(V1), d4_elem(T1),
+    key([Ch, C, R], K, F), Ch = [$Snap(_), _, _], shift(V1), held_turn(Ch, T1),
     pair(K, F, A, C1, B, C2, _), facing(K, F, A, C1, D1),
     relative(C, C1, R0), apply(T1, R0, R1), compose(R1, V1, Q1),  // c1 placed
     apply_dir(T1, D1, D1_t), neighbor(Q1, D1_t, Q),               // one step past it
@@ -233,9 +236,10 @@ snap_step([Ch, C, R], A, T1, V1, B, C2, D2_t, Q) :-
 origin(Ch, O, C) :-
     impl_choice(Ch), Ch = [$Snap($Translate()), K, F], piece_cell(K, O, C), connector(F, C, _).
 
+held_turn(Ch, T) :- impl_choice(Ch), Ch = [$Snap($Translate()), _, _], d4_compose(T, T, T).  // no turn
+
 join_step(Ky, A, T, V1, B, C2, T, Q) :-
     snap_step(Ky, A, T, V1, B, C2, D2, Q), Ky = [[$Snap($Translate()), K, F], _, _],
-    d4_compose(T, T, T),  // no turn
     facing(K, F, B, C2, D2).
 
 // --- $TurnToFace ---
@@ -253,37 +257,36 @@ origin(Ch, O, C) :-
     impl_choice(Ch), Ch = [$Snap($TurnToFace()), K, F],
     largest.high(K, O, _), piece_cell(K, O, C), connector(F, C, _).
 
+held_turn(Ch, T) :- impl_choice(Ch), Ch = [$Snap($TurnToFace()), _, _], c4_elem(T).
+
 join_step(Ky, A, T1, V1, B, C2, T2, Q) :-
     snap_step(Ky, A, T1, V1, B, C2, D2_t, Q), Ky = [[$Snap($TurnToFace()), K, F], _, _],
-    c4_elem(T1), c4_elem(T2), facing(K, F, B, C2, D2), apply_dir(T2, D2, D2_t).
+    c4_elem(T2), facing(K, F, B, C2, D2), apply_dir(T2, D2, D2_t).
 
 // --- $NoOverlapJoin ---
 
 origin(Ch, O, C) :-
     impl_choice(Ch), Ch = [$NoOverlapJoin(), K, F], piece_cell(K, O, C), connector(F, C, _).
 
-// The pairs as a tree from the origin's piece: of a pair's two connectors,
-// the one on the piece nearer the origin is the first.
-.type Root = [ch: Choice, origin: Position]
+// One class per pair and way of joining: connector c1's partner c2 one step
+// toward d is c2's partner c1 one step back.
+.init sides = Canon<Side>
+sides.equiv([C1, D], [C2, D2]) :- pair(_, _, _, C1, _, C2, _), dir_elem(D), opposite(D, D2).
 
-// @claim snap
-.init tree = GraphDistance<Root, Ident>
-tree.seed([Ch, C], O) :- origin(Ch, O, C), Ch = [$NoOverlapJoin(), _, _].
-tree.edge([Ch, C], A, B) :-
-    origin(Ch, _, C), Ch = [$NoOverlapJoin(), K, F], pair(K, F, A, _, B, _, _).
+// Each pair takes one of the four directions.
+.init dirs = TiebreakResolutions<Choice, Color, Ident>
+dirs.cand(Ch, Col, S) :-
+    impl_choice(Ch), Ch = [$NoOverlapJoin(), K, F], pair(K, F, _, C1, _, _, Col),
+    dir_elem(D), sides.id([C1, D], S).
 
-// Each pair takes one of the four directions: the second connector sits one
-// step from the first that way.
-.init dirs = TiebreakResolutions<Root, Color, PairDir>
-dirs.cand(Rt, Col, [Col, C1, D]) :-
-    tree.pred(Rt, B, A), Rt = [[$NoOverlapJoin(), K, F], _], pair(K, F, A, C1, B, _, Col), dir_elem(D).
-
-key([Ch, C, R], K, F) :- dirs.resolution([Ch, C], R), Ch = [$NoOverlapJoin(), K, F].
+key([Ch, C, R], K, F) :-
+    dirs.resolution(Ch, R), Ch = [$NoOverlapJoin(), K, F], origin(Ch, _, C).
 
 join_step([Ch, C, R], A, T, V1, B, C2, T, Q) :-
     key([Ch, C, R], K, F), Ch = [$NoOverlapJoin(), _, _], shift(V1),
     d4_compose(T, T, T),  // no turn
-    pair(K, F, A, C1, B, C2, Col), dirs.assign([Ch, C], R, Col, [Col, C1, D]),
+    pair(K, F, A, C1, B, C2, Col), dirs.assign(Ch, R, Col, S),
+    dir_elem(D), sides.id([C1, D], S),
     relative(C, C1, R0), compose(R0, V1, Q1),  // c1 placed
     neighbor(Q1, D, Q).
 
