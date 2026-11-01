@@ -8,6 +8,7 @@
 //  recolors exactly when it reaches the footprint's size on both axes.
 
 .type SeatKey = [e: Example, col: Color, k: number]
+.type PieceKey = [e: Example, id: Ident]
 
 .decl out(p: Position, col: Color)
 
@@ -35,16 +36,35 @@ out(P, Col) :- covered(P), params.paint(Col).
 out(P, Col) :- in(P, Col), !covered(P).
 
 .comp Determine {
+    // A cell a train output recolors.
+    .decl painted(e: Example, p: Position)
+    painted(E, P) :- ex_out(E, P, _), ex_in(E, P, Col), !ex_out(E, P, Col).
+
+    .init pieces = Components<Example>
+    pieces.node(E, P) :- painted(E, P).
+
+    .init piece_box = Bbox<PieceKey>
+    piece_box.cell([E, Id], P) :- pieces.label(E, P, Id).
+
+    // The least extent of a recolored piece, which no footprint exceeds.
+    .init narrowest = Extremes<Unit>
+    narrowest.cand($U(), N) :-
+        pieces.label(E, P, Id), piece_box.box([E, Id], B), axis_elem(A), box_extent(B, P, A, N).
+
     .decl cand(k: number)
-    cand(K) :- ex_in(_, P, _), axis_elem(A), sub_extent(P, A, K).
+    cand(K) :- narrowest.low($U(), N), painted(_, P), axis_elem(A), sub_extent(P, A, K), K <= N.
+
+    // A color of a train input.
+    .decl shade(e: Example, col: Color)
+    shade(E, Col) :- ex_out(E, _, _), ex_in(E, _, Col).
 
     .init square = Frame2D<number>
     square.extent(K, A, K) :- cand(K), axis_elem(A).
 
     // Each square of one color in an input.
     .init seats = Occurrences<SeatKey, Unit>
-    seats.cell([E, Col, K], P, $U()) :- ex_in(E, P, Col), cand(K).
-    seats.shape([E, Col, K], S, $U()) :- ex_in(E, _, Col), square.cell(K, S).
+    seats.cell([E, Col, K], P, $U()) :- shade(E, Col), ex_in(E, P, Col), cand(K).
+    seats.shape([E, Col, K], S, $U()) :- shade(E, Col), square.cell(K, S).
 
     // A square that a train output leaves a cell of as it is.
     .decl left_alone(k: number)
@@ -56,9 +76,6 @@ out(P, Col) :- in(P, Col), !covered(P).
     least.cand($U(), K) :- cand(K), !left_alone(K).
 
     // The least side at which no train output leaves a square alone.
-    // @ignore: determine prediction — the squares the outputs leave alone bound
-    //  the side from below, and the side is that bound: a solid square past
-    //  every square the noise forms is a rectangle
     .decl side(k: number)
     side(K) :- least.low($U(), K).
 }
