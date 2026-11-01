@@ -13,7 +13,7 @@
 - `rest-kept`: every other cell keeps its input color.
 
 ## Parameters
-- `min_block_cells`: 10
+- `min_block_cells`: 7
     - the fewest cells a one-color 4-connected region has to be a block
 
 ## Scene parameters
