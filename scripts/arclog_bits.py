@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """The bits of each form and each atom of an arclog program, in the census walk of the sampler.
 
-  uv run python scripts/arclog_bits.py PROGRAM.arclog TASK [--fast] [--parents] [--models DIR] [--steer-cover LIST] [--json OUT] [-v]
+  uv run python scripts/arclog_bits.py PROGRAM.arclog TASK [--fast] [--parents] [--written] [--order-cap N] [--order-budget N] [--order-seconds S] [--models DIR] [--steer-cover LIST] [--json OUT] [-v]
 
 PROGRAM.arclog has one form per line (the gold text of the corpus: `(INIT ...)`, `(DET ...)`, `(RULE ...)`, `(RIGID_DET ...)`, then an
 optional `(OUT ...)`). A blank line and a line that starts with `;` are skipped. TASK is a task id under data/tasks/.
@@ -17,9 +17,13 @@ stops (`stop`) and what is left (`other`), and a form's row has its running tota
 A form that the walk can't draw shows `bad` (a choice to which the walk gives gold chance 0) or `dead` (a gate or a refusal that ends gold's path)
 and the reason, not a number. A form that the walk draws with something its priors lack (`fell_back`) is marked `fb`, and the header says which keys.
 
-Exact mode (the default) is or_q.walk, as work/lm/data-study/sampler/sampler-worker/front/frontier_q.py drives it: each form over every form before
-it, on a session of its own. Its figure equals the census row for the same text, code, models and STEER_COVER. `--parents` adds, per form, the bits when the scope is only
-the forms that it reads, directly or not. `--fast` is a proxy that loads no engine tables (see scripts/arclog_bits_fast.py).
+Exact mode (the default) is or_q.walk, as work/lm/data-study/sampler/sampler-worker/front/frontier_q.py drives it: each form on a session of its own. A figure is
+-log2 of the sum over the form's valid orders (see or_q.py: a form with more orders than `--order-cap` has an estimate from `--order-budget` walks, and a form takes at most
+`--order-seconds`). The first column, `before`, has every written form before the form as its scope, in written order, so it reads the written form order and isn't DAG invariant.
+`--parents` adds, per form, the bits when the scope is only the forms that it reads, directly or not, each in its canonical atom order (or_q.canonical_lines,
+or_q.canonical_scope); that column is DAG invariant. `--written` gives the old figure, which equals a census row of the same text, code, models and STEER_COVER: the form's written order
+only (or_q.walk_order), and both columns read the written forms in written order. `--fast` is a proxy for the bits of the written order, and loads no engine tables
+(see scripts/arclog_bits_fast.py).
 
 The engine is the Mac runtime of work/lm/data-study/ast/run/runtime-ba0754492, run by the python of runtime-kaggle-py313. This tool sets
 PYTHONPATH itself, and stops unless the installed arclog.abi3.so and the wheel have the hashes of `wheel_engine` in the manifest
@@ -144,6 +148,11 @@ def exact(a, lines):
     load = time.time() - t0
     t0 = time.time()
     rows = []
+    forms = [j for j, x in enumerate(lines) if kind_of(x) != 'OUT']  # canonical_lines takes the forms with no OUT form
+    canon = None
+    if a.parents and not a.written:
+        sess, _, _ = live_try.session_of(a.task)
+        canon, _ = or_q.canonical_lines([lines[j] for j in forms], sess)
     for i, target in enumerate(lines):
         kind = kind_of(target)
         row: dict[str, Any] = dict(line=i, kind=kind, target=target)
@@ -151,14 +160,17 @@ def exact(a, lines):
         if kind not in live.KIND_TOK:
             row['skip'] = True
             continue
-        for scope, keep in (('before', list(range(i))), ('parents', parents(lines, i) if a.parents else None)):
+        for scope, keep in (('before', lines[:i]), ('parents', None if not a.parents else [lines[j] for j in parents(lines, i)] if a.written or canon is None else or_q.canonical_scope(canon, forms.index(i)))):
             if keep is None:
                 continue
             t1 = time.time()
             q: dict[str, Any]
             try:
                 sess, task_json, _ = live_try.session_of(a.task)  # a session for each walk, as frontier_q.py: a session that earlier walks used gives other bits
-                q = or_q.walk(sampler, a.task, kind, [len(keep), 0], [lines[j] for j in keep], target, sess, task_json, kind)
+                if a.written:
+                    q = or_q.walk_order(sampler, a.task, kind, [len(keep), 0], keep, target, sess, task_json, kind)
+                else:
+                    q = or_q.walk(sampler, a.task, kind, [len(keep), 0], keep, target, sess, task_json, kind, a.order_cap, a.order_budget, a.order_seconds)
             except Exception as e:  # noqa: BLE001
                 q = dict(error=repr(e)[:200])
             q['seconds'] = round(time.time() - t1, 2)
@@ -247,6 +259,10 @@ def show(a, res, header, program):
         run += q['total']
         d = q['cats']
         out.append('%-3d %-9s %-58s %7.1f %s %7.1f%s%s' % (r['line'], r['kind'], label(r['target']), q['total'], cells(d), run, ptxt, '  fb' if q.get('fell_back') else ''))
+        o = q.get('orders')
+        if o:
+            out.append('      orders %s walked %d valid %d written %s, %s' % (round(o['orders']) if o['orders'] is not None else '?', o['walked'], o['valid'], '-' if o['written'] is None else '%.1f' % o['written'],
+                                                                          'exact' if o['exact'] else 'estimate se %.2f' % o.get('se_bits', 0.0)))
         for place, text, bits, ad in q['atom_rows']:
             out.append('      %-6s %-55s %7.1f %s' % (place, label(text, 55), bits, cells(ad)))
     out.append('total %.1f bits over %d forms%s; %.1f s in the walks, %.1f s to load the models' % (
@@ -261,7 +277,13 @@ def inner(a):
     res: dict[str, Any] = fast(a, lines) if a.fast else exact(a, lines)
     if a.json:
         json.dump(res, open(a.json, 'w'))
-    header = 'fast (a proxy from the text, no engine)' if a.fast else 'exact  models %s  STEER_COVER=%s' % (a.models, ','.join(list(res['steer_cover'])) or 'unset')
+    if a.fast:
+        header = 'fast (a proxy for the bits of the written order, no engine)'
+    else:
+        what = 'written order' if a.written else 'sum over orders'
+        header = 'exact (%s)  models %s  STEER_COVER=%s; the bits column reads every written form before the form, in written order' % (what, a.models, ','.join(list(res['steer_cover'])) or 'unset')
+        if a.parents:
+            header += '; the parents column reads the forms it reads, ' + ('in written order' if a.written else 'each in canonical atom order')
     print(show(a, res, header, a.program))
 
 
@@ -270,7 +292,11 @@ def main():
     ap.add_argument('program')
     ap.add_argument('task')
     ap.add_argument('--fast', action='store_true', help='the proxy, with no engine')
-    ap.add_argument('--parents', action='store_true', help='also the bits over the forms that the form reads')
+    ap.add_argument('--parents', action='store_true', help='also the bits over the forms that the form reads, in canonical atom order')
+    ap.add_argument('--written', action='store_true', help='the bits of the written order of each form, over the written forms: one order, as this tool read before it summed over orders')
+    ap.add_argument('--order-cap', type=int, default=256, help='a form with at most this many orders has all of them walked')
+    ap.add_argument('--order-budget', type=int, default=256, help='the walks of a form with more')
+    ap.add_argument('--order-seconds', type=float, default=300, help='the seconds a form takes at most')
     ap.add_argument('--models', type=Path, default=MODELS, help='a folder with live_priors.pkl, relR4_o.pkl, choice5_o.pkl, tilt_v1.json (default: the dataset of kernel-bundle-00361067)')
     ap.add_argument('--steer-cover', default='', help='STEER_COVER of the walk (default: unset, as in kernel-bundle-00361067)')
     ap.add_argument('--manifest', type=Path, default=MANIFEST)

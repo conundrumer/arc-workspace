@@ -7,7 +7,7 @@ come from a linear model on its counts. The coefficients are in `arclog_bits_fas
   python scripts/arclog_bits_fast.py fit CENSUS.jsonl POINTS.json REL_ALL.jsonl OUT.json
   python scripts/arclog_bits_fast.py cv  CENSUS.jsonl POINTS.json REL_ALL.jsonl      (5 folds by task: median and worst gap per kind)
 
-CENSUS.jsonl is a census of or_q (rows with `scope` before, `atoms`, `detail`, `parts`), POINTS.json its gold programs, and REL_ALL.jsonl a relation-pick
+CENSUS.jsonl is a census of `or_q.walk_order`, the walk of the written order (rows with `scope` before, `atoms`, `detail`, `parts`), POINTS.json its gold programs, and REL_ALL.jsonl a relation-pick
 read whose `opts` give each relation's kind.
 """
 import json
