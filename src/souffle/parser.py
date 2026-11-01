@@ -118,6 +118,8 @@ RIGID_PLACEMENTS: dict[str, str | None] = {
     "DiagAxis": "diag_axis_of(Bd{i}, {src}), "
                 "apply_diag_dir(D4, Bd{i}, Ad{i}), "
                 "diag_axis_of(Ad{i}, {img})",
+    "Sense": "turn({src}, Bd{i}, Cd{i}), apply_dir(D4, Bd{i}, Ad{i}), "
+             "apply_dir(D4, Cd{i}, Dd{i}), turn({img}, Ad{i}, Dd{i})",
     RIGID_POSE: "d4_compose({img}, {src}, D4)",
     "Color": None, "number": None, "Ident": None, "symbol": None,
     "Example": None,
@@ -128,7 +130,8 @@ accepts: the atoms that relate the stored value `{src}` to its image
 leaves as it is.
 
 A type acts through its type's action relation, or, for an axis, through
-the swap it induces on a member direction. A stored pose S, placed at
+the swap it induces on a member direction, and a sense through the
+turn it makes between two directions, taken to the turn of their images. A stored pose S, placed at
 the placement's pose D, becomes the P with `d4_compose(P, S, D)`, the
 element that takes S onto D, which is the same in every frame of the
 block."""
