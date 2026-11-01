@@ -555,6 +555,13 @@ def column_type(ts, cols, pos, field=None):
     return str(ts[pos]) if ts and field is None and 0 <= pos < len(ts) else None
 
 
+@functools.lru_cache(maxsize=4)
+def vocab_columns(V):
+    """([(position, token)] of the vocabulary's column tokens, in position order; [(slot, token)] of its relation tokens)."""
+    cols = sorted((int(V.name(i)[1:]), i) for i in range(len(V)) if V.kind(i) == 'column' and V.name(i)[1:].isdigit())
+    return cols, [(M.slot_no(V.name(t)), t) for t in range(len(V)) if V.kind(t) == 'relation']
+
+
 def column_positions(dec, V, entries, ndecl):
     """{relation slot: {(column position, field position or None): type}} of the declared relations below slot ndecl,
     at decoder dec at an atom start. entries[slot] lists a relation's columns as [(table slot, type)], one entry per
@@ -563,12 +570,11 @@ def column_positions(dec, V, entries, ndecl):
     and skipping a key column that the INIT does not bind. So the positions are the column tokens the decoder admits
     right after the relation token, less the first where they number one more than the table's columns; a relation
     whose admitted columns number neither is left out."""
-    cols = sorted((int(V.name(i)[1:]), i) for i in range(len(V)) if V.kind(i) == 'column' and V.name(i)[1:].isdigit())
+    cols, rels = vocab_columns(V)
     out = {}
-    for t in range(len(V)):
-        if V.kind(t) != 'relation' or M.slot_no(V.name(t)) >= ndecl or not entries.get(M.slot_no(V.name(t))):
+    for sl, t in rels:
+        if sl >= ndecl or not entries.get(sl):
             continue
-        sl = M.slot_no(V.name(t))
         f = dec.fork()
         try:
             f.step(t)

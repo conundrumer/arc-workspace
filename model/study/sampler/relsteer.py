@@ -129,6 +129,7 @@ class Scorer:
         one_thread()
         self.mask = ck.get('mask', 'all')
         self.kind = model
+        self.scored = relfeat.Scored()
         m = ck[model]
         self.groups = m['groups_used']
         if ck.get('plugin') and any(g not in relfeat.FEATURE_FUNCS for g in self.groups):  # a model trained with a plugin's feature set
@@ -161,6 +162,9 @@ class Scorer:
         return np.frombuffer(X, np.float32).reshape(len(opts), nd), logp
 
     def f(self, row):
+        return self.scored.get_or(row, self.score)
+
+    def score(self, row):
         row = relfeat.mask_row(row, self.mask)
         if self.kind == 'logit':
             ds = relfeat.option_dicts(row, self.groups)

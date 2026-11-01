@@ -11,6 +11,7 @@ mask_row(row, mode) hides the author's names before any feature sees the row:
   'group'  as 'all', but a member name that the library declares stays ('&bbox.box' -> '&D.box', '&r2.box' stays)
   'none'   the row as it is (only for measuring the leak)
 """
+import hashlib
 import math
 import re
 
@@ -57,6 +58,25 @@ def _sub(a, b):
             return True
         a = _SUPER.get(a)
     return False
+
+
+# ---- the scores of rows seen ----
+
+SCORED_CAP = 4096  # rows whose scores a scorer keeps; the store is emptied past it
+
+
+class Scored(dict):
+    """{digest of a row's text: its scores}. The search draws the same atom start again under different paths, and each time writes a row
+    with the same values; a model's scores are a function of the row alone, so the first answer stands for all of them."""
+
+    def get_or(self, row, score):
+        key = hashlib.blake2b(repr(row).encode(), digest_size=16).digest()
+        got = self.get(key)
+        if got is None:
+            if len(self) >= SCORED_CAP:
+                self.clear()
+            got = self[key] = score(row)
+        return got
 
 
 # ---- the mask ----

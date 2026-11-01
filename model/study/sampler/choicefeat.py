@@ -351,6 +351,7 @@ class Scorer:
         m = ck['hgb']
         import relsteer
         self.groups, self.model, self.beta = m['groups_used'], relsteer.FlatGBM.of(m['model']), m['beta']
+        self.scored = relfeat.Scored()
         self.phases = frozenset(ck.get('phases') or DEFAULT_PHASES)  # the phases the model was trained on
         if ck.get('plugin') and any(g not in FEATURE_FUNCS for g in self.groups):
             load_plugin(os.path.join(os.path.dirname(os.path.abspath(__file__)), ck['plugin']))
@@ -359,6 +360,9 @@ class Scorer:
         self.sets = [(FEATURE_FUNCS[g], Columns(self.col, g)) for g in self.groups]
 
     def f(self, row):
+        return self.scored.get_or(row, self.score)
+
+    def score(self, row):
         """option_dicts' values of the masked row, put in the model's input by column as they come."""
         row = mask_row(row)
         opts, nd = row['options'], self.nd
