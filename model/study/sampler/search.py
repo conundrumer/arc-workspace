@@ -328,8 +328,8 @@ class SearchRun(Run):
         self.shared = collections.defaultdict(dict)  # (kind, place, path) -> the caches that Drawers of one scope share
         self.memo = {}  # (what, id of a decoder) -> (the decoder, the answer): a decoder of a node that a shared root keeps stays the same one
 
-    def drawer(self, pg, kind, dec, place=None):
-        dr = super().drawer(pg, kind, dec, place)
+    def drawer(self, pg, kind, dec, place=None, prior=None):
+        dr = super().drawer(pg, kind, dec, place, prior)
         dr.ctx = self.rng.hash
         if kind == 'INIT':  # an INIT body reads what its component and the bodies before it fixed, so a store is for one path to the body
             if len(self.shared) >= INIT_STORES:

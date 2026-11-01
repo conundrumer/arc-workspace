@@ -13,7 +13,7 @@ counts so far: draws, finished programs, drops by reason, errors by type, and th
 
 clause draws one clause of the kind over a scope that the caller picks: forms, the text of one form each in dependency order, with
 no OUT. The forms are replayed into a decoder and a Program as if this module had drawn them, so what a clause reads of the scope
-comes from the decoder. A CHOOSE or RIGID_DET form is replayed and never drawn. A form's relation slot is its place among the scope's declarations, so the written name of a relation
+comes from the decoder. A CHOOSE form is replayed and never drawn. A form's relation slot is its place among the scope's declarations, so the written name of a relation
 means nothing to a decoder: two forms need two head names, any names, and a Clause's text uses the names of forms. The Run stays
 between calls on one session, seed sets its draws for each call, and sampler.run.c has the counts of its calls.
 
@@ -86,9 +86,9 @@ from sample2_col import M, arclog  # noqa: E402
 S.ADMITS = True  # one Decoder.admits call per node, with no mask and no per-token call
 S.REACH = False  # no look-ahead below a column or a value: an atom that cannot close is redrawn, which costs less
 
-RULE_TOK, DET_TOK, INIT_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 7, 12, 13
-KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK)
-REPLAYED = 'CHOOSE', 'RIGID_DET'  # the kinds of a scope's forms that no draw makes and a scope replays, for the forms after them
+RULE_TOK, DET_TOK, INIT_TOK, RIGID_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 6, 7, 12, 13
+KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK, RIGID_DET=RIGID_TOK)
+REPLAYED = 'CHOOSE',  # the kinds of a scope's forms that no draw makes and a scope replays, for the forms after them
 EXAMPLE_TASK, EXAMPLE_TRAIN = 0, 1  # the example_kind of a task-wide table entry, and of a train pair's
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
 READER_OUT = '(OUT (input ^P ^Col))'  # the reader takes whole programs; this closes a scope's text and is not stepped
@@ -409,6 +409,8 @@ class LiveDrawer(S.Drawer):
     example_read = 1.0  # the factor on the weight of a declared relation's Example column
     eq_share = 0.0  # the share of `=` among the atoms drawn now: nonzero inside an OR's branch, where `=` binds a label that the branches share
     mirror = frozenset()  # the relation tokens that the earlier branches of the OR being drawn hold
+    prior = None  # the kind whose atom counts and stop hazard the body takes
+    plain_parts = False  # whether the body is a RIGID_DET's parts: plain atoms, each of a relation of its own
 
     def __init__(self, V, counts, rng, regcols, fr, regtypes, limits):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
@@ -770,7 +772,7 @@ class Run:
             saved = copy.copy(pg)
             try:
                 f = self.open_form(pg, dec, kind)
-                return self.rule(pg, f) if kind == 'RULE' else self.det(pg, f) if kind == 'DET' else self.init(pg, f)
+                return dict(RULE=self.rule, DET=self.det, INIT=self.init, RIGID_DET=self.rigid)[kind](pg, f)
             except Spent:
                 raise
             except (Drop, arclog.Refusal) as e:
@@ -865,30 +867,12 @@ class Run:
             raise Drop('no component')
         comp = self.pick(names, [pri['comps'][c] for c in names])
         f = f.fork()
-        forced = f.step(self.tok[comp])[0]
-        self.declared(pg, forced)
-        slots = [M.slot_no(self.V.name(t)) for t in forced if self.V.kind(t) == 'relation']
-        pg.names = pg.names | {'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)}  # a '.' tells a method (one_call)
+        self.declare_methods(pg, f.step(self.tok[comp])[0])
         params, ports = pri['comp_ports'][comp]
         keyed = rng.random() < pri['keyed'][comp] / pri['comps'][comp]
         nlab, keys, fields = 0, {}, {}
         if keyed:  # the key port: one label of its body becomes the key
-            dr = self.drawer(pg, 'INIT', f, 'key')
-            dr.key_labels = self.pick(*zip(*self.key_labels))
-            cur, toks = self.body(pg, dr, f, 'INIT', 0)[:2]
-            stars = [i for i, t in enumerate(toks) if t == M.STAR]
-            free = [j for j in range(len(stars)) if self.ff0.label_tok[j] not in dr.fr.hidden]  # a label local to a branch is no key
-            if not free:
-                raise Drop('key body makes no label')
-            picked = rng.sample(free, min(len(free), dr.key_labels))
-            types = self.label_types(dr, dr.drawn)
-            keys = {self.ff0.label_tok[n]: types.get('L%d' % n) for n in picked}
-            carets = {stars[n] for n in picked}
-            g = f.fork()
-            for j, t in enumerate(toks):
-                g.step(M.CARET if j in carets else t)
-            g.step(M.END)
-            f, nlab = g, len(stars)
+            f, nlab, keys = self.key_body(pg, f)
         else:
             f = f.fork()
             f.step(SKIP_TOK)
@@ -918,6 +902,55 @@ class Run:
             f.step(SKIP_TOK)
         if not f.admits([RULE_TOK])[0]:
             raise Drop('%s did not end' % comp)
+        self.close(pg, f)
+        return f
+
+    def declare_methods(self, pg, forced):
+        """Records the relations of a form that the decoder forced: an INIT's after its component, a RIGID_DET's after its last END."""
+        self.declared(pg, forced)
+        slots = [M.slot_no(self.V.name(t)) for t in forced if self.V.kind(t) == 'relation']
+        pg.names = pg.names | {'&r%d' % s: '&r%d.%d' % (slots[0], i) for i, s in enumerate(slots)}  # a '.' tells a method (one_call)
+
+    def key_body(self, pg, f, nlab=0, outer=None):
+        """(decoder after a key body and its END at f, the labels so far, {label token: type} of its keys): one label of the body, or more by the priors' count, becomes a key.
+        outer has the keys of the key group that this body stands in, which it reads."""
+        dr = self.drawer(pg, 'INIT', f, 'key')
+        dr.key_labels = self.pick(*zip(*self.key_labels))
+        if outer:
+            dr.want, dr.want_types = set(outer), frozenset(t for t in outer.values() if t)
+            dr.fr.hidden = frozenset(self.ff0.label_tok[i] for i in range(nlab)) - dr.want
+        cur, toks = self.body(pg, dr, f, 'INIT', nlab, (), outer or ())[:2]
+        stars = [i for i, t in enumerate(toks) if t == M.STAR]
+        free = [j for j in range(len(stars)) if self.ff0.label_tok[nlab + j] not in dr.fr.hidden]  # a label local to a branch is no key
+        if not free:
+            raise Drop('key body makes no label')
+        picked = self.rng.sample(free, min(len(free), dr.key_labels))
+        types = self.label_types(dr, dr.drawn)
+        keys = {self.ff0.label_tok[nlab + n]: types.get('L%d' % (nlab + n)) for n in picked}
+        carets = {stars[n] for n in picked}
+        g = f.fork()
+        for j, t in enumerate(toks):
+            g.step(M.CARET if j in carets else t)
+        g.step(M.END)
+        return g, nlab + len(stars), keys
+
+    def rigid(self, pg, f):
+        """A RIGID_DET at f: a key group, an instance clause and the parts, each of the first two from the priors' share of forms that have it. The instance clause
+        is a key body, and the parts are atoms that read the keys, as a port's body is; the form's relations come with its last END."""
+        rg = self.pri.get('rigid') or dict(forms=0, keyed=0, instance=0)  # priors fitted before RIGID_DET was counted have none: the shares are 1/2
+        nlab, keys = 0, {}
+        if self.rng.random() < (rg['keyed'] + 0.1) / (rg['forms'] + 0.2):
+            f, nlab, keys = self.key_body(pg, f)
+        else:
+            f = f.fork()
+            f.step(SKIP_TOK)
+        if self.rng.random() < (rg['instance'] + 0.1) / (rg['forms'] + 0.2):
+            f, nlab, own = self.key_body(pg, f, nlab, keys)
+            keys = keys | own
+        else:
+            f = f.fork()
+            f.step(SKIP_TOK)
+        f, _ = self.port(pg, f, 'RIGID_DET', 'parts', [], (), nlab, keys, {})
         self.close(pg, f)
         return f
 
@@ -964,7 +997,7 @@ class Run:
         types so far, and gets those of the columns that this head binds first. outside says that the port follows the key group."""
         pri, rng = self.pri, self.rng
         empties = pri.get('empty_ports')  # priors fitted before an empty port was counted have none: they draw none
-        if empties is not None and not keys and not outside and f.fork().admits([M.END])[0] and rng.random() < (empties.get((comp, name), 0) + 0.1) / (pri['ports'][comp, False, name] + 0.2):
+        if empties is not None and not keys and not outside and comp != 'RIGID_DET' and f.fork().admits([M.END])[0] and rng.random() < (empties.get((comp, name), 0) + 0.1) / (pri['ports'][comp, False, name] + 0.2):
             if (got := self.empty_port(f, cols)) is not None:
                 self.c['port:empty'] += 1
                 return got, nlab
@@ -980,7 +1013,9 @@ class Run:
         sizes = {}  # a type -> the count of labels that a head column of it takes
         for c, t in rest:
             sizes[t] = len(fields[t]) if t in fields else sizes.get(t) or self.record_size(comp, name, c)
-        dr = self.drawer(pg, 'INIT', f, 'port')
+        dr = self.drawer(pg, 'INIT', f, 'port', comp)
+        if comp == 'RIGID_DET':  # the parts admit no NOT, input or `=`, which tell a finished atom: the END that closes the parts does
+            dr.fr.closers_try, dr.plain_parts, dr.orc = dr.fr.closers_try + [M.END], True, None
         dr.labs_wanted = nlab + max(sizes.values(), default=0)
         want = {} if waive else keys
         dr.want, dr.want_types = set(want), frozenset(t for t in want.values() if t)
@@ -989,7 +1024,7 @@ class Run:
         made = list(range(nlab, nlab + toks.count(M.STAR)))
         nlab = made[-1] + 1 if made else nlab
         f = cur.fork()
-        f.step(M.END)
+        self.declare_methods(pg, f.step(M.END)[0])  # a RIGID_DET's relations come here
         names, labs = {c for c, _ in bound}, [self.ff0.label_tok[i] for i in made if i in self.ff0.label_tok]
         types = self.label_types(dr, dr.drawn)
         for c, t in cols:
@@ -1002,7 +1037,7 @@ class Run:
                     fields[t] = [types.get(self.V.name(x)) or keys.get(x) or ANY_TYPE for x in got]
             elif some and (c in names or not ok[-1]):  # the decoder refuses END at a column whose type an earlier port bound
                 n = len(fields[t]) if t in fields else min(sizes.get(t, 1), len(some))
-                f, got = self.head_column(f, some, n)
+                f, got = self.head_column(f, labs if n > 1 else some, n)  # a record's field labels are admitted after its column token, and a label that the decoder refuses before it may be one
                 if t in params:
                     fields[t] = [types.get(self.V.name(x), ANY_TYPE) for x in got]
             elif ok[-1]:
@@ -1038,19 +1073,21 @@ class Run:
                 pg.arity[self.rel0 + s] = len({c for c, _ in e}) + 2
             pg.pending[kind] = {}
 
-    def drawer(self, pg, kind, dec, place=None):
+    def drawer(self, pg, kind, dec, place=None, prior=None):
         """A Drawer of one body at decoder dec, an atom start, over the relations pg declares. place is the kind of body within an
-        INIT, 'key' or 'port'; its Drawer has that place's OR counts, as orc, or None where the place has no OR."""
+        INIT, 'key' or 'port'; its Drawer has that place's OR counts, as orc, or None where the place has no OR. prior names the atom counts and the
+        stop hazard of a form kind that has its own (a RIGID_DET's parts), in place of the body kind's."""
         ff = copy.copy(self.ff0)
         decl = list(range(self.rel0, self.rel0 + pg.ndecl))
         ff.starts_list = self.lib_starts + decl + self.fact_starts
         ff.starts = set(ff.starts_list)
         ff.arity, ff.record_col, ff.root, ff.created = pg.arity, pg.record_cols[kind], None, 0
         self.fill_columns(pg, dec, kind)
-        dr = self.drawer_class(self.V, self.pri['atoms'][kind], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
+        prior = prior if prior in self.pri['atoms'] else kind
+        dr = self.drawer_class(self.V, self.pri['atoms'][prior], self.rng, self.pri['regcols'], ff, self.pri['regtypes'], self.lim)
         dr.prog_names, dr.decl_types, dr.colmap, dr.jcache = pg.names, pg.decl_types, pg.colmaps[kind], self.jc[kind]
         dr.need_boost, dr.want_boost = NEED_BOOST, NEED_BOOST
-        dr.place, dr.example_read = place or kind, EXAMPLE_READ.get(kind, 1.0)
+        dr.place, dr.example_read, dr.prior = place or kind, EXAMPLE_READ.get(kind, 1.0), prior
         dr.orc = self.orcs.get(dr.place)
         self.steer(pg, dr, kind)
         return dr
@@ -1121,7 +1158,7 @@ class Run:
     def body(self, pg, dr, dec, kind, nlab, need=(), keys=()):
         """Atoms at decoder dec (with nlab labels before them) until the hazard stops them: (decoder, tokens, atom texts,
         types in scope). Each atom passes the gates that read the decoder alone; a stop passes MIN2_KINDS and the head's needs."""
-        lim, c, hz = self.lim, self.c, self.pri['hazard'][kind]
+        lim, c, hz = self.lim, self.c, self.pri['hazard'][dr.prior or kind]
         single = self.pri.get('single', {}).get(kind)  # P(stop at one atom) for a first atom that is no method call, in priors that have it
         cur, toks, text, scope = dec, [], [], ()
         top = lim.port_atoms if kind == 'INIT' else lim.max_atoms
@@ -1139,7 +1176,7 @@ class Run:
             if dr.orc and self.rng.random() < self.p_or(dr.orc, k):
                 dr.p_labels = labels
                 ored = self.or_atom(pg, dr, cur, toks, text, scope, nlab, k)
-            if ored is None and (p_all := self.p_all(dr.place)) and self.rng.random() < p_all:
+            if ored is None and not dr.plain_parts and (p_all := self.p_all(dr.place)) and self.rng.random() < p_all:
                 alled = self.all_atom(pg, dr, cur, toks, text, scope, nlab, k)
             if ored is not None:  # the body goes on after the OR, or ends there
                 c['or:drawn'] += 1
@@ -1168,7 +1205,7 @@ class Run:
                         c['try:unjoined'] += 1
                         free += 1
                         continue
-                    if res[3] in text or clash(res[3], text):
+                    if res[3] in text or clash(res[3], text) or dr.plain_parts and atom_parts(res[3])[1] in [atom_parts(a)[1] for a in text]:
                         c['try:repeat'] += 1
                         free += 1
                         continue

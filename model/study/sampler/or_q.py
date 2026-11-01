@@ -33,6 +33,8 @@ import search  # noqa: E402
 import search_gold as G  # noqa: E402
 from live import ALSO_TOK, M, arclog  # noqa: E402
 
+FORMS = 'INIT', 'RIGID_DET'  # the kinds of a form that has ports or a key group, and ends at its last body
+
 L2 = math.log(2)
 COIN_ALT = os.environ.get('COIN_ALT', '1') == '1'  # gold's chance under a must_join coin that is true takes the weights that coin gives; 0 reads them as the free coin's
 SEP = (ALSO_TOK, M.END)
@@ -76,7 +78,7 @@ class Guide(search.Chooser):
 
     def more(self):
         """Whether the body that the walk is in goes on in gold: an INIT body ends at its END."""
-        return bool(self.rest) and not (self.kind == 'INIT' and self.rest[0] == M.END)
+        return bool(self.rest) and not (self.kind in FORMS and self.rest[0] == M.END)
 
     def extent(self, toks):
         """The index in toks of the END that closes the body at the front of toks, or None. An OR takes an END, an ALL takes two, and a
@@ -265,6 +267,9 @@ class Guide(search.Chooser):
         elif "pri['keyed'][comp]" in line:
             r = bool(self.rest) and self.rest[0] != SKIP
             pre, name, pop = '', 'keyed', False
+        elif "rg['keyed']" in line or "rg['instance']" in line:  # a RIGID_DET's key group or instance clause
+            r = bool(self.rest) and self.rest[0] != SKIP
+            pre, name, pop = '', 'rigid: key group' if "rg['keyed']" in line else 'rigid: instance', False
         elif 'f.admits([SKIP_TOK])' in line:  # a port's coin: taken or skipped
             r = not (self.rest and self.rest[0] == SKIP)
             pre, name, pop = '', 'outside: taken or skipped' if self.outside_loop(fr) else 'port: taken or skipped', False
@@ -287,7 +292,7 @@ class Guide(search.Chooser):
         if p >= 1 or p <= 0:
             if r != (p >= 1):
                 self.bad.append('%s (chance %d, gold goes the other way)' % (name, p >= 1))
-                if self.kind == 'INIT':
+                if self.kind in FORMS:
                     raise Stuck(name)
             r = p >= 1
         else:
@@ -322,7 +327,7 @@ class Guide(search.Chooser):
             if n not in population:
                 self.stuck('component %s is not among those that the walk draws' % n)
             self.rest.popleft()
-        elif who == 'init' and 'key_labels' in line:
+        elif who == 'key_body' and 'key_labels' in line:
             self.carets = self.key_group()
             n = len(self.carets)
             name = 'key: count of labels'
@@ -376,7 +381,7 @@ class Guide(search.Chooser):
         """The key's labels among the labels of a key group (in init), or among the labels that an OR's first branch makes (in or_form)."""
         who = sys._getframe(1).f_code.co_name
         population = list(population)
-        if who == 'init':
+        if who == 'key_body':
             gold, name = sorted(self.carets), 'key: which labels'
             if len(gold) != k or not set(gold) <= set(population):
                 self.stuck('key: the labels with a caret are %s, and the walk takes %d of %s' % (gold, k, population))
@@ -435,7 +440,7 @@ class GuidedDrawer(search.SearchDrawer):
         d = self.deltas.get(id(res))  # the join coin: log q given must_join, and given not
         g.detail.append(dict(k=self.p_k, joined=bool(res[4]), lj=None if d is None else round(d[1] / math.log(2), 3), lf=None if d is None else round(d[2] / math.log(2), 3),
                              cur={ph: round(b, 3) for ph, b in g.cur.items()}))
-        if g.kind == 'INIT' and any(ph.startswith('relation') for ph in zero):  # the atom's tokens are not the walk's, so the tokens after it are out of step
+        if g.kind in FORMS and any(ph.startswith('relation') for ph in zero):  # the atom's tokens are not the walk's, so the tokens after it are out of step
             raise Stuck(g.bad[-1])
         return res, why
 
@@ -516,11 +521,11 @@ class GuidedRun(search.SearchRun):
                 g.bad.append('branch end: gold has %s' % (g.rest[0] if g.rest else None))
         return got
 
-    def drawer(self, pg, kind, dec, place=None):
+    def drawer(self, pg, kind, dec, place=None, prior=None):
         """In an INIT, the parts of a body's atoms are those of its place. The hash that names the path to a body, for the caches that the Drawers of
         one path share, is the count of gold's tokens taken so far: each body of the walk has its own path, as in a search."""
         self.rng.hash = self.rng.total - len(self.rng.rest)
-        dr, g = super().drawer(pg, kind, dec, place), self.rng
+        dr, g = super().drawer(pg, kind, dec, place, prior), self.rng
         if g.rows is not None:
             dr.sink = lambda k, row, gold: g.emit(dr, k, row, gold)
         if kind == 'INIT':
@@ -552,7 +557,7 @@ def gold_rest(sess, scope, target, kind='RULE'):
     ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, target, live.READER_OUT)), sess.settings).decode_stream()
     toks = [(t, p) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope)]
     assert toks[0][0] == live.KIND_TOK[kind]
-    if kind == 'INIT':  # the form ends at its last port, with no END of its own
+    if kind in FORMS:  # the form ends at its last port, with no END of its own
         return collections.deque(t for t, _ in toks[1:])
     assert toks[-1][0] == M.END and len(toks[-1][1]) == 1
     return collections.deque(t for t, _ in toks[1:-1])
@@ -578,7 +583,7 @@ def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, 
     dead = match = None
     try:
         f = run.form(pg, dec, kind)
-        if kind == 'INIT':  # the walk steps the SKIP of each port that is left, and takes no call for it
+        if kind in FORMS:  # the walk steps the SKIP of each port that is left, and takes no call for it
             if all(t == SKIP for t in g.rest):
                 g.rest.clear()
             match = search.clause_key(run.clause_of(scope, pg, f).text) == search.clause_key(target)
@@ -590,7 +595,7 @@ def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, 
         dead = '%s: %s | %s' % (type(e).__name__, str(e)[:100], [k for k in run.c if k.startswith(('form:', 'try:', 'or:'))][:4])
     rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(g.parts.items())}, counts=dict(g.counts),
                total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail)
-    if kind == 'INIT':
+    if kind in FORMS:
         rec['match'] = match
     return rec
 

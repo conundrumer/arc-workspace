@@ -54,7 +54,7 @@ from live_try import SETTINGS  # noqa: E402
 
 DEPTH = 4
 PER_TASK = 2
-KINDS = tuple(live.KIND_TOK)
+KINDS = 'RULE', 'DET', 'INIT'  # the kinds that strata.point_fields has a point group for; a RIGID_DET target or an earlier RIGID_DET form leaves the point out
 SESSION_BYTES = 1 << 30  # a session's cap: a process has the session, the priors and the models, and stays under 2 GiB
 OVERRUN = 10.0  # seconds a draw can run past its deadline
 

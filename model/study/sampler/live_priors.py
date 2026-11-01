@@ -6,6 +6,8 @@ needs: the next clause's kind or the stop, by how many clauses of each kind exis
 component, ports and head sites. A clause comes after what it reads and written order counts for nothing: each program is walked in WALK_ORDERS
 random orders that keep its reads.
 
+A sparse kind borrows signal from anywhere, at any point. Its prior takes counts from the kind itself, from the parent kind it is a sibling of (DET for RIGID_DET), from the docs' statement of what the kind does, and from the solvers that a survey names. Its trigger takes engine verdicts (SeveralValues, NotConsistent up to a pose, rows several where not determined) and table content. The same signals apply whether the kind is drawn, lifted as a repair, or rewritten into gold. Thin counts are a reason to borrow signal, not a reason to leave a kind flat or out.
+
   <runtime python> live_priors.py [--out PATH]
 """
 import argparse
@@ -21,9 +23,10 @@ import sampler_paths as P
 
 KIND_STEP = 2  # the clause count is bucketed by this step in the next-kind counts
 KIND_TOP = 12  # the last bucket
-WALK_KINDS = 'DET', 'INIT', 'RULE'  # the kinds that a draw makes
+WALK_KINDS = 'DET', 'INIT', 'RIGID_DET', 'RULE'  # the kinds that a draw makes
 WALK_TOP = 8  # a kind's clause count is capped at this in a walk state
 WALK_ORDERS = 8  # random orders counted per program
+BORROW = 1.0  # a sparse kind's weight on its parent kind's atoms, against its own: RIGID_DET's parts from DET's bodies
 READER_PROGRAM = '(RULE &r (input (:P *P) (:Col *Col)))\n(OUT (&r ^P ^Col))'  # a program, for the engine's export of the registry
 
 
@@ -93,6 +96,9 @@ def walk_counts(tasks):
     for t in tasks:
         forms = [f for f in S.corpus_forms(t) if f[0] in WALK_KINDS]
         heads, body, _, _ = S.strata._depths(forms)
+        for j, f in enumerate(forms):  # _depths leaves out a kind it has no point group for
+            if j not in body:
+                heads[f[1]], body[j] = j, S.strata.reads_of(f[2:], set()) - {f[1]}
         needs = {j: {heads[r] for r in rs if r in heads and heads[r] < j} for j, rs in body.items()}
         for _ in range(WALK_ORDERS):
             left, have = dict(needs), collections.Counter()
@@ -103,6 +109,46 @@ def walk_counts(tasks):
                 have[forms[j][0]] += 1
             after[tuple(min(have[k], WALK_TOP) for k in WALK_KINDS)]['stop'] += 1
     return dict(kinds=WALK_KINDS, top=WALK_TOP, after=dict(after))
+
+
+def rigid_counts(tasks):
+    """{'forms', 'keyed', 'instance'} -> RIGID_DET forms, those with a key group, and those with an instance clause (inside the key group or not)."""
+    out = collections.Counter()
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            if f[0] != 'RIGID_DET':
+                continue
+            parts = [g for g in f[2:] if isinstance(g, list) and g]
+            keyed = bool(parts) and parts[0][0] == 'key'
+            inner = parts[0][2:] if keyed else parts
+            out['forms'] += 1
+            out['keyed'] += keyed
+            out['instance'] += any(isinstance(g, list) and g[:1] == ['instance'] for g in inner)
+    return out
+
+
+def rigid_parts(tasks):
+    """{task: [body]} of the parts of the RIGID_DET forms: the atoms after the key group and the instance clause."""
+    out = collections.defaultdict(list)
+    for t in tasks:
+        for f in S.corpus_forms(t) or []:
+            if f[0] == 'RIGID_DET':
+                parts = [g for g in f[2:] if isinstance(g, list) and g]
+                while parts and parts[0][0] in ('key', 'instance'):
+                    parts = [g for g in parts[0][1:] if isinstance(g, list) and g and isinstance(g[0], str)]
+                out[t].append(parts)
+    return out
+
+
+def borrowed(own, parent):
+    """(atom counts, stop hazard) of a kind whose bodies are own, {task: [body]}, with the bodies of its parent kind in the weight BORROW of its own: each
+    count is the kind's own plus the parent's scaled to BORROW times the kind's atoms."""
+    mine, theirs = S.Prior(own), S.Prior(parent)
+    scale = BORROW * sum(mine.total['rel'].values()) / max(sum(theirs.total['rel'].values()), 1)
+    atoms = {f: collections.Counter({k: mine.total[f].get(k, 0) + scale * theirs.total[f].get(k, 0) for k in {*mine.total[f], *theirs.total[f]}}) for f in S.Prior.FIELDS}
+    lens, plens = (collections.Counter(len(b) for bs in x.values() for b in bs) for x in (own, parent))
+    lens = {n: lens[n] + scale * plens[n] for n in {*lens, *plens}}
+    return atoms, {k: (lens.get(k, 0) + 0.5) / (sum(v for n, v in lens.items() if n >= k) + 1.0) if any(n >= k for n in lens) else 1.0 for k in range(1, S.MAX_ATOMS + 1)}
 
 
 def port_heads(form):
@@ -314,6 +360,7 @@ def fit(leave_out=()):
                     heads_out.update((f[2], p, col) for col in head)
     bodies = {k: S.gold_bodies(tasks, k) for k in ('RULE', 'DET')}
     bodies['INIT'] = S.gold_port_bodies(tasks)
+    rigid_atoms, rigid_hazard = borrowed(rigid_parts(tasks), bodies['DET'])
     regcols = S.registry_columns()
     regtypes = registry_types(regcols)
     compound = collections.Counter()
@@ -326,8 +373,8 @@ def fit(leave_out=()):
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
-                hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), rigid=rigid_counts(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()} | dict(RIGID_DET=rigid_atoms),
+                hazard={k: S.kind_hazard(b) for k, b in bodies.items()} | dict(RIGID_DET=rigid_hazard), regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
 
