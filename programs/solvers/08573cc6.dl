@@ -26,8 +26,8 @@
     RIGID(legend,
         .decl corner(d: DiagDir) corner(DIAG_TL).
         .decl along(d: Dir) along(DIR_R).
-        .decl first_arm(d: Dir) first_arm(DIR_L).
-        .decl next_arm(d: Dir) next_arm(DIR_B).
+        .decl start_dir(d: Dir) start_dir(DIR_L).
+        .decl sense(s: Sense) sense(SENSE_CC).
     )
 
     // --- $Stored ---
@@ -63,12 +63,12 @@ legend(Pose, P, Q) :-
 // The first arm leaves the dot.
 .init spiral = Propagation<Unit, Arm>
 spiral.source($U(), [P_end, D, Delta]) :-
-    seed(P), legend(Pose, _, _), params.legend_first_arm(Pose, D), params.len0(N),
+    seed(P), legend(Pose, _, _), params.legend_start_dir(Pose, D), params.len0(N),
     jump(P, D, N, P_end), jump_offset(D, N, Delta).
 spiral.edge($U(), [P, D, Delta], [P_end2, D2, Delta2]) :-
     in(P, _), dir_elem(D), axis_of(D, A), sub_extent(P, A, N), jump_offset(D, N, Delta),
-    legend(Pose, _, _), params.legend_first_arm(Pose, D0), params.legend_next_arm(Pose, D1),
-    turn(S, D0, D1), turn(S, D, D2), rotation(S, M),        // the sense of the walk's first turn
+    legend(Pose, _, _), params.legend_sense(Pose, S),
+    turn(S, D, D2), rotation(S, M),
     apply(M, Delta, DeltaR), neighbor(DeltaR, D2, Delta2),  // the arm turned, one cell longer
     compose(P, Delta2, P_end2).
 
@@ -98,7 +98,7 @@ arm_cell(C, D) :-
 
 // --- $Start ---
 corner_axis(A, $Start()) :-
-    legend(Pose, _, _), params.legend_first_arm(Pose, D), axis_of(D, A).
+    legend(Pose, _, _), params.legend_start_dir(Pose, D), axis_of(D, A).
 
 // --- $Stored ---
 corner_axis(A, $Stored()) :- params.color_axis(A).
