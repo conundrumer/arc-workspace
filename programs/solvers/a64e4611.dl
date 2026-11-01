@@ -4,7 +4,8 @@
 // @scene noise-field: the grid is params.background with cells of one other
 //  color scattered over it
 // @scene band: one empty rectangle, all params.background, is larger in area
-//  than every other empty rectangle. It reaches at least one grid edge.
+//  than every other empty rectangle. It reaches at least one grid edge. Every
+//  other empty rectangle at least seven cells wide on both axes overlaps it.
 // @scene channels: straight empty channels, each at least three cells wide,
 //  run from the band to a grid edge
 // @rule band-fill: the band's cells become params.fill, except a margin
@@ -15,15 +16,6 @@
 //  line of such cells runs from it to a grid edge in one direction and to a
 //  params.fill cell of the band in the other. The line stops at the band's
 //  params.fill cells.
-// @rule green: every large empty region of the field becomes params.fill,
-//  except a margin params.margin cells wide next to a cell off
-//  params.background. No margin is kept at the grid edge.
-//     @approximated: the band and its channels become params.fill, as
-//      band-fill and channel-fill state
-//     @witness second-region: variant other
-//         @relaxed band
-//     @witness wide-block: variant other
-//         @relaxed band
 // @rule keep: every other cell keeps its input color
 
 // which empty rectangle is the band
@@ -38,6 +30,13 @@
     // @witness equal-bands: variant $TiedBands
     //     @relaxed band
   | TiedBands {}
+    // @scene band: every empty rectangle at least params.region_side cells wide
+    //  on both axes that overlaps no larger such rectangle is a band
+    // @witness second-region: variant $EveryRegion
+    //     @relaxed band
+    // @witness wide-block: variant $EveryRegion
+    //     @relaxed band
+  | EveryRegion {}
 
 // what a channel runs to
 .type Anchor =
@@ -111,6 +110,8 @@
     .decl background(c: Color) background(0).
     .decl fill(c: Color) fill(3).
     .decl margin(k: number) margin(1).
+    // --- $EveryRegion ---
+    .decl region_side(k: number) region_side(7).
 }
 
 .init params = Params
@@ -119,17 +120,24 @@
 impl_choice([$LargestArea(), $BandAnchor(), $StopAtBand(), $AnyHeading(), $ClearLine(), $OpenEdge()]).
 impl_choice([Bd, An, Ex, Hd, Ln, Eg]) :-
     band_choice(Bd), anchor_choice(An), extent_choice(Ex), heading_choice(Hd),
-    line_rule_choice(Ln), edge_rule_choice(Eg), !flooding(An, Ex, Hd, Ln).
+    line_rule_choice(Ln), edge_rule_choice(Eg), !flooding(An, Ex, Hd, Ln),
+    !lane_margin(Bd, Ln, Eg).
 
 // Arms off every side of every arm, each painted over any color to its
 // piece's far side, cover the pairs' noise: these cases fit no pair.
 .decl flooding(an: Anchor, ex: Extent, hd: Heading, ln: LineRule)
 flooding($ChannelChain(), $StopAtBand(), $AnyHeading(), $SideEmpty()).
 
+// EveryRegion's bands are wide enough to have green beside their margin on the
+// grid edge, and the lanes from that green fill the margin: wherever these
+// cases are defined, they give the output of the OpenEdge copy.
+.decl lane_margin(bd: Band, ln: LineRule, eg: EdgeRule)
+lane_margin($EveryRegion(), $ClearLine(), $BandEdgeMargin()).
+
 // LargestArea takes no other branch: wherever it is defined, it finds the
 // one band TiedBands finds.
 .decl band_choice(bd: Band)
-band_choice($WidestBand()). band_choice($TiedBands()).
+band_choice($WidestBand()). band_choice($TiedBands()). band_choice($EveryRegion()).
 
 .decl anchor_choice(an: Anchor)
 anchor_choice($BandAnchor()). anchor_choice($ChannelChain()).
@@ -204,12 +212,13 @@ area_tie() :- by_area.high(_, B1, _), by_area.high(_, B2, _), B1 != B2.
 
 band_box($LargestArea(), B) :- by_area.high(_, B, _), !area_tie().
 
-// --- $WidestBand ---
-// WidestBand: the rectangle with the longest short side.
+// --- $WidestBand, $EveryRegion ---
 // @claim band
 .init short_side = Extremes<Box>
 short_side.cand(B, N) :- hull.box([_, P], B), box_extent(B, P, _, N).
 
+// --- $WidestBand ---
+// WidestBand: the rectangle with the longest short side.
 // @claim band
 .init by_side = ArgExtremes<Unit, Box>
 by_side.cand($U(), B, N) :- short_side.low(B, N).
@@ -226,6 +235,18 @@ band_box($WidestBand(), B) :- side_area.high(_, B, _), !side_tie().
 // --- $TiedBands ---
 // TiedBands: every rectangle of the largest area.
 band_box($TiedBands(), B) :- by_area.high(_, B, _).
+
+// --- $EveryRegion ---
+// EveryRegion: every wide rectangle that overlaps no larger wide rectangle.
+.decl wide(b: Box)
+wide(B) :- short_side.low(B, N), params.region_side(K), N >= K.
+
+.decl outgrown(b: Box)
+outgrown(B) :-
+    wide(B), wide(B2), area.item(B, P), area.item(B2, P),
+    area.tally(B, N), area.tally(B2, N2), N < N2.
+
+band_box($EveryRegion(), B) :- wide(B), !outgrown(B).
 
 // ---------------------------------------------------------------------------
 // Pieces
