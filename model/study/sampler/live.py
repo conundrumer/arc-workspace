@@ -19,7 +19,7 @@ between calls on one session, seed sets its draws for each call, and sampler.run
 
 A draw walks the program form by form. Clause order does not matter: what a step of the walk reads is what the program has. The
 next clause's kind, or the stop, comes from corpus counts (P alone) keyed by how many clauses of each kind exist (live_priors.py
-counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a DET may take a proposer, an
+counts them over random dependency orders of gold). A RULE's atoms and a DET's come from S's Drawer, a RULE or a DET may take a proposer, an
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches share the keys
 alone, and other labels stay in their branch. A branch may take an OR as its last atom, from that place's counts (one level deep); the
@@ -779,20 +779,27 @@ class Run:
         return f
 
     def rule(self, pg, f):
+        counts = self.pri.get('rule')  # priors fitted before RULE proposers were counted have no such key: they take none
+        if counts and self.rng.random() < counts['proposer'] / (counts['proposer'] + counts['atoms']):
+            return self.proposed(pg, f)
         dr = self.drawer(pg, 'RULE', f)
         return self.end(pg, self.body(pg, dr, f, 'RULE', 0)[0])
+
+    def proposed(self, pg, f):
+        """The decoder after a clause of one proposer, which the decoder admits at f, from the priors' counts of the proposers."""
+        names = [p for p in self.pri['proposers'] if p in self.tok]
+        ok = f.admits([self.tok[p] for p in names])
+        names = [p for p, y in zip(names, ok) if y]
+        if not names:
+            raise Drop('no proposer')
+        f = f.fork()
+        f.step(self.tok[self.pick(names, [self.pri['proposers'][p] for p in names])])
+        return self.end(pg, f)
 
     def det(self, pg, f):
         pri = self.pri
         if self.rng.random() < pri['det']['proposer'] / (pri['det']['proposer'] + pri['det']['atoms']):
-            names = [p for p in pri['proposers'] if p in self.tok]
-            ok = f.admits([self.tok[p] for p in names])
-            names = [p for p, y in zip(names, ok) if y]
-            if not names:
-                raise Drop('no proposer')
-            f = f.fork()
-            f.step(self.tok[self.pick(names, [pri['proposers'][p] for p in names])])
-            return self.end(pg, f)
+            return self.proposed(pg, f)
         dr = self.drawer(pg, 'DET', f)
         return self.end(pg, self.body(pg, dr, f, 'DET', 0)[0])
 

@@ -222,8 +222,6 @@ class Walk:
     def rule(self, kind, f):
         pg, run, t = self.pg, self.run, self.t
         if self.V.kind(t[self.i]) == 'proposer':
-            if kind == 'RULE':
-                raise Refused('RULE by a proposer')
             if self.V.name(t[self.i]) not in run.pri['proposers']:
                 self.hard['no proposer'] += 1
             f = f.fork()

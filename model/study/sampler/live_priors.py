@@ -2,7 +2,7 @@
 """Writes the frozen priors of live.py: every corpus task's gold program counted, with no task held out, into
 DATA/sampler/models/live_priors.pkl. The file holds what S reads from disk at a point (the atom priors, the stop hazards,
 the compound counts of RULE bodies and of an INIT's key and port bodies, the registry's columns and types), and the program-level counts that a draw from an empty prefix
-needs: the next clause's kind or the stop, by how many clauses of each kind exist, a DET's proposer and marks, and an INIT's
+needs: the next clause's kind or the stop, by how many clauses of each kind exist, a RULE's or a DET's proposer and marks, and an INIT's
 component, ports and head sites. A clause comes after what it reads and written order counts for nothing: each program is walked in WALK_ORDERS
 random orders that keep its reads.
 
@@ -228,6 +228,7 @@ def fit(leave_out=()):
     kinds1 = collections.defaultdict(collections.Counter)  # previous kind -> next kind -> clauses
     proposers, comps = collections.Counter(), collections.Counter()
     det = collections.Counter()  # 'proposer' or 'atoms' -> clauses; ('ONE' or 'SET', the same) -> clauses
+    rule = collections.Counter()  # 'proposer' or 'atoms' -> RULE clauses
     keyed, ports = collections.Counter(), collections.Counter()  # component -> INITs with a key group; (component, key group, port) -> uses
     heads = collections.Counter()  # (component, port, column) -> uses of the port whose head names the column
     head_labels = collections.defaultdict(collections.Counter)  # (component, port, column) -> count of labels at that head site -> uses
@@ -248,6 +249,10 @@ def fit(leave_out=()):
                 for x in f[2:]:
                     if x in (['ONE'], ['SET']):
                         det[x[0], how] += 1
+            elif f[0] == 'RULE':
+                how = 'proposer' if any(isinstance(x, str) for x in f[2:]) else 'atoms'
+                rule[how] += 1
+                proposers.update(x for x in f[2:] if isinstance(x, str))
             elif f[0] == 'INIT':
                 k, used = init_ports(f)
                 comps[f[2]] += 1
@@ -273,7 +278,7 @@ def fit(leave_out=()):
             compound['after', ] += next((i < len(body) - 1 for i, a in enumerate(body) if a and a[0] in ('OR', 'IF')), False)
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
-    return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
+    return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
                 ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
