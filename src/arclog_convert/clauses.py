@@ -550,8 +550,9 @@ class ClauseWriter:
         if not (isinstance(l, AtomLiteral) and not l.negated and not l.atom.relation.instances
                 and l.atom.relation.name in POSE_TESTS and isinstance(l.atom.args[-1], Variable)):
             return None
+        reads_part = () if self.scope == ("Params",) else ("params",)
         return next((x.atom for x in lits if isinstance(x, AtomLiteral) and not x.negated
-                     and x.atom.relation.instances == ("params",) and x.atom.relation.name in self.c.rigid
+                     and x.atom.relation.instances == reads_part and x.atom.relation.name in self.c.rigid
                      and x.atom.args[POSE_COLUMN] == l.atom.args[-1]), None)
 
     def new_label(self, stem: str, bound: set[str]) -> Variable:

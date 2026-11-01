@@ -837,7 +837,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
             if u.scope.components == ("Determine",):
                 if u.head.relation.instances:
                     det_inst_units[u.head.relation.instances].append(u)
-                elif u.head.relation.name not in c.skip_rels:
+                elif u.head.relation.name not in c.skip_rels and u.head.relation.name not in c.rigid:
                     parameter = c.determines_parameter(u.scope.components, u.head.relation.name)
                     if not parameter or u.head.relation.name in det_units:
                         side = "DET" if parameter or u.head.relation.name in determined_copies \
