@@ -25,8 +25,9 @@
     // params.bar_slot the bar slots, and params.dot_slot each dot slot
     // with its side
   | Banner {}
-    // params.template_bar and params.template_dot, the whole trail as one
-    // stored shape, anchored on the marker
+    // params.stamp_bar and params.stamp_dots, the whole trail as one stored
+    // shape, anchored on the marker, in the pose that aims it along params.dir
+    // with its first dot at params.first_edge
   | Stamp {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -34,21 +35,21 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
     .decl dot(c: Color) dot(5).
-
-    // --- $Walk, $Banner ---
     .decl dir(d: Dir) dir(DIR_R).   // the trail extends from the marker this way
-    .decl bar_axis(a: Axis)         // bars run across the trail
-    bar_axis(A) :- dir(D), axis_of(D, A0), perp(A0, A).
     // A bar line's two ends, each named by its quarter turn from the trail.
     .decl side(s: Sense, d: Dir)
     side(S, E) :- dir(D), turn(S, D, E).
+
+    // --- $Walk, $Banner ---
+    .decl bar_axis(a: Axis)         // bars run across the trail
+    bar_axis(A) :- dir(D), axis_of(D, A0), perp(A0, A).
 
     // --- $Walk ---
     // The lines one step of the walk crosses: a bar line and the gap line
     // after it.
     .decl step_lines(k: number) step_lines(2).
 
-    // --- $Stored ---
+    // --- $Stored, $Stamp ---
     .decl first_side(s: Sense) first_side(SENSE_CC).   // the first dot's side
     .decl first_edge(d: Dir)
     first_edge(E) :- first_side(S), side(S, E).
@@ -62,31 +63,36 @@
     dot_edge(K, E) :- dot_slot(K, S), side(S, E).
 
     // --- $Stamp ---
-    // Trail cells as offsets from the marker, `@` on the marker cell.
-    .decl template_bar(delta: Offset)   // member cells take the marker's color
-    GRID_STAMP_10x9(template_bar,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-         1, _, 1, _, 1, _, 1, _, 1,
-        @1, _, 1, _, 1, _, 1, _, 1)
-    .decl template_dot(delta: Offset)   // member cells take params.dot
-    GRID_STAMP_10x9(template_dot,
-         _, 1, _, _, _, 1, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-         _, _, _, _, _, _, _, _, _,
-        @_, _, _, 1, _, _, _, 1, _)
+    // The trail, its cells as offsets from the marker, `@` on the marker cell:
+    // bar cells take the marker's color, and dot cells take params.dot.
+    RIGID(stamp,
+        .decl bar(delta: Offset)
+        GRID_STAMP_10x9(bar,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+             1, _, 1, _, 1, _, 1, _, 1,
+            @1, _, 1, _, 1, _, 1, _, 1)
+        .decl dots(delta: Offset)
+        GRID_STAMP_10x9(dots,
+             _, 1, _, _, _, 1, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+             _, _, _, _, _, _, _, _, _,
+            @_, _, _, 1, _, _, _, 1, _)
+        .decl aim(d: Dir) aim(DIR_R).
+        .decl first_end(d: Dir) first_end(DIR_T).
+    )
 }
 
 .init params = Params
@@ -161,11 +167,18 @@ dotted(Q, $Banner()) :-
 
 // --- $Stamp ---
 
-// Each template offset seated on the marker, on-grid.
+// The stamp's pose: it aims along params.dir, with its first dot at
+// params.first_edge.
+.decl stamp_pose(g: D4)
+stamp_pose(G) :-
+    params.stamp_aim(G, D), params.dir(D),
+    params.stamp_first_end(G, E), params.first_edge(E).
+
+// Each offset of the posed stamp seated on the marker, on-grid.
 lit(Q, $Stamp()) :-
-    marker(P, _), params.template_bar(Delta), compose(P, Delta, Q), in(Q, _).
+    stamp_pose(G), marker(P, _), params.stamp_bar(G, Delta), compose(P, Delta, Q), in(Q, _).
 dotted(Q, $Stamp()) :-
-    marker(P, _), params.template_dot(Delta), compose(P, Delta, Q), in(Q, _).
+    stamp_pose(G), marker(P, _), params.stamp_dots(G, Delta), compose(P, Delta, Q), in(Q, _).
 
 // --- Output ---
 
@@ -239,11 +252,22 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
     // --- $Stamp ---
 
     // Each bar cell and dot cell as an offset from the marker.
-    .decl template_bar(delta: Offset)
-    template_bar(Delta) :-
+    .decl stamp_bar(delta: Offset)
+    stamp_bar(Delta) :-
         mark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
-    .decl template_dot(delta: Offset)
-    template_dot(Delta) :-
+    .decl stamp_dots(delta: Offset)
+    stamp_dots(Delta) :-
         mark(E, P, _), ex_out(E, Q, Dot), params.dot(Dot), relative(P, Q, Delta).
+
+    .decl stamp_aim(d: Dir)
+    stamp_aim(D) :- params.dir(D).
+
+    // The trail's first dot.
+    .init first_dot = Extremes<Example>
+    first_dot.cand(E, I) :- dot_step(E, I, _).
+
+    .decl stamp_first_end(d: Dir)
+    stamp_first_end(Ed) :-
+        first_dot.low(E, I), dot_step(E, I, S), params.side(S, Ed).
 }
