@@ -34,13 +34,14 @@
     mark_rank(3, 0).
     mark_rank(4, 1).
 
-    // The rotation carrying a piece's open corner to its step direction.
-    // Reflections are outside the domain: each piece is symmetric about the
-    // diagonal of its own open corner, so a reflection only repeats a
-    // rotation's step.
-    .decl rot(src: Color, d: D4)
-    rot(5, D4_ID).
-    rot(2, D4_HT).
+    // Each piece color's step, one chart per color: a corner a piece leaves
+    // open and the diagonal a piece with that corner steps along. Each
+    // orientation of the piece is a pose of the chart.
+    RIGID(piece,
+        .decl step(id: Ident, src: Color, open: DiagDir, dir: DiagDir)
+        step(0, 5, DIAG_TR, DIAG_TR).
+        step(1, 2, DIAG_TR, DIAG_BL).
+    )
 }
 
 .init params = Params
@@ -70,18 +71,14 @@ piece_cell([Col, Id], P) :- parts.label(Col, P, Id).
 .init parse = Parse<Obj>
 parse.cell(O, P) :- piece_cell(O, P).
 
-// The piece's step direction: its open corner turned by the piece color's
-// rotation.
-.decl step_dir(o: Obj, dir: DiagDir)
-step_dir([Col, Id], D) :-
-    parse.open_diag([Col, Id], Diag), params.rot(Col, Rot), apply_diag_dir(Rot, Diag, D).
-
-// The piece's copy, one step along its step direction.
+// The piece's copy, one step along the step its color's chart places at its
+// open corner.
 .decl mark_cell(p: Position, col: Color)
 mark_cell(Q, M) :-
-    piece_cell([Col, Id], P), step_dir([Col, Id], D),  // a piece cell and its step
-    params.mark(Col, M),                               // the copy's color
-    neighbor(P, D, Q), in(Q, _).                       // one step, inside the frame
+    piece_cell([Col, Id], P), parse.open_diag([Col, Id], Diag),  // a piece cell, its open corner
+    params.piece_step(_, _, Col, Diag, D),                       // the step from that corner
+    params.mark(Col, M),                                         // the copy's color
+    neighbor(P, D, Q), in(Q, _).                                 // one step, inside the frame
 
 .init win = ArgExtremes<Position, Color>
 win.cand(P, M, R) :- mark_cell(P, M), params.mark_rank(M, R).
@@ -135,25 +132,25 @@ out(P, Col, $Cover()) :-
         ).
 
     // The step a piece color takes from an open corner.
-    .decl piece_step(src: Color, open: DiagDir, dir: DiagDir)
-    piece_step(Col, Diag, D) :-
+    .decl shown_step(src: Color, open: DiagDir, dir: DiagDir)
+    shown_step(Col, Diag, D) :-
         parse.open_diag([E, Col, Id], Diag),       // a piece's open corner
         copy.occurrence([E, Col, Id], V),          // where its copy lies
         diag_dir_elem(D), step_offset(D, V).       // one diagonal step away
 
-    // The rotation that turns a piece's open corner to its step, one per
-    // step: the rotations act on the corners freely and transitively.
-    .init turn = Unanimous<Color, D4>
-    turn.item(Col, Rot) :- piece_step(Col, Diag, D), c4_elem(Rot), apply_diag_dir(Rot, Diag, D).
+    .init color_id = IdentOf<Color>
+    color_id.value(Col) :- shown_step(Col, _, _).
 
-    .decl rot(src: Color, d: D4)
-    rot(Col, Rot) :- turn.value(Col, Rot).
+    // One copy of the chart per piece color and open corner the pairs show.
+    // @ignore: head-repeat — the key columns tell the copies apart, and the chart's own columns hold the same values
+    .decl piece_step(col: Color, corner: DiagDir, id: Ident, src: Color, open: DiagDir, dir: DiagDir)
+    piece_step(Col, Diag, Id, Col, Diag, D) :- shown_step(Col, Diag, D), color_id.id(Col, Id).
 
     // The piece's copy, under the determined step.
     .decl copy_cell(o: ExObj, p: Position)
     copy_cell([E, Col, Id], Q) :-
         copy_land([E, Col, Id], D, Q),
-        parse.open_diag([E, Col, Id], Diag), piece_step(Col, Diag, D).
+        parse.open_diag([E, Col, Id], Diag), shown_step(Col, Diag, D).
 
     // The colors a piece's copy shows. A copy overrun by a higher-precedence
     // one shows that color too, so a color's own mark is the one every piece
