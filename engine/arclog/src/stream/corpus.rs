@@ -52,9 +52,11 @@ pub struct CaseStream {
     /// Whether the case is the solver's concept case.
     pub concept: bool,
     /// Whether the case program holds a `DEMONSTRATED` form, whose stream
-    /// the commands that replay do not decode.
+    /// the commands that replay do not decode. False for a case that the
+    /// checker refuses.
     pub demonstrated: bool,
-    /// The case's token stream with the relation at each slot, or the writer's fault.
+    /// The case's token stream with the relation at each slot, or the checker's
+    /// refusal of the case or the writer's fault.
     pub stream: Result<WrittenStream, String>,
     /// The names of the stream's labels as the case's `.arclog` text writes
     /// them: those of [`case_files`], or, for a case whose files the corpus's
@@ -67,8 +69,9 @@ pub struct CaseStream {
 
 /// The stream of each wanted case of the solver `id` of `corpus`, in the
 /// order of the cases, as [`corpus_case_stream`] gives it, or the fault that
-/// stops the solver: its files do not read, a wanted case is absent, or the
-/// checker refuses a wanted case. Where `prefix`, the files of the solver,
+/// stops the solver: its files do not read, or a wanted case is absent. A
+/// case that the checker refuses has that refusal in place of its stream, and
+/// the other cases keep theirs. Where `prefix`, the files of the solver,
 /// and of each case under `cases/<id>/`, hold a prefix of a solver, as
 /// [`crate::check::CaseFiles::prefix`] gives it, so the checker does not
 /// refuse a case program for holding no `OUT` form, and a case's stream ends
@@ -138,17 +141,20 @@ impl SolverAnalysis {
             }
         };
         let mut cache = CheckCache::default();
-        let programs = check_cases(solver, cases, clauses, &mut cache, &|name| names.contains(name), prefix)?;
         let concept = &cases.concept().case.name;
-        Ok(programs
-            .iter()
-            .map(|(name, program)| {
-                let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
-                let (stream, labels) = match named_case_stream(corpus, id, solver, case, program, vocabulary, &mut cache, prefix) {
+        Ok(cases
+            .cases()
+            .filter(|case| names.contains(&case.case.name))
+            .map(|case| {
+                let name = &case.case.name;
+                let spelled = case_spelled(name);
+                let program = check_case(solver, case, clauses, &mut cache, &format!("the case {spelled}"), prefix);
+                let demonstrated = program.as_ref().is_ok_and(holds_demonstrated);
+                let (stream, labels) = match program.and_then(|program| named_case_stream(corpus, id, solver, case, &program, vocabulary, &mut cache, prefix)) {
                     Ok((stream, labels)) => (Ok(stream), labels),
                     Err(fault) => (Err(fault), Vec::new()),
                 };
-                CaseStream { case: case_spelled(name), concept: name == concept, demonstrated: holds_demonstrated(program), stream, labels }
+                CaseStream { case: spelled, concept: name == concept, demonstrated, stream, labels }
             })
             .collect())
     }
