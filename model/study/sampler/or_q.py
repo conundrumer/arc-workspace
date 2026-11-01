@@ -639,10 +639,25 @@ CANON_TRIES = 3000  # the orders of a form that canonical_lines tries
 
 
 def decoder_check(sess, scope, kind):
-    """form_orders' check of an order's text."""
+    """form_orders' check of an order's text: the decoder takes the text over the scope. gold_rest decodes the whole program, and the tokens of the
+    scope and then the text's are stepped through the session's decoder, which refuses more (for example "static prune") than the decode of a
+    program does."""
+    base = []
+
     def check(text):
         try:
             gold_rest(sess, scope, text, kind)
+            ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, text, live.READER_OUT)), sess.settings).decode_stream()
+            if not base:
+                dec = sess.decoder()
+                for t, m, p in zip(ids, model, paths):
+                    if m and p[0] < len(scope):
+                        dec.step(t)
+                base.append(dec)
+            dec = base[0].fork()
+            for t, m, p in zip(ids, model, paths):
+                if m and p[0] == len(scope):
+                    dec.step(t)
             return None
         except Exception as e:  # noqa: BLE001
             line = str(e).split('\n')[0]
