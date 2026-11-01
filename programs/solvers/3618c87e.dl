@@ -67,15 +67,17 @@
 
 .comp Parse<Key> {
     .decl cell(k: Key, p: Position, col: Color)
+    .decl fall(d: Dir)
 
     // Each cell paired with its along/across split on the fall axis.
     .decl cell_split(k: Key, p: Position, col: Color, p_inner: Position, p_across: Position)
     cell_split(K, P, Col, P_inner, P_across) :-
-        cell(K, P, Col), params.fall_dir(D), axis_of(D, A), split(P, A, P_inner, P_across).
+        cell(K, P, Col), fall(D), axis_of(D, A), split(P, A, P_inner, P_across).
 }
 
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
+parse.fall(D) :- params.fall_dir(D).
 
 // --- $PerCell ---
 
@@ -111,8 +113,17 @@ out(P, Col, $SliceMap()) :-
     ).
 
 .comp Determine {
+    // The heading from a cell a color leaves to a cell of its line that the
+    // color reaches.
+    .decl slice_fall_to(d: Dir)
+    slice_fall_to(D) :-
+        ex_in(E, P, Col), ex_out(E, P, C_out), C_out != Col,   // Col leaves P
+        ex_out(E, Q, Col), ex_in(E, Q, C_in), C_in != Col,     // Col reaches Q
+        axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).
+
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.fall(D) :- slice_fall_to(D).
 
     // The output color at each input cell, in slice coordinates.
     .decl out_slice(e: Example, p_across: Position, p_inner: Position, col: Color)
@@ -125,14 +136,10 @@ out(P, Col, $SliceMap()) :-
         parse.cell_split(E, _, Col, P_inner, P_across), ex_out(E, _, _),
         !out_slice(E, P_across, P_inner, Col).
 
-    // @ignore: determine prediction — the test runs no step of the program at
-    //  the slice: it reads the input content of each slice the output changes
     .decl slice_input(p: Position, col: Color)
     slice_input(P_inner, Col) :-
         replaced(E, P_across), parse.cell_split(E, _, Col, P_inner, P_across).
 
-    // @ignore: determine prediction — the test runs no step of the program at
-    //  the slice: it reads the output content of each slice the output changes
     .decl slice_output(p: Position, col: Color)
     slice_output(P_inner, Col) :- replaced(E, P_across), out_slice(E, P_across, P_inner, Col).
 
