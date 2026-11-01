@@ -17,7 +17,6 @@
 //      the wire, where two wire cells that touch at a corner are neighbors
 //      only when no wire cell touches both of them by a side
 //     @witness hooked-wire-end: variant other
-//         @relaxed wire
 // @rule center-lookup: a linked box's center takes the center color of the box
 //  whose outer color equals the linked box's center color
 // @rule erase-others: every cell of a box that is not linked becomes

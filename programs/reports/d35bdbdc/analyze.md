@@ -3,7 +3,7 @@
 ## Concept
 - Fits every train and test pair (`probe.py`). Test2's 7-box is cut off by the bottom edge, and test2's wire end (7,2) touches the side middles of both the 2-box and the 7-box; the 2-box's center 4 is no box's outer color, so `linked-boxes` leaves it unlinked, as the output has it. Test1's end (1,6) touches the 4-box and the 2-box, and both are linked.
 - Relational form of a wire end: a wire cell with at most one neighbor in the wire graph, where a corner contact between two wire cells counts only when no wire cell touches both of them by a side. With that, train1's end (7,1) has one neighbor, while the corner cells of the wire have two.
-- Witness `hooked-wire-end`: verdict `other`, plausibility `variant`. It breaks the scene claim `wire` (two ends): the wire's end at (3,8) hooks back and also touches (4,7), so the degree test finds one end. It breaks the input invariant that each wire end touches no wire cell except the one before it.
+- Witness `hooked-wire-end`: verdict `other`, plausibility `variant`. It breaks no scene claim: its wire has two drawn ends, (3,1) and (3,8), each next to the middle cell of a box's side. The end at (3,8) hooks back and also touches (4,7), so the degree test finds one end. It breaks the input invariant that each wire end touches no wire cell except the one before it.
     - The generator's rule: the boxes at the first and last cells of the drawn wire are linked. The degree test approximates that drawing order, and the cell set does not show that order where the wire touches itself near an end.
 - Witness `self-named-box` (see `$SelfLookup`) has verdict `$SelfLookup`. There, the "another box" condition in `linked-boxes` erases a linked box that a person keeps.
 
