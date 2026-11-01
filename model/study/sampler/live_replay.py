@@ -215,7 +215,7 @@ class Walk:
             self.hard['body: no stop in %d atoms' % top] += 1
         if k == 0:
             self.hard['empty body'] += 1
-        if k == 1 and kind in S.MIN2_KINDS and text[0] != '(OR)' and not S.one_call(dr, text):
+        if k == 1 and kind in S.MIN2_KINDS and text[0] != '(OR)' and 'single' not in run.pri and not S.one_call(dr, text):
             self.hard['gate:one atom'] += 1
         return cur, text, scope
 

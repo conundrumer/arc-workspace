@@ -27,7 +27,8 @@ labels that OR exports are the branch's, and its other labels stay in it. The fi
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
-sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. The decoder gives every read of the task: its checks, and tables through step_tables;
+sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. A RULE's or a DET's body may stop at one atom, which S refuses (MIN2_KINDS), with the
+priors' rate for a first atom that is no compound and no method call. The decoder gives every read of the task: its checks, and tables through step_tables;
 this module reads no gold and no path but the priors.
 
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
@@ -979,6 +980,7 @@ class Run:
         """Atoms at decoder dec (with nlab labels before them) until the hazard stops them: (decoder, tokens, atom texts,
         types in scope). Each atom passes the gates that read the decoder alone; a stop passes MIN2_KINDS and the head's needs."""
         lim, c, hz = self.lim, self.c, self.pri['hazard'][kind]
+        single = self.pri.get('single', {}).get(kind)  # P(stop at one atom) for a first atom that is no method call, in priors that have it
         cur, toks, text, scope = dec, [], [], ()
         top = lim.port_atoms if kind == 'INIT' else lim.max_atoms
         labels = None
@@ -1035,7 +1037,10 @@ class Run:
                 dr.drawn.append(got[3])
                 scope = [str(t) for t in tb['types']] if tb is not None else list(scope) + list(self.label_types(dr, [got[3]]).values())
                 labels = tb.get('labels') if tb is not None else None
-                chance = self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb)
+                if k == 1 and single is not None and not S.one_call(dr, text):  # gold's rate with no steer; the steers give a RULE's stop at one atom a fifth of its prior
+                    chance = single
+                else:
+                    chance = self.stop_chance(dr, k, hz.get(k, hz[max(hz)]), toks, got, tb)
                 stop = False if self.stop_barred(dr, kind, k, top, nlab, toks, text, scope, need, keys) else self.rng.random() < chance
             if not stop and k < top:
                 continue
@@ -1049,7 +1054,7 @@ class Run:
             if kind == 'INIT' and not self.port_can_end(cur):
                 c['gate:unsafe'] += 1
                 continue
-            if k == 1 and kind in S.MIN2_KINDS and ored is None and not S.one_call(dr, text):
+            if k == 1 and kind in S.MIN2_KINDS and ored is None and single is None and not S.one_call(dr, text):
                 c['gate:one atom'] += 1
                 continue
             if keys and not set(keys) & set(toks):
@@ -1068,7 +1073,7 @@ class Run:
         if need and ANY_TYPE not in scope and any(not x & set(scope) for x in need):
             dr.need_boost = NEED_RESCUE
             return True
-        return bool(nlab + toks.count(M.STAR) < dr.labs_wanted and k < top or k == 1 and kind in S.MIN2_KINDS and not S.one_call(dr, text)
+        return bool(nlab + toks.count(M.STAR) < dr.labs_wanted and k < top or k == 1 and kind in S.MIN2_KINDS and 'single' not in self.pri and not S.one_call(dr, text)
                     or keys and not set(keys) & set(toks))
 
     def stop_chance(self, dr, k, h, toks, got, tb):

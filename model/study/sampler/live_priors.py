@@ -193,6 +193,21 @@ def nested_counts(tasks):
     return out
 
 
+def single_rates(tasks):
+    """{kind: P(the body stops at one atom | its first atom is no compound and no method call)} over the RULE and DET bodies of the tasks.
+    The kind's hazard at one atom counts the compound bodies too, which a draw makes by the compound counts."""
+    one, total = collections.Counter(), collections.Counter()
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            if f[0] not in ('RULE', 'DET'):
+                continue
+            body = [a for a in f[2:] if isinstance(a, list) and a[0] not in ('ONE', 'SET')]
+            if body and body[0][0] not in ('OR', 'IF', 'ALL') and '.' not in str(body[0][0]):
+                total[f[0]] += 1
+                one[f[0]] += len(body) == 1
+    return {k: (one[k] + 0.5) / (total[k] + 1.0) for k in total}
+
+
 def registry_types(regcols):
     """S.lib_types over the registry's entries, which the engine exports with any program."""
     program = S.arclog.StudyProgram.from_sexp(READER_PROGRAM, S.arclog.DecodeSettings())
@@ -259,7 +274,7 @@ def fit():
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
