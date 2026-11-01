@@ -114,8 +114,8 @@ KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of
 EXAMPLE_READ = dict(DET=0.2, INIT=0.03)  # the factor on a declared relation's Example column in a body of the kind: gold's atoms on declared relations read it in 32% of DETs' and 3.9% of INITs'; draws read it in 41% and 8% at these factors
 EQ_FRESH = 0.14  # the chance that the first operand of `=` is a fresh label: 99 of 685 gold `=` atoms
 EQ_BRANCH = dict(RULE=0.5, DET=0.28, key=0.12, port=0.5)  # the share of `=` among the atoms drawn in an OR's branch, by place. The priors count the atoms outside an OR alone (`=`: 10 of 20539 RULE atoms; inside branches, 452 of 5577). Most draws of `=` fail for want of a second operand, so RULE's is the share at which draws make `=` at gold's 1.8% of RULE atoms; the others keep its ratio to gold's branch shares (8.1%, 4.5%, 2.0%, 7.9%)
-ELSE_NEG = 0.13  # the chance that a later branch opens with the else negation (negation_of): 204 of 1624 gold later branches open with a NOT that it can draw. 780 hold a NOT of a relation that the first branch holds, which the atom draws make
-MIRROR_NOT = 0.88  # the share of the relations under a NOT in a later branch that the earlier branches of the OR hold: 914 of 1042 gold NOT atoms of declared relations in later branches of RULEs
+ELSE_NEG = 0.13  # the value for priors with no 'hand'; otherwise the fit's hand_counts gives it (set_hand). The chance that a later branch opens with the else negation (negation_of): 204 of 1624 gold later branches open with a NOT that it can draw. 780 hold a NOT of a relation that the first branch holds, which the atom draws make
+MIRROR_NOT = 0.88  # the value for priors with no 'hand'; otherwise the fit's hand_counts gives it (set_hand). The share of the relations under a NOT in a later branch that the earlier branches of the OR hold: 914 of 1042 gold NOT atoms of declared relations in later branches of RULEs
 FIELD_AGAIN = 0.01  # the factor on a field that a record site repeats: 15 of 1570 gold record sites have one
 HEAD_FITS = dict(Position={'Position', 'Box'}, Offset={'Offset', 'Box'}, Axis={'Axis', 'Axis4'}, DiagAxis={'DiagAxis', 'Axis4'}, Dir={'Dir', 'Dir8'}, DiagDir={'DiagDir', 'Dir8'},
                  Point={'Position', 'Offset', 'Box'})  # the label types that a head column of a type takes, where a family's other members do not: the engine's lattice has no value in both of two siblings
@@ -331,6 +331,14 @@ def or_counts(cc):
                 shapes=[(int(k[2:]), v) for k, v in shapes.items() if k.startswith('OR') and v > 0],
                 hazard={j: (lens.get(j, 0) + 0.5) / (sum(v for n, v in lens.items() if n >= j) + 1.0) for j in lens},
                 after=(cc[('after',)] + 0.5) / (sum(comp.values()) + 1.0))
+
+
+def set_hand(pri):
+    """The module constants that priors count over valid orders. Priors with no 'hand' keep the constants. One process has one set."""
+    global ELSE_NEG, MIRROR_NOT
+    hand = pri.get('hand', {})
+    ELSE_NEG, MIRROR_NOT = hand.get('else_neg', ELSE_NEG), hand.get('mirror_not', MIRROR_NOT)
+    S.P_REEXPORT, S.UNJOINED = hand.get('p_reexport', S.P_REEXPORT), hand.get('unjoined', S.UNJOINED)
 
 
 def set_steers(models_dir, on):
@@ -569,6 +577,7 @@ class Sampler:
         set_steers(models_dir, steers)
         with open(os.path.join(models_dir, 'live_priors.pkl'), 'rb') as f:
             self.pri = pickle.load(f)
+        set_hand(self.pri)
         gc.set_threshold(100000, 50, 100)  # as S: the data is long-lived and holds few cycles
         self.run = None  # the Run of the last clause call, kept for the next call on its session
         self.searches = {}  # (session, forms, kind, limits) -> search.Search

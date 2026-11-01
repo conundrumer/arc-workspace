@@ -329,7 +329,7 @@ WANT_BOOST_OUT = float(os.environ.get('WANT_BOOST_OUT', '4'))
 # of the atom loop do; BRANCH_GATE_P=0 leaves it out.
 BRANCH_GATE_P = os.environ.get('BRANCH_GATE_P', '1') == '1'
 CELLS_GATE = os.environ.get('CELLS_GATE', '1') == '1'
-UNJOINED = 0.14
+UNJOINED = 0.14  # the value for priors with no 'hand'; otherwise the fit's hand_counts gives it (live.set_hand)
 PROG_CHUNK = int(os.environ.get('PROG_CHUNK', '4'))  # points of one gold program to a job; a job holds its points' draw rows (with X rows) until it ends
 SESSION_BYTES = int(os.environ.get('SESSION_BYTES', '0')) or None  # a point's session cap; a job past it gives an error row, where it would hold the whole machine
 X_ROWS_CAP = 2000  # rows kept per entry of a draw's X; gold's X keeps all
@@ -337,7 +337,7 @@ MIN2_KINDS = {'DET', 'RULE'}  # kinds of point where a draw may not stop at one 
 ONE_CALL = os.environ.get('ONE_CALL', '1') == '1'
 DERIVED_GROUPS = {'INIT port'}  # point groups where gold's body reads a derived relation
 MAX_UNREAD = 1  # labels that a port body makes and nothing reads: gold has at most 1
-P_REEXPORT = 0.33  # gold's final OR exports a label of its first branch that the branch reads again: output 113 of 334, elsewhere 86 of 269
+P_REEXPORT = 0.33  # the value for priors with no 'hand'; otherwise the fit's hand_counts gives it (live.set_hand). Gold's final OR exports a label of its first branch that the branch reads again: output 113 of 334, elsewhere 86 of 269
 P_UNNAMED = 0.02  # a later branch of a final OR may close without naming every exported label, away from the output clause: gold 6 of 274
 P_UNREAD_LOCAL = 0.015  # a later branch may close with a label it makes and does not read: gold 8 of 515
 BRANCH_TRIES = 3  # draws of a later branch of a final OR, each from the branch's start
@@ -951,12 +951,14 @@ class BodyOrders:
     """The law of the orders of a body's atoms, a fact of the set of atoms: the next atom is uniform over those that may stand after the atoms
     before it (atom_binds), as a next clause is in live_priors' walk counts. atoms is the body sorted by text with no * or ^, steps maps (positions
     of the atoms before, position of the atom) to the chance that an order has those atoms first and this atom next, and bounds maps the former to
-    the labels bound after them. A label that a body reads and never marks is bound before the body. Over ORDER_EXACT atoms, steps are the
-    mean of ORDER_SAMPLES draws."""
+    the labels bound after them. A label that a body reads and never marks, and that no atom of the body binds, is bound before the body, and
+    so is a label of bound, the labels that the code around the body binds. Over ORDER_EXACT atoms, steps are the mean of ORDER_SAMPLES draws."""
 
-    def __init__(self, body):
+    def __init__(self, body, bound=()):
         self.atoms = sorted((a for a in body if isinstance(a, list)), key=lambda a: re.sub(r'[*^]', '', sx(a)))
         free = atom_labels(self.atoms) - atom_labels(self.atoms, True)
+        free -= atoms_bound(self.atoms, set(), set())
+        free |= set(bound) & atom_labels(self.atoms)
         self.outer = [free | atom_labels(self.atoms[:i] + self.atoms[i + 1:]) for i in range(len(self.atoms))]
         self.bounds = {frozenset(): free}
         self.steps = collections.Counter()

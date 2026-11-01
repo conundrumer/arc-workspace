@@ -12,6 +12,7 @@ A sparse kind borrows signal from anywhere, at any point. Its prior takes counts
 """
 import argparse
 import collections
+import itertools
 import json
 import os
 import pickle
@@ -294,6 +295,58 @@ def single_rates(tasks):
     return {k: (one[k] + 0.5) / (total[k] + 1.0) for k in total}
 
 
+def hand_counts(tasks):
+    """What live.set_hand reads: the chances that the walk's first-branch and joined rules take, each a mean over the orders of an OR's branches and over
+    S.BodyOrders of a list. 'else_neg', 'mirror_not' and 'p_reexport' read RULE bodies, and 'unjoined' reads RULE, DET, key and port bodies."""
+    c = collections.Counter()
+
+    def negated(a):
+        return a[1] if a and a[0] == 'NOT' and isinstance(a[1], list) else None
+
+    def count_or(a):
+        parts = [[x for x in p if isinstance(x, list)] for p in a[1:] if isinstance(p, list)]
+        binds = [S.atoms_bound(p, set(), set()) for p in parts]
+        exported = set.intersection(*binds)
+        orders = list(itertools.permutations(range(len(parts))))
+        for o in orders:
+            w = 1 / len(orders)
+            held = collections.Counter(x for b in parts[o[0]] for x in S.atom_labels(b))
+            again = {x for x, n in held.items() if n >= 2}
+            c['again'] += w * len(again)
+            c['again exported'] += w * len(again & exported)
+            first = {b[0] for b in parts[o[0]] if b and b[0] != 'NOT'}
+            for r in range(1, len(o)):
+                law = S.BodyOrders(parts[o[r]], set().union(*[binds[q] for q in range(len(parts)) if q != o[r]]))
+                earlier = {b[0] for q in o[:r] for b in parts[q] if b and b[0] != 'NOT'}
+                c['later'] += w
+                c['opens'] += w * sum(v for (done, i), v in law.steps.items() if not done and negated(law.atoms[i]) and negated(law.atoms[i])[0] in first)
+                for b in parts[o[r]]:
+                    n = negated(b)
+                    if n and str(n[0]).startswith('&'):
+                        c['mirror'] += w
+                        c['mirror held'] += w * (n[0] in earlier)
+
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            if f[0] == 'RULE':
+                places = [[a for a in f[2:] if isinstance(a, list)]]
+            elif f[0] == 'DET':
+                places = [[a for a in f[2:] if isinstance(a, list) and a[0] not in ('ONE', 'SET')]]
+            else:
+                places = [b for _, b in init_bodies(f)] if f[0] == 'INIT' else []
+            for body in places:
+                law = S.BodyOrders(body)
+                for (done, i), w in law.steps.items():
+                    a = law.atoms[i]
+                    if done and a and a[0] not in ('OR', 'IF', 'ALL', 'NOT') and a[0] not in S.OPS:
+                        c['atoms'] += w
+                        c['unjoined'] += w * (not S.atom_labels(a) & law.bounds[done])
+                for a in body if f[0] == 'RULE' else ():
+                    if a and a[0] == 'OR':
+                        count_or(a)
+    return dict(else_neg=c['opens'] / c['later'], mirror_not=c['mirror held'] / c['mirror'], p_reexport=c['again exported'] / c['again'], unjoined=c['unjoined'] / c['atoms'])
+
+
 def registry_types(regcols):
     """S.lib_types over the registry's entries, which the engine exports with any program."""
     program = S.arclog.StudyProgram.from_sexp(READER_PROGRAM, S.arclog.DecodeSettings())
@@ -362,7 +415,7 @@ def fit(leave_out=()):
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), rigid=rigid_counts(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()} | dict(RIGID_DET=rigid_atoms),
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), rigid=rigid_counts(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), hand=hand_counts(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()} | dict(RIGID_DET=rigid_atoms),
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()} | dict(RIGID_DET=rigid_hazard), regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
