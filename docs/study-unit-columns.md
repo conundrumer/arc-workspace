@@ -11,10 +11,11 @@ The old implementation used Unit positions for these parameters and filled
 unlabeled input positions with a constant. That physical coordinate conveyed
 no information. The 9613c813 extent reconstruction is no longer needed.
 
-Unfold's private state machine still stores a scalar cursor and scalar item
-handles. A zero-field parameter has a private singleton handle there.
-Private input decoding supplies that handle; public state/output relation
-rows are constructed at their actual zero-field widths. Program relations,
+Unfold's private state machine stores the cursor and each item as one
+handle. A zero-field parameter has a private singleton handle there, and a
+parameter of several fields has a handle into the run's table of cells.
+Private input decoding supplies those handles; public state/output relation
+rows are constructed at their actual widths. Program relations,
 body queries, INIT projections and native exported tables carry no Unit
 coordinate for these bindings. Unit's term decoder remains available for
 historical evidence and internal singleton handling.

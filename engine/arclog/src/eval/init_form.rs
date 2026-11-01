@@ -11,6 +11,7 @@ use crate::check::instance_inputs::inputs_at;
 use crate::check::{CheckedProgram, InstanceClause};
 use crate::eval::ir::{self, ClauseIr, IrPaths};
 use crate::eval::join;
+use crate::eval::unfold::RecordHandles;
 use crate::eval::{Evaluation, FormBodies, Outcome, RelationValue, RunFault};
 use crate::terms::{Constant, Term};
 use crate::hash::StableHashMap;
@@ -164,22 +165,22 @@ pub(super) struct InputClause {
     pub(crate) paths: Arc<IrPaths>,
     key: usize,
     head: Vec<Option<LabelId>>,
-    /// The first logical input column, if it has a native position.
-    cursor: Option<ir::Variable>,
+    /// The row positions of the first logical input column.
+    cursor: Vec<ir::Variable>,
 }
 
 impl InputClause {
     /// Bind a state-local query at its key and cursor. A Unit cursor
     /// matches only the Unit state. Variables use the form's canonical IDs.
-    pub(super) fn at_state(&self,key:&[TermId],cursor:TermId)->Result<Option<Vec<(ir::Variable,TermId)>>,String> {
+    pub(super) fn at_state(&self,key:&[TermId],cursor:TermId,records:&RecordHandles)->Result<Option<Vec<(ir::Variable,TermId)>>,String> {
         // An unkeyed input applies at every key, as InputClause::grouped
         // does. A keyed input binds its own key positions exactly.
         if self.key!=0 && key.len()!=self.key {return Err("recursive input and state key arities differ".into());}
         let mut bound=self.clause.columns[..self.key].iter().copied().zip(key.iter().copied()).collect::<Vec<_>>();
-        match self.cursor {
-            Some(variable)=>bound.push((variable,cursor)),
-            None if cursor==Term::Constant(Constant::Unit).encode().expect("Unit term")=>{},
-            None=>return Ok(None),
+        match &self.cursor[..] {
+            []=>if cursor!=Term::Constant(Constant::Unit).encode().expect("Unit term") {return Ok(None);},
+            [variable]=>bound.push((*variable,cursor)),
+            variables=>bound.extend(variables.iter().copied().zip(records.cells(cursor).iter().copied())),
         }
         Ok(Some(bound))
     }
@@ -290,8 +291,8 @@ impl<'p> InstanceShape<'p> {
             .map_err(|compile| format!("input `{}` does not compile: {compile:?}", name.0))?;
         let first = input.port.columns.iter().find(|column|!is_key(column));
         let cursor = match first {
-            Some(column) if !self.column_types(column)?.is_empty()=>clause.columns.get(key).copied(),
-            _=>None,
+            Some(column)=>clause.columns.get(key..key+self.column_types(column)?.len()).map_or_else(Vec::new,<[_]>::to_vec),
+            None=>Vec::new(),
         };
         Ok(Some(InputClause { clause, paths, key, head, cursor }))
     }
@@ -342,22 +343,25 @@ impl<'p> InstanceShape<'p> {
         columns.iter().map(|column| if is_key(column) { Ok(None) } else { self.column_types(column).map(|types| Some(types.len())) }).collect()
     }
 
-    /// Private Unfold atoms: a zero-field value has one singleton handle.
-    /// Program relation rows never use this scalar representation.
-    pub(super) fn scalar_widths(&self, columns:&[Column])->Result<Vec<usize>,String> {
-        columns.iter().filter(|c|!is_key(c)).map(|column| {
-            let width=self.column_types(column)?.len();
-            if width>1 {return Err("Unfold cursor/item must be scalar or an empty record".into());}
-            Ok(width)
-        }).collect()
+    /// The row positions of each private Unfold atom of `columns`.
+    pub(super) fn atom_widths(&self, columns:&[Column])->Result<Vec<usize>,String> {
+        columns.iter().filter(|c|!is_key(c)).map(|column|Ok(self.column_types(column)?.len())).collect()
     }
-    pub(super) fn scalar_rows(&self, columns:&[Column], rows:&RowSet)->Result<RowSet,String> {
-        let widths=self.scalar_widths(columns)?;
+    /// `rows` as private Unfold atoms, one cell per logical column: a
+    /// zero-field value has one singleton handle, and a value of several
+    /// fields has a handle of `records`. Program relation rows never use
+    /// this representation.
+    pub(super) fn atom_rows(&self, columns:&[Column], rows:&RowSet, records:&mut RecordHandles)->Result<RowSet,String> {
+        let widths=self.atom_widths(columns)?;
         let mut atoms=RowSet::empty(widths.len() as u16);
         let unit=Term::Constant(Constant::Unit).encode().expect("singleton handle");
         for row in rows.rows() {
-            let mut cells=row.iter();
-            atoms.insert(widths.iter().map(|width| if *width==0 {unit} else {*cells.next().expect("native input width")}).collect());
+            let mut rest=row;
+            atoms.insert(widths.iter().map(|&width| {
+                let (cells,after)=rest.split_at(width);
+                rest=after;
+                match cells {[]=>unit,[cell]=>*cell,_=>records.handle(cells)}
+            }).collect());
         }
         Ok(atoms)
     }

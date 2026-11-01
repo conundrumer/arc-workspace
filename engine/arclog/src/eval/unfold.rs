@@ -16,6 +16,7 @@
 //! untaken item that differs from an item of the take stays `untaken`, or
 //! leaves it as `excluded` where that item is in conflict with it.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use super::examples::{self, ExampleScope};
@@ -65,20 +66,63 @@ pub struct StateGraph {
     /// several tie, and otherwise one. A walk takes one branch of each
     /// state it reaches.
     pub branches: Vec<Box<[Branch]>>,
+    /// The cells of the states' cursors and items of several fields.
+    pub records: Arc<RecordHandles>,
 }
 
-/// Public row positions of the private scalar cursor/item pair. Empty
-/// parameters have no row positions; their singleton TermId stays in states.
+/// The cells of the cursors and items of several fields of one `Unfold`
+/// run. A state stores such a value as one private handle, which equal
+/// cells share. Only this table reads a handle, and no row holds one.
+#[derive(Clone, Debug, Default)]
+pub struct RecordHandles {
+    cells: Vec<Row>,
+    handles: StableHashMap<Row, TermId>,
+}
+
+impl RecordHandles {
+    /// The handle of `cells`.
+    pub(super) fn handle(&mut self, cells: &[TermId]) -> TermId {
+        if let Some(&handle) = self.handles.get(cells) {
+            return handle;
+        }
+        let handle = TermId::from_encoding(self.cells.len() as u32);
+        self.cells.push(cells.into());
+        self.handles.insert(cells.into(), handle);
+        handle
+    }
+
+    /// The cells of `handle`.
+    pub(super) fn cells(&self, handle: TermId) -> &[TermId] {
+        &self.cells[handle.encoding() as usize]
+    }
+}
+
+/// The row positions of the cursor and of the item. A zero-field value has
+/// no row positions and its singleton TermId stays in states. A value of
+/// several fields is a handle of [`RecordHandles`] in states.
 #[derive(Clone,Copy,Debug)]
-pub(super) struct OutputLayout {pub cursor:bool,pub item:bool}
+pub(super) struct OutputLayout {pub cursor:usize,pub item:usize}
 impl OutputLayout {
-    const SCALARS:Self=Self {cursor:true,item:true};
-    pub fn width(self)->usize {usize::from(self.cursor)+usize::from(self.item)}
+    const SCALARS:Self=Self {cursor:1,item:1};
+    pub fn width(self)->usize {self.cursor+self.item}
     pub fn at(evaluation:&Evaluation<'_>,form:&NodePath)->Outcome<Self> {
         let (instance,component)=instance_at(evaluation,form)?;
         let shape=InstanceShape::of(evaluation.program,form,instance,component);
-        let widths=shape.scalar_widths(&component.outputs[0].columns).map_err(|message|RunFault {message:message.into(),form:form.clone()})?;
-        Ok(Self {cursor:widths[0]!=0,item:widths[1]!=0})
+        Self::of(&shape,component).map_err(|message|RunFault {message:message.into(),form:form.clone()})
+    }
+    fn of(shape:&InstanceShape<'_>,component:&Component)->Result<Self,String> {
+        let widths=shape.atom_widths(&component.outputs[0].columns)?;
+        Ok(Self {cursor:widths[0],item:widths[1]})
+    }
+}
+
+/// The row cells of `atom`, the cursor or an item of a state, of `width`
+/// row positions.
+fn atom_cells<'c>(width: usize, atom: &'c TermId, records: &'c RecordHandles) -> &'c [TermId] {
+    match width {
+        0 => &[],
+        1 => std::slice::from_ref(atom),
+        _ => records.cells(*atom),
     }
 }
 
@@ -111,15 +155,16 @@ impl UnfoldOutput {
 
     /// Adds to `rows` the rows of this output at `state` on `branch`, the
     /// branch a walk takes there, each `key`, the cursor, then the item.
-    pub(super) fn add_rows(self, layout:OutputLayout, key: &[TermId], state: &UnfoldState, branch: &Branch, rows: &mut RowSet) {
+    pub(super) fn add_rows(self, layout:OutputLayout, records:&RecordHandles, key: &[TermId], state: &UnfoldState, branch: &Branch, rows: &mut RowSet) {
         let items: &[TermId] = match self {
             UnfoldOutput::Taken => &state.taken,
             UnfoldOutput::Untaken => &state.untaken,
             UnfoldOutput::Excluded => &state.excluded,
             UnfoldOutput::Take => &branch.take,
         };
-        for &item in items {
-            rows.insert(key.iter().copied().chain(layout.cursor.then_some(state.cursor)).chain(layout.item.then_some(item)).collect());
+        let cursor = atom_cells(layout.cursor, &state.cursor, records);
+        for item in items {
+            rows.insert(key.iter().chain(cursor).chain(atom_cells(layout.item, item, records)).copied().collect());
         }
     }
 }
@@ -198,7 +243,7 @@ pub fn unfold<'a>(
 ) -> Outcome<Result<Vec<(Row, StateGraph)>, RelationValue>> {
     let (instance, component) = instance_at(evaluation, form)?;
     let shape = InstanceShape::of(evaluation.program, form, instance, component);
-    let run = Run { evaluation, bodies, form, shape: &shape, component, example, own: own_outputs(evaluation, output, example) };
+    let run = Run { evaluation, bodies, form, shape: &shape, component, example, own: own_outputs(evaluation, output, example), records: RefCell::default() };
     run.graphs(budget)
 }
 
@@ -263,7 +308,7 @@ impl<'g> Walks<'g> {
 
 /// The state-local read context of one reached round in one model.
 #[derive(Clone,Debug)]
-pub struct WalkContext {pub key:Row,pub state:UnfoldState,pub take:Box<[TermId]>}
+pub struct WalkContext {pub key:Row,pub state:UnfoldState,pub take:Box<[TermId]>,pub records:Arc<RecordHandles>}
 
 /// The distinct values of some outputs over the walks of one key's state
 /// graph, found as they are asked for, each the rows of each output at the
@@ -294,7 +339,7 @@ impl<'g> DistinctWalks<'g> {
             for ((state, branches), branch) in graph.states.iter().zip(&graph.branches).zip(&chosen) {
                 let Some(branch) = branch else { continue };
                 for (output, rows) in self.outputs.iter().zip(&mut parts) {
-                    output.add_rows(self.layout, &self.key, state, &branches[*branch as usize], rows);
+                    output.add_rows(self.layout, &graph.records, &self.key, state, &branches[*branch as usize], rows);
                 }
             }
             let content = parts
@@ -306,7 +351,7 @@ impl<'g> DistinctWalks<'g> {
                 })
                 .collect();
             if self.seen.insert(content) {
-                let contexts=graph.states.iter().zip(&graph.branches).zip(&chosen).filter_map(|((state,branches),branch)|branch.map(|b|WalkContext {key:self.key.clone(),state:state.clone(),take:branches[b as usize].take.clone()})).collect();
+                let contexts=graph.states.iter().zip(&graph.branches).zip(&chosen).filter_map(|((state,branches),branch)|branch.map(|b|WalkContext {key:self.key.clone(),state:state.clone(),take:branches[b as usize].take.clone(),records:graph.records.clone()})).collect();
                 self.found.push(parts);self.contexts.push(contexts);
             }
         }
@@ -483,6 +528,8 @@ struct Run<'r, 'a> {
     component: &'r Component,
     example: Option<Example>,
     own: Vec<(UnfoldOutput, (GraphRelation, Option<Example>))>,
+    /// The handles that the run's states hold.
+    records: RefCell<RecordHandles>,
 }
 
 /// The bodies that read the outputs, each where the form writes it.
@@ -510,6 +557,8 @@ impl<'r, 'a> Run<'r, 'a> {
                 Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.form.clone() }))),
             }
         }
+        let records = Arc::new(self.records.take());
+        graphs.iter_mut().for_each(|(_, graph): &mut (Row, StateGraph)| graph.records = records.clone());
         Ok(Ok(graphs))
     }
 
@@ -525,13 +574,10 @@ impl<'r, 'a> Run<'r, 'a> {
         declared.ok_or_else(|| self.fault(format!("the component declares no input `{}`", port.0)))
     }
 
-    /// The clause of `input` where the form writes it, each head site one
-    /// label.
+    /// The clause of `input` where the form writes it.
     fn compile(&self, input: UnfoldInput) -> Outcome<Option<InputClause>> {
         let declared = self.declared(input)?;
-        let Some(clause) = self.shape.input_clause(self.evaluation.program, self.form, declared).map_err(|message| self.fault(message))? else { return Ok(None) };
-        self.shape.scalar_widths(&declared.port.columns).map_err(|message|self.fault(message))?;
-        Ok(Some(clause))
+        self.shape.input_clause(self.evaluation.program, self.form, declared).map_err(|message| self.fault(message))
     }
 
     /// The rows of `clause`, of `arity` columns, through the driver, or the
@@ -553,7 +599,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 self.shape.unwritten(declared,&types,keys,self.evaluation).map_err(|message|self.fault(message))?
             }
         };
-        let rows=rows.iter().map(|rows|self.shape.scalar_rows(&declared.port.columns,rows).map_err(|message|self.fault(message))).collect::<Outcome<Vec<_>>>()?;
+        let rows=rows.iter().map(|rows|self.shape.atom_rows(&declared.port.columns,rows,&mut self.records.borrow_mut()).map_err(|message|self.fault(message))).collect::<Outcome<Vec<_>>>()?;
         Ok(Ok(rows))
     }
 
@@ -595,7 +641,7 @@ impl<'r, 'a> Run<'r, 'a> {
         };
         let [at_key] = &body.grouped(std::slice::from_ref(&group.key), rows)[..] else { unreachable!("the rows of one key") };
         let declared=self.declared(input)?;
-        let atoms=self.shape.scalar_rows(&declared.port.columns,at_key).map_err(|message|self.fault(message))?;
+        let atoms=self.shape.atom_rows(&declared.port.columns,at_key,&mut self.records.borrow_mut()).map_err(|message|self.fault(message))?;
         Ok(Ok(atoms.rows().filter(|row| row[0] == state.cursor).map(|row| row[1]).collect()))
     }
 
@@ -607,10 +653,9 @@ impl<'r, 'a> Run<'r, 'a> {
         let values = &self.bodies.driver.values;
         for (which, entry) in &self.own {
             let widths=self.shape.widths(&self.component.outputs[0].columns).expect("checked output widths");
-            let scalar=self.shape.scalar_widths(&self.component.outputs[0].columns).expect("checked scalar output");
-            let layout=OutputLayout {cursor:scalar[0]!=0,item:scalar[1]!=0};
+            let layout=OutputLayout::of(self.shape,self.component).expect("checked output widths");
             let mut rows = RowSet::empty(self.shape.arity(&widths) as u16);
-            which.add_rows(layout,key, state, &branch, &mut rows);
+            which.add_rows(layout,&self.records.borrow(),key, state, &branch, &mut rows);
             values.borrow_mut().insert(entry.clone(), RelationValue::Rows(Arc::new(join::one_part(rows))));
         }
         let value = evaluate();
