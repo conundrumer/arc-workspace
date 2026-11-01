@@ -81,7 +81,8 @@ impl Construction for Wallpaper {
         let shifts = cosets(lib, &grid, &periods)?;
         for d in transform.rows() {
             let d = d[0];
-            let involution = lib.inverse(d)? == d;
+            let Some(inverse) = lib.inverse(d)? else { continue };
+            let involution = inverse == d;
             for &delta in &shifts {
                 context.budget.charge_work(1)?;
                 if involution && !periods.admits_square(lib.compose(delta, lib.apply(d, delta)?)?) {
@@ -133,10 +134,14 @@ struct Periods {
 
 impl Periods {
     /// The periods of the `period` rows `(A, K)`, at most one positive
-    /// period on each axis, as [`crate::domain`] checks.
+    /// period on each axis, as [`crate::domain`] checks. A row whose `A` is
+    /// no axis gives no period.
     fn of(period: &RowSet) -> Periods {
         let mut periods = Periods { vertical: None, horizontal: None };
         for row in period.rows() {
+            if Geometry::get().each(Some(row[0]), &ValueType::Axis4).next().is_none() {
+                continue;
+            }
             let axis = if is_vertical(row[0]) { &mut periods.vertical } else { &mut periods.horizontal };
             *axis = Some(Term::decode_number(row[1]));
         }

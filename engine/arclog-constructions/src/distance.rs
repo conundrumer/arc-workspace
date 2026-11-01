@@ -154,8 +154,9 @@ impl Graph {
         search.steps.finish(search.budget)?;
         let mut distance = RowSet::empty(self.width as u16 + 1);
         for (node, cost) in self.nodes.iter().zip(&costs).filter(|_| wanted[0]) {
-            if let Some(cost) = cost {
-                distance.insert(row(node, &[Term::encode_number(i32::try_from(*cost).expect("a least cost within a number"))]));
+            // A cost outside a number has no term id, so its node has no row.
+            if let Some(cost) = cost.and_then(|cost| i32::try_from(cost).ok()) {
+                distance.insert(row(node, &[Term::encode_number(cost)]));
             }
         }
         let mut predecessor = RowSet::empty(2 * self.width as u16);

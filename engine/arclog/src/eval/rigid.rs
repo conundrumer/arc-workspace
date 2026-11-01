@@ -307,7 +307,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
     fn takes_onto(&self, geometry: &Geometry, g: D4Element, frame: &View<'_>, observed: &View<'_>) -> bool {
         if !self.has_own_idents() {
             return self.parts.iter().zip(frame.parts).zip(observed.parts).all(|((part, frame), observed)| {
-                let images: StableHashSet<Row> = frame.rows().map(|values| image(geometry, g, values, &part.types).collect()).collect();
+                let images: StableHashSet<Row> = frame.rows().filter_map(|values| image(geometry, g, values, &part.types)).collect();
                 images.len() == observed.len() && observed.rows().all(|values| images.contains(values))
             });
         }
@@ -315,7 +315,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let mut readings: IdentRowsBuilder<u32, TermId> = IdentRowsBuilder::default();
         for (index, part) in self.parts.iter().enumerate() {
             for values in frame.parts[index].rows() {
-                let moved: Vec<TermId> = image(geometry, g, values, &part.types).collect();
+                let Some(moved) = image(geometry, g, values, &part.types) else { continue };
                 push_row(&mut images, index, &moved, &part.own);
             }
             for values in observed.parts[index].rows() {
@@ -510,7 +510,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
                 let part = &self.parts[index];
                 let mut agreed: Option<StableHashSet<Row>> = None;
                 for &g in &found {
-                    let images: StableHashSet<Row> = records[index].get(key).into_iter().flat_map(RowSet::rows).map(|values| image(geometry, g, values, &part.types).collect()).collect();
+                    let images: StableHashSet<Row> = records[index].get(key).into_iter().flat_map(RowSet::rows).filter_map(|values| image(geometry, g, values, &part.types)).collect();
                     undefined |= agreed.get_or_insert_with(|| images.clone()) != &images;
                 }
                 let mut rows = part.no_rows();
@@ -558,9 +558,10 @@ impl<'e, 'p> Assembly<'e, 'p> {
             for &element in elements {
                 let g = geometry.element(element);
                 for values in reading.rows() {
+                    let Some(moved) = image(geometry, g, values, part_types) else { continue };
                     let mut row = key.to_vec();
                     row.push(element);
-                    row.extend(image(geometry, g, values, part_types));
+                    row.extend_from_slice(&moved);
                     rows.insert(row.into());
                 }
             }
@@ -674,12 +675,13 @@ fn label_type(types: &FormTypes, label: LabelId) -> Result<ValueType, String> {
 }
 
 /// The image under `g` of `values`, whose columns take `types`, each value
-/// acted on by its type, as `docs/arclog/rigid.md#semantics` gives.
-pub fn image<'v>(geometry: &'v Geometry, g: D4Element, values: &'v [TermId], types: &'v [ValueType]) -> impl Iterator<Item = TermId> + 'v {
-    values.iter().zip(types).map(move |(&value, ty)| match ty {
+/// acted on by its type, as `docs/arclog/rigid.md#semantics` gives, or `None`
+/// where a value of an orientation type has no image, and so the row has none.
+pub fn image(geometry: &Geometry, g: D4Element, values: &[TermId], types: &[ValueType]) -> Option<Row> {
+    values.iter().zip(types).map(|(&value, ty)| match ty {
         ValueType::Record(_) => unreachable!("a label's type is no record"),
-        ty if ty.is_box() => Term::Box(apply(g, Term::decode_box(value))).encode().expect("a Box's margins, moved among its edges, each fit a signed byte"),
-        _ if ty.moved_by_d4() => geometry.under(g, value),
-        _ => value,
-    })
+        ty if ty.is_box() => Some(Term::Box(apply(g, Term::decode_box(value))).encode().expect("a Box's margins, moved among its edges, each fit a signed byte")),
+        _ if ty.moved_by_d4() => geometry.try_under(g, value),
+        _ => Some(value),
+    }).collect()
 }

@@ -1193,6 +1193,8 @@ impl Analysis<'_> {
         let (mut own_rows, mut own_columns) = self.own_size(sized, row, ctx, depth)?;
         if let Some(by) = &size.by {
             let element = self.sub.column_of(site_label(atom, &by.column)?)?;
+            // A row whose `by` cell is no D4 element gives no extent.
+            Geometry::get().each(Some(row[element]), &ValueType::D4).next()?;
             if matches!(Geometry::get().element(row[element]).image(Edge::Top), Edge::Left | Edge::Right) {
                 (own_rows, own_columns) = (own_columns, own_rows);
             }

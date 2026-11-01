@@ -340,7 +340,7 @@ impl Comparison<'_> {
             let mut trial = compared.clone();
             let mut agrees = true;
             for (part, record, types, rows) in &sides {
-                let moved: Vec<Vec<TermId>> = rows.iter().map(|row| image(geometry, g, row, types).collect()).collect();
+                let moved: Vec<Vec<TermId>> = rows.iter().filter_map(|row| image(geometry, g, row, types).map(Vec::from)).collect();
                 match self.leaves(types, record, &moved) {
                     Ok((record, engine)) => agrees = differs(record, engine, &mut trial).is_none(),
                     Err(fault) => return Some(Finding::Fault(format!("{part}: {fault}"))),

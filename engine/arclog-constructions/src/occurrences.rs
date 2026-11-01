@@ -53,11 +53,13 @@ impl Construction for Occurrences {
             let d = d[0];
             let mut images: Vec<(TermId, TermId)> = Vec::new();
             for s in shape.indices() {
-                images.push((s[0], lib.apply(d, s[0])?));
+                if let Some(image) = lib.try_apply(d, s[0])? {
+                    images.push((s[0], image));
+                }
             }
             let mut placements: StableHashSet<TermId> = StableHashSet::default();
             for row in shape_rows.rows() {
-                let image = lib.apply(d, row[0])?;
+                let Some(image) = lib.try_apply(d, row[0])? else { continue };
                 for &p in at_value.get(&row[1..]).into_iter().flatten() {
                     context.budget.charge_work(1)?;
                     placements.insert(lib.relative(image, p)?);

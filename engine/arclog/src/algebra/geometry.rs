@@ -391,8 +391,14 @@ impl Geometry {
 
     /// The image of `value` under `g`.
     pub fn under(&self, g: D4Element, value: TermId) -> TermId {
-        let (ty, meaning) = self.meaning(value);
-        self.constant(ty, meaning.under(g)).expect("the image of each constant is a constant of its type")
+        self.try_under(g, value).expect("the image of each constant is a constant of its type")
+    }
+
+    /// The image of `value` under `g`, or `None` where `value` is no
+    /// orientation constant, or no constant of its type is its image.
+    pub fn try_under(&self, g: D4Element, value: TermId) -> Option<TermId> {
+        let &(ty, meaning) = self.meanings.get(&value)?;
+        self.constant(ty, meaning.under(g))
     }
 
     pub(super) fn element_constant(&self, x: D4Element) -> TermId {

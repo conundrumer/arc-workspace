@@ -49,7 +49,9 @@ impl Construction for Agreement {
             let d = d[0];
             let mut pairs = Vec::new();
             for p in source.indices() {
-                pairs.push(([p[0]], [lib.apply(d, p[0])?]));
+                if let Some(image) = lib.try_apply(d, p[0])? {
+                    pairs.push(([p[0]], [image]));
+                }
             }
             let verdict = compare(&source, &target, pairs, context.budget)?;
             if verdict.mismatch && group.wanted[0] {
@@ -153,18 +155,32 @@ impl Lib<'_> {
         Ok(rows)
     }
 
+    /// The value of the last column of the row of `name` at `bound`, which
+    /// binds every other column, or `None` where `name` holds no row there.
+    fn partial_image(&self, name: &str, bound: &[Option<TermId>]) -> Result<Option<TermId>, ReachedBound> {
+        match &self.rows(name, bound)?[..] {
+            [] => Ok(None),
+            [row] => Ok(Some(*row.last().expect("a row of some column"))),
+            rows => panic!("`{name}` gives {} rows at a binding of each column but its last", rows.len()),
+        }
+    }
+
     /// The value of the last column of the one row of `name` at `bound`,
     /// which binds every other column.
     fn image(&self, name: &str, bound: &[Option<TermId>]) -> Result<TermId, ReachedBound> {
-        match &self.rows(name, bound)?[..] {
-            [row] => Ok(*row.last().expect("a row of some column")),
-            rows => panic!("`{name}` gives {} rows at a binding of each column but its last", rows.len()),
-        }
+        let image = self.partial_image(name, bound)?;
+        Ok(image.unwrap_or_else(|| panic!("`{name}` gives no row at a binding of each column but its last")))
     }
 
     /// The image of the Box `p` under the D4 element `d`.
     pub(crate) fn apply(&self, d: TermId, p: TermId) -> Result<TermId, ReachedBound> {
         self.image("apply", &[Some(d), Some(p), None])
+    }
+
+    /// The image of the Box `p` under `d`, or `None` where `d` is no D4
+    /// element, where `apply` holds no row.
+    pub(crate) fn try_apply(&self, d: TermId, p: TermId) -> Result<Option<TermId>, ReachedBound> {
+        self.partial_image("apply", &[Some(d), Some(p), None])
     }
 
     /// The Box `a` translated by `b`.
@@ -177,9 +193,10 @@ impl Lib<'_> {
         self.image("relative", &[Some(base), Some(x), None])
     }
 
-    /// The inverse of the D4 element `d`.
-    pub(crate) fn inverse(&self, d: TermId) -> Result<TermId, ReachedBound> {
-        self.image("d4_inverse", &[Some(d), None])
+    /// The inverse of `d`, or `None` where `d` is no D4 element, where
+    /// `d4_inverse` holds no row.
+    pub(crate) fn inverse(&self, d: TermId) -> Result<Option<TermId>, ReachedBound> {
+        self.partial_image("d4_inverse", &[Some(d), None])
     }
 
     /// Each axis with each translation magnitude that the frame of the
