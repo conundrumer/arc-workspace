@@ -210,3 +210,19 @@ out(P_grid_out, Col, $CompressRuns()) :-
     runs.id([A, L1], R1), run_frame.pos(A, R1, Q1),
     runs.id([A2, L2], R2), run_frame.pos(A2, R2, Q2),
     compose(Q1, Q2, P_grid_out).
+
+.comp Determine {
+    // The rings of each train output, from its border inward.
+    .init rings = Rim<Example>
+    rings.cell(E, P) :- ex_out(E, P, _).
+
+    // A depth at which a train output holds a color other than its border's.
+    .init inner = Extremes<Unit>
+    inner.cand($U(), K) :-
+        rings.rim(E, P), ex_out(E, P, Col),
+        rings.depth(E, Q, K), ex_out(E, Q, Col2), Col2 != Col.
+
+    // The outer ring ends where the first other color starts.
+    .decl ring_width(k: number)
+    ring_width(K) :- inner.low($U(), K).
+}
