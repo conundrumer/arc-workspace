@@ -175,9 +175,9 @@ def body_compounds(tasks):
 
 def nested_counts(tasks):
     """{place: counts} of the ORs that stand inside a branch of an OR, in the bodies of RULEs and of an INIT's key and ports: 'branches'
-    is the branches of ORs, 'nests' the ORs inside a branch past its first atom, 'after' the nests with an atom after them in their
-    branch, ('parts', n) the nests of n branches."""
-    out = {k: collections.Counter() for k in ('RULE', 'key', 'port')}
+    is the branches of ORs, 'nests' the ORs inside a branch past its first atom, 'first' those that are a branch's first atom, 'after' the
+    nests with an atom after them in their branch, ('parts', n) the nests of n branches."""
+    out = {k: collections.Counter(first=0) for k in ('RULE', 'key', 'port')}
     for t in tasks:
         for f in S.corpus_forms(t):
             bodies = [('RULE', [a for a in f[2:] if isinstance(a, list)])] if f[0] == 'RULE' else init_bodies(f) if f[0] == 'INIT' else []
@@ -186,7 +186,9 @@ def nested_counts(tasks):
                     for b in [b for b in a[1:] if isinstance(b, list)] if a and a[0] == 'OR' else ():
                         out[place]['branches'] += 1
                         for i, x in enumerate(b):
-                            if i and isinstance(x, list) and x and x[0] == 'OR':
+                            if not i and isinstance(x, list) and x and x[0] == 'OR':
+                                out[place]['first'] += 1
+                            elif i and isinstance(x, list) and x and x[0] == 'OR':
                                 out[place]['nests'] += 1
                                 out[place]['after'] += i < len(b) - 1
                                 out[place]['parts', len([y for y in x[1:] if isinstance(y, list)])] += 1

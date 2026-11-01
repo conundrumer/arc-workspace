@@ -541,6 +541,8 @@ class Run:
         self.orcs = {'RULE': or_counts(pri['compound'])} | {k: or_counts(v) for k, v in pri['compounds'].items()}
         for place, n in pri.get('nested', {}).items():  # an OR inside a branch: a branch's chance of one, and the chance that an atom follows it
             self.orcs[place] |= dict(nest=n['nests'] / max(n['branches'], 1), nest_after=(n['after'] + 0.5) / (n['nests'] + 1.0))
+            if 'first' in n:  # priors fitted before an OR could be a branch's first atom have no such count: they draw none
+                self.orcs[place]['nest_first'] = (n['first'] + 0.5) / (n['branches'] + 1.0)
         self.key_labels = sorted(pri.get('key_labels', {1: 1}).items())  # a key's count of ^ labels, and its gold count
         self.t0 = time.monotonic()
         self.c = collections.Counter()
@@ -1378,7 +1380,9 @@ class Run:
                 bound |= set(read) & exported
                 start = 2
                 self.c['or:else negation'] += 1
-        nest_due, nest_next = bool(nests) and self.rng.random() < nests, False  # a branch with an OR inside takes it as its last atom, as gold's mostly do
+        first_nest = start == 1 and nests and dr.orc.get('nest_first') and self.rng.random() < dr.orc['nest_first']  # an OR may be the branch's first atom
+        nest_due, nest_next = bool(nests) and not first_nest and self.rng.random() < nests, bool(first_nest)  # a branch with an OR inside takes it as its last atom, as gold's mostly do
+        soft = None
         for j in range(start, self.lim.branch_atoms + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
@@ -1393,6 +1397,8 @@ class Run:
                 self.c['or:nested' if nest else 'or:nested failed'] += 1
                 nest_due = False
                 if nest is None:  # the branch closes as it could before
+                    if not text:
+                        return None, 'no atom'
                     self.c['or:soft close'] += soft is not None
                     return d, toks, text, made, read, bound
             if nest is not None:

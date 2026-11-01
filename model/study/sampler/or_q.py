@@ -54,6 +54,7 @@ class Guide(search.Chooser):
 
     def __init__(self, run, rest, kind='RULE'):
         self.run, self.rest, self.kind = run, rest, kind
+        self.total = len(rest)
         self.parts, self.counts, self.bad, self.atoms, self.detail = collections.Counter(), collections.Counter(), [], [], []
         self.hash, self.or_next, self.ctx = 0, False, 'top'
         self.levels = []  # one count of the branches so far, for each OR being drawn
@@ -213,6 +214,9 @@ class Guide(search.Chooser):
                     break
             r = self.neg_idx is not None
             name = 'br:else-NOT coin'
+        elif 'nest_first' in line:
+            r = bool(self.rest) and self.rest[0] == M.OR
+            name = 'br:nest first coin'
         elif 'bool(nests)' in line:
             r = False
             for t, d in self.scan():
@@ -486,7 +490,9 @@ class GuidedRun(search.SearchRun):
         return got
 
     def drawer(self, pg, kind, dec, place=None):
-        """In an INIT, the parts of a body's atoms are those of its place."""
+        """In an INIT, the parts of a body's atoms are those of its place. The hash that names the path to a body, for the caches that the Drawers of
+        one path share, is the count of gold's tokens taken so far: each body of the walk has its own path, as in a search."""
+        self.rng.hash = self.rng.total - len(self.rng.rest)
         dr, g = super().drawer(pg, kind, dec, place), self.rng
         if kind == 'INIT':
             if place == 'key':
