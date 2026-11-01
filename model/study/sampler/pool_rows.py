@@ -38,7 +38,7 @@ Output, under --out:
   ends a size on a task; the second also writes the rows of the pool as it stands, which a later run replaces. A task with a done
   file is skipped on a restart.
 
-Row hashes compare within a task: a value of a type that a session interns has no meaning in another session.
+Row hashes compare within a task. An Ident cell is the same in every session where ARCLOG_IDENT_SOURCE is `value`, and a number that has no meaning in another session where it is not.
 
   RAYON_NUM_THREADS=1 <runtime python> -u pool_rows.py [--out DIR] [--tasks 40] [--large 10] [--sizes 300,3000] [--seconds 3600] [--shard K/N] [--only TASK ...]
 """

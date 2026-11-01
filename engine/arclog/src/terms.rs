@@ -203,7 +203,8 @@ pub struct ReachedMarginBound {
 
 /// An Ident: the index of a content in the task session's [`InternTable`].
 /// The number depends on the order of interning, so an Ident has equality
-/// and no order.
+/// and no order. A table export gives the content's member digest in place of
+/// the number ([`InternTable::export_cell`]).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ident(u32);
 
@@ -610,11 +611,17 @@ pub enum DataValueError {
 /// The task session's table from contents to Idents. It finds a content by
 /// its hash, and compares contents only where two hashes match. The table's
 /// bytes count toward the task session's bound, and a freed number is not
-/// used again in the session.
+/// used again in the session. Where `ARCLOG_IDENT_SOURCE` is `value`, it also
+/// keeps the member digest of each content, which is the same in every
+/// session.
 #[derive(Debug, Default)]
 pub struct InternTable {
     /// The content of each number given, `None` once freed.
     contents: Vec<Option<Content>>,
+    /// The member digest of each number given, as [`InternTable::digest`]
+    /// gives it: zero where the content is freed, and while Ident values are
+    /// off.
+    digests: Vec<StableHash>,
     /// The Idents of the contents of each hash.
     by_hash: crate::hash::StableHashMap<StableHash, Vec<Ident>>,
     /// The bytes of each set in `contents` plus the capacity in bytes of each
@@ -652,8 +659,64 @@ impl InternTable {
         idents.push(ident);
         let grown = (idents.capacity() - before) * std::mem::size_of::<Ident>();
         self.held_bytes += grown + Self::content_bytes(&content);
+        let digest = if crate::types::ident_mode() == crate::types::IdentMode::Value { self.digest_of(&content) } else { StableHash(0) };
+        self.digests.push(digest);
         self.contents.push(Some(content));
         ident
+    }
+
+    /// The member digest of `content`, which is the same in every process
+    /// and session: a hash of the member type's column types and of the
+    /// members, as a sum of the hash of each member. A member's hash holds
+    /// its term ids, except that it holds the digest of each Ident in it in
+    /// place of that Ident's number. Each Ident in a member is already
+    /// interned, so the digest is built from the inside out. A content read
+    /// from a file has the digest of its written number.
+    fn digest_of(&self, content: &Content) -> StableHash {
+        use std::hash::Hash;
+        let mut hasher = crate::hash::StableHasher::new();
+        match content {
+            Content::FromFile { written, .. } => {
+                0u8.hash(&mut hasher);
+                written.0.hash(&mut hasher);
+            }
+            Content::Set(set) => {
+                1u8.hash(&mut hasher);
+                let mut types = Vec::new();
+                column_types(&set.member, &mut types);
+                for ty in &types {
+                    ty.without_source().hash(&mut hasher);
+                }
+                let idents = set.ident_fields();
+                let mut sum = 0u128;
+                for member in set.each() {
+                    let mut member_hasher = crate::hash::StableHasher::new();
+                    for (field, id) in member.iter().enumerate() {
+                        if idents.contains(&field) {
+                            self.digests[id.0 as usize].0.hash(&mut member_hasher);
+                        } else {
+                            id.0.hash(&mut member_hasher);
+                        }
+                    }
+                    sum = sum.wrapping_add(member_hasher.finish128().0);
+                }
+                sum.hash(&mut hasher);
+                (set.members.len() as u64).hash(&mut hasher);
+            }
+        }
+        hasher.finish128()
+    }
+
+    /// The member digest of `ident`'s content, as [`InternTable::intern`]
+    /// computed it. It is zero unless `ARCLOG_IDENT_SOURCE` is `value`.
+    pub fn digest(&self, ident: Ident) -> StableHash {
+        self.digests[ident.0 as usize]
+    }
+
+    /// The cell that a table export gives `ident`: the first 32 bits of its
+    /// digest. It is the same for equal contents in every process.
+    pub fn export_cell(&self, ident: Ident) -> i32 {
+        (self.digest(ident).0 >> 96) as u32 as i32
     }
 
     /// The content that `ident` labels. A freed Ident is a fault of its
@@ -683,6 +746,7 @@ impl InternTable {
         for (number, keep) in kept.into_iter().enumerate() {
             if !keep {
                 self.contents[number] = None;
+                self.digests[number] = StableHash(0);
             }
         }
         let contents = &self.contents;
@@ -707,6 +771,7 @@ impl InternTable {
     /// bound. It runs in constant time.
     pub fn bytes(&self) -> usize {
         self.contents.capacity() * std::mem::size_of::<Option<Content>>()
+            + self.digests.capacity() * std::mem::size_of::<StableHash>()
             + self.by_hash.capacity()
                 * (std::mem::size_of::<StableHash>() + std::mem::size_of::<Vec<Ident>>())
             + self.held_bytes

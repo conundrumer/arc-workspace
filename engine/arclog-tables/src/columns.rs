@@ -34,11 +34,14 @@
 //! `i32` by the type of its column: a Box its four margins (top, bottom,
 //! left, right), a Color its digit, a Number itself, an Example its index, a
 //! Unit 0, and an orientation constant, a `Pose` by its D4 constant, its
-//! encoding, which [`orientation_names`] names. An Ident is its number, which
-//! depends on the order of interning in the session of the unit of streams
-//! that interned it, so on the cut of the solver's streams into units, which
-//! the solver's unit count sets, and it is equal to another Ident of the
-//! same run and to no Ident of another. A run is an offset in `values` and a
+//! encoding, which [`orientation_names`] names. An Ident is the first 32 bits
+//! of its member digest ([`arclog::terms::InternTable::digest`]) where
+//! `ARCLOG_IDENT_SOURCE` is `value`, so it is equal for equal sets in every
+//! run. Otherwise it is its number, which depends on the order of interning
+//! in the session of the unit of streams that interned it, so on the cut of
+//! the solver's streams into units, which the solver's unit count sets, and
+//! it is equal to another Ident of the same run and to no Ident of another.
+//! A run is an offset in `values` and a
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
 //! the projection's. The rows of a run are in the order of their cells. Two
 //! runs of a case with the same cells, the same rows of the same width, share
@@ -77,7 +80,7 @@ use arclog::read::spelling::{spelling, FACT_RELATIONS};
 use arclog::registry::{has_frame, Registry};
 use arclog::relations::Relation;
 use arclog::stream::corpus::StreamLabels;
-use arclog::terms::{Constant, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
+use arclog::terms::{Constant, Ident, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use arclog::types::ValueType;
 
 use crate::extents::{EntryExtents, Extent, Merged};
@@ -816,9 +819,15 @@ fn row_width(types: &[ValueType]) -> u32 {
     types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).sum()
 }
 
-/// The cells of the term of `id` at a column of type `ty`.
-fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType) {
+/// The cells of the term of `id` at a column of type `ty`. Where `idents` is
+/// given, an Ident's cell is 0, and its place in `out` and the Ident are added
+/// to `idents`, for [`set_ident_cells`] to fill.
+fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType, idents: Option<&mut Vec<(usize, Ident)>>) {
     match Term::decode(id, ty) {
+        Term::Ident(ident) if idents.is_some() => {
+            idents.expect("idents given").push((out.len(), ident));
+            out.push(0);
+        }
         Term::Number(number) => out.push(number.0),
         Term::Box(margins) => out.extend([margins.top, margins.bottom, margins.left, margins.right]),
         Term::Constant(Constant::Color(color)) => out.push(i32::from(color.digit())),
@@ -855,13 +864,22 @@ fn sorted_rows(materializer:&Materializer<'_>,rows: &Relation, types: &[ValueTyp
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
     let mut written = Vec::with_capacity(count.saturating_mul(width));
     let mut visited = 0;
+    let by_digest = arclog::types::ident_mode() == arclog::types::IdentMode::Value;
+    let mut idents = Vec::new();
     materializer.walk(rows, &mut |row| {
         for (&id, ty) in row.iter().zip(types) {
-            push_cells(&mut written, id, ty);
+            push_cells(&mut written, id, ty, by_digest.then_some(&mut idents));
         }
         visited += 1;
     })?;
     materializer.check()?;
+    if !idents.is_empty() {
+        // The read lock is taken after the walk, which may read the table itself.
+        let table = materializer.session().intern.read().expect("an intern table that no panic poisoned");
+        for (at, ident) in idents {
+            written[at] = table.export_cell(ident);
+        }
+    }
     let row_cells = |at: usize| &written[at * width..(at + 1) * width];
     let mut order: Vec<usize> = (0..visited).collect();
     order.sort_by(|&a, &b| row_cells(a).cmp(row_cells(b)));

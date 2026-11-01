@@ -198,6 +198,11 @@ impl<'a> Materializer<'a> {
     /// Uses the caller's current operation, without starting another timer.
     pub fn new(session:&'a TaskSession, limits:&'a Limits)->Self { Self {session,limits} }
 
+    /// The session whose limits this operation runs under.
+    pub fn session(&self) -> &'a TaskSession {
+        self.session
+    }
+
     /// Conservative per-row owned storage, including hash/vector headers and
     /// allocator slack. Callers supply their actual scalar payload layout.
     /// The row's slot (a boxed slice or vector header, or a hash bucket at
