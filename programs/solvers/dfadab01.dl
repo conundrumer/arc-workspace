@@ -63,33 +63,52 @@
     //     @relaxed markers
     .decl background(c: Color) background(0).
 
-    // The picture each marker color draws, as offsets from the marker, `@` on
-    // the anchor corner.
+    // The placement of the legend: the one that takes the train pose onto
+    // itself, the element that composed with itself gives itself.
+    .decl placed(d: D4)
+    placed(D) :- legend_pose(D, R), d4_compose(R, R, R).
+
     .decl stamp(k: Color, v: Offset, col: Color)
-    GRID_STAMP_SPARSE_4x4(stamp, 2,
-        @4, 4, 4, 4,
-        4, _, _, 4,
-        4, _, _, 4,
-        4, 4, 4, 4)
-    GRID_STAMP_SPARSE_4x4(stamp, 3,
-        @_, 1, 1, _,
-        1, _, _, 1,
-        1, _, _, 1,
-        _, 1, 1, _)
-    GRID_STAMP_SPARSE_4x4(stamp, 5,
-        @6, 6, _, _,
-        6, 6, _, _,
-        _, _, 6, 6,
-        _, _, 6, 6)
-    GRID_STAMP_SPARSE_4x4(stamp, 8,
-        @7, _, _, 7,
-        _, 7, 7, _,
-        _, 7, 7, _,
-        7, _, _, 7)
+    stamp(K, V, Col) :- placed(D), legend_stamp(D, K, V, Col).
+
+    // The pictures with the sample's key corner, with the pose of the train
+    // samples.
+    RIGID(legend,
+        // The picture each marker color draws, as offsets from the marker, `@`
+        // on the anchor corner.
+        .decl stamp(k: Color, v: Offset, col: Color)
+        GRID_STAMP_SPARSE_4x4(stamp, 2,
+            @4, 4, 4, 4,
+            4, _, _, 4,
+            4, _, _, 4,
+            4, 4, 4, 4)
+        GRID_STAMP_SPARSE_4x4(stamp, 3,
+            @_, 1, 1, _,
+            1, _, _, 1,
+            1, _, _, 1,
+            _, 1, 1, _)
+        GRID_STAMP_SPARSE_4x4(stamp, 5,
+            @6, 6, _, _,
+            6, 6, _, _,
+            _, _, 6, 6,
+            _, _, 6, 6)
+        GRID_STAMP_SPARSE_4x4(stamp, 8,
+            @7, _, _, 7,
+            _, 7, 7, _,
+            _, 7, 7, _,
+            7, _, _, 7)
+
+        .decl pose(d: D4)
+        pose(D4_ID).
+
+        // --- $PastKeyCorner ---
+        // The corner of the sample's box that its key marker sits diagonally past.
+        .decl key_corner(d: DiagDir) key_corner(DIAG_BR).
+    )
 
     // --- $PastKeyCorner ---
-    // The corner of the sample's box that its key marker sits diagonally past.
-    .decl key_corner(d: DiagDir) key_corner(DIAG_BR).
+    .decl key_corner(d: DiagDir)
+    key_corner(Diag) :- placed(D), legend_key_corner(D, Diag).
 
     // --- $SampleStamp ---
     // The corner of the sample's box that sits on a marker.
@@ -220,21 +239,23 @@ undefined(Ch) :- sample_key.clash(Ch).
         sample.box(E, B), marker(E, P, K), !inside(P, B),
         neighbor(P, _, Q), inside(Q, B).
 
-    // The picture a sample gives its key, read relative to corner d of its box.
-    .decl picture(d: DiagDir, k: Color, v: Offset, col: Color)
-    picture(D, K, V, Col) :-
+    // The corner of a sample's box that its key marker sits diagonally past.
+    .decl legend_key_corner(d: DiagDir)
+    legend_key_corner(D) :-
+        sample.box(E, B), key_marker(E, P, _),
+        ex_in(E, Q, _), box_corner(Q, B, D), neighbor(Q, D, P).
+
+    // The picture a sample gives its key, read relative to the box's corner
+    // opposite the key corner.
+    .decl legend_stamp(k: Color, v: Offset, col: Color)
+    legend_stamp(K, V, Col) :-
         key_marker(E, _, K), sample.box(E, B),
-        ex_in(E, C, _), box_corner(C, B, D),          // the box's corner d
+        legend_key_corner(D), diag_opposite(D, A),
+        ex_in(E, C, _), box_corner(C, B, A),          // the anchor corner
         sample_cell(E, S, Col), relative(C, S, V).    // offset from that corner
 
-    // A train marker that is no key marker, drawing its key's picture read
-    // from corner d, disagrees with the train output.
-    .decl misfit(d: DiagDir)
-    misfit(D) :-
-        ex_out(E, _, _), marker(E, P, K), !key_marker(E, P, _),
-        picture(D, K, V, Col), compose(P, V, Q), ex_in(E, Q, _),
-        !ex_out(E, Q, Col).
-
-    .decl stamp(k: Color, v: Offset, col: Color)
-    stamp(K, V, Col) :- picture(D, K, V, Col), !misfit(D).
+    // The legend is read in the pose of the train samples: the identity, the
+    // element that composed with itself gives itself.
+    .decl legend_pose(d: D4)
+    legend_pose(D) :- d4_compose(D, D, D).
 }
