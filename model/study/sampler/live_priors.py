@@ -112,6 +112,20 @@ def port_heads(form):
     return [(p[0], {h[0][1:]: len(h) - 1 for h in p[1] if isinstance(h, list)}) for p in ports]
 
 
+def empty_ports(tasks):
+    """{(component, port): ports with no atoms and no head columns} over the INITs of the tasks that have no key group."""
+    out = collections.Counter()
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            if f[0] != 'INIT':
+                continue
+            parts = [g for g in f[3:] if isinstance(g, list) and g]
+            if parts and parts[0][0] == 'key':
+                continue
+            out.update((f[2], p[0]) for p in parts if not p[1] and not any(isinstance(a, list) for a in p[2:]))
+    return out
+
+
 def init_bodies(form):
     """[(place, atoms)] of the key and ports of an INIT form: place is 'key' or 'port'."""
     out = []
@@ -312,7 +326,7 @@ def fit(leave_out=()):
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)

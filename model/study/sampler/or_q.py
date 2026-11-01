@@ -268,6 +268,9 @@ class Guide(search.Chooser):
         elif 'f.admits([SKIP_TOK])' in line:  # a port's coin: taken or skipped
             r = not (self.rest and self.rest[0] == SKIP)
             pre, name, pop = '', 'outside: taken or skipped' if self.outside_loop(fr) else 'port: taken or skipped', False
+        elif 'empties.get(' in line:  # a port of no atoms
+            r = bool(self.rest) and self.rest[0] == M.END
+            pre, name = '', 'port: empty'
         elif 'heads.get(' in line:
             r = self.port['heads'][self.port['cols'].index(loc['c'])] is not None
             pre, name = '', 'head: bound'

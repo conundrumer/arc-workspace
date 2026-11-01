@@ -13,7 +13,7 @@ counts so far: draws, finished programs, drops by reason, errors by type, and th
 
 clause draws one clause of the kind over a scope that the caller picks: forms, the text of one form each in dependency order, with
 no OUT. The forms are replayed into a decoder and a Program as if this module had drawn them, so what a clause reads of the scope
-comes from the decoder. A form's relation slot is its place among the scope's declarations, so the written name of a relation
+comes from the decoder. A CHOOSE or RIGID_DET form is replayed and never drawn. A form's relation slot is its place among the scope's declarations, so the written name of a relation
 means nothing to a decoder: two forms need two head names, any names, and a Clause's text uses the names of forms. The Run stays
 between calls on one session, seed sets its draws for each call, and sampler.run.c has the counts of its calls.
 
@@ -24,7 +24,7 @@ INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches export the keys
 alone, and the other labels stay in the OR: a later branch may read the first branch's. A branch may take an OR as its last atom, from that place's counts (one level deep); the
 labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
-each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
+each key, or stops with chance 1 - KEY_ALL. A port of an INIT with no key may have no atoms and no head labels, from the priors' count of those (priors that lack it draw none). A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
 sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. A RULE's or a DET's body may stop at one atom, which S refuses (MIN2_KINDS), with the
@@ -82,6 +82,7 @@ S.REACH = False  # no look-ahead below a column or a value: an atom that cannot 
 
 RULE_TOK, DET_TOK, INIT_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 7, 12, 13
 KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK)
+REPLAYED = 'CHOOSE', 'RIGID_DET'  # the kinds of a scope's forms that no draw makes and a scope replays, for the forms after them
 EXAMPLE_TASK, EXAMPLE_TRAIN = 0, 1  # the example_kind of a task-wide table entry, and of a train pair's
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
 READER_OUT = '(OUT (input ^P ^Col))'  # the reader takes whole programs; this closes a scope's text and is not stepped
@@ -625,7 +626,7 @@ class Run:
 
     def open_form(self, pg, dec, kind):
         """The decoder after kind's token at dec, a fork. A program's first model step has step_tables' first result."""
-        tok = KIND_TOK[kind]
+        tok = KIND_TOK[kind] if kind in KIND_TOK else self.V.id(kind)
         if pg.before is not None:
             f = dec.fork()
             f.step(tok)
@@ -658,7 +659,7 @@ class Run:
                     break
                 first, *toks = [t for _, t in group]
                 kind = self.V.name(first)
-                if kind not in KIND_TOK:  # a form that no draw makes
+                if kind not in KIND_TOK and kind not in REPLAYED:  # a form that no draw makes
                     raise Drop('scope: a %s form' % kind)
                 pg.new = []
                 f = self.open_form(pg, dec, kind)
@@ -667,7 +668,7 @@ class Run:
                     if rels:
                         self.declared(pg, rels)
                         at = M.slot_no(self.V.name(rels[0]))
-                        pg.names = pg.names | {self.V.name(x): '&r%d.%d' % (at, j) if kind == 'INIT' else self.V.name(x) for j, x in enumerate(rels)}
+                        pg.names = pg.names | {self.V.name(x): '&r%d.%d' % (at, j) if kind in ('INIT', 'RIGID_DET') else self.V.name(x) for j, x in enumerate(rels)}
                 pg.toks = pg.toks + toks
                 pg.kinds = pg.kinds + [kind]
                 dec = f
@@ -913,6 +914,11 @@ class Run:
         """The decoder after port name's body and head at f, with the labels of the INIT so far. fields has each type parameter's label
         types so far, and gets those of the columns that this head binds first. outside says that the port follows the key group."""
         pri, rng = self.pri, self.rng
+        empties = pri.get('empty_ports')  # priors fitted before an empty port was counted have none: they draw none
+        if empties is not None and not keys and not outside and f.fork().admits([M.END])[0] and rng.random() < (empties.get((comp, name), 0) + 0.1) / (pri['ports'][comp, False, name] + 0.2):
+            if (got := self.empty_port(f, cols)) is not None:
+                self.c['port:empty'] += 1
+                return got, nlab
         uses = pri.get('outside', {}).get((comp, name), 0) if outside else sum(pri['ports'][comp, k, name] for k in (False, True))
         heads = pri.get('heads_out', {}) if outside else pri['heads']
         bound = [(c, t) for c, t in cols if rng.random() < (heads.get((comp, name, c), 0) + 0.1) / (uses + 0.2)]
@@ -956,6 +962,19 @@ class Run:
             else:
                 raise Drop('head: no label for %s' % name)
         return f, nlab
+
+    def empty_port(self, f, cols):
+        """The decoder after a port of no atoms and a head of no labels at f, or None where the decoder refuses it."""
+        f = f.fork()
+        try:
+            f.step(M.END)
+            for _ in cols:
+                if not f.admits([M.END])[0]:
+                    return None
+                f.step(M.END)
+        except arclog.Refusal:
+            return None
+        return f
 
     # ---------------------------------------------------------------- a body
 

@@ -26,8 +26,8 @@ os.environ['STEER_COVER'] = 'init,branch'  # sample2_col reads this when it is i
 
 import argparse
 import collections
-import concurrent.futures as cf
 import json
+import multiprocessing
 import random
 import re
 import resource
@@ -54,6 +54,7 @@ NAME = re.compile(r'&[A-Za-z_0-9]+')
 FOLDS = 6
 GOLD_REVISION = 'gold-v3-drift-regold-ba59a0ab1'  # the gold of corpus-v3mix (symlinks to gen-v3 ast-corpus) that the rows read
 TEST_SHARE = 6  # one task in this many is a test task
+TASKS_PER_WORKER = 8  # a worker ends after this many tasks and a new one starts, since a worker keeps the memory of its sessions between tasks (3.4 GB at the end of a run). A new worker costs about 0.13 s of CPU, so 0.016 s a task. multiprocessing.Pool does it with the spawn start method; ProcessPoolExecutor's max_tasks_per_child stops with tasks left once a worker has ended after more than one task
 ORDER_ATOMS = 12  # a body of more atoms than this gives its written order alone
 
 
@@ -191,6 +192,14 @@ def task_rows(args):
     return task, rows, statuses, round(time.time() - t0, 1), round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e9, 2)
 
 
+def task_rows_or_error(args):
+    """task_rows, or (task, None, the error) where it raises."""
+    try:
+        return task_rows(args)
+    except Exception as e:  # noqa: BLE001
+        return args[0], None, repr(e)
+
+
 def git(*cmd):
     try:
         return subprocess.run(['git', *cmd], cwd=HERE, capture_output=True, text=True, timeout=20).stdout.strip()
@@ -221,15 +230,13 @@ def run(a):
     print('%d tasks, %d done, %d to do, %d jobs' % (len(tasks), len(done), len(todo), a.jobs), flush=True)
     work = [(t, (a.models_fold.format(fold_of(t, a.folds)) if a.models_fold else a.models), a.scope, a.orders) for t in todo]
     t0, total = time.time(), collections.Counter()
-    with (cf.ProcessPoolExecutor(a.jobs) as ex, JsonlWriter(os.path.join(a.out, 'relrows.jsonl.zst')) as rel, JsonlWriter(os.path.join(a.out, 'choices.jsonl.zst')) as ch,
+    with (multiprocessing.get_context('spawn').Pool(a.jobs, maxtasksperchild=TASKS_PER_WORKER) as pool, JsonlWriter(os.path.join(a.out, 'relrows.jsonl.zst')) as rel, JsonlWriter(os.path.join(a.out, 'choices.jsonl.zst')) as ch,
           open(sp, 'a') as sf):
-        futs = [ex.submit(task_rows, w) for w in work]
-        for n, fu in enumerate(cf.as_completed(futs), 1):
-            try:
-                task, rows, statuses, secs, rss = fu.result()
-            except Exception as e:  # noqa: BLE001
-                print('FAILED %s' % e, flush=True)
+        for n, got in enumerate(pool.imap_unordered(task_rows_or_error, work), 1):
+            if got[1] is None:
+                print('FAILED %s: %s' % (got[0], got[2]), flush=True)
                 continue
+            task, rows, statuses, secs, rss = got
             c = collections.Counter()
             for k, row in rows:
                 (rel if k == 'rel' else ch).write(row)
