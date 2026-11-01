@@ -965,10 +965,10 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                         f.claim_slugs = rest.split()
 
         forms = self.settle_sets([f for f in forms if f is not None])
-        # a set `DET` with no body has the stored rows of its parameter as its value
-        bodiless = {f.name for f in forms if f.body is None}
+        # a set `DET` that no clause of the solver derives has the stored rows of its parameter as its record
+        unclaused = {f.name for f in forms if f.src is None}
         for amp in sorted(self.used_sets):
-            if set_name(amp) not in bodiless:
+            if set_name(amp) not in unclaused:
                 continue
             for i, text in enumerate(arcdata_params):
                 if text.startswith(f"(param {amp} "):

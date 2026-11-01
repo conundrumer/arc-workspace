@@ -46,8 +46,9 @@ from arclog_convert.forms import (
     share_labels,
     wrap,
 )
+from arclog_convert.implied import ELEM
 from arclog_convert.leaves import Written
-from arclog_convert.lib import ALGEBRA_MODES, FROM_KEY, field_names, field_sites, pascal
+from arclog_convert.lib import ALGEBRA_MODES, FROM_KEY, domain_proposer, field_names, field_sites, pascal
 from arclog_convert.terms import ctor_names, subst_terms
 
 LABEL = re.compile(r"(?<![(:\w&.])[*^]?([A-Z]\w*)")
@@ -65,6 +66,13 @@ READ = re.compile(r"\((&\w+)(?=[\s)]|$)")
 
 DET_HEAD = re.compile(r"\((?:DET|DET_OR_RULE) (&\w+)(?=[\s)]|$)")
 """The head of a determination, and the relation it derives."""
+
+BY_PROPOSER = re.compile(r"\(DET &\w+ (\w+)\)")
+"""A `DET` with no body that names one proposer, and that proposer."""
+
+MEMBERS = {domain_proposer([t]): rel for rel, t in ELEM.items()}
+"""The lib relation that lists the members of an orientation type, by the
+type-domain proposer of that type."""
 
 
 def fresh(base: str, taken: set[str]) -> str:
@@ -300,9 +308,12 @@ class InstancesMixin:
         """`forms`, with each open parameter that a `DET` body reads written in
         two determinations: the Souffle determination as a `DET` of `set_name`
         with no `ONE` mark, and a `DET` that picks one row of that set. Each
-        read of the parameter in a `DET` body reads the set. Where the set's
-        `DET` has no body, the parameter's stored rows are the set's value,
-        and the `param` form of the rows names the set."""
+        read of the parameter in a `DET` body reads the set. A set's value
+        holds several rows, and a type-domain proposer gives one value per
+        row, so the set's `DET` of such a proposer states the body of the
+        type's members. Where no clause of the solver derives the set, the
+        parameter's stored rows are the set's record, and the `param` form of
+        the rows names the set."""
         names = {self.c.rel_name(("Params",), n): n for n in self.c.open_params}
         determined = {m.group(1) for f in forms if (m := DET_HEAD.match(f.lines[0])) and m.group(1) in names}
         self.used_sets = frozenset(determined & {r for f in forms if self.det_side(f) for r in line_reads(f)})
@@ -336,7 +347,15 @@ class InstancesMixin:
             # the Souffle determination, and not the pick that reads it
             f.name = set_name(f.name)
             f.marks = [x for x in f.marks if x != "(ONE)"]
-            if f.body is None:
+            by = BY_PROPOSER.fullmatch(f.lines[0]) if f.body is None else None
+            if by and by.group(1) in MEMBERS:
+                n = next(n for n in self.c.open_params if self.c.rel_name(("Params",), n) == m.group(1))
+                label = pascal(self.c.rels[(("Params",), n)].columns[0].name)
+                f.body = [f"({MEMBERS[by.group(1)]} *{label})"]
+                f.cols = [label]
+                f.side = "DET"
+                f.lines = [f"(DET {f.name}", f"  {f.body[0]})"]
+            elif f.body is None:
                 f.lines[0] = f.lines[0].replace(m.group(1), f.name, 1)
             else:
                 f.lines = [f.lines[0].replace(m.group(1), f.name, 1)] + ["  " + l for l in f.body + f.marks]
