@@ -325,9 +325,9 @@ class Limits:
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
     out_pairs: int = 6  # (Position, Color) column pairs of a relation that the OUT search tries
-    out_colors: int = 4  # the best suited Color relations, that a Position column is painted with
+    out_colors: int = 8  # the best suited Color relations, that a Position column is painted with
     out_unions: int = 3  # the best suited earlier relations, that a relation is joined with in a union
-    out_cands: int = 40  # candidates of the OUT search at one form end
+    out_cands: int = 100  # candidates of the OUT search at one form end
 
 
 @dataclasses.dataclass
@@ -472,6 +472,7 @@ class Program:
         self.new = []  # the relation slots the last form declared, with their tables
         self.grids, self.colors = [], []  # the OUT search's relations so far, the best suited first: (slot, Position token, Color token); (slot, Color token)
         self.suit = {}  # relation slot -> its rank in the OUT search: (Gate.suits, a random tie break)
+        self.scope_grids, self.scope_colors = [], []  # the best suited entries of grids and colors from the relations of a replayed scope, which the OUT search takes in on its first call
         self.kinds = []  # the kind of each clause, which only next_kind reads, as counts
         self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
 
@@ -653,6 +654,7 @@ class Run:
                 kind = self.V.name(first)
                 if kind not in KIND_TOK:  # a form that no draw makes
                     raise Drop('scope: a %s form' % kind)
+                pg.new = []
                 f = self.open_form(pg, dec, kind)
                 for t in toks:
                     rels = [x for x in f.step(t)[0] if self.V.kind(x) == 'relation']
@@ -664,13 +666,32 @@ class Run:
                 pg.kinds = pg.kinds + [kind]
                 dec = f
                 self.close(pg, f)
+                suits = self.gate.suits(pg.before)
+                pg.suit = pg.suit | {s: (suits.get(s, 0.0), random.Random(s).random()) for s in pg.new}
             pg.written = {head_of(a): head_of(b) for a, b in zip(dec.program_form().split('\n'), forms)}
             f = dec.fork()
             f.step(RULE_TOK)
             self.fill_columns(pg, f)
+            self.scope_partners(pg, dec)
         self.c['scope_seconds'] += time.perf_counter() - t0
         self.scoped = forms, dec, pg
         return dec, pg.fork()
+
+    def scope_partners(self, pg, dec):
+        """Fills pg.scope_grids and pg.scope_colors from the relations that pg declares, as the OUT search fills pg.grids and pg.colors over
+        the forms of a whole-program draw, the best suited first. Each list keeps the entries that cands reads, and one more for each
+        relation of the last form, which the search leaves out where it tests that form."""
+        spare, lim = len(pg.new), self.lim
+        for s in sorted(pg.decl_types, key=pg.suit.get, reverse=True):
+            ts = pg.decl_types[s]
+            if 'Color' in ts and not ({'Position', 'Box'} & set(ts)):
+                at = [k for (k, field), t in pg.colmap.get(s, {}).items() if field is None and t == 'Color']  # a relation of one Color column, which other columns may go with, as a port of an INIT has
+                if ts.count('Color') == 1 and len(at) == 1 and len(pg.scope_colors) < lim.out_colors + spare:
+                    pg.scope_colors.append((s, self.ff0.col_by_pos[at[0]]))
+            elif {'Position', 'Box'} & set(ts) and len(pg.scope_grids) < lim.out_unions + spare:
+                full = [(p, c) for p, c in self.out_pairs(dec, self.rel0 + s, lim.out_pairs) if c is not None]
+                if full:
+                    pg.scope_grids.append((s, *full[0]))
 
     def program(self):
         pg, dec = Program(), self.root.fork()
@@ -1443,6 +1464,8 @@ class Run:
             read = [inp, self.site(0, lp)[0], lp, self.site(1, lc)[0], lc]
             yield 'overlay', [RULE_TOK, M.OR] + head + [ALSO_TOK] + read + cover + [M.END, M.END]
             yield 'plain', None
+            for s2, c2 in pg.colors[:self.lim.out_colors]:  # the input's cells that the relation leaves out take a color of s2
+                yield 'overlay fill', [RULE_TOK, M.OR] + head + [ALSO_TOK] + read[:3] + cover + [self.rel0 + s2, c2, lc] + [M.END, M.END]
             for s2, p2, c2 in pg.grids[:self.lim.out_unions]:
                 if s2 != s:
                     other = [self.rel0 + s2] + sum(sorted(([p2, lp], [c2, lc]), key=lambda x: col[x[0]]), [])
@@ -1466,6 +1489,10 @@ class Run:
         suits = self.gate.suits(pg.before)
         pg.suit = pg.suit | {s: (suits.get(s, 0.0), self.rng.random()) for s in pg.new}
         best = lambda rels: sorted(rels, key=lambda r: pg.suit[r[0]], reverse=True)  # noqa: E731
+        if pg.scope_grids or pg.scope_colors:  # a replayed scope: its relations are partners, except the last form's, which this search tests
+            pg.grids = best(pg.grids + [x for x in pg.scope_grids if x[0] not in pg.new])
+            pg.colors = best(pg.colors + [x for x in pg.scope_colors if x[0] not in pg.new])
+            pg.scope_grids, pg.scope_colors = [], []
         for s in sorted(pg.new, key=pg.suit.get, reverse=True):
             ts = pg.decl_types.get(s, ())
             if 'Color' in ts and not ({'Position', 'Box'} & set(ts)):
