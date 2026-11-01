@@ -171,9 +171,13 @@ ring(Ch, P_tile, K) :-
 .init ring_cell = Frame2D<Unit>
 ring_cell.extent($U(), A, W) :- axis_elem(A), params.ring_width(W).
 
+// @ignore: single-consumer — one row per layer keeps the join with the ring cells under the engine's row cap
+.decl layer_color(u: LayerUnit, l: Ident, col: Color)
+layer_color(U, L, Col) :- layer(U, P, L), in(P, Col).
+
 out(P_grid, Col, $Concentric(U, O)) :-
     ring($Concentric(U, O), P_tile, K), depth($Concentric(U, O), L, K),
-    layer(U, P_layer, L), in(P_layer, Col),                   // the layer at the ring's depth
+    layer_color(U, L, Col),                                   // the layer at the ring's depth
     ring_cell.cell($U(), P_intile), concat_2d(P_tile, P_intile, 0, P_grid).
 
 // --- $CompressRuns ---
