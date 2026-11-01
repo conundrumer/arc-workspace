@@ -14,10 +14,11 @@
 //  of rectangles shows there: the color of the rectangle drawn last of those
 //  that cover it, and the background color where no rectangle covers it;
 //  every other cell keeps its color
-//     @approximated: each rectangle is the bounding box of its visible cells,
-//      and a rectangle is over another when one of its visible cells lies in
-//      the other's box, closed transitively; each cell of color mark_color
-//      takes the color of the topmost rectangle that covers it
+//     @approximated: each shown color, the background's included, is a
+//      rectangle, the bounding box of its visible cells, and a rectangle is
+//      over another when one of its visible cells lies in the other's box,
+//      closed transitively; each cell of color mark_color takes the color of
+//      the topmost rectangle that covers it
 //     @witness order-hidden: borderline other
 //     @witness hidden-end: borderline other
 //         @relaxed visible-extent
