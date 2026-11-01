@@ -206,6 +206,8 @@ SEED_TAG = os.environ.get('SEED_TAG', 'v2')  # a point's draws follow seed_of(ta
 HAZARD_GROUP = os.environ.get('HAZARD_GROUP', '') == '1'  # a RULE point's stop factors come from the gold bodies of its own point group
 PREFIX_DRAWS = os.environ.get('PREFIX_DRAWS', '') == '1'  # each passing draw and gold also give their clause cut at each atom where it can end
 STRUCT_P = os.environ.get('STRUCT_P', '') == '1'  # P's relation and value weights take the structural logits (REL_W, VAL_W)
+P_DAG = False  # live.set_steers sets this from the environment. On: P's value weights read no label number. The labels of a value pick share its join weight, and STRUCT_P's value logit takes a label's type by its name
+STAR_NAME = re.compile(r'\*([A-Za-z_]\w*)')  # a label's first site in a prefix atom, as choicefeat has it
 # fitted by relfit.py and valfit.py on dev gold picks (runR_dev, runD_dev), tested on holdout
 REL_W = dict(logp=0.83, lib=-0.20, derived=-0.19, op=0.39, lib_k1=0.08, derived_k1=1.30, op_k1=-1.37, in_scope=0.15,
              in_scope_frac=0.52, none_in_scope=-0.48, arity=0.10, repeat=-0.27, recency0=0.09, recency_log=-0.48, no_types=0.12)
@@ -1806,13 +1808,22 @@ class Drawer:
             ctype = str(ts[n.last]) if ts and 0 <= n.last < len(ts) else None
         idx = {o: int(self.V.name(o)[1:]) for o in os if fr.KIND[o] == 'label' and self.V.name(o)[1:].isdigit()}
         top = max(idx.values()) if idx else 0
+        by_num = None  # under P_DAG: the type in scope of each label number, by the label's name in the prefix
+        if P_DAG and self.p_labels is not None:
+            pre = self.rel_prefix(fr, self.p_key, self.p_k)
+            if pre is not None:
+                stype = dict(zip(self.p_labels, self.p_scope))
+                by_num = [stype.get(x) for x in dict.fromkeys(STAR_NAME.findall(' '.join(pre)))]
         out = []
         for o, w in zip(os, ws):
             if w <= 0:
                 out.append(0.0)
                 continue
             i = idx.get(o)
-            lt = self.p_scope[i] if i is not None and i < len(self.p_scope) else None
+            if P_DAG:
+                lt = by_num[i] if by_num is not None and i is not None and i < len(by_num) else None
+            else:
+                lt = self.p_scope[i] if i is not None and i < len(self.p_scope) else None
             z = (W['fresh'] if o == M.STAR else W['zero'] if o == M.ZERO else W['label'] if i is not None else
                  W['field'] if fr.KIND[o] == 'column' else 0.0)
             if i is not None:
@@ -2201,7 +2212,7 @@ class Drawer:
                 ws.append((fresh + join) * 0.5 ** fr.colpos[o])
             else:
                 boost = JOIN_BOOST if steer and not joined else 1.0
-                share = 1.0 if len(labs) == 1 else (0.5 if o == newest else 0.5 / (len(labs) - 1))
+                share = 1.0 / len(labs) if P_DAG else 1.0 if len(labs) == 1 else (0.5 if o == newest else 0.5 / (len(labs) - 1))
                 ws.append(boost * join * share * (self.want_boost if steer and o in self.want else 1.0))
         if STRUCT_P and n.phase in ('val', 'fval'):
             ws = self.struct_val(n, os, ws)

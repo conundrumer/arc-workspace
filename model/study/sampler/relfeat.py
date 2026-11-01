@@ -225,6 +225,16 @@ FEATURE_FUNCS = {'struct': f_struct, 'b': f_b, 'x': f_cross, 'ctx': f_tree_ctx}
 BUILTIN = frozenset(FEATURE_FUNCS)
 
 
+def name_filter(path):
+    """A test of a feature name, from a file of names, one a line. A line that ends in * is a prefix. logp always passes. With no path, every name passes."""
+    if not path:
+        return lambda n: True
+    lines = open(path).read().split()
+    exact = {x for x in lines if not x.endswith('*')} | {'logp'}
+    pre = tuple(x[:-1] for x in lines if x.endswith('*'))
+    return lambda n: n in exact or n.startswith(pre)
+
+
 def qualify(group, name):
     """A plugin's dense feature 'path' is 'dag.path' (so two sets can use one name); 'x:' names and built-in sets keep theirs."""
     return name if group in BUILTIN or name.startswith('x:') else group + '.' + name

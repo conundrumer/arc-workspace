@@ -343,6 +343,7 @@ def set_hand(pri):
 
 def set_steers(models_dir, on):
     """S's module settings of the steers in on, a subset of STEERS; the others are off. One process has one set."""
+    S.P_DAG = os.environ.get('P_DAG', '') == '1'
     S.COL_FREQ = S.STRUCT_P = S.STRUCT_B = S.STRUCT_C = 'struct' in on
     for w in S.REL_W, S.REL_WB, S.VAL_W:  # a relation's or label's recency is written order, which a DAG does not have
         w.update({k: 0.0 for k in ('recency0', 'recency_log', 'newest') if k in w})

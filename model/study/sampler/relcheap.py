@@ -76,6 +76,7 @@ class FeatVocab:
 
 
 MASK = 'all'  # the derived-name mask of the run (relfeat.mask_row)
+KEEP = FEAT.name_filter('')  # the feature names a fit may use (--keep-names)
 EXCLUDE = set()  # tasks whose rows are left out of train and test (--exclude)
 
 
@@ -169,7 +170,7 @@ class Sel:
 
     def __init__(self, fv, groups, D, rows, min_tasks, nf):
         keep_g = set(groups) | {'base'}
-        ids = [i for i in range(nf) if fv.group[i] in keep_g]
+        ids = [i for i in range(nf) if fv.group[i] in keep_g and KEEP(fv.names[i])]
         sp = [i for i in ids if fv.names[i].startswith('x:')]
         if sp:
             m = np.isin(D.row_of_trip, rows) & np.isin(D.fid, sp)
@@ -319,6 +320,7 @@ def main():
     ap.add_argument('--hgb-feats', nargs='+', default=['struct', 'b', 'ctx'])
     ap.add_argument('--plugin', default='')
     ap.add_argument('--exclude', default='', help='a file of tasks, one a line, whose rows are left out of train and test')
+    ap.add_argument('--keep-names', default='', help='a file of feature names, one a line; a name that ends in * is a prefix. Only these names (and logp) are used')
     ap.add_argument('--mask', default='all', choices=['all', 'group', 'none', 'all_nogrp'], help='derived-name mask (relfeat.mask_row)')
     ap.add_argument('--baselines', action='store_true', help='also fit relfit and relfit --b as they are (reservoir of --base-rows)')
     ap.add_argument('--base-rows', type=int, default=6000)
@@ -337,8 +339,9 @@ def main():
     ap.add_argument('--save-bits', default='')
     ap.add_argument('--save-model', default='')
     a = ap.parse_args()
-    global MASK
+    global MASK, KEEP
     MASK = a.mask
+    KEEP = FEAT.name_filter(a.keep_names)
     if a.exclude:
         EXCLUDE.update(open(a.exclude).read().split())
     torch.set_num_threads(a.threads)

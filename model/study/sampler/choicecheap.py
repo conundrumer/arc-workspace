@@ -39,6 +39,7 @@ PHASES = list(CF.DEFAULT_PHASES)  # the phases to train on and report (--phases)
 
 
 EXCLUDE = set()  # tasks whose rows are left out of train and test (--exclude)
+KEEP = CF.relfeat.name_filter('')  # the feature names a fit may use (--keep-names)
 
 
 def rows_of(d):
@@ -73,7 +74,7 @@ class Data:
         """names: the dense columns (a test set takes the train set's); else every name seen in >= min_count options, 'logp' first."""
         if names is None:
             cnt = collections.Counter(n for d in self.dicts for n in d)
-            names = ['logp'] + sorted(n for n, c in cnt.items() if n != 'logp' and c >= min_count)
+            names = ['logp'] + sorted(n for n, c in cnt.items() if n != 'logp' and c >= min_count and KEEP(n))
         ix = {n: j for j, n in enumerate(names)}
         X = np.zeros((len(self.dicts), len(names)), np.float32)
         for i, d in enumerate(self.dicts):
@@ -236,12 +237,14 @@ def table(meta, cols, title):
 
 
 def main():
+    global KEEP
     ap = argparse.ArgumentParser()
     ap.add_argument('--train', nargs='+', default=[HERE + '/runC_dev'])
     ap.add_argument('--test', default=HERE + '/runC_holdout')
     ap.add_argument('--feats', nargs='+', default=['base', 'cols', 'val'])
     ap.add_argument('--plugin', default='')
     ap.add_argument('--exclude', default='', help='a file of tasks, one a line, whose rows are left out of train and test')
+    ap.add_argument('--keep-names', default='', help='a file of feature names, one a line; a name that ends in * is a prefix. Only these names (and logp) are used')
     ap.add_argument('--phases', nargs='+', default=list(CF.DEFAULT_PHASES), choices=CF.PHASES,
                     help="the phases to train on and report; 'stop' is the atom stop. The saved model steers only these.")
     ap.add_argument('--min-count', type=int, default=20, help='a dense feature is kept when >= this many train options fire it')
@@ -256,6 +259,7 @@ def main():
     ap.add_argument('--save-model', default='')
     a = ap.parse_args()
     PHASES[:] = a.phases
+    KEEP = CF.relfeat.name_filter(a.keep_names)
     if a.exclude:
         EXCLUDE.update(open(a.exclude).read().split())
     from threadpoolctl import threadpool_limits

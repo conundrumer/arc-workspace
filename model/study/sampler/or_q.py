@@ -31,6 +31,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import body_order  # noqa: E402
 import form_orders as O  # noqa: E402
 import live  # noqa: E402
 import live_try  # noqa: E402
@@ -78,9 +79,30 @@ class Guide(search.Chooser):
         self.in_all = 0  # the ALLs being drawn
         self.marks = []  # the running bits after each atom of the walk
         self.fell_back = set()  # what the priors lack and the walk went on without: 'rigid' (a RIGID_DET's coins take 1/2), 'RIGID_DET atoms' (its parts take INIT's), 'empty_ports' (gold's empty port has no coin)
+        self.order_rng = None  # with a random.Random here, each body takes a random valid order as the walk comes to it (see shuffle)
+        self.bodies = []  # the bodies of the form's text that no shuffle has taken
+        self.star_total = sum(1 for t in rest if t in (M.STAR, M.CARET))
+        self.order_key, self.order_many, self.no_order = [], False, None  # the bodies' tokens as walked, whether a body has other orders, why a body has no order
 
     def start(self, path):
         pass
+
+    def shuffle(self, end):
+        """The body at the front of rest, its first end tokens, takes a random valid order, and the tokens after it take the new label numbers. A body that body_order does not order
+        stays as gold wrote it, and no_order says why."""
+        if self.order_rng is None or self.no_order:
+            return
+        toks = list(self.rest)
+        base = self.star_total - sum(1 for t in toks if t in (M.STAR, M.CARET))
+        try:
+            span, after, many = body_order.shuffle(self.run.V, toks[:end], toks[end:], base, self.run.ff0.label_tok, self.order_rng, self.bodies)
+        except body_order.NoOrder as e:
+            self.no_order = str(e)
+            return
+        self.rest.clear()
+        self.rest.extend(span + after)
+        self.order_key.append(tuple(span))
+        self.order_many = self.order_many or many
 
     def stuck(self, why):
         self.bad.append(why)
@@ -115,6 +137,7 @@ class Guide(search.Chooser):
         end = self.extent(list(self.rest))
         if end is None:
             self.stuck('the key group has no END')
+        self.shuffle(end)
         n, carets = 0, set()
         for i in range(end):
             if self.rest[i] in (M.STAR, M.CARET):
@@ -416,6 +439,9 @@ class Guide(search.Chooser):
 
     def begin_port(self, cols, keys, outside):
         self.where = 'outside ' if outside else 'port '
+        end = self.extent(list(self.rest))
+        if end is not None:
+            self.shuffle(end)
         self.port = self.look(cols, keys)
 
     def end_port(self):
@@ -593,11 +619,13 @@ def one(sampler, task, case, point, kind=None):
     return walk(sampler, task, case, point, scope, target, sess, task_json, kind)
 
 
-def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=None, rows=None, atoms=None, scoped=None, seconds=120):
+def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=None, rows=None, atoms=None, scoped=None, seconds=120, order_rng=None, seen=()):
     """The record of the walk of one order, the target text as written, over the scope forms on the session. With a list as rows, the rows that the
     steers score on gold's path, (kind, row) for each consult, are added to it (the Drawers' sink; STEER_COVER decides where INIT bodies and later
     branches count). atoms are the token lists of the target's atoms in another order, in place of the written one. scoped is a list of one item, the `Run.scoped` of these
-    forms on this session, which saves the replay of the scope; the walk puts its own there. With it, the record has `marks`, the running bits after each atom."""
+    forms on this session, which saves the replay of the scope; the walk puts its own there. With it, the record has `marks`, the running bits after each atom. With order_rng, each
+    body takes a random valid order; rec['order_key'] is its tokens, rec['order_many'] says whether the form has other orders and rec['no_order'] why a body has none. seen
+    holds the order_keys that a caller has: a RULE or a DET whose key is there has no walk, and its record has order_key alone."""
     kind = kind or target.split()[0].lstrip('(')
     run = GuidedRun(sampler.pri, sess, time.monotonic() + seconds, task_json, live.Limits(form_tries=1))
     run.scoped = scoped[0] if scoped else None
@@ -607,6 +635,12 @@ def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=
     g = run.rng = Guide(run, collections.deque(t for a in atoms for t in a) if atoms else gold_rest(sess, scope, target, kind), kind)
     g.rows = rows
     dead = match = None
+    if order_rng is not None:
+        g.order_rng, g.bodies = order_rng, body_order.bodies_of(target)
+        if kind not in FORMS:
+            g.shuffle(len(g.rest))
+            if g.no_order or tuple(g.order_key) in seen:
+                return dict(order_key=tuple(g.order_key), order_many=g.order_many, no_order=g.no_order)
     try:
         f = run.form(pg, dec, kind)
         if kind in FORMS:  # the walk steps the SKIP of each port that is left, and takes no call for it
@@ -620,7 +654,8 @@ def walk_order(sampler, task, case, point, scope, target, sess, task_json, kind=
     except Exception as e:  # noqa: BLE001
         dead = '%s: %s | %s' % (type(e).__name__, str(e)[:100], [k for k in run.c if k.startswith(('form:', 'try:', 'or:'))][:4])
     rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(g.parts.items())}, counts=dict(g.counts),
-               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back))
+               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back),
+               order_key=tuple(g.order_key), order_many=g.order_many, no_order=g.no_order)
     if scoped is not None:
         rec['marks'] = g.marks
     if kind in FORMS:

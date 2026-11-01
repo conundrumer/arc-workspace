@@ -18,9 +18,7 @@ again, and a later run with a longer --tasks list adds to DIR. At its end a run 
 task order. Those are the files that the fits read. A run stops where DIR holds rows of other priors, another scope, other orders or another STEER_COVER: such rows need their own DIR.
 
 The scope of a form is its ancestors by reads (parents) or every gold form before it (before). A form's walk uses the priors of its task's fold, fit
-without that fold's tasks and the leave-out tasks (`folds` writes the lists), so that P at a row is not fit on the row's own task. Order 0 is
-gold's written atom order. With --orders n, a RULE or a DET body of plain atoms (no OR, IF or ALL) also gives the rows of up to n - 1 random valid
-orders, each a walk that ends cleanly; the live draw's atoms have no order, as ROW_ORDERS rows have.
+without that fold's tasks and the leave-out tasks (`folds` writes the lists), so that P at a row is not fit on the row's own task. With --orders n, a form gives the rows of up to n random valid orders (body_order.py), each a walk that ends cleanly, with `order` 1 and up. A form that has no such order gives its written order, with `order` 0. The live draw's atoms have no order, so a fit reads no written order.
 
   scripts/run_heavy.py --cpus N --need soon <runtime python> -u live_rows.py run --out DIR --jobs N
 """
@@ -62,7 +60,8 @@ FOLDS = 6
 GOLD_REVISION = 'gold-v3-drift-regold-ba59a0ab1'  # the gold of corpus-v3mix (symlinks to gen-v3 ast-corpus) that the rows read
 TEST_SHARE = 6  # one task in this many is a test task
 TASKS_PER_WORKER = 8  # a worker ends after this many tasks and a new one starts, since a worker keeps the memory of its sessions between tasks (3.4 GB at the end of a run). A new worker costs about 0.13 s of CPU, so 0.016 s a task. multiprocessing.Pool does it with the spawn start method; ProcessPoolExecutor's max_tasks_per_child stops with tasks left once a worker has ended after more than one task
-ORDER_ATOMS = 12  # a body of more atoms than this gives its written order alone
+ORDER_KINDS = 'RULE', 'DET', 'INIT'  # the kinds whose bodies take random orders
+ORDER_TRIES = 4  # walks of a form, at most, for each clean order wanted
 
 
 def fold_of(task, n):
@@ -154,62 +153,46 @@ def parents(lines, i):
     return sorted(got)
 
 
-def atoms_of(run, sess, scope, target):
-    """gold's atoms of a RULE or a DET target as token lists (its kind token and last END left out), or None where a token is not an atom's."""
-    ids, model, paths = live.arclog.StudyProgram.from_sexp('\n'.join((*scope, target, live.READER_OUT)), sess.settings).decode_stream()
-    toks = [(t, p) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope)]
-    by = collections.defaultdict(list)
-    for t, p in toks:
-        if len(p) > 2:
-            by[p[2]].append(t)  # the path is the point [form, 0] and then the atom; the form's own tokens (kind, END) have none
-    atoms = list(by.values())
-    V = run.V
-    ok = all(a[0] == M.NOT or a[0] in M.CMP or V.kind(a[0]) in S.RELATION_KINDS for a in atoms)
-    return atoms if ok and sum(map(len, atoms)) == len(toks) - 2 else None
-
-
-def orders_of(run, sess, task, index, scope, target, n):
-    """Up to n - 1 token deques of valid random orders of a plain body's atoms (S's reorder: a NOT or a comparison after the labels it reads)."""
-    atoms = atoms_of(run, sess, scope, target)
-    if atoms is None or not 1 < len(atoms) <= ORDER_ATOMS:
-        return []
-    sites = S.label_sites(run.V, atoms)
-    seen, out = {tuple(map(tuple, atoms))}, []
-    for o in S.random_orders(range(len(atoms)), random.Random(M.seed_of(task, index, 'orders'))):
-        new = S.reorder(atoms, sites, o, run.ff0.label_tok)
-        if new is None or tuple(map(tuple, new)) in seen:
-            continue
-        seen.add(tuple(map(tuple, new)))
-        out.append((len(out) + 1, new))
-        if len(out) >= n - 1:
-            break
-    return out
-
-
 def form_rows(sampler, task, lines, i, sess, task_json, scope_mode, orders):
-    """([(kind, row)], status) of the walks of form i: its written order and the extra orders."""
+    """([(kind, row)], status) of the walks of form i: up to orders random valid orders, each a walk that ends cleanly, with `order` 1 and up. A form with no such order gives its
+    written order, with `order` 0 and the reason in status['written']."""
     kind = lines[i].split()[0].lstrip('(')
     keep = parents(lines, i) if scope_mode == 'parents' else list(range(i))
     scope, target = [lines[j] for j in keep], lines[i]
     t0 = time.time()
     out, status = [], dict(i=i, kind=kind, scope=len(scope), orders=0)
-    walks = [(0, None)]
-    if orders > 1 and kind in ('RULE', 'DET'):
-        run0 = or_q.GuidedRun(sampler.pri, sess, time.monotonic() + 120, task_json, live.Limits(form_tries=1))
-        walks += orders_of(run0, sess, task, i, scope, target, orders)
-    for order, atoms in walks:
-        rows = []
-        rec = or_q.walk_order(sampler, task, 'live', [i, 0], scope, target, sess, task_json, kind, rows, atoms)
-        clean = not rec['bad'] and rec['dead'] is None and not rec['left']
-        if order == 0:
-            status.update(bad=rec['bad'][:3], dead=rec['dead'], left=rec['left'], total=rec['total'], clean=clean)
-        elif not clean:
-            status['orders_refused'] = status.get('orders_refused', 0) + 1
-            continue
-        status['orders'] += 1
+
+    def add(rows, order):
         for k, row in rows:
             row.update(task=task, case='live', point=[i, 0], kind=kind, order=order)
             out.append((k, row))
+
+    rng, seen, why = random.Random(M.seed_of(task, i, 'orders')), set(), None if kind in ORDER_KINDS else 'kind'
+    for _ in range(ORDER_TRIES * orders if why is None else 0):
+        rows = []
+        rec = or_q.walk_order(sampler, task, 'live', [i, 0], scope, target, sess, task_json, kind, rows, order_rng=rng, seen=seen)
+        why = rec['no_order']
+        if why:
+            break
+        if 'dead' not in rec or rec['order_key'] in seen:  # an order walked before
+            if rec['order_many']:
+                continue
+            break
+        seen.add(rec['order_key'])
+        if not rec['bad'] and rec['dead'] is None and not rec['left']:
+            status['orders'] += 1
+            status.update(bad=[], dead=None, left=0, total=rec['total'], clean=True)
+            add(rows, status['orders'])
+        else:
+            status['orders_refused'] = status.get('orders_refused', 0) + 1
+            status['refused'] = str(rec['dead'] or rec['bad'][:1] or 'left')[:100]
+        if status['orders'] >= orders or not rec['order_many']:
+            break
+    if not status['orders']:
+        rows = []
+        rec = or_q.walk_order(sampler, task, 'live', [i, 0], scope, target, sess, task_json, kind, rows)
+        status.update(written=why or 'no clean order', bad=rec['bad'][:3], dead=rec['dead'], left=rec['left'], total=rec['total'], clean=not rec['bad'] and rec['dead'] is None and not rec['left'])
+        add(rows, 0)
     status['seconds'] = round(time.time() - t0, 2)
     return out, status
 
@@ -277,7 +260,7 @@ def manifest(a, tasks, extra=None):
     m = dict(command=' '.join(sys.argv), commit=git('rev-parse', 'HEAD'), uncommitted=bool(git('status', '--porcelain', '--', HERE)),
              task_set='the tasks of %s, less the %d leave-out tasks of %s; part %s: %d tasks' % (a.tasks or S.CORPUS, len(set(open(a.leave_out).read().split())), a.leave_out, a.part, len(tasks)),
              budget='no search budget: a teacher-forced walk of each gold form', measures=['rows for the rel steer and the choice steer'],
-             corpus=S.CORPUS, gold_revision=a.gold_revision, scope=a.scope, orders=a.orders, models=a.models or a.models_fold, folds=a.folds, steer_cover=sorted(S.STEER_COVER),
+             corpus=S.CORPUS, gold_revision=a.gold_revision, scope=a.scope, orders=a.orders, p_dag=os.environ.get('P_DAG', '') == '1', order_mode='random', models=a.models or a.models_fold, folds=a.folds, steer_cover=sorted(S.STEER_COVER),
              priors_sha256=priors_sha(a), engine_sha256=[file_sha(p) for p in glob.glob(os.path.join(os.path.dirname(live.arclog.__file__), '*.so'))],
              started=time.strftime('%Y-%m-%d %H:%M:%S'))
     return m | (extra or {})
@@ -285,7 +268,7 @@ def manifest(a, tasks, extra=None):
 
 def same_rows(old, new):
     """Stops the run where DIR holds rows that differ from the run's in more than their tasks."""
-    for k in ('scope', 'orders', 'steer_cover', 'priors_sha256'):
+    for k in ('scope', 'orders', 'steer_cover', 'priors_sha256', 'p_dag', 'order_mode'):
         if old.get(k) != new[k]:
             sys.exit('%s differs from the manifest in this folder: %s against %s. Such rows need their own --out.' % (k, new[k], old.get(k)))
 
@@ -348,7 +331,7 @@ def main():
     ap.add_argument('--models-fold', default='', help='a models directory with {} for the task fold, as in DIR/fold{}')
     ap.add_argument('--folds', type=int, default=FOLDS)
     ap.add_argument('--scope', default='parents', choices=('parents', 'before'))
-    ap.add_argument('--orders', type=int, default=1, help='orders of a plain RULE or DET body: its written order and up to this many less one random ones')
+    ap.add_argument('--orders', type=int, default=1, help='random valid orders of each form')
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--tasks', default='', help='a file of tasks, one a line, in place of the corpus')
     ap.add_argument('--limit', type=int, default=0, help='the first n tasks')
