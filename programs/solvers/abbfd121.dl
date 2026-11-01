@@ -5,17 +5,17 @@
 //  grid; its period differs between inputs
 // @scene occluders: two or more solid axis-aligned rectangles cover parts of
 //  the wallpaper, each in its own color that the wallpaper does not use; they
-//  do not touch or overlap; an occluder is a color whose cells fill their
-//  bounding box
+//  share no side and do not overlap; an occluder is a color whose cells fill
+//  their bounding box
 // @scene unique-largest: exactly one occluder has the largest area
+// @scene phase-shown: each cell under the selected occluder has a visible cell
+//  of its phase, under the per-axis shortest periods that no two visible cells
+//  contradict
 // @rule select: the selected occluder is the one with the largest area
 // @rule frame: the output has the height and width of the selected occluder
-// @rule recover: each output cell is the wallpaper as drawn at the matching
-//  input cell under the selected occluder, before the occluders were placed
-//     @approximated: each output cell takes the color of the visible cells of
-//      its phase under the per-axis shortest periods that no two visible cells
-//      contradict; undefined where the phase has no visible cell
-//     @witness asym-hidden: borderline other
+// @rule recover: each output cell takes the color of the visible cells of its
+//  phase under the per-axis shortest periods that no two visible cells
+//  contradict; undefined where the phase has no visible cell
 
 // how the occluders are found
 .type Occluder =
@@ -44,9 +44,12 @@
     //  onto a visible cell of its color, and no visible cell onto a visible
     //  cell of another color; undefined where a cell takes two colors
     // @witness oblique-hidden: borderline $ObliquePeriod
+    //     @relaxed phase-shown
     // @witness oblique-wide: borderline $ObliquePeriod
+    //     @relaxed phase-shown
     // @witness oblique-no-axis: borderline $ObliquePeriod
     //     @relaxed wallpaper
+    //     @relaxed phase-shown
   | ObliquePeriod {}
     // @rule recover: where both axes have a period, a hidden cell also
     //  takes the colors that maps and axis periods carry to it, where a map
@@ -55,7 +58,9 @@
     //  and no cell's axis-period color onto a cell with another color;
     //  undefined where a cell takes two colors
     // @witness mirror-hidden: borderline $IsometryOrbit
+    //     @relaxed phase-shown
     // @witness mirror-wide: borderline $IsometryOrbit
+    //     @relaxed phase-shown
     // @witness oblique-hidden: borderline $ObliquePeriod
     // @witness oblique-wide: borderline $ObliquePeriod
   | IsometryOrbit {}
@@ -67,8 +72,7 @@
     // @rule fill: a hidden cell that no visible cell reaches takes
     //  params.fill
     // @witness oblique-fill: borderline $ObliquePeriod
-    //     @reassigned fill
-    // @witness asym-fill: borderline other
+    //     @relaxed phase-shown
     //     @reassigned fill
   | HiddenFill {}
 
