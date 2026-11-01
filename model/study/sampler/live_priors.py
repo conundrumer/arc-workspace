@@ -221,8 +221,8 @@ def registry_types(regcols):
         return S.lib_types(Rc, regcols)
 
 
-def fit():
-    tasks = sorted(t for t in os.listdir(S.CORPUS) if S.corpus_forms(t))
+def fit(leave_out=()):
+    tasks = sorted(t for t in os.listdir(S.CORPUS) if t not in leave_out and S.corpus_forms(t))
     kinds = collections.defaultdict(collections.Counter)  # (previous kind, bucket) -> next kind -> clauses
     lengths = collections.Counter()  # clauses before OUT -> programs
     kinds1 = collections.defaultdict(collections.Counter)  # previous kind -> next kind -> clauses
@@ -283,8 +283,9 @@ def fit():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=P.SAMPLER_DATA + '/models/live_priors.pkl')
+    ap.add_argument('--leave-out', help='a file of tasks to fit without, one a line')
     a = ap.parse_args()
-    got = fit()
+    got = fit(set(open(a.leave_out).read().split()) if a.leave_out else ())
     with open(a.out + '.tmp', 'wb') as f:
         pickle.dump(got, f, protocol=5)
     os.replace(a.out + '.tmp', a.out)

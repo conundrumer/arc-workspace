@@ -36,6 +36,8 @@ STEMS = P.SAMPLER_DATA + '/runs/runF_r4t.stems'
 OUT = P.SAMPLER_DATA + '/runs/bestfirst'
 CHUNK = 2.0  # seconds of wall time in one call of Sampler.search
 ARMS = 'draw', 'search'
+GOLDS = os.environ.get('SEARCH_GOLDS')  # a JSON list of task and gold_sexp, read in place of the point store
+MODELS = os.environ.get('SEARCH_MODELS', P.SAMPLER_DATA + '/models')
 
 
 def points(stems):
@@ -55,8 +57,16 @@ def index():
         return json.load(f)
 
 
+@functools.cache
+def golds():
+    with open(GOLDS) as f:
+        return {x['task']: x['gold_sexp'] for x in json.load(f)}
+
+
 def gold_of(task, case, point):
     """Gold's program of the point, as its lines."""
+    if GOLDS:
+        return task, [x for x in golds()[task].splitlines() if x.strip()]
     idx = index()
     for d, e in idx['points'].items():
         if d.startswith(task + '-') and e[0] == case and e[1] == point:
@@ -81,7 +91,7 @@ def job(task, case, point, arm, out, budget, eager=True):
     scope, target = lines[:point[0]], lines[point[0]]
     tk = search.clause_key(target)
     kind = target.split()[0].lstrip('(')  # the kind of gold's clause: RULE, DET or INIT
-    sampler = live.Sampler(P.SAMPLER_DATA + '/models')
+    sampler = live.Sampler(MODELS)
     sess, task_json, _ = live_try.session_of(task)
     res = dict(task=task, case=case, point=point, arm=arm, budget=budget, eager=eager, target=target, forms=len(scope), setup_cpu=round(time.process_time() - t0, 2), hit=False)
     c0 = time.process_time()
