@@ -407,6 +407,15 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
 pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
     let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
     let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
+    // An `Unfold` input outside the key clause has rows without the key columns
+    // that its port declares. No extent or export of the table can read them.
+    for model in examples.iter().filter_map(|example| example.rows.as_ref().ok()).flat_map(|rows| rows.at.iter()).flat_map(|(_, models)| models) {
+        if let RelationValue::Rows(rows) = model {
+            if usize::from(rows.arity()) != types.len() {
+                return Err(fault(&format!("the relation has native arity {}, incompatible with its {} checked columns", rows.arity(), types.len())));
+            }
+        }
+    }
     let names = match &relation.output {
         None => program.program.column_names(relation.node).filter(|names| names.len() == types.len()),
         Some(_) => None,
