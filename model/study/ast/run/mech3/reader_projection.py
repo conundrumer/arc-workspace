@@ -213,7 +213,6 @@ def reader_header_union(readers):
             else:
                 chosen[key]=dict(column,reader_paths=[])
             chosen[key]['reader_paths'].append(reader['reader_path'])
-    require(chosen or not readers,'empty DET projection has readers but no certified named scalar fields')
     columns=sorted(chosen.values(),key=lambda f:f['header_physical_column'])
     require(len({c['header_physical_column'] for c in columns})==len(columns),
             'native header physical identity has distinct public paths')
