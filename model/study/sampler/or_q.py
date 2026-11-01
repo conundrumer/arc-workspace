@@ -700,71 +700,57 @@ def decoder_check(sess, scope, kind):
     return check
 
 
-def sorted_fields(text, sess, scope):
-    """The text with the fields of each atom that reads a relation of the scope (`&r..`) in the column order of that relation over the scope, and the fields of a record port, to any depth,
-    in the column order of the record's key. A relation's column order is set by the atom order of its form, and the walk pays for the fields of a reader that stand out of that order.
-    A port's column, and a record's field columns, are read from the decoder on a probe of the port with fresh labels, so an atom with a port that the probe can't place keeps its order.
-    Labels are marked again on their first occurrence."""
-    cache, V = {}, sess.vocabulary
+def columns_of(text, sess, scope):
+    """The columns of the text's atoms that have ports, in the order of their paths: for each atom, {the steps from the atom to a port or a field: its column}."""
+    ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, text, live.READER_OUT)), sess.settings).decode_stream()
+    atoms, V = {}, sess.vocabulary
+    for t, m, p in zip(ids, model, paths):
+        if not m or p[0] != len(scope):
+            continue
+        p, kind = tuple(p), V.kind(t)
+        if kind in live.S.RELATION_KINDS:
+            atoms[p] = {}
+        elif kind == 'column':
+            at = next((p[:n] for n in range(len(p) - 1, 0, -1) if p[:n] in atoms), None)
+            if at is not None:  # a head's record is in no atom
+                atoms[at][p[len(at):]] = int(V.name(t)[1:])
+    return [atoms[p] for p in sorted(atoms) if atoms[p]]
 
+
+def sorted_fields(text, sess, scope):
+    """The text with the ports of each atom, and the fields of each record, to any depth, in the column order of the relation or the record's key over the scope. The columns come from the decoder's tokens of the text.
+    Fields of one column name keep their written order, since each stands for its own place in the key. Labels are marked again on their first occurrence. The text stays as written where the decoder refuses it or its atoms do not match the tokens."""
     def is_port(f):
         return isinstance(f, list) and bool(f) and isinstance(f[0], str) and f[0].startswith(':')
 
-    def is_record(f):
-        return is_port(f) and len(f) > 1 and all(is_port(g) for g in f[1:])
+    def atoms(x, out):
+        if isinstance(x, list) and x:
+            if isinstance(x[0], str) and not x[0].startswith(':') and len(x) > 1 and all(is_port(f) for f in x[1:]):
+                out.append(x)
+            else:
+                for y in x:
+                    atoms(y, out)
+        return out
 
-    def skeleton(f, n):
-        """The port with a fresh label for each value."""
-        if is_record(f):
-            return [f[0], *[skeleton(g, n) for g in f[1:]]]
-        n[0] += 1
-        return [f[0], '*Zq%d' % n[0]]
+    def order(port, at, cols):
+        """The port with its fields in column order. A field that is a bare label is its own field name."""
+        fields = [order(f, at + (i,), cols) if is_port(f) else f for i, f in enumerate(port[1:])]
+        return [port[0], *[fields[i] for i in sorted(range(len(fields)), key=lambda i: cols.get(at + (i,), -1))]]
 
-    def read(toks, k):
-        """(column, the columns of its record's fields or None, next index) of the port at toks[k]."""
-        col, k = int(toks[k][0][1:]), k + 1
-        if k < len(toks) and toks[k][1] == 'column':  # a record: its fields run to the END
-            kids = []
-            while k < len(toks) and toks[k][0] != 'END':
-                c, sub, k = read(toks, k)
-                kids.append((c, sub))
-            return col, kids, k + 1
-        return col, None, k + 1
-
-    def columns(rel, port):
-        """(column, [(column, ...) of each field, or None for a field that is no record]) of the port in the relation, or None."""
-        probe = '(RULE &rzz (%s %s))' % (rel, O.unparse(skeleton(port, [0])))
-        if probe not in cache:
-            try:
-                ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, probe, live.READER_OUT)), sess.settings).decode_stream()
-                toks = [(V.name(t), V.kind(t)) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope)]
-                at = next(k for k, (_, kind) in enumerate(toks) if kind == 'relation')
-                cache[probe] = read(toks, at + 1)[:2]
-            except Exception:  # noqa: BLE001
-                cache[probe] = None
-        return cache[probe]
-
-    def order(port, kids):
-        """The port with its fields, and theirs, in column order; the port itself if the probe's fields do not match its own."""
-        if not is_record(port) or kids is None or len(kids) != len(port) - 1:
-            return port
-        fields = [order(g, sub) for g, (_, sub) in zip(port[1:], kids)]
-        return [port[0], *[g for _, g in sorted(zip([c for c, _ in kids], fields), key=lambda t: t[0])]]
-
-    def fix(x):
-        if not isinstance(x, list):
-            return x
-        x = [fix(y) for y in x]
-        if len(x) > 1 and isinstance(x[0], str) and x[0].startswith('&r') and all(is_port(f) for f in x[1:]):
-            got = [columns(x[0], f) for f in x[1:]]
-            if None not in got:
-                ports = [order(f, kids) for f, (_, kids) in zip(x[1:], got)]
-                x = [x[0], *[f for _, f in sorted(zip([c for c, _ in got], ports), key=lambda t: t[0])]]
-        return x
     try:
-        out = O.unparse(fix(O.parse(text)[0]))
-        form = O.Form(out)
-    except ValueError:
+        tree = O.parse(text)[0]
+        found, layout = atoms(tree, []), columns_of(text, sess, scope)
+        if len(found) != len(layout):
+            return text
+        for x, cols in zip(found, layout):
+            ports = [order(p, (i,), cols) for i, p in enumerate(x[1:])]
+            x[1:] = [ports[i] for i in sorted(range(len(ports)), key=lambda i: cols[(i,)])]
+        form = O.Form(O.unparse(tree))
+    except (ValueError, KeyError):
+        return text
+    except Exception as e:  # noqa: BLE001
+        if not isinstance(e, arclog.Refusal) and 'Check(' not in str(e):
+            raise
         return text
     return text if form.written is None else form.text(form.written)
 
