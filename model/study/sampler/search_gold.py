@@ -75,6 +75,7 @@ def job(task, case, point, arm, out, budget, eager=True):
     import live
     import live_try
     import search
+    search.OR_BITS = float(os.environ.get('SEARCH_OR_BITS', search.OR_BITS))
     t0 = time.process_time()
     d, lines = gold_of(task, case, point)
     scope, target = lines[:point[0]], lines[point[0]]
@@ -131,7 +132,7 @@ def job(task, case, point, arm, out, budget, eager=True):
 
 def run(a):
     pts = points(a.stems)[::a.every][:a.limit]
-    todo = [(p, arm) for p in pts for arm in ARMS if not os.path.exists(result_path(a.out, arm, *p))]
+    todo = [(p, arm) for p in pts for arm in a.arms if not os.path.exists(result_path(a.out, arm, *p))]
     print('%d points, %d jobs left' % (len(pts), len(todo)), flush=True)
     heavy = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), 'scripts', 'run_heavy.py')
     running, t0, done = [], time.time(), 0
@@ -201,6 +202,7 @@ def main():
     ap.add_argument('--out', default=OUT)
     ap.add_argument('--budget', type=float, default=60)
     ap.add_argument('--order', choices=['run', 'q'], default='run', help='search arm: give a clause when its run makes it, or in exact descending q')
+    ap.add_argument('--arms', nargs='+', choices=ARMS, default=list(ARMS), help='run: the arms to run')
     ap.add_argument('--jobs', type=int, default=2)
     ap.add_argument('--limit', type=int, default=None)
     ap.add_argument('--every', type=int, default=1)

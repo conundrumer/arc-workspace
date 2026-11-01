@@ -21,6 +21,9 @@ decoder refuses), the path ends: the clause that a retry reaches is also reached
 (the gates read the clause alone), and that path has the greater chance. A clause q counts the first try's chances alone, as
 the estimate of a clause's rank does. The counts of the Run name each refusal (REJECTS), and Counts ends the path at the count.
 
+With OR_BITS above 0, the bound of a path that takes a body's OR is lower by that many bits (a clause's logq too), so a run that takes an OR
+comes after plain runs of about the same chance. The order of the options at a choice stays the order of their chances.
+
 A clause whose atoms, read as a set with their labels renamed, were reached by another path stops there (Search.seen). clause_key
 gives the same key to a clause whatever the order of its atoms and the names of its labels.
 """
@@ -39,6 +42,8 @@ from live import ALSO_TOK, Clause, Drop, LiveDrawer, M, Run, S, Spent, arclog
 REJECTS = ('try:', 'gate:', 'or:try:', 'or:fail', 'or:branch retry', 'or:empty', 'or:unsafe', 'form:')  # the names, in Run.c, of a refused try
 FRONTIER_CAP = 400000  # entries of the frontier, the lowest bounds dropped first
 SEEN_CAP = 2000000  # atom sets that Search.seen keeps
+OR_BITS = 3.0  # bits taken off the bound of a path for each OR it takes: a run that takes an OR costs more CPU, so its clauses come after plain ones of about the same q
+LN2 = math.log(2)
 TOKEN = re.compile(r'\(|\)|[^\s()]+')
 
 
@@ -143,11 +148,16 @@ class Chooser:
     """The rng of a Run in a search. start(path) begins a run, which takes the ranks of path and then rank 0; `sibs` gets the next rank
     at each choice from the path's last on, as (path before the choice, rank, log bound)."""
 
+    or_bits = 0.0  # OR_BITS of the run
+    or_next = False  # the next coin is a body's OR coin (SearchRun.p_or)
+
     def start(self, path):
         self.ranks, self.i, self.logp, self.chain, self.hash, self.sibs = path, 0, 0.0, None, 0, []
+        self.or_next = False
 
-    def node(self, probs):
-        """The index in probs (chances that sum to 1, as a list) of the option that the run takes here."""
+    def node(self, probs, cost=0.0):
+        """The index in probs (chances that sum to 1, as a list) of the option that the run takes here. cost is the bits off the bound of
+        option 0, which is the OR of an OR coin; the order of the options stays that of their chances."""
         i, ranks = self.i, self.ranks
         self.i = i + 1
         n = len(probs)
@@ -159,18 +169,19 @@ class Chooser:
         if r >= n or probs[order[r]] <= 0:
             raise Mismatch
         if i >= len(ranks) - 1 and r + 1 < n and probs[order[r + 1]] > 0:
-            self.sibs.append((self.chain, r + 1, self.logp + math.log(probs[order[r + 1]])))
-        self.logp += math.log(probs[order[r]])
+            self.sibs.append((self.chain, r + 1, self.logp + math.log(probs[order[r + 1]]) - (cost * LN2 if order[r + 1] == 0 else 0.0)))
+        self.logp += math.log(probs[order[r]]) - (cost * LN2 if order[r] == 0 else 0.0)
         self.chain = (self.chain, r)
         self.hash = hash((self.hash, r))
         return order[r]
 
     def coin(self, p):
+        cost, self.or_next = (self.or_bits if self.or_next else 0.0), False
         if p >= 1:
             return True
         if p <= 0:
             return False
-        return self.node([p, 1.0 - p]) == 0
+        return self.node([p, 1.0 - p], cost) == 0
 
     def pick(self, opts, weights):
         """S.Drawer.pick's (option, its share of the weights)."""
@@ -280,6 +291,7 @@ class SearchRun(Run):
     def __init__(self, pri, session, deadline, task, limits):
         super().__init__(pri, session, 0, deadline, task, limits)
         self.rng = Chooser()
+        self.rng.or_bits = OR_BITS
         self.c = Counts(self.c)
         self.seen = {}  # hash of (body context, atoms as a set) -> hash of the path that reached it
         self.shared = collections.defaultdict(dict)  # (kind, place, path) -> the caches that Drawers of one scope share
@@ -321,6 +333,10 @@ class SearchRun(Run):
 
     def can_close(self, d):
         return self.memoed('close', d, lambda: super(SearchRun, self).can_close(d))
+
+    def p_or(self, o, k):
+        self.rng.or_next = True  # the coin that compares with this chance is the OR coin
+        return super().p_or(o, k)
 
     def set_key(self, dr, atoms, toks):
         return hash((dr.ctx, atoms_key(atoms), tuple(t for t in toks if t in (M.OR, ALSO_TOK, M.END))))
@@ -445,6 +461,9 @@ class Search:
             elif self.eager:
                 self.emitted.add(key)
                 st['clauses'] += 1
+                if '(OR ' in clause.text:
+                    st['or clauses'] += 1
+                    st['seconds or clause'] += live.time.process_time() - t0
                 return True, clause
             else:
                 self.pending[key] = ch.logp
