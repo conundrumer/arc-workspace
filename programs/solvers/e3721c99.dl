@@ -87,8 +87,6 @@ impl_choice([S, H, D]) :- shape_choice(S), hole_choice(H), divider_choice(D).
 pieces.node(C, P) :- in(P, C), !params.background(C).
 
 .decl object(o: Obj, p: Position)
-object([S, C, Id], P) :- shape_choice(S), pieces.label(C, P, Id), !params.shape_color(C).
-
 .decl shape(o: Obj)
 shape([S, C, Id]) :- object([S, C, Id], _), params.shape_color(C).
 
@@ -106,13 +104,14 @@ key(D, [S, C, Id]) :-
 
 // --- $Shape4 ---
 
-object([$Shape4(), C, Id], P) :- pieces.label(C, P, Id), params.shape_color(C).
+object([$Shape4(), C, Id], P) :- pieces.label(C, P, Id).
 
 // --- $Shape8 ---
 
-// @claim shapes
+// The 8-connected one-color pieces of each color but the background.
+// @claim legend-keys shapes
 .init shapes8 = Components8<Color>
-shapes8.node(C, P) :- in(P, C), params.shape_color(C).
+shapes8.node(C, P) :- in(P, C), !params.background(C).
 
 object([$Shape8(), C, Id], P) :- shapes8.label(C, P, Id).
 
