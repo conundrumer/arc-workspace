@@ -189,7 +189,13 @@ class Guide(search.Chooser):
         if 'p_or(' in line:
             r = bool(self.rest) and self.rest[0] == M.OR
             name = 'or:take' if r else 'top:no OR'
-        elif "orc['after']" in line:  # the code reads `random() >= after`, which is a stop where the coin is False
+        elif 'p_all' in line:
+            r = bool(self.rest) and self.rest[0] == self.run.V.id('ALL')
+            name, pop = 'top:no ALL', True
+        elif 'stop_guard' in line:
+            r = bool(self.rest) and self.rest[0] == M.END
+            name, pop = 'all:guard stops', True
+        elif "orc['after']" in line or 'all_after(' in line:  # the code reads `random() >= after`, which is a stop where the coin is False
             r = self.more()
             name = 'or:after'
         elif "['proposer']" in line:
@@ -456,6 +462,16 @@ class GuidedRun(search.SearchRun):
             if g.levels:
                 g.levels.pop()
             g.ctx = saved
+
+    def all_form(self, *args):
+        """The ALL's second END is not taken by any call, so it goes here."""
+        got, g = super().all_form(*args), self.rng
+        if got is not None:
+            if g.rest and g.rest[0] == M.END:
+                g.rest.popleft()
+            else:
+                g.bad.append('ALL end: gold has %s' % (g.rest[0] if g.rest else None))
+        return got
 
     def branch(self, dr, d, labs, pkey, k, scope, outer, exported, first, local, want, want_types, nests=0.0):
         g = self.rng

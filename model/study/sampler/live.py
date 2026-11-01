@@ -23,7 +23,7 @@ counts them over random dependency orders of gold). A RULE's atoms and a DET's c
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches export the keys
 alone, and the other labels stay in the OR: a later branch may read the first branch's. A branch may take an OR as its last atom, from that place's counts (one level deep); the
-labels that OR exports are the branch's, and its other labels stay in it. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
+labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and a keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
@@ -1063,16 +1063,24 @@ class Run:
                 raise Drop('body: no stop in %d atoms' % PORT_SHORT)
             dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
             dr.want = (set(keys) - set(toks) or set(keys)) if keys else dr.want  # a port reads each key
-            ored = None
+            ored = alled = None
             if dr.orc and self.rng.random() < self.p_or(dr.orc, k):
                 dr.p_labels = labels
                 ored = self.or_atom(pg, dr, cur, toks, text, scope, nlab, k)
+            if ored is None and (p_all := self.p_all(dr.place)) and self.rng.random() < p_all:
+                alled = self.all_atom(pg, dr, cur, toks, text, scope, nlab, k)
             if ored is not None:  # the body goes on after the OR, or ends there
                 c['or:drawn'] += 1
                 cur, ctoks, ctext, scope, labels = ored
                 toks += ctoks
                 text.append(ctext)
                 stop = self.rng.random() >= dr.orc['after']
+            elif alled is not None:  # and after an ALL
+                c['all:drawn'] += 1
+                cur, ctoks, ctext, scope, labels = alled
+                toks += ctoks
+                text.append(ctext)
+                stop = self.rng.random() >= self.all_after(dr.place)
             else:
                 fr = dr.frontier(cur, nlab + toks.count(M.STAR), tuple(toks))
                 got, free = None, 0
@@ -1192,6 +1200,99 @@ class Run:
         dr.drawn += atoms
         return d, ctoks, ctext, types, labels
 
+    def p_all(self, place):
+        """P(a body's atom is an ALL) for an atom of the place, 'branch' for an atom of an OR's branch: the priors' ALLs over their atoms, 0 in priors that have none."""
+        a, name = self.pri.get('all_forms'), 'body' if place in ('RULE', 'DET') else place
+        return (a['alls', name] + 0.5) / (a['atoms', name] + 1.0) if a else 0.0
+
+    def all_after(self, place):
+        """P(an atom follows an ALL in its body)."""
+        a, name = self.pri['all_forms'], 'body' if place in ('RULE', 'DET') else place
+        return (a['more', name] + 0.5) / (a['alls', name] + 1.0)
+
+    def all_stop(self, j):
+        """P(an ALL's guard ends after its j-th atom)."""
+        a = self.pri['all_forms']
+        return (a['guard', j] + 0.5) / (sum(v for (x, n), v in a.items() if x == 'guard' and n >= j) + 1.0)
+
+    def all_atom(self, pg, dr, cur, toks, text, scope, nlab, k):
+        """An ALL at decoder cur that passes the gates of a body's table, where the body has one: (decoder, tokens, text, types in scope,
+        labels of the table), or None."""
+        done = self.all_form(dr, cur, toks, text, scope, nlab, k)
+        if done is None:
+            return None
+        d, ctoks, ctext, hide, atoms, _ = done
+        if dr.place not in ('RULE', 'DET'):  # the engine gives no table inside a port
+            types, labels = list(scope), None
+        else:
+            tb = self.table(dr.fr, d, pg)[0]
+            sm = S.summary(tb)
+            if sm is not None and sm['empty_inputs']:
+                self.c['all:empty'] += 1
+                return None
+            if not self.can_end(d):
+                self.c['all:unsafe'] += 1
+                return None
+            types = [str(t) for t in tb['types']] if tb is not None else list(scope)
+            labels = tb.get('labels') if tb is not None else None
+        dr.fr.hidden = dr.fr.hidden | hide
+        dr.drawn += atoms
+        return d, ctoks, ctext, types, labels
+
+    def all_form(self, dr, dec, toks, text, scope, nlab, k, pkey=()):
+        """An ALL at decoder dec, the k-th atom of a body with tokens toks and atom texts text: (decoder after its second END, tokens, text,
+        the label tokens that it keeps local, its atoms' texts, the numbers of the labels it reads from outside), or None. The guard
+        has atoms drawn as a branch's, each after the first joined to a label, and ends by the priors' guard lengths. The conclusion is
+        one atom, which reads a label that the guard makes. pkey is the tokens of the clause before toks, where toks are those of an OR's branch."""
+        rng, lim = self.rng, self.lim
+        d = dec.fork()
+        try:
+            d.step(self.V.id('ALL'))
+        except arclog.Refusal:
+            return None
+        base = nlab + toks.count(M.STAR)
+        ctoks, guard, made = [self.V.id('ALL')], [], []
+        closed, want, want_types = dr.rel_closed, dr.want, dr.want_types
+        try:
+            dr.rel_closed = lambda x, ends: closed(x, ends + 2)  # the guard's END and the conclusion's atom come before the ALL's END
+            for j in range(1, lim.branch_atoms + 1):
+                res = self.branch_atom(dr, d, base + ctoks.count(M.STAR), (*pkey, *toks, *ctoks), k + j - 1, [], scope, list(text), guard, j > 1)
+                if res is None:
+                    return None
+                d = res[0].dec
+                ctoks += list(res[0].toks)
+                guard.append(res[3])
+                made += [int(x) for x in re.findall(r'\*L(\d+)', res[3])]
+                stop_guard = self.all_stop(j)
+                if rng.random() < stop_guard:
+                    break
+            d = d.fork()
+            d.step(M.END)
+            ctoks.append(M.END)
+            dr.rel_closed = lambda x, ends: closed(x, ends + 1)
+            dr.want, dr.want_types = frozenset(self.ff0.label_tok[i] for i in made if i in self.ff0.label_tok), frozenset()
+            res = self.branch_atom(dr, d, base + ctoks.count(M.STAR), (*pkey, *toks, *ctoks), k + len(guard), [], scope, list(text), guard, True)
+            if res is None:
+                return None
+            reads = {int(x) for x in re.findall(r'(?<![*\w])L(\d+)', res[3])}
+            if made and not reads & set(made):
+                self.c['all:conclusion reads no guard label'] += 1
+                return None
+            d = res[0].dec
+            ctoks += list(res[0].toks)
+            made += [int(x) for x in re.findall(r'\*L(\d+)', res[3])]
+            d = d.fork()
+            d.step(M.END)
+            ctoks.append(M.END)
+        except arclog.Refusal:
+            self.c['all:refused'] += 1
+            return None
+        finally:
+            dr.rel_closed, dr.want, dr.want_types = closed, want, want_types
+        atoms = [*guard, res[3]]
+        read = {int(x) for a in atoms for x in re.findall(r'(?<![*\w])L(\d+)', a)} - set(made)
+        return d, ctoks, '(ALL (%s) (%s))' % (' '.join(guard), res[3]), frozenset(self.ff0.label_tok[i] for i in made if i in self.ff0.label_tok), atoms, read
+
     def can_close(self, d):
         """Whether a branch can close at decoder d."""
         for t in (ALSO_TOK, M.END):
@@ -1302,6 +1403,14 @@ class Run:
                 types.update({int(x[1:]): t for x, t in self.label_types(dr, atoms).items()})
                 self.inner += atoms
                 fresh, joins, binds, stop = sorted(exports), sorted(read_any), read_all, 1 - dr.orc['nest_after']
+            elif (p_all := self.p_all('branch')) and self.rng.random() < p_all and (alled := self.all_form(dr, d, toks, outer + text, scope, labs, k + j - 1, pkey)) is not None:
+                d, atoks, atext, hide, atoms, outside = alled  # an ALL keeps its labels local to it
+                toks += atoks
+                text.append(atext)
+                dr.fr.hidden = dr.fr.hidden | hide
+                self.lost |= hide
+                self.inner += atoms
+                fresh, joins, binds, stop = [], sorted(outside), set(outside), hz.get(j, 1.0)
             else:
                 res = self.branch_atom(dr, d, labs + toks.count(M.STAR), pkey + tuple(toks), k + j - 1, wtypes, scope, outer, text, joins)
                 if res is None:

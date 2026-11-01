@@ -193,6 +193,37 @@ def nested_counts(tasks):
     return out
 
 
+def all_counts(tasks):
+    """Counts of the ALLs in the bodies of RULEs, DETs and an INIT's key and ports, and in their ORs' branches. ('atoms', place) is the atoms
+    of the place (a compound is one), ('alls', place) its ALLs, ('more', place) the ALLs with an atom after them in their body, and ('guard', n)
+    the ALLs of n guard atoms. place is 'body' for a RULE or a DET, 'key', 'port', or 'branch' for an atom inside a branch of an OR."""
+    out = collections.Counter()
+
+    def count(atoms, place):
+        for i, a in enumerate(atoms):
+            if not (isinstance(a, list) and a):
+                continue
+            out['atoms', place] += 1
+            if a[0] == 'ALL':
+                guard = a[1] if len(a) > 1 and isinstance(a[1], list) else []
+                out['alls', place] += 1
+                out['more', place] += i < len(atoms) - 1
+                out['guard', len(guard)] += 1
+            elif a[0] == 'OR':
+                for b in a[1:]:
+                    if isinstance(b, list):
+                        count(b, 'branch')
+
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            if f[0] in ('RULE', 'DET'):
+                count([a for a in f[2:] if isinstance(a, list)], 'body')
+            elif f[0] == 'INIT':
+                for place, body in init_bodies(f):
+                    count(body, place)
+    return out
+
+
 def single_rates(tasks):
     """{kind: P(the body stops at one atom | its first atom is no compound and no method call)} over the RULE and DET bodies of the tasks.
     The kind's hazard at one atom counts the compound bodies too, which a draw makes by the compound counts."""
@@ -279,7 +310,7 @@ def fit(leave_out=()):
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()},
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()}, regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
