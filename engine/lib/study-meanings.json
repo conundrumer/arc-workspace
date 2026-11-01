@@ -105,8 +105,8 @@
     },
     "type:Ident": {
       "status": "authored_contract",
-      "summary": "A label of one thing, such as one object. It holds nothing but the thing's identity.",
-      "contract_markdown": "A label of one thing, such as one object. It holds nothing but the thing's identity.",
+      "summary": "A label of one thing, such as one object. It holds nothing but the thing's identity. While `ARCLOG_IDENT_SOURCE` is set, an `Ident` column has one source: the `INIT` form and output that makes it, or the `DET` form of a proposer that makes it. A label stands at `Ident` columns of one source only, so the checker refuses a join, a `NOT`, an `=` or `!=`, a union and a type parameter that meet two sources.",
+      "contract_markdown": "A label of one thing, such as one object. It holds nothing but the thing's identity. While `ARCLOG_IDENT_SOURCE` is set, an `Ident` column has one source: the `INIT` form and output that makes it, or the `DET` form of a proposer that makes it. A label stands at `Ident` columns of one source only, so the checker refuses a join, a `NOT`, an `=` or `!=`, a union and a type parameter that meet two sources.",
       "source": {
         "document": "engine/lib/registry.sexpr",
         "start_line": 44,
