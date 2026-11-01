@@ -274,6 +274,8 @@ class Converter:
         # for each arclog name, the label and field of each site that a read of it writes, since a
         # label of a `DET` that no read names is existential and the relation holds no column for it
         self.read_sites: dict[str, set[tuple[str, str | None]]] = {}
+        # the arclog name of each relation with a clause written as a `DET`, a helper of `Determine` included
+        self.det_heads: set[str] = set()
         # a `never` body of a pick reads the lib's relations as the units do, so the rewrite takes them as units
         aparts = [(p, i, Unit(UnitId(-1 - n), Scope(p.scope), Atom(RelationName((), f"@apart{n}"), (), 0), body, None, None))
                   for n, (p, i, body) in enumerate((p, i, body) for p in self.picks.values()

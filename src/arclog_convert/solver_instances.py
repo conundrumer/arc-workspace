@@ -242,6 +242,8 @@ class InstancesMixin:
         f.cols = [n for n, _ in head_cols]
         f.col_labels = col_names
         f.side = side
+        if side == "DET":
+            c.det_heads.add(name)
         if len(f.lines) == 1:
             pass
         f.branches = tuple(sorted(branches))

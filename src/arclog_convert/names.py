@@ -261,9 +261,8 @@ def column_map(s: "Solver", names: dict, insts: dict[str, str], text: ParityText
     top level by the Souffle relation's path, and a relation of an expansion's
     shape by its own name; the labels are those `site_columns` gives (for the
     `prediction` of a `DEMONSTRATED` form, the labels of the `value` head's
-    sites, as its `DEMO_RULE` clause names them), but for a
-    relation of `Determine` that is no instance's port, whose entry gives only
-    the sites that a read of it names (`_named_sites`). A
+    sites, as its `DEMO_RULE` clause names them), but for a `DET`, whose entry
+    gives only the sites that a read of it names (`_named_sites`). A
     relation whose clauses the converter writes at other arclog columns under
     one ALT than under another, or than at the top level
     (`Converter.writings`), has for entry `{"writings": [...]}`: one
@@ -339,11 +338,13 @@ def _named_sites(c: "Converter", written: str, scope: tuple[str, ...], relation:
                  ) -> set[tuple[str, str | None]] | None:
     """The (label, field) sites that a read names of the relation `written`,
     declared in `scope`, where its native identity determines a matching
-    Params relation (`instances` are its instance path). A `DET` has as its
-    columns the labels that a read names, and a label no read names is
-    existential. Helpers retain their full RULE columns. None where the
-    relation is no such `DET`, or no read names it."""
-    return c.read_sites.get(written) if c.determines_parameter(scope, relation, instances) else None
+    Params relation (`instances` are its instance path) or a clause of it is
+    written as a `DET`. A `DET` has as its columns the labels that a read
+    names, and a label no read names is existential. A relation written as a
+    `RULE` retains its full columns. None where the relation is no such `DET`,
+    or no read names it."""
+    is_det = c.determines_parameter(scope, relation, instances) or written in c.det_heads
+    return c.read_sites.get(written) if is_det else None
 
 
 def _read_sites(columns: list[list[Site]], named: set[tuple[str, str | None]] | None) -> list[list[Site]]:
