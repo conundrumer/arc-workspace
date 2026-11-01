@@ -2,8 +2,7 @@
 
 ## Concept
 - Fits every pair (`probe.py`), with `min_block_cells` anywhere from 6 to 23; at 24 the 23-cell block of train1 drops out and train1 fails.
-- Witness `block-colored-channel-cell`: plausibility `ordinary`, verdict `other`. A channel cell whose random color is the block's color joins the block region and cuts the channel, and the generator fills the whole channel all the same; train2 input (4,4) is one such cell, walled in by the channel, which the concept fills.
-- The rule as the generator applies it: the generator draws a 4-connected channel from one cell of the grid border into a block, puts the grid's paint color on that border cell and random colors on the rest, and fills the channel with the paint when it ends inside the block. A channel that runs out through the block's side is left as it is. `dead-end-fills` takes the pockets of non-block cells in place of the drawn channel, and so misses any drawn cell whose random color is the block's.
+- The pairs show no channel cell hidden in a block: none of the 72 cells they change lies in a block region. Of the 80 filled cells off the grid border, 1 has the block's color, train2 input (4,4), whose four neighbors are all pocket cells. A block's color covers 9.8% of the field, which would give 7.9 such cells.
 
 ## Choice points
 - `mouth-place`: where a dead end's mouth lies

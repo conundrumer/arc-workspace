@@ -5,7 +5,7 @@
 - The header has no `noise-field` scene line: Style admits a `@scene` line only where a claim, a `@relaxed` line or a branch refers to it, and nothing refers to `noise-field`. The `blocks` line says the blocks lie in a field of random colors.
 
 ## Judgments
-- `dead-end-fills` takes the restated text from analyze.md (the generator's drawn channel), with the concept file's text as its `@approximated:` line: the rule has no relational form, because a drawn channel cell that the generator colors with the block's color can lie where the input shows only block cells (for example at the channel's inner end), so no set of clauses agrees with the rule on every input the generator produces. `block-colored-channel-cell` (ordinary other) stands under the `@approximated:` line, and every case gives an output other than the judged one on it.
+- `dead-end-fills` takes the concept file's text, and the program states it. A rule that fills a block-region cell, or a sealed pocket past one, has no support: no pair changes a block-region cell, and train2 keeps its sealed pocket at (2,13) and (3,13).
 - `$LeakyFills`, `$KeepBlockColored` and `$StoredPaint` fail Fit (analyze.md), and the two Not formed fill-color readings (the channel's inner-end color, the channel's commonest color) fail Fit at train0. None of them is a constructor.
 - `min_block_cells` stays 10 and is not open: the sweep shows 5 to 23 fit every pair and give the same test outputs, and analyze.md judges that a reader of the concept takes no count from the task.
 - No Determine comp: the plan lists `min_block_cells` as covered by enumeration over its type (`domain enumerable(31)`), and no clause can read the value from the evidence.

@@ -139,33 +139,6 @@
       ]
     }]
   }, {
-    "id": "block-colored-channel-cell",
-    "separates": "A dead-end channel down from the top border has one cell of the block color, joined to the block: every case fills the channel above that cell with 9 and keeps it and the cells below it, and the generator fills the whole channel with 9.",
-    "input": [
-      [1,2,5,5,9,5,5,5,3,4],
-      [3,4,5,5,3,5,5,5,6,7],
-      [6,7,5,5,5,5,5,5,1,2],
-      [1,2,5,5,7,5,5,5,3,4],
-      [3,4,5,5,2,5,5,5,6,7],
-      [6,7,5,5,5,5,5,5,1,2],
-      [1,2,3,4,6,7,1,2,3,4],
-      [3,4,6,7,1,2,3,4,6,7],
-      [6,7,1,2,3,4,6,7,1,2],
-      [1,2,3,4,6,7,1,2,3,4]
-    ],
-    "output": [
-      [1,2,5,5,9,5,5,5,3,4],
-      [3,4,5,5,9,5,5,5,6,7],
-      [6,7,5,5,9,5,5,5,1,2],
-      [1,2,5,5,9,5,5,5,3,4],
-      [3,4,5,5,9,5,5,5,6,7],
-      [6,7,5,5,5,5,5,5,1,2],
-      [1,2,3,4,6,7,1,2,3,4],
-      [3,4,6,7,1,2,3,4,6,7],
-      [6,7,1,2,3,4,6,7,1,2],
-      [1,2,3,4,6,7,1,2,3,4]
-    ]
-  }, {
     "id": "min_block_cells=ConstInDim",
     "separates": "A 16x16 grid holds a 4x4 block whose 14-cell region is cut by a two-cell dead-end channel from the top border: the concept counts the region a block and fills the channel with 9, and min_block_cells=ConstInDim takes the grid's side, 16, as the least block size, finds no block, and keeps the channel.",
     "input": [
