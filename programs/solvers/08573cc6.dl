@@ -1,6 +1,6 @@
 // 08573cc6
 // @keywords: markers walk
-// output: A lone dot and a two-cell legend at the top-left corner. The output
+// output: A lone dot and a two-cell legend at a corner. The output
 //  is a rectangular spiral walked outward from the dot: arms turn with a fixed
 //  sense, each arm one cell longer than the last, and the walk ends with the
 //  first arm the grid edge cuts short. The legend's two colors paint the arms
@@ -19,10 +19,16 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
     .decl dot(col: Color) dot(1).
-    .decl marker_corner(d: DiagDir) marker_corner(DIAG_TL).
-    .decl start_dir(d: Dir) start_dir(DIR_L).
-    .decl sense(s: Sense) sense(SENSE_CC).
     .decl len0(n: number) len0(2).
+
+    // The legend and the walk it starts, as one assembly. The legend's cell
+    // at a grid corner and the step to its second cell fix the pose.
+    RIGID(legend,
+        .decl corner(d: DiagDir) corner(DIAG_TL).
+        .decl along(d: Dir) along(DIR_R).
+        .decl first_arm(d: Dir) first_arm(DIR_L).
+        .decl next_arm(d: Dir) next_arm(DIR_B).
+    )
 
     // --- $Stored ---
     .decl color_axis(a: Axis) color_axis(AXIS_H).
@@ -41,13 +47,12 @@ seed(P) :- in(P, Col), params.dot(Col).
 .decl marker(p: Position, col: Color)
 marker(P, Col) :- in(P, Col), !params.bg(Col), !params.dot(Col).
 
-.decl corner_color(col: Color)
-corner_color(Col) :- marker(P, Col), params.marker_corner(Diag), corner_dist(P, Diag, 0).
-
-.decl other_color(col: Color)
-other_color(Col) :-
-    marker(P, Col), params.marker_corner(Diag),
-    dir_of(Diag, _, D), !dist(P, D, 0).    // off the corner
+// The legend at its pose: the cell at the corner, and the second cell one step
+// from it.
+.decl legend(d: D4, p: Position, q: Position)
+legend(Pose, P, Q) :-
+    marker(P, _), params.legend_corner(Pose, Diag), corner_dist(P, Diag, 0),
+    params.legend_along(Pose, R), neighbor(P, R, Q), marker(Q, _).
 
 // An arm, by where it ends and its move: p_end may sit off the grid, and
 // only an arm ending on the grid continues the walk.
@@ -58,11 +63,12 @@ other_color(Col) :-
 // The first arm leaves the dot.
 .init spiral = Propagation<Unit, Arm>
 spiral.source($U(), [P_end, D, Delta]) :-
-    seed(P), params.start_dir(D), params.len0(N),
+    seed(P), legend(Pose, _, _), params.legend_first_arm(Pose, D), params.len0(N),
     jump(P, D, N, P_end), jump_offset(D, N, Delta).
 spiral.edge($U(), [P, D, Delta], [P_end2, D2, Delta2]) :-
     in(P, _), dir_elem(D), axis_of(D, A), sub_extent(P, A, N), jump_offset(D, N, Delta),
-    params.sense(S), turn(S, D, D2), rotation(S, M),
+    legend(Pose, _, _), params.legend_first_arm(Pose, D0), params.legend_next_arm(Pose, D1),
+    turn(S, D0, D1), turn(S, D, D2), rotation(S, M),        // the sense of the walk's first turn
     apply(M, Delta, DeltaR), neighbor(DeltaR, D2, Delta2),  // the arm turned, one cell longer
     compose(P, Delta2, P_end2).
 
@@ -91,15 +97,16 @@ arm_cell(C, D) :-
 .decl corner_axis(a: Axis, ch: Choice)
 
 // --- $Start ---
-corner_axis(A, $Start()) :- params.start_dir(D), axis_of(D, A).
+corner_axis(A, $Start()) :-
+    legend(Pose, _, _), params.legend_first_arm(Pose, D), axis_of(D, A).
 
 // --- $Stored ---
 corner_axis(A, $Stored()) :- params.color_axis(A).
 
 out(P, Col, Ch) :-
-    arm_cell(P, D), axis_of(D, A),                          // arm cell, its axis
-    ( corner_axis(A, Ch), corner_color(Col)                 // on the corner's axis
-    ; corner_axis(A2, Ch), perp(A, A2), other_color(Col)    // across it
+    arm_cell(P, D), axis_of(D, A), legend(_, Q, Q2),    // arm cell, its axis, the legend
+    ( corner_axis(A, Ch), in(Q, Col)                    // on the corner's axis
+    ; corner_axis(A2, Ch), perp(A, A2), in(Q2, Col)     // across it
     ).
 out(P, Col_out, Ch) :-
     impl_choice(Ch), in(P, Col),                                 // grid cell
@@ -108,8 +115,14 @@ out(P, Col_out, Ch) :-
     ).
 
 .comp Determine {
-    .decl marker_corner(d: DiagDir)
-    marker_corner(Diag) :-
-        ex_in(_, P, Col), !params.bg(Col), !params.dot(Col),   // a marker
-        corner_dist(P, Diag, 0).                               // at a corner
+    .decl legend_cell(e: Example, p: Position)
+    legend_cell(E, P) :- ex_in(E, P, Col), !params.bg(Col), !params.dot(Col).
+
+    .decl legend_corner(e: Example, d: DiagDir)
+    legend_corner(E, Diag) :- legend_cell(E, P), corner_dist(P, Diag, 0).
+
+    .decl legend_along(e: Example, d: Dir)
+    legend_along(E, D) :-
+        legend_corner(E, Diag), legend_cell(E, P), corner_dist(P, Diag, 0),  // the corner cell
+        dir_elem(D), neighbor(P, D, Q), legend_cell(E, Q).                   // the step to the other
 }
