@@ -37,9 +37,14 @@ GROUPS = ['DET', 'RULE depth 1', 'RULE depth 2', 'RULE depth 3+', 'INIT port', '
 PHASES = list(CF.DEFAULT_PHASES)  # the phases to train on and report (--phases)
 
 
+EXCLUDE = set()  # tasks whose rows are left out of train and test (--exclude)
+
+
 def rows_of(d):
     p = d if d.endswith('.zst') else os.path.join(d, 'choices.jsonl.zst')
-    yield from iter_json(p)
+    for r in iter_json(p):
+        if r.get('task') not in EXCLUDE:
+            yield r
 
 
 class Data:
@@ -216,6 +221,7 @@ def main():
     ap.add_argument('--test', default=HERE + '/runC_holdout')
     ap.add_argument('--feats', nargs='+', default=['base', 'cols', 'val'])
     ap.add_argument('--plugin', default='')
+    ap.add_argument('--exclude', default='', help='a file of tasks, one a line, whose rows are left out of train and test')
     ap.add_argument('--phases', nargs='+', default=list(CF.DEFAULT_PHASES), choices=CF.PHASES,
                     help="the phases to train on and report; 'stop' is the atom stop. The saved model steers only these.")
     ap.add_argument('--min-count', type=int, default=20, help='a dense feature is kept when >= this many train options fire it')
@@ -230,6 +236,8 @@ def main():
     ap.add_argument('--save-model', default='')
     a = ap.parse_args()
     PHASES[:] = a.phases
+    if a.exclude:
+        EXCLUDE.update(open(a.exclude).read().split())
     from threadpoolctl import threadpool_limits
     threadpool_limits(limits=a.threads)
     if a.plugin:

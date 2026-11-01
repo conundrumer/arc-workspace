@@ -34,6 +34,7 @@ import search_gold as G  # noqa: E402
 from live import ALSO_TOK, M, arclog  # noqa: E402
 
 L2 = math.log(2)
+COIN_ALT = os.environ.get('COIN_ALT', '1') == '1'  # gold's chance under a must_join coin that is true takes the weights that coin gives; 0 reads them as the free coin's
 SEP = (ALSO_TOK, M.END)
 SKIP = live.SKIP_TOK
 
@@ -53,7 +54,7 @@ class Guide(search.Chooser):
 
     def __init__(self, run, rest, kind='RULE'):
         self.run, self.rest, self.kind = run, rest, kind
-        self.parts, self.counts, self.bad, self.atoms = collections.Counter(), collections.Counter(), [], []
+        self.parts, self.counts, self.bad, self.atoms, self.detail = collections.Counter(), collections.Counter(), [], [], []
         self.hash, self.or_next, self.ctx = 0, False, 'top'
         self.levels = []  # one count of the branches so far, for each OR being drawn
         self.neg_idx = self.neg_toks = None
@@ -397,11 +398,36 @@ class GuidedDrawer(search.SearchDrawer):
             if b != math.inf:
                 g.parts['%s atom: %s' % (g.ctx, ph)] += b
         if total != math.inf:
-            g.parts['%s atom: column stops and join mix' % g.ctx] += total - sum(g.cur.values())
+            g.parts['%s atom: join mix' % g.ctx] += total - sum(g.cur.values())
         g.atoms.append((g.ctx, res[3], None if total == math.inf else round(total, 2)))
+        d = self.deltas.get(id(res))  # the join coin: log q given must_join, and given not
+        g.detail.append(dict(k=self.p_k, joined=bool(res[4]), lj=None if d is None else round(d[1] / math.log(2), 3), lf=None if d is None else round(d[2] / math.log(2), 3),
+                             cur={ph: round(b, 3) for ph, b in g.cur.items()}))
         if g.kind == 'INIT' and any(ph.startswith('relation') for ph in zero):  # the atom's tokens are not the walk's, so the tokens after it are out of step
             raise Stuck(g.bad[-1])
         return res, why
+
+    def pick_complete(self, n, opts, weights, key, alt=None):
+        """SearchDrawer's, with the share of gold's start among the weights of the other coin value, which the atom's coin mixture reads."""
+        o, q = super().pick_complete(n, opts, weights, key, alt)
+        if alt is not None and COIN_ALT:
+            self.alt_q = self.alt_share(alt, opts.index(o)) if o in opts else 0.0
+        return o, q
+
+    def pick_reach(self, n, opts, weights, alt=None):
+        """SearchDrawer's, with the share of gold's value among the weights of the other coin value."""
+        o, q = super().pick_reach(n, opts, weights, alt)
+        if alt is not None and COIN_ALT:
+            self.alt_q = self.alt_share(alt, opts.index(o)) if o in opts else 0.0
+        return o, q
+
+    def steer_choice(self, fr, n, popts, opts, k, rel, joined, leaf, stop, key):
+        """S's, and at a column pick where the atom may stop, the bits of gold's side of the stop: the stop's chance if gold's next token is no column, else its complement."""
+        fm, stq = super().steer_choice(fr, n, popts, opts, k, rel, joined, leaf, stop, key)
+        if n.phase == 'cols' and leaf and opts:
+            stopped = not self.force or fr.KIND[self.force[0]] != 'column'
+            self.rng.cur['column stop'] += bits(stq if stopped else 1 - stq)
+        return fm, stq
 
     def pick(self, opts, weights):
         o, q = super().pick(opts, weights)
@@ -504,7 +530,7 @@ def one(sampler, task, case, point, kind=None):
     except Exception as e:  # noqa: BLE001
         dead = '%s: %s | %s' % (type(e).__name__, str(e)[:100], [k for k in run.c if k.startswith(('form:', 'try:', 'or:'))][:4])
     rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(g.parts.items())}, counts=dict(g.counts),
-               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms)
+               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail)
     if kind == 'INIT':
         rec['match'] = match
     return rec
