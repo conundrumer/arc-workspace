@@ -455,6 +455,10 @@ def table(meta, cols, title):
         line('k ' + kb, [kbucket(m['k']) == kb for m in meta])
     for g in GROUPS:
         line('group ' + g, [m['grp'] == g for m in meta])
+    for w in ('body', 'branch', 'nested', 'ALL'):  # where in the clause, for rows that live_rows.py writes
+        line('where ' + w, [m.get('where') == w for m in meta])
+    for pl in ('key', 'port'):
+        line('place ' + pl, [m.get('place') == pl for m in meta])
     for kd in ('lib', 'derived', 'op'):
         line('RULE depth 3+, gold ' + kd, [m['grp'] == 'RULE depth 3+' and m['kind'] == kd for m in meta])
     for kb in ('1', '2', '3+'):

@@ -76,6 +76,7 @@ class FeatVocab:
 
 
 MASK = 'all'  # the derived-name mask of the run (relfeat.mask_row)
+EXCLUDE = set()  # tasks whose rows are left out of train and test (--exclude)
 
 
 def row_triples(row, fnames, fv, mask=None):
@@ -113,6 +114,7 @@ class Data:
         self.gold.append(toks.index(row['gold']))
         pg = row.get('point_group') or {}
         self.meta.append(dict(task=row['task'], grp=pg.get('point_group'), kind=row['options'][toks.index(row['gold'])]['kind'], k=row['k'],
+                              where=row.get('where'), place=row.get('place'),
                               clause='%s|%s|%s' % (row['task'], row['case'], row['point'])))
         self.task_id.append(self.tasks.setdefault(row['task'], len(self.tasks)))
         return True
@@ -145,6 +147,8 @@ def stream(dirs, fnames, fv, label, hook=None, max_rows=0):
             done += 1
             if max_rows and done > max_rows:
                 break
+            if r.get('task') in EXCLUDE:
+                continue
             if D.add(r, fnames, fv) and hook:
                 hook(r, len(D.meta) - 1)
             if done % 1000 == 0:
@@ -314,6 +318,7 @@ def main():
     ap.add_argument('--logit-feats', nargs='+', action='append', help='feature sets of a logit column; repeat for several columns')
     ap.add_argument('--hgb-feats', nargs='+', default=['struct', 'b', 'ctx'])
     ap.add_argument('--plugin', default='')
+    ap.add_argument('--exclude', default='', help='a file of tasks, one a line, whose rows are left out of train and test')
     ap.add_argument('--mask', default='all', choices=['all', 'group', 'none', 'all_nogrp'], help='derived-name mask (relfeat.mask_row)')
     ap.add_argument('--baselines', action='store_true', help='also fit relfit and relfit --b as they are (reservoir of --base-rows)')
     ap.add_argument('--base-rows', type=int, default=6000)
@@ -334,6 +339,8 @@ def main():
     a = ap.parse_args()
     global MASK
     MASK = a.mask
+    if a.exclude:
+        EXCLUDE.update(open(a.exclude).read().split())
     torch.set_num_threads(a.threads)
     if a.plugin:
         load_plugin(a.plugin)
@@ -341,9 +348,10 @@ def main():
         tm = []
         for r in iter_json(a.test + '/relrows.jsonl.zst'):
             toks = [o['tok'] for o in r['options']]
-            if r['gold'] in toks:
+            if r['gold'] in toks and r.get('task') not in EXCLUDE:
                 pg = r.get('point_group') or {}
                 tm.append(dict(task=r['task'], grp=pg.get('point_group'), kind=r['options'][toks.index(r['gold'])]['kind'], k=r['k'],
+                               where=r.get('where'), place=r.get('place'),
                                clause='%s|%s|%s' % (r['task'], r['case'], r['point'])))
         cols = {}
         for f in a.merge:

@@ -277,6 +277,7 @@ STEER_CHOICE_BETA = float(os.environ.get('STEER_CHOICE_BETA', '1'))
 STEER_CHOICE_PHASES = frozenset(os.environ.get('STEER_CHOICE_PHASES', 'cols,fcol,val,fval,op,stop').split(','))  # 'stop' is the atom stop; a phase that the model was not trained on is not steered
 CHOICE_CHECK = os.environ.get('CHOICE_CHECK', '')
 STEER_REL_MODEL = os.environ.get('STEER_REL_MODEL', 'hgb')  # 'hgb' (the tree) or 'logit'
+STEER_COVER = frozenset(filter(None, os.environ.get('STEER_COVER', '').split(',')))  # places where the steers go beyond S's draw: 'init' (the bodies of an INIT's key and ports, which the prefix text gives), 'branch' (the first atom of a later branch of an OR, whose clause cannot close)
 TILT = os.environ.get('TILT', '')  # path of a JSON file of score tilts (tilt_fit.py): q's weight of a choice is multiplied by exp(TILT_BETA * TILT_SCALE * theta); unset: no tilt, the draws are unchanged
 TILT_BETA = float(os.environ.get('TILT_BETA', '0.5'))  # the beta of the target
 TILT_SCALE = float(os.environ.get('TILT_SCALE', '1'))  # 1: the fitted theta in full; below 1: shrunk
@@ -1303,6 +1304,10 @@ class Drawer:
         self.rel_dag_src = None  # run_point sets this: (spec, point index), the forms before the point
         self.rel_dag = None  # STEER_REL: dag_info's (fields, adj) of those forms, built at the first miss; False where it cannot be built
         self.rel_dag_f, self.rel_dag_p = {}, {}  # base -> its fields; (bases the prefix reads, base) -> dag_path
+        self.sink = None  # a function (kind, row, gold): each pick of a forced atom (kind 'rel' or 'choice') and each stop row (kind 'stop', gold None) adds the row that its steer scores at that pick
+        self.p_text = None  # the atoms drawn before this one, as text, where the clause cannot close (an INIT body, the first atom of a later branch); the live walk sets it
+        self.or_done = ()  # the atoms of the branches that the OR being drawn has finished
+        self.rel_text = False  # the prefix is p_text, not the closed clause (an INIT body)
 
     def frontier(self, dec, labs=0, key=None):
         """The frontier at decoder dec, an atom start with labs labels in the clause. With key (the clause's tokens so far,
@@ -1728,8 +1733,12 @@ class Drawer:
                     rtypes=self.row_rtypes(n.rtok), text=n.text, gold=gold, options=opts, point_group=self.row_pg,
                     prior_uses=self.prior_uses(n.rtok, key))
 
-    def choice(self, k, n, popts, rel, joined, leaf, gold, stop=None):
-        """A CHOICE_ROWS row of a forced pick."""
+    def choice(self, k, n, popts, rel, joined, leaf, gold, stop=None, fr=None):
+        """A CHOICE_ROWS row of a forced pick; with a sink and fr, the row that STEER_CHOICE scores at that pick goes to the sink."""
+        if self.sink is not None and self.force is not None and fr is not None:
+            row = self.choice_consult_row(fr, n, popts, k, rel, joined, leaf, stop, self.p_key, self.rel_prefix(fr, self.p_key, k))
+            if row is not None:
+                self.sink('choice', row, gold)
         if self.choices is None or self.force is None:
             return
         self.choices.append(self.choice_row(k, n, popts, rel, joined, leaf, gold, stop, self.p_key))
@@ -1749,10 +1758,29 @@ class Drawer:
         """Whether STEER_CHOICE steers phase `name` ('stop' for the atom stop): it is in STEER_CHOICE_PHASES and the model was trained on it."""
         return bool(STEER_CHOICE) and name in STEER_CHOICE_PHASES and name in choice_scorer().phases
 
+    def stop_consult_row(self, dec, key, k, toks, rel, text, tb, h):
+        """The row that STEER_CHOICE scores at the stop after an atom (stop_shift's arguments), else None where the clause cannot close. It is
+        the row that CHOICE_ROWS writes."""
+        if self.rel_text:
+            pre = list(self.p_text or ()) + [text]
+        else:
+            pf = self.rel_closed(dec, 1)
+            if pf is None:
+                return None
+            pre = body_atoms(pf.split('\n')[self.rel_base])
+        row = self.stop_row(k, toks, rel, text, h, None, key[:len(key) - len(toks)])
+        row.update(prefix=pre, scope_labels=list(tb['labels']) if tb and tb.get('labels') is not None else None,
+                   scope_types=[str(t) for t in tb['types']] if tb else [])
+        return row
+
     def stop_shift(self, dec, key, k, toks, rel, text, tb, h):
         """STEER_CHOICE at the stop after an atom (decoder dec after its tokens toks; key: the clause's tokens with them; tb: the prefix
         table with the atom): beta * (f_STOP - f_GO) on the row that CHOICE_ROWS writes, the shift of the log odds of q's stop hazard (0
         where the steer is off). Cached per point by (key, k, text). P's hazard h stays."""
+        if self.sink is not None and 0 < h < 1:  # the row goes to the sink, whether the steer is on or not; the caller then gives its gold
+            row = self.stop_consult_row(dec, key, k, toks, rel, text, tb, h)
+            if row is not None:
+                self.sink('stop', row, None)
         if not self.choice_on('stop') or self.rel_off or not 0 < h < 1:
             return 0.0
         ck = (key, 'atom stop', k, text)
@@ -1762,11 +1790,8 @@ class Drawer:
             c0 = time.process_time()
             self.choice_stats['misses'] += 1
             got = 0.0
-            pf = self.rel_closed(dec, 1)
-            if pf is not None:
-                row = self.stop_row(k, toks, rel, text, h, None, key[:len(key) - len(toks)])
-                row.update(prefix=body_atoms(pf.split('\n')[self.rel_base]), scope_labels=list(tb['labels']) if tb and tb.get('labels') is not None else None,
-                           scope_types=[str(t) for t in tb['types']] if tb else [])
+            row = self.stop_consult_row(dec, key, k, toks, rel, text, tb, h)
+            if row is not None:
                 c1 = time.process_time()
                 self.choice_stats['s_row'] += c1 - c0
                 if CHOICE_CHECK:
@@ -1789,6 +1814,15 @@ class Drawer:
         ts = None if tok in M.CMP else self.rel_types(tok)
         return len(ts) if ts else len(self.reg.get(rel) or []) or None
 
+    def choice_consult_row(self, fr, n, popts, k, rel, joined, leaf, stop, key, pre):
+        """The row that STEER_CHOICE scores at a pick of phase n.phase (prefix pre): CHOICE_ROWS' row with gold None, and the atom's scope. Where pre is
+        None (the clause cannot close), None."""
+        if pre is None:
+            return None
+        row = self.choice_row(k, n, popts, rel, joined, leaf, None, stop, key)
+        row.update(prefix=pre, scope_labels=list(self.p_labels) if self.p_labels is not None else None, scope_types=list(self.p_scope))
+        return row
+
     def choice_factors(self, fr, n, popts, k, rel, joined, leaf, stop, key):
         """STEER_CHOICE: (exp(STEER_CHOICE_BETA * f) for each option of popts, the same for the stop) at node n, f from the model of
         STEER_CHOICE on the row that CHOICE_ROWS would write (P's shares unsteered). Cached per point by (key, phase, k, NOT, atom text)."""
@@ -1801,9 +1835,7 @@ class Drawer:
             got = ([1.0] * len(popts), 1.0)
             pre = None if self.rel_off else self.rel_prefix(fr, key, k)
             if pre is not None:
-                row = self.choice_row(k, n, popts, rel, joined, leaf, None, stop, key)
-                row.update(prefix=pre, scope_labels=list(self.p_labels) if self.p_labels is not None else None,
-                           scope_types=list(self.p_scope))
+                row = self.choice_consult_row(fr, n, popts, k, rel, joined, leaf, stop, key, pre)
                 c1 = time.process_time()
                 self.choice_stats['s_row'] += c1 - c0
                 if CHOICE_CHECK:  # debug: the rows that the steer scores, one JSON line each
@@ -2054,9 +2086,13 @@ class Drawer:
         rendered), else None where the clause cannot be closed."""
         if k <= 1:
             return []
+        if self.rel_text:
+            return list(self.p_text or ())
         if key not in self.rel_pre:
             pf = self.rel_closed(fr.root.dec, 1)
             self.rel_pre[key] = body_atoms(pf.split('\n')[self.rel_base]) if pf is not None else None
+            if pf is None and 'branch' in STEER_COVER and self.p_text is not None:  # the clause cannot close at a later branch's first atom
+                self.rel_pre[key] = list(self.p_text)
         return self.rel_pre[key]
 
     def rel_dag_fill(self, row, key):
@@ -2084,6 +2120,22 @@ class Drawer:
                     self.rel_dag_p[pre_bases, b] = dag_path(adj, pre_bases, b) if pre_bases else None
                 o['dag'] = dict(fields(b), base=b, method=o.get('name', '') != b, sibling=b in pre_bases, path=self.rel_dag_p[pre_bases, b])
 
+    def rel_row(self, fr, n, popts, k, scope_types, key, rel, joined, leaf, pre):
+        """The row that STEER_REL scores at an atom start of phase n.phase (prefix pre): the options with P's shares, and the DAG fields where the
+        model reads them. It is the row that REL_ROWS writes."""
+        c1 = time.process_time()
+        pj = self.joinable(n, popts, scope_types, key) if JOIN_P != 1 and k > 1 and n.phase == 'root' else None
+        pw = self.weights(n, popts, rel, joined, leaf, False, pj)
+        tot = sum(pw) or 1.0
+        self.rel_stats['s_weights'] += time.process_time() - c1
+        row = dict(k=k, phase=n.phase, scope=list(scope_types), prefix=pre, point_group=self.rel_pg,
+                   options=[self.option_info(x, round(w / tot, 6)) for x, w in zip(popts, pw)])
+        d0 = time.process_time()
+        if REL_CHECK or self.sink is not None or ('dag' in rel_scorer().groups if STEER_REL else False):  # the DAG fields, where the model reads them (or the check compares them)
+            self.rel_dag_fill(row, key)
+        self.rel_stats['s_dag'] += time.process_time() - d0  # includes s_dag_point, the graph's build; s_score leaves both out
+        return row
+
     def rel_factors(self, fr, n, popts, k, scope_types, key, rel, joined, leaf):
         """STEER_REL: exp(STEER_REL_BETA * f) for each option of popts at a root-phase atom start, f from the model of
         STEER_REL on the row that relrows would write (P's shares unsteered). Cached per point by (key, phase, k, scope)."""
@@ -2098,18 +2150,8 @@ class Drawer:
             c1 = time.process_time()
             self.rel_stats['s_prefix'] += c1 - c0
             if pre is not None:
-                pj = self.joinable(n, popts, scope_types, key) if JOIN_P != 1 and k > 1 and n.phase == 'root' else None
-                pw = self.weights(n, popts, rel, joined, leaf, False, pj)
-                tot = sum(pw) or 1.0
+                row = self.rel_row(fr, n, popts, k, scope_types, key, rel, joined, leaf, pre)
                 c2 = time.process_time()
-                self.rel_stats['s_weights'] += c2 - c1
-                row = dict(k=k, phase=n.phase, scope=list(scope_types), prefix=pre, point_group=self.rel_pg,
-                           options=[self.option_info(x, round(w / tot, 6)) for x, w in zip(popts, pw)])
-                d0 = time.process_time()
-                if REL_CHECK or 'dag' in rel_scorer().groups:  # the DAG fields, where the model reads them (or the check compares them)
-                    self.rel_dag_fill(row, key)
-                dt = time.process_time() - d0
-                self.rel_stats['s_dag'] += dt  # includes s_dag_point, the graph's build; s_score leaves both out
                 if REL_CHECK:  # debug: the rows that the steer scores, one JSON line each
                     with open(REL_CHECK, 'a') as f_:
                         f_.write(json.dumps(dict(row, id=self.rel_id)) + '\n')
@@ -2118,7 +2160,7 @@ class Drawer:
                     got = [math.exp(max(-20.0, min(20.0, STEER_REL_BETA * x))) for x in f]
                 except Exception as e:  # noqa: BLE001
                     print('STEER_REL: scoring failed: %s: %s' % (type(e).__name__, str(e)[:200]), file=sys.stderr, flush=True)
-                self.rel_stats['s_score'] += time.process_time() - c2 - dt
+                self.rel_stats['s_score'] += time.process_time() - c2
             if len(self.rel_cache) >= self.cache_cap:
                 self.rel_cache.clear()
             self.rel_cache[ck] = got
@@ -2180,6 +2222,10 @@ class Drawer:
                     i_ = opts.index(o) if o in opts else None  # gold's relation that the decoder does not allow here: q 0
                     ls = lambda v: None if i_ is None or v is None or not sum(v) or not v[i_] else round(math.log(v[i_] / sum(v)), 4)  # noqa: E731
                     self.gq_rel.append(dict(phase=n.phase, p=round(math.log(qp), 4) if qp else None, free0=ls(ws0), free=ls(ws), join0=ls(alt0), join=ls(alt)))
+                if self.sink is not None and self.force is not None:
+                    pre = self.rel_prefix(fr, key, k)
+                    if pre is not None:
+                        self.sink('rel', self.rel_row(fr, n, popts, k, scope_types, key, rel, joined, leaf, pre), self.V.name(o))
                 if self.relrows is not None and self.force is not None:
                     pw = self.weights(n, popts, rel, joined, leaf, False, pj)
                     tot = sum(pw) or 1.0
@@ -2202,7 +2248,7 @@ class Drawer:
                                           not self.force or fr.KIND[self.force[0]] != 'column')):
                     self.part('column stop', math.log(stop if popts else 1.0))
                     if popts:
-                        self.choice(k, n, popts, rel, joined, leaf, 'STOP', stop)
+                        self.choice(k, n, popts, rel, joined, leaf, 'STOP', stop, fr)
                     if coin_on:  # the stop does not depend on the coin
                         lj += math.log(stq if opts else 1.0)
                         lf += math.log(stq if opts else 1.0)
@@ -2261,7 +2307,7 @@ class Drawer:
             else:
                 return None, 'phase %s' % n.phase
             if n.phase not in ('root', 'root2'):
-                self.choice(k, n, popts, rel, joined, leaf, self.V.name(o), stop if n.phase == 'cols' and leaf else None)
+                self.choice(k, n, popts, rel, joined, leaf, self.V.name(o), stop if n.phase == 'cols' and leaf else None, fr)
             if n.phase in ('val', 'fval') and self.on_value is not None and self.force is not None:
                 self.on_value(k, fr, n, popts, self.V.name(o))
             lq += log0(q)

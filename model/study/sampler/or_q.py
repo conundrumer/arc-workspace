@@ -63,6 +63,9 @@ class Guide(search.Chooser):
         self.where = ''  # in an INIT, the body that the walk is in ('key ', 'port ' or 'outside '), in front of the names of its parts
         self.carets = set()  # in an INIT, the numbers of the key's labels that gold marks with a caret
         self.port = None  # in an INIT, gold's port that the walk is in: see look
+        self.rows = None  # with a list here, the rows that the steers score on gold's path: (kind, row) per consult, in walk order (see emit)
+        self.stop = None  # the stop row that waits for the coin of its atom
+        self.in_all = 0  # the ALLs being drawn
 
     def start(self, path):
         pass
@@ -152,6 +155,20 @@ class Guide(search.Chooser):
             n -= 1
         return False
 
+    def emit(self, dr, kind, row, gold):
+        """The sink of a Drawer: the row that a steer scores here, with gold's pick and where in the clause it is. A stop row waits for its coin."""
+        row.update(gold=gold, place=dr.place, where='ALL' if self.in_all else ('body', 'branch', 'nested')[min(len(self.levels), 2)])
+        if kind == 'stop':
+            self.stop = row
+        else:
+            self.rows.append((kind, row))
+
+    def stopped(self, gold):
+        """The coin of the stop after an atom: its row takes gold's side. A stop that a gate bars has no coin, and its row is dropped."""
+        if self.stop is not None:
+            self.rows.append(('choice', dict(self.stop, gold='STOP' if gold else 'GO')))
+            self.stop = None
+
     def add(self, name, p):
         b = bits(p)
         if b == math.inf:
@@ -205,6 +222,8 @@ class Guide(search.Chooser):
         elif 'random() < chance' in line:
             r = not self.more()
             name = 'top:stop'
+            if self.rows is not None:
+                self.stopped(r)
         elif 'ELSE_NEG' in line:
             self.neg_idx = None
             for i, a in enumerate(loc['first']):
@@ -469,7 +488,12 @@ class GuidedRun(search.SearchRun):
 
     def all_form(self, *args):
         """The ALL's second END is not taken by any call, so it goes here."""
-        got, g = super().all_form(*args), self.rng
+        g = self.rng
+        g.in_all += 1
+        try:
+            got = super().all_form(*args)
+        finally:
+            g.in_all -= 1
         if got is not None:
             if g.rest and g.rest[0] == M.END:
                 g.rest.popleft()
@@ -494,6 +518,8 @@ class GuidedRun(search.SearchRun):
         one path share, is the count of gold's tokens taken so far: each body of the walk has its own path, as in a search."""
         self.rng.hash = self.rng.total - len(self.rng.rest)
         dr, g = super().drawer(pg, kind, dec, place), self.rng
+        if g.rows is not None:
+            dr.sink = lambda k, row, gold: g.emit(dr, k, row, gold)
         if kind == 'INIT':
             if place == 'key':
                 g.where = 'key '
@@ -529,15 +555,23 @@ def gold_rest(sess, scope, target, kind='RULE'):
     return collections.deque(t for t, _ in toks[1:-1])
 
 
-def one(sampler, task, case, point, kind=None):
+def one(sampler, task, case, point, kind=None, rows=None):
     """The record of the point's walk. kind is that of gold's clause, from its text where None."""
     d, lines = G.gold_of(task, case, point)
     scope, target = lines[:point[0]], lines[point[0]]
-    kind = kind or target.split()[0].lstrip('(')
     sess, task_json, _ = live_try.session_of(task)
+    return walk(sampler, task, case, point, scope, target, sess, task_json, kind, rows)
+
+
+def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, rows=None, atoms=None):
+    """The record of the walk of the target clause over the scope forms on the session. With a list as rows, the rows that the steers score on
+    gold's path, (kind, row) for each consult, are added to it (the Drawers' sink; STEER_COVER decides where INIT bodies and later branches count).
+    atoms are the token lists of the target's atoms in another order, in place of the written one."""
+    kind = kind or target.split()[0].lstrip('(')
     run = GuidedRun(sampler.pri, sess, time.monotonic() + 120, task_json, live.Limits(form_tries=1))
     dec, pg = run.scope(scope)
-    g = run.rng = Guide(run, gold_rest(sess, scope, target, kind), kind)
+    g = run.rng = Guide(run, collections.deque(t for a in atoms for t in a) if atoms else gold_rest(sess, scope, target, kind), kind)
+    g.rows = rows
     dead = match = None
     try:
         f = run.form(pg, dec, kind)

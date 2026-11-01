@@ -14,6 +14,8 @@ These settings steer the proposal. Each takes a file in `sampler/models/`:
 
 `REL_ROWS=1` and `CHOICE_ROWS=1` write the rows those fits read. `ROW_ORDERS=n` writes them for n random valid atom orders per clause, and each row has `order`.
 
+`live_rows.py` writes the same rows from gold's walk through `live.py`, so a row exists wherever a draw consults a steer: the atoms of a RULE's or a DET's body, of an INIT's key and ports, of the branches of an OR (nested ones too) and of an ALL, and the stops after a body's atoms. Each row is the row that the steer scores, built by the Drawer's own function, with gold's pick, and has `where` and `place`. `STEER_COVER=init,branch` makes a draw consult the steers at an INIT's bodies and at the first atom of a later branch of an OR, which they leave alone otherwise; the rows are written under it. `relcheap.py` and `choicecheap.py` take `--exclude FILE` for tasks that no fit may read.
+
 ## Measure
 
 `GOLD_Q=1` gives gold's log q under the steered proposal, on gold's row in `draws.jsonl.zst`.

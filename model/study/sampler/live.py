@@ -51,7 +51,7 @@ The steers of S's proposal (README: Proposal) run on these draws, each from its 
 and Sampler's steers argument picks them; S's P settings that their fits had ('struct') go with them. A row's fields come from the
 program drawn so far. A RULE's point group takes its depth as 1 + the deepest clause so far (gold's RULE on dev has that depth in
 2961 of 3144 clauses, where 'RULE depth 3+' counts as one depth), and a relation's dag fields read the drawn forms. An INIT body has
-the tilt alone, as S's ports have.
+the tilt alone, as S's ports have, unless STEER_COVER has `init` (S's setting), when the steers score it on the text of its atoms as the prefix; with `branch`, the first atom of a later branch of an OR, where the clause cannot close, also has its prefix from the text of the atoms drawn.
 """
 import collections
 import copy
@@ -1004,7 +1004,8 @@ class Run:
         group = 'INIT port' if kind == 'INIT' else kind if kind == 'DET' else 'RULE depth %s' % (depth if depth < 3 else '3+')
         tab = (S.TILT_TABLE or {}).get(group)
         dr.tilt, dr.stop_tab = (tab['theta'], tab) if tab else (None, None)
-        dr.rel_closed, dr.rel_base, dr.rel_off = self.closed, len(pg.forms), kind == 'INIT'
+        init = kind == 'INIT'
+        dr.rel_closed, dr.rel_base, dr.rel_off, dr.rel_text = self.closed, len(pg.forms), init and 'init' not in S.STEER_COVER, init and 'init' in S.STEER_COVER  # an INIT body has no closed clause: its prefix is the text of its atoms
         dr.rel_pg, dr.row_pg = dict(point_group=group, depth=depth, d_out=None), dict(kind=kind)
         dr.rel_dag, dr.rel_stats, dr.choice_stats = (fields, adj), self.steer_stats['rel'], self.steer_stats['choice']
         dr.hist = collections.defaultdict(list)
@@ -1064,6 +1065,7 @@ class Run:
             if kind == 'INIT' and k == PORT_SHORT + 1 and self.rng.random() >= PORT_LONG:
                 raise Drop('body: no stop in %d atoms' % PORT_SHORT)
             dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
+            dr.p_text = tuple(text)
             dr.want = (set(keys) - set(toks) or set(keys)) if keys else dr.want  # a port reads each key
             ored = alled = None
             if dr.orc and self.rng.random() < self.p_or(dr.orc, k):
@@ -1337,6 +1339,7 @@ class Run:
         lim, c, free = self.lim, self.c, 0
         fr = dr.frontier(d, labs)
         dr.eq_share = EQ_BRANCH.get(dr.place, 0.0)
+        dr.p_text = tuple(outer) + dr.or_done + tuple(text)  # the prefix where the clause cannot close
         try:
             for n_try in range(lim.atom_tries + lim.cheap_tries):
                 if n_try - free >= lim.atom_tries:
@@ -1463,7 +1466,7 @@ class Run:
         hidden0, want, want_types = dr.fr.hidden, dr.want, dr.want_types
         dr.rel_closed = lambda x, ends: closed(x, ends + 1)  # one more END closes the OR
         all_made, reads, held, shown = set(), [], set(), set()
-        mirror0 = dr.mirror
+        mirror0, done0, dr.or_done = dr.mirror, dr.or_done, ()
         if not nested:
             self.lost, self.inner = frozenset(), []  # the label tokens that the ORs inside this one keep local, and their atoms' texts
         try:
@@ -1481,6 +1484,7 @@ class Run:
                 else:
                     return None
                 d, btoks, btext, made, read, bound = got
+                dr.or_done += tuple(btext)
                 reads.append({x for x, v in read.items() if v})
                 sep = M.END if b == nparts - 1 else ALSO_TOK
                 try:
@@ -1502,7 +1506,7 @@ class Run:
                 dr.fr.hidden = hidden0 | self.lost | frozenset(self.ff0.label_tok[i] for i in all_made - exported - shown if i in self.ff0.label_tok)
         finally:
             dr.rel_closed, dr.fr.hidden = closed, hidden0
-            dr.want, dr.want_types, dr.mirror = want, want_types, mirror0
+            dr.want, dr.want_types, dr.mirror, dr.or_done = want, want_types, mirror0, done0
         hide = frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
         atoms = [a for p in parts for a in p if not a.startswith('(OR ')]
         ctext = '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts)

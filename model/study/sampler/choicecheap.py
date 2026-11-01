@@ -15,6 +15,7 @@ bits per clause (the sum over its picks) and the bits the model saves per clause
 """
 import argparse
 import collections
+import json
 import os
 import pickle
 import random
@@ -65,7 +66,7 @@ class Data:
         self.start.append(self.start[-1] + len(ds))
         self.gold.append(toks.index(row['gold']))
         self.meta.append(dict(task=row['task'], phase=CF.phase_of(row), grp=(row.get('point_group') or {}).get('point_group'), k=row['k'],
-                              gold_stop=row['gold'] == 'STOP', clause='%s|%s|%s' % (row['task'], row['case'], row['point'])))
+                              where=row.get('where'), place=row.get('place'), kind=(row.get('point_group') or {}).get('kind'), gold_stop=row['gold'] == 'STOP', clause='%s|%s|%s' % (row['task'], row['case'], row['point'])))
         return True
 
     def finish(self, names=None, min_count=1):
@@ -94,9 +95,21 @@ class Data:
         return len(self.nopt)
 
 
+def n_lines(d):
+    """The rows in a run directory's choices file, from its frame index, else None."""
+    p = d if d.endswith('.zst') else os.path.join(d, 'choices.jsonl.zst')
+    try:
+        with open(p + '.idx.jsonl') as f:
+            next(f)
+            return sum(json.loads(x)['line_count'] for x in f if x.endswith('\n'))
+    except (OSError, StopIteration, ValueError):
+        return None
+
+
 def stream(dirs, fnames, label, max_rows=0):
     D = Data(fnames)
     t0, done = time.time(), 0
+    total = sum(n_lines(d) or 0 for d in dirs)
     for d in dirs:
         for r in rows_of(d):
             done += 1
@@ -104,7 +117,8 @@ def stream(dirs, fnames, label, max_rows=0):
                 break
             D.add(r)
             if done % 10000 == 0:
-                print('%s: %d rows, %.0f rows/s' % (label, done, done / (time.time() - t0)), flush=True)
+                rate = done / (time.time() - t0)
+                print('%s: %d rows, %.0f rows/s%s' % (label, done, rate, ', eta %.0fs' % ((total - done) / rate) if total > done else ''), flush=True)
     print('%s: %d picks in %.0fs' % (label, len(D.meta), time.time() - t0), flush=True)
     return D
 
@@ -188,6 +202,12 @@ def subsets(meta):
             ('stop, gold STOP', np.array([m['phase'] == 'stop' and m['gold_stop'] for m in meta]))]
     for g in GROUPS:
         out.append(('group ' + g, np.array([m['grp'] == g for m in meta])))
+    for kd in ('RULE', 'DET', 'INIT'):
+        out.append(('form ' + kd, np.array([m['kind'] == kd for m in meta])))
+    for w in ('body', 'branch', 'nested', 'ALL'):  # where in the clause, for rows that live_rows.py writes
+        out.append(('where ' + w, np.array([m['where'] == w for m in meta])))
+    for pl in ('key', 'port'):
+        out.append(('place ' + pl, np.array([m['place'] == pl for m in meta])))
     for k in (1, 2, 3):
         out.append(('k %d%s' % (k, '+' if k == 3 else ''), np.array([m['k'] >= k if k == 3 else m['k'] == k for m in meta])))
     d3 = np.array([m['grp'] == 'RULE depth 3+' for m in meta])
