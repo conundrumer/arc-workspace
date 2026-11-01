@@ -16,7 +16,7 @@ use crate::hash::{StableHash, StableHashMap};
 use crate::relations::{Relation, RelationPart, SharedRows};
 use crate::program::FactRelation;
 use crate::task::Task;
-use crate::terms::{Example, InternTable};
+use crate::terms::{Example, InternTable, TermId};
 
 /// What a result-cache entry evaluates: a form's resolved content, for a
 /// clause or a part of a body, the compiled clause of a body of a form
@@ -585,9 +585,11 @@ impl CacheState {
 }
 
 /// Whether `a` and `b` hold the same rows. Where their parts split the
-/// columns alike, the parts' rows are compared; otherwise each row of `a`
-/// is looked up in `b`'s parts. Immutable clone storage proves equality
-/// without visiting rows; part storage proves only its column-matched part.
+/// columns alike, the parts' rows are compared. Otherwise each part of one
+/// relation is compared with the projection of the other onto its columns,
+/// which reads only the parts of the other that hold those columns. Immutable
+/// clone storage proves equality without visiting rows; part storage proves
+/// only its column-matched part.
 pub fn same_rows(a: &Relation, b: &Relation) -> bool {
     if std::ptr::eq(a, b) || a.shares_storage(b) {
         return true;
@@ -608,15 +610,39 @@ pub fn same_rows(a: &Relation, b: &Relation) -> bool {
                 || part.rows.rows().all(|row| other.rows.contains(row)))
         });
     }
-    let mut same = true;
-    crate::eval::join::each_row(a, &mut |row| {
-        same = same
-            && b.parts().iter().all(|part| {
-                let projected: Vec<_> = part.columns.iter().map(|column| row[usize::from(column.0)]).collect();
-                part.rows.contains(&projected)
-            });
-    });
-    same
+    // Two sets of one size are equal where one holds the other, so one
+    // direction is enough, the one that reads fewer parts per row. `len`
+    // saturates, so a count at its top proves no size.
+    let (walked, looked) = if a.parts().len() >= b.parts().len() { (a, b) } else { (b, a) };
+    holds_rows(looked, walked) && (a.len() < u64::MAX || holds_rows(walked, looked))
+}
+
+/// Whether `holder`, a relation with a row, holds each row of `walked`, also
+/// with a row. A row stands in a product where its projection stands in each
+/// part, so each part reads only the parts of `walked` that hold its columns.
+fn holds_rows(holder: &Relation, walked: &Relation) -> bool {
+    /// Whether `part` holds each combination of a row of each of `sources`,
+    /// where `row` holds the columns of the sources before them.
+    fn projections_held(sources: &[&RelationPart], part: &RelationPart, row: &mut [TermId], projected: &mut [TermId]) -> bool {
+        let Some((source, rest)) = sources.split_first() else {
+            for (slot, column) in projected.iter_mut().zip(&part.columns) {
+                *slot = row[usize::from(column.0)];
+            }
+            return part.rows.contains(projected);
+        };
+        source.rows.rows().all(|source_row| {
+            for (column, &value) in source.columns.iter().zip(source_row) {
+                row[usize::from(column.0)] = value;
+            }
+            projections_held(rest, part, row, projected)
+        })
+    }
+    let mut row = vec![TermId::from_encoding(0); usize::from(walked.arity())];
+    holder.parts().iter().filter(|part| !part.columns.is_empty()).all(|part| {
+        let sources: Vec<&RelationPart> = walked.parts().iter().filter(|source| source.columns.iter().any(|column| part.columns.contains(column))).collect();
+        let mut projected = vec![TermId::from_encoding(0); part.columns.len()];
+        projections_held(&sources, part, &mut row, &mut projected)
+    })
 }
 
 /// The bytes of `relation`'s parts beside their rows.
