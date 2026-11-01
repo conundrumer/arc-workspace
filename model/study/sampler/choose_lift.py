@@ -6,19 +6,21 @@
 cover(ct, masks, new) reads the tables of a form end: the live Run lifts only at a form end whose cover is at least its choose_cover.
 
 key_facts(ct, masks) reads a RULE's table when its clause closes: for each key of columns under which a train or test entry has a value of several rows, the count of keys
-with several rows, of keys with one row (solo), over those entries, and of cells that a train pair wants and no row holds (empty, for a key of one cell column). The keys go in this order: one column,
-then more; no empty cell, then some; a cell column, then another; more solo keys first. A key whose rows leave no candidate column (every other column is a function of the
-key) is left out.
+with several rows, of keys with one row (solo), over those entries, of cells that a train pair wants and no row holds (empty, for a key of one cell column), and the bits (the sum of log2 of
+the rows of each key with several rows). The keys go in this order: one column, then more; no empty cell, then some; a cell column, then another; more solo keys first. A key whose rows leave no
+candidate column (every other column is a function of the key) is left out.
 
 lifts yields, for each CHOOSE that makes the program pass, the forms with the CHOOSE, (the index of the RULE, its key, the name of the `never` shape) and the Probe of
 the changed program. The CHOOSE stands after the RULE: `for` is the key (with the columns that the key decides, so the chosen relation holds every column of the RULE),
 `from` the RULE's rows, and every later form reads the chosen relation where it read the RULE. A program passes where its OUT test ends Consistent and every test input has
-an attempt. The RULEs go in order of their reads from OUT, the nearest first, and a RULE tries each key with each shape of `nevers` in its order (overlap, then cover, rival, line, exclusive; a shape that reads another
+an attempt. The pairs of a RULE and a key go in the order of the fewest key columns, the fewest columns that the key decides, a cell column first, and the fewest bits (the nearest RULE, then
+key_facts's order, where these tie), and a pair tries each shape of `nevers` in its order (overlap, then cover, rival, line, exclusive; a shape that reads another
 relation of the program once for each such relation, a pair of its columns for rival), then the overlap with each other shape, then all the shapes at once. Distinct attempts
 are yielded once, up to MAX_FOUND of them.
 """
 import collections
 import itertools
+import math
 import re
 
 import numpy as np
@@ -38,7 +40,7 @@ IDENT = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
 
 def key_facts(ct, masks=None):
     """(labels, types, keys) of the one new table of step_tables result ct, or None where it cannot be read. A key is (the column indexes, several, solo, empty, the column indexes
-    that its values decide), for the keys under which a train entry has a value of several rows, in the order that lifts tries them."""
+    that its values decide, the bits), for the keys under which a train entry has a value of several rows, in the order that lifts tries them."""
     try:
         labels, types, widths, at, entries = O.view(ct)
     except M.Fail:
@@ -86,7 +88,7 @@ def key_facts(ct, masks=None):
                 lost = sum(int(k) not in cells for k in range(900) if masks[ex][900][0][k])
                 best[ex] = min(best.get(ex, lost), lost)
             empty = sum(best.values())
-        out.append((cols, several, solo, empty, decided))
+        out.append((cols, several, solo, empty, decided, sum(math.log2(v) for c in per for v in c.values() if v > 1)))
     out.sort(key=lambda k: (len(k[0]) > 1, k[3] > 0, types[k[0][0]] not in CELLS, -k[2]))
     return labels, types, out
 
@@ -238,26 +240,26 @@ def lifts(session, forms, tables, deadline=None, tally=None):
         return
     base = O.probe(session, forms, False, True)
     found = []
-    for i, (labels, types, keys) in todo:
-        for cols, _, _, _, decided in keys:
-            shapes = nevers(forms, i, tables, list(cols), list(decided))
-            first = {s: t for s, t in reversed(shapes)}  # the first never of each shape
-            tries = [(s, [t]) for s, t in shapes] + [('overlap+' + s, [first['overlap'], t]) for s, t in first.items() if s != 'overlap'] + ([('all', list(first.values()))] if len(first) > 2 else [])
-            for shape, texts in tries:
-                if deadline is not None and time.monotonic() >= deadline:
+    pairs = sorted(((i, got, key) for i, got in todo for key in got[2]), key=lambda p: (len(p[2][0]), len(p[2][4]), p[1][1][p[2][0][0]] not in CELLS, p[2][5]))
+    for i, (labels, _, _), (cols, _, _, _, decided, _) in pairs:
+        shapes = nevers(forms, i, tables, list(cols), list(decided))
+        first = {s: t for s, t in reversed(shapes)}  # the first never of each shape
+        tries = [(s, [t]) for s, t in shapes] + [('overlap+' + s, [first['overlap'], t]) for s, t in first.items() if s != 'overlap'] + ([('all', list(first.values()))] if len(first) > 2 else [])
+        for shape, texts in tries:
+            if deadline is not None and time.monotonic() >= deadline:
+                return
+            text, new = choose(forms, i, tables, list(cols), list(decided), texts)
+            changed = lifted(forms, i, text, new)
+            try:
+                got = O.probe(session, changed, base=base, at=i + 1)
+            except ValueError:  # the text does not type
+                got = O.Probe(kind='Ill-typed')
+            if tally is not None:
+                tally[shape + ' ' + got.kind] += 1
+            if got.kind == 'Stopped':  # the other shapes of this key read the same table, and stop too
+                break
+            if O.passes(got) and got.attempts != base.attempts and got.attempts not in found:
+                found.append(got.attempts)
+                yield changed, (i, tuple(labels[c] for c in cols), shape), got
+                if len(found) >= MAX_FOUND:
                     return
-                text, new = choose(forms, i, tables, list(cols), list(decided), texts)
-                changed = lifted(forms, i, text, new)
-                try:
-                    got = O.probe(session, changed, base=base, at=i + 1)
-                except ValueError:  # the text does not type
-                    got = O.Probe(kind='Ill-typed')
-                if tally is not None:
-                    tally[shape + ' ' + got.kind] += 1
-                if got.kind == 'Stopped':  # the other shapes of this key read the same table, and stop too
-                    break
-                if O.passes(got) and got.attempts != base.attempts and got.attempts not in found:
-                    found.append(got.attempts)
-                    yield changed, (i, tuple(labels[c] for c in cols), shape), got
-                    if len(found) >= MAX_FOUND:
-                        return
