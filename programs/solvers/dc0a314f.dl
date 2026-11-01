@@ -146,8 +146,30 @@ block.cell([P, Q], P), block.cell([P, Q], Q) :-
     in(P, _), diag_dir_elem(D), neighbor(P, D, Q), in(Q, _).
 
 // Each cell, and each 2x2 block.
-frame_at($CenterFound(), B) :- in(B, _).
-frame_at($CenterFound(), B) :- block.box(_, B).
+.decl center_cand(b: Box)
+center_cand(B) :- in(B, _).
+center_cand(B) :- block.box(_, B).
+
+// The cells a first test reads: the covered cells, and the uncovered cells
+// beside them.
+.decl probe(p: Position)
+probe(P) :- covered(P).
+probe(P) :- uncovered(P, _), dir_elem(D), neighbor(P, D, Q), covered(Q).
+
+.decl probe_image(b: Box, d: D4, p: Position, p2: Position)
+probe_image(B, D, P, P2) :-
+    center_cand(B), d4_elem(D), probe(P),
+    relative(B, P, Q), apply(D, Q, Q2), compose(B, Q2, P2),
+    in(P2, _).
+
+.decl probe_clash(b: Box, d: D4)
+probe_clash(B, D) :-
+    probe_image(B, D, P, P2), uncovered(P, Col), uncovered(P2, Col2), Col != Col2.
+
+// A center has an element that takes a covered cell onto an uncovered one and
+// that no two uncovered cells contradict.
+frame_at($CenterFound(), B) :-
+    probe_image(B, D, P, P2), covered(P), uncovered(P2, _), !probe_clash(B, D).
 
 // --- concept, $GroupPerInput, $CenterStored, $CenterFound, $WholeBlockImage, $ImageMajority ---
 // P2 is the image of P under D about the center of square B.
