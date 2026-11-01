@@ -129,7 +129,7 @@ A solver that stores data a task states in a frame of its own keeps it in a Souf
 - It closes a stored shape over D4 or C4 by hand, lists one row of a table per orientation the observed data shows, or searches C4 by hand, because the instances stand in several orientations.
 - It stores a stamp and the direction attached to it separately, though every instance in the observed data has one pose. The block makes the two one assembly.
 
-A solver that finds its template in the input it runs on stores no shape in a frame. In the solvers that hold a block, a restriction to a subgroup of D4 is a narrowing against the training poses: 4522001f keeps the rotations, and ad38a9d0 holds an open choice among `SYM_1`, `SYM_C4` and `SYM_D4`.
+A solver that finds its template in the input it runs on stores no shape in a frame.
 
 Values that look posed and are not:
 
