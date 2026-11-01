@@ -96,6 +96,8 @@ KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of
 EXAMPLE_READ = dict(DET=0.2, INIT=0.03)  # the factor on a declared relation's Example column in a body of the kind: gold's atoms on declared relations read it in 32% of DETs' and 3.9% of INITs'; draws read it in 41% and 8% at these factors
 EQ_FRESH = 0.14  # the chance that the first operand of `=` is a fresh label: 99 of 685 gold `=` atoms
 EQ_BRANCH = dict(RULE=0.5, DET=0.28, key=0.12, port=0.5)  # the share of `=` among the atoms drawn in an OR's branch, by place. The priors count the atoms outside an OR alone (`=`: 10 of 20539 RULE atoms; inside branches, 452 of 5577). Most draws of `=` fail for want of a second operand, so RULE's is the share at which draws make `=` at gold's 1.8% of RULE atoms; the others keep its ratio to gold's branch shares (8.1%, 4.5%, 2.0%, 7.9%)
+ELSE_NEG = 0.13  # the chance that a later branch opens with the else negation (negation_of): 204 of 1624 gold later branches open with a NOT that it can draw. 780 hold a NOT of a relation that the first branch holds, which the atom draws make
+MIRROR_NOT = 0.88  # the share of the relations under a NOT in a later branch that the earlier branches of the OR hold: 914 of 1042 gold NOT atoms of declared relations in later branches of RULEs
 FIELD_AGAIN = 0.01  # the factor on a field that a record site repeats: 15 of 1570 gold record sites have one
 HEAD_FITS = dict(Position={'Position', 'Box'}, Offset={'Offset', 'Box'}, Axis={'Axis', 'Axis4'}, DiagAxis={'DiagAxis', 'Axis4'}, Dir={'Dir', 'Dir8'}, DiagDir={'DiagDir', 'Dir8'},
                  Point={'Position', 'Offset', 'Box'})  # the label types that a head column of a type takes, where a family's other members do not: the engine's lattice has no value in both of two siblings
@@ -282,7 +284,7 @@ def opposite(atom):
 
 def or_counts(cc):
     """What a draw of an OR reads of the compound counts cc (S.compound_counts): a body's chance of one, the part counts, the stop
-    hazard of a branch, the chance that a later branch opens with a negation and the chance that an atom follows the OR."""
+    hazard of a branch and the chance that an atom follows the OR."""
     shapes = {x[1]: v for x, v in cc.items() if x[0] == 'shape'}
     lens = {x[1]: v for x, v in cc.items() if x[0] == 'blen'}
     both = lambda name: {k: cc[(name, False, k)] + cc[(name, True, k)] for k in {x[2] for x in cc if x[0] == name}}  # noqa: E731
@@ -290,7 +292,7 @@ def or_counts(cc):
     return dict(comp=comp, reach=both('reach'), share=sum(v for k, v in shapes.items() if k.startswith('OR')) / sum(shapes.values()),
                 shapes=[(int(k[2:]), v) for k, v in shapes.items() if k.startswith('OR') and v > 0],
                 hazard={j: (lens.get(j, 0) + 0.5) / (sum(v for n, v in lens.items() if n >= j) + 1.0) for j in lens},
-                neg1=(cc[('neg1',)] + 0.5) / (cc[('later',)] + 1.0), after=(cc[('after',)] + 0.5) / (sum(comp.values()) + 1.0))
+                after=(cc[('after',)] + 0.5) / (sum(comp.values()) + 1.0))
 
 
 def set_steers(models_dir, on):
@@ -363,6 +365,7 @@ class LiveDrawer(S.Drawer):
     labs_wanted = 0  # the count of labels of the clause at which a port's body has as many as its head takes
     example_read = 1.0  # the factor on the weight of a declared relation's Example column
     eq_share = 0.0  # the share of `=` among the atoms drawn now: nonzero inside an OR's branch, where `=` binds a label that the branches share
+    mirror = frozenset()  # the relation tokens that the earlier branches of the OR being drawn hold
 
     def __init__(self, V, counts, rng, regcols, fr, regtypes, limits):
         super().__init__(V, counts, rng, regcols, fr, regtypes)
@@ -372,6 +375,8 @@ class LiveDrawer(S.Drawer):
         """S's, with the field that a record site repeats at gold's share, and a declared relation's Example column, which S's column
         weights take for the first column, at example_read."""
         ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
+        if steer and self.mirror and n.phase == 'root2':
+            ws = self.mirrored(os, ws, MIRROR_NOT)
         if n.phase == 'root' and self.eq_share and M.CMP[0] in os:  # the priors count the atoms outside an OR alone, and `=` is rare there
             rest = sum(w for o, w in zip(os, ws) if o != M.CMP[0])
             return [rest * self.eq_share / (1 - self.eq_share) if o == M.CMP[0] else w for o, w in zip(os, ws)]
@@ -383,6 +388,16 @@ class LiveDrawer(S.Drawer):
         if n.phase == 'cols':
             return [w * self.example_read if self.example_column(n, o) else w for o, w in zip(os, ws)]
         return ws
+
+    def mirrored(self, os, ws, share):
+        """ws with the weights of the options in mirror raised, where their share of the total is below share, to that share."""
+        into = [o in self.mirror for o in os]
+        a = sum(w for w, m in zip(ws, into) if m)
+        b = sum(ws) - a
+        if not 0 < a < a + b or a >= share * (a + b):
+            return ws
+        f = share / (1 - share) * b / a
+        return [w * f if m else w for w, m in zip(ws, into)]
 
     def example_column(self, n, o):
         """Whether column token o at cols node n is a declared relation's Example column: colmap has the relation's other columns."""
@@ -1209,7 +1224,7 @@ class Run:
         strict = dr.place != 'key'
         toks, text, made, read, bound, types = [], [], [], collections.Counter(), set(), {}
         start = 1
-        if later and first and self.rng.random() < dr.orc['neg1']:  # the else branch: NOT of a first-branch atom
+        if later and first and self.rng.random() < ELSE_NEG:  # the else branch: NOT of a first-branch atom
             got = self.negated(d, first[self.rng.randrange(len(first))], local)
             if got is not None:
                 d, ntoks, ntext = got
@@ -1265,8 +1280,9 @@ class Run:
                 return None, 'unbound'
             soft = None if named and not unread else S.P_UNREAD_LOCAL if named else S.P_UNNAMED if not unread else 0.0
             nest_next = False
-            if self.rng.random() < stop and (soft is None or self.rng.random() < soft):
-                if nest_due and nest is None and j < self.lim.branch_atoms:
+            opens = nest_due and nest is None and j < self.lim.branch_atoms  # the OR inside binds and reads labels too, so the branch needs no close before it
+            if self.rng.random() < (stop if soft is None or opens else stop * soft):
+                if opens:
                     nest_due = nest_next = True
                     continue
                 self.c['or:soft close'] += soft is not None
@@ -1288,11 +1304,13 @@ class Run:
         closed = dr.rel_closed
         hidden0, want, want_types = dr.fr.hidden, dr.want, dr.want_types
         dr.rel_closed = lambda x, ends: closed(x, ends + 1)  # one more END closes the OR
-        all_made, reads = set(), []
+        all_made, reads, held = set(), [], set()
+        mirror0 = dr.mirror
         if not nested:
             self.lost, self.inner = frozenset(), []  # the label tokens that the ORs inside this one keep local, and their atoms' texts
         try:
             for b in range(nparts):
+                dr.mirror = frozenset(held) if dr.place in ('RULE', 'DET') else frozenset()  # gold's rate is counted over RULEs
                 for attempt in range(S.BRANCH_TRIES if b else 1):
                     if attempt:
                         c['or:branch retry'] += 1
@@ -1314,6 +1332,7 @@ class Run:
                     c['or:fail close'] += 1
                     return None
                 ctoks += btoks + [sep]
+                held |= {t for t in btoks if self.V.kind(t) in S.RELATION_KINDS}
                 parts.append(btext)
                 all_made |= set(made)
                 if b:
@@ -1324,7 +1343,7 @@ class Run:
                 dr.fr.hidden = hidden0 | self.lost | frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
         finally:
             dr.rel_closed, dr.fr.hidden = closed, hidden0
-            dr.want, dr.want_types = want, want_types
+            dr.want, dr.want_types, dr.mirror = want, want_types, mirror0
         hide = frozenset(self.ff0.label_tok[i] for i in all_made - exported if i in self.ff0.label_tok)
         atoms = [a for p in parts for a in p if not a.startswith('(OR ')]
         ctext = '(OR %s)' % ' '.join('(%s)' % ' '.join(p) for p in parts)
