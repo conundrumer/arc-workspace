@@ -386,7 +386,7 @@ class LiveDrawer(S.Drawer):
             return [w * FIELD_AGAIN if self.fr.colpos.get(o) == n.need else w for o, w in zip(os, ws)]
         if n.phase == 'op' and M.STAR in os:  # S's weights give a fresh label no weight; here it has gold's share of the first operand of `=`
             rest = sum(w for o, w in zip(os, ws) if o != M.STAR)
-            return [rest * EQ_FRESH / (1 - EQ_FRESH) if o == M.STAR else w for o, w in zip(os, ws)]
+            return [(rest * EQ_FRESH / (1 - EQ_FRESH) if rest else 1.0) if o == M.STAR else w for o, w in zip(os, ws)]  # with no label to read, a fresh label is the only operand
         if n.phase == 'cols':
             return [w * self.example_read if self.example_column(n, o) else w for o, w in zip(os, ws)]
         return ws
