@@ -56,7 +56,9 @@ the tilt alone, as S's ports have, unless STEER_COVER has `init` (S's setting), 
 import collections
 import copy
 import dataclasses
+import functools
 import gc
+import gzip
 import itertools
 import json
 import math
@@ -105,6 +107,9 @@ HEAD_FITS = dict(Position={'Position', 'Box'}, Offset={'Offset', 'Box'}, Axis={'
 NEED_BOOST = 4.0  # a port's boost for the types its head needs, as S's at the clause that OUT reads
 KIND_BACKOFF = 2.0  # the weight of the walk counts over all states, against those of the program's state
 GRID_RULES = 'malformed', 'equals input', 'same size', 'fixed size', 'size ratio', 'colors'  # Gate.holds reads these
+GATE_RECORDS = os.environ.get('GATE_RECORDS', '')  # a run folder: each form at the gate gets a record there (GateRecords); empty writes none
+GATE_RECORD_TASK = os.environ.get('GATE_RECORD_TASK', 'task')  # the task id of this process's records
+GATE_RECORD_BYTES = 64 << 20  # a task's records stop at this size
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 DEADLINE_SHARE = 0.9  # a request that took this share of the session's deadline ran to it
@@ -311,6 +316,33 @@ def set_steers(models_dir, on):
         S.rel_scorer()
     if S.STEER_CHOICE:
         S.choice_scorer()
+
+
+class GateRecords:
+    """The records of a task's forms at the gate: one line per form in `<dir>/gate-records/<task>.jsonl.gz`, or with this process's id in the name where
+    that file exists. Each line is its own gzip member, so a stopped run keeps its lines. Past GATE_RECORD_BYTES a last line says so and the rest go unwritten."""
+
+    def __init__(self, folder, task):
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, task + '.jsonl.gz')
+        self.f = open(os.path.join(folder, '%s.%d.jsonl.gz' % (task, os.getpid())) if os.path.exists(path) else path, 'ab')
+        self.seen, self.size, self.capped = 0, 0, False
+
+    def write(self, record):
+        self.seen += 1
+        if self.capped:
+            return
+        data = gzip.compress((json.dumps(record) + '\n').encode())
+        self.size += len(data)
+        if self.size >= GATE_RECORD_BYTES:
+            self.capped, data = True, gzip.compress((json.dumps(dict(capped=True, seen=self.seen)) + '\n').encode())
+        self.f.write(data)
+        self.f.flush()
+
+
+@functools.cache
+def records():
+    return GateRecords(os.path.join(GATE_RECORDS, 'gate-records'), GATE_RECORD_TASK)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1581,10 +1613,12 @@ class Run:
         self.stopped = self.stopped or kind == 'Stopped'
         if not f.ended:
             return
-        broken = self.gate.refused(f.attempts())
+        attempts = f.attempts()
+        broken = self.gate.refused(attempts)
         self.c.update('refused:' + r for r in broken)
         if GATE_RULES.intersection(broken):
             self.c['refused'] += 1
+            self.gate_record(f, attempts, broken, None, 'refused:' + next(r for r in broken if r in GATE_RULES), label)
             return
         got = self.gate.leave_one_out(f.program_form())
         self.c.update('loo:' + r for r in got)
@@ -1592,10 +1626,18 @@ class Run:
         if got and 'pass' not in got:
             self.c['refused'] += 1
             self.c['refused:loo'] += 1
+            self.gate_record(f, attempts, broken, got, 'refused:loo', label)
             return
+        self.gate_record(f, attempts, broken, got, 'passed', label)
         self.c['consistent'] += 1
         self.c['consistent:' + label] += 1
         yield f
+
+    def gate_record(self, f, attempts, broken, loo, decision, label):
+        """Writes the gate's record of the form that decoder f ended, where GATE_RECORDS is set. No decision reads it."""
+        if GATE_RECORDS:
+            records().write(dict(task=GATE_RECORD_TASK, train_pairs=len(self.gate.task['train']), label=label, form=f.program_form(), attempts=attempts,
+                                 broken=list(broken), loo=loo, decision=decision))
 
     def candidate(self, dec, toks, label):
         """The clause of tokens toks at dec, then OUT over its relation."""
