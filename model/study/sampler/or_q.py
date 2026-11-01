@@ -191,6 +191,9 @@ class Guide(search.Chooser):
         elif "orc['after']" in line:  # the code reads `random() >= after`, which is a stop where the coin is False
             r = self.more()
             name = 'or:after'
+        elif "pri['det']['proposer']" in line:
+            r = bool(self.rest) and self.run.V.name(self.rest[0]) in self.run.pri['proposers']
+            name = 'proposer or atoms'
         elif 'random() < chance' in line:
             r = not self.more()
             name = 'top:stop'
@@ -261,7 +264,7 @@ class Guide(search.Chooser):
         return r
 
     def choices(self, population, weights=None, k=1):
-        """The count of an OR's branches; in an INIT also the component, the key's count of labels and a head column's count of labels."""
+        """The count of an OR's branches; in a DET the proposer; in an INIT also the component, the key's count of labels and a head column's count of labels."""
         fr = sys._getframe(2)
         who, line = fr.f_code.co_name, linecache.getline(fr.f_code.co_filename, fr.f_lineno).strip()
         population = list(population)
@@ -274,6 +277,12 @@ class Guide(search.Chooser):
                 self.bad.append('%s %d not in the shapes' % (name, n))
                 return [population[0]]
             self.levels.append(0)
+        elif who == 'det':
+            n = self.run.V.name(self.rest[0]) if self.rest else None
+            name = 'proposer'
+            if n not in population:
+                self.stuck('proposer %s is not among those that the walk draws' % n)
+            self.rest.popleft()
         elif who == 'init' and 'comp = self.pick' in line:
             n = self.run.V.name(self.rest[0]) if self.rest else None
             name = 'component'
