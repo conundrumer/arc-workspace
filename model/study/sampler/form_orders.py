@@ -10,7 +10,8 @@ These keep their places: a form's ports and key group, a port's head, and an ALL
 An order is one permutation of each set. A label's mark (`*` or `^`) goes on its first occurrence in the order, as in the decoder's tokens. An
 order is valid here where a NOT or a comparison comes after the labels it reads, a `=` of two labels comes after one of them (it makes the other), and an
 ALL comes after the labels it shares with the rest of the form. No label's mark is read from the text, so no written order is read. The rest of validity
-is the caller's walk: the decoder's checks, and a chance above 0 at each choice.
+is the caller's walk: the decoder's checks, and a chance above 0 at each choice. The two labels of a `=` or a `!=` stand in name order in the form, since no
+result reads their written order.
 
 Two orders of a form with like atoms can give one token stream, which is one path of the proposal. A path counts once: `Form.path` is its key and
 `Form.multiplicity` is how many orders give it.
@@ -117,6 +118,8 @@ def body(atoms, place):
 
 
 def item(a, place):
+    if isinstance(a, list) and len(a) == 3 and a[0] in SYMMETRIC and all(LABEL.match(x) for x in a[1:]):  # no written order of the operands is read
+        a = [a[0], *sorted(a[1:], key=lambda x: LABEL.match(x)[2])]
     if isinstance(a, list) and a and a[0] == 'OR':
         return Node(in_canonical_order([body(b, place + ' branch') for b in a[1:]]), True, lambda xs: ['OR', *xs], place=place, or_form=True)
     if isinstance(a, list) and len(a) == 3 and a[0] == 'ALL':
@@ -606,7 +609,7 @@ def sum_orders(form, walk, check=None, cap=256, budget=256, seconds=None, seed=0
     t0, rng = time.monotonic(), random.Random(seed)
     memo, paths, walks = {}, {}, []
     written = walk(form.text0)
-    if form.written is not None:
+    if form.written is not None and form.text(form.written) == form.text0:
         memo[form.path(form.written)] = written
 
     def visit(order):
