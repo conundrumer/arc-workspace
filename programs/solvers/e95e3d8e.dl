@@ -4,16 +4,15 @@
 // @scene periodic-tiling: the input is a tile repeated on both axes, with some cells covered by holes; on each axis the cells outside the holes repeat with one period, the least such period, and the period differs from input to input.
 // @scene hole-patches: the holes are solid rectangles of `hole_color`, and `hole_color` appears nowhere in the tile.
 // @scene every-residue-visible: each cell of the tile, by its row and column residue under the periods, shows outside the holes somewhere in the input.
-// @rule fill-from-period: each hole cell takes the color that the generator's tile has at that cell's place; every other cell keeps its color.
-//     @approximated: each hole cell takes the color of an uncovered cell in the same row residue and the same column residue under the periods, each the least shift on its axis that no pair of uncovered cells contradicts; every other cell keeps its color.
-//     @witness hidden-tile-color: borderline other
+// @rule fill-from-period: each hole cell takes the color of an uncovered cell in the same row residue and the same column residue under the periods, each the least shift on its axis such that no pair of uncovered cells contradicts any multiple of it; every other cell keeps its color.
 
 // how each axis's period is found
 .type PeriodShape =
     // @claim periodic-tiling
     AxisPeriods {}
-    // @scene periodic-tiling: one period that both axes share, the least shift that no pair of uncovered cells contradicts on either axis.
+    // @scene periodic-tiling: one period that both axes share, the least shift such that no pair of uncovered cells contradicts any multiple of it on either axis.
     // @witness unequal-periods: variant concept
+    // @witness hidden-period-evidence: borderline concept
   | SquarePeriod {}
 
 // which cells a hole cell takes its color from
@@ -30,7 +29,7 @@
     // @claim fill-from-period
     OneColor {}
     // @rule fill-from-period: the hole cell takes the commonest color among its class's uncovered cells; undefined on a tie.
-    // @witness hidden-period-evidence: borderline other
+    // @witness stray-cell: borderline $ModalClass
     //     @relaxed periodic-tiling
   | ModalClass {}
 
@@ -48,6 +47,7 @@
 
 // The periods read with one hole color.
 .type PeriodKey = [s: PeriodShape, c: Color]
+.type AxisColor = [a: Axis, c: Color]
 .type Cell = [f: FillSource, k: PeriodKey, p: Position]
 .type Residue = [a: Axis, r: number]
 
@@ -88,6 +88,10 @@ intact(C, P, Col) :- hole_cand(C), in(P, Col), Col != C.
 .init si = OffsetInvariance<Color, Color>
 si.cell(C, P, Col) :- intact(C, P, Col).
 
+// Some uncovered pair contradicts a multiple of the shift n.
+.decl refuted(c: Color, a: Axis, n: number)
+refuted(C, A, N) :- si.mismatch(C, A, K), si.cand(C, A, N, _), stride(K, N, 0, _, 0).
+
 // Each axis's period under each period shape and hole color.
 .decl period(k: PeriodKey, a: Axis, n: number)
 
@@ -119,13 +123,18 @@ lacks([S, F, G, H], P, Col) :-
 out(P, Col, Ch) :- fill(Ch, _, P, Col), !lacks(Ch, P, Col).
 
 // --- $AxisPeriods ---
-period([$AxisPeriods(), C], A, N) :- si.min_period(C, A, N).
+// The shifts on each axis that some uncovered pair witnesses and no uncovered pair refutes.
+// @claim periodic-tiling
+.init least = Extremes<AxisColor>
+least.cand([A, C], K) :- si.pair(C, A, K, _, _), !refuted(C, A, K).
+
+period([$AxisPeriods(), C], A, N) :- least.low([A, C], N).
 
 // --- $SquarePeriod ---
-// The shifts some uncovered pair witnesses and no uncovered pair contradicts on either axis.
+// The shifts some uncovered pair witnesses and no uncovered pair refutes on either axis.
 // @claim periodic-tiling
 .init square = Extremes<Color>
-square.cand(C, K) :- si.pair(C, _, K, _, _), !si.mismatch(C, _, K).
+square.cand(C, K) :- si.pair(C, _, K, _, _), !refuted(C, _, K).
 
 period([$SquarePeriod(), C], A, K) :- square.low(C, K), axis_elem(A).
 

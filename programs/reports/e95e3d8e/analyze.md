@@ -2,21 +2,21 @@
 
 ## Concept
 - The concept fits every pair. Its per-axis periods are 5, 3, 7 and 8 on train0, train1, train2 and test0, and on each pair the filled grid is the expected output.
-- As the generator applies it, the rule is this: each hole cell takes the color that the generator's tile has at that cell's place. The concept's period, the least shift on each axis that no pair of surviving cells contradicts, approximates the tile's period. That approximation is wrong where the holes hide every cell that shows the true period.
-    - `hidden-tile-color`: a 3-by-3 hole covers every cell of color 4 in a 5-by-5 wallpaper with period 2. Every case fills the hole with 3. Plausibility `borderline`, verdict `other`. It breaks the invariant of the inputs that each tile color shows outside the holes. It breaks no scene claim, because under the period 1 that the concept finds, every class shows.
+- Each axis's period is the least shift such that no pair of surviving cells contradicts any multiple of it. The fill then comes from cells of the input. On each pair, every output color shows in the input.
 - On 3000 random 22-by-22 inputs built like the pairs (one diagonal-symmetric square tile with period 3 to 8, and 2 to 5 rectangular holes up to 6 by 6), the concept gave the uncovered tiling every time. On those inputs `$IsometryOrbits` and `$ModalClass` never parted from the concept.
 
 ## Choice points
 - `counterpart-kind`
     - `concept`: the hole cell takes its color from the cells that the periods relate to it. Each point below exists only with this branch.
         - `period-source`
-            - `concept`: each axis's period is derived on each input, as the least shift that no pair of surviving cells contradicts.
+            - `concept`: each axis's period is derived on each input, as the least shift such that no pair of surviving cells contradicts any multiple of it.
             - `$StoredPeriod`: replaces `periodic-tiling`'s per-input period with stored parameters `period_v` and `period_h`. It fails Fit at train1, because train0 needs 5 and train1 needs 3.
             - `periods=Period`: derives each axis's period from the whole input, with the holes counted as content. On every input the holes contradict each shorter shift, so it gives 22 (21 on train2), and each hole cell's class holds no surviving cell. It fails Fit at train0.
         - `period-shape`
             - `concept`: each axis has its own period.
-            - `$SquarePeriod` (29ec7d0e): replaces `periodic-tiling` with one period that both axes share, which is the least shift that no surviving pair contradicts on either axis. It is undefined where a hole cell's class under that period holds no surviving cell, or holds two colors. It fits every pair.
+            - `$SquarePeriod` (29ec7d0e): replaces `periodic-tiling` with one period that both axes share, which is the least shift such that no surviving pair contradicts any multiple of it on either axis. It is undefined where a hole cell's class under that period holds no surviving cell, or holds two colors. It fits every pair.
                 - Witness `unequal-periods`, at the stored assignment, breaks no scene claim. Plausibility `variant`, verdict `concept`. It breaks these invariants of the inputs: every tile is square, and every grid is 22 by 22. `$SquarePeriod` is defined on it and copies 1 into (0,2), where the concept restores 2.
+                - Witness `hidden-period-evidence`, at the stored assignment, breaks no scene claim. Plausibility `borderline`, verdict `concept`. It breaks these invariants of the inputs: the holes cover a small part of a 22-by-22 grid, they leave the evidence of each period visible at the period itself, and every tile is square. The pair (1,1) and (7,1) contradicts the shift 6, so the concept takes periods 4 and 2 and restores the tile. `$SquarePeriod` takes 4 on both axes and is undefined.
         - `fill-source`
             - `concept`: the cells of the hole cell's period class.
             - `$IsometryOrbits` (0dfd9992): adds the claim that the period classes merge under each D4 transform, with a translation modulo the periods, that some pair of surviving classes witnesses and none contradicts. On every input of this task, the one such transform is the main-diagonal reflection. It is undefined where a hole cell's orbit holds no surviving cell, or holds two colors. It fits every pair.
@@ -25,7 +25,7 @@
         - `class-agreement`
             - `concept`: the class's surviving cells share one color, and the concept is undefined otherwise.
             - `$ModalClass` (135a2760): the hole cell takes the commonest color among its class's surviving cells, and the model is undefined on a tie. It fits every pair.
-                - Witness `hidden-period-evidence`, at the stored assignment, breaks `periodic-tiling`: under the least uncontradicted shifts (2 and 2), one class holds both 1 and 4. Plausibility `borderline`, verdict `other`. It breaks these invariants of the inputs: the holes cover a small part of a 22-by-22 grid, and they leave the evidence of each period visible. The concept is undefined on it, `$ModalClass` fills 4, and the tile's period is 4 rows.
+                - Witness `stray-cell`, at the stored assignment, breaks `periodic-tiling`: one uncovered cell holds 5 in a period class whose other uncovered cells hold 4. Plausibility `borderline`, verdict `$ModalClass`. It breaks these invariants of the inputs: every class holds one color, and the holes are at least 2 cells wide. The concept is undefined on it, and `$ModalClass` fills 4.
     - `$DiagonalMirror`: replaces `fill-from-period` so that the hole cell takes the color of its mirror cell across the main diagonal, with no period. It fails Fit at train0: (1,1) and (2,2) are holes, and each is its own mirror.
 - `hole-color-source`
     - `concept`: `hole_color` is stored as 0.
