@@ -8,8 +8,8 @@ These keep their places: a form's ports and key group, a port's head, and an ALL
 (an IF) is one item, and its inside keeps its text.
 
 An order is one permutation of each set. A label's mark (`*` or `^`) goes on its first occurrence in the order, as in the decoder's tokens. An
-order is valid here where a NOT or a comparison comes after the labels it reads and doesn't mark, and an ALL comes after the labels it shares with
-the rest of the form. The rest of validity is the caller's walk: the decoder's checks, and a chance above 0 at each choice.
+order is valid here where a NOT or a comparison comes after the labels it reads, a `=` of two labels comes after one of them (it makes the other), and an
+ALL comes after the labels it shares with the rest of the form. No label's mark is read from the text, so no written order is read. The rest of validity is the caller's walk: the decoder's checks, and a chance above 0 at each choice.
 
 Two orders of a form with like atoms can give one token stream, which is one path of the proposal. A path counts once: `Form.path` is its key and
 `Form.multiplicity` is how many orders give it.
@@ -24,6 +24,7 @@ TOKEN = re.compile(r'\(|\)|[^\s()]+')
 LABEL = re.compile(r'^([*^]?)([A-Z][A-Za-z0-9_]*)$')
 CMP = {'=', '!=', '<', '<=', '>', '>='}
 KEYWORDS = {'NOT', 'OR', 'ALL', 'IF', 'ALSO', 'END'}
+SYMMETRIC = ('=', '!=')  # the comparisons whose operands have no order of their own
 MARK_ITEMS = ('ONE', 'SET')  # marks of a clause, which stand after its body
 RULE_REASONS = ("no mode of the atom's relation", 'the `NOT` or the `ALL` stands')  # the refusals of the decoder that a rule of the form explains
 EXPLORE = 0.1  # the share of a guided draw's choice that goes uniformly over the items
@@ -81,7 +82,7 @@ class Node:
 
     def __init__(self, items=(), free=False, wrap=None, tree=None, place='', all_form=False, or_form=False):
         self.items, self.free, self.wrap, self.tree, self.place, self.all_form, self.or_form = list(items), free, wrap, tree, place, all_form, or_form
-        self.needs = frozenset()
+        self.needs = self.any_of = frozenset()
         self.id = None
         self.leaves = []
         self.written = 0  # the place of the item in its set in the text
@@ -91,7 +92,8 @@ class Node:
     def make_key(self):
         """A key of the node that depends on no order of any set: the items of a set are in sorted order."""
         if self.leaf:
-            return unparse(strip_marks(self.tree))
+            t = strip_marks(self.tree)
+            return unparse([t[0], *sorted(t[1:])] if t[0] in SYMMETRIC else t)
         keys = [x.key for x in self.items]
         if self.free:
             keys.sort()
@@ -178,9 +180,10 @@ class Form:
                     self.marks[m[2]] = m[1]
         for leaf in self.leaves:
             leaf.names = self.labels(leaf)
-            if leaf.tree[0] == 'NOT' or leaf.tree[0] in CMP:
-                own = {LABEL.match(t)[2] for t in tokens(leaf.tree) if t[:1] in ('*', '^') and LABEL.match(t)}
-                leaf.needs = frozenset(leaf.names - own)
+            if leaf.tree[0] == '=':
+                leaf.any_of = frozenset(leaf.names) if len(leaf.names) == 2 else frozenset()  # `=` makes a label of a fresh operand, so it reads one of its two labels
+            elif leaf.tree[0] == 'NOT' or leaf.tree[0] in CMP:
+                leaf.needs = frozenset(leaf.names)
         self.set_all(self.root)
         self.see(self.root, frozenset())
         self.refused = collections.defaultdict(set)  # a leaf's id -> the label sets that the decoder refused it with
@@ -268,7 +271,7 @@ class Form:
         """The places in the top set of the items that may come next."""
         nid, mask = stack[-1]
         items = self.nodes[nid].items
-        return [i for i, x in enumerate(items) if not mask >> i & 1 and x.needs <= bound
+        return [i for i, x in enumerate(items) if not mask >> i & 1 and x.needs <= bound and (not x.any_of or x.any_of & bound)
                 and not (x.leaf and x.leaf_id in self.refused and self.visible(x, bound) in self.refused[x.leaf_id])]
 
     def choose(self, stack, bound, i, emitted):
@@ -391,7 +394,7 @@ class Form:
 
         def build(node):
             if node.leaf:
-                return mark(node.tree)
+                return mark(self.operands(node, seen))
             items = [node.items[i] for i in perm[node.id]] if node.free else node.items
             return node.wrap([build(x) for x in items])
 
@@ -406,6 +409,13 @@ class Form:
             seen.add(m[2])
             return self.marks[m[2]] + m[2]
         return build(self.root)
+
+    def operands(self, leaf, seen):
+        """The leaf's tree: a `=` of two labels has a label that seen lacks as its first operand, since the first operand is the site that makes a label."""
+        t = leaf.tree
+        if leaf.any_of and LABEL.match(t[2])[2] not in seen and LABEL.match(t[1])[2] in seen:
+            return [t[0], t[2], t[1]]
+        return t
 
     def text(self, order):
         return unparse(self.tree(order))
