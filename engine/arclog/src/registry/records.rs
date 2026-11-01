@@ -9,6 +9,9 @@ pub(super) struct WrittenRelation {
     pub(super) name: LibName,
     pub(super) place: SourcePlace,
     pub(super) columns: LabelColumns,
+    /// The modes of the macro's `(modes ...)` form, none where it has none;
+    /// `None` for a proposer, whose modes are not declared.
+    pub(super) modes: Option<Box<[Mode]>>,
     pub(super) definition: Node<Body>,
     /// The items of the `(frames ...)` form of a macro, none for a proposer.
     pub(super) frames: Box<[SExpr]>,
@@ -17,7 +20,8 @@ pub(super) struct WrittenRelation {
 }
 
 /// Each column of a form, with the label of the form's body that the
-/// column stands for and the type the form declares for it, where it does.
+/// column stands for and the type the form declares for it, where it does:
+/// a macro's column does, a proposer's does not.
 pub(super) type LabelColumns = Box<[LabelColumn]>;
 
 /// A `component` form's name, kind, type parameters and inputs, and the

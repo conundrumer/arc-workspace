@@ -8,6 +8,7 @@ pub(super) const RELATION: &str = "relation";
 pub(super) const COMPONENT: &str = "component";
 pub(super) const PROPOSER: &str = "proposer";
 pub(super) const CONSTANTS: &str = "constants";
+pub(super) const TYPE: &str = "type";
 pub(super) const FACT: &str = "fact";
 pub(super) const MACRO: &str = "macro";
 pub(super) const COLUMNS: &str = "columns";

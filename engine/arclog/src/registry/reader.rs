@@ -20,6 +20,8 @@ pub(super) struct FileReader {
     /// The names of the `C4` form, and its place.
     pub(super) c4: Option<(Box<[Box<str>]>, SourcePlace)>,
     pub(super) facts: StableHashMap<FactRelation, Box<[Column]>>,
+    /// The type names that a `type` form declares.
+    pub(super) types: StableHashSet<TypeName>,
     pub(super) relation_macros: Vec<WrittenRelation>,
     /// Each `(proposer <name> arclog (columns ...))` form, in file order.
     pub(super) arclog_proposers: Vec<ArclogProposer>,
@@ -97,8 +99,8 @@ impl FileReader {
 
     /// Gives a diagnostic where an accessor of the registry would have no
     /// value to give: an orientation type with no `constants` form, no `C4`
-    /// form or a `C4` constant that is no D4 constant, or a fact relation
-    /// with no `fact` form.
+    /// form or a `C4` constant that is no D4 constant, a fact relation
+    /// with no `fact` form, or a type name with no `type` form.
     pub(super) fn check_complete(&mut self) {
         let start = file_start(SourceFile::LibRegistry);
         for (name, text) in spelling::TYPE_NAMES {
@@ -120,6 +122,11 @@ impl FileReader {
                 }
             }
             None => self.fault(CheckId::Scope, "the file has no `C4` form", start),
+        }
+        for (name, text) in spelling::TYPE_NAMES {
+            if !self.types.contains(name) {
+                self.fault(CheckId::Scope, format!("the file has no `type` form of `{text}`"), start);
+            }
         }
         for (fact, text) in spelling::FACT_RELATIONS {
             if !self.facts.contains_key(fact) {

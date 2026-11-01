@@ -1,5 +1,5 @@
 # arcdata
-- The record file of a solver, `<task_id>.arcdata`, beside its [arclog](./arclog.md) file. The arclog file holds the task's claims and structure, and this file holds the judgments and records on its cases: the witnesses that separate its cases, the cases it excludes, and the stored assignment the determination produced.
+- The record file of a solver, `<task_id>.arcdata`, beside its [arclog](./arclog.md) file.
 - The file is s-expressions, read by the arclog reader, with a closed set of head symbols. Prose is a quoted string. A name is one the arclog file declares, in that file's spelling: `&background`, `&one_run.value`, `$openings`, `$EachOpening`, `&background=$Derived`, `container`.
 - The file's forms stand in this order:
     1. `representative`, if any
@@ -48,8 +48,8 @@
         (1 0 0)
         (0 0 0))))
     ```
-- A grid's rows are of one length. Each cell gives one row: its position in the grid's frame, then its value. A relation with no column after the position marks its cells `1`. A `_` cell gives no row, and values before the grid fill the columns before the position. A grid of an Offset column marks one cell with `@`, as `@_` or `@1`, and a grid of a Position column marks none; a grid of a column that no form writes as Position or Offset may mark one cell or none. Each cell of a grid with a marked cell gives its offset from that cell in place of its position; the marked cell may be empty, as in 0ca9ddb6's `&template`.
-- A frame of cells, or a frame cut into equal tiles, has no `param` form of its own: each of its fields comes from a `DET` that the program states, and a field's `param` form is that `DET`'s, as [Program](./arclog.md#program) gives.
+- A grid's rows are of one length. Each cell gives one row: its position in the grid's frame, then its value. A relation with no column after the position marks its cells `1`. A `_` cell gives no row, and values before the grid fill the columns before the position. A grid of an Offset column marks one cell with `@`, as `@_` or `@1`, and a grid of a Position column marks none; a grid of a column that no form writes as Position or Offset may mark one cell or none. Each cell of a grid with a marked cell gives its offset from that cell in place of its position; the marked cell may be empty.
+- A field of a frame of cells, or of a frame cut into equal tiles, is no stored value of its own: its `param` form is that of the `DET` that gives it.
 - Every `param` form stands at the top level. The arclog block that declares the parameter says which cases read it. The rows of an open parameter, as [Open values](./arclog.md#open-values) gives it, are its open values, except where its `DET` ends in `ONE` marks over a set of rows: the rows are then what those marks choose from, and each open value is one model of them.
 - A `param` form and a witness's `output` forms are records of a run, not its source: a run whose determination or whose output set disagrees with the entry is a fault.
 
@@ -102,34 +102,6 @@
 - `<plausibility>` is `ordinary`, `variant`, `borderline` or `foreign`.
 - `<verdict>` is `concept`, an alt's name, `any` or `other`. A witness that breaks an input claim holds `(relaxed <slug>)`.
 - `assign` reassigns a relation for this witness, with rows in the form a `param` form takes.
-- `output` gives each distinct output with the fewest names whose cases together give it, as [Witness file](../handbook/solver-file.md#witness-file) gives them; a name that fixes several alts is a list; `undefined` where those cases are undefined; several grids where the cases give one per model of a [One](./constraints.md#one) mark or a [Choose](./constraints.md#choose), as [The output set](./constraints.md#the-output-set) gives. With the verdict `other`, one `output` form with no name holds the annotator's judged grid.
+- `output` gives each distinct output with the fewest names whose cases together give it; a name that fixes several alts is a list; `undefined` where those cases are undefined; several grids where the cases give one per model of a [One](./constraints.md#one) mark or a [Choose](./constraints.md#choose), as [The output set](./constraints.md#the-output-set) gives. With the verdict `other`, one `output` form with no name holds the annotator's judged grid.
 - A grid's rows stand one per line, two spaces in from the form that holds the grid.
 - A `witness` form with no body, `(witness two-openings variant $EachOpening)`, is the witness of that id given in full under an earlier alt.
-
-## Example
-- The arcdata file of the task in the arclog [Example](./arclog.md#example).
-    ```
-    (param &bg Color (0))
-    (param &recolor.value (Color Color) (3 1) (5 4))
-
-    (alts &bg
-      (alt &bg=$Derived
-        (witness bg=DominantColor variant &bg=$Derived
-          (relaxed background)
-          (separates "train 0 with 0 and 7 swapped: &bg=$Stored reads every cell as one object and fills the grid 1; &bg=$Derived reads the object of 3 and fills its box 1")
-          (input (grid
-            (7 7 7 7)
-            (7 3 3 7)
-            (7 3 7 7)
-            (7 7 7 7)))
-          (output &bg=$Stored (grid
-            (1 1 1 1)
-            (1 1 1 1)
-            (1 1 1 1)
-            (1 1 1 1)))
-          (output &bg=$Derived (grid
-            (7 7 7 7)
-            (7 1 1 7)
-            (7 1 1 7)
-            (7 7 7 7))))))
-    ```

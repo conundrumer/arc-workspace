@@ -26,7 +26,7 @@ How the engine keeps every program equivariant by construction, at no cost at ru
 A program is equivariant when each of these conditions holds:
 
 - Each relation that the program reads from outside its clauses is equivariant. The grids are, by definition. The parameters are, since γ acts on the assignment. Each lib relation and component is, by the obligations below.
-- Each clause is made of joins, projections, unions, negations, and the tests `=` and `!=`. Each of these commutes with every bijection that acts on the columns one by one, so each is equivariant under the action above. `IF` and `ALL` compile to these, as [arclog](../../docs/arclog/arclog.md#conditional) gives.
+- Each clause is made of joins, projections, unions, negations, and the tests `=` and `!=`. Each of these commutes with every bijection that acts on the columns one by one, so each is equivariant under the action above. `IF` and `ALL` compile to these, as [Joins](evaluator.md#joins) gives.
 - An order test, `<`, `<=`, `>` or `>=`, stands only on a type that every γ fixes element by element and whose order is not an encoding. Of the column types, only `number` is such a type.
 - The only constant is `0`, and every γ fixes it: the number zero, and the zero box, which `apply` maps to itself. A constant of any other task type, such as `DIR_T` or a color, is moved by some γ.
 - An instance applies a component to relations of the program. A composition of equivariant functions is equivariant.

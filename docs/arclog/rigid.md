@@ -2,51 +2,15 @@
 - The `RIGID_DET` form, a rigid determination, is the arclog form for parameters that a task states in a frame of their own. The parts of one assembly are read off each instance in the observed data and compared up to one D4 element per instance, and the program reads them only through a placement of the whole assembly.
 
 ## Form
-- 142ca369: each marker launches a diagonal ray. A marker is an L-triomino with a cell the ray leaves from and the diagonal it heads along, and the markers of one input stand in different orientations. The determination reads one representative marker: `&pick` takes one launch cell that the training outputs show, and `&bbox` is the box of that marker's cells.
+- Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`. A part that reads `input`, `ex_input`, `ex_output` or a lib relation has no output. A part is a body of its own, and a `*X` or `^X` in it is refused when it makes a name that a label of the `instance` or `key` clause holds.
     ```
-    (DET &glyph
-      (&bbox.cell (:key (:E *K_e) (:P *K_p)) (:P *P2))
-      (&bbox.box (:key (:E K_e) (:P K_p)) *B)
-      (inside (:A P2) B)
-      (relative (:Base B) (:X P2) (:X_rel *P)))
-
-    (DET &launch
-      (&bbox.box (:key (:P *P_l)) *B)
-      (inside (:A P_l) B)
-      (relative (:Base B) (:X P_l) (:X_rel *P)))
-
-    (DET &aim
-      (&pick.representative (:a *E (:P *P_l)) (:b E (:P P_l)))
-      (&launch_cell E P_l *D))
-
     (RIGID_DET &marker
       (&glyph *P)
       (&launch *P)
       (&aim *D))
-
-    (RULE &launch2
-      (&occ.occurrence (:key (:D *D2) *Col) (:P *A))
-      (&marker.launch (:Pose D2) (:P *P_l))
-      (compose A (:B P_l) (:C *P))
-      (&marker.aim (:Pose D2) *D))
     ```
-    - The `DET` forms are tables over the observed data that read the representative marker, with its cells in the frame of its box.
-    - Each atom of the form is a part, and its sites are that part's reading. The program reads the part under the atom's relation name in the form's path: `&marker.glyph`, or `&marker.bbox.box` for a part that reads `&bbox.box`. A part that reads `input`, `ex_input`, `ex_output` or a lib relation has no output.
     - A form with no `instance` clause has one instance. Its parts read no instance label, and each part's `DET` table is that one instance's reading.
     - In a form with an `instance` clause, a part whose atom holds no label of that clause is a frame part: no instance's reading holds it, and the other parts place it, as [Semantics](#semantics) gives.
-- 150deff5: a marked region packs with two pieces, a 2×2 block in one color and a 1×3 line in another. The determination reads one lone piece region of each color in a training output, and `&member` gives each piece's cells under the id of the color it paints.
-    ```
-    (DET &member
-      (&bbox.cell (:key *E (:Col *C) (:Id *Id2)) (:P *P2))
-      (&bbox.box (:key E (:Col C) (:Id Id2)) *B)
-      (inside (:A P2) B)
-      (relative (:Base B) (:X P2) (:X_rel *P))
-      (&color_id.class (:a C) *Id))
-
-    (RIGID_DET &piece
-      (&member *Id *P))
-    ```
-    - The outputs hold `:Pose` and then the part's columns, so a read at one pose and one `Id` places one piece: `(&piece.member (:Pose ^D) ^Id (:P *S))`.
 - A form may also hold an `instance` clause, and a `key` clause:
     - `instance` is written as a key clause is, as [Instance](./arclog.md#instance) gives it, and one of its rows is one instance. Each atom inside `instance`, after its body, is a part, and it reads the instance's labels, other than a frame part. Each other label of the part, one that neither the instance clause nor the key gives, is the part's own, made at a site of the part's atom.
     - `key` is a key clause with the meaning it has in an `INIT`: each key row is an independent assembly, aligned on its own and posed on its own, other than where a key column holds the assembly's own Idents, as [Semantics](#semantics) gives. A form with no `key` has one assembly. The outputs hold the key's columns first, as an instance's outputs do.
@@ -75,7 +39,7 @@
     - A column of the assembly's own Idents of the same assembly.
     - A column of a derived relation, or a column of an `INIT` form's key, input or output that its component types by a type parameter, which then takes the type.
     - `=` and `!=`.
-- A site in the body of a determination relation that an `instance` clause reads is not counted, since that body gives the instance its reading. In 269e22fb, `&cell_class` joins `&class_id.class`, and in 150deff5, `&member` joins `&color_id.class`. A label that stands at any other `Ident` site makes the column a plain `Ident`, a later read of the part included: in 150deff5, `&piece_color` reads `&piece.member`'s `Id` in `&output`. No rule refuses it.
+- A site in the body of a determination relation that an `instance` clause reads is not counted, since that body gives the instance its reading. A label that stands at any other `Ident` site makes the column a plain `Ident`, a later read of the part included. No rule refuses it.
 
 ## Subgroups
 - A task may admit an assembly in only some orientations. For example, the instances stand rotated but never mirrored. The program says so by comparing each placement with the training instances' poses:

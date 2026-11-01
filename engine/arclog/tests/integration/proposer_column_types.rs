@@ -52,9 +52,9 @@ fn a_color_of_an_arclog_proposer_at_a_number_site_is_refused() {
 
 #[test]
 fn a_relation_macro_that_names_a_column_twice_refuses() {
-    let written = "(macro same_dist (columns (D D) (P1 P1) (P2 P2))";
+    let written = "(macro same_dist (columns (D D Dir) (P1 P1 Box) (P2 P2 Box))";
     assert!(REGISTRY_TEXT.contains(written));
-    let text = REGISTRY_TEXT.replacen(written, "(macro same_dist (columns (D D) (P1 P1) (P1 P2))", 1);
+    let text = REGISTRY_TEXT.replacen(written, "(macro same_dist (columns (D D Dir) (P1 P1 Box) (P1 P2 Box))", 1);
     let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("the column `P1` named twice refuses");
     let kinds: Vec<&DiagnosticKind> = error.diagnostics.iter().map(|d| &d.kind).collect();
     assert!(kinds.contains(&&DiagnosticKind::Check(CheckId::Scope)), "{:?}", error.diagnostics);

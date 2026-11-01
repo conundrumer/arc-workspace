@@ -11,7 +11,8 @@ impl FileReader {
     /// [`macro_column_types`] derives them from the columns of the other
     /// forms' names and of the fact relations, and the modes of the
     /// `relation` forms. A proposer is read as a relation macro whose
-    /// definition is its clause.
+    /// definition is its clause. A fault of the file is a relation macro
+    /// whose `modes` form, or lack of one, differs from the modes so derived.
     pub(super) fn declare_macros(&mut self) {
         let mut lib: StableHashMap<LibName, Box<[Column]>> = StableHashMap::default();
         let mut modes: StableHashMap<LibName, Box<[Mode]>> = StableHashMap::default();
@@ -39,6 +40,14 @@ impl FileReader {
                 for m in std::mem::take(&mut self.relation_macros) {
                     let mut relation = declarations.relations.remove(&m.name).expect("each relation macro takes a declaration");
                     let what = format!("the macro `{}`", m.name.0);
+                    if let Some(written) = &m.modes {
+                        let (written, derived) = (spelled_modes(written), spelled_modes(&relation.modes));
+                        if written != derived {
+                            let text = |modes: &[String]| if modes.is_empty() { "no modes".to_string() } else { format!("(modes {})", modes.join(" ")) };
+                            let message = format!("{what} declares {}, which differs from {}, the modes its definition gives", text(&written), text(&derived));
+                            self.fault(CheckId::Safety, message, m.place);
+                        }
+                    }
                     relation.frames = self.relation_frames(&m.frames, &relation.columns, &what).unwrap_or_default();
                     let labels = m.columns.iter().map(|column| column.label).collect();
                     self.entries.insert(m.name, LibEntry::Macro(Macro::Relation { relation, labels, definition: m.definition }));
@@ -52,4 +61,20 @@ impl FileReader {
             Err(diagnostics) => self.diagnostics.extend(diagnostics),
         }
     }
+}
+
+/// Each mode of `modes` as `(<Column> ...)`, its columns in the order they
+/// are written, the modes sorted by their sets of columns, so that two lists
+/// of the same modes in any order give the same texts.
+fn spelled_modes(modes: &[Mode]) -> Vec<String> {
+    let mut sets: Vec<Vec<String>> = modes
+        .iter()
+        .map(|mode| {
+            let mut columns: Vec<String> = mode.bound.iter().map(crate::program::column_spelled).collect();
+            columns.sort();
+            columns
+        })
+        .collect();
+    sets.sort();
+    sets.into_iter().map(|columns| format!("({})", columns.join(" "))).collect()
 }

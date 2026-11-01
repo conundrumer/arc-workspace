@@ -1,5 +1,6 @@
 + document-size-budget: 24700
 * comment: when editing this doc
+    - `arcdata` marks a section or a statement an `arclog` agent needs only when its brief opts in to arcdata files. That agent's render leaves out each one that has it, and each statement that has `formal`.
     - The corpus supports the synthesis of solver programs.
     - This doc and [Encoding](docs/handbook/encoding.md) state a theory of tasks, models and encodings, in that theory's own terms.
         - A statement about how a file, a format, a marker, a command, or a tool's output represents them, or about how the solver's code is written, goes elsewhere.
@@ -47,6 +48,7 @@
 - **assignment**: one choice of value for each parameter.
 - **program**: the clauses that derive `out` from `in` and the parameters.
 - **lookup table**: a parameter that maps keys from the input to entries that the program uses.
+    + arcdata
 
 ### Models and tasks
 - **model**: the function that gives the output grids for an assignment and an input grid.
@@ -101,12 +103,16 @@
     - fam(M) = {T | ∃T′ ∈ alts(T). ∃θ ∈ Θ. M(θ) ⊨ T′}
         + formal
 - **sibling task**: another task in the family of this task's model.
+    + arcdata
     + xref: src/checker/lint/form/case_type.py:check_family_case
 - **peer model**: another model whose family contains this task.
+    + arcdata
 - **hypothesis**: the assertion that a task belongs to a model's family.
 - **case**: one model in the solver, together with its hypothesis.
 
 ### The generator
++ arcdata
+
 - **generator**: the process that produces the task and other tasks.
 - **variant task**: a task the generator produces.
 - **task data**: a value that differs between this task and a variant task the model fits.
@@ -131,6 +137,8 @@
     + xref: docs/handbook/principles.md#models-and-tasks
 
 ### Choice points and open parameters
++ arcdata
+
 - **choice point**: an underdetermined property whose possible answers are models represented by cases.
     + xref: src/checker/lint/style.py:check_choice_domain, docs/handbook/principles.md#models-and-tasks
     - A choice point stands at the concept, or under a branch when its property exists only with that branch.
@@ -158,6 +166,8 @@
         + xref: docs/handbook/principles.md#models-and-tasks
 
 ### Witnesses
++ arcdata
+
 - **divergence witness**: an input on which one of these holds:
     + xref: src/checker/witness.py:check_witness_lines, docs/handbook/principles.md#models-and-tasks, docs/handbook/principles.md#the-generator
     - at some assignment, two models give different outputs, or one is defined and the other is not.
@@ -203,6 +213,8 @@
         + xref: src/checker/witness.py:check_other_verdict, src/solver/annotations.py:VerdictWord
 
 ### Equivalence and subsumption
++ arcdata
+
 - Two models are equivalent when each assignment of either has an assignment of the other that it agrees with.
     + xref: docs/handbook/principles.md#the-solvers-parts
     - Equivalent(A, B) ⇔ (∀θ ∈ Θ. ∃φ ∈ Θ′. Agree(θ, φ)) ∧ (∀φ ∈ Θ′. ∃θ ∈ Θ. Agree(θ, φ))
@@ -240,6 +252,7 @@
     * comment: The Analyze pass a0350bef143e9424f on d22278a0 read this definition, which then lacked its last clause, and a separate line that stated that clause without "even where some set of clauses agrees with it", as giving opposite answers for a Euclidean distance that clauses over squared distances agree with, and its transcript review af2f557b8ee46b12c took the definition alone as enough, as tickets 10-648 and 10-654 record.
 - An **approximation** is a set of clauses that computes no such number, under its name or another, and that the program runs in place of a rule that has no relational form.
     - An input the generator produces on which an approximation disagrees with its rule is a divergence witness.
+        + arcdata
         + xref: src/checker/witness.py:check_approximation_witness, docs/handbook/principles.md#witnesses
 
 ## Parameterization
@@ -329,6 +342,8 @@
     + xref: src/checker/lint/constants.py:check_const_join, src/checker/lint/heads.py:check_head_repeat, docs/handbook/principles.md#the-generator
 
 ### Open parameters
++ arcdata
+
 - The solver stores every open value of an open parameter in one relation.
     + xref: docs/handbook/principles.md#choice-points-and-open-parameters
 - open(i) ⊆ Θᵢ: the open values of parameter i
@@ -343,6 +358,8 @@
             + gloss
 
 ## Cases
++ arcdata
+
 - A case is included exactly when it meets each **case condition**:
     + xref: src/checker/case_conditions.py:check_case_conditions
     - **Fit.** The model fits some split task at its stored assignment.

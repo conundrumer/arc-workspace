@@ -13,6 +13,12 @@
 //! `registry_file` under `engine/arclog/tests/integration/` parses both lib files, so a
 //! fault of either fails `cargo test`.
 //!
+//! Each `;;;` comment line before a form, other than `;;; @rare`, is a line of its prose, the
+//! user-facing text of what the form declares, which
+//! `scripts/generate_study_meanings.py` writes into `docs/arclog/lib.md`, or
+//! into `docs/arclog/lib-rare.md` where the block opens with `;;; @rare`, and
+//! into `engine/lib/study-meanings.json`. The reader skips comments.
+//!
 //! Each top-level form declares one lib element, by its head:
 //!
 //! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...) [<frames>] [<types>])`:
@@ -71,16 +77,24 @@
 //! - `(constants <type> <NAME> ...)`: the constants of an orientation type,
 //!   and `(constants C4 <NAME> ...)`: the D4 constants that are C4, the
 //!   rotations.
+//! - `(type <Name>)`: a type name of [`crate::program::TypeName`], in the
+//!   spelling of `crate::read::spelling::TYPE_NAMES`. The file has one such
+//!   form for each type name, and none for another name or twice for one: a
+//!   fault of the file otherwise, so the registry's type names are
+//!   `TypeName`'s.
 //! - `(fact <name> (columns (<Column> <type>) ...))`: the columns of a fact
 //!   relation, `input`, `ex_input` or `ex_output`, the Example column `E`
 //!   first in the two of the examples.
-//! - `(macro <name> (columns (<Column> <Label> [<type>]) ...) [<frames>] [<types>] <body>)`:
+//! - `(macro <name> (columns (<Column> <Label> <type>) ...) [(modes (<Column> ...) ...)] [<frames>] [<types>] <body>)`:
 //!   a lib relation that the lib defines from other lib names, each column
-//!   with the label of the definition it stands for, and its definition. A
-//!   `<type>` stands strictly under the type the definition gives the
-//!   column's label, and is the column's type; a column with none has the
-//!   type the definition gives. A [`Macro::Relation`]'s column types,
-//!   modes and rules are the ones [`macro_column_types`] gives.
+//!   with the label of the definition it stands for and its type, and its
+//!   definition. A `<type>` stands at or under the type the definition gives
+//!   the column's label, and is the column's type. The `modes` form is
+//!   written as a `relation` form's is, and a macro with no mode has no
+//!   `modes` form. A [`Macro::Relation`]'s column types, modes and rules are
+//!   the ones [`macro_column_types`] derives from the definition, so a
+//!   column whose type, or a macro whose modes, the form declares otherwise
+//!   is a fault of the file.
 //!
 //! # Frames
 //!

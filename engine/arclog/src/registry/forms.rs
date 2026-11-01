@@ -1,5 +1,5 @@
 //! The reader of the registry file's forms other than its macro forms:
-//! `relation`, `component`, `proposer`, `constants` and
+//! `relation`, `component`, `proposer`, `constants`, `type` and
 //! `fact`, with the columns and the types they write, and the `frames` forms
 //! of a relation, a macro and an output.
 
@@ -29,6 +29,7 @@ impl FileReader {
             }
             Some(PROPOSER) => self.proposer(rest, place),
             Some(CONSTANTS) => self.constants(rest, place),
+            Some(TYPE) => self.type_form(rest, place),
             Some(FACT) => self.fact(rest, place),
             Some(MACRO) => self.macro_form(rest, place),
             _ => self.refuse("the form's head is no kind of form of the registry file", place),
@@ -113,7 +114,8 @@ impl FileReader {
         let modes = match rest.get(at).filter(|expr| headed(expr, MODES).is_some()) {
             Some(expr) => {
                 at += 1;
-                self.modes(expr, &columns, place)?
+                let names: Vec<ColumnName> = columns.iter().map(|c| c.name.clone()).collect();
+                self.modes(expr, &names, place)?
             }
             None => Box::default(),
         };
@@ -274,9 +276,9 @@ impl FileReader {
         Some(named.into())
     }
 
-    /// `(modes (<Column> ...) ...)`, each mode a nonempty list of columns of
+    /// `(modes (<Column> ...) ...)`, each mode a nonempty list of the columns
     /// `columns`.
-    fn modes(&mut self, expr: &SExpr, columns: &[Column], place: SourcePlace) -> Option<Box<[Mode]>> {
+    pub(super) fn modes(&mut self, expr: &SExpr, columns: &[ColumnName], place: SourcePlace) -> Option<Box<[Mode]>> {
         let items = self.headed(Some(expr), MODES, place)?;
         let mut modes = Vec::new();
         for item in items {
@@ -290,8 +292,8 @@ impl FileReader {
             for name in names.iter() {
                 let text = self.symbol(Some(name), "a mode's column", *place)?;
                 let column = ColumnName::Written(text.into());
-                if !columns.iter().any(|c| c.name == column) {
-                    return self.refuse(format!("`{text}` is no column of the relation"), name.place());
+                if !columns.contains(&column) {
+                    return self.refuse(format!("`{text}` is no column of the form"), name.place());
                 }
                 bound.push(column);
             }
@@ -539,6 +541,19 @@ impl FileReader {
         }
         let set = (0..names.len()).map(|index| OrientationConstant::new(ty, index as u8)).collect();
         self.constants.insert(ty, TypeConstants { names, set: ConstantSet { constants: set } });
+        Some(())
+    }
+
+    /// `(type <Name>)`, after its head.
+    fn type_form(&mut self, rest: &[SExpr], place: SourcePlace) -> Option<()> {
+        let text = self.symbol(rest.first(), "the type's name", place)?;
+        let Some(name) = spelling::parse(spelling::TYPE_NAMES, text) else {
+            return self.refuse(format!("`{text}` is no type name"), rest[0].place());
+        };
+        self.no_more(rest.get(1..).unwrap_or_default())?;
+        if !self.types.insert(name) {
+            return self.refuse(format!("the file has two `type` forms of `{text}`"), place);
+        }
         Some(())
     }
 

@@ -188,15 +188,19 @@ values; render2 may store identical immutable definitions once in artifacts.
 
 ## Authoritative implementation meanings
 
-Signatures are not marked as meanings. Each registry entry now has `semantics`,
-looked up by its exact resolved ID (`lib:Walk`, `lib:apply`, `fact:input`, …).
-The explicit ID catalogue is `engine/lib/study-meanings.json`, which
-`scripts/generate_study_meanings.py` generates from the registry's `;;;` prose
-and its `;;; @doc` links to the `///` docs of Souffle and Rust declarations and
-the `;;;` docs of arclog proposers. Each entry carries its authored
-summary/full contract, source lines and section. `docs/study-library-meanings.source.md`
-is the lib catalogue that the arclog-editor agent reads. All 140 current
-registry declarations have authored coverage. A future unmapped ID is
+Signatures are not marked as meanings. Each `lib:` and `fact:` entry of the
+registry export has `semantics`, looked up by its exact resolved ID (`lib:Walk`,
+`lib:apply`, `fact:input`, …).
+The registry's `;;;` prose is the one source of the lib's meanings.
+`scripts/generate_study_meanings.py` generates from it both the explicit ID
+catalogue `engine/lib/study-meanings.json` and the lib catalogue
+`docs/arclog/lib.md` that the `arclog` agent reads, with the entries that a
+`;;; @rare` line marks in `docs/arclog/lib-rare.md` instead. Each catalogue entry
+carries its authored summary/full contract, source lines and section. The
+`type:` entries stand only in the catalogue and in `lib.md` or `lib-rare.md`. `semantics` and
+`definitions.semantic_coverage` cover the `lib:` and `fact:` IDs, as
+`engine/arclog/src/study/render_definitions.rs` looks them up. Every `lib:` and
+`fact:` declaration has authored coverage. A future unmapped ID is
 `status=pending`; `definitions.semantic_coverage` and `parts.native_semantics`
 report this separately from structural reader completeness. There is no runtime
 name/port regex or guessed semantics.

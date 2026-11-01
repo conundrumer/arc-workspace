@@ -22,9 +22,9 @@ fn a_site_at_an_undeclared_column_refuses() {
 
 #[test]
 fn a_written_column_at_a_label_local_to_an_or_branch_refuses() {
-    let written = "(macro same_dist (columns (D D) (P1 P1) (P2 P2))\n  (margin (:B *P1) *D *K)\n  (margin (:B *P2) D K))";
+    let written = "(macro same_dist (columns (D D Dir) (P1 P1 Box) (P2 P2 Box)) (modes (P1 P2))\n  (margin (:B *P1) *D *K)\n  (margin (:B *P2) D K))";
     assert!(REGISTRY_TEXT.contains(written));
-    let local = "(macro same_dist (columns (D D) (P1 P1) (P2 P2) (Z Z))\n  (margin (:B *P1) *D *K)\n  (margin (:B *P2) D K)\n  (OR ((margin (:B *Z) D K)) ((margin (:B P1) D K))))";
+    let local = "(macro same_dist (columns (D D Dir) (P1 P1 Box) (P2 P2 Box) (Z Z Box)) (modes (P1 P2))\n  (margin (:B *P1) *D *K)\n  (margin (:B *P2) D K)\n  (OR ((margin (:B *Z) D K)) ((margin (:B P1) D K))))";
     let text = REGISTRY_TEXT.replacen(written, local, 1);
     let error = Registry::parse(&text, PROPOSERS_TEXT).err().expect("a column at `Z` refuses");
     let kinds: Vec<&DiagnosticKind> = error.diagnostics.iter().map(|d| &d.kind).collect();

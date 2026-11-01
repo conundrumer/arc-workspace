@@ -2,6 +2,7 @@
 * comment: when editing this doc
     - The notes at the head of [Principles](docs/handbook/principles.md) apply.
         + xref: docs/handbook/principles.md
+    - `souffle` marks a section, a definition or a statement that only the author of a Souffle solver needs. The `arclog` agent's render leaves out each one that has it.
 
 # Encoding
 - What holds for the program that encodes a model.
@@ -10,17 +11,24 @@
 
 ### Structures and the lib
 - **parse**: the structures that a model finds in the input.
+    + souffle
 - **setup**: the parse shared by every case, together with the clauses that encode it.
+    + souffle
 - **draft**: a solver that is not yet approved.
+    + souffle
 - **corpus**: the approved solvers.
+    + souffle
 - **precedent**: the encoding that the corpus already uses for a structure in the parse.
+    + souffle
     - The solver that introduces or improves that encoding establishes the precedent.
     - A precedent covers how the structure is found and encoded.
     - It does not cover the tests performed inside that encoding.
 - **component**: a comp declared in a module under `programs/lib/`.
+    + souffle
 - **construction**: a component whose outputs give another form of its inputs.
     + xref: src/checker/lint/form/witnesses.py:_constructions
 - **equivariant lib relation**: a lib relation whose output changes under each D4 element exactly as its input does.
+    + souffle
     + xref: programs/lib/orientation.dl, docs/handbook/principles.md#invariance
 
 ## Fidelity
@@ -92,8 +100,11 @@
 ### Performance
 - The principled form is the right form regardless of performance.
 - A form chosen for speed comes from constraints of the Datalog implementation and its runner.
+    + souffle
 
 ## Equivariant lib relations
++ souffle
+
 - An equivariant lib relation preserves the model's equivariance when its inputs derive from parameters, through an atom's arguments or a component instance's `@input` relations.
     + xref: docs/handbook/principles.md#invariance, src/solver/annotations.py:_INPUT_MARK
 - A non-equivariant one introduces a hidden orientation into an otherwise symmetric program.
@@ -106,6 +117,7 @@
                 + gloss
 
 ## Corpus consistency
++ souffle
 
 ### Parse priority
 - The priorities for choosing a parse are, in order:

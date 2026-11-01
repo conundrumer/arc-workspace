@@ -1,6 +1,6 @@
 + document-size-budget: 2000
 * comment: when editing this doc
-    - Each reader of the handbook inlines its sections where it starts to read the handbook: the `analyze`, `create`, `refine`, `handbook`, `handbook-expanded`, `arclog-editor` and `lib-reviewer` agents, [Solver session](prompts/session.md), [User session](prompts/user-session.md) and [Codex on arc-workspace](prompts/codex.md).
+    - Each reader of the handbook inlines its sections where it starts to read the handbook: the `analyze`, `create`, `refine`, `handbook`, `handbook-expanded`, `arclog` and `lib-reviewer` agents, [Solver session](prompts/session.md), [User session](prompts/user-session.md) and [Codex on arc-workspace](prompts/codex.md).
     - Acts, each with its section:
         - Reading a whole section of the handbook: [abridgement](#abridgement).
         - Reading a cited task id: [citations](#citations).

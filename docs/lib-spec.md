@@ -133,9 +133,10 @@ Every element of the lib is one of these kinds, and each kind has its own test.
 ## Types
 
 - The ARC types, Color and the orientation types, are nominal: a value has identity and no arithmetic. Its encoding as a number is an engine fact the lib hides.
-- A `number` is a count.
+- A `number` is another spelling of `Int`, a signed whole number. A count is a `Nat`, a whole number from 0 up.
 - Box is the box algebra's carrier. Position and Offset are its two interpretations, types under Box, and `compose` takes Box at each column, so it adds a cell to a translation.
-- `Ident` is an opaque label, `Example` the index of an example, train or test, and `Unit` the key of a single-set site.
+- `Ident` is an opaque label, `Example` the index of an example, train or test, and `Unit` the type of a value with no fields.
+- The list of the arclog types and what each means is the `;;;` prose of the `(type ...)` forms of [the registry](../engine/lib/registry.sexpr), which `scripts/generate_study_meanings.py` writes into [the arclog lib](arclog/lib.md) and [its rare items](arclog/lib-rare.md).
 
 ## Conventions
 

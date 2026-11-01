@@ -11,8 +11,9 @@ use crate::types::{each_site_label, label_fault_message, meet, scope_lists, sett
 pub struct LabelColumn {
     pub name: ColumnName,
     pub label: LabelId,
-    /// A type that stands strictly under the type the definition gives the
-    /// label, which is then the column's type.
+    /// A type that stands at or under the type the definition gives the
+    /// label, which is then the column's type. A macro's column declares one;
+    /// a proposer's does not.
     pub declared: Option<ValueType>,
 }
 
@@ -44,7 +45,7 @@ pub struct MacroDeclarations {
 ///
 /// The type of a relation macro's column is its declared type, where it
 /// declares one, and otherwise the type that [`label_type`] gives its label
-/// over the definition. A declared type stands strictly under the type
+/// over the definition. A declared type stands at or under the type
 /// [`label_type`] gives the label, and is the type of the label among the
 /// definition's labels. A site has the column's type: a column of a fact
 /// relation, of the type that `facts` gives it, a column
@@ -82,7 +83,7 @@ pub struct MacroDeclarations {
 /// have an empty meet, or whose branches give types with no join, over the
 /// list of the label's scope that `crate::types::scope_lists` gives, the
 /// definition for a column's label; a column whose label stands at no site
-/// that gives a type; a column whose declared type does not stand strictly
+/// that gives a type; a column whose declared type does not stand at or
 /// under the type its label has; or a definition that no set of the columns
 /// binds.
 /// A macro that reads a macro with a fault takes no declaration, and gives
@@ -223,12 +224,12 @@ impl MacroDerivation<'_, '_> {
                     types.push(derived);
                     continue;
                 }
-                (Ok(Some(derived)), Some(declared)) if stands_strictly_under(declared, &derived) => {
+                (Ok(Some(derived)), Some(declared)) if at_or_under(declared, &derived) => {
                     types.push(declared.clone());
                     continue;
                 }
                 (Ok(Some(derived)), Some(declared)) => {
-                    format!("has the type {derived:?}, which the declared type {declared:?} does not stand strictly under")
+                    format!("has the type {derived:?}, which the declared type {declared:?} does not stand at or under")
                 }
                 (Ok(None), _) => "stands at no site that gives a type".to_string(),
                 (Err(fault), _) => label_fault_message(fault),
@@ -442,11 +443,6 @@ impl MacroDerivation<'_, '_> {
         let declared = columns.iter().find(|c| &c.name == column)?.ty.fixed().cloned()?;
         Some(ruled_type(declared, rules, column, atom, label_type, &|_, _| false))
     }
-}
-
-/// Whether `declared` is a type other than `derived` that stands under it.
-fn stands_strictly_under(declared: &ValueType, derived: &ValueType) -> bool {
-    declared != derived && at_or_under(declared, derived)
 }
 
 /// The subsets of `items` of `size` elements, each in the order of `items`.
