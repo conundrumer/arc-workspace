@@ -117,6 +117,7 @@ GATE_RECORD_BYTES = 64 << 20  # a task's records stop at this size
 ONE_LABEL = ' one'  # what a ONE repair adds to the label of the candidate that it repairs
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
+FILLS_HELD = 1000  # the most refused forms a Run keeps for its caller
 DEADLINE_SHARE = 0.9  # a request that took this share of the session's deadline ran to it
 SUIT_COLUMNS = 2  # a relation's Position columns, and its Color columns, that Gate.suits reads
 STEERS = 'struct', 'tilt', 'rel', 'choice'
@@ -594,6 +595,7 @@ class Run:
         self.stopped = False  # whether an OUT candidate over the relation that the OUT search is at hit a limit
         self.pg = None  # the Program at the form end that the OUT search is at
         self.one_seconds, self.one_done, self.one_view, self.one_queue = 0.0, set(), (None, None), []  # the time of the ONE repairs; the programs they ran on; (a step_tables result, its two_colors answers); the candidates to repair at the end of the OUT search
+        self.fills = []  # (program, attempts) of forms leave-one-out refused, for Pool.test
         self.scoped = None  # (forms, decoder, Program) of the last scope
         self.walk = pri['walk']
         self.head_sizes = sum(map(collections.Counter, pri.get('head_labels', {}).values()), collections.Counter())  # a head column's count of labels -> uses, over all sites
@@ -1647,6 +1649,8 @@ class Run:
             self.c['refused'] += 1
             self.c['refused:loo'] += 1
             self.gate_record(f, attempts, broken, got, 'refused:loo', label)
+            if len(self.fills) < FILLS_HELD:
+                self.fills.append((f.program_form(), attempts))
             return
         self.gate_record(f, attempts, broken, got, 'passed', label)
         self.c['consistent'] += 1
