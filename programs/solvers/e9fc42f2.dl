@@ -68,9 +68,15 @@
 // Under $NoOverlapJoin, connector c's partner sits one step from it toward d.
 .type Side = [c: Position, d: Dir]
 
-// Under $NoOverlapJoin, each pair's color takes one class of sides.
+// Under $NoOverlapJoin, a class of sides of a pair, under one reading of the
+// pieces and the connectors.
+.type SideKey = [k: Connectivity, f: ConnectorColors, s: Ident]
+
+// Under $NoOverlapJoin, the pair of color c takes the class of sides s.
+.type PairSide = [c: Color, s: Ident]
+
 .type TiebreakResolution =
-    End {} | Sit {slot: Color, item: Ident, rest: TiebreakResolution}
+    End {} | Sit {slot: Color, item: PairSide, rest: TiebreakResolution}
 
 .decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
@@ -273,11 +279,16 @@ origin(Ch, O, C) :-
 .init sides = Canon<Side>
 sides.equiv([C1, D], [C2, D2]) :- pair(_, _, _, C1, _, C2, _), dir_elem(D), opposite(D, D2).
 
+// The color of each class of sides.
+// @claim snap
+.init side_color = Unanimous<SideKey, Color>
+side_color.item([K, F, S], Col) :-
+    pair(K, F, _, C1, _, _, Col), dir_elem(D), sides.id([C1, D], S).
+
 // Each pair takes one of the four directions.
-.init dirs = TiebreakResolutions<Choice, Color, Ident>
-dirs.cand(Ch, Col, S) :-
-    impl_choice(Ch), Ch = [$NoOverlapJoin(), K, F], pair(K, F, _, C1, _, _, Col),
-    dir_elem(D), sides.id([C1, D], S).
+.init dirs = TiebreakResolutions<Choice, Color, PairSide>
+dirs.cand(Ch, Col, [Col, S]) :-
+    impl_choice(Ch), Ch = [$NoOverlapJoin(), K, F], side_color.value([K, F, S], Col).
 
 key([Ch, C, R], K, F) :-
     dirs.resolution(Ch, R), Ch = [$NoOverlapJoin(), K, F], origin(Ch, _, C).
@@ -285,7 +296,7 @@ key([Ch, C, R], K, F) :-
 join_step([Ch, C, R], A, T, V1, B, C2, T, Q) :-
     key([Ch, C, R], K, F), Ch = [$NoOverlapJoin(), _, _], shift(V1),
     d4_compose(T, T, T),  // no turn
-    pair(K, F, A, C1, B, C2, Col), dirs.assign(Ch, R, Col, S),
+    pair(K, F, A, C1, B, C2, Col), dirs.assign(Ch, R, Col, [Col, S]),
     dir_elem(D), sides.id([C1, D], S),
     relative(C, C1, R0), compose(R0, V1, Q1),  // c1 placed
     neighbor(Q1, D, Q).
