@@ -88,6 +88,7 @@ S.REACH = False  # no look-ahead below a column or a value: an atom that cannot 
 
 RULE_TOK, DET_TOK, INIT_TOK, RIGID_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 6, 7, 12, 13
 KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK, RIGID_DET=RIGID_TOK)
+KIND_SHARE = dict(RIGID_DET=0.019)  # a sparse kind -> its share of the pool's picks: the share of corpus tasks that use the kind
 REPLAYED = 'CHOOSE',  # the kinds of a scope's forms that no draw makes and a scope replays, for the forms after them
 EXAMPLE_TASK, EXAMPLE_TRAIN = 0, 1  # the example_kind of a task-wide table entry, and of a train pair's
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
@@ -162,6 +163,13 @@ def overlap(rows, p, c, masks):
     seen[key[ok]] = True
     want, right = masks[n]
     return int((seen & want).sum()) / max(int(want.sum() + (seen & ~right).sum() + (~ok).sum()), 1)
+
+
+def kind_weights(pri):
+    """A form kind -> its weight in the pool's pick of a kind: its count over the corpus, and for a kind of KIND_SHARE, what gives it that share of the picks."""
+    got = {k: sum(c.get(k, 0) for c in pri['kinds1'].values()) for k in KIND_TOK}
+    rest = sum(v for k, v in got.items() if k not in KIND_SHARE)
+    return got | {k: rest * s / (1 - sum(KIND_SHARE.values())) for k, s in KIND_SHARE.items()}
 
 
 class Gate:
