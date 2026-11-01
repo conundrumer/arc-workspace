@@ -57,16 +57,21 @@
 
 .type DotKey = [f: FrameParse, col: Color]
 .type FrameKey = [f: FrameParse, b: Box]
-.type FrameRankKey = [f: FrameParse, k: RankKey]
+.type AnchorFrame = [d: DiagDir, fr: FrameKey]
+.type FrameRankKey = [d: DiagDir, f: FrameParse, k: RankKey]
 .type DotRankKey = [f: FrameParse, c: Count]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type AnchorValue = [d: DiagDir]
+.type OpenValue = [anchor: AnchorValue]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
 
 .comp Params {
     // @derive DominantColor: borderline concept
     .decl background(c: Color) background(0).
     // the interior corner whose cell the checkerboard fills
-    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+    // @open
+    .decl anchor(d: DiagDir) anchor(DIAG_TL). anchor(DIAG_TR).
 }
 
 .init params = Params
@@ -100,9 +105,9 @@ ink(P, Col) :- in(P, Col), !params.background(Col).
 hollow.cell([F, B], P) :- frame(F, B, _), in(P, _), interior(P, B).
 
 // An interior cell at an even taxicab distance from the interior's anchor
-// corner: some interior cell lies at half that distance.
-.decl checker(fr: FrameKey, p: Position)
-checker(Fr, P) :-
+// corner d: some interior cell lies at half that distance.
+.decl checker(d: DiagDir, fr: FrameKey, p: Position)
+checker(D, Fr, P) :-
     hollow.box(Fr, B_in), params.anchor(D),
     hollow.cell(Fr, P), crop(P, B_in, P_rel), corner_dist(P_rel, D, K),
     hollow.cell(Fr, M), crop(M, B_in, M_rel), corner_dist(M_rel, D, J),
@@ -112,20 +117,20 @@ checker(Fr, P) :-
 .decl dot_count(f: FrameParse, c: Count, col: Color, n: number)
 
 // The dot color each frame takes.
-.decl take(m: Match, c: Count, f: FrameParse, b: Box, col: Color)
+.decl take(d: DiagDir, m: Match, c: Count, f: FrameParse, b: Box, col: Color)
 
-.decl filled(ch: Choice, p: Position, col: Color)
-filled([M, C, F, U], P, Col) :-
-    impl_choice([M, C, F, U]), take(M, C, F, B, Col), checker([F, B], P).
+.decl filled(ch: Choice, d: DiagDir, p: Position, col: Color)
+filled([M, C, F, U], D, P, Col) :-
+    impl_choice([M, C, F, U]), take(D, M, C, F, B, Col), checker(D, [F, B], P).
 
-.decl kept(ch: Choice, p: Position, col: Color)
+.decl kept(ch: Choice, d: DiagDir, p: Position, col: Color)
 
-out(P, Col, Ch) :- filled(Ch, P, Col).
-out(P, Col, Ch) :- kept(Ch, P, Col).
-out(P, Col, [M, C, F, U]) :- impl_choice([M, C, F, U]), frame_cell(F, P), in(P, Col).
-out(P, Col, [M, C, F, U]) :-
-    impl_choice([M, C, F, U]), in(P, _), !frame_cell(F, P),
-    !filled([M, C, F, U], P, _), !kept([M, C, F, U], P, _), params.background(Col).
+out(P, Col, Ch, [[D]]) :- filled(Ch, D, P, Col).
+out(P, Col, Ch, [[D]]) :- kept(Ch, D, P, Col).
+out(P, Col, [M, C, F, U], [nil]) :- impl_choice([M, C, F, U]), frame_cell(F, P), in(P, Col).
+out(P, Col, [M, C, F, U], [[D]]) :-
+    impl_choice([M, C, F, U]), params.anchor(D), in(P, _), !frame_cell(F, P),
+    !filled([M, C, F, U], D, P, _), !kept([M, C, F, U], D, P, _), params.background(Col).
 
 // --- $ColorClassFrame ---
 // @claim hollow-frames
@@ -181,40 +186,41 @@ dot_count(F, $CountPieces(), Col, N) :- dot_piece_count.tally([F, Col], N).
 
 // --- $ExactCount, $RankByChecker ---
 // @claim checker-fill
-.init checker_size = Tally<FrameKey, Position>
-checker_size.item(Fr, P) :- checker(Fr, P).
+.init checker_size = Tally<AnchorFrame, Position>
+checker_size.item([D, Fr], P) :- checker(D, Fr, P).
 
 // --- $ExactCount ---
-take($ExactCount(), C, F, B, Col) :- checker_size.tally([F, B], N), dot_count(F, C, Col, N).
+take(D, $ExactCount(), C, F, B, Col) :- checker_size.tally([D, [F, B]], N), dot_count(F, C, Col, N).
 
 // --- $MatchByRank ---
-.decl frame_score(k: RankKey, fr: FrameKey, n: number)
+.decl frame_score(d: DiagDir, k: RankKey, fr: FrameKey, n: number)
 
 // @claim checker-fill
 .init frame_rank = Ordinal<FrameRankKey>
-frame_rank.idx_set([F, K], N) :- frame_score(K, [F, _], N).
+frame_rank.idx_set([D, F, K], N) :- frame_score(D, K, [F, _], N).
 
 // @claim checker-fill
 .init dot_rank = Ordinal<DotRankKey>
 dot_rank.idx_set([F, C], N) :- dot_count(F, C, _, N).
 
-take($MatchByRank(K), C, F, B, Col) :-
-    frame_score(K, [F, B], N), frame_rank.rank([F, K], N, R),
+take(D, $MatchByRank(K), C, F, B, Col) :-
+    frame_score(D, K, [F, B], N), frame_rank.rank([D, F, K], N, R),
     dot_count(F, C, Col, N2), dot_rank.rank([F, C], N2, R).
 
 // --- $RankByChecker ---
-frame_score($RankByChecker(), Fr, N) :- checker_size.tally(Fr, N).
+frame_score(D, $RankByChecker(), Fr, N) :- checker_size.tally([D, Fr], N).
 
 // --- $RankByArea ---
 // @claim checker-fill
 .init hollow_size = Tally<FrameKey, Position>
 hollow_size.item(Fr, P) :- hollow.cell(Fr, P).
 
-frame_score($RankByArea(), Fr, N) :- hollow_size.tally(Fr, N).
+frame_score(D, $RankByArea(), Fr, N) :- params.anchor(D), hollow_size.tally(Fr, N).
 
 // --- $KeepUnmatchedDots ---
-kept([M, C, F, $KeepUnmatchedDots()], P, Col) :-
-    impl_choice([M, C, F, $KeepUnmatchedDots()]), dot(F, P, Col), !take(M, C, F, _, Col).
+kept([M, C, F, $KeepUnmatchedDots()], D, P, Col) :-
+    impl_choice([M, C, F, $KeepUnmatchedDots()]), params.anchor(D),
+    dot(F, P, Col), !take(D, M, C, F, _, Col).
 
 .comp Determine {
     .init commonest = Mode<Example, Color, Position>
