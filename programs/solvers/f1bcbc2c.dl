@@ -180,4 +180,12 @@ out(P, Col, Ch) :- defined(Ch), in(P, Col), !filled(P, Ch).
     // the fill is the color the train outputs hold and no input does
     .decl fill_color(c: Color)
     fill_color(Col) :- ex_out(_, _, Col), !ex_in(_, _, Col).
+
+    // a color that some input holds at two cells
+    .decl repeated(c: Color)
+    repeated(Col) :- ex_in(E, P, Col), ex_in(E, Q, Col), P != Q.
+
+    // the plug is the color that no input holds at two cells
+    .decl plug_color(c: Color)
+    plug_color(Col) :- ex_in(_, _, Col), !repeated(Col).
 }

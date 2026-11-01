@@ -59,12 +59,18 @@
 // block region that walls it.
 .type Pocket = [place: MouthPlace, a: Adjacency, region: Ident, id: Ident]
 
+// One color of one input.
+.type Shade = [e: Example, col: Color]
+
+// One one-color region of one input.
+.type Patch = [s: Shade, id: Ident]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The fewest cells a one-color region has to be a block region.
     // @derive ConstInDim: ordinary concept
-    .decl min_block_cells(n: number) min_block_cells(10).
+    .decl min_block_cells(n: number) min_block_cells(7).
 }
 
 .init params = Params
@@ -197,3 +203,21 @@ mouth_color.item(X, Col) :- mouth(X, P), in(P, Col).
 
 fill([Pl, A, $WalledAnyMouth()], P, Col) :-
     mouth_color.value([Pl, A, R, Id], Col), pocket([Pl, A, R, Id], P).
+
+.comp Determine {
+    .init patches = Components<Shade>
+    patches.node([E, Col], P) :- ex_in(E, P, Col).
+
+    .init patch_size = Tally<Patch, Position>
+    patch_size.item([S, Id], P) :- patches.label(S, P, Id).
+
+    // A count of cells that no one-color region of any input has.
+    .init unused = Extremes<Unit>
+    unused.cand($U(), K) :-
+        ex_in(_, P, _), axis_elem(A), sub_extent(P, A, K), !patch_size.tally(_, K).
+
+    // The field's clumps stop short of the least unused count, and the blocks
+    // lie past it.
+    .decl min_block_cells(n: number)
+    min_block_cells(K) :- unused.low($U(), K).
+}

@@ -30,7 +30,7 @@
 none
 
 ## Not formed
-- Other values of `min_block_cells`: every value from 6 to 23 fits the pairs. The value only sets a block apart from the field's one-color clumps, which reach 6 cells in test0. A reader of the concept takes no count from it, so no value is an open value.
+- Other values of `min_block_cells`: every value from 6 to 23 fits the pairs. The value only sets a block apart from the field's one-color clumps, which reach 6 cells in test0. A reader of the concept takes no count from it, so no value is an open value. The determination takes the least count that no one-color region of any input has, which is 7.
 - The fill color as the color of the channel's inner end: fails train0, where row 13 ends at (13,7) = 2 and the fill is 9.
 - The fill color as the commonest color in the channel: fails train0, where the channel at col 16–17 holds four 5s and the fill is 9.
 
