@@ -13,10 +13,9 @@
 - Hints: `head-repeat` on `piece` and `single-consumer` on `cover` and `sized` were right, and the solver was changed for them. The `case section` hints on `piece_cell`, `parts4` and `parts8` went away after the change to `piece`, without an `@ignore`.
 - Deletions: the `domain` rules of the two `Tally` instances, `sized(K)` in `stranded` and `in(P, _)` in `out` changed nothing on any input, and the solver no longer has them. `corners_differ`, `most_outside` and the `most.mode` atoms stay: no pair has corners that differ or more than one tie, but the readings need them.
 - `derive` found no built-in derivation that fits. `store` gave no line to add.
-- Determination: `piece_turns` is SYM_1 at every run that finished. The plan lists no proposer that derives it, so the solver has no `Determine` comp.
+- Determination: the solver has no parameter, so it has no `Determine` comp.
 
 ## Unsettled
-- `piece_turns` at values other than SYM_1: the sweep and the plan time out at train0 or train1 for all nine other subgroups. With turns, the pieces have many more live placements, and the enumeration of covers grows. A faster cover enumeration would settle it. `analyze.md` judges SYM_C4, SYM_D4 and SYM_TB to fail Fit and SYM_LR not to be an open value.
 - The cases that take two or more non-concept branches are not witnessed, and no run checks them. A witness on which such a case's output differs from the output of every case that takes only part of its branches would settle it.
 - `deletions` ran before the last edits, which removed the four deletions it reported and inlined `sized`. The pairs run and the witness run after those edits pass.
 

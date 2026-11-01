@@ -5,8 +5,8 @@
 // @scene frame: the frame is all cells of one or two frame colors, and no piece holds a frame color.
 // @scene pieces: every other non-background cell belongs to a piece, a 4-connected one-color part
 //  that touches no other non-background cell, even at a corner.
-// @scene exact-fit: the pieces, each transformed by an element of piece_turns (SYM_1) and then
-//  translated, cover the background cells of the frame's bounding box exactly once, and no other cell.
+// @scene exact-fit: the pieces, each translated, cover the background cells of the frame's bounding
+//  box exactly once, and no other cell.
 // @rule find-frame: the frame colors are the set of colors at which exact-fit holds.
 // @rule crop: the output is the frame's bounding box, with the frame cells kept.
 // @rule fill: each background cell of that box takes the color of the piece that covers it in the
@@ -56,11 +56,11 @@
 // under the readings of the background and the pieces.
 .type FrameSet = [b: Background, pa: PieceParts, id: Ident]
 
-// Piece o turned by d inside the box of frame candidate k.
-.type Pose = [k: FrameSet, o: Ident, d: D4]
+// Piece o inside the box of frame candidate k.
+.type Pose = [k: FrameSet, o: Ident]
 
-// Piece o turned by d and translated to the margins at.
-.type Placement = [o: Ident, d: D4, at: Position]
+// Piece o translated to the margins at.
+.type Placement = [o: Ident, at: Position]
 
 // One exact cover: a placement for each piece.
 .type TiebreakResolution =
@@ -68,10 +68,7 @@
 
 .decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
-.comp Params {
-    // The subgroup of D4 a piece may be transformed by before it moves into place.
-    .decl piece_turns(s: Sym) piece_turns(SYM_1).
-}
+.comp Params {}
 
 .init params = Params
 
@@ -127,32 +124,30 @@ gap_count.item(K, P) :- gap(K, P).
 .init piece_count = Tally<FrameSet, Position>
 piece_count.item([Bk, Pa, Id], P) :- piece([Bk, Pa, Id], O), piece_cell([Bk, Pa, O], _, P).
 
-// A piece's footprint, read from its own box and turned by each element of piece_turns.
+// A piece's footprint, read from its own box.
 // @claim exact-fit
 .init piece_box = Bbox<Piece>
 piece_box.cell(Pc, P) :- piece_cell(Pc, _, P).
 
-.decl shape(pc: Piece, d: D4, p: Position)
-shape(Pc, D, P_t) :-
-    piece_cell(Pc, _, P), piece_box.box(Pc, B), crop(P, B, P_inner),
-    params.piece_turns(S), sym_member(S, D), apply(D, P_inner, P_t).
+.decl shape(pc: Piece, p: Position)
+shape(Pc, P_inner) :- piece_cell(Pc, _, P), piece_box.box(Pc, B), crop(P, B, P_inner).
 
-// Where a turned piece lands with each of its cells on a gap.
+// Where a piece lands with each of its cells on a gap.
 // @claim exact-fit
 .init occ = Occurrences<Pose, Unit>
-occ.shape([K, O, D], P, $U()) :-
+occ.shape([K, O], P, $U()) :-
     gap_count.tally(K, N), piece_count.tally(K, N),   // the pieces hold as many cells as the gaps
-    piece(K, O), K = [Bk, Pa, _], shape([Bk, Pa, O], D, P).
-occ.cell([K, O, D], P, $U()) :- occ.shape([K, O, D], _, _), gap(K, P).
+    piece(K, O), K = [Bk, Pa, _], shape([Bk, Pa, O], P).
+occ.cell([K, O], P, $U()) :- occ.shape([K, O], _, _), gap(K, P).
 
 .decl covers(k: FrameSet, pl: Placement, p: Position)
-covers([Bk, Pa, Id], [O, D, B], P) :-
-    occ.occurrence([[Bk, Pa, Id], O, D], B), shape([Bk, Pa, O], D, S), compose(B, S, P).
+covers([Bk, Pa, Id], [O, B], P) :-
+    occ.occurrence([[Bk, Pa, Id], O], B), shape([Bk, Pa, O], S), compose(B, S, P).
 
 // The placements some exact cover may hold.
 // @claim exact-fit
 .init pruning = PlacementPruning<FrameSet, Placement, Ident>
-pruning.cand(K, [O, D, B], O) :- occ.occurrence([K, O, D], B).
+pruning.cand(K, [O, B], O) :- occ.occurrence([K, O], B).
 pruning.conflict(K, Pl, Pl2) :- covers(K, Pl, P), covers(K, Pl2, P).
 
 // Some piece has no placement left.

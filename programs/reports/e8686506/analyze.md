@@ -31,7 +31,7 @@
 - none
 
 ## Not formed
-- `piece_turns` at a value other than SYM_1: SYM_C4, SYM_D4 and SYM_TB fail Fit at train1. There, the turned T pieces 8 and 4 change places, and the turned 6 bars lie flat, which gives 7, 9 and 2 output grids. SYM_LR fits every pair, because every piece in the evidence is symmetric left to right. But a reader of "slide each piece, unturned" does not take a mirror-only reading, so SYM_LR is not an open value.
+- Pieces turned before they move: the subgroups SYM_C4, SYM_D4 and SYM_TB fail Fit at train1. There, the turned T pieces 8 and 4 change places, and the turned 6 bars lie flat, which gives 7, 9 and 2 output grids. SYM_LR fits every pair, because every piece in the evidence is symmetric left to right. But a reader of "slide each piece, unturned" does not take a mirror-only reading, so the model has no turn parameter.
 - Background as the color at a grid corner: no source gives it. The background changes between pairs (8, 3, 4), and the commonest color is the only derivation of it that the proposers give.
 - A frame limited to cells inside its outline, such as the cells between two frame cells on a row: this is the hole rule that train1 rules out, because its four box corners lie outside every frame row's span and still take 5 cells.
 
