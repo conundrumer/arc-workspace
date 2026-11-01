@@ -84,11 +84,22 @@ join(K1, K2, V) :- seam_cell.clash([K1, K2, V]), !disagree(K1, K2, V).
 .init span = Tally<Axis, Line>
 span.item(A, [K, P_along]) :- content(K, P, _), axis_elem(A), split(P, A, P_along, _).
 
+// The fragment held still: the one with the most ink, and each of those at a
+// tie. The crop takes the choice back out.
+.init ink_size = Tally<Ident, Position>
+ink_size.item(K, P) :- motif(K, _, P).
+
+.init largest = ArgExtremes<Unit, Ident>
+largest.cand($U(), K, N) :- ink_size.tally(K, N).
+
+.decl base(k: Ident)
+base(K) :- largest.high($U(), K, _).
+
 // The room the scene can take around the fragment held still: that
 // fragment's box, grown past both ends of each axis by the axis's span.
 .decl room(base: Ident, b: Box)
 room(Base, B) :-
-    bbox.box(Base, B_base),
+    base(Base), bbox.box(Base, B_base),
     span.tally(A_v, N_v), axis_of(D_v, A_v), axis_outset(D_v, N_v, N_v, B_v),
     perp(A_v, A_h), span.tally(A_h, N_h), axis_of(D_h, A_h), axis_outset(D_h, N_h, N_h, B_h),
     compose(B_v, B_h, B_grow), compose(B_base, B_grow, B).
@@ -105,12 +116,11 @@ roomy(Base, K, V) :-
     compose(B_k, V, B_placed), inside(B_placed, B_room).
 
 // Each fragment's shift into the frame of the fragment held still, laid
-// join by join out from it. Every fragment serves as the one held still,
-// and the crop takes the choice back out.
+// join by join out from it.
 .type Placed = [k: Ident, v: Offset]
 
 .init layout = Propagation<Ident, Placed>
-layout.source(Base, [Base, ZERO]) :- bbox.box(Base, _).
+layout.source(Base, [Base, ZERO]) :- base(Base).
 layout.edge(Base, [K1, V1], [K2, V]) :-
     roomy(Base, K1, V1), join(K1, K2, V2), compose(V1, V2, V), roomy(Base, K2, V).
 
