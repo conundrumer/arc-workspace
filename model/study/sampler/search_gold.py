@@ -16,6 +16,7 @@ search: Sampler.search in chunks of CHUNK seconds of wall time, which exercises 
 """
 import argparse
 import collections
+import functools
 import gzip
 import hashlib
 import json
@@ -47,11 +48,16 @@ def points(stems):
     return out
 
 
-def gold_of(task, case, point):
-    """Gold's program of the point, as its lines."""
+@functools.cache
+def index():
     path = P.SAMPLER_DATA + '/fstore_index-%s.json.gz' % hashlib.sha256(FSTORE.encode()).hexdigest()[:8]
     with gzip.open(path, 'rt') as f:
-        idx = json.load(f)
+        return json.load(f)
+
+
+def gold_of(task, case, point):
+    """Gold's program of the point, as its lines."""
+    idx = index()
     for d, e in idx['points'].items():
         if d.startswith(task + '-') and e[0] == case and e[1] == point:
             return d, [x for x in idx['golds'][e[2]].splitlines() if x.strip()]
@@ -62,7 +68,7 @@ def result_path(out, arm, task, case, point):
     return os.path.join(out, arm, '%s.%s.%s.json' % (task, case.replace(' ', '_').replace('$', ''), '-'.join(map(str, point))))
 
 
-def job(task, case, point, arm, out, budget):
+def job(task, case, point, arm, out, budget, eager=True):
     import live
     import live_try
     import search
@@ -72,7 +78,7 @@ def job(task, case, point, arm, out, budget):
     tk = search.clause_key(target)
     sampler = live.Sampler(P.SAMPLER_DATA + '/models')
     sess, task_json, _ = live_try.session_of(task)
-    res = dict(task=task, case=case, point=point, arm=arm, budget=budget, target=target, forms=len(scope), setup_cpu=round(time.process_time() - t0, 2), hit=False)
+    res = dict(task=task, case=case, point=point, arm=arm, budget=budget, eager=eager, target=target, forms=len(scope), setup_cpu=round(time.process_time() - t0, 2), hit=False)
     c0 = time.process_time()
     cpu = lambda: time.process_time() - c0  # noqa: E731
     seen = set()
@@ -92,7 +98,7 @@ def job(task, case, point, arm, out, budget):
         res.update(tried=calls, clauses=ok, distinct=len(seen), counts={k: v for k, v in sampler.run.c.items() if not k.startswith('scope')} if sampler.run else {})
     else:
         emitted, gen = 0, [None]
-        se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, 'RULE')
+        se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, 'RULE', eager=eager)
 
         def on_leaf(key):
             if key == tk and gen[0] is None:
@@ -106,7 +112,7 @@ def job(task, case, point, arm, out, budget):
                     break
             if se.exhausted or not se.heap:
                 break
-            se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, 'RULE')
+            se = sampler.search(sess, 0, time.monotonic() + CHUNK, task_json, scope, 'RULE', eager=eager)
             se.on_leaf = on_leaf
         res.update(tried=se.stats['runs'], clauses=emitted, distinct=emitted, gen_cpu=None if gen[0] is None else round(gen[0], 3),
                    counts=dict(se.stats) | {k: v for k, v in se.run.c.items() if not k.startswith('scope')}, frontier=len(se.heap), dropped_bits=None if se.dropped == -float('inf') else round(se.dropped / -0.6931471805599453, 2))
@@ -130,7 +136,7 @@ def run(a):
         while todo and len(running) < a.jobs:
             (task, case, point), arm = todo.pop(0)
             cmd = ['timeout', str(a.job_timeout), heavy, '--cpus', '1', '--need', 'soon', sys.executable, '-u', os.path.abspath(__file__), 'job', task, case, json.dumps(point), arm,
-                   '--out', a.out, '--budget', str(a.budget)]
+                   '--out', a.out, '--budget', str(a.budget), '--order', a.order]
             running.append((subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=dict(os.environ, RAYON_NUM_THREADS='1')), task, case, point, arm))
         time.sleep(0.5)
         for r in running[:]:
@@ -190,6 +196,7 @@ def main():
     ap.add_argument('--stems', default=STEMS)
     ap.add_argument('--out', default=OUT)
     ap.add_argument('--budget', type=float, default=60)
+    ap.add_argument('--order', choices=['run', 'q'], default='run', help='search arm: give a clause when its run makes it, or in exact descending q')
     ap.add_argument('--jobs', type=int, default=2)
     ap.add_argument('--limit', type=int, default=None)
     ap.add_argument('--every', type=int, default=1)
@@ -198,7 +205,7 @@ def main():
     a.job_timeout = a.job_timeout or int(2 * a.budget + 60)
     if a.cmd == 'job':
         task, case, point, arm = a.args
-        r = job(task, case, json.loads(point), arm, a.out, a.budget)
+        r = job(task, case, json.loads(point), arm, a.out, a.budget, a.order == 'run')
         print(task, case, point, arm, 'hit' if r['hit'] else 'no hit', r.get('hit_cpu'), 'cpu', r['cpu'], 'tried', r['tried'])
     elif a.cmd == 'run':
         run(a)

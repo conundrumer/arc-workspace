@@ -10,7 +10,8 @@ likely) names one run of the walk. A run takes the ranks of its path, and then r
 gives one path to the end of a clause. At each choice from the last of the path on, the run puts the next rank of that choice in the
 frontier, with the chance of the path up to it times that option's chance, which is an upper bound on every clause below it. The
 frontier is a heap on those bounds. A run that ends in a clause puts the clause there with its own chance; the clause is given
-when it is the best entry. The run replays its path from the empty clause: S's caches (S.Drawer) hold the decoder's answers and the
+when it is the best entry (with eager, it is given at once, and the order is only about descending: a clause is out of place
+by the gap between its chance and the best bound at its run). The run replays its path from the empty clause: S's caches (S.Drawer) hold the decoder's answers and the
 steers' scores, so a replay costs less than a draw.
 
 A choice is any call of the walk's `rng`: Chooser stands in for the random.Random of the Run, so `rng.random() < p` is a coin with chance p,
@@ -215,7 +216,8 @@ class Counts(collections.Counter):
 
 SHARED = 'rel_pre', 'srel_cache', 'rel_dag_f', 'rel_dag_p'  # the Drawer caches that the Drawers of one scope and kind share
 SHARED_HIDDEN = 'rel_cache', 'choice_cache', 'roots'  # those whose entries also depend on the labels that a frontier hides
-MEMO_CAP = 30000  # decoders whose table, or whose END check, Run keeps
+MEMO_CAP = 3000  # decoders whose table, or whose END check, Run keeps
+ROOT_CAP = 512  # atom-start frontiers that the Drawers of a scope share
 
 
 class Hidden:
@@ -294,7 +296,7 @@ class SearchRun(Run):
                     sh[name] = getattr(dr, name)
             for name in SHARED_HIDDEN:
                 setattr(dr, name, Hidden(sh.setdefault(name, {}), dr.fr))
-            dr.root_cap, dr.node_cap = 4096, 1 << 30
+            dr.root_cap, dr.node_cap = ROOT_CAP, 1 << 30
         return dr
 
     def memoed(self, what, dec, make):
@@ -315,9 +317,12 @@ class SearchRun(Run):
     def can_close(self, d):
         return self.memoed('close', d, lambda: super(SearchRun, self).can_close(d))
 
+    def set_key(self, dr, atoms, toks):
+        return hash((dr.ctx, atoms_key(atoms), tuple(t for t in toks if t in (M.OR, ALSO_TOK, M.END))))
+
     def stop_chance(self, dr, k, h, toks, got, tb):
         """Run's, and the end of a path whose atoms as a set another path reached."""
-        key = hash((dr.ctx, atoms_key(dr.drawn), tuple(t for t in toks if t in (M.OR, ALSO_TOK, M.END))))
+        key = self.set_key(dr, dr.drawn, toks)
         prior = self.seen.get(key)
         if prior is None:
             if len(self.seen) >= SEEN_CAP:
@@ -334,8 +339,8 @@ class SearchRun(Run):
 class Search:
     """The frontier of one scope and kind. Iterating gives Clauses until `deadline`; a later iteration goes on."""
 
-    def __init__(self, run, forms, kind, cap):
-        self.run, self.forms, self.kind, self.cap = run, tuple(forms), kind, cap or FRONTIER_CAP
+    def __init__(self, run, forms, kind, cap, eager=False):
+        self.run, self.forms, self.kind, self.cap, self.eager = run, tuple(forms), kind, cap or FRONTIER_CAP, eager
         self.deadline = run.deadline
         self.heap = [(0.0, 0, None, None)]  # (-log bound, tie, path, clause): a path to run, or a clause
         self.tie = itertools.count(1)
@@ -381,12 +386,15 @@ class Search:
             if time_up(self.deadline):
                 return
             heapq.heappop(self.heap)
-            if not self.step(chain):
+            ok, new = self.step(chain)
+            if not ok:
                 heapq.heappush(self.heap, (nb, tie, chain, None))
                 return
+            if new is not None:
+                yield new
 
     def step(self, chain):
-        """Runs the path that chain is the end of; False where the deadline passed in it."""
+        """Runs the path that chain is the end of: (False, None) where the deadline passed in it, else (True, the clause to give now or None)."""
         run, ch, st = self.run, self.run.rng, self.stats
         path = []
         while chain is not None:
@@ -401,11 +409,13 @@ class Search:
             dec, pg = run.scope(self.forms)
             f = run.form(pg, dec, self.kind)
             clause = run.clause_of(self.forms, pg, f)
-        except Dead:
+        except Dead as e:
             st['dead'] += 1
+            st['dead:' + re.sub(r'\d+', 'N', str(e))[:30]] += 1
+            st['seconds dead'] += live.time.process_time() - t0
         except live.Deadline:
             st['runs'] -= 1
-            return False
+            return False, None
         except Mismatch:
             st['mismatch'] += 1
         except (Drop, arclog.Refusal, arclog.Fault) as e:
@@ -415,6 +425,8 @@ class Search:
             st['error'] += 1
             run.failed(e)
         st['seconds'] += live.time.process_time() - t0
+        if clause is not None:
+            st['seconds clause'] += live.time.process_time() - t0
         for parent, r, logb in ch.sibs:
             self.push(logb, (parent, r))
         if clause is not None:
@@ -422,26 +434,30 @@ class Search:
             clause.logq = ch.logp
             if self.on_leaf:
                 self.on_leaf(key)
-            if key in self.emitted or self.pending.get(key, -math.inf) >= ch.logp:
+            if key in self.emitted or (not self.eager and self.pending.get(key, -math.inf) >= ch.logp):
                 st['dup clause'] += 1
+            elif self.eager:
+                self.emitted.add(key)
+                st['clauses'] += 1
+                return True, clause
             else:
                 self.pending[key] = ch.logp
                 self.push(ch.logp, None, clause)
-        return True
+        return True, None
 
 
 def time_up(deadline):
     return live.time.monotonic() >= deadline
 
 
-def search(sampler, session, deadline, task, forms, kind, lim, cap):
+def search(sampler, session, deadline, task, forms, kind, lim, cap, eager=False):
     """Sampler.search: the Search of the scope, new or the earlier one with the new deadline."""
-    key = id(session), tuple(forms), kind, lim
+    key = id(session), tuple(forms), kind, lim, eager
     got = sampler.searches.get(key)
     if got is None or got.run.session is not session:
         if len(sampler.searches) >= 64:
             sampler.searches.clear()
         run = SearchRun(sampler.pri, session, deadline, task, lim)
-        got = sampler.searches[key] = Search(run, forms, kind, cap)
+        got = sampler.searches[key] = Search(run, forms, kind, cap, eager)
     got.deadline = deadline
     return got

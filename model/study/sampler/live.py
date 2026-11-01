@@ -484,12 +484,14 @@ class Sampler:
             self.run = Run(self.pri, session, seed, deadline, task, lim)
         return self.run.clause(seed, deadline, forms, kind)
 
-    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, **limits):
+    def search(self, session, seed, deadline, task, forms, kind='RULE', frontier_cap=None, eager=False, **limits):
         """search.Search over the scope forms: iterating it gives distinct Clauses in about descending q until the deadline. A call
         with the same session, forms, kind and limits gives that Search again with the new deadline, and it goes on where it
-        stopped. The search draws nothing at random, so seed has no effect."""
+        stopped. The search draws nothing at random, so seed has no effect. With eager, a clause is given as soon as a run makes it, so the
+        clauses come in about descending logq. Without it, a clause waits until no entry of the frontier has a greater bound, and the clauses come in
+        exact descending logq."""
         import search
-        return search.search(self, session, deadline, task, forms, kind, Limits(**limits), frontier_cap)
+        return search.search(self, session, deadline, task, forms, kind, Limits(**limits), frontier_cap, eager)
 
 
 class Run:
