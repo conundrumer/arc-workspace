@@ -5,7 +5,7 @@
 
 STEMS is a stems file of search_gold.py. A point's record in OUT.json has `parts` (bits by part: the OR taken or not, the branch count, the
 relation and the rest of each atom by place, the stops, the link coins), `total`, `atoms` (place, text, bits), `bad` (a choice to which the walk
-gives gold chance 0) and `dead` (a gate or a refusal that ends gold's path). Gold's atoms are forced through Drawer.atom with the steers and the
+gives gold chance 0), `dead` (a gate or a refusal that ends gold's path) and `fell_back` (what the priors lack and the walk went on without, see Guide). Gold's atoms are forced through Drawer.atom with the steers and the
 join coin on, as S.gold_q does, and each rng call of the walk takes gold's side. The bits are those of gold's written atom order and of the first
 try of each choice, as the search counts a path. A coin is told from the line of live.py that makes it, so a change to those lines needs a change
 here. `--set` replaces a number in live.py before the run (for example MIRROR_NOT=0.8).
@@ -68,6 +68,7 @@ class Guide(search.Chooser):
         self.rows = None  # with a list here, the rows that the steers score on gold's path: (kind, row) per consult, in walk order (see emit)
         self.stop = None  # the stop row that waits for the coin of its atom
         self.in_all = 0  # the ALLs being drawn
+        self.fell_back = set()  # what the priors lack and the walk went on without: 'rigid' (a RIGID_DET's coins take 1/2), 'RIGID_DET atoms' (its parts take INIT's), 'empty_ports' (gold's empty port has no coin)
 
     def start(self, path):
         pass
@@ -270,6 +271,8 @@ class Guide(search.Chooser):
         elif "rg['keyed']" in line or "rg['instance']" in line:  # a RIGID_DET's key group or instance clause
             r = bool(self.rest) and self.rest[0] != SKIP
             pre, name, pop = '', 'rigid: key group' if "rg['keyed']" in line else 'rigid: instance', False
+            if not self.run.pri.get('rigid'):
+                self.fell_back.add('rigid')
         elif 'f.admits([SKIP_TOK])' in line:  # a port's coin: taken or skipped
             r = not (self.rest and self.rest[0] == SKIP)
             pre, name, pop = '', 'outside: taken or skipped' if self.outside_loop(fr) else 'port: taken or skipped', False
@@ -418,6 +421,8 @@ class Guide(search.Chooser):
 class GuidedDrawer(search.SearchDrawer):
     def atom(self, fr, k, scope_types=(), key=()):
         g = self.rng
+        if g.kind in FORMS and g.rest and g.rest[0] == M.END:  # gold's body has no atom, and the walk draws one: Run.port draws an empty port only in an INIT with no key
+            g.stuck('%sbody: gold has no atom here, and the walk draws one' % g.where)
         self.force, self.gq, self.gq_rel = g.rest, True, []
         g.cur = collections.Counter()
         try:
@@ -536,6 +541,10 @@ class GuidedRun(search.SearchRun):
 
     def port(self, pg, f, comp, name, cols, params, nlab, keys, fields, outside=False):
         g = self.rng
+        if comp == 'RIGID_DET' and 'RIGID_DET' not in self.pri['atoms']:
+            g.fell_back.add('RIGID_DET atoms')
+        if 'empty_ports' not in self.pri and not keys and not outside and comp != 'RIGID_DET' and g.extent(list(g.rest)) == 0:
+            g.fell_back.add('empty_ports')
         g.begin_port(cols, keys, outside)
         got = super().port(pg, f, comp, name, cols, params, nlab, keys, fields, outside)
         g.end_port()
@@ -594,7 +603,7 @@ def walk(sampler, task, case, point, scope, target, sess, task_json, kind=None, 
     except Exception as e:  # noqa: BLE001
         dead = '%s: %s | %s' % (type(e).__name__, str(e)[:100], [k for k in run.c if k.startswith(('form:', 'try:', 'or:'))][:4])
     rec = dict(task=task, case=case, point=point, target=target, parts={k: round(v, 3) for k, v in sorted(g.parts.items())}, counts=dict(g.counts),
-               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail)
+               total=round(sum(g.parts.values()), 2), bad=g.bad, dead=dead, left=len(g.rest), atoms=g.atoms, detail=g.detail, fell_back=sorted(g.fell_back))
     if kind in FORMS:
         rec['match'] = match
     return rec
