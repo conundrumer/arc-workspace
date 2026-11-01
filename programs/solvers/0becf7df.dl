@@ -14,35 +14,58 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // Corner the key block sits at.
-    .decl corner(d: DiagDir)
-    corner(DIAG_TL).
+    // The key block, with the pose of the training key.
+    RIGID(key,
+        // Corner the key block sits at.
+        .decl corner(d: DiagDir)
+        corner(DIAG_TL).
 
-    // Key block extent per axis.
-    .decl key_dim(a: Axis, n: number)
-    key_dim(AXIS_V, 2).
-    key_dim(AXIS_H, 2).
+        // Key block extent per axis.
+        .decl dim(a: Axis, n: number)
+        dim(AXIS_V, 2).
+        dim(AXIS_H, 2).
+
+        .decl pose(d: D4)
+        pose(D4_ID).
+
+        // --- $Line ---
+        // Axis along which a pair's two members lie.
+        .decl axis(a: Axis)
+        axis(AXIS_H).
+
+        // --- $Map ---
+        // Pairing as an id join over the key frame: src labels the key cells,
+        // dst gives each cell the id of its partner.
+        .decl src(p: Position, id: Ident)
+        GRID_2x2(src,
+            0, 1,
+            2, 3)
+
+        .decl dst(p: Position, id: Ident)
+        GRID_2x2(dst,
+            1, 0,
+            3, 2)
+    )
+
+    // --- $Line, $Map ---
+    // The placement of the key: the one that takes the training pose onto
+    // itself, the element that composed with itself gives itself.
+    .decl placed(d: D4)
+    placed(D) :- key_pose(D, R), d4_compose(R, R, R).
+
+    .decl corner(d: DiagDir)
+    corner(Diag) :- placed(D), key_corner(D, Diag).
+
+    .decl key_extent(a: Axis, n: number)
+    key_extent(A, N) :- placed(D), key_dim(D, A, N).
 
     // --- $Line ---
-    // Axis along which a pair's two members lie.
     .decl axis(a: Axis)
-    axis(AXIS_H).
+    axis(A) :- placed(D), key_axis(D, A).
 
     // --- $Map ---
-    // Pairing as an id join over the key frame: src labels the key cells,
-    // dst gives each cell the id of its partner.
-    .decl src(p: Position, id: Ident)
-    GRID_2x2(src,
-        0, 1,
-        2, 3)
-
-    .decl dst(p: Position, id: Ident)
-    GRID_2x2(dst,
-        1, 0,
-        3, 2)
-
     .decl pair(p1: Position, p2: Position)
-    pair(P1, P2) :- src(P1, Id), dst(P2, Id).
+    pair(P1, P2) :- placed(D), key_src(D, P1, Id), key_dst(D, P2, Id).
 }
 
 .init params = Params
@@ -55,8 +78,8 @@ impl_choice($Line()). impl_choice($Map()).
 key_cell(P) :-
     in(P, _),                                             // grid cell
     params.corner(Diag), diag_dist(P, Diag, A, K1, K2),   // dists to corner edges
-    params.key_dim(A, N1), K1 < N1,                       // within extent on A
-    perp(A, A2), params.key_dim(A2, N2), K2 < N2.         // and across
+    params.key_extent(A, N1), K1 < N1,                    // within extent on A
+    perp(A, A2), params.key_extent(A2, N2), K2 < N2.      // and across
 
 .decl mapping(c1: Color, c2: Color, ch: Choice)
 
@@ -89,12 +112,12 @@ out(P, Col_out, Ch) :-
     .decl key_cell(e: Example, p: Position)
     key_cell(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col), mapping(E, Col, _).
 
-    .decl corner(d: DiagDir)
-    corner(Diag) :- key_cell(_, P), corner_dist(P, Diag, 0).
+    .decl key_corner(d: DiagDir)
+    key_corner(Diag) :- key_cell(_, P), corner_dist(P, Diag, 0).
 
     // Distances from the corner's edges that key cells take, per axis.
     .init key_dist = Tally<Axis, number>
-    key_dist.item(A, K) :- key_cell(_, P), corner(Diag), diag_dist(P, Diag, A, K, _).
+    key_dist.item(A, K) :- key_cell(_, P), key_corner(Diag), diag_dist(P, Diag, A, K, _).
 
     .decl key_dim(a: Axis, n: number)
     key_dim(A, N) :- key_dist.tally(A, N).
@@ -105,16 +128,16 @@ out(P, Col_out, Ch) :-
         key_cell(E, P2), ex_in(E, P2, C2),    // another
         mapping(E, C1, C2).                   // their colors swap
 
-    .decl axis(a: Axis)
-    axis(A) :- grid_partner(P1, P2), axis_elem(A), same_line(A, P1, P2).
+    .decl key_axis(a: Axis)
+    key_axis(A) :- grid_partner(P1, P2), axis_elem(A), same_line(A, P1, P2).
 
     .init frame = Frame2D<Unit>
     frame.extent($U(), A, N) :- key_dim(A, N).
 
     .decl key_pos(p_grid: Position, p_key: Position)
     key_pos(P_grid, P_key) :-
-        key_cell(_, P_grid), corner(Diag), frame.cell($U(), P_key),    // key cell, key frame cell
-        corner_anchor(Diag, P_grid, P_key).                            // same dists to the corner's edges
+        key_cell(_, P_grid), key_corner(Diag), frame.cell($U(), P_key),    // key cell, key frame cell
+        corner_anchor(Diag, P_grid, P_key).                                // same dists to the corner's edges
 
     .decl partner(p1: Position, p2: Position)
     partner(P1, P2) :-
@@ -124,9 +147,14 @@ out(P, Col_out, Ch) :-
     .init ident = IdentOf<Position>
     ident.value(P1) :- partner(P1, _).
 
-    .decl src(p: Position, id: Ident)
-    src(P1, Id) :- partner(P1, _), ident.id(P1, Id).
+    .decl key_src(p: Position, id: Ident)
+    key_src(P1, Id) :- partner(P1, _), ident.id(P1, Id).
 
-    .decl dst(p: Position, id: Ident)
-    dst(P2, Id) :- partner(P1, P2), ident.id(P1, Id).
+    .decl key_dst(p: Position, id: Ident)
+    key_dst(P2, Id) :- partner(P1, P2), ident.id(P1, Id).
+
+    // The key is read in the pose of the train keys: the identity, the element
+    // that composed with itself gives itself.
+    .decl key_pose(d: D4)
+    key_pose(D) :- d4_compose(D, D, D).
 }
