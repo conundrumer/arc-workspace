@@ -193,6 +193,8 @@ def _match(cols, labs):
 _CMP = ('=', '!=', '<', '<=', '>', '>=')
 _ORD = ('<', '<=', '>', '>=')
 _cache = [None, None]
+_by_cols_of = {}  # the values of a row that _by_cols reads -> {column types -> _by_cols' answer}
+_BY_COLS_CAP = 256  # rows' values kept; the store is emptied past it
 
 
 def _rowinfo(row):
@@ -237,7 +239,12 @@ def _rowinfo(row):
     info = dict(all_t=all_t, dang_t=dang_t, last_t=last_t, idf=idf, nlast=len(last_t), touch_t=touch_t, numpairs=nnum * (nnum - 1) // 2, nnum=nnum,
                 apairs=apairs, age_t=sorted(zip(ages, [l[1] for l in labs if l[3] == 0]), key=lambda x: x[0]), miss_p=miss_p, miss_n=miss_n, miss_of=miss_of,
                 nl=len(labs), nd=len(dang_t),
-                pairs=_pairs([l for l in labs if l[3] == 0]), by_cols={})
+                pairs=_pairs([l for l in labs if l[3] == 0]))
+    # _by_cols reads these and the column list: rows with the same values share the answers
+    sig = (tuple(all_t), tuple(dang_t), tuple(last_t), tuple(touch_t), tuple(info['age_t']), len(labs), tuple(idf.items()), tuple(miss_p))
+    if len(_by_cols_of) >= _BY_COLS_CAP:
+        _by_cols_of.clear()
+    info['by_cols'] = _by_cols_of.setdefault(sig, {})
     _cache[0], _cache[1] = row, info
     return info
 

@@ -51,6 +51,9 @@ _IDENT = re.compile(r'^\*?[A-Za-z_]\w*$')
 _STAR = re.compile(r'\*([A-Za-z_]\w*)')
 _AC = {}
 _FITS = {}
+_SIGRES = {}  # the values of a row that _sigres reads -> {column types -> _sigres' answer}
+_O1 = {}  # a row's set of scope types -> {column types -> the o1 values that read the scope}
+_SHARED_CAP = 256  # rows' values kept in each of these stores; one is emptied past it
 
 
 def _nt(t):
@@ -202,7 +205,8 @@ def _build(row):
     g._cm = None
     g._tw = None
     g._f1 = {}
-    g._sig = {}
+    g._sig = None
+    g._o1 = None
     g._cmpinfo = None
     g._kinds = None
     return g
@@ -315,9 +319,18 @@ def _o1(g, row, o, d):
         return
     ts = o.get('types')
     if ts:
-        if not any(t in g.scope_raw for t in ts):
+        memo = g._o1
+        if memo is None:
+            if len(_O1) >= _SHARED_CAP:
+                _O1.clear()
+            memo = g._o1 = _O1.setdefault(frozenset(g.scope_raw), {})
+        key = tuple(ts)
+        got = memo.get(key)
+        if got is None:
+            got = memo[key] = (not any(t in g.scope_raw for t in ts), not any(_loose(u, _nt(t)) for u in g.scope for t in ts))
+        if got[0]:
             d['o1_none_in_scope'] = 1.0
-        if not any(_loose(u, _nt(t)) for u in g.scope for t in ts):
+        if got[1]:
             d['o1_none_fit'] = 1.0
 
 
@@ -361,9 +374,23 @@ def _o2(g, row, o, d):
 
 # ---- o3 ----
 
+def _sigres_memo(g):
+    """The store of the answers of _sigres for the values of the row that it reads: the types of the unread and of all labels of each frontier atom,
+    and of each twin pair that _sigres counts. Rows with the same values share it."""
+    lt = g.lt
+    key = (tuple((tuple(lt.get(n) for n in g.aunread[i]), tuple(lt.get(n) for n in g.alabs[i])) for i in g.front),
+           tuple((lt.get(a), lt.get(b)) for a, b in _twins(g) if g.cnt[a] <= 2 and g.cnt[b] <= 2))
+    if len(_SIGRES) >= _SHARED_CAP:
+        _SIGRES.clear()
+    return _SIGRES.setdefault(key, {})
+
+
 def _sigres(g, sig):
     """The type-dependent values for an option whose column types are `sig` (cached for the row)."""
-    r = g._sig.get(sig)
+    memo = g._sig
+    if memo is None:
+        memo = g._sig = _sigres_memo(g)
+    r = memo.get(sig)
     if r is not None:
         return r
     r = {}
@@ -405,7 +432,7 @@ def _sigres(g, sig):
                 tw += 1
         if tw:
             r['o5_take_twin'] = float(min(tw, 3))
-    g._sig[sig] = r
+    memo[sig] = r
     return r
 
 

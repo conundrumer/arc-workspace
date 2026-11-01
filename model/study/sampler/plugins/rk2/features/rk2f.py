@@ -178,6 +178,8 @@ LIBS = ('input', 'relative', 'axis_of', 'inside', 'margin', 'split', 'neighbor',
 LIBSET = frozenset(LIBS)
 
 _cache = [None, None]
+_by_types_of = {}  # the values of a row that _by_types reads -> {column types -> _by_types' answer}
+_BY_TYPES_CAP = 256  # rows' values kept; the store is emptied past it
 
 
 def _atom_class(a):
@@ -288,7 +290,11 @@ def _info(row):
             else:
                 break
         run[cls] = n
-    info = dict(labs=labs, L=L, atoms=atoms, dang=dang, twin=twin, cross=cross, same=same, ps=ps, neg_ps=neg_ps, sum_ps=sum_ps, by_types={}, pct={}, depths=depths, arity=arity,
+    # _by_types reads these and the column types: rows with the same values share the answers
+    sig = (tuple(twin), tuple(cross), tuple(same), tuple(pool), tuple(demand.items()))
+    if len(_by_types_of) >= _BY_TYPES_CAP:
+        _by_types_of.clear()
+    info = dict(labs=labs, L=L, atoms=atoms, dang=dang, twin=twin, cross=cross, same=same, ps=ps, neg_ps=neg_ps, sum_ps=sum_ps, by_types=_by_types_of.setdefault(sig, {}), pct={}, depths=depths, arity=arity,
                 scope=scope, pool=pool, demand=demand, last=last, run=run, nneg=sum(1 for c, n in classes if n), ncmp=sum(1 for c, n in classes if c == 'cmp'),
                 twin_n=len(twin), twin_of=twin_of, cross_n=sum(cross.values()), same_n=sum(same.values()))
     _cache[0], _cache[1] = row, info

@@ -44,6 +44,71 @@ def load_plugin(path):
     relfeat.FEATURE_FUNCS.update(mod.FEATURE_FUNCS)
 
 
+class FlatGBM:
+    """decision_function of a fitted HistGradientBoostingClassifier as numpy arrays, built from the model's trees at load.
+
+    All trees sit in one set of arrays, and one pass over the levels moves every (tree, row) pair down a level, so a call costs a few
+    dozen numpy calls in place of one Python call for each tree. The values equal the model's to the last bit: a row reaches the leaf
+    that the model's predictor gives it (it goes left where its value is at most the node's threshold), and the leaf values add to the
+    baseline one tree after another, as `_predict_iterations` adds them. A matrix that has a NaN, and a matrix of more than `ROWS` rows
+    (where the model's compiled loop is the faster), go to the model. A model with a tree per class, a categorical split or a
+    preprocessor is not flattened: `FlatGBM.of` gives the model back.
+    """
+
+    ROWS = 512
+
+    @classmethod
+    def of(cls, model):
+        """The FlatGBM of the model, else the model itself where this class does not cover it."""
+        try:
+            return cls(model)
+        except (AttributeError, TypeError, ValueError, KeyError):
+            return model
+
+    def __init__(self, model):
+        if model.n_trees_per_iteration_ != 1 or getattr(model, '_preprocessor', None) is not None or getattr(model, 'is_categorical_', None) is not None:
+            raise ValueError('not a plain binary model')
+        trees = [p[0].nodes for p in model._predictors]
+        if any(nd['is_categorical'].any() for nd in trees):
+            raise ValueError('categorical split')
+        self.model = model
+        self.base = float(np.asarray(model._baseline_prediction, np.float64).ravel()[0])
+        self.nf = int(model.n_features_in_)
+        sizes = [len(nd) for nd in trees]
+        start = np.concatenate([[0], np.cumsum(sizes)[:-1]]).astype(np.int64)
+        n = sum(sizes)
+        feat, thr, kid, val = np.zeros(n, np.int64), np.full(n, np.inf), np.zeros((n, 2), np.int64), np.zeros(n)
+        for s, nd in zip(start, trees):
+            i = np.arange(len(nd)) + s
+            leaf = nd['is_leaf'].astype(bool)
+            feat[i] = np.where(leaf, 0, nd['feature_idx'])
+            thr[i] = np.where(leaf, np.inf, nd['num_threshold'])
+            kid[i, 0] = np.where(leaf, i, nd['left'].astype(np.int64) + s)  # a leaf moves to itself
+            kid[i, 1] = np.where(leaf, i, nd['right'].astype(np.int64) + s)
+            val[i] = nd['value']
+        # a node is numbered twice, as 2 * node: the arrays by node repeat each entry, and kid gives the doubled number of a child
+        self.feat, self.thr, self.kid, self.val = feat.repeat(2), thr.repeat(2), kid.ravel() * 2, val.repeat(2)
+        self.roots = start * 2
+        self.depth = max(int(nd['depth'].max()) for nd in trees)
+        self.trees = len(trees)
+
+    def decision_function(self, X):
+        n = X.shape[0]
+        if n > self.ROWS or X.shape[1] != self.nf or np.isnan(X).any():
+            return self.model.decision_function(X)
+        off = np.arange(n, dtype=np.int64) * self.nf
+        flat = X.ravel()
+        at = np.repeat(self.roots[:, None], n, 1)
+        for _ in range(self.depth):
+            go = flat[self.feat[at] + off] > self.thr[at]  # right where the value is above the threshold
+            at = self.kid[at + go]
+        leaves = self.val[at]
+        out = np.empty((self.trees + 1, n))
+        out[0] = self.base
+        out[1:] = leaves
+        return np.cumsum(out, axis=0)[-1]
+
+
 class Columns(dict):
     """A feature set's {feature name: column of the model}, filled as names come; -1 for a name that has no column, and for 'logp',
     which option_dicts takes from no set."""
@@ -71,7 +136,7 @@ class Scorer:
         if model == 'logit':
             self.index, self.w = m['index'], m['weights']
         else:
-            self.model, self.beta = m['model'], m['beta']
+            self.model, self.beta = FlatGBM.of(m['model']), m['beta']
             self.col = {n: j for j, n in enumerate(m['names'])}
             self.nd = len(self.col)
             self.sets = [(getattr(relfeat.FEATURE_FUNCS[g], 'unfiltered', relfeat.FEATURE_FUNCS[g]), Columns(self.col, g)) for g in self.groups]

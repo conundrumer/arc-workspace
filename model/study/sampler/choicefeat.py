@@ -47,6 +47,7 @@ The label with token L<i> is the i-th '*' in the prefix, then in the text: its n
 of the prefix, and its type is scope_types[scope_labels.index('V<j>')].  A label made in this atom (i beyond the prefix's) takes
 the type of the column it fills, rtypes[column position].  context(row) gives these.
 """
+import array
 import collections
 import importlib.util
 import math
@@ -326,6 +327,19 @@ def load_plugin(path):
     FEATURE_FUNCS.update(mod.FEATURE_FUNCS)
 
 
+class Columns(dict):
+    """A feature set's {feature name: column of the model}, filled as names come; -1 for a name that has no column, and for 'logp',
+    which option_dicts takes from no set."""
+
+    def __init__(self, col, group):
+        super().__init__(logp=-1)
+        self.col, self.group = col, group
+
+    def __missing__(self, name):
+        j = self[name] = self.col.get(qualify(self.group, name), -1)
+        return j
+
+
 class Scorer:
     """sc = Scorer('/path/choice.pkl');  f = sc.f(row)  ->  list[float], one per row['options']: the model's score minus log(P's share);
     a steer multiplies weight i by exp(beta * f[i]).  row: a choice row as the sampler writes it (the mask is applied here)."""
@@ -335,21 +349,31 @@ class Scorer:
             ck = pickle.load(f)
         one_thread()
         m = ck['hgb']
-        self.groups, self.model, self.beta = m['groups_used'], m['model'], m['beta']
+        import relsteer
+        self.groups, self.model, self.beta = m['groups_used'], relsteer.FlatGBM.of(m['model']), m['beta']
         self.phases = frozenset(ck.get('phases') or DEFAULT_PHASES)  # the phases the model was trained on
         if ck.get('plugin') and any(g not in FEATURE_FUNCS for g in self.groups):
             load_plugin(os.path.join(os.path.dirname(os.path.abspath(__file__)), ck['plugin']))
         self.col = {n: j for j, n in enumerate(m['names'])}
         self.nd = len(self.col)
+        self.sets = [(FEATURE_FUNCS[g], Columns(self.col, g)) for g in self.groups]
 
     def f(self, row):
+        """option_dicts' values of the masked row, put in the model's input by column as they come."""
         row = mask_row(row)
-        ds = option_dicts(row, self.groups)
-        X = np.zeros((len(ds), self.nd), np.float32)
-        col = self.col
-        for i, d in enumerate(ds):
-            for n, v in d.items():
-                j = col.get(n)
-                if j is not None:
-                    X[i, j] = v
-        return (self.beta * self.model.decision_function(X) - np.array([d['logp'] for d in ds])).tolist()
+        opts, nd = row['options'], self.nd
+        X = array.array('f', bytes(4 * len(opts) * nd))
+        logp = [math.log(max(o['p'], 1e-9)) for o in opts]
+        lc, base = self.col.get('logp', -1), 0
+        for o, lp in zip(opts, logp):
+            if lc >= 0:
+                X[lc + base] = lp
+            for fn, col in self.sets:
+                for n, v in (fn(row, o) or {}).items():
+                    if v:
+                        j = col[n]
+                        if j >= 0:
+                            X[j + base] = float(v)
+            base += nd
+        X = np.frombuffer(X, np.float32).reshape(len(opts), nd)
+        return (self.beta * self.model.decision_function(X) - np.array(logp)).tolist()

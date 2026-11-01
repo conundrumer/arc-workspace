@@ -1062,8 +1062,11 @@ class FastFrontier:
     def probe(self, dec):
         """A token that starts a next atom at `dec` (the engine gives a body table only at an atom start)."""
         n = FNode((), dec, 'root', -1, 0, '', False, 0, None)
-        for j in self.closers_try[1:2] + self.starts_list:
-            if self.KIND[j] != 'relation' and self.adm(n, j):
+        cands = [j for j in self.closers_try[1:2] + self.starts_list if self.KIND[j] != 'relation']
+        if ROOT_ADMITS and cands and dec.admits(cands[:1])[0]:  # the first candidate is nearly always the one; `adm` would check every start token
+            return cands[0]
+        for j in cands:
+            if self.adm(n, j):
                 return j
         return None
 
