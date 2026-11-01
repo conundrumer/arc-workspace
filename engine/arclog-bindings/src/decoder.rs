@@ -91,7 +91,7 @@ impl PyDecoder {
 
     fn step_result(&self, result: arclog::decode::StepResult) -> PyResult<StepResult> {
         match result {
-            Ok(step) => Ok((self.forced_ids(&step.forced), step.consistency.as_ref().map(PyConsistency::of), step.rule_test.as_ref().map(PyConsistency::of))),
+            Ok(step) => Ok((self.forced_ids(&step.forced), step.consistency.as_ref().map(|consistency| PyConsistency::of(consistency, step.capped_sets)), step.rule_test.as_ref().map(|rule_test| PyConsistency::of(rule_test, step.rule_capped_sets)))),
             Err(refusal) => Err(refusal_error(&refusal)),
         }
     }
@@ -100,6 +100,18 @@ impl PyDecoder {
 /// The `Refusal` that Python raises for a decode's `refusal`.
 fn refusal_error(refusal: &arclog::decode::Refusal) -> PyErr {
     Refusal::new_err(format!("{refusal:?}"))
+}
+
+/// The attempts as lists of at most two grids, one list per test input.
+fn attempts_lists(attempts: &[Attempts]) -> Vec<Vec<Vec<Vec<u32>>>> {
+    attempts
+        .iter()
+        .map(|attempt| match attempt {
+            Attempts::None => Vec::new(),
+            Attempts::One(one) => vec![grid_rows(one)],
+            Attempts::Two(one, two) => vec![grid_rows(one), grid_rows(two)],
+        })
+        .collect()
 }
 
 /// The bytes of `mask` over a vocabulary of `len` tokens: bit `id % 8` of
@@ -233,16 +245,23 @@ impl PyDecoder {
     fn attempts(&self) -> PyResult<Option<Vec<Vec<Vec<Vec<u32>>>>>> {
         let Some(outcome) = self.decoder().attempts() else { return Ok(None) };
         let attempts = settled(outcome)?;
-        Ok(Some(
-            attempts
-                .iter()
-                .map(|attempt| match attempt {
-                    Attempts::None => Vec::new(),
-                    Attempts::One(one) => vec![grid_rows(one)],
-                    Attempts::Two(one, two) => vec![grid_rows(one), grid_rows(two)],
-                })
-                .collect(),
-        ))
+        Ok(Some(attempts_lists(&attempts)))
+    }
+
+    /// The output sets of the consistency tests of the decode's steps that
+    /// ended at the model cap with the grids found so far.
+    #[getter]
+    fn capped_sets(&self) -> u64 {
+        self.decoder().capped_sets()
+    }
+
+    /// The attempts, as `attempts` gives them, and the count of the output
+    /// sets on the test inputs that ended at the model cap with the grids
+    /// found so far; `None` until the decode ends at a consistent relation.
+    fn attempts_counted(&self) -> PyResult<Option<(Vec<Vec<Vec<Vec<u32>>>>, u64)>> {
+        let Some(outcome) = self.decoder().attempts_counted() else { return Ok(None) };
+        let (attempts, capped) = settled(outcome)?;
+        Ok(Some((attempts_lists(&attempts), capped)))
     }
 
     /// Attaches the language model's top tokens at the record `step` of the

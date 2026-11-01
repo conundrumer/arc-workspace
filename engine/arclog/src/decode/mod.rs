@@ -456,7 +456,12 @@ impl<'a> Decoder<'a> {
         let (state, forced) = self.next_state(token)?;
         let consistency = if tested { self.consistency(&self.state, &state, Tested::Out) } else { None };
         let rule_test = if tested && self.context.settings.rule_tests { self.consistency(&self.state, &state, Tested::Rule) } else { None };
-        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test } })
+        let counted = |tested: Option<(Consistency, u64)>| match tested {
+            Some((consistency, capped)) => (Some(consistency), capped),
+            None => (None, 0),
+        };
+        let ((consistency, capped_sets), (rule_test, rule_capped_sets)) = (counted(consistency), counted(rule_test));
+        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test, capped_sets, rule_capped_sets } })
     }
 
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
@@ -493,6 +498,7 @@ impl<'a> Decoder<'a> {
             record.rule_test = Some(verdict);
             record.stop = record.stop.or(stop);
         }
+        record.capped_sets = step.capped_sets + step.rule_capped_sets;
         self.trace.push(record);
         for forced in step.forced.iter() {
             self.trace.push(DecodeRecord::new(forced.clone(), Emitter::Engine));
@@ -503,6 +509,13 @@ impl<'a> Decoder<'a> {
     /// forced tokens among them, in the order of the stream.
     pub fn trace(&self) -> &DecodeTrace {
         &self.trace
+    }
+
+    /// The output sets of the consistency tests of the decode's steps that
+    /// ended at the model cap with the grids found so far, summed over the
+    /// trace's records.
+    pub fn capped_sets(&self) -> u64 {
+        self.trace.records().iter().map(|record| record.capped_sets).sum()
     }
 
     /// Attaches `top_k`, the language model's top tokens at the decision of

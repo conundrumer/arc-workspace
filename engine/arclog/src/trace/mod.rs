@@ -190,12 +190,16 @@ pub struct DecodeRecord {
     pub rule_test: Option<Verdict>,
     /// The bound the prefix reached at this step.
     pub stop: Option<Stop>,
+    /// The output sets of the tests at this step that ended at the model
+    /// cap with the grids found so far, as
+    /// `docs/engine/cases.md#enumeration-and-its-stops` gives.
+    pub capped_sets: u64,
     pub top_k: Option<TopK>,
 }
 
 impl DecodeRecord {
     pub fn new(token: Token, emitter: Emitter) -> DecodeRecord {
-        DecodeRecord { token, emitter, rows: Vec::new(), counts: None, consistency: None, rule_test: None, stop: None, top_k: None }
+        DecodeRecord { token, emitter, rows: Vec::new(), counts: None, consistency: None, rule_test: None, stop: None, capped_sets: 0, top_k: None }
     }
 }
 

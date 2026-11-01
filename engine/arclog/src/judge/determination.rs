@@ -29,7 +29,7 @@ use crate::task::{JudgedTask, Task};
 use crate::types::GraphRelation;
 
 use super::candidates::{PairCandidates, Section, World};
-use super::run::{Found, Observed, Tested};
+use super::run::{AtCap, Found, Observed, Tested};
 
 /// A case that the determination runs: its name, its checked program, the
 /// checked concept program, in which the `DET` forms the case takes from
@@ -271,11 +271,13 @@ pub(crate) struct Walked {
 /// The walk of the joint assignments of `dets`, the `DET`s that `output`
 /// reads, depth-first in their dependency order, under the
 /// assignment cap `cap`: at each assignment, the test of `output`, as
-/// `tested` gives it, over the train pairs whose candidates are `train`.
-pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64, tested: Tested) -> Walked {
+/// `tested` gives it, over the train pairs whose candidates are `train`,
+/// with the output sets of a case that reaches the model cap as `at_cap`
+/// gives.
+pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRelation, train: &[PairCandidates<'_>], cap: u64, tested: Tested, at_cap: AtCap<'_>) -> Walked {
     let mut kept = Vec::new();
     let mut leaf = |evaluation: &Evaluation<'_>, assigned: &[Assignment]| {
-        let (found, observed) = tested.recorded(evaluation, output, train);
+        let (found, observed) = tested.recorded(evaluation, output, train, at_cap);
         let fault = match found {
             Ok(Found::Columns(_)) => None,
             Ok(Found::None) => return Ok(()),
@@ -321,7 +323,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         if holds_demonstrated {
             demonstrated.extend(reads.iter().cloned());
         }
-        let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments, Tested::Out);
+        let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments, Tested::Out, AtCap::Stop);
         let outcome = match end {
             Ok(()) if kept.is_empty() => CaseOutcome::Unsolved,
             Ok(()) => CaseOutcome::Solved,

@@ -46,7 +46,7 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
     - a group with no option left leaves the cluster with no model.
 - The module visits clusters, options and values in a canonical order by content, with Idents ordered by their contents as a writer numbers them, as [Terms](reader.md#terms) gives, so a stop at a cap does not depend on an encoding order. The node cap is a fixed count. On 2026-10-23, `arclog-cli row-counts` over the 18 solvers of `work/arclog/gen/` with a `CHOOSE` form searched at most 512 nodes in one cluster (b7cb93ac on train/2), and at most 12 nodes in a cluster of each of the other 17 solvers.
 - The models of one case on one input, its `DEMONSTRATED` choices included, run under a cap of 2^9 = 512, which is the default of the model cap of [Decode settings](synthesis.md#decode-settings). The cap is a fixed count, and its evidence is in [Open values and constraint search](corpus-survey.md#open-values-and-constraint-search): the models per case per input that survey measures stay under it, for the forms it measures. The most models of one case on one input in `work/arclog/gen/` are 256, of `&pruning` of b7cb93ac on train/2, counted on 2026-10-23 by `arclog-cli row-counts` under a model cap of 2^24.
-- Reaching the node cap or the model cap is a stop at a bound: the case has no output on that input, the result cache does not store the stop, and the stop is an alert, as [Joins](evaluator.md#joins) and [Bounds](overview.md#requirements) give.
+- Reaching the node cap is a stop at a bound, and so is reaching the model cap where [Enumeration and its stops](#enumeration-and-its-stops) gives no set at the cap: the case has no output on that input, the result cache does not store the stop, and the stop is an alert, as [Joins](evaluator.md#joins) and [Bounds](overview.md#requirements) give.
 - The module gives the models one at a time.
 - A cluster is enumerated where its chosen relation, as [One](../../docs/arclog/constraints.md#one) defines it, is an ancestor of `&output` in the case's dependency graph, over every read edge, a negated read included. A chosen relation, or the relation of a `DEMONSTRATED` form, that is no ancestor of `&output` takes its first model in the canonical order, since no output reads it.
 - A `DET` reads a chosen relation, or the relation of a `DEMONSTRATED` form, only where that relation has one model, on each example where the `DET` reads it lifted. Otherwise the engine reports an error that names the `DET` and the pick.
@@ -61,8 +61,11 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
     - a witness input, in the refine step: at the first grid outside every grid that the witness's `output` forms record.
 - An undefined grid stops each of these too, except on a witness input whose record holds `undefined`.
 - The walks of an `Unfold` instance are enumerated lazily, as the other models are, under the same stops. A stop counts distinct grids, and not distinct sets of output facts, since two joint walks whose facts differ can give one grid.
-- An enumeration that stops early gives the output `outside`: three or more grids or undefined on a test input, and outside the candidates or the record on the others. Every comparison of the judge treats `outside` as different from every output, itself included. Whether an enumeration stops early does not depend on the order of the models, so no comparison does. An early stop is not a stop at a bound, as [Reports](#reports) gives.
-- Where a comparison needs the full set, as a witness group does on a witness input where the case's grids so far lie inside the record, enumeration goes on to the last model. A case that solves the task needs every model.
+- An enumeration that stops early gives the output `outside`: three or more grids or undefined on a test input, and outside the candidates or the record on the others. Every comparison of the judge treats `outside` as different from every output, itself included. Below the model cap, whether an enumeration stops early does not depend on the order of the models, so no comparison does. An early stop is not a stop at a bound, as [Reports](#reports) gives.
+- Where the setting [Grids at the model cap](synthesis.md#decode-settings) is on, an enumeration that reaches the model cap before it stops early gives the set of the models up to the cap, the set it would give if the cap were its last model, in place of a stop at a bound. The judge counts each such set, and the trace of a decode records the count, as [Traces](synthesis.md#traces) gives.
+- The consistency tests of a decode and its attempts read that setting. The admission of a `DET`, the determination and the judged run of a case on a pair give a stop at the model cap whatever the setting is.
+- Where a comparison needs the full set, as a witness group does on a witness input where the case's grids so far lie inside the record, enumeration goes on to the last model or, where the cap rule above applies, to the cap.
+- A case that solves the task has, on each pair, a set of the models up to the last model or up to the model cap. At the cap the set depends on the order of the models: a model past the cap can give a grid that the set lacks, such as a third grid or a grid outside the candidates, and the set can solve a pair that the set of every model does not.
 
 ## Open values
 
@@ -127,6 +130,7 @@ The judge checks the [case conditions](../../docs/handbook/principles.md#cases) 
 
 - A case stopped at a bound has no output on that input, and the judge reports the stop as a fault, as [Joins](evaluator.md#joins) gives. It is not the output `outside` of an enumeration that stops early.
 - A report names the case, the pair or the witness, and the cause, in the file's names.
+- A set that ended at the model cap is no stop at a bound, and the judge reports it as a count.
 - Per input, the judge's work past the evaluation of the cases is linear in the cases: one interned output per case, the enumeration up to its stop, and, in the refine step, the comparisons over the distinct vectors.
 
 ## How each decision can fail

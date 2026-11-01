@@ -65,17 +65,20 @@ pub(crate) struct PyConsistency {
     stop: Option<PyStopKind>,
     /// The fault, for `Fault`.
     message: Option<String>,
+    /// The output sets of the test that ended at the model cap with the grids
+    /// found so far.
+    capped_sets: u64,
 }
 
 impl PyConsistency {
-    pub(crate) fn of(consistency: &Consistency) -> PyConsistency {
+    pub(crate) fn of(consistency: &Consistency, capped_sets: u64) -> PyConsistency {
         let (assignments, stop, message) = match consistency {
             Consistency::Consistent { assignments } => (Some(assignments.len()), None, None),
             Consistency::Fault(fault) => (None, None, Some(fault.message.to_string())),
             Consistency::Stopped(stop) => (None, Some(Stop::from(stop.bound).into()), None),
             Consistency::NotConsistent | Consistency::SeveralValues { .. } => (None, None, None),
         };
-        PyConsistency { kind: PyConsistencyKind::of(consistency), assignments, stop, message }
+        PyConsistency { kind: PyConsistencyKind::of(consistency), assignments, stop, message, capped_sets }
     }
 }
 

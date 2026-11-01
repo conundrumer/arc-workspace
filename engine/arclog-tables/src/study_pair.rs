@@ -743,7 +743,7 @@ fn gold_observation_report(gold:&StudyProgram,session:&TaskSession,settings:&Dec
         "fits_contract":"native closed-world TRAIN candidate-set comparison; no TEST Fit verdict",
         "settings":{"deadline_seconds":settings.deadline.map(|d|d.as_secs_f64()),
             "table_work_cap":settings.table_work_cap,"projection_cap":settings.projection_cap,
-            "rule_tests":settings.rule_tests,"check_copies":settings.check_copies,
+            "rule_tests":settings.rule_tests,"grids_at_model_cap":settings.grids_at_model_cap,"check_copies":settings.check_copies,
             "proposer_tokens":settings.proposer_tokens,"type_domain_proposers":settings.type_domain_proposers,
             "vocabulary":{"relations":settings.vocabulary.relations,"columns":settings.vocabulary.columns,"labels":settings.vocabulary.labels},
             "caps":{"bindings":session.caps.bindings,"rows":session.caps.rows,"models":session.caps.models,

@@ -21,6 +21,7 @@ pub struct PyDecodeSettings {
     table_work_cap: u64,
     rule_tests: bool,
     static_pruning: bool,
+    grids_at_model_cap: bool,
 }
 
 impl PyDecodeSettings {
@@ -36,6 +37,7 @@ impl PyDecodeSettings {
             table_work_cap: settings.table_work_cap,
             rule_tests: settings.rule_tests,
             static_pruning: settings.static_pruning,
+            grids_at_model_cap: settings.grids_at_model_cap,
         }
     }
 
@@ -51,6 +53,7 @@ impl PyDecodeSettings {
             table_work_cap: self.table_work_cap,
             rule_tests: self.rule_tests,
             static_pruning: self.static_pruning,
+            grids_at_model_cap: self.grids_at_model_cap,
             ..DecodeSettings::default()
         })
     }
@@ -66,7 +69,7 @@ impl PyDecodeSettings {
     }
 
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None, static_pruning=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -78,6 +81,7 @@ impl PyDecodeSettings {
         table_work_cap: Option<u64>,
         rule_tests: Option<bool>,
         static_pruning: Option<bool>,
+        grids_at_model_cap: Option<bool>,
     ) -> PyResult<PyDecodeSettings> {
         let base = PyDecodeSettings::of(&DecodeSettings::synthesis());
         let settings = PyDecodeSettings {
@@ -91,6 +95,7 @@ impl PyDecodeSettings {
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
             rule_tests: rule_tests.unwrap_or(base.rule_tests),
             static_pruning: static_pruning.unwrap_or(base.static_pruning),
+            grids_at_model_cap: grids_at_model_cap.unwrap_or(base.grids_at_model_cap),
         };
         settings.engine()?;
         Ok(settings)

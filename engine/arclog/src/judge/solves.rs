@@ -117,6 +117,26 @@ impl<'p, 'a> Enumeration<'p, 'a> {
     }
 }
 
+impl Enumeration<'_, '_> {
+    /// The output set of an enumeration that the model cap `stop` ended
+    /// before its last model, and whether the set ended at the cap.
+    ///
+    /// An enumeration that ended before the cap gives its own set. One
+    /// still going gives the distinct grids of the models up to the cap, or
+    /// `undefined`, so which grids it holds depends on the order of the
+    /// models. One going with no grid to give, as where the cap is zero,
+    /// gives the stop.
+    pub fn finish_at_cap(self, stop: Stop) -> (OutputSet, bool) {
+        if self.ended.is_some() {
+            return (self.finish(), false);
+        }
+        if self.grids.is_empty() && !self.undefined {
+            return (OutputSet::Stopped(stop), false);
+        }
+        (self.finish(), true)
+    }
+}
+
 /// Whether the distinct grids `grids` decide the comparison with `pair`, so
 /// its enumeration stops.
 fn decided(grids: &[Grid], pair: &PairCandidates) -> bool {

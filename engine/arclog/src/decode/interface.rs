@@ -5,6 +5,7 @@
 //! where the decode settings run the rule tests, at the `END` of a `RULE`
 //! clause, the consistency of the clause's relation read as an output.
 
+use std::cell::Cell;
 use std::sync::Arc;
 
 use super::state::State;
@@ -15,7 +16,7 @@ use crate::eval::ir::atom_modes;
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
-use crate::judge::run::{Found, Tested};
+use crate::judge::run::{AtCap, Found, Tested};
 use crate::judge::determination::{dets_read, descend_with, distinct_values, walk, Assignment, Det, Domains, End, EvaluationInputs, Walked};
 use super::det_memo::SessionMemo;
 use crate::program::path::{NodePath, PathStep};
@@ -63,6 +64,11 @@ pub struct Step {
     /// The consistency of the relation of the `RULE` clause that the token
     /// ends, an observation that ends no decode.
     pub rule_test: Option<Consistency>,
+    /// The output sets of the test of `consistency` that ended at the model
+    /// cap with the grids found so far.
+    pub capped_sets: u64,
+    /// The same count for the test of `rule_test`.
+    pub rule_capped_sets: u64,
 }
 
 /// What a prefix gives at each joint assignment of the `DET`s it reads, in
@@ -190,7 +196,14 @@ impl<'a> Decoder<'a> {
     /// The attempts on each test input, or none until the decode ends at
     /// a consistent `OUT` form, as `docs/engine/synthesis.md#open-parameters` gives.
     pub fn attempts(&self) -> Option<Outcome<Box<[crate::judge::attempts::Attempts]>>> {
+        Some(self.attempts_counted()?.map(|(attempts, _)| attempts))
+    }
+
+    /// [`Decoder::attempts`], with the count of the output sets on the test
+    /// inputs that ended at the model cap with the grids found so far.
+    pub fn attempts_counted(&self) -> Option<Outcome<(Box<[crate::judge::attempts::Attempts]>, u64)>> {
         let form = self.output.as_ref()?;
+        let capped = Cell::new(0);
         Some((|| {
             let checked = self.checked(self.state.resolved(self.context.registry), form)?;
             let relation = derived_at(&checked, form);
@@ -198,7 +211,8 @@ impl<'a> Decoder<'a> {
             let parameters: Vec<_> = self.assignments.iter().map(|values| ParameterValues::determined(values.clone())).collect();
             let inputs = self.inputs(&checked, &limits);
             let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
-            crate::judge::attempts::attempts(&evaluations, &relation)
+            let attempts = crate::judge::attempts::attempts(&evaluations, &relation, self.at_cap(&capped))?;
+            Ok((attempts, capped.get()))
         })())
     }
 
@@ -428,8 +442,10 @@ impl<'a> Decoder<'a> {
     /// `after`, where `before`, the state before the step, holds fewer forms
     /// and the decode judges the train pairs: of an `OUT` form when `tested`
     /// is [`Tested::Out`], and of a `RULE` clause when it is
-    /// [`Tested::Rule`]; none for a form of the other kind.
-    pub(super) fn consistency(&self, before: &State, after: &State, tested: Tested) -> Option<Consistency> {
+    /// [`Tested::Rule`]; none for a form of the other kind. The count is of
+    /// the output sets of the test that ended at the model cap with the
+    /// grids found so far.
+    pub(super) fn consistency(&self, before: &State, after: &State, tested: Tested) -> Option<(Consistency, u64)> {
         let train = self.train.as_ref()?;
         let program = after.program();
         let forms = &program.value().forms;
@@ -444,19 +460,27 @@ impl<'a> Decoder<'a> {
         let form = NodePath::top(forms.len() as u32 - 1);
         let checked = match self.finished_checked(before, after) {
             Ok(checked) => checked,
-            Err(fault) => return Some(Consistency::Fault(fault.clone())),
+            Err(fault) => return Some((Consistency::Fault(fault.clone()), 0)),
         };
         let output = derived_at(checked, &form);
-        Some(self.test(checked, &output, train, tested))
+        let capped = Cell::new(0);
+        let consistency = self.test(checked, &output, train, tested, self.at_cap(&capped));
+        Some((consistency, capped.get()))
+    }
+
+    /// What the output sets of a case that reaches the model cap are, under
+    /// the decode settings, counting in `capped` each set that ends there.
+    fn at_cap<'c>(&self, capped: &'c Cell<u64>) -> AtCap<'c> {
+        if self.context.settings.grids_at_model_cap { AtCap::Grids { capped } } else { AtCap::Stop }
     }
 
     /// The consistency test of `output` in `program`, at each joint
     /// assignment of the `DET`s it reads, under the assignment cap of the
     /// decode settings.
-    fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>], tested: Tested) -> Consistency {
+    fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>], tested: Tested, at_cap: AtCap<'_>) -> Consistency {
         let dets: Vec<_> = dets_read(program, output.node);
         let limits = self.limits();
-        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested);
+        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested, at_cap);
         match end {
             Err(End::Stop(stop)) => return Consistency::Stopped(stop),
             Err(End::Fault(fault)) => return Consistency::Fault(fault),
@@ -476,7 +500,7 @@ impl<'a> Decoder<'a> {
         let parameters: Vec<_> = kept.iter().map(|assignment| ParameterValues::determined(assignment.values.clone())).collect();
         let inputs = self.inputs(program, &limits);
         let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
-        match tested.observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train) {
+        match tested.observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train, at_cap) {
             Ok(Found::Columns(_)) => Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect() },
             Ok(Found::None) => Consistency::NotConsistent,
             Ok(Found::Stopped(stop)) => Consistency::Stopped(stop),

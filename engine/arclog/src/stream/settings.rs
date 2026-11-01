@@ -56,6 +56,12 @@ pub struct DecodeSettings {
     pub rule_tests: bool,
     /// Apply proven local atom pruning while generating decoder offers.
     pub static_pruning: bool,
+    /// Whether a case that reaches the model cap on an input gives the
+    /// distinct grids of the models up to the cap there, or a stop with no
+    /// output, as `docs/engine/synthesis.md#decode-settings` gives it. The
+    /// consistency tests and the attempts read it; the admission of a `DET`
+    /// and the determination read none of it.
+    pub grids_at_model_cap: bool,
 }
 
 impl DecodeSettings {
@@ -86,6 +92,7 @@ impl Default for DecodeSettings {
             check_copies: false,
             rule_tests: false,
             static_pruning: false,
+            grids_at_model_cap: true,
         }
     }
 }

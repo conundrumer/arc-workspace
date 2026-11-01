@@ -122,3 +122,29 @@ fn a_body_det_uses_its_models_as_parameter_values() {
     walk_consistent(&mut decoder, program);
     assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::One(grid(&[2, 2]))]);
 }
+
+/// A case whose pick has two models on each input, and whose output is the
+/// input at each model, run under a model cap of one.
+const PICKED_CELL: &str = "(RULE &pick (input *P *Col) (ONE))\n(RULE &output (input *P *Col) (&pick (:P *Q) (:Col *C)))\n(OUT (&output ^P ^Col))\n";
+
+#[test]
+fn a_case_at_the_model_cap_solves_a_train_pair_and_gives_attempts_from_the_models_up_to_it() {
+    let inputs = inputs(INPUT, Caps { models: 1, ..Caps::CORPUS });
+    let mut decoder = decoder(&inputs);
+    walk_consistent(&mut decoder, PICKED_CELL);
+    assert!(decoder.capped_sets() > 0, "the trace counts the sets that ended at the cap");
+    let (attempts, capped) = decoder.attempts_counted().unwrap().unwrap();
+    assert_eq!(&*attempts, &[arclog::judge::attempts::Attempts::One(grid(&[3, 4]))]);
+    assert_eq!(capped, 1, "the one test input ended at the cap");
+}
+
+#[test]
+fn a_case_at_the_model_cap_has_no_output_when_the_setting_is_off() {
+    let mut inputs = inputs(INPUT, Caps { models: 1, ..Caps::CORPUS });
+    inputs.settings.grids_at_model_cap = false;
+    let mut decoder = decoder(&inputs);
+    let (ended, _) = walk(&mut decoder, &model_tokens(PICKED_CELL));
+    assert!(matches!(ended, Some(Consistency::Stopped(ref stop)) if matches!(stop.bound, arclog::eval::ReachedBound::Models { cap: 1 })), "{ended:?}");
+    assert!(decoder.output().is_none());
+    assert_eq!(decoder.capped_sets(), 0);
+}

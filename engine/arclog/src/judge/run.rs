@@ -6,18 +6,30 @@
 //! of a `RULE` clause, whose grid columns are searched for as that setting
 //! gives.
 
+use std::cell::Cell;
 use std::ops::ControlFlow;
 
 use crate::eval::output::{read_grid, GridColumns};
 use crate::relations::ColumnIndex;
 use crate::types::ValueType;
-use crate::eval::{Evaluation, GridValue, ModelsEnd, Outcome, RelationValue, RunFault, Stop};
+use crate::eval::{Evaluation, GridValue, ModelsEnd, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 use crate::task::JudgedTask;
 use crate::terms::Example;
 use crate::types::GraphRelation;
 
 use super::candidates::{PairCandidates, Section, World};
 use super::solves::{solves, Comparison, Enumeration, Next, OutputSet};
+
+/// What the output set of a case does where the case reaches the model cap,
+/// as `docs/engine/cases.md#enumeration-and-its-stops` gives.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AtCap<'c> {
+    /// The set is a stop at the bound: the case has no output on the pair.
+    Stop,
+    /// The set is the distinct grids of the models up to the cap, and
+    /// `capped` counts each set that ended so.
+    Grids { capped: &'c Cell<u64> },
+}
 
 /// How far the enumeration of a case's models on a pair goes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -81,7 +93,7 @@ pub fn judged_run(evaluation: &Evaluation<'_>, relation: &GraphRelation, judged:
                 Depth::Decided => Comparison::Pair(pair),
                 Depth::Full => Comparison::Full,
             };
-            let set = output_sets(evaluation, relation, example, &[GridColumns::OUT], &[comparison])?.pop().expect("one set");
+            let set = output_sets(evaluation, relation, example, &[GridColumns::OUT], &[comparison], AtCap::Stop)?.pop().expect("one set");
             let solved = solves(&set, pair);
             Ok(JudgedOutput { set, solved })
         })
@@ -118,19 +130,19 @@ impl Tested {
 
     /// The test of `relation` at the evaluation, against the train pairs
     /// `train`, with the output sets it evaluated.
-    pub(crate) fn recorded(self, evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>]) -> (Outcome<Found>, Observed) {
+    pub(crate) fn recorded(self, evaluation: &Evaluation<'_>, relation: &GraphRelation, train: &[PairCandidates<'_>], at_cap: AtCap<'_>) -> (Outcome<Found>, Observed) {
         let mut observed = Observed::default();
         let found = self.found(evaluation, relation, train, &mut |example, columns, comparisons| {
-            recorded_sets(evaluation, relation, &mut observed, example, columns, comparisons)
+            recorded_sets(evaluation, relation, &mut observed, example, columns, comparisons, at_cap)
         });
         (found, observed)
     }
 
     /// The test of `relation` over the evaluations, each with the output
     /// sets that its assignment's test recorded.
-    pub(crate) fn observed(self, evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, train: &[PairCandidates<'_>]) -> Outcome<Found> {
+    pub(crate) fn observed(self, evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, train: &[PairCandidates<'_>], at_cap: AtCap<'_>) -> Outcome<Found> {
         self.found(&evaluations[0], relation, train, &mut |example, columns, comparisons| {
-            output_sets_observed(evaluations, observations, relation, example, columns, comparisons)
+            output_sets_observed(evaluations, observations, relation, example, columns, comparisons, at_cap)
         })
     }
 
@@ -199,9 +211,12 @@ pub(crate) struct Observed(Vec<(Example, GridColumns, bool, OutputSet)>);
 /// that `observed` records for a pair under the rule below is served from
 /// it, and every other pair's is given by one enumeration of the case's
 /// models, [`output_sets`], and recorded. A recorded set serves a request
-/// of the same comparison kind, and a `Full` request where it is a full
-/// set of grids or `undefined`.
-fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed: &mut Observed, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
+/// of the same comparison kind, and a `Full` request where it is a set of
+/// grids or `undefined`. Such a set comes from an enumeration that no
+/// comparison ended, which visited the models up to the last model or, under
+/// [`AtCap::Grids`], up to the model cap, in the order a `Full` enumeration
+/// visits them, so a `Full` enumeration gives the same set.
+fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed: &mut Observed, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>], at_cap: AtCap<'_>) -> Outcome<Vec<OutputSet>> {
     let mut sets: Vec<Option<OutputSet>> = Vec::with_capacity(columns.len());
     let (mut missing_columns, mut missing_comparisons) = (Vec::new(), Vec::new());
     for (&columns, &comparison) in columns.iter().zip(comparisons) {
@@ -216,7 +231,7 @@ fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed
     if missing_columns.is_empty() {
         return Ok(sets.into_iter().flatten().collect());
     }
-    let mut computed = output_sets(evaluation, relation, example, &missing_columns, &missing_comparisons)?.into_iter();
+    let mut computed = output_sets(evaluation, relation, example, &missing_columns, &missing_comparisons, at_cap)?.into_iter();
     let mut recorded_at = 0;
     Ok(sets
         .into_iter()
@@ -231,7 +246,7 @@ fn recorded_sets(evaluation: &Evaluation<'_>, relation: &GraphRelation, observed
         .collect())
 }
 
-pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>]) -> Outcome<Vec<OutputSet>> {
+pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations: &mut [Observed], relation: &GraphRelation, example: Example, columns: &[GridColumns], comparisons: &[Comparison<'_, '_>], at_cap: AtCap<'_>) -> Outcome<Vec<OutputSet>> {
     let mut enumerations: Vec<(Enumeration<'_, '_>, Next)> = comparisons.iter().map(|&comparison| (Enumeration::new(comparison), Next::GoOn)).collect();
     let mut outside = vec![false; columns.len()];
     for (evaluation, observed) in evaluations.iter().zip(observations.iter_mut()) {
@@ -241,7 +256,7 @@ pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations:
         }
         let live_columns: Vec<GridColumns> = live.iter().map(|&at| columns[at]).collect();
         let live_comparisons: Vec<Comparison<'_, '_>> = live.iter().map(|&at| comparisons[at]).collect();
-        let sets = recorded_sets(evaluation, relation, observed, example, &live_columns, &live_comparisons)?;
+        let sets = recorded_sets(evaluation, relation, observed, example, &live_columns, &live_comparisons, at_cap)?;
         for (&at, set) in live.iter().zip(sets) {
             let (enumeration, next) = &mut enumerations[at];
             match set {
@@ -261,13 +276,16 @@ pub(crate) fn output_sets_observed(evaluations: &[Evaluation<'_>], observations:
 /// The output set of `relation` on `example` by each of `columns`, each
 /// compared as the comparison at its index in `comparisons` gives, over one
 /// enumeration of the case's models, which goes on while some set's
-/// enumeration does.
+/// enumeration does. Where the enumeration reaches the model cap, each set is
+/// what its enumeration holds so far under [`AtCap::Grids`], and a stop under
+/// [`AtCap::Stop`]. Where it reaches another bound, each set is a stop.
 fn output_sets(
     evaluation: &Evaluation<'_>,
     relation: &GraphRelation,
     example: Example,
     columns: &[GridColumns],
     comparisons: &[Comparison<'_, '_>],
+    at_cap: AtCap<'_>,
 ) -> Outcome<Vec<OutputSet>> {
     let mut enumerations: Vec<(Enumeration<'_, '_>, Next)> =
         comparisons.iter().map(|&comparison| (Enumeration::new(comparison), Next::GoOn)).collect();
@@ -281,9 +299,14 @@ fn output_sets(
     })?;
     Ok(enumerations
         .into_iter()
-        .map(|(enumeration, _)| match &end {
-            ModelsEnd::Stopped(stop) => OutputSet::Stopped(stop.clone()),
-            ModelsEnd::Visitor | ModelsEnd::Exhausted => enumeration.finish(),
+        .map(|(enumeration, _)| match (&end, at_cap) {
+            (ModelsEnd::Stopped(stop), AtCap::Grids { capped }) if matches!(stop.bound, ReachedBound::Models { .. }) => {
+                let (set, reached) = enumeration.finish_at_cap(stop.clone());
+                capped.set(capped.get() + u64::from(reached));
+                set
+            }
+            (ModelsEnd::Stopped(stop), _) => OutputSet::Stopped(stop.clone()),
+            (ModelsEnd::Visitor | ModelsEnd::Exhausted, _) => enumeration.finish(),
         })
         .collect())
 }
