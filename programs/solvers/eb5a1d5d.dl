@@ -131,6 +131,10 @@ cells.item([U, L], P) :- layer(U, P, L).
 
 depth_order.score($Concentric(U, $LayersByCellCount()), L, N) :- cells.tally([U, L], N).
 
+// The larger layer lies outside.
+depth($Concentric(U, $LayersByCellCount()), L, K) :-
+    depth_order.rank_desc($Concentric(U, $LayersByCellCount()), L, K).
+
 // --- $LayersByBboxArea ---
 
 // @claim depth-chain
@@ -139,10 +143,9 @@ area.item([U, L], P) :- extent.box([U, L], B), in(P, _), inside(P, B).
 
 depth_order.score($Concentric(U, $LayersByBboxArea()), L, N) :- area.tally([U, L], N).
 
-// --- $LayersByCellCount, $LayersByBboxArea ---
-
 // The larger layer lies outside.
-depth(Ch, L, K) :- depth_order.score(Ch, L, _), depth_order.rank_desc(Ch, L, K).
+depth($Concentric(U, $LayersByBboxArea()), L, K) :-
+    depth_order.rank_desc($Concentric(U, $LayersByBboxArea()), L, K).
 
 // --- $Concentric ---
 

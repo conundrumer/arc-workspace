@@ -157,7 +157,7 @@ flood4.node(Ps, P) :- passable_choice(Ps), seed(P, _).
 flood4.seed(Ps, P) :- passable_choice(Ps), seed(P, _).
 
 system($Flood4(), Ps, P, Id) :- flood4.reach(Ps, P), flood4.label(Ps, P, Id).
-walk_step($Flood4(), V) :- flood4.step(V).
+walk_step($Flood4(), V) :- dir_elem(D), step_offset(D, V).
 
 // --- $Flood8 ---
 // @claim flood-seed-region
