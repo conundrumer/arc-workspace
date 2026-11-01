@@ -185,7 +185,7 @@ CHEAP_TRIES = 24  # redraws for a repeated atom or an unjoined one (a few ms eac
 SP_CUT_EXEMPT = frozenset()  # SP keys that fire on a gold clause cut after some atom: the per-atom check leaves them out
 MAX_FIELDS = 6
 IDENT_SOURCE = os.environ.get('ARCLOG_IDENT_SOURCE', '') not in ('', '0')  # the engine gives each Ident column one source, so the decoder says which labels a column admits
-COMPLETE =os.environ.get('COMPLETE', '1') == '1'
+COMPLETE = os.environ.get('COMPLETE', '1') == '1'
 COMPLETE_BUDGET = 80
 REACH = os.environ.get('REACH', '1') == '1'
 # What reachable()'s cache is keyed by, beside (relation, negation, phase, last column, need, column): 'state' the frontier root (the clause's tokens before
