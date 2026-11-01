@@ -551,6 +551,7 @@ class Run:
         self.stopped = False  # whether an OUT candidate over the relation that the OUT search is at hit a limit
         self.scoped = None  # (forms, decoder, Program) of the last scope
         self.walk = pri['walk']
+        self.head_sizes = sum(map(collections.Counter, pri.get('head_labels', {}).values()), collections.Counter())  # a head column's count of labels -> uses, over all sites
         self.walk_all = sum(self.walk['after'].values(), collections.Counter())
         nv = len(V)
         self.rel0 = V.id('&r0')
@@ -880,9 +881,14 @@ class Run:
         return t in params or any(k is None or k in family for k in keys.values())
 
     def record_size(self, comp, name, c):
-        """A head column's count of labels, from the priors."""
+        """A head column's count of labels, from the priors. The counts that the site never had share 1 / (its uses + 1) of the chance, in the proportions of all sites' counts."""
         sizes = self.pri.get('head_labels', {}).get((comp, name, c))
-        return self.pick(*zip(*sizes.items())) if sizes else 1
+        if not sizes:
+            return 1
+        seen = sum(sizes.values())
+        elsewhere = {n: w for n, w in self.head_sizes.items() if n not in sizes}  # a count that this site never had, from the other sites'
+        counts = {n: w / (seen + 1.0) for n, w in sizes.items()} | {n: w / (seen + 1.0) / sum(elsewhere.values()) for n, w in elsewhere.items()}
+        return self.pick(list(counts), list(counts.values()))
 
     def head_column(self, f, labs, n, keys=()):
         """(decoder after a head column at f that takes n labels of the label tokens labs, labels taken). Two labels or more are a record:
