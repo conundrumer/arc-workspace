@@ -124,12 +124,12 @@ A placement is kept where its difference from a training instance's pose is a ro
 
 ## Evidence
 
-A survey of the solvers that do not use the Souffle `RIGID` block, for stored data that a task states in a frame of its own:
+A solver that stores data a task states in a frame of its own keeps it in a Souffle `RIGID` block. `timeout 30 grep -lE RIGID programs/solvers/*.dl` lists the solvers that hold one. A solver without a block is open to conversion when it stores such data in one of these ways:
 
-- In 4522001f, ad38a9d0 and b27ca6d3, the instances stand in several orientations. Each solver closes a stored shape over D4 or C4 by hand, and takes one instance as the chart through `Quotient`. 4522001f restricts to rotations, and ad38a9d0 holds an open choice among `SYM_1`, `SYM_C4` and `SYM_D4`. Each restriction is a narrowing against the training poses.
-- 1e5d6875 lists one row of its step table per orientation the observed data shows, and searches C4 by hand. Its stored `rot` is a pose difference, which is already frame-free.
-- 3f23242b, 3ac3eb23, 8403a5d5, 7447852a, 3618c87e, 0becf7df and 08573cc6 store a stamp, and the direction attached to it, separately. Every instance in their observed data has one pose. A `RIGID_DET` makes the two one assembly, and no output changes.
-- No solver stores a shape in one orientation where its inputs show the shape in several. Where the inputs do, the solver finds the template in the input it runs on.
+- It closes a stored shape over D4 or C4 by hand, lists one row of a table per orientation the observed data shows, or searches C4 by hand, because the instances stand in several orientations.
+- It stores a stamp and the direction attached to it separately, though every instance in the observed data has one pose. The block makes the two one assembly.
+
+A solver that finds its template in the input it runs on stores no shape in a frame. In the solvers that hold a block, a restriction to a subgroup of D4 is a narrowing against the training poses: 4522001f keeps the rotations, and ad38a9d0 holds an open choice among `SYM_1`, `SYM_C4` and `SYM_D4`.
 
 Values that look posed and are not:
 
