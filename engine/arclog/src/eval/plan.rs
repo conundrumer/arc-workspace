@@ -34,7 +34,11 @@
 //! grounds with the nodes it leaves out: each export of the union, and each variable
 //! that a kept node holds, is grounded in every branch, and a node is left out
 //! where it holds a column that is neither placed, grounded nor of an
-//! orientation type.
+//! orientation type. Where no union grounds in that way either, as where a
+//! branch's `=` equates an export of no orientation type with a label of an
+//! orientation type, the order places the first export of such a union, and
+//! a variable that only an algebra relation gives values waits for a mode of
+//! that relation.
 
 use super::join::node_variables;
 use super::ir::{Argument, Arguments, ClauseIr, IrNode, Operand, Union, Variable};
@@ -130,8 +134,9 @@ pub fn variable_order(clause: &ClauseIr, sizes: &RelationSizes, outer: &[Variabl
     for variable in clause.nodes.iter().flat_map(node_variables) {
         held[usize::from(variable.0)] = true;
     }
+    let waiting = mode_waiting(clause, &direct, &binders);
     for wanted in [bound, held] {
-        while let Some(variable) = next_left(&wanted, &placed, &binders) {
+        while let Some(variable) = next_left(&wanted, &placed, &binders, &waiting) {
             place(variable, &mut placed, &mut order);
             follow(clause, &mut placed, &mut order);
         }
@@ -183,21 +188,44 @@ fn follow(clause: &ClauseIr, placed: &mut [bool], order: &mut Vec<Variable>) {
 }
 
 /// The first variable of `wanted` that is not placed, in index order, other
-/// than one that a union binds and does not yet [`grounds`]; where every
-/// variable left is of that kind, the first whose union [`grounds_leaving`],
-/// the case of a clause whose unions ground one another's columns; and
-/// where none is, the first variable left. The last case is one that no
-/// clause which passes the whole-form check reaches. The order holds every
-/// variable of `wanted`.
-fn next_left(wanted: &[bool], placed: &[bool], binders: &[Option<(usize, &Union)>]) -> Option<Variable> {
+/// than one of `waiting` and one that a union binds and does not yet
+/// [`grounds`]; where every variable left is of those kinds, the first whose
+/// union [`grounds_leaving`], the case of a clause whose unions ground one
+/// another's columns; where none is, the first variable left outside
+/// `waiting`, the case of a union that grounds at no placement, whose values
+/// the join takes from the branches with the nodes they leave out, and which
+/// the union's check then holds to the whole branches; and otherwise the
+/// first variable left. The last case is one that no clause which passes the
+/// whole-form check reaches. The order holds every variable of `wanted`.
+fn next_left(wanted: &[bool], placed: &[bool], binders: &[Option<(usize, &Union)>], waiting: &[bool]) -> Option<Variable> {
     let left = |v: &usize| wanted[*v] && !placed[*v];
+    let free = |v: &usize| left(v) && !waiting[*v];
     let ready = |v: &usize, holds: fn(&Union, &[bool]) -> bool| binders[*v].is_none_or(|(_, union)| holds(union, placed));
     (0..wanted.len())
-        .filter(left)
+        .filter(free)
         .find(|v| ready(v, grounds))
-        .or_else(|| (0..wanted.len()).filter(left).find(|v| ready(v, grounds_leaving)))
+        .or_else(|| (0..wanted.len()).filter(free).find(|v| ready(v, grounds_leaving)))
+        .or_else(|| (0..wanted.len()).find(free))
         .or_else(|| (0..wanted.len()).find(left))
         .map(|v| Variable(v as u16))
+}
+
+/// Whether the join has values for each variable only from an algebra
+/// relation, by the variable's index: an algebra relation holds it, no atom,
+/// comparison or union binds it, and it has no orientation domain. Such a
+/// variable takes its place from [`follow`] once a mode of that relation
+/// holds, and has no values before that.
+fn mode_waiting(clause: &ClauseIr, direct: &[bool], binders: &[Option<(usize, &Union)>]) -> Vec<bool> {
+    let mut waiting = vec![false; clause.variables.len()];
+    for node in clause.nodes.iter() {
+        if let IrNode::Lib(atom) = node {
+            for variable in variables_of(&atom.arguments) {
+                let v = usize::from(variable.0);
+                waiting[v] = !direct[v] && binders[v].is_none() && orientation_domain(&clause.variables[v].ty).is_none();
+            }
+        }
+    }
+    waiting
 }
 
 /// Whether `variable` has a binding or a native finite orientation domain.
