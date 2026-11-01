@@ -29,6 +29,10 @@ A path's ranks give the same options only under the same weights, so a Search re
 A clause whose atoms, read as a set with their labels renamed, were reached by another path stops there (Run.seen). clause_key
 gives the same key to a clause whatever the order of its atoms and the names of its labels.
 
+Options of one chance have an order in the ranks. By default it is the order of the options. With ORDER_FREE tie (S's setting) it is the order of their tie keys (TieKeys), so that a search
+does not move when the scope's forms or a body's labels are numbered another way: a label's key is its color in the atoms drawn, a derived relation's the key of its form (form_keys),
+any other option's the stable number of its name. A count and a coin side have no key.
+
 A worker restarts, and has memory for few searches. So the state of a search is small and in a file, and a Manager (one per Sampler) decides
 which searches keep their caches:
     sampler.search_store(directory, hot=64, limit_mib=None, save_every=10.0, keep_cold=4, retries=0)   # before the first search
@@ -122,16 +126,32 @@ def draw(x, color, mark=None):
     return '(' + ' '.join(parts) + ')'
 
 
-def atoms_key(atoms):
-    """A hashable key of atoms, the texts or parsed atoms of a conjunction: the same for any order of the atoms and any names of the
-    labels (a label is a name that a '*' marks once at least). The labels get colors by refining the multiset of the atoms around
-    each; two labels with the same neighbours get one color, so the key can be the same for clauses that differ."""
-    parsed = [x if isinstance(x, list) else (parse(x) or [[]])[0] for x in atoms]
+def parsed_atoms(atoms):
+    """The parsed atoms of atoms, the texts or parsed atoms of a conjunction."""
+    return [x if isinstance(x, list) else (parse(x) or [[]])[0] for x in atoms]
+
+
+def colors_of(parsed):
+    """{label name: color} of the labels (a label is a name that a '*' marks once at least) of the parsed atoms. The labels get colors by
+    refining the multiset of the atoms around each; two labels with the same neighbours get one color."""
     labels = {t[1:] for a in parsed for t in flat(a) if t.startswith('*') and len(t) > 1}
     color = dict.fromkeys(labels, 0)
     where = {l: [a for a in parsed if any(t.lstrip('*') == l for t in flat(a))] for l in labels}
     for _ in range(3):
         color = {l: zlib.crc32('\x1f'.join(sorted(draw(a, color, l) for a in where[l])).encode()) for l in labels}
+    return color
+
+
+def label_colors(atoms):
+    """{label name: color} of the labels that atoms make, the texts or parsed atoms of a conjunction: the same for any order of the atoms and any names of the labels."""
+    return colors_of(parsed_atoms(atoms))
+
+
+def atoms_key(atoms):
+    """A hashable key of atoms, the texts or parsed atoms of a conjunction: the same for any order of the atoms and any names of the
+    labels. The labels have the colors of label_colors, so the key can be the same for clauses that differ."""
+    parsed = parsed_atoms(atoms)
+    color = colors_of(parsed)
     return tuple(sorted(draw(a, color) for a in parsed))
 
 
@@ -171,6 +191,18 @@ class Coin:
         return not self.ch.coin(p)
 
 
+def tie_order(order, probs, tie):
+    """order, the indexes of probs by descending chance, with each run of options of one chance in the order of tie(index), and then of the index."""
+    out, i, n = [], 0, len(order)
+    while i < n and probs[order[i]] > 0:
+        j = i + 1
+        while j < n and probs[order[j]] == probs[order[i]]:
+            j += 1
+        out += sorted(order[i:j], key=lambda x: (tie(x), x)) if j - i > 1 else order[i:j]
+        i = j
+    return out + list(order[i:])
+
+
 class Chooser:
     """The rng of a Run in a search. start(path) begins a run, which takes the ranks of path and then rank 0; `taken` gets the rank
     taken at each choice, and `sibs` gets the next rank at each choice from the path's last on, as (index of the choice, log bound):
@@ -180,14 +212,16 @@ class Chooser:
 
     or_bits = 0.0  # OR_BITS of the run
     or_next = False  # the next coin is a body's OR coin (SearchRun.p_or)
+    keys = None  # with ORDER_FREE tie, the TieKeys of the Drawer at work: the keys of the labels that choice and sample pick among
 
     def start(self, path):
         self.ranks, self.i, self.logp, self.taken, self.hash, self.sibs = path, 0, 0.0, [], 0, []
         self.or_next = False
 
-    def node(self, probs, cost=0.0):
+    def node(self, probs, cost=0.0, tie=None):
         """The index in probs (chances that sum to 1, as a list) of the option that the run takes here. cost is the bits off the bound of
-        option 0, which is the OR of an OR coin; the order of the options stays that of their chances."""
+        option 0, which is the OR of an OR coin; the order of the options stays that of their chances. With tie, a function of an option's
+        index that gives its key, options of one chance are in the order of their keys, and then of their indexes."""
         i, ranks = self.i, self.ranks
         self.i = i + 1
         n = len(probs)
@@ -195,6 +229,8 @@ class Chooser:
             order = (0, 1) if probs[0] >= probs[1] else (1, 0)
         else:
             order = sorted(range(n), key=lambda j: -probs[j]) if n < 40 else np.argsort(-np.asarray(probs), kind='stable').tolist()
+        if tie is not None:
+            order = tie_order(order, probs, tie)
         r = ranks[i] if i < len(ranks) else 0
         if r >= n or probs[order[r]] <= 0:
             raise Mismatch
@@ -216,14 +252,14 @@ class Chooser:
             return False
         return self.node([p, 1.0 - p], cost) == 0
 
-    def pick(self, opts, weights):
-        """S.Drawer.pick's (option, its share of the weights)."""
+    def pick(self, opts, weights, key=None):
+        """S.Drawer.pick's (option, its share of the weights). key is a function of an option that gives its tie key (node)."""
         tot = sum(weights)
         if not tot > 0:
             raise Dead
         if len(opts) == 1:
             return opts[0], 1.0
-        j = self.node([w / tot for w in weights])
+        j = self.node([w / tot for w in weights], tie=None if key is None else lambda j: key(opts[j]))
         return opts[j], weights[j] / tot
 
     def random(self):
@@ -237,15 +273,18 @@ class Chooser:
         return [self.pick(list(population), list(weights) if weights is not None else [1.0] * len(population))[0]]
 
     def choice(self, seq):
-        return seq[self.node([1.0 / len(seq)] * len(seq))] if len(seq) > 1 else seq[0]
+        """One of the label tokens seq."""
+        tie = None if self.keys is None else lambda j: self.keys.label(seq[j])
+        return seq[self.node([1.0 / len(seq)] * len(seq), tie=tie)] if len(seq) > 1 else seq[0]
 
     def randrange(self, n):
         return self.node([1.0 / n] * n) if n > 1 else 0
 
     def sample(self, population, k):
-        """k of the population as a set is, in the order of the population."""
+        """k of the population, label numbers, as a set is, in the order of the population. Sets of equal chance go by the sorted keys of their labels."""
         combos = list(itertools.combinations(range(len(population)), k))
-        got = combos[self.node([1.0 / len(combos)] * len(combos))] if len(combos) > 1 else combos[0]
+        tie = None if self.keys is None else lambda j: tuple(sorted(self.keys.number(population[i]) for i in combos[j]))
+        got = combos[self.node([1.0 / len(combos)] * len(combos), tie=tie)] if len(combos) > 1 else combos[0]
         return [population[j] for j in got]
 
 
@@ -285,15 +324,61 @@ class Hidden:
         self.store.clear()
 
 
+def form_keys(forms, made):
+    """{relation token: tie key} of the relations that the scope's forms declare, for ORDER_FREE tie. made maps a form's place to the tokens
+    of its relations. A form's key is that of its clause_key with each relation it reads replaced by that relation's form's key, so that
+    it is the same in any order of the scope's forms; a form with several relations (an INIT's) adds the relation's place in the form."""
+    heads, out = {}, {}
+    for i, text in enumerate(forms):
+        head = re.match(r'\(\w+ (&\w+)', text)
+        key = stable(repr(clause_key(re.sub(r'&\w+', lambda m: '&%d' % heads.get(m[0], 0), text))))
+        for j, tok in enumerate(made.get(i, ())):
+            out[tok] = key if len(made[i]) == 1 else stable(repr((key, j)))
+        if head:
+            heads[head[1]] = key
+    return out
+
+
+class TieKeys:
+    """ORDER_FREE tie: the keys that put options of one chance in an order that is a fact of the options and not of the scope's order. A label has
+    its color from label_colors over the atoms drawn in the body (a label of an earlier body has color 0), a derived relation the key of its
+    form (form_keys), any other option the stable number of its name. Two options with one key stay in the order of the options."""
+
+    def __init__(self, run, dr):
+        self.run, self.dr, self.seen = run, dr, ((), {})
+
+    def color(self, name):
+        atoms = (*getattr(self.dr, 'drawn', ()), *self.dr.or_done)
+        if self.seen[0] != atoms:
+            self.seen = atoms, label_colors(atoms)
+        return self.seen[1].get(name, 0)
+
+    def label(self, tok):
+        return self.color(self.run.V.name(tok))
+
+    def number(self, n):
+        return self.color('L%d' % n)
+
+    def token(self, o):
+        """The key of option token o of a Drawer's pick."""
+        kind = self.dr.fr.KIND[o]
+        if kind == 'label':
+            return self.label(o)
+        if kind == 'relation':
+            return self.run.form_keys.get(o, 0)
+        return stable(self.run.V.name(o))
+
+
 class SearchDrawer(LiveDrawer):
     """LiveDrawer with the picks of the search."""
 
     cache_cap = 1 << 20
+    tie = None  # with ORDER_FREE tie, the TieKeys of this Drawer
 
     def pick(self, opts, weights):
         if self.force is not None:
             return super().pick(opts, weights)
-        return self.rng.pick(opts, weights)
+        return self.rng.pick(opts, weights, self.tie and self.tie.token)
 
     def pick_complete(self, n, opts, weights, key, alt=None):
         """S's, where a start that completable refuses ends the path in place of a pick over the rest."""
@@ -329,10 +414,20 @@ class SearchRun(Run):
         self.seen = {}  # stable number of (body context, atoms as a set) -> low 32 bits of the hash of the path that reached it
         self.shared = collections.defaultdict(dict)  # (kind, place, path) -> the caches that Drawers of one scope share
         self.memo = {}  # (what, id of a decoder) -> (the decoder, the answer): a decoder of a node that a shared root keeps stays the same one
+        self.keyed, self.form_keys = None, {}  # ORDER_FREE tie: the forms of the scope, and form_keys of them
+
+    def scope(self, forms):
+        """Run's, and with ORDER_FREE tie the tie key of each relation that the forms declare."""
+        got = super().scope(forms)
+        if 'tie' in S.ORDER_FREE and self.keyed != tuple(forms):
+            self.keyed, self.form_keys = tuple(forms), form_keys(forms, self.scoped[2].made)
+        return got
 
     def drawer(self, pg, kind, dec, place=None, prior=None):
         dr = super().drawer(pg, kind, dec, place, prior)
         dr.ctx = self.rng.hash
+        if 'tie' in S.ORDER_FREE:
+            dr.tie = self.rng.keys = TieKeys(self, dr)
         if kind == 'INIT':  # an INIT body reads what its component and the bodies before it fixed, so a store is for one path to the body
             if len(self.shared) >= INIT_STORES:
                 self.shared = collections.defaultdict(dict, {k: v for k, v in self.shared.items() if k[0] != 'INIT'})
@@ -402,7 +497,7 @@ PATH_MAX, SIB_MAX, HAND_MAX, EMIT_MAX = 2048, 2048, 8192, 1 << 13  # what the Jo
 @functools.cache
 def fingerprint():
     """A number for the code and the data that a walk reads: a state of another one does not fit this process's walk."""
-    parts = [VERSION, S.UNREAD_BETA]
+    parts = [VERSION, S.UNREAD_BETA, sorted(S.ORDER_FREE)]
     for mod in (sys.modules[__name__], live, live.S):
         with open(mod.__file__, 'rb') as f:
             parts.append(hashlib.blake2b(f.read(), digest_size=8).hexdigest())

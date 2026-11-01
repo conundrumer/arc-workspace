@@ -420,7 +420,8 @@ class Guide(search.Chooser):
         who = sys._getframe(1).f_code.co_name
         population = list(population)
         if who == 'key_body':
-            gold, name = sorted(self.carets), 'key: which labels'
+            nlab = sys._getframe(1).f_locals['nlab']  # the population is label numbers
+            gold, name = sorted(nlab + c for c in self.carets), 'key: which labels'
             if len(gold) != k or not set(gold) <= set(population):
                 self.stuck('key: the labels with a caret are %s, and the walk takes %d of %s' % (gold, k, population))
             if not self.rest or self.rest[0] != M.END:  # the walk steps the END of the key group next

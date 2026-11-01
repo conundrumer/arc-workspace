@@ -562,6 +562,7 @@ class Program:
         self.scope_grids, self.scope_colors, self.scope_positions = [], [], []  # the best suited entries of grids, colors and positions from the relations of a replayed scope, which the OUT search takes in on its first call
         self.kinds = []  # the kind of each clause, which only next_kind reads, as counts
         self.written = {}  # a relation's head in the decoder -> its head in the forms of a scope
+        self.made = {}  # a scope's form place -> the relation tokens it declares
         self.facts = {}  # a relation slot -> one_repair.facts of its table; kept where the ONE repair is on
         self.lifts = {}  # a RULE's relation slot -> choose_lift.key_facts of its table; kept where the CHOOSE lift is on
         self.unread = frozenset()  # UNREAD_BETA: the relation tokens of the scope's forms that no kept form reads
@@ -770,6 +771,7 @@ class Run:
                 suits = self.gate.suits(pg.before)
                 pg.suit = pg.suit | {s: (suits.get(s, 0.0), random.Random(s).random()) for s in pg.new}
             pg.written = {head_of(a): head_of(b) for a, b in zip(dec.program_form().split('\n'), forms)}
+            pg.made = dict(made)
             f = dec.fork()
             f.step(RULE_TOK)
             self.fill_columns(pg, f)
@@ -980,7 +982,7 @@ class Run:
         free = [j for j in range(len(stars)) if self.ff0.label_tok[nlab + j] not in dr.fr.hidden]  # a label local to a branch is no key
         if not free:
             raise Drop('key body makes no label')
-        picked = self.rng.sample(free, min(len(free), dr.key_labels))
+        picked = [n - nlab for n in self.rng.sample([nlab + j for j in free], min(len(free), dr.key_labels))]
         types = self.label_types(dr, dr.drawn)
         keys = {self.ff0.label_tok[nlab + n]: types.get('L%d' % (nlab + n)) for n in picked}
         carets = {stars[n] for n in picked}

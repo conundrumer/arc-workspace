@@ -17,6 +17,7 @@ These settings steer the proposal. Each takes a file in `sampler/models/`:
 `ORDER_FREE=col,tie,key` takes no file and is off by default. Each name turns on one reading of a body as a DAG:
 
 - `col`: a derived relation's columns get a coin each, by the body's place, the column's type and whether that type is in scope (`COL_TYPE`). `col_type_counts.py ROWS OUT.json` counts the table from the rows of `live_rows.py`.
+- `tie`: in a search, options of one chance are in the order of their keys, which are facts of the scope and the body (`search.TieKeys`), not the order of the options. No chance changes.
 
 `REL_ROWS=1` and `CHOICE_ROWS=1` write the rows those fits read. `ROW_ORDERS=n` writes them for n random valid atom orders per clause, and each row has `order`.
 
