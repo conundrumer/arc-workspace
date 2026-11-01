@@ -28,7 +28,7 @@ each key, or stops with chance 1 - KEY_ALL. A keyed INIT's ports that its key gr
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
 sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. A RULE's or a DET's body may stop at one atom, which S refuses (MIN2_KINDS), with the
-priors' rate for a first atom that is no compound and no method call. The decoder gives every read of the task: its checks, and tables through step_tables;
+priors' rate for a first atom that is no compound and no method call. A port's body may have up to port_atoms atoms; past PORT_SHORT it goes on with chance PORT_LONG. The decoder gives every read of the task: its checks, and tables through step_tables;
 this module reads no gold and no path but the priors.
 
 OUT is a search, not a draw. A decode ends at its first consistent OUT, so each candidate runs on a fork of the form's end and
@@ -90,6 +90,8 @@ NEED_STOP = 0.1  # the factor on an atom's stop chance where it holds a column o
 ANY_TYPE = '?'  # the type in a body's scope of a label whose type is not known
 BRANCHES = 'RULE', 'key', 'port'  # the places of a body that may hold an OR, each with its counts in the priors
 BIND_QUIT = 0.8  # the chance that a later branch with an unbound exported label fails, at each atom past bind_atoms
+PORT_SHORT = 6  # atoms of a port's body past which gold has a port in 1.3% of INITs; draws reach them far oftener, since a refused stop makes a body go on
+PORT_LONG = 0.2  # the chance that a port's body goes on past PORT_SHORT atoms: 6 of 400 INIT clauses drawn at this chance have such a port
 KEY_ALL = 0.9  # the chance that a keyed port with an unread key goes on: 830 of 907 gold ports of keys of two or more labels read them all
 EXAMPLE_READ = dict(DET=0.2, INIT=0.03)  # the factor on a declared relation's Example column in a body of the kind: gold's atoms on declared relations read it in 32% of DETs' and 3.9% of INITs'; draws read it in 41% and 8% at these factors
 EQ_FRESH = 0.14  # the chance that the first operand of `=` is a fresh label: 99 of 685 gold `=` atoms
@@ -317,7 +319,7 @@ class Limits:
     max_atoms: int = S.MAX_ATOMS  # atoms of a body
     branch_atoms: int = 12  # atoms of an OR's branch, the most that gold has
     bind_atoms: int = 6  # atoms of a later branch by which 98% of gold's bind the exported labels; past them a branch ends with chance BIND_QUIT
-    port_atoms: int = 6  # atoms of a port's body; 0.4% of gold's are longer, and the checks of a long one cost most
+    port_atoms: int = 12  # atoms of a port's body; 5 of gold's 7696 ports are longer
     max_forms: int = 40  # clauses of a program before OUT is the only kind
     form_tries: int = 4  # draws of a clause that a gate or the decoder refuses
     out_pairs: int = 6  # (Position, Color) column pairs of a relation that the OUT search tries
@@ -993,6 +995,8 @@ class Run:
         for k in range(1, top + 1):
             if time.monotonic() >= self.deadline:
                 raise Deadline
+            if kind == 'INIT' and k == PORT_SHORT + 1 and self.rng.random() >= PORT_LONG:
+                raise Drop('body: no stop in %d atoms' % PORT_SHORT)
             dr.need = set().union(*[x for x in need if not x & set(scope)]) if need else set()
             dr.want = (set(keys) - set(toks) or set(keys)) if keys else dr.want  # a port reads each key
             ored = None
