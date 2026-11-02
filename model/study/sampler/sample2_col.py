@@ -109,6 +109,8 @@ Changes from sample.py (v1):
   relation a coin each by (place, kind, in scope) (col_kind: the column's type, or @Record, @Example, @unknown; COL_TYPE, counted by col_type_counts.py), so that a set of columns has one chance in any column order, and
   zeroes COL_W's back; `tie` breaks the tie of equal chances in a search by the options' facts, not their order (search.py); `key` picks a key's labels by the
   types of their sites (live.Run.key_pick, with the priors' key_types from key_type_counts.py). A setting that is unset keeps the draws and the chances as they were;
+- KEY_IDENT=rel (default unset: none) multiplies the weight of a declared relation that has an Ident column by m (the priors' key_rel, from key_rel_counts.py) at an atom start of an INIT's key body
+  where no label in scope has the type Ident and no rel steer acts (live.Run.key_rel_m). Unset, or with priors that have no key_rel, m is 1: the weights and the draws are as they were;
 - SEED_TAG (default v2) seeds each point's draws, so a run with another tag draws other programs at the same points; with
   ARCLOG_STATS set, a point's info gives its CPU ms per engine phase (`engine`);
 - a DET assignment's row set in a table is kept by its packed rows (DROWS), since a point's tables repeat the same
@@ -292,6 +294,8 @@ CHOICE_CHECK = os.environ.get('CHOICE_CHECK', '')
 STEER_REL_MODEL = os.environ.get('STEER_REL_MODEL', 'hgb')  # 'hgb' (the tree) or 'logit'
 STEER_COVER = frozenset(filter(None, os.environ.get('STEER_COVER', '').split(',')))  # places where the steers go beyond S's draw: 'init' (the bodies of an INIT's key and ports, which the prefix text gives), 'branch' (the first atom of a later branch of an OR, whose clause cannot close)
 ORDER_FREE = frozenset(filter(None, os.environ.get('ORDER_FREE', '').split(',')))  # 'col', 'tie', 'key': a body read as a DAG where the walk read its written order (see the module docstring)
+IDENT = frozenset({'Ident'})
+KEY_IDENT = frozenset(filter(None, os.environ.get('KEY_IDENT', '').split(',')))  # 'rel': an INIT key body's first Ident relation is likelier (see the module docstring)
 COL_TYPE = {('DET', '@Example', False): 0.861, ('DET', '@Record', False): 0.904, ('DET', '@unknown', False): 0.643, ('DET', 'Axis', False): 0.501, ('DET', 'Axis', True): 0.84, ('DET', 'Box', False): 0.603, ('DET', 'Box', True): 0.673, ('DET', 'Color', False): 0.585, ('DET', 'Color', True): 0.76, ('DET', 'D4', False): 0.506, ('DET', 'D4', True): 0.94, ('DET', 'DiagDir', False): 0.663, ('DET', 'DiagDir', True): 0.793, ('DET', 'Dir', False): 0.499, ('DET', 'Dir', True): 0.666, ('DET', 'Dir8', False): 0.573, ('DET', 'Example', False): 0.643, ('DET', 'Example', True): 0.893, ('DET', 'Ident', False): 0.721, ('DET', 'Ident', True): 0.928, ('DET', 'Int', False): 0.611, ('DET', 'Int', True): 0.927, ('DET', 'Nat', False): 0.706, ('DET', 'Nat', True): 0.914, ('DET', 'Offset', False): 0.555, ('DET', 'Position', False): 0.551, ('DET', 'Position', True): 0.696, ('RULE', '@Example', False): 0.474, ('RULE', '@Record', False): 0.929, ('RULE', '@unknown', False): 0.744, ('RULE', 'Axis', False): 0.487, ('RULE', 'Axis', True): 0.827, ('RULE', 'Axis4', False): 0.779, ('RULE', 'Box', False): 0.636, ('RULE', 'Box', True): 0.745, ('RULE', 'C4', False): 0.643, ('RULE', 'Color', False): 0.72, ('RULE', 'Color', True): 0.82, ('RULE', 'D4', False): 0.677, ('RULE', 'D4', True): 0.97, ('RULE', 'DiagAxis', False): 0.608, ('RULE', 'DiagAxis', True): 0.94, ('RULE', 'DiagDir', False): 0.586, ('RULE', 'DiagDir', True): 0.928, ('RULE', 'Dir', False): 0.546, ('RULE', 'Dir', True): 0.782, ('RULE', 'Dir8', False): 0.584, ('RULE', 'Dir8', True): 0.882, ('RULE', 'Ident', False): 0.789, ('RULE', 'Ident', True): 0.952, ('RULE', 'Int', False): 0.551, ('RULE', 'Int', True): 0.816, ('RULE', 'Nat', False): 0.479, ('RULE', 'Nat', True): 0.767, ('RULE', 'Offset', False): 0.569, ('RULE', 'Offset', True): 0.9, ('RULE', 'Pose', False): 0.664, ('RULE', 'Position', False): 0.743, ('RULE', 'Position', True): 0.738, ('RULE', 'Sense', False): 0.482, ('RULE', 'Sense', True): 0.964, ('RULE', 'Sym', False): 0.505, ('key', '@Example', False): 0.037, ('key', '@Record', False): 0.968, ('key', '@unknown', False): 0.561, ('key', 'Axis', False): 0.511, ('key', 'Box', False): 0.55, ('key', 'Color', False): 0.513, ('key', 'Color', True): 0.993, ('key', 'D4', False): 0.828, ('key', 'DiagDir', False): 0.611, ('key', 'Dir', False): 0.616, ('key', 'Example', False): 0.917, ('key', 'Ident', False): 0.866, ('key', 'Int', False): 0.346, ('key', 'Nat', False): 0.479, ('key', 'Position', False): 0.566, ('key', 'Position', True): 0.695, ('port', '@Example', False): 0.023, ('port', '@Record', False): 0.944, ('port', '@unknown', False): 0.561, ('port', 'Axis', False): 0.619, ('port', 'Axis', True): 0.669, ('port', 'Box', False): 0.574, ('port', 'Color', False): 0.548, ('port', 'Color', True): 0.93, ('port', 'D4', False): 0.791, ('port', 'DiagDir', False): 0.486, ('port', 'Dir', False): 0.581, ('port', 'Dir', True): 0.734, ('port', 'Dir8', False): 0.851, ('port', 'Example', False): 0.842, ('port', 'Ident', False): 0.83, ('port', 'Ident', True): 0.943, ('port', 'Int', False): 0.82, ('port', 'Nat', False): 0.74, ('port', 'Offset', False): 0.881, ('port', 'Position', False): 0.697, ('port', 'Position', True): 0.79}  # ORDER_FREE col: (place, column kind (col_kind), kind in scope) -> the chance that an atom of a derived relation names a column of that kind (col_type_counts.py counts it from the rows)
 COL_TYPE_DEFAULT = {('DET', False): 0.618, ('DET', True): 0.783, ('RULE', False): 0.668, ('RULE', True): 0.794, ('key', False): 0.496, ('key', True): 0.836, ('port', False): 0.537, ('port', True): 0.846}  # the chance for a kind that COL_TYPE has no entry for, by place and kind in scope
 UNREAD_BETA = float(os.environ.get('UNREAD_BETA', '0'))  # nats added to the log weight of a derived option whose form no kept form reads (Drawer.unread); 0: off
@@ -1768,6 +1772,8 @@ class Drawer:
 
     prog_names = {}  # '&rN' -> the program's name of a derived relation
     place = None  # the kind of body: RULE, DET, or an INIT's key or port (live.py sets it)
+    key_ident_offered = False  # a key body's atom start offered a declared relation with an Ident column where no Ident label was in scope (a count of live.py's, not a draw)
+    key_rel_m = 1.0  # KEY_IDENT rel: the factor on the weight of a declared relation with an Ident column at an atom start of a key body that has no Ident label in scope (live.py sets it)
     p_k, p_scope, p_key, p_last = 1, (), (), ()  # the atom's index, the types in scope, the clause's tokens before it, the last atom's
 
     def last_atom(self):
@@ -2423,6 +2429,14 @@ class Drawer:
                 ws = self.weights(n, opts, rel, joined, leaf, True, jset, must_join)
                 alt = self.weights(n, opts, rel, joined, leaf, True, jset, not must_join) if coin_on and jset else None
                 ws0, alt0 = ws, alt
+                if n.phase == 'root' and self.place == 'key' and self.rel_off and 'Ident' not in map(str, scope_types):  # also under self.force: the scores see the factor
+                    ident = [self.fr.KIND[o] == 'relation' and self.has_type(o, IDENT) for o in opts]
+                    self.key_ident_offered |= any(ident)
+                    if self.key_rel_m != 1.0:
+                        kf = [self.key_rel_m if x else 1.0 for x in ident]
+                        ws = [w * e for w, e in zip(ws, kf)]
+                        if alt is not None:
+                            alt = [w * e for w, e in zip(alt, kf)]
                 if STEER_REL and (self.force is None or self.gq):  # the steer only: P (share, pw) stays unsteered
                     rf = self.rel_factors(fr, n, popts, k, scope_types, key, rel, joined, leaf)
                     ws = [w * e for w, e in zip(ws, rf)]

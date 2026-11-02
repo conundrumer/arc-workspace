@@ -23,7 +23,7 @@ counts them over random dependency orders of gold). A RULE's atoms and a DET's c
 INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches export the keys
 alone, and the other labels stay in the OR: a later branch may read the first branch's. A branch may take an OR as its last atom, from that place's counts (one level deep); the
-labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and which labels are the keys is a draw with every set at one chance (Run.key_pick), unless ORDER_FREE has `key` and the priors have `key_types` (key_type_counts.py): then a label's weight is the largest odds, over the types of its sites, that a label of that type is a key. A keyed port goes on until it reads
+labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and which labels are the keys is a draw with every set at one chance (Run.key_pick), unless ORDER_FREE has `key` and the priors have `key_types` (key_type_counts.py): then a label's weight is the largest odds, over the types of its sites, that a label of that type is a key. With KEY_IDENT=rel and priors that have `key_rel` (key_rel_counts.py), a declared relation with an Ident column weighs m times as much at an atom start of a key body that has no Ident label in scope. A keyed port goes on until it reads
 each key, or stops with chance 1 - KEY_ALL. A port of an INIT may have no atoms, from the priors' count of those, with no key group or in one (priors that lack the count draw none). Out of a key group it has no head labels, and in one a head column of it may name a key label, from the priors' count of those. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
@@ -634,6 +634,7 @@ class Run:
             if 'first' in n:  # priors fitted before an OR could be a branch's first atom have no such count: they draw none
                 self.orcs[place]['nest_first'] = (n['first'] + 0.5) / (n['branches'] + 1.0)
         self.key_labels = sorted(pri.get('key_labels', {1: 1}).items())  # a key's count of ^ labels, and its gold count
+        self.key_rel_m = pri.get('key_rel', {}).get('Ident', {}).get('m', 1.0) if 'rel' in S.KEY_IDENT else 1.0  # KEY_IDENT rel: the factor on an Ident relation at a key body's atom start
         self.t0 = time.monotonic()
         self.c = collections.Counter()
         self.steer_stats = dict(rel=collections.Counter(), choice=collections.Counter())  # the Drawers' rel_stats and choice_stats
@@ -989,6 +990,9 @@ class Run:
         types = self.label_types(dr, dr.drawn)
         keys = {self.ff0.label_tok[nlab + n]: types.get('L%d' % (nlab + n)) for n in picked}
         carets = {stars[n] for n in picked}
+        self.c['key:ident_offered'] += dr.key_ident_offered  # counts only: Ident relation offered, body makes an Ident label, an Ident label is a key
+        self.c['key:ident_label'] += any(str(t) == 'Ident' for t in types.values())
+        self.c['key:ident_key'] += any(str(t) == 'Ident' for t in keys.values())
         g = f.fork()
         keyed = [M.CARET if j in carets else t for j, t in enumerate(toks)]
         for t in keyed:
@@ -1176,6 +1180,8 @@ class Run:
         dr.need_boost, dr.want_boost, dr.unread = NEED_BOOST, NEED_BOOST, pg.unread
         dr.place, dr.example_read, dr.prior = place or kind, EXAMPLE_READ.get(kind, 1.0), prior
         dr.orc = self.orcs.get(dr.place)
+        if dr.place == 'key':
+            dr.key_rel_m = self.key_rel_m
         self.steer(pg, dr, kind)
         return dr
 
