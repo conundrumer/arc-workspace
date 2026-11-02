@@ -351,6 +351,7 @@ def set_steers(models_dir, on):
         S.COL_W['back'] = 0.0
     path = {k: os.path.join(models_dir, f) if k in on else '' for k, f in STEER_FILES.items()}
     S.STEER_REL, S.STEER_CHOICE = path['rel'], path['choice']
+    S.STEER_DERIVED = os.path.join(models_dir, os.environ['STEER_DERIVED']) if os.environ.get('STEER_DERIVED') and S.STEER_REL else ''
     S.TILT_STOP = 'lw'
     S.TILT_TABLE = json.load(open(path['tilt']))['groups'] if path['tilt'] else None
     for tab in (S.TILT_TABLE or {}).values():  # pos: and bi: read an atom's written place and its predecessor; a body's atoms have no order
@@ -359,6 +360,8 @@ def set_steers(models_dir, on):
         S.rel_scorer()
     if S.STEER_CHOICE:
         S.choice_scorer()
+    if S.STEER_DERIVED:
+        S.derived_model()
 
 
 class GateRecords:
@@ -566,6 +569,7 @@ class Program:
         self.facts = {}  # a relation slot -> one_repair.facts of its table; kept where the ONE repair is on
         self.lifts = {}  # a RULE's relation slot -> choose_lift.key_facts of its table; kept where the CHOOSE lift is on
         self.unread = frozenset()  # UNREAD_BETA: the relation tokens of the scope's forms that no kept form reads
+        self.rel_tabs = {}  # STEER_DERIVED: a relation slot -> its RelTable, for the relations of every form so far (before holds the last form's tables only)
 
     def fork(self):
         """A copy whose dicts can change with no effect on this Program."""
@@ -852,6 +856,8 @@ class Run:
                 if cs:
                     for k in KIND_TOK:
                         pg.pending[k][s] = list(zip(cs, ts))
+        if S.STEER_DERIVED:
+            pg.rel_tabs = pg.rel_tabs | {s: S.RelTable(b, j) for s, j in S.relation_tables(b)}
         if self.lim.one_repair and len(pg.new) == 1:
             import one_repair
             got = one_repair.facts(b)
@@ -1205,6 +1211,7 @@ class Run:
         init = kind == 'INIT'
         dr.rel_closed, dr.rel_base, dr.rel_off, dr.rel_text = self.closed, len(pg.forms), init and 'init' not in S.STEER_COVER, init and 'init' in S.STEER_COVER  # an INIT body has no closed clause: its prefix is the text of its atoms
         dr.rel_pg, dr.row_pg = dict(point_group=group, depth=depth, d_out=None), dict(kind=kind)
+        dr.pg, dr.kind = pg, kind
         dr.rel_dag, dr.rel_stats, dr.choice_stats = (fields, adj), self.steer_stats['rel'], self.steer_stats['choice']
         dr.hist = collections.defaultdict(list)
         for t, cols in S.atom_uses(self.V, pg.toks):

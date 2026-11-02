@@ -300,7 +300,7 @@ class Counts(collections.Counter):
             raise Dead(key)
 
 
-SHARED = 'rel_pre', 'srel_cache', 'rel_dag_f', 'rel_dag_p'  # the Drawer caches that the Drawers of one scope and kind share
+SHARED = 'rel_pre', 'srel_cache', 'rel_dag_f', 'rel_dag_p', 'scope_facts'  # the Drawer caches that the Drawers of one scope and kind share
 SHARED_HIDDEN = 'rel_cache', 'choice_cache', 'roots'  # those whose entries also depend on the labels that a frontier hides
 MEMO_CAP = 3000  # decoders whose table, or whose END check, Run keeps
 INIT_STORES = 64  # paths to INIT bodies whose caches the run keeps

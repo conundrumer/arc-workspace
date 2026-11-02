@@ -111,6 +111,9 @@ Changes from sample.py (v1):
   types of their sites (live.Run.key_pick, with the priors' key_types from key_type_counts.py). A setting that is unset keeps the draws and the chances as they were;
 - KEY_IDENT=rel (default unset: none) multiplies the weight of a declared relation that has an Ident column by m (the priors' key_rel, from key_rel_counts.py) at an atom start of an INIT's key body
   where no label in scope has the type Ident and no rel steer acts (live.Run.key_rel_m). Unset, or with priors that have no key_rel, m is 1: the weights and the draws are as they were;
+- STEER_DERIVED=<file> (default unset: off), a file of the models folder, replaces the relation steer's split at an atom start where STEER_REL is on, INIT
+  bodies included: a gate g gives the derived relations the share g of P's total there and the other options 1 - g; the derived relations share theirs by
+  the model's conditional logit over facts of the scope's DAG and tables, and the others keep the steered shape (Drawer.derived_steer);
 - STEER_REL_GROUPS=1 (default unset: off) keeps P's split between the derived relations and the other options at an atom start under STEER_REL: each group's steered
   weights are scaled to that group's total before the steer, so the steer moves weight only within a group (Drawer.group_steer). Unset, the steer multiplies each option's weight;
 - SEED_TAG (default v2) seeds each point's draws, so a run with another tag draws other programs at the same points; with
@@ -148,6 +151,7 @@ import itertools
 import json
 import math
 import os
+import pickle
 import random
 import re
 import statistics
@@ -289,6 +293,8 @@ EMPTY_ATOM = os.environ.get('EMPTY_ATOM', '1') == '1'  # an atom is redrawn wher
 STEER_REL = os.environ.get('STEER_REL', '')  # path of relcheap's pickle (relsteer.Scorer): at a root-phase atom start each option's weight is multiplied by exp(STEER_REL_BETA * f); unset: off
 STEER_REL_BETA = float(os.environ.get('STEER_REL_BETA', '1'))
 STEER_REL_GROUPS = os.environ.get('STEER_REL_GROUPS', '') == '1'  # the steer keeps P's total of the derived relations and of the other options (see the module docstring)
+STEER_DERIVED = ''  # the path of the derived-pick model; live.set_steers sets it from the setting STEER_DERIVED (see the module docstring)
+DERIVED_STATS = collections.Counter()  # STEER_DERIVED: calls, cache misses and CPU seconds of derived_steer
 REL_CHECK = os.environ.get('REL_CHECK', '')
 STEER_CHOICE = os.environ.get('STEER_CHOICE', '')  # path of choicecheap's pickle (choicefeat.Scorer): at a column, field, value or operand pick each option's weight is multiplied by exp(STEER_CHOICE_BETA * f); unset: off
 STEER_CHOICE_BETA = float(os.environ.get('STEER_CHOICE_BETA', '1'))
@@ -1484,6 +1490,8 @@ class Drawer:
         self.p_text = None  # the atoms drawn before this one, as text, where the clause cannot close (an INIT body, the first atom of a later branch); the live walk sets it
         self.or_done = ()  # the atoms of the branches that the OR being drawn has finished
         self.rel_text = False  # the prefix is p_text, not the closed clause (an INIT body)
+        self.pg, self.kind = None, None  # STEER_DERIVED: the Program at the body's form and the form's kind; live.Run.steer sets them
+        self.scope_facts = {}  # STEER_DERIVED: 'derived' -> (the program's last step_tables result and form count, its DerivedScope); the Drawers of one scope share it
 
     def frontier(self, dec, labs=0, key=None):
         """The frontier at decoder dec, an atom start with labs labels in the clause. With key (the clause's tokens so far,
@@ -2374,6 +2382,85 @@ class Drawer:
                     out[i] *= t0 / t1
         return out
 
+    def derived_steer(self, n, opts, ws, alt, rf, k, scope_types, key):
+        """STEER_DERIVED: (ws, alt) after the steer. The derived relations with ws above 0 are D and the other options B. Of the total T of a list, D gets sigma * T, shared
+        by exp of the model's score, and B gets (1 - sigma) * T in the steered shape ws * rf. alt takes the same scores and sigma, over its own totals. The scores and sigma
+        are cached per (key, phase, k, scope, D)."""
+        c0 = time.process_time()
+        DERIVED_STATS['calls'] += 1
+        is_d = [self.fr.KIND[o] == 'relation' for o in opts]
+        d_idx = [i for i, d in enumerate(is_d) if d and ws[i] > 0]
+        e, sigma = [0.0] * len(opts), 0.0
+        if d_idx:
+            dopts = [opts[i] for i in d_idx]
+            ck = ('derived', key, n.phase, k, tuple(scope_types), self.p_scope, tuple(dopts))
+            got = self.rel_cache.get(ck)
+            if got is None:
+                DERIVED_STATS['misses'] += 1
+                gate_x, opt_x = self.derived_facts(n, dopts, key)
+                got = derived_model().score(gate_x, opt_x)
+                if len(self.rel_cache) >= self.cache_cap:
+                    self.rel_cache.clear()
+                self.rel_cache[ck] = got
+            sigma, ms = got
+            top = max(ms)
+            for i, m in zip(d_idx, ms):
+                e[i] = math.exp(m - top)
+        ws = self.derived_split(is_d, ws, rf, e, sigma)
+        if alt is not None:
+            alt = self.derived_split(is_d, alt, rf, [x if a > 0 else 0.0 for x, a in zip(e, alt)], sigma)
+        DERIVED_STATS['cpu'] += time.process_time() - c0
+        return ws, alt
+
+    @staticmethod
+    def derived_split(is_d, w, rf, e, sigma):
+        """STEER_DERIVED: the weights w with total T where the derived relations (is_d) with e above 0 share T * sigma by e, and the other options share T * (1 - sigma) by
+        w * rf. Where no e is above 0, the other options share T, and the derived relations keep w. Where no other option has w * rf above 0, they keep w."""
+        out = list(w)
+        d_idx, b_idx = [i for i, d in enumerate(is_d) if d], [i for i, d in enumerate(is_d) if not d]
+        total, zd, zb = sum(w), sum(e[i] for i in d_idx if w[i] > 0), sum(w[i] * rf[i] for i in b_idx)
+        if zd > 0:
+            for i in d_idx:
+                out[i] = total * sigma * e[i] / zd if w[i] > 0 else 0.0
+            total *= 1.0 - sigma
+        if zb > 0:
+            for i in b_idx:
+                out[i] = total * w[i] * rf[i] / zb
+        return out
+
+    def derived_base(self, name):
+        """(head, j) of the derived relation named name in the names of the scope's forms, j None for a head relation."""
+        head, _, sub = self.prog_names.get(name, name).partition('.')
+        return head, int(sub) if sub.isdigit() else (sub or None)
+
+    def derived_scope(self):
+        """The DerivedScope of the program that this Drawer's body is in, built at the first ask and kept in scope_facts, which the Drawers of one scope share."""
+        pg = self.pg
+        at = pg.before, len(pg.forms)
+        got = self.scope_facts.get('derived')
+        if got is None or got[0][0] is not at[0] or got[0][1] != at[1]:
+            got = self.scope_facts['derived'] = at, DerivedScope(pg.forms, {self.derived_base('&r%d' % s): t for s, t in pg.rel_tabs.items()})
+        return got[1]
+
+    def derived_facts(self, n, dopts, key):
+        """STEER_DERIVED: (the gate's facts, a list of each derived option's facts) at an atom start, as dicts of name to value (feats.gate_facts, feats.option_facts). The
+        derived relations and the builtin relations among the tokens of key are the drawn ones; no fact reads the order of the forms, of the atoms or of the build."""
+        drawn, builtin = set(), False
+        for t in key:
+            try:
+                kind = self.fr.KIND[t]
+            except (IndexError, KeyError, TypeError):
+                continue
+            if kind == 'relation':
+                if re.fullmatch(r'&r\d+', self.V.name(t) or ''):
+                    drawn.add(self.derived_base(self.V.name(t)))
+            elif kind in DERIVED_BUILTIN:
+                builtin = True
+        st = dict(hk='DET' if self.kind == 'RIGID_DET' else self.kind, pl=self.place if self.place in DERIVED_PLACES else 'other', ph=n.phase,
+                  sty=frozenset(map(str, self.p_scope)), dd=drawn, bd=builtin)
+        sc = self.derived_scope()
+        return sc.gate_facts(st, len(dopts)), sc.option_facts(st, [self.derived_base(self.V.name(t)) for t in dopts])
+
     def rel_factors(self, fr, n, popts, k, scope_types, key, rel, joined, leaf):
         """STEER_REL: exp(STEER_REL_BETA * f) for each option of popts at a root-phase atom start, f from the model of
         STEER_REL on the row that relrows would write (P's shares unsteered). Cached per point by (key, phase, k, scope)."""
@@ -2455,7 +2542,9 @@ class Drawer:
                             alt = [w * e for w, e in zip(alt, kf)]
                 if STEER_REL and (self.force is None or self.gq):  # the steer only: P (share, pw) stays unsteered
                     rf = self.rel_factors(fr, n, popts, k, scope_types, key, rel, joined, leaf)
-                    if STEER_REL_GROUPS:
+                    if STEER_DERIVED:
+                        ws, alt = self.derived_steer(n, opts, ws, alt, rf, k, scope_types, key)
+                    elif STEER_REL_GROUPS:
                         ws = self.group_steer(opts, ws, rf)
                         if alt is not None:
                             alt = self.group_steer(opts, alt, rf)
@@ -2598,6 +2687,232 @@ def cut_scorer(task, case, point):
     os.environ.setdefault('FSTORE_POINTS', FSTORE.rstrip('/'))
     import cut_score
     return cut_score.CutScorer(task, case, list(point))
+
+
+class DerivedModel:
+    """STEER_DERIVED's model, the export of the derived-pick fit, a pickle of plain numbers: for the option logit, logit_names with logit_mean, logit_scale and logit_beta,
+    coltypes (a column type fact ct:T of a T not among them counts as ct:other) and logit_ignore (facts that the logit leaves out); for the gate, gate_names with
+    gate_mean, gate_scale and gate_coef, gate_intercept, and the calibration temp and bias on the gate's logit; version."""
+
+    def __init__(self, path):
+        with open(path, 'rb') as f:
+            d = pickle.load(f)
+        self.version, self.coltypes, self.ignore = d['version'], set(d['coltypes']), set(d['logit_ignore'])
+        self.w = {n: b / s for n, b, s in zip(d['logit_names'], d['logit_beta'], d['logit_scale'])}
+        self.w0 = -sum(b * m / s for b, m, s in zip(d['logit_beta'], d['logit_mean'], d['logit_scale']))
+        self.gw = {n: c / s for n, c, s in zip(d['gate_names'], d['gate_coef'], d['gate_scale'])}
+        self.g0 = d['gate_intercept'] - sum(c * m / s for c, m, s in zip(d['gate_coef'], d['gate_mean'], d['gate_scale']))
+        self.temp, self.bias = d['temp'], d['bias']
+
+    def logit(self, facts):
+        """The score of one option from its facts, a dict of name to value. A name that the model does not know is an error."""
+        s = self.w0
+        for name, v in facts.items():
+            if name in self.ignore:
+                continue
+            if name.startswith('ct:') and name[3:] not in self.coltypes and name != 'ct:other':
+                name = 'ct:other'
+            s += self.w[name] * v
+        return s
+
+    def score(self, gate_x, opt_x):
+        """(sigma, [s for each option]): the gate's share of P's total for the derived relations, and each option's score. gate_x are the gate's facts but lse and mx, which come
+        from the scores."""
+        ms = [self.logit(x) for x in opt_x]
+        top = max(ms)
+        lse = top + math.log(sum(math.exp(m - top) for m in ms))
+        z = self.g0
+        for name, v in dict(gate_x, lse=lse - math.log(len(ms)), mx=top - lse).items():
+            z += self.gw[name] * v
+        z = z * self.temp + self.bias
+        return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, z)))), ms
+
+
+_DERIVED = []
+
+
+def derived_model():
+    if not _DERIVED:
+        _DERIVED.append(DerivedModel(STEER_DERIVED))
+    return _DERIVED[0]
+
+
+DERIVED_FORMS = ('RULE', 'DET', 'INIT', 'RIGID_DET')
+DERIVED_PLACES = ('RULE', 'DET', 'port', 'key', 'other')
+DERIVED_BUILTIN = ('lib relation', 'relation macro', 'fact relation')
+KEY_ORDERS = 720  # the most orders of tied columns that table_key tries
+KEY_CELLS = 1_400_000  # the most row values, summed over those orders, that table_key hashes
+
+
+class OneTable:
+    """Table j of a step_tables result, as parse_table reads a result that holds one table."""
+
+    def __init__(self, ct, j):
+        self.ct = ct
+        self.base_tables = (ct.base_tables or 0) + j
+        self.tables = {k: [v[j]] for k, v in ct.tables.items() if k != 'relation'}
+
+    def __getattr__(self, name):
+        return getattr(self.ct, name)
+
+
+def relation_tables(ct):
+    """[(relation slot, table index)] of a step_tables result, in its order."""
+    rel = M.col(ct, 'tables', 'relation') if isinstance(ct.tables['relation'], (bytes, bytearray, memoryview)) else ct.tables['relation']
+    return [(int(rel[j]), j) for j in range(len(ct.tables['form'])) if rel[j] >= 0]
+
+
+def table_key(tb):
+    """(merge key, [[example kind, index, rows, row hash]]) of a parsed table. Hashes compare within a session. The key takes the least hash
+    over the orders of columns that tie on type and values, so that it doesn't depend on their order. A table past KEY_ORDERS or KEY_CELLS keeps
+    the order of first position. Which case applies depends only on the table's shape, so tables that are equal up to column order take the same case."""
+    spans, at = [], 0
+    for w in tb['widths']:
+        spans.append((at, at + w))
+        at += w
+    entries = [(tuple(ex), rows) for ex, _, rows, _, _ in tb['entries']]
+    cols = []
+    for t, (a, b) in zip(tb['types'], spans):
+        cols.append((str(t), hash(tuple(sorted((ex, hash(frozenset(r[a:b] for r in rows))) for ex, rows in entries))), a, b))
+    order = sorted(cols)
+    groups = [list(g) for _, g in itertools.groupby(order, key=lambda c: c[:2])]
+    orders = [order]
+    tries = math.prod(math.factorial(len(g)) for g in groups)
+    if 1 < tries <= KEY_ORDERS and tries * at * sum(len(rows) for _, rows in entries) <= KEY_CELLS:
+        orders = [[c for g in perm for c in g] for perm in itertools.product(*(itertools.permutations(g) for g in groups))]
+
+    def row_hashes(seq):
+        per = collections.defaultdict(set)
+        for ex, rows in entries:
+            per[ex].add(hash(frozenset(tuple(v for _, _, a, b in seq for v in r[a:b]) for r in rows)))
+        return per
+
+    per = row_hashes(order)
+    counts = collections.Counter()
+    for ex, rows in entries:
+        counts[ex] = max(counts[ex], len(rows))
+    body = min(hash(tuple(sorted((ex, tuple(sorted(s))) for ex, s in got.items()))) for got in (per, *map(row_hashes, orders[1:])))
+    return (tuple(c[0] for c in order), body), [[ex[0], ex[1], counts[ex], '%016x' % (hash(tuple(sorted(per[ex]))) & (2 ** 64 - 1))] for ex in sorted(per)]
+
+
+class RelTable:
+    """The table of one relation at a form end, kept for STEER_DERIVED: the step_tables result and the table's index in it. facts() reads the table at the first ask
+    (merge key, column types, row count of each example, whether a column label is blank) and lets the result go. A table that does not parse has no_table."""
+    NONE = dict(key=None, types=[], nrows=[], blank=False, nt=True)
+
+    def __init__(self, ct, j):
+        self.ct, self.j, self.got = ct, j, None
+
+    def facts(self):
+        if self.got is None:
+            try:
+                tb = parse_table(OneTable(self.ct, self.j))
+                self.got = dict(key=table_key(tb)[0], types=[str(t) for t in tb['types']], nrows=[len(e[2]) for e in tb['entries']], blank='' in tb['labels'], nt=False)
+            except Exception:  # noqa: BLE001  a table past the work cap
+                self.got = self.NONE
+            self.ct = None
+        return self.got
+
+
+class DerivedScope:
+    """STEER_DERIVED: what a pick reads of a program's forms and tables. forms: the parsed forms before the clause, with the heads that the decoder gives them; tabs: (head, j) ->
+    RelTable. A form's parents are the forms that its text reads. Its depth is 1 more than its parents' largest. The facts are the derived-pick fit's (feats.Scope, option_facts and
+    gate_facts of its code), from sets and flags of the forms and the atoms drawn, none from an order."""
+
+    def __init__(self, forms, tabs):
+        self.kind, reads = {}, {}
+        for f in forms:
+            if f and f[0] in DERIVED_FORMS and len(f) > 1 and isinstance(f[1], str):
+                self.kind[f[1]] = 'DET' if f[0] == 'RIGID_DET' else f[0]
+                reads[f[1]] = strata.reads_of(f[2:], set()) - {f[1]}
+        self.parents = {h: rs & self.kind.keys() for h, rs in reads.items()}
+        self.depth, self.anc = {}, {}
+
+        def walk(h):
+            if h not in self.depth:
+                self.anc[h] = set()
+                for p in self.parents[h]:
+                    walk(p)
+                    self.anc[h] |= {p} | self.anc[p]
+                self.depth[h] = 1 + max((self.depth[p] for p in self.parents[h]), default=0)
+        for h in self.parents:
+            walk(h)
+        self.maxdepth = max(self.depth.values(), default=1)
+        self.readers = collections.Counter(p for ps in self.parents.values() for p in ps)
+        self.nforms, self.tabs, self.rels = len(self.kind), tabs, {}
+        self.nrel = collections.Counter(h for h, _ in tabs if h in self.kind)
+
+    def rel(self, base):
+        """The facts of the relation base, (head, j), that the options read about it; None where its form is not in the scope."""
+        r = self.rels.get(base)
+        if r is None and base[0] in self.kind:
+            t, h = self.tabs[base].facts() if base in self.tabs else RelTable.NONE, base[0]
+            nr = t['nrows']
+            r = self.rels[base] = dict(
+                head=h, sub=base[1] is not None, key=t['key'], types=tuple(sorted(t['types'])), nt=int(t['nt']), arity=len(t['types']), ct=collections.Counter(t['types']),
+                lmean=math.log1p(sum(nr) / len(nr)) if nr else 0.0, lmax=math.log1p(max(nr)) if nr else 0.0, share=sum(1 for x in nr if x > 0) / len(nr) if nr else 0.0,
+                blank=int(t['blank']), depth=self.depth[h], leaf=int(self.readers[h] == 0), root=int(not self.parents[h]), lread=math.log1p(self.readers[h]),
+                lnrel=math.log(max(self.nrel[h], 1)))
+        return r
+
+    def option_facts(self, st, bases):
+        """The facts of the derived options at bases ((head, j) each), a dict of name to value each with the facts that are 0 left out. st: hk (head kind), pl (place), ph (phase),
+        sty (the label types in scope), dd (the set of derived relations drawn), bd (whether a builtin relation was drawn)."""
+        hk, pl, drawn, stys = st['hk'], st['pl'], st['dd'], st['sty']
+        rs = [self.rel(b) for b in bases]
+        same_types = collections.Counter(r['types'] for r in rs if r is not None)
+        same_key = collections.Counter(r['key'] for r in rs if r is not None and r['key'] is not None)
+        drel = [r for r in map(self.rel, drawn) if r is not None]
+        dkeys = collections.Counter(r['key'] for r in drel if r['key'] is not None)
+        dtypes = set().union(*[r['types'] for r in drel])
+        dfids = {d[0] for d in drawn}
+        danc = set().union(*[self.anc.get(f, ()) for f in dfids])
+        dsib = collections.Counter(d[0] for d in drawn)
+        out = []
+        for b, r in zip(bases, rs):
+            f = {}
+            if r is None:  # an option whose form is not in the scope: no fact but the flags
+                f['notab'], f['nosc'] = 1.0, float(not stys)
+                out.append({k: v for k, v in f.items() if v})
+                continue
+            h, a, me = r['head'], r['arity'], b in drawn
+            f['ar%d' % min(max(a, 1), 4)] = 1.0 if a else 0.0
+            f['lmean'], f['lmax'], f['share'] = r['lmean'], r['lmax'], r['share']
+            for t, c in r['ct'].items():
+                f['ct:' + t] = float(c)
+            f['blank'], f['notab'] = float(r['blank']), float(r['nt'])
+            tin = sum(c for t, c in r['ct'].items() if t in stys)
+            f['tin'], f['tinf'] = float(tin), tin / a if a else 0.0
+            f['nosc'] = float(not stys)
+            f['dupt'] = math.log1p(same_types[r['types']] - 1)
+            f['dupk'] = float(r['key'] is not None and same_key[r['key']] > 1)
+            f['d%d' % min(r['depth'], 4)] = 1.0
+            f['dmax'] = float(r['depth'] - self.maxdepth)
+            f['deep'] = float(r['depth'] == self.maxdepth)
+            f['leaf'], f['root'], f['lread'] = float(r['leaf']), float(r['root']), r['lread']
+            f['kk:%sx%s' % (self.kind[h], hk)] = 1.0
+            f['sub'], f['lnrel'] = float(r['sub']), r['lnrel']
+            f['dr_self'] = float(me)
+            f['dr_sib'] = float(dsib[h] > me)
+            f['dr_anc'] = float(h in danc)
+            f['dr_desc'] = float(bool(dfids & self.anc.get(h, set())))
+            f['dr_par'] = float(any(df != h and self.parents[df] & self.parents[h] for df in dfids if df in self.parents))
+            f['dr_key'] = float(r['key'] is not None and dkeys[r['key']] > me)
+            f['dr_type'] = float(bool(set(r['types']) & dtypes))
+            if not drawn:
+                f['x_nod_leaf'], f['x_nod_deep'], f['x_nod_tin'] = f['leaf'], f['deep'], f['tin']
+            f['x_%s_leaf' % pl], f['x_%s_sub' % pl], f['x_%s_dmax' % pl] = f['leaf'], f['sub'], f['dmax']
+            if st['ph'] == 'root2':
+                f['x_r2_self'], f['x_r2_leaf'] = f['dr_self'], f['leaf']
+            out.append({k: round(v, 4) for k, v in f.items() if v})
+        return out
+
+    def gate_facts(self, st, n_d):
+        """The gate's facts at an atom start with n_d derived options, as option_facts gives its facts; the gate's two facts of the scores, lse and mx, are left to the model."""
+        dd = bool(st['dd'])
+        f = {'hk:' + st['hk']: 1.0, 'pl:' + st['pl']: 1.0, 'lnD': math.log(max(n_d, 1)), 'lnf': math.log(max(self.nforms, 1)), 'r2': float(st['ph'] == 'root2'),
+             'dd': float(dd), 'bd': float(st['bd']), 'both': float(dd and st['bd']), 'nosc': float(not st['sty'])}
+        return {k: round(v, 4) for k, v in f.items() if v}
 
 
 @functools.cache
