@@ -22,7 +22,7 @@ Exact mode (the default) is or_q.walk, as work/lm/data-study/sampler/sampler-wor
 `--order-seconds`). The first column, `before`, has every written form before the form as its scope, in written order, so it reads the written form order and isn't DAG invariant.
 `--parents` adds, per form, the bits when the scope is only the forms that it reads, directly or not, each in its canonical atom order (or_q.canonical_lines,
 or_q.canonical_scope); that column is DAG invariant. `--written` gives the old figure, which equals a census row of the same text, code, models and STEER_COVER: the form's written order
-only (or_q.walk_order), and both columns read the written forms in written order. `--fast` is a proxy for the bits of the written order, and loads no engine tables
+only (or_q.walk_order), and both columns read the written forms in written order. An older sampler (`SAMPLER_CODE`) whose or_q.walk takes no `cap` reads the written order only, so it runs with `--written`. `--fast` is a proxy for the bits of the written order, and loads no engine tables
 (see scripts/arclog_bits_fast.py).
 
 The engine is the Mac runtime of work/lm/data-study/ast/run/runtime-0a7d32160, run by the python of runtime-kaggle-py313 (`--runtime` for
@@ -35,6 +35,7 @@ unset, which is this tool's default. A census with `init,branch` (rigid-census.s
 """
 import argparse
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -147,11 +148,23 @@ def label(line, width=58):
 # ---------------------------------------------------------------- exact mode, in the engine's python
 
 def exact(a, lines):
+    here = Path(__file__).resolve().parent
+    sys.path[:] = [p for p in sys.path if Path(p or '.').resolve() != here]  # scripts/arclog.py would shadow the engine's arclog package
     sys.path.insert(0, str(SAMPLER))
     os.environ['STEER_COVER'] = a.steer_cover
+    import arclog  # noqa: E402  # pyright: ignore[reportMissingImports]
+    if not hasattr(arclog, 'Decoder'):
+        sys.exit('arclog is %s, not the engine package' % getattr(arclog, '__file__', '?'))
     import live  # noqa: E402  # pyright: ignore[reportMissingImports]
     import live_try  # noqa: E402  # pyright: ignore[reportMissingImports]
     import or_q  # noqa: E402  # pyright: ignore[reportMissingImports]
+    takes = inspect.signature(or_q.walk).parameters
+    orders = all(n in takes for n in ('cap', 'budget', 'seconds'))  # an older sampler's walk reads the written order only
+    if not a.written and not orders:
+        sys.exit('%s/or_q.py: walk() takes no cap, budget or seconds, so it reads the written order only; run with --written' % SAMPLER)
+    if a.parents and not a.written and not hasattr(or_q, 'canonical_lines'):
+        sys.exit('%s/or_q.py has no canonical_lines; run --parents with --written' % SAMPLER)
+    walk_order = getattr(or_q, 'walk_order', or_q.walk)  # an older sampler's walk is the written-order walk
     t0 = time.time()
     sampler = live.Sampler(str(a.models), tuple(live.STEERS))
     load = time.time() - t0
@@ -177,9 +190,11 @@ def exact(a, lines):
             try:
                 sess, task_json, _ = live_try.session_of(a.task)  # a session for each walk, as frontier_q.py: a session that earlier walks used gives other bits
                 if a.written:
-                    q = or_q.walk_order(sampler, a.task, kind, [len(keep), 0], keep, target, sess, task_json, kind)
+                    q = walk_order(sampler, a.task, kind, [len(keep), 0], keep, target, sess, task_json, kind)
                 else:
-                    q = or_q.walk(sampler, a.task, kind, [len(keep), 0], keep, target, sess, task_json, kind, a.order_cap, a.order_budget, a.order_seconds)
+                    q = or_q.walk(sampler, a.task, kind, [len(keep), 0], keep, target, sess, task_json, kind=kind, cap=a.order_cap, budget=a.order_budget, seconds=a.order_seconds)
+                if q.get('total') is None and not (q.get('bad') or q.get('dead')):
+                    q = dict(error='the walk gave no total')
             except Exception as e:  # noqa: BLE001
                 q = dict(error=repr(e)[:200])
             q['seconds'] = round(time.time() - t1, 2)
@@ -294,6 +309,9 @@ def inner(a):
         if a.parents:
             header += '; the parents column reads the forms it reads, ' + ('in written order' if a.written else 'each in canonical atom order')
     print(show(a, res, header, a.program))
+    errors = [r['line'] for r in res['rows'] for k in ('before', 'parents') if 'error' in r.get(k, {})]
+    if errors:
+        sys.exit('%d walks failed, on lines %s' % (len(errors), ','.join(map(str, sorted(set(errors))))))
 
 
 def main():
