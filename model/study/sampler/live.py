@@ -459,7 +459,7 @@ class LiveDrawer(S.Drawer):
 
     def weights(self, n, os, rel, joined, leaf, steer, jset=None, must_join=False):
         """S's, with the field that a record site repeats at gold's share, and a declared relation's Example column, which S's column
-        weights take for the first column, at example_read (not with ORDER_FREE col, whose table counts the Example type by place)."""
+        weights take for the first column, at example_read (not with ORDER_FREE col, whose table counts that column as @Example, by place)."""
         ws = super().weights(n, os, rel, joined, leaf, steer, jset, must_join)
         if steer and self.mirror and n.phase == 'root2':
             ws = self.mirrored(os, ws, MIRROR_NOT)
@@ -471,7 +471,7 @@ class LiveDrawer(S.Drawer):
         if n.phase == 'op' and M.STAR in os:  # S's weights give a fresh label no weight; here it has gold's share of the first operand of `=`
             rest = sum(w for o, w in zip(os, ws) if o != M.STAR)
             return [(rest * EQ_FRESH / (1 - EQ_FRESH) if rest else 1.0) if o == M.STAR else w for o, w in zip(os, ws)]  # with no label to read, a fresh label is the only operand
-        if n.phase == 'cols' and 'col' not in S.ORDER_FREE:  # with col, COL_TYPE counts the Example type by place
+        if n.phase == 'cols' and 'col' not in S.ORDER_FREE:  # with col, COL_TYPE counts the implicit Example column as @Example, by place
             return [w * self.example_read if self.example_column(n, o) else w for o, w in zip(os, ws)]
         return ws
 
@@ -496,7 +496,7 @@ class LiveDrawer(S.Drawer):
         fm, stq = super().steer_choice(fr, n, popts, opts, k, rel, joined, leaf, stop, key)
         if stop is not None and (n.labs < self.labs_wanted or any(self.col_needed(n.rtok, fr.colpos[o]) for o in opts)):
             stq *= NEED_STOP
-        if stop is not None and opts and 'col' not in S.ORDER_FREE and all(self.example_column(n, o) for o in opts):  # weights rank columns, so a lone Example column is read unless the atom stops
+        if stop is not None and opts and 'col' not in S.ORDER_FREE and all(self.example_column(n, o) for o in opts):  # weights rank columns, so a lone Example column is read unless the atom stops; with col, COL_TYPE counts that column as @Example
             stq = 1 - (1 - stq) * self.example_read
         return fm, stq
 
