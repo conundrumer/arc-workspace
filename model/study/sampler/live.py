@@ -24,7 +24,7 @@ INIT takes a component, and each of its ports takes
 a body and a head. The body of a RULE, a DET, a key or a port may hold an OR, from that place's counts: in a key the branches export the keys
 alone, and the other labels stay in the OR: a later branch may read the first branch's. A branch may take an OR as its last atom, from that place's counts (one level deep); the
 labels that OR exports are the branch's, and its other labels stay in it. A body or a branch may hold an ALL, from the priors' counts: its guard's labels stay in it, and its one conclusion atom reads one of them. The first operand of `=` may be a fresh label (EQ_FRESH), and `=` has the weight EQ_BRANCH in an OR's branch, where gold uses it most. A key's count of ^ labels comes from the priors, and which labels are the keys is a draw with every set at one chance (Run.key_pick), unless ORDER_FREE has `key` and the priors have `key_types` (key_type_counts.py): then a label's weight is the largest odds, over the types of its sites, that a label of that type is a key. A keyed port goes on until it reads
-each key, or stops with chance 1 - KEY_ALL. A port of an INIT with no key may have no atoms and no head labels, from the priors' count of those (priors that lack it draw none). A keyed INIT's ports that its key group skipped may come again after the group, from the
+each key, or stops with chance 1 - KEY_ALL. A port of an INIT may have no atoms, from the priors' count of those, with no key group or in one (priors that lack the count draw none). Out of a key group it has no head labels, and in one a head column of it may name a key label, from the priors' count of those. A keyed INIT's ports that its key group skipped may come again after the group, from the
 priors' counts of those: such a port reads no key, so it holds for every key. A head column of a keyed port may name a key label, from the priors' counts; that port's body then needs no label for it, and reads no key with the priors' share of such ports. A head column of a type parameter may take a record of several labels, its count from the
 priors, and the port's body goes on until it makes that many or reaches its last atom; the column that first binds a type parameter
 sets that count and the labels' types for the INIT's other columns of that type, and their ports' bodies then need those types. A RULE's or a DET's body may stop at one atom, which S refuses (MIN2_KINDS), with the
@@ -1073,9 +1073,9 @@ class Run:
         types so far, and gets those of the columns that this head binds first. outside says that the port follows the key group. With keys, the body's
         Drawer has the key group's tokens as its join_context."""
         pri, rng = self.pri, self.rng
-        empties = pri.get('empty_ports')  # priors fitted before an empty port was counted have none: they draw none
-        if empties is not None and not keys and not outside and comp != 'RIGID_DET' and f.fork().admits([M.END])[0] and rng.random() < (empties.get((comp, name), 0) + 0.1) / (pri['ports'][comp, False, name] + 0.2):
-            if (got := self.empty_port(f, cols)) is not None:
+        empties = pri.get('empty_keyed' if keys else 'empty_ports')  # priors fitted before an empty port was counted, in a key group or out of it, have none: they draw none
+        if empties is not None and not outside and comp != 'RIGID_DET' and f.fork().admits([M.END])[0] and rng.random() < (empties.get((comp, name), 0) + 0.1) / (pri['ports'][comp, bool(keys), name] + 0.2):
+            if (got := self.empty_port(f, comp, name, cols, params, keys, fields, empties)) is not None:
                 self.c['port:empty'] += 1
                 return got, nlab
         uses = pri.get('outside', {}).get((comp, name), 0) if outside else sum(pri['ports'][comp, k, name] for k in (False, True))
@@ -1126,12 +1126,20 @@ class Run:
                 raise Drop('head: no label for %s' % name)
         return f, nlab
 
-    def empty_port(self, f, cols):
-        """The decoder after a port of no atoms and a head of no labels at f, or None where the decoder refuses it."""
-        f = f.fork()
+    def empty_port(self, f, comp, name, cols, params, keys, fields, empties):
+        """The decoder after a port of no atoms at f, with the head that goes with it, or None where the decoder refuses it. Its head names no label, except in a key group: a column
+        that has a key label of keys there is bound with the chance that the priors' empty ports (empties, the count of those ports) have it bound, and fields has the label types it binds, as in Run.port."""
+        f, rng = f.fork(), self.rng
+        heads, seen = self.pri.get('empty_heads', {}), empties.get((comp, name), 0)
         try:
             f.step(M.END)
-            for _ in cols:
+            for c, t in cols:
+                if keys and self.key_fits(t, keys, params) and rng.random() < (heads.get((comp, name, c), 0) + 0.1) / (seen + 0.2):
+                    n = len(fields[t]) if t in fields else self.record_size(comp, name, c)
+                    f, got = self.head_column(f, list(keys), n, list(keys))
+                    if t in params:
+                        fields[t] = [keys.get(x) or ANY_TYPE for x in got]
+                    continue
                 if not f.admits([M.END])[0]:
                     return None
                 f.step(M.END)

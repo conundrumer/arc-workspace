@@ -78,7 +78,7 @@ class Guide(search.Chooser):
         self.stop = None  # the stop row that waits for the coin of its atom
         self.in_all = 0  # the ALLs being drawn
         self.marks = []  # the running bits after each atom of the walk
-        self.fell_back = set()  # what the priors lack and the walk went on without: 'rigid' (a RIGID_DET's coins take 1/2), 'RIGID_DET atoms' (its parts take INIT's), 'empty_ports' (gold's empty port has no coin)
+        self.fell_back = set()  # what the priors lack and the walk went on without: 'rigid' (a RIGID_DET's coins take 1/2), 'RIGID_DET atoms' (its parts take INIT's), 'empty_ports' (gold's empty port has no coin), 'empty_keyed' (the same in a key group)
         self.order_rng = None  # with a random.Random here, each body takes a random valid order as the walk comes to it (see shuffle)
         self.bodies = []  # the bodies of the form's text that no shuffle has taken
         self.star_total = sum(1 for t in rest if t in (M.STAR, M.CARET))
@@ -489,7 +489,7 @@ class Guide(search.Chooser):
 class GuidedDrawer(search.SearchDrawer):
     def atom(self, fr, k, scope_types=(), key=()):
         g = self.rng
-        if g.kind in FORMS and g.rest and g.rest[0] == M.END:  # gold's body has no atom, and the walk draws one: Run.port draws an empty port only in an INIT with no key
+        if g.kind in FORMS and g.rest and g.rest[0] == M.END:  # gold's body has no atom, and the walk draws one: Run.port draws an empty port only with priors that count them
             g.stuck('%sbody: gold has no atom here, and the walk draws one' % g.where)
         self.force, self.gq, self.gq_rel = g.rest, True, []
         g.cur = collections.Counter()
@@ -612,8 +612,9 @@ class GuidedRun(search.SearchRun):
         g = self.rng
         if comp == 'RIGID_DET' and 'RIGID_DET' not in self.pri['atoms']:
             g.fell_back.add('RIGID_DET atoms')
-        if 'empty_ports' not in self.pri and not keys and not outside and comp != 'RIGID_DET' and g.extent(list(g.rest)) == 0:
-            g.fell_back.add('empty_ports')
+        counted = 'empty_keyed' if keys else 'empty_ports'
+        if counted not in self.pri and not outside and comp != 'RIGID_DET' and g.extent(list(g.rest)) == 0:
+            g.fell_back.add(counted)
         g.begin_port(cols, keys, outside)
         got = super().port(pg, f, comp, name, cols, params, nlab, keys, fields, outside)
         g.end_port()

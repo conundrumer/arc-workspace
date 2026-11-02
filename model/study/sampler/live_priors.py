@@ -173,6 +173,24 @@ def empty_ports(tasks):
     return out
 
 
+def empty_keyed(tasks):
+    """(ports, heads) over the INITs of the tasks that have a key group, for the ports inside it that have no atoms: ports is {(component, port): those ports}, and heads is {(component, port, column): those
+    whose head names the column}. With no atoms a head names a key label alone."""
+    ports, heads = collections.Counter(), collections.Counter()
+    for t in tasks:
+        for f in S.corpus_forms(t):
+            if f[0] != 'INIT':
+                continue
+            parts = [g for g in f[3:] if isinstance(g, list) and g]
+            if not parts or parts[0][0] != 'key':
+                continue
+            for p in parts[0][2:]:
+                if isinstance(p, list) and p and not any(isinstance(a, list) for a in p[2:]):
+                    ports[f[2], p[0]] += 1
+                    heads.update((f[2], p[0], h[0][1:]) for h in p[1] if isinstance(h, list))
+    return ports, heads
+
+
 def init_bodies(form):
     """[(place, atoms)] of the key and ports of an INIT form: place is 'key' or 'port'."""
     out = []
@@ -414,8 +432,9 @@ def fit(leave_out=()):
         compound.update(c)
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
+    empty_keys, empty_heads = empty_keyed(tasks)
     return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
-                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), rigid=rigid_counts(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), hand=hand_counts(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()} | dict(RIGID_DET=rigid_atoms),
+                ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), empty_keyed=empty_keys, empty_heads=empty_heads, rigid=rigid_counts(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), hand=hand_counts(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()} | dict(RIGID_DET=rigid_atoms),
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()} | dict(RIGID_DET=rigid_hazard), regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
                 families=S.FAMILIES)
