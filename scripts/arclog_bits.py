@@ -25,9 +25,9 @@ or_q.canonical_scope); that column is DAG invariant. `--written` gives the old f
 only (or_q.walk_order), and both columns read the written forms in written order. `--fast` is a proxy for the bits of the written order, and loads no engine tables
 (see scripts/arclog_bits_fast.py).
 
-The engine is the Mac runtime of work/lm/data-study/ast/run/runtime-ba0754492, run by the python of runtime-kaggle-py313. This tool sets
-PYTHONPATH itself, and stops unless the installed arclog.abi3.so and the wheel have the hashes of `wheel_engine` in the manifest
-(work/lm/data-study/sampler/sampler-worker/sampler-helper-forms/manifest.json; `--manifest` for another).
+The engine is the Mac runtime of work/lm/data-study/ast/run/runtime-0a7d32160, run by the python of runtime-kaggle-py313 (`--runtime` for
+another runtime that scripts/build_study_runtime.py built). This tool sets PYTHONPATH itself, and stops unless the installed
+arclog.abi3.so is the one in the runtime's wheel.
 
 Default models are those of work/synth-kaggle/kernel-bundle-00361067/dataset, the built bundle that work/synth-kaggle/kernel-next-bundle-inputs.md
 calls current: `live_priors.pkl` (sha256 starts 5feaca170f02b72b), `relR4_o.pkl`, `choice5_o.pkl` and `tilt_v1.json`. That bundle runs with STEER_COVER
@@ -51,9 +51,8 @@ from engine.checkout import main_worktree  # noqa: E402
 
 WORK = main_worktree(ROOT) / 'work'
 RUN = WORK / 'lm/data-study/ast/run'
-ENGINE_PATH = RUN / 'runtime-ba0754492/py313-path'
+RUNTIME = RUN / 'runtime-0a7d32160'
 ENGINE_PY = RUN / 'runtime-kaggle-py313/venv/bin/python'
-MANIFEST = WORK / 'lm/data-study/sampler/sampler-worker/sampler-helper-forms/manifest.json'
 BUNDLE = WORK / 'synth-kaggle/kernel-bundle-00361067'
 MODELS = BUNDLE / 'dataset'
 SAMPLER = Path(os.environ.get('SAMPLER_CODE', ROOT / 'model/study/sampler'))  # as frontier_q.py: the sampler code of another checkout
@@ -70,16 +69,26 @@ def sha256(path):
     return h.hexdigest()
 
 
-def check_engine(manifest):
-    """The engine line for the header; stops the tool where the installed arclog is not the manifest's wheel."""
-    want = json.load(open(manifest))['wheel_engine']
-    so = (ENGINE_PATH / 'arclog/arclog.abi3.so').resolve()
-    wheels = sorted((ENGINE_PATH.parent / 'wheels').glob('*.whl'))
-    got = {'so_sha256': sha256(so), 'sha256': sha256(wheels[0]) if wheels else None}
-    for key, value in got.items():
-        if value != want.get(key):
-            sys.exit('arclog %s in %s is %s; the manifest %s has %s for the wheel of commit %s' % (key, ENGINE_PATH, value, manifest, want.get(key), want.get('commit')))
-    return 'arclog %s (%s) matches %s' % (want['commit'], want['sha256'][:12], Path(manifest).name)
+def engine_path(runtime):
+    """The folder that holds the runtime's arclog package for the python of runtime-kaggle-py313, made on first use."""
+    path = runtime / 'py313-path'
+    if not (path / 'arclog').exists():
+        path.mkdir(exist_ok=True)
+        (path / 'arclog').symlink_to(next((runtime / 'venv/lib').glob('python*/site-packages/arclog')))
+    return path
+
+
+def check_engine(runtime):
+    """The engine line for the header; stops the tool where the installed arclog.abi3.so is not the one in the runtime's wheel."""
+    import zipfile
+    ready = json.load(open(runtime / 'ready.json'))
+    so = engine_path(runtime) / 'arclog/arclog.abi3.so'
+    with zipfile.ZipFile(ready['wheel']) as wheel:
+        name = next(n for n in wheel.namelist() if n.endswith('arclog.abi3.so'))
+        want = hashlib.sha256(wheel.read(name)).hexdigest()
+    if sha256(so) != want:
+        sys.exit('arclog.abi3.so in %s is not the one in %s' % (so.resolve().parent, ready['wheel']))
+    return 'arclog %s (%s)' % (ready['revision'][:9], runtime.name)
 
 
 def read_program(path):
@@ -299,7 +308,7 @@ def main():
     ap.add_argument('--order-seconds', type=float, default=300, help='the seconds a form takes at most')
     ap.add_argument('--models', type=Path, default=MODELS, help='a folder with live_priors.pkl, relR4_o.pkl, choice5_o.pkl, tilt_v1.json (default: the dataset of kernel-bundle-00361067)')
     ap.add_argument('--steer-cover', default='', help='STEER_COVER of the walk (default: unset, as in kernel-bundle-00361067)')
-    ap.add_argument('--manifest', type=Path, default=MANIFEST)
+    ap.add_argument('--runtime', type=Path, default=RUNTIME, help='a runtime folder that scripts/build_study_runtime.py built (default: runtime-0a7d32160)')
     ap.add_argument('--json', help='write the records here')
     ap.add_argument('-v', '--verbose', action='store_true', help='the whole reason of a bad or dead form')
     a = ap.parse_args()
@@ -307,8 +316,8 @@ def main():
         sys.exit('no task %s in data/tasks/' % a.task)
     if os.environ.get(INNER) or a.fast:
         return inner(a)
-    note = check_engine(a.manifest)
-    env = dict(os.environ, PYTHONPATH=str(ENGINE_PATH), RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', **{INNER: '1'})
+    note = check_engine(a.runtime)
+    env = dict(os.environ, PYTHONPATH=str(engine_path(a.runtime)), RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', **{INNER: '1'})
     print(note, file=sys.stderr)
     sys.exit(subprocess.call([str(ENGINE_PY), '-u', os.path.abspath(__file__), *sys.argv[1:]], env=env))
 

@@ -18,7 +18,7 @@
     - `--models DIR` and `--steer-cover LIST` change the models and the `STEER_COVER` of the walk. The defaults are the models of the built bundle that `work/synth-kaggle/kernel-next-bundle-inputs.md` calls current, with `STEER_COVER` unset. A census with `init,branch` is `--steer-cover init,branch --models <its models dir>`.
     - `--json OUT` writes the records to `OUT`.
     - `-v` gives the whole reason of a `bad` or `dead` form.
-- The exact mode runs a pinned engine, and the tool stops unless the installed engine has the hashes that the manifest `work/lm/data-study/sampler/sampler-worker/sampler-helper-forms/manifest.json` gives for its wheel.
+- The exact mode runs the engine of a runtime that `scripts/build_study_runtime.py` built, `--runtime` for another than the default, and the tool stops unless the installed engine is the one in that runtime's wheel.
 - `work/` is untracked and stands in the main tree, so a path under it is read from the main tree.
 
 ## Reading the table
