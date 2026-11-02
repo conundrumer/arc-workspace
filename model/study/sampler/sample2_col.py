@@ -43,6 +43,7 @@ Changes from sample.py (v1):
   reuses it.
 - SAMPLER_CORPUS (sample.py), SAMPLER_FSTORE and SAMPLER_GEN replace the gold the sampler reads: the AST corpus, the
   feature-store points and the converted corpus;
+- GOLD_APPROXIMATED=1 (sample.py) makes the fits read a corpus stem whose first row has `approximated: true` (its gold solver has @approximated); by default the fits (corpus_forms, body_hazard, group_hazards, and so live_priors.py and live_rows.py) leave that stem out. A view with no such flag is read whole;
 - HAZARD_GROUP=1 gives a RULE point the stop factors of its own point group's gold bodies, in place of all RULE bodies';
 - PREFIX_DRAWS=1 writes cuts.jsonl.zst: each passing draw's clause (and gold's) cut after each atom where it can end,
   evaluated as a draw, with prefix_of, prefix_k and draw = prefix_of * 1000 + prefix_k;
@@ -151,7 +152,7 @@ import time
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sample import M, arclog, M_sexprs, SHAPES, SPLITS, TASKS, OPS, CORPUS, body_hazard, table_rows, static_prune, n_forms  # noqa: E402
+from sample import M, arclog, M_sexprs, SHAPES, SPLITS, TASKS, OPS, CORPUS, body_hazard, GOLD_APPROXIMATED, left_out, first_row, table_rows, static_prune, n_forms  # noqa: E402
 import sample as _sample  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -669,12 +670,9 @@ def registry_columns():
 
 @functools.lru_cache(maxsize=None)
 def corpus_forms(t):
-    """The parsed gold program of task t's first corpus pair, or None where the corpus has no pairs for t."""
-    p = CORPUS + t + '/pairs.jsonl.gz'
-    if not os.path.exists(p):
-        return None
-    with gzip.open(p, 'rt') as f:
-        return M_sexprs(json.loads(f.readline())['gold_sexp'])
+    """The parsed gold program of task t's first corpus pair, or None where the corpus has no pairs for t or left_out names t."""
+    r = first_row(t)
+    return r and M_sexprs(r['gold_sexp'])
 
 
 def gold_bodies(dev, kind):
@@ -841,11 +839,10 @@ def group_hazards(dev):
     body counted in its clause's point group (strata.point_fields)."""
     bodies = collections.defaultdict(lambda: collections.defaultdict(list))
     for t in dev:
-        p = CORPUS + t + '/pairs.jsonl.gz'
-        if not os.path.exists(p):
+        r = first_row(t)
+        if r is None:
             continue
-        with gzip.open(p, 'rt') as f:
-            forms = strata.sexprs(json.loads(f.readline())['gold_sexp'])
+        forms = strata.sexprs(r['gold_sexp'])
         for i, e in enumerate(forms):
             if e and e[0] == 'RULE':
                 bodies[strata.point_fields(forms, i)['point_group']][t].append([a for a in e[2:] if isinstance(a, list)])

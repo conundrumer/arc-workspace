@@ -4,6 +4,8 @@ S draws one clause at a point of a task, given the program before that point, un
 
 `sample2_col.py` is S and `sample.py` holds its priors. `sampler_paths.py` says where code and data are read from. Models, the corpus view and run outputs stay in the shared data directory, under `sampler/` of `python3 model/study/study_paths.py`.
 
+The fits read the corpus view's stems through `sample.first_row`. A stem whose first row has `approximated: true` (its gold solver has `@approximated`) is left out of `live_priors.py`, `live_rows.py` and the hazards, unless `GOLD_APPROXIMATED=1` is set. A view with no such flag is read whole. `dag_bits.py` and the walks read the stem they are given. `live_rows.py` records the setting in its manifest, and a run stops where `--out` holds rows of the other setting.
+
 ## Proposal
 
 These settings steer the proposal. Each takes a file in `sampler/models/`:

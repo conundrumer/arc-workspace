@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Writes the frozen priors of live.py: every corpus task's gold program counted, with no task held out, into
+"""Writes the frozen priors of live.py: every corpus task's gold program counted (less the tasks whose first row in the corpus has `approximated: true`, unless GOLD_APPROXIMATED=1), with no task held out, into
 DATA/sampler/models/live_priors.pkl. The file holds what S reads from disk at a point (the atom priors, the stop hazards,
 the compound counts of RULE bodies and of an INIT's key and port bodies, the registry's columns and types), and the program-level counts that a draw from an empty prefix
 needs: the next clause's kind or the stop, by how many clauses of each kind exist, a RULE's or a DET's proposer and marks, and an INIT's

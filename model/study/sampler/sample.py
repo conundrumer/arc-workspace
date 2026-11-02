@@ -14,6 +14,7 @@ A point already in DIR/points.jsonl is skipped, so a rerun extends a run.
 import argparse
 import collections
 import concurrent.futures as cf
+import functools
 import gzip
 import hashlib
 import json
@@ -35,6 +36,28 @@ DATA = P.DATA + '/'
 SHAPES = os.environ.get('SHAPES', P.SAMPLER_DATA + '/gold-shapes.jsonl')
 SPLITS = DATA + 'feat-exp/stream/splits.json'
 CORPUS = os.environ.get('SAMPLER_CORPUS', P.SAMPLER_DATA + '/corpus-v3mix/')  # the AST corpus: <task>/pairs.jsonl.gz (gen-v3 in slot order; corpus-v11 for a3325580)
+GOLD_APPROXIMATED = os.environ.get('GOLD_APPROXIMATED', '') == '1'  # 1: the fits read a stem whose first row has approximated: true (a gold solver with @approximated); default: they leave it out
+
+
+@functools.lru_cache(maxsize=None)
+def stem_first_row(t):
+    """The first row of task t's stem in the corpus, or None where the corpus has no pairs for t."""
+    p = CORPUS + t + '/pairs.jsonl.gz'
+    if not os.path.exists(p):
+        return None
+    with gzip.open(p, 'rt') as f:
+        return json.loads(f.readline())
+
+
+def left_out(t):
+    """True where the fits leave task t out: its stem's first row has approximated: true, and GOLD_APPROXIMATED is not 1."""
+    r = stem_first_row(t)
+    return bool(r and r.get('approximated') and not GOLD_APPROXIMATED)
+
+
+def first_row(t):
+    """The first row of task t's stem for a fit, or None where the corpus has no pairs for t or the fits leave t out (left_out)."""
+    return None if left_out(t) else stem_first_row(t)
 TASKS = P.REPO + '/data/tasks/'
 OPS = {'=': 'cmp:Eq', '!=': 'cmp:Ne', '<': 'cmp:Lt', '<=': 'cmp:Le', '>': 'cmp:Gt', '>=': 'cmp:Ge'}
 MAX_ATOMS = 8
@@ -77,14 +100,12 @@ class Prior:
 
 
 def body_hazard(dev):
-    """P(END after k atoms | k atoms), from the RULE bodies of the corpus gold of dev tasks."""
+    """P(END after k atoms | k atoms), from the RULE bodies of the corpus gold of dev tasks, less the tasks that left_out names."""
     lens = collections.Counter()
     for t in dev:
-        p = CORPUS + t + '/pairs.jsonl.gz'
-        if not os.path.exists(p):
+        r = first_row(t)
+        if r is None:
             continue
-        with gzip.open(p, 'rt') as f:
-            r = json.loads(f.readline())
         for e in M_sexprs(r['gold_sexp']):
             if e and e[0] == 'RULE':
                 lens[len([a for a in e[2:] if isinstance(a, list)])] += 1

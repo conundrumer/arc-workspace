@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Rows for the rel steer and the choice steer from gold's walk through live.py, in the files that relcheap.py and choicecheap.py read.
 
-  [SAMPLER_CORPUS=VIEW/] <runtime python> live_rows.py run --out DIR [--part train|test|all] [--models DIR | --models-fold TEMPLATE --folds N] [--orders N] [--jobs N]
+  [SAMPLER_CORPUS=VIEW/] [GOLD_APPROXIMATED=1] <runtime python> live_rows.py run --out DIR [--part train|test|all] [--models DIR | --models-fold TEMPLATE --folds N] [--orders N] [--jobs N]
                                     [--scope parents|before|cut] [--tasks FILE] [--limit N] [--leave-out FILE] [--gold-revision NAME]
   <runtime python> live_rows.py folds --out DIR [--folds N] [--leave-out FILE]
 
@@ -16,7 +16,7 @@ A task's rows go to DIR/stems/<task>.jsonl.gz as soon as they exist, with its st
 (the type sets of the labels offered and taken at a key pick, for key_type_counts.py; no fit reads it). The
 file appears whole, by rename. A run skips each task whose file holds the sha256 of the task's text in the corpus, so a restart skips the finished tasks, a task with new text runs
 again, and a later run with a longer --tasks list adds to DIR. At its end a run rebuilds DIR/relrows.jsonl.zst, DIR/choices.jsonl.zst and DIR/tasks.jsonl from all of DIR/stems, in
-task order. Those are the files that the fits read. A run stops where DIR holds rows of other priors, another scope, other orders, another STEER_COVER or another ORDER_FREE: such rows need their own DIR.
+task order. Those are the files that the fits read. A run leaves out each task whose first row in the corpus has `approximated: true`, unless GOLD_APPROXIMATED=1. A run stops where DIR holds rows of other priors, another scope, other orders, another STEER_COVER, another ORDER_FREE or another GOLD_APPROXIMATED: such rows need their own DIR.
 
 The scope of a form is its ancestors by reads (parents), every gold form before it in the text (before), or the forms before it in a random order of all the forms that keeps reads (cut), as
 live_priors.walk_counts draws the forms of a program, so that a form's place in gold's text is no part of its options. A form's walk uses the priors of its task's fold, fit
@@ -75,13 +75,13 @@ def is_test(task):
 
 
 def task_list(a):
-    """The tasks of the run: the corpus tasks with gold, less the leave-out tasks and those of the other part."""
+    """The tasks of the run: the corpus tasks with gold, less the leave-out tasks, those of the other part and, unless GOLD_APPROXIMATED=1, those whose first row has approximated: true."""
     leave = set(open(a.leave_out).read().split())
     if a.tasks:
         tasks = open(a.tasks).read().split()
     else:
         tasks = sorted(t for t in os.listdir(S.CORPUS) if t not in leave and S.corpus_forms(t))
-    tasks = [t for t in tasks if t not in leave and (a.part == 'all' or is_test(t) == (a.part == 'test'))]
+    tasks = [t for t in tasks if t not in leave and not S.left_out(t) and (a.part == 'all' or is_test(t) == (a.part == 'test'))]
     return tasks[:a.limit] if a.limit else tasks
 
 
@@ -276,7 +276,7 @@ def manifest(a, tasks, extra=None):
     m = dict(command=' '.join(sys.argv), commit=git('rev-parse', 'HEAD'), uncommitted=bool(git('status', '--porcelain', '--', HERE)),
              task_set='the tasks of %s, less the %d leave-out tasks of %s; part %s: %d tasks' % (a.tasks or S.CORPUS, len(set(open(a.leave_out).read().split())), a.leave_out, a.part, len(tasks)),
              budget='no search budget: a teacher-forced walk of each gold form', measures=['rows for the rel steer and the choice steer'],
-             corpus=S.CORPUS, gold_revision=a.gold_revision, scope=a.scope, orders=a.orders, p_dag=os.environ.get('P_DAG', '') == '1', order_mode='random', models=a.models or a.models_fold, folds=a.folds, steer_cover=sorted(S.STEER_COVER), order_free=sorted(S.ORDER_FREE) or None,
+             corpus=S.CORPUS, gold_revision=a.gold_revision, scope=a.scope, orders=a.orders, p_dag=os.environ.get('P_DAG', '') == '1', order_mode='random', models=a.models or a.models_fold, folds=a.folds, steer_cover=sorted(S.STEER_COVER), order_free=sorted(S.ORDER_FREE) or None, gold_approximated=S.GOLD_APPROXIMATED or None,
              priors_sha256=priors_sha(a), engine_sha256=[file_sha(p) for p in glob.glob(os.path.join(os.path.dirname(live.arclog.__file__), '*.so'))],
              started=time.strftime('%Y-%m-%d %H:%M:%S'))
     return m | (extra or {})
@@ -284,7 +284,7 @@ def manifest(a, tasks, extra=None):
 
 def same_rows(old, new):
     """Stops the run where DIR holds rows that differ from the run's in more than their tasks."""
-    for k in ('scope', 'orders', 'steer_cover', 'order_free', 'priors_sha256', 'p_dag', 'order_mode'):
+    for k in ('scope', 'orders', 'steer_cover', 'order_free', 'gold_approximated', 'priors_sha256', 'p_dag', 'order_mode'):
         if old.get(k) != new[k]:
             sys.exit('%s differs from the manifest in this folder: %s against %s. Such rows need their own --out.' % (k, new[k], old.get(k)))
 
