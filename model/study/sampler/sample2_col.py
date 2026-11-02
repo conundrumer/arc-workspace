@@ -111,6 +111,8 @@ Changes from sample.py (v1):
   types of their sites (live.Run.key_pick, with the priors' key_types from key_type_counts.py). A setting that is unset keeps the draws and the chances as they were;
 - KEY_IDENT=rel (default unset: none) multiplies the weight of a declared relation that has an Ident column by m (the priors' key_rel, from key_rel_counts.py) at an atom start of an INIT's key body
   where no label in scope has the type Ident and no rel steer acts (live.Run.key_rel_m). Unset, or with priors that have no key_rel, m is 1: the weights and the draws are as they were;
+- STEER_REL_GROUPS=1 (default unset: off) keeps P's split between the derived relations and the other options at an atom start under STEER_REL: each group's steered
+  weights are scaled to that group's total before the steer, so the steer moves weight only within a group (Drawer.group_steer). Unset, the steer multiplies each option's weight;
 - SEED_TAG (default v2) seeds each point's draws, so a run with another tag draws other programs at the same points; with
   ARCLOG_STATS set, a point's info gives its CPU ms per engine phase (`engine`);
 - a DET assignment's row set in a table is kept by its packed rows (DROWS), since a point's tables repeat the same
@@ -286,6 +288,7 @@ ENGINE_STATS = os.environ.get('ARCLOG_STATS', '') not in ('', '0')  # info['engi
 EMPTY_ATOM = os.environ.get('EMPTY_ATOM', '1') == '1'  # an atom is redrawn where it makes the prefix's X empty on every train entry
 STEER_REL = os.environ.get('STEER_REL', '')  # path of relcheap's pickle (relsteer.Scorer): at a root-phase atom start each option's weight is multiplied by exp(STEER_REL_BETA * f); unset: off
 STEER_REL_BETA = float(os.environ.get('STEER_REL_BETA', '1'))
+STEER_REL_GROUPS = os.environ.get('STEER_REL_GROUPS', '') == '1'  # the steer keeps P's total of the derived relations and of the other options (see the module docstring)
 REL_CHECK = os.environ.get('REL_CHECK', '')
 STEER_CHOICE = os.environ.get('STEER_CHOICE', '')  # path of choicecheap's pickle (choicefeat.Scorer): at a column, field, value or operand pick each option's weight is multiplied by exp(STEER_CHOICE_BETA * f); unset: off
 STEER_CHOICE_BETA = float(os.environ.get('STEER_CHOICE_BETA', '1'))
@@ -2358,6 +2361,19 @@ class Drawer:
         self.rel_stats['s_dag'] += time.process_time() - d0  # includes s_dag_point, the graph's build; s_score leaves both out
         return row
 
+    def group_steer(self, opts, ws, rf):
+        """STEER_REL_GROUPS: the steered weights ws[o] * rf[o], scaled within each group (the derived relations, and the other options) to the group's
+        total of ws, so that the steer keeps P's split between the groups."""
+        derived = [self.fr.KIND[o] == 'relation' for o in opts]
+        out = [w * e for w, e in zip(ws, rf)]
+        for g in (True, False):
+            idx = [i for i, d in enumerate(derived[:len(out)]) if d == g]
+            t0, t1 = sum(ws[i] for i in idx), sum(out[i] for i in idx)
+            if t1 > 0:
+                for i in idx:
+                    out[i] *= t0 / t1
+        return out
+
     def rel_factors(self, fr, n, popts, k, scope_types, key, rel, joined, leaf):
         """STEER_REL: exp(STEER_REL_BETA * f) for each option of popts at a root-phase atom start, f from the model of
         STEER_REL on the row that relrows would write (P's shares unsteered). Cached per point by (key, phase, k, scope)."""
@@ -2439,9 +2455,14 @@ class Drawer:
                             alt = [w * e for w, e in zip(alt, kf)]
                 if STEER_REL and (self.force is None or self.gq):  # the steer only: P (share, pw) stays unsteered
                     rf = self.rel_factors(fr, n, popts, k, scope_types, key, rel, joined, leaf)
-                    ws = [w * e for w, e in zip(ws, rf)]
-                    if alt is not None:
-                        alt = [w * e for w, e in zip(alt, rf)]
+                    if STEER_REL_GROUPS:
+                        ws = self.group_steer(opts, ws, rf)
+                        if alt is not None:
+                            alt = self.group_steer(opts, alt, rf)
+                    else:
+                        ws = [w * e for w, e in zip(ws, rf)]
+                        if alt is not None:
+                            alt = [w * e for w, e in zip(alt, rf)]
                 o, q = self.pick_complete(n, opts, ws, key, alt)
                 if o is None:
                     return None, 'no completable start'
