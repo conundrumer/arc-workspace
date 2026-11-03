@@ -20,11 +20,16 @@ choice is followed: the number of distinct streams is the number of paths.
 In a DEMONSTRATED query, the sets are the bodies of its key and inputs and the bodies of each form of each rule, with the OR, ALL and IF inside them; its rules (Group 'rules');
 and the forms of each rule before its PREDICT clause (Group 'forms'). The engine's QueryHash leaves out the order of the rules, and the order of two forms of a rule of which neither
 reads the other. A part of a Group follows the same rule: the least by its tokens among the parts that the decoder accepts now (a form that reads the relation of a form not yet
-written is not accepted). The bodies of a CHOOSE form stay as the query has them. Its labels are read in their label scopes; a read of a relation that a form of the rule declares
+written is not accepted). The bodies of a CHOOSE form of a rule stay as the query has them. Its labels are read in their label scopes; a read of a relation that a form of the rule declares
 names the relation by the form (RELREF, bound by the form's Decl) and its columns by the labels of that form (segments). The `unordered` plan has no walk of these Groups
 (no_groups). The query is unsupported (DEMONSTRATED_OUT_OF_SCOPE).
 
 The parts of a RIGID_DET are no set: each is an output slot by its position, and a permutation of the parts changes the QueryHash. They stay as the query has them.
+
+In a CHOOSE query, the `for` body is a set (kind 'choose key'), with one bound: its `^` labels are the columns of the key, in the order they are made, so an order of its items that
+makes them in another order is another query (caret_order_ok). The `from` body and each `never` body are pinned (PINNED, Seq): the QueryHash keeps the order of their items and
+their repeats, so the items stay as the query has them; an OR, ALL or IF in one of them has its sets as anywhere else. Next items of a pinned body that write the same tokens
+are a tie (seq_lead), and of the streams of the ties, the path is the least one of the query's QueryHash. The `never` bodies stay in the order of the query.
 
 A site's order inside an atom is not an order that the QueryHash ignores in the engine wheel of the study (site-exp18): a permutation of the sites changes the QueryHash.
 The sites stay as the query has them. The operands of `=` stand so that a new label is first.
@@ -265,13 +270,13 @@ def segments(env, dec_kind, kind, full, colrefs=None, demo_info=None):
         if site:
             x = COLREF + len(colrefs)
             colrefs[x] = (rels[T.rtok], env.colpos[t] - off[T.rtok], off[T.rtok])
-        if is_body and fk != 'CHOOSE':  # a CHOOSE form of a DEMO_RULE stays as written: no gold confirms that its bodies are sets of the QueryHash
+        if is_body and (fk != 'CHOOSE' or not T.sub):  # a CHOOSE form of a DEMO_RULE stays as written: no gold confirms that its bodies are sets of the QueryHash
             bid = pt.track.body
             if cur is not None and cur[0] == 'body' and cur[3] == bid and cur[4] == place:
                 cur[2].append(x)
             else:
                 bkind = ('body' if fk in ('RULE', 'DET') else ('key' if pt.track.inkey else 'port') if fk in ('INIT', 'DEMONSTRATED')
-                         else ('rigid key' if pt.track.inkey else 'part'))
+                         else ('choose key' if pt.track.inkey else 'choose body') if fk == 'CHOOSE' else ('rigid key' if pt.track.inkey else 'part'))
                 cur = ['body', bkind, [x], bid, place]
                 segs.append(cur)
         else:
@@ -402,13 +407,14 @@ def parse_items(env, s, i, stop):
     return items, i
 
 
-def drop_repeats(items):
+def drop_repeats(items, top=True):
     """items without each atom that repeats an earlier atom of its set, in the nested sets too. A set is a conjunction, so a repeat adds nothing to it, and the mask
-    removes the token that closes it (lookahead_legal.RepeatSame): a query is written with each atom of a set once."""
+    removes the token that closes it (lookahead_legal.RepeatSame): a query is written with each atom of a set once. top False: the items themselves keep their repeats (a pinned
+    body, whose repeats the QueryHash keeps), and the sets nested in them lose theirs."""
     out, seen = [], set()
     for it in items:
         if isinstance(it, Atom):
-            if it.toks in seen:
+            if top and it.toks in seen:
                 continue
             seen.add(it.toks)
         elif isinstance(it, Or):
@@ -448,7 +454,14 @@ def read_query(env, base, kind, full, gold_hash=None):
                 items, j = parse_items(env, s, 0, (END,))
                 if j != len(s) - 1:
                     raise ParseError('body ends early')
-                el = Body(Set(drop_repeats(items), bkind))
+                if bkind in PINNED:
+                    items = Seq(drop_repeats(items, top=False))
+                elif bkind == 'choose key':
+                    items = Keyed(drop_repeats(items))
+                    items.carets = tuple(sorted(g for it in items for g in labels_of(it) if marks.get(g) == CARET))
+                else:
+                    items = drop_repeats(items)
+                el = Body(Set(items, bkind))
             placed.append((place, el, s))
         q.plan = demo_plan(placed, info) if kind == 'DEMONSTRATED' else [el for _, el, _ in placed]
         set_needs(q)
@@ -460,6 +473,55 @@ def read_query(env, base, kind, full, gold_hash=None):
 
 
 DEMONSTRATED_OUT_OF_SCOPE = 'DEMONSTRATED: out of scope, so its targets give no points'
+PINNED = ('choose body',)  # the kinds of body whose items are no set: a CHOOSE's `from` and `never` bodies
+
+
+class Seq(list):
+    """The items of a pinned body (PINNED): they are written in their order."""
+
+
+class Keyed(list):
+    """The items of a CHOOSE's `for` body. carets: the labels that its `^` make, in the order the query makes them (the key's columns)."""
+    carets: tuple = ()
+
+
+def free(items, rem):
+    """The items of rem (indexes into items) that may be written next: in a pinned body (Seq) the first of them, else each. (A tie of seq_lead leads to the same tokens.)"""
+    if isinstance(items, Seq):
+        return (min(rem),) if rem else ()
+    return rem
+
+
+def seq_lead(items, rem, ways):
+    """[(index, ways)] of the items of a pinned body that may be written next, from ways(index) -> [(tokens, state)]: the first item of rem, and the items after it in rem, in order,
+    as long as each has a way of the same tokens as a way of the first (those ways alone). Such items are a tie: either of them written first gives the same tokens there, and the
+    two writings differ only in which of their labels a later item reads. The QueryHash names labels by the form's graph, so the two writings can be one query, and the walk follows
+    each, as it follows a tie of a set. They can also be two queries, since the QueryHash keeps the order of a pinned body's items: so the end of the walk (_ordered) keeps the
+    query's own QueryHash."""
+    order_ = sorted(rem)
+    if not order_:
+        return []
+    lead = ways(order_[0])
+    keys = {w[0] for w in lead}
+    out = [(order_[0], lead)]
+    for idx in order_[1:]:
+        tied = [w for w in ways(idx) if w[0] in keys] if keys else []
+        if not tied:
+            break
+        out.append((idx, tied))
+    return out
+
+
+def caret_order_ok(items, marks, nm0, nm1):
+    """Whether a way of an item of a CHOOSE's `for` body (Keyed), from the naming nm0 to nm1, makes the `^` labels that it makes in the query's order: they are the next ones of
+    items.carets that nm0 does not bind. True for any other set."""
+    if not isinstance(items, Keyed):
+        return True
+    made = sorted(g for g in nm1 if g not in nm0 and marks.get(g) == CARET)
+    if not made:
+        return True
+    pending = [g for g in items.carets if g not in nm0]
+    return made == pending[:len(made)]
 
 
 def demo_plan(placed, info):
@@ -952,7 +1014,7 @@ def _completable(env, marks, items, rem, st, cr, sep, k, memo):
     if not rem:
         res = k is None or bool(k(st))
     else:
-        order = sorted(rem, key=lambda i: (lead(items[i]), i)) if env.lead_left is not None else sorted(rem)
+        order = sorted(free(items, rem), key=lambda i: (lead(items[i]), i)) if env.lead_left is not None else sorted(free(items, rem))
         for idx in order:
             if one_waits(items, rem, idx, True):
                 continue
@@ -961,35 +1023,37 @@ def _completable(env, marks, items, rem, st, cr, sep, k, memo):
             def kk(s1, idx=idx, st=st, rem=rem, cr=cr):
                 return completable(env, marks, items, rem - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in st[1]), sep, k, memo)
             outs, _ = render(env, marks, items[idx], st, 'min', sep, kk, one=True)
-            if any(kk(s1) for _, s1 in outs):
+            if any(caret_order_ok(items, marks, st[1], s1[1]) and kk(s1) for _, s1 in outs):
                 res = True
                 break
     return res
 
 
 def _cands(env, marks, items, first, s0, rem, cr, step, mode, sep, k, memo, why):
-    """[(key, item index, (tokens, state))] of the ways to write each item of rem next at state s0 (the ways of an atom not tested for a dead end); why gets each item that has none."""
-    cands = []
-    for idx in rem:
+    """[(key, item index, (tokens, state))] of the ways to write each item of rem next at state s0 (the ways of an atom not tested for a dead end); why gets each item that has none.
+    In a pinned body, the items of seq_lead alone."""
+
+    def ways(idx):
         if step == 0 and first is not None and idx not in first:
             why.append((describe(env, items[idx]), 'the branch does not keep a label that another branch names'))
-            continue
+            return []
         if one_waits(items, rem, idx, mode == 'min'):
             why.append((describe(env, items[idx]), 'a ONE mark comes after the other items'))
-            continue
+            return []
         if mode == 'min' and not exports_ok(env, items[idx], s0[1]):
             why.append((describe(env, items[idx]), 'the OR would make a label that it does not export'))
-            continue
+            return []
         kk = None
         if mode == 'min' and env.lookahead:
             kk = (lambda s1, idx=idx: completable(
                 env, marks, items, frozenset(rem) - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in s0[1]), sep, k, memo))
         outs, err = render(env, marks, items[idx], s0, mode, sep if (sep is not None and step > 0) else None, kk, probe=False)
+        outs = [o for o in outs if caret_order_ok(items, marks, s0[1], o[1][1])]
         if not outs:
-            why.append((describe(env, items[idx]), err))
-        for o in outs:
-            cands.append((o[0], idx, o))
-    return cands
+            why.append((describe(env, items[idx]), err or 'the item would make a key label out of the order of the key'))
+        return outs
+    got = seq_lead(items, rem, ways) if isinstance(items, Seq) else ((idx, ways(idx)) for idx in rem)
+    return [(o[0], idx, o) for idx, outs in got for o in outs]
 
 
 def _closes_ok(env, items, c, probe, why):
@@ -1162,9 +1226,11 @@ def _ordered(env, q, cap=CAP):
     for toks, st in states.values():
         paths.setdefault(toks, st[0].query_hash(-1))
         nms.setdefault(toks, st[1])
-    # the end-of-query rule: items with equal keys make different labels, so tie choices can give different streams; the least complete stream is the path
+    # the end-of-query rule: items with equal keys make different labels, so tie choices can give different streams; the least complete stream is the path. In a query with a
+    # pinned body, a tie of its items (seq_lead) can give another query, so the path is the least stream of the query's QueryHash, where one has it
     tied = len(paths)
-    best = min(paths)
+    own = [p for p, h in paths.items() if h == q.gold_hash] if any(isinstance(el, Body) and isinstance(el.set.items, Seq) for el in elements(q.plan)) else []
+    best = min(own or paths)
     return Ordered([best], [paths[best]], None, '', False, env.stats['tie_choices'], [nms[best]], tied)
 
 
@@ -1258,7 +1324,8 @@ def walk_group(env, marks, group, st, cap=CAP):
 
 def count_set(env, marks, node, st, limit=20000):
     """The number of distinct token streams over every order of the set that the decoder accepts, written as a body (the closing END checked). Raises Overflow past `limit` states.
-    A state of the walk is the items taken, and which item made each label: the decoder's late refusals (a test that the atoms before it imply) depend on both."""
+    A state of the walk is the items taken, and which item made each label: the decoder's late refusals (a test that the atoms before it imply) depend on both. A pinned body has
+    one order."""
     items = node.items
     memo = {}
     nstates = [0]
@@ -1289,10 +1356,11 @@ def count_set(env, marks, node, st, limit=20000):
                     pass
         groups = collections.defaultdict(dict)
         for rem, s0, cr in live_cfgs:
-            for idx in rem:
+            def ways(idx, rem=rem, s0=s0):
                 if one_waits(items, rem, idx):
-                    continue
-                outs, _ = render(env, marks, items[idx], s0, 'all')
+                    return []
+                return [o for o in render(env, marks, items[idx], s0, 'all')[0] if caret_order_ok(items, marks, s0[1], o[1][1])]
+            for idx, outs in ((i, ways(i)) for i in free(items, rem)):  # in a pinned body, the first item alone: a tie of seq_lead can give another query
                 for toks, s1 in outs:
                     r2 = rem - {idx}
                     cr2 = cr | {(g, idx) for g in s1[1] if g not in s0[1]}
@@ -1473,7 +1541,7 @@ def site_stats(env, q):
 #   set_key_text(pt)   the text that the digest is of
 #
 # The partial query is read from pt.tokens alone. The atoms of a body, the branches of an OR, the atoms of a branch and the two lists of an ALL are sets; what has no free order
-# (the component, SKIP, the heads of ports, the parts of a RIGID_DET) stays in order. The open item is the open atom and the open containers (OR, ALL, body) around it. A label is named by a canonical
+# (the component, SKIP, the heads of ports, the parts of a RIGID_DET, the items of a CHOOSE's `from` and `never` bodies) stays in order. The open item is the open atom and the open containers (OR, ALL, body) around it. A label is named by a canonical
 # numbering: colours by refinement over the atoms that read it, and the ties of that by the least text over their permutations (up to PERMS). With creators=True an atom that
 # makes a label (`*`, `^`) differs from one that reads it, because the decoder's later refusals and the QueryHash of an OR depend on which atom made the label.
 
@@ -1481,7 +1549,7 @@ PERMS = 720
 
 
 class _Open:
-    """A container of a partial parse: kind 'body', 'or', 'all' or 'if' (stages: the lists of the test and the then, once closed)."""
+    """A container of a partial parse: kind 'body', 'seq' (a pinned body: order.PINNED), 'or', 'all' or 'if' (stages: the lists of the test and the then, once closed)."""
     __slots__ = ('kind', 'items', 'branches', 'dom', 'stages')
 
     def __init__(self, kind):
@@ -1491,7 +1559,7 @@ class _Open:
 def parse_prefix(core, kind, tokens, made):
     """The model tokens of a writing point (the kind token first) as a partial tree.
 
-    Returns (segments, stack, atom). segments: ('F', tokens) for structure with no free order and ('B', items) for a closed body. stack: the open containers, outermost first.
+    Returns (segments, stack, atom). segments: ('F', tokens) for structure with no free order, ('B', items) for a closed body and ('S', items) for a closed pinned body. stack: the open containers, outermost first.
     atom: the open atom (a list) or None. An item is ('A', tokens), ('OR', branches) or ('ALL', domain, body). In tokens a label read is ('L', token) and a label made by `*` or `^`
     is ('N', token, mark); the rest are ints. made: the label tokens in the order they were made."""
     rel, col, lab, ALLT = core.is_rel, core.is_column, core.is_label, core.ALL
@@ -1518,14 +1586,14 @@ def parse_prefix(core, kind, tokens, made):
                 fixed.append(value(t) if t in (STAR, CARET) else ('L', t) if lab[t] else t)
                 continue
             if not (rel[t] or t in CMP or t in (NOT, OR_TOK, ALLT, core.IF, core.ONE)):
-                decisions += t == SKIP_TOK
+                decisions += t == SKIP_TOK or (kind == 'CHOOSE' and t == END)
                 fixed.append(('L', t) if lab[t] else t)
                 continue
             decisions += 1
             if fixed:
                 segs.append(('F', tuple(fixed)))
                 fixed = []
-            stack.append(_Open('body'))
+            stack.append(_Open('seq' if kind == 'CHOOSE' and decisions >= 2 else 'body'))  # a CHOOSE's bodies after its `for` are pinned
         if one is not None:  # inside a ONE mark: labels, then its END
             if t == END:
                 one.append(END)
@@ -1583,8 +1651,8 @@ def parse_prefix(core, kind, tokens, made):
             top.branches.append(tuple(top.items))
             top.items = []
         elif t == END:
-            if top.kind == 'body':
-                segs.append(('B', tuple(top.items)))
+            if top.kind in ('body', 'seq'):
+                segs.append(('B' if top.kind == 'body' else 'S', tuple(top.items)))
                 stack.pop()
             elif top.kind == 'or':
                 top.branches.append(tuple(top.items))
@@ -1631,7 +1699,7 @@ def _atoms(segs, stack, atom):
         if tag == 'F':
             out.append((('F', i), body))
         else:
-            items(body, ('B', i))
+            items(body, (tag, i))
     path = ('O', len(segs))
     for c in stack:
         path = path + (c.kind,)
@@ -1724,7 +1792,7 @@ def _encode(segs, stack, atom, num, creators, kind):
         return 'ALL[' + its(x[1]) + '|' + its(x[2]) + ']'
     parts = [kind]
     for tag, body in segs:
-        parts.append('F:' + at(body) if tag == 'F' else 'B:{' + its(body) + '}')
+        parts.append('F:' + at(body) if tag == 'F' else 'S:[' + ','.join(item(x) for x in body) + ']' if tag == 'S' else 'B:{' + its(body) + '}')
 
     def open_part(k):
         if k == len(stack):
@@ -1737,6 +1805,8 @@ def _encode(segs, stack, atom, num, creators, kind):
             head = 'if{' + '|'.join(its(sub) for sub in c.stages) + '}cur{' + its(c.items) + '}'
         elif c.kind == 'all':
             head = 'all{' + ('-' if c.dom is None else its(c.dom)) + '}cur{' + its(c.items) + '}'
+        elif c.kind == 'seq':
+            head = 'seq[' + ','.join(item(x) for x in c.items) + ']'
         return head + '>' + open_part(k + 1)
     parts.append('O:' + open_part(0))
     return ';'.join(parts)
@@ -1812,7 +1882,8 @@ def canonical_stream(env, scope_dec, kind, stream, seconds=10.0):
 #
 # A configuration is (boundary, pending tokens): a boundary is the state between two chunks of tokens (the segment of the query's plan, the items of its body still to write, the
 # decoder, the naming of the labels, which item made each label); a chunk is the tokens of one item (every inner order of an OR or ALL, as render gives them under mode 'all'), the
-# END of a body, or a fixed part. Only the boundaries from which the whole query can be written are kept, so every positive token leads to a complete query.
+# END of a body, or a fixed part. Only the boundaries from which the whole query can be written are kept, so every positive token leads to a complete query. In a query with a
+# pinned body, the ties of its items (seq_lead) are followed, and a complete query counts only where it has the query's QueryHash.
 
 class Boundary:
     __slots__ = ('seg', 'rem', 'st', 'cr', 'cs', 'key', 'chunks', 'viable')
@@ -1829,6 +1900,7 @@ class Unordered:
         no_groups(q)
         self.env, self.q, self.limit = env, q, limit
         self.nseg = len(q.plan)
+        self.pinned = any(isinstance(el, Body) and isinstance(el.set.items, Seq) for el in q.plan)
         self.bounds = {}
         env.total = q.total
         env.colrefs = q.colrefs
@@ -1862,9 +1934,9 @@ class Unordered:
             return b.viable
         b.chunks = []
         env, q = self.env, self.q
-        if b.seg == self.nseg:
-            b.viable = True
-            return True
+        if b.seg == self.nseg:  # in a query with a pinned body, a tie of its items (seq_lead) can give another query: the order is the query's where it gives its QueryHash
+            b.viable = not self.pinned or b.st[0].query_hash(-1) == q.gold_hash
+            return b.viable
         seg = q.plan[b.seg]
         found = []  # (tokens, next boundary)
         if isinstance(seg, Fixed):
@@ -1876,10 +1948,13 @@ class Unordered:
             except Exception:  # noqa: BLE001 - a refusal
                 pass
         else:
-            for idx in sorted(b.rem):
-                if one_waits(seg.set.items, b.rem, idx):
-                    continue
-                outs, _ = render(env, q.marks, seg.set.items[idx], b.st, 'all')
+            items = seg.set.items
+
+            def ways(idx):
+                if one_waits(items, b.rem, idx):
+                    return []
+                return [o for o in render(env, q.marks, items[idx], b.st, 'all')[0] if caret_order_ok(items, q.marks, b.st[1], o[1][1])]
+            for idx, outs in (seq_lead(items, b.rem, ways) if isinstance(items, Seq) else ((i, ways(i)) for i in sorted(b.rem))):
                 for toks, s1 in outs:
                     made = frozenset((g, idx) for g in s1[1] if g not in b.st[1])
                     cs = b.cs | {(idx, toks)} if isinstance(seg.set.items[idx], (Or, All, If)) else b.cs

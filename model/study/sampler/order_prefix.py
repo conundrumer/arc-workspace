@@ -29,7 +29,12 @@ input site of a lib relation takes a label that is new there. So the first two t
 In a DEMONSTRATED query, the bodies of its key and inputs and of each form of a rule are sets as above, each read in its label scope (Rule._info). Its rules, and the forms of a rule
 before its PREDICT clause, are sets too (see demo_keep): a rule's tokens are compared with each earlier rule's as they come, and a form is compared with each earlier form of its rule
 where it closes.
-A proposer body, a CHOOSE form, the group tokens of an INIT or a RIGID_DET and the parts of a RIGID_DET have no sets: the rule keeps every id there. A test that passes SECONDS keeps the token.
+In a CHOOSE query, the `for` body is a set as above, but an item x is not compared at its close with an earlier item p where x, written at the state before p, would make the
+`^` labels in another order: they are the key's columns in order (order.caret_order_ok). (The tests at a start and inside an atom keep the token where a `^` label was made since p.)
+Its `from` and `never` bodies are pinned ('seq': order.PINNED): the rule keeps their items as written, and only orders the operands of a symmetric comparison and the sets of an
+OR, ALL or IF inside them.
+A proposer body, a CHOOSE form of a DEMO_RULE, the group tokens of an INIT, a RIGID_DET or a CHOOSE and the parts of a RIGID_DET have no sets: the rule keeps every id there. A test that
+passes SECONDS keeps the token.
 """
 import bisect
 import collections
@@ -54,7 +59,7 @@ SECONDS = 2.0  # the budget of one test at a close
 
 class _List:
     """An open set of items: kind 'body', 'branch', 'dom' (an ALL's first list), 'allbody', 'if0', 'if1' or 'if2'; or 'parts', a RIGID_DET's parts, which are no set (each is an
-    output slot by its position) and which the rule keeps in any order. items: [(start, end, kind)] of its closed items, token indexes
+    output slot by its position) and which the rule keeps in any order; or 'seq', a pinned body of a CHOOSE (its `from` or a `never`), whose items stay as written. items: [(start, end, kind)] of its closed items, token indexes
     (end excluded), kind 'atom', 'not', 'cmp', 'one', 'or', 'all' or 'if'. cur: the start of the open item, and cur_kind its kind."""
     __slots__ = ('kind', 'start', 'items', 'cur', 'cur_kind')
 
@@ -75,7 +80,7 @@ class _Or:
 
 
 def parse(core, kind, tokens, start=0):
-    """The open sets of a query's model tokens (the kind token first), outermost first: a list of _List and _Or; [] where no set is open (between the bodies of an INIT or a RIGID_DET,
+    """The open sets of a query's model tokens (the kind token first), outermost first: a list of _List and _Or; [] where no set is open (between the bodies of an INIT, a RIGID_DET or a CHOOSE,
     after a body's END); None for a proposer body. start: the index of the kind token of the form, where the form is a form of a DEMO_RULE, or the query's kind token."""
     rel, col, lab = core.is_rel, core.is_column, core.is_label
     ALLT, IFT, ONET = core.ALL, core.IF, core.ONE
@@ -87,16 +92,16 @@ def parse(core, kind, tokens, start=0):
         stack.append(_List('body', start + 1))
     atom = one = notwait = due = rec = False
     need = 0
-    decisions = 0  # the group-level decisions so far (a body or SKIP each); a RIGID_DET's parts follow its first two
+    decisions = 0  # the group-level decisions so far (a body or SKIP each; in a CHOOSE, an empty body's END too); a RIGID_DET's parts follow its first two, a CHOOSE's pinned bodies its first
     for i in range(start + 1, len(tokens)):
         t = tokens[i]
         if not stack:
             if kind in ('RULE', 'DET'):
                 return []
-            if not (rel[t] or t in CMP or t in starts):  # a group token of an INIT or a RIGID_DET
-                decisions += t == SKIP_TOK
+            if not (rel[t] or t in CMP or t in starts):  # a group token of an INIT, a RIGID_DET or a CHOOSE
+                decisions += t == SKIP_TOK or (kind == 'CHOOSE' and t == END)
                 continue
-            stack.append(_List('parts' if kind == 'RIGID_DET' and decisions >= 2 else 'body', i))
+            stack.append(_List('parts' if kind == 'RIGID_DET' and decisions >= 2 else 'seq' if kind == 'CHOOSE' and decisions >= 1 else 'body', i))
             decisions += 1
         top = stack[-1]
         if one:  # a ONE mark: its labels, then its END
@@ -156,7 +161,7 @@ def parse(core, kind, tokens, start=0):
             o.cur = i + 1
             stack.append(_List('branch', i + 1))
         elif t == END:
-            if top.kind in ('body', 'parts'):
+            if top.kind in ('body', 'parts', 'seq'):
                 stack.pop()
             elif top.kind == 'branch':
                 stack.pop()
@@ -222,7 +227,7 @@ class Rule:
                 fields, off = self.label_offset(tokens, rs, base)
             else:
                 kind = 'INIT'  # the key and inputs of a DEMONSTRATED form are bodies of ports, as an INIT's
-        elif kind not in ('RULE', 'DET', 'INIT', 'RIGID_DET'):
+        elif kind not in ('RULE', 'DET', 'INIT', 'RIGID_DET', 'CHOOSE'):
             return None
         stack = parse(self.core, kind, tokens, base)
         if stack is None:
@@ -313,6 +318,10 @@ class Rule:
         if not isinstance(L, _List) or L.kind == 'parts':
             return out
         ph = pt.place.phase
+        if L.kind == 'seq':  # the items of a pinned body stay as written
+            if ph == Phase.OPERAND and L.cur is not None:
+                out &= self.operands(pt, ids)
+            return out
         core = self.core
         if ph in (Phase.VALUE, Phase.OPERAND, Phase.FIELD):
             if L.cur is not None:
@@ -589,7 +598,7 @@ class Rule:
         """Whether the closed item x = (start, end, kind) of set L passes the condition against each earlier item of L. tokens: pt's tokens, and the token after the point where
         x ends with it."""
         a, b, kd = x
-        if kd == 'one':
+        if kd == 'one' or L.kind == 'seq':
             return True
         ma = self.made_before(info, a)
         item = marks = None
@@ -603,7 +612,10 @@ class Rule:
                     self.stats['pair below'] += 1
                     return False
                 continue
-            if tuple(self.rendered(info, tokens, a, b, mj)[0][:1]) > K[:1]:
+            r = self.rendered(info, tokens, a, b, mj)[0]
+            if tuple(r[:1]) > K[:1]:
+                continue
+            if pt.kind == 'CHOOSE' and not self.caret_order_kept(info, tokens, s, a, b, mj):  # x before p would make the key labels of a CHOOSE's `for` in another order
                 continue
             try:
                 if item is None:
@@ -626,6 +638,28 @@ class Rule:
                 return False
         return True
 
+    def caret_order_kept(self, info, tokens, s, a, b, mj):
+        """Whether the item x = tokens[a:b], written at the state before the earlier item that starts at s (where mj labels were made), makes the `^` labels in the order of the
+        tokens: in a CHOOSE's `for`, the `^` labels are the key's columns in order (order.caret_order_ok). At that state x makes, by `^`, its own `^` labels and the labels that it
+        reads and that a `^` made since; the other labels that a `^` made since follow."""
+        mk, off = info['mk'], info['off']
+        before = [self.made_before(info, i) for i in range(s, a) if tokens[i] == CARET]
+        written = before + [self.made_before(info, i) for i in range(a, b) if tokens[i] == CARET]
+        moved = []
+        for i in range(a, b):
+            t = tokens[i]
+            if t == CARET:
+                k = self.made_before(info, i)
+            elif self.core.is_label[t]:
+                k = self.label_idx[t] - off
+                if k < mj or tokens[mk[k]] != CARET:
+                    continue
+            else:
+                continue
+            if k not in moved:
+                moved.append(k)
+        return moved + [k for k in before if k not in moved] == written
+
     def end_ok(self, pt, info):
         """Whether END may close the innermost open set: for an ALL or an OR, the item is one of order.render's from its first state, and it passes the condition against the earlier
         items of its set. The END of a body or of an ALL's first list is always kept."""
@@ -637,7 +671,7 @@ class Rule:
     def _end_ok(self, pt, info):
         stack, tokens = info['stack'], pt.tokens
         L, n = stack[-1], len(tokens)
-        if L.kind in ('dom', 'if0', 'if1', 'body'):
+        if L.kind in ('dom', 'if0', 'if1', 'body', 'seq'):
             return True
         P = stack[-3] if L.kind == 'branch' else stack[-2]
         a = P.cur
@@ -688,7 +722,7 @@ class Rule:
         for depth, L in enumerate(lists):
             items = list(L.items) + ([(L.cur, n, L.cur_kind)] if L.cur is not None else [])
             rel = other = None
-            if L.kind == 'parts':
+            if L.kind in ('parts', 'seq'):
                 out.append(Floor(depth, L.kind, rel, other))
                 continue
             for s, e, kd in items:
