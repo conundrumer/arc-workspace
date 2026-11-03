@@ -32,6 +32,7 @@ import bisect
 import collections
 import dataclasses
 import time
+from typing import Any
 
 import numpy as np
 
@@ -53,16 +54,20 @@ class _List:
     (end excluded), kind 'atom', 'not', 'cmp', 'one', 'or', 'all' or 'if'. cur: the start of the open item, and cur_kind its kind."""
     __slots__ = ('kind', 'start', 'items', 'cur', 'cur_kind')
 
-    def __init__(self, kind, start):
-        self.kind, self.start, self.items, self.cur, self.cur_kind = kind, start, [], None, None
+    def __init__(self, kind: str, start: int):
+        self.kind, self.start = kind, start
+        self.items: list[tuple] = []  # (start, end, kind)
+        self.cur: int | None = None
+        self.cur_kind: str | None = None
 
 
 class _Or:
     """An open OR: branches [(start, end)] of its closed branches, cur the start of the open branch."""
     __slots__ = ('start', 'branches', 'cur')
 
-    def __init__(self, start):
-        self.start, self.branches, self.cur = start, [], start
+    def __init__(self, start: int):
+        self.start, self.cur = start, start
+        self.branches: list[tuple[int, int]] = []
 
 
 def parse(core, kind, tokens):
@@ -71,7 +76,7 @@ def parse(core, kind, tokens):
     rel, col, lab = core.is_rel, core.is_column, core.is_label
     ALLT, IFT, ONET = core.ALL, core.IF, core.ONE
     starts = (NOT, OR_TOK, ALLT, IFT, ONET)
-    stack = []
+    stack: list[Any] = []  # of _List and _Or
     if kind in ('RULE', 'DET'):
         if len(tokens) > 1 and core.kind[tokens[1]] == 'proposer':
             return None
@@ -139,7 +144,7 @@ def parse(core, kind, tokens):
             top.cur, top.cur_kind, one = i, 'one', True
         elif t == ALSO_TOK and top.kind == 'branch':
             stack.pop()
-            o = stack[-1]
+            o: Any = stack[-1]  # the _Or of the branch
             o.branches.append((o.cur, i))
             o.cur = i + 1
             stack.append(_List('branch', i + 1))

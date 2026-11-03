@@ -124,13 +124,13 @@ class Env:
         self.col = set(colpos)
         self.colpos = colpos
         self.tie_log = []
-        self.total = None  # the label mentions of the query that ordered() walks
+        self.total: collections.Counter | None = None  # the label mentions of the query that ordered() walks
         self.lookahead = False  # ordered() sets it for the second try of a query that the plain rule cannot write
         self.look = 0  # above 0 inside completable: the walk asks whether a rest can be written, and does not probe each atom for a dead end
         self.rcache = {}  # render of atoms, for one query (ordered clears it)
         self.label = {i for i in range(n) if self.kind[i] == 'label'}
         self.stats = collections.Counter()
-        self.deadline = None  # a time.monotonic() value past which a walk raises Overflow
+        self.deadline: float | None = None  # a time.monotonic() value past which a walk raises Overflow
         self.sess = sess
         self.IF = V.id('IF')
         self.ONE = V.id('ONE')
