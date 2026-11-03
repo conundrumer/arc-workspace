@@ -15,6 +15,7 @@ HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/pol
 sys.path.insert(0, HERE)
 import numpy as np  # noqa: E402
 from nodefeat import Pair, features  # noqa: E402
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/policy')
 from outfeat import link_one, out_features  # noqa: E402
 
 USES = float(os.environ.get('POLICY_USES', 1))  # score taken off per earlier use of a node

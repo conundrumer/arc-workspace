@@ -5,7 +5,9 @@
 import collections
 import math
 import re
+import sys
 
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/policy')
 from outfeat import table
 
 CAP = 400

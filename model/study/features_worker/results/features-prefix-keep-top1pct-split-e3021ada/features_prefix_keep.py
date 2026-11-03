@@ -9,9 +9,11 @@ import json
 import math
 import os
 import pickle
+import sys
 import numpy as np
 import live
 from nodefeat import Pair, features
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/policy')
 from outfeat import out_features
 import features_second as SECOND
 import superdag as D
