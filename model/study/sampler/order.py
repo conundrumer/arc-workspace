@@ -732,7 +732,7 @@ def after(env, k, st, tok):
 def completable(env, marks, items, rem, st, cr, sep, k, memo):
     """True where the items `rem` can be written, in some order, from the state st (cr: the items that made the labels), and k then accepts the state after them (k None: true).
     The decoder refuses some orders late (a label read outside each list that keeps it, a key label that is local to a form), so the greedy rule asks this before it takes an item.
-    The search follows the same rule (the least keys that complete), which finds a completion where one exists."""
+    The search follows the same rule (the least keys that complete, and no OR that exports_ok refuses), which finds a completion where one exists."""
     key = (rem, nm_key(st[1]), cr, st[0].trace_form())  # the form so far: states of one naming can differ in what the atoms before them were
     got = memo.get(key)
     if got is not None:
@@ -755,6 +755,8 @@ def _completable(env, marks, items, rem, st, cr, sep, k, memo):
     else:
         for idx in sorted(rem):
             if one_waits(items, rem, idx, True):
+                continue
+            if not exports_ok(env, items[idx], st[1]):  # walk_set does not take the OR at this state; the decoder refuses its END only after every order of the items in it
                 continue
             def kk(s1, idx=idx, st=st, rem=rem, cr=cr):
                 return completable(env, marks, items, rem - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in st[1]), sep, k, memo)
