@@ -2,12 +2,17 @@
 
     SAMPLER_CODE=<kit>/model/study/sampler PYTHONPATH=<site>:<kit>/model/study/sampler <runtime python> partition_check.py OUT.jsonl [--split dev] [--tasks T,...]
     partition_check.py --summary OUT.jsonl
+    WRITER_PLAN=ordered ... partition_check.py OUT.jsonl --rule any [--split dev] [--tasks T,...]
 
 For each gold RULE or DET of the split's skeleton whose body reads a query of its scope: its canonical stream (order.canonical_stream, the
 stream of the `ordered` plan's targets) is stepped through the writer from its scope. At the point of the body's first atom, the check
 counts whether the stream's token is one that ReadsScopeFirst bars (the first atom reads no query of the scope), and, where it is, whether
 the legal plan's options there (writer.options with the `legal` lookahead) hold a token that ReadsScopeFirst keeps, so that the writer can
 start the body with an atom that reads the scope. Each barred query also gives the relation its stream starts with.
+
+With --rule any, each canonical stream is walked to its end through the legal plan's options, the order rule of WRITER_PLAN=ordered among
+them, and lookahead_legal.ReadsScopeAny is applied to the options at each point. It counts the streams the legal plan cuts, the streams
+ReadsScopeAny cuts (with the token where it cuts), and the milliseconds the rule took.
 """
 import argparse
 import collections
@@ -82,6 +87,52 @@ def check_task(run, env, sess, split, task):
     return c, starts
 
 
+def check_any(run, env, sess, split, task):
+    """For --rule any: each canonical stream walked to its end under the legal plan (with the order rule of WRITER_PLAN=ordered), and ReadsScopeAny applied to the options at each point."""
+    import live
+    import lookahead_legal as LL
+    import order
+    import writer
+    from live import arclog
+    c, starts = collections.Counter(), collections.Counter()
+    rule = LL.ReadsScopeAny()
+    plan = writer.default_plan(run, None, ('legal',))
+    t_rule = 0.0
+    for scope, kind, text in queries(split, task):
+        c['queries'] += 1
+        try:
+            ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, text, live.READER_OUT)), sess.settings).decode_stream()
+            stream = [int(t) for t, m, q in zip(ids, model, paths) if m and q[0] == len(scope)]
+            dec, pg = run.scope(scope)
+            s2, how, why = order.canonical_stream(env, dec, kind, stream)
+            c['order ' + how + (' ' + why.split(':')[0] if why else '')] += 1
+            pg.new = []
+            pt = writer.start_point(run, pg, run.open_form(pg, dec, kind), kind)
+            cut = None
+            for t in s2:
+                if pt.track.where == 'done':
+                    cut = 'stream goes on after the query is done'
+                    break
+                opts, fac, reason = writer.options(pt, plan)
+                if opts is None or t not in set(int(x) for x in opts):
+                    cut = 'the legal plan (with the order rule) removes the gold token'
+                    break
+                t1 = time.perf_counter()
+                f = rule.factors(pt, list(opts))
+                t_rule += time.perf_counter() - t1
+                c['points'] += 1
+                if f[list(int(x) for x in opts).index(t)] == -float('inf'):
+                    cut = 'ReadsScopeAny removes the gold token'
+                    starts[run.V.name(t)] += 1
+                    break
+                pt = writer.step_point(pt, t)
+            c[cut or 'canonical stream kept to its end'] += 1
+        except Exception as e:  # noqa: BLE001
+            c['error %s: %s' % (type(e).__name__, str(e)[:60])] += 1
+    c['rule ms'] = round(1000 * t_rule)
+    return c, starts
+
+
 def summary(path):
     c, starts = collections.Counter(), collections.Counter()
     n = 0
@@ -102,6 +153,7 @@ def main():
     ap.add_argument('--split', default='dev')
     ap.add_argument('--tasks', default='')
     ap.add_argument('--summary', action='store_true')
+    ap.add_argument('--rule', choices=('first', 'any'), default='first', help='first: where ReadsScopeFirst bars the canonical first atom; any: where ReadsScopeAny cuts the canonical stream (needs WRITER_PLAN=ordered)')
     a = ap.parse_args()
     if a.summary:
         return summary(a.out)
@@ -122,7 +174,7 @@ def main():
             sess, d, _ = live_try.session_of(task)
             run = live.Run(smp.pri, sess, 0, time.monotonic() + 3600, d, live.Limits())
             env = tr.order_env(run)
-            c, starts = check_task(run, env, sess, a.split, task)
+            c, starts = (check_any if a.rule == 'any' else check_task)(run, env, sess, a.split, task)
             f.write(json.dumps(dict(task=task, counts=c, starts=starts)) + '\n')
             f.flush()
             n += 1
