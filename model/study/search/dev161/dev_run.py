@@ -3,6 +3,7 @@
     run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--models DIR] [--tree FILE] [--split dev|train] [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N] [--skip TASK,...] [--record]
 
 RUN names the output folder, $DATA/search/dev161/RUN for dev and $DATA/search/train866/RUN for train (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
+Every arm runs under one writer plan (WRITER_PLAN): the plan that --tree records where an arm takes the tree, else WRITER_PLAN, else the plan with no tree (sampler/writer_plan.py).
 Each job is one task of one arm and one seed: the pool search with the v9 notebook's environment and a fresh store of its own. --models
 is the worker's models folder (default the v9 dataset's), and --tree the writer's tree of the arms that take one. With
 --budget cpu (the default), one worker runs on --seconds of its own CPU time (cpu_clock/sitecustomize.py), and the kernel supervisor's
@@ -149,9 +150,9 @@ def run_job(a, out, task, arm, seed):
                POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES='search', ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
-    for k in ('WRITER_TREE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
+    for k in ('WRITER_TREE', 'WRITER_PLAN', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
         env.pop(k, None)
-    env.update({k: v if v is not None else str(a.tree) for k, v in ARMS[arm].items()})
+    env.update({k: v if v is not None else str(a.tree) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
     if a.record:  # the draw records (sampler/draw_record.py), one file per job
         env.update(ARC_DRAW_RECORD=str(w / 'draws.jsonl'), ARC_DRAW_RUN='%s/%s' % (a.run, w.name), ARC_DRAW_SITE=Path(a.site).name,
                    ARC_DRAW_RELEASE=Path(a.code).name)
@@ -201,6 +202,17 @@ def summary(out):
     (out / 'summary.txt').write_text('\n'.join(lines) + '\n')
 
 
+def run_plan(a):
+    """The writer plan of every arm: the plan that --tree records where an arm takes the tree, else WRITER_PLAN, else the plan with no tree (sampler/writer_plan.py). Raises where
+    WRITER_PLAN and the tree give different plans."""
+    spec = importlib.util.spec_from_file_location('writer_plan', Path(__file__).resolve().parents[2] / 'sampler/writer_plan.py')
+    assert spec is not None and spec.loader is not None
+    wp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wp)
+    tree = str(a.tree) if any('WRITER_TREE' in ARMS[arm] for arm in a.arms.split(',')) else None
+    return wp.plan_of_process(tree, os.environ.get('WRITER_PLAN'))[0]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run')
@@ -219,6 +231,7 @@ def main():
     ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
+    a.plan = run_plan(a)
     CPU_MODE[0] = a.budget == 'cpu'
     out = DATA_ROOT / 'search' / OUT_DIRS.get(a.split, 'none') / a.run
     out.mkdir(parents=True, exist_ok=True)

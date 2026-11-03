@@ -771,6 +771,8 @@ def main() -> int:
     ap.add_argument('--out', type=Path, default=OUTD)
     args = ap.parse_args()
     k, n = map(int, args.shard.split('/'))
+    os.environ.setdefault('WRITER_PLAN', args.plan)  # --plan is the writer plan of the process: a WRITER_PLAN or a WRITER_TREE of the other plan raises
+    importlib.import_module('lookahead_legal').check_plan(args.plan)
     tr = importlib.import_module('train_rows')
     wr = importlib.import_module('writer')
     live = importlib.import_module('live')
