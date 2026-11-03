@@ -39,6 +39,11 @@ A packing stop leaves an explicit partial prefix and an unavailable suffix.
 It does not turn missing buffers into completed empty relations. Native study
 reports carry stopped packing evidence; stream/corpus adapters report the exact
 packing stop, and `CaseTables.materialization_stop` exposes it to direct callers.
+The packing names each table of the unavailable suffix (`CaseColumns::left_out`).
+`step_tables`, `successor_tables` and `base_tables` raise `RuntimeError` where
+the suffix holds a table: the message gives the bound and names each table left
+out, by its relation and the path of its form. A stop inside a table's entries
+keeps the table, with those entries stopped, and raises nothing.
 A stopped packed prefix cannot become a reusable prefix-cache result.
 
 ## Allocation ownership

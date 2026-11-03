@@ -486,12 +486,19 @@ pub struct CaseColumns {
     /// Reservations follow these owned packed buffers through their last drop.
     pub(crate) allocations: Vec<Arc<arclog::session::SessionAllocation>>,
     pub(crate) packing_stop: Option<Stop>,
+    /// The tables that the packing left out after its stop, each as
+    /// [`table_spelled`] names it, in their order.
+    pub(crate) left_out: Vec<String>,
 }
 
 impl CaseColumns {
     /// A stop reached before packing a native row buffer; no empty value was
     /// substituted. Bindings propagate it to their operation report.
     pub fn packing_stop(&self)->Option<&Stop> {self.packing_stop.as_ref()}
+    /// The tables that the packing left out after [`CaseColumns::packing_stop`]:
+    /// the columns hold no row of them. Empty where the columns hold a row of
+    /// each table, a table whose entries stopped included.
+    pub fn left_out(&self)->&[String] {&self.left_out}
     /// Stable owners for returned Python buffers and captured raw views.
     pub fn allocations(&self)->Vec<Arc<arclog::session::SessionAllocation>> {self.allocations.clone()}
     /// These columns with a row for each of `violations`, the declared rows
@@ -927,12 +934,16 @@ fn fold(materializer:&Materializer<'_>,evidence: &[Table], tables: &[(usize, Tab
 }
 
 /// The columns of `tables`, each with the index of its token, in `out`, the
-/// first of them the table at `first`, after the tables in `names`.
+/// first of them the table at `first`, after the tables in `names`. Each
+/// table after a stop goes to `out.left_out`.
 fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, first: usize, tables: impl Iterator<Item = (usize, &'t Table)>, train: usize, labels: Option<&StreamLabels>, row_export:RowExport<'_>) {
     // A stopped fold is a prefix, including when a previous append stopped.
     // Releasing phase scratch must never admit a later table past a gap.
-    if out.packing_stop.is_some() {return;}
     for (place, (token, table)) in (first..).zip(tables) {
+        if out.packing_stop.is_some() {
+            out.left_out.push(table_spelled(table));
+            continue;
+        }
         let first_allocation=out.allocations.len();
         let before=packing_bytes(out,names,runs);
         // Headers/count-only entries allocate too, even when there is no row
@@ -941,7 +952,11 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
             .and_then(|bytes|materializer.copy(bytes.saturating_add(packing_growth(out,names,runs,table,row_export))));
         match allocation {
             Ok(allocation)=>out.allocations.push(allocation),
-            Err(bound)=>{out.packing_stop=Some(Stop {bound,form:table.form.clone()});break;},
+            Err(bound)=>{
+                out.packing_stop=Some(Stop {bound,form:table.form.clone()});
+                out.left_out.push(table_spelled(table));
+                continue;
+            },
         }
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
         push_table(materializer,out, names, runs, row, token, table, train, labels,row_export);
@@ -955,7 +970,19 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
         // native Contents/matrices keep their independent shared leases.
         let retained=packing_allowance(packing_bytes(out,names,runs).saturating_sub(before));
         settle_packing(&mut out.allocations[first_allocation..],retained);
-        if out.packing_stop.is_some() {break;}
+    }
+}
+
+/// How an error names `table`: the relation as the program spells it, or the
+/// body in progress, or the fact relation of an evidence table, with the path
+/// of its form.
+pub(crate) fn table_spelled(table: &Table) -> String {
+    let at = form_path(&table.form);
+    match (&table.point, &table.contents) {
+        (Point::Body { .. }, _) => format!("the body in progress at form {at}"),
+        (_, Ok(Contents { relation: TableRelation::Fact(fact), .. })) => format!("{fact:?}"),
+        (_, Ok(contents)) if !contents.name.is_empty() => format!("{} at form {at}", contents.name),
+        _ => format!("the relation at form {at}"),
     }
 }
 
