@@ -1,6 +1,6 @@
 #!/bin/bash
 # usage: set_run.sh SET N
-# Builds the union outputs of SET on the engine SITE in the folder GOLD_UNION_DIR, each stage in N shards through run_heavy and merged before the next stage starts: fits (FITS_CAP seconds a program, default 300), union rows, union keys, and the graph (ROWS_VERSION: the row store hash_versions it accepts). GOLD_UNION_DIR must hold cases-SET.jsonl. Each output's code stamp names the engine. Logs go to $UNION_SCRATCH/SET-*.log (UNION_SCRATCH default: the scratchpad of session 64993706), and a line with the clock time is printed as each stage starts and as the run ends.
+# Builds the union outputs of SET on the engine SITE in the folder GOLD_UNION_DIR, each stage in N shards through run_heavy and merged before the next stage starts: fits (FITS_CAP seconds a program, default 300), union rows, union keys, the graph (ROWS_VERSION: the row store hash_versions it accepts), and the walks. GOLD_UNION_DIR must hold cases-SET.jsonl. Each output's code stamp names the engine. Logs go to $UNION_SCRATCH/SET-*.log (UNION_SCRATCH default: the scratchpad of session 64993706), and a line with the clock time is printed as each stage starts and as the run ends.
 set -e
 cd /Users/davidlu/code/arc-workspace
 : "${SITE:?}" "${GOLD_UNION_DIR:?}" "${ROWS_VERSION:?}"
@@ -43,4 +43,6 @@ for f in tables prods tasks; do
   python3 $U/gold_union_code.py concat $G/graph-$f-$SET.jsonl $parts
   rm $parts $(for p in $parts; do echo $p.code.json; done)
 done
+echo "$(date +%H:%M) $SET walks"
+python3 $U/gold_union_walks.py $SET > $S/$SET-walks.log 2>&1
 echo "$(date +%H:%M) $SET done"

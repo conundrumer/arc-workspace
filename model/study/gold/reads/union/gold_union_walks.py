@@ -1,4 +1,4 @@
-"""The enabled queries of the states of state sequences over a set's union graph, against the task's cheapest and minimax paths. Prints the counts and writes walks-SET.json in work/lm/data-study/gold/gold-union.
+"""The enabled queries of the states of state sequences over a set's union graph, against the task's cheapest and minimax paths. Prints the counts and writes walks-SET.json in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union).
 
   python3 gold_union_walks.py SET [SET ...]
 
@@ -15,7 +15,7 @@
 """
 import collections, json, os, random, sys
 
-OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
+OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union') + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 PER_TASK = 8
 KINDS = os.environ.get('WALK_KINDS', 'union path').split()
 
