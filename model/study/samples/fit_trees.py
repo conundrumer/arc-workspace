@@ -173,9 +173,9 @@ def point_folder(folder: Path) -> Path:
     return folder
 
 
-def split_files(folder: Path, dev_tasks: set[str]) -> tuple[list[Path], list[Path], dict[str, dict]]:
-    """(train files, dev files, the header of each task), by the split in each header; --dev-tasks moves tasks to dev. A header split other than train or dev is an error."""
-    paths = sorted(point_folder(folder).glob('*.jsonl.gz'))
+def split_files(folders: list[Path], dev_tasks: set[str]) -> tuple[list[Path], list[Path], dict[str, dict]]:
+    """(train files, dev files, the header of each task) of the folders, by the split in each header; --dev-tasks moves tasks to dev. A header split other than train or dev is an error."""
+    paths = sorted((p for folder in folders for p in point_folder(folder).glob('*.jsonl.gz')), key=lambda p: p.name)
     heads = {p.name.removesuffix('.jsonl.gz'): header_of(p) for p in paths}
     unknown = dev_tasks - heads.keys()
     if unknown:
@@ -614,7 +614,7 @@ def fit(args: argparse.Namespace) -> int:
     report = dict(
         model=str(out), params=dict(params, objective='custom: -log(sum of softmax over the positive ids), per point', alpha=args.alpha), rounds_run=booster.current_iteration(), best_round=best,
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
-        points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=str(args.points), matrix=sizes,
+        points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
         features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
@@ -624,7 +624,7 @@ def fit(args: argparse.Namespace) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
-    ap.add_argument('--points', type=Path, required=True, help='the folder samples/SET/points/')
+    ap.add_argument('--points', type=Path, nargs='+', required=True, help='the folders samples/SET/points/<plan>, such as the train and the dev one')
     ap.add_argument('--out', type=Path, help='the file of the saved booster')
     ap.add_argument('--check', action='store_true', help='check the gradient against a finite difference on one real group, then stop')
     ap.add_argument('--points-per-task', type=int, default=0, help='at most N points of a task, chosen by a seeded hash (0: all)')
@@ -642,7 +642,7 @@ def main() -> int:
     args = ap.parse_args()
     try:
         if args.check:
-            return check(args.points, args.seed, args.alpha)
+            return check(args.points[0], args.seed, args.alpha)
         if args.out is None:
             ap.error('--out is required unless --check')
         return fit(args)
