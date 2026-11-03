@@ -73,6 +73,17 @@ allowance as prefix-copy admission. Coverage assertions reject an insufficient
 preflight instead of silently reducing the retained allowance. Shared native
 matrix leases remain independent and unchanged.
 
+The eight-times allowance covers the copies that coexist while packing runs.
+A returned `CaseTables` does not keep it. `PyCaseTables::of` takes the
+reservations out of the columns (`CaseColumns::take_allocations`) after it makes
+the Python objects, and each unshared reservation shrinks so that together they
+keep the estimate of those objects' bytes: the length of each `bytes` object,
+a fixed estimate for each `bytes` or `list` object and for each list item, and
+the length of each `str` item. The Rust columns drop when `of` returns, so a
+kept result holds on the ledger about the bytes of its Python buffers.
+`Session.ledger_stats()` gives the three parts that the bound counts: the intern
+table's bytes, the result cache's bytes and the reserved bytes of live buffers.
+
 A deep prefix copy owns its new copy reservation exclusively. It does not keep
 the original prefix's reservations alive after cache eviction. The existing
 single session ledger releases the exact unused phase allowance through mutable

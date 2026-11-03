@@ -133,7 +133,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
     arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
     let own = stream.count() - earlier.map_or(evidence_tables.len() as u32, |step| step.stream.count());
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
+    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
 }
 
 /// The base tables of the task of `decoder`: `input`, `ex_input` and
@@ -160,7 +160,7 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train_pairs(evidence), Vec::new(), rows, &SummaryCache::default()).0
     });
     complete(&columns)?;
-    PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, None)
+    PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)
 }
 
 /// What `successor_tables` gives for one id: the tables of its successor,
@@ -340,16 +340,16 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let _timed = split::span(Part::SuccessorObjects);
     let base = |tokens: usize| earlier.map(|step| Base { case: case.clone(), tokens, tables: step.stream.count() });
     let cap = engine.settings().projection_cap;
-    let pack = |columns: &CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens));
-    let current = current.map(|columns| Py::new(py, pack(&columns, now.unwrap_or(0))?)).transpose()?;
-    let unchanged = unchanged.map(|(columns, stream)| -> PyResult<Py<PyCaseTables>> { Py::new(py, pack(&columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own: 0 })) }).transpose()?;
+    let pack = |columns: CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens));
+    let current = current.map(|columns| Py::new(py, pack(columns, now.unwrap_or(0))?)).transpose()?;
+    let unchanged = unchanged.map(|(columns, stream)| -> PyResult<Py<PyCaseTables>> { Py::new(py, pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own: 0 })) }).transpose()?;
     let mut results: Vec<(&'static str, String, Option<Py<PyCaseTables>>)> = Vec::with_capacity(each.len());
     for result in each {
         let result = match result {
             Err(refusal) => ("refused", refusal, None),
             Ok((kind, note, Packed::Unchanged)) => (kind, note, unchanged.as_ref().map(|shared| shared.clone_ref(py))),
             Ok((kind, note, Packed::Same(first))) => (kind, note, results[first].2.as_ref().map(|shared| shared.clone_ref(py))),
-            Ok((kind, note, Packed::Own(columns, stream, own))) => (kind, note, Some(Py::new(py, pack(&columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own }))?)),
+            Ok((kind, note, Packed::Own(columns, stream, own))) => (kind, note, Some(Py::new(py, pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own }))?)),
         };
         results.push(result);
     }

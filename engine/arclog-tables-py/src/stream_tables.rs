@@ -196,7 +196,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
                 Ok((columns, cut)) => {
                     let base = cut.map(|(base, tokens, count)| Base { case: names[base].clone(), tokens, tables: count });
                     if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {case}: native packing stopped {:?} at {:?}",stop.bound,stop.form));}
-                    tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, &columns, None, base)?);
+                    tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, columns, None, base)?);
                     ended.push(match replay.record.ended {
                         Some(at) => at.line(task, case),
                         None => format!("{task} {case}: ended none"),

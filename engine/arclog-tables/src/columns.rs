@@ -499,8 +499,22 @@ impl CaseColumns {
     /// the columns hold no row of them. Empty where the columns hold a row of
     /// each table, a table whose entries stopped included.
     pub fn left_out(&self)->&[String] {&self.left_out}
-    /// Stable owners for returned Python buffers and captured raw views.
-    pub fn allocations(&self)->Vec<Arc<arclog::session::SessionAllocation>> {self.allocations.clone()}
+    /// The reservations of these columns, taken out of them, for the owner of
+    /// the copies made from the columns, such as returned Python buffers.
+    /// Each that no other owner shares shrinks, in their order, so that they
+    /// keep `bytes` in all: the packing allowance does not outlive the
+    /// columns, and `bytes` is what the copies hold once the columns drop.
+    pub fn take_allocations(&mut self,mut bytes:usize)->Vec<Arc<arclog::session::SessionAllocation>> {
+        let mut allocations=std::mem::take(&mut self.allocations);
+        for allocation in &mut allocations {
+            let held=allocation.bytes();
+            if let Some(allocation)=Arc::get_mut(allocation) {
+                allocation.shrink_to(bytes);
+            }
+            bytes=bytes.saturating_sub(held.min(bytes));
+        }
+        allocations
+    }
     /// These columns with a row for each of `violations`, the declared rows
     /// that the replay of the case found its constructions' outputs break.
     pub fn with_copies(mut self, violations: &[CopyViolation]) -> CaseColumns {
