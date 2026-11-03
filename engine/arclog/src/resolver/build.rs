@@ -283,12 +283,16 @@ pub(super) fn reads_example_column(program: &Node<Program>, read: &NodePath, reg
     builder.read_columns();
     builder.sides();
     let Some(Resolution::Node(node)) = builder.resolutions.get(read) else { return false };
-    let form_path = NodePath::top(top.0);
-    if matches!(form, Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_)) {
+    // The writer's rule: a read in a `DEMO_RULE` form takes the rule of its
+    // own form, and a lifted read is lifted at the form that holds the atom.
+    let root = crate::program::path::NodeRef::Program(program.value());
+    let Some(form_path) = crate::stream::write::read_form(root, read) else { return false };
+    if crate::stream::write::takes_example_column(root, &form_path) {
         !builder.is_fact(*node) && !builder.forms[node.0 as usize].contains(&form_path)
             && builder.sides[node.0 as usize] == super::Side::PerInput
     } else {
-        sides::lifted(builder.is_fact(*node), builder.form_sides[&form_path], builder.sides[node.0 as usize])
+        let Some(atom) = builder.atoms.iter().find(|atom| atom.path == *read) else { return false };
+        sides::lifted(builder.is_fact(*node), builder.form_sides[&atom.form], builder.sides[node.0 as usize])
     }
 }
 

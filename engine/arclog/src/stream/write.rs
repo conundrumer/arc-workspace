@@ -845,21 +845,36 @@ impl Writer<'_> {
 /// a `DEMO_RULE` form takes the rule of that form.
 pub(crate) fn reads_example_column(resolved: &ResolvedProgram, read: &NodePath) -> bool {
     let program = NodeRef::Program(resolved.program.value());
+    let Some(form) = read_form(program, read) else { return false };
+    if !takes_example_column(program, &form) {
+        return resolved.reads_lifted(read);
+    }
+    let Some(Resolution::Node(node)) = resolved.resolution(read) else { return false };
+    let fact = matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
+    !fact && !resolved.nodes_of(&form).contains(node) && resolved.side(*node) == Side::PerInput
+}
+
+/// The path of the form whose rule [`reads_example_column`] takes for the
+/// read at `read` in `program`: the first form on the path that is no
+/// claim, or, inside a `DEMO_RULE` form of a `DEMONSTRATED` form, the form of
+/// that rule.
+pub(crate) fn read_form(program: NodeRef<'_>, read: &NodePath) -> Option<NodePath> {
     let depths = 1..=read.0.len();
-    let Some(mut form) = depths.map(|depth| NodePath(read.0[..depth].into())).find(|at| !matches!(node_at(program, at), Some(NodeRef::Claim(_)))) else { return false };
+    let mut form = depths.map(|depth| NodePath(read.0[..depth].into())).find(|at| !matches!(node_at(program, at), Some(NodeRef::Claim(_))))?;
     if read.0.len() > form.0.len() + 1 && matches!(node_at(program, &form), Some(NodeRef::Demonstrated(_))) {
         let rule = NodePath(read.0[..form.0.len() + 1].into());
         if matches!(node_at(program, &rule), Some(NodeRef::DemoRule(_))) {
             form = NodePath(read.0[..form.0.len() + 2].into());
         }
     }
-    match node_at(program, &form) {
-        Some(NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) | NodeRef::Demonstrated(_)) => {}
-        _ => return resolved.reads_lifted(read),
-    }
-    let Some(Resolution::Node(node)) = resolved.resolution(read) else { return false };
-    let fact = matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Fact(_));
-    !fact && !resolved.nodes_of(&form).contains(node) && resolved.side(*node) == Side::PerInput
+    Some(form)
+}
+
+/// Whether a read in the form at `form` of `program` gives the Example
+/// column the column token 0 by the rule of an `INIT`, a `CHOOSE`, a
+/// `RIGID_DET` or a `DEMONSTRATED` form, rather than where it is lifted.
+pub(crate) fn takes_example_column(program: NodeRef<'_>, form: &NodePath) -> bool {
+    matches!(node_at(program, form), Some(NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) | NodeRef::Demonstrated(_)))
 }
 
 fn diagnostic(kind: DiagnosticKind, severity: Severity, message: String, path: &NodePath) -> Diagnostic {
