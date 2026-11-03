@@ -4,7 +4,7 @@ A program is kept when its text has a row in fits-SET.jsonl (gold_union_fits.py,
 
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py run [K N [SET]]    SET is train, dev or held-out; the rows go to union-SET-K.jsonl
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py child TASK...
-  model/study/gold/cover_forms/gold_union_env.sh gold_union.py merge [SET]    writes union-SET.jsonl and union-SET.jsonl.sha256 from the union-SET-K.jsonl files; with no SET, union.jsonl from all of them. It also updates union-SET.manifest.json (made where missing): `sha256`, where the manifest has it, and `code`, {"sha", "dirty"} of the code that merged (gold_union_code.py); its other fields stay.
+  model/study/gold/cover_forms/gold_union_env.sh gold_union.py merge [SET]    writes union-SET.jsonl and union-SET.jsonl.sha256 from the union-SET-K.jsonl files; with no SET, union.jsonl from all of them. A task listed in out-of-scope.jsonl gets the line {task, set, error, set_aside}, with its reason in both and no tables, so that the consumers set it aside; its lines in the union-SET-K.jsonl files stay. It also updates union-SET.manifest.json (made where missing): `sha256`, where the manifest has it, and `code`, {"sha", "dirty"} of the code that merged (gold_union_code.py); its other fields stay.
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py search    writes search-programs.jsonl from the search outputs in SEARCH
 """
 import glob, hashlib, json, os, re, sys, time
@@ -21,7 +21,15 @@ C.GIB = 4  # a task past 4 GiB is set aside; 6 shards share the machine
 
 OUT = os.environ.get('GOLD_UNION_DIR', D + 'gold/gold-union') + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 HEAD, NAME = G.HEAD, G.NAME
-SETS = ['train', 'dev', 'held-out']  # the splits, in the order that they run
+OUT_OF_SCOPE = OUT + 'out-of-scope.jsonl'  # one line per task, {task, set, reason}: a task the union sets aside
+
+
+def out_of_scope():
+    """{task: reason} of out-of-scope.jsonl."""
+    return {r['task']: r['reason'] for r in map(json.loads, open(OUT_OF_SCOPE))} if os.path.exists(OUT_OF_SCOPE) else {}
+
+
+SETS =['train', 'dev', 'held-out']  # the splits, in the order that they run
 SEARCH = [  # glob patterns of search outputs: one JSON line per program, the file named TASK.*.jsonl
     ROOT / 'work/synth-kaggle' / ('kernel-soak-%s-linux-ramp59-2400s/work-logs/74dd1130.search.out.jsonl' % k) for k in ('8ed4fe634', '0eec50f18', '2d21a0079', 'e8ded5733', 'ec15d12f0')
 ] + [
@@ -275,6 +283,9 @@ def merge(args=()):
             if l.endswith('\n'):
                 r = json.loads(l)
                 got[r['task']] = l
+    for t, why in out_of_scope().items():
+        if t in got:
+            got[t] = json.dumps(dict(task=t, set=json.loads(got[t]).get('set'), error=why, set_aside=why)) + '\n'
     text = ''.join(got[t] for t in sorted(got))
     open(OUT + name + '.jsonl', 'w').write(text)
     open(OUT + name + '.jsonl.sha256', 'w').write(hashlib.sha256(text.encode()).hexdigest() + '\n')

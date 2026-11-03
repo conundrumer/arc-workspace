@@ -7,12 +7,12 @@
 A case is a line of cases-SET.jsonl. The union is union-SET.jsonl with union-SET-addendum.jsonl. The case `pinned` is the pinned program.
 
 - `SET K N` takes the tasks at positions K, K + N, ... of the union and appends to union-keys-SET-K.jsonl, all of a task's lines in one write, so a task in that file is complete. It skips the tasks in any union-keys-SET-<n>.jsonl. With UNION_TASKS set (tasks separated by spaces), `SET K N` takes only those tasks of the union, and K N name only the output file; it still skips the tasks in any union-keys-SET-<n>.jsonl. Where union-SET.jsonl doesn't exist yet, the union is the shard files of `gold_union.py run`, a later row for a task in place of an earlier one.
-- `SET merge` writes union-keys-SET.jsonl from those files, in the order of cases-SET.jsonl.
+- `SET merge` writes union-keys-SET.jsonl from those files, in the order of cases-SET.jsonl, less the tasks of out-of-scope.jsonl (gold_union.py).
 - `SET` and `SET merge` also write union-keys-SET.jsonl.code.json, {"code": {"sha", "dirty"}}: the commit of the code that wrote the file (gold_union_code.py).
 """
 import glob, json, os, re, sys
 import gold_union_code
-from gold_union import OUT, Bar, forms_of, program_lines, shards, union_rows
+from gold_union import OUT, Bar, forms_of, out_of_scope, program_lines, shards, union_rows
 
 
 def union(s):
@@ -32,12 +32,13 @@ def key_shards(s):
 
 
 def merge(s):
-    got = {}
+    got, aside = {}, out_of_scope()
     for p in key_shards(s):
         for l in open(p):
             if l.endswith('\n'):
                 c = json.loads(l)
-                got[c['task'], c['case']] = l
+                if c['task'] not in aside:
+                    got[c['task'], c['case']] = l
     with open(OUT + 'union-keys-%s.jsonl.part' % s, 'w') as out:
         for l in open(OUT + 'cases-%s.jsonl' % s):
             c = json.loads(l)
