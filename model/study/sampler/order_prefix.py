@@ -12,13 +12,19 @@ made after it is `*` (or `^`) where the item first names it, and then the label 
 one set, p written first, x is refused at the state before p or x's key at that state is not below p's key. Equal keys are a tie, and both orders stay.
 
 The rule tests that condition as the tokens come, at the innermost open set:
-  - A token that starts an item is removed where it is below the first token of an earlier item of the set, and the item is accepted at the state before that earlier item.
-  - A token that goes on with an open atom is removed where it makes the atom's key at the state before an earlier item fall below that item's key, and the atom is accepted there.
+  - A token that starts an atom of a free relation (one whose sites all take a new label: not a lib relation) is removed where it is below the first token of an earlier item of the
+    set, and the decoder takes it at the state before that earlier item.
+  - A token that goes on with an open atom of a free relation is removed where it makes the atom's key at the state before an earlier item fall below that item's key, and the
+    decoder takes the atom so far and the token at that state.
   - A token that closes an atom is removed where the atom fails the condition against an earlier item (order.render at the earlier state).
   - The END of an OR or an ALL is removed where the written item is not one of the ways that order.render writes it from its first state, or it fails the condition against an earlier
-    item of its set. The END of a body is removed where the written body is not one of the ways that order.walk_set writes it from the body's first state.
-Where a label was made between the earlier item and the open one, the open item can be refused at the earlier state by tokens still to come (a NOT, a comparison or a compound that reads
-that label, an input site of a lib relation, a site that takes a `^` label): the first two tests keep the token there, and the tests at the close decide.
+    item of its set.
+At a body's END every two items of the body have passed the condition, so the body is one of the ways that the rule writes it: in plain order.ordered, a step takes the least key, which is
+the condition for each pair; and an item that the written body takes first can be completed, so the lookahead form of order.ordered takes it too.
+A NOT, a comparison, an atom of a lib relation and a compound can be refused at the earlier state by tokens still to come, though the decoder takes their first tokens there: they read
+labels that are bound there only later (a label made in between; in a later branch of an OR, a label of the first branch that a positive atom of the branch has to read first), or an
+input site of a lib relation takes a label that is new there. So the first two tests keep their tokens, and the test at the close decides. They keep a free relation's tokens too where a
+`^` label was made in between.
 
 A DEMONSTRATED query, a proposer body and the group tokens of an INIT or a RIGID_DET have no sets: the rule keeps every id there. A test that passes SECONDS keeps the token.
 """
@@ -160,9 +166,8 @@ def parse(core, kind, tokens):
 @dataclasses.dataclass(frozen=True, slots=True)
 class Floor:
     """The bound that the order puts on the first token of the next item started in one open set. depth: the set's place among the open sets, 0 outermost. kind: the set's kind
-    (_List.kind). rel: the bound for an atom of a relation whose sites all take a new label (not a lib relation), or None for no bound; it can fall only where a `^` label is made
-    before that start. other: the bound for an atom of a lib relation, NOT, a comparison, OR and ALL, or None; it holds while no label is made before that start, and a label
-    made in between can lower it. The rule removes a first token below the bound (unless the decoder refuses it at the state before the earlier item that sets the bound); a
+    (_List.kind). rel: the bound for an atom of a free relation (one whose sites all take a new label: not a lib relation), or None for no bound; it can fall only where a `^`
+    label is made before that start. other: always None: the rule bars an atom of a lib relation, NOT, a comparison, OR and ALL at its close alone. The rule removes a first token below the bound (unless the decoder refuses it at the state before the earlier item that sets the bound); a
     first token above it is free of the bound; at the bound, the item's later tokens decide, since a key is the item's whole token string."""
     depth: int
     kind: str
@@ -319,7 +324,7 @@ class Rule:
             low = rt < kn
             if not low.any():
                 continue
-            if late and (L.cur_kind != 'atom' or not self.free[tokens[a]] or self.late_caret(info, tokens, mj, ma)):
+            if L.cur_kind != 'atom' or not self.free[tokens[a]] or (late and self.late_caret(info, tokens, mj, ma)):
                 continue
             dec = writer.dec_at(pt, s).fork()
             try:
@@ -341,16 +346,12 @@ class Rule:
         for s, e, kd in items:
             if kd == 'one':
                 continue
-            low = (ids < tokens[s]) & (ids != self.core.ONE)
+            low = (ids < tokens[s]) & free  # only an atom of a free relation is decided at its first token
             if not low.any():
                 continue
             mj = self.made_before(info, s)
-            if mn > mj:  # labels were made since: only an atom of a relation that takes a new label at each site is decided at its first token, and not where a `^` label was made
-                if self.late_caret(info, tokens, mj, mn):
-                    continue
-                low &= free
-                if not low.any():
-                    continue
+            if mn > mj and self.late_caret(info, tokens, mj, mn):  # and not where a `^` label was made since
+                continue
             adm = np.array(writer.dec_at(pt, s).fork().admits([int(x) for x in ids[low]]), bool)
             keep[np.flatnonzero(low)[adm]] = False
         return keep
@@ -429,7 +430,7 @@ class Rule:
                 continue
             K = tuple(tokens[s:e])
             mj = self.made_before(info, s)
-            if ma == mj:  # no label made between: the item is written at that state as it stands, and the decoder takes it there as it took it here
+            if ma == mj and kd == 'atom' and self.free[tokens[a]]:  # no label made between: the atom is written at that state as it stands, and the decoder takes it there as here
                 if tuple(tokens[a:b]) < K:
                     self.stats['pair below'] += 1
                     return False
@@ -440,7 +441,10 @@ class Rule:
                 if item is None:
                     marks, total = self.setup(info, tokens, b)
                     item = self.item_of(info, tokens, a, b, total)
-                outs, _ = order.render(self.env, marks, item, (writer.dec_at(pt, s), self.naming(info, s)), 'min')
+                nm = self.naming(info, s)
+                if not order.exports_ok(self.env, item, nm):  # order.walk_set does not take the OR at that state
+                    continue
+                outs, _ = order.render(self.env, marks, item, (writer.dec_at(pt, s), nm), 'min')
             except order.Overflow:
                 self.stats['pair overflow'] += 1
                 continue
@@ -455,8 +459,8 @@ class Rule:
         return True
 
     def end_ok(self, pt, info):
-        """Whether END may close the innermost open set: for a body, the written body is one of order.walk_set's; for an ALL or an OR, the item is one of order.render's from its
-        first state, and it passes the condition against the earlier items of its set."""
+        """Whether END may close the innermost open set: for an ALL or an OR, the item is one of order.render's from its first state, and it passes the condition against the earlier
+        items of its set. The END of a body or of an ALL's first list is always kept."""
         got = pt.memo.get('order_prefix_end')
         if got is None:
             got = pt.memo['order_prefix_end'] = self._end_ok(pt, info)
@@ -465,10 +469,8 @@ class Rule:
     def _end_ok(self, pt, info):
         stack, tokens = info['stack'], pt.tokens
         L, n = stack[-1], len(tokens)
-        if L.kind in ('dom', 'if0', 'if1'):
+        if L.kind in ('dom', 'if0', 'if1', 'body'):
             return True
-        if L.kind == 'body':
-            return self.body_ok(pt, info, L)
         P = stack[-3] if L.kind == 'branch' else stack[-2]
         a = P.cur
         written = tuple(tokens[a:n]) + (END,)
@@ -489,47 +491,6 @@ class Rule:
             self.stats['compound not canonical'] += 1
             return False
         return self.pair_ok(pt, info, P, (a, n + 1, P.cur_kind), toks)
-
-    def body_ok(self, pt, info, L):
-        tokens, n = pt.tokens, len(pt.tokens)
-        a = L.start
-        written = tuple(tokens[a:n])
-        env = self.env
-        try:
-            marks, total = self.setup(info, tokens, n)
-            s = self.symbolic(info, tokens, a, n) + [END]
-            items, j = order.parse_items(env, s, 0, (END,))
-            if j != len(s) - 1:
-                return True
-            for it in items:
-                self.set_needs(it, total)
-            st = (writer.dec_at(pt, a), self.naming(info, a))
-            k = (lambda s2: order.after(env, None, s2, END))
-            try:  # as order.ordered: the plain rule, and where it is stuck or no stream it gives can end the body, the rule with a lookahead
-                outs = [o for o in order.walk_set(env, marks, order.Set(items, L.kind), st, 'min', k=k) if k(o[1])]
-            except order.Stuck:
-                outs = []
-            if not outs:
-                self.stats['body lookahead'] += 1
-                env.lookahead = True
-                env.rcache = {}
-                outs = [o for o in order.walk_set(env, marks, order.Set(items, L.kind), st, 'min', k=k) if k(o[1])]
-        except order.Overflow:
-            self.stats['body overflow'] += 1
-            return True
-        except order.Stuck:
-            self.stats['body stuck'] += 1
-            return True
-        except Exception:  # noqa: BLE001
-            self.stats['body error'] += 1
-            return True
-        finally:
-            env.deadline = None
-            env.lookahead = False
-        if written not in {o[0] for o in outs}:
-            self.stats['body not canonical'] += 1
-            return False
-        return True
 
     # ---- floors
 
@@ -564,8 +525,6 @@ class Rule:
                     continue
                 mj = self.made_before(info, s)
                 f = tokens[s]
-                if mn == mj:  # no label made since that item
-                    other = f if other is None else max(other, f)
                 if mn == mj or not self.late_caret(info, tokens, mj, mn):
                     rel = f if rel is None else max(rel, f)
             out.append(Floor(depth, L.kind, rel, other))
