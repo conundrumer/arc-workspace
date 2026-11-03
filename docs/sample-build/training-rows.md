@@ -28,7 +28,7 @@ The search's draws on train tasks are negative examples. A draw is never a targe
     - For each query of the program, in the order the writer wrote it: its text as written, its `QueryHash` on the run's engine site, and the `QueryHash`es of the queries written before it. That set is the step's state.
     - The outcome: whether the program ran; for each train example, whether the output equals the expected output; the first query that failed, with its reason (an engine error, a refusal, no table, the deadline); and whether the draw solves every train example.
     - The count of identical draws that the record stands for.
-- **Matching.** A step of a draw matches a sample when the step's state equals the sample's state. A draw that solves every train example gives no negatives.
+- **Matching.** Only a draw's last step, the query the draw wrote, gives negatives. Its other steps are queries of its scope, which earlier draws wrote. The last step matches a sample when its state equals the sample's state. A draw that solves every train example gives no negatives.
 - **Drawn ids.** At each writing point of a matched step, the draw's next token is a drawn id when no live target has that token next. An id's `drawn` count is the number of failed draws that took it at that writing point. A positive id has no `drawn` count.
 - **Loss.** In the fit only, each id's term in the softmax denominator has the weight 1 + α · `drawn`, with α a fit option. The trees' scores do not read the weight.
 - **Unmatched steps.** A step whose state equals no sample's state gives no rows. The header of each task's file counts the matched and unmatched steps.
