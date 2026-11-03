@@ -17,11 +17,12 @@ use crate::resolver::{DependencyNode, Resolution};
 
 impl Builder<'_> {
     /// The content and the columns of each node, each node after the
-    /// nodes it reads, where no cycle holds it. The content of a node of a
-    /// layered resolution that no read of the last form resolves to is
-    /// left to [`ResolvedProgram::node_content`], which writes it on its
-    /// first read: no pass of the resolution reads it, and it gives the
-    /// bytes that writing it here would.
+    /// nodes it reads, and a `DEMONSTRATED` form's node after the nodes its
+    /// rules declare ([`Builder::rule_nodes`]), where no cycle holds it.
+    /// The content of a node of a layered resolution that no read of the
+    /// last form resolves to is left to [`ResolvedProgram::node_content`],
+    /// which writes it on its first read: no pass of the resolution reads
+    /// it, and it gives the bytes that writing it here would.
     pub(super) fn contents(&mut self) {
         let offset = self.offset();
         let unread = self.unread_nodes();
@@ -40,7 +41,9 @@ impl Builder<'_> {
     /// of a layered resolution of one form, and `false` for every node of
     /// another resolution. A node that only another node reads in the
     /// dependency graph counts as unread, as a write of a content reads no
-    /// other node's content.
+    /// other node's content, apart from that of a `DEMONSTRATED` form,
+    /// which reads the content of each node its rules declare
+    /// ([`Builder::rule_nodes`]); such a node counts as read.
     fn unread_nodes(&self) -> Vec<bool> {
         let mut unread = vec![self.earlier.is_some(); self.nodes.len()];
         for resolution in self.resolutions.values() {
@@ -51,14 +54,29 @@ impl Builder<'_> {
         for (node, forms) in self.forms.iter().enumerate() {
             unread[node] &= forms.len() == 1;
         }
+        for (node, unread) in unread.iter_mut().enumerate() {
+            *unread &= !matches!(self.nodes[node].scope, NameScope::DemoRule(_));
+        }
         unread
+    }
+
+    /// The nodes that the rules of the `DEMONSTRATED` form of `node`
+    /// declare, none where `node` is the node of no such form. The form's
+    /// content writes each of them by its content, whether or not a node
+    /// reads it.
+    fn rule_nodes(&self, node: usize) -> Vec<u32> {
+        let DependencyNode { kind: crate::resolver::DependencyKind::Demonstrated(_), .. } = &self.nodes[node] else { return Vec::new() };
+        let forms = &self.forms[node];
+        let in_form = |scope: &NameScope| matches!(scope, NameScope::DemoRule(rule) if forms.iter().any(|form| rule.0.starts_with(&form.0)));
+        (0..self.nodes.len()).filter(|&other| in_form(&self.nodes[other].scope)).map(|other| other as u32).collect()
     }
 
     fn content_of(&mut self, node: usize, visited: &mut Vec<bool>, unread: &[bool]) {
         if std::mem::replace(&mut visited[node], true) {
             return;
         }
-        let reads: Vec<u32> = self.reads[node].iter().copied().collect();
+        let mut reads: Vec<u32> = self.reads[node].iter().copied().collect();
+        reads.extend(self.rule_nodes(node));
         for read in reads {
             self.content_of(read as usize, visited, unread);
         }

@@ -543,9 +543,11 @@ impl ResolvedProgram {
     /// the whole form. So the closure holds, for each form it holds, every
     /// node that form gives and what those nodes read, not only the node
     /// that something reads: a read in another input's body is a read of
-    /// the content. A name that no form of the closure declares would
-    /// stand in the content as a name, which a decode gives as a slot and a
-    /// file as a spelling.
+    /// the content. The content of a `DEMONSTRATED` form writes each node
+    /// that its rules declare, read or not, so the closure holds what each
+    /// of them reads too. A name that no form of the closure declares
+    /// would stand in the content as a name, which a decode gives as a slot
+    /// and a file as a spelling.
     ///
     /// The sites of an atom stand in the content in the order of the
     /// program, which a decode takes from its tokens and the text of the
@@ -584,8 +586,8 @@ impl ResolvedProgram {
         let mut reached = vec![false; self.graph.nodes.len()];
         let mut open = vec![position];
         while let Some(top) = open.pop() {
-            for root in self.nodes_of(&NodePath::top(u32::try_from(top).ok()?)) {
-                for (node, reads) in self.graph.reached(*root).into_iter().enumerate() {
+            for root in self.form_roots(top)? {
+                for (node, reads) in self.graph.reached(root).into_iter().enumerate() {
                     if !reads || std::mem::replace(&mut reached[node], true) {
                         continue;
                     }
@@ -602,6 +604,18 @@ impl ResolvedProgram {
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
         Some((build::resolve(&pruned, None, &SolverScope::default(), registry).value, last))
+    }
+
+    /// The nodes that the top-level form at `top` gives, and, for a
+    /// `DEMONSTRATED` form, the nodes its rules declare. `None` where `top`
+    /// is out of the range of a path step.
+    fn form_roots(&self, top: usize) -> Option<Vec<GraphNodeIndex>> {
+        let mut roots = self.nodes_of(&NodePath::top(u32::try_from(top).ok()?)).to_vec();
+        if let Some(crate::program::Form::Demonstrated(_)) = self.program.value().forms.get(top) {
+            let in_form = |scope: &crate::program::NameScope| matches!(scope, crate::program::NameScope::DemoRule(rule) if rule.0.first().is_some_and(|step| step.0 as usize == top));
+            roots.extend((0..self.graph.nodes.len()).filter(|&node| in_form(&self.graph.nodes[node].scope)).map(|node| GraphNodeIndex(node as u32)));
+        }
+        Some(roots)
     }
 
     /// The resolved content of the node `node` of the dependency graph, or
