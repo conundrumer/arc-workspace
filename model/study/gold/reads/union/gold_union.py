@@ -81,6 +81,8 @@ def verdict(fits, text):
         return None, 'no fits row'
     if x['why']:
         return x, x['why']
+    if x.get('sampler', 'ok') != 'ok':  # a program the sampler's decoder refuses is gold the sampler can't write
+        return x, 'sampler: ' + x['sampler']
     if not x['fit']:
         return x, 'no assignment fits'
     return x, None if x['test_ok'] else 'test output not given'

@@ -1,8 +1,9 @@
-"""Which programs of the union gold solve their task, on the current engine. A program fits when some assignment of its DETs gives every train output through its OUT query (each grid it gives is the output or the example's `alt` grid). It solves (test_ok) when it fits and, on each test example with an expected output, the fitting assignments give at most two distinct grids over all constraint models, and one is the expected output. Per task, each distinct program text of cases-SET.jsonl is run once. The fits go to fits-SET.jsonl in the gold-union folder, one line per task: task, and programs, a list of {text_sha, cases, assignments, fitting, fit, test_ok, why}. assignments counts the assignments of the OUT table, fitting those that give every train output, and why is the reason a program gives no tables (fit and test_ok are then null: no verdict). The union keeps a program when fit and test_ok.
+"""Which programs of the union gold solve their task, on the current engine. A program fits when some assignment of its DETs gives every train output through its OUT query (each grid it gives is the output or the example's `alt` grid). It solves (test_ok) when it fits and, on each test example with an expected output, the fitting assignments give at most two distinct grids over all constraint models, and one is the expected output. Per task, each distinct program text of cases-SET.jsonl is run once. The fits go to fits-SET.jsonl in the gold-union folder, one line per task: task, and programs, a list of {text_sha, cases, assignments, fitting, fit, test_ok, why, sampler}. assignments counts the assignments of the OUT table, fitting those that give every train output, and why is the reason a program gives no tables (fit and test_ok are then null: no verdict). sampler is how the sampler's decoder takes the program, under the settings of model/study/sampler/live_try.py (static pruning on): 'ok', or the refusal (sampler_outcome). The union keeps a program when fit and test_ok, and sampler is 'ok'.
 
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET [K N]    SET: train, dev or held-out; K N takes the tasks at positions K, K + N, ... and writes fits-SET-K.jsonl. A restart skips the tasks the file has. With FITS_TASKS set (tasks separated by spaces), K N name only the output file, and the run takes those tasks.
   With FITS_REUSE set (fits files separated by commas, with or without the header line), a program that has a row (same task and text_sha) in one of those files, the first that has it, is not run: its row copies that row's assignments, fitting, fit, test_ok and why, and its cases are those of the current cases-SET.jsonl. The progress line of each task says how many of its programs were copied.
   With FITS_CAP=S set, each program runs in a forked child that is killed after S seconds. A killed program has fit and test_ok null and why 'timeout S s', and the union leaves it out with that reason.
+  ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET sampler K N     adds the sampler outcome to the programs of fits-SET.jsonl that have none: it writes sampler-SET-K.jsonl for the tasks at positions K, K + N, ..., and the merge takes it.
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET merge     writes fits-SET.jsonl from the fits-SET-K.jsonl files, sorted by task, after a first line {"t": "header", "code": {"sha", "dirty"}} (gold_union_code.py: the commit of the code that merged it). A reader of fits-SET.jsonl skips the lines that have `t`.
 """
 import glob, hashlib, importlib.util, json, os, re, select, signal, sys, time
@@ -182,6 +183,38 @@ def capped(env, task, text, tasks, task_json):
     return json.loads(got) if got else (None, None, None, 'timeout %ds' % CAP)
 
 
+def sampler_settings():
+    """The decode settings of the sampler: SETTINGS of model/study/sampler/live_try.py, read from its text (importing it loads the sampler)."""
+    import ast
+    tree = ast.parse((ROOT / 'model/study/sampler/live_try.py').read_text())
+    node = next(n.value for n in tree.body if isinstance(n, ast.Assign) and [t.id for t in n.targets if isinstance(t, ast.Name)] == ['SETTINGS'])
+    return eval(compile(ast.Expression(node), 'live_try.py', 'eval'), {'__builtins__': {}, 'dict': dict})  # a dict(...) of constants
+
+
+def sampler_outcome(env, task_json, text):
+    """How the sampler's decoder takes the program: 'ok' where every token steps and the decoder ends, else 'refused: <reason>', 'does not parse: <reason>' or 'not ended'. It decodes as live_try.py does: an open-world session of the task with no test output, the sampler's settings, and a 2 GiB session bound."""
+    _, arclog, _ = env
+    d = json.loads(json.dumps(task_json))
+    for t in d['test']:
+        t.pop('output', None)
+    sess = arclog.Session(arclog.Task.from_json(json.dumps(d), arclog.World.Open), arclog.DecodeSettings(**SAMPLER), session_bytes=2 << 30)
+    try:
+        ids, model, _ = arclog.StudyProgram.from_sexp(text, sess.settings).decode_stream()
+    except ValueError as e:
+        return 'does not parse: %s' % str(e)[:150]
+    dec = sess.decoder()
+    try:
+        for t, m in zip(ids, model):
+            if m:
+                dec.step(t)
+    except (arclog.Refusal, arclog.Fault) as e:
+        return 'refused: %s' % str(e)[:150]
+    return 'ok' if dec.ended else 'not ended'
+
+
+SAMPLER = sampler_settings()
+
+
 def reuse_of():
     """{task: {text_sha: program}} of the files of FITS_REUSE, the first file that has a program in place of a later one."""
     got = {}
@@ -199,12 +232,35 @@ def one(env, task, texts, tasks, reuse):
     for text, cases in texts.items():
         old = reuse.get(sha16(text))
         if old:
-            progs.append(dict(text_sha=old['text_sha'], cases=cases, **{k: old[k] for k in ('assignments', 'fitting', 'fit', 'test_ok', 'why')}))
+            progs.append(dict(text_sha=old['text_sha'], cases=cases, **{k: old[k] for k in ('assignments', 'fitting', 'fit', 'test_ok', 'why')},
+                              sampler=old.get('sampler') or sampler_outcome(env, task_json, text)))
             copied += 1
             continue
         n, k, ok, why = (capped if CAP else check)(env, task, text, tasks, task_json)
-        progs.append(dict(text_sha=sha16(text), cases=cases, assignments=n, fitting=k, fit=None if why else k > 0, test_ok=None if why else ok, why=why))
+        progs.append(dict(text_sha=sha16(text), cases=cases, assignments=n, fitting=k, fit=None if why else k > 0, test_ok=None if why else ok, why=why,
+                          sampler=sampler_outcome(env, task_json, text)))
     return dict(task=task, programs=progs), copied
+
+
+def sampler_run(set_name, k, n):
+    """Writes sampler-SET-K.jsonl: {task, text_sha, sampler} of each program of fits-SET.jsonl with no sampler outcome, for the tasks at positions K, K + N, ... A restart skips the tasks the file has."""
+    texts = {t: {sha16(x): x for x in v} for t, v in programs_of(set_name).items()}
+    rows = [r for r in rows_of(OUT + 'fits-%s.jsonl' % set_name) if r['task'] in texts]
+    mine = [r for i, r in enumerate(sorted(rows, key=lambda r: r['task'])) if i % n == k]
+    path = OUT + 'sampler-%s-%d.jsonl' % (set_name, k)
+    done = {json.loads(l)['task'] for l in open(path) if l.endswith('\n')} if os.path.exists(path) else set()
+    env, start = engine(), time.time()
+    with open(path, 'a') as f:
+        for i, r in enumerate(mine, 1):
+            if r['task'] in done:
+                continue
+            task_json = json.load(open(ROOT / 'data/tasks' / (r['task'] + '.json')))
+            got = [dict(task=r['task'], text_sha=x['text_sha'], sampler=sampler_outcome(env, task_json, texts[r['task']][x['text_sha']]))
+                   for x in r['programs'] if not x.get('sampler') and x['text_sha'] in texts[r['task']]]
+            f.write(''.join(json.dumps(g) + '\n' for g in got) or json.dumps(dict(task=r['task'], text_sha=None, sampler=None)) + '\n')
+            f.flush()
+            el = time.time() - start
+            print('%s %d/%d  refused %d/%d  %.0fs  eta %.0fs' % (r['task'], i, len(mine), sum(g['sampler'] != 'ok' for g in got), len(got), el, el / i * (len(mine) - i)), flush=True)
 
 
 def shard_files(set_name):
@@ -221,12 +277,19 @@ def rows_of(path):
 
 
 def merge(set_name):
-    got = {}
+    got, outcome = {}, {}
+    for p in sorted(glob.glob(OUT + 'sampler-%s-*.jsonl' % set_name)):  # sampler outcomes that sampler_run added to older rows
+        for l in open(p):
+            if l.endswith('\n'):
+                s = json.loads(l)
+                outcome[s['task'], s['text_sha']] = s['sampler']
     for p in shard_files(set_name):
         for r in rows_of(p):
             for x in r['programs']:
                 if x['why']:  # an older run wrote false here
                     x.update(fit=None, test_ok=None)
+                if not x.get('sampler') and outcome.get((r['task'], x['text_sha'])):
+                    x['sampler'] = outcome[r['task'], x['text_sha']]
             got[r['task']] = json.dumps(r) + '\n'
     if got:
         open(OUT + 'fits-%s.jsonl' % set_name, 'w').write(gold_union_code.header() + ''.join(got[t] for t in sorted(got)))
@@ -260,4 +323,9 @@ def run(set_name, shard=None):
 
 if __name__ == '__main__':
     a = sys.argv[1:]
-    merge(a[0]) if a[1:] == ['merge'] else run(a[0], (int(a[1]), int(a[2])) if a[2:] else None)
+    if a[1:] == ['merge']:
+        merge(a[0])
+    elif a[1:2] == ['sampler']:
+        sampler_run(a[0], int(a[2]), int(a[3]))
+    else:
+        run(a[0], (int(a[1]), int(a[2])) if a[2:] else None)
