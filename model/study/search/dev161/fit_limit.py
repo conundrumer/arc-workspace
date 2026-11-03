@@ -1,9 +1,9 @@
 """Sets a dev_run.py run's job limit to fit the machine, every --every seconds, from --start (HHMM, local time) on.
 
-    fit_limit.py RUN_FOLDER [--start 2245] [--every 120] [--min 3] [--max 12] [--job-gib 1.5]
+    fit_limit.py RUN_FOLDER [--start 2245] [--every 120] [--min 3] [--max 12] [--job-gib 1.5] [--reserve 0]
 
 The limit is the jobs running now plus the idle cores (the idle share of the second sample of `top -l 2 -n 0` times the core count, less
-one), held under the jobs that the free memory fits at --job-gib each. It prints each change, and ends when the run's results cover
+one, less --reserve, which leaves cores for another run), held under the jobs that the free memory fits at --job-gib each. It prints each change, and ends when the run's results cover
 every job (no worker of the run is left for 10 minutes).
 """
 import argparse
@@ -40,6 +40,7 @@ def main():
     ap.add_argument('--min', type=int, default=3)
     ap.add_argument('--max', type=int, default=12)
     ap.add_argument('--job-gib', type=float, default=1.5)
+    ap.add_argument('--reserve', type=int, default=0)
     a = ap.parse_args()
     run, quiet = Path(a.run), 0
     while time.strftime('%H%M') < a.start and time.strftime('%H%M') >= '1200':
@@ -47,7 +48,7 @@ def main():
     while quiet < 600:
         n = running(run)
         quiet = quiet + a.every if n == 0 else 0
-        want = n + int(idle_cores()) - 1
+        want = n + int(idle_cores()) - 1 - a.reserve
         fits = n + int(free_gib() / a.job_gib)
         limit = max(a.min, min(a.max, want, fits))
         try:
