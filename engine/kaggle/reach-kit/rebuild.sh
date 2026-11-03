@@ -14,6 +14,6 @@ python3 "$S/build.py" --code
 SAMPLER_CODE=$H/kit-union-read-79af0a4f2/model/study/sampler PYTHONPATH=$R/model/study/gold/cover_forms:$R/work/synth-kaggle/macsite13 \
   $R/scripts/run_heavy.py --cpus "$JOBS" --need soon $PY "$S/build_merged.py" --jobs "$JOBS" "$SET"
 $R/scripts/run_heavy.py --cpus "$JOBS" --need soon python3 "$S/build_map.py" "$SET" "$JOBS"
-SETS=$(ls records-*.jsonl | sed 's/records-\(.*\)\.jsonl/\1/' | grep -v prev | grep -vx training | tr '\n' ' ')  # training's records serve maps-training.jsonl, not the kit's gold
+SETS=$(ls records-*.jsonl | sed 's/records-\(.*\)\.jsonl/\1/' | grep -v '\.' | grep -vx training | tr '\n' ' ')  # training's records serve maps-training.jsonl, not the kit's gold
 python3 "$S/build.py" $SETS
 python3 "$S/kit_sha.py"
