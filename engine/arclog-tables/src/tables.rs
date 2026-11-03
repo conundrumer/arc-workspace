@@ -5,9 +5,7 @@
 //! gets no table: an input
 //! written with a body of one positive atom and any number of `NOT` atoms, each
 //! of a fact relation, a declared relation or an output, whose rows the tables
-//! of those relations hold, the `adjacent`
-//! output of a Connectivity instance and the `predecessor` output of a
-//! CellDistance instance, which no clause reads. Each table gives its
+//! of those relations hold. Each table gives its
 //! point, its relation's slot, its columns' names, types, slots and labels, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
@@ -651,15 +649,11 @@ pub(crate) fn materialized_slots<'a>(program:&'a Program,written:&'a arclog::str
 /// with a body of one positive atom and any number of `NOT` atoms, each of a
 /// fact relation, a declared relation or an output, whose rows are those of
 /// the positive atom with its columns renamed, dropped or joined, less the rows
-/// that a negated atom matches; the `adjacent` output of a Connectivity instance and the
-/// `predecessor` output of a CellDistance instance, which no clause reads.
+/// that a negated atom matches.
 pub fn gives_no_table(program: &Program, form: &NodePath, declared: &ProgramRelation) -> bool {
     let ProgramRelation::Output(name) = declared else { return false };
     let [OutputStep::Port(port)] = &name.path[..] else { return false };
     let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(program), form) else { return false };
-    if matches!((written.component.0.as_ref(), port.0.as_ref()), ("Connectivity", "adjacent") | ("CellDistance", "predecessor")) {
-        return true;
-    }
     let keyed = written.key.iter().flat_map(|key| key.value().inputs.iter());
     keyed.chain(written.inputs.iter()).any(|input| {
         let input = input.value();
