@@ -11,7 +11,7 @@ H=$REPO/scripts/run_heavy.py
 cd "$REPO"
 export GOLD_UNION_DIR=${GOLD_UNION_DIR:?GOLD_UNION_DIR names the union folder}
 echo "== $SPLIT records $(date +%T)"
-SITE=$W SAMPLER_CODE=$KIT/model/study/sampler $H --cpus "${JOBS:-4}" --need soon "$REPO/model/study/gold/cover_forms/gold_union_env.sh" "$REPO/engine/kaggle/reach-kit/build_merged.py" --jobs "${JOBS:-4}" "$SPLIT" 2>&1 | grep -v Warning
+SITE=$W SAMPLER_CODE=$KIT/model/study/sampler $H --cpus "${JOBS:-4}" --need soon "$REPO/model/study/gold/cover_forms/gold_union_env.sh" "$REPO/engine/kaggle/reach-kit/build_merged.py" --jobs "${JOBS:-4}" "$SPLIT" 2>&1 | grep --line-buffered -v Warning
 echo "== $SPLIT rows $(date +%T)"
-$H --cpus "${JOBS:-4}" --need soon $PY -u model/study/samples/rows_replay.py "$SPLIT" "${JOBS:-4}" --release "$KIT" 2>&1 | grep -v Warning
+$H --cpus "${JOBS:-4}" --need soon $PY -u model/study/samples/rows_replay.py "$SPLIT" "${JOBS:-4}" --release "$KIT" 2>&1 | grep --line-buffered -v Warning
 echo "== $SPLIT done $(date +%T)"
