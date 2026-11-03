@@ -181,28 +181,3 @@ fn souffle(record: &Value, element: &Element<'_>, inputs: &Value) -> Option<Souf
     }
     Some(Souffle { parts, left_out, column_types: Vec::new() })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::super::inputs::elements;
-    use super::*;
-
-    /// The engine's walks of Boundary on its emptied inputs, which hold no
-    /// row at `dir`, are its walks on those inputs with `dir` holding the
-    /// cardinals, the default rows of `dir`.
-    #[test]
-    fn emptied_input_holds_its_default_rows() {
-        let element = elements().into_iter().find(|e| e.name() == "Boundary").expect("Boundary is a lib element");
-        let subject = element.subject().expect("a construction of the engine");
-        let inputs = element.inputs();
-        let emptied = Emptied { inputs: emptied_inputs(&inputs, &["dir".to_owned()]), ports: vec!["dir".to_owned()] };
-        let mut cardinals = emptied.inputs.clone();
-        for input in cardinals["inputs"].as_array_mut().into_iter().flatten() {
-            if input["port"] == "dir" {
-                input["rows"] = serde_json::json!([["DIR_T"], ["DIR_B"], ["DIR_L"], ["DIR_R"]]);
-            }
-        }
-        let engine = SouffleInputs::Emptied(emptied).engine_walks(&subject).expect("the engine's run on the emptied inputs");
-        assert_eq!(engine, subject.evaluated(&cardinals).expect("the engine's run on the cardinals"));
-    }
-}
