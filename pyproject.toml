@@ -3,7 +3,10 @@ name = "arc"
 version = "0.1.0"
 description = "ARC-AGI-2 work"
 requires-python = ">=3.12,<3.13"
-dependencies = ["zstandard==0.23.0"]
+dependencies = [
+    "lightgbm==4.6.0",
+    "zstandard==0.23.0",
+]
 
 [build-system]
 requires = ["hatchling"]
