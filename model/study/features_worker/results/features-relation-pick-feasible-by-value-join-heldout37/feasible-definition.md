@@ -1,0 +1,12 @@
+A relation pick's feasible set is the set of options, among those alive by column type, that can give a row with the labels bound at the pick, on the task's own train examples. The test input is not read.
+
+- **Bound labels.** The labels of the clause's prefix at the pick. Their values are the rows of the prefix's table, from `arclog.step_tables` at that clause.
+- **Column map.** One column of the relation, or one field of a record column, set to one bound label. The decoder decides which label may stand at which column, by its own type rules. Other columns stay unnamed. A column that the atom must name, and that takes no fresh label, takes a label or `0`.
+- **Join.** The relation is feasible on an example where some map gives a row of the prefix joined with the relation, by the engine's row count on that clause. A map of more labels gives a subset of the rows of a map of fewer, so one label per map is enough for this test.
+- **Relation that shares no bound label.** At a later atom, a relation with no column that a bound label can stand at is out. The census calls it dead by join, so it is out of the alive set too.
+- **First atom.** No label is bound, and the relation stands alone: it is feasible where its own atom gives a row.
+- **OR branch.** The engine gives no table inside an OR, so the walk reads the flat clause that the branch stands for: the atoms before the OR and the branch's atoms so far, with labels renumbered. A label that an earlier branch made and this branch has not named is not bound. The first atom of a branch of an OR at the body's start stands alone.
+- **NOT.** The NOT token is one option, in the set where the prefix has a row. At the relation pick after it, a map must remove a row and keep a row on one example. A map under NOT may hold up to 3 labels, since a map of more labels removes fewer rows. A column under NOT takes no fresh label. The `keep` set drops the need to remove a row.
+- **Comparison.** An operand pair that the decoder admits must remove a row and keep a row on one example, or be `(= *X Y)`, which makes a label and keeps every row. The `keep` set drops the need to remove a row.
+- **Across examples.** The `any` set needs a map that gives a row on at least one train example. The `all` set needs one map that gives a row on every train example where the prefix has a row. The per-example size counts the options that have some map on that example alone.
+- **Undetermined.** An option with no row, and with a stop, a fault, or the cap of 120 tables on its maps, stays in each set and is counted.
