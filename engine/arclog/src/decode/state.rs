@@ -42,7 +42,7 @@ use crate::registry::Registry;
 use crate::resolver::columns::example;
 use crate::resolver::{resolve, resolve_in_progress, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
-use crate::resolver::form_columns::{demonstrated_columns, rigid_outputs};
+use crate::resolver::form_columns::{demonstrated_columns, part_steps, rigid_outputs};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
 use crate::stream::{Control, Token};
 use crate::types::{Meet, ValueType};
@@ -1567,7 +1567,12 @@ impl State {
             }
             (RigidStage::Parts, _) if *token == Token::Control(Control::End) => Ok(Offer::Close { consumed: true }),
             (RigidStage::Parts, _) if is_relation(token) => {
+                let taken: Vec<OutputStep> = rigid.parts.iter().filter_map(|part| part_steps(&part.value().relation)?.into_iter().next()).collect();
                 self.open_atom(context, token)?;
+                let begins = self.open_relation().and_then(|relation| part_steps(&relation)?.into_iter().next());
+                if begins.is_some_and(|step| taken.contains(&step)) {
+                    return Err("the output of a part of a `RIGID_DET` form begins with a step that the output of an earlier part begins with");
+                }
                 Ok(Offer::Taken)
             }
             _ => Err("a `RIGID_DET` form's parts are atoms, then its `END`"),
