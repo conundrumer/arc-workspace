@@ -20,6 +20,7 @@ SAMPLES = '/Users/davidlu/code/arc-workspace/model/study/samples'
 OUTD = '/Users/davidlu/code/arc-workspace/work/lm/data-study/samples'
 SITE_ROWS = '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/site-exp11'  # arclog with the export by assignment, and arclog_features
 ROWS_RSS_MIB = 3072  # the row store run's worker stops past 3 GiB
+ROWS_DEADLINE_SECONDS = 600  # the row store run's replay deadline per request: the run is offline, and the search's 10 s loses slow programs' tables
 ENV = dict(P_DAG='1', ORDER_FREE='col,tie,key', ARCLOG_IDENT_SOURCE='value', ARC_SESSION_SHARE='.9', SEARCH_LIMIT_SHARE='.65', ONE_REPAIR='30', CHOOSE_LIFT='0',
            POOL_CLAUSES='search', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')  # the job lines of the source kit
 
@@ -37,7 +38,7 @@ def one(rec, tmp, rows_out=None):
     env = dict(os.environ, **ENV, PYTHONPATH=KIT + '/model/study/sampler:' + SITE, ARC_MODELS=KIT + '/models-cf', ARC_POLICY=KIT + '/policy',
                POLICY_MODEL=KIT + '/policy/policy_model.pkl', ARC_STORE=d + '/store', ARC_GOLD_UNION=d + '/gold.json', ARC_UNION_MAP_OUT=out)
     if rows_out:
-        env.update(ARC_SAMPLES_PATH=SAMPLES, ARC_UNION_ROWS_OUT=rows_out, ARC_UNION_ROWS_SRC=str(rec.get('src')), ARC_UNION_ROWS_SPLIT=rec['split'], PYTHONPATH=env['PYTHONPATH'] + ':' + SAMPLES)
+        env.update(ARC_DEADLINE_SECONDS=str(ROWS_DEADLINE_SECONDS), ARC_SAMPLES_PATH=SAMPLES, ARC_UNION_ROWS_OUT=rows_out, ARC_UNION_ROWS_SRC=str(rec.get('src')), ARC_UNION_ROWS_SPLIT=rec['split'], PYTHONPATH=env['PYTHONPATH'] + ':' + SAMPLES)
     t0 = time.time()
     p = subprocess.run([PY, '-u', KIT + '/model/study/sampler/kaggle_worker.py', '--task', task, '--out', d + '/out.jsonl', '--beat', d + '/beat',
                         '--seconds', '86400', '--seed', '1', '--rss-limit-mib', str(ROWS_RSS_MIB if rows_out else 8000)], env=env, capture_output=True, text=True)

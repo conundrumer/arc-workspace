@@ -195,6 +195,10 @@ def records(want):
     return [last[t] for t in task_order(want) if t in last and t not in aside]
 
 
+LIVE_DEADLINE = "SETTINGS = dict(deadline_seconds=10.0,"
+LIVE_DEADLINE_ENV = "SETTINGS = dict(deadline_seconds=float(os.environ.get('ARC_DEADLINE_SECONDS', 10.0)),"  # build_map's row store run sets a larger one
+
+
 def patch(path, old, new):
     s = open(path).read()
     assert s.count(old) == 1, (path, old[:60])
@@ -208,13 +212,14 @@ def main():
     if not os.path.exists(KIT):
         shutil.copytree(SRC, KIT, ignore=shutil.ignore_patterns('out', 'store', '__pycache__'), symlinks=True)
         os.makedirs(KIT + '/out')
-    for f in ('model/study/sampler/kaggle_worker.py', 'run3600.sh', 'run14.sh'):  # the patched files, from the source kit each build
+    for f in ('model/study/sampler/kaggle_worker.py', 'model/study/sampler/live_try.py', 'run3600.sh', 'run14.sh'):  # the patched files, from the source kit each build
         shutil.copy2(SRC + '/' + f, KIT + '/' + f)
     patch(KIT + '/model/study/sampler/kaggle_worker.py', WORKER_GOLD, WORKER_UNION)
     patch(KIT + '/model/study/sampler/kaggle_worker.py', WORKER_OPEN, WORKER_OPEN_U)
     patch(KIT + '/model/study/sampler/kaggle_worker.py', WORKER_COVER, WORKER_COVER_U)
     for r in ('run3600.sh', 'run14.sh'):
         patch(KIT + '/' + r, RUN_ENV, RUN_ENV_U)
+    patch(KIT + '/model/study/sampler/live_try.py', LIVE_DEADLINE, LIVE_DEADLINE_ENV)
     if sets == ['--code']:
         return
     recs, sources = [], {}
