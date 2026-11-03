@@ -22,7 +22,7 @@ ap.add_argument('--threads', default='2')
 ap.add_argument('--iters', type=int, default=200)
 a = ap.parse_args()
 os.environ.setdefault('OMP_NUM_THREADS', a.threads)
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22/scripts'  # the data folder
 sys.path.insert(0, HERE)
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/')
 import numpy as np

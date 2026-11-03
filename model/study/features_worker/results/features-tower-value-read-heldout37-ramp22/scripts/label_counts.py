@@ -1,6 +1,6 @@
 """Label counts per run and per task from rows/<set>/*.json."""
 import glob, json, os, sys, collections, statistics as st
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22/scripts')
 import common as C
 for which in ('fit', 'read'):
     rs = [json.load(open(p))['info'] for p in sorted(glob.glob(C.REC + '/rows/%s/*.json' % which))]

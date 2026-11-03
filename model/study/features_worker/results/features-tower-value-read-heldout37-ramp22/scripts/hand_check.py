@@ -1,7 +1,7 @@
 """Prints a few nodes of one read run with their parents and cover ids, read straight from the bank and the cover file, to check labels by hand."""
 import json, sys, os
 import numpy as np
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22/scripts')
 import common as C
 task, seed = sys.argv[1], sys.argv[2]
 arm = sys.argv[3] if len(sys.argv) > 3 else None

@@ -14,7 +14,7 @@ import sys
 import time
 
 T0 = time.time()
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22/scripts'  # the data folder
 REC = os.path.dirname(HERE)
 KIT = REC + '/kit/search-refit-r1-kit-0729e4943/'
 FEAT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'

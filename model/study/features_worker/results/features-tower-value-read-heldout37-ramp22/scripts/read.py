@@ -22,7 +22,7 @@ import time
 import numpy as np
 
 sys.dont_write_bytecode = True
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22/scripts'  # the data folder
 sys.path.insert(0, HERE)
 import common as C
 

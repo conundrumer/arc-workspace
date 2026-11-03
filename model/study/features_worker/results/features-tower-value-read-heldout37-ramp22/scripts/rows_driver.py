@@ -4,7 +4,7 @@
 Needs rows/read/*.json (build_labels.py read) for the form counts.
 """
 import argparse, glob, json, os, subprocess, sys, time
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22/scripts'  # the data folder
 sys.path.insert(0, HERE)
 import common as C
 ap = argparse.ArgumentParser()

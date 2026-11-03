@@ -4,7 +4,7 @@ import json
 import os
 import pickle
 
-REC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REC = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-value-read-heldout37-ramp22'  # the data folder
 DS = '/Users/davidlu/code/arc-workspace/work/lm/data-study/'
 R1 = DS + 'sampler/search-worker/runs/search-refit-r1-heldout37-ramp22-2seeds-600s-0729e4943/'
 N600 = DS + 'sampler/sampler-worker/sampler-pool-dag-nodes-train50-600s/out/nodes_s0/'
