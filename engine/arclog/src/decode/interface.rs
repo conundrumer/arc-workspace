@@ -108,6 +108,28 @@ impl SubBody {
     }
 }
 
+/// What identifies the sub-body of the clause in progress at a state of a
+/// decode ([`Decoder::sub_body_key`]).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SubBodyKey {
+    /// The source of the clause with the sub-body's conjuncts as its body: two
+    /// states with equal finished forms and equal sources give equal sub-bodies.
+    pub source: Vec<u8>,
+    /// The conjunct in progress where the sub-body leaves it out.
+    pub left_out: Option<LeftOut>,
+}
+
+/// A conjunct in progress that a sub-body leaves out.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LeftOut {
+    /// An atom of a relation with modes, no mode of which has a site at each
+    /// of its bound columns yet.
+    Atom,
+    /// A conjunct that is no atom: a `NOT`, an `OR`, an `IF`, an `ALL` or a
+    /// constraint, before its end.
+    Conjunct,
+}
+
 /// A widening operation bound to its checked owner's evaluation scope.
 /// Its fields are private: callers obtain it from [`Decoder::widening`],
 /// never from a guessed clause keyword or the reads left in one branch.
@@ -370,6 +392,48 @@ impl<'a> Decoder<'a> {
         let open = open?;
         let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
         let OpenClause { clause, kept, .. } = open_clause(last, &open, self.context.registry)?;
+        let labels = atom_labels(&kept);
+        Some(self.body_of(finished, clause, kept, labels))
+    }
+
+    /// What identifies the sub-body that [`Decoder::sub_body`] gives at this
+    /// state, with no evaluation; `None` where no clause is in progress.
+    pub fn sub_body_key(&self) -> Option<SubBodyKey> {
+        let (program, open) = self.state.partial()?;
+        let open = open?;
+        let (last, _) = program.value().forms.split_last()?;
+        let OpenClause { clause, kept, open_at } = open_clause(last, &open, self.context.registry)?;
+        let body = &clause.body;
+        let left_out = match open_at.and_then(|at| body.value().conjuncts.get(at)) {
+            Some(open) if complete_or_atoms(body, open_at, self.context.registry).len() < body.value().conjuncts.len() => Some(match open {
+                Conjunct::Atom(_) => LeftOut::Atom,
+                _ => LeftOut::Conjunct,
+            }),
+            _ => None,
+        };
+        Some(SubBodyKey { source: super::prefix_key::sub_body_key(&clause, &kept), left_out })
+    }
+
+    /// The sub-body of the clause in progress less its open conjunct, where
+    /// [`Decoder::sub_body`] holds that conjunct: the sub-body of its complete
+    /// conjuncts, as `sub_body` builds one. `None` where no clause is in
+    /// progress, no conjunct of it is open, `sub_body` leaves the open
+    /// conjunct out, or the open conjunct is the only one.
+    pub fn complete_sub_body(&self) -> Option<Outcome<SubBody>> {
+        let (program, open) = self.state.partial()?;
+        let open = open?;
+        let (last, finished) = program.value().forms.split_last()?;
+        let OpenClause { clause, mut kept, open_at } = open_clause(last, &open, self.context.registry)?;
+        let conjuncts = clause.body.value().conjuncts.len();
+        // The open conjunct is the last of its body, and so the last of the sub-body where the sub-body holds it.
+        let open_at = open_at.filter(|&at| at + 1 == conjuncts)?;
+        if complete_or_atoms(&clause.body, Some(open_at), self.context.registry).len() < conjuncts {
+            return None;
+        }
+        kept.pop();
+        if kept.is_empty() {
+            return None;
+        }
         let labels = atom_labels(&kept);
         Some(self.body_of(finished, clause, kept, labels))
     }

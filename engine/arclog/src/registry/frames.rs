@@ -112,6 +112,9 @@ impl Registry {
     /// The rule of the column `column` of the output `output` of the component
     /// `component`, or `None` where the lib declares no such column or the
     /// column has no frame. A column that no `frames` form names takes
+    /// `(of <the input columns that the `copies` rows copy into it>)`, each as
+    /// `<input>.<column>`, where a row maps it, since its values are copies of
+    /// those columns' values, and otherwise
     /// `(of <each column that has a frame, other than key, of the component's inputs>)`.
     pub fn output_frame(&self, component: &LibName, output: &PortName, column: &ColumnName) -> Option<FrameRule> {
         let LibEntry::Component(component) = self.entry(component)? else { return None };
@@ -121,6 +124,19 @@ impl Registry {
         }
         if let Some(rule) = declared_rule(&output.frames, column) {
             return Some(rule.clone());
+        }
+        let mut copied: Vec<FrameColumn> = Vec::new();
+        for from in output.copies.iter().flat_map(|row| row.alternatives.iter()) {
+            let input = &component.inputs[from.input].port;
+            for &(from_at, _) in from.columns.iter().filter(|&&(_, to_at)| output.columns[to_at].name == *column) {
+                let source = FrameColumn { input: Some(input.name.clone()), column: input.columns[from_at].name.clone() };
+                if !copied.contains(&source) {
+                    copied.push(source);
+                }
+            }
+        }
+        if !copied.is_empty() {
+            return Some(FrameRule { makes: false, of: copied.into(), size: None });
         }
         let of = component.inputs.iter().flat_map(|input| {
             input.port.columns.iter().filter(|own| !is_key(own) && own.has_frame()).map(|own| FrameColumn { input: Some(input.port.name.clone()), column: own.name.clone() })

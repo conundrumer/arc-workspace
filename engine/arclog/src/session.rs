@@ -834,6 +834,16 @@ impl TaskSession {
         }
     }
 
+    /// This session with fact relations of its own, built for the task of the
+    /// evaluation that uses it. The intern table and the result cache stay
+    /// shared: an entry of the result cache is keyed by the rows it reads, so
+    /// it holds for every task. [`TaskSession::fact_relation`] keeps one
+    /// relation for each fact and example, so an evaluation over a task other
+    /// than the session's uses a session from this method.
+    pub(crate) fn with_own_facts(&self) -> Self {
+        TaskSession { facts: Arc::default(), ..self.clone() }
+    }
+
     /// The domains that the liveness walks of this session's decodes keep.
     pub(crate) fn det_probes(&self) -> &OnceLock<crate::decode::det_memo::ProbeMemo> {
         &self.det_probes

@@ -6,7 +6,7 @@ use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
-use crate::registry::{LibName, Registry};
+use crate::registry::{ColumnType, LibEntry, LibName, Registry};
 use crate::resolver::registry_columns::{is_domain, proposer_columns};
 use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, ColumnName, Conjunct, Form, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
 
@@ -32,9 +32,9 @@ impl Check for PicksCheck {
     ///   with `ONE` marks;
     /// - at a `never` body, a body that holds fewer than two positive atoms
     ///   of the relation of the first positive atom of the `from` clause;
-    /// - a form whose every `never` body states only that one candidate
-    ///   stands in two rows, which `ONE` marks state, as `states_one`
-    ///   gives.
+    /// - a form whose every `never` body states only that some columns
+    ///   determine a row of the pick, which `ONE` marks state, as
+    ///   `states_one` gives.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         refusals(input.form, true, input.scope.registry)
     }
@@ -57,6 +57,9 @@ fn refusals(form: &Form, ended: bool, registry: &Registry) -> CheckResult {
         (NodeRef::Clause(clause), _) if ended && !set_mark_fits(clause, registry) => {
             refused.push((at.clone(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
         }
+        (NodeRef::Clause(clause), _) if !proposers_fit(clause, registry) => {
+            refused.push((at.clone(), "each proposer of a clause has, at each column of its first proposer, a type that joins that proposer's type"))
+        }
         (NodeRef::Choose(choose), _) if ended => choose_refusals(choose, at, &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
             refused.push((at.clone(), "`ONE` stands at a clause's top level, after its body"));
@@ -68,6 +71,25 @@ fn refusals(form: &Form, ended: bool, registry: &Registry) -> CheckResult {
     }
     let order = CanonicalOrder::of(form, &mut SearchBudget::new());
     result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+}
+
+/// Whether each proposer of `clause` after the first has, at each column of
+/// the first proposer, a type that joins the first proposer's type there,
+/// where both types are fixed. The rows of each other proposer map by position
+/// onto the first proposer's columns (`docs/engine/determination.md`), so a
+/// value of another type would stand in a column of the first one's type.
+fn proposers_fit(clause: &Clause, registry: &Registry) -> bool {
+    let columns = |name: &LibName| match registry.entry(name) {
+        Some(LibEntry::Proposer(proposer)) => Some(&proposer.columns),
+        _ => None,
+    };
+    let Some(first) = clause.proposers.first().and_then(columns) else { return true };
+    clause.proposers[1..].iter().filter_map(columns).all(|other| {
+        other.iter().zip(first.iter()).all(|(a, b)| match (&a.ty, &b.ty) {
+            (ColumnType::Fixed(a), ColumnType::Fixed(b)) => a.join(b).is_some(),
+            _ => true,
+        })
+    })
 }
 
 /// Whether the `SET` mark of `clause`, if it has one, stands after a body of
@@ -98,7 +120,7 @@ fn choose_refusals(choose: &Choose, at: &NodePath, out: &mut Vec<(NodePath, &str
         }
     }
     if states_one(choose) {
-        out.push((at.clone(), "every `never` says that one candidate stands in two rows, so `ONE` marks state the pick"));
+        out.push((at.clone(), "every `never` says only that some columns determine a row of the pick, and none pairs two `for` rows at one value of a candidate column, so `ONE` marks state the pick"));
     }
 }
 
@@ -115,12 +137,19 @@ fn positive_atoms(body: &Body) -> impl Iterator<Item = &Atom> {
 /// body is two atoms of the candidate's relation on the candidate's sites,
 /// and one group of `!=` constraints, one constraint or an `OR` whose every
 /// branch is one, over exactly the pairs of labels at which the two atoms
-/// differ. A form with no `never` body is such a pick.
+/// differ, where the two atoms join at no site of a candidate column or
+/// differ at no site of a `for` column. Two atoms that join at a candidate
+/// column and differ at a `for` column say that a value of that column
+/// stands in at most one row, which no `ONE` mark states, as a `ONE` mark
+/// keeps exactly one row for each value of its key. A form with no `never`
+/// body is such a pick.
 fn states_one(choose: &Choose) -> bool {
     let [Conjunct::Atom(candidate)] = &choose.from.value().conjuncts[..] else { return false };
     let candidate = candidate.value();
     let Some(sites) = site_labels(candidate) else { return false };
     let keys: Vec<&SiteKey<'_>> = sites.iter().map(|(key, _)| key).collect();
+    let row_labels: Vec<LabelId> = choose.rows.iter().flat_map(|rows| rows.columns.iter().map(|column| column.label)).collect();
+    let row_key = |key: &SiteKey<'_>| sites.iter().any(|(own, label)| own == key && row_labels.contains(label));
     choose.never.iter().all(|never| {
         let (atoms, rest): (Vec<&Conjunct>, Vec<&Conjunct>) = never.value().conjuncts.iter().partition(|conjunct| match conjunct {
             Conjunct::Atom(atom) => atom.value().relation == candidate.relation,
@@ -132,11 +161,18 @@ fn states_one(choose: &Choose) -> bool {
             return false;
         }
         let mut differ: Vec<(u32, u32)> = Vec::new();
+        let (mut joins_candidate, mut differs_at_row) = (false, false);
         for (key, label) in &first {
             let other = second.iter().find(|(own, _)| own == key).map(|(_, label)| *label).expect("the two atoms have the same sites");
-            if other != *label {
+            if other == *label {
+                joins_candidate |= !row_key(key);
+            } else {
+                differs_at_row |= row_key(key);
                 differ.push(pair(*label, other));
             }
+        }
+        if joins_candidate && differs_at_row {
+            return false;
         }
         let [group] = &rest[..] else { return false };
         let Some(group) = inequalities(group) else { return false };

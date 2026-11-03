@@ -107,6 +107,18 @@ pub(super) fn clause_cut_key(form: &Form, conjuncts: usize) -> Option<Vec<u8>> {
     Some(source.0)
 }
 
+/// The key of the clause `clause` with the body `kept` in place of its own:
+/// with equal finished forms before it, equal keys give equal sub-bodies
+/// ([`super::Decoder::sub_body`]), whose columns `kept` gives.
+pub(super) fn sub_body_key(clause: &Clause, kept: &[Conjunct]) -> Vec<u8> {
+    let mut source = Source::default();
+    source.scalar(&clause.keyword); source.scalar(&clause.derives); source.scalar(&clause.gloss);
+    source.scalar(&clause.proposers); source.scalar(&clause.ones); source.scalar(&clause.set);
+    source.scalar(&kept.len());
+    for conjunct in kept { source.conjunct(conjunct); }
+    source.0
+}
+
 /// The key of the prefix whose last form is `form`, with its open node at
 /// `open`: each field of the form that the form's kind holds, in source
 /// order, and the path. Equal keys give the checks equal input: they read

@@ -22,6 +22,7 @@ use crate::constructions;
 use crate::errors::{settled, Fault, Refusal};
 use crate::results::{assigned, grid_rows, rows_view, PyAssigned, PyConsistency, PyProjection, PyProjections};
 use crate::session::SessionData;
+use crate::study::{written_query_hash, finished_query};
 use crate::vocabulary::PyVocabulary;
 
 /// The thread pool of the batch step, built once.
@@ -41,7 +42,7 @@ type StepResult = (Vec<u32>, Option<PyConsistency>, Option<PyConsistency>);
 /// `Arc` that outlives the decode: `decoder` is declared before `data`, so
 /// it drops first, and the `'static` of its type stands for the lifetime of
 /// that `Arc`. `decoder` is `None` only inside [`step_batch`]'s call.
-#[pyclass(name = "Decoder", module = "arclog")]
+#[pyclass(name = "Decoder", module = "arclog", weakref)]
 pub struct PyDecoder {
     decoder: Option<Decoder<'static>>,
     data: Arc<SessionData>,
@@ -277,6 +278,33 @@ impl PyDecoder {
     fn trace_form(&self, top_k: bool) -> String {
         let decoder = self.decoder();
         trace_form(decoder.trace(), decoder.vocabulary(), &TraceFormOptions { top_k, ..TraceFormOptions::default() })
+    }
+
+    /// The hash of the resolver's content of the finished query at
+    /// `index`: free of the names that the scope gives its tables. Index -1
+    /// is the last finished query.
+    #[pyo3(signature = (index=-1))]
+    fn query_hash(&self, index: isize) -> PyResult<u128> {
+        let decoder = self.decoder();
+        let (position, _) = finished_query(decoder.program(), index)?;
+        decoder.query_hash(position).map(|hash| hash.0).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))
+    }
+
+    /// The bytes that `query_hash` hashes, for the finished query at `index`.
+    #[pyo3(signature = (index=-1))]
+    fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
+        let decoder = self.decoder();
+        let (position, _) = finished_query(decoder.program(), index)?;
+        let content = decoder.query_content(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        Ok(PyBytes::new(py, content.canonical_bytes()))
+    }
+
+    /// The canonical hash of the finished query at `index`, with the
+    /// names as written. Index -1 is the last finished query.
+    #[pyo3(signature = (index=-1))]
+    fn written_query_hash(&self, index: isize) -> PyResult<u128> {
+        let (_, query) = finished_query(self.decoder().program(), index)?;
+        Ok(written_query_hash(query).0)
     }
 
     /// The program so far, as an arclog file.

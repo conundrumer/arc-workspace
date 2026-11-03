@@ -47,6 +47,22 @@ pub trait NameWriter {
     /// no [`super::RelationRef`] refers to, so they are written as the file
     /// writes them and never pass through this method.
     fn write_column(&self, relation: &super::RelationRef, column: &[super::ColumnName], out: &mut CanonicalWriter);
+
+    /// The count of the other orders of the columns of `relation` under
+    /// which its content is the same, as a symmetry of the clause that
+    /// derives it gives them. A read of `relation` reads the same rows in
+    /// each of those orders.
+    fn column_orders(&self, _relation: &super::RelationRef) -> usize {
+        0
+    }
+
+    /// Writes a column of `relation` as [`NameWriter::write_column`] does,
+    /// at its position in the order `order` of the columns of `relation`:
+    /// `0` for the order of its rows, and from `1` each order that
+    /// [`NameWriter::column_orders`] counts.
+    fn write_column_in(&self, relation: &super::RelationRef, column: &[super::ColumnName], _order: usize, out: &mut CanonicalWriter) {
+        self.write_column(relation, column, out);
+    }
 }
 
 /// The relation whose columns a `DEMO_RULE` form's fields are: its
@@ -232,7 +248,6 @@ pub(super) enum Tag {
     Site,
     ArgLabel,
     ArgField,
-    Fresh,
     Join,
     Key,
     Zero,
@@ -485,35 +500,34 @@ pub(super) fn forms_root(cx: &mut Context, out: &mut CanonicalWriter, parent: No
 
 pub(super) fn label_use(cx: &Context, out: &mut CanonicalWriter, label: LabelUse) {
     match label {
-        LabelUse::Fresh(id) => {
-            out.tag(Tag::Fresh);
-            cx.label(out, id);
-        }
-        LabelUse::Join(id) => {
+        // The `*` stands at the first site in written order, so it moves with
+        // a reorder and is not part of the form.
+        LabelUse::Fresh(id) | LabelUse::Join(id) => {
             out.tag(Tag::Join);
             cx.label(out, id);
         }
+        // The `^` stands at the first site in written order too, so it moves with a reorder of sites, atoms or
+        // branches. The key's columns, which the form writes with the labels' positions, hold which labels are the key's.
         LabelUse::Key(id) => {
-            out.tag(Tag::Key);
+            out.tag(Tag::Join);
             cx.label(out, id);
         }
         LabelUse::Zero => out.tag(Tag::Zero),
     }
 }
 
-/// Normalize converse comparisons; equality with a fresh first operand stays
-/// directional because it binds that operand.
+/// Normalize converse comparisons; equality and inequality are symmetric,
+/// whichever operand the `*` stands on.
 pub(crate) fn normalized_constraint(c:&Constraint)->(ConstraintOp,[Option<ConstraintLabel>;2],bool) {
     let operands=[Some(c.first),constraint_second(c)];
     match c.op {
         ConstraintOp::Gt=>(ConstraintOp::Lt,[operands[1],operands[0]],false),
         ConstraintOp::Ge=>(ConstraintOp::Le,[operands[1],operands[0]],false),
-        op=>(op,operands,matches!(op,ConstraintOp::Eq|ConstraintOp::Ne) && !c.first.fresh),
+        op=>(op,operands,matches!(op,ConstraintOp::Eq|ConstraintOp::Ne)),
     }
 }
 
 pub(super) fn constraint_label(cx: &Context, out: &mut CanonicalWriter, label: ConstraintLabel) {
-    out.flag(label.fresh);
     cx.label(out, label.label);
 }
 
@@ -827,6 +841,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
                 }
             }
             Open::Instance(instance) => {
+                self.head_fields = HeadFields::default();
                 out.tag(Tag::Instance);
                 names.write_own(&instance.name.0, out);
                 names.write_name(&RelationRef::Lib(instance.component.clone()), out);
@@ -866,7 +881,6 @@ impl<'a> ScopeSink<'a> for Context<'_> {
             Open::Or => out.tag(Tag::Or),
             Open::If => out.tag(Tag::If),
             Open::All => out.tag(Tag::All),
-            Open::One(one) => out.len(one.key.len()),
         }
     }
 
@@ -874,8 +888,8 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         Context::child(self, parent, child, visit);
     }
 
-    /// Writes `members` sorted by the bytes of their forms, and records their
-    /// order.
+    /// Writes `members` sorted by the bytes of their forms, less those at
+    /// `repeats`, and records the order of all of them.
     ///
     /// The recorded order maps each canonical position to a member's index
     /// in `members`, and [`CanonicalOrder`] reads a step at `parent` as a
@@ -888,7 +902,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
     /// among the children of `parent` is not its index in `members`, or
     /// `members` does not hold every child of `parent`, a fault of the path
     /// table or of the form writer.
-    fn members<T>(&mut self,_at:(), parent: NodeRef<'a>, members: &'a [T], pinned:&[usize],node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, (), &'a T)) {
+    fn members<T>(&mut self,_at:(), parent: NodeRef<'a>, members: &'a [T], pinned:&[usize],repeats:&[usize],node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, (), &'a T)) {
         let mut forms: Vec<(usize,Vec<u8>, u32)> = Vec::with_capacity(members.len());
         for (member, index) in members.iter().zip(0u32..) {
             let outer = std::mem::take(&mut self.out);
@@ -905,10 +919,15 @@ impl<'a> ScopeSink<'a> for Context<'_> {
             assert_eq!(members.len(), parent.children().len(), "{CHILD_FAULT}");
             order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_,_, index)| *index).collect());
         }
-        self.out.len(forms.len());
-        for (_,bytes, _) in &forms {
+        let written = || forms.iter().filter(|(_, _, index)| !repeats.contains(&(*index as usize)));
+        self.out.len(written().count());
+        for (_,bytes, _) in written() {
             self.out.nested(bytes);
         }
+    }
+
+    fn head_field(&mut self, port: &ColumnName, key: HeadKey) -> ColumnName {
+        head_field(&mut self.head_fields, port, key)
     }
 
     fn len(&mut self, len: usize) {
@@ -919,9 +938,35 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         self.out.tag(if present { Tag::Some } else { Tag::None });
     }
 
+    /// Writes the sites in each order of the columns of the relation, and
+    /// keeps the least bytes, so that the order of its rows, which a symmetry
+    /// of its clause leaves open, is not part of the form.
+    fn atom_sites(&mut self, at: (), atom: &'a Atom, visit: impl Fn(&mut Self, ())) {
+        let orders = self.names.column_orders(&atom.relation);
+        if orders == 0 {
+            return visit(self, at);
+        }
+        let recorded = self.order.take();
+        let outer = std::mem::take(&mut self.out);
+        let mut least: Option<(Vec<u8>, usize)> = None;
+        for order in 0..=orders {
+            self.column_order = order;
+            visit(self, at);
+            let bytes = std::mem::take(&mut self.out).bytes;
+            if least.as_ref().is_none_or(|(form, _)| bytes < *form) {
+                least = Some((bytes, order));
+            }
+        }
+        self.out = outer;
+        self.order = recorded;
+        self.column_order = least.expect("an order of the columns").1;
+        visit(self, at);
+        self.column_order = 0;
+    }
+
     fn site(&mut self, _at: (), path: &[ColumnName], args: usize, relation: Option<&RelationRef>) {
         self.out.tag(Tag::Site);
-        site_column(self.names, relation, path, &mut self.out);
+        site_column(self.names, relation, path, self.column_order, &mut self.out);
         self.out.len(args);
     }
 
@@ -929,7 +974,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         match named {
             Some(name) => {
                 self.out.tag(Tag::ArgNamedLabel);
-                site_column(self.names, relation, &column_path(path, name), &mut self.out);
+                site_column(self.names, relation, &column_path(path, name), self.column_order, &mut self.out);
             }
             None => self.out.tag(Tag::ArgLabel),
         }
@@ -961,16 +1006,36 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         for(i,label)in operands.into_iter().enumerate(){self.operand(at,i,label);}
     }
 
-    fn one_label(&mut self, _at: (), _index: usize, label: LabelId) {
-        let mut out = std::mem::take(&mut self.out);
-        self.label(&mut out, label);
-        self.out = out;
+    /// Writes the distinct marks sorted by their bytes, each as its labels
+    /// sorted by their bytes.
+    fn marks(&mut self, _at: (), ones: &'a [OneMark]) {
+        let mut marks: Vec<Vec<u8>> = Vec::new();
+        for one in super::walk::distinct_marks(ones) {
+            let mut labels: Vec<Vec<u8>> = one.key.iter().map(|label| {
+                let mut out = CanonicalWriter::default();
+                self.label(&mut out, *label);
+                out.bytes
+            }).collect();
+            labels.sort();
+            labels.dedup();
+            let mut out = CanonicalWriter::default();
+            out.len(labels.len());
+            for bytes in &labels {
+                out.nested(bytes);
+            }
+            marks.push(out.bytes);
+        }
+        marks.sort();
+        self.out.len(marks.len());
+        for bytes in &marks {
+            self.out.nested(bytes);
+        }
     }
 
-    fn columns(&mut self, _at: (), columns: &'a [RelationColumn], relation: Option<&RelationRef>) {
+    fn columns(&mut self, _at: (), columns: &'a [RelationColumn], relation: Option<&RelationRef>, ordered: bool) {
         let names = self.names;
         let mut out = std::mem::take(&mut self.out);
-        Context::columns(self, &mut out, columns, relation.is_none(),|out, name| relation_column(names, relation, name, out));
+        Context::columns(self, &mut out, columns, relation.is_none() && ordered,|out, name| relation_column(names, relation, name, out));
         self.out = out;
     }
 
@@ -990,20 +1055,57 @@ impl<'a> ScopeSink<'a> for Context<'_> {
 }
 
 /// Writes the column path `path` of a site on `relation` through `names`,
-/// or as given at an instance input's head, where `relation` is `None`.
-pub(super) fn site_column(names: &dyn NameWriter, relation: Option<&RelationRef>, path: &[ColumnName], out: &mut CanonicalWriter) {
+/// in the order `order` of its columns, or as given at an instance input's
+/// head, where `relation` is `None`.
+pub(super) fn site_column(names: &dyn NameWriter, relation: Option<&RelationRef>, path: &[ColumnName], order: usize, out: &mut CanonicalWriter) {
     match relation {
-        Some(relation) => names.write_column(relation, path, out),
+        Some(relation) => names.write_column_in(relation, path, order, out),
         None => out.column_path(path),
     }
 }
 
-/// Writes `name`, a column of `relation`, through `names`, or as given
-/// where `relation` is `None`, a key body's column.
+/// The fields of the head sites of an instance, by the port column whose
+/// record has them, in order of first use.
+#[derive(Default)]
+pub(super) struct HeadFields(Vec<(ColumnName, Vec<HeadKey>)>);
+
+/// What tells a field of a head site apart from the others on its port.
+#[derive(Clone, PartialEq)]
+pub(super) enum HeadKey {
+    /// A field of a record, by its name.
+    Name(ColumnName),
+    /// The label of a head site of one label, which projects that label
+    /// onto a column of no record, or of a record of one field. Each input
+    /// is a body of its own, whose labels are its own, so a head site of one
+    /// label is a field of its own unless it projects a label that another
+    /// head site projects, a key's label. The name of the label is no part
+    /// of the form: a text writes it and a decode gives the label's slot.
+    Label(LabelId),
+}
+
+/// The slot name of `key`, a field of the record at `port`, a column of a
+/// head site: its order of first use in `fields`. The names of the fields
+/// come from the labels of the record's first head, which a text keeps and a
+/// decode gives as slots.
+pub(super) fn head_field(fields: &mut HeadFields, port: &ColumnName, key: HeadKey) -> ColumnName {
+    let at = fields.0.iter().position(|(other, _)| other == port).unwrap_or_else(|| {
+        fields.0.push((port.clone(), Vec::new()));
+        fields.0.len() - 1
+    });
+    let keys = &mut fields.0[at].1;
+    let index = keys.iter().position(|field| *field == key).unwrap_or_else(|| {
+        keys.push(key);
+        keys.len() - 1
+    });
+    ColumnName::Slot(index as u32)
+}
+
+/// Writes `name`, a column of `relation`, through `names`. A key body's
+/// column, where `relation` is `None`, stands by its position, and its name,
+/// written or a slot, is not part of the form.
 pub(super) fn relation_column(names: &dyn NameWriter, relation: Option<&RelationRef>, name: &ColumnName, out: &mut CanonicalWriter) {
-    match relation {
-        Some(relation) => names.write_column(relation, std::slice::from_ref(name), out),
-        None => out.name(name),
+    if let Some(relation) = relation {
+        names.write_column(relation, std::slice::from_ref(name), out);
     }
 }
 

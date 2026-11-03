@@ -218,6 +218,68 @@ fn an_instance_whose_input_reads_its_own_output_decodes_to_its_stream() {
     round_trip(&format!("{BG}{walk}"));
 }
 
+/// Asserts that the query at `index` of the program written in `arclog`
+/// has the content of the query at `index` of the decode of its stream.
+fn same_query_content(arclog: &str, index: usize) {
+    let inputs = inputs();
+    let decoder = decoded(&inputs, arclog);
+    assert_eq!(decoder.query_content(index), checked(arclog).program.query_content(index, Registry::get()));
+}
+
+/// A read of an instance's own output, at a site on a column of a type
+/// parameter that the instance binds to one label, names that label by its
+/// written name in a file and by a slot in a decode. The column is the
+/// site's own column, so the query has one content in its file and in its
+/// decode.
+#[test]
+fn an_instance_that_reads_its_own_output_on_a_column_of_one_label_has_the_query_content_of_its_file() {
+    let walk = "(INIT &walk Unfold (start ((:t B)) (&bg (:C *B))) (initial_taken ((:item B2)) (&bg (:C *B2))) (initial_untaken ((:item B3)) (&bg (:C *B3))) (step ((:t B4) (:t2 X)) (&bg (:C *B4)) (&bg (:C *X)) (&walk.take (:t B4) (:item X))))\n";
+    same_query_content(&format!("{BG}{walk}"), 1);
+}
+
+/// A read of an instance's own output, at a site on a field of the record
+/// of a type parameter, names the field by its written name in a file and
+/// by a slot in a decode. The field stands by its place in the record, so
+/// the query has one content in its file and in its decode.
+#[test]
+fn an_instance_that_reads_a_field_of_its_own_output_has_the_query_content_of_its_file() {
+    let walk = "(INIT &walk Unfold (start ((:t P Col)) (&fg *P *Col)) (initial_taken ((:item B)) (&bg (:C *B))) (initial_untaken ((:item B2)) (&bg (:C *B2))) (step ((:t (:P P2) (:Col Col2)) (:t2 (:P P3) (:Col Col3))) (&fg (:P *P2) (:Col *Col2)) (&fg (:P *P3) (:Col *Col3)) (&walk.take (:t (:P P2) (:Col Col2)))))\n";
+    same_query_content(&format!("{BG}{FG}{walk}"), 2);
+}
+
+/// A read of a keyed instance's own output, at a site on a field of its
+/// `key` record, names the field by the key's written label in a file and
+/// by a slot in a decode. The field stands by the rank of its label in the
+/// key's body, so the query has one content in its file and in its decode.
+#[test]
+fn a_keyed_instance_that_reads_a_key_field_of_its_own_output_has_the_query_content_of_its_file() {
+    let key = "(&fg (:P Kp) (:Col Kc))";
+    let walk = format!("(INIT &walk Unfold (key ((&fg (:P ^Kp) (:Col ^Kc))) (start ((:t B)) (&bg (:C *B)) {key}) (initial_taken ((:item B2)) (&bg (:C *B2)) {key}) (initial_untaken ((:item B3)) (&bg (:C *B3)) {key}) (step ((:t B4) (:t2 X)) (&bg (:C *B4)) (&bg (:C *X)) (&walk.take (:key Kp Kc) (:t B4) (:item X)))))\n");
+    same_query_content(&format!("{BG}{FG}{walk}"), 2);
+}
+
+/// Each input of an instance is a body of its own, so a label of one name
+/// in two inputs is two labels, and a head site of one label on a column
+/// of a type parameter projects its own label. A file names that label by
+/// its written name and a decode by a slot, so the query has one content in
+/// its file and in its decode only where the name enters no head site.
+#[test]
+fn an_instance_whose_inputs_make_labels_of_one_name_has_the_query_content_of_its_file() {
+    let walk = "(INIT &walk Unfold (start ((:t B)) (&bg (:C *B))) (initial_taken ((:item B)) (&bg (:C *B))) (initial_untaken ((:item B)) (&bg (:C *B))) (step ((:t B) (:t2 X)) (&bg (:C *B)) (&bg (:C *X))))\n";
+    same_query_content(&format!("{BG}{walk}"), 1);
+}
+
+/// In a keyed instance, an input that reads its instance's own output and
+/// a key label stands in the key clause, and the inputs that read neither
+/// stand after it. The input that reads the output then precedes the
+/// projections that bind the parameters it reads, so its body reads them
+/// before the stream binds them, and the decode steps the stream.
+#[test]
+fn a_keyed_instance_whose_input_reads_its_own_output_before_its_parameters_bind_decodes_to_its_stream() {
+    let walk = "(INIT &walk Unfold (key ((&fg (:P ^Kp) (:Col ^Kc))) (step ((:t B4) (:t2 X)) (&bg (:C *B4)) (&bg (:C *X)) (&fg (:P Kp) (:Col Kc)) (&walk.take (:t B4) (:item X)))) (start ((:t B)) (&bg (:C *B))) (initial_taken ((:item B2)) (&bg (:C *B2))) (initial_untaken ((:item B3)) (&bg (:C *B3))))\n";
+    round_trip(&format!("{BG}{FG}{walk}"));
+}
+
 /// A decode stepped through the stream of `arclog`.
 fn decoded<'i>(inputs: &'i Inputs, arclog: &str) -> Decoder<'i> {
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());

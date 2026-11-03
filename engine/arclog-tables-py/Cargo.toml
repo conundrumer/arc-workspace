@@ -13,4 +13,6 @@ arclog-bindings = { path = "../arclog-bindings" }
 arclog = { path = "../arclog" }
 # The tables and their columns, which these bindings give Python.
 arclog-tables = { path = "../arclog-tables" }
+# The names and the version of the TableVector's features.
+arclog-features = { path = "../arclog-features" }
 pyo3 = { version = "0.27.2", features = ["abi3-py312"] }

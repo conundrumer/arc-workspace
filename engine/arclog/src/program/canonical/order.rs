@@ -159,6 +159,22 @@ impl CanonicalOrder {
         found.expect("a label of the scope").1
     }
 
+    /// Each sorted list of the form, by the source path of the node whose
+    /// children it orders, with the canonical position of each member of
+    /// the list, indexed by the member's source index.
+    pub fn list_positions(&self) -> Vec<(NodePath, Vec<u32>)> {
+        self.lists
+            .iter()
+            .map(|(source, order)| {
+                let mut positions = vec![0; order.len()];
+                for (position, &index) in order.iter().enumerate() {
+                    positions[index as usize] = position as u32;
+                }
+                (source.clone(), positions)
+            })
+            .collect()
+    }
+
     /// Each label scope within the form, as the source path of its form
     /// relative to the form, with its labels and their canonical positions,
     /// in the order of the scopes' canonical paths.

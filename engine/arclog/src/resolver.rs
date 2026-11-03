@@ -201,6 +201,11 @@ impl ResolvedContent {
         self.form.bytes.len()
     }
 
+    /// The bytes of the content's canonical form.
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.form.bytes
+    }
+
     /// The hash of the content's canonical form.
     pub fn content_hash(&self) -> StableHash {
         self.form.hash
@@ -521,6 +526,58 @@ impl ResolvedProgram {
             return earlier.content(path);
         }
         self.names.content(&self.program, path).map(|form| ResolvedContent { form })
+    }
+
+    /// The resolved content of the finished query at the top-level position
+    /// `position`, in the program of its use closure alone: the forms of
+    /// the nodes it reads at any depth, in program order, then the query.
+    /// A `DET` relation has the columns that the reads of the program name,
+    /// so the content of a query would otherwise depend on the forms that
+    /// read its inputs and that the query does not read; the same query
+    /// has one content in every program. The closure is resolved afresh
+    /// whatever this resolution is, since a layered resolution gives a
+    /// node's content from the forms it was resolved over.
+    ///
+    /// The content of a node is that of each form that gives it, and an
+    /// `INIT` or `RIGID_DET` form gives several nodes that are written from
+    /// the whole form. So the closure holds, for each form it holds, every
+    /// node that form gives and what those nodes read, not only the node
+    /// that something reads: a read in another input's body is a read of
+    /// the content. A name that no form of the closure declares would
+    /// stand in the content as a name, which a decode gives as a slot and a
+    /// file as a spelling.
+    ///
+    /// The sites of an atom stand in the content in the order of the
+    /// program, which a decode takes from its tokens and the text of the
+    /// program does not keep. The closure is resolved with those sites in
+    /// the order of the text ([`crate::write::in_text_order`]), so a decode
+    /// and the reader of its text give one content. `None` where `position`
+    /// names no node.
+    pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
+        let forms = &self.program.value().forms;
+        let mut keep = vec![false; forms.len()];
+        *keep.get_mut(position)? = true;
+        let mut reached = vec![false; self.graph.nodes.len()];
+        let mut open = vec![position];
+        while let Some(top) = open.pop() {
+            for root in self.nodes_of(&NodePath::top(u32::try_from(top).ok()?)) {
+                for (node, reads) in self.graph.reached(*root).into_iter().enumerate() {
+                    if !reads || std::mem::replace(&mut reached[node], true) {
+                        continue;
+                    }
+                    for form in self.forms_of(GraphNodeIndex(node as u32)) {
+                        let Some(top) = form.0.first().map(|step| step.0 as usize).filter(|top| *top <= position) else { continue };
+                        if !std::mem::replace(&mut keep[top], true) {
+                            open.push(top);
+                        }
+                    }
+                }
+            }
+        }
+        let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| form.clone()).collect();
+        let last = NodePath::top(closure.len() as u32 - 1);
+        let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
+        build::resolve(&pruned, None, &SolverScope::default(), registry).value.content(&last)
     }
 
     /// The resolved content of the node `node` of the dependency graph, or

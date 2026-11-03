@@ -396,6 +396,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                 let arguments = Arguments(variables.iter().zip(0u16..).map(|(&v, at)| (ColumnIndex(at), Argument::Variable(v))).collect());
                 found.push(LinkedPart { relation, arguments, variables, columns: entry.columns });
             }
+            let _timed = crate::stats::span(crate::stats::Phase::EvalPartLinked);
             return Some(self.link(clause, &taken, found, order, inputs, columns, budget));
         }
         None

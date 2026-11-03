@@ -30,8 +30,6 @@ pub(super) enum Open<'a> {
     Or,
     If,
     All,
-    /// A `ONE` mark of a clause.
-    One(&'a OneMark),
 }
 
 /// What takes the walk of a label scope's nodes.
@@ -52,13 +50,26 @@ pub(super) trait ScopeSink<'a> {
 
     /// Runs `visit` on each of `members`, the whole list of the children of
     /// `parent`, which `node` gives as nodes, in the order the sink takes.
-    fn members<T>(&mut self, at:Self::At, parent: NodeRef<'a>, members: &'a [T], pinned:&[usize], node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, Self::At, &'a T));
+    /// The members at `repeats` repeat an earlier member, so they are not
+    /// part of the form.
+    fn members<T>(&mut self, at:Self::At, parent: NodeRef<'a>, members: &'a [T], pinned:&[usize], repeats:&[usize], node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, Self::At, &'a T));
+
+    /// The name of a field of the record at `port`, a column of a head
+    /// site, which the walk writes in place of the field that `key` tells
+    /// apart. A field is named by the labels of its record's first head,
+    /// written or decoded, so a field stands by its order of first use among
+    /// the head sites of the instance on that port.
+    fn head_field(&mut self, port: &ColumnName, key: HeadKey) -> ColumnName;
 
     /// The length of a list that the walk visits next.
     fn len(&mut self, len: usize);
 
     /// Whether the walk visits an optional part next.
     fn option(&mut self, present: bool);
+
+    /// Runs `visit`, the walk of the sites of `atom`, below the atom at `at`,
+    /// as the sink takes the orders of the columns of its relation.
+    fn atom_sites(&mut self, at: Self::At, atom: &'a Atom, visit: impl Fn(&mut Self, Self::At));
 
     /// The site at `path`, with `args` arguments, whose columns `relation`
     /// gives, or an instance input's head where it gives none.
@@ -78,12 +89,14 @@ pub(super) trait ScopeSink<'a> {
     /// Constraint operands in the normalized operator's direction.
     fn constraint(&mut self,at:Self::At,constraint:&Constraint);
 
-    /// The label at `index` of a `ONE` mark.
-    fn one_label(&mut self, at: Self::At, index: usize, label: LabelId);
+    /// The `ONE` marks of the clause at `at`. A clause's marks are a set, and
+    /// so are the labels of each mark, so neither order is part of the form.
+    fn marks(&mut self, at: Self::At, ones: &'a [OneMark]);
 
     /// The labels of `columns`, each column of `relation`, or written as
     /// given where `relation` is `None`.
-    fn columns(&mut self, at: Self::At, columns: &'a [RelationColumn], relation: Option<&RelationRef>);
+    /// `ordered` holds when the order of `columns` is part of the form, which matters only where `relation` is `None`.
+    fn columns(&mut self, at: Self::At, columns: &'a [RelationColumn], relation: Option<&RelationRef>, ordered: bool);
 
     /// The parts of `choose` after its `from` body that no label enters.
     fn choose_from_inside_for(&mut self, choose: &'a Choose);
@@ -118,14 +131,8 @@ pub(super) fn clause<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize
     let body = clause.body.value();
     sink.child(NodeRef::Clause(clause), NodeRef::Body(body), |sink| self::body(sink, at, Tag::Body, 0, body));
     sink.len(usize::from(clause.set));
-    sink.len(clause.ones.len());
-    for (index, one) in clause.ones.iter().enumerate() {
-        let mark = sink.open(at, Tag::One, index, Open::One(one));
-        for (index, label) in one.key.iter().enumerate() {
-            sink.one_label(mark, index, *label);
-        }
-    }
-    sink.columns(at, &clause.columns, Some(&derives));
+    sink.marks(at, &clause.ones);
+    sink.columns(at, &clause.columns, Some(&derives), true);
 }
 
 pub(super) fn body<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, index: usize, body: &'a Body) {
@@ -137,7 +144,48 @@ pub(super) fn body<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, ind
 fn body_order<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, index: usize, body: &'a Body, ordered: bool) {
     let at = sink.open(at, role, index, Open::Body);
     let pinned = if ordered { (0..body.conjuncts.len()).collect::<Vec<_>>() } else { Vec::new() };
-    sink.members(at,NodeRef::Body(body), &body.conjuncts, &pinned,NodeRef::Conjunct, |sink, at,conjunct| self::conjunct(sink, at, conjunct));
+    // A body is a conjunction, so a conjunct that repeats an earlier one
+    // adds nothing to it.
+    let repeats: Vec<usize> = if ordered { Vec::new() } else { (0..body.conjuncts.len()).filter(|&i| body.conjuncts[..i].iter().any(|earlier| same_conjunct(earlier, &body.conjuncts[i]))).collect() };
+    sink.members(at,NodeRef::Body(body), &body.conjuncts, &pinned,&repeats,NodeRef::Conjunct, |sink, at,conjunct| self::conjunct(sink, at, conjunct));
+}
+
+/// The marks of `ones` less each that names the same labels as an earlier one.
+pub(super) fn distinct_marks(ones: &[OneMark]) -> Vec<&OneMark> {
+    let labels = |one: &OneMark| {
+        let mut labels: Vec<u32> = one.key.iter().map(|label| label.0).collect();
+        labels.sort();
+        labels.dedup();
+        labels
+    };
+    let mut seen = Vec::new();
+    ones.iter().filter(|one| {
+        let own = labels(one);
+        let new = !seen.contains(&own);
+        if new {
+            seen.push(own);
+        }
+        new
+    }).collect()
+}
+
+/// Whether `a` and `b` are the same atom, negated atom or constraint, with
+/// the same labels: equal but for the order of an atom's sites, or of the
+/// operands of a symmetric constraint.
+fn same_conjunct(a: &Conjunct, b: &Conjunct) -> bool {
+    let same_atom = |a: &Atom, b: &Atom| {
+        let count = |sites: &[Site], site: &Site| sites.iter().filter(|own| *own == site).count();
+        a.relation == b.relation && a.sites.len() == b.sites.len() && a.sites.iter().all(|site| count(&a.sites, site) == count(&b.sites, site))
+    };
+    match (a, b) {
+        (Conjunct::Atom(a), Conjunct::Atom(b)) | (Conjunct::Not(Negated::Atom(a)), Conjunct::Not(Negated::Atom(b))) => same_atom(a.value(), b.value()),
+        (Conjunct::Constraint(a), Conjunct::Constraint(b)) => {
+            let (a_op, [a0, a1], symmetric) = normalized_constraint(a);
+            let (b_op, [b0, b1], _) = normalized_constraint(b);
+            a_op == b_op && ((a0, a1) == (b0, b1) || symmetric && (a0, a1) == (b1, b0))
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn conjunct<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, conjunct: &'a Conjunct) {
@@ -155,10 +203,8 @@ pub(super) fn conjunct<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, conjunct: 
         }
         Conjunct::Or(branches) => {
             let at = sink.open(at, Tag::Member, 0, Open::Or);
-            sink.len(branches.len());
-            for(index,branch)in branches.iter().enumerate() {
-                sink.child(parent,NodeRef::Body(branch.value()),|sink|self::body(sink,at,Tag::Branch,index,branch.value()));
-            }
+            // Branches are alternatives, so their order is not part of the form.
+            sink.members(at,parent,&branches[..],&[],&[],|branch|NodeRef::Body(branch.value()),|sink,at,branch|self::body(sink,at,Tag::Branch,0,branch.value()));
         }
         Conjunct::If { test, then, otherwise } => {
             let at = sink.open(at, Tag::Member, 0, Open::If);
@@ -177,23 +223,46 @@ pub(super) fn conjunct<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, conjunct: 
 
 pub(super) fn atom<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, role: Tag, index: usize, atom: &'a Atom, negated: bool, member: bool) {
     let at = sink.open(at, role, index, Open::Atom { atom, negated, member });
-    if sink.feature_sites() {
-        sink.members(at,NodeRef::Atom(atom),&atom.sites,&[],NodeRef::Site,|sink,at,site|self::site(sink,at,site,&[],Some(&atom.relation)));
-    } else {
-        sink.len(atom.sites.len());
-        for site in atom.sites.iter() {
-            sink.child(NodeRef::Atom(atom),NodeRef::Site(site),|sink|self::site(sink,at,site,&[],Some(&atom.relation)));
-        }
-    }
+    // The sites of an atom are unordered: a site names its column, so the order they are written in scopes nothing
+    // (`docs/arclog/arclog.md#sites`). The labels' canonical positions come from the graph, which no site order enters,
+    // so sorting the sites changes the form and not the order of a relation's callable columns.
+    sink.atom_sites(at, atom, |sink, at| sink.members(at,NodeRef::Atom(atom),&atom.sites,&[],&[],NodeRef::Site,|sink,at,site|self::site(sink,at,site,&[],Some(&atom.relation))));
 }
 
 /// Walks `site`, a site on the column `prefix` then its own column gives.
 pub(super) fn site<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, site: &'a Site, prefix: &[ColumnName], relation: Option<&RelationRef>) {
-    let path = column_path(prefix, &site.column);
+    // On a head, the column of the site is a port's, and each name below it
+    // is a field of the record the head projects.
+    let head = relation.is_none();
+    let port = prefix.first().unwrap_or(&site.column);
+    let column = if head && !prefix.is_empty() { sink.head_field(port, HeadKey::Name(site.column.clone())) } else { site.column.clone() };
+    let path = column_path(prefix, &column);
     sink.site(at, &path, site.value.args.len(), relation);
+    // A head site of one label projects that label onto a column of no
+    // record, or of a record of one field, so the label tells its field
+    // apart, and the name it takes in a text or a decode does not.
+    let one_label = head && prefix.is_empty() && match &site.value.args[..] {
+        [SiteArg::NamedLabel { .. }] => true,
+        [SiteArg::Field(field)] => matches!(&field.value.args[..], [SiteArg::Label(_)]),
+        _ => false,
+    };
+    let named=|sink:&mut S,at,index,name:&ColumnName,label:LabelUse|{
+        let name = match (head, one_label, label) {
+            (true, true, LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) => sink.head_field(port, HeadKey::Label(id)),
+            (true, _, _) => sink.head_field(port, HeadKey::Name(name.clone())),
+            (false, _, _) => name.clone(),
+        };
+        sink.site_label(at,index,&path,Some(&name),label,relation)
+    };
     let visit=|sink:&mut S,at,arg:&'a SiteArg,index|match arg {
         SiteArg::Label(label)=>sink.site_label(at,index,&path,None,*label,relation),
-        SiteArg::NamedLabel {name,label}=>sink.site_label(at,index,&path,Some(name),*label,relation),
+        SiteArg::NamedLabel {name,label}=>named(sink,at,index,name,*label),
+        // A field that holds one label is that label, named by the field: a
+        // decode writes it as a named label, a text as a field.
+        SiteArg::Field(field) if matches!(&field.value.args[..],[SiteArg::Label(_)])=>{
+            let SiteArg::Label(label)=&field.value.args[0] else { unreachable!("the field holds one label") };
+            named(sink,at,index,&field.column,*label)
+        }
         SiteArg::Field(field)=>{sink.site_field();self::site(sink,at,field,&path,relation);},
     };
     let node = |arg:&'a SiteArg| match arg {
@@ -201,7 +270,7 @@ pub(super) fn site<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, site: &'a Site
         SiteArg::Label(l)|SiteArg::NamedLabel {label:l,..}=>NodeRef::Label(l),
     };
     if sink.feature_sites() && site.value.args.iter().all(|arg|!matches!(arg,SiteArg::Label(_))) {
-        sink.members(at,NodeRef::Site(site),&site.value.args,&[],node,|sink,at,arg|visit(sink,at,arg,0));
+        sink.members(at,NodeRef::Site(site),&site.value.args,&[],&[],node,|sink,at,arg|visit(sink,at,arg,0));
     } else {
         for(index,arg)in site.value.args.iter().enumerate() {
             // Positional children are not sorted, but still enter their AST
@@ -237,16 +306,17 @@ fn inputs<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, in
 pub(super) fn key_clause<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, key: &'a KeyClause) {
     let at = sink.open(at, Tag::KeyClause, 0, Open::KeyClause);
     let parent = NodeRef::KeyClause(key);
-    key_body(sink, at, parent, Tag::Key, &key.key);
+    // A key is a record of its `^` labels, which a site reads by field name, so the order of its columns is not part of the form.
+    key_body(sink, at, parent, Tag::Key, &key.key, false);
     inputs(sink, at, parent, &key.inputs);
 }
 
 /// Walks `key`, whose body is a child of `parent`, the node at `at`.
-pub(super) fn key_body<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, role: Tag, key: &'a KeyBody) {
+pub(super) fn key_body<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, role: Tag, key: &'a KeyBody, ordered: bool) {
     let at = sink.open(at, role, 0, Open::KeyBody);
     let body = key.body.value();
     sink.child(parent, NodeRef::Body(body), |sink| self::body(sink, at, Tag::Body, 0, body));
-    sink.columns(at, &key.columns, None);
+    sink.columns(at, &key.columns, None, ordered);
 }
 
 pub(super) fn input<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, input: &'a InstanceInput) {
@@ -267,9 +337,9 @@ pub(super) fn choose<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize
     let parent = NodeRef::Choose(choose);
     sink.option(choose.rows.is_some());
     if let Some(rows) = &choose.rows {
-        key_body(sink, at, parent, Tag::Key, rows);
+        key_body(sink, at, parent, Tag::Key, rows, true);
     }
-    sink.columns(at, &choose.candidate_columns, Some(&RelationRef::Declared(choose.name.clone())));
+    sink.columns(at, &choose.candidate_columns, Some(&RelationRef::Declared(choose.name.clone())), true);
     let from = choose.from.value();
     sink.child(parent, NodeRef::Body(from), |sink| body_order(sink, at, Tag::Body, 0, from, true));
     sink.choose_from_inside_for(choose);
@@ -287,7 +357,7 @@ pub(super) fn rigid_det<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: us
     for (key, role) in [(&rigid.key, Tag::Key), (&rigid.instance, Tag::Instance)] {
         sink.option(key.is_some());
         if let Some(key) = key {
-            key_body(sink, at, parent, role, key);
+            key_body(sink, at, parent, role, key, true);
         }
     }
     sink.len(rigid.parts.len());
@@ -298,7 +368,7 @@ pub(super) fn rigid_det<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: us
 
 pub(super) fn out<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, out: &'a Out) {
     let at = sink.open(at, Tag::Form, index, Open::Out(out));
-    key_body(sink, at, NodeRef::Out(out), Tag::Key, &out.key);
+    key_body(sink, at, NodeRef::Out(out), Tag::Key, &out.key, true);
 }
 
 /// Walks the key clause and the inputs of `demonstrated`, below the node
@@ -309,7 +379,7 @@ pub(super) fn demonstrated_key<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, de
 
 pub(super) fn demo_rule<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, rule: &'a DemoRule) {
     let at = sink.open(at, Tag::DemoRule, 0, Open::DemoRule(rule));
-    sink.columns(at, &rule.fields, Some(&prediction()));
+    sink.columns(at, &rule.fields, Some(&prediction()), true);
     sink.rule_text(rule);
     sink.len(rule.forms.len());
     for (index, form) in rule.forms.iter().enumerate() {

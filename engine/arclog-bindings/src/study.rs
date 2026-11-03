@@ -1,15 +1,37 @@
 //! Thin Python handles for the engine's study ASTs.
 
+use arclog::hash::StableHash;
+use arclog::program::canonical::{CanonicalOrder, SearchBudget};
+use arclog::program::{Form, Node, Program};
 use arclog::registry::Registry;
+use arclog::resolver::{resolve, ResolvedContent, SolverScope};
 use arclog::stream::DecodeSettings;
 use arclog::study::StudyProgram;
 use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
+use pyo3::types::{PyBytes, PyDict, PyTuple};
 
 use crate::mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 use crate::session::PySession;
 use crate::settings::PyDecodeSettings;
 use crate::vocabulary::PyVocabulary;
+
+/// The finished query at `index` of `program`, counted from the end where
+/// `index` is negative, with its position.
+pub(crate) fn finished_query(program: &Node<Program>, index: isize) -> PyResult<(usize, &Form)> {
+    let forms = &program.value().forms;
+    let position = if index < 0 { index.checked_add(forms.len() as isize) } else { Some(index) };
+    match position.and_then(|position| usize::try_from(position).ok()).and_then(|position| forms.get(position).map(|form| (position, form))) {
+        Some(found) => Ok(found),
+        None => Err(PyIndexError::new_err(format!("no finished query at index {index}: the program has {} finished queries", forms.len()))),
+    }
+}
+
+/// The hash of the canonical form of `query`, with the names as written.
+pub(crate) fn written_query_hash(query: &Form) -> StableHash {
+    CanonicalOrder::with_form(query, &mut SearchBudget::new()).1.hash
+}
 
 /// A grammar/binder reader for this session's immutable settings. Each
 /// returned AST still goes through the whole-program checks below.
@@ -29,6 +51,19 @@ pub struct PyStudyProgram {
 }
 
 type Stream = (Vec<u32>, Vec<u8>, Vec<Vec<u32>>);
+
+impl PyStudyProgram {
+    /// The resolver's content of the query at `index`, in the program of
+    /// its use closure, as a decode that has finished it holds, with the
+    /// query's position.
+    fn query_content(&self, index: isize) -> PyResult<(ResolvedContent, usize)> {
+        let (position, _) = finished_query(self.program.program(), index)?;
+        let prefix = Node::new(Program { forms: self.program.program().value().forms[..=position].into() });
+        let resolved = resolve(&prefix, None, &SolverScope::default(), Registry::get()).value;
+        let content = resolved.query_content(position, Registry::get());
+        content.map(|content| (content, position)).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))
+    }
+}
 
 #[pymethods]
 impl PyStudyProgram {
@@ -180,6 +215,42 @@ impl PyStudyProgram {
                 .map(|v| v.to_string())
         })
         .map_err(PyValueError::new_err)
+    }
+
+    /// The hash of the resolver's content of the query at `index`: free
+    /// of the names that the scope gives its tables. The content is that of
+    /// the query in the program of the queries up to it, as a decode
+    /// that has just finished it holds, since a later read of a `DET`'s
+    /// columns changes the columns that the resolution keeps.
+    fn query_hash(&self, index: isize) -> PyResult<u128> {
+        let (content, _) = self.query_content(index)?;
+        Ok(content.content_hash().0)
+    }
+
+    /// The bytes that `query_hash` hashes, for the query at `index`.
+    fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
+        let (content, _) = self.query_content(index)?;
+        Ok(PyBytes::new(py, content.canonical_bytes()))
+    }
+
+    /// The canonical hash of the query at `index`, with the names as
+    /// written.
+    fn written_query_hash(&self, index: isize) -> PyResult<u128> {
+        let (_, query) = finished_query(self.program.program(), index)?;
+        Ok(written_query_hash(query).0)
+    }
+
+    /// For each list of the query at `index`, by its source path, the
+    /// canonical position of each element.
+    fn query_order<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyDict>> {
+        let (_, query) = finished_query(self.program.program(), index)?;
+        let order = CanonicalOrder::of(query, &mut SearchBudget::new());
+        let lists = PyDict::new(py);
+        for (path, positions) in order.list_positions() {
+            let key = PyTuple::new(py, path.0.iter().map(|step| step.0))?;
+            lists.set_item(key, positions)?;
+        }
+        Ok(lists)
     }
 
     fn sexp(&self) -> String {

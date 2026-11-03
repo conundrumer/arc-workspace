@@ -30,6 +30,10 @@ use pyo3::sync::PyOnceLock;
 /// it claims none; `copies` gives one row, its `detail` a sentence, for each declared row of a
 /// component's output that the replay found the output's rows break, and none for a call without
 /// `copies`.
+/// `tables` gives `column_ident_sources`, one string per column in the order of `column_names`: the
+/// source of each Ident of the column's type, the form that makes its values, as 32 hexadecimal digits,
+/// joined by `,` for a Record, and the empty string for a type with no Ident of a source. Two columns
+/// hold values of one type where their `column_types` and their `column_ident_sources` are equal.
 /// `tables` gives, beside `column_types` and `det_types`, the frame that the values of each column
 /// stand in: `column_frames`, one string per column in the order of `column_names`, and `det_frames`,
 /// for each `DET` one string per column in the order of its `det_types`. A frame is
@@ -105,8 +109,15 @@ pub(crate) struct PyCaseTables {
     tables: Py<PyDict>,
     #[pyo3(get)]
     entries: Py<PyDict>,
+    /// `None` in the result of `step_tables` by assignment, which has `assignments` in its place.
     #[pyo3(get)]
-    assigned: Py<PyDict>,
+    assigned: Option<Py<PyDict>>,
+    /// The `DET`s of each row of `tables` with their value hashes, in the result of `step_tables` by assignment, and `None` in any other.
+    #[pyo3(get)]
+    assignments: Option<Py<PyDict>>,
+    /// The key of each example at each row of `tables`, as `assignments` is given.
+    #[pyo3(get)]
+    example_keys: Option<Py<PyDict>>,
     #[pyo3(get)]
     projections: Py<PyDict>,
     #[pyo3(get)]
@@ -135,6 +146,8 @@ pub(crate) struct Step {
     pub(crate) stream: Arc<StreamTables>,
     pub(crate) bodies: bool,
     pub(crate) token: Option<usize>,
+    /// The count of the tables that the step itself gave, the last of `stream`.
+    pub(crate) own: u32,
 }
 
 /// An integer type of a column, with its numpy dtype and its native bytes.
@@ -226,6 +239,12 @@ impl<'a, 'py> Part<'a, 'py> {
         self.dtypes.set_item(format!("{}.{key}", self.name), T::DTYPE)
     }
 
+    /// A column of `bytes` that are not an integer column: the little-endian bytes of the hash of each row, 16 bytes a row.
+    fn hashes(&self, key: &str, column: &[u128]) -> PyResult<()> {
+        let bytes = PyBytes::new(self.dict.py(), &column.iter().flat_map(|hash| hash.to_le_bytes()).collect::<Vec<u8>>());
+        self.dict.set_item(key, owned_value(self.dict.py(), bytes.as_any(), self.owner)?)
+    }
+
     fn list<V: IntoPyObject<'py>>(&self, key: &str, column: V) -> PyResult<()> {
         self.dict.set_item(key,column)?;
         let value=self.dict.get_item(key)?.expect("the column just inserted");
@@ -283,6 +302,7 @@ impl PyCaseTables {
         t.list("relation_name", relation_names(c, relations))?;
         t.list("column_names", &c.column_names)?;
         t.list("column_types", &c.column_types)?;
+        t.list("column_ident_sources", &c.column_ident_sources)?;
         t.list("column_frames", &c.column_frames)?;
         t.list("extent_columns", &c.extent_columns)?;
         t.list("column_slots", &c.column_slots)?;
@@ -304,6 +324,20 @@ impl PyCaseTables {
         t.list("keys", &c.keys)?;
         t.ints("output_position", &c.output_position)?;
         t.ints("output_color", &c.output_color)?;
+        if columns.by_assignment {
+            t.ints("table", &c.table)?;
+            t.hashes("query", &c.query)?;
+            t.ints("has_query", &c.has_query)?;
+            t.list("name", &c.name)?;
+            t.hashes("hash", &c.hash)?;
+            t.ints("hashed", &c.hashed)?;
+            t.list("unhashed_reason", &c.unhashed_reason)?;
+            t.ints("capped", &c.capped)?;
+            // The TableVector of each row: `table_feature_names()` values, as `float32`.
+            let bytes = PyBytes::new(py, &c.features.iter().flat_map(|value| value.to_ne_bytes()).collect::<Vec<u8>>());
+            t.dict.set_item("features", owned_value(py, bytes.as_any(), &owner)?)?;
+            dtypes.set_item("tables.features", "float32")?;
+        }
         let e = Part::new(py, "entries", &dtypes,&owner);
         let c = &columns.entries;
         e.ints("table", &c.table)?;
@@ -321,12 +355,30 @@ impl PyCaseTables {
         e.stop("extent_stop", &c.extent_stop)?;
         e.list("extent_fault", &c.extent_fault)?;
         e.list("extent_status", &c.extent_status)?;
+        if columns.by_assignment {
+            e.hashes("hash", &c.hash)?;
+        }
         let a = Part::new(py, "assigned", &dtypes,&owner);
         let c = &columns.assigned;
         a.ints("entry", &c.entry)?;
         a.ints("det", &c.det)?;
         a.ints("rows", &c.rows)?;
         a.ints("offset", &c.offset)?;
+        let n = Part::new(py, "assignments", &dtypes,&owner);
+        let c = &columns.assignments;
+        n.ints("table", &c.table)?;
+        n.list("det", &c.det)?;
+        n.hashes("det_query", &c.det_query)?;
+        n.ints("has_det_query", &c.has_det_query)?;
+        n.hashes("value", &c.value)?;
+        let x = Part::new(py, "example_keys", &dtypes,&owner);
+        let c = &columns.example_keys;
+        x.ints("table", &c.table)?;
+        x.ints("kind", &c.kind)?;
+        x.ints("index", &c.index)?;
+        x.ints("distinct", &c.distinct)?;
+        x.ints("rows", &c.rows)?;
+        x.ints("hash", &c.hash)?;
         let v = Part::new(py, "projections", &dtypes,&owner);
         let c = &columns.projections;
         v.ints("table", &c.table)?;
@@ -364,7 +416,9 @@ impl PyCaseTables {
             base: base.map(|base| base.case),
             tables: t.dict.unbind(),
             entries: e.dict.unbind(),
-            assigned: a.dict.unbind(),
+            assigned: (!columns.by_assignment).then(|| a.dict.unbind()),
+            assignments: columns.by_assignment.then(|| n.dict.unbind()),
+            example_keys: columns.by_assignment.then(|| x.dict.unbind()),
             projections: v.dict.unbind(),
             projection_rows: r.dict.unbind(),
             flows: f.dict.unbind(),

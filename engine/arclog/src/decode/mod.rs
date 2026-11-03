@@ -49,7 +49,7 @@ mod projections;
 
 pub use batch::step_batch;
 pub use det_admission::DetRefusal;
-pub use interface::{BodyWidening, derived_at, open_clause, held_dets, relation_dets, walked_dets, Assigned, Consistency, OpenClause, Step, SubBody};
+pub use interface::{BodyWidening, derived_at, open_clause, held_dets, relation_dets, walked_dets, Assigned, Consistency, LeftOut, OpenClause, Step, SubBody, SubBodyKey};
 pub use projections::{projections, Projection, Projections};
 pub use state::State;
 
@@ -429,6 +429,26 @@ impl<'a> Decoder<'a> {
         self.apply(advanced)
     }
 
+    /// The decode after `token`: a fork of this decode that [`Decoder::step`]
+    /// advanced by `token`, or the refusal that `step` gives for it. Where the
+    /// decode holds the mask of its state and the mask admits `token`, the
+    /// state after `token` comes from the mask, and no check runs. The step
+    /// runs the consistency test of an `OUT` form that `token` finishes, as
+    /// `step` does, and no rule test, so the fork's trace has no rule test
+    /// at the step. This decode stays as it was.
+    pub fn successor(&self, token: Token) -> Result<Decoder<'a>, Refusal> {
+        let (state, forced) = self.next_state(&token)?;
+        let forms = &state.program().value().forms;
+        let finishes_out = forms.len() > self.state.program().value().forms.len() && matches!(forms.last(), Some(crate::program::Form::Out(_)));
+        let (consistency, capped_sets) = match finishes_out.then(|| self.consistency(&self.state, &state, Tested::Out)).flatten() {
+            Some((consistency, capped)) => (Some(consistency), capped),
+            None => (None, 0),
+        };
+        let mut next = self.fork();
+        next.apply(Ok(Advanced { token, state, step: Step { forced: forced.into(), consistency, rule_test: None, capped_sets, rule_capped_sets: 0 } }))?;
+        Ok(next)
+    }
+
     /// The tokens that [`Decoder::step`] gives as `forced` after `token`, or
     /// the refusal that it gives for a token it refuses. It runs no
     /// consistency test, and leaves the decode as it was. Where the decode
@@ -559,6 +579,18 @@ impl<'a> Decoder<'a> {
         self.state.program()
     }
 
+    /// The hash of the resolver's content of the finished query at
+    /// `index`, free of the names that its scope gives its tables; none where
+    /// `index` names no finished query.
+    pub fn query_hash(&self, index: usize) -> Option<crate::hash::StableHash> {
+        self.query_content(index).map(|content| content.content_hash())
+    }
+
+    /// The resolver's content of the finished query at `index`.
+    pub fn query_content(&self, index: usize) -> Option<crate::resolver::ResolvedContent> {
+        self.state.resolved(self.registry()).query_content(index, self.registry())
+    }
+
     /// The program so far with the form in progress as its last form, the
     /// prefix that the mask's checks read, and the path in that form of its
     /// innermost open node, or none where the last form is complete; or none
@@ -606,7 +638,7 @@ impl<'a> Decoder<'a> {
             self.completes(&state, checks, &reads_example, order)?;
         } else if state.head_site_completions(usize::MAX).is_some() {
             let _timed = stats::span(Phase::DecodeCompletes);
-            let steps = &mut { PROJECTION_STEPS };
+            let steps = &mut projection_steps();
             // A site of one argument first: the sets of labels it can hold are many, and one label passes where any does.
             self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
         }
@@ -643,6 +675,10 @@ impl<'a> Decoder<'a> {
             let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else { continue };
             match found.class {
                 crate::program::static_prune::Class::Unsatisfiable => return Err(Refusal::Grammar("static prune: no row satisfies the completed atom")),
+                // A membership test that an earlier atom's column already implies has a twin that the decoder takes: the
+                // membership atom first, as the binder, and the other atom joining its label. Both write one query, so
+                // refusing the test only in the order where it comes second makes legality depend on the order.
+                crate::program::static_prune::Class::Valid if found.rule == "membership.subtype" => {}
                 crate::program::static_prune::Class::Valid => return Err(Refusal::Grammar("static prune: the completed atom repeats an existing test")),
                 crate::program::static_prune::Class::Alias | crate::program::static_prune::Class::Constant => {
                     let Some(replacement) = found.replacement else { continue };
@@ -799,8 +835,13 @@ impl<'a> Decoder<'a> {
 }
 
 /// The steps of the completion search of a projection, per token. A token
-/// whose search spends them is refused.
-const PROJECTION_STEPS: usize = 256;
+/// whose search spends them is refused. `ARCLOG_PROJECTION_STEPS` sets them,
+/// read once; 96 where it is unset or not a number. Every gold program of the
+/// ramp and training corpora decodes within 64.
+fn projection_steps() -> usize {
+    static STEPS: OnceLock<usize> = OnceLock::new();
+    *STEPS.get_or_init(|| std::env::var("ARCLOG_PROJECTION_STEPS").ok().and_then(|v| v.parse().ok()).unwrap_or(96))
+}
 
 /// What the mask has found at a state of the order operators `<`, `<=`, `>`
 /// and `>=`. No check tells them apart, so the first of them that the mask

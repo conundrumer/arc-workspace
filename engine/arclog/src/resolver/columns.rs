@@ -86,6 +86,12 @@ pub(super) enum Place {
     Field(ColumnPosition, ColumnGroup),
 }
 
+/// The other orders of the columns of a relation under which its content
+/// is the same, as a symmetry of the clause that derives it gives them:
+/// each holds, for each position in the rows, the position its column takes
+/// in that order.
+pub(super) type ColumnOrders = Box<[Box<[u16]>]>;
+
 /// The columns of a relation, in the order of its rows.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub(crate) struct Columns(pub(super) Box<[Slot]>);

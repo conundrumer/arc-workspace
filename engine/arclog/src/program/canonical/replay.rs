@@ -29,7 +29,9 @@ struct CachedWrite {
 enum NameCall {
     Name(RelationRef),
     Own(DeclaredName),
-    Column(RelationRef, Box<[ColumnName]>),
+    /// A column, in an order of the columns of its relation.
+    Column(RelationRef, Box<[ColumnName]>, usize),
+    ColumnOrders(RelationRef),
 }
 
 impl NameCall {
@@ -39,7 +41,8 @@ impl NameCall {
         match self {
             NameCall::Name(relation) => names.write_name(relation, &mut out),
             NameCall::Own(name) => names.write_own(name, &mut out),
-            NameCall::Column(relation, column) => names.write_column(relation, column, &mut out),
+            NameCall::Column(relation, column, order) => names.write_column_in(relation, column, *order, &mut out),
+            NameCall::ColumnOrders(relation) => out.len(names.column_orders(relation)),
         }
         out.bytes
     }
@@ -73,7 +76,16 @@ impl NameWriter for Recording<'_> {
     }
 
     fn write_column(&self, relation: &RelationRef, column: &[ColumnName], out: &mut CanonicalWriter) {
-        self.call(NameCall::Column(relation.clone(), column.into()), out);
+        self.write_column_in(relation, column, 0, out);
+    }
+
+    fn column_orders(&self, relation: &RelationRef) -> usize {
+        self.call(NameCall::ColumnOrders(relation.clone()), &mut CanonicalWriter::default());
+        self.names.column_orders(relation)
+    }
+
+    fn write_column_in(&self, relation: &RelationRef, column: &[ColumnName], order: usize, out: &mut CanonicalWriter) {
+        self.call(NameCall::Column(relation.clone(), column.into(), order), out);
     }
 }
 

@@ -5,14 +5,14 @@
 
 use std::sync::Arc;
 
-use super::super::columns::{Columns, Place};
+use super::super::columns::{ColumnOrders, Columns, Place};
 use super::super::form_columns::{form_columns, row_columns};
 use super::super::registry_columns;
 use super::super::names::{form_bytes, node_form, Own, Writer};
 use super::Builder;
 use crate::program::canonical::{canonical_labeling, LabelScope, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Choose, Clause, ColumnName, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation};
+use crate::program::{Choose, Clause, ColumnName, LabelId, NameScope, OutputName, OutputOwner, OutputStep, ProgramRelation};
 use crate::resolver::{DependencyNode, Resolution};
 
 impl Builder<'_> {
@@ -27,6 +27,7 @@ impl Builder<'_> {
         let unread = self.unread_nodes();
         self.names.contents = vec![None; self.nodes.len() - offset];
         self.names.node_columns = vec![None; self.nodes.len() - offset];
+        self.names.node_orders = vec![ColumnOrders::default(); self.nodes.len() - offset];
         self.names.unwritten = (offset..self.nodes.len()).map(|node| unread[node].then(std::sync::OnceLock::new)).collect();
         let mut visited = vec![false; self.nodes.len()];
         visited[..offset].fill(true);
@@ -62,6 +63,7 @@ impl Builder<'_> {
             self.content_of(read as usize, visited, unread);
         }
         self.record_kept(node);
+        self.rank_keys(node);
         let local = node - self.offset();
         let (content, columns) = if unread[node] {
             (None, self.node_columns(node))
@@ -69,11 +71,50 @@ impl Builder<'_> {
             let (content, columns) = self.node_content(node);
             (Some(content), columns)
         };
-        if let Some(columns) = &columns {
+        if let Some((columns, _)) = &columns {
             self.label_positions(node, columns);
         }
+        let (columns, orders) = columns.unzip();
         self.names.contents[local] = content;
         self.names.node_columns[local] = columns;
+        self.names.node_orders[local] = orders.unwrap_or_default();
+    }
+
+    /// Records in [`super::super::names::Names::key_ranks`] the rank of each
+    /// field of the `key` record of each `INIT` form of `node` that has a key
+    /// clause, once for the form. The labeling of the form writes the
+    /// relations its key reads by their content, which the nodes that
+    /// `node` reads have, and writes its own outputs by their written
+    /// names, so a form whose inputs read its own outputs needs no content
+    /// of its own.
+    fn rank_keys(&mut self, node: usize) {
+        let scope = self.nodes[node].scope.clone();
+        let mut ranked = Vec::new();
+        for path in &self.forms[node] {
+            let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.case.value()), path) else { continue };
+            let Some(key) = &instance.key else { continue };
+            if self.names.key_ranks.get(&scope).is_some_and(|ranks| ranks.contains_key(&instance.name)) {
+                continue;
+            }
+            let own = Own::of(NodeRef::Instance(instance));
+            let ranks_in = |labeling: &crate::program::canonical::CanonicalLabeling| -> Box<[(ColumnName, u32)]> {
+                let rank = |label| labeling.positions.iter().find(|(found, _)| *found == label).map_or(u32::MAX, |(_, position)| *position);
+                key.value().key.columns.iter().map(|column| (column.name.clone(), rank(column.label))).collect()
+            };
+            // The labeling of the form writes its reads of its own outputs, whose `key` fields take their ranks
+            // in the labeling of the key's body.
+            let body = {
+                let writer = Writer { names: &self.names, scope: &scope, own: own.as_ref() };
+                ranks_in(&canonical_labeling(LabelScope::Body(key.value().key.body.value()), &writer, &mut SearchBudget::new()))
+            };
+            self.names.own_key_ranks.entry(scope.clone()).or_default().insert(instance.name.clone(), body);
+            let writer = Writer { names: &self.names, scope: &scope, own: own.as_ref() };
+            let labeling = canonical_labeling(LabelScope::Instance(instance), &writer, &mut SearchBudget::new());
+            ranked.push((instance.name.clone(), ranks_in(&labeling)));
+        }
+        for (name, ranks) in ranked {
+            self.names.key_ranks.entry(scope.clone()).or_default().insert(name, ranks);
+        }
     }
 
     /// Records the position in `columns`, the rows of `node`, of each
@@ -95,37 +136,42 @@ impl Builder<'_> {
     /// forms, as [`super::super::names::Names::form_content`] gives it,
     /// with no order; and its
     /// columns, those of its form of least content, where its columns
-    /// come from its form.
-    fn node_content(&self, node: usize) -> (crate::program::canonical::CanonicalForm, Option<Columns>) {
+    /// come from its form, with their orders where the node has one form.
+    fn node_content(&self, node: usize) -> (crate::program::canonical::CanonicalForm, Option<(Columns, ColumnOrders)>) {
         let DependencyNode { kind, scope } = &self.nodes[node];
-        let mut parts: Vec<(Arc<[u8]>, Option<Columns>)> = Vec::new();
+        let mut parts: Vec<(Arc<[u8]>, Option<(Columns, ColumnOrders)>)> = Vec::new();
         for path in &self.forms[node] {
             parts.push((form_bytes(&self.names, self.case.value(), scope, path), self.form_columns(node, path)));
         }
         parts.sort_by(|a, b| a.0.cmp(&b.0));
-        let columns = parts.iter().find_map(|(_, columns)| columns.clone());
+        let mut columns = parts.iter().find_map(|(_, columns)| columns.clone());
+        // An order of one form's columns under which its content is the same need not be one of the node's.
+        if parts.len() > 1 {
+            columns = columns.map(|(columns, _)| (columns, ColumnOrders::default()));
+        }
         (node_form(kind, parts.into_iter().map(|(bytes, _)| bytes)), columns)
     }
 
     /// The columns of `node`, a node of one form, as [`Builder::node_content`]
     /// gives them.
-    fn node_columns(&self, node: usize) -> Option<Columns> {
+    fn node_columns(&self, node: usize) -> Option<(Columns, ColumnOrders)> {
         self.form_columns(node, &self.forms[node][0])
     }
 
-    /// The columns of the relation the form of `node` at `path` gives.
-    fn form_columns(&self, node: usize, path: &NodePath) -> Option<Columns> {
+    /// The columns of the relation the form of `node` at `path` gives, with
+    /// their orders under which the form's content is the same.
+    fn form_columns(&self, node: usize, path: &NodePath) -> Option<(Columns, ColumnOrders)> {
         let scope = &self.nodes[node].scope;
         let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
         let own = Own::of(form);
         let writer = Writer { names: &self.names, scope, own: own.as_ref() };
         match form {
             NodeRef::Clause(clause) => match self.concept_columns.get(path) {
-                Some(columns) => columns.clone(),
+                Some(columns) => columns.clone().map(|columns| (columns, ColumnOrders::default())),
                 None => self.clause_columns(node, clause, scope, &writer),
             },
-            NodeRef::Choose(choose) => Some(choose_columns(choose, &writer)),
-            NodeRef::Out(out) => Some(Columns::of_names(out.key.columns.iter().map(|column| column.name.clone()))),
+            NodeRef::Choose(choose) => Some((choose_columns(choose, &writer), ColumnOrders::default())),
+            NodeRef::Out(out) => Some((Columns::of_names(out.key.columns.iter().map(|column| column.name.clone())), ColumnOrders::default())),
             _ => None,
         }
     }
@@ -146,8 +192,13 @@ impl Builder<'_> {
             if let Some(columns) = self.kept_columns(node, clause) {
                 let own = Own::of(NodeRef::Clause(clause));
                 let writer = Writer { names: &self.names, scope, own: own.as_ref() };
-                if !columns.names().eq(canonical_columns(clause, &writer).names()) {
-                    kept.push((path.clone(), columns));
+                let (canonical, _) = canonical_columns(clause, &writer);
+                if !columns.names().eq(canonical.names()) {
+                    // `kept` only enters a form's content, which holds each
+                    // column by its canonical position, not by its name,
+                    // since a decode names the columns by slots.
+                    let positions = columns.names().map(|name| ColumnName::Slot(canonical.names().position(|other| other == name).map_or(u32::MAX, |position| position as u32)));
+                    kept.push((path.clone(), Columns::of_names(positions)));
                 }
             }
         }
@@ -169,39 +220,70 @@ impl Builder<'_> {
     /// The columns of the relation a clause of `node` derives: for a `DET`
     /// parameter node that an atom reads, as [`Builder::kept_columns`]
     /// gives them; for another clause, its labels in
-    /// their canonical positions; or, with no columns of its own, its first
-    /// proposer's, or the output's of an instance it stands for.
-    fn clause_columns(&self, node: usize, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<Columns> {
+    /// their canonical positions, with their orders under which the
+    /// clause's content is the same; or, with no columns of its own, its
+    /// first proposer's, or the output's of an instance it stands for.
+    fn clause_columns(&self, node: usize, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<(Columns, ColumnOrders)> {
+        let unordered = |columns: Columns| (columns, ColumnOrders::default());
         if let Some(kept) = self.kept_columns(node, clause) {
-            return Some(kept);
+            return Some(unordered(kept));
         }
         if !clause.columns.is_empty() {
             return Some(canonical_columns(clause, writer));
         }
         if let Some(proposer) = clause.proposers.first() {
-            return registry_columns::proposer_columns(self.registry, proposer).map(|names| Columns::of_names(names.into_vec()));
+            return registry_columns::proposer_columns(self.registry, proposer).map(|names| unordered(Columns::of_names(names.into_vec())));
         }
         if let ProgramRelation::Output(OutputName { of: OutputOwner::Instance(name), path }) = &clause.derives {
             if let [OutputStep::Port(port)] = &path[..] {
-                return self.instances.get(&(scope.clone(), name.clone())).and_then(|nodes| nodes.columns.get(port)).cloned();
+                return self.instances.get(&(scope.clone(), name.clone())).and_then(|nodes| nodes.columns.get(port)).cloned().map(unordered);
             }
         }
-        Some(Columns::default())
+        Some(unordered(Columns::default()))
     }
 }
 
-/// The columns of `clause` in their canonical positions.
-fn canonical_columns(clause: &Clause, writer: &Writer<'_>) -> Columns {
+/// The columns of `clause` in their canonical positions, and their other
+/// orders under which the clause's content is the same: those that each
+/// other labeling of the clause whose form is the canonical form gives.
+fn canonical_columns(clause: &Clause, writer: &Writer<'_>) -> (Columns, ColumnOrders) {
     let labeling = canonical_labeling(LabelScope::Clause(clause), writer, &mut SearchBudget::new());
-    ordered(&clause.columns, &labeling)
+    let rows = ranks(&clause.columns, &labeling.positions);
+    let mut orders: Vec<Box<[u16]>> = Vec::new();
+    for other in labeling.others.iter() {
+        let mut order = vec![0; rows.len()].into_boxed_slice();
+        for (row, rank) in rows.iter().zip(ranks(&clause.columns, other)) {
+            order[usize::from(*row)] = rank;
+        }
+        let moved = order.iter().enumerate().any(|(position, other)| usize::from(*other) != position);
+        if moved && !orders.contains(&order) {
+            orders.push(order);
+        }
+    }
+    (ordered(&clause.columns, &labeling.positions), orders.into())
 }
 
-/// `columns` in the order of their labels' positions in `labeling`.
-fn ordered(columns: &[crate::program::RelationColumn], labeling: &crate::program::canonical::CanonicalLabeling) -> Columns {
-    let position = |label| labeling.positions.iter().find(|(found, _)| *found == label).map(|(_, position)| *position);
-    let mut ordered: Vec<(Option<u32>, &ColumnName)> = columns.iter().map(|column| (position(column.label), &column.name)).collect();
+/// `columns` in the order of their labels' positions in `positions`.
+fn ordered(columns: &[crate::program::RelationColumn], positions: &[(LabelId, u32)]) -> Columns {
+    let mut ordered: Vec<(Option<u32>, &ColumnName)> = columns.iter().map(|column| (position(positions, column.label), &column.name)).collect();
     ordered.sort_by_key(|(position, _)| *position);
     Columns::of_names(ordered.into_iter().map(|(_, name)| name.clone()))
+}
+
+/// The position of each of `columns` in the order [`ordered`] gives them.
+fn ranks(columns: &[crate::program::RelationColumn], positions: &[(LabelId, u32)]) -> Vec<u16> {
+    let mut order: Vec<usize> = (0..columns.len()).collect();
+    order.sort_by_key(|&index| position(positions, columns[index].label));
+    let mut ranks = vec![0; columns.len()];
+    for (rank, index) in order.into_iter().enumerate() {
+        ranks[index] = rank as u16;
+    }
+    ranks
+}
+
+/// The position of `label` in `positions`.
+fn position(positions: &[(LabelId, u32)], label: LabelId) -> Option<u32> {
+    positions.iter().find(|(found, _)| *found == label).map(|(_, position)| *position)
 }
 
 /// The columns of a chosen relation: the row's, in the order of the
@@ -210,6 +292,6 @@ fn ordered(columns: &[crate::program::RelationColumn], labeling: &crate::program
 fn choose_columns(choose: &Choose, writer: &Writer<'_>) -> Columns {
     let labeling = canonical_labeling(LabelScope::Choose(choose), writer, &mut SearchBudget::new());
     let rows = row_columns(choose).map(|column| column.name.clone());
-    let candidate = ordered(&choose.candidate_columns, &labeling);
+    let candidate = ordered(&choose.candidate_columns, &labeling.positions);
     Columns::of_names(rows.chain(candidate.names().cloned()))
 }

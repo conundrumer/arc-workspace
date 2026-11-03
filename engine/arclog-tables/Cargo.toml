@@ -8,6 +8,9 @@ publish.workspace = true
 # The tables are read from a decoder and a checked program of the core crate,
 # through its read-only accessors.
 arclog = { path = "../arclog" }
+# The features of a table at an assignment, on plain data. The Python binding
+# of `arclog-features-py` calls the same functions.
+arclog-features = { path = "../arclog-features" }
 serde_json = "1"
 
 [dev-dependencies]

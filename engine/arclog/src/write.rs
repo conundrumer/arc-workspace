@@ -113,6 +113,14 @@ pub(crate) fn label_names_named(program: &Node<Program>, registry: &Registry,
     synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names, _)| names).collect()
 }
 
+/// `program` with the sites of each read of a derived relation in the order
+/// that [`write_synthesized`] writes them. A decode takes its sites in the
+/// order its tokens give, which the text does not keep, so this order is the
+/// one a program has in common with its text.
+pub(crate) fn in_text_order(program: &Node<Program>, registry: &Registry) -> Node<Program> {
+    synthesized::in_text_order(program, registry)
+}
+
 /// The name of each label of each form of `program`, in form order, as
 /// [`write_synthesized`] names them: the form's reserved names, then its
 /// other labels in the order of their ids. It refuses the programs that
@@ -258,6 +266,16 @@ mod synthesized {
             named.push((written, names, slots));
         }
         named
+    }
+
+    /// The forms of `program` with the sites of each read of a derived
+    /// relation in the order the text writes them, as [`write`] puts them,
+    /// and nothing else changed: the program a reader of that text builds,
+    /// up to the names and the ids of its labels.
+    pub(super) fn in_text_order(program: &Node<Program>, registry: &Registry) -> Node<Program> {
+        let mut synth = Synthesizer { registry, columns: StableHashMap::default(), records: StableHashMap::default(), slots: Slots::default() };
+        let forms: Vec<Form> = program.value().forms.iter().map(|form| synth.in_slot_order(form).0).collect();
+        Node::new(Program { forms: forms.into() })
     }
 
     pub(super) fn write(program: &Node<Program>, registry: &Registry, preferred: Option<&super::LabelNames>) -> String {
@@ -416,6 +434,9 @@ mod synthesized {
         old.iter().enumerate().map(|(slot, label)| new.iter().position(|own| own == label).unwrap_or(slot) as u32).collect()
     }
 
+    /// The name of the `:Pose` column that each output of a `RIGID_DET` holds.
+    const POSE_COLUMN: &str = "Pose";
+
     struct Names<'n>(&'n [(LabelId, Box<str>)]);
 
     impl Names<'_> {
@@ -553,11 +574,25 @@ mod synthesized {
             let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
             names.dedup_by_key(|(id, _)| *id);
             uses.made.sort_by_key(|(label, _)| ranks.get(label).copied().unwrap_or(label.0));
+            // A column of a relation that a `RIGID_DET` part can read, or an
+            // instance column of a `RIGID_DET`, is a column of an output that
+            // has a `:Pose` column of its own, and a text names its columns
+            // apart.
+            let in_output: Vec<LabelId> = match form {
+                Form::Clause(clause) => clause.value().columns.iter().map(|column| column.label).collect(),
+                Form::Choose(choose) => {
+                    let choose = choose.value();
+                    choose.rows.iter().flat_map(|rows| rows.columns.iter()).chain(choose.candidate_columns.iter()).map(|column| column.label).collect()
+                }
+                Form::RigidDet(rigid) => rigid.value().instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| column.label).collect(),
+                _ => Vec::new(),
+            };
             for (label, base) in &uses.made {
                 if names.iter().any(|(id, _)| id == label) {
                     continue;
                 }
-                let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name);
+                let apart = in_output.contains(label);
+                let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name) || (apart && name == POSE_COLUMN);
                 names.push((*label, label_name(base, taken).into()));
             }
             names
