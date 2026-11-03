@@ -173,8 +173,7 @@ def reader_update(hook: dict[str, Any]) -> Iterator[Update | None]:
     `HookEvent`, and a record that `read_record` does not read, are
     faults."""
     event = HookEvent(hook["hook_event_name"])
-    denies = (event is HookEvent.PRE_TOOL_USE
-              and hook["tool_name"] not in UNCHANGING_TOOLS)
+    denies = False
     delivered = delivery_path(hook)
     try:
         f = record_path(hook).open("r+")
