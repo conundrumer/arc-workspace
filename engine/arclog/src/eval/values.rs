@@ -383,6 +383,11 @@ impl TableWork {
         self.count.load(Ordering::Relaxed) > self.cap
     }
 
+    /// The cap on the count.
+    pub fn cap(&self) -> u64 {
+        self.cap
+    }
+
     /// The bindings counted so far.
     pub fn count(&self) -> u64 {
         self.count.load(Ordering::Relaxed)

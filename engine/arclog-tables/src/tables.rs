@@ -512,15 +512,26 @@ pub(crate) fn add_projections(decoder: &Decoder<'_>, contents: &mut Contents, fo
     if over { contents.projections = projections_of(decoder, &contents.examples, form, work); }
 }
 
+/// The share of a table's work cap that the search for its projections may
+/// count: a quarter. Provisional.
+const PROJECTION_SHARE: u64 = 4;
+
 /// The projections of the rows of `examples`, none where an example gives a
-/// fault. Its search counts its bindings in `work`, the count of the table.
+/// fault. Its search counts its bindings in a count of its own, under the
+/// lesser of [`PROJECTION_SHARE`] of the cap of `work`, the count of the
+/// table, and what `work` has left, and then adds them to `work`. A search
+/// past its own cap stops at that cap, and leaves the rest of the table's work
+/// to the table's other evaluations and to later tables.
 fn projections_of(decoder: &Decoder<'_>, examples: &[ExampleRows], form: &NodePath, work: &TableWork) -> Option<Projections> {
     let flat: Vec<Assigned<BodyValue>> = examples.iter().map(|example| example.rows.as_ref().ok().map(flatten)).collect::<Option<_>>()?;
-    let limits = decoder.limits().counted_in(work.clone());
+    let own = TableWork::new((work.cap() / PROJECTION_SHARE).min(work.cap().saturating_sub(work.count())));
+    let limits = decoder.limits().counted_in(own.clone());
     let (_, session, _) = decoder.evaluation_inputs();
     let mut budget = Budget::new(&limits, session);
     let found = projections(&flat, decoder.settings().projection_cap, &mut budget, form);
     budget.record();
+    // A count past the table's cap stops the table's next evaluation.
+    let _ = work.charge(own.count());
     Some(found)
 }
 
