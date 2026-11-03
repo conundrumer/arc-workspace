@@ -34,10 +34,10 @@ def main():
     pubs, ex = K.publications(), K.excluded()
     path = OUT + '/union-identity-%s.jsonl' % want
     with open(path, 'w') as out:
-        for t in sorted(os.listdir(D + 'gold/gold-v3-combined-cut/view-final')):
+        for t in K.union_tasks(pubs):
             if set_of(t) != want:
                 continue
-            progs = [('pinned', K.pinned(t))]
+            progs = [('pinned', K.pinned(t))] if K.pinned(t) is not None else []
             if t in pubs:
                 for c in pubs[t][1]['cases']:
                     if c['case'].replace('$', '').replace(' ', '+') not in ex[t]:

@@ -151,17 +151,19 @@ def one(t, pubs, ex):
     fits = fits_of(set_of(t)).get(t)
     if fits is None:
         return dict(row, error='no fits row')
-    try:
-        pin, _ = bar.normal(G.pinned(t))
-    except Exception as e:  # noqa: BLE001
-        return dict(row, error='pinned: does not parse: %s %s' % (type(e).__name__, str(e)[:100]))
-    x, why = verdict(fits, G.pinned(t))
-    if why == 'no fits row' or x['why']:
-        return dict(row, error='pinned: ' + why)
-    if why:
-        return dict(row, error='pinned: no assignment fits')
-    progs, norms, cases, left_out, texts = {sha(pin): ['pinned']}, {sha(pin): pin}, {'pinned': sha(pin)}, {}, {}
-    kept = {sha(pin): dict(test_differs=not x['test_ok'])}
+    progs, norms, cases, left_out, texts, kept = {}, {}, {}, {}, {}, {}
+    if G.pinned(t) is not None:  # a solver written after gold-v3's view-final has no pinned program, and its cases alone make the row
+        try:
+            pin, _ = bar.normal(G.pinned(t))
+        except Exception as e:  # noqa: BLE001
+            return dict(row, error='pinned: does not parse: %s %s' % (type(e).__name__, str(e)[:100]))
+        x, why = verdict(fits, G.pinned(t))
+        if why == 'no fits row' or x['why']:
+            return dict(row, error='pinned: ' + why)
+        if why:
+            return dict(row, error='pinned: no assignment fits')
+        progs, norms, cases = {sha(pin): ['pinned']}, {sha(pin): pin}, {'pinned': sha(pin)}
+        kept = {sha(pin): dict(test_differs=not x['test_ok'])}
     for c in (pubs[t][1]['cases'] if t in pubs else []):
         if c['case'].replace('$', '').replace(' ', '+') in ex[t]:
             continue

@@ -56,8 +56,17 @@ def excluded():
 
 
 def pinned(t):
-    with gzip.open(G + 'gold-v3-combined-cut/view-final/%s/pairs.jsonl.gz' % t, 'rt') as f:
+    """The pinned program of the task, or None where gold-v3's view-final has none (a solver written after it)."""
+    p = G + 'gold-v3-combined-cut/view-final/%s/pairs.jsonl.gz' % t
+    if not os.path.exists(p):
+        return None
+    with gzip.open(p, 'rt') as f:
         return json.loads(f.readline())['gold_sexp']
+
+
+def union_tasks(pubs):
+    """The tasks of the union gold: those with a pinned program, and those with a publication."""
+    return sorted(set(os.listdir(G + 'gold-v3-combined-cut/view-final')) | set(pubs))
 
 
 def main():
