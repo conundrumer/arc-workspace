@@ -153,6 +153,7 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--split', default='dev')
     ap.add_argument('--tasks', default='')
+    ap.add_argument('--skip', default='', help='tasks to leave out, separated by commas')
     ap.add_argument('--summary', action='store_true')
     ap.add_argument('--rule', choices=('first', 'any'), default='first', help='first: where ReadsScopeFirst bars the canonical first atom; any: where ReadsScopeAny cuts the canonical stream (needs WRITER_PLAN=ordered)')
     a = ap.parse_args()
@@ -163,6 +164,7 @@ def main():
     import train_rows as tr
     live_try.P.REPO = os.environ.get('ARC_ROOT', '/Users/davidlu/code/arc-workspace')
     tasks = a.tasks.split(',') if a.tasks else sorted(f[:-6] for f in os.listdir(DATA % a.split))
+    tasks = [t for t in tasks if t not in a.skip.split(',')]
     done = set()
     if os.path.exists(a.out):
         done = {json.loads(l)['task'] for l in open(a.out)}
