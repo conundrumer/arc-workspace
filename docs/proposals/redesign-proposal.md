@@ -1,6 +1,6 @@
 # Redesign: what is measured, and what is open
 
-Status: proposal. Nothing here is built. Each statement under "Measured" cites a worker's record. Each item under "Open" is a choice the measurements do not settle.
+Status: in build. Each statement under "Measured" cites its source. Each item under "Open" is a choice the measurements do not settle.
 
 ## Measured
 
@@ -22,6 +22,8 @@ Figures are on the union gold (every non-excluded case of each task, tables merg
 - Target identity is order-invariant: a query is a set of atoms, and the loss is on the table it computes, so any written order the engine accepts is one target. Identity for deduplication comes from the engine's canonical hash (from refinement and individualization, invariant under reordering and renaming); a canonical string is not needed. Counts from the Python canonical rule, as an upper bound: training's 64,381 queries become 26,682 identities within tasks and 15,554 across tasks; median 34 tokens and 2 atoms per query. Vocabulary: 66 lib relations, 3 base tables, 64 components, 42 ports, 124 field labels, 12 operators, 1 constant, table references by position.
 - The union graph as labels: ramp 445 tables and 1,282 queries; the 37 (36 tasks) 3,270 queries; training estimated at 110k to 200k states with their enabled queries on 989 tasks. The corpus has no re-arc and no generators; witnesses exist for 321 tasks.
 - The engine exports a table with more than 10,000 rows in one TableRows as counts, not rows.
+- On the 161 dev tasks, under the pool search with 120 s of CPU per task and one seed, the tree writer against the hand-set distribution, both under the `ordered` plan, reaches 394 against 380 of 617 depth-0 tables, 91 against 31 of 734 depth-1 tables, and 59 against 27 of 7,078 tables at depth 2 and deeper, the last difference spread over 35 tasks. The tree arm solves 1 task and the hand arm none. Source: work/lm/data-study/search/dev161/o4efd-s0/.
+- Fit noise: over 4 seeds scored on fixed dev points, dev loss has a standard deviation of 0.0022 and top-1 of 0.3 points. Fits are compared on one fixed set of dev points. Source: docs/sample-build/training-rows.md, "Fit noise".
 
 ## The objects and the signature
 
@@ -73,7 +75,8 @@ Whether one learned model, given a partial program and its evaluation, can tell 
 
 - The model writes the query: given a state, it produces the text of one query under the grammar, the types and the state's mask (only tables in the state may be used). It does not rank candidates written by anything else, and the hand-set proposer is not its candidate writer.
 - The loss is on the parameterized table the query computes: a written query is accepted at a state when the parameterized table it computes equals the one a target query computes. That is a judgement about outputs, not a claim that the parameterized table is derived from both queries.
-- The model sits beside a search. The search is not decided now: it is abstracted as features over the whole state, so a choice of search is a choice of what the state exposes.
+- The model sits beside the state search: a best-first frontier of partial programs, ordered by a score, over queries and parameterized tables shared across states. The aim is a good model. The pool search, which needs no learned score, may still be used.
+- Generality applies to the structure of the model and the search, not to how much of the language the writer covers.
 - Each table enters the state as a feature vector computed from its type and rows, and from the table together with the base tables: hand features now, an embedding later. Each query in the state carries a query vector, computed from its used tables' vectors and its computed tables' vectors and the relation between them, and optionally from the query's text (kind, component, atom count). The feature sets are not decided now. The function over the whole state (the set of query vectors with their use edges) may be learned entirely. The engine exports a table with more than 10,000 rows in one TableRows as counts, so features that need rows stop there without an engine change.
 - Training targets: at every state on the union graph, every applicable graph query, every case. The search's own draws are not targets. Its draws on train tasks serve as negative examples; whether they serve as held-out evaluation is open.
 - Out of scope: DEMONSTRATED. The writer doesn't write it, and a task whose gold needs it is excluded from fits, scores and search counts, with that reason recorded.
@@ -85,23 +88,23 @@ Whether one learned model, given a partial program and its evaluation, can tell 
 ## Open
 
 - The per-table feature set, starting from the inventory of per-table features that exist today.
-- What the state exposes of the search (which abstracts the search choice).
+- What the state exposes to the model.
+- The state search's score over states, beside the writer's distribution.
 - Whether the search's draws serve as held-out evaluation.
 
 ## Code changes in build
 
-The user gave the go on 2026-11-02. Each is built by its owner, uncommitted, in the order below.
+The user gave the go on 2026-11-02. Each is built by its owner and committed.
 
-- The sample data build, specified: per-table feature function over (type, rows, base tables), about 164 features, to be computed in the engine at export where possible; a side output of the union run writing each table's feature vector and TableHash; the state-sequence generator over the union graph with targets identified by the engine's canonical hash; samples sharded by task. The held-out set is the 120 evaluation tasks; train and dev come from the hash rule over the rest. Sets are named only by this split (train, dev, held-out); a smaller set is a named fixed sample of one split. Pod-parallel stages are being marked. work/lm/data-study/features-worker/sample-build-spec/spec.md and contract.md.
+- The sample data build, specified: per-table feature function over (type, rows, base tables), about 164 features, to be computed in the engine at export where possible; a side output of the union run writing each table's feature vector and TableHash; the state-sequence generator over the union graph with targets identified by the engine's canonical hash; samples sharded by task. The held-out set is the 120 evaluation tasks; train and dev come from the hash rule over the rest. Sets are named only by this split: train, dev and held-out. Pod-parallel stages are being marked. docs/sample-build/spec.md and contract.md.
 - The query writer (the component that writes one query body from a state), specified: one query body from a state, each decision the next stream token under the engine's admissible mask, with the distribution over admitted tokens supplied by a pluggable function of the prefix, the decoder state, the state's table vectors and the task. It takes the place of the hand-set proposer in the search's execute step and replaces about 2,350 lines; 720 to 1,210 new. Budget, measured on 6 ramp tasks: the mask call costs 0.26 ms median, a step 0.02 ms, about 14 model tokens and 5 ms of engine time per query, 81 admitted tokens per state of 805; with body tables at each atom start the engine takes 21 to 37 ms per try, which leaves 2 to 5 ms per model call inside today's 89 ms; without body tables, 3 to 6 ms. With it, the table import fix (the sampler's Python code that turns an exported table into rows raises on a table exported as counts), Python only, 110 to 200 lines; today at most 1.5% of tries are dropped that way. work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md.
-- A search over states driven by a score, specified: a best-first frontier of states; the two choices are a score module and the writer's distribution; about 650 of 748 search lines go, a new file of 250 to 350 lines, about 150 lines change elsewhere. work/lm/data-study/sampler/search-worker/state-search-spec.md.
+- A search over states driven by a score, specified: a best-first frontier of states; the two choices are a score module and the writer's distribution; about 650 of 748 search lines go, a new file of 250 to 350 lines, about 150 lines change elsewhere. docs/state-search/state-search-spec.md.
 - Engine side, decided: expose the engine's canonical hash as the query identity. The model takes features, never tables, so the export writes per table the TableVector computed in the engine from the full TableRows, with the TableHash and row counts, for every table with no count cap, and that is what the state search and the samples use. The 10,000-rows-per-TableRows count export survives only in the old format until the consumers switch. For feature development only, the export also writes every parameterized table in full, every assignment and every TableRows with no count cap, to a store once per run, each table once by TableHash, so a feature change never re-exports; Features-worker develops features in Python over that store, and a feature that settles moves into the engine's feature code. That code is one Rust crate, engine/arclog-features, called by the export and by a Python module over the store.
 
 ## Build order
 
 Dependencies only.
 
-- The Kaggle submission (on the user's word): after the trees are trained and in the writer, and the kit survives engine panics, memory kills and hangs, with every task still getting an answer.
 - The table import fix for count-exported tables (Sampler-worker, Python only) depends on nothing and serves the sample build, the query writer and the state search.
 - The sample data build (features-worker, Mac) depends on nothing else; its per-table vector is what the state search and the writer's pluggable function consume.
 - The state search (search-worker) depends on nothing to build; it runs with an adapter over the current hand-set proposer until the writer exists, and takes the writer through one query.
