@@ -23,7 +23,7 @@ from table_vec import NAN, paint_state, picks
 
 SCHEMA = 'f2'
 KINDS = {'DET': 0, 'RULE': 1, 'INIT': 2}
-RESULTS = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop'
+RESULTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'node_shape')  # set T's features_node_shape.py and its vocab.json
 LINK = ['link_row_ratio', 'link_filter', 'link_grow', 'link_disjoint', 'link_parent_gain', 'link_adds', 'link_better', 'link_new_cells',
         'link_new_count', 'link_pair_union']
 AGGS = ['min', 'mean', 'max']
