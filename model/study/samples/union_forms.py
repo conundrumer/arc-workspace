@@ -17,29 +17,29 @@ TASK = re.compile(rb'^\{"task": "([^"]*)"')
 
 
 class LineIndex:
-    """The lines of a jsonl file by task, as byte ranges: one pass over the file, so a task's lines are read without loading the file."""
+    """The lines of a jsonl file by task, as byte ranges: one pass over the file, so a task's lines are read without loading the file. The file stays open, so
+    the ranges stay valid when a writer replaces the file by a rename while it is read."""
 
     def __init__(self, path: Path):
         self.path = path
         self.at: dict[str, list[tuple[int, int, int]]] = collections.defaultdict(list)
         pos = 0
-        with open(path, 'rb') as f:
-            for n, line in enumerate(f):
-                m = TASK.match(line)
-                if m:
-                    self.at[m[1].decode()].append((pos, len(line), n))
-                pos += len(line)
+        self.f = open(path, 'rb')
+        for n, line in enumerate(self.f):
+            m = TASK.match(line)
+            if m:
+                self.at[m[1].decode()].append((pos, len(line), n))
+            pos += len(line)
 
     def tasks(self) -> list[str]:
         return sorted(self.at)
 
     def lines(self, task: str) -> list[bytes]:
-        with open(self.path, 'rb') as f:
-            out = []
-            for pos, size, _ in self.at.get(task, []):
-                f.seek(pos)
-                out.append(f.read(size))
-            return out
+        out = []
+        for pos, size, _ in self.at.get(task, []):
+            self.f.seek(pos)
+            out.append(self.f.read(size))
+        return out
 
 
 def sha(text: str) -> str:
