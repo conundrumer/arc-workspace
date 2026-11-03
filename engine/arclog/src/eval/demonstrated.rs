@@ -20,7 +20,7 @@ use crate::hash::StableHashMap;
 use crate::program::canonical::{prediction, relation_of};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
-    Body, ColumnName, DemoRule, Demonstrated, DemonstratedPart, Form, InstanceInput, InstanceInputPart, KeyClausePart, LabelId, RelationColumn,
+    Body, Clause, ColumnName, DemoRule, Demonstrated, DemonstratedPart, Form, InstanceInput, InstanceInputPart, KeyClausePart, LabelId, RelationColumn,
 };
 use crate::relations::{Row, RowSet};
 use crate::resolver::columns::projection;
@@ -363,13 +363,7 @@ fn predictions(
         }
         let path = rule_path.child(index as u32);
         let body = clause.body.value();
-        let held = body_labels(body);
-        let mut named: Vec<(&ColumnName, LabelId)> = Vec::new();
-        for column in clause.columns.iter().chain(rule.fields.iter()) {
-            if held.contains(&column.label) && !named.iter().any(|(_, label)| *label == column.label) {
-                named.push((&column.name, column.label));
-            }
-        }
+        let named = prediction_columns(clause, rule);
         let labels: Vec<LabelId> = named.iter().map(|(_, label)| *label).collect();
         let conjuncts = body.conjuncts.iter().zip(0u32..).map(|(conjunct, at)| (conjunct, path.child(0).child(at))).collect();
         let (compiled, _) = ir::compile_safe(evaluation.program, &path, conjuncts, &labels).map_err(|compile| fault(format!("the prediction does not compile: {compile:?}")))?;
@@ -412,4 +406,48 @@ fn predictions(
         instances.push((Row::default(), vec![RowSet::empty(width); groups.len()]));
     }
     Ok(Ok(instances.into_iter().map(|(_, sets)| sets).collect()))
+}
+
+/// The columns of `clause`, a `&prediction` clause of `rule`, that its body
+/// makes, each by its name and its label: the clause's columns, then the
+/// rule's fields, each label once.
+fn prediction_columns<'c>(clause: &'c Clause, rule: &'c DemoRule) -> Vec<(&'c ColumnName, LabelId)> {
+    let held = body_labels(clause.body.value());
+    let mut named: Vec<(&ColumnName, LabelId)> = Vec::new();
+    for column in clause.columns.iter().chain(rule.fields.iter()) {
+        if held.contains(&column.label) && !named.iter().any(|(_, label)| *label == column.label) {
+            named.push((&column.name, column.label));
+        }
+    }
+    named
+}
+
+/// Each `&prediction` clause of the `DEMONSTRATED` form `demonstrated` at
+/// `form`, by its path, with the label in its body of each column of the
+/// form's relation: the key's columns, then the columns of the `value`
+/// head. A key column has none where the clause makes no label for it, as
+/// the clause's predictions then hold at every value of that column.
+pub(crate) fn prediction_labels(demonstrated: &Demonstrated, form: &NodePath) -> Result<Vec<(NodePath, Vec<Option<LabelId>>)>, String> {
+    let shape = Shape::of(demonstrated, form);
+    let heads = shape.heads()?;
+    let mut found = Vec::new();
+    for (index, rule) in demonstrated.rules.iter().enumerate() {
+        let rule_path = form.child(demonstrated.position(DemonstratedPart::Rule(index)));
+        let rule = rule.value();
+        for (at, form) in rule.forms.iter().enumerate() {
+            let Form::Clause(clause) = form else { continue };
+            let clause = clause.value();
+            if relation_of(&clause.derives) != prediction() {
+                continue;
+            }
+            let named = prediction_columns(clause, rule);
+            let label = |name: &ColumnName| named.iter().find(|(found, _)| *found == name).map(|(_, label)| *label);
+            let mut labels: Vec<Option<LabelId>> = shape.key_columns.iter().map(|column| label(&column.name)).collect();
+            for (name, _) in &heads.value.columns {
+                labels.push(Some(name.as_ref().and_then(label).ok_or_else(|| format!("the prediction names no column {name:?} of the `value` head"))?));
+            }
+            found.push((rule_path.child(at as u32), labels));
+        }
+    }
+    Ok(found)
 }

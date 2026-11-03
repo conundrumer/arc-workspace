@@ -203,6 +203,33 @@ impl BodyView {
         Ok(Self {form,clause,paths,scope,input})
     }
 
+    /// The body of each `&prediction` clause of the `DEMONSTRATED` form at
+    /// `form`, with the labels it makes as its columns, and the label in it
+    /// of each column of the form's relation, as
+    /// `super::demonstrated::prediction_labels` gives them. A body takes the
+    /// types of its rule's label scope and the examples of the form.
+    pub fn predictions(program:&CheckedProgram,form:&NodePath)->Outcome<Vec<(Self,Vec<Option<LabelId>>)>> {
+        let fault=|message:String|RunFault {message:message.into(),form:form.clone()};
+        let root=NodeRef::Program(program.program.program.value());
+        let Some(NodeRef::Demonstrated(demonstrated))=node_at(root,form) else {return Err(fault("prediction owner is not DEMONSTRATED".into()))};
+        let scope=match program.program.form_side(form) {
+            Some(Side::PerInput)=>ExampleScope::PerExample,
+            Some(Side::TaskWide)=>ExampleScope::TaskWide,
+            None=>return Err(fault("DEMONSTRATED owner has no checked evaluation scope".into())),
+        };
+        let found=super::demonstrated::prediction_labels(demonstrated,form).map_err(fault)?;
+        found.into_iter().map(|(clause,labels)| {
+            let Some(NodeRef::Clause(written))=node_at(root,&clause) else {return Err(fault("a prediction path is not a clause".into()))};
+            let body=written.body.value();
+            let at=clause.child(0);
+            let conjuncts=body.conjuncts.iter().zip(0u32..).map(|(conjunct,index)|(conjunct,at.child(index))).collect();
+            let columns=crate::read::columns::made_labels(body);
+            let (compiled,paths)=ir::compile_query(program,&clause,None,conjuncts,&columns)
+                .map_err(|e|fault(format!("checked prediction compile: {e:?}")))?;
+            Ok((Self {form:form.clone(),clause:compiled,paths,scope,input:None},labels))
+        }).collect()
+    }
+
     /// The checked option relation that a CHOOSE selects rows from: its
     /// for rows with their from candidates. Never constraints and picking
     /// select a subset; they do not create the selected cells' frames.
