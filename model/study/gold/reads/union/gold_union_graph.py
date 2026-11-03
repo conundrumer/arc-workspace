@@ -348,7 +348,12 @@ def main():
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error=u.get('error', 'no tables'))) + '\n')
                 continue
             T = tables_of(s, u)
-            rows, task, queries = one(u, cases[u['task']], merged, T or Tables(), rows5)
+            try:
+                rows, task, queries = one(u, cases[u['task']], merged, T or Tables(), rows5)
+            except Exception as e:  # noqa: BLE001  a task the graph can't build: its error line, and the run goes on
+                fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error='graph: %s: %s' % (type(e).__name__, str(e)[:200]))) + '\n')
+                print(u['task'], 'graph error', type(e).__name__, str(e)[:200], flush=True)
+                continue
             task.update(tables_source='row store' if T else 'none', shared_value_sets=T.shared_value_sets if T else None, unmatched=len(T.unmatched) if T else None)
             for r in rows:
                 why = [left[u['task']][m] for m in r['members'] if m in left[u['task']]]
