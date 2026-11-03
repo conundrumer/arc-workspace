@@ -35,11 +35,11 @@
 ;;; @rare
 ;;; The type of a value with no fields. An arcdata `param` form may name it. No lib relation has a `Unit` column.
 (type Unit)
-;;; A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column.
+;;; A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column. The values of a Box or Position column stand in a frame: the grids that each value is a place in, each grid being the input or the output of the current example, or of the example that an Example column holds. Some lib relations and component outputs make a new frame, which has no grid. [Frames](arclog.md#frames) gives how a column gets its frame.
 (type Box)
 ;;; A Box of one cell. A label at a Box column and a Position column is a Position. A label never stands at a Position column and an Offset column.
 (type Position)
-;;; A Box that moves another Box.
+;;; A Box that moves another Box. An Offset column has no frame.
 (type Offset)
 ;;; A label of one thing, such as one object. It holds nothing but the thing's identity. While `ARCLOG_IDENT_SOURCE` is set, an `Ident` column has one source: the `INIT` form and output that makes it, or the `DET` form of a proposer that makes it. A label stands at `Ident` columns of one source only, so the checker refuses a join, a `NOT`, an `=` or `!=`, a union and a type parameter that meet two sources.
 (type Ident)
@@ -71,7 +71,7 @@
     (when ((A Position) (B Offset)) (C Position))
     (when ((A Offset) (B Position)) (C Position))
     (when ((A Offset) (B Offset)) (C Offset))))
-;;; X_rel is X less Base, margin by margin. For two cells, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.
+;;; X_rel is X less Base, margin by margin. For two cells in one frame, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.
 (relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base) (size X))))
   (types
     (when ((Base Offset) (X Offset)) (X_rel Offset))

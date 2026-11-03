@@ -72,8 +72,8 @@
     },
     "type:Box": {
       "status": "authored_contract",
-      "summary": "A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column.",
-      "contract_markdown": "A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column.",
+      "summary": "A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column. The values of a Box or Position column stand in a frame: the grids that each value is a place in, each grid being the input or the output of the current example, or of the example that an Example column holds. Some lib relations and component outputs make a new frame, which has no grid. [Frames](arclog.md#frames) gives how a column gets its frame.",
+      "contract_markdown": "A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column. The values of a Box or Position column stand in a frame: the grids that each value is a place in, each grid being the input or the output of the current example, or of the example that an Example column holds. Some lib relations and component outputs make a new frame, which has no grid. [Frames](arclog.md#frames) gives how a column gets its frame.",
       "source": {
         "document": "engine/lib/registry.sexpr",
         "start_line": 38,
@@ -94,8 +94,8 @@
     },
     "type:Offset": {
       "status": "authored_contract",
-      "summary": "A Box that moves another Box.",
-      "contract_markdown": "A Box that moves another Box.",
+      "summary": "A Box that moves another Box. An Offset column has no frame.",
+      "contract_markdown": "A Box that moves another Box. An Offset column has no frame.",
       "source": {
         "document": "engine/lib/registry.sexpr",
         "start_line": 42,
@@ -237,8 +237,8 @@
     },
     "lib:relative": {
       "status": "authored_contract",
-      "summary": "X_rel is X less Base, margin by margin. For two cells, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.",
-      "contract_markdown": "X_rel is X less Base, margin by margin. For two cells, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.",
+      "summary": "X_rel is X less Base, margin by margin. For two cells in one frame, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.",
+      "contract_markdown": "X_rel is X less Base, margin by margin. For two cells in one frame, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.",
       "source": {
         "document": "engine/lib/registry.sexpr",
         "start_line": 74,

@@ -11,9 +11,9 @@
 - `Nat`: A whole number from 0 up. A `Nat` label fills an `Int` column.
 - `Color`: A color.
 - `Example`: One example of the task, train or test, in a DET. It is the example's index.
-- `Box`: A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column.
+- `Box`: A rectangle of the grid, given by its margin at each edge. A margin below 0 reaches past the edge. `Position` and `Offset` are types under `Box`, and either stands at a Box column. The values of a Box or Position column stand in a frame: the grids that each value is a place in, each grid being the input or the output of the current example, or of the example that an Example column holds. Some lib relations and component outputs make a new frame, which has no grid. [Frames](arclog.md#frames) gives how a column gets its frame.
 - `Position`: A Box of one cell. A label at a Box column and a Position column is a Position. A label never stands at a Position column and an Offset column.
-- `Offset`: A Box that moves another Box.
+- `Offset`: A Box that moves another Box. An Offset column has no frame.
 - `Ident`: A label of one thing, such as one object. It holds nothing but the thing's identity. While `ARCLOG_IDENT_SOURCE` is set, an `Ident` column has one source: the `INIT` form and output that makes it, or the `DET` form of a proposer that makes it. A label stands at `Ident` columns of one source only, so the checker refuses a join, a `NOT`, an `=` or `!=`, a union and a type parameter that meet two sources.
 - `C4`: The four turns: D4_ID, D4_CW, D4_HT and D4_CC. A type under `D4`.
 - `D4`: The eight symmetries of a square. D4_ID is the identity. D4_CW, D4_HT and D4_CC are the quarter turn clockwise, the half turn and the quarter turn counterclockwise. D4_LR swaps the left and the right (a reflection across the vertical axis), and D4_TB the top and the bottom. D4_DG and D4_AD reflect across the diagonals of those names.
@@ -33,7 +33,7 @@
 
 ## Relations
 - `compose(A: Box, B: Box, C: Box)`, needs A B: C is A plus B, margin by margin. With B an offset, C is A moved by B.
-- `relative(Base: Box, X: Box, X_rel: Box)`, needs Base X: X_rel is X less Base, margin by margin. For two cells, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.
+- `relative(Base: Box, X: Box, X_rel: Box)`, needs Base X: X_rel is X less Base, margin by margin. For two cells in one frame, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.
 - `edge_inset(D: Dir, K: Int, B: Box)`, needs K: The grid with K lines cut from edge D.
 - `margin(B: Box, D: Dir, K: Int)`, needs B: K cells lie between B and edge D.
 - `apply(D: D4, P: Box, P_out: Box)`, needs P: P_out is P's image when the whole grid undergoes D.
