@@ -551,8 +551,9 @@ impl ResolvedProgram {
     /// program, which a decode takes from its tokens and the text of the
     /// program does not keep. The closure is resolved with those sites in
     /// the order of the text ([`crate::write::in_text_order`]), so a decode
-    /// and the reader of its text give one content. `None` where `position`
-    /// names no node.
+    /// and the reader of its text give one content. A clause's gloss changes
+    /// no table and no stream holds it, so the closure's clauses hold none
+    /// ([`query_form`]). `None` where `position` names no node.
     pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
         let (closure, last) = self.query_closure(position, registry)?;
         closure.content(&last)
@@ -595,7 +596,7 @@ impl ResolvedProgram {
                 }
             }
         }
-        let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| form.clone()).collect();
+        let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| query_form(form)).collect();
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
         Some((build::resolve(&pruned, None, &SolverScope::default(), registry).value, last))
@@ -873,6 +874,15 @@ fn demo_rules<'d>(
     let path = path.clone();
     let rules = demonstrated.rules.iter().enumerate();
     rules.map(move |(index, rule)| (path.child(demonstrated.position(crate::program::DemonstratedPart::Rule(index))), rule.value()))
+}
+
+/// `form` as the content of a query holds it: a clause with no gloss.
+fn query_form(form: &crate::program::Form) -> crate::program::Form {
+    use crate::program::{Clause, Form};
+    match form {
+        Form::Clause(clause) if clause.value().gloss.is_some() => Form::Clause(Node::new(Clause { gloss: None, ..clause.value().clone() })),
+        form => form.clone(),
+    }
 }
 
 pub(crate) mod column_sources;
