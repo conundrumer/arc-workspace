@@ -111,6 +111,7 @@ from arclog_convert.forms import (
     Todo,
     fold_or_lines,
     hoist_shared,
+    sink_alt_dets,
     renamed,
 )
 from arclog_convert.checks import Fold
@@ -161,7 +162,7 @@ def _finished(arclog: str, arcdata: str, concept_empty: frozenset[str] | set[str
     arclog = fold_or_lines(renamed(arclog))
     insts = libmap_rename.renamed_instances(libmap_rename.instances(arclog),
                                             libmap_rename.reads(arclog + arcdata))
-    arclog = hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)), concept_empty)
+    arclog = sink_alt_dets(hoist_shared(fix_labels(libmap_rename.rename(arclog, insts)), concept_empty))
     return arclog, libmap_rename.rename(arcdata, insts), insts
 
 

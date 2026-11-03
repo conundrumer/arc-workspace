@@ -228,6 +228,34 @@ class CasesMixin:
                     grew = True
         return topo([f for f in concept if f.side == "DET" and f.name in reading - derived])
 
+    def redetermined(self, fs: list[Form], concept: set[str]) -> set[str]:
+        """The names of the `DET` forms of `fs`, the forms of one case, that
+        fix a constructor outside the concept case and read, directly or
+        through other forms of `fs`, a relation that a form of `fs` derives
+        in a block their own block does not hold. A `DET` reads in the case
+        of its own block, so in this case it is derived again, as the
+        case derives what it reads."""
+        by_name: dict[str, list[Form]] = defaultdict(list)
+        for f in fs:
+            by_name[f.name].append(f)
+
+        def block(f: Form) -> set[str]:
+            return set(f.branches) - concept
+        out: set[str] = set()
+        for f in fs:
+            if f.side != "DET" or not block(f):
+                continue
+            seen: set[str] = set()
+            todo = list(f.reads)
+            while todo:
+                n = todo.pop()
+                if n not in seen:
+                    seen.add(n)
+                    todo.extend(m for g in by_name[n] for m in g.reads)
+            if any(not block(g) <= block(f) for n in seen for g in by_name[n]):
+                out.add(f.name)
+        return out
+
     def own_copies_needed(self) -> frozenset[ScopedName]:
         """The relations of the solver's program and of its parse that a `DET`
         of the concept program reads, directly or through other relations,

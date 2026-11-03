@@ -50,9 +50,13 @@ def holds_at(f: Form, at: dict[str, str], concept: set[str], field_of: dict[str,
     `DET` form also holds at a constructor that is the concept's, whatever
     constructor the case takes there: Souffle's `Determine` runs once, so a
     constructor that it names in a read selects that branch's rows, which in
-    the converter's cases are the concept case's."""
+    the converter's cases are the concept case's. A form that also fixes a
+    constructor outside the concept case is the exception for a constructor
+    that its head names: the clause states the rows of that case alone."""
+    alt = bool(set(f.branches) - concept)
+
     def holds(b: str) -> bool:
-        if f.side == "DET" and b in concept:
+        if f.side == "DET" and b in concept and not (alt and b in f.head_branches):
             return True
         return at[field_of[b]] == b if field_of[b] in at else b in concept
     return all(holds(b) for b in f.branches)
@@ -514,8 +518,9 @@ class RenderMixin:
             stated = {p.name.partition(".")[0] for p in pl if p.name and set(p.alts) == case}
             new = [g for g in new if whole(g) and g.name not in stated]
             want = set().union(*(written_reads(f) for f in new))
+            reread = self.redetermined(fs, concept)
             while more := [g for g in fs if g.name in want and whole(g) and g.name not in stated
-                           and stated_otherwise(g.name, merged_texts(by_name[g.name]), seen)
+                           and (stated_otherwise(g.name, merged_texts(by_name[g.name]), seen) or g.name in reread)
                            and not any(g is h for h in new)]:
                 new += more
                 want |= set().union(*(written_reads(g) for g in more))

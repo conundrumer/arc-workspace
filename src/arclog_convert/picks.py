@@ -9,7 +9,10 @@ and every column of type `TiebreakResolution` is dropped.
 
 A pick whose every apart says that one candidate stands in two slots gets
 `ones`, the key columns of its `ONE` marks: the slot's columns, then the
-joined columns of each such apart. Where the pick is the item relation's
+joined columns of each such apart. A `TiebreakResolutions` pick gets no
+`ones` where an apart joins on a column that is not the slot's, as its
+items may stay unused, and a relation that gates its models adds aparts
+(`gated_aparts`). Where the pick is the item relation's
 only reader, the item relation's clauses become the picked relation's
 (`fold`). A head term `$Ctor(V..)` of type `TiebreakResolution` with no
 `TiebreakResolutions` instance is a pick of one row of the atoms that bind
@@ -325,9 +328,19 @@ class Rewriter:
             k = self.never_key(body, pick.item, pick.cvars, pick.spread)
             if k is None:
                 return None
+            if self.unused_key(pick, k):
+                return None
             if k not in keys:
                 keys.append(k)
         return keys
+
+    @staticmethod
+    def unused_key(pick: Pick, key: list[str]) -> bool:
+        """Whether `key`, the joined columns of an apart, has an item's own
+        column in a `TiebreakResolutions` pick. A `ONE` mark keeps a row for
+        every value of its key, and a tiebreak may leave an item unused."""
+        return pick.comp == "TiebreakResolutions" and any(
+            not term_vars(pick.spread.get(v, Variable(v)), set()) <= set(pick.slot) for v in key)
 
     @staticmethod
     def never_key(body, item: Atom, cvars: list[str], spread: dict) -> list[str] | None:
@@ -698,7 +711,94 @@ class Rewriter:
                     return [l for l in lits if not (isinstance(l, AtomLiteral) and l.negated
                                                     and l.atom.relation == RelationName((), name))]
                 units = [dc_replace(u, body=tuple(map_lits(u.body, fn))) if u.body else u for u in units]
+        self.gated_aparts(inst, pick, reads, units, rels)
         return units
+
+    def gated_aparts(self, inst, pick: Pick, reads, units, rels) -> None:
+        """The aparts of the clauses of a relation `r` over one resolution
+        that gates the models: every read of `r` is `NOT r(K, Res)` in a
+        clause `c(K, Res) :- resolution(K, Res), NOT r(K, Res)`. A clause of
+        `r` that two chosen candidates make true, once the relations over the
+        resolution that have one clause are inlined, is an apart. Its two
+        candidates are two `assign` reads, or an `assign` read and a negated
+        `assign` read, for which the second candidate is any other item at
+        that slot. `r` keeps the clause, which also holds where a slot has no
+        candidate."""
+        item_at = reads[-1]
+        sc = inst.scope.components
+        path = (inst.name,)
+        assign, resolution = RelationName(path, "assign"), RelationName(path, "resolution")
+
+        def mine(r):
+            return [u for u in units if u.head.relation.name == r.name and not u.head.relation.instances
+                    and u.scope.components == sc]
+
+        def res_col(r):
+            idx = [i for i, c in enumerate(r.columns) if c.type.name == RES]
+            return idx[0] if len(idx) == 1 and r.scope.components == sc else None
+
+        def inline(lits, R):
+            """`lits`, each read of a relation over `R` with one clause replaced by that clause's body."""
+            for _ in range(3):
+                out, changed = [], False
+                for l in lits:
+                    q = next((x for x in rels if isinstance(l, AtomLiteral) and not l.negated
+                              and x.name == l.atom.relation.name and not l.atom.relation.instances
+                              and res_col(x) is not None), None)
+                    qs = mine(q) if q is not None else []
+                    if len(qs) != 1 or qs[0].body is None or l.atom.args[res_col(q)] != R \
+                            or not all(isinstance(a, Variable) for a in qs[0].head.args) \
+                            or len({a.name for a in qs[0].head.args}) != len(qs[0].head.args):
+                        out.append(l)
+                        continue
+                    u = qs[0]
+                    m = dict(zip((a.name for a in u.head.args), l.atom.args))
+                    for v in term_vars(u.body, set()) - set(m):
+                        m[v] = self.fresh(v)
+                    out.extend(tsubst(tuple(u.body), m))
+                    changed = True
+                lits = out
+                if not changed:
+                    break
+            return lits
+
+        for r in rels:
+            ri = res_col(r)
+            clauses = mine(r)
+            if ri is None or not clauses or any(u.body is None for u in clauses):
+                continue
+            readers = [u for u in units if u not in clauses and u.body and RelationName((), r.name) in reads_of(u.body)]
+            if not readers:
+                continue
+            for u in readers:
+                gate = [l for l in u.body if isinstance(l, AtomLiteral) and l.atom.relation in (resolution, RelationName((), r.name))]
+                if len(u.body) != 2 or len(gate) != 2 or {l.negated for l in gate} != {False, True} \
+                        or gate[0].atom.args != gate[1].atom.args:
+                    break
+            else:
+                for u in clauses:
+                    R = u.head.args[ri]
+                    if not isinstance(R, Variable):
+                        continue
+                    lits = inline(list(u.body), R)
+                    on = [l for l in lits if isinstance(l, AtomLiteral) and l.atom.relation == assign and l.atom.args[1] == R]
+                    pos, neg = [l for l in on if not l.negated], [l for l in on if l.negated]
+                    rest = [l for l in lits if l not in on and not (
+                        isinstance(l, AtomLiteral) and not l.negated and l.atom.relation == resolution and l.atom.args[1] == R)]
+                    if R.name in term_vars(tuple(rest), set()):
+                        continue
+                    taken = term_vars(tuple(lits), set())
+                    if len(pos) == 2 and not neg:
+                        a1, a2, s = item_at(*[(a.atom.args[0], a.atom.args[2], a.atom.args[3]) for a in pos], taken)
+                        pick.aparts.append(fix_cmps(tsubst(tuple([a1, a2] + rest), s)))
+                    elif len(pos) == 1 and len(neg) == 1 and pos[0].atom.args[0] == neg[0].atom.args[0] \
+                            and not isinstance(neg[0].atom.args[3], Wildcard):
+                        p_, n_ = pos[0].atom, neg[0].atom
+                        X = self.fresh("X")
+                        taken.add(X.name)
+                        a1, a2, s = item_at((p_.args[0], p_.args[2], p_.args[3]), (n_.args[0], n_.args[2], X), taken)
+                        other = Comparison(ComparisonOperator.NE, X, n_.args[3], 0)
+                        pick.aparts.append(fix_cmps(tsubst(tuple([a1, a2] + rest + [other]), s)))
 
     def unify_apart(self, pairs_a, pairs_b, taken: set[str]):
         """The bindings of the two sides of an apart, and one substitution for

@@ -165,6 +165,7 @@ class InstancesMixin:
                     col_names[-1].append(head_cols[-1][0])
         else:
             self.todo.add("head", souffle_term(u.head))
+        head_branches = frozenset(branches)
         head_vars = {t.name for _, t in head_cols if isinstance(t, Variable)}
         for e in eqs:
             a, b = e.lhs.name, e.rhs.name
@@ -255,6 +256,7 @@ class InstancesMixin:
         if len(f.lines) == 1:
             pass
         f.branches = tuple(sorted(branches))
+        f.head_branches = tuple(sorted(head_branches))
         f.comments = [*(";; " + t for t in self.plain_comments(f.line)), *todos]
         p = None if u.head.relation.instances else c.one_marks.get((u.scope.components, u.head.relation.name))
         if p is not None and u.span and u.span.first == min(

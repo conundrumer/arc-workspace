@@ -268,6 +268,7 @@ class Form:
     head_repeat: list = field(default_factory=list)   # (column, the column its head repeats)
     with_domain: list[str] | None = None   # a Cardinality's lines with its `domain` clause written, see `zero_domains`
     demo_rule: str = ""               # the demonstrated rule a clause's head names
+    head_branches: tuple[str, ...] = ()   # the constructors its head fixes, among `branches`
 
     def __setattr__(self, key, value):
         # `&output` is the tail's: no claim holds it
@@ -746,6 +747,7 @@ def merge_forms(forms: list[Form]) -> list[Form]:
         close(g.lines, ")")
         g.claim_slugs = [s for x in fs for s in x.claim_slugs]
         g.branches = tuple(sorted(set().union(*(x.branches for x in fs))))
+        g.head_branches = tuple(sorted(set().union(*(x.head_branches for x in fs))))
         g.cols, g.side = list(fs[0].cols), fs[0].side
         g.marks = list(fs[0].marks)
         out.append(g)
@@ -937,6 +939,102 @@ def renamed(text: str) -> str:
     return text.replace("(@@in ", "(from ")
 
 
+
+
+def sink_alt_dets(text: str) -> str:
+    """The text with each `DET` of the concept program that only the forms
+    of one alt's blocks read moved into that alt: to the end of the alt's
+    first claim block whose text names the relation, or else of its first
+    claim block that holds a reader. A `DET` stays where a concept form or a
+    concept claim's text names it, where a relation it reads, directly or
+    through the concept's forms, has a form in an `ALT` block, or where a
+    relation it reads is declared after the place it would move to."""
+    from arclog_convert.lint_alts import alt_blocks, placements, reads
+    from arclog_convert.lint_read import L, Str, read
+    forms = read(text)
+    pl = placements(forms)
+    derivers: dict[str, list] = defaultdict(list)
+    for p in pl:
+        if p.name:
+            derivers[p.name.partition(".")[0]].append(p)
+    concept_text = " ".join(f.items[2].text for f in forms if isinstance(f, L) and f.head in ("INPUT", "OUTPUT")
+                            and len(f.items) > 2 and isinstance(f.items[2], Str))
+    blocks: dict[tuple, list] = defaultdict(list)
+    for path, b in alt_blocks(forms):
+        blocks[path].append(b)
+
+    def in_alt(name: str, seen: set[str]) -> bool:
+        """Whether `name`, or a relation the concept's forms of it read, has a form in an `ALT` block."""
+        if name in seen:
+            return False
+        seen.add(name)
+        ds = derivers.get(name, [])
+        return any(d.alts for d in ds) or any(in_alt(r, seen) for d in ds for r in reads(d.form, name))
+
+    edits: list[tuple[int, int, str]] = []   # (start, end, replacement) on `text`
+    for p in pl:
+        if p.form.head != "DET" or p.alts or p.rigid is not None or not p.name or len(derivers[p.name]) != 1:
+            continue
+        name = p.name
+        if re.search(re.escape(name) + r"(?![\w.])", concept_text):
+            continue
+        readers = [q for q in pl if q.form is not p.form and name in reads(q.form, q.name)]
+        if not readers or any(not q.alts or q.rigid is not None for q in readers):
+            continue
+        target = min((q.alts for q in readers), key=len)
+        if any(not set(target) <= set(q.alts) for q in readers) or len(blocks.get(target, [])) != 1:
+            continue
+        own = reads(p.form, name)
+        if any(in_alt(r, set()) for r in own):
+            continue
+        alt = blocks[target][0]
+        claims = [c for c in alt.items[2:] if isinstance(c, L) and c.head in ("INPUT", "OUTPUT")]
+        named = [c for c in claims if len(c.items) > 2 and isinstance(c.items[2], Str)
+                 and re.search(re.escape(name) + r"(?![\w.])", c.items[2].text)]
+        holding = [c for c in claims if any(q.form.start > c.start and q.form.end <= c.end for q in readers)]
+        claim = (named or holding or [None])[0]
+        if claim is None:
+            continue
+        at = claim.end - 1   # the claim block's closing paren
+        if any(d.form.start > at for r in own for d in derivers.get(r, [])):
+            continue
+        # the DET's text, with the comments above it, re-indented to the claim block's forms
+        a = text.rfind("\n", 0, p.form.start) + 1
+        ind = p.form.start - a
+        while a > 0:
+            prev = text.rfind("\n", 0, a - 1) + 1
+            if not text[prev:a - 1].strip().startswith(";;"):
+                break
+            a = prev
+        inner = next((x for x in claim.items[3:] if isinstance(x, L)), None)
+        cl = text.rfind("\n", 0, claim.start) + 1
+        new_ind = (inner.start - text.rfind("\n", 0, inner.start) - 1) if inner is not None else claim.start - cl + 2
+        body = [l[ind:] if l[:ind].strip() == "" else l.lstrip() for l in text[a:p.form.end].split("\n")]
+        moved = "\n".join((" " * new_ind + l) if l else l for l in body)
+        # the cut: the DET and the comments above it, and the blank line that parted it from its neighbours
+        line_end = text.find("\n", p.form.end)
+        line_end = len(text) if line_end < 0 else line_end
+        tail = text[p.form.end:line_end]
+        if tail.strip(")"):
+            continue
+        if tail:
+            # its parens close the blocks above it: they go to the line before it
+            b = a - 1
+            while b > 0 and not text[text.rfind("\n", 0, b) + 1:b].strip():
+                b = text.rfind("\n", 0, b)
+            cut = (b, p.form.end)
+        else:
+            end = line_end + 1
+            if text[end:end + 1] == "\n":
+                end += 1
+            elif a > 1 and text[a - 2:a] == "\n\n":
+                a -= 1
+            cut = (a, end)
+        edits += [(at, at, "\n\n" + moved), (*cut, "")]
+    # bottom up; of two moves into one block, the earlier one lands first
+    for _, (start, end, new) in sorted(enumerate(edits), key=lambda e: (e[1][0], e[0]), reverse=True):
+        text = text[:start] + new + text[end:]
+    return text
 
 
 def hoist_shared(text: str, concept_empty: frozenset[str] | set[str]) -> str:
