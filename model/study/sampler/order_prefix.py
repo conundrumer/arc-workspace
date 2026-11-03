@@ -26,7 +26,7 @@ labels that are bound there only later (a label made in between; in a later bran
 input site of a lib relation takes a label that is new there. So the first two tests keep their tokens, and the test at the close decides. They keep a free relation's tokens too where a
 `^` label was made in between.
 
-A DEMONSTRATED query, a proposer body and the group tokens of an INIT or a RIGID_DET have no sets: the rule keeps every id there. A test that passes SECONDS keeps the token.
+A DEMONSTRATED query, a proposer body, the group tokens of an INIT or a RIGID_DET and the parts of a RIGID_DET have no sets: the rule keeps every id there. A test that passes SECONDS keeps the token.
 """
 import bisect
 import collections
@@ -39,7 +39,7 @@ import numpy as np
 import live
 import order
 import writer
-from live import ALSO_TOK, M, arclog
+from live import ALSO_TOK, SKIP_TOK, M, arclog
 from writer import Phase, core_of
 
 STAR, CARET, END, NOT, OR_TOK, ZERO = M.STAR, M.CARET, M.END, M.NOT, M.OR, M.ZERO
@@ -50,7 +50,8 @@ SECONDS = 2.0  # the budget of one test at a close
 
 
 class _List:
-    """An open set of items: kind 'body', 'branch', 'dom' (an ALL's first list), 'allbody', 'if0', 'if1' or 'if2'. items: [(start, end, kind)] of its closed items, token indexes
+    """An open set of items: kind 'body', 'branch', 'dom' (an ALL's first list), 'allbody', 'if0', 'if1' or 'if2'; or 'parts', a RIGID_DET's parts, which are no set (each is an
+    output slot by its position) and which the rule keeps in any order. items: [(start, end, kind)] of its closed items, token indexes
     (end excluded), kind 'atom', 'not', 'cmp', 'one', 'or', 'all' or 'if'. cur: the start of the open item, and cur_kind its kind."""
     __slots__ = ('kind', 'start', 'items', 'cur', 'cur_kind')
 
@@ -83,14 +84,17 @@ def parse(core, kind, tokens):
         stack.append(_List('body', 1))
     atom = one = notwait = due = rec = False
     need = 0
+    decisions = 0  # the group-level decisions so far (a body or SKIP each); a RIGID_DET's parts follow its first two
     for i in range(1, len(tokens)):
         t = tokens[i]
         if not stack:
             if kind in ('RULE', 'DET'):
                 return []
             if not (rel[t] or t in CMP or t in starts):  # a group token of an INIT or a RIGID_DET
+                decisions += t == SKIP_TOK
                 continue
-            stack.append(_List('body', i))
+            stack.append(_List('parts' if kind == 'RIGID_DET' and decisions >= 2 else 'body', i))
+            decisions += 1
         top = stack[-1]
         if one:  # a ONE mark: its labels, then its END
             if t == END:
@@ -149,7 +153,7 @@ def parse(core, kind, tokens):
             o.cur = i + 1
             stack.append(_List('branch', i + 1))
         elif t == END:
-            if top.kind == 'body':
+            if top.kind in ('body', 'parts'):
                 stack.pop()
             elif top.kind == 'branch':
                 stack.pop()
@@ -261,7 +265,7 @@ class Rule:
         if not info or not info['stack']:
             return out
         L = info['stack'][-1]
-        if not isinstance(L, _List):
+        if not isinstance(L, _List) or L.kind == 'parts':
             return out
         ph = pt.place.phase
         core = self.core
@@ -525,6 +529,9 @@ class Rule:
         for depth, L in enumerate(lists):
             items = list(L.items) + ([(L.cur, n, L.cur_kind)] if L.cur is not None else [])
             rel = other = None
+            if L.kind == 'parts':
+                out.append(Floor(depth, L.kind, rel, other))
+                continue
             for s, e, kd in items:
                 if kd == 'one':
                     continue

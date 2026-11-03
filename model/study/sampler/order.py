@@ -16,6 +16,8 @@ bound), the key being the item's model tokens under the current naming: a label 
 fresh index. An OR's branches, the atoms of a branch and the two parts of an ALL follow the same rule, each by itself. Items with equal keys are a tie, and every tie
 choice is followed: the number of distinct streams is the number of paths.
 
+The parts of a RIGID_DET are no set: each is an output slot by its position, and a permutation of the parts changes the QueryHash. They stay as the query has them.
+
 A site's order inside an atom is not an order that the QueryHash ignores in the engine wheel of the study (site-exp18): a permutation of the sites changes the QueryHash.
 The sites stay as the query has them. The operands of `=` stand so that a new label is first.
 
@@ -291,7 +293,7 @@ def read_query(env, base, kind, full, gold_hash=None):
     try:
         for tag, bkind, toks in segments(env, dec.fork(), kind, full):
             s = symbolise(env, toks, marks)
-            if tag == 'fixed':
+            if tag == 'fixed' or bkind == 'part':  # a RIGID_DET's parts are its output slots by position: the QueryHash depends on their order
                 q.plan.append(Fixed(tuple(s)))
             elif env.kind[s[0]] == 'proposer':
                 q.plan.append(Fixed(tuple(s)))
@@ -1048,7 +1050,7 @@ def site_stats(env, q):
 #   set_key_text(pt)   the text that the digest is of
 #
 # The partial query is read from pt.tokens alone. The atoms of a body, the branches of an OR, the atoms of a branch and the two lists of an ALL are sets; what has no free order
-# (the component, SKIP, the heads of ports) stays in order. The open item is the open atom and the open containers (OR, ALL, body) around it. A label is named by a canonical
+# (the component, SKIP, the heads of ports, the parts of a RIGID_DET) stays in order. The open item is the open atom and the open containers (OR, ALL, body) around it. A label is named by a canonical
 # numbering: colours by refinement over the atoms that read it, and the ties of that by the least text over their permutations (up to PERMS). With creators=True an atom that
 # makes a label (`*`, `^`) differs from one that reads it, because the decoder's later refusals and the QueryHash of an OR depend on which atom made the label.
 
@@ -1075,6 +1077,7 @@ def parse_prefix(core, kind, tokens, made):
     one = None  # the open ONE mark
     due = rec = False
     need = 0
+    decisions = 0  # the group-level decisions so far (a body or SKIP each); a RIGID_DET's parts follow its first two
     toks = list(tokens[1:])
     if kind in ('RULE', 'DET'):
         if toks and core.kind[toks[0]] == 'proposer':
@@ -1088,9 +1091,14 @@ def parse_prefix(core, kind, tokens, made):
 
     for t in toks:
         if not stack:  # the group level of an INIT or a RIGID_DET
+            if kind == 'RIGID_DET' and decisions >= 2:  # the parts: output slots by position, in order
+                fixed.append(value(t) if t in (STAR, CARET) else ('L', t) if lab[t] else t)
+                continue
             if not (rel[t] or t in CMP or t in (NOT, OR_TOK, ALLT, core.IF, core.ONE)):
+                decisions += t == SKIP_TOK
                 fixed.append(('L', t) if lab[t] else t)
                 continue
+            decisions += 1
             if fixed:
                 segs.append(('F', tuple(fixed)))
                 fixed = []
