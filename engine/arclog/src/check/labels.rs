@@ -53,9 +53,72 @@ impl Check for MadeAndExportedLabelsCheck {
     /// written later in an open body may make or export the label it reads;
     /// and, of the refusals of `=`, each at a node that is complete, since
     /// a later branch of an `OR` may yet name the label of a `=` in its
-    /// first branch.
+    /// first branch. In an open body of an `INIT` form, a `^` label that a
+    /// form of the body holds and can no longer export is refused as well,
+    /// as [`local_key_labels`] gives.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::refused(body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at), &|at| prefix.is_open(at)))
+        let mut refused = body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at), &|at| prefix.is_open(at));
+        if let Form::Instance(_) = prefix.partial {
+            for form_body in form_bodies(prefix.partial).iter().filter(|body| prefix.is_open(&body.at)) {
+                refused.extend(local_key_labels(form_body, &|at| prefix.is_open(at)));
+            }
+        }
+        super::prefix::refused(refused)
+    }
+}
+
+/// The refusal of each `^` label of `form_body`, an open body, that a form
+/// of the body holds and no completion of the body exports from it, so that
+/// the body's own list keeps it in no completion: a label that is local to
+/// a form of the key body. `open` holds the paths of the open nodes.
+///
+/// The `^` is the label's one making use, so only the forms that hold it
+/// can bring it to the body's list, each through the form around it, and a
+/// form exports only a label that its first branch or its then keeps. The
+/// label is local where it stands in a `NOT` or an `ALL`, in a later branch
+/// of an `OR`, or in the test or the else of an `IF`, or where it stands in
+/// the first branch of an `OR` that a later branch does not name, or in the
+/// then of an `IF` whose else does not name it, that branch or else being
+/// complete and not empty.
+fn local_key_labels(form_body: &FormBody<'_>, open: &dyn Fn(&NodePath) -> bool) -> Vec<Refusal> {
+    let mut refused = Vec::new();
+    each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut |at, use_| {
+        if let LabelUse::Key(label) = use_ {
+            if held_local(form_body.body.value(), &form_body.at, at, label, open) {
+                refused.push(Refusal { message: "the key label is local to a form of the key body, so no atom at the key body's top level binds it".into(), at: at.clone() });
+            }
+        }
+    });
+    refused
+}
+
+/// Whether the form of `list`, at `list_at`, that holds the node at `at`,
+/// or a form inside it, holds `label` there and exports it in no
+/// completion, as [`local_key_labels`] gives.
+fn held_local(list: &Body, list_at: &NodePath, at: &NodePath, label: LabelId, open: &dyn Fn(&NodePath) -> bool) -> bool {
+    let step = |depth: usize| at.0.get(depth).map(|step| step.0);
+    let Some(index) = step(list_at.0.len()) else { return false };
+    let Some(conjunct) = list.conjuncts.get(index as usize) else { return false };
+    let conjunct_at = list_at.child(index);
+    // A part that is complete, holds a conjunct, and does not name the label.
+    let silent = |part: &Body, part_at: &NodePath| !open(part_at) && !part.conjuncts.is_empty() && !crate::safety::body_labels(part).contains(&label);
+    let part = step(conjunct_at.0.len());
+    match conjunct {
+        Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => false,
+        Conjunct::Not(Negated::Form(_)) | Conjunct::All { .. } => true,
+        Conjunct::Or(branches) => match part {
+            Some(0) => {
+                branches.iter().zip(0u32..).skip(1).any(|(branch, index)| silent(branch.value(), &conjunct_at.child(index)))
+                    || held_local(branches[0].value(), &conjunct_at.child(0), at, label, open)
+            }
+            Some(_) => true,
+            None => false,
+        },
+        Conjunct::If { then, otherwise, .. } => match part {
+            Some(1) => silent(otherwise.value(), &conjunct_at.child(2)) || held_local(then.value(), &conjunct_at.child(1), at, label, open),
+            Some(_) => true,
+            None => false,
+        },
     }
 }
 
