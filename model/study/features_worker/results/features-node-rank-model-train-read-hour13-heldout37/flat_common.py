@@ -2,7 +2,7 @@
 import glob, json, os, pickle, re
 
 W = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/'
-H = os.path.dirname(os.path.abspath(__file__)) + '/'  # this folder: output rows, and copies of gold-dups.jsonl, gold-sig.jsonl, bits/
+H = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # this folder: output rows, and copies of gold-dups.jsonl, gold-sig.jsonl, bits/
 OLD = W + 'sampler-hour-stall-read-fold13/'  # the hour read's rows, read by seed-hour.py only
 KIT = W + 'kits/sampler-pool-fold-hour-8be414670/'
 HOUR = W + 'sampler-pool-fold-hour-3600s/out/'

@@ -5,7 +5,7 @@ s = t * model(node) is the score of a read; the hand score (recorded, t 1) is th
 """
 import hashlib, json, os
 
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 PY = '/Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 ARMS = {
     'M-H': dict(name='mh', features='H', label='true', t=.75),

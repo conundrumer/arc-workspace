@@ -7,7 +7,7 @@ A fold's tasks leave every source: pass exclude=set of task ids.
 import glob, json, os, sys
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 sys.path.insert(0, HERE)
 import features_node_feats as FE
 

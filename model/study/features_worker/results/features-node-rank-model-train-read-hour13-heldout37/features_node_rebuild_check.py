@@ -12,7 +12,7 @@ Then totals. Prints nothing from a held label beyond these counts.
 """
 import collections, glob, json, os, sys, time
 sys.dont_write_bytecode = True
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np
 import common2 as C2

@@ -10,7 +10,7 @@ by features_node_vocab.py from R120 and N600 clauses only.
 """
 import json, os, re
 
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 TOK = re.compile(r'[()]|[^\s()]+')
 KEYWORDS = {'NOT', 'OR', 'ALL', 'AND', 'IF', 'DET', 'RULE', 'INIT', 'OUT'}
 CMP = {'!=', '<', '<=', '>', '>=', '='}

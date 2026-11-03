@@ -5,7 +5,7 @@ MODE: cells (Position, Box, Example meaning on 3 tasks), empty (share of empty v
       names (banned words), cost (ms per node on 2,000 nodes), row (features from rebuilt rows against record rows: see features_node_rebuild.py --row-check)
 """
 import collections, math, os, random, re, sys, time
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np
 import features_node_io as IO, features_node_feats as FE, features_node_shape as SH

@@ -7,7 +7,7 @@ which rows share an id, so their values may differ), by whether the table has an
 """
 import collections, json, math, os, re, sys, time
 T0 = time.time()
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 LIMIT = float(sys.argv[1]); NN = int(sys.argv[2]) if len(sys.argv) > 2 else 500; STEP = int(sys.argv[3]) if len(sys.argv) > 3 else 37
 KIT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/kits/sampler-pool-dag-nodes-train50-final-8be414670/'
 sys.path.insert(0, KIT + 'model/study/sampler'); sys.path.insert(0, HERE)

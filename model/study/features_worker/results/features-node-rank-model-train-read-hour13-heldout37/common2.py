@@ -5,7 +5,7 @@ Runs on PY = /Users/davidlu/code/arc-workspace/work/lm/.venv/bin/python -I (nump
 """
 import bisect, collections, glob, importlib.util, json, os, re, sys
 
-POOLG = os.path.dirname(os.path.abspath(__file__)) + '/'
+POOLG = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 sys.path.insert(0, POOLG)
 import flat_common as C
 W = C.W

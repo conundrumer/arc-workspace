@@ -7,8 +7,8 @@ Writes form-rows.tsv (one per run and ready form), read-rows.tsv (one per run, r
 """
 import collections, csv, itertools, json, math, os, sys, time
 sys.dont_write_bytecode = True
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37')
 import numpy as np
 import poolrun, common2 as C2
 

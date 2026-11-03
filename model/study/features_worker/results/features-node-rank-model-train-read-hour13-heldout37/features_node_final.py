@@ -10,7 +10,7 @@ Nothing here reads a held label or a held task. FINAL_PREFIX=pilot- makes the ar
 """
 import json, os, pickle, sys, time, types as _types
 T0 = time.time()
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-rank-model-train-read-hour13-heldout37/'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np
 import final_arms as FA, forest as FO
