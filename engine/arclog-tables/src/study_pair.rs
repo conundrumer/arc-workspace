@@ -260,7 +260,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
             let dets=relation_dets(checked,relation.node);let work=decoder.table_work();
             let examples=relation_examples(decoder,checked,&relation,&dets,&work);
             let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples,&work).map(|c| {
-                let c=Contents {name:relation_spelled(declared),keys:checked.program.column_keys(relation.node),..c};
+                let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
                 let seen=tables.iter().chain(held.iter()).map(|(_,t)|t).collect::<Vec<_>>();
                 made(decoder,&seen,checked,&relation,c)
             });

@@ -221,7 +221,7 @@ impl PyStudyTaskEvaluator {
             Ok((result.report,columns))
         })).map_err(PyValueError::new_err)?;
         let side=if mutant.is_some(){"mutant"}else{"gold"};
-        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,&columns,None,None)?))
+        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
     /// Exact native ingestion in this task's session, with the GIL released.
@@ -331,7 +331,7 @@ impl PyStudyTaskEvaluator {
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
             Ok((report,columns))
         })).map_err(PyValueError::new_err)?;
-        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&columns,None,None)?))
+        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
     /// Native gold-only TRAIN FITS and ordered kept DET choices, without a mutant.
@@ -381,7 +381,7 @@ impl PyStudyTaskEvaluator {
             result.report["body_table_packed"]=result.report["body_table"].as_u64().is_some_and(|i|(i as usize)<columns.tables.form.len()).into();
             Ok((result.report,columns))
         })).map_err(PyValueError::new_err)?;
-        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,&columns,None,None)?))
+        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
@@ -494,7 +494,7 @@ fn pack_pair<R:PackingReport+Send+Sync>(
         let mut binding=table_binding(&columns,sides[index],result.packing_report(),ident_namespace);
         binding["program_sexp"]=programs[index].sexp(Registry::get()).into();
         bindings.push(binding);
-        PyCaseTables::of(py,task.into(),sides[index].into(),false,projection_cap,&columns,None,None)
+        PyCaseTables::of(py,task.into(),sides[index].into(),false,projection_cap,columns,None,None)
     };
     let gold=side(0)?;
     let mutant=side(1)?;

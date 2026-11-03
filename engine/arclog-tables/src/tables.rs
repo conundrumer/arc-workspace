@@ -5,9 +5,7 @@
 //! gets no table: an input
 //! written with a body of one positive atom and any number of `NOT` atoms, each
 //! of a fact relation, a declared relation or an output, whose rows the tables
-//! of those relations hold, the `adjacent`
-//! output of a Connectivity instance and the `predecessor` output of a
-//! CellDistance instance, which no clause reads. Each table gives its
+//! of those relations hold. Each table gives its
 //! point, its relation's slot, its columns' names, types, slots and labels, and its rows on
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
@@ -166,6 +164,10 @@ pub struct Contents {
     /// The relation's name as the program spells it, empty for a body and
     /// for an evidence table, whose [`TableRelation::Fact`] names it.
     pub name: String,
+    /// The table's Name ([`crate::summary::TableSummary::name`]), as
+    /// [`output_name`] gives it: empty for a table of no output and for an
+    /// evidence table.
+    pub output_name: String,
     /// The sources of each column's values ([`column_flows`]),
     /// none for an evidence table.
     pub flows: Box<[Vec<ColumnSource>]>,
@@ -372,7 +374,7 @@ pub(crate) fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[
                 let work = decoder.table_work();
                 let examples = relation_examples(decoder, checked, &relation, &dets, &work);
                 contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| {
-                    let contents = Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), ..contents };
+                    let contents = Contents { name: relation_spelled(declared), output_name: output_name(program.value(), &form, declared), keys: checked.program.column_keys(relation.node), ..contents };
                     let seen: Vec<&Table> = earlier.iter().copied().chain(&tables).collect();
                     made(decoder, &seen, checked, &relation, contents)
                 })
@@ -497,7 +499,7 @@ pub(crate) fn metadata(program: &CheckedProgram, form: &NodePath, relation: Tabl
             }
         }
     }}
-    Ok(Contents { assignment_layout:AssignmentLayout::Search, relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), flows,
+    Ok(Contents { assignment_layout:AssignmentLayout::Search, relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), output_name: String::new(), flows,
         rows: None, depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
 }
 
@@ -598,7 +600,7 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
         })
         .collect();
     let frames = fact_frames(fact, &columns);
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), output_name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as
@@ -641,6 +643,21 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
 }
 
+/// The Name of the table of `declared`, a relation of the form at `form` of
+/// `program`: the path after the form's name of an instance's output or
+/// input (`component`), the Name that [`arclog::program::rigid_output_name`]
+/// gives an output of a `RIGID_DET` form, by the index of its part (`slot 0`,
+/// `pose`), and empty for a relation of no output.
+pub(crate) fn output_name(program: &Program, form: &NodePath, declared: &ProgramRelation) -> String {
+    let ProgramRelation::Output(output) = declared else { return String::new() };
+    match (&output.of, node_at(NodeRef::Program(program), form)) {
+        (OutputOwner::RigidDet(_), Some(NodeRef::RigidDet(rigid))) => {
+            arclog::program::rigid_output_name(rigid, &output.path, |part| part as u32).expect("an output of a `RIGID_DET` form is its pose or a part's")
+        }
+        _ => arclog::program::output_path_spelled(&output.path),
+    }
+}
+
 /// Export order shared by study collection and compile-only inventory.
 pub(crate) fn materialized_slots<'a>(program:&'a Program,written:&'a arclog::stream::WrittenStream,form:&'a arclog::stream::write::WrittenForm)->impl Iterator<Item=usize>+'a {
     form.readable.iter().copied().filter(move|slot|!gives_no_table(program,&form.path,&written.relations[*slot]))
@@ -651,15 +668,11 @@ pub(crate) fn materialized_slots<'a>(program:&'a Program,written:&'a arclog::str
 /// with a body of one positive atom and any number of `NOT` atoms, each of a
 /// fact relation, a declared relation or an output, whose rows are those of
 /// the positive atom with its columns renamed, dropped or joined, less the rows
-/// that a negated atom matches; the `adjacent` output of a Connectivity instance and the
-/// `predecessor` output of a CellDistance instance, which no clause reads.
+/// that a negated atom matches.
 pub fn gives_no_table(program: &Program, form: &NodePath, declared: &ProgramRelation) -> bool {
     let ProgramRelation::Output(name) = declared else { return false };
     let [OutputStep::Port(port)] = &name.path[..] else { return false };
     let Some(NodeRef::Instance(written)) = node_at(NodeRef::Program(program), form) else { return false };
-    if matches!((written.component.0.as_ref(), port.0.as_ref()), ("Connectivity", "adjacent") | ("CellDistance", "predecessor")) {
-        return true;
-    }
     let keyed = written.key.iter().flat_map(|key| key.value().inputs.iter());
     keyed.chain(written.inputs.iter()).any(|input| {
         let input = input.value();

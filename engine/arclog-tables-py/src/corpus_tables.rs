@@ -179,7 +179,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
             match outcome {
                 Ok(((columns, ended), relations)) => {
                     if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {}: native packing stopped {:?} at {:?}",case.case,stop.bound,stop.form));}
-                    tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, &columns, Some(relations), None)?);
+                    tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, columns, Some(relations), None)?);
                     if let Some(at) = ended.filter(|at| matches!(at.kind, PyConsistencyKind::Stopped)) {
                         faults.push(at.line(task, &case.case));
                     }

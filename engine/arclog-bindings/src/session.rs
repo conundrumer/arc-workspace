@@ -73,6 +73,13 @@ impl PySession {
         py.detach(|| self.data.session.memo_stats())
     }
 
+    /// The bytes that the session's bound counts, as `TaskSession::ledger`
+    /// gives them: the intern table's, the result cache's, and the reserved
+    /// bytes of live buffers, such as those that a `CaseTables` holds.
+    fn ledger_stats(&self, py: Python<'_>) -> (usize, usize, usize) {
+        py.detach(|| self.data.session.ledger())
+    }
+
     /// End a complete-program round-trip batch. No parsed/checkpoint state
     /// from the preceding case remains rooted by this session.
     fn reset_program_replay(&self,py:Python<'_>) {

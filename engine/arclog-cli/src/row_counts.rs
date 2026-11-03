@@ -390,15 +390,4 @@ mod tests {
         assert!(lines.iter().any(|line| line.starts_with("train/0 &big stopped:bindings:3")), "{lines:?}");
         assert!(lines.iter().any(|line| line.starts_with("train/0 &big clause ") && line.contains(" stopped:bindings:3 ")), "{lines:?}");
     }
-
-    #[test]
-    fn a_relation_the_decode_gives_no_table_is_marked() {
-        let lines = lines_of("(INIT &c Connectivity (node (P) (input *P)))\n(RULE &r (&c.component (:P *P) *Id))\n", Caps::CORPUS);
-        for marked in ["&c.node", "&c.adjacent"] {
-            assert!(lines.contains(&format!("train/0 {marked} no table")), "{marked}: {lines:?}");
-        }
-        assert!(lines.iter().any(|line| line.starts_with("train/0 &c.component ")), "{lines:?}");
-        assert!(!lines.iter().any(|line| line.starts_with("train/0 &c.component") && line.ends_with("no table")), "{lines:?}");
-        assert!(!lines.iter().any(|line| line.starts_with("train/0 &r") && line.ends_with("no table")), "{lines:?}");
-    }
 }

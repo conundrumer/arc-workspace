@@ -89,7 +89,8 @@ Where no test passes, the line is the residual class, and rewriting it takes a r
 
 - One table per assignment: in the encoder. Assignments are evaluated apart, since a join keeps only rows whose assignments agree, so attention across them carries nothing the program reads.
 - No table per example for RULE relations: a `DET` can read a RULE's lifted form, which unions the examples, so examples cross.
-- Not tables: `connected` (C20-60, and out of the lib in C20-62), one-atom instance inputs (C20-73), instance inputs of one positive atom and `NOT` atoms, each reading a fact relation, a declared relation or an output (C20-159), Connectivity.adjacent and CellDistance.predecessor (C20-76).
+- Not tables: `connected` (C20-60, and out of the lib in C20-62), one-atom instance inputs (C20-73), and instance inputs of one positive atom and `NOT` atoms, each reading a fact relation, a declared relation or an output (C20-159).
+- Connectivity.adjacent and CellDistance.predecessor are tables. C20-76 left them out as outputs that no clause reads; it is reversed, since the language accepts a read of either, and a gold program reads `adjacent`.
 - The engine's projection cap stays at 10,000: at 2,000, 66 of 123 large clause relations lose a read that fits in no projection.
 - The assignment cap of 256 is not a lever: no table has more than 96 assignments.
 - Factorized bodies are not a lever: 98% of large-body rows are in bodies with one connected part.

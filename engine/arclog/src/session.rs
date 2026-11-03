@@ -890,6 +890,14 @@ impl TaskSession {
         }
     }
 
+    /// The bytes that the session's bound counts: the intern table's, the
+    /// result cache's, and those of the live reservations
+    /// ([`TaskSession::reserve`]).
+    pub fn ledger(&self) -> (usize, usize, usize) {
+        let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
+        (intern, self.results.bytes(), self.allocated.load(Ordering::Relaxed))
+    }
+
     fn check_bytes(&self, intern: usize, allocated: usize) -> Result<(), ReachedSessionBound> {
         let bytes = intern.saturating_add(self.results.bytes()).saturating_add(allocated);
         if bytes > self.bound.bytes { Err(ReachedSessionBound { bytes, bound: self.bound }) } else { Ok(()) }

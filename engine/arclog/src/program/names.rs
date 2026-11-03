@@ -35,6 +35,37 @@ fn slot_spelled(slot: u32) -> String {
     format!("slot {slot}")
 }
 
+/// The steps of `path`, the path of an output after the name of its form,
+/// as a file writes them, joined by `.`: `component`, `glyph`, `bbox.box`,
+/// `pose`, with the slot of a name a decode gives no text.
+pub fn output_path_spelled(path: &[OutputStep]) -> String {
+    let steps = path.iter().map(|step| match step {
+        OutputStep::Port(PortName(port)) => port.to_string(),
+        OutputStep::Part(part) => declared_spelled(part).trim_start_matches(crate::read::spelling::DECLARED_MARK).to_owned(),
+        OutputStep::Pose => crate::read::spelling::POSE.to_owned(),
+    });
+    steps.collect::<Vec<_>>().join(".")
+}
+
+/// The Name of the output at `path`, the path after the form's name, of the
+/// `RIGID_DET` form `rigid`, as the export of tables names it: `pose`, or
+/// `slot <n>`, where n is `position` of the index of the part whose output
+/// it is among the form's parts, followed by the steps of the path after the
+/// part's own (`slot 0.box` for a part that reads `&bbox.box`). The
+/// canonical form writes the parts in the order of the form, so the index of
+/// a part is its position in the content that the QueryHash hashes, and the
+/// Name holds no name of the program. None where `path` is no output of
+/// `rigid`.
+pub fn rigid_output_name(rigid: &RigidDet, path: &[OutputStep], position: impl Fn(usize) -> u32) -> Option<String> {
+    if let [OutputStep::Pose] = path {
+        return Some(crate::read::spelling::POSE.to_owned());
+    }
+    let part = rigid.parts.iter().position(|part| crate::resolver::form_columns::part_steps(&part.value().relation).as_deref() == Some(path))?;
+    let rest = output_path_spelled(&path[1..]);
+    let slot = slot_spelled(position(part));
+    Some(if rest.is_empty() { slot } else { format!("{slot}.{rest}") })
+}
+
 /// The scope of a declared name: the program, or one `DEMO_RULE` form, by its
 /// path. A name that a `DEMO_RULE` form declares stands for its declaration
 /// within that form alone (`docs/arclog/arclog.md#demonstrated`).

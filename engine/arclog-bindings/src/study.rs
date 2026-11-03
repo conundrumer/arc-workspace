@@ -532,3 +532,26 @@ pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &
         .map(|value| value.to_string())
         .map_err(PyValueError::new_err)
 }
+
+/// The Name that the tables export (`step_tables`'s `tables["name"]`) gives
+/// the output of a `RIGID_DET` form that `read` reads in `text`, an arclog
+/// program text: `read` is the relation of the read as `text` writes it, as
+/// `&r22.r20`, `&r22.pose` or `&r22.r20.box`, and the Name is `pose` or
+/// `slot <n>`, n the position of the part in the form's canonical form,
+/// followed by the steps after the part's (`arclog::resolver::rigid_read_name`).
+/// A part that the canonical form cannot tell from an earlier part, so that
+/// two texts of one QueryHash may list the two in either order, takes the
+/// Name of the earliest such part, whose table holds the same rows.
+/// `ValueError` where `text` does not read, or where `read` reads no output
+/// of a `RIGID_DET` form of `text`. The call runs with the GIL released.
+#[pyfunction]
+pub(crate) fn rigid_slot_name(py: Python<'_>, text: &str, read: &str) -> PyResult<String> {
+    py.detach(|| {
+        let read_text = arclog::read::read_arclog(text, arclog::layout::SourceFile::Arclog).map_err(|d| arclog::study::diagnostics_text(&d))?;
+        if read_text.diagnostics.iter().any(|d| d.severity == arclog::diagnostic::Severity::Error) {
+            return Err(arclog::study::diagnostics_text(&read_text.diagnostics));
+        }
+        arclog::resolver::rigid_read_name(&read_text.value.0, read, Registry::get())
+    })
+    .map_err(PyValueError::new_err)
+}

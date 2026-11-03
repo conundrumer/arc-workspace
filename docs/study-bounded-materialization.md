@@ -39,6 +39,11 @@ A packing stop leaves an explicit partial prefix and an unavailable suffix.
 It does not turn missing buffers into completed empty relations. Native study
 reports carry stopped packing evidence; stream/corpus adapters report the exact
 packing stop, and `CaseTables.materialization_stop` exposes it to direct callers.
+The packing names each table of the unavailable suffix (`CaseColumns::left_out`).
+`step_tables`, `successor_tables` and `base_tables` raise `RuntimeError` where
+the suffix holds a table: the message gives the bound and names each table left
+out, by its relation and the path of its form. A stop inside a table's entries
+keeps the table, with those entries stopped, and raises nothing.
 A stopped packed prefix cannot become a reusable prefix-cache result.
 
 ## Allocation ownership
@@ -67,6 +72,21 @@ and content-run-index capacities, using the same simultaneous Python-owner
 allowance as prefix-copy admission. Coverage assertions reject an insufficient
 preflight instead of silently reducing the retained allowance. Shared native
 matrix leases remain independent and unchanged.
+
+The eight-times allowance covers the copies that coexist while packing runs.
+A returned `CaseTables` does not keep it. `PyCaseTables::of` takes the
+reservations out of the columns (`CaseColumns::take_allocations`) after it makes
+the Python objects, and each unshared reservation shrinks so that together they
+keep the bytes of those objects: `sys.getsizeof` of each column object and of
+each object that its items reach, with None, bools and the ints from -5 to 256
+counted as 0, plus the `__dict__` of each owned `bytes` column. The Rust columns
+drop when `of` returns. A result of `step_tables` also keeps the tables of its
+stream for the next call's `before`, and with them the reservations of their
+native rows and extents. Those tables are shared by the later results of the
+same stream, and two streams of one decode, such as a call with
+`by_assignment` and one without, each hold their own.
+`Session.ledger_stats()` gives the three parts that the bound counts: the intern
+table's bytes, the result cache's bytes and the reserved bytes of live buffers.
 
 A deep prefix copy owns its new copy reservation exclusively. It does not keep
 the original prefix's reservations alive after cache eviction. The existing
@@ -98,12 +118,13 @@ permits that missing clause: inspection records `clause_available=false`,
 stop remains a fault. Native dumps and stream observations retain packing stops,
 so a bounded prefix cannot be mistaken for a complete or empty clause.
 
-Returned Python bytes/list subclasses retain the native capsule lease on each
-actual escaped buffer/container. Scalars remain ordinary integers; bytes,
-dtypes, list contents and serialized mapping keys are unchanged. A read-only
-owner property prevents ordinary assignment/deletion from detaching ownership.
-A private holder counts actual owned instances and drops its capsule at the
-last instance, independently of heap-type garbage collection. Memoryviews keep
+Each column object of a result, a `bytes` or `list` subclass, retains the
+native capsule lease. The items of a list column are plain objects: a `bytes`
+subclass carries a `__dict__` for its owner, ten times the bytes of a short
+row's status. Scalars remain ordinary integers; bytes, dtypes, list contents and
+serialized mapping keys are unchanged. Each column object holds the capsule in
+its `_owner` attribute, so the capsule drops when the last column object of the
+result drops. Memoryviews keep
 the original exporter alive. Copies subsequently made by consumers are the
 consumers' ownership, rather than aliases of the producer's allocation.
 

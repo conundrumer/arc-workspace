@@ -1,11 +1,12 @@
 //! The tables of one case program as the Python class `CaseTables`: the
 //! flat columns of [`arclog_tables::columns`], each part a dict of columns.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyCapsule, PyList, PyModule};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyCapsule, PyInt, PyList, PyModule, PyTuple};
 use pyo3::sync::PyOnceLock;
 
 /// The tables of one case program of a solver of a corpus, as flat columns
@@ -180,9 +181,11 @@ fn cell_bytes<T: Cell>(column: &[T]) -> Vec<u8> {
     bytes
 }
 
-// A raw consumer can retain a field after dropping CaseTables. Keep the
-// reservation on each actual escaped bytes/list object, not on the wrapper
-// or on a serialized mapping key. Buffer contents and isinstance stay native.
+// A raw consumer can retain a column after dropping CaseTables. Keep the
+// reservation on each column object, not on the wrapper or on a serialized
+// mapping key. The items of a list column are plain objects: a `bytes`
+// subclass has a `__dict__`, which would take ten times a short row's bytes.
+// Buffer contents and isinstance stay native.
 fn owned_types(py:Python<'_>)->PyResult<&'static (Py<PyAny>,Py<PyAny>)> {
     static TYPES:PyOnceLock<(Py<PyAny>,Py<PyAny>)>=PyOnceLock::new();
     TYPES.get_or_try_init(py,||{
@@ -198,25 +201,67 @@ class _OwnedList(list):
     })
 }
 
-/// `value` as an object that holds `owner`: a `bytes` as an instance of a
-/// subclass of `bytes` with the same bytes, a `list` as an instance of a
-/// subclass of `list` with the items of the list so held, and any other value
-/// as it is.
-fn owned_value<'py>(py:Python<'py>,value:&Bound<'py,PyAny>,owner:&Bound<'py,PyAny>)->PyResult<Bound<'py,PyAny>> {
-    let (bytes,list)=owned_types(py)?;
-    let owned=if value.is_instance_of::<PyBytes>() {
-        bytes.bind(py).call1((value,))?
-    } else if let Ok(items)=value.cast::<PyList>() {
-        let mut held=Vec::with_capacity(items.len());
-        for item in items.iter() {
-            held.push(if item.is_instance_of::<PyBytes>()||item.is_instance_of::<PyList>() { owned_value(py,&item,owner)? } else { item });
+/// The column objects of a case, which each hold the capsule of the columns'
+/// reservations once all of them are made, and the bytes of the objects
+/// that they reach.
+struct Owned<'py> {
+    objects: RefCell<Vec<Bound<'py, PyAny>>>,
+    bytes: std::cell::Cell<usize>,
+    /// `sys.getsizeof`.
+    sizeof: Bound<'py, PyAny>,
+}
+
+/// The `__dict__` that `_owner` gives an `_OwnedBytes`, which `sys.getsizeof`
+/// does not count: 304 bytes on CPython 3.13.
+const OWNER_DICT_BYTES: usize = 320;
+
+impl<'py> Owned<'py> {
+    fn new(py: Python<'py>) -> PyResult<Self> {
+        Ok(Owned { objects: RefCell::default(), bytes: std::cell::Cell::new(0), sizeof: PyModule::import(py, "sys")?.getattr("getsizeof")? })
+    }
+
+    fn add(&self, bytes: usize) {
+        self.bytes.set(self.bytes.get().saturating_add(bytes));
+    }
+
+    /// The bytes of `value` and of each object that it reaches through its
+    /// items, as `sys.getsizeof` gives each. None, a bool and an int from -5
+    /// to 256 are shared objects and take none.
+    fn reached(&self, value: &Bound<'py, PyAny>) -> PyResult<usize> {
+        if value.is_none() || value.is_instance_of::<PyBool>() || (value.is_instance_of::<PyInt>() && value.extract::<i64>().is_ok_and(|int| (-5..=256).contains(&int))) {
+            return Ok(0);
         }
-        list.bind(py).call1((PyList::new(py,held)?,))?
+        let mut bytes: usize = self.sizeof.call1((value,))?.extract()?;
+        if let Ok(items) = value.cast::<PyList>() {
+            for item in items.iter() {
+                bytes = bytes.saturating_add(self.reached(&item)?);
+            }
+        } else if let Ok(items) = value.cast::<PyTuple>() {
+            for item in items.iter() {
+                bytes = bytes.saturating_add(self.reached(&item)?);
+            }
+        }
+        Ok(bytes)
+    }
+}
+
+/// `value` as a column object that `owned` makes hold the capsule: a `bytes`
+/// as an instance of a subclass of `bytes` with the same bytes, a `list` as
+/// an instance of a subclass of `list` with the same items, and any other
+/// value as it is.
+fn owned_value<'py>(py:Python<'py>,value:&Bound<'py,PyAny>,owned:&Owned<'py>)->PyResult<Bound<'py,PyAny>> {
+    let (bytes,list)=owned_types(py)?;
+    let made=if value.is_instance_of::<PyBytes>() {
+        owned.add(OWNER_DICT_BYTES);
+        bytes.bind(py).call1((value,))?
+    } else if value.is_instance_of::<PyList>() {
+        list.bind(py).call1((value,))?
     } else {
         return Ok(value.clone());
     };
-    owned.setattr("_owner",owner)?;
-    Ok(owned)
+    owned.add(owned.reached(&made)?);
+    owned.objects.borrow_mut().push(made.clone());
+    Ok(made)
 }
 
 /// The dict of one part of a case's columns, and the dtype of each of its
@@ -225,30 +270,30 @@ struct Part<'a, 'py> {
     dict: Bound<'py, PyDict>,
     name: &'static str,
     dtypes: &'a Bound<'py, PyDict>,
-    owner: &'a Bound<'py,PyAny>,
+    owned: &'a Owned<'py>,
 }
 
 impl<'a, 'py> Part<'a, 'py> {
-    fn new(py: Python<'py>, name: &'static str, dtypes: &'a Bound<'py, PyDict>,owner:&'a Bound<'py,PyAny>) -> Self {
-        Part { dict: PyDict::new(py), name, dtypes,owner }
+    fn new(py: Python<'py>, name: &'static str, dtypes: &'a Bound<'py, PyDict>,owned:&'a Owned<'py>) -> Self {
+        Part { dict: PyDict::new(py), name, dtypes,owned }
     }
 
     fn ints<T: Cell>(&self, key: &str, column: &[T]) -> PyResult<()> {
         let bytes=PyBytes::new(self.dict.py(),&cell_bytes(column));
-        self.dict.set_item(key,owned_value(self.dict.py(),bytes.as_any(),self.owner)?)?;
+        self.dict.set_item(key,owned_value(self.dict.py(),bytes.as_any(),self.owned)?)?;
         self.dtypes.set_item(format!("{}.{key}", self.name), T::DTYPE)
     }
 
     /// A column of `bytes` that are not an integer column: the little-endian bytes of the hash of each row, 16 bytes a row.
     fn hashes(&self, key: &str, column: &[u128]) -> PyResult<()> {
         let bytes = PyBytes::new(self.dict.py(), &column.iter().flat_map(|hash| hash.to_le_bytes()).collect::<Vec<u8>>());
-        self.dict.set_item(key, owned_value(self.dict.py(), bytes.as_any(), self.owner)?)
+        self.dict.set_item(key, owned_value(self.dict.py(), bytes.as_any(), self.owned)?)
     }
 
     fn list<V: IntoPyObject<'py>>(&self, key: &str, column: V) -> PyResult<()> {
         self.dict.set_item(key,column)?;
         let value=self.dict.get_item(key)?.expect("the column just inserted");
-        self.dict.set_item(key,owned_value(self.dict.py(),&value,self.owner)?)
+        self.dict.set_item(key,owned_value(self.dict.py(),&value,self.owned)?)
     }
 
     fn stop(&self, key: &str, stop: &StopColumns) -> PyResult<()> {
@@ -285,12 +330,13 @@ pub(crate) struct Base {
 impl PyCaseTables {
     /// `relations` is the spelling of the relation declared at each slot of the
     /// case program, or `None` for a stream that no case program writes. `base`
-    /// is the base of a case whose `columns` are cut.
-    pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, columns: &CaseColumns, relations: Option<&[String]>, base: Option<Base>) -> PyResult<Self> {
-        let capsule=PyCapsule::new(py,columns.allocations(),None)?;
-        let owner=capsule.into_any();
+    /// is the base of a case whose `columns` are cut. The reservations of
+    /// `columns` pass to the returned objects, which keep on the session's
+    /// ledger the estimate of their own bytes alone.
+    pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, mut columns: CaseColumns, relations: Option<&[String]>, base: Option<Base>) -> PyResult<Self> {
+        let owned=Owned::new(py)?;
         let dtypes = PyDict::new(py);
-        let t = Part::new(py, "tables", &dtypes,&owner);
+        let t = Part::new(py, "tables", &dtypes,&owned);
         let c = &columns.tables;
         t.ints("token", &c.token)?;
         t.list("form", &c.form)?;
@@ -335,10 +381,10 @@ impl PyCaseTables {
             t.ints("capped", &c.capped)?;
             // The TableVector of each row: `table_feature_names()` values, as `float32`.
             let bytes = PyBytes::new(py, &c.features.iter().flat_map(|value| value.to_ne_bytes()).collect::<Vec<u8>>());
-            t.dict.set_item("features", owned_value(py, bytes.as_any(), &owner)?)?;
+            t.dict.set_item("features", owned_value(py, bytes.as_any(), &owned)?)?;
             dtypes.set_item("tables.features", "float32")?;
         }
-        let e = Part::new(py, "entries", &dtypes,&owner);
+        let e = Part::new(py, "entries", &dtypes,&owned);
         let c = &columns.entries;
         e.ints("table", &c.table)?;
         e.ints("clause_index", &c.clause_index)?;
@@ -358,20 +404,20 @@ impl PyCaseTables {
         if columns.by_assignment {
             e.hashes("hash", &c.hash)?;
         }
-        let a = Part::new(py, "assigned", &dtypes,&owner);
+        let a = Part::new(py, "assigned", &dtypes,&owned);
         let c = &columns.assigned;
         a.ints("entry", &c.entry)?;
         a.ints("det", &c.det)?;
         a.ints("rows", &c.rows)?;
         a.ints("offset", &c.offset)?;
-        let n = Part::new(py, "assignments", &dtypes,&owner);
+        let n = Part::new(py, "assignments", &dtypes,&owned);
         let c = &columns.assignments;
         n.ints("table", &c.table)?;
         n.list("det", &c.det)?;
         n.hashes("det_query", &c.det_query)?;
         n.ints("has_det_query", &c.has_det_query)?;
         n.hashes("value", &c.value)?;
-        let x = Part::new(py, "example_keys", &dtypes,&owner);
+        let x = Part::new(py, "example_keys", &dtypes,&owned);
         let c = &columns.example_keys;
         x.ints("table", &c.table)?;
         x.ints("kind", &c.kind)?;
@@ -379,12 +425,12 @@ impl PyCaseTables {
         x.ints("distinct", &c.distinct)?;
         x.ints("rows", &c.rows)?;
         x.ints("hash", &c.hash)?;
-        let v = Part::new(py, "projections", &dtypes,&owner);
+        let v = Part::new(py, "projections", &dtypes,&owned);
         let c = &columns.projections;
         v.ints("table", &c.table)?;
         v.list("columns", &c.columns)?;
         v.ints("width", &c.width)?;
-        let r = Part::new(py, "projection_rows", &dtypes,&owner);
+        let r = Part::new(py, "projection_rows", &dtypes,&owned);
         let c = &columns.projection_rows;
         r.ints("projection", &c.projection)?;
         r.ints("entry", &c.entry)?;
@@ -393,7 +439,7 @@ impl PyCaseTables {
         r.ints("offset", &c.offset)?;
         r.ints("extent_offset", &c.extent_offset)?;
         r.list("extent_status", &c.extent_status)?;
-        let f = Part::new(py, "flows", &dtypes,&owner);
+        let f = Part::new(py, "flows", &dtypes,&owned);
         let c = &columns.flows;
         f.ints("table", &c.table)?;
         f.ints("column", &c.column)?;
@@ -404,8 +450,19 @@ impl PyCaseTables {
         f.ints("det", &c.det)?;
         f.list("atom", &c.atom)?;
         f.ints("occurrence", &c.occurrence)?;
-        let k = Part::new(py, "copies", &dtypes,&owner);
+        let k = Part::new(py, "copies", &dtypes,&owned);
         k.list("detail", &columns.copies.detail)?;
+        let values=owned_value(py,PyBytes::new(py,&cell_bytes(&columns.values)).as_any(),&owned)?.cast_into::<PyBytes>()?.unbind();
+        let materialization_stop=columns.packing_stop().map(|stop|format!("{:?} at {:?}",stop.bound,stop.form));
+        // Once the columns drop, the objects made from them are all that is
+        // left of them, so the capsule keeps their bytes on the session's
+        // ledger, not the packing's allowance.
+        let capsule=PyCapsule::new(py,columns.take_allocations(owned.bytes.get()),None)?;
+        let by_assignment=columns.by_assignment;
+        drop(columns);
+        for object in owned.objects.take() {
+            object.setattr("_owner",&capsule)?;
+        }
         Ok(PyCaseTables {
             task,
             case,
@@ -416,17 +473,17 @@ impl PyCaseTables {
             base: base.map(|base| base.case),
             tables: t.dict.unbind(),
             entries: e.dict.unbind(),
-            assigned: (!columns.by_assignment).then(|| a.dict.unbind()),
-            assignments: columns.by_assignment.then(|| n.dict.unbind()),
-            example_keys: columns.by_assignment.then(|| x.dict.unbind()),
+            assigned: (!by_assignment).then(|| a.dict.unbind()),
+            assignments: by_assignment.then(|| n.dict.unbind()),
+            example_keys: by_assignment.then(|| x.dict.unbind()),
             projections: v.dict.unbind(),
             projection_rows: r.dict.unbind(),
             flows: f.dict.unbind(),
             copies: k.dict.unbind(),
-            values: owned_value(py,PyBytes::new(py,&cell_bytes(&columns.values)).as_any(),&owner)?.cast_into::<PyBytes>()?.unbind(),
+            values,
             dtypes: dtypes.unbind(),
             step: None,
-            materialization_stop: columns.packing_stop().map(|stop|format!("{:?} at {:?}",stop.bound,stop.form)),
+            materialization_stop,
         })
     }
 

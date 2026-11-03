@@ -139,7 +139,7 @@ pub(crate) fn relation_tables_with_receipt_where(checked:&Arc<CheckedProgram>,de
         let context=AssignmentContext::Held {receipt,limits,work};
         let examples=relation_examples_with_context(decoder,checked,&relation,&dets,work,context);
         let c=relation_metadata(decoder.registry(),checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
-            let c=Contents {name:relation_spelled(declared),keys:checked.program.column_keys(relation.node),..c};
+            let c=Contents {name:relation_spelled(declared),output_name:output_name(checked.program.program.value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
             made_with_context(decoder,&tables.iter().map(|(_,t)|t).collect::<Vec<_>>(),checked,&relation,c,context)
         });
         tables.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents:c}));

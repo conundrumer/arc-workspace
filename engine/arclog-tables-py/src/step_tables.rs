@@ -16,7 +16,7 @@ use arclog_tables::tables::successors::{successor_tables as successors_of, Succe
 use arclog_tables::tables::{evidence_tables, input_table, mark_selected, selected_columns, step_tables as step_tables_of, Point, Points, Table};
 use arclog::decode::LeftOut;
 use arclog::eval::copies::CopyViolation;
-use pyo3::exceptions::{PyIndexError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::case_tables::{Base, PyCaseTables, Step};
@@ -52,6 +52,13 @@ use crate::case_tables::{Base, PyCaseTables, Step};
 /// result of `step_tables`, gives another task, another case or another
 /// `bodies`, or gives a step at a token not below the step's. A `before` of a
 /// decode before its first step has no step, and passes.
+///
+/// `RuntimeError` is raised where the export stops at a bound of the request,
+/// such as the session's bytes or the deadline, before the result holds a
+/// row of each table of the step: the message gives the bound and names
+/// each table it left out, by its relation as the program spells it and the
+/// path of its form. A stop inside a table's entries leaves the table in the
+/// result, with those entries stopped, and raises nothing.
 ///
 /// The `CaseTables` has the `task` and the `case` that the call gives, as a
 /// `Decoder` holds neither. Its `relation_name` is the relation as the program
@@ -121,11 +128,12 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     if arclog::stats::enabled() {
         split::add(Part::GilWait, left.elapsed().as_nanos());
     }
+    complete(&columns)?;
     let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });
     let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
     arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
     let own = stream.count() - earlier.map_or(evidence_tables.len() as u32, |step| step.stream.count());
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
+    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
 }
 
 /// The base tables of the task of `decoder`: `input`, `ex_input` and
@@ -137,6 +145,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 /// `ex_output` are the evidence tables that the first result of `step_tables`
 /// gives. The result has no `step`, and serves as no `before`. The call runs
 /// with the GIL released, but for the build of the `CaseTables`.
+/// `RuntimeError` is raised where the export leaves out a table, as in
+/// `step_tables`.
 #[pyfunction]
 #[pyo3(signature = (decoder, task, case, rows=false))]
 pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, rows: bool) -> PyResult<PyCaseTables> {
@@ -149,7 +159,8 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         // A cache of its own: the evidence tables' summaries are kept by their place, which differs here.
         step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train_pairs(evidence), Vec::new(), rows, &SummaryCache::default()).0
     });
-    PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, None)
+    complete(&columns)?;
+    PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)
 }
 
 /// What `successor_tables` gives for one id: the tables of its successor,
@@ -223,8 +234,10 @@ enum Packed {
 /// does. A successor body is evaluated as the evaluator joins one conjunct to
 /// the rows of the body's other parts (`arclog_tables::tables::successors`).
 ///
-/// `IndexError` is raised for an id outside the vocabulary, and `ValueError`
-/// where `before` cannot stand before the step, as `step_tables` raises it.
+/// `IndexError` is raised for an id outside the vocabulary, `ValueError`
+/// where `before` cannot stand before the step, and `RuntimeError` where the
+/// export of a successor's tables leaves out a table, as `step_tables` raises
+/// them.
 #[pyfunction]
 #[pyo3(signature = (decoder, ids, task, case, before=None, rows=false))]
 #[allow(clippy::type_complexity)]
@@ -318,23 +331,44 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
         }
         (current, each, unchanged)
     });
+    for columns in current.iter().chain(unchanged.as_ref().map(|(columns, _)| columns)).chain(each.iter().filter_map(|result| match result {
+        Ok((_, _, Packed::Own(columns, _, _))) => Some(columns),
+        _ => None,
+    })) {
+        complete(columns)?;
+    }
     let _timed = split::span(Part::SuccessorObjects);
     let base = |tokens: usize| earlier.map(|step| Base { case: case.clone(), tokens, tables: step.stream.count() });
     let cap = engine.settings().projection_cap;
-    let pack = |columns: &CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens));
-    let current = current.map(|columns| Py::new(py, pack(&columns, now.unwrap_or(0))?)).transpose()?;
-    let unchanged = unchanged.map(|(columns, stream)| -> PyResult<Py<PyCaseTables>> { Py::new(py, pack(&columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own: 0 })) }).transpose()?;
+    let pack = |columns: CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens));
+    let current = current.map(|columns| Py::new(py, pack(columns, now.unwrap_or(0))?)).transpose()?;
+    let unchanged = unchanged.map(|(columns, stream)| -> PyResult<Py<PyCaseTables>> { Py::new(py, pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own: 0 })) }).transpose()?;
     let mut results: Vec<(&'static str, String, Option<Py<PyCaseTables>>)> = Vec::with_capacity(each.len());
     for result in each {
         let result = match result {
             Err(refusal) => ("refused", refusal, None),
             Ok((kind, note, Packed::Unchanged)) => (kind, note, unchanged.as_ref().map(|shared| shared.clone_ref(py))),
             Ok((kind, note, Packed::Same(first))) => (kind, note, results[first].2.as_ref().map(|shared| shared.clone_ref(py))),
-            Ok((kind, note, Packed::Own(columns, stream, own))) => (kind, note, Some(Py::new(py, pack(&columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own }))?)),
+            Ok((kind, note, Packed::Own(columns, stream, own))) => (kind, note, Some(Py::new(py, pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own }))?)),
         };
         results.push(result);
     }
     Ok((current, results))
+}
+
+/// A `RuntimeError` where the packing of `columns` stopped and left out a
+/// table, which names the stop and each table left out. The columns hold no
+/// row of such a table, so a result made of them could not be told from the
+/// result of a step that gives no table.
+fn complete(columns: &CaseColumns) -> PyResult<()> {
+    match (columns.left_out(), columns.packing_stop()) {
+        ([], _) => Ok(()),
+        (left_out, stop) => Err(PyRuntimeError::new_err(format!(
+            "the export of the tables stopped{} and left out the table of {}",
+            stop.map_or_else(String::new, |stop| format!(" at {:?}", stop.bound)),
+            left_out.join(", ")
+        ))),
+    }
 }
 
 /// The `Step` of `before`, the `before` of a call of `step_tables` for `task`
