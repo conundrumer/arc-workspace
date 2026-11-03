@@ -1,0 +1,80 @@
+salt 1533 of 2000; chi-square 0.71 (median over salts 6.27; 8 terms, dev counts by stratum)
+overall: pool 1147, train 866, dev 161, held 120 (T 1027, E 120); dev share of T 0.1568
+
+| Stratum | T pool | Train | Dev | Dev expected |
+|---|---|---|---|---|
+| d1-4/diff | 111 | 94 | 17 | 16.7 |
+| d1-4/same | 159 | 133 | 26 | 23.9 |
+| d5-7/diff | 100 | 84 | 16 | 15.0 |
+| d5-7/same | 244 | 208 | 36 | 36.6 |
+| d8+/diff | 84 | 70 | 14 | 12.6 |
+| d8+/same | 240 | 201 | 39 | 36.0 |
+| none/diff | 29 | 25 | 4 | 4.4 |
+| none/same | 60 | 51 | 9 | 9.0 |
+| All | 1027 | 866 | 161 | 154.1 |
+
+held (E): 120 tasks
+  with a usable union graph: 35; without: 85
+  output size same 81, diff 39
+  graph tasks by goal depth bin: d1-4 0, d5-7 5, d8+ 30
+
+current sets under the rule:
+  the 22: train 19, dev 3, held 0 (of 22)
+  the 37: train 0, dev 0, held 37 (of 37)
+  the 99: train 0, dev 0, held 99 (of 99)
+  the 22 by block: {'T': 22}
+
+the 22 per stratum: stratum, T pool, in the 22, of those train, dev
+  d1-4/diff  111   2  train 2  dev 0
+  d1-4/same  159   8  train 6  dev 2
+  d5-7/diff  100   4  train 4  dev 0
+  d5-7/same  244   4  train 4  dev 0
+  d8+/diff    84   1  train 1  dev 0
+  d8+/same   240   3  train 2  dev 1
+  none/diff   29   0  train 0  dev 0
+  none/same   60   0  train 0  dev 0
+  rest of T (not in the 22): train 847, dev 158
+
+the 37 and the 99 in E: 37 37 of 37 in E; 99 99 of 99 in E
+
+check, case-counts cases: per bin T pool, train, dev; then held
+  0        T pool    1  train    1 (1.00)  dev   0 (0.00)  held   0 (of 120: 0.00)
+  1        T pool  262  train  219 (0.84)  dev  43 (0.16)  held  37 (of 120: 0.31)
+  2-3      T pool  368  train  309 (0.84)  dev  59 (0.16)  held  36 (of 120: 0.30)
+  4+       T pool  332  train  281 (0.85)  dev  51 (0.15)  held  40 (of 120: 0.33)
+  none     T pool   64  train   56 (0.88)  dev   8 (0.12)  held   7 (of 120: 0.06)
+
+check, input cells median: per bin T pool, train, dev; then held
+  a<=81    T pool  322  train  277 (0.86)  dev  45 (0.14)  held   3 (of 120: 0.03)
+  b82-225  T pool  401  train  331 (0.83)  dev  70 (0.17)  held  31 (of 120: 0.26)
+  c226+    T pool  304  train  258 (0.85)  dev  46 (0.15)  held  86 (of 120: 0.72)
+
+check, fewest productions (upper bound): per bin T pool, train, dev; then held
+  a<=7     T pool  300  train  252 (0.84)  dev  48 (0.16)  held   0 (of 120: 0.00)
+  b8-12    T pool  354  train  295 (0.83)  dev  59 (0.17)  held   6 (of 120: 0.05)
+  c13+     T pool  284  train  243 (0.86)  dev  41 (0.14)  held  29 (of 120: 0.24)
+  none     T pool   89  train   76 (0.85)  dev  13 (0.15)  held  85 (of 120: 0.71)
+
+check, graph tables: per bin T pool, train, dev; then held
+  a<=15    T pool  247  train  205 (0.83)  dev  42 (0.17)  held   0 (of 120: 0.00)
+  b16-30   T pool  438  train  368 (0.84)  dev  70 (0.16)  held   6 (of 120: 0.05)
+  c31+     T pool  255  train  219 (0.86)  dev  36 (0.14)  held  29 (of 120: 0.24)
+  none     T pool   87  train   74 (0.85)  dev  13 (0.15)  held  85 (of 120: 0.71)
+
+check, train pairs: per bin T pool, train, dev; then held
+  2        T pool  165  train  141 (0.85)  dev  24 (0.15)  held  36 (of 120: 0.30)
+  3        T pool  587  train  492 (0.84)  dev  95 (0.16)  held  60 (of 120: 0.50)
+  4        T pool  195  train  165 (0.85)  dev  30 (0.15)  held  18 (of 120: 0.15)
+  5+       T pool   80  train   68 (0.85)  dev  12 (0.15)  held   6 (of 120: 0.05)
+
+seeds per arm, two-sided .05, power .8, D0 scaled from the ramp (per task 0.0625/22 solves; 0.625/22 solves or has a candidate):
+  N=120 solves          D0=0.34  +1 pts: delta 1.20, seeds 9 (8.38) | +2 pts: delta 2.40, seeds 4 (3.72) | +5 pts: delta 6.00, seeds 2 (1.36)
+  N=120 solves or cand  D0=3.41  +1 pts: delta 1.20, seeds 26 (25.11) | +2 pts: delta 2.40, seeds 8 (7.90) | +5 pts: delta 6.00, seeds 3 (2.03)
+  N=35 solves          D0=0.10  +1 pts: delta 0.35, seeds 29 (28.74) | +2 pts: delta 0.70, seeds 13 (12.74) | +5 pts: delta 1.75, seeds 5 (4.67)
+  N=35 solves or cand  D0=0.99  +1 pts: delta 0.35, seeds 87 (86.09) | +2 pts: delta 0.70, seeds 28 (27.08) | +5 pts: delta 1.75, seeds 7 (6.97)
+  N=161 solves          D0=0.46  +1 pts: delta 1.61, seeds 7 (6.25) | +2 pts: delta 3.22, seeds 3 (2.77) | +5 pts: delta 8.05, seeds 2 (1.02)
+  N=161 solves or cand  D0=4.57  +1 pts: delta 1.61, seeds 19 (18.72) | +2 pts: delta 3.22, seeds 6 (5.89) | +5 pts: delta 8.05, seeds 2 (1.51)
+  N=120, change of 3 solves: seeds 2.89
+  N=161, change of 3 solves: seeds 3.00
+  standard error ratio against the 22: held sqrt(120/22) = 2.34, dev sqrt(161/22) = 2.71
+  base solves at 8/989 on held: 0.97; on dev: 1.30

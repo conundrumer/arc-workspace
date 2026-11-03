@@ -6,7 +6,7 @@ of sha256("1533:<id>") / 16**16, and is train where u < 0.85, else dev. The stra
 - depth bin: `goal_depth` of the task's row in gold-union/graph-tasks-{training,ramp,37}.jsonl (a later file's row replaces an earlier one's):
   d1-4, d5-7, d8+; `none` for a task with no row, an `error` row, or goal_depth inf.
 - size bin: `same` where every train pair's output has its input's height and width, else `diff`.
-The design is work/lm/data-study/features-worker/split-design/split.md; its split2.tsv is what `--check` compares against.
+The design is docs/sample-build/split.md; its split_design/split2.tsv is what `--check` compares against.
 
   python3 split.py            writes OUTD/split.tsv (task, split, stratum)
   python3 split.py --check    exits 1 where OUTD/split.tsv differs from split2.tsv
@@ -22,7 +22,7 @@ from pathlib import Path
 TASKS = MAIN_ROOT / 'data/tasks'
 GRAPHS = DATA_ROOT / 'gold/gold-union'
 OUTD = DATA_ROOT / 'samples'
-DESIGN = DATA_ROOT / 'features-worker/split-design/split2.tsv'
+DESIGN = Path(__file__).resolve().parent / 'split_design/split2.tsv'
 SALT = 1533
 CUT = 0.85
 HELD_SOURCE = {'dataset': 'arc-agi-2', 'split': 'evaluation'}

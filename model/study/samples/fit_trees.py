@@ -25,6 +25,7 @@ import json
 import os
 import re
 import resource
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -505,6 +506,14 @@ class Reporter:
             print(f'round {env.iteration + 1} dev loss {loss:.6f}', flush=True)
 
 
+def code_commit() -> dict[str, Any]:
+    """The commit of the repo that holds this file, and the paths under this file's folder that differ from it (empty where the code is the commit's)."""
+    here = Path(__file__).resolve().parent
+    def git(*a: str) -> str:
+        return subprocess.run(['git', '-C', str(here), *a], capture_output=True, text=True, check=True).stdout.strip()
+    return dict(sha=git('rev-parse', 'HEAD'), dirty=sorted(git('status', '--porcelain', '--', '.').splitlines()))
+
+
 def peak_rss_mib() -> float:
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return peak / (1 << 20) if sys.platform == 'darwin' else peak / 1024
@@ -559,7 +568,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=str(args.points), matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1))
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=code_commit())
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0
