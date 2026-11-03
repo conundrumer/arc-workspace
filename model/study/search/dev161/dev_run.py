@@ -1,8 +1,8 @@
-"""The live search on the dev tasks of the split, in arms that differ only by the writer's tree, judged by solves on the test example.
+"""The live search on the dev or train tasks of the split, in arms that differ only by the writer's tree, judged by solves on the test example.
 
-    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N]
+    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--split dev|train] [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N] [--record]
 
-RUN names the output folder, $DATA/search/dev161/RUN (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
+RUN names the output folder, $DATA/search/dev161/RUN for dev and $DATA/search/train866/RUN for train (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
 Each job is one task of one arm and one seed: the pool search with the v9 notebook's environment and a fresh store of its own. With
 --budget cpu (the default), one worker runs on --seconds of its own CPU time (cpu_clock/sitecustomize.py), and the kernel supervisor's
 code (supervisor.py beside the --code kit, else the v9 dataset's) makes the submission from its candidates. With --budget wall, the
@@ -12,7 +12,8 @@ run next to each other, so the arms are paired as results arrive.
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
 candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
-Only dev tasks run: the split's guard refuses any other.
+Held-out tasks never run. With --record, which only a train run takes, each worker writes its node records (ARC_RECORD) to the job's
+record/ folder.
 """
 import argparse
 import collections
@@ -40,9 +41,14 @@ RUNNING = [0]  # the jobs running now
 CPU_MODE = [False]  # --budget cpu, where a worker's clock is its CPU time
 
 
-def dev_tasks():
+OUT_DIRS = {'dev': 'dev161', 'train': 'train866'}
+
+
+def split_tasks(split):
+    if split not in OUT_DIRS:
+        sys.exit('split %r: only dev and train run' % split)
     lines = (DATA_ROOT / 'samples/split.tsv').read_text().splitlines()[1:]
-    return sorted(l.split('\t')[0] for l in lines if l.split('\t')[1] == 'dev')
+    return sorted(l.split('\t')[0] for l in lines if l.split('\t')[1] == split)
 
 
 def solved(task, sub):
@@ -137,6 +143,9 @@ def run_job(a, out, task, arm, seed):
     for k in ('WRITER_TREE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
         env.pop(k, None)
     env.update(ARMS[arm])
+    if a.record:
+        (w / 'record').mkdir()
+        env['ARC_RECORD'] = str(w / 'record')
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
@@ -192,18 +201,22 @@ def main():
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
+    ap.add_argument('--split', default='dev')
+    ap.add_argument('--record', action='store_true', help='each worker writes its node records; train runs only')
     ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
     CPU_MODE[0] = a.budget == 'cpu'
-    out = DATA_ROOT / 'search/dev161' / a.run
+    if a.record and a.split != 'train':
+        sys.exit('--record is for train runs only')
+    out = DATA_ROOT / 'search' / OUT_DIRS.get(a.split, 'none') / a.run
     out.mkdir(parents=True, exist_ok=True)
     done = set()
     if (out / 'results.jsonl').exists():
         done = {(r['task'], r['arm'], r['seed']) for r in map(json.loads, open(out / 'results.jsonl'))}
-    tasks = dev_tasks()[:a.tasks or None]
+    tasks = split_tasks(a.split)[:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
-    print('%d dev tasks, %d jobs to run, %d done' % (len(tasks), len(todo), len(done)), flush=True)
+    print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
     t0, n = time.time(), 0
     with cf.ThreadPoolExecutor(16) as ex:  # gate() holds the jobs to the limit
         for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
