@@ -10,7 +10,7 @@ kernel supervisor runs it for --seconds of wall-clock time. The jobs of a task
 run next to each other, so the arms are paired as results arrive.
 
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
-candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/jobs, where it
+candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
 Only dev tasks run: the split's guard refuses any other.
 """
@@ -74,10 +74,10 @@ def effort(w):
 
 
 def gate(out, a):
-    """Waits until fewer jobs run than the limit in the file <out>/jobs (default --jobs), which can be changed while the run goes on."""
+    """Waits until fewer jobs run than the limit in the file <out>/limit (default --jobs), which can be changed while the run goes on."""
     while True:
         try:
-            limit = int((out / 'jobs').read_text())
+            limit = int((out / 'limit').read_text())
         except (OSError, ValueError):
             limit = a.jobs
         with LOCK:
