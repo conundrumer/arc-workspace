@@ -683,6 +683,21 @@ fn derive(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>) -> Ve
                 }
             }
             (Some(NodeRef::Instance(instance)), DependencyKind::InstanceOutput { .. }) => gather_output(decoder, reads, subject, &given, instance, &mut gathered),
+            (Some(NodeRef::Demonstrated(_)), DependencyKind::Demonstrated(_)) => {
+                // A row at a key is a prediction of a rule that the key's
+                // demonstrations confirm, so the bodies of the rules'
+                // `&prediction` clauses derive the rows.
+                match BodyView::predictions(checked, &given.form) {
+                    Ok(predictions) => for (view, labels) in &predictions {
+                        let placements = labels.iter().enumerate().map(|(slot, label)| Some(Placement { slot: slot as u32, label: *label })).collect::<Vec<_>>();
+                        match view.widened() {
+                            Ok(views) => for sub in &views { gather(decoder, reads, &dets, subject, sub, &placements, &mut gathered) },
+                            Err(fault) => lose_all(&mut gathered, &fault_spelled(&fault)),
+                        }
+                    },
+                    Err(fault) => lose_all(&mut gathered, &fault_spelled(&fault)),
+                }
+            }
             _ => lose_all(&mut gathered, &format!("the rows of a {} form are not derived", kind_spelled(kind))),
         }
     }
