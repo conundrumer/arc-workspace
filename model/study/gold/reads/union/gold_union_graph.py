@@ -9,6 +9,7 @@
 - A query is one QueryHash of the engine's export (gold_union_tables.py): union queries of one QueryHash are one query, with their Python identities in `idents` and the least of them in `ident`. A query that the row store lacks keeps its Python identity.
 - A table is (QueryHash, Name), and a graph table is the class of tables of one map {Assignment → TableHash} (gold_union_tables.py gives the rule). A query's heads are the graph tables of every output the export gives it; the graph tables it uses are those of the tables its body uses, less the outputs of an INIT that its own inputs read. A read of an input block of an INIT, where the engine makes no table of that block (its body is one positive atom and any NOT atoms: `renamed`), uses the tables of those atoms. A graph table with more than one query is an OR. Roots are made by queries that use no table. The goal is an OR over options, one for each distinct set of graph tables that a kept case's OUT (or the pinned program's) uses; an option is an AND over its tables, with depth the most over them and cost the sum.
 - A graph table has `members`, the union names of its tables ("key" for a query that is neither INIT nor RIGID_DET, "key.name" for an INIT output or a RIGID_DET table), `tables`, its (QueryHash, Name) pairs, `map` and `capped`, and `exported`, false where the row store has no query for it (the engine refused the program, or the text didn't match), so the graph table has no map. `kit_unreachable` marks a graph table with a member in the `left` of synth-worker's maps-SET.jsonl (not read while maps-SET.jsonl.stale exists): a union output whose replay in the search kit doesn't finish or isn't collected. `kit_unreachable_reason` is that `left` entry's reason. search-worker's outmap-SET.jsonl names the outputs of `left`.
+- A task with a graph table that the row store lacks (named "u…", gold_union_tables.py) gets an error line "unmatched reads", with those tables and their members in `unmatched_reads`, and no table or query lines.
 - The queries and the tables they use come from the `text` of each kept case in union-keys-SET.jsonl.
 - Depth: depth(T) = min over T's queries of 1 + max over the tables each uses of depth, roots at 0, as the least fixed point from infinity, so a cycle gives the right result. `depth_cases` is the union file's depth of the union table, the least over the cases.
 - Query bits: the least bits of the query, joined by Python identity, over the rows of reread-kit/merged.jsonl, where the row's base_sha is the text of gold-export/flat/<task>.arclog, and the rows of reread5-all and reread6-all (whole lines only, so rows that stream in are taken as they land), one per union program (stem `<task>~<program sha>`), where the row's base_sha is the program's text (or_q.walk at b8e52e249 in both). Other queries have no bits. A graph table's `bits` is the least over its queries that have bits.
@@ -413,6 +414,12 @@ def main():
                 print(u['task'], 'graph error', type(e).__name__, str(e)[:200], flush=True)
                 continue
             task.update(tables_source='row store' if T else 'none', shared_value_sets=T.shared_value_sets if T else None, unmatched=len(T.unmatched) if T else None)
+            u_rows = [r for r in rows if r['table'].startswith('u')]
+            if u_rows:  # a read with no row store table is a fault of the union, the store or the graph, so the task gets an error line
+                fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error='unmatched reads: %d tables, %s' % (len(u_rows), '; '.join('%s %s' % (r['table'], ','.join(r['members'])) for r in u_rows[:5])),
+                                         unmatched_reads=[dict(table=r['table'], kind=r['kind'], members=r['members']) for r in u_rows])) + '\n')
+                print(u['task'], 'unmatched reads', len(u_rows), flush=True)
+                continue
             for r in rows:
                 why = [left[u['task']][m] for m in r['members'] if m in left[u['task']]]
                 r['kit_unreachable'] = bool(why)
