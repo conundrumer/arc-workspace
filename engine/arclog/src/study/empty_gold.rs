@@ -22,7 +22,10 @@
 //! slots. An `INIT` form whose key body becomes false is deleted, and so is
 //! one with an input body that becomes false where each of its outputs is
 //! proved empty; otherwise that input's clause is removed where the input
-//! then has no row. Any other read of such a relation, an `OUT` form that
+//! then has no row, and stands as it is where the component would fill an
+//! input with no clause, with each deleted form that it reads through the
+//! relations that have become empty, and so on, which the edit then keeps
+//! as it is. Any other read of such a relation, an `OUT` form that
 //! reads one, a clause with proposers whose body becomes empty, and a
 //! filtered program that the checker refuses, keep the original gold of the
 //! whole task. So does an `OUT` relation of the filtered program that
@@ -307,74 +310,88 @@ struct Filtered {
 fn filter(evaluator: &Evaluator<'_>, original: &StudyProgram, tables: &mut Tables, registry: &Registry, settings: &DecodeSettings) -> Result<Filtered, String> {
     let checked = original.checked();
     let forms = &original.program().value().forms;
-    let mut deleted: BTreeMap<usize, &'static str> = BTreeMap::new();
-    for (index, form) in forms.iter().enumerate() {
-        let Form::Clause(clause) = form else { continue };
-        if !matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) {
-            continue;
-        }
-        let relation = derived_at(checked, &NodePath::top(index as u32));
-        if let Coverage::Complete { empty: true, .. } = evaluator.coverage(tables, checked, &relation) {
-            deleted.insert(index, EMPTY);
-        }
-    }
-    let plan = loop {
-        let empty = emptied(checked, &deleted);
-        let mut added = false;
-        let mut plan = Plan::default();
+    // The forms that stand as they are, since an input clause that the edit
+    // keeps reads them.
+    let mut pinned: BTreeSet<usize> = BTreeSet::new();
+    let (deleted, plan) = 'run: loop {
+        let mut deleted: BTreeMap<usize, &'static str> = BTreeMap::new();
         for (index, form) in forms.iter().enumerate() {
-            if deleted.contains_key(&index) || !mentions(NodeRef::from(form), &empty) {
+            let Form::Clause(clause) = form else { continue };
+            if !matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) || pinned.contains(&index) {
                 continue;
             }
-            let at = NodePath::top(index as u32);
-            match form {
-                Form::Out(_) => return Err(format!("the OUT form, form {index}, reads a relation that is empty on every input, so the case's output is empty")),
-                Form::Instance(instance) => match edit_instance(evaluator, tables, checked, registry, instance.value(), &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
-                    InstanceEdit::Delete(reason) => {
-                        deleted.insert(index, reason);
-                        added = true;
-                    }
-                    InstanceEdit::Keep { bodies, inputs } => {
-                        plan.bodies.extend(bodies);
-                        if !inputs.is_empty() {
-                            plan.inputs.insert(index, inputs);
+            let relation = derived_at(checked, &NodePath::top(index as u32));
+            if let Coverage::Complete { empty: true, .. } = evaluator.coverage(tables, checked, &relation) {
+                deleted.insert(index, EMPTY);
+            }
+        }
+        let plan = loop {
+            let empty = emptied(checked, &deleted);
+            let mut added = false;
+            let mut plan = Plan::default();
+            for (index, form) in forms.iter().enumerate() {
+                if deleted.contains_key(&index) || !mentions(NodeRef::from(form), &empty) {
+                    continue;
+                }
+                let at = NodePath::top(index as u32);
+                match form {
+                    Form::Out(_) => return Err(format!("the OUT form, form {index}, reads a relation that is empty on every input, so the case's output is empty")),
+                    Form::Instance(instance) => match edit_instance(evaluator, tables, checked, registry, instance.value(), &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                        InstanceEdit::Delete(reason) => {
+                            deleted.insert(index, reason);
+                            added = true;
                         }
-                        plan.edited.insert(index);
-                    }
-                },
-                _ => {
-                    let mut bodies = Vec::new();
-                    let mut parts = Vec::new();
-                    root_bodies(NodeRef::from(form), &at, &mut bodies, &mut parts);
-                    if parts.iter().any(|atom| reads(&atom.relation, &empty)) {
-                        return Err(format!("a RIGID_DET part of form {index} reads an empty relation"));
-                    }
-                    for (path, body) in bodies {
-                        match rewrite(body.value(), &empty).map_err(|reason| format!("form {index}: {reason}"))? {
-                            Rewritten::Same => {}
-                            Rewritten::Changed(conjuncts) => {
-                                plan.bodies.push((path, Node::new(Body { conjuncts: conjuncts.into() })));
-                                plan.edited.insert(index);
+                        InstanceEdit::Keep { bodies, inputs } => {
+                            plan.bodies.extend(bodies);
+                            if !inputs.is_empty() {
+                                plan.inputs.insert(index, inputs);
                             }
-                            Rewritten::Empty => {
-                                let deletable = match form {
-                                    Form::Clause(clause) => matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) && clause.value().proposers.is_empty() && path == at.child(0),
-                                    _ => false,
-                                };
-                                if !deletable {
-                                    return Err(format!("form {index} reads an empty relation where no deletion is supported"));
+                            plan.edited.insert(index);
+                        }
+                        InstanceEdit::Pin(bodies) => {
+                            let more = pins(checked, forms, &bodies, &empty, &deleted);
+                            if more.is_subset(&pinned) {
+                                return Err(format!("form {index}: an input clause that the edit keeps reads an empty relation that no deleted form derives"));
+                            }
+                            pinned.extend(more);
+                            continue 'run;
+                        }
+                    },
+                    _ => {
+                        let mut bodies = Vec::new();
+                        let mut parts = Vec::new();
+                        root_bodies(NodeRef::from(form), &at, &mut bodies, &mut parts);
+                        if parts.iter().any(|atom| reads(&atom.relation, &empty)) {
+                            return Err(format!("a RIGID_DET part of form {index} reads an empty relation"));
+                        }
+                        for (path, body) in bodies {
+                            match rewrite(body.value(), &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                                Rewritten::Same => {}
+                                Rewritten::Changed(conjuncts) => {
+                                    plan.bodies.push((path, Node::new(Body { conjuncts: conjuncts.into() })));
+                                    plan.edited.insert(index);
                                 }
-                                deleted.insert(index, READS_EMPTY);
-                                added = true;
+                                Rewritten::Empty => {
+                                    let deletable = match form {
+                                        Form::Clause(clause) => matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) && clause.value().proposers.is_empty() && path == at.child(0),
+                                        _ => false,
+                                    };
+                                    if !deletable {
+                                        return Err(format!("form {index} reads an empty relation where no deletion is supported"));
+                                    }
+                                    deleted.insert(index, READS_EMPTY);
+                                    added = true;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        if !added {
-            break plan;
-        }
+            if !added {
+                break plan;
+            }
+        };
+        break (deleted, plan);
     };
     let edited: BTreeSet<usize> = plan.edited.iter().copied().filter(|index| !deleted.contains_key(index)).collect();
     if deleted.is_empty() && edited.is_empty() {
@@ -432,6 +449,8 @@ enum InstanceEdit {
     /// The bodies the edit replaces, and the inputs whose clauses it
     /// removes.
     Keep { bodies: Vec<(NodePath, Node<Body>)>, inputs: Vec<PortName> },
+    /// The bodies of the input clauses that stand as they are.
+    Pin(Vec<Node<Body>>),
 }
 
 /// The edit of the `INIT` form `instance` at `at`, one of whose bodies reads
@@ -439,9 +458,11 @@ enum InstanceEdit {
 /// each output of a keyed instance is empty at a key it does not have. An
 /// input body that becomes false gives the input no row: the instance is
 /// deleted where each of its outputs is proved empty in the original
-/// program, and otherwise the input's clause is removed where the component
-/// gives the input no default row and does not fill it from the key, since
-/// an input with no clause and no default has no row.
+/// program. Otherwise the input's clause is removed where the component
+/// gives the input no default row, does not fill it from the key and does
+/// not fill it from its outputs, since an input with no clause and no
+/// default has no row; where the component fills it, the input's clause
+/// stands as it is, which [`InstanceEdit::Pin`] gives.
 fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, registry: &Registry, instance: &crate::program::Instance, at: &NodePath, empty: &Empty) -> Result<InstanceEdit, String> {
     let mut bodies = Vec::new();
     let mut inputs: Vec<(NodePath, &Node<InstanceInput>)> = Vec::new();
@@ -457,11 +478,15 @@ fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
     let first = u32::from(instance.key.is_some());
     inputs.extend(instance.inputs.iter().enumerate().map(|(index, input)| (at.child(first + index as u32), input)));
     let mut falsified = Vec::new();
+    let mut false_bodies = Vec::new();
     for (path, input) in inputs {
         let input = input.value();
         match rewrite(input.body.value(), empty)? {
             Rewritten::Same => {}
-            Rewritten::Empty => falsified.push(input.name.clone()),
+            Rewritten::Empty => {
+                falsified.push(input.name.clone());
+                false_bodies.push(input.body.clone());
+            }
             Rewritten::Changed(conjuncts) => bodies.push((path.child(input.head.len() as u32), Node::new(Body { conjuncts: conjuncts.into() }))),
         }
     }
@@ -474,11 +499,15 @@ fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
     let Some(LibEntry::Component(component)) = registry.entry(&instance.component) else {
         return Err("the instance's component is not in the lib".into());
     };
-    for name in &falsified {
+    let mut kept = Vec::new();
+    for (name, body) in falsified.iter().zip(false_bodies) {
         let port = component.inputs.iter().find(|port| port.port.name == *name).ok_or("an input that the component does not declare")?;
         if port.default.is_some() || port.from_key || port.reads_outputs {
-            return Err(format!("the input {} reads an empty relation, and an input with no clause would hold rows", name.0));
+            kept.push(body);
         }
+    }
+    if !kept.is_empty() {
+        return Ok(InstanceEdit::Pin(kept));
     }
     Ok(InstanceEdit::Keep { bodies, inputs: falsified })
 }
@@ -491,6 +520,58 @@ fn outputs_empty(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
         DependencyKind::InstanceOutput { .. } => matches!(evaluator.coverage(tables, checked, &GraphRelation { node, output: None }), Coverage::Complete { empty: true, .. }),
         DependencyKind::InstanceInput { .. } => true,
         _ => false,
+    })
+}
+
+/// The deleted forms that `bodies` read through the relations of `empty`,
+/// and so on through the bodies of those forms.
+fn pins(checked: &CheckedProgram, forms: &[Form], bodies: &[Node<Body>], empty: &Empty, deleted: &BTreeMap<usize, &'static str>) -> BTreeSet<usize> {
+    let mut relations = Vec::new();
+    for body in bodies {
+        empty_reads(NodeRef::Body(body.value()), empty, &mut relations);
+    }
+    let resolved = &checked.program;
+    let mut found = BTreeSet::new();
+    while let Some(relation) = relations.pop() {
+        for (index, node) in resolved.graph.nodes.iter().enumerate() {
+            if node_relation(&node.kind).as_ref() != Some(&relation) {
+                continue;
+            }
+            for at in resolved.forms_of(crate::resolver::GraphNodeIndex(index as u32)) {
+                let Some(step) = at.0.first() else { continue };
+                let form = step.0 as usize;
+                if deleted.contains_key(&form) && found.insert(form) {
+                    empty_reads(NodeRef::from(&forms[form]), empty, &mut relations);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Pushes onto `out` each relation of `empty` that an atom at or below
+/// `node` reads.
+fn empty_reads(node: NodeRef<'_>, empty: &Empty, out: &mut Vec<ProgramRelation>) {
+    if let Some(atom) = node.atom() {
+        let relation = match &atom.relation {
+            RelationRef::Declared(name) => Some(ProgramRelation::Declared(name.clone())),
+            RelationRef::Output(name) => Some(ProgramRelation::Output(name.clone())),
+            _ => None,
+        };
+        out.extend(relation.filter(|relation| empty.contains(relation)));
+    }
+    for child in node.children() {
+        empty_reads(child, empty, out);
+    }
+}
+
+/// The relation that a graph node of kind `kind` gives, where it gives one.
+fn node_relation(kind: &DependencyKind) -> Option<ProgramRelation> {
+    Some(match kind {
+        DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation.clone(),
+        DependencyKind::Chosen(name) => ProgramRelation::Declared(name.clone()),
+        DependencyKind::InstanceOutput { instance, output } => ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(output.clone())]) }),
+        _ => return None,
     })
 }
 
@@ -614,12 +695,7 @@ fn emptied(checked: &CheckedProgram, deleted: &BTreeMap<usize, &'static str>) ->
     let mut empty = Empty::default();
     let mut live = Empty::default();
     for (index, node) in resolved.graph.nodes.iter().enumerate() {
-        let relation = match &node.kind {
-            DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation.clone(),
-            DependencyKind::Chosen(name) => ProgramRelation::Declared(name.clone()),
-            DependencyKind::InstanceOutput { instance, output } => ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(output.clone())]) }),
-            _ => continue,
-        };
+        let Some(relation) = node_relation(&node.kind) else { continue };
         let forms = resolved.forms_of(crate::resolver::GraphNodeIndex(index as u32));
         if !forms.is_empty() && forms.iter().all(|at| at.0.len() == 1 && deleted.contains_key(&(at.0[0].0 as usize))) {
             empty.insert(relation);
