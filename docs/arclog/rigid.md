@@ -9,6 +9,7 @@
       (&launch *P)
       (&aim *D))
     ```
+    - The output of a part begins with the name of the relation, instance or `RIGID_DET` form that the part reads. Two parts do not read one such name: an output that two parts begin with is a fault, and the decoder refuses the second part.
     - A form with no `instance` clause has one instance. Its parts read no instance label, and each part's `DET` table is that one instance's reading.
     - In a form with an `instance` clause, a part whose atom holds no label of that clause is a frame part: no instance's reading holds it, and the other parts place it, as [Semantics](#semantics) gives.
 - A form may also hold an `instance` clause, and a `key` clause:

@@ -31,7 +31,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{column_label, flat_label_types, fresh_in_nested_form, label_type_cached, list_class, settle_label_types, sources_on, typed, TypedLabels, WalkCache, scope_lists, use_label, AssemblyId, IdentSource, KeyRow, LabelFault, SourceId, ValueType};
+use crate::types::{column_label, each_site_label, flat_label_types, fresh_in_nested_form, label_type_cached, list_class, settle_label_types, sources_on, typed, TypedLabels, WalkCache, scope_lists, use_label, AssemblyId, IdentSource, KeyRow, LabelFault, SourceId, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -384,6 +384,17 @@ impl<'a> FormInference<'a> {
         let root = NodeRef::Instance(instance.value());
         let mut faults = Vec::new();
         for sites in binding_sites(instance.value(), &component.inputs) {
+            if let ParameterSite::Head { site: first, .. } = sites.binding {
+                let fields = columns::projection(first);
+                let misfit = sites.later.iter().map(|(_, site)| *site).find(|site| !reads_binding(fields.as_deref(), site));
+                if let Some(second) = misfit {
+                    if let Some(at) = path_to(root, NodeRef::Site(second), NodePath::default()) {
+                        let message = format!("a head site onto the type parameter `{}` takes more than the one label that the first site onto it binds", sites.parameter.name);
+                        faults.push((at, message));
+                    }
+                    continue;
+                }
+            }
             if let (Some(_), ParameterSite::Head { site, .. }) = (&sites.parameter.bound, sites.binding) {
                 let later: Vec<&Site> = sites.later.iter().map(|(_, site)| *site).collect();
                 if let Err(second) = joined_projections(site, &later, &|label| self.label(label)) {
@@ -1649,6 +1660,21 @@ fn join_types(types: impl Iterator<Item = ValueType>) -> Result<Option<ValueType
         });
     }
     Ok(joined)
+}
+
+/// Whether `site`, a head site onto a type parameter after the site that
+/// binds it, takes one label where the binding site projects one label
+/// (`fields` none), as the evaluation of the form reads it. A site after a
+/// binding record is not tested: the search for the completions of a head
+/// site (`Decoder::completes_projection`) finds a record's fields only after
+/// a search that its budget does not cover.
+fn reads_binding(fields: Option<&[ColumnName]>, site: &Site) -> bool {
+    if fields.is_some() {
+        return true;
+    }
+    let mut labels = 0;
+    each_site_label(site, &mut Vec::new(), &mut |use_, _| labels += usize::from(use_label(use_).is_some()));
+    labels == 1
 }
 
 /// The path of the node `target` among the descendants of `root`, which stands
