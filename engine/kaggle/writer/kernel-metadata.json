@@ -1,0 +1,1 @@
+{"id": "conundrumer/arc-synth-run", "title": "arc synth run", "code_file": "notebook.ipynb", "language": "python", "kernel_type": "notebook", "is_private": true, "enable_gpu": true, "enable_internet": false, "dataset_sources": ["conundrumer/arc-synth-bundle"], "competition_sources": ["arc-prize-2026-arc-agi-2"], "kernel_sources": [], "machine_shape": "NvidiaL4"}
