@@ -102,6 +102,9 @@ pub enum Control {
     DemoRule,
     /// `PREDICT`, the keyword of a `DEMO_RULE`'s `&prediction` clause.
     Predict,
+    /// `ALT_FORM`, which marks the next form of a `DEMO_RULE` as one that an
+    /// `ALT` gives it, a label scope of its own.
+    AltForm,
 }
 
 impl fmt::Display for Token {
@@ -143,6 +146,7 @@ impl Control {
             Control::Demonstrated => "DEMONSTRATED",
             Control::DemoRule => "DEMO_RULE",
             Control::Predict => "PREDICT",
+            Control::AltForm => "ALT_FORM",
         }
     }
 
@@ -176,7 +180,7 @@ impl Control {
 
     /// The control tokens of the `DEMONSTRATED` form, whose slots follow
     /// every other slot of the vocabulary, in this order.
-    pub const DEMONSTRATED_FORM: [Control; 3] = [Control::Demonstrated, Control::DemoRule, Control::Predict];
+    pub const DEMONSTRATED_FORM: [Control; 4] = [Control::Demonstrated, Control::DemoRule, Control::Predict, Control::AltForm];
 }
 
 /// Which side emits a token: the language model, or the engine, as the

@@ -14,7 +14,10 @@
 //! A `DEMONSTRATED` form's key and inputs step as an instance's do, with the
 //! inputs of `crate::stream::demonstrated::ports`, and its rules then follow.
 //! A rule is a label scope of its own, which its forms share, and each of its
-//! forms steps as a form of the program does. A relation that a rule's form
+//! forms steps as a form of the program does. A form after `ALT_FORM`, one
+//! that an `ALT` gives the rule, is a label scope of its own, whose labels
+//! take slots from the first; after it the rule's labels go on from where
+//! they stood. A relation that a rule's form
 //! declares is read within the rule alone. A decoded rule is named `$R<n>`,
 //! by its position among the form's rules, and holds no text. Its
 //! `&prediction` clause names its columns as the stream fills them: each
@@ -30,7 +33,7 @@ use crate::program::path::{NodePath, PathStep};
 use crate::program::{
     written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, DemoRule,
     Demonstrated, Form, Instance, InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OneMark, Operand, OutputName, OutputOwner,
-    OutputStep, PortName, Out, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
+    OutputStep, PortName, Out, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg, SiteValue,
 };
 use crate::read::columns::{key_labels, made_labels, slot_columns};
 use crate::read::is_type_parameter_column;
@@ -444,7 +447,12 @@ struct DemoRuleFrame {
     /// The slot of the first relation that a form of the rule declares.
     first: u32,
     fields: Vec<LabelId>,
-    forms: Vec<Form>,
+    /// Each form, with whether an `ALT` gives it to the rule.
+    forms: Vec<(Form, bool)>,
+    /// Where `ALT_FORM` has opened a form that an `ALT` gives the rule, a
+    /// label scope of its own, the count of the rule's labels, which the
+    /// rule takes back once that form is complete.
+    rule_labels: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -1123,7 +1131,7 @@ impl State {
                 Token::Control(Control::DemoRule) => {
                     let index = top!(self, Frame::Demonstrated).rules.len();
                     let first = self.next_slot();
-                    self.stack.push(Frame::DemoRule(DemoRuleFrame { index, first, fields: Vec::new(), forms: Vec::new() }));
+                    self.stack.push(Frame::DemoRule(DemoRuleFrame { index, first, fields: Vec::new(), forms: Vec::new(), rule_labels: None }));
                     self.labels = 0;
                     Ok(Offer::Taken)
                 }
@@ -1573,10 +1581,22 @@ impl State {
     }
 
     /// A rule's fields, each a made label, then its forms, each opened by
-    /// its keyword, `PREDICT` for its `&prediction` clause, then its `END`.
+    /// its keyword, `PREDICT` for its `&prediction` clause, and after
+    /// `ALT_FORM` where an `ALT` gives it, then its `END`.
     fn offer_rule(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
-        let fields_open = top!(self, Frame::DemoRule).forms.is_empty();
+        let rule = top!(self, Frame::DemoRule);
+        let alt_open = rule.rule_labels.is_some();
+        let fields_open = rule.forms.is_empty() && !alt_open;
+        if alt_open && !matches!(token, Token::Control(Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet | Control::Predict)) {
+            return Err("`ALT_FORM` is followed by the keyword of a form");
+        }
         match token {
+            Token::Control(Control::AltForm) => {
+                let labels = self.labels;
+                top!(self, Frame::DemoRule).rule_labels = Some(labels);
+                self.labels = 0;
+                Ok(Offer::Taken)
+            }
             Token::Control(Control::Fresh) if fields_open => {
                 let Some(LabelUse::Fresh(label)) = self.label_token(token, false, forced) else { unreachable!("`*` makes a label") };
                 top!(self, Frame::DemoRule).fields.push(label);
@@ -1631,7 +1651,13 @@ impl State {
     /// finishes it as a form of the program.
     fn complete_form(&mut self, form: Form) {
         match self.stack.last_mut() {
-            Some(Frame::DemoRule(rule)) => rule.forms.push(form),
+            Some(Frame::DemoRule(rule)) => {
+                let rule_labels = rule.rule_labels.take();
+                rule.forms.push((form, rule_labels.is_some()));
+                if let Some(labels) = rule_labels {
+                    self.labels = labels;
+                }
+            }
             _ => self.finish_form(form),
         }
     }
@@ -2002,7 +2028,7 @@ impl State {
                     Some(Built::Form(form)) => Some(form),
                     _ => None,
                 };
-                let forms = rule.forms.iter().cloned().chain(child).collect();
+                let forms = rule.forms.iter().cloned().chain(child.map(|form| (form, rule.rule_labels.is_some()))).collect();
                 Built::Rule(Node::new(demo_rule(rule.index, &rule.fields, forms)))
             }
             Frame::Demonstrated(demonstrated) => {
@@ -2265,12 +2291,13 @@ fn prediction_clause(body: Node<Body>, columns: Vec<RelationColumn>) -> Clause {
 }
 
 /// The decoded `DEMO_RULE` form at `index` among the rules of its form,
-/// with the fields `fields` and the forms `forms`, named as
-/// `crate::stream::demonstrated::rule_name` and `field_name` give.
-fn demo_rule(index: usize, fields: &[LabelId], forms: Vec<Form>) -> DemoRule {
+/// with the fields `fields` and the forms `forms`, each with whether an
+/// `ALT` gives it, named as `crate::stream::demonstrated::rule_name` and
+/// `field_name` give.
+fn demo_rule(index: usize, fields: &[LabelId], forms: Vec<(Form, bool)>) -> DemoRule {
     use crate::stream::demonstrated::{field_name, rule_name};
     let fields = fields.iter().enumerate().map(|(at, label)| RelationColumn { name: field_name(at), label: *label }).collect();
-    DemoRule { name: rule_name(index), fields, text: None, forms: RuleForms::written(forms.into()) }
+    DemoRule { name: rule_name(index), fields, text: None, forms: forms.into_iter().collect() }
 }
 
 fn empty() -> Node<Body> {

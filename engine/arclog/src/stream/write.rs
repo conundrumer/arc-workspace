@@ -22,7 +22,9 @@
 //! the inputs of [`super::demonstrated::ports`], then writes each rule, then
 //! `END`, and the engine then declares the form's relation. A rule is its
 //! own label scope: its fields, then its forms, each of whose labels takes
-//! a slot after the fields and the labels of the rule's earlier forms. The
+//! a slot after the fields and the labels of the rule's earlier forms. A
+//! form that an `ALT` gives the rule follows `ALT_FORM` and is a label scope
+//! of its own, whose labels take slots from the first. The
 //! relations a rule's forms declare take the next relation slots, and a
 //! read in the rule finds them before the program's relations of the same
 //! name.
@@ -768,7 +770,7 @@ impl Writer<'_> {
     /// label for each field, its forms in the order of [`write_order`], and
     /// `END`. Its `&prediction` clause is written as
     /// [`Writer::prediction`] gives, and each other form as a form of the
-    /// program is.
+    /// program is, after `ALT_FORM` where an `ALT` gives it.
     fn demo_rule(&mut self, rule: &DemoRule, targets: &[Option<ColumnName>], path: &NodePath) -> Written {
         self.model(Control::DemoRule, path)?;
         self.clear_labels();
@@ -780,11 +782,18 @@ impl Writer<'_> {
         self.rule_declared = Some(StableHashMap::default());
         for index in write_order(self.registry, &forms) {
             let (form, at) = &forms[index];
-            if rule.forms.from_alt(index) {
-                return Err(no_form("a form that an `ALT` gives a `DEMO_RULE` form", at));
+            // A form that an `ALT` gives the rule is a label scope of its own, whose labels take slots from the
+            // first, and after it the rule's labels take their slots on from where they stood.
+            let own_scope = rule.forms.from_alt(index).then(|| {
+                let rule_labels = (std::mem::take(&mut self.labels), self.next_label);
+                self.next_label = 0;
+                rule_labels
+            });
+            match own_scope {
+                Some(_) => self.model(Control::AltForm, at)?,
+                // A label that an earlier form of the rule makes is made anew in this one.
+                None => self.labels.retain(|label, _| fields.contains(label)),
             }
-            // A label that an earlier form of the rule makes is made anew in this one.
-            self.labels.retain(|label, _| fields.contains(label));
             match form {
                 Form::Clause(clause) if relation_of(&clause.value().derives) == prediction() => self.prediction(clause.value(), rule, targets, at)?,
                 Form::Clause(clause) => self.clause(clause.value(), at)?,
@@ -792,6 +801,9 @@ impl Writer<'_> {
                 Form::Choose(choose) => self.choose(choose.value(), at)?,
                 Form::RigidDet(rigid) => self.rigid_det(rigid.value(), at)?,
                 Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => return Err(no_form("a form of a `DEMO_RULE` other than a clause, an `INIT`, a `CHOOSE` and a `RIGID_DET` form", at)),
+            }
+            if let Some((labels, next_label)) = own_scope {
+                (self.labels, self.next_label) = (labels, next_label);
             }
         }
         self.rule_declared = None;
