@@ -1,0 +1,134 @@
+"""The live search on the dev tasks of the split, in arms that differ only by the writer's tree, judged by solves on the test example.
+
+    dev_run.py RUN --code DIR --site DIR [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs 4] [--tasks N]
+
+RUN names the output folder, $DATA/search/dev161/RUN (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
+Each job is one task of one arm and one seed: the kernel supervisor (supervisor.py beside this file's --code kit, else the v9
+dataset's) runs the pool search for --seconds, with the v9 notebook's environment, and a fresh store of its own. The jobs of a task
+run next to each other, so the arms are paired as results arrive.
+
+Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
+candidates, workers, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line.
+Only dev tasks run: the split's guard refuses any other.
+"""
+import argparse
+import collections
+import concurrent.futures as cf
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from study_paths import DATA_ROOT, MAIN_ROOT  # noqa: E402
+
+DATASET = MAIN_ROOT / 'work/synth-kaggle/kernel-writer-dry8/dataset'  # the v9 bundle's dataset: models, policy model, supervisor
+PY = MAIN_ROOT / 'work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
+TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
+ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}}
+RSS_LIMIT_MIB = 2888
+LOCK = threading.Lock()
+
+
+def dev_tasks():
+    lines = (DATA_ROOT / 'samples/split.tsv').read_text().splitlines()[1:]
+    return sorted(l.split('\t')[0] for l in lines if l.split('\t')[1] == 'dev')
+
+
+def solved(task, sub):
+    """Whether each test example of task has an attempt equal to its output, and the count of test examples."""
+    tests = json.loads((MAIN_ROOT / 'data/tasks' / (task + '.json')).read_text())['test']
+    got = sub.get(task, [])
+    ok = len(got) == len(tests) and all(any(a.get(k) == t['output'] for k in ('attempt_1', 'attempt_2')) for a, t in zip(got, tests))
+    return ok, len(tests)
+
+
+def job(a, out, task, arm, seed):
+    w = out / 'jobs' / ('%s.%s.s%d' % (task, arm, seed))
+    w.mkdir(parents=True, exist_ok=True)
+    d = json.loads((MAIN_ROOT / 'data/tasks' / (task + '.json')).read_text())
+    (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
+    samp = Path(a.code) / 'model/study/sampler'
+    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(DATASET), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
+               POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES='search', ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
+               RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
+               NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
+    for k in ('WRITER_TREE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
+        env.pop(k, None)
+    env.update(ARMS[arm])
+    sup = Path(a.code) / 'supervisor.py'
+    sup = sup if sup.exists() else DATASET / 'supervisor.py'
+    t0 = time.time()
+    cmd = [str(MAIN_ROOT / 'scripts/run_heavy.py'), '--cpus', '1', '--need', 'soon', str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
+           '--submission', str(w / 'submission.json'), '--work', str(w / 'work'), '--seconds', str(a.seconds), '--workers', '1',
+           '--rss-limit-mib', str(RSS_LIMIT_MIB), '--worker-cmd', '%s -u %s' % (PY, samp / 'kaggle_worker.py')]
+    with open(w / 'supervisor.log', 'w') as log:
+        rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=a.seconds + 600).returncode
+    text = (w / 'supervisor.log').read_text()
+    sub = json.loads((w / 'submission.json').read_text()) if (w / 'submission.json').exists() else {}
+    ok, ntest = solved(task, sub)
+    last = next((l for l in reversed(text.splitlines()) if 'submission written; deaths' in l), '')
+    dk = re.search(r'deaths (\d+) kills (\d+)', last)
+    cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
+    rec = dict(task=task, arm=arm, seed=seed, solved=ok, tests=ntest, candidates=cands, rc=rc, seconds=round(time.time() - t0, 1),
+               deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
+               tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))
+    with LOCK:
+        with open(out / 'results.jsonl', 'a') as f:
+            f.write(json.dumps(rec) + '\n')
+        summary(out)
+    return rec
+
+
+def summary(out):
+    recs = [json.loads(l) for l in open(out / 'results.jsonl')]
+    by = collections.defaultdict(list)
+    for r in recs:
+        by[(r['arm'], r['seed'])].append(r)
+    lines = []
+    for (arm, seed), rs in sorted(by.items()):
+        lines.append('%s s%d: %d tasks, %d solved, %d with a candidate, %d tracebacks, %d kills' % (
+            arm, seed, len(rs), sum(r['solved'] for r in rs), sum(r['candidates'] > 0 for r in rs), sum(r['tracebacks'] for r in rs), sum(r['kills'] or 0 for r in rs)))
+    tasks = {r['task'] for r in recs}
+    paired = [t for t in tasks if all(any(r['task'] == t and r['arm'] == arm for r in recs) for arm in ARMS)]
+    lines.append('paired tasks: %d; solved only by tree: %s; only by hand: %s' % (
+        len(paired), sorted(t for t in paired if any(r['task'] == t and r['arm'] == 'tree' and r['solved'] for r in recs) and not any(r['task'] == t and r['arm'] == 'hand' and r['solved'] for r in recs)),
+        sorted(t for t in paired if any(r['task'] == t and r['arm'] == 'hand' and r['solved'] for r in recs) and not any(r['task'] == t and r['arm'] == 'tree' and r['solved'] for r in recs))))
+    (out / 'summary.txt').write_text('\n'.join(lines) + '\n')
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('run')
+    ap.add_argument('--code', required=True)
+    ap.add_argument('--site', required=True)
+    ap.add_argument('--arms', default='tree,hand')
+    ap.add_argument('--seeds', default='0')
+    ap.add_argument('--seconds', type=int, default=120)
+    ap.add_argument('--jobs', type=int, default=4)
+    ap.add_argument('--tasks', type=int, default=0)
+    a = ap.parse_args()
+    out = DATA_ROOT / 'search/dev161' / a.run
+    out.mkdir(parents=True, exist_ok=True)
+    done = set()
+    if (out / 'results.jsonl').exists():
+        done = {(r['task'], r['arm'], r['seed']) for r in map(json.loads, open(out / 'results.jsonl'))}
+    tasks = dev_tasks()[:a.tasks or None]
+    todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
+    print('%d dev tasks, %d jobs to run, %d done' % (len(tasks), len(todo), len(done)), flush=True)
+    t0, n = time.time(), 0
+    with cf.ThreadPoolExecutor(a.jobs) as ex:
+        for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
+            r = fut.result()
+            n += 1
+            rate = n / (time.time() - t0)
+            print('%s %s s%d solved %s cands %d kills %d tb %d | %d/%d, ETA %.0f min' % (
+                r['task'], r['arm'], r['seed'], r['solved'], r['candidates'], r['kills'], r['tracebacks'], n, len(todo), (len(todo) - n) / rate / 60), flush=True)
+
+
+if __name__ == '__main__':
+    main()
