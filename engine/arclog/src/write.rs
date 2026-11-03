@@ -112,7 +112,7 @@ pub(crate) fn write_synthesized_named(program: &Node<Program>, registry: &Regist
 
 pub(crate) fn label_names_named(program: &Node<Program>, registry: &Registry,
     preferred: Option<&LabelNames>) -> LabelNames {
-    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names, _, _)| names).collect()
+    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names, _, _, _)| names).collect()
 }
 
 /// `program` with the sites of each read of a derived relation in the order
@@ -138,17 +138,33 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
 {
     use crate::program::path::{NodePath,NodeRef};
     use crate::program::LabelId;
+    use crate::layout::SourceFile;
+    type NestedSlots = crate::hash::StableHashMap<NodePath, synthesized::Slots>;
     let named = match layout {
         Some(layout) => program.value().forms.iter().enumerate().map(|(i,f)| {
-            let names = layout.node(crate::layout::SourceFile::Arclog,&NodePath::top(i as u32))
+            let names = layout.node(SourceFile::Arclog,&NodePath::top(i as u32))
                 .map(|n|n.label_names.to_vec()).unwrap_or_default();
-            (f.clone(),names,None,None)
+            (f.clone(),names,None,None,NestedSlots::default())
         }).collect(),
         None => synthesized::named_forms(program,registry,preferred).into_iter()
-            .map(|(form,names,slots,nested)| (form,names,Some(slots),Some(nested))).collect::<Vec<_>>(),
+            .map(|(form,names,slots,nested,nested_slots)| (form,names,Some(slots),Some(nested),nested_slots)).collect::<Vec<_>>(),
     };
-    fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath, slots: Option<&synthesized::Slots>,
-        names: &[(LabelId,Box<str>)], out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
+    /// The layout nodes of `layout` at and below `from`, moved to `to`.
+    fn moved(layout: &Layout, from: &NodePath, to: &NodePath) -> Layout {
+        let mut out = Layout::default();
+        for ((file, path), node) in layout.nodes.range((SourceFile::Arclog, from.clone())..) {
+            if *file != SourceFile::Arclog || !path.0.starts_with(&from.0) { break; }
+            let path = NodePath(to.0.iter().chain(path.0[from.0.len()..].iter()).cloned().collect());
+            out.nodes.insert((SourceFile::Arclog, path), node.clone());
+        }
+        out
+    }
+    /// The names of the label scopes of a `DEMONSTRATED` form, the form at
+    /// the top-level path `NodePath::top(0)`, and the slots that each form
+    /// of its rules reads in, by the form's path below the form.
+    struct Within<'w> { alone: &'w Layout, slots: &'w NestedSlots }
+    fn walk<'w>(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath, slots: Option<&'w synthesized::Slots>,
+        names: &'w [(LabelId,Box<str>)], within: Option<&Within<'w>>, out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
         // NamedLabel at a decoded record field is printed as (:field LABEL).
         // Its source node is still LABEL, at the original argument path.
         if matches!(original,NodeRef::Label(_)) && matches!(display,NodeRef::Site(_)) {
@@ -156,7 +172,20 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
             if children.len()!=1 {return Err(format!("display field shape mismatch at {at:?}"));}
             display=children[0];
         }
-        out.insert(at.clone(),arclog::snippet(display,names)?);
+        let text = match (display, within) {
+            (NodeRef::DemoRule(rule), Some(within)) => arclog::rule_snippet(rule, &moved(within.alone, &in_alone(at), &NodePath::default())),
+            _ => arclog::snippet(display,names)?,
+        };
+        out.insert(at.clone(),text);
+        walk_children(original, display, at, slots, names, within, out)
+    }
+    /// The path in the layout of a `DEMONSTRATED` form alone of the node at
+    /// `at`, a path within the form.
+    fn in_alone(at: &NodePath) -> NodePath {
+        NodePath(NodePath::top(0).0.iter().chain(at.0[1..].iter()).cloned().collect())
+    }
+    fn walk_children<'w>(original: NodeRef<'_>, display: NodeRef<'_>, at: &NodePath, slots: Option<&'w synthesized::Slots>,
+        names: &'w [(LabelId,Box<str>)], within: Option<&Within<'w>>, out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
         let original_children=original.children();let display_children=display.children();
         if original_children.len()!=display_children.len() {
             return Err(format!("display child count mismatch at {at:?}"));
@@ -166,22 +195,44 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
         let order = original.atom().zip(slots).and_then(|(atom, slots)| synthesized::read_order(atom, slots));
         for (k,display) in display_children.into_iter().enumerate() {
             let i = order.as_ref().map_or(k, |order| order[k]);
-            walk(original_children[i],display,&at.child(i as u32),slots,names,out)?;
+            let child_at = at.child(i as u32);
+            // Within a `DEMONSTRATED` form, a rule and a form an `ALT` gave
+            // a rule name the labels of a scope of their own, and each form
+            // of a rule reads in the slots it was ordered by.
+            let (names, slots) = match within {
+                Some(within) => {
+                    let names = if crate::program::canonical::opens_scope(original, i, original_children[i]) {
+                        within.alone.node(SourceFile::Arclog, &in_alone(&child_at)).map_or(&[][..], |node| &node.label_names[..])
+                    } else { names };
+                    (names, within.slots.get(&NodePath(child_at.0[1..].into())).or(slots))
+                }
+                None => (names, slots),
+            };
+            walk(original_children[i],display,&child_at,slots,names,within,out)?;
         }
         Ok(())
     }
     let mut out=std::collections::BTreeMap::new();
-    for (i,(original,(display,names,slots,nested))) in program.value().forms.iter().zip(named).enumerate() {
-        // A `DEMONSTRATED` form's rules are scopes of their own, which a
-        // snippet has no names of: the form has the text of its own alone.
+    for (i,(original,(display,names,slots,nested,nested_slots))) in program.value().forms.iter().zip(named).enumerate() {
+        let at = NodePath::top(i as u32);
+        // A `DEMONSTRATED` form's rules are scopes of their own: the form
+        // has the text of its own alone, and the nodes below it the names
+        // of the scope each stands in.
         if let Form::Demonstrated(_) = original {
-            let nested = nested.ok_or_else(|| format!("the DEMONSTRATED form {i} has no text of its own"))?;
             let mut alone = Layout::default();
-            synthesized::name_scopes(&mut alone, 0, names, nested);
-            out.insert(NodePath::top(i as u32), write_arclog(&Node::new(Program { forms: Arc::from([display]) }), &alone).trim().to_owned());
+            match (layout, nested) {
+                (_, Some(nested)) => synthesized::name_scopes(&mut alone, 0, names.clone(), nested),
+                // A read form keeps the layout the file gave it, moved to
+                // the place of the program's one form.
+                (Some(layout), None) => alone = moved(layout, &at, &NodePath::top(0)),
+                (None, None) => return Err(format!("the DEMONSTRATED form {i} has no names for its scopes")),
+            }
+            out.insert(at.clone(), write_arclog(&Node::new(Program { forms: Arc::from([display.clone()]) }), &alone).trim().to_owned());
+            let within = Within { alone: &alone, slots: &nested_slots };
+            walk_children(NodeRef::from(original),NodeRef::from(&display),&at,slots.as_ref(),&names,Some(&within),&mut out)?;
             continue;
         }
-        walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),slots.as_ref(),&names,&mut out)?;
+        walk(NodeRef::from(original),NodeRef::from(&display),&at,slots.as_ref(),&names,None,&mut out)?;
     }
     out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized_named(program,registry,preferred)});
     Ok(out)
@@ -244,11 +295,12 @@ mod synthesized {
         program: &Node<Program>,
         registry: &Registry,
         preferred: Option<&super::LabelNames>,
-    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>, Slots, Vec<Scope>)> {
+    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>, Slots, Vec<Scope>, StableHashMap<NodePath, Slots>)> {
         let mut synth = Synthesizer::new(registry);
         let mut named = Vec::new();
         for (index, form) in program.value().forms.iter().enumerate() {
             let slots = synth.slots.clone();
+            synth.nested_slots.clear();
             let (form, ranks) = synth.in_slot_order(form);
             let form = &form;
             let generated = synth.label_names(form, &ranks);
@@ -270,7 +322,7 @@ mod synthesized {
             };
             let written = synth.form(form, &Names(&names));
             let nested = std::mem::take(&mut synth.nested);
-            named.push((written, names, slots, nested));
+            named.push((written, names, slots, nested, std::mem::take(&mut synth.nested_slots)));
         }
         named
     }
@@ -288,7 +340,7 @@ mod synthesized {
     pub(super) fn write(program: &Node<Program>, registry: &Registry, preferred: Option<&super::LabelNames>) -> String {
         let mut forms = Vec::new();
         let mut layout = Layout::default();
-        for (index, (form, names, _, nested)) in named_forms(program, registry, preferred).into_iter().enumerate() {
+        for (index, (form, names, _, nested, _)) in named_forms(program, registry, preferred).into_iter().enumerate() {
             name_scopes(&mut layout, index, names, nested);
             if let Form::Out(out) = &form {
                 super::elide_out_sites(out.value(), &NodePath::top(index as u32), &mut layout);
@@ -513,6 +565,9 @@ mod synthesized {
         /// The places of the labels of each scope below the form being
         /// ordered, by the scope's path below the form.
         nested_ranks: StableHashMap<NodePath, Ranks>,
+        /// The slots that each form of a `DEMO_RULE` below the form being
+        /// ordered reads in, by the form's path below the form.
+        nested_slots: StableHashMap<NodePath, Slots>,
     }
 
     fn slot_text(slot: u32) -> String {
@@ -576,7 +631,7 @@ mod synthesized {
 
     impl<'r> Synthesizer<'r> {
         fn new(registry: &'r Registry) -> Self {
-            Synthesizer { registry, columns: StableHashMap::default(), records: StableHashMap::default(), slots: Slots::default(), nested: Vec::new(), nested_ranks: StableHashMap::default() }
+            Synthesizer { registry, columns: StableHashMap::default(), records: StableHashMap::default(), slots: Slots::default(), nested: Vec::new(), nested_ranks: StableHashMap::default(), nested_slots: StableHashMap::default() }
         }
 
         /// The text of `column` of a site on `relation`.
@@ -641,6 +696,7 @@ mod synthesized {
                 for (index, form) in rule.forms.iter().enumerate() {
                     let alt = rule.forms.from_alt(index);
                     let form_at = forms_at.path(NodeRef::from(form));
+                    self.nested_slots.insert(form_at.clone(), self.slots.clone());
                     let (ordered, own) = self.in_slot_order(form);
                     if alt {
                         self.nested_ranks.insert(form_at, own);
