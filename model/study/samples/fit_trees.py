@@ -4,7 +4,8 @@
   python3 fit_trees.py --points DIR --check [--alpha A]
 
 DIR is `samples/SET/points/`. The point files of train tasks give the fit and those of dev tasks give the evaluation, by the split in each file's header. A file whose header split is
-held-out (or `held`, its name in older files) is an error, and so is a DIR below `points_held-out` or `points_held`. --dev-tasks names tasks to treat as dev whatever their header says (for development on a small set; held-out stays an error).
+held-out (or `held`, its name in older files) is an error, and so is a DIR below `points_held-out` or `points_held`. The tasks of split.OUT_OF_SCOPE are left
+out of the fit and of --score, and the report's `out_of_scope` names them. --dev-tasks names tasks to treat as dev whatever their header says (for development on a small set; held-out stays an error).
 With --points-per-task N a task keeps at most N of its points, chosen by a hash of the seed, the sample id and the point's position in its file (0: all).
 
 A row is one (point, id): the id's option values, the id's table vector and the point's values. The columns are in the order of the header's `uses` (the writer's feature names, which
@@ -45,7 +46,7 @@ from typing import Any, Callable, Iterator
 import lightgbm as lgb
 import numpy as np
 
-from split import is_held_out
+from split import OUT_OF_SCOPE, is_held_out, out_of_scope
 
 HELD_FOLDERS = ('points_held-out', 'points_held')  # the folder name, and the one that earlier runs wrote
 FEATURE_FIELDS = ('schema', 'extractor_sha', 'writer_sha', 'wheel', 'point_names', 'option_names', 'table_names', 'uses', 'vector_names', 'vector_point_cols')
@@ -180,8 +181,10 @@ def point_folder(folder: Path) -> Path:
 
 
 def split_files(folders: list[Path], dev_tasks: set[str]) -> tuple[list[Path], list[Path], dict[str, dict]]:
-    """(train files, dev files, the header of each task) of the folders, by the split in each header; --dev-tasks moves tasks to dev. A header split other than train or dev is an error."""
-    paths = sorted((p for folder in folders for p in point_folder(folder).glob('*.jsonl.gz')), key=lambda p: p.name)
+    """(train files, dev files, the header of each task) of the folders, by the split in each header; --dev-tasks moves tasks to dev. A header split other than train or dev is an error.
+    A task of split.out_of_scope() is left out."""
+    skip = out_of_scope()
+    paths = sorted((p for folder in folders for p in point_folder(folder).glob('*.jsonl.gz') if p.name.removesuffix('.jsonl.gz') not in skip), key=lambda p: p.name)
     heads = {p.name.removesuffix('.jsonl.gz'): header_of(p) for p in paths}
     unknown = dev_tasks - heads.keys()
     if unknown:
@@ -651,7 +654,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0

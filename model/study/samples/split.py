@@ -46,6 +46,16 @@ def split_of(task: str) -> Split:
     return 'train' if u(task) < CUT else 'dev'
 
 
+# The tasks out of scope, which no fit and no score reads: one line per task, {task, set, reason}; the union's gold_union_scope.py writes it.
+OUT_OF_SCOPE = Path(os.environ.get('ARC_OUT_OF_SCOPE', str(DATA_ROOT / 'gold/gold-union-exp46/out-of-scope.jsonl')))
+
+
+@functools.cache
+def out_of_scope() -> dict[str, str]:
+    """{task: reason} of OUT_OF_SCOPE; a missing file is an error, so that no task enters a fit for want of the file."""
+    return {r['task']: r['reason'] for r in map(json.loads, OUT_OF_SCOPE.read_text().splitlines()) if r}
+
+
 def is_held_out(split: str) -> bool:
     """True for the held-out split under its name and under the name that older files carry. A reader of a split field asks this, so that no held-out task enters a fit by its old name."""
     return split in (HELD_OUT, OLD_HELD_OUT)
