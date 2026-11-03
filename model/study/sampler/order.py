@@ -2,7 +2,8 @@
 """The order of the free choices of a query, for the two writer plans.
 
 A query is written token by token. Many orders give one QueryHash: the atoms of a body, the branches of an OR, the atoms of a branch, the parts of an ALL,
-and the bodies of a key group and of the ports. This module reads a query (its model tokens) as a tree of sets, and writes it in an order.
+and the bodies of a key group and of the ports. This module reads a query (its model tokens) as a tree of sets, and writes it in an order. An atom that repeats an atom
+of its set is read once (drop_repeats).
 
     env = Env(sess)                                       # per session (one task)
     q = read_query(env, base_dec, kind, tokens)           # base_dec: the decoder after the scope's tokens; tokens: [(token id, model flag)] of the query's form, the kind token first
@@ -394,6 +395,26 @@ def parse_items(env, s, i, stop):
     return items, i
 
 
+def drop_repeats(items):
+    """items without each atom that repeats an earlier atom of its set, in the nested sets too. A set is a conjunction, so a repeat adds nothing to it, and the mask
+    removes the token that closes it (lookahead_legal.RepeatSame): a query is written with each atom of a set once."""
+    out, seen = [], set()
+    for it in items:
+        if isinstance(it, Atom):
+            if it.toks in seen:
+                continue
+            seen.add(it.toks)
+        elif isinstance(it, Or):
+            for b in it.branches:
+                b.items = drop_repeats(b.items)
+        elif isinstance(it, All):
+            it.dom.items, it.body.items = drop_repeats(it.dom.items), drop_repeats(it.body.items)
+        elif isinstance(it, If):
+            it.test.items, it.then.items, it.els.items = drop_repeats(it.test.items), drop_repeats(it.then.items), drop_repeats(it.els.items)
+        out.append(it)
+    return out
+
+
 def read_query(env, base, kind, full, gold_hash=None):
     """base: the decoder after the scope. full: [(token id, model flag)] of the query's form, the kind token first."""
     dec = base.fork()
@@ -420,7 +441,7 @@ def read_query(env, base, kind, full, gold_hash=None):
                 items, j = parse_items(env, s, 0, (END,))
                 if j != len(s) - 1:
                     raise ParseError('body ends early')
-                el = Body(Set(items, bkind))
+                el = Body(Set(drop_repeats(items), bkind))
             placed.append((place, el, s))
         q.plan = demo_plan(placed, info) if kind == 'DEMONSTRATED' else [el for _, el, _ in placed]
         set_needs(q)
