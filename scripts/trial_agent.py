@@ -49,7 +49,7 @@ HELP = mctx("""
     - `run` runs the brief on the reader's runtime, saves no session, and ends with that run's exit code.
         - It prints the path of the trial's output file at its start: the runtime's native JSONL events, under `.cache/trials/` of the worktree.
         - For `agent <name>`, where that agent's role launches on Codex in the current mode, the trial runs `codex exec` with that role's configured model and reasoning effort.
-        - Other trials run `claude -p` with the reader's model: the `model` in an agent prompt's front matter, or, for `coordinator`, `user-session` and `session`, the family alias of the last assistant `message.model` in the transcript of `$CLAUDE_CODE_SESSION_ID`.
+        - Other trials run `claude -p` with the reader's model: the `model` in an agent prompt's front matter, or, for `coordinator`, `user-session`, `arclog-session` and `session`, the family alias of the last assistant `message.model` in the transcript of `$CLAUDE_CODE_SESSION_ID`.
         - Where the reader is unsupported or no model is found, the command refuses and runs nothing.
         - The trial's shared part is the file `.cache/trials/<change number>-<reader slug>.md` of the worktree.
             - `<reader slug>` is `<reader>` and each of `[args]`, joined by `-`.
@@ -77,7 +77,8 @@ CACHE_TTL_VAR = "CLAUDE_CODE_PROMPT_CACHE_TTL"
 """Sets the prompt-cache TTL of a `claude -p` run. Unset, a run on a Claude
 subscription gets the 1-hour TTL, which costs more than the 5-minute one."""
 
-SESSION_READERS = (ReaderName.COORDINATOR, ReaderName.USER_SESSION, ReaderName.SESSION)
+SESSION_READERS = (ReaderName.COORDINATOR, ReaderName.USER_SESSION,
+                   ReaderName.ARCLOG_SESSION, ReaderName.SESSION)
 """The readers that run on the model of the session's coordinator."""
 
 POLL_SECONDS = 0.5

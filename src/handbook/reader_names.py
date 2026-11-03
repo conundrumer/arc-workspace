@@ -11,6 +11,7 @@ class ReaderName(StrEnum):
 
     COORDINATOR = "coordinator"
     USER_SESSION = "user-session"
+    ARCLOG_SESSION = "arclog-session"
     SESSION = "session"
     CODEX = "codex"
     AGENT = "agent"

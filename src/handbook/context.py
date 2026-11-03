@@ -45,6 +45,9 @@ SESSION_DOC = document(checkout.prompts()) / "session.md"
 CODEX_DOC = document(checkout.prompts()) / "codex.md"
 # The entry document of the session the user launches with `scripts/claude.py`.
 USER_SESSION_DOC = document(checkout.prompts()) / "user-session.md"
+# The entry document of the session the user launches with
+# `scripts/claude.py --reader arclog-session`.
+ARCLOG_SESSION_DOC = document(checkout.prompts()) / "arclog-session.md"
 
 
 def role_file(name: str, roles: Path = ROLE_DIR) -> Path:

@@ -28,9 +28,10 @@ older rendering passes the budget.
 Where the user starts the coordinator with `claude`, its reader is
 `coordinator`, and it reads the session-start hook's text alone
 (`coordinator_context`). Where the user starts it with `scripts/claude.py`,
-its reader is `user-session`, and it reads both texts: that script's
-appendix to the system prompt (`coordinator_appendix`), then the
-session-start hook's text (`user_session_context`). The appendix reaches
+its reader is `user-session`, or the reader its `--reader` option names
+(`APPENDIX_DOCS`), and it reads both texts: that script's appendix to the
+system prompt (`coordinator_appendix`), then the session-start hook's text
+(`user_session_context`). The appendix reaches
 the session by `--append-system-prompt-file` and not by the hook, so
 `HOOK_TEXT_CAP` does not bound it.
 """
@@ -46,10 +47,11 @@ from controlled_markdown import mctx
 from engine import checkout
 from handbook.agent_documents import agent_dir
 from handbook.budget import checked
-from handbook.context import USER_SESSION_DOC, entry_text
+from handbook.context import ARCLOG_SESSION_DOC, USER_SESSION_DOC, entry_text
 from handbook.contexts import APPENDIX, marked_section
 from handbook.generated import Rendering, write_generated
 from handbook.paths import repo_label
+from handbook.reader_names import ReaderName
 
 COORDINATOR_DOC = agent_dir() / "notes" / "coordinator.md"
 COORDINATOR_PATH = checkout.claude() / "coordinator.md"
@@ -112,10 +114,16 @@ def budgeted_text(doc: Path = COORDINATOR_DOC) -> str:
     return checked(doc, coordinator_text(doc), COORDINATOR_PATH)
 
 
-def coordinator_appendix() -> str:
-    """The text `scripts/claude.py` appends to the coordinator's system
-    prompt."""
-    return entry_text(USER_SESSION_DOC)
+APPENDIX_DOCS = {ReaderName.USER_SESSION: USER_SESSION_DOC,
+                 ReaderName.ARCLOG_SESSION: ARCLOG_SESSION_DOC}
+"""The entry document of each reader that `scripts/claude.py` starts: the
+document it appends to the coordinator's system prompt."""
+
+
+def coordinator_appendix(reader: ReaderName = ReaderName.USER_SESSION) -> str:
+    """The text `scripts/claude.py` appends to the system prompt of the
+    coordinator whose reader is `reader`."""
+    return entry_text(APPENDIX_DOCS[reader])
 
 
 def coordinator_context() -> str:
@@ -124,11 +132,12 @@ def coordinator_context() -> str:
     return marked_section(repo_label(COORDINATOR_PATH), budgeted_text())
 
 
-def user_session_context() -> str:
-    """What reaches the coordinator the user starts with `scripts/claude.py`,
-    in the order the session receives it: the system-prompt appendix that
-    script gives, then the session-start hook's text."""
-    return "\n".join([marked_section(APPENDIX, coordinator_appendix()),
+def user_session_context(reader: ReaderName = ReaderName.USER_SESSION) -> str:
+    """What reaches the coordinator the user starts with `scripts/claude.py`
+    as the reader `reader`, in the order the session receives it: the
+    system-prompt appendix that script gives, then the session-start hook's
+    text."""
+    return "\n".join([marked_section(APPENDIX, coordinator_appendix(reader)),
                       coordinator_context()])
 
 

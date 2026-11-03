@@ -49,6 +49,9 @@ CONTEXT_READERS = {
                                    lambda _a: coordinator_context()),
     ReaderName.USER_SESSION: Reader(None, _no_values,
                                     lambda _a: user_session_context()),
+    ReaderName.ARCLOG_SESSION: Reader(
+        None, _no_values,
+        lambda _a: user_session_context(ReaderName.ARCLOG_SESSION)),
     ReaderName.SESSION: Reader(None, _no_values, lambda _a: session_context()),
     ReaderName.CODEX: Reader(None, _no_values, lambda _a: codex_context()),
     ReaderName.AGENT: Reader(ArgumentForm.NAME,
