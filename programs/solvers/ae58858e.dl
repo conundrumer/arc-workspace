@@ -157,7 +157,7 @@ member([$Orthogonal(), S, Id], P) :- ink_shapes.label(S, P, Id).
 .init ink_shapes8 = Components8<Cells>
 ink_shapes8.node($Foreground($Multicolor()), P) :- shape_cell($Foreground($Multicolor()), P).
 
-member([$Diagonal(), S, Id], P) :- ink_shapes8.label(S, P, Id).
+member([$Diagonal(), $Foreground($Multicolor()), Id], P) :- ink_shapes8.label(_, P, Id).
 
 // --- $Threshold ---
 recolor($Threshold(), X) :- size.tally(X, N), params.min_size(K), N >= K.

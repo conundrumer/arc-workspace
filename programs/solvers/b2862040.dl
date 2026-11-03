@@ -272,4 +272,20 @@ closing([C, E, Wa, I, $MinHoleSize()], P) :-
     count_color(N, Col) :-
         ex.shape([E, C, I, O], P), ex.holes.tally([E, C, _, _, I, O], N),    // a shape with its count of holes
         ex_out(E, P, Col).                                                    // the color it takes
+
+    // A shape that the train output recolors: a cell of it changes color.
+    .decl recolored_shape(e: Example, c: ShapeConn, i: Ink, o: Ident)
+    recolored_shape(E, C, I, O) :-
+        ex.shape([E, C, I, O], P), ex_in(E, P, Col_in), ex_out(E, P, Col_out), Col_in != Col_out.
+
+    .decl hole_count(n: number)
+    hole_count(N) :- recolored_shape(E, C, I, O), ex.holes.tally([E, C, _, _, I, O], N).
+
+    // The sizes of the regions that the recolored shapes close off, over every train pair.
+    .init closed_hole_size = Extremes<Unit>
+    closed_hole_size.cand($U(), N) :-
+        recolored_shape(E, C, I, O), ex.hole_size.tally([E, C, _, _, I, O, _], N).
+
+    .decl min_hole_size(n: number)
+    min_hole_size(N) :- closed_hole_size.low($U(), N).
 }

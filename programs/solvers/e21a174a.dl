@@ -108,16 +108,14 @@ unstacked(U, A) :-
 // The stack axis of each reading.
 .decl stack(u: LayerUnit, x: AxisSource, a: Axis)
 
-// The box the bands mirror within.
-// @ignore: head-zero — ZERO is the frame itself, the box $FrameMirror mirrors within
-.decl span(r: Arrangement, s: Box)
+// The place of a band B once it is mirrored along axis A.
+.decl mirrored(r: Arrangement, a: Axis, b: Box, b_new: Box)
 
-// Each layer cell at its place once the layer's band is mirrored within S.
+// Each layer cell at its place once the layer's band is mirrored.
 .decl moved(u: LayerUnit, r: Arrangement, a: Axis, q: Position, col: Color)
 moved(U, R, A, Q, Col) :-
-    layer(U, A, Id, P), in(P, Col), bands.box([U, A, Id], B), span(R, S),
-    relative(S, B, B_rel), flip_of(A, D), apply(D, B_rel, B_flip),   // the band mirrored in S
-    compose(S, B_flip, B_new), crop(P, B, P_rel), compose(B_new, P_rel, Q).
+    layer(U, A, Id, P), in(P, Col), bands.box([U, A, Id], B), mirrored(R, A, B, B_new),
+    crop(P, B, P_rel), compose(B_new, P_rel, Q).
 
 out(P, Col, [U, R, X], [A]) :-
     impl_choice([U, R, X]), stack(U, X, A),
@@ -156,10 +154,14 @@ unstacked($RowRuns(), A) :- line_color(A, L, Col1), line_color(A, L, Col2), Col1
 .init stack_box = Bbox<Unit>
 stack_box.cell($U(), P) :- ink(P, _).
 
-span($SpanMirror(), S) :- stack_box.box($U(), S).
+// The band mirrored within the box the stack holds.
+mirrored($SpanMirror(), A, B, B_new) :-
+    bands.box([_, A, _], B), stack_box.box($U(), S),
+    relative(S, B, B_rel), flip_of(A, D), apply(D, B_rel, B_flip), compose(S, B_flip, B_new).
 
 // --- $FrameMirror ---
-span($FrameMirror(), ZERO).
+// The band mirrored within the frame.
+mirrored($FrameMirror(), A, B, B_new) :- bands.box([_, A, _], B), flip_of(A, D), apply(D, B, B_new).
 
 // --- $StoredAxis ---
 stack(U, $StoredAxis(), A) :- layer_unit_choice(U), params.stack_axis(A), !unstacked(U, A).

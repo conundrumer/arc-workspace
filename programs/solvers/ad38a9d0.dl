@@ -158,9 +158,6 @@ cells_choice($NonBgCells($MixedPieces())). cells_choice($NonBgCells($PerColorPie
 .decl key_form_choice(k: KeyForm)
 key_form_choice($ShapeKey()). key_form_choice($SizeBoxKey()).
 
-.decl split_choice(sp: Split)
-split_choice($MixedPieces()). split_choice($PerColorPieces()).
-
 // A case other than the concept that leaves a piece with no key undefined
 // gives the grid of its $KeepUnknown copy wherever it is defined.
 .decl impl_choice(ch: Choice)
@@ -172,23 +169,16 @@ impl_choice([S, K, $KeepUnknown()]) :- cells_choice(S), key_form_choice(K).
     .type Pc = [k: Key, id: Ident]
     .type Part = [k: Key, col: Color]
 
-    // The cells the pieces are made of.
+    // The cells the pieces are made of, each with the color its piece is
+    // grouped under.
     .decl cell(k: Key, p: Position, col: Color)
 
-    // The key's pieces hold one color each.
-    .decl one_color(k: Key)
-
     // @claim field
-    .init part = Components<Key>
-    part.node(K, P) :- cell(K, P, _), !one_color(K).
-
-    // @claim field
-    .init color_part = Components<Part>
-    color_part.node([K, Col], P) :- cell(K, P, Col), one_color(K).
+    .init part = Components<Part>
+    part.node([K, Col], P) :- cell(K, P, Col).
 
     .decl piece(k: Key, id: Ident, p: Position)
-    piece(K, Id, P) :- part.label(K, P, Id).
-    piece(K, Id, P) :- color_part.label([K, _], P, Id).
+    piece(K, Id, P) :- part.label([K, _], P, Id).
 
     // @claim known-shapes
     .init box = Bbox<Pc>
@@ -227,13 +217,14 @@ out(P, Col, [S, K, U]) :-
 
 parse.cell($FgPieces(), P, Col) :- in(P, Col), params.fg(Col).
 
-// --- $NonBgCells ---
+// --- $NonBgCells & $MixedPieces ---
 
-parse.cell($NonBgCells(Sp), P, Col) :- in(P, Col), !params.bg(Col), split_choice(Sp).
+// The background color groups the cells of every color.
+parse.cell($NonBgCells($MixedPieces()), P, Bg) :- in(P, Col), !params.bg(Col), params.bg(Bg).
 
-// --- $PerColorPieces ---
+// --- $NonBgCells & $PerColorPieces ---
 
-parse.one_color($NonBgCells($PerColorPieces())).
+parse.cell($NonBgCells($PerColorPieces()), P, Col) :- in(P, Col), !params.bg(Col).
 
 // --- $ShapeKey ---
 
@@ -275,8 +266,13 @@ paint(Sym, P, Col, [S, K, $KeepUnknown()]) :-
     !keyed(Sym, S, Id, _, K), in(P, Col).
 
 .comp Determine {
+    // --- fg: the color of the cells the output recolors ---
+
+    .decl fg(c: Color)
+    fg(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
     .init parse = Parse<Example>
-    parse.cell(E, P, Col) :- ex_in(E, P, Col), params.fg(Col), ex_out(E, _, _).
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), fg(Col), ex_out(E, _, _).
 
     // A piece of one example.
     .type ExPiece = [e: Example, id: Ident]
