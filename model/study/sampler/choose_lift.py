@@ -27,6 +27,7 @@ import numpy as np
 
 import live
 import one_repair as O
+import table_adapter as TA
 from sample2_col import M
 
 NAME = O.NAME
@@ -98,32 +99,26 @@ def cover(ct, masks, new):
     in step_tables result ct; 0.0 where no such pair exists. A cell is wanted as live.cell_masks says (a train output's cell that differs from the input, or any cell where the
     sizes differ), and a pair covers it where a row of the train pair's entry holds the cell's Position and its output color. A task-wide table is read against every train pair,
     and its entry of most cover stands."""
-    T, base = ct.tables, ct.base_tables or 0
-    rel = M.col(ct, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
-    values = np.frombuffer(ct.values, np.int32)
-    table, kind, pair = M.col(ct, 'entries', 'table'), M.col(ct, 'entries', 'example_kind'), M.col(ct, 'entries', 'example_index')
-    sub, rows, offset = M.col(ct, 'entries', 'kind'), M.col(ct, 'entries', 'rows'), M.col(ct, 'entries', 'offset')
-    stop, vstop, fault = ct.entries['stop_bound'], ct.entries['value_stop_bound'], ct.entries['fault']
-    entries = collections.defaultdict(list)  # table -> its train entries
-    for e in range(len(table)):
-        if kind[e] in (live.EXAMPLE_TASK, live.EXAMPLE_TRAIN) and sub[e] == 0 and not (stop[e] or vstop[e] or fault[e]):
-            entries[table[e] - base].append(e)
+    summaries = TA.tables(ct)
+    entries = collections.defaultdict(list)  # table row -> its train entries (example kind, example index, rows)
+    for j, r in enumerate(summaries):
+        if r.slot in new:
+            entries[j] = [x for x in TA.entries(ct, j) if x[0] in (live.EXAMPLE_TASK, live.EXAMPLE_TRAIN)]
     best = 0.0
     for j, es in entries.items():
-        if int(rel[j]) not in new:
+        if not es:
             continue
-        types = [str(t) for t in T['column_types'][j]]
+        types = list(summaries[j].types)
         at = list(itertools.accumulate((4 if t in M.WIDE else 1 for t in types), initial=0))
-        if kind[es[0]] == live.EXAMPLE_TASK:  # each entry is read against every pair
-            reads = [[(e, m[9000][0]) for m in masks] for e in es]
+        if es[0][0] == live.EXAMPLE_TASK:  # each entry is read against every pair
+            reads = [[(rs, m[9000][0]) for m in masks] for _, _, rs in es]
         else:
-            reads = [[(e, masks[k][9000][0]) for k, e in {int(pair[e]): e for e in es}.items()]]
+            reads = [[(rs, masks[k][9000][0]) for k, rs in {pair: rs for _, pair, rs in es}.items()]]
         for p in (a for a, t in zip(at, types) if t in CELLS):
             for c in (a for a, t in zip(at, types) if t == 'Color'):
                 for read in reads:
                     hit = total = 0
-                    for e, want in read:
-                        rs = values[offset[e]:offset[e] + rows[e] * at[-1]].reshape(-1, at[-1])
+                    for rs, want in read:
                         i, k, color = rs[:, p], rs[:, p + 2], rs[:, c]
                         ok = (i >= 0) & (i < 30) & (k >= 0) & (k < 30) & (color >= 0) & (color < 10)
                         seen = np.zeros(9000, bool)

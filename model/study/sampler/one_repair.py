@@ -30,6 +30,7 @@ import numpy as np
 
 import live
 import sample2_col as S
+import table_adapter as TA
 from sample2_col import M, arclog
 
 NAME = re.compile(r'&[A-Za-z_0-9]+')
@@ -71,9 +72,9 @@ def probe(session, forms, tables=False, snaps=False, base=None, at=None):
                 if step[1] is not None:
                     got.last = step[1]
                 if tables and before is None:  # a program's first model step has step_tables' first result
-                    before = arclog.step_tables(dec, *live.TABLES, True, None)
+                    before = TA.export(dec, *live.TABLES, None)
             if tables and (j + 1 == len(steps) or steps[j + 1][2] != form) and before is not None and not forms[form].startswith('(OUT'):
-                before = arclog.step_tables(dec, *live.TABLES, True, before)
+                before = TA.export(dec, *live.TABLES, before)
                 got.tables[form] = before
     except (arclog.Refusal, arclog.Fault):
         got.kind = 'Refused'

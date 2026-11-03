@@ -849,9 +849,8 @@ class Margins:
 
 
 class Ident(C.namedtuple('Ident', 'table value')):
-    """An Ident value with the table it belongs to. Idents of two tables are never equal here, whatever their cells.
-    `ident_group(table)` gives the tables that share Ident values (each table alone). Where ARCLOG_IDENT_SOURCE is
-    `value`, a cell is a hash of the members of the Ident's set, so equal sets have one cell in every table."""
+    """An Ident value with the table it belongs to. Ident values are local to their table: Idents of two tables are
+    never equal. `ident_group(table)` gives the tables that share Ident values (each table alone, for now)."""
 
 
 def ident_group(table):

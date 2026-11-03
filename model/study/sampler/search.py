@@ -26,11 +26,11 @@ comes after plain runs of about the same chance. The order of the options at a c
 
 A path's ranks give the same options only under the same weights, so a Search reads the forms that UNREAD_BETA raises once, when it is made, and keeps them (Search.unread).
 
-A clause whose atoms, read as a set with their labels renamed, were reached by another path stops there (Run.seen). clause_key
+A clause whose atoms, read as a set with their labels renamed, were reached by another path stops there (Run.seen). query_key
 gives the same key to a clause whatever the order of its atoms and the names of its labels.
 
 Options of one chance have an order in the ranks. By default it is the order of the options. With ORDER_FREE tie (S's setting) it is the order of their tie keys (TieKeys), so that a search
-does not move when the scope's forms or a body's labels are numbered another way: a label's key is its color in the atoms drawn, a derived relation's the key of its form (form_keys),
+does not move when the scope's forms or a body's labels are numbered another way: a label's key is its color in the atoms drawn, a derived relation's the key of its form (table_keys),
 any other option's the stable number of its name. A count and a coin side have no key.
 
 A worker restarts, and has memory for few searches. So the state of a search is small and in a file, and a Manager (one per Sampler) decides
@@ -44,6 +44,7 @@ what a death would lose, so that a restart does not try the path of the run in f
 twice. Search.skip(clause) is for a caller whose own step on a clause failed.
 """
 import collections
+import dataclasses
 import functools
 import gc
 import hashlib
@@ -68,6 +69,15 @@ REJECTS = ('try:', 'gate:', 'or:try:', 'or:fail', 'or:branch retry', 'or:empty',
 FRONTIER_CAP = 400000  # entries of the frontier, the lowest bounds dropped first
 SEEN_CAP = 2000000  # atom sets that Search.seen keeps
 OR_BITS = 3.0  # bits taken off the bound of a path for each OR it takes: a run that takes an OR costs more CPU, so its clauses come after plain ones of about the same q
+WRITER = os.environ.get('WRITER', '0') == '1'  # the token-level writer (writer.py) writes each query, in place of Run.form's per-atom draw; off by default
+WRITER_LOOKAHEAD = tuple(x for x in os.environ.get('WRITER_LOOKAHEAD', '').split(',') if x) or None  # the lookahead components of the writer's plan, in order (lookahead.ORDER names them; 'all' adds Completable); None: lookahead.DEFAULT
+EXTRA_COMPONENTS = []  # functions of a SearchRun that make a lookahead component, added to the end of the writer's plan (superdag_search.py adds its stop bars here)
+DISTRIBUTION = None  # the Distribution of the writer's plan (writer.Distribution); None: writer.Uniform
+if os.environ.get('WRITER_TREE'):  # a LightGBM text model, with its feature names beside it (tree_dist.load); a model that fails to load leaves DISTRIBUTION as it is
+    import tree_dist
+    DISTRIBUTION = tree_dist.load(os.environ['WRITER_TREE']) or DISTRIBUTION
+    if DISTRIBUTION is not None and WRITER_LOOKAHEAD is None:  # a learned distribution owns every choice that the legality rules leave; the preference components would end its paths
+        WRITER_LOOKAHEAD = ('legal',)
 LN2 = math.log(2)
 TOKEN = re.compile(r'\(|\)|[^\s()]+')
 MASK = (1 << 64) - 1
@@ -156,7 +166,7 @@ def atoms_key(atoms):
 
 
 @functools.lru_cache(maxsize=1 << 12)
-def _key(text):
+def _query_key(text):
     forms = parse(text)
     if not forms or not forms[0]:
         return ()
@@ -164,10 +174,13 @@ def _key(text):
     return (form[0],) + atoms_key(form[2:])
 
 
-def clause_key(text):
+def query_key(text):
     """A key of the clause text, a form such as (RULE &head atom ...): its kind and atoms, with no head name; the same for any order
     of the atoms and any names of the labels."""
-    return _key(text)
+    return _query_key(text)
+
+
+clause_key = query_key  # the earlier name, for or_q.py and search_gold.py
 
 
 # ---------------------------------------------------------------- the choices of a run
@@ -213,15 +226,19 @@ class Chooser:
     or_bits = 0.0  # OR_BITS of the run
     or_next = False  # the next coin is a body's OR coin (SearchRun.p_or)
     keys = None  # with ORDER_FREE tie, the TieKeys of the Drawer at work: the keys of the labels that choice and sample pick among
+    deadline = None  # the run's deadline: a choice past it raises live.Deadline, so one long write ends at the deadline
 
     def start(self, path):
         self.ranks, self.i, self.logp, self.taken, self.hash, self.sibs = path, 0, 0.0, [], 0, []
         self.or_next = False
 
-    def node(self, probs, cost=0.0, tie=None):
-        """The index in probs (chances that sum to 1, as a list) of the option that the run takes here. cost is the bits off the bound of
-        option 0, which is the OR of an OR coin; the order of the options stays that of their chances. With tie, a function of an option's
-        index that gives its key, options of one chance are in the order of their keys, and then of their indexes."""
+    def node(self, probs, costs=None, tie=None):
+        """The index in probs (chances that sum to 1, as a list or an array) of the option that the run takes here. costs is the bits off the bound
+        of each option, an array with one entry per option, or a number for option 0 alone (the OR of an OR coin); the order of the options stays
+        that of their chances. With tie, a function of an option's index that gives its key, options of one chance are in the order of their keys,
+        and then of their indexes."""
+        if self.deadline is not None and time_up(self.deadline):
+            raise live.Deadline('a choice past the deadline')
         i, ranks = self.i, self.ranks
         self.i = i + 1
         n = len(probs)
@@ -231,15 +248,21 @@ class Chooser:
             order = sorted(range(n), key=lambda j: -probs[j]) if n < 40 else np.argsort(-np.asarray(probs), kind='stable').tolist()
         if tie is not None:
             order = tie_order(order, probs, tie)
+        if costs is None:
+            bits = lambda o: 0.0  # noqa: E731
+        elif np.ndim(costs) == 0:
+            bits = lambda o: costs if o == 0 else 0.0  # noqa: E731
+        else:
+            bits = lambda o: float(costs[o])  # noqa: E731
         r = ranks[i] if i < len(ranks) else 0
         if r >= n or probs[order[r]] <= 0:
             raise Mismatch
         if i >= len(ranks) - 1 and r + 1 < n and probs[order[r + 1]] > 0:
-            logb = self.logp + math.log(probs[order[r + 1]]) - (cost * LN2 if order[r + 1] == 0 else 0.0)
+            logb = self.logp + math.log(probs[order[r + 1]]) - bits(order[r + 1]) * LN2
             self.sibs.append((i, logb))
             if self.jr is not None:
                 self.jr.sib(i, logb)
-        self.logp += math.log(probs[order[r]]) - (cost * LN2 if order[r] == 0 else 0.0)
+        self.logp += math.log(probs[order[r]]) - bits(order[r]) * LN2
         self.taken.append(r)
         self.hash = (self.hash * 1099511628211 + r + 1) & MASK  # a number that is the same in every process
         return order[r]
@@ -327,14 +350,14 @@ class Hidden:
         self.store.clear()
 
 
-def form_keys(forms, made):
+def table_keys(forms, made):
     """{relation token: tie key} of the relations that the scope's forms declare, for ORDER_FREE tie. made maps a form's place to the tokens
-    of its relations. A form's key is that of its clause_key with each relation it reads replaced by that relation's form's key, so that
+    of its relations. A form's key is that of its query_key with each relation it reads replaced by that relation's form's key, so that
     it is the same in any order of the scope's forms; a form with several relations (an INIT's) adds the relation's place in the form."""
     heads, out = {}, {}
     for i, text in enumerate(forms):
         head = re.match(r'\(\w+ (&\w+)', text)
-        key = stable(repr(clause_key(re.sub(r'&\w+', lambda m: '&%d' % heads.get(m[0], 0), text))))
+        key = stable(repr(query_key(re.sub(r'&\w+', lambda m: '&%d' % heads.get(m[0], 0), text))))
         for j, tok in enumerate(made.get(i, ())):
             out[tok] = key if len(made[i]) == 1 else stable(repr((key, j)))
         if head:
@@ -345,10 +368,11 @@ def form_keys(forms, made):
 class TieKeys:
     """ORDER_FREE tie: the keys that put options of one chance in an order that is a fact of the options and not of the scope's order. A label has
     its color from label_colors over the atoms drawn in the body (a label of an earlier body has color 0), a derived relation the key of its
-    form (form_keys), any other option the stable number of its name. Two options with one key stay in the order of the options."""
+    form (table_keys), any other option the stable number of its name. Two options with one key stay in the order of the options."""
 
-    def __init__(self, run, dr):
+    def __init__(self, run, dr=None):
         self.run, self.dr, self.seen = run, dr, ((), {})
+        self.names = {}  # token id -> stable number of its name
 
     def color(self, name):
         atoms = (*getattr(self.dr, 'drawn', ()), *self.dr.or_done)
@@ -366,13 +390,34 @@ class TieKeys:
         """The key of a set of labels, their numbers: their keys, sorted."""
         return tuple(sorted(self.number(n) for n in numbers))
 
+    def of(self, point, tok):
+        """The key of token id tok at a writing point of the writer: a label's color over the closed atoms of the body, a table's (QueryHash, Name)
+        where the scope's AssignmentSummaries give it, else its Run's key for the table, else the stable number of the name. No assignment enters, and no
+        name that the scope gives its tables."""
+        core = point.run.writer_core
+        kind = core.kind[tok]
+        if kind == 'label':
+            atoms = tuple(x for _, x in point.track.texts)
+            if self.seen[0] != atoms:
+                self.seen = atoms, label_colors(atoms)
+            return self.seen[1].get(core.names[tok], 0)
+        if kind == 'relation':
+            rows = getattr(point.pg, 'tables', {}).get(M.slot_no(core.names[tok]))
+            if rows and isinstance(getattr(rows[0], 'table', None), tuple):  # an AssignmentSummary: its table is (QueryHash, Name)
+                return stable(repr(rows[0].table))
+            return point.run.table_keys.get(tok, 0)
+        got = self.names.get(tok)
+        if got is None:
+            got = self.names[tok] = stable(core.names[tok])
+        return got
+
     def token(self, o):
         """The key of option token o of a Drawer's pick."""
         kind = self.dr.fr.KIND[o]
         if kind == 'label':
             return self.label(o)
         if kind == 'relation':
-            return self.run.form_keys.get(o, 0)
+            return self.run.table_keys.get(o, 0)
         return stable(self.run.V.name(o))
 
 
@@ -421,13 +466,23 @@ class SearchRun(Run):
         self.seen = {}  # stable number of (body context, atoms as a set) -> low 32 bits of the hash of the path that reached it
         self.shared = collections.defaultdict(dict)  # (kind, place, path) -> the caches that Drawers of one scope share
         self.memo = {}  # (what, id of a decoder) -> (the decoder, the answer): a decoder of a node that a shared root keeps stays the same one
-        self.keyed, self.form_keys = None, {}  # ORDER_FREE tie: the forms of the scope, and form_keys of them
+        self.keyed, self.table_keys = None, {}  # ORDER_FREE tie: the queries of the scope, and table_keys of them
+        self.points = {}  # the writer's prefix cache: the model tokens of a path -> its WritingPoint
+        self.points_cap = MEMO_CAP
+        self.plan = None  # the writer's Plan, made at the first query
+        self.finished = None  # the writer's Finished for the query in hand
+        self.keep_closed = WRITER and getattr(DISTRIBUTION, 'vector', False)  # a tree over the writing-point vector reads the state block, which the closed queries' step_tables results give (writer.keep_state_tables)
+
+    def release(self):
+        """Drops the WritingPoints of a run that its Search gives up: each refers back to the run, so the run is garbage of a cycle, and the points would
+        hold their decoders until the next full collection."""
+        self.points.clear()
 
     def scope(self, forms):
         """Run's, and with ORDER_FREE tie the tie key of each relation that the forms declare."""
         got = super().scope(forms)
         if 'tie' in S.ORDER_FREE and self.keyed != tuple(forms):
-            self.keyed, self.form_keys = tuple(forms), form_keys(forms, self.scoped[2].made)
+            self.keyed, self.table_keys = tuple(forms), table_keys(forms, self.scoped[2].made)
         return got
 
     def drawer(self, pg, kind, dec, place=None, prior=None):
@@ -450,6 +505,47 @@ class SearchRun(Run):
             setattr(dr, name, Hidden(sh.setdefault(name, {}), dr.fr))
         dr.root_cap, dr.node_cap = ROOT_CAP, 1 << 30
         return dr
+
+    def form(self, pg, dec, kind):
+        """Run's, and with WRITER the query that the writer writes (writer.write): each choice of the writer is a node of the search. A path
+        that the writer ends is a dead path."""
+        if not WRITER:
+            return super().form(pg, dec, kind)
+        import writer
+        if self.plan is None:
+            self.plan = writer.default_plan(self, OR_BITS, WRITER_LOOKAHEAD, DISTRIBUTION)
+            if EXTRA_COMPONENTS and not (WRITER_LOOKAHEAD and 'legal' in WRITER_LOOKAHEAD):  # the legal plan holds legality rules only: the stop bars are preferences
+                self.plan = dataclasses.replace(self.plan, lookahead=self.plan.lookahead + tuple(make(self) for make in EXTRA_COMPONENTS))
+        self.rng.keys = TieKeys(self) if 'tie' in S.ORDER_FREE else None
+        pg.new = []
+        start = writer.start_point(self, pg, self.open_form(pg, dec, kind), kind)
+        got = writer.write(start, self.plan, self.rng, self.points, self.atom_closed)
+        if isinstance(got, writer.Ended):
+            self.c['writer:ended ' + got.reason] += 1
+            raise Dead('writer ended: ' + got.reason)
+        self.finished = got
+        return got.dec
+
+    def atom_closed(self, ctx, point):
+        """Prefix dedup: a path whose closed atoms, read as a set with their labels renamed, another path reached ends there. ctx is the path's hash at the
+        start of the body, which separates the bodies of an INIT. The key holds no assignment."""
+        T = point.track
+        key = stable(repr((ctx, atoms_key([x for _, x in T.texts]), tuple(t for t in point.tokens if t in (M.OR, ALSO_TOK, M.END, point.run.writer_core.ALL)))))
+        prior, here = self.seen.get(key), self.rng.hash & 0xffffffff
+        if prior is None:
+            if len(self.seen) >= SEEN_CAP:
+                self.seen.clear()
+            self.seen[key] = here
+        elif prior != here:
+            self.c['dup:atoms'] += 1
+            raise Dead('atoms')
+
+    def clause_of(self, forms, pg, f):
+        """Run's, with the QueryHash of the writer's query."""
+        clause = super().clause_of(forms, pg, f)
+        if WRITER and self.finished is not None:
+            clause.query_hash, self.finished = self.finished.query_hash, None
+        return clause
 
     def forget_slots(self):
         """Run's drops what the Drawers keep of relation slots when the scope changes. A search has one scope, and the answers in jc are state
@@ -504,8 +600,20 @@ PATH_MAX, SIB_MAX, HAND_MAX, EMIT_MAX = 2048, 2048, 8192, 1 << 13  # what the Jo
 @functools.cache
 def fingerprint():
     """A number for the code and the data that a walk reads: a state of another one does not fit this process's walk."""
-    parts = [VERSION, S.UNREAD_BETA, sorted(S.ORDER_FREE)]
-    for mod in (sys.modules[__name__], live, live.S):
+    parts = [VERSION, S.UNREAD_BETA, sorted(S.ORDER_FREE), WRITER]
+    mods = [sys.modules[__name__], live, live.S]
+    if WRITER:  # the writer's modules, each plan entry's name and version, and the engine's feature version
+        import lookahead
+        import writer
+        mods += [writer, lookahead]
+        dist = DISTRIBUTION or writer.Uniform()
+        parts += [WRITER_LOOKAHEAD or lookahead.DEFAULT, [x.__name__ for x in EXTRA_COMPONENTS], dist.name, dist.version]
+        try:
+            import arclog_features
+            parts.append(arclog_features.FEATURES_VERSION)
+        except ImportError:
+            pass
+    for mod in mods:
         with open(mod.__file__, 'rb') as f:
             parts.append(hashlib.blake2b(f.read(), digest_size=8).hexdigest())
     return stable(repr(parts))
@@ -604,7 +712,7 @@ class Search:
 
     def skip(self, clause):
         """Never gives the clause again: a Clause, its text, or its key. For a caller whose step on that clause failed."""
-        key = clause.key if isinstance(clause, live.Clause) else clause_key(clause) if isinstance(clause, str) else clause
+        key = (getattr(clause, 'query_hash', None) or clause.key) if isinstance(clause, live.Clause) else query_key(clause) if isinstance(clause, str) else clause
         kd = stable(repr(key))
         self.emitted.add(kd)
         self.dirty += 1
@@ -681,6 +789,7 @@ class Search:
         run.unread = self.unread
         ch.start(path)
         ch.jr = jr
+        ch.deadline = run.deadline
         st['runs'] += 1
         if jr is not None:
             jr.begin(path)
@@ -733,7 +842,9 @@ class Search:
                 self.push(logb, base, j)
         if clause is None:
             return True, None
-        key = clause.key = clause_key(clause.text)
+        key = clause.key = getattr(clause, 'query_hash', None)  # with the writer, a query is known by its QueryHash
+        if key is None:
+            key = clause.key = query_key(clause.text)
         kd = clause.kd = stable(repr(key))
         clause.logq = ch.logp
         if self.on_leaf:
@@ -768,6 +879,7 @@ class Search:
             return
         self.seen_kept, self.jc_kept = getattr(self.run, 'seen', {}), getattr(self.run, 'jc', None)
         self.heap = [(nb, tie, base, j, REMAT if clause is not None else None) for nb, tie, base, j, clause in self.heap]
+        self.run.release()
         self.run = self.ctx = None
 
     def encode(self, gen):

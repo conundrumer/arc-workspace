@@ -118,8 +118,7 @@ Changes from sample.py (v1):
   weights are scaled to that group's total before the steer, so the steer moves weight only within a group (Drawer.group_steer). Unset, the steer multiplies each option's weight;
 - SEED_TAG (default v2) seeds each point's draws, so a run with another tag draws other programs at the same points; with
   ARCLOG_STATS set, a point's info gives its CPU ms per engine phase (`engine`);
-- a DET assignment's row set in a table is kept by its packed rows (DROWS), since a point's tables repeat the same
-  assignments.
+- a DET's value in an assignment is its value hash (the engine's), so a point's tables repeat the same assignments at no cost.
 - --split holdout draws the holdout tasks' points; the prior and the hazards are dev's either way.
 - ROW_ORDERS=n gives REL_ROWS and CHOICE_ROWS for n random valid orders of gold's clause in place of the written one, and each row has `order`
   (0 to n - 1). GOLD_ORDERS=all adds to gold's row logq_orders, gold's log q summed over its valid orders, each order's q as GOLD_Q gives it.
@@ -162,6 +161,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sample import M, arclog, M_sexprs, SHAPES, SPLITS, TASKS, OPS, CORPUS, body_hazard, GOLD_APPROXIMATED, left_out, first_row, table_rows, static_prune, n_forms  # noqa: E402
 import sample as _sample  # noqa: E402
+import table_adapter as TA  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sampler_paths as P  # noqa: E402
@@ -1254,102 +1254,18 @@ class FastFrontier:
 
 # ---------------------------------------------------------------- tables with frames and models
 
-DROWS, DROWS_CAP = {}, 4096  # (width, a DET assignment's packed rows) -> its rows; a point's tables repeat the same assignments
+parse_table, full = TA.parse_table, TA.full  # the one adapter reads the rows of a table
 
 
-def parse_table(ct, with_rows=True):
-    """The one table of a step_tables result: labels, types, frames, and per entry its example, DET assignment, rows
-    in native order, each row's extents ([h, w] or None per Box, Position or Offset column, in label order) and its
-    model. Raises M.Fail where the step gave another count of tables, or the table or an entry is incomplete. With
-    with_rows False, an entry's rows are only their count (a range), its extents and DET assignment are left empty, and
-    `full` gives the whole table."""
-    T = ct.tables
-    if len(T['form']) != 1:
-        raise M.Fail('step gave %d tables' % len(T['form']))
-    if T['fault'][0]:
-        raise M.Fail('table fault: %s' % (T['fault'][0],))
-    base = ct.base_tables or 0
-    labels = list(T['column_labels'][0])
-    types = list(T['column_types'][0])
-    widths = [4 if str(t) in M.WIDE else 1 for t in types]
-    tw = sum(widths)
-    xcols = list(T['extent_columns'][0])
-    boxcols = [i for i, t in enumerate(types) if str(t) in M.WIDE]
-    det_rel, det_types, det_w = list(T['det_relations'][0]), list(T['det_types'][0]), list(T['det_widths'][0])
-    V = memoryview(ct.values).cast('B').cast('i')
-    et, ex, ei = M.col(ct, 'entries', 'table'), M.col(ct, 'entries', 'example_kind'), M.col(ct, 'entries', 'example_index')
-    ek, er, eo = M.col(ct, 'entries', 'kind'), M.col(ct, 'entries', 'rows'), M.col(ct, 'entries', 'offset')
-    xo, em = M.col(ct, 'entries', 'extent_offset'), M.col(ct, 'entries', 'model')
-    xst = ct.entries['extent_status']
-    stop, vstop, efault = ct.entries['stop_bound'], ct.entries['value_stop_bound'], ct.entries['fault']
-    ae, ad, ar, ao = (M.col(ct, 'assigned', k) for k in ('entry', 'det', 'rows', 'offset'))
-    by_entry = collections.defaultdict(list)
-    for q in range(len(ae)):
-        by_entry[ae[q]].append(q)
-    entries = []
-    for e in range(len(et)):
-        if et[e] - base != 0:
-            continue
-        if ek[e] != 0 or stop[e] or vstop[e] or efault[e]:
-            # kind 1 is a Count entry: the table holds projections in place of rows, and the bound that stopped the
-            # projection search stands in the table's projections_stop columns, not in the entry's
-            try:
-                pj = ', projections %s stop %s at %s' % (T['projections'][0], T['projections_stop_bound'][0], T['projections_stop_form'][0]) if ek[e] == 1 else ''
-            except (KeyError, IndexError):
-                pj = ''
-            err = M.Fail('entry %d incomplete (kind %d, stop %s %s, fault %s%s)' % (e, ek[e], stop[e], vstop[e], efault[e], pj))
-            if ek[e] == 1:  # a Count entry still has the table's header, which a scorer of features that read no rows uses
-                err.header = dict(labels=labels, types=[str(t) for t in types], frames=list(T['column_frames'][0]))
-            raise err
-        if not with_rows:
-            entries.append(((int(ex[e]), int(ei[e])), {}, range(er[e]), [], int(em[e])))
-            continue
-        rows, exts = [], []
-        for r in range(er[e]):
-            o = eo[e] + r * tw
-            rows.append(tuple(V[o:o + tw]))
-            ext = {}
-            if xcols and xo[e] >= 0:
-                for j, c in enumerate(xcols):
-                    st_ = xst[e][r][j] if e < len(xst) and r < len(xst[e]) and j < len(xst[e][r]) else 0
-                    if st_ == 1:
-                        k = xo[e] + (r * len(xcols) + j) * 2
-                        ext[c] = [int(V[k]), int(V[k + 1])]
-            exts.append([ext.get(c) for c in boxcols])
-        asg = {}
-        for q in by_entry[e]:
-            d = ad[q]
-            w = det_w[d]
-            raw = V[ao[q]:ao[q] + ar[q] * w]
-            dk = (w, raw.tobytes())
-            drows = DROWS.get(dk)
-            if drows is None:
-                if len(DROWS) >= DROWS_CAP:
-                    DROWS.clear()
-                drows = DROWS[dk] = frozenset(tuple(raw[i * w:(i + 1) * w]) for i in range(ar[q]))
-            asg[M.slot_no(det_rel[d])] = (drows, 'Ident' in str(det_types[d]))
-        entries.append(((int(ex[e]), int(ei[e])), asg, rows, exts, int(em[e])))
-    return dict(labels=labels, types=types, widths=widths, frames=list(T['column_frames'][0]), entries=entries,
-                ct=None if with_rows else ct)
-
-
-def full(tb):
-    """tb with its rows, extents and DET assignments, where parse_table left them out."""
-    if tb is None or tb.get('ct') is None:
-        return tb
-    if 'full' not in tb:
-        tb['full'] = parse_table(tb['ct'])
-    return tb['full']
-
-
-def body_table(fr, task, case, parent_dec, parent_before):
+def body_table(fr, task, case, parent_dec, parent_before, rows=True):
+    """(the body table at parent_dec after a probe token, None), or (None, why). With rows False the table has its counts and its AssignmentSummaries, and `full` cannot give its rows."""
     f = parent_dec.fork()
     p = fr.probe(f)
     if p is None:
         return None, 'no probe token'
     try:
         f.step(p)
-        ct = arclog.step_tables(f, task, case, True, parent_before)
+        ct = TA.export(f, task, case, parent_before, rows)
         return parse_table(ct, with_rows=False), None
     except M.Fail as e:
         return None, str(e)
@@ -1359,27 +1275,7 @@ def body_table(fr, task, case, parent_dec, parent_before):
         return None, '%s: %s' % (type(e).__name__, e)
 
 
-def summary(tb):
-    if tb is None:
-        return None
-    per = [[ex[0], ex[1], len(rows)] for ex, asg, rows, *_ in tb['entries']]
-    train = [n for k, _, n in per if k == 1]
-    if not train:  # a task-level table (a DET's): an entry with no rows is empty in every example
-        train = [n for _, _, n in per]
-    inputs = [n for k, _, n in per if k in (1, 2)] or train  # train entries and the test input's, which a deployed sampler also has
-    return dict(labels=tb['labels'], types=[str(t) for t in tb['types']], frames=tb.get('frames'), entries=per,
-                empty_all=(all(n == 0 for n in train) if train else None), empty_inputs=(all(n == 0 for n in inputs) if inputs else None))
-
-
-def rows_with_models(tb, cap=500):
-    """x_rows: per entry [[kind, index], rows (sorted, at most cap; all where cap is None), row count, {DET slot: rows}, model, extents of
-    those rows ([h, w] or None per Box, Position or Offset column, in label order)]."""
-    out = []
-    for ex, asg, rows, exts, model in full(tb)['entries']:
-        pairs = sorted(zip(rows, exts))[:cap]
-        out.append([list(ex), [list(r) for r, _ in pairs], len(rows), {str(k): sorted(map(list, v[0])) for k, v in asg.items()},
-                    model, [x for _, x in pairs]])
-    return out
+summary, rows_with_models = TA.summary, TA.rows_of
 
 
 # ---------------------------------------------------------------- one atom
@@ -2740,77 +2636,28 @@ def derived_model():
 DERIVED_FORMS = ('RULE', 'DET', 'INIT', 'RIGID_DET')
 DERIVED_PLACES = ('RULE', 'DET', 'port', 'key', 'other')
 DERIVED_BUILTIN = ('lib relation', 'relation macro', 'fact relation')
-KEY_ORDERS = 720  # the most orders of tied columns that table_key tries
-KEY_CELLS = 1_400_000  # the most row values, summed over those orders, that table_key hashes
-
-
-class OneTable:
-    """Table j of a step_tables result, as parse_table reads a result that holds one table."""
-
-    def __init__(self, ct, j):
-        self.ct = ct
-        self.base_tables = (ct.base_tables or 0) + j
-        self.tables = {k: [v[j]] for k, v in ct.tables.items() if k != 'relation'}
-
-    def __getattr__(self, name):
-        return getattr(self.ct, name)
-
-
-def relation_tables(ct):
-    """[(relation slot, table index)] of a step_tables result, in its order."""
-    rel = M.col(ct, 'tables', 'relation') if isinstance(ct.tables['relation'], (bytes, bytearray, memoryview)) else ct.tables['relation']
-    return [(int(rel[j]), j) for j in range(len(ct.tables['form'])) if rel[j] >= 0]
-
-
-def table_key(tb):
-    """(merge key, [[example kind, index, rows, row hash]]) of a parsed table. Hashes compare within a session. The key takes the least hash
-    over the orders of columns that tie on type and values, so that it doesn't depend on their order. A table past KEY_ORDERS or KEY_CELLS keeps
-    the order of first position. Which case applies depends only on the table's shape, so tables that are equal up to column order take the same case."""
-    spans, at = [], 0
-    for w in tb['widths']:
-        spans.append((at, at + w))
-        at += w
-    entries = [(tuple(ex), rows) for ex, _, rows, _, _ in tb['entries']]
-    cols = []
-    for t, (a, b) in zip(tb['types'], spans):
-        cols.append((str(t), hash(tuple(sorted((ex, hash(frozenset(r[a:b] for r in rows))) for ex, rows in entries))), a, b))
-    order = sorted(cols)
-    groups = [list(g) for _, g in itertools.groupby(order, key=lambda c: c[:2])]
-    orders = [order]
-    tries = math.prod(math.factorial(len(g)) for g in groups)
-    if 1 < tries <= KEY_ORDERS and tries * at * sum(len(rows) for _, rows in entries) <= KEY_CELLS:
-        orders = [[c for g in perm for c in g] for perm in itertools.product(*(itertools.permutations(g) for g in groups))]
-
-    def row_hashes(seq):
-        per = collections.defaultdict(set)
-        for ex, rows in entries:
-            per[ex].add(hash(frozenset(tuple(v for _, _, a, b in seq for v in r[a:b]) for r in rows)))
-        return per
-
-    per = row_hashes(order)
-    counts = collections.Counter()
-    for ex, rows in entries:
-        counts[ex] = max(counts[ex], len(rows))
-    body = min(hash(tuple(sorted((ex, tuple(sorted(s))) for ex, s in got.items()))) for got in (per, *map(row_hashes, orders[1:])))
-    return (tuple(c[0] for c in order), body), [[ex[0], ex[1], counts[ex], '%016x' % (hash(tuple(sorted(per[ex]))) & (2 ** 64 - 1))] for ex in sorted(per)]
-
-
 class RelTable:
-    """The table of one relation at a form end, kept for STEER_DERIVED: the step_tables result and the table's index in it. facts() reads the table at the first ask
-    (merge key, column types, row count of each example, whether a column label is blank) and lets the result go. A table that does not parse has no_table."""
-    NONE = dict(key=None, types=[], nrows=[], blank=False, nt=True)
+    """The AssignmentSummaries of one table at a query's end, kept for STEER_DERIVED. facts() gives the TableHash of each, the column types, the row counts of the table's
+    TableVector (lmean, lmax and share, over its train entries and its assignments), whether a column label is blank and whether the table has no TableHash (a table past the work
+    cap). It reads no rows."""
+    NONE = dict(key=None, types=[], lmean=0.0, lmax=0.0, share=0.0, blank=False, nt=True)
 
-    def __init__(self, ct, j):
-        self.ct, self.j, self.got = ct, j, None
+    def __init__(self, rows):
+        self.rows, self.got = rows, None
 
     def facts(self):
         if self.got is None:
-            try:
-                tb = parse_table(OneTable(self.ct, self.j))
-                self.got = dict(key=table_key(tb)[0], types=[str(t) for t in tb['types']], nrows=[len(e[2]) for e in tb['entries']], blank='' in tb['labels'], nt=False)
-            except Exception:  # noqa: BLE001  a table past the work cap
+            rs = self.rows
+            if not rs or any(r.hash is None for r in rs):
                 self.got = self.NONE
-            self.ct = None
+            else:
+                if TA.pooled(rs, 'n_train'):
+                    lmean, lmax, share = (TA.pooled(rs, k) for k in ('lmean', 'lmax', 'share'))
+                else:  # a task-wide table has no train entries, and the TableVector's row counts are over train entries: its counts are those of its examples (ExampleKey.rows)
+                    nr = [k[3] for r in rs for k in r.examples]
+                    lmean, lmax, share = math.log1p(sum(nr) / len(nr)) if nr else 0.0, math.log1p(max(nr)) if nr else 0.0, sum(1 for x in nr if x > 0) / len(nr) if nr else 0.0
+                self.got = dict(key=tuple(sorted(r.hash for r in rs)), types=list(rs[0].types), lmean=lmean, lmax=lmax, share=share, blank='' in rs[0].labels, nt=False)
+            self.rows = None
         return self.got
 
 
@@ -2847,10 +2694,9 @@ class DerivedScope:
         r = self.rels.get(base)
         if r is None and base[0] in self.kind:
             t, h = self.tabs[base].facts() if base in self.tabs else RelTable.NONE, base[0]
-            nr = t['nrows']
             r = self.rels[base] = dict(
                 head=h, sub=base[1] is not None, key=t['key'], types=tuple(sorted(t['types'])), nt=int(t['nt']), arity=len(t['types']), ct=collections.Counter(t['types']),
-                lmean=math.log1p(sum(nr) / len(nr)) if nr else 0.0, lmax=math.log1p(max(nr)) if nr else 0.0, share=sum(1 for x in nr if x > 0) / len(nr) if nr else 0.0,
+                lmean=t['lmean'], lmax=t['lmax'], share=t['share'],
                 blank=int(t['blank']), depth=self.depth[h], leaf=int(self.readers[h] == 0), root=int(not self.parents[h]), lread=math.log1p(self.readers[h]),
                 lnrel=math.log(max(self.nrel[h], 1)))
         return r
@@ -2982,7 +2828,7 @@ class Prefix:
         for i in range(self.pos, first):
             if self.model[i]:
                 self.dec.step(self.ids[i])
-                self.before = b = arclog.step_tables(self.dec, self.task, self.case, True, self.before)
+                self.before = b = TA.export(self.dec, self.task, self.case, self.before, rows=False)
                 T = b.tables
                 rel = M.col(b, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
                 for j in range(len(T['form'])):
@@ -3074,6 +2920,8 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         """(X, clause text, head) of a port whose body has table tb and RULE text rule_line: gold's head, or for a draw
         a label for each of gold's head columns of a type the component allows; the clause text is gold's INIT line
         with the port replaced."""
+        if tb.get('counted'):
+            return None, 'the body table has Count entries'
         bl = binders(M_sexprs(rule_line)[0][2:], [])
         types = [str(t) for t in tb['types']]
         m = dict(zip(binders(port['atoms'], []), bl))
@@ -3223,7 +3071,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
         f = d.fork()
         try:
             f.step(END)
-            tb = parse_table(arclog.step_tables(f, task, case, True, before))
+            tb = parse_table(TA.export(f, task, case, before))
         except Exception:  # noqa: BLE001
             return 0
         head = []
@@ -3246,7 +3094,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
             return rec
         header = None
         try:  # X from the table of the clause's relation at its END: it holds the labels an OR or IF exports
-            tb, err = parse_table(arclog.step_tables(f, task, case, True, before)), None
+            tb, err = parse_table(TA.export(f, task, case, before)), None
         except M.Fail as e:
             tb, err = None, str(e)
             header = getattr(e, 'header', None)
@@ -3791,7 +3639,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
                 st_['safe'].append(can_end(cur_))
             gx_ = rows[0].get('body_x') or rows[0].get('x')
             try:
-                st_['same'] = gx_ is None or (summary(parse_table(arclog.step_tables(d, task, case, True, before))) or {}).get('entries') == gx_['entries']
+                st_['same'] = gx_ is None or (summary(parse_table(TA.export(d, task, case, before))) or {}).get('entries') == gx_['entries']
             except M.Fail:
                 st_['same'] = False
         return st_

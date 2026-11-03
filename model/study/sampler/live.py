@@ -89,6 +89,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('STRUCT_B', '1')  # S imports the terms of STRUCT_B only under this setting; set_steers sets the flag itself
 import sample2_col as S  # noqa: E402
+import table_adapter as TA  # noqa: E402
 from fractions import Fraction  # noqa: E402
 
 from sample2_col import M, arclog  # noqa: E402
@@ -131,7 +132,6 @@ GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 FILLS_HELD = 1000  # the most refused forms a Run keeps for its caller
 DEADLINE_SHARE = 0.9  # a request that took this share of the session's deadline ran to it
-SUIT_COLUMNS = 2  # a relation's Position columns, and its Color columns, that Gate.suits reads
 STEERS = 'struct', 'tilt', 'rel', 'choice'
 STEER_FILES = dict(tilt='tilt_v1.json', rel='relR4_o.pkl', choice='choice5_o.pkl')
 
@@ -165,22 +165,6 @@ def cell_masks(pair):
     cells = want.reshape(900, 10)
     wp, wc = cells.any(1), cells.any(0)
     return {9000: (want, right), 900: (wp, wp), 10: (wc, wc)}
-
-
-def overlap(rows, p, c, masks):
-    """How well rows, an array with one row per table row, suit a train pair: wanted cells hit / (cells wanted + wrong cells). p is
-    the column of a Position or Box's top, whose left is two columns on, and c that of a Color; either may be None. 1 means an
-    overlay of the rows gives the pair's output."""
-    ok, key, n = np.ones(len(rows), bool), 0, 1
-    if p is not None:
-        i, j = rows[:, p], rows[:, p + 2]
-        ok, key, n = (i >= 0) & (i < 30) & (j >= 0) & (j < 30), 30 * i + j, 900
-    if c is not None:
-        ok, key, n = ok & (rows[:, c] >= 0) & (rows[:, c] < 10), 10 * key + rows[:, c], 10 * n
-    seen = np.zeros(n, bool)
-    seen[key[ok]] = True
-    want, right = masks[n]
-    return int((seen & want).sum()) / max(int(want.sum() + (seen & ~right).sum() + (~ok).sum()), 1)
 
 
 def kind_weights(pri):
@@ -227,30 +211,19 @@ class Gate:
         return got + [r for r in GRID_RULES if not all(any(self.holds(r, g, x) for g in att) for att, x in zip(attempts, self.inputs) if att)]
 
     def suits(self, ct):
-        """{relation slot: how well its rows suit the train outputs} over step_tables result ct, at its best pair of columns: the mean
-        overlap over its train entries. A task-wide table has an entry per DET assignment, of which one holds, so it takes the
-        best entry, with the mean overlap over the train pairs. An entry with no rows to read counts for nothing."""
-        T, base, out = ct.tables, ct.base_tables or 0, {}
-        rel = M.col(ct, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
-        V = np.frombuffer(ct.values, np.int32)
-        et, ex, ei = M.col(ct, 'entries', 'table'), M.col(ct, 'entries', 'example_kind'), M.col(ct, 'entries', 'example_index')
-        ek, er, eo = M.col(ct, 'entries', 'kind'), M.col(ct, 'entries', 'rows'), M.col(ct, 'entries', 'offset')
-        stop, vstop, fault = ct.entries['stop_bound'], ct.entries['value_stop_bound'], ct.entries['fault']
-        train = collections.defaultdict(list)  # a table -> its entries
-        for e in range(len(et)):
-            if ex[e] in (EXAMPLE_TASK, EXAMPLE_TRAIN) and ek[e] == 0 and not (stop[e] or vstop[e] or fault[e]):
-                train[et[e] - base].append(e)
-        for j, es in train.items():
-            types = [str(t) for t in T['column_types'][j]]
-            at = list(itertools.accumulate((4 if t in M.WIDE else 1 for t in types), initial=0))
-            ps = [a for a, t in zip(at, types) if t in ('Position', 'Box')][:SUIT_COLUMNS]
-            cs = [a for a, t in zip(at, types) if t == 'Color'][:SUIT_COLUMNS]
-            if rel[j] < 0 or not ps + cs:
+        """{table slot: how well its rows suit the train outputs} over step_tables result ct: the TableVector's suit, the best mean overlap of the table's train entries with the
+        train outputs over its Position or Box and Color columns. A task-wide table has an entry per assignment, of which one holds, so it takes its best assignment; any other
+        table takes the mean over its assignments. It reads no rows."""
+        summaries, out, at_slot = TA.tables(ct), {}, collections.defaultdict(list)
+        for r in summaries:
+            if r.slot >= 0:
+                at_slot[r.slot].append(r)
+        for s, rs in at_slot.items():
+            if not any(t in ('Position', 'Box', 'Color') for t in rs[0].types):
                 continue
-            tabs = [(self.masks if ex[e] == EXAMPLE_TASK else [self.masks[ei[e]]], V[eo[e]:eo[e] + er[e] * at[-1]].reshape(-1, at[-1])) for e in es]
-            pick = max if ex[es[0]] == EXAMPLE_TASK else statistics.fmean
-            sites = [(p, c) for p in ps or [None] for c in cs or [None]]
-            out[int(rel[j])] = max(pick([statistics.fmean(overlap(v, p, c, m) for m in ms) for ms, v in tabs]) for p, c in sites)
+            got = [TA.feature(r, 'suit') for r in rs if any(k[0] in (EXAMPLE_TASK, EXAMPLE_TRAIN) for k in r.examples)]
+            if got:
+                out[s] = max(got) if rs[0].examples and rs[0].examples[0][0] == EXAMPLE_TASK else statistics.fmean(got)
         return out
 
     def fold_sessions(self):
@@ -544,6 +517,31 @@ class LiveFrontier(S.FastFrontier):
         return c
 
 
+SCOPE_REUSE = int(os.environ.get('SCOPE_REUSE', 1) or 0)  # Run.scope steps only the last form where the forms before it are a kept scope; SCOPE_REUSE=0 turns it off
+SCOPE_KEEP = int(os.environ.get('SCOPE_KEEP', 8))  # the kept scopes, the most recent
+
+
+def program_snapshot(pg):
+    """A copy of Program pg that no later write to pg reaches, and whose writes don't reach pg. Copied: decl_types, decl_slots, arity, names,
+    colmaps and pending and record_cols with their inner dicts, and every other dict, list and set field one level deep (forms, toks, new, grids,
+    colors, positions, grid_pairs, suit, scope_grids, scope_colors, scope_positions, kinds, written, made, facts, lifts, rel_tabs, tables, indexes,
+    queries). colmap points at the copy's colmaps entry that it pointed at in pg. before is the engine's result, which nothing changes, so it is shared."""
+    g = copy.copy(pg)
+    for k, v in vars(pg).items():
+        if k in ('colmaps', 'pending', 'record_cols'):
+            setattr(g, k, {a: copy.deepcopy(b) for a, b in v.items()})
+        elif k in ('decl_types', 'decl_slots', 'arity'):
+            setattr(g, k, copy.deepcopy(v))
+        elif isinstance(v, dict) and k != 'colmap':
+            setattr(g, k, dict(v))
+        elif isinstance(v, list):
+            setattr(g, k, list(v))
+        elif isinstance(v, set):
+            setattr(g, k, set(v))
+    g.colmap = next((g.colmaps[a] for a, b in pg.colmaps.items() if b is pg.colmap), g.colmaps['RULE'])
+    return g
+
+
 class Program:
     """The state of one draw at a form boundary: its decoder's relations and the last step_tables result."""
 
@@ -569,7 +567,11 @@ class Program:
         self.facts = {}  # a relation slot -> one_repair.facts of its table; kept where the ONE repair is on
         self.lifts = {}  # a RULE's relation slot -> choose_lift.key_facts of its table; kept where the CHOOSE lift is on
         self.unread = frozenset()  # UNREAD_BETA: the relation tokens of the scope's forms that no kept form reads
-        self.rel_tabs = {}  # STEER_DERIVED: a relation slot -> its RelTable, for the relations of every form so far (before holds the last form's tables only)
+        self.rel_tabs = {}  # STEER_DERIVED: a table slot -> its RelTable, for the tables of every query so far (before holds the last query's tables only)
+        self.tables = {}  # a table slot -> its AssignmentSummaries, one per assignment, for the tables of the last query
+        self.indexes = {}  # a table slot -> the places of those AssignmentSummaries in the last step_tables result
+        self.queries = {}  # a DET's slot -> its QueryHash, for the queries so far
+        self.closed = ()  # the step_tables result of each query closed so far, oldest first; kept only where Run.keep_closed (the state block of the writing-point vector reads them)
 
     def fork(self):
         """A copy whose dicts can change with no effect on this Program."""
@@ -625,6 +627,14 @@ class Run:
 
     drawer_class = LiveDrawer
     unread = None  # the places in a scope's forms of those that no kept form reads (UNREAD_BETA), read when the scope is made; None: unread_forms
+    keep_closed = False  # whether close keeps each query's step_tables result in pg.closed (writer.keep_state_tables sets it)
+    want_rows = True  # whether a caller reads the rows of pg.before (pool_rows, hop1_rows, the policy's link features); a caller that reads none sets it False
+
+    @property
+    def rows(self):
+        """Whether close exports the rows (step_tables rows=True). Nothing on the search reads rows, but a caller that reads pg.before's rows (want_rows), the ONE repair and the
+        CHOOSE lift. The dev row store makes every export rows=True besides."""
+        return bool(self.want_rows or self.lim.one_repair or self.lim.choose_lift)
 
     def __init__(self, pri, session, seed, deadline, task, limits):
         self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
@@ -651,6 +661,7 @@ class Run:
         self.lift_seconds, self.lift_done, self.lift_queue, self.fit_attempts = 0.0, set(), [], set()  # the time of the CHOOSE lifts; the programs they ran on; the candidates to lift at the end of the OUT search; the attempts of the fits so far (kept where the lift is on)
         self.fills = []  # (program, attempts) of forms leave-one-out refused, for Pool.test
         self.scoped = None  # (forms, decoder, Program) of the last scope
+        self.kept = collections.OrderedDict()  # SCOPE_REUSE: forms -> (decoder, Program before the end-of-scope steps, made) of recent scopes, oldest first
         self.walk = pri['walk']
         self.head_sizes = sum(map(collections.Counter, pri.get('head_labels', {}).values()), collections.Counter())  # a head column's count of labels -> uses, over all sites
         self.walk_all = sum(self.walk['after'].values(), collections.Counter())
@@ -732,7 +743,7 @@ class Run:
         if tok not in self.first:
             f = self.root.fork()
             f.step(tok)
-            self.first[tok] = f, arclog.step_tables(f, *TABLES, True, None)
+            self.first[tok] = f, TA.export(f, *TABLES, None, self.rows)
         f, pg.before = self.first[tok]
         return f.fork()
 
@@ -753,9 +764,21 @@ class Run:
             made = collections.defaultdict(list)  # a form's place -> the relation tokens it declares
             ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*forms, READER_OUT)), self.session.settings).decode_stream()
             stream = [(p[0], t) for t, m, p in zip(ids, model, paths) if m]
+            start = 0
+            kept = self.kept.get(forms[:-1]) if SCOPE_REUSE and len(forms) > 1 else None
+            if kept is not None:  # forms is a kept scope plus one form: step that form from the kept decoder and its chain
+                k_dec, k_pg, k_made = kept
+                if len(k_pg.toks) + len(k_pg.kinds) == sum(1 for at, _ in stream if at < len(forms) - 1):
+                    dec, pg, start = k_dec, program_snapshot(k_pg), len(forms) - 1
+                    made.update({a: list(b) for a, b in k_made.items()})
+                    self.c['scope:reused'] += 1
+                else:
+                    self.c['scope:reuse token count differs'] += 1
             for i, group in itertools.groupby(stream, lambda x: x[0]):
                 if i == len(forms):
                     break
+                if i < start:
+                    continue
                 first, *toks = [t for _, t in group]
                 kind = self.V.name(first)
                 if kind not in KIND_TOK and kind not in REPLAYED:  # a form that no draw makes
@@ -775,6 +798,11 @@ class Run:
                 self.close(pg, f)
                 suits = self.gate.suits(pg.before)
                 pg.suit = pg.suit | {s: (suits.get(s, 0.0), random.Random(s).random()) for s in pg.new}
+            if SCOPE_REUSE:
+                self.kept[forms] = dec, program_snapshot(pg), {a: list(b) for a, b in made.items()}
+                self.kept.move_to_end(forms)
+                while len(self.kept) > SCOPE_KEEP:
+                    self.kept.popitem(last=False)
             pg.written = {head_of(a): head_of(b) for a, b in zip(dec.program_form().split('\n'), forms)}
             pg.made = dict(made)
             f = dec.fork()
@@ -839,25 +867,33 @@ class Run:
         raise Drop('%s: no clause in %d tries' % (kind, self.lim.form_tries))
 
     def close(self, pg, f):
-        """Records the form that the last step of decoder f ended: its relations' tables, for types and columns."""
+        """Records the query that the last step of decoder f ended: the AssignmentSummaries of its tables, grouped by slot in pg.tables, and their types and columns."""
         t0 = time.monotonic()
-        pg.before = b = arclog.step_tables(f, *TABLES, True, pg.before)
+        pg.before = b = TA.export(f, *TABLES, pg.before, self.rows)
+        if self.keep_closed:
+            pg.closed = pg.closed + (b,)
         T = b.tables
-        if not len(T['form']):
+        summaries = TA.tables(b, pg.queries)
+        if not summaries:
             self.spent(t0)
-        rel = M.col(b, 'tables', 'relation') if isinstance(T['relation'], (bytes, bytearray, memoryview)) else T['relation']
-        for j in range(len(T['form'])):
+        by, index = {}, {}
+        for j, r in enumerate(summaries):
             if T['fault'][j]:
-                raise Drop('relation table fault')
-            if rel[j] >= 0:
-                s, ts, cs = int(rel[j]), [str(t) for t in T['column_types'][j]], [int(c) for c in T['column_slots'][j]]
-                pg.decl_types[s], pg.decl_slots[s] = ts, cs
-                pg.new.append(s)
-                if cs:
-                    for k in KIND_TOK:
-                        pg.pending[k][s] = list(zip(cs, ts))
+                raise Drop('table fault')
+            if r.slot >= 0:
+                if r.slot not in by:
+                    s, ts, cs = r.slot, list(r.types), [int(c) for c in T['column_slots'][j]]
+                    pg.decl_types[s], pg.decl_slots[s] = ts, cs
+                    pg.new.append(s)
+                    if cs:
+                        for k in KIND_TOK:
+                            pg.pending[k][s] = list(zip(cs, ts))
+                by.setdefault(r.slot, []).append(r)
+                index.setdefault(r.slot, []).append(j)
+        pg.tables, pg.indexes = by, index
+        pg.queries = pg.queries | {r.slot: r.table[0] for rs in by.values() for r in rs if isinstance(r.table, tuple) and not r.table[1]}
         if S.STEER_DERIVED:
-            pg.rel_tabs = pg.rel_tabs | {s: S.RelTable(b, j) for s, j in S.relation_tables(b)}
+            pg.rel_tabs = pg.rel_tabs | {s: S.RelTable(rs) for s, rs in by.items()}
         if self.lim.one_repair and len(pg.new) == 1:
             import one_repair
             got = one_repair.facts(b)
@@ -879,7 +915,7 @@ class Run:
     def table(self, fr, dec, pg):
         """S.body_table's (table, error) at decoder dec, with Spent where it ran to the deadline."""
         t0 = time.monotonic()
-        got = S.body_table(fr, *TABLES, dec, pg.before)
+        got = S.body_table(fr, *TABLES, dec, pg.before, rows=False)
         if got[0] is None:
             self.spent(t0)
         return got
