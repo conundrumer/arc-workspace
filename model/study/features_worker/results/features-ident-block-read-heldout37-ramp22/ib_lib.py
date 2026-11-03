@@ -17,7 +17,7 @@ import re
 import sys
 import time
 
-R = os.path.dirname(os.path.abspath(__file__))
+R = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-ident-block-read-heldout37-ramp22'  # the data folder
 WS = '/Users/davidlu/code/arc-workspace'
 STUDY = WS + '/work/lm/data-study'
 KIT = STUDY + '/sampler/sampler-worker/kits/sampler-pool-tiekey-value-0729e4943'
