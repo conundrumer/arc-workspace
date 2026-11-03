@@ -1792,6 +1792,36 @@ fn push_flows(out: &mut CaseColumns, names: &TableNames, row: u32, contents: &Co
     }
 }
 
+/// The bytes that the packing of one entry or one projection's rows keeps
+/// until its columns become Python objects, and the conversion makes of it:
+/// `values` cells (4 bytes each) that the packing added to the case's value
+/// buffer, `order` places that a new run's sorted order keeps (8 bytes each),
+/// and `status`, the extent status of each row.
+///
+/// - The cells stand four times: in the buffer, in the conversion's byte copy
+///   and in the two Python `bytes` objects that it makes of that copy, the
+///   second of which stays.
+/// - A row's status keeps a `Vec` slot (24 bytes) and an allocation of at
+///   least 8 bytes, and becomes a Python `bytes` object, which `sys.getsizeof`
+///   gives as 33 bytes and one a status, in a list slot of 8 bytes.
+fn kept_bytes(values: usize, order: usize, status: &[Vec<u8>]) -> usize {
+    let status = status.iter().map(|row| 24 + row.len().max(8) + 33 + row.len() + 8).fold(0usize, usize::saturating_add);
+    values.saturating_mul(4 * 4).saturating_add(order.saturating_mul(8)).saturating_add(status)
+}
+
+/// Shrinks the reservations `allocations` that no other owner shares, in
+/// their order, so that they keep `bytes` in all, as the packing of an entry
+/// ends: the reservations covered its scratch, and keep only what it holds.
+fn settle(allocations: &mut [Arc<arclog::session::SessionAllocation>], mut bytes: usize) {
+    for allocation in allocations {
+        let held = allocation.bytes();
+        if let Some(allocation) = Arc::get_mut(allocation) {
+            allocation.shrink_to(bytes);
+        }
+        bytes = bytes.saturating_sub(held.min(bytes));
+    }
+}
+
 // Each annotation output is genuine ownership even when its value run was
 // interned earlier. Cover simultaneous per-row scratch, sorted extent/status
 // copies and Python containers; retain the lease on the returned CaseColumns.
@@ -1815,6 +1845,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
         let push = |out: &mut CaseColumns, runs: &mut Runs, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let count_only=row_export.count_only(out.entries.table.len(),contents.projections.is_some());
+            let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
@@ -1870,6 +1901,9 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                     }
                 }
             } else {Vec::new()};
+            let order_kept=if runs.1.len()>runs_from {order.len()} else {0};
+            let kept=kept_bytes(out.values.len()-values_from,order_kept,&extent_status);
+            settle(&mut out.allocations[allocations_from..],kept);
             let entries = &mut out.entries;
             entries.extent_status.push(extent_status);
             entries.kind.push(value_kind as u8);
@@ -1931,6 +1965,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             out.projections.width.push(row_width(&projection_types));
             for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
+                    let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
                     let mut order:Arc<[usize]> = Arc::from([]);
                     let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
@@ -1975,6 +2010,9 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                         Ok(value)=>value,
                         Err(bound)=>{out.packing_stop=Some(Stop {bound,form:form.clone()});(-1,Vec::new())},
                     };
+                    let order_kept=if runs.1.len()>runs_from {order.len()} else {0};
+                    let kept=kept_bytes(out.values.len()-values_from,order_kept,&extent_status);
+                    settle(&mut out.allocations[allocations_from..],kept);
                     out.projection_rows.extent_status.push(extent_status);
                     out.projection_rows.projection.push(projection_row);
                     out.projection_rows.entry.push((starts[example] + at) as u32);
