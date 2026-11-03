@@ -8,6 +8,10 @@ learned model weighs it, and the `legal` plan leaves it out.
 Each component of lookahead.ORDER is split by the condition it tests. PARTS maps a component to its parts; the parts of a component remove, together,
 what the component removes. LEGAL names the parts and components that are legality rules. `lookahead.components(run, ['legal'])` makes them.
 The verdict of each part, with its evidence, is in the report that goes with this file.
+
+The writer plan (WRITER_PLAN: `ordered` or `unordered`, unset is `unordered`) picks the rules of the plan (PLAN_RULES) that LegalMask adds to RULES: under `ordered`, OrderRule
+(order_prefix.py) bars every order of the free choices but the `ordered` rule's; under `unordered`, every order stays. The training rows (train_rows.points_of_targets, plan=)
+and the draw records (draw_record.py) read the same setting, and check_plan stops a run whose targets are of the other plan.
 """
 import os
 
@@ -459,6 +463,39 @@ class AtomOrderOrLate(AtomOrder):
     OR_LATE = True
 
 
+# ---------------------------------------------------------------- the order rule of the `ordered` plan
+
+class OrderRule:
+    """The `ordered` plan's order of the free choices (order_prefix.Rule): removes each id that no `ordered` path continues with."""
+    name = 'OrderRule'
+
+    def __init__(self, run):
+        import order_prefix
+        self.rule = order_prefix.rule_of(run)
+
+    def factors(self, pt, ids):
+        return np.where(self.rule.keep(pt, ids), 0.0, -np.inf)
+
+
+PLANS = ('ordered', 'unordered')
+PLAN = os.environ.get('WRITER_PLAN') or 'unordered'  # the writer plan of the process: LegalMask, train_rows and draw_record read it
+if PLAN not in PLANS:
+    raise ValueError('WRITER_PLAN: %r is not one of %s' % (PLAN, PLANS))
+PLAN_RULES = {'ordered': ('OrderRule',), 'unordered': ()}  # the rules of each plan, after RULES
+
+
+def check_plan(plan):
+    """Raises where `plan` is not the process's writer plan (WRITER_PLAN): the targets of one plan go with the mask of that plan alone."""
+    if plan != PLAN:
+        raise ValueError('plan %r, and WRITER_PLAN gives %r: the mask is the plan of WRITER_PLAN; set WRITER_PLAN=%s' % (plan, PLAN, plan))
+
+
+def plan_of_tree(path):
+    """The plan that a tree file's name gives ('unordered' or 'ordered' in its base name), else None."""
+    base = os.path.basename(path or '')
+    return 'unordered' if 'unordered' in base else 'ordered' if 'ordered' in base else None
+
+
 # ---------------------------------------------------------------- the legal plan
 
 PARTS = {
@@ -470,7 +507,7 @@ PARTS = {
     'HeadGate': ('HeadFill',),
 }
 ALL_PARTS = tuple(p for ps in PARTS.values() for p in ps) + ('AtomOrder', 'AtomOrderOrLate', 'AtomOrderDep')
-NEEDS_RUN = ('KindsControl', 'KindsProposer', 'KindsComponent', 'AtomOrder', 'AtomOrderOrLate', 'AtomOrderDep', 'LegalMask', 'LegalMaskStrict')
+NEEDS_RUN = ('KindsControl', 'KindsProposer', 'KindsComponent', 'AtomOrder', 'AtomOrderOrLate', 'AtomOrderDep', 'LegalMask', 'LegalMaskStrict', 'OrderRule')
 
 # The legality rules and legal parts, in order. They are the rules that LegalMask composes.
 RULES = ('NotStar', 'HeadFill', 'RepeatSame', 'HiddenLabels', 'CaretLocal', 'EqSelf')
@@ -519,12 +556,12 @@ ADD = tuple(x for x in os.environ.get('WRITER_LEGAL_ADD', '').split(',') if x)  
 
 
 class LegalMask:
-    """The legality rules as one mask. The writer applies it as a lookahead component; `allowed(pt)` gives the mask for the model: the engine's mask with the rules
+    """The legality rules, and the rules of the writer plan (PLAN_RULES), as one mask. The writer applies it as a lookahead component; `allowed(pt)` gives the mask for the model: the engine's mask with the rules
     applied, over the whole vocabulary, so that a later step can move a settled rule into the engine's admissible(). `removed(pt, ids)` says which rule removed each id."""
     name = 'LegalMask'
 
     def __init__(self, run, rules=None):
-        self.rules = [make(run, n) for n in (rules or RULES + ADD)]
+        self.rules = [make(run, n) for n in (rules or RULES + ADD + PLAN_RULES[PLAN])]
 
     def removed(self, pt, ids):
         """{rule name: bool array over ids} for the rules that remove an id."""

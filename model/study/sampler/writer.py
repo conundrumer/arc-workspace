@@ -189,6 +189,15 @@ class WritingPoint:
     open_atom: tuple[TokenId, ...]  # the model tokens of the atom so far
     ids_: np.ndarray  # the mask, as ids
     memo: dict = dataclasses.field(default_factory=dict, compare=False)  # per writing point: factors, logits, features
+    back: tuple | None = dataclasses.field(default=None, compare=False)  # (the decoder before the last token, its back), None at the first point: dec_at reads it
+
+
+def dec_at(pt, i):
+    """The decoder of writing point pt after its first i tokens (1 <= i <= len(pt.tokens)): a decoder of an earlier point of its path, which a caller forks and never steps."""
+    d, back = pt.dec, pt.back
+    for _ in range(len(pt.tokens) - i):
+        d, back = back
+    return d
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -636,7 +645,7 @@ def step_point(pt, t, cache=None):
     forced = nxt.step(t)[0]
     ids2 = ids_of(nxt.fork().admissible())  # on a fork: a decoder keeps the mask it computes, with the state after each admitted id, and a cached point would keep that; a step from the point forks its decoder, and a fork keeps no mask
     T, labels, atoms = core.advance(pt, t, forced, ids2)
-    child = dataclasses.replace(pt, dec=nxt, tokens=tokens, atoms=atoms, labels=labels, track=T, open_atom=T.atom, ids_=ids2, memo={})
+    child = dataclasses.replace(pt, dec=nxt, tokens=tokens, atoms=atoms, labels=labels, track=T, open_atom=T.atom, ids_=ids2, memo={}, back=(pt.dec, pt.back))
     child = core._with_place(child, T, atoms, labels, tokens, ids2)
     if cache is not None:
         if len(cache) >= getattr(pt.run, 'points_cap', 3000):
