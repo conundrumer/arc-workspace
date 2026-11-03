@@ -164,6 +164,10 @@ pub struct Contents {
     /// The relation's name as the program spells it, empty for a body and
     /// for an evidence table, whose [`TableRelation::Fact`] names it.
     pub name: String,
+    /// The table's Name ([`crate::summary::TableSummary::name`]), as
+    /// [`output_name`] gives it: empty for a table of no output and for an
+    /// evidence table.
+    pub output_name: String,
     /// The sources of each column's values ([`column_flows`]),
     /// none for an evidence table.
     pub flows: Box<[Vec<ColumnSource>]>,
@@ -370,7 +374,7 @@ pub(crate) fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[
                 let work = decoder.table_work();
                 let examples = relation_examples(decoder, checked, &relation, &dets, &work);
                 contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| {
-                    let contents = Contents { name: relation_spelled(declared), keys: checked.program.column_keys(relation.node), ..contents };
+                    let contents = Contents { name: relation_spelled(declared), output_name: output_name(program.value(), &form, declared), keys: checked.program.column_keys(relation.node), ..contents };
                     let seen: Vec<&Table> = earlier.iter().copied().chain(&tables).collect();
                     made(decoder, &seen, checked, &relation, contents)
                 })
@@ -495,7 +499,7 @@ pub(crate) fn metadata(program: &CheckedProgram, form: &NodePath, relation: Tabl
             }
         }
     }}
-    Ok(Contents { assignment_layout:AssignmentLayout::Search, relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), flows,
+    Ok(Contents { assignment_layout:AssignmentLayout::Search, relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), output_name: String::new(), flows,
         rows: None, depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
 }
 
@@ -596,7 +600,7 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
         })
         .collect();
     let frames = fact_frames(fact, &columns);
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), output_name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as
@@ -637,6 +641,21 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
         _ => false,
     })?;
     Some(GraphRelation { node: *shared, output: Some(Arc::clone(&name.path)) })
+}
+
+/// The Name of the table of `declared`, a relation of the form at `form` of
+/// `program`: the path after the form's name of an instance's output or
+/// input (`component`), the Name that [`arclog::program::rigid_output_name`]
+/// gives an output of a `RIGID_DET` form, by the index of its part (`slot 0`,
+/// `pose`), and empty for a relation of no output.
+pub(crate) fn output_name(program: &Program, form: &NodePath, declared: &ProgramRelation) -> String {
+    let ProgramRelation::Output(output) = declared else { return String::new() };
+    match (&output.of, node_at(NodeRef::Program(program), form)) {
+        (OutputOwner::RigidDet(_), Some(NodeRef::RigidDet(rigid))) => {
+            arclog::program::rigid_output_name(rigid, &output.path, |part| part as u32).expect("an output of a `RIGID_DET` form is its pose or a part's")
+        }
+        _ => arclog::program::output_path_spelled(&output.path),
+    }
 }
 
 /// Export order shared by study collection and compile-only inventory.

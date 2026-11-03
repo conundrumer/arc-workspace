@@ -80,5 +80,6 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<PyReplayProgress>()?;
     names.function(wrap_pyfunction!(streams::corpus_streams, module)?)?;
     names.function(wrap_pyfunction!(study::empty_gold_json, module)?)?;
+    names.function(wrap_pyfunction!(study::rigid_slot_name, module)?)?;
     names.function(wrap_pyfunction!(case_files::case_files, module)?)
 }

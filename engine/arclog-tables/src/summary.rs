@@ -126,8 +126,11 @@ pub struct TableSummary {
     /// Whether the walk of some example stopped at the assignment cap.
     pub capped: bool,
     /// The table's Name: the output Name of a table of an instance or of a
-    /// `RIGID_DET` form, the fact relation's name of an evidence table and the
-    /// empty string for any other table.
+    /// `RIGID_DET` form ([`crate::tables::output_name`]), the fact relation's
+    /// name of an evidence table and the empty string for any other table. A
+    /// `RIGID_DET` form's part is named by its position in the form's
+    /// canonical form, `slot 0`, `slot 1` and so on, and not by the relation
+    /// it reads, so the Name holds no name of the program.
     pub name: String,
 }
 
@@ -173,7 +176,7 @@ fn capped(contents: &Contents) -> bool {
 fn name_of(contents: &Contents) -> String {
     match contents.relation {
         TableRelation::Fact(fact) => spelling(FACT_RELATIONS, &fact).to_owned(),
-        TableRelation::Slot(_) => contents.name.split_once('.').map_or_else(String::new, |(_, name)| name.to_owned()),
+        TableRelation::Slot(_) => contents.output_name.clone(),
     }
 }
 

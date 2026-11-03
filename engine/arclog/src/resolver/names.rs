@@ -397,6 +397,35 @@ impl Names {
             None => form,
         })
     }
+
+    /// For each part of the `RIGID_DET` form at `path` of `program`, the
+    /// least index of a part whose swap with it leaves the form's canonical
+    /// form through the resolver as it is, its own index where none does.
+    /// Ties are a class: the swaps that leave a form as it is make a group.
+    /// `None` where `path` names no `RIGID_DET` form.
+    pub(super) fn part_positions(&self, program: &Node<Program>, path: &NodePath) -> Option<Box<[u32]>> {
+        let at = At::of(program, path)?;
+        let NodeRef::RigidDet(rigid) = at.node else { return None };
+        let writer = Writer { names: self, scope: &at.scope, own: at.own.as_ref() };
+        let form = |parts: Vec<Node<crate::program::Atom>>| {
+            let swapped = crate::program::RigidDet { parts: parts.into(), ..rigid.clone() };
+            written_through(NodeRef::RigidDet(&swapped), None, &writer).map(|form| form.bytes)
+        };
+        let written = form(rigid.parts.to_vec())?;
+        let mut positions: Vec<u32> = (0..rigid.parts.len() as u32).collect();
+        for later in 0..rigid.parts.len() {
+            // A part that ties with one part of a class ties with the least part of it, so only the least of each class is tried.
+            for first in (0..later).filter(|first| positions[*first] == *first as u32) {
+                let mut parts = rigid.parts.to_vec();
+                parts.swap(first, later);
+                if form(parts).is_some_and(|swapped| swapped == written) {
+                    positions[later] = first as u32;
+                    break;
+                }
+            }
+        }
+        Some(positions.into())
+    }
 }
 
 /// The node at a path of a program, with the scope its names resolve in,

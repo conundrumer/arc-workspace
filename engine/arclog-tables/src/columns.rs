@@ -283,7 +283,9 @@ pub struct TableColumns {
     pub query: Vec<u128>,
     pub has_query: Vec<u8>,
     /// The table's Name: the output Name of an instance's or a `RIGID_DET` form's table, the fact
-    /// relation's name of an evidence table, and the empty string for any other.
+    /// relation's name of an evidence table, and the empty string for any other, as
+    /// [`crate::summary::TableSummary::name`] gives it. A `RIGID_DET` form's part is `slot <n>`, by its
+    /// position in the form's canonical form, and `arclog.rigid_slot_name` gives that Name for a read.
     pub name: Vec<String>,
     /// The TableHash, and whether the assignment has one (1) or not (0, with the hash 0).
     pub hash: Vec<u128>,

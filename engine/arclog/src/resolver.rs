@@ -554,6 +554,27 @@ impl ResolvedProgram {
     /// and the reader of its text give one content. `None` where `position`
     /// names no node.
     pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
+        let (closure, last) = self.query_closure(position, registry)?;
+        closure.content(&last)
+    }
+
+    /// For each part of the `RIGID_DET` form at the top-level position
+    /// `position`, the least index of a part it ties with, in the content
+    /// that [`ResolvedProgram::query_content`] gives the form: two parts tie
+    /// where the swap of the two leaves that content as it is, so that two
+    /// programs that list them in either order have one QueryHash. Parts that
+    /// tie read relations of one content at sites of one form, and hold the
+    /// same rows. `None` where `position` names no `RIGID_DET` form.
+    pub fn rigid_part_positions(&self, position: usize, registry: &Registry) -> Option<Box<[u32]>> {
+        let (closure, last) = self.query_closure(position, registry)?;
+        closure.names.part_positions(&closure.program, &last)
+    }
+
+    /// The program of the use closure of the finished query at the
+    /// top-level position `position`, resolved as
+    /// [`ResolvedProgram::query_content`] gives, and the path of the query
+    /// in it.
+    fn query_closure(&self, position: usize, registry: &Registry) -> Option<(ResolvedProgram, NodePath)> {
         let forms = &self.program.value().forms;
         let mut keep = vec![false; forms.len()];
         *keep.get_mut(position)? = true;
@@ -577,7 +598,7 @@ impl ResolvedProgram {
         let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| form.clone()).collect();
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
-        build::resolve(&pruned, None, &SolverScope::default(), registry).value.content(&last)
+        Some((build::resolve(&pruned, None, &SolverScope::default(), registry).value, last))
     }
 
     /// The resolved content of the node `node` of the dependency graph, or
@@ -723,6 +744,34 @@ pub fn resolve(
     registry: &Registry,
 ) -> WithDiagnostics<ResolvedProgram> {
     build::resolve(case, concept, scope, registry)
+}
+
+/// The Name that the export of tables gives the output of a `RIGID_DET`
+/// form that `read` reads in `program`, as
+/// [`crate::program::rigid_output_name`] gives it: `read` is the relation of
+/// the read as a file writes it, `&marker.glyph`, `&marker.bbox.box` or
+/// `&marker.pose`. A read of a part that ties with an earlier part of the
+/// form ([`ResolvedProgram::rigid_part_positions`]) takes the Name of the
+/// least part it ties with, which holds the same rows, so two programs of
+/// one QueryHash give a read of one output one Name. The error names a read
+/// that reads no output of a `RIGID_DET` form of `program`.
+pub fn rigid_read_name(program: &Node<Program>, read: &str, registry: &Registry) -> Result<String, String> {
+    let unread = || format!("`{read}` reads no output of a `RIGID_DET` form of the program");
+    let (owner, rest) = read.split_once('.').ok_or_else(unread)?;
+    let found = program.value().forms.iter().enumerate().find_map(|(position, form)| match form {
+        crate::program::Form::RigidDet(rigid) if crate::program::declared_spelled(&rigid.value().name.0) == owner => Some((position, rigid.value())),
+        _ => None,
+    });
+    let (position, rigid) = found.ok_or_else(unread)?;
+    let path: Vec<OutputStep> = if rest == crate::read::spelling::POSE {
+        vec![OutputStep::Pose]
+    } else {
+        let mut steps = rigid.parts.iter().filter_map(|part| form_columns::part_steps(&part.value().relation));
+        steps.find(|steps| crate::program::output_path_spelled(steps) == rest).ok_or_else(unread)?
+    };
+    let prefix = Node::new(Program { forms: program.value().forms[..=position].into() });
+    let positions = resolve(&prefix, None, &SolverScope::default(), registry).value.rigid_part_positions(position, registry).ok_or_else(unread)?;
+    crate::program::rigid_output_name(rigid, &path, |part| positions[part]).ok_or_else(unread)
 }
 
 /// The resolution of `program`, whose forms before its last are the forms of
