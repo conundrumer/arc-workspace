@@ -70,7 +70,7 @@ FRONTIER_CAP = 400000  # entries of the frontier, the lowest bounds dropped firs
 SEEN_CAP = 2000000  # atom sets that Search.seen keeps
 OR_BITS = 3.0  # bits taken off the bound of a path for each OR it takes: a run that takes an OR costs more CPU, so its clauses come after plain ones of about the same q
 WRITER = os.environ.get('WRITER', '0') == '1'  # the token-level writer (writer.py) writes each query, in place of Run.form's per-atom draw; off by default
-PARTITION = WRITER and os.environ.get('SEARCH_PARTITION', '0') == '1'  # with the writer, SEARCH_PARTITION=1 gives each query one slot that writes it: over a non-empty scope, a RULE's or DET's first atom reads the scope (lookahead_legal.ReadsScopeFirst), and a query that reads no query of a scope belongs to the root slot. Off by default: it bars the canonical first atom of gold queries that read the scope in a later atom. Not a legality rule: gold writes queries that read no scope at non-empty states, so the training rows' mask leaves them
+PARTITION = WRITER and os.environ.get('SEARCH_PARTITION', '0') == '1'  # with the writer, SEARCH_PARTITION=1 gives each query one slot that writes it: over a non-empty scope, a RULE or DET reads the scope (lookahead_legal.ReadsScopeAny, which needs WRITER_PLAN=ordered), and a query that reads no query of a scope belongs to the root slot. Not a legality rule: gold writes queries that read no scope at non-empty states, so the training rows' mask leaves them
 WRITER_LOOKAHEAD = tuple(x for x in os.environ.get('WRITER_LOOKAHEAD', '').split(',') if x) or None  # the lookahead components of the writer's plan, in order (lookahead.ORDER names them; 'all' adds Completable); None: lookahead.DEFAULT
 EXTRA_COMPONENTS = []  # functions of a SearchRun that make a lookahead component, added to the end of the writer's plan (superdag_search.py adds its stop bars here)
 DISTRIBUTION = None  # the Distribution of the writer's plan (writer.Distribution); None: writer.Uniform
@@ -527,9 +527,11 @@ class SearchRun(Run):
             self.plan = writer.default_plan(self, OR_BITS, WRITER_LOOKAHEAD, DISTRIBUTION)
             if EXTRA_COMPONENTS and not (WRITER_LOOKAHEAD and 'legal' in WRITER_LOOKAHEAD):  # the legal plan holds legality rules only: the stop bars are preferences
                 self.plan = dataclasses.replace(self.plan, lookahead=self.plan.lookahead + tuple(make(self) for make in EXTRA_COMPONENTS))
-            if PARTITION:  # the slots partition the queries: a RULE or DET over a non-empty scope reads it in its first atom (lookahead_legal.ReadsScopeFirst)
+            if PARTITION:  # the slots partition the queries: a RULE or DET over a non-empty scope reads it (lookahead_legal.ReadsScopeAny, under the order rule of WRITER_PLAN=ordered)
                 import lookahead_legal
-                self.plan = dataclasses.replace(self.plan, lookahead=self.plan.lookahead + (lookahead_legal.ReadsScopeFirst(),))
+                if lookahead_legal.PLAN != 'ordered':
+                    raise ValueError('SEARCH_PARTITION=1 needs WRITER_PLAN=ordered: ReadsScopeAny reads the order rule\'s floors')
+                self.plan = dataclasses.replace(self.plan, lookahead=self.plan.lookahead + (lookahead_legal.ReadsScopeAny(),))
         self.rng.keys = TieKeys(self) if 'tie' in S.ORDER_FREE else None
         pg.new = []
         start = writer.start_point(self, pg, self.open_form(pg, dec, kind), kind)

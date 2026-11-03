@@ -557,7 +557,78 @@ class ReadsScopeFirst:
         return out
 
 
-CANDIDATES = ('RepeatEndBranch', 'ReadsScope', 'ReadsScopeFirst')
+class ReadsScopeAny:
+    """Over a non-empty scope, under the `ordered` plan's order rule (order_prefix.py), a RULE's or DET's tokens while the query reads no query of the scope: every id after which no
+    completion of the query can read one. After a token, a completion can read the scope where some open set of the query can still start an atom of a scope relation, or an OR,
+    ALL or NOT, whose first token the set's Floor does not put below its bound (a tie counts as possible). A query that reads no query of the scope belongs to the root slot. A
+    search rule, not a legality rule: gold writes queries that read no scope at non-empty states. Where the query has no sets (order_prefix.Rule.has_sets), the rule keeps every id."""
+    name = 'ReadsScopeAny'
+    CACHE = 64  # the scopes whose relation ids it keeps
+
+    def __init__(self):
+        self.scopes = {}  # (id of the vocabulary, frozenset of the scope's names) -> (sorted ids of its relations, set of them)
+
+    def scope_ids(self, V, names):
+        key = (id(V), frozenset(names))
+        got = self.scopes.get(key)
+        if got is None:
+            ids = np.array([i for i in range(len(V)) if V.kind(i) == 'relation' and V.name(i) in names], np.int64)
+            got = self.scopes[key] = (ids, frozenset(int(i) for i in ids))
+            if len(self.scopes) > self.CACHE:
+                self.scopes.pop(next(iter(self.scopes)))
+        return got
+
+    @staticmethod
+    def level_ok(rel, other, top_s, top_w):
+        """Whether a set with these bounds can still start a scope relation (top_s, the largest such id) or a wrapper (top_w, the largest of OR, ALL and NOT)."""
+        return (top_s is not None and (rel is None or top_s >= rel)) or (other is None or top_w >= other)
+
+    def possible(self, fl, top_s, top_w):
+        return any(self.level_ok(f.rel, f.other, top_s, top_w) for f in fl)
+
+    def factors(self, pt, ids):
+        import order_prefix
+        ids = np.asarray(ids, np.int64)
+        out = np.zeros(len(ids))
+        names = getattr(pt.pg, 'written', None)
+        if pt.kind not in ('RULE', 'DET') or not names or not len(ids):
+            return out
+        V = pt.run.V
+        sids, sset = self.scope_ids(V, names)
+        if not len(sids) or any(int(t) in sset for t in pt.tokens):
+            return out
+        rule = order_prefix.rule_of(pt.run)
+        fl = rule.floors(pt)
+        if not fl:  # None: no sets; []: no set open
+            return out
+        wrap = np.array([M.OR, M.NOT, V.id('ALL')], np.int64)
+        top_s, top_w = int(sids.max()), int(wrap.max())
+        free = ~(np.isin(ids, sids) | np.isin(ids, wrap))  # ids that are neither a scope relation nor a wrapper
+        is_end = ids == M.END
+        if is_end.any():
+            after = rule.floors(pt, M.END)
+            if not after or not self.possible(after, top_s, top_w):
+                out[is_end] = -np.inf
+        starts = free & ~is_end
+        if pt.place.phase in (Phase.PROPOSER, Phase.ATOM_START) and starts.any():
+            t0 = int(ids[starts].max())  # the largest: where it is above the inner bound, the probe tells a new item of the innermost set from a token inside an item; where it is not, both give the same bounds
+            f0 = rule.floors(pt, t0)
+            inner = fl[-1]
+            if f0 and len(f0) == len(fl) and f0[-1].rel == max(inner.rel if inner.rel is not None else t0, t0):  # a start token begins an item of the innermost set
+                outer = self.possible(fl[:-1], top_s, top_w)
+                if not outer:
+                    t = ids[starts]
+                    rel = np.maximum(t, inner.rel if inner.rel is not None else -1)
+                    other = np.maximum(t, inner.other if inner.other is not None else -1)
+                    ok = (top_s >= rel) | (top_w >= other)
+                    idx = np.flatnonzero(starts)
+                    out[idx[~ok]] = -np.inf
+            elif not self.possible(fl, top_s, top_w):
+                out[starts] = -np.inf
+        return out
+
+
+CANDIDATES = ('RepeatEndBranch', 'ReadsScope', 'ReadsScopeFirst', 'ReadsScopeAny')
 ADD = tuple(x for x in os.environ.get('WRITER_LEGAL_ADD', '').split(',') if x)  # candidates that a check adds to RULES
 
 
