@@ -551,23 +551,23 @@ class ReadsScopeFirst:
 
 class ReadsScopeAny:
     """Over a non-empty scope, under the `ordered` plan's order rule (order_prefix.py), a RULE's or DET's tokens while the query reads no query of the scope: every id after which no
-    completion of the query can read one. After a token, a completion can read the scope where some open set of the query can still start an atom of a scope relation, or an OR,
-    ALL or NOT, whose first token the set's Floor does not put below its bound (a tie counts as possible). A query that reads no query of the scope belongs to the root slot. A
-    search rule, not a legality rule: gold writes queries that read no scope at non-empty states. Where the query has no sets (order_prefix.Rule.has_sets), the rule keeps every id."""
+    completion of the query can read one. A query of the scope is a relation of the decoder's `&r` names: a declaration of the scope, or an output of one of its INITs. After a token, a
+    completion can read the scope where some open set of the query can still start an atom of a scope relation, or an OR, ALL or NOT, whose first token the set's Floor does not put
+    below its bound (a tie counts as possible). The scope relations that can start an atom are those of the engine's mask at a start point of the scope, kept per scope; before one is
+    seen, every `&r` relation counts. A query that reads no query of the scope belongs to the root slot. A search rule, not a legality rule: gold writes queries that read no scope at
+    non-empty states. Where the query has no sets (order_prefix.Rule.has_sets), the rule keeps every id."""
     name = 'ReadsScopeAny'
     CACHE = 64  # the scopes whose relation ids it keeps
 
     def __init__(self):
-        self.scopes = {}  # (id of the vocabulary, frozenset of the scope's names) -> (sorted ids of its relations, set of them)
+        self.vocab = {}  # id of the vocabulary -> (sorted ids of its `&r` relations, set of them)
+        self.scopes = {}  # (id of the vocabulary, the scope's written names) -> the largest `&r` relation id of the mask at a start point
 
-    def scope_ids(self, V, names):
-        key = (id(V), frozenset(names))
-        got = self.scopes.get(key)
+    def rel_ids(self, V):
+        got = self.vocab.get(id(V))
         if got is None:
-            ids = np.array([i for i in range(len(V)) if V.kind(i) == 'relation' and V.name(i) in names], np.int64)
-            got = self.scopes[key] = (ids, frozenset(int(i) for i in ids))
-            if len(self.scopes) > self.CACHE:
-                self.scopes.pop(next(iter(self.scopes)))
+            ids = np.array([i for i in range(len(V)) if V.kind(i) == 'relation' and V.name(i).startswith('&r')], np.int64)
+            got = self.vocab[id(V)] = (ids, frozenset(int(i) for i in ids))
         return got
 
     @staticmethod
@@ -586,29 +586,37 @@ class ReadsScopeAny:
         if pt.kind not in ('RULE', 'DET') or not names or not len(ids):
             return out
         V = pt.run.V
-        sids, sset = self.scope_ids(V, names)
-        if not len(sids) or any(int(t) in sset for t in pt.tokens):
+        rids, rset = self.rel_ids(V)
+        if not len(rids) or any(int(t) in rset for t in pt.tokens):
             return out
+        start = pt.place.phase in (Phase.PROPOSER, Phase.ATOM_START)
+        key = (id(V), frozenset(names.items()))
+        if key not in self.scopes and start:
+            here = [int(t) for t in pt.ids_ if int(t) in rset]
+            if here:
+                self.scopes[key] = max(here)
+                if len(self.scopes) > self.CACHE:
+                    self.scopes.pop(next(iter(self.scopes)))
+        top_s = self.scopes.get(key, int(rids.max()))
         rule = order_prefix.rule_of(pt.run)
         fl = rule.floors(pt)
         if not fl:  # None: no sets; []: no set open
             return out
         wrap = np.array([M.OR, M.NOT, V.id('ALL')], np.int64)
-        top_s, top_w = int(sids.max()), int(wrap.max())
-        free = ~(np.isin(ids, sids) | np.isin(ids, wrap))  # ids that are neither a scope relation nor a wrapper
+        top_w = int(wrap.max())
+        free = ~(np.isin(ids, rids) | np.isin(ids, wrap))  # ids that are neither a scope relation nor a wrapper
         is_end = ids == M.END
         if is_end.any():
             after = rule.floors(pt, M.END)
             if not after or not self.possible(after, top_s, top_w):
                 out[is_end] = -np.inf
         starts = free & ~is_end
-        if pt.place.phase in (Phase.PROPOSER, Phase.ATOM_START) and starts.any():
+        if start and starts.any():
             t0 = int(ids[starts].max())  # the largest: where it is above the inner bound, the probe tells a new item of the innermost set from a token inside an item; where it is not, both give the same bounds
             f0 = rule.floors(pt, t0)
             inner = fl[-1]
             if f0 and len(f0) == len(fl) and f0[-1].rel == max(inner.rel if inner.rel is not None else t0, t0):  # a start token begins an item of the innermost set
-                outer = self.possible(fl[:-1], top_s, top_w)
-                if not outer:
+                if not self.possible(fl[:-1], top_s, top_w):
                     t = ids[starts]
                     rel = np.maximum(t, inner.rel if inner.rel is not None else -1)
                     other = np.maximum(t, inner.other if inner.other is not None else -1)
