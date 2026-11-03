@@ -56,8 +56,9 @@ def main():
     while quiet < 600:
         n = running(run)
         quiet = quiet + a.every if n == 0 else 0
-        want = n + int(idle_cores()) - 1 - a.reserve + (running(Path(a.over)) if a.over else 0)
-        fits = n + int(free_gib() / a.job_gib)
+        idle, free = idle_cores(), free_gib()
+        want = n + int(idle) - 1 - a.reserve + (running(Path(a.over)) if a.over else 0)
+        fits = n + int(free / a.job_gib)
         limit = max(a.min, min(a.max, want, fits))
         if not normal_pressure():
             limit = max(a.min, min(limit, n - 1))
@@ -67,7 +68,7 @@ def main():
             old = None
         if limit != old:
             (run / 'limit').write_text('%d\n' % limit)
-            print('%s limit %s -> %d (running %d, idle cores %.1f, free %.1f GiB)' % (time.strftime('%H:%M'), old, limit, n, idle_cores(), free_gib()), flush=True)
+            print('%s limit %s -> %d (running %d, idle cores %.1f, free %.1f GiB)' % (time.strftime('%H:%M'), old, limit, n, idle, free), flush=True)
         time.sleep(a.every)
 
 
