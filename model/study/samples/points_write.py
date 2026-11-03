@@ -1,9 +1,9 @@
 """Stage 5 of the sample build: the training rows of the gradient-boosted trees, one writing point of a target query at a time, with the writer's own features.
 
-  python3 points_write.py SET --plan ordered|unordered [--shard k/N] [--tasks T,T,...] [--samples-per-task K] [--seed S] [--seconds X] [--max-states N] [--vectors] [--out DIR]
+  python3 points_write.py SET --plan ordered|unordered [--shard k/N] [--tasks T,T,...] [--samples-per-task K] [--seed S] [--seconds X] [--max-states N] [--vectors] [--draws GLOB|DIR] [--skeleton DIR] [--out DIR]
 
-SET is ramp, 37 or training. The extractor (train_rows.points_of, with writer.Features) and the engine wheel come from sys.path: run it with the runtime python and with PYTHONPATH holding the
-extractor's folder and the wheel's site folder. For each task of OUTD/SET/skeleton it writes OUTD/SET/points/<plan>/<task>.jsonl.gz (train and dev tasks) or OUTD/SET/points_held-out/<plan>/<task>.jsonl.gz
+SET is train, dev or held-out. The extractor (train_rows.points_of, with writer.Features) and the engine wheel come from sys.path: run it with the runtime python and with PYTHONPATH holding the
+extractor's folder and the wheel's site folder. For each task of OUTD/SET/skeleton (or of --skeleton DIR) it writes OUTD/SET/points/<plan>/<task>.jsonl.gz (train and dev tasks) or OUTD/SET/points_held-out/<plan>/<task>.jsonl.gz
 (held-out tasks), to a temp file and then renamed, and skips a task whose file holds the same skeleton sha, extractor shas, wheel, code sha and sample choice. It is not a fit: it writes every
 task, held-out ones included, and calls no split guard. With --samples-per-task K a task keeps at most K samples, chosen by a hash of the seed and the sample id (0: all).
 
@@ -33,9 +33,24 @@ With --vectors a point row is the writer's full writing-point vector of each id 
 - A point is written only if rebuilding the matrix from `vp` and `vo` gives the extractor's matrix back bit for bit (NaN equal to NaN) and every point-scope column is equal across the ids of the point.
   A point that fails is counted (`rebuild failures`, `point-scope columns that differ across ids`) and not written.
 - A file with vectors and a file without are never current for each other.
+
+With --draws, the search's draws give each point's `drawn` counts (docs/sample-build/training-rows.md, "Search draws"). GLOB is a glob of draw record files (model/study/sampler/draw_record.py);
+DIR is a folder searched for `draws.jsonl` files. A draw file of a task that is not train by split.py is refused (exit 2) before any file is written.
+- A draw is one line of a file: a record, or {"repeat": d, "draw": n}, which adds 1 to the count of the record of draw d of that file. A draw whose record solves every train example gives nothing.
+- A draw's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps); its other steps
+  are not used. A draw that matches several samples is walked, and counted, for each.
+- The drawn query's names are the sample's: the last step's own name (`&fN`, the first name of its text) is `&r<len(scope)>`, as a target's own label is, and each other `&fN` (or a RIGID_DET part's
+  `.fN` step) is the global label of the QueryHash of the step whose own name it is. Its token stream is decoded over the sample's scope as a target's is.
+- The path of the drawn query under the plan: `ordered` walks its canonical stream (order.canonical_stream, as the targets are walked); `unordered` walks its stream as written through the
+  states of the search (train_rows.points_of_unordered's graph), from the first state, along the edge of each token.
+- At the first point of the path whose positives do not hold the drawn query's next token, that token gets the draw's count added to its `drawn` count, and the walk ends; where the token is not
+  an id of the point it is counted (`not admitted`) and nothing is added. A path whose tokens are all positives gives nothing.
+- `point` then also has `drawn`: [[index into ids, count], ...]. The header is written when the file is closed and also has `draws` (the task's draw files, each [path, sha256]) and
+  `draw_counts` (draws counted with their repeats: matched, unmatched, and what became of the matched ones).
 """
 import argparse
 import base64
+import glob
 import gzip
 import hashlib
 import importlib
@@ -43,6 +58,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -54,13 +70,18 @@ from typing import Any
 
 import numpy as np
 
-from split import is_held_out
+_path = list(sys.path)
+from split import is_held_out, split_of  # noqa: E402
+sys.path[:] = _path  # split.py puts model/study first on sys.path, where its writer.py would shadow the writer kit's
+del _path
 
 OUTD = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/samples')
 REPO = Path(__file__).resolve().parents[3]
 SCHEMA = 'points-1'
 VECTOR_COUNTS = ('point-scope columns that differ across ids', 'vector shape or names differ from the header')
 LABEL = re.compile(r'&r(\d+)')
+DRAW_NAME = re.compile(r'(&f\d+)((?:\.\w+)*)')  # a pool name of a draw's text, with the steps of a RIGID_DET part or an INIT output
+DRAW_HEAD = re.compile(r'^\(\s*\S+\s+(&f\d+)')  # the query's own name: the first name of its text
 type Atom = tuple[int, ...]
 
 
@@ -82,6 +103,7 @@ class Point:
     positive_ids: np.ndarray
     live: int
     next_ids: set[int] = field(default_factory=set)
+    drawn: Counter[int] = field(default_factory=Counter)  # with --draws: id -> the count of failed draws that took it here
     vp: str = ''  # with --vectors: the point-scope columns and the id-scope columns, as base64
     vo: str = ''
 
@@ -216,21 +238,100 @@ def rewrite(query: dict, label: dict[str, str], own: str) -> str:
     return LABEL.sub(put, program[-1])
 
 
+# ---------------------------------------------------------------- the search draws
+
+@dataclass
+class Draw:
+    """The last step of a draw record, with the count of the draws that it stands for."""
+    text: str  # the drawn query as the pool wrote it, with &fN names
+    state: frozenset[str | None]  # the QueryHashes of the steps before it
+    names: dict[str, str]  # the own name of each step before it -> that step's QueryHash
+    solves: bool
+    count: int = 1
+
+
+def draw_files(spec: str) -> list[Path]:
+    """The draw record files of --draws: the `draws.jsonl` files below a folder, or the files of a glob."""
+    if os.path.isdir(spec):
+        return sorted(Path(spec).rglob('draws.jsonl'))
+    return sorted(Path(p) for p in glob.glob(spec, recursive=True) if os.path.isfile(p))
+
+
+def draw_file_task(path: Path) -> str | None:
+    """The task of a draw file, from its first record (draw 1 is never a repeat); None for an empty file."""
+    with open(path) as f:
+        for text in f:
+            rec = json.loads(text)
+            if 'task' in rec:
+                return rec['task']
+    return None
+
+
+def read_draws(paths: list[Path]) -> list[Draw]:
+    """The draws of the files, one for each record, each with its repeats counted."""
+    draws: list[Draw] = []
+    for path in paths:
+        at: dict[int, Draw] = {}  # a draw's number in this file -> its record
+        with open(path) as f:
+            for text in f:
+                rec = json.loads(text)
+                if 'repeat' in rec:
+                    first = at.get(int(rec['repeat']))
+                    if first is not None:
+                        first.count += 1
+                    continue
+                steps = rec['steps']
+                names = {}
+                for s in steps[:-1]:
+                    m = DRAW_HEAD.match(s['text'])
+                    if m and s['query_hash'] is not None:
+                        names[m[1]] = s['query_hash']
+                d = Draw(steps[-1]['text'], frozenset(steps[-1]['state']), names, bool(rec['solves']))
+                at[int(rec['draw'])] = d
+                draws.append(d)
+    return draws
+
+
+def drawn_text(draw: Draw, label: dict[str, str], own: str) -> str:
+    """The drawn query's text with the sample's names: its own name is `own`, and each other pool name is the global label of its step's QueryHash. A RIGID_DET part's `.fN` step is
+    written `.rK`, with &rK the label of &fN."""
+    to = {n: label[h] for n, h in draw.names.items() if h in label}
+    m = DRAW_HEAD.match(draw.text)
+    if not m:
+        raise Reject('the drawn query has no own name')
+    to[m[1]] = own
+
+    def one(m: re.Match[str]) -> str:
+        if m[1] not in to:
+            raise Reject('a name of the drawn query is no query of the sample\'s scope')
+        steps = [to[m[1]]]
+        for st in m[2].split('.')[1:] if m[2] else []:
+            if re.fullmatch(r'f\d+', st):
+                if '&' + st not in to:
+                    raise Reject('a name of the drawn query is no query of the sample\'s scope')
+                steps.append(to['&' + st][1:])
+            else:
+                steps.append(st)
+        return '.'.join(steps)
+    return DRAW_NAME.sub(one, draw.text)
+
+
 # ---------------------------------------------------------------- stepping a target's stream
 
 # ---------------------------------------------------------------- one file
 
 class Sink:
-    """A task's file: the header, the table vectors once each before their first use, the points, the summary."""
+    """A task's file: the header, the table vectors once each before their first use, the points, the summary. The header is written at close, so that it can hold counts of the
+    whole file: the file is one gzip member of the header and then the gzip member of the rest, which is written as it comes."""
 
     def __init__(self, path: Path, header: dict):
         fd, self.tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + '.')
         self.f = gzip.open(os.fdopen(fd, 'wb'), 'wt', compresslevel=6)
         self.path = path
+        self.header = header
         self.index: dict[bytes, int] = {}
         self.parsed: list[np.ndarray] = []
         self.pending: list[str] = []
-        self.f.write(json.dumps(header) + '\n')
 
     def table_index(self, row: np.ndarray) -> int:
         key = row.tobytes()
@@ -246,10 +347,23 @@ class Sink:
         self.f.writelines(self.pending)
         self.pending.clear()
 
-    def close(self, summary: dict) -> None:
+    def close(self, summary: dict, header_counts: dict | None = None) -> None:
+        """Ends the file: header_counts are added to the header."""
         self.f.write(json.dumps(dict(record='summary', **summary)) + '\n')
         self.f.close()
-        os.replace(self.tmp, self.path)
+        fd, whole = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name + '.')
+        try:
+            with os.fdopen(fd, 'wb') as out:
+                with gzip.open(out, 'wt', compresslevel=6) as h:
+                    h.write(json.dumps(dict(self.header, **(header_counts or {}))) + '\n')
+                with open(self.tmp, 'rb') as body:
+                    shutil.copyfileobj(body, out)
+            os.replace(whole, self.path)
+        except BaseException:
+            if os.path.exists(whole):
+                os.unlink(whole)
+            raise
+        os.unlink(self.tmp)
 
     def abort(self) -> None:
         try:
@@ -280,6 +394,8 @@ class Env:
     vector_names: tuple[str, ...] | None = None  # with --vectors, the columns of the vector
     vector_point_cols: list[int] = field(default_factory=list)
     vector_id_cols: list[int] = field(default_factory=list)
+    draws: dict[frozenset[str | None], list[Draw]] | None = None  # with --draws: the task's draws that do not solve, by state
+    draw_counts: Counter[str] = field(default_factory=Counter)
 
 
 def point_of_vector(env: Env, kind: str, rec: dict) -> Point | None:
@@ -325,6 +441,92 @@ def point_of_record(env: Env, kind: str, rec: dict) -> Point | None:
     return Point(kind, tuple(int(t) for t in rec['tokens']), rec['phase'], rec['ids'].tolist(), ids_text, option_text, table_ix, point_text, rec['positive_ids'], int(rec['live']))
 
 
+def query_stream(env: Env, scope: tuple[str, ...], text: str) -> tuple[str, list[int]]:
+    """(kind, the model tokens of the query's line, the kind token first) of a query text over the scope's labels."""
+    live = env.live
+    ids, model, paths = live.arclog.StudyProgram.from_sexp('\n'.join((*scope, text, live.READER_OUT)), env.run.session.settings).decode_stream()
+    stream = [int(t) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope)]
+    kind = env.run.V.name(stream[0])
+    if kind not in live.KIND_TOK:
+        raise Reject(f'the kind {kind} is not written')
+    return kind, stream
+
+
+def drawn_streams(env: Env, sample: dict, scope: tuple[str, ...], label: dict[str, str], kinds: set[str]) -> dict[str, Counter[tuple[int, ...]]]:
+    """The streams of the sample's matched draws, by kind, each with its count of draws. A draw that cannot be read, or whose kind has no target, is counted and left out."""
+    got: dict[str, Counter[tuple[int, ...]]] = {}
+    for d in (env.draws or {}).get(frozenset(sample['state']['queries']), ()):
+        try:
+            kind, stream = query_stream(env, scope, drawn_text(d, label, f'&r{len(scope)}'))
+        except Reject as e:
+            env.draw_counts['unread: ' + str(e)] += d.count
+            continue
+        except Exception as e:
+            env.draw_counts['unread: decode: ' + type(e).__name__] += d.count
+            env.totals.examples.setdefault('draw decode: ' + type(e).__name__, f'{d.text[:160]} {sample["id"]}: {why(e)}')
+            continue
+        if kind not in kinds:
+            env.draw_counts['a kind with no target'] += d.count
+            continue
+        got.setdefault(kind, Counter())[tuple(stream)] += d.count
+    return got
+
+
+def positive_set(p: Point) -> set[int]:
+    return {int(t) for t in p.positive_ids}
+
+
+def first_drawn_ordered(points: dict[tuple[int, ...], Point], path: list[int]) -> tuple[Point | None, int, str]:
+    """(the first point of the path whose positives lack the path's next token, that token, '') or (None, 0, why). A point's key is its token prefix, the kind token included."""
+    rows = {p.tokens[1:]: p for p in points.values()}
+    for k, t in enumerate(path):
+        p = rows.get(tuple(path[:k]))
+        if p is not None and t not in positive_set(p):
+            return p, t, ''
+    return None, 0, 'every token at a point is a positive'
+
+
+def first_drawn_unordered(points: dict[tuple[int, ...], Point], graph: dict, state_point: dict[Any, tuple[int, ...]], path: list[int]) -> tuple[Point | None, int, str]:
+    """As first_drawn_ordered, along the states of the unordered search from its first state, each token taking the edge of that token."""
+    if not graph:
+        return None, 0, 'the search has no state'
+    key = next(iter(graph))
+    for t in path:
+        tk = state_point.get(key)
+        p = points.get(tk) if tk is not None else None
+        if p is not None and t not in positive_set(p):
+            return p, t, ''
+        edges = dict(graph[key]['edges']) if key in graph else {}
+        if t not in edges:
+            return None, 0, 'a positive of a state with no point' if p is None else 'the step of a positive failed'
+        key = edges[t]
+    return None, 0, 'every token at a point is a positive'
+
+
+def add_drawn(env: Env, kind: str, scope: tuple[str, ...], points: dict[tuple[int, ...], Point], streams: Counter[tuple[int, ...]], graph: dict | None,
+              state_point: dict[Any, tuple[int, ...]]) -> None:
+    """Adds each drawn stream's count to the drawn count of its drawn id, at the first point of its path under the plan where the id is no positive."""
+    for stream, count in streams.items():
+        s = list(stream)
+        if s and s[0] == env.live.KIND_TOK[kind]:
+            s = s[1:]
+        if env.plan == 'ordered':
+            dec0, _ = env.run.scope(scope)
+            s, order, _ = env.tr.order.canonical_stream(env.tr.order_env(env.run), dec0, kind, s, env.seconds)
+            if order != 'canonical':
+                env.draw_counts['walked as written: no canonical order'] += count
+            p, t, no = first_drawn_ordered(points, s)
+        else:
+            p, t, no = first_drawn_unordered(points, graph or {}, state_point, s)
+        if p is None:
+            env.draw_counts['no drawn id: ' + no] += count
+        elif t not in p.ids:
+            env.draw_counts['not admitted'] += count
+        else:
+            p.drawn[t] += count
+            env.draw_counts['drawn'] += count
+
+
 def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
     tot, wr, live = env.totals, env.wr, env.live
     texts, label = scope_of(sample['state']['queries'], queries)
@@ -340,11 +542,7 @@ def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
         try:
             q = queries[h]
             text = rewrite(q, label, f'&r{len(scope)}')
-            ids, model, paths = live.arclog.StudyProgram.from_sexp('\n'.join((*scope, text, live.READER_OUT)), env.run.session.settings).decode_stream()
-            stream = [int(t) for t, m, p in zip(ids, model, paths) if m and p[0] == len(scope)]
-            kind = env.run.V.name(stream[0])
-            if kind not in live.KIND_TOK:
-                raise Reject(f'the kind {kind} is not written')
+            kind, stream = query_stream(env, scope, text)
             if kind != q['kind']:
                 raise Reject('the stream\'s kind differs from the query\'s kind')
         except Reject as e:
@@ -354,14 +552,22 @@ def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
             tot.fail('target', 'decode: ' + why(e), f'{h} {sample["id"]}')
             continue
         targets.setdefault(kind, []).append((text, stream))
+    drawn = drawn_streams(env, sample, scope, label, set(targets)) if env.draws is not None else {}
     for kind, group in targets.items():
         points: dict[tuple[int, ...], Point] = {}
         refused: set[tuple[int, ...]] = set()  # token prefixes whose point failed its checks
         failed: set[int] = set()
         stats: Counter[str] = Counter()
+        graph: dict | None = {} if env.plan == 'unordered' and kind in drawn else None  # the unordered search's states, for the draws' paths
+        state_point: dict[Any, tuple[int, ...]] = {}  # a state of the graph -> the key of its point
         t0 = time.perf_counter()
-        it = env.tr.points_of_targets(env.run, scope, kind, [stream for _, stream in group], env.uses, plan=env.plan, seconds=env.seconds, max_states=env.max_states, stats=stats,
-                                      vectors=env.vector_names is not None)
+        if graph is not None:
+            # points_of_targets under `unordered` is points_of_unordered; this call also fills the graph, whose last state is the state of the record just yielded
+            it = env.tr.points_of_unordered(env.run, scope, kind, [stream for _, stream in group], env.uses, max_states=env.max_states, seconds=env.seconds, stats=stats, graph=graph,
+                                            vectors=env.vector_names is not None)
+        else:
+            it = env.tr.points_of_targets(env.run, scope, kind, [stream for _, stream in group], env.uses, plan=env.plan, seconds=env.seconds, max_states=env.max_states, stats=stats,
+                                          vectors=env.vector_names is not None)
         while True:
             try:
                 got = next(it, None)
@@ -394,6 +600,8 @@ def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
                     points[key] = p
                 elif not np.array_equal(p.positive_ids, rec['positive_ids']) or p.live != rec['live']:
                     tot.counts['points whose records disagree on the positives'] += 1
+                if graph:
+                    state_point.setdefault(next(reversed(graph)), key)
                 if rec['next_id'] is not None:
                     p.next_ids.add(int(rec['next_id']))
                 if rec['order'] == 'gold':
@@ -405,9 +613,12 @@ def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
         if stats['unordered:states'] == tot.largest and env.plan == 'unordered':
             tot.examples['largest search'] = f'{stats["unordered:states"]} states, {len(group)} targets of kind {kind}, sample {sample["id"]}'
         t1 = time.perf_counter()
+        if kind in drawn:
+            add_drawn(env, kind, scope, points, drawn[kind], graph, state_point)
         env.sink.flush_tables()
         for p in points.values():
             where = {t: i for i, t in enumerate(p.ids)}
+            drawn_field = '' if env.draws is None else ',"drawn":' + json.dumps(sorted([where[t], c] for t, c in p.drawn.items()), separators=(',', ':'))
             pos = sorted(where[int(t)] for t in p.positive_ids if int(t) in where)
             if len(pos) != len(p.positive_ids):
                 tot.counts['points with a positive that is not in ids'] += 1
@@ -421,10 +632,10 @@ def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
             tot.counts['points with one positive'] += len(pos) == 1
             if env.vector_names is not None:
                 env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"ids":{p.ids_text},"vp":"{p.vp}","vo":"{p.vo}",'
-                                 f'"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}}}\n')
+                                 f'"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}{drawn_field}}}\n')
                 continue
             env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"ids":{p.ids_text},"option":{p.option_text},'
-                             f'"table":{json.dumps(p.table, separators=(",", ":"))},"point":{p.point_text},"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}}}\n')
+                             f'"table":{json.dumps(p.table, separators=(",", ":"))},"point":{p.point_text},"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}{drawn_field}}}\n')
         tot.seconds['labels and writing'] += time.perf_counter() - t1
 
 
@@ -445,9 +656,10 @@ def header_of(path: Path) -> dict | None:
         return None
 
 
-def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace, shas: dict[str, str], smp: Any, out: Path) -> Totals | None:
+def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace, shas: dict[str, str], smp: Any, out: Path, draw_paths: list[Path] | None = None) -> Totals | None:
+    """Writes the task's file, or returns None where the file is current. draw_paths: with --draws, the task's draw files."""
     live, wr, tr = env_base['live'], env_base['wr'], env_base['tr']
-    skeleton = OUTD / set_name / 'skeleton' / f'{task}.jsonl'
+    skeleton = skeleton_folder(args) / f'{task}.jsonl'
     records = [json.loads(x) for x in skeleton.read_text().splitlines()]
     head = records[0]
     queries = {r['hash']: r for r in records if r['record'] == 'query'}
@@ -458,7 +670,8 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     header = dict(record='header', schema=SCHEMA, task=task, set=set_name, plan=args.plan, split=split, skeleton_sha=file_sha(skeleton), extractor_sha=shas['extractor'], writer_sha=shas['writer'],
                   wheel=shas['wheel'], code=shas['code'], samples_per_task=args.samples_per_task, seed=args.seed, seconds=args.seconds, max_states=args.max_states,
                   uses=list(env_base['uses']), point_names=list(env_base['point_names']), option_names=[env_base['option_names'][i] for i in env_base['plain']],
-                  table_names=[env_base['option_names'][i] for i in env_base['table']])
+                  table_names=[env_base['option_names'][i] for i in env_base['table']],
+                  draws=None if draw_paths is None else [[str(q), file_sha(q)] for q in draw_paths])
     if args.vectors:
         # the vector's columns follow from the wheel and the writer, which the header names, so they are added after the skip check
         header = dict(header, vectors=True, point_names=[], option_names=[], table_names=[])
@@ -483,25 +696,60 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     uses = () if args.vectors else env_base['uses']  # the vector holds the features; the extractor need not make the prefix features too
     env = Env(live, wr, tr, run, uses, env_base['option_names'], env_base['point_names'], env_base['plain'], env_base['table'], sink, tot, args.plan, args.seconds, args.max_states,
               vector_names, point_cols, id_cols)
+    if draw_paths is not None:
+        states = {frozenset(sm['state']['queries']) for sm in samples}
+        env.draws = {}
+        for dr in read_draws(draw_paths):
+            if dr.state not in states:
+                env.draw_counts['unmatched'] += dr.count
+                continue
+            env.draw_counts['matched'] += dr.count
+            if dr.solves:
+                env.draw_counts['solves'] += dr.count
+                continue
+            env.draws.setdefault(dr.state, []).append(dr)
     try:
         for sample in samples:
             tot.counts['samples'] += 1
             before = tot.counts['points']
             try:
                 process_sample(env, sample, queries)
-            except Reject as e:
-                tot.fail('sample', str(e), f'{sample["id"]} {task}')
-                continue
             except Exception as e:
-                tot.fail('sample', 'error: ' + why(e), f'{sample["id"]} {task}')
+                tot.fail('sample', str(e) if isinstance(e, Reject) else 'error: ' + why(e), f'{sample["id"]} {task}')
+                if env.draws:
+                    env.draw_counts['the sample failed'] += sum(dr.count for dr in env.draws.get(frozenset(sample['state']['queries']), ()))
                 continue
             tot.counts['samples written'] += 1
             tot.counts['samples with a point'] += tot.counts['points'] > before
-        sink.close(dict(samples=tot.counts['samples'], points=tot.counts['points'], failures={k: dict(v) for k, v in tot.failures.items()}, rebuild_failures=tot.counts['rebuild failures'], **({'vector_failures': {k: tot.counts[k] for k in VECTOR_COUNTS}} if args.vectors else {}), search=dict(sorted(tot.search.items()))))
+        sink.close(dict(samples=tot.counts['samples'], points=tot.counts['points'], failures={k: dict(v) for k, v in tot.failures.items()}, rebuild_failures=tot.counts['rebuild failures'], **({'vector_failures': {k: tot.counts[k] for k in VECTOR_COUNTS}} if args.vectors else {}), search=dict(sorted(tot.search.items()))),
+                   None if draw_paths is None else dict(draw_counts=dict(sorted(env.draw_counts.items()))))
+        tot.counts.update({'draws ' + k: v for k, v in env.draw_counts.items()})
     except BaseException:
         sink.abort()
         raise
     return tot
+
+
+def draw_files_by_task(paths: list[Path]) -> dict[str, list[Path]] | None:
+    """The draw files of each task, or None (with the reason on stderr) where there is none or a file is of a task that is not train."""
+    if not paths:
+        print('error: --draws gives no draw file', file=sys.stderr)
+        return None
+    by_task: dict[str, list[Path]] = {}
+    for path in paths:
+        task = draw_file_task(path)
+        if task is None:
+            continue
+        sp = split_of(task)
+        if sp != 'train':
+            print(f'error: {path} holds draws of task {task}, which is {sp}; only the draws of train tasks are read', file=sys.stderr)
+            return None
+        by_task.setdefault(task, []).append(path.resolve())
+    return by_task
+
+
+def skeleton_folder(args: argparse.Namespace) -> Path:
+    return args.skeleton if args.skeleton is not None else OUTD / args.set / 'skeleton'
 
 
 def main() -> int:
@@ -515,6 +763,8 @@ def main() -> int:
     ap.add_argument('--max-states', type=int, default=20000, help='the most states of one unordered search')
     ap.add_argument('--plan', choices=('ordered', 'unordered'), required=True, help='the writer plan: ordered (a fixed order of atoms) or unordered (set labels)')
     ap.add_argument('--vectors', action='store_true', help='write the writer\'s full writing-point vector of each id in place of the prefix features')
+    ap.add_argument('--draws', help='a glob of draw record files, or a folder of draws.jsonl files: the drawn counts of train tasks')
+    ap.add_argument('--skeleton', type=Path, help='the folder of the skeleton files (default OUTD/SET/skeleton)')
     ap.add_argument('--out', type=Path, default=OUTD)
     args = ap.parse_args()
     k, n = map(int, args.shard.split('/'))
@@ -532,12 +782,17 @@ def main() -> int:
     shas = dict(extractor=file_sha(module_file(tr)), writer=file_sha(module_file(wr)), code=file_sha(Path(__file__)), wheel=module_file(live.arclog).parent.parent.name)
     env_base = dict(live=live, live_try=live_try, wr=wr, tr=tr, uses=uses, option_names=option_names, point_names=point_names, plain=plain, table=table)
     wanted = set(args.tasks.split(',')) if args.tasks else None
-    tasks = sorted(p.stem for p in (OUTD / args.set / 'skeleton').glob('*.jsonl') if zlib.crc32(p.stem.encode()) % n == k and (wanted is None or p.stem in wanted))
+    tasks = sorted(p.stem for p in skeleton_folder(args).glob('*.jsonl') if zlib.crc32(p.stem.encode()) % n == k and (wanted is None or p.stem in wanted))
+    draws_of: dict[str, list[Path]] | None = None
+    if args.draws:
+        draws_of = draw_files_by_task(draw_files(args.draws))
+        if draws_of is None:
+            return 2
     t0 = time.time()
     total, done, skipped = Totals(), 0, 0
     for i, task in enumerate(tasks, 1):
         t1 = time.time()
-        got = run_task(env_base, args.set, task, args, shas, smp, args.out)
+        got = run_task(env_base, args.set, task, args, shas, smp, args.out, None if draws_of is None else draws_of.get(task, []))
         if got is None:
             skipped += 1
             continue
@@ -558,6 +813,7 @@ def main() -> int:
         ms_per_point=round(1000 * (time.time() - t0) / p, 3),
         extractor_ms_per_point=round(1000 * total.seconds['extractor'] / p, 3), assembly_ms_per_record=round(1000 * total.seconds['assembly'] / max(c['points before dedupe'], 1), 3),
         largest_search_states=total.largest, search=dict(sorted(total.search.items())),
+        **({'draw_counts': {k2.removeprefix('draws '): v for k2, v in sorted(c.items()) if k2.startswith('draws ')}} if draws_of is not None else {}),
         failures={k2: dict(v) for k2, v in total.failures.items()}, examples=total.examples)))
     return 0
 

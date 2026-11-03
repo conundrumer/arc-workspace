@@ -1,7 +1,7 @@
 """The fit of the gradient-boosted trees over the training rows (stage 5 of the sample build writes them, points_write.py).
 
-  python3 fit_trees.py --points DIR --out PATH [--points-per-task N] [--seed S] [--dev-tasks T,T] [--rounds R] ...
-  python3 fit_trees.py --points DIR --check
+  python3 fit_trees.py --points DIR --out PATH [--points-per-task N] [--seed S] [--dev-tasks T,T] [--alpha A] [--rounds R] ...
+  python3 fit_trees.py --points DIR --check [--alpha A]
 
 DIR is `samples/SET/points/`. The point files of train tasks give the fit and those of dev tasks give the evaluation, by the split in each file's header. A file whose header split is
 held-out (or `held`, its name in older files) is an error, and so is a DIR below `points_held-out` or `points_held`. --dev-tasks names tasks to treat as dev whatever their header says (for development on a small set; held-out stays an error).
@@ -13,6 +13,9 @@ rows that are the writer's writing-point vector of the id, rebuilt from the poin
 A point is a group. The score of an id is a sum of the trees'
 leaf values. In a group with scores s, p = softmax(s) over the group's ids, and q = softmax over the positive ids only. The loss of a group is -log(sum of p over the positive ids), its
 gradient in s is p - q and its Hessian is p(1 - p), floored at 1e-6. --check compares that gradient with a finite difference of the loss on a real group.
+With --alpha A (default 0), the train loss weighs each id's term of the softmax denominator by w = 1 + A * drawn, with drawn the id's count in the point's `drawn` (points_write.py --draws;
+0 for an id it does not list): p = w e^s / sum(w e^s), and the loss, gradient and Hessian are as above with that p. A drawn count on a positive id is an error. The dev loss, the
+evaluation and the booster's scores do not read the weight. With A = 0, or with no drawn count, the fit is the one without --alpha.
 
 --out is the file of `booster.save_model`. Beside it, `<out>.json` holds the params, the evaluation, the matrix sizes, the feature names and the header fields that define the features.
 """
@@ -59,6 +62,7 @@ class Groups:
     sizes: Ints  # (groups,) int64
     columns: int
     tasks: list[str] = field(default_factory=list)
+    drawn: Floats | None = None  # (rows,) float32: the drawn count of each row's id; None where the rows have none
 
     @property
     def rows(self) -> int:
@@ -72,7 +76,7 @@ class Groups:
         rows, groups = self.rows, max(len(self.sizes), 1)
         item = np.dtype(np.float32).itemsize
         return dict(tasks=len(set(self.tasks)), groups=len(self.sizes), rows=rows, columns=self.columns, ids_per_group=round(rows / groups, 2),
-                    positives_per_group=round(float(self.positive.sum()) / groups, 3), matrix_bytes=rows * self.columns * item,
+                    positives_per_group=round(float(self.positive.sum()) / groups, 3), drawn=float(self.drawn.sum()) if self.drawn is not None else 0.0, matrix_bytes=rows * self.columns * item,
                     bytes_per_row=(rows * self.columns * item + self.positive.nbytes) // max(rows, 1))
 
 
@@ -93,11 +97,14 @@ class Terms:
     tied_top_positive: Floats  # per group, the count of those that are positive
 
 
-def group_terms(scores: Floats, positive: Floats, starts: Ints, sizes: Ints) -> Terms:
-    """The softmax terms of every group at once; each group has at least one id and at least one positive id."""
+def group_terms(scores: Floats, positive: Floats, starts: Ints, sizes: Ints, weight: Floats | None = None) -> Terms:
+    """The softmax terms of every group at once; each group has at least one id and at least one positive id. weight, if given, is each id's weight in the softmax denominator, 1 on
+    the positive ids."""
     mark = positive > 0
     top = np.maximum.reduceat(scores, starts)
     e = np.exp(scores - np.repeat(top, sizes))
+    if weight is not None:
+        e = e * weight
     total = np.add.reduceat(e, starts)
     top_pos = np.maximum.reduceat(np.where(mark, scores, -np.inf), starts)
     e_pos = np.where(mark, np.exp(scores - np.repeat(top_pos, sizes)), 0.0)
@@ -108,12 +115,20 @@ def group_terms(scores: Floats, positive: Floats, starts: Ints, sizes: Ints) -> 
                  np.add.reduceat((tied & mark).astype(np.float64), starts))
 
 
-def objective_of(groups: Groups) -> Callable[[Floats, Any], tuple[Floats, Floats]]:
-    """The custom objective of LightGBM over a set of groups: (gradient, Hessian) of the summed group losses."""
+def loss_weight(groups: Groups, alpha: float) -> Floats | None:
+    """1 + alpha * drawn for each row, or None where alpha is 0 or no row has a drawn count."""
+    if alpha == 0 or groups.drawn is None or not groups.drawn.any():
+        return None
+    return 1.0 + alpha * groups.drawn.astype(np.float64)
+
+
+def objective_of(groups: Groups, alpha: float = 0.0) -> Callable[[Floats, Any], tuple[Floats, Floats]]:
+    """The custom objective of LightGBM over a set of groups: (gradient, Hessian) of the summed group losses, with the denominator weights of alpha."""
     starts, sizes, positive = groups.starts, groups.sizes, groups.positive.astype(np.float64)
+    weight = loss_weight(groups, alpha)
 
     def objective(scores: Floats, _data: Any) -> tuple[Floats, Floats]:
-        t = group_terms(np.asarray(scores, np.float64), positive, starts, sizes)
+        t = group_terms(np.asarray(scores, np.float64), positive, starts, sizes, weight)
         return t.p - t.q, np.maximum(t.p * (1.0 - t.p), HESSIAN_FLOOR)
     return objective
 
@@ -236,6 +251,7 @@ class Kept:
     size: int
     vp: Floats | None = None
     vo: Floats | None = None
+    drawn: Floats | None = None  # (size,) float32 where the point lists drawn counts
 
 
 def choice_key(seed: int, sample: str, position: int) -> int:
@@ -276,6 +292,13 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                 continue
             if min(rec['positive']) < 0 or max(rec['positive']) >= n:
                 raise FitError(f'{path}: the point at record {position} has a positive index outside its ids')
+            drawn = None
+            if rec.get('drawn'):
+                drawn = np.zeros(n, np.float32)
+                for i, c in rec['drawn']:
+                    if not 0 <= i < n or i in rec['positive'] or c < 0:
+                        raise FitError(f'{path}: the point at record {position} has a drawn count outside its ids, on a positive id, or below 0')
+                    drawn[i] = c
             if not is_vector:
                 missing = set(rec['table']) - tables.keys()
                 if missing:
@@ -285,10 +308,10 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                 continue
             if is_vector:
                 got = Kept(np.zeros((n, 0), np.float32), np.zeros(0, np.int64), np.zeros(0, np.float32), np.array(rec['positive'], np.int64), n,
-                           np.frombuffer(vp_bytes, '<f4').astype(np.float32), np.frombuffer(vo_bytes, '<f4').astype(np.float32).reshape(n, n_vo))
+                           np.frombuffer(vp_bytes, '<f4').astype(np.float32), np.frombuffer(vo_bytes, '<f4').astype(np.float32).reshape(n, n_vo), drawn)
             else:
                 got = Kept(np.array(rec['option'], np.float32).reshape(n, n_option), np.array(rec['table'], np.int64),
-                           np.array(rec['point'], np.float32), np.array(rec['positive'], np.int64), n)
+                           np.array(rec['point'], np.float32), np.array(rec['positive'], np.int64), n, drawn=drawn)
             if per_task > 0 and len(kept) >= per_task:
                 heapq.heapreplace(kept, (-key, position, got))
             elif per_task > 0:
@@ -311,28 +334,38 @@ def fill_rows(out: Floats, k: Kept, tables: dict[int, Floats], layout: Layout, l
     out[:, layout.point_cols] = k.point
 
 
-def positive_of(kept: list[Kept]) -> tuple[Floats, Ints]:
-    """The 0/1 positive mark of every row of the points, and the size of each point."""
+def positive_of(kept: list[Kept]) -> tuple[Floats, Ints, Floats | None]:
+    """The 0/1 positive mark of every row of the points, the size of each point, and the drawn count of every row (None where no point lists one)."""
     sizes = np.array([k.size for k in kept], np.int64)
     positive = np.zeros(int(sizes.sum()), np.float32)
+    drawn = np.zeros(len(positive), np.float32) if any(k.drawn is not None for k in kept) else None
     at = 0
     for k in kept:
         positive[at + k.positive] = 1.0
+        if drawn is not None and k.drawn is not None:
+            drawn[at:at + k.size] = k.drawn
         at += k.size
-    return positive, sizes
+    return positive, sizes, drawn
+
+
+def joined_drawn(pieces: list[Groups]) -> Floats | None:
+    """The drawn counts of the pieces' rows in one array, 0 for a piece with none; None where no piece has any."""
+    if all(g.drawn is None for g in pieces):
+        return None
+    return np.concatenate([g.drawn if g.drawn is not None else np.zeros(g.rows, np.float32) for g in pieces])
 
 
 def read_file(path: Path, head: dict, layout: Layout, per_task: int, seed: int) -> tuple[Dense, Counter[str]]:
     """The groups of one file, with their rows in one matrix."""
     kept, tables, count = kept_of(path, head, per_task, seed)
-    positive, sizes = positive_of(kept)
+    positive, sizes, drawn = positive_of(kept)
     matrix = np.empty((len(positive), len(layout.names)), np.float32)
     at = 0
     for k in kept:
         end = at + k.size
         fill_rows(matrix[at:end], k, tables, layout, 0, k.size)
         at = end
-    return Dense(positive, sizes, len(layout.names), [head['task']] * len(sizes), matrix=matrix), count
+    return Dense(positive, sizes, len(layout.names), [head['task']] * len(sizes), drawn, matrix=matrix), count
 
 
 def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: int, seed: int) -> tuple[Dense, Counter[str]]:
@@ -347,6 +380,7 @@ def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: in
     if not pieces:
         raise FitError('the files give no point with two ids and a positive id')
     total = sum(g.rows for g in pieces)
+    drawn = joined_drawn(list(pieces))
     matrix = np.empty((total, len(layout.names)), np.float32)
     positive = np.empty(total, np.float32)
     sizes: list[Ints] = []
@@ -359,7 +393,7 @@ def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: in
         sizes.append(g.sizes)
         tasks.extend(g.tasks)
         at += g.rows
-    return Dense(positive, np.concatenate(sizes), len(layout.names), tasks, matrix=matrix), count
+    return Dense(positive, np.concatenate(sizes), len(layout.names), tasks, drawn, matrix=matrix), count
 
 
 class PointReader:
@@ -429,6 +463,7 @@ def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_tas
     rows: list[PointRows] = []
     positives: list[Floats] = []
     sizes: list[Ints] = []
+    drawn: list[Groups] = []  # the drawn counts of each file, as pieces for joined_drawn
     tasks: list[str] = []
     for p in paths:
         head = heads[p.name.removesuffix('.jsonl.gz')]
@@ -436,14 +471,15 @@ def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_tas
         count += c
         if not kept:
             continue
-        positive, size = positive_of(kept)
+        positive, size, file_drawn = positive_of(kept)
         positives.append(positive)
         sizes.append(size)
+        drawn.append(Groups(positive, size, 0, drawn=file_drawn))
         tasks.extend([head['task']] * len(size))
         rows.append(PointRows(reader, p, head, size))
     if not rows:
         raise FitError('the files give no point with two ids and a positive id')
-    return Groups(np.concatenate(positives), np.concatenate(sizes), len(layout.names), tasks), rows, reader, count
+    return Groups(np.concatenate(positives), np.concatenate(sizes), len(layout.names), tasks, joined_drawn(drawn)), rows, reader, count
 
 
 def booster_names(names: list[str]) -> list[str]:
@@ -456,8 +492,9 @@ def booster_names(names: list[str]) -> list[str]:
 
 # ---------------------------------------------------------------- the check
 
-def check(folder: Path, seed: int) -> int:
-    """Compare the gradient with a central finite difference of the loss on the real group with the most positive ids among those with some, but not all, ids positive."""
+def check(folder: Path, seed: int, alpha: float = 0.0) -> int:
+    """Compare the gradient with a central finite difference of the loss on the real group with the most positive ids among those with some, but not all, ids positive. With alpha,
+    the group is the one with the most drawn count among those, if one has a drawn count, and the loss has its denominator weights."""
     for p in sorted(point_folder(folder).glob('*.jsonl.gz')):
         head = header_of(p)
         if head['split'] not in ('train', 'dev'):
@@ -468,11 +505,16 @@ def check(folder: Path, seed: int) -> int:
         if not len(usable):
             continue
         g = int(usable[np.argmax(pos_count[usable])])
+        if alpha and groups.drawn is not None:
+            drawn_count = np.add.reduceat(groups.drawn, groups.starts)
+            if drawn_count[usable].max() > 0:
+                g = int(usable[np.argmax(drawn_count[usable])])
         start, size = int(groups.starts[g]), int(groups.sizes[g])
         positive = groups.positive[start:start + size].astype(np.float64)
         starts, sizes = np.array([0], np.int64), np.array([size], np.int64)
-        one = Groups(positive.astype(np.float32), sizes, groups.columns)
-        objective = objective_of(one)
+        one = Groups(positive.astype(np.float32), sizes, groups.columns, drawn=None if groups.drawn is None else groups.drawn[start:start + size])
+        objective = objective_of(one, alpha)
+        weight = loss_weight(one, alpha)
         rng = np.random.default_rng(seed)
         worst = 0.0
         for scale in (0.1, 1.0, 5.0):
@@ -484,9 +526,9 @@ def check(folder: Path, seed: int) -> int:
                 up, down = s.copy(), s.copy()
                 up[i] += step
                 down[i] -= step
-                numeric[i] = (group_terms(up, positive, starts, sizes).loss[0] - group_terms(down, positive, starts, sizes).loss[0]) / (2 * step)
+                numeric[i] = (group_terms(up, positive, starts, sizes, weight).loss[0] - group_terms(down, positive, starts, sizes, weight).loss[0]) / (2 * step)
             worst = max(worst, float(np.abs(grad - numeric).max()))
-        print(f'check: task {head["task"]} group {g} ids {size} positives {int(positive.sum())} gradient vs finite difference, max |error| over 3 score draws = {worst:.3e}; '
+        print(f'check: task {head["task"]} group {g} ids {size} positives {int(positive.sum())} drawn {0 if one.drawn is None else int(one.drawn.sum())} alpha {alpha} gradient vs finite difference, max |error| over 3 score draws = {worst:.3e}; '
               f'Hessian min {hess.min():.3e} max {hess.max():.3e}')
         return 0 if worst < 1e-6 else 1
     raise FitError(f'{folder}: no group with some, but not all, ids positive')
@@ -543,7 +585,9 @@ def fit(args: argparse.Namespace) -> int:
 
     params: dict[str, Any] = dict(num_leaves=args.num_leaves, learning_rate=args.learning_rate, min_data_in_leaf=args.min_data_in_leaf, feature_fraction=args.feature_fraction,
                                   seed=args.seed, num_threads=args.threads, verbosity=-1, metric='None')
-    train_objective = objective_of(train)
+    if args.alpha and (train.drawn is None or not train.drawn.any()):
+        print(f'--alpha {args.alpha}: the train points have no drawn count, so the loss has no weight', flush=True)
+    train_objective = objective_of(train, args.alpha)
     dev_starts, dev_sizes, dev_positive = dev.starts, dev.sizes, dev.positive.astype(np.float64)
 
     def dev_loss(scores: Floats, _data: Any) -> tuple[str, float, bool]:
@@ -568,7 +612,7 @@ def fit(args: argparse.Namespace) -> int:
     print(f'dev, trees:   mean loss {got["mean_loss"]:.6f}  top-scored id is positive {got["top_is_positive"]:.4f}  ({got["points"]} points)')
     print(f'dev, uniform: mean loss {base["mean_loss"]:.6f}  top-scored id is positive {base["top_is_positive"]:.4f}  (every id ties; credit shared)')
     report = dict(
-        model=str(out), params=dict(params, objective='custom: -log(sum of softmax over the positive ids), per point'), rounds_run=booster.current_iteration(), best_round=best,
+        model=str(out), params=dict(params, objective='custom: -log(sum of softmax over the positive ids), per point', alpha=args.alpha), rounds_run=booster.current_iteration(), best_round=best,
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=str(args.points), matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
@@ -586,6 +630,7 @@ def main() -> int:
     ap.add_argument('--points-per-task', type=int, default=0, help='at most N points of a task, chosen by a seeded hash (0: all)')
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
+    ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
     ap.add_argument('--rounds', type=int, default=2000)
     ap.add_argument('--early-stopping', type=int, default=50, help='stop after this many rounds without a better dev loss')
     ap.add_argument('--log-every', type=int, default=50)
@@ -597,7 +642,7 @@ def main() -> int:
     args = ap.parse_args()
     try:
         if args.check:
-            return check(args.points, args.seed)
+            return check(args.points, args.seed, args.alpha)
         if args.out is None:
             ap.error('--out is required unless --check')
         return fit(args)
