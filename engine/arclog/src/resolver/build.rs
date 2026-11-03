@@ -202,8 +202,9 @@ impl<'a> Builder<'a> {
 
 /// The resolution of `program`, whose forms before its last are the forms
 /// of `earlier`, by the passes of [`resolve`] over the last form alone, or
-/// `None` where the last form is one this resolution does not handle.
-fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> Option<ResolvedProgram> {
+/// `None` where the last form is one this resolution does not handle. A
+/// `DEMONSTRATED` last form is handled where `demonstrated` is true.
+fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool) -> Option<ResolvedProgram> {
     let scope = SolverScope::default();
     let (last, complete) = program.value().forms.split_last()?;
     if earlier.concept().is_some() || earlier.names.earlier.is_some() || earlier.program.value().forms.len() != complete.len() {
@@ -212,6 +213,7 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
     match last {
         Form::Clause(clause) if matches!(clause.value().derives, ProgramRelation::Declared(_)) => {}
         Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) | Form::Out(_) => {}
+        Form::Demonstrated(_) if demonstrated => {}
         _ => return None,
     }
     let program_scope = NameScope::Program;
@@ -239,7 +241,7 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
             })
             .collect();
         let widened = earlier.widened(widening, registry);
-        return layered(&widened, program, registry);
+        return layered(&widened, program, registry, demonstrated);
     }
     builder.sides();
     builder.contents();
@@ -249,7 +251,11 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
 }
 
 pub(super) fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+    layered(earlier, program, registry, false).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+}
+
+pub(super) fn resolve_in_progress(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+    layered(earlier, program, registry, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
 }
 
 /// The grammar's decision at an open relation needs binding and sides,
