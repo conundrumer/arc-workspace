@@ -18,7 +18,7 @@ import random
 import sys
 import time
 
-R = os.path.dirname(os.path.abspath(__file__))
+R = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-tower-read-heldout37-ramp22'  # the data folder
 WS = '/Users/davidlu/code/arc-workspace'
 STUDY = WS + '/work/lm/data-study'
 # The Ident read whose code is reused. Its corpus rows (21,181) equal those of features-ident-block-read-heldout37-ramp22, form for form.
