@@ -9,7 +9,7 @@ import json, multiprocessing, os, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.environ.get('UNION_REACH_OUT', '/Users/davidlu/code/arc-workspace/work/synth-kaggle/kit-union-read')  # the kit, its records and its maps; the scripts live in the repo
-UNION = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
+UNION = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union').rstrip('/') + '/'  # the union files' folder
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/gold/reads/union')
 sys.path.insert(0, HERE)
 import gold_union as U  # noqa: E402

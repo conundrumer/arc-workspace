@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.environ.get('UNION_REACH_OUT', '/Users/davidlu/code/arc-workspace/work/synth-kaggle/kit-union-read')  # the kit, its records and its maps; the scripts live in the repo
 SRC = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/kits/sampler-pool-colfix-value-79af0a4f2'
 KIT = OUT + '/kit-union-read-79af0a4f2'
-UNION = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
+UNION = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union').rstrip('/') + '/'  # the union files' folder
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/gold/reads/union')
 import gold_case_counts as K  # noqa: E402
 import gold_union_identity as I  # noqa: E402
