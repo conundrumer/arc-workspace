@@ -420,6 +420,149 @@ pub fn search(
     Search::new(clause, &plan, inputs, registry, &SearchMemo::default(), bound).run(&projected, budget)
 }
 
+/// The relation of `columns`, columns of `clause`, over the connected nodes
+/// `nodes` in `order`, as [`search`] gives its rows, held in two parts where a
+/// variable splits them. Such a variable is a Position column of `clause`
+/// that each node holding it in one set of the nodes, the borrower, holds
+/// only at columns that its algebra relation reads through the Position's
+/// frame alone ([`crate::algebra::boxes::frame_columns`]), and that no other
+/// node links to the rest, the lender. Where the lender's rows give the
+/// variable values of one frame, the borrower's rows are the same at each of
+/// them: the borrower is searched once, at the first, and the relation is the
+/// product of the lender's rows and the borrower's.
+///
+/// The row cap counts the rows of that product, as it counts the rows of the
+/// search of all the nodes at once, so the relation stops at the row cap where
+/// that search stops. Where the values have several frames, or the lender's
+/// rows alone pass the row cap, the nodes are searched at once.
+#[allow(clippy::too_many_arguments)]
+pub fn search_part(
+    clause: &ClauseIr,
+    nodes: &[usize],
+    order: Vec<Variable>,
+    inputs: &JoinInputs,
+    registry: &Registry,
+    columns: &[ColumnIndex],
+    budget: &mut Budget<'_>,
+) -> Result<Relation, ReachedBound> {
+    if let Some(split) = frame_split(clause, nodes, columns) {
+        let of = |part: &Part| -> (Vec<Variable>, Vec<ColumnIndex>, Vec<ColumnIndex>) {
+            let order = order.iter().copied().filter(|v| part.variables.contains(v)).collect();
+            let (held, local): (Vec<ColumnIndex>, Vec<ColumnIndex>) = columns
+                .iter()
+                .zip(0u16..)
+                .filter(|(column, _)| part.variables.contains(&clause.columns[usize::from(column.0)]))
+                .map(|(&column, at)| (column, ColumnIndex(at)))
+                .unzip();
+            (order, held, local)
+        };
+        let (lender_order, lender_columns, lender_local) = of(&split.lender);
+        let (borrower_order, borrower_columns, borrower_local) = of(&split.borrower);
+        let lent = budget.nested(|budget| search(clause, &split.lender.nodes, &[], lender_order, &[], inputs, registry, &lender_columns, budget));
+        let lent = match lent {
+            Ok(lent) => Some(lent),
+            Err(ReachedBound::Rows { .. }) => None,
+            Err(bound) => return Err(bound),
+        };
+        let at = lender_columns.iter().position(|column| clause.columns[usize::from(column.0)] == split.variable).expect("the lender holds the variable's column");
+        let first = lent.as_ref().and_then(|lent| lent.rows().next().map(|row| row[at]));
+        let one_frame = lent.as_ref().is_some_and(|lent| first.is_none_or(|first| lent.rows().all(|row| crate::algebra::boxes::frame_of(row[at]) == crate::algebra::boxes::frame_of(first))));
+        if let (true, Some(lent)) = (one_frame, lent) {
+            let borrowed = match first {
+                Some(first) => search(clause, &split.borrower.nodes, &[], borrower_order, &[(split.variable, first)], inputs, registry, &borrower_columns, budget)?,
+                None => RowSet::empty(borrower_columns.len() as u16),
+            };
+            let product = (lent.len() as u64).saturating_mul(borrowed.len() as u64);
+            budget.charge_rows(product.saturating_sub(borrowed.len() as u64))?;
+            let parts = [RelationPart { columns: lender_local.into(), rows: lent }, RelationPart { columns: borrower_local.into(), rows: borrowed }];
+            return Ok(product_of(columns.len() as u16, parts.into()));
+        }
+    }
+    search(clause, nodes, &[], order, &[], inputs, registry, columns, budget).map(one_part)
+}
+
+/// The relation of `arity` columns whose parts are `parts`, as [`product`]
+/// gives it.
+fn product_of(arity: u16, parts: Vec<RelationPart>) -> Relation {
+    let parts: Vec<RelationPart> = parts.into_iter().filter(|part| !part.columns.is_empty() || part.rows.is_empty()).collect();
+    Relation::from_parts(arity, parts.into())
+}
+
+/// The two sets of the connected nodes `nodes` of `clause` that a variable
+/// splits, as [`search_part`] gives them, where one does: the first such
+/// variable among the columns `columns`.
+struct FrameSplit {
+    variable: Variable,
+    lender: Part,
+    borrower: Part,
+}
+
+fn frame_split(clause: &ClauseIr, nodes: &[usize], columns: &[ColumnIndex]) -> Option<FrameSplit> {
+    for column in columns {
+        let variable = clause.columns[usize::from(column.0)];
+        if clause.variables[usize::from(variable.0)].ty != ValueType::Position {
+            continue;
+        }
+        let through_frame = |node: usize| match &clause.nodes[node] {
+            IrNode::Lib(atom) => {
+                let frame = crate::algebra::boxes::frame_columns(&atom.relation);
+                let mut holds = atom.arguments.0.iter().filter(|(_, argument)| *argument == Argument::Variable(variable)).peekable();
+                holds.peek().is_some() && holds.all(|(column, _)| frame.contains(&column.0))
+            }
+            _ => false,
+        };
+        if !nodes.iter().any(|&node| through_frame(node)) {
+            continue;
+        }
+        let held = |node: usize| {
+            let mut held = node_variables(&clause.nodes[node]);
+            if through_frame(node) {
+                held.retain(|v| *v != variable);
+            }
+            held
+        };
+        let mut split = parts_holding(nodes, &held);
+        if split.len() != 2 {
+            continue;
+        }
+        let at = split.iter().position(|part| part.variables.contains(&variable))?;
+        let lender = split.swap_remove(at);
+        let borrower = split.pop()?;
+        if borrower.nodes.iter().any(|&node| through_frame(node)) {
+            return Some(FrameSplit { variable, lender, borrower });
+        }
+    }
+    None
+}
+
+/// The connected sets of `nodes`, two nodes connected where `held` gives
+/// them a variable in common, in the order of their first nodes.
+fn parts_holding(nodes: &[usize], held: &dyn Fn(usize) -> Vec<Variable>) -> Vec<Part> {
+    let mut parts: Vec<Part> = Vec::new();
+    for &node in nodes {
+        let variables = held(node);
+        let (linked, rest): (Vec<Part>, Vec<Part>) = std::mem::take(&mut parts).into_iter().partition(|part| variables.iter().any(|v| part.variables.contains(v)));
+        parts = rest;
+        let mut joined = Part { variables: Vec::new(), nodes: Vec::new() };
+        for part in linked {
+            joined.nodes.extend(part.nodes);
+            joined.variables.extend(part.variables);
+        }
+        joined.nodes.push(node);
+        for v in variables {
+            if !joined.variables.contains(&v) {
+                joined.variables.push(v);
+            }
+        }
+        parts.push(joined);
+    }
+    parts.sort_by_key(|part| part.nodes.iter().copied().min());
+    for part in &mut parts {
+        part.nodes.sort_unstable();
+    }
+    parts
+}
+
 /// The rows of `projected`, variables of `clause`, where the one node of
 /// `clause` is a union and `nodes` is that node: the rows of its branches,
 /// each branch searched once at no bound value, with all its nodes, over the

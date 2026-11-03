@@ -341,12 +341,12 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         let Ok(value) = self.holding_stops::<Infallible>(&request, || {
-            let rows = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
-                Some(rows) => rows,
-                None => join::search(&body.clause, &part.nodes, &[], part.order(order, &[]), &[], inputs, evaluation.registry, &entry.columns, &mut budget),
+            let relation = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
+                Some(rows) => rows.map(join::one_part),
+                None => join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget),
             };
-            Ok(match rows {
-                Ok(rows) => RelationValue::Rows(Arc::new(join::one_part(rows))),
+            Ok(match relation {
+                Ok(relation) => RelationValue::Rows(Arc::new(relation)),
                 Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
             })
         });

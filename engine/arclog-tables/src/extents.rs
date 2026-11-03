@@ -786,7 +786,7 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                             }
                             if entry.admit(reads,body_rows,subject.columns.len(),&sub.form).is_err() {continue;}
                             let Some(full)=body_layout.full(body_at,body_assignment) else {entry.lose("extent query assignment ordinal is outside its held receipt");continue};
-                            let ctx = Ctx { example: example.example, assignment: full, layout:&body_layout, ordinal:body_at };
+                            let ctx = Ctx::new(example.example, full, &body_layout, body_at);
                             if let Some(stop)=analysis.key_stop(&ctx) {entry.stop=Some(stop);}
                             if let Some(fault)=analysis.key_fault(&ctx) {entry.lose(&fault);}
                             let walked=reads.materializer().walk(body_rows, &mut |row| {
@@ -1045,7 +1045,7 @@ fn gather_output(decoder: &Decoder<'_>, reads: &Reads<'_>, subject: &Subject<'_>
         let Ok(rows) = &example.rows else { continue };
         for (ordinal, ((assigned, models), entry)) in rows.at.iter().zip(gathered[place].iter_mut()).enumerate() {
             let Some(full)=subject.assignment_layout.full(ordinal,assigned) else {entry.lose("component assignment ordinal is outside its held receipt");continue};
-            let ctx=Ctx {example:example.example,assignment:full,layout:subject.assignment_layout,ordinal};
+            let ctx=Ctx::new(example.example,full,subject.assignment_layout,ordinal);
             let lookups = plan.lookups(reads,&ctx, entry);
             for model in models {
                 let RelationValue::Rows(model_rows) = model else { continue };
@@ -1161,6 +1161,17 @@ struct Ctx<'a> {
     assignment: &'a [Assignment],
     layout: &'a AssignmentLayout,
     ordinal: usize,
+    /// The entries of each table read that agree with the assignment, by the
+    /// table's number and the place of the example, as [`Reads::extent_at`]
+    /// selects them. They depend on the context alone, so a walk of a body's
+    /// rows compares the assignments once per table, and not once per row.
+    selected: RefCell<StableHashMap<(u32, usize), Rc<[usize]>>>,
+}
+
+impl<'a> Ctx<'a> {
+    fn new(example: Option<Example>, assignment: &'a [Assignment], layout: &'a AssignmentLayout, ordinal: usize) -> Self {
+        Ctx { example, assignment, layout, ordinal, selected: RefCell::default() }
+    }
 }
 
 /// The earlier tables that the rows of a table read, and the work count of the
@@ -1229,7 +1240,13 @@ impl<'a> Reads<'a> {
         let place = contents.examples.iter().position(|own| own.example == example).or_else(|| contents.examples.iter().position(|own| own.example.is_none()))?;
         let rows = contents.examples[place].rows.as_ref().ok()?;
         let mut result=Merged::Unset;
-        for at in ctx.layout.select(ctx.ordinal,ctx.assignment,&contents.assignment_layout,rows) {
+        let held=ctx.selected.borrow().get(&(named.row, place)).cloned();
+        let selected=held.unwrap_or_else(|| {
+            let selected:Rc<[usize]>=ctx.layout.select(ctx.ordinal,ctx.assignment,&contents.assignment_layout,rows).into();
+            ctx.selected.borrow_mut().insert((named.row, place), Rc::clone(&selected));
+            selected
+        });
+        for &at in selected.iter() {
             let [RelationValue::Rows(relation)] = &rows.at[at].1[..] else {return None};
             let fixed: Vec<usize> = constraints.iter().map(|&(column, _)| column).collect();
             let key = (named.row, place, at, index, fixed);
