@@ -107,6 +107,10 @@ pub struct Decoder<'a> {
     /// The stops that this decode's requests hold, which the limits of each
     /// request share ([`Decoder::limits`]).
     held_stops: Arc<HeldStops>,
+    /// Whether a step evaluates: the consistency test of an `OUT` form, the
+    /// rule test and the liveness walk of a written `DET`
+    /// ([`Decoder::without_evaluation`]).
+    evaluates: bool,
 }
 
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
@@ -191,7 +195,23 @@ impl<'a> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default() }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
+    }
+
+    /// The decode, with steps that evaluate nothing: a step runs the
+    /// grammar, the checks of the prefix and the static prune as
+    /// [`Decoder::step`] does, and gives the refusal that `step` gives for
+    /// each of them. It runs no consistency test of an `OUT` form and no rule
+    /// test, so the decode ends at no `OUT` form, and of the admission of a
+    /// written `DET` it runs only the check of the finished program, with no
+    /// liveness walk. So it refuses no token with
+    /// [`DetRefusal::NoLiveAssignment`] or [`DetRefusal::Bound`], nor with a
+    /// [`DetRefusal::Fault`] of an evaluation, nor a token after a
+    /// consistent `OUT` form, which `step` refuses with
+    /// [`Refusal::Grammar`]. Its forks evaluate nothing either.
+    pub fn without_evaluation(mut self) -> Decoder<'a> {
+        self.evaluates = false;
+        self
     }
 
     /// The ids of the decode's tokens.

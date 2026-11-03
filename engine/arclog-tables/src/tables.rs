@@ -615,8 +615,9 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as
-/// `declared`: the node of a clause, a parameter, a chosen relation or an
-/// instance port, and the output of a shared node by its path. A chosen
+/// `declared`: the node of a clause, a parameter, a chosen relation, a
+/// `DEMONSTRATED` relation or an instance port, and the output of a shared
+/// node by its path. A chosen
 /// relation stands before the clause of its `ONE` marks. A shared node gives
 /// only the outputs it has: for an instance, the outputs of its component
 /// in `registry`, and for an assembly, the relations of its own name.
@@ -626,6 +627,7 @@ fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath
     let chosen = nodes.iter().find(|node| matches!(kind(node), DependencyKind::Chosen(name) if ProgramRelation::Declared(name.clone()) == *declared));
     let plain = nodes.iter().find(|node| match (kind(node), declared) {
         (DependencyKind::Clause(relation) | DependencyKind::Parameter(relation), declared) => relation == declared,
+        (DependencyKind::Demonstrated(name), ProgramRelation::Declared(declared)) => name == declared,
         (DependencyKind::InstanceInput { instance, input: port } | DependencyKind::InstanceOutput { instance, output: port }, ProgramRelation::Output(name)) => {
             name.of == OutputOwner::Instance(instance.clone()) && *name.path == [OutputStep::Port(port.clone())]
         }

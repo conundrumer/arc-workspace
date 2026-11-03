@@ -98,8 +98,27 @@ impl PySession {
         PyVocabulary::of(&Vocabulary::new(Registry::get(), &self.data.settings))
     }
 
-    /// A decode of no token yet, judging the train pairs.
-    pub(crate) fn decoder(&self) -> PyResult<PyDecoder> {
-        PyDecoder::open(&self.data)
+    /// A decode of no token yet, judging the train pairs. With `evaluate`
+    /// false, its steps evaluate nothing: they run the grammar, the checks
+    /// and the static prune, and give the `Refusal` that a decode that
+    /// evaluates gives for each of them, with no consistency test, so the
+    /// decode never ends, and no liveness walk of a written `DET`
+    /// (`arclog::decode::Decoder::without_evaluation`).
+    #[pyo3(signature = (*, evaluate=true))]
+    pub(crate) fn decoder(&self, evaluate: bool) -> PyResult<PyDecoder> {
+        PyDecoder::open(&self.data, evaluate)
+    }
+
+    /// Steps each token of `ids` whose flag in `model` is 1, and none of the
+    /// others, through a decode that evaluates nothing (`decoder` with
+    /// `evaluate=False`), with the GIL released. Gives the index in `ids` of
+    /// the first token that the decode refuses and the message of the
+    /// `Refusal` that `Decoder.step` raises for it, or `None` where it takes
+    /// each of them. Raises `ValueError` where `ids` and `model` differ in
+    /// length, and `IndexError` for an id outside the vocabulary.
+    fn check_stream(&self, py: Python<'_>, ids: Vec<u32>, model: Vec<u8>) -> PyResult<Option<(usize, String)>> {
+        let mut decoder = PyDecoder::open(&self.data, false)?;
+        let refused = py.detach(|| decoder.first_refusal(&ids, &model))?;
+        Ok(refused.map(|(at, refusal)| (at, crate::decoder::refusal_message(&refusal))))
     }
 }

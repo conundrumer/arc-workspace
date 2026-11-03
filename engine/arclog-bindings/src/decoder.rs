@@ -49,7 +49,10 @@ pub struct PyDecoder {
 }
 
 impl PyDecoder {
-    pub(crate) fn open(data: &Arc<SessionData>) -> PyResult<PyDecoder> {
+    /// A decode of no token yet on the session of `data`, judging the train
+    /// pairs, or, with `evaluates` false, a decode that evaluates nothing
+    /// ([`Decoder::without_evaluation`]).
+    pub(crate) fn open(data: &Arc<SessionData>, evaluates: bool) -> PyResult<PyDecoder> {
         // SAFETY: the reference points into the `Arc`'s allocation, which the
         // returned `PyDecoder` keeps alive and never moves, and the decode
         // drops before the `Arc` does.
@@ -57,7 +60,28 @@ impl PyDecoder {
         let world = borrowed.task.world;
         let train: Arc<[PairCandidates<'static>]> = borrowed.task.judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, world)).collect();
         let decoder = Decoder::new(&borrowed.task.task, &borrowed.session, Registry::get(), constructions()?, &borrowed.settings).judging(train);
+        let decoder = if evaluates { decoder } else { decoder.without_evaluation() };
         Ok(PyDecoder { decoder: Some(decoder), data: Arc::clone(data) })
+    }
+
+    /// The first token of `ids` with a flag of 1 in `model` that the decode
+    /// refuses, stepping each such token and none of the others: its index in
+    /// `ids` and the refusal; none where the decode takes each of them.
+    pub(crate) fn first_refusal(&mut self, ids: &[u32], model: &[u8]) -> PyResult<Option<(usize, arclog::decode::Refusal)>> {
+        if ids.len() != model.len() {
+            return Err(PyValueError::new_err("one model flag per id"));
+        }
+        let decoder = self.decoder_mut();
+        for (at, (&id, &flag)) in ids.iter().zip(model).enumerate() {
+            if flag == 0 {
+                continue;
+            }
+            let token = decoder.vocabulary().token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))?;
+            if let Err(refusal) = decoder.step(token) {
+                return Ok(Some((at, refusal)));
+            }
+        }
+        Ok(None)
     }
 
     /// The decode, for a crate that reads it as the engine's own value.
@@ -100,7 +124,12 @@ impl PyDecoder {
 
 /// The `Refusal` that Python raises for a decode's `refusal`.
 fn refusal_error(refusal: &arclog::decode::Refusal) -> PyErr {
-    Refusal::new_err(format!("{refusal:?}"))
+    Refusal::new_err(refusal_message(refusal))
+}
+
+/// The message of the `Refusal` that Python raises for a decode's `refusal`.
+pub(crate) fn refusal_message(refusal: &arclog::decode::Refusal) -> String {
+    format!("{refusal:?}")
 }
 
 /// The attempts as lists of at most two grids, one list per test input.
