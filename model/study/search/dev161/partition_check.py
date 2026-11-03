@@ -92,6 +92,7 @@ def check_any(run, env, sess, split, task):
     import live
     import lookahead_legal as LL
     import order
+    import train_rows as tr
     import writer
     from live import arclog
     c, starts = collections.Counter(), collections.Counter()
@@ -104,7 +105,7 @@ def check_any(run, env, sess, split, task):
             ids, model, paths = arclog.StudyProgram.from_sexp('\n'.join((*scope, text, live.READER_OUT)), sess.settings).decode_stream()
             stream = [int(t) for t, m, q in zip(ids, model, paths) if m and q[0] == len(scope)]
             dec, pg = run.scope(scope)
-            s2, how, why = order.canonical_stream(env, dec, kind, stream)
+            s2, how, why = order.canonical_stream(env, dec, kind, stream, seconds=tr.ORDER_SECONDS)
             c['order ' + how + (' ' + why.split(':')[0] if why else '')] += 1
             pg.new = []
             pt = writer.start_point(run, pg, run.open_form(pg, dec, kind), kind)
@@ -116,7 +117,9 @@ def check_any(run, env, sess, split, task):
                 opts, fac, reason = writer.options(pt, plan)
                 if opts is None or t not in set(int(x) for x in opts):
                     cut = 'the legal plan (with the order rule) removes the gold token'
-                    starts['legal cut at %s in %s' % (run.V.name(t), text[:120])] += 1
+                    mask = next((x for x in plan.lookahead if isinstance(x, LL.LegalMask)), None)
+                    by = sorted(k for k, v in mask.removed(pt, [t]).items() if v[0]) if mask is not None and t in set(int(x) for x in pt.ids_) else ['the engine']
+                    starts['legal cut by %s at %s in %s' % ('+'.join(by) or 'no rule', run.V.name(t), text)] += 1
                     break
                 t1 = time.perf_counter()
                 f = rule.factors(pt, list(opts))
