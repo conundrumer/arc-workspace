@@ -3,7 +3,8 @@
 
     rule = rule_of(run)              # one per Run
     keep = rule.keep(pt, ids)        # bool over ids: False where the rule removes the id
-    fl = rule.floors(pt)             # [Floor] of the open sets of pt; rule.floors(pt, t): of the point after token t, with no step
+    fl = rule.floors(pt)             # [Floor] of the open sets of pt, [] where no set is open, None where the query has no sets; rule.floors(pt, t): of the point after token t
+    rule.below(bound, t)             # whether first token t is below a Floor's bound, so that the bound bars it
 
 The `ordered` rule writes the items of a set (the atoms of a body, the branches of an OR, the atoms of a branch, the two lists of an ALL) one at a time: at each step, the item of least key
 among the items that the decoder accepts at that step. The key of an item at a state is its model tokens under the state's naming: a label made before the state is its label token; a label
@@ -59,8 +60,8 @@ class _Or:
 
 
 def parse(core, kind, tokens):
-    """The open sets of a query's model tokens (the kind token first), outermost first: a list of _List and _Or. None where the next token is in no body (a proposer body, a
-    finished RULE or DET)."""
+    """The open sets of a query's model tokens (the kind token first), outermost first: a list of _List and _Or; [] where no set is open (between the bodies of an INIT or a RIGID_DET,
+    after a body's END); None for a proposer body."""
     rel, col, lab = core.is_rel, core.is_column, core.is_label
     ALLT, IFT, ONET = core.ALL, core.IF, core.ONE
     starts = (NOT, OR_TOK, ALLT, IFT, ONET)
@@ -75,7 +76,7 @@ def parse(core, kind, tokens):
         t = tokens[i]
         if not stack:
             if kind in ('RULE', 'DET'):
-                return None
+                return []
             if not (rel[t] or t in CMP or t in starts):  # a group token of an INIT or a RIGID_DET
                 continue
             stack.append(_List('body', i))
@@ -153,8 +154,6 @@ def parse(core, kind, tokens):
                 p = stack[-1]
                 p.items.append((p.cur, i + 1, p.cur_kind))
                 p.cur = None
-    if not stack and kind in ('RULE', 'DET'):
-        return None
     return stack
 
 
@@ -193,7 +192,7 @@ class Rule:
         if T.form or kind not in ('RULE', 'DET', 'INIT', 'RIGID_DET'):
             return None
         stack = parse(self.core, kind, tokens)
-        if not stack:
+        if stack is None:
             return None
         mk = [i for i, t in enumerate(tokens) if t in (STAR, CARET)]
         return dict(stack=stack, mk=mk)
@@ -249,7 +248,7 @@ class Rule:
         if T.where != 'body' or not len(ids):
             return out
         info = self.info(pt)
-        if info is None:
+        if not info or not info['stack']:
             return out
         L = info['stack'][-1]
         if not isinstance(L, _List):
@@ -534,12 +533,25 @@ class Rule:
 
     # ---- floors
 
+    def has_sets(self, pt):
+        """Whether the query of pt has sets that the rule orders: False for a DEMONSTRATED query and a proposer body, where the rule keeps every id."""
+        return self.info(pt) is not None
+
+    @staticmethod
+    def below(bound, t):
+        """Whether first token t is below a Floor's bound (rel or other), so that the bound bars it. False where the bound is None, at the bound (the later tokens decide) and above it.
+        The rule keeps a barred start where the decoder refuses it at the state before the earlier item that sets the bound; keep(pt, ids) gives that exact verdict."""
+        return bound is not None and int(t) < bound
+
     def floors(self, pt, t=None):
-        """[Floor] of the open sets of pt, outermost first; with t, of the point after token t (no step is made). [] where the rule has no sets there."""
+        """[Floor] of the open sets of pt, outermost first; with t, of the point after token t (no step is made). [] where no set is open (after a body's END, between the bodies
+        of an INIT or a RIGID_DET); None where the query has no sets (has_sets)."""
+        if not self.has_sets(pt):
+            return None
         tokens = pt.tokens if t is None else pt.tokens + (int(t),)
         info = self.info(pt) if t is None else self._info(pt.kind, tokens, pt.track)
         if info is None:
-            return []
+            return None
         n = len(tokens)
         mn = self.made_before(info, n)
         out = []
