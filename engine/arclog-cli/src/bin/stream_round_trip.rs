@@ -37,6 +37,9 @@
 //! names`, each label name and field name of the `value` head renamed, and
 //! each column and field of a rule of that name with it; and `value head
 //! names alone`, the head's names renamed with no column or field of a rule.
+//! In both `value head` variants each site of a clause's read of the form's
+//! relation on a renamed column is renamed with it, so that the program's
+//! readers of the relation still check.
 
 use std::ops::ControlFlow;
 use std::path::Path;
@@ -45,7 +48,8 @@ use std::process::ExitCode;
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::corpus::CorpusTask;
 use arclog::eval::examples::{scope_of, ExampleScope};
-use arclog::eval::{relation_of, Cancellation, Evaluation, Limits, ParameterValues, RelationValue};
+use arclog::eval::{Cancellation, Evaluation, Limits, ParameterValues, RelationValue};
+use arclog::program::{Atom, Body, Conjunct, Negated, RelationRef};
 use arclog::program::{Clause, ColumnName, DeclaredName, RelationName, DemoRule, DemoRuleName, Demonstrated, InstanceInput, KeyClause, ProgramRelation, Site, SiteArg, SiteValue, Text};
 use arclog::session::TaskSession;
 use arclog::decode::corpus::{corpus_session, read_corpus_task};
@@ -54,7 +58,8 @@ use arclog::decode::Decoder;
 use arclog::program::path::NodePath;
 use arclog::program::{Form, Node, Program};
 use arclog::registry::Registry;
-use arclog::resolver::{resolve, resolve_cases, SolverScope};
+use arclog::resolver::{resolve, resolve_cases, DependencyKind, GraphNodeIndex, SolverScope};
+use arclog::types::GraphRelation;
 use arclog::stream::corpus::{case_spelled, check_cases, corpus_case_stream_of_files, decoded_cases};
 use arclog::stream::{token_stream, DecodeSettings, WrittenStream};
 
@@ -241,6 +246,16 @@ fn variant_lines(read: &CorpusTask, text: &Node<Program>, constructions: &arclog
         (Err(fault), _) => return vec![format!("not compared: the text: {fault}")],
     };
     let renamed = head_renames(original);
+    let readers = |forms: &mut [Form]| {
+        if !renamed.is_empty() {
+            for form in forms.iter_mut() {
+                if let Form::Clause(clause) = form {
+                    let body = renamed_reads(&clause.value().body, &original.name, &renamed);
+                    *form = Form::Clause(Node::new(Clause { body, ..clause.value().clone() }));
+                }
+            }
+        }
+    };
     let variants: [(&str, Demonstrated); 4] = [
         ("rule names", with_rules(original, |index, rule| DemoRule { name: DemoRuleName(format!("$Variant{index}").into()), ..rule.clone() })),
         ("rule texts", with_rules(original, |index, rule| DemoRule { text: Some(Text(format!("variant text {index}").into())), ..rule.clone() })),
@@ -249,7 +264,14 @@ fn variant_lines(read: &CorpusTask, text: &Node<Program>, constructions: &arclog
     ];
     let mut lines = Vec::new();
     for (name, variant) in variants {
+        if name.starts_with("value head") && renamed.is_empty() {
+            lines.push(format!("{name}: not compared: the `value` head writes no name"));
+            continue;
+        }
         let mut changed = forms.clone();
+        if name.starts_with("value head") {
+            readers(&mut changed);
+        }
         changed[at] = Form::Demonstrated(Node::new(variant));
         let (tables, hash) = outcome(read, &changed, at, &original.name, &session, constructions);
         let tables = match tables {
@@ -279,7 +301,8 @@ fn outcome(read: &CorpusTask, forms: &[Form], at: usize, name: &arclog::program:
 fn tables(read: &CorpusTask, program: &Node<Program>, name: &arclog::program::RelationName, session: &TaskSession, constructions: &arclog::eval::instance::Constructions) -> Result<Vec<String>, String> {
     let registry = Registry::get();
     let checked = checked(program)?;
-    let relation = relation_of(&checked, &ProgramRelation::Declared(name.clone())).ok_or("the program has no relation of the form")?;
+    let node = checked.program.graph.nodes.iter().position(|node| matches!(&node.kind, DependencyKind::Demonstrated(own) if own == name));
+    let relation = GraphRelation { node: GraphNodeIndex(node.ok_or("the program has no relation of the form")? as u32), output: None };
     let parameters = ParameterValues::stored(read.solver.arcdata.value());
     let limits = Limits::new(None, Cancellation::default());
     let session = session.sharing_terms();
@@ -372,6 +395,53 @@ fn with_value_head(demonstrated: &Demonstrated, renames: &[(ColumnName, ColumnNa
     };
     let key = demonstrated.key.as_ref().map(|key| Node::new(KeyClause { inputs: key.value().inputs.iter().map(input).collect(), ..key.value().clone() }));
     Demonstrated { key, inputs: demonstrated.inputs.iter().map(input).collect(), ..demonstrated.clone() }
+}
+
+/// `body` with each site of each atom of `relation` on a column that
+/// `renames` renames, at any depth, renamed with it, and each field of such
+/// a site.
+fn renamed_reads(body: &Node<Body>, relation: &RelationName, renames: &[(ColumnName, ColumnName)]) -> Node<Body> {
+    let new = |name: &ColumnName| renames.iter().find(|(old, _)| old == name).map_or_else(|| name.clone(), |(_, new)| new.clone());
+    let atom = |atom: &Node<Atom>| -> Node<Atom> {
+        let value = atom.value();
+        if value.relation != RelationRef::Declared(relation.clone()) {
+            return atom.clone();
+        }
+        let sites = value
+            .sites
+            .iter()
+            .map(|site| {
+                let args = site
+                    .value
+                    .args
+                    .iter()
+                    .map(|arg| match arg {
+                        SiteArg::NamedLabel { name, label } => SiteArg::NamedLabel { name: new(name), label: *label },
+                        SiteArg::Field(field) => SiteArg::Field(Site { column: new(&field.column), ..field.clone() }),
+                        arg => arg.clone(),
+                    })
+                    .collect();
+                Site { column: new(&site.column), value: SiteValue { args } }
+            })
+            .collect();
+        Node::new(Atom { relation: value.relation.clone(), sites })
+    };
+    fn mapped(conjunct: &Conjunct, atom: &dyn Fn(&Node<Atom>) -> Node<Atom>, body: &dyn Fn(&Node<Body>) -> Node<Body>) -> Conjunct {
+        match conjunct {
+            Conjunct::Atom(read) => Conjunct::Atom(atom(read)),
+            Conjunct::Not(Negated::Atom(read)) => Conjunct::Not(Negated::Atom(atom(read))),
+            Conjunct::Not(Negated::Form(form)) => Conjunct::Not(Negated::Form(std::sync::Arc::new(mapped(form, atom, body)))),
+            Conjunct::Constraint(_) => conjunct.clone(),
+            Conjunct::Or(branches) => Conjunct::Or(branches.iter().map(body).collect()),
+            Conjunct::If { test, then, otherwise } => Conjunct::If { test: body(test), then: body(then), otherwise: body(otherwise) },
+            Conjunct::All { domain, body: each } => Conjunct::All { domain: body(domain), body: body(each) },
+        }
+    }
+    fn walk(of: &Node<Body>, atom: &dyn Fn(&Node<Atom>) -> Node<Atom>) -> Node<Body> {
+        let body = |inner: &Node<Body>| walk(inner, atom);
+        Node::new(Body { conjuncts: of.value().conjuncts.iter().map(|each| mapped(each, atom, &body)).collect() })
+    }
+    walk(body, &atom)
 }
 
 /// `rule` with each column of its `&prediction` clauses and each of its
