@@ -214,6 +214,7 @@ def sampler_outcome(env, task_json, text):
 
 SAMPLER = sampler_settings()
 SAMPLER_CAP = float(os.environ.get('SAMPLER_CAP', 60))  # seconds per program for sampler_outcome; a program past it is 'timeout'
+SAMPLER_TASK_CAP = float(os.environ.get('SAMPLER_TASK_CAP', 180))  # seconds per task for sampler_run; the programs left after it are 'timeout: task cap', not counted
 
 
 def sampler_capped(env, task_json, text):
@@ -279,8 +280,11 @@ def sampler_run(set_name, k, n):
             if r['task'] in done:
                 continue
             task_json = json.load(open(ROOT / 'data/tasks' / (r['task'] + '.json')))
-            got = [dict(task=r['task'], text_sha=x['text_sha'], sampler=sampler_capped(env, task_json, texts[r['task']][x['text_sha']]))
-                   for x in r['programs'] if not x.get('sampler') and x['text_sha'] in texts[r['task']]]
+            got, end = [], time.time() + SAMPLER_TASK_CAP
+            for x in r['programs']:
+                if not x.get('sampler') and x['text_sha'] in texts[r['task']]:
+                    out = sampler_capped(env, task_json, texts[r['task']][x['text_sha']]) if time.time() < end else 'timeout: task cap %ds, not counted' % SAMPLER_TASK_CAP
+                    got.append(dict(task=r['task'], text_sha=x['text_sha'], sampler=out))
             f.write(''.join(json.dumps(g) + '\n' for g in got) or json.dumps(dict(task=r['task'], text_sha=None, sampler=None)) + '\n')
             f.flush()
             el = time.time() - start
