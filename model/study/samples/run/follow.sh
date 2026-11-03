@@ -5,12 +5,12 @@
 set -o pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 : "${KIT:?KIT names a writer kit release}" "${ARC_SAMPLE_GRAPHS:?ARC_SAMPLE_GRAPHS names the graph folder}"
-export KIT ARC_SAMPLE_GRAPHS POINTS
+export KIT ARC_SAMPLE_GRAPHS POINTS HERE
 while :; do
     quiet=0
     if ! pgrep -f 'samples/rows_replay.py' > /dev/null && [ -z "$(find "$ARC_SAMPLE_GRAPHS" -newermt '-2 minutes' -print -quit)" ]; then quiet=1; fi
     echo "== pass $(date +%T)$([ $quiet = 1 ] && echo ', the last')"
-    for sn in "$@"; do "$HERE/chain.sh" "${sn%%:*}" "${sn##*:}"; done
+    printf '%s\n' "$@" | xargs -P "$#" -I{} bash -c 'sn={}; "$HERE/chain.sh" "${sn%%:*}" "${sn##*:}"'  # the splits at once
     [ $quiet = 1 ] && break
     /bin/sleep 60
 done
