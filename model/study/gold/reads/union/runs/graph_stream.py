@@ -5,6 +5,7 @@
 - OUT_DIR holds links to union-SPLIT.jsonl and union-keys-SPLIT.jsonl of GOLD_UNION_DIR, so the graph reads the current union.
 - Every 30 seconds, the tasks of a split whose row store (work/lm/data-study/samples/SPLIT/rows/<task>.jsonl.gz) is newer than the task's last graph, and that have a union-keys line, form a batch. gold_union_graph.py runs on the batch (UNION_TASKS), 50 tasks a process, into graph-*-SPLIT-<n>.jsonl, and graph-*-SPLIT.jsonl is then the latest batch's lines of each task, with its .code.json. Then gold_union_walks.py writes the split's walks there.
 - A task whose union-keys line changes is built again too.
+- With STREAM_TASKS (tasks separated by spaces), only those tasks are built. With STREAM_SINCE (seconds since the epoch), only stores written after that time are built.
 - It stops when the file OUT_DIR/STOP exists, or after IDLE seconds (default 3600) with no new store. It prints a line with the clock time for each batch.
 """
 import glob, hashlib, json, os, subprocess, sys, time
@@ -17,6 +18,8 @@ G = os.environ['GOLD_UNION_DIR'] + '/'
 O = os.environ['OUT_DIR'] + '/'
 SPLITS = sys.argv[1:] or ['train', 'dev', 'held-out']
 IDLE = float(os.environ.get('IDLE', 3600))
+ONLY = set(os.environ['STREAM_TASKS'].split()) if os.environ.get('STREAM_TASKS') else None
+SINCE = float(os.environ.get('STREAM_SINCE', 0))
 
 
 def say(*a):
@@ -63,7 +66,7 @@ def main():
             todo = []
             for p in glob.glob(SAMPLES + '%s/rows/*.jsonl.gz' % s):
                 t = os.path.basename(p)[:-len('.jsonl.gz')]
-                if t in keys:
+                if t in keys and (ONLY is None or t in ONLY) and os.path.getmtime(p) > SINCE:
                     now = (os.path.getmtime(p), keys[t])
                     if built.get((s, t)) != now and time.time() - now[0] > 10:  # a store still being written waits
                         todo.append((t, now))
