@@ -14,7 +14,8 @@ one value left out. Only "t" tables of --graph count.
 Only the job folders that results.jsonl names count, and each task counts where every arm of --arms has a job. --skip-file is a JSON file
 whose A_tasks and B_tasks list tasks to leave out. Depths are grouped as 0, 1 and 2 and deeper. For each depth it prints the graph tables,
 the reached tables per arm, the paired difference (first arm less second) summed over tasks, its mean and standard deviation per task, and
-the bound 1.96 times the square root of the sum of squared per-task differences. --check names the row store's tables both ways and stops
+the bound 1.96 times the square root of the sum of squared per-task differences. With --by tables it also checks the naming from the
+draw records: each graph table that a drawn query of a gold QueryHash gives must be named alike from the job's records. --check names the row store's tables both ways and stops
 at the first difference from gold_union_tables.tables_of.
 """
 import argparse
@@ -139,23 +140,26 @@ def main():
     band = lambda d: '0' if d == 0 else '1' if d == 1 else '2+'  # noqa: E731
     tot = collections.Counter()
     reach = collections.defaultdict(collections.Counter)  # (task, arm) -> band -> reached
+    agree = collections.Counter()  # the graph tables of the drawn queries of a gold QueryHash, and those of them that the draw records name alike
     for t in tasks:
         g = depth[t]
         for x in g.values():
             tot[band(x)] += 1
-        names = None
-        if a.by == 'qh':
-            got = row_store(rows, t)
-            names = graph_names(*got) if got else {}
+        got = row_store(rows, t)
+        names = graph_names(*got) if got else {}
         for arm in arms:
             qhs, outputs, entries = job_tables(jobs[t][arm])
-            if a.by == 'qh':
-                hit = {v for (f, _), v in names.items() if f in qhs}
-            else:
-                hit = set(graph_names(outputs, entries).values())
+            by_qh = {v for (f, _), v in names.items() if f in qhs} & set(g)
+            hit = by_qh if a.by == 'qh' else set(graph_names(outputs, entries).values())
+            if a.by == 'tables':
+                agree['graph tables of drawn gold QueryHashes'] += len(by_qh)
+                agree['of them named alike from the draw records'] += len(by_qh & hit)
             for x in hit & set(g):
                 reach[t, arm][band(g[x])] += 1
     print('%d tasks paired (%s), by %s%s; graph %s' % (len(tasks), ' less '.join(arms), a.by, ', a lower bound' if a.by == 'qh' else '', a.graph))
+    if a.by == 'tables':  # a drawn query of a gold QueryHash gives gold's tables, so the draw records must name each of its graph tables as the row store does
+        print('check: %d of %d graph tables of drawn gold QueryHashes are named alike from the draw records' % (
+            agree['of them named alike from the draw records'], agree['graph tables of drawn gold QueryHashes']))
     for b in ('0', '1', '2+'):
         d = [reach[t, arms[0]][b] - reach[t, arms[1]][b] for t in tasks]
         n = len(d)
