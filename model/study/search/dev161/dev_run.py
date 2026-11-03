@@ -1,19 +1,20 @@
 """The live search on the dev or train tasks of the split, in arms that differ only by the writer's tree, judged by solves on the test example.
 
-    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--split dev|train] [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N] [--record]
+    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--models DIR] [--tree FILE] [--split dev|train] [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N] [--skip TASK,...] [--record]
 
 RUN names the output folder, $DATA/search/dev161/RUN for dev and $DATA/search/train866/RUN for train (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
-Each job is one task of one arm and one seed: the pool search with the v9 notebook's environment and a fresh store of its own. With
+Each job is one task of one arm and one seed: the pool search with the v9 notebook's environment and a fresh store of its own. --models
+is the worker's models folder (default the v9 dataset's), and --tree the writer's tree of the arms that take one. With
 --budget cpu (the default), one worker runs on --seconds of its own CPU time (cpu_clock/sitecustomize.py), and the kernel supervisor's
 code (supervisor.py beside the --code kit, else the v9 dataset's) makes the submission from its candidates. With --budget wall, the
 kernel supervisor runs it for --seconds of wall-clock time. The jobs of a task
 run next to each other, so the arms are paired as results arrive.
 
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
-candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/limit, where it
+candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line, and runs.jsonl gets each start's arguments and the kit's manifest. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
-Held-out tasks never run. With --record, which only a train run takes, each worker writes one draw record per draw to the job's
-draws.jsonl (sampler/draw_record.py).
+Held-out tasks never run, and --skip leaves out the tasks it lists. With --record, each worker writes one draw record per draw to the
+job's draws.jsonl (sampler/draw_record.py).
 """
 import argparse
 import collections
@@ -34,8 +35,8 @@ from study_paths import DATA_ROOT, MAIN_ROOT  # noqa: E402
 DATASET = MAIN_ROOT / 'work/synth-kaggle/kernel-writer-dry8/dataset'  # the v9 bundle's dataset: models, policy model, supervisor
 PY = MAIN_ROOT / 'work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
-ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}, 'tree_reads': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
-        'tree_fp': {'WRITER_TREE': str(TREE), 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'}}  # the checks of the ReadsScope rules
+ARMS = {'tree': {'WRITER_TREE': None}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
+        'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules
 RSS_LIMIT_MIB = 2888
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
@@ -137,13 +138,13 @@ def run_job(a, out, task, arm, seed):
     d = json.loads((MAIN_ROOT / 'data/tasks' / (task + '.json')).read_text())
     (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
     samp = Path(a.code) / 'model/study/sampler'
-    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(DATASET), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
+    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
                POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES='search', ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     for k in ('WRITER_TREE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
         env.pop(k, None)
-    env.update(ARMS[arm])
+    env.update({k: v if v is not None else str(a.tree) for k, v in ARMS[arm].items()})
     if a.record:  # the draw records (sampler/draw_record.py), one file per job
         env.update(ARC_DRAW_RECORD=str(w / 'draws.jsonl'), ARC_DRAW_RUN='%s/%s' % (a.run, w.name), ARC_DRAW_SITE=Path(a.site).name,
                    ARC_DRAW_RELEASE=Path(a.code).name)
@@ -185,7 +186,8 @@ def summary(out):
         lines.append('%s s%d: %d tasks, %d solved, %d with a candidate, %d tracebacks, %d kills' % (
             arm, seed, len(rs), sum(r['solved'] for r in rs), sum(r['candidates'] > 0 for r in rs), sum(r['tracebacks'] for r in rs), sum(r['kills'] or 0 for r in rs)))
     tasks = {r['task'] for r in recs}
-    paired = [t for t in tasks if all(any(r['task'] == t and r['arm'] == arm for r in recs) for arm in ARMS)]
+    arms = {r['arm'] for r in recs}
+    paired = [t for t in tasks if all(any(r['task'] == t and r['arm'] == arm for r in recs) for arm in arms)]
     lines.append('paired tasks: %d; solved only by tree: %s; only by hand: %s' % (
         len(paired), sorted(t for t in paired if any(r['task'] == t and r['arm'] == 'tree' and r['solved'] for r in recs) and not any(r['task'] == t and r['arm'] == 'hand' and r['solved'] for r in recs)),
         sorted(t for t in paired if any(r['task'] == t and r['arm'] == 'hand' and r['solved'] for r in recs) and not any(r['task'] == t and r['arm'] == 'tree' and r['solved'] for r in recs))))
@@ -197,25 +199,29 @@ def main():
     ap.add_argument('run')
     ap.add_argument('--code', required=True)
     ap.add_argument('--site', required=True)
+    ap.add_argument('--models', default=str(DATASET))
+    ap.add_argument('--tree', default=str(TREE))
+    ap.add_argument('--skip', default='')
     ap.add_argument('--arms', default='tree,hand')
     ap.add_argument('--seeds', default='0')
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
     ap.add_argument('--split', default='dev')
-    ap.add_argument('--record', action='store_true', help='each worker writes its node records; train runs only')
+    ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
     ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
     CPU_MODE[0] = a.budget == 'cpu'
-    if a.record and a.split != 'train':
-        sys.exit('--record is for train runs only')
     out = DATA_ROOT / 'search' / OUT_DIRS.get(a.split, 'none') / a.run
     out.mkdir(parents=True, exist_ok=True)
+    with open(out / 'runs.jsonl', 'a') as f:  # each start's arguments and the kit's manifest
+        man = Path(a.code) / 'manifest.json'
+        f.write(json.dumps(dict(time=time.strftime('%Y-%m-%dT%H:%M:%S%z'), args=vars(a), manifest=json.loads(man.read_text()) if man.exists() else None)) + '\n')
     done = set()
     if (out / 'results.jsonl').exists():
         done = {(r['task'], r['arm'], r['seed']) for r in map(json.loads, open(out / 'results.jsonl'))}
-    tasks = split_tasks(a.split)[:a.tasks or None]
+    tasks = [t for t in split_tasks(a.split) if t not in a.skip.split(',')][:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
     t0, n = time.time(), 0
