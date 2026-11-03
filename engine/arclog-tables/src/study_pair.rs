@@ -224,6 +224,48 @@ fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->O
     }
 }
 
+/// Prints to stderr, for a probe of a gold evaluation's memory, the table's
+/// relation, its count of values (one per example, assignment and model), the
+/// rows those values store and their bytes, the bytes of their indexes, the
+/// rows of their products, its stop, and the heap's live bytes and the
+/// session's ledger after it. A value that several tables share counts in
+/// each.
+fn trace_table(decoder:&Decoder<'_>,table:&Table) {
+    let (_,session,_)=decoder.evaluation_inputs();
+    let (mut values,mut stored,mut bytes,mut index,mut product,mut stops)=(0usize,0u64,0usize,0usize,0u64,Vec::new());
+    let name=match &table.contents {
+        Ok(contents)=>{
+            for example in contents.examples.iter() {
+                match &example.rows {
+                    Ok(assigned)=>{
+                        if let Some(stop)=&assigned.stop {stops.push(format!("{:?}",stop.bound));}
+                        for model in assigned.at.iter().flat_map(|(_,models)|models) {
+                            values+=1;
+                            match model {
+                                arclog::eval::RelationValue::Rows(rows)=>{
+                                    stored+=rows.parts().iter().map(|part|part.rows.len() as u64).sum::<u64>();
+                                    bytes+=rows.parts().iter().map(|part|part.rows.bytes()).sum::<usize>();
+                                    index+=rows.index_bytes().1;
+                                    product=product.saturating_add(rows.len());
+                                }
+                                arclog::eval::RelationValue::Stopped(stop)=>stops.push(format!("{:?}",stop.bound)),
+                                _=>{}
+                            }
+                        }
+                    }
+                    Err(fault)=>stops.push(format!("fault {}",fault.message)),
+                }
+            }
+            contents.name.clone()
+        }
+        Err(fault)=>format!("fault {}",fault.message),
+    };
+    let (intern,results,allocated)=session.ledger();
+    let mib=|b:usize|b>>20;
+    eprintln!("table-heap {name} form={:?} values={values} stored_rows={stored} row_mib={} index_mib={} product_rows={product} heap_mib={:?} ledger_mib=intern {} + cache {} + reserved {} stops={stops:?}",
+        table.form.0,mib(bytes),mib(index),arclog::heap::live().map(mib),mib(intern),mib(results),mib(allocated));
+}
+
 /// Evaluate export relation declarations against their original checked
 /// graph. Prefixes are scoped to the certified gold handle, so source names
 /// and AST paths are never confused across equal-looking token streams.
@@ -265,6 +307,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
                 made(decoder,&seen,checked,&relation,c)
             });
             held.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents}));
+            if std::env::var_os("ARCLOG_TABLE_HEAP").is_some() {trace_table(decoder,&held.last().expect("the table just held").1);}
         }
         tables.extend(held);
     }
