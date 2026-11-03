@@ -9,6 +9,8 @@ Each component of lookahead.ORDER is split by the condition it tests. PARTS maps
 what the component removes. LEGAL names the parts and components that are legality rules. `lookahead.components(run, ['legal'])` makes them.
 The verdict of each part, with its evidence, is in the report that goes with this file.
 """
+import os
+
 import numpy as np
 
 import live
@@ -473,7 +475,27 @@ NEEDS_RUN = ('KindsControl', 'KindsProposer', 'KindsComponent', 'AtomOrder', 'At
 # The legality rules and legal parts, in order. They are the rules that LegalMask composes.
 RULES = ('NotStar', 'HeadFill', 'RepeatSame', 'HiddenLabels', 'CaretLocal', 'EqSelf')
 # Parts the probe found no removal for, so it could not judge them (lg_probe.py); name them after 'legal' to add them: WRITER_LOOKAHEAD=legal,RepeatEndBranch
-CANDIDATES = ('RepeatEndBranch',)
+class ReadsScope:
+    """A RULE's or DET's END at the top of its body, over a non-empty scope, while the query names no query of the scope. Such a query's tables
+    depend on no query of the scope, so it belongs to the root slot, whose search writes it; each query then has one slot that writes it."""
+    name = 'ReadsScope'
+
+    def factors(self, pt, ids):
+        out = np.zeros(len(ids))
+        T = pt.track
+        if pt.kind not in ('RULE', 'DET') or T.path or T.where != 'body' or not (ids == M.END).any():
+            return out
+        names = getattr(pt.pg, 'written', None)
+        if not names:  # the root slot: an empty scope
+            return out
+        V = pt.run.V
+        if not any(V.kind(t) == 'relation' and V.name(t) in names for t in pt.tokens):
+            out[ids == M.END] = -np.inf
+        return out
+
+
+CANDIDATES = ('RepeatEndBranch', 'ReadsScope')
+ADD = tuple(x for x in os.environ.get('WRITER_LEGAL_ADD', '').split(',') if x)  # candidates that a check adds to RULES
 
 
 class LegalMask:
@@ -482,7 +504,7 @@ class LegalMask:
     name = 'LegalMask'
 
     def __init__(self, run, rules=None):
-        self.rules = [make(run, n) for n in (rules or RULES)]
+        self.rules = [make(run, n) for n in (rules or RULES + ADD)]
 
     def removed(self, pt, ids):
         """{rule name: bool array over ids} for the rules that remove an id."""

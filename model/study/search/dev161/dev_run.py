@@ -34,7 +34,7 @@ from study_paths import DATA_ROOT, MAIN_ROOT  # noqa: E402
 DATASET = MAIN_ROOT / 'work/synth-kaggle/kernel-writer-dry8/dataset'  # the v9 bundle's dataset: models, policy model, supervisor
 PY = MAIN_ROOT / 'work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
-ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}}
+ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}, 'tree_reads': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScope'}}  # tree_reads: the check of the ReadsScope rule
 RSS_LIMIT_MIB = 2888
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
@@ -140,7 +140,7 @@ def run_job(a, out, task, arm, seed):
                POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES='search', ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
-    for k in ('WRITER_TREE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
+    for k in ('WRITER_TREE', 'WRITER_LEGAL_ADD', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
         env.pop(k, None)
     env.update(ARMS[arm])
     if a.record:  # the draw records (sampler/draw_record.py), one file per job
