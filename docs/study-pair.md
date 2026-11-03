@@ -77,6 +77,9 @@ the engine writer's source/decode correspondence, not numeric slot guesses.
 A pair and its components report `complete`, `stopped` with the reached
 bound, or `fault` with its reason. No fault is replaced by an empty table or
 a guessed assignment. Projections and extent failures remain visible.
+A stop of a table's projections search loses no row, so it leaves the status
+as the rows give it. The report lists each such stop in `projection_stops`,
+and the table's `projections_stop` columns hold it.
 Table evaluations use the native table work caps; OUT shares a work budget
 with the gold assignment walk; row comparison also charges row visits to
 a bounded budget before materialization. Native run, assignment, deadline,
