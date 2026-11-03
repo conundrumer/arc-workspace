@@ -3,7 +3,7 @@
   features_context_cv.py DUMP_ROWS POLICY_DIR
 """
 import collections, glob, gzip, hashlib, os, pickle, random, statistics as st, sys, time
-sys.path[:0] = [sys.argv[2], os.path.dirname(os.path.abspath(__file__))]
+sys.path[:0] = [sys.argv[2], '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-prefix-keep-top1pct-split-e3021ada']
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier as H
 from nodefeat import Pair

@@ -16,7 +16,7 @@ from outfeat import out_features
 import features_second as SECOND
 import superdag as D
 S = live.S
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-prefix-keep-top1pct-split-e3021ada'  # the data folder
 BUNDLE = None
 MIN_BITS = 8.
 FLOOR = -100.
