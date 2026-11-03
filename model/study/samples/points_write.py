@@ -37,7 +37,7 @@ With --vectors a point row is the writer's full writing-point vector of each id 
 With --draws, the search's draws give each point's `drawn` counts (docs/sample-build/training-rows.md, "Search draws"). GLOB is a glob of draw record files (model/study/sampler/draw_record.py);
 DIR is a folder searched for `draws.jsonl` files. A draw file of a task that is not train by split.py is refused (exit 2) before any file is written.
 - A draw is one line of a file: a record, or {"repeat": d, "draw": n}, which adds 1 to the count of the record of draw d of that file. A draw whose record solves every train example gives nothing.
-- A draw's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps); its other steps
+- A draw's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps, and every sample whose state a draw has); its other steps
   are not used. A draw that matches several samples is walked, and counted, for each.
 - The drawn query's names are the sample's: the last step's own name (`&fN`, the first name of its text) is `&r<len(scope)>`, as a target's own label is, and each other `&fN` (or a RIGID_DET part's
   `.fN` step) is the global label of the QueryHash of the step whose own name it is. Its token stream is decoded over the sample's scope as a target's is.
@@ -663,7 +663,10 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     records = [json.loads(x) for x in skeleton.read_text().splitlines()]
     head = records[0]
     queries = {r['hash']: r for r in records if r['record'] == 'query'}
-    samples = chosen([r for r in records if r['record'] == 'sample'], args.samples_per_task, args.seed)
+    samples = [r for r in records if r['record'] == 'sample']
+    drawn_states = {dr.state for dr in read_draws(draw_paths)} if draw_paths else set()
+    kept = {s['id'] for s in chosen(samples, args.samples_per_task, args.seed)}
+    samples = [s for s in samples if s['id'] in kept or frozenset(s['state']['queries']) in drawn_states]  # the K chosen, and each sample that a draw matches
     split = head['split']
     folder = out / set_name / ('points_held-out' if is_held_out(split) else 'points') / args.plan
     path = folder / f'{task}.jsonl.gz'
