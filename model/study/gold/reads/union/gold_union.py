@@ -2,7 +2,7 @@
 
 A program is kept when its text has a row in fits-SET.jsonl (gold_union_fits.py, on the current engine) with fit and test_ok true: some assignment of its DETs gives every train output, and the fitting assignments give, on each test example, at most two distinct grids and one is the expected output. Queries of equal QueryHash make one union table (query_hash.py, on the engine of gold_union_env.sh; the row keeps `query_hash_version`). A query that the engine refuses keeps its own union table and is listed in the row's `unhashed`. gold_union_graph.py joins union tables by equal maps.
 
-  model/study/gold/cover_forms/gold_union_env.sh gold_union.py run [K N [SET]]    SET is ramp, 37, training or 62; the rows go to union-SET-K.jsonl
+  model/study/gold/cover_forms/gold_union_env.sh gold_union.py run [K N [SET]]    SET is train, dev or held-out; the rows go to union-SET-K.jsonl
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py child TASK...
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py merge [SET]    writes union-SET.jsonl and union-SET.jsonl.sha256 from the union-SET-K.jsonl files; with no SET, union.jsonl from all of them. It also updates union-SET.manifest.json (made where missing): `sha256`, where the manifest has it, and `code`, {"sha", "dirty"} of the code that merged (gold_union_code.py); its other fields stay.
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py search    writes search-programs.jsonl from the search outputs in SEARCH
@@ -14,16 +14,14 @@ import gold_case_counts as G
 import gold_final_dedup as F
 import gold_cheapest_case as C
 import gold_union_code
-from gold_union_fits import rows_of, sha16, shard_files
+from gold_union_fits import rows_of, set_of, sha16, shard_files
 from gold_cheapest_common import Bar, ROOT, D, program_lines, sha
 from gold_cheapest_prune import dead_lines
 C.GIB = 4  # a task past 4 GiB is set aside; 6 shards share the machine
 
 OUT = os.environ.get('GOLD_UNION_DIR', D + 'gold/gold-union') + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 HEAD, NAME = G.HEAD, G.NAME
-RAMP = open(F.RAMP).read().split()
-LEFT_OUT = [t for t in open(D + 'sampler/sampler-worker/held/leave_out.txt').read().split() if t not in F.P.HELD]  # the 62
-SETS = ['ramp', '37', 'training', '62']  # in the order that they run
+SETS = ['train', 'dev', 'held-out']  # the splits, in the order that they run
 SEARCH = [  # glob patterns of search outputs: one JSON line per program, the file named TASK.*.jsonl
     ROOT / 'work/synth-kaggle' / ('kernel-soak-%s-linux-ramp59-2400s/work-logs/74dd1130.search.out.jsonl' % k) for k in ('8ed4fe634', '0eec50f18', '2d21a0079', 'e8ded5733', 'ec15d12f0')
 ] + [
@@ -42,10 +40,6 @@ def union_rows(name):
                 r = json.loads(l)
                 got[r['task']] = r
     return [got[t] for t in sorted(got)]
-
-
-def set_of(t):
-    return '37' if t in F.P.HELD else 'ramp' if t in RAMP else '62' if t in LEFT_OUT else 'training'
 
 
 def forms_of(lines):
@@ -255,7 +249,7 @@ def run(args=()):
 
 def shards(name=None):
     """The shard files of `run`, of one set or of all: union-<set>-<K>.jsonl, and not the union-identity files of gold_union_identity.py."""
-    pat = re.compile(r'union-(%s)-\d+\.jsonl$' % (re.escape(name) if name else 'ramp|37|training|62|all'))
+    pat = re.compile(r'union-(%s)-\d+\.jsonl$' % (re.escape(name) if name else 'train|dev|held-out|all'))
     return sorted(p for p in glob.glob(OUT + 'union-*.jsonl') if pat.search(p))
 
 

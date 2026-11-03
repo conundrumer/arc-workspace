@@ -1,6 +1,6 @@
 """Which programs of the union gold solve their task, on the current engine. A program fits when some assignment of its DETs gives every train output through its OUT query (each grid it gives is the output or the example's `alt` grid). It solves (test_ok) when it fits and, on each test example with an expected output, the fitting assignments give at most two distinct grids over all constraint models, and one is the expected output. Per task, each distinct program text of cases-SET.jsonl is run once. The fits go to fits-SET.jsonl in the gold-union folder, one line per task: task, and programs, a list of {text_sha, cases, assignments, fitting, fit, test_ok, why}. assignments counts the assignments of the OUT table, fitting those that give every train output, and why is the reason a program gives no tables (fit and test_ok are then null: no verdict). The union keeps a program when fit and test_ok.
 
-  ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET [K N]    SET: ramp, 37 or training; K N takes the tasks at positions K, K + N, ... and writes fits-SET-K.jsonl. A restart skips the tasks the file has. With FITS_TASKS set (tasks separated by spaces), K N name only the output file, and the run takes those tasks.
+  ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET [K N]    SET: train, dev or held-out; K N takes the tasks at positions K, K + N, ... and writes fits-SET-K.jsonl. A restart skips the tasks the file has. With FITS_TASKS set (tasks separated by spaces), K N name only the output file, and the run takes those tasks.
   With FITS_CAP=S set, each program runs in a forked child that is killed after S seconds. A killed program has fit and test_ok null and why 'timeout S s', and the union leaves it out with that reason.
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET merge     writes fits-SET.jsonl from the fits-SET-K.jsonl files, sorted by task, after a first line {"t": "header", "code": {"sha", "dirty"}} (gold_union_code.py: the commit of the code that merged it). A reader of fits-SET.jsonl skips the lines that have `t`.
 """
@@ -16,6 +16,12 @@ WORK_CAP = int(os.environ.get('FITS_WORK_CAP', 1 << 28))  # the engine's table w
 DEADLINE = float(os.environ.get('FITS_DEADLINE', 120))  # the engine's deadline in seconds; its default, 10, stops programs by the machine's load
 SESSION_BYTES = int(os.environ.get('FITS_SESSION_BYTES', 8 << 30))  # the engine's session byte bound; its default is 512 MiB
 CAP = float(os.environ.get('FITS_CAP', 0))  # seconds per program; 0 runs each program in this process, with no cap
+SPLIT = {f[0]: 'held-out' if f[3] in ('held', 'held-out') else f[3] for f in (l.rstrip('\n').split('\t') for l in open(ROOT / 'model/study/samples/split_design/split2.tsv')) if f[0] != 'task'}  # {task: split}, from the `split` column
+
+
+def set_of(t):
+    """The split of the task: train, dev or held-out."""
+    return SPLIT[t]
 
 
 def sha16(text):
