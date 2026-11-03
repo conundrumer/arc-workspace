@@ -4,6 +4,7 @@
 //! program to its stream in [`write`](mod@write).
 
 pub mod corpus;
+pub(crate) mod demonstrated;
 pub mod settings;
 pub mod token;
 pub mod vocabulary;

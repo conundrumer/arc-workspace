@@ -17,20 +17,30 @@
 //! `crate::resolver::form_columns::rigid_outputs` gives. A projection gives one column
 //! name per column of the input, each followed by the head site's arguments
 //! at that column and `END`.
+//!
+//! A `DEMONSTRATED` form names its key and inputs as an instance does, with
+//! the inputs of [`super::demonstrated::ports`], then writes each rule, then
+//! `END`, and the engine then declares the form's relation. A rule is its
+//! own label scope: its fields, then its forms, each of whose labels takes
+//! a slot after the fields and the labels of the rule's earlier forms. The
+//! relations a rule's forms declare take the next relation slots, and a
+//! read in the rule finds them before the program's relations of the same
+//! name.
 
 use crate::check::CheckedProgram;
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::canonical::{prediction, relation_of};
 use crate::program::{
-    Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintLabel, Form, Instance, InstanceInput, LabelId, LabelUse, Negated,
-    Operand, Out, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
+    Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintLabel, DemoRule, Demonstrated, DemonstratedPart, Form, Instance, InstanceInput,
+    LabelId, LabelUse, Negated, Operand, Out, OutputName, OutputOwner, OutputStep, ProgramRelation, RelationRef, RigidDet, Site, SiteArg,
 };
 use crate::program::Atom;
 use crate::registry::{Component, InputPort, LibEntry, Registry};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
 use crate::resolver::columns::{example, projection};
-use crate::resolver::form_columns::rigid_outputs;
+use crate::resolver::form_columns::{demonstrated_columns, rigid_outputs};
 use crate::resolver::{DependencyKind, Resolution, ResolvedProgram, Side};
 
 use super::{Control, Emitter, Token, Vocabulary};
@@ -44,9 +54,8 @@ use super::{Control, Emitter, Token, Vocabulary};
 ///
 /// Fails at the first token that `vocabulary` does not hold, with a
 /// diagnostic that names the cap the program passes or the proposer the
-/// settings do not offer, and at a form that the stream has no form for: a
-/// `DEMONSTRATED` or an `ALTS` form, and a `DET_OR_RULE` or `RULE_OR_DET`
-/// line.
+/// settings do not offer, and at a form that the stream has no form for: an
+/// `ALTS` form, and a `DET_OR_RULE` or `RULE_OR_DET` line.
 pub fn token_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Vec<(Token, Emitter)>, Diagnostic> {
     Ok(written_stream(program, vocabulary)?.tokens)
 }
@@ -81,11 +90,9 @@ pub struct WrittenForm {
 /// The stream of [`token_stream`] with the relations its slots name and the
 /// labels of its forms, from one run of the writer.
 pub fn written_stream(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, Diagnostic> {
-    let WriterOutput { stream, declared, forms } = write_program(program, vocabulary)?;
-    let mut relations: Vec<(u32, ProgramRelation)> = declared.into_iter().map(|(relation, declared)| (declared.slot, relation)).collect();
-    relations.sort_by_key(|(slot, _)| *slot);
+    let WriterOutput { stream, slots, forms } = write_program(program, vocabulary)?;
     let (tokens,paths)=stream.into_iter().map(|(token,emitter,path)|((token,emitter),path)).unzip();
-    Ok(WrittenStream { tokens, paths, relations: relations.into_iter().map(|(_, relation)| relation).collect(), forms })
+    Ok(WrittenStream { tokens, paths, relations: slots, forms })
 }
 
 /// The token stream of [`token_stream`], each token with the path in
@@ -101,10 +108,10 @@ pub fn token_stream_with_paths(program: &CheckedProgram, vocabulary: &Vocabulary
 }
 
 /// What one run of the writer gives: the tokens with their paths, the
-/// relations declared, and the forms written.
+/// relation declared at each slot, and the forms written.
 struct WriterOutput {
     stream: Vec<(Token, Emitter, NodePath)>,
-    declared: StableHashMap<ProgramRelation, Declared>,
+    slots: Vec<ProgramRelation>,
     forms: Vec<WrittenForm>,
 }
 
@@ -115,12 +122,16 @@ fn write_program(program: &CheckedProgram, vocabulary: &Vocabulary) -> Result<Wr
         registry: vocabulary.registry(),
         resolved: &program.program,
         declared: StableHashMap::default(),
+        rule_declared: None,
+        slots: Vec::new(),
         labels: StableHashMap::default(),
+        next_label: 0,
+        form_labels: None,
         stream: Vec::new(),
         written: Vec::new(),
     };
     writer.forms(&program.program.program.value().forms)?;
-    Ok(WriterOutput { stream: writer.stream, declared: writer.declared, forms: writer.written })
+    Ok(WriterOutput { stream: writer.stream, slots: writer.slots, forms: writer.written })
 }
 
 /// The forms of `forms` that hold no form, each with its path under `path`,
@@ -182,7 +193,8 @@ fn declarations(registry: &Registry, form: &Form) -> Vec<ProgramRelation> {
             component(registry, &instance.component).map_or_else(Vec::new, |component| instance_outputs(component, instance).into_iter().map(|(relation, _)| relation).collect())
         }
         Form::RigidDet(rigid) => rigid_det_outputs(rigid.value()).into_iter().map(|(relation, _)| relation).collect(),
-        Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => Vec::new(),
+        Form::Demonstrated(demonstrated) => vec![ProgramRelation::Declared(demonstrated.value().name.clone())],
+        Form::Claim(_) | Form::Alts(_) | Form::Out(_) => Vec::new(),
     }
 }
 
@@ -241,9 +253,23 @@ struct Writer<'w> {
     vocabulary: &'w Vocabulary<'w>,
     registry: &'w Registry,
     resolved: &'w ResolvedProgram,
+    /// The relations that the program's forms declare, other than those of
+    /// a `DEMO_RULE` form.
     declared: StableHashMap<ProgramRelation, Declared>,
-    /// The slot of each label of the current top-level form.
+    /// The relations that the forms of the `DEMO_RULE` form being written
+    /// declare, which a read in that form finds first.
+    rule_declared: Option<StableHashMap<ProgramRelation, Declared>>,
+    /// The relation declared at each slot.
+    slots: Vec<ProgramRelation>,
+    /// The slot of each label of the current label scope, as far as a read
+    /// takes it.
     labels: StableHashMap<LabelId, u32>,
+    /// The next label slot of the current label scope.
+    next_label: u32,
+    /// The labels of the form being written, by slot, where they are not
+    /// those of `labels`: a `DEMONSTRATED` form's own scope, which its rules
+    /// replace in `labels`.
+    form_labels: Option<Vec<(u32, LabelId)>>,
     stream: Vec<(Token, Emitter, NodePath)>,
     /// The forms written so far.
     written: Vec<WrittenForm>,
@@ -284,8 +310,8 @@ impl Writer<'_> {
         for index in write_order(self.registry, &leaves) {
             let (form, at) = &leaves[index];
             let token_start=self.stream.len();
-            let relation_start=self.declared.len();
-            self.labels.clear();
+            let relation_start=self.slots.len();
+            self.clear_labels();
             match form {
                 Form::Claim(_) => unreachable!("leaf forms hold no claim"),
                 Form::Clause(clause) => self.clause(clause.value(), at)?,
@@ -293,10 +319,13 @@ impl Writer<'_> {
                 Form::Choose(choose) => self.choose(choose.value(), at)?,
                 Form::RigidDet(rigid) => self.rigid_det(rigid.value(), at)?,
                 Form::Out(out) => self.out(out.value(), at)?,
-                Form::Demonstrated(_) => return Err(no_form("a `DEMONSTRATED` form", at)),
+                Form::Demonstrated(demonstrated) => self.demonstrated(demonstrated.value(), at)?,
                 Form::Alts(_) => return Err(no_form("an `ALTS` form", at)),
             }
-            let mut labels: Vec<(u32, LabelId)> = self.labels.iter().map(|(id, slot)| (*slot, *id)).collect();
+            let mut labels: Vec<(u32, LabelId)> = match self.form_labels.take() {
+                Some(labels) => labels,
+                None => self.labels.iter().map(|(id, slot)| (*slot, *id)).collect(),
+            };
             labels.sort_by_key(|(slot, _)| *slot);
             let readable = match form {
                 Form::Instance(instance) => {
@@ -307,9 +336,11 @@ impl Writer<'_> {
                         .map(|port| ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.name.clone()), path: [OutputStep::Port(port.name.clone())].into() }))
                         .map(|relation| self.declared[&relation].slot as usize).collect()
                 }
-                _ => (relation_start..self.declared.len()).collect(),
+                // The relations of the form's rules are read within their rules alone.
+                Form::Demonstrated(_) => vec![self.slots.len() - 1],
+                _ => (relation_start..self.slots.len()).collect(),
             };
-            self.written.push(WrittenForm { tokens:token_start..self.stream.len(),relations:relation_start..self.declared.len(),readable,path: at.clone(), labels: labels.into_iter().map(|(_, id)| id).collect() });
+            self.written.push(WrittenForm { tokens:token_start..self.stream.len(),relations:relation_start..self.slots.len(),readable,path: at.clone(), labels: labels.into_iter().map(|(_, id)| id).collect() });
         }
         Ok(())
     }
@@ -322,16 +353,26 @@ impl Writer<'_> {
     }
 
     /// Takes the next relation slot for `relation`, with the columns
-    /// `columns`, and gives it. A relation already declared is a fault: the
-    /// decoder takes a new slot at each declaration, so a second declaration
-    /// would give a stream whose later slots differ from the decoder's.
+    /// `columns`, and gives it: in the scope of the `DEMO_RULE` form being
+    /// written, where one is, and otherwise in the program's. A relation
+    /// already declared in that scope is a fault: the decoder takes a new
+    /// slot at each declaration, so a second declaration would give a stream
+    /// whose later slots differ from the decoder's.
     fn reserve(&mut self, relation: ProgramRelation, columns: Box<[ColumnName]>, path: &NodePath) -> Result<u32, Diagnostic> {
-        if self.declared.contains_key(&relation) {
+        let scope = self.rule_declared.as_mut().unwrap_or(&mut self.declared);
+        if scope.contains_key(&relation) {
             return Err(run_fault(format!("the stream declares a relation once for each form that derives it, and {relation:?} has more than one"), path));
         }
-        let slot = u32::try_from(self.declared.len()).expect("fewer than 2^32 relations");
-        self.declared.insert(relation, Declared { slot, columns });
+        let slot = u32::try_from(self.slots.len()).expect("fewer than 2^32 relations");
+        scope.insert(relation.clone(), Declared { slot, columns });
+        self.slots.push(relation);
         Ok(slot)
+    }
+
+    /// Starts a label scope.
+    fn clear_labels(&mut self) {
+        self.labels.clear();
+        self.next_label = 0;
     }
 
     /// Emits the clause. A `DET` with no body and no proposer has no labels, so
@@ -440,8 +481,15 @@ impl Writer<'_> {
             LabelUse::Join(id) => (None, id),
             LabelUse::Zero => return self.model(Control::Zero, path),
         };
-        let next = u32::try_from(self.labels.len()).expect("fewer than 2^32 labels");
-        let slot = *self.labels.entry(id).or_insert(next);
+        let slot = match self.labels.get(&id) {
+            Some(slot) => *slot,
+            None => {
+                let slot = self.next_label;
+                self.next_label += 1;
+                self.labels.insert(id, slot);
+                slot
+            }
+        };
         match mark {
             Some(mark) => {
                 self.model(mark, path)?;
@@ -480,7 +528,8 @@ impl Writer<'_> {
 
     /// The slot and the columns of a relation the program has declared.
     fn declared_relation(&self, relation: &ProgramRelation, path: &NodePath) -> Result<(Token, Box<[ColumnName]>), Diagnostic> {
-        let declared = self.declared.get(relation).ok_or_else(|| run_fault(format!("the program reads {relation:?} before it declares it"), path))?;
+        let in_rule = self.rule_declared.as_ref().and_then(|scope| scope.get(relation));
+        let declared = in_rule.or_else(|| self.declared.get(relation)).ok_or_else(|| run_fault(format!("the program reads {relation:?} before it declares it"), path))?;
         Ok((Token::Relation(declared.slot), declared.columns.clone()))
     }
 
@@ -684,22 +733,116 @@ impl Writer<'_> {
         let columns = row_columns.chain(choose.candidate_columns.iter()).map(|column| column.name.clone()).collect();
         self.declare(choose_relation(choose), columns, path)
     }
+
+    /// Emits the `DEMONSTRATED` form: `DEMONSTRATED`, its key and inputs as
+    /// an instance's are, with the inputs of [`super::demonstrated::ports`],
+    /// each rule, and `END`; the engine then declares the form's relation.
+    fn demonstrated(&mut self, demonstrated: &Demonstrated, path: &NodePath) -> Written {
+        self.model(Control::Demonstrated, path)?;
+        let ports = super::demonstrated::ports();
+        let keyed: &[_] = demonstrated.key.as_ref().map_or(&[], |key| &key.value().inputs);
+        self.push(Token::Column(0), Emitter::Engine, path)?;
+        match &demonstrated.key {
+            None => self.model(Control::Skip, path)?,
+            Some(key) => {
+                let key = key.value();
+                let at = path.child(demonstrated.position(DemonstratedPart::Key));
+                self.body(key.key.body.value(), &at.child(0))?;
+                self.model(Control::End, &at.child(0))?;
+                self.inputs(ports, &key.inputs, |_| true, &at, 1)?;
+            }
+        }
+        let written_in_key = |port: &crate::registry::InputPort| keyed.iter().any(|input| input.value().name == port.port.name);
+        self.inputs(ports, &demonstrated.inputs, |port| !written_in_key(port), path, u32::from(demonstrated.key.is_some()))?;
+        self.form_labels = Some(self.labels.iter().map(|(id, slot)| (*slot, *id)).collect());
+        let targets = super::demonstrated::prediction_targets(demonstrated);
+        for (index, rule) in demonstrated.rules.iter().enumerate() {
+            self.demo_rule(rule.value(), &targets, &path.child(demonstrated.position(DemonstratedPart::Rule(index))))?;
+        }
+        self.model(Control::End, path)?;
+        let columns = demonstrated_columns(demonstrated).names().cloned().collect();
+        self.declare(ProgramRelation::Declared(demonstrated.name.clone()), columns, path)
+    }
+
+    /// Emits the `DEMO_RULE` form `rule`, at `path`: `DEMO_RULE`, a made
+    /// label for each field, its forms in the order of [`write_order`], and
+    /// `END`. Its `&prediction` clause is written as
+    /// [`Writer::prediction`] gives, and each other form as a form of the
+    /// program is.
+    fn demo_rule(&mut self, rule: &DemoRule, targets: &[Option<ColumnName>], path: &NodePath) -> Written {
+        self.model(Control::DemoRule, path)?;
+        self.clear_labels();
+        for field in rule.fields.iter() {
+            self.label(LabelUse::Fresh(field.label), path)?;
+        }
+        let fields: Vec<LabelId> = rule.fields.iter().map(|field| field.label).collect();
+        let forms: Vec<(&Form, NodePath)> = rule.forms.iter().enumerate().map(|(index, form)| (form, path.child(index as u32))).collect();
+        self.rule_declared = Some(StableHashMap::default());
+        for index in write_order(self.registry, &forms) {
+            let (form, at) = &forms[index];
+            if rule.forms.from_alt(index) {
+                return Err(no_form("a form that an `ALT` gives a `DEMO_RULE` form", at));
+            }
+            // A label that an earlier form of the rule makes is made anew in this one.
+            self.labels.retain(|label, _| fields.contains(label));
+            match form {
+                Form::Clause(clause) if relation_of(&clause.value().derives) == prediction() => self.prediction(clause.value(), rule, targets, at)?,
+                Form::Clause(clause) => self.clause(clause.value(), at)?,
+                Form::Instance(instance) => self.instance(instance.value(), at)?,
+                Form::Choose(choose) => self.choose(choose.value(), at)?,
+                Form::RigidDet(rigid) => self.rigid_det(rigid.value(), at)?,
+                Form::Claim(_) | Form::Demonstrated(_) | Form::Alts(_) | Form::Out(_) => return Err(no_form("a form of a `DEMO_RULE` other than a clause, an `INIT`, a `CHOOSE` and a `RIGID_DET` form", at)),
+            }
+        }
+        self.rule_declared = None;
+        self.model(Control::End, path)
+    }
+
+    /// Emits the `&prediction` clause `clause` of `rule`: `PREDICT`, its
+    /// body and `END`, then, for each column of `targets`, the engine's
+    /// column token at its position and the label of the clause's column of
+    /// that name, or of the rule's field of that name, or `SKIP` where
+    /// neither stands. It declares nothing.
+    fn prediction(&mut self, clause: &Clause, rule: &DemoRule, targets: &[Option<ColumnName>], path: &NodePath) -> Written {
+        if clause.keyword != ClauseKeyword::Rule || !clause.proposers.is_empty() || clause.set || !clause.ones.is_empty() {
+            return Err(no_form("a `&prediction` clause other than a `RULE` with a body alone", path));
+        }
+        self.model(Control::Predict, path)?;
+        self.body(clause.body.value(), &path.child(0))?;
+        self.model(Control::End, path)?;
+        for (position, target) in targets.iter().enumerate() {
+            self.push(Token::Column(position as u32), Emitter::Engine, path)?;
+            let column = target.as_ref().and_then(|name| clause.columns.iter().chain(rule.fields.iter()).find(|column| column.name == *name));
+            match column {
+                Some(column) => self.label(LabelUse::Join(column.label), path)?,
+                None => self.model(Control::Skip, path)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Whether the read at `read` gives the Example column the column token 0,
 /// with the columns of its relation after it, as
 /// `docs/engine/arclog-stream.md#token-stream` gives: a clause's read where it is
-/// lifted, and a read in an `INIT`, a `CHOOSE` or a `RIGID_DET` form of a
-/// per-input relation that is no fact and no relation of the form, lifted
-/// or not. The side of such a form follows from its reads, a site on `E`
-/// among them, so the rule reads only what stands at the read's relation
-/// token.
+/// lifted, and a read in an `INIT`, a `CHOOSE` or a `RIGID_DET` form, or in
+/// the key or an input of a `DEMONSTRATED` form, of a per-input relation
+/// that is no fact and no relation of the form, lifted or not. The side of
+/// such a form follows from its reads, a site on `E` among them, so the rule
+/// reads only what stands at the read's relation token. A read in a form of
+/// a `DEMO_RULE` form takes the rule of that form.
 pub(crate) fn reads_example_column(resolved: &ResolvedProgram, read: &NodePath) -> bool {
     let program = NodeRef::Program(resolved.program.value());
     let depths = 1..=read.0.len();
-    let Some(form) = depths.map(|depth| NodePath(read.0[..depth].into())).find(|at| !matches!(node_at(program, at), Some(NodeRef::Claim(_)))) else { return false };
+    let Some(mut form) = depths.map(|depth| NodePath(read.0[..depth].into())).find(|at| !matches!(node_at(program, at), Some(NodeRef::Claim(_)))) else { return false };
+    if read.0.len() > form.0.len() + 1 && matches!(node_at(program, &form), Some(NodeRef::Demonstrated(_))) {
+        let rule = NodePath(read.0[..form.0.len() + 1].into());
+        if matches!(node_at(program, &rule), Some(NodeRef::DemoRule(_))) {
+            form = NodePath(read.0[..form.0.len() + 2].into());
+        }
+    }
     match node_at(program, &form) {
-        Some(NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_)) => {}
+        Some(NodeRef::Instance(_) | NodeRef::Choose(_) | NodeRef::RigidDet(_) | NodeRef::Demonstrated(_)) => {}
         _ => return resolved.reads_lifted(read),
     }
     let Some(Resolution::Node(node)) = resolved.resolution(read) else { return false };

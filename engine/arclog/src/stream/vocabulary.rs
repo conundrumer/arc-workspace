@@ -8,9 +8,10 @@ use crate::registry::{LibEntry, LibName, Proposer, ProposerKind, Registry};
 use super::{Control, DecodeSettings, Token, TokenKind, VocabularyCaps};
 
 /// The tokens of one decode by id, and the id of each. The slots stand in
-/// this order: the control tokens, the lib relations, relation macros and
-/// components, the proposers the settings offer, the fact relations, then
-/// the relation, column and label slots up to the settings' caps. Lib names
+/// this order: the control tokens of [`Control::ALL`], the lib relations,
+/// relation macros and components, the proposers the settings offer, the
+/// fact relations, the relation, column and label slots up to the settings'
+/// caps, then the control tokens of [`Control::DEMONSTRATED_FORM`]. Lib names
 /// stand in the order of their text within each kind.
 #[derive(Clone, Debug)]
 pub struct Vocabulary<'r> {
@@ -46,6 +47,7 @@ impl<'r> Vocabulary<'r> {
             .chain((0..caps.relations).map(Token::Relation))
             .chain((0..caps.columns).map(Token::Column))
             .chain((0..caps.labels).map(Token::Label))
+            .chain(Control::DEMONSTRATED_FORM.into_iter().map(Token::Control))
             .collect();
         let ids = tokens.iter().enumerate().map(|(id, token)| (token.clone(), u32::try_from(id).expect("fewer than 2^32 tokens"))).collect();
         Vocabulary { registry, caps, tokens, ids }
