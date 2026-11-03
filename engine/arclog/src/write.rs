@@ -11,7 +11,8 @@ mod arclog;
 pub(crate) use arclog::{declared, output_name, relation_ref};
 
 use crate::layout::Layout;
-use crate::program::{Arcdata, Node, Program};
+use crate::program::{Arcdata, Form, Node, Program};
+use std::sync::Arc;
 use crate::registry::Registry;
 use crate::solver::Solver;
 use crate::terms::InternTable;
@@ -91,7 +92,8 @@ pub fn write_solver(solver: &Solver) -> SolverText {
 /// and reads back as two labels.
 ///
 /// A relation slot `n` is written `&rn`. The writer prints each form a decode
-/// builds, `RULE`, `DET`, `INIT`, `CHOOSE`, `RIGID_DET` and `OUT`, including
+/// builds, `RULE`, `DET`, `INIT`, `CHOOSE`, `RIGID_DET`, `OUT` and
+/// `DEMONSTRATED`, including
 /// explicit record-field sites. It writes a site of an `OUT` form that is a column of one
 /// label as `^<column>`, with the column's name whatever the other labels of
 /// the form are named, since no label of an `OUT` is read again.
@@ -110,7 +112,7 @@ pub(crate) fn write_synthesized_named(program: &Node<Program>, registry: &Regist
 
 pub(crate) fn label_names_named(program: &Node<Program>, registry: &Registry,
     preferred: Option<&LabelNames>) -> LabelNames {
-    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names, _)| names).collect()
+    synthesized::named_forms(program, registry, preferred).into_iter().map(|(_, names, _, _)| names).collect()
 }
 
 /// `program` with the sites of each read of a derived relation in the order
@@ -140,10 +142,10 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
         Some(layout) => program.value().forms.iter().enumerate().map(|(i,f)| {
             let names = layout.node(crate::layout::SourceFile::Arclog,&NodePath::top(i as u32))
                 .map(|n|n.label_names.to_vec()).unwrap_or_default();
-            (f.clone(),names,None)
+            (f.clone(),names,None,None)
         }).collect(),
         None => synthesized::named_forms(program,registry,preferred).into_iter()
-            .map(|(form,names,slots)| (form,names,Some(slots))).collect::<Vec<_>>(),
+            .map(|(form,names,slots,nested)| (form,names,Some(slots),Some(nested))).collect::<Vec<_>>(),
     };
     fn walk(original: NodeRef<'_>, mut display: NodeRef<'_>, at: &NodePath, slots: Option<&synthesized::Slots>,
         names: &[(LabelId,Box<str>)], out: &mut std::collections::BTreeMap<NodePath,String>) -> Result<(),String> {
@@ -169,7 +171,16 @@ pub(crate) fn node_texts(program: &Node<Program>, layout: Option<&Layout>, regis
         Ok(())
     }
     let mut out=std::collections::BTreeMap::new();
-    for (i,(original,(display,names,slots))) in program.value().forms.iter().zip(named).enumerate() {
+    for (i,(original,(display,names,slots,nested))) in program.value().forms.iter().zip(named).enumerate() {
+        // A `DEMONSTRATED` form's rules are scopes of their own, which a
+        // snippet has no names of: the form has the text of its own alone.
+        if let Form::Demonstrated(_) = original {
+            let nested = nested.ok_or_else(|| format!("the DEMONSTRATED form {i} has no text of its own"))?;
+            let mut alone = Layout::default();
+            synthesized::name_scopes(&mut alone, 0, names, nested);
+            out.insert(NodePath::top(i as u32), write_arclog(&Node::new(Program { forms: Arc::from([display]) }), &alone).trim().to_owned());
+            continue;
+        }
         walk(NodeRef::from(original),NodeRef::from(&display),&NodePath::top(i as u32),slots.as_ref(),&names,&mut out)?;
     }
     out.insert(NodePath::default(),match layout {Some(l)=>write_arclog(program,l),None=>write_synthesized_named(program,registry,preferred)});
@@ -220,7 +231,7 @@ mod synthesized {
 
     use crate::hash::StableHashMap;
     use crate::layout::{Layout, NodeLayout, SourceFile, SourcePlace};
-    use crate::program::path::NodePath;
+    use crate::program::path::{NodePath, NodeRef};
     use crate::program::*;
     use crate::registry::{Registry, ColumnType, ParameterSite, TypeParameter, binding_sites};
     use crate::resolver::columns::projection;
@@ -233,13 +244,8 @@ mod synthesized {
         program: &Node<Program>,
         registry: &Registry,
         preferred: Option<&super::LabelNames>,
-    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>, Slots)> {
-        let mut synth = Synthesizer {
-            registry,
-            columns: StableHashMap::default(),
-            records: StableHashMap::default(),
-            slots: Slots::default(),
-        };
+    ) -> Vec<(Form, Vec<(LabelId, Box<str>)>, Slots, Vec<Scope>)> {
+        let mut synth = Synthesizer::new(registry);
         let mut named = Vec::new();
         for (index, form) in program.value().forms.iter().enumerate() {
             let slots = synth.slots.clone();
@@ -263,7 +269,8 @@ mod synthesized {
                 }
             };
             let written = synth.form(form, &Names(&names));
-            named.push((written, names, slots));
+            let nested = std::mem::take(&mut synth.nested);
+            named.push((written, names, slots, nested));
         }
         named
     }
@@ -273,7 +280,7 @@ mod synthesized {
     /// and nothing else changed: the program a reader of that text builds,
     /// up to the names and the ids of its labels.
     pub(super) fn in_text_order(program: &Node<Program>, registry: &Registry) -> Node<Program> {
-        let mut synth = Synthesizer { registry, columns: StableHashMap::default(), records: StableHashMap::default(), slots: Slots::default() };
+        let mut synth = Synthesizer::new(registry);
         let forms: Vec<Form> = program.value().forms.iter().map(|form| synth.in_slot_order(form).0).collect();
         Node::new(Program { forms: forms.into() })
     }
@@ -281,16 +288,31 @@ mod synthesized {
     pub(super) fn write(program: &Node<Program>, registry: &Registry, preferred: Option<&super::LabelNames>) -> String {
         let mut forms = Vec::new();
         let mut layout = Layout::default();
-        for (index, (form, names, _)) in named_forms(program, registry, preferred).into_iter().enumerate() {
-            let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
-            let node = NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
-            layout.nodes.insert((SourceFile::Arclog, NodePath::top(index as u32)), node);
+        for (index, (form, names, _, nested)) in named_forms(program, registry, preferred).into_iter().enumerate() {
+            name_scopes(&mut layout, index, names, nested);
             if let Form::Out(out) = &form {
                 super::elide_out_sites(out.value(), &NodePath::top(index as u32), &mut layout);
             }
             forms.push(form);
         }
         super::write_arclog(&Node::new(Program { forms: forms.into() }), &layout)
+    }
+
+    /// The label names of a scope below a form, a `DEMO_RULE` form or a form
+    /// that an `ALT` gave one, by its path below the form.
+    pub(crate) type Scope = (NodePath, Vec<(LabelId, Box<str>)>);
+
+    /// Puts into `layout` the label names of the form at `index`, `names`,
+    /// and those of each scope below it, `nested`.
+    pub(super) fn name_scopes(layout: &mut Layout, index: usize, names: Vec<(LabelId, Box<str>)>, nested: Vec<Scope>) {
+        let place = SourcePlace { file: SourceFile::Arclog, start: 0, end: 0, line: index as u32 + 1, column: 1 };
+        let at = NodePath::top(index as u32);
+        let node = |names: Vec<(LabelId, Box<str>)>| NodeLayout { tokens: Box::new([place]), label_names: names.into(), ..NodeLayout::default() };
+        layout.nodes.insert((SourceFile::Arclog, at.clone()), node(names));
+        for (below, names) in nested {
+            let path = NodePath(at.0.iter().chain(below.0.iter()).cloned().collect());
+            layout.nodes.insert((SourceFile::Arclog, path), node(names));
+        }
     }
 
     /// The slot each column of a derived relation takes in the text: the
@@ -486,6 +508,11 @@ mod synthesized {
         /// The slot each column of a relation a form before the current one
         /// declares takes in the text, by the column's slot in the program.
         slots: Slots,
+        /// The label names of each scope below the form being written.
+        nested: Vec<Scope>,
+        /// The places of the labels of each scope below the form being
+        /// ordered, by the scope's path below the form.
+        nested_ranks: StableHashMap<NodePath, Ranks>,
     }
 
     fn slot_text(slot: u32) -> String {
@@ -547,7 +574,11 @@ mod synthesized {
         }
     }
 
-    impl Synthesizer<'_> {
+    impl<'r> Synthesizer<'r> {
+        fn new(registry: &'r Registry) -> Self {
+            Synthesizer { registry, columns: StableHashMap::default(), records: StableHashMap::default(), slots: Slots::default(), nested: Vec::new(), nested_ranks: StableHashMap::default() }
+        }
+
         /// The text of `column` of a site on `relation`.
         fn column_text(&self, relation: Option<&RelationRef>, column: &ColumnName) -> String {
             match column {
@@ -570,33 +601,67 @@ mod synthesized {
                 let made = uses.made.iter().filter(|(label, _)| !uses.reserved.iter().any(|(id, _)| id == label));
                 return uses.reserved.iter().cloned().chain(made.map(|(label, column)| (*label, column.as_str().into()))).collect();
             }
-            let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
-            let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
-            names.dedup_by_key(|(id, _)| *id);
-            uses.made.sort_by_key(|(label, _)| ranks.get(label).copied().unwrap_or(label.0));
             // A column of a relation that a `RIGID_DET` part can read, or an
             // instance column of a `RIGID_DET`, is a column of an output that
             // has a `:Pose` column of its own, and a text names its columns
             // apart.
-            let in_output: Vec<LabelId> = match form {
-                Form::Clause(clause) => clause.value().columns.iter().map(|column| column.label).collect(),
-                Form::Choose(choose) => {
-                    let choose = choose.value();
-                    choose.rows.iter().flat_map(|rows| rows.columns.iter()).chain(choose.candidate_columns.iter()).map(|column| column.label).collect()
-                }
-                Form::RigidDet(rigid) => rigid.value().instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| column.label).collect(),
-                _ => Vec::new(),
-            };
-            for (label, base) in &uses.made {
-                if names.iter().any(|(id, _)| id == label) {
-                    continue;
-                }
-                let apart = in_output.contains(label);
-                let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name) || (apart && name == POSE_COLUMN);
-                names.push((*label, label_name(base, taken).into()));
-            }
-            names
+            let in_output = output_labels(form);
+            named_uses(uses, ranks, &in_output)
         }
+
+        /// The names of the labels of a scope that holds `forms`, after the
+        /// labels `fields`, which the scope makes first, with the names
+        /// `reserved` held for the labels they name.
+        fn scope_names(&self, forms: &[&Form], fields: &[RelationColumn], reserved: Vec<(LabelId, Box<str>)>, ranks: Option<&Ranks>) -> Vec<(LabelId, Box<str>)> {
+            let mut uses = Uses { reserved, made: fields.iter().map(|field| (field.label, FIELD_BASE.to_owned())).collect() };
+            let mut in_output = Vec::new();
+            for form in forms {
+                self.form_uses(form, &mut uses);
+                in_output.extend(output_labels(form));
+            }
+            named_uses(uses, ranks.unwrap_or(&Ranks::default()), &in_output)
+        }
+
+        /// `demonstrated`, a `DEMONSTRATED` form, in the order its labels and
+        /// sites take in the text. The places of the labels of its key and
+        /// inputs are in `ranks`, and those of each rule's scope in
+        /// `nested_ranks`.
+        fn demonstrated_in_slot_order(&mut self, demonstrated: &Demonstrated, ranks: &mut Ranks) -> Demonstrated {
+            let slots = &self.slots;
+            let key = demonstrated.key.as_ref().map(|key| {
+                let key = key.value();
+                Node::new(KeyClause { key: key_in_order(&key.key, slots, ranks), inputs: key.inputs.iter().map(|input| input_in_order(input, slots, ranks)).collect() })
+            });
+            let inputs = demonstrated.inputs.iter().map(|input| input_in_order(input, slots, ranks)).collect();
+            let root = NodePath::default();
+            let children = super::arclog::ChildPaths::of(&root, NodeRef::Demonstrated(demonstrated));
+            let mut rules = Vec::new();
+            for rule in demonstrated.rules.iter() {
+                let rule = rule.value();
+                let at = children.path(NodeRef::DemoRule(rule));
+                let forms_at = super::arclog::ChildPaths::of(&at, NodeRef::DemoRule(rule));
+                let mut rule_ranks = Ranks::default();
+                let mut forms = Vec::new();
+                for (index, form) in rule.forms.iter().enumerate() {
+                    let alt = rule.forms.from_alt(index);
+                    let form_at = forms_at.path(NodeRef::from(form));
+                    let (ordered, own) = self.in_slot_order(form);
+                    if alt {
+                        self.nested_ranks.insert(form_at, own);
+                    } else {
+                        rule_ranks.extend(own);
+                    }
+                    forms.push((ordered, alt));
+                }
+                self.nested_ranks.insert(at, rule_ranks);
+                rules.push(Node::new(DemoRule { forms: forms.into_iter().collect(), ..rule.clone() }));
+            }
+            Demonstrated { key, inputs, rules: rules.into(), ..demonstrated.clone() }
+        }
+
+        /// The labels of `form` that are columns of an output with a `:Pose`
+        /// column of its own.
+
 
         /// `form` with the sites of each read of a derived relation in the
         /// order `read_order` gives, and the place of each label the change
@@ -605,6 +670,10 @@ mod synthesized {
         /// form take them.
         fn in_slot_order(&mut self, form: &Form) -> (Form, Ranks) {
             let mut ranks = Ranks::default();
+            if let Form::Demonstrated(demonstrated) = form {
+                let ordered = self.demonstrated_in_slot_order(demonstrated.value(), &mut ranks);
+                return (Form::Demonstrated(Node::new(ordered)), ranks);
+            }
             let slots = &self.slots;
             let (form, declared) = match form {
                 Form::Clause(clause) => {
@@ -659,6 +728,15 @@ mod synthesized {
 
         fn form_uses(&self, form: &Form, uses: &mut Uses) {
             match form {
+                // The key and the inputs; each rule is a scope of its own.
+                Form::Demonstrated(demonstrated) => {
+                    let demonstrated = demonstrated.value();
+                    if let Some(key) = &demonstrated.key {
+                        self.body_uses(key.value().key.body.value(), uses);
+                        key.value().inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
+                    }
+                    demonstrated.inputs.iter().for_each(|input| self.input_uses(input.value(), uses));
+                }
                 Form::Clause(clause) => self.body_uses(clause.value().body.value(), uses),
                 Form::Instance(instance) => {
                     let instance = instance.value();
@@ -744,8 +822,91 @@ mod synthesized {
                 Form::Choose(choose) => Form::Choose(Node::new(self.choose(choose.value(), names))),
                 Form::RigidDet(rigid) => Form::RigidDet(Node::new(self.rigid_det(rigid.value(), names))),
                 Form::Out(out) => Form::Out(Node::new(Out { key: self.key_body(&out.value().key, names) })),
-                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE, RIGID_DET and OUT"),
+                Form::Demonstrated(demonstrated) => Form::Demonstrated(Node::new(self.demonstrated(demonstrated.value(), names))),
+                _ => panic!("write_synthesized writes the forms a decode builds: RULE, DET, INIT, CHOOSE, RIGID_DET, OUT and DEMONSTRATED"),
             }
+        }
+
+        /// `demonstrated` as written, its key and inputs with `names`, and
+        /// each rule, and each form an `ALT` gave a rule, with the names of
+        /// its own scope, which go to `nested`. A label of a `&prediction`
+        /// clause that fills a column takes the name of the key's or the
+        /// `value` head's label at that column, since the text names the
+        /// clause's columns by its labels.
+        fn demonstrated(&mut self, demonstrated: &Demonstrated, names: &Names) -> Demonstrated {
+            let ports = crate::stream::demonstrated::ports();
+            let no_fields = StableHashMap::default();
+            let key = demonstrated.key.as_ref().map(|key| {
+                let value = key.value();
+                let inputs = value.inputs.iter().map(|input| Node::new(self.input(input.value(), names, ports, &no_fields))).collect();
+                Node::new(KeyClause { key: self.key_body(&value.key, names), inputs })
+            });
+            let inputs = demonstrated.inputs.iter().map(|input| Node::new(self.input(input.value(), names, ports, &no_fields))).collect();
+            let relation = ProgramRelation::Declared(demonstrated.name.clone());
+            if let (Some(old), Some(new)) = (&demonstrated.key, &key) {
+                let fields = old.value().key.columns.iter().zip(new.value().key.columns.iter()).map(|(old, new)| (old.name.clone(), new.name.clone())).collect();
+                self.records.insert((relation.clone(), crate::resolver::columns::key()), fields);
+            }
+            let head = Demonstrated { name: RelationName(declared(&demonstrated.name.0)), key, inputs, rules: Arc::from([]) };
+            let columns = crate::resolver::form_columns::demonstrated_columns(&head).names().map(|column| written(column).unwrap_or_default().to_owned()).collect();
+            self.columns.insert(relation, columns);
+            // The column each target of a `&prediction` clause names, and the
+            // label of the key or the `value` head at that column.
+            let targets: Vec<ColumnName> = crate::stream::demonstrated::prediction_targets(demonstrated)
+                .into_iter()
+                .enumerate()
+                .map(|(at, name)| name.unwrap_or(ColumnName::Slot(u32::MAX - at as u32)))
+                .collect();
+            let mut target_labels: Vec<LabelId> = demonstrated.key.iter().flat_map(|key| key.value().key.columns.iter().map(|column| column.label)).collect();
+            if let Some(value) = crate::resolver::form_columns::demonstrated_value(demonstrated) {
+                for site in value.head.iter() {
+                    crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| target_labels.extend(crate::types::use_label(use_)));
+                }
+            }
+            let reserved = |forms: &[&Form]| -> Vec<(LabelId, Box<str>)> {
+                let mut reserved = Vec::new();
+                for form in forms {
+                    let Form::Clause(clause) = form else { continue };
+                    let clause = clause.value();
+                    if crate::program::canonical::relation_of(&clause.derives) != crate::program::canonical::prediction() {
+                        continue;
+                    }
+                    for column in clause.columns.iter() {
+                        let label = targets.iter().position(|target| *target == column.name).and_then(|at| target_labels.get(at));
+                        if let Some(label) = label {
+                            reserved.push((column.label, names.get(*label).into()));
+                        }
+                    }
+                }
+                reserved
+            };
+            let root = NodePath::default();
+            let children = super::arclog::ChildPaths::of(&root, NodeRef::Demonstrated(demonstrated));
+            let mut rules = Vec::new();
+            for rule in demonstrated.rules.iter() {
+                let rule = rule.value();
+                let at = children.path(NodeRef::DemoRule(rule));
+                let forms_at = super::arclog::ChildPaths::of(&at, NodeRef::DemoRule(rule));
+                let own: Vec<&Form> = rule.forms.iter().enumerate().filter(|(index, _)| !rule.forms.from_alt(*index)).map(|(_, form)| form).collect();
+                let rule_names = self.scope_names(&own, &rule.fields, reserved(&own), self.nested_ranks.get(&at));
+                let mut forms = Vec::new();
+                for (index, form) in rule.forms.iter().enumerate() {
+                    let alt = rule.forms.from_alt(index);
+                    let written_form = if alt {
+                        let form_at = forms_at.path(NodeRef::from(form));
+                        let alt_names = self.scope_names(&[form], &[], reserved(&[form]), self.nested_ranks.get(&form_at));
+                        let written_form = self.form(form, &Names(&alt_names));
+                        self.nested.push((form_at, alt_names));
+                        written_form
+                    } else {
+                        self.form(form, &Names(&rule_names))
+                    };
+                    forms.push((written_form, alt));
+                }
+                self.nested.push((at, rule_names));
+                rules.push(Node::new(DemoRule { forms: forms.into_iter().collect(), ..rule.clone() }));
+            }
+            Demonstrated { rules: rules.into(), ..head }
         }
 
         fn clause(&mut self, clause: &Clause, names: &Names) -> Clause {
@@ -1002,6 +1163,41 @@ mod synthesized {
                 },
             }
         }
+    }
+
+    /// The base of the name of a field of a `DEMO_RULE` form.
+    const FIELD_BASE: &str = "F";
+
+    /// The labels of `form` that are columns of an output with a `:Pose`
+    /// column of its own, which a text names apart from `Pose`.
+    fn output_labels(form: &Form) -> Vec<LabelId> {
+        match form {
+            Form::Clause(clause) => clause.value().columns.iter().map(|column| column.label).collect(),
+            Form::Choose(choose) => {
+                let choose = choose.value();
+                choose.rows.iter().flat_map(|rows| rows.columns.iter()).chain(choose.candidate_columns.iter()).map(|column| column.label).collect()
+            }
+            Form::RigidDet(rigid) => rigid.value().instance.iter().flat_map(|instance| instance.columns.iter()).map(|column| column.label).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The name of each label of `uses`: the reserved names, then the other
+    /// labels in the order of their places in `ranks`, or of their ids.
+    fn named_uses(mut uses: Uses, ranks: &Ranks, in_output: &[LabelId]) -> Vec<(LabelId, Box<str>)> {
+        let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
+        let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
+        names.dedup_by_key(|(id, _)| *id);
+        uses.made.sort_by_key(|(label, _)| ranks.get(label).copied().unwrap_or(label.0));
+        for (label, base) in &uses.made {
+            if names.iter().any(|(id, _)| id == label) {
+                continue;
+            }
+            let apart = in_output.contains(label);
+            let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name) || (apart && name == POSE_COLUMN);
+            names.push((*label, label_name(base, taken).into()));
+        }
+        names
     }
 
     /// The labels of one form, collected in any order.

@@ -85,9 +85,18 @@ pub const SCHEMA: &str = "arclog-empty-gold-v1";
 
 /// The result of the task `id`: the filtered gold of each case, or its
 /// original gold with the reason, or the original gold of the whole task
-/// with the reason, and the lint. `Err` only
-/// where the task file does not read.
+/// with the reason, and the lint. `Err` only where the task file does not
+/// read. A panic keeps the original gold of the whole task, with the panic's
+/// message as the reason, and gives no case.
 pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Duration>, constructions: &Constructions) -> Result<Value, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task_gold(corpus, tasks, id, deadline, constructions))).unwrap_or_else(|payload| {
+        let reason = format!("the filter panicked: {}", crate::harness::panic_message(&*payload).unwrap_or("a payload that is not a message"));
+        Ok(json!({"schema": SCHEMA, "task": id, "selection": "original", "reason": reason,
+            "cases": [], "skipped_cases": [], "singleton_double_read_lint": {"status": "unavailable", "reason": reason, "findings": []}}))
+    })
+}
+
+fn task_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Duration>, constructions: &Constructions) -> Result<Value, String> {
     let (task, _) = read_task_files(tasks, id)?;
     let registry = Registry::get();
     let program_settings = DecodeSettings::default();
