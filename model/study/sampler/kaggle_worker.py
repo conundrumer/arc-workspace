@@ -39,7 +39,7 @@ ONE_REPAIR_SECONDS = '30'  # of the ONE repair of one candidate, 0 for none; liv
 P_DAG_SETTING = '1'  # live.set_steers reads P_DAG from the environment: P's value weights read no label number, the setting that the steers' rows were made under
 ORDER_FREE_SETTING = 'col,tie,key'  # sample2_col.py reads ORDER_FREE when it is imported: tie orders options of one chance by their facts (search.py), key picks a key's labels by the types of their sites (live.Run.key_pick)
 IDENT_SOURCE_SETTING = 'value'  # sample2_col.py reads ARCLOG_IDENT_SOURCE when it is imported, and the engine at its first use in a process: an Ident column has one source, and a table export gives an Ident the first 32 bits of its member digest
-POOL_CLAUSES_SETTING = 'search'  # source() reads it: the pool search (superdag_search.py) writes the pool's queries, with the writer where WRITER is 1; state is the state search (state_search.py), which drafts with Run.form and so reads no WRITER_TREE
+POOL_CLAUSES_SETTING = 'search'  # source() reads it: the pool search (superdag_search.py) writes the pool's queries, with the writer where WRITER is 1; state is the state search (state_search.py), which drafts with the writer where WRITER is 1, as the pool search does
 WRITER_SETTING = '1'  # search.py reads WRITER when it is imported: the token-level writer (writer.py) writes each query
 WRITER_TREE_SETTING = ''  # search.py reads WRITER_TREE when it is imported: the writer's LightGBM model, with its feature names beside it (tree_dist.load); a path relative to --models; empty for the hand-set distribution
 NO_TREE_PLAN_SETTING = 'ordered'  # WRITER_PLAN where WRITER_TREE is empty (the hand-set distribution); with a tree, lookahead_legal takes the plan that the tree records (writer_plan.py)
@@ -319,6 +319,9 @@ def source(a, sampler):
         import state_search
         superdag_search.is_panic = lambda e: False  # a panic ends the worker, as in the pool search
         state_search.install()
+        if os.environ.get('ARC_DRAW_RECORD'):  # the draw records of a recorded run (draw_record.py)
+            import draw_record
+            draw_record.install_state(os.environ['ARC_DRAW_RECORD'])
         return state_search
     if path != 'search':
         return None

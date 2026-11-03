@@ -1,12 +1,15 @@
-"""Draw records of the pool search, for the training rows' negative ids (docs/sample-build/training-rows.md, "Search draws").
+"""Draw records of the pool search and of the state search, for the training rows' negative ids (docs/sample-build/training-rows.md, "Search draws").
 
-kaggle_worker.source installs it where ARC_DRAW_RECORD names a file. Each draw (superdag_search.try_clause: one query the writer wrote
-at a slot's scope) appends one JSON line to that file as it ends:
+kaggle_worker.source installs it where ARC_DRAW_RECORD names a file: install() for the pool search, install_state() for the state search. Each
+draw appends one JSON line to that file as it ends. A draw of the pool search is superdag_search.try_clause, one query the writer wrote at a
+slot's scope. A draw of the state search is an expansion that reached state_search.take, one query the writer wrote at the popped state; an
+expansion whose writer ended its path in every try has no query and no record (its line in <out>.expansions has outcome 'failed').
 
   run fields   task, run (ARC_DRAW_RUN), draw (the pool's draw count), seed, plan ('ordered' or 'unordered': the writer plan
                of the process, lookahead_legal.PLAN), release (ARC_DRAW_RELEASE), model_sha256 (of WRITER_TREE), site (ARC_DRAW_SITE)
-  steps        one entry per query of the program: the scope's queries (with every query they read, ordered by query id), then the
-               drawn query. Each has text (as the pool writes it, with &fN names), query_hash (32 hex digits, or null) and state (the
+  steps        one entry per query of the program: the scope's queries, then the drawn query. In the pool search the scope's queries
+               are those of the slot with every query they read, ordered by query id; in the state search they are the state's program
+               (state_search.program, in append order). Each has text (as the pool writes it, with &fN names), query_hash (32 hex digits, or null) and state (the
                query_hash of each step before it).
   tables       on a 'new' draw, the drawn query's tables as the pool kept them (superdag.Pool.take), one entry per output: name, dets (the
                QueryHash of each DET its assignments name, 32 hex digits, or the engine's name where it gives none), and at, one row per
@@ -90,28 +93,33 @@ def try_clause(self, clause, texts, kind):
 
 
 def write(pool, clause, kind, text, out, nforms, before, outs, seconds):
-    c = pool.run.c
     steps = scope_steps(pool)
     qh = getattr(clause, 'query_hash', None)
     if qh is None and len(pool.forms) > nforms:
         qh = next((h for h, f in pool.defs.items() if f == nforms), None)
     steps.append((pool.forms[nforms].text if len(pool.forms) > nforms else text, hex_of(qh)))
+    write_line(pool, pool.draws, kind, steps, out, before, outs, seconds, STATE['tables'])
+
+
+def write_line(pool, draw, kind, steps, out, before, outs, seconds, made):
+    """One record, or a repeat line, for a draw whose program is steps [(text, query hash)]."""
+    c = pool.run.c
     key = tuple(h for _, h in steps)
     first = STATE['seen'].get(key) if None not in key else None
     if first is not None:
-        line = dict(repeat=first, draw=pool.draws)
+        line = dict(repeat=first, draw=draw)
     else:
         if None not in key:
-            STATE['seen'][key] = pool.draws
+            STATE['seen'][key] = draw
         rose = sorted(k for k, v in c.items() if k.startswith(FAILED) and v > before.get(k, 0))
         kinds = collections.Counter(k for k, _ in outs)
         best = min(outs, key=lambda x: ORDER.index(x[0]) if x[0] in ORDER else len(ORDER), default=None)
-        line = dict(task=pool.id.split('.')[0], draw=pool.draws, seed=pool.a.seed, kind=kind, **STATE['fixed'],
+        line = dict(task=pool.id.split('.')[0], draw=draw, seed=pool.a.seed, kind=kind, **STATE['fixed'],
                     steps=[dict(text=t, query_hash=h, state=[s for _, s in steps[:i]]) for i, (t, h) in enumerate(steps)],
                     ran=out in ('new', 'equal'), result=out, failed=rose or None, outs=dict(kinds),
                     best=dict(kind=best[0], message=best[1]) if best else None, per_example=None,
                     solves=kinds.get('Consistent', 0) > 0, seconds=round(seconds, 3),
-                    tables=tables_of(STATE['tables']) if out == 'new' and STATE['tables'] else None)
+                    tables=tables_of(made) if out == 'new' and made else None)
     STATE['f'].write(json.dumps(line) + '\n')
     STATE['f'].flush()
 
@@ -147,6 +155,46 @@ def judged(self, f, cons, label):
         kind = str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]
         STATE['outs'].append((kind, (getattr(cons, 'message', None) or '')[:300]))
     yield from _judged(self, f, cons, label)
+
+
+def state_take(pool, st, f, pg, kind, nscope, bits=None):
+    """state_search.take, and the draw's record: the state's program, then the drawn query. A take that raises writes a record with result
+    'none' and the counters it raised, then raises again."""
+    import state_search as SX
+    c = pool.run.c
+    before = {k: v for k, v in c.items() if k.startswith(FAILED)}
+    nforms, t0 = len(pool.forms), time.monotonic()
+    try:
+        line = f.program_form().split('\n')[nscope]
+        text = SX.written_names(line, pg.written | {live.head_of(line): '&f%d' % nforms})
+    except Exception:  # noqa: BLE001
+        text = None
+    made = [r for s in pg.new for r in pg.tables.get(s, ())]
+    scope = [(pool.forms[q].text, getattr(pool.forms[q], 'query_hash', None)) for q in SX.program(pool, st)]
+    STATE['outs'] = []
+    got = None
+    try:
+        got = _state_take(pool, st, f, pg, kind, nscope, bits)
+        return got
+    finally:
+        outs, STATE['outs'] = STATE['outs'], None
+        try:
+            out, qid = (got[0], got[1]) if got is not None else ('no table', None)
+            result = 'none' if out == 'no table' else 'new' if qid == nforms else 'equal'
+            qh = getattr(pool.forms[qid], 'query_hash', None) if qid is not None else None
+            steps = scope + [(pool.forms[qid].text if result == 'new' else text, qh)]
+            write_line(pool, pool.expanded, kind, steps, result, before, outs, time.monotonic() - t0, made if result == 'new' else None)
+        except Exception as e:  # noqa: BLE001
+            c['draw record:error %s' % type(e).__name__] += 1
+
+
+def install_state(path):
+    """Patches state_search.take and live.Run.judged to write the state search's draw records to path."""
+    global _state_take, _judged
+    import state_search as SX
+    STATE['f'], STATE['fixed'] = open(path, 'a'), fixed_fields()
+    _state_take, SX.take = SX.take, state_take
+    _judged, live.Run.judged = live.Run.judged, judged
 
 
 def install(path):
