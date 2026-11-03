@@ -42,6 +42,7 @@ IDENT_SOURCE_SETTING = 'value'  # sample2_col.py reads ARCLOG_IDENT_SOURCE when 
 POOL_CLAUSES_SETTING = 'search'  # source() reads it: the pool search (superdag_search.py) writes the pool's queries, with the writer where WRITER is 1; state is the state search (state_search.py), which drafts with Run.form and so reads no WRITER_TREE
 WRITER_SETTING = '1'  # search.py reads WRITER when it is imported: the token-level writer (writer.py) writes each query
 WRITER_TREE_SETTING = ''  # search.py reads WRITER_TREE when it is imported: the writer's LightGBM model, with its feature names beside it (tree_dist.load); a path relative to --models; empty for the hand-set distribution
+NO_TREE_PLAN_SETTING = 'ordered'  # WRITER_PLAN where WRITER_TREE is empty (the hand-set distribution); with a tree, lookahead_legal takes the plan that the tree records (writer_plan.py)
 SEARCH_STATE_SCORE_SETTING = ''  # state_search.py reads it at install(): a module whose score(view) orders the frontier; a path relative to --models; empty for the default score
 PATH_SETTINGS = ('WRITER_TREE', 'SEARCH_STATE_SCORE')  # the settings whose relative paths settings() resolves against --models
 MAX_CANDIDATES = 2000
@@ -341,7 +342,7 @@ def store_of(name, out):
 
 
 def settings(models):
-    """Sets in the environment each setting that the models were made and read under, where the environment has none. live.py, sample2_col.py and search.py read them when
+    """Sets in the environment each setting that the models were made and read under, where the environment has none, and WRITER_PLAN where it has no WRITER_TREE. live.py, sample2_col.py and search.py read them when
     they are imported, and the engine reads ARCLOG_IDENT_SOURCE once a process, at its first use, so this runs before superdag is imported. A relative path of PATH_SETTINGS
     becomes a path under models, the dataset folder. os.execv at a renewal keeps them."""
     for name, value in (('ONE_REPAIR', ONE_REPAIR_SECONDS), ('P_DAG', P_DAG_SETTING), ('ORDER_FREE', ORDER_FREE_SETTING), ('ARCLOG_IDENT_SOURCE', IDENT_SOURCE_SETTING),
@@ -351,6 +352,8 @@ def settings(models):
         path = os.environ.get(name)
         if path and not os.path.isabs(path):
             os.environ[name] = os.path.join(models, path)
+    if not os.environ.get('WRITER_TREE'):
+        os.environ.setdefault('WRITER_PLAN', NO_TREE_PLAN_SETTING)
 
 
 def main():

@@ -11,7 +11,7 @@ The plans (points_of_targets, plan=...; see order.py): a record then also has po
 number of live targets at the point) and order. Under `ordered` each target is walked in its canonical stream (order.canonical_stream; a target whose canonical stream does not give
 its gold QueryHash is walked as given, and its order is 'gold' with order_why); the positives are the next tokens of the live targets. Under `unordered` the points are the states of a
 search over the targets' item sets, merged by order.set_key, and the positives are every id that continues some live target's item set (order.Unordered).
-A plan's records need the mask of that plan: `plan` must be the writer plan of the process (WRITER_PLAN, lookahead_legal.check_plan), else points_of_targets raises.
+A plan's records need the mask of that plan: `plan` must be the writer plan of the process (lookahead_legal.PLAN; lookahead_legal.check_plan), else points_of_targets raises.
 
 vectors=True (points_of, points_of_targets, points_of_unordered): a record also has vectors (float32, len(ids) x width: the writing-point vector of each admitted id, in the order of ids; see
 writer.Features.vectors and writer.VECTOR_BLOCKS) and names (the width column names, one tuple that every record shares: a file writes it once).

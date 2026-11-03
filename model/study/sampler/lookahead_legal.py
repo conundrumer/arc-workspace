@@ -9,9 +9,9 @@ Each component of lookahead.ORDER is split by the condition it tests. PARTS maps
 what the component removes. LEGAL names the parts and components that are legality rules. `lookahead.components(run, ['legal'])` makes them.
 The verdict of each part, with its evidence, is in the report that goes with this file.
 
-The writer plan (WRITER_PLAN: `ordered` or `unordered`, unset is `unordered`) picks the rules of the plan (PLAN_RULES) that LegalMask adds to RULES: under `ordered`, OrderRule
-(order_prefix.py) bars every order of the free choices but the `ordered` rule's; under `unordered`, every order stays. The training rows (train_rows.points_of_targets, plan=)
-and the draw records (draw_record.py) read the same setting, and check_plan stops a run whose targets are of the other plan.
+The writer plan of the process (PLAN, `ordered` or `unordered`: writer_plan.py says where it comes from) picks the rules of the plan (PLAN_RULES) that LegalMask adds to RULES: under
+`ordered`, OrderRule (order_prefix.py) bars every order of the free choices but the `ordered` rule's; under `unordered`, every order stays. The training rows
+(train_rows.points_of_targets, plan=) and the draw records (draw_record.py) read the same plan, and check_plan stops a run whose targets are of the other plan.
 """
 import os
 
@@ -19,6 +19,7 @@ import numpy as np
 
 import live
 import writer
+import writer_plan
 from live import M, S, arclog
 from writer import Phase, core_of
 import lookahead
@@ -477,29 +478,20 @@ class OrderRule:
         return np.where(self.rule.keep(pt, ids), 0.0, -np.inf)
 
 
-PLANS = ('ordered', 'unordered')
-PLAN = os.environ.get('WRITER_PLAN') or 'unordered'  # the writer plan of the process: LegalMask, train_rows and draw_record read it
-if PLAN not in PLANS:
-    raise ValueError('WRITER_PLAN: %r is not one of %s' % (PLAN, PLANS))
+PLAN, PLAN_SOURCE = writer_plan.of_environment()  # the writer plan of the process, and where it comes from: LegalMask, train_rows and draw_record read it
 PLAN_RULES = {'ordered': ('OrderRule',), 'unordered': ()}  # the rules of each plan, after RULES
 
 
 def check_plan(plan):
-    """Raises where `plan` is not the process's writer plan (WRITER_PLAN): the targets of one plan go with the mask of that plan alone."""
+    """Raises where `plan` is not the process's writer plan (PLAN): the targets of one plan go with the mask of that plan alone."""
     if plan != PLAN:
-        raise ValueError('plan %r, and WRITER_PLAN gives %r: the mask is the plan of WRITER_PLAN; set WRITER_PLAN=%s' % (plan, PLAN, plan))
+        raise ValueError('plan %r, and the writer plan of the process is %r (from %s): the mask is the plan of the process' % (plan, PLAN, PLAN_SOURCE))
 
 
 def with_plan_rules(run, comps):
     """comps (lookahead components) and, after them, each rule of the writer plan (PLAN_RULES) that no component of comps is or holds (as LegalMask holds its rules)."""
     have = {c.name for c in comps} | {r.name for c in comps for r in getattr(c, 'rules', ())}
     return list(comps) + [make(run, n) for n in PLAN_RULES[PLAN] if n not in have]
-
-
-def plan_of_tree(path):
-    """The plan that a tree file's name gives ('unordered' or 'ordered' in its base name), else None."""
-    base = os.path.basename(path or '')
-    return 'unordered' if 'unordered' in base else 'ordered' if 'ordered' in base else None
 
 
 # ---------------------------------------------------------------- the legal plan

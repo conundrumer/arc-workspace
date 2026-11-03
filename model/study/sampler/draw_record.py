@@ -3,8 +3,8 @@
 kaggle_worker.source installs it where ARC_DRAW_RECORD names a file. Each draw (superdag_search.try_clause: one query the writer wrote
 at a slot's scope) appends one JSON line to that file as it ends:
 
-  run fields   task, run (ARC_DRAW_RUN), draw (the pool's draw count), seed, plan ('ordered' or 'unordered': the writer plan,
-               WRITER_PLAN; install raises where the tree file's name gives the other plan), release (ARC_DRAW_RELEASE), model_sha256 (of WRITER_TREE), site (ARC_DRAW_SITE)
+  run fields   task, run (ARC_DRAW_RUN), draw (the pool's draw count), seed, plan ('ordered' or 'unordered': the writer plan
+               of the process, lookahead_legal.PLAN), release (ARC_DRAW_RELEASE), model_sha256 (of WRITER_TREE), site (ARC_DRAW_SITE)
   steps        one entry per query of the program: the scope's queries (with every query they read, ordered by query id), then the
                drawn query. Each has text (as the pool writes it, with &fN names), query_hash (32 hex digits, or null) and state (the
                query_hash of each step before it).
@@ -42,9 +42,6 @@ def fixed_fields():
         with open(tree, 'rb') as f:
             sha = hashlib.sha256(f.read()).hexdigest()
     import lookahead_legal
-    named = lookahead_legal.plan_of_tree(tree)
-    if named is not None:
-        lookahead_legal.check_plan(named)
     return dict(run=os.environ.get('ARC_DRAW_RUN'), plan=lookahead_legal.PLAN, release=os.environ.get('ARC_DRAW_RELEASE'), model_sha256=sha,
                 site=os.environ.get('ARC_DRAW_SITE'))
 
