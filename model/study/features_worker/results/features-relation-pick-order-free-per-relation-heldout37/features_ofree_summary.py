@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-order-free-per-relation-heldout37')
 import features_ofree_lib as L  # noqa: E402
 
 CL = ('derived', 'lib', 'fact', 'macro', 'NOT', 'comparison')

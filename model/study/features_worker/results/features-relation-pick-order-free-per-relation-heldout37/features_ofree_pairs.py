@@ -10,7 +10,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-order-free-per-relation-heldout37')
 import features_ofree_lib as L  # noqa: E402
 
 NAMED = [('compose', 'perp'), ('perp', 'compose'), ('neighbor', 'dir8_elem'), ('dir8_elem', 'neighbor'), ('inside', 'BoundingBox.box'), ('BoundingBox.box', 'inside')]

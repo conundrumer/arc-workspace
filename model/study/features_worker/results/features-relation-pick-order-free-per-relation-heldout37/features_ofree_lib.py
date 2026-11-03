@@ -17,11 +17,11 @@ import numpy as np
 import scipy.optimize as so
 import scipy.sparse as sp
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-order-free-per-relation-heldout37')
 import features_ofree_facts as FL  # noqa: E402
 import features_ofree_text as T  # noqa: E402
 
-ME = os.path.dirname(os.path.abspath(__file__)) + '/'
+ME = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-order-free-per-relation-heldout37/'  # the data folder
 LN2 = math.log(2)
 np.seterr(all='ignore')  # Accelerate's matmul sets the flags on finite values
 FOLDS = 4
