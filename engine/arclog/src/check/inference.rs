@@ -852,9 +852,13 @@ impl<'a> Inference<'a> {
 
     /// The types of the form `form` at `path`: [`Inference::infer_new`], or
     /// the types of the last form that the inference shares, where `form`
-    /// is that top-level form.
+    /// is the program's last form. A resolution that is not layered leaves
+    /// the forms before the last to this inference too, each a top-level
+    /// form of types of its own.
     fn infer_form(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
-        let Some(shared) = self.shared.filter(|_| path.0.len() == 1) else { return self.infer_new(form, path) };
+        let last = self.program.program.value().forms.len().checked_sub(1);
+        let is_last = matches!(&path.0[..], [top] if Some(top.0 as usize) == last);
+        let Some(shared) = self.shared.filter(|_| is_last) else { return self.infer_new(form, path) };
         if let Some(types) = shared.borrow().as_ref() {
             return FormInference::of_types(types.clone(), form, path, self.program, self.registry);
         }

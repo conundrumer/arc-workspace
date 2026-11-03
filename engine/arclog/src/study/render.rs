@@ -54,6 +54,15 @@ impl StudyProgram {
                 ),
                 NodeRef::RigidDet(c) => ("rigid_det", json!({"name":name(&c.name.0)})),
                 NodeRef::Out(_) => ("out", json!({})),
+                NodeRef::Demonstrated(d) => (
+                    "demonstrated",
+                    json!({"name":name(&d.name.0),"has_key":d.key.is_some(),"input_count":d.inputs.len(),"rule_count":d.rules.len()}),
+                ),
+                NodeRef::DemoRule(r) => (
+                    "demo_rule",
+                    json!({"name":r.name.0,"fields":r.fields.iter().map(|c|json!({"name":column(&c.name),"label_id":c.label.0})).collect::<Vec<_>>(),
+                    "forms_from_alt":(0..r.forms.len()).map(|i|r.forms.from_alt(i)).collect::<Vec<_>>()}),
+                ),
                 NodeRef::Body(_) => ("body", json!({})),
                 NodeRef::Conjunct(c) => (
                     match c {

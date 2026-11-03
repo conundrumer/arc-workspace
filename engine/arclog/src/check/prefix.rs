@@ -41,9 +41,10 @@ impl FormPrefix {
 /// that node and the node itself, with each node above it open, and the
 /// last prefix `form` itself. The stream writes the source's order, but for
 /// an instance input's body, which it writes before the head sites that
-/// project its labels. A node of a claim, an `ALTS` form or a
-/// `DEMONSTRATED` form ends no prefix of its own, since no token stream
-/// holds one.
+/// project its labels. A node of a claim or an `ALTS` form ends no prefix
+/// of its own, since no token stream holds one. A node of a `DEMONSTRATED`
+/// form ends no prefix here either: the prefixes of such a form are the
+/// decoder's alone.
 ///
 /// A list that the prefix has not reached stands empty, and an open clause,
 /// key body or `CHOOSE` form holds no columns yet, since the columns of a

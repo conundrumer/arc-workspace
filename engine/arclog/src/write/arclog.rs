@@ -667,3 +667,12 @@ pub(super) fn snippet(node: NodeRef<'_>, names: &[(LabelId, Box<str>)]) -> Resul
     }
     Ok(writer.out.text.trim().to_owned())
 }
+
+/// The text of the `DEMO_RULE` form `rule`, with the label names that
+/// `layout` gives each scope at its path below the rule: the rule's own at
+/// the empty path, and that of each form an `ALT` gave the rule at its path.
+pub(super) fn rule_snippet(rule: &DemoRule, layout: &Layout) -> String {
+    let mut writer = Writer { layout, out: Out::new(layout, SourceFile::Arclog) };
+    writer.demo_rule(rule, &NodePath::default());
+    writer.out.text.trim().to_owned()
+}

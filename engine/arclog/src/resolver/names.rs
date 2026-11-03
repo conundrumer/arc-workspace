@@ -11,7 +11,7 @@ use crate::program::canonical::{
 };
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
-    Body, Clause, ColumnName, DeclaredName, Demonstrated, Form, InstanceName, LabelId, NameScope, Node, OutputOwner, Program, RelationRef,
+    Body, Clause, ColumnName, DeclaredName, DemoRule, DemoRuleName, Demonstrated, Form, InstanceName, LabelId, NameScope, Node, OutputOwner, Program, RelationRef,
 };
 
 /// Writes the path of the output that `relation` reads, after the
@@ -472,12 +472,97 @@ pub(super) fn written_at(program: &Program, node: NodeRef<'_>, path: &NodePath, 
 
 /// The canonical form of `node`, at `path`, through `writer`. A site or a
 /// bare label is written as the atom `atom` that holds it, with that site
-/// alone.
+/// alone. A `DEMO_RULE` form is written as [`rule_content`] gives it.
 pub(super) fn written(node: NodeRef<'_>, path: &NodePath, atom: Option<&crate::program::Atom>, writer: &Writer<'_>) -> Option<CanonicalForm> {
-    if let NodeRef::Demonstrated(demonstrated) = node {
-        return Some(demonstrated_form(demonstrated, path, writer));
+    match node {
+        NodeRef::Demonstrated(demonstrated) => Some(demonstrated_form(demonstrated, path, writer)),
+        NodeRef::DemoRule(rule) => written_through(NodeRef::DemoRule(&rule_content(rule, writer)), atom, writer),
+        _ => written_through(node, atom, writer),
     }
-    written_through(node, atom, writer)
+}
+
+/// The `DEMO_RULE` form `rule` as its content holds it: with no name, which
+/// a decode gives by the rule's place among the rules of its form, and with
+/// its forms in the order of [`rule_form_order`], so that two rules that
+/// list their forms in two orders that follow what each form reads have
+/// one content.
+fn rule_content(rule: &DemoRule, writer: &Writer<'_>) -> DemoRule {
+    let forms = rule_form_order(rule, writer).into_iter().map(|at| (rule.forms[at].clone(), rule.forms.from_alt(at))).collect();
+    DemoRule { name: DemoRuleName(Box::from("")), forms, ..rule.clone() }
+}
+
+/// The indexes of the forms of `rule` in the order of its content: at each
+/// step, among the forms left that read no relation that a form left
+/// declares, or among all the forms left where none is ready, as on a
+/// cycle, the form whose canonical form through `writer`, taken alone, is
+/// least. A form that reads another comes after it, and two forms of which
+/// neither reads the other come in the order of their contents. Forms of
+/// one content keep their order.
+fn rule_form_order(rule: &DemoRule, writer: &Writer<'_>) -> Vec<usize> {
+    let forms = &rule.forms[..];
+    let keys: Vec<Option<Arc<[u8]>>> = forms.iter().map(|form| written_through(NodeRef::from(form), None, writer).map(|form| form.bytes)).collect();
+    let declared: Vec<Option<&DeclaredName>> = forms.iter().map(declared_name).collect();
+    let reads: Vec<Vec<usize>> = forms
+        .iter()
+        .enumerate()
+        .map(|(at, form)| {
+            let mut names = Vec::new();
+            names_read(NodeRef::from(form), &mut names);
+            let reads_form = |other: usize| other != at && declared[other].is_some_and(|name| declared[at] != Some(name) && names.contains(&name));
+            (0..forms.len()).filter(|&other| reads_form(other)).collect()
+        })
+        .collect();
+    let mut placed = vec![false; forms.len()];
+    let mut order = Vec::with_capacity(forms.len());
+    while order.len() < forms.len() {
+        let left: Vec<usize> = (0..forms.len()).filter(|&at| !placed[at]).collect();
+        let ready: Vec<usize> = left.iter().copied().filter(|&at| reads[at].iter().all(|&read| placed[read])).collect();
+        let pool = if ready.is_empty() { left } else { ready };
+        let next = pool.into_iter().min_by(|&a, &b| keys[a].cmp(&keys[b])).expect("a form is left");
+        placed[next] = true;
+        order.push(next);
+    }
+    order
+}
+
+/// The name of the relation that `form` declares, or of the owner of the
+/// outputs it declares; none for a form that declares none.
+fn declared_name(form: &Form) -> Option<&DeclaredName> {
+    use crate::program::ProgramRelation;
+    match form {
+        Form::Clause(clause) => Some(match &clause.value().derives {
+            ProgramRelation::Declared(name) => &name.0,
+            ProgramRelation::Output(output) => owner_name(&output.of),
+        }),
+        Form::Instance(instance) => Some(&instance.value().name.0),
+        Form::Choose(choose) => Some(&choose.value().name.0),
+        Form::RigidDet(rigid) => Some(&rigid.value().name.0),
+        Form::Demonstrated(demonstrated) => Some(&demonstrated.value().name.0),
+        Form::Claim(_) | Form::Alts(_) | Form::Out(_) => None,
+    }
+}
+
+/// The name of the owner of the outputs that `owner` names.
+fn owner_name(owner: &OutputOwner) -> &DeclaredName {
+    match owner {
+        OutputOwner::Instance(instance) => &instance.0,
+        OutputOwner::RigidDet(rigid) => &rigid.0,
+    }
+}
+
+/// Adds to `names` the name of the relation, or of the owner of the output,
+/// that each atom below `node` reads.
+fn names_read<'n>(node: NodeRef<'n>, names: &mut Vec<&'n DeclaredName>) {
+    if let Some(atom) = node.atom() {
+        match &atom.relation {
+            RelationRef::Declared(name) => names.push(&name.0),
+            RelationRef::Output(output) => names.push(owner_name(&output.of)),
+            RelationRef::Fact(_) | RelationRef::Lib(_) | RelationRef::DefinedPort(_) => {}
+        }
+    }
+    for child in node.children() {
+        names_read(child, names);
+    }
 }
 
 /// The canonical form of `node`, a node other than a `DEMONSTRATED` form,
@@ -516,21 +601,27 @@ fn written_through(node: NodeRef<'_>, atom: Option<&crate::program::Atom>, write
 }
 
 /// The canonical form of the `DEMONSTRATED` form `demonstrated` at
-/// `path`: its key clause and its inputs through `writer`, then each of
-/// its `DEMO_RULE` forms through a writer of the rule's scope, so that
+/// `path`: its key clause and its inputs through `writer`, then its
+/// `DEMO_RULE` forms, each through a writer of the rule's scope, so that
 /// each name a rule declares is written as the resolved content of what
-/// it resolves to in that rule.
+/// it resolves to in that rule. The rules are a set: their forms stand
+/// sorted, so that the order of the rules is not in the content.
 fn demonstrated_form(demonstrated: &Demonstrated, path: &NodePath, writer: &Writer<'_>) -> CanonicalForm {
     let mut out = CanonicalWriter::default();
     let bare = Demonstrated { rules: Arc::from([]), ..demonstrated.clone() };
     bare.write_canonical(&mut out, &mut SearchBudget::new(), writer);
-    out.len(demonstrated.rules.len());
-    for (rule_path, rule) in super::demo_rules(demonstrated, path) {
-        let scope = NameScope::DemoRule(rule_path.clone());
-        let rule_writer = Writer { names: writer.names, scope: &scope, own: None };
-        let form = written(NodeRef::DemoRule(rule), &rule_path, None, &rule_writer).expect("a rule has a canonical form");
-        out.len(form.bytes.len());
-        out.write(&form.bytes);
+    let mut rules: Vec<Arc<[u8]>> = super::demo_rules(demonstrated, path)
+        .map(|(rule_path, rule)| {
+            let scope = NameScope::DemoRule(rule_path.clone());
+            let rule_writer = Writer { names: writer.names, scope: &scope, own: None };
+            written(NodeRef::DemoRule(rule), &rule_path, None, &rule_writer).expect("a rule has a canonical form").bytes
+        })
+        .collect();
+    rules.sort();
+    out.len(rules.len());
+    for form in &rules {
+        out.len(form.len());
+        out.write(form);
     }
     out.finish()
 }

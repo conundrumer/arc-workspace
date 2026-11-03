@@ -1,10 +1,10 @@
 //! Renderer access to the same inferred site types and grid rules as checks.
 use super::frames::FormGrids;
 use super::inference::{CaseInferences, Inference, ScopeBody, SiteReading};
-use super::types::PoseOr;
+use super::types::{demo_rule, form_at, rule_scope_forms, PoseOr};
 use super::{CheckedProgram, SolverClauses};
 use crate::mutation::path_json;
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::*;
 use crate::registry::Registry;
 use crate::types::{ValueType, typed};
@@ -67,13 +67,19 @@ fn export_sites(checked: &CheckedProgram, registry: &Registry,
         arguments: Vec<Value>,
         comparisons: Vec<Value>,
         column_types: BTreeMap<NodePath, SiteColumnType>,
-        /// The labels that a site argument or an operand of the form uses.
+        /// The labels that a site argument or an operand of the scope uses.
         used: std::collections::BTreeSet<u32>,
+        /// The path of the label scope that the walk is in.
+        scope: NodePath,
+        /// The path of each node that opens a label scope of its own, which
+        /// the walk of the scope it stands in leaves out.
+        nested: Vec<NodePath>,
     }
     let clauses = SolverClauses::of_shared_program(std::sync::Arc::clone(&checked.program));
     let cases = CaseInferences::new(&clauses, registry);
     let inference = Inference::new(&checked.program, &cases);
-    let mut out = Sites { rendered: names.is_some(), arguments: Vec::new(), comparisons: Vec::new(), column_types: BTreeMap::new(), used: Default::default() };
+    let mut out = Sites { rendered: names.is_some(), arguments: Vec::new(), comparisons: Vec::new(), column_types: BTreeMap::new(), used: Default::default(),
+        scope: NodePath::default(), nested: Vec::new() };
     let mut variables = Vec::new();
     let mut scopes = Vec::new();
     fn frame(ty: &ValueType, label: Option<LabelId>, grids: &FormGrids<'_, '_>) -> Value {
@@ -112,7 +118,7 @@ fn export_sites(checked: &CheckedProgram, registry: &Registry,
             path.extend(field.cloned());
             let column_type = atom.and_then(|a| inference.site_type(reading, a, &path));
             out.column_types.insert(arg_at.clone(), SiteColumnType {
-                scope_path: reading.path.clone(), ty: column_type.clone(),
+                scope_path: out.scope.clone(), ty: column_type.clone(),
             });
             let label_id = crate::types::use_label(label);
             out.used.extend(label_id.map(|l| l.0));
@@ -132,7 +138,7 @@ fn export_sites(checked: &CheckedProgram, registry: &Registry,
             } else {
                 None
             };
-            out.arguments.push(json!({"path":path_json(&arg_at),"site_path":path_json(at),"scope_path":path_json(reading.path),
+            out.arguments.push(json!({"path":path_json(&arg_at),"site_path":path_json(at),"scope_path":path_json(&out.scope),
                 "label_id":label_id.map(|l|l.0),"resolved_type":format!("{ty:?}"),
                 "type_identity":crate::study::render_correspondence::type_json(&ty),
                 "column_path":path.iter().map(crate::study::render::column).collect::<Vec<_>>(),
@@ -206,11 +212,15 @@ fn export_sites(checked: &CheckedProgram, registry: &Registry,
                 }
             };
             if let Some(second) = second {
-                out.comparisons.push(json!({"path":path_json(at),"scope_path":path_json(reading.path),"operator":format!("{:?}",c.op),
+                out.comparisons.push(json!({"path":path_json(at),"scope_path":path_json(&out.scope),"operator":format!("{:?}",c.op),
                     "first":{"label_id":c.first.label.0,"resolved_type":format!("{first:?}"),"frame":frame(&first,Some(c.first.label),grids)},"second":second}));
             }
         }
         for (i, child) in node.children().into_iter().enumerate() {
+            if crate::program::canonical::opens_scope(node, i, child) {
+                out.nested.push(at.child(i as u32));
+                continue;
+            }
             walk(
                 child,
                 &at.child(i as u32),
@@ -239,32 +249,39 @@ fn export_sites(checked: &CheckedProgram, registry: &Registry,
             }
         }
         for (i,child) in node.children().into_iter().enumerate() {
-            declarations(child,&at.child(i as u32),out,used,rendered);
+            if !crate::program::canonical::opens_scope(node, i, child) {
+                declarations(child,&at.child(i as u32),out,used,rendered);
+            }
         }
     }
-    for (i, form) in checked.program.program.value().forms.iter().enumerate() {
-        let at = NodePath::top(i as u32);
-        let inferred = inference
-            .infer(&at)
-            .ok_or_else(|| format!("no native form inference at {at:?}"))?;
-        let scope = ScopeBody::of(form, registry);
-        let reading = inferred.reading(PoseOr::Given);
-        let grids = FormGrids::new(&inference, reading, &scope);
-        let reading = SiteReading {
-            grids: Some(&grids),
-            ..reading
+    // Each label scope: a top-level form, or a scope within one, as
+    // `opens_scope` gives them. The forms of a `DEMO_RULE` that share its
+    // scope are each read under the inference of the form, and the scope's
+    // labels under the inference of the rule.
+    let program = checked.program.program.value();
+    let root = NodeRef::Program(program);
+    let mut pending: Vec<(usize, NodePath)> = (0..program.forms.len()).rev().map(|i| (i, NodePath::top(i as u32))).collect();
+    while let Some((i, at)) = pending.pop() {
+        let forms: Vec<(NodePath, &Form)> = match node_at(root, &at) {
+            Some(NodeRef::DemoRule(_)) => {
+                let rule = demo_rule(program, &at).ok_or_else(|| format!("no DEMO_RULE form at {at:?}"))?;
+                rule_scope_forms(rule).map(|(index, form)| (at.child(index), form)).collect()
+            }
+            _ => vec![(at.clone(), form_at(program, &at).ok_or_else(|| format!("no form at {at:?}"))?)],
         };
+        let infer = |path: &NodePath| inference.infer(path).ok_or_else(|| format!("no native form inference at {path:?}"));
+        let inferred = forms.iter().map(|(path, _)| infer(path)).collect::<Result<Vec<_>, _>>()?;
+        let bodies: Vec<ScopeBody> = forms.iter().map(|(_, form)| ScopeBody::of(form, registry)).collect();
+        let grids: Vec<FormGrids> = inferred.iter().zip(&bodies).map(|(inferred, body)| FormGrids::new(&inference, inferred.reading(PoseOr::Given), body)).collect();
         let first_argument = out.arguments.len();
         let first_comparison = out.comparisons.len();
         out.used.clear();
-        walk(
-            NodeRef::from(form),
-            &at,
-            &inference,
-            reading,
-            &grids,
-            &mut out,
-        )?;
+        out.scope = at.clone();
+        let nested_from = out.nested.len();
+        for (((path, form), inferred), grids) in forms.iter().zip(&inferred).zip(&grids) {
+            let reading = SiteReading { grids: Some(grids), ..inferred.reading(PoseOr::Given) };
+            walk(NodeRef::from(*form), path, &inference, reading, grids, &mut out)?;
+        }
         // Index original occurrences once per scope, rather than rescanning
         // every site and declaration for every variable.
         let mut occurrence_index = std::collections::BTreeMap::<u32,Vec<Value>>::new();
@@ -282,26 +299,39 @@ fn export_sites(checked: &CheckedProgram, registry: &Registry,
                 }
             }
         }
-        declarations(NodeRef::from(form),&at,&mut occurrence_index,&mut out.used,out.rendered);
+        for (path, form) in &forms {
+            declarations(NodeRef::from(*form),path,&mut occurrence_index,&mut out.used,out.rendered);
+        }
+        // The labels of the scope: those of its one form, or those of the
+        // `DEMO_RULE`, whose inference meets the types its forms give them.
+        let scope_inferred = if forms.len() == 1 && forms[0].0 == at { std::rc::Rc::clone(&inferred[0]) } else { infer(&at)? };
+        let labels = &scope_inferred.reading(PoseOr::Given).labels;
+        // The spellings of the labels: those of the top-level form's scope.
+        let spellings = names.filter(|_| at.0.len() == 1).map(|names| &names[i]);
         let mut scope_labels = Vec::new();
-        for (label, _) in reading.labels {
-            let ty = typed(reading.labels, *label)
+        for (label, _) in labels.iter() {
+            let ty = typed(labels, *label)
                 .ok_or_else(||format!("no native inferred variable type at {at:?} label {label:?}"))?;
             if !out.used.remove(&label.0) {
                 return Err(format!("native inferred variable has no original occurrence at {at:?} label {label:?}"));
             }
-            if let Some(names) = names {
+            if names.is_some() {
                 let occurrences = occurrence_index.remove(&label.0).unwrap_or_default();
-                variables.push(json!({"scope_path":path_json(reading.path),"label_id":label.0,
-                    "label_spelling":names[i].iter().find(|(id,_)|id==label).map(|(_,name)|name.as_ref()),
-                    "resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(*label),&grids),"occurrences":occurrences}));
+                // The grids of the first form of the scope whose inference holds the label.
+                let held = inferred.iter().position(|inferred| inferred.labels.iter().any(|(found, _)| found == label)).unwrap_or(0);
+                variables.push(json!({"scope_path":path_json(&at),"label_id":label.0,
+                    "label_spelling":spellings.and_then(|names| names.iter().find(|(id,_)|id==label)).map(|(_,name)|name.as_ref()),
+                    "resolved_type":format!("{ty:?}"),"frame":frame(&ty,Some(*label),&grids[held]),"occurrences":occurrences}));
                 scope_labels.push(label.0);
             }
         }
         if names.is_some() {
-            scopes.push(json!({"scope_path":path_json(reading.path),"label_ids":scope_labels,
+            scopes.push(json!({"scope_path":path_json(&at),"label_ids":scope_labels,
                 "argument_count":out.arguments.len()-first_argument,"comparison_count":out.comparisons.len()-first_comparison}));
         }
+        // The scopes within this one, in the order of their paths.
+        let nested: Vec<NodePath> = out.nested.drain(nested_from..).collect();
+        pending.extend(nested.into_iter().rev().map(|path| (i, path)));
     }
     let Sites { arguments, comparisons, column_types, .. } = out;
     let json = if names.is_some() {

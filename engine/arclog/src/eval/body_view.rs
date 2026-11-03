@@ -6,7 +6,7 @@ use super::ir::{self, Argument, AtomSource, ClauseIr, IrNode, IrPaths, KeyRead, 
 use super::{Outcome, RunFault};
 use crate::check::CheckedProgram;
 use crate::program::path::{node_at,NodePath,NodeRef};
-use crate::program::{ChoosePart,Conjunct,Form,LabelId,RigidDetPart};
+use crate::program::{ChoosePart,Conjunct,LabelId,RigidDetPart};
 use crate::resolver::Side;
 
 const MAX_DERIVATIONS:usize=32;
@@ -107,34 +107,41 @@ impl BodyView {
             Ok(crate::program::Body {conjuncts:body.conjuncts[..count].into()})
         }).transpose()?;
         let body=selected.as_ref().unwrap_or(body);
-        let owner=&program.program.program.value().forms[top as usize];
-        let relative=NodePath(at.0[1..].into());
+        // The innermost form that holds the body: a form of a `DEMO_RULE`
+        // stands in the label scope of its rule, not in the top-level one.
+        let (inner,owner)=(1..at.0.len()).rev().find_map(|end| {
+            let path=NodePath(at.0[..end].into());
+            match node_at(root,&path)? {
+                node@(NodeRef::Clause(_)|NodeRef::Instance(_)|NodeRef::Choose(_)|NodeRef::RigidDet(_)|NodeRef::Out(_)|NodeRef::Demonstrated(_))=>Some((path,node)),
+                _=>None,
+            }
+        }).ok_or_else(||fault("body has no form".into()))?;
+        let relative=NodePath(at.0[inner.0.len()..].into());
         let mut bodies=Vec::new();
         let mut key=None;
         match owner {
-            Form::Instance(instance)=>{
-                if let Some(held)=&instance.value().key {
+            NodeRef::Instance(instance)=>{
+                if let Some(held)=&instance.key {
                     // The key clause is the instance's first child; an input after it is outside the key.
                     if (physical_input && input.is_some()) || (relative.0.len()>2 && relative.0[0].0==0 && relative.0[1].0>0)
-                        || (broadcast_key && relative.0[0].0>0 && Self::port_has_key_column(program,&form.child(relative.0[0].0),&instance.value().component)) {
-                        let key_at=form.child(0).child(0);
+                        || (broadcast_key && relative.0[0].0>0 && Self::port_has_key_column(program,&inner.child(relative.0[0].0),&instance.component)) {
+                        let key_at=inner.child(0).child(0);
                         let labels=crate::read::columns::key_labels(&held.value().key.body.value());
-                        let (clause,paths,_)=super::init_form::key_clause_memo(program,&form,&(held.value().key.body.value(),key_at),&labels).map_err(|e|fault(format!("checked key body compile: {e:?}")))?;
-                        key=Some((KeyRead {form:form.clone(),clause:(*clause).clone()},(*paths).clone(),labels));
+                        let (clause,paths,_)=super::init_form::key_clause_memo(program,&inner,&(held.value().key.body.value(),key_at),&labels).map_err(|e|fault(format!("checked key body compile: {e:?}")))?;
+                        key=Some((KeyRead {form:inner.clone(),clause:(*clause).clone()},(*paths).clone(),labels));
                     }
                 }
             }
-            Form::Choose(choose)=>{
-                let choose=choose.value();
+            NodeRef::Choose(choose)=>{
                 let part=choose.parts().nth(relative.0[0].0 as usize).ok_or_else(||fault("CHOOSE body part is absent".into()))?;
                 if matches!(part,ChoosePart::From) && choose.from_inside_for || matches!(part,ChoosePart::Never(_)) {
-                    if let Some(rows)=&choose.rows {bodies.push((rows.body.value(),form.child(0)));}
+                    if let Some(rows)=&choose.rows {bodies.push((rows.body.value(),inner.child(0)));}
                 }
-                if matches!(part,ChoosePart::Never(_)) {bodies.push((choose.from.value(),form.child(if choose.rows.is_some(){1}else{0})));}
+                if matches!(part,ChoosePart::Never(_)) {bodies.push((choose.from.value(),inner.child(if choose.rows.is_some(){1}else{0})));}
             }
-            Form::RigidDet(rigid)=>{
-                if rigid.value().instance.is_some() && relative.0[0].0==rigid.value().position(RigidDetPart::Instance) {
-                    if let Some(key)=&rigid.value().key {bodies.push((key.body.value(),form.child(rigid.value().position(RigidDetPart::Key))));}
+            NodeRef::RigidDet(rigid)=>{
+                if rigid.instance.is_some() && relative.0[0].0==rigid.position(RigidDetPart::Instance) {
+                    if let Some(key)=&rigid.key {bodies.push((key.body.value(),inner.child(rigid.position(RigidDetPart::Key))));}
                 }
             }
             _=>{}
@@ -188,12 +195,12 @@ impl BodyView {
         // A label mentioned in each branch need not be bound by each branch.
         let given = key.as_ref().map(|(_,_,labels)|labels.iter().copied().collect()).unwrap_or_default();
         let outside = columns.iter().copied().collect();
-        let types = ir::label_types(program,&form);
+        let types = ir::label_types(program,&inner);
         let bound = crate::safety::bound_labels(&conjuncts.iter().map(|(c,_)|*c).collect::<Vec<_>>(),&given,&outside,
             &|atom|ir::atom_modes(crate::registry::Registry::get(),atom),
             &|label|types.label(label).cloned());
         columns.retain(|label|bound.contains(label));
-        let (clause,paths)=ir::compile_query(program,&form,key.as_ref().map(|(read,paths,labels)|(read.clone(),paths.clone(),labels.as_slice())),conjuncts,&columns)
+        let (clause,paths)=ir::compile_query(program,&inner,key.as_ref().map(|(read,paths,labels)|(read.clone(),paths.clone(),labels.as_slice())),conjuncts,&columns)
             .map_err(|e|fault(format!("checked body compile: {e:?}")))?;
         let scope=match program.program.form_side(&form) {
             Some(Side::PerInput)=>ExampleScope::PerExample,
