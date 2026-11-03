@@ -490,6 +490,12 @@ def check_plan(plan):
         raise ValueError('plan %r, and WRITER_PLAN gives %r: the mask is the plan of WRITER_PLAN; set WRITER_PLAN=%s' % (plan, PLAN, plan))
 
 
+def with_plan_rules(run, comps):
+    """comps (lookahead components) and, after them, each rule of the writer plan (PLAN_RULES) that no component of comps is or holds (as LegalMask holds its rules)."""
+    have = {c.name for c in comps} | {r.name for c in comps for r in getattr(c, 'rules', ())}
+    return list(comps) + [make(run, n) for n in PLAN_RULES[PLAN] if n not in have]
+
+
 def plan_of_tree(path):
     """The plan that a tree file's name gives ('unordered' or 'ordered' in its base name), else None."""
     base = os.path.basename(path or '')

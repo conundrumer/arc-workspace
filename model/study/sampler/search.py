@@ -75,6 +75,9 @@ WRITER_LOOKAHEAD = tuple(x for x in os.environ.get('WRITER_LOOKAHEAD', '').split
 EXTRA_COMPONENTS = []  # functions of a SearchRun that make a lookahead component, added to the end of the writer's plan (superdag_search.py adds its stop bars here)
 DISTRIBUTION = None  # the Distribution of the writer's plan (writer.Distribution); None: writer.Uniform
 if os.environ.get('WRITER_TREE'):  # a LightGBM text model, with its feature names beside it (tree_dist.load); a model that fails to load leaves DISTRIBUTION as it is
+    import lookahead_legal
+    if lookahead_legal.plan_of_tree(os.environ['WRITER_TREE']) is not None:  # a tree of one plan's rows goes with that plan's mask (WRITER_PLAN)
+        lookahead_legal.check_plan(lookahead_legal.plan_of_tree(os.environ['WRITER_TREE']))
     import tree_dist
     DISTRIBUTION = tree_dist.load(os.environ['WRITER_TREE']) or DISTRIBUTION
     if DISTRIBUTION is not None and WRITER_LOOKAHEAD is None:  # a learned distribution owns every choice that the legality rules leave; the preference components would end its paths

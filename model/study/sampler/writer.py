@@ -1524,9 +1524,11 @@ def check_plan(plan, run):
 
 
 def default_plan(run, or_bits, lookahead=None, distribution=None):
-    """The plan of a deployed job: every lookahead component, the Uniform distribution and the OR cost. lookahead names the components to use, in order."""
+    """The plan of a deployed job: every lookahead component, the Uniform distribution and the OR cost. lookahead names the components to use, in order; the rules of the writer
+    plan (lookahead_legal.PLAN_RULES) follow them where no component holds them."""
     import lookahead as L
-    comps = L.components(run, lookahead)
+    import lookahead_legal
+    comps = lookahead_legal.with_plan_rules(run, L.components(run, lookahead))
     if getattr(distribution, 'vector', False):  # its rows were made with the state block, so the Run keeps what that block reads
         keep_state_tables(run)
     return check_plan(Plan(tuple(comps), distribution or Uniform(), OrBits(or_bits) if or_bits else None, Limits(model_tokens=run.lim.max_atoms * 12 + 64,

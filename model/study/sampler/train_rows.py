@@ -11,6 +11,7 @@ The plans (points_of_targets, plan=...; see order.py): a record then also has po
 number of live targets at the point) and order. Under `ordered` each target is walked in its canonical stream (order.canonical_stream; a target whose canonical stream does not give
 its gold QueryHash is walked as given, and its order is 'gold' with order_why); the positives are the next tokens of the live targets. Under `unordered` the points are the states of a
 search over the targets' item sets, merged by order.set_key, and the positives are every id that continues some live target's item set (order.Unordered).
+A plan's records need the mask of that plan: `plan` must be the writer plan of the process (WRITER_PLAN, lookahead_legal.check_plan), else points_of_targets raises.
 
 vectors=True (points_of, points_of_targets, points_of_unordered): a record also has vectors (float32, len(ids) x width: the writing-point vector of each admitted id, in the order of ids; see
 writer.Features.vectors and writer.VECTOR_BLOCKS) and names (the width column names, one tuple that every record shares: a file writes it once).
@@ -141,6 +142,9 @@ def points_of_targets(run, forms, kind, streams, uses, prepare=None, plan=None, 
     """
     if plan not in (None,) + PLANS:
         raise ValueError('plan: %r' % (plan,))
+    if plan is not None:
+        import lookahead_legal
+        lookahead_legal.check_plan(plan)
     if plan is not None and prepare is not None:
         raise ValueError('prepare and plan do not go together')
     if vectors:
@@ -270,7 +274,8 @@ def _unordered_states(run, pg, dec, kind, walkers, stats):
 
 
 def points_of_unordered(run, forms, kind, streams, uses, max_states=20000, seconds=10.0, stats=None, graph=None, vectors=False):
-    """The writing points of several queries of one kind over one scope under the `unordered` plan: yields (target index, record) as points_of_targets does.
+    """The writing points of several queries of one kind over one scope under the `unordered` plan: yields (target index, record) as points_of_targets does. Raises where the
+    writer plan of the process is not `unordered` (lookahead_legal.check_plan).
 
     The points are the states of a search from the first point: at each state the positives are the ids of the mask that continue some live target's item set (order.Unordered:
     every order of the items that the decoder accepts, from which the whole query can be written), the search takes each positive, and two states with one order.set_key (the
@@ -282,6 +287,8 @@ def points_of_unordered(run, forms, kind, streams, uses, max_states=20000, secon
     graph: if given, a dict that gets graph[key] = dict(edges=[(token, key)], hash=QueryHash or None, done=[targets that have written their whole query]) for each state.
     stats: if given, a Counter that gets counts.
     """
+    import lookahead_legal
+    lookahead_legal.check_plan('unordered')
     stats = collections.Counter() if stats is None else stats
     opt_names, pt_names = split_uses(tuple(uses))
     if vectors:
