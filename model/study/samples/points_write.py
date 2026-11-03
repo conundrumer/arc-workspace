@@ -724,7 +724,10 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
                 continue
             tot.counts['samples written'] += 1
             tot.counts['samples with a point'] += tot.counts['points'] > before
-        sink.close(dict(samples=tot.counts['samples'], points=tot.counts['points'], failures={k: dict(v) for k, v in tot.failures.items()}, rebuild_failures=tot.counts['rebuild failures'], **({'vector_failures': {k: tot.counts[k] for k in VECTOR_COUNTS}} if args.vectors else {}), search=dict(sorted(tot.search.items()))),
+        sink.close(dict(samples=tot.counts['samples'], points=tot.counts['points'],
+                        checks=dict(points_with_no_positive=tot.counts['points with no positive'], left_the_mask=tot.counts['left the mask'],
+                                    positive_not_in_ids=tot.counts['points with a positive that is not in ids'], next_token_no_positive=tot.counts['points whose next token is no positive']),
+                        failures={k: dict(v) for k, v in tot.failures.items()}, rebuild_failures=tot.counts['rebuild failures'], **({'vector_failures': {k: tot.counts[k] for k in VECTOR_COUNTS}} if args.vectors else {}), search=dict(sorted(tot.search.items()))),
                    None if draw_paths is None else dict(draw_counts=dict(sorted(env.draw_counts.items()))))
         tot.counts.update({'draws ' + k: v for k, v in env.draw_counts.items()})
     except BaseException:
