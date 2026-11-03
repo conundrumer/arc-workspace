@@ -8,7 +8,9 @@ dataset's) runs the pool search for --seconds, with the v9 notebook's environmen
 run next to each other, so the arms are paired as results arrive.
 
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
-candidates, workers, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line.
+candidates, draws, CPU seconds, deaths and kills, and seconds. The budget is wall-clock time, so draws and CPU seconds show what a job got
+on a loaded machine. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/jobs, where it
+holds a number, sets how many jobs run at once while the run goes on.
 Only dev tasks run: the split's guard refuses any other.
 """
 import argparse
@@ -32,6 +34,7 @@ TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
 ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}}
 RSS_LIMIT_MIB = 2888
 LOCK = threading.Lock()
+RUNNING = [0]  # the jobs running now
 
 
 def dev_tasks():
@@ -47,9 +50,53 @@ def solved(task, sub):
     return ok, len(tests)
 
 
+def effort(w):
+    """(draws, CPU seconds) of a job's workers: the draws of the last end line, else of the last progress line, and the CPU seconds summed over
+    the worker processes (a process's CPU count goes on across a renewal's execv and starts again in a new worker)."""
+    draws, cpu, seg = 0, 0.0, 0.0
+    for p in (w / 'work').glob('*.log'):
+        for l in p.read_text(errors='replace').splitlines():
+            m = re.match(r'rss \d+ at \d+ s of \d+, cpu (\d+) s, (\d+) samples', l)
+            if m:
+                c = float(m.group(1))
+                if c < seg:
+                    cpu += seg
+                seg, draws = c, int(m.group(2))
+            m = re.match(r'end: [^,]*, (\d+) draws', l)
+            if m:
+                draws = int(m.group(1))
+    return draws, round(cpu + seg)
+
+
+def gate(out, a):
+    """Waits until fewer jobs run than the limit in the file <out>/jobs (default --jobs), which can be changed while the run goes on."""
+    while True:
+        try:
+            limit = int((out / 'jobs').read_text())
+        except (OSError, ValueError):
+            limit = a.jobs
+        with LOCK:
+            if RUNNING[0] < limit:
+                RUNNING[0] += 1
+                return
+        time.sleep(5)
+
+
 def job(a, out, task, arm, seed):
-    w = out / 'jobs' / ('%s.%s.s%d' % (task, arm, seed))
-    w.mkdir(parents=True, exist_ok=True)
+    gate(out, a)
+    try:
+        return run_job(a, out, task, arm, seed)
+    finally:
+        with LOCK:
+            RUNNING[0] -= 1
+
+
+def run_job(a, out, task, arm, seed):
+    n = 0
+    while (out / 'jobs' / ('%s.%s.s%d.%d' % (task, arm, seed, n))).exists():  # an attempt that a stopped run left keeps its folder; each attempt has a fresh store
+        n += 1
+    w = out / 'jobs' / ('%s.%s.s%d.%d' % (task, arm, seed, n))
+    w.mkdir(parents=True)
     d = json.loads((MAIN_ROOT / 'data/tasks' / (task + '.json')).read_text())
     (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
     samp = Path(a.code) / 'model/study/sampler'
@@ -74,7 +121,8 @@ def job(a, out, task, arm, seed):
     last = next((l for l in reversed(text.splitlines()) if 'submission written; deaths' in l), '')
     dk = re.search(r'deaths (\d+) kills (\d+)', last)
     cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
-    rec = dict(task=task, arm=arm, seed=seed, solved=ok, tests=ntest, candidates=cands, rc=rc, seconds=round(time.time() - t0, 1),
+    draws, cpu = effort(w)
+    rec = dict(task=task, arm=arm, seed=seed, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
                deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
                tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))
     with LOCK:
@@ -121,7 +169,7 @@ def main():
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
     print('%d dev tasks, %d jobs to run, %d done' % (len(tasks), len(todo), len(done)), flush=True)
     t0, n = time.time(), 0
-    with cf.ThreadPoolExecutor(a.jobs) as ex:
+    with cf.ThreadPoolExecutor(16) as ex:  # gate() holds the jobs to the limit
         for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
             r = fut.result()
             n += 1
