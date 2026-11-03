@@ -262,7 +262,7 @@ class Document:
                      and n['definition']['name'] == owner['data']['name']}
         else:
             seeds = {i for i, n in graph.items() if self.owner in n['forms']
-                     and n['definition']['kind'] in ('clause', 'parameter', 'rigid_assembly')}
+                     and n['definition']['kind'] in ('clause', 'parameter', 'chosen', 'rigid_assembly')}
         require(seeds, 'target relation absent from resolver graph')
         def dependents(initial, fixed_cut=False):
             # fixed_cut: a DET (`parameter`) or CHOOSE (`chosen`) node holds one value for the task, so its
