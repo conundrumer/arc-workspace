@@ -1,6 +1,6 @@
 """The live search on the dev tasks of the split, in arms that differ only by the writer's tree, judged by solves on the test example.
 
-    dev_run.py RUN --code DIR --site DIR [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs 4] [--tasks N]
+    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N]
 
 RUN names the output folder, $DATA/search/dev161/RUN (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
 Each job is one task of one arm and one seed: the kernel supervisor (supervisor.py beside this file's --code kit, else the v9
@@ -63,7 +63,7 @@ def job(a, out, task, arm, seed):
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
-    cmd = [str(MAIN_ROOT / 'scripts/run_heavy.py'), '--cpus', '1', '--need', 'soon', str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
+    cmd = [str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
            '--submission', str(w / 'submission.json'), '--work', str(w / 'work'), '--seconds', str(a.seconds), '--workers', '1',
            '--rss-limit-mib', str(RSS_LIMIT_MIB), '--worker-cmd', '%s -u %s' % (PY, samp / 'kaggle_worker.py')]
     with open(w / 'supervisor.log', 'w') as log:
