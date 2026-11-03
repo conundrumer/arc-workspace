@@ -441,12 +441,14 @@ class Expander:
             if inst is None:
                 continue
             key = (inst.scope.components, inst.name)
-            if key in plans and h.instances[-1] == inst.name and (
-                    len(h.instances) == 1 or len(h.instances) == 2 and h.name in plans[key][1].derive):
+            if key in plans and h.instances[-1] == inst.name and len(h.instances) <= 2:
                 # (a clause outside the solver's component, such as `parse.table.divider(..) :- ..` or, in
                 # Determine, `ex.table.divider(..) :- ..`, feeds an input of an instance nested in the component's
-                # instance, and derives the input's relation)
+                # instance, and derives the input's relation: its body reads at its own scope, so no shape
+                # clause holds it in place of an atom)
                 inputs_of[key].setdefault(h.name, []).append(u)
+                if len(h.instances) == 2 and h.name not in plans[key][1].derive:
+                    plans[key] = (plans[key][0], replace(plans[key][1], derive=plans[key][1].derive | {h.name}))
         self.inputs_of, self.rels = inputs_of, rels
         for key, (inst, spec) in plans.items():
             d = _parse(self.fmt(spec.decls, inst)) if spec.decls.strip() else None
@@ -503,7 +505,9 @@ class Expander:
                     if m is None:
                         raise ValueError(f"{inst.name}.{name}: a clause's head does not match {pat}")
                     for h in hs:
-                        new_units.append(replace(u, id=self.uid(), head=Atom(h.relation, subst(h.args, m, False), u.head.line)))
+                        # a clause outside the component heads the new relation through the component's instance
+                        rel = RelationName(u.head.relation.instances[:-1] + h.relation.instances, h.relation.name)
+                        new_units.append(replace(u, id=self.uid(), head=Atom(rel, subst(h.args, m, False), u.head.line)))
         # each input clause of a planned instance gives way to its new clauses
         gone = {id(u) for k in plans for us in inputs_of[k].values() for u in us}
         out_units = []
