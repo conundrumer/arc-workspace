@@ -4,7 +4,9 @@
 `arclog.empty_gold_json(corpus, tasks, task, deadline_seconds=None)` once per
 missing or changed task. The native operation discovers emptiness, applies the
 closure, checks output equality and returns `selection: filtered` or a whole-task
-`selection: original` with its reason. Python does not reproduce these checks or
+`selection: original` with its reason. Under `selection: filtered`, a case whose
+edit fails keeps its original program, with its `reason`; a case with no program
+text makes the whole task `selection: original`. Python does not reproduce these checks or
 require additional native proof flags. Native skipped cases remain in the record.
 
 Gold enters the pipeline at `model/export.py` / native `corpus_streams`, after

@@ -28,9 +28,12 @@
 //! as it is. Any other read of such a relation, an `OUT` form that
 //! reads one, a clause with proposers whose body becomes empty, and a
 //! filtered program that the checker refuses, keep the original gold of the
-//! whole task. So does an `OUT` relation of the filtered program that
-//! differs from the original's on an example, an assignment or a model, or
-//! whose enumeration is not complete.
+//! case, with the reason. So does an `OUT` relation of the filtered program
+//! that differs from the original's on an example, an assignment or a model,
+//! or whose enumeration is not complete. A case whose stream does not read
+//! back, or whose program has no text in the source's names, keeps the
+//! original gold of the whole task, since the result has no text of that
+//! case's gold.
 //!
 //! The lint reports, on the original program, two positive atoms of one
 //! conjunction that read the same relation, bind the same columns to the same
@@ -73,8 +76,9 @@ use crate::types::GraphRelation;
 /// The schema of the result of [`empty_gold`].
 pub const SCHEMA: &str = "arclog-empty-gold-v1";
 
-/// The result of the task `id`: the filtered gold of each case, or the
-/// original gold of the whole task with the reason, and the lint. `Err` only
+/// The result of the task `id`: the filtered gold of each case, or its
+/// original gold with the reason, or the original gold of the whole task
+/// with the reason, and the lint. `Err` only
 /// where the task file does not read.
 pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Duration>, constructions: &Constructions) -> Result<Value, String> {
     let (task, _) = read_task_files(tasks, id)?;
@@ -121,23 +125,30 @@ pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Durati
                 lint_gap.get_or_insert(format!("{}: {reason}", case.case));
             }
         }
-        // Once a case keeps its original gold, the whole task does.
+        // Once the whole task keeps its original gold, later cases skip the
+        // edit.
         if fallback.is_some() {
             cases.push(CaseResult::original(&case.case, case.concept, &original, names.as_ref().ok(), registry));
             continue;
         }
-        let filtered = filter(&evaluator, &original, &mut tables, registry, &program_settings);
-        let result = match (filtered, &names) {
-            (Ok(filtered), Ok(names)) => CaseResult::filtered(&case.case, case.concept, &original, filtered, names, registry),
-            (Ok(_), Err(reason)) => Err(reason.clone()),
-            (Err(reason), _) => Err(reason),
-        };
-        match result {
-            Ok(result) => cases.push(result),
+        let names = match names {
+            Ok(names) => names,
             Err(reason) => {
                 fallback.get_or_insert(format!("{}: {reason}", case.case));
-                cases.push(CaseResult::original(&case.case, case.concept, &original, names.as_ref().ok(), registry));
+                cases.push(CaseResult::original(&case.case, case.concept, &original, None, registry));
+                continue;
             }
+        };
+        let result = filter(&evaluator, &original, &mut tables, registry, &program_settings).and_then(|filtered| CaseResult::filtered(&case.case, case.concept, &original, filtered, &names, registry));
+        match result {
+            Ok(result) => cases.push(result),
+            Err(reason) => match CaseResult::kept(&case.case, case.concept, &original, &names, registry, &reason) {
+                Ok(result) => cases.push(result),
+                Err(fault) => {
+                    fallback.get_or_insert(format!("{}: {reason}; {fault}", case.case));
+                    cases.push(CaseResult::original(&case.case, case.concept, &original, Some(&names), registry));
+                }
+            },
         }
     }
     if cases.is_empty() && fallback.is_none() {
@@ -1093,7 +1104,7 @@ struct CaseResult {
 
 impl CaseResult {
     fn unread(case: &str, concept: bool) -> CaseResult {
-        let value = json!({"case": case, "concept": concept, "original_program": null, "filtered_program": null, "old_to_new_clause_index": [], "removed_clauses": [], "edited_clauses": []});
+        let value = json!({"case": case, "concept": concept, "original_program": null, "filtered_program": null, "old_to_new_clause_index": [], "removed_clauses": [], "edited_clauses": [], "reason": null});
         CaseResult { value: value.clone(), original: value }
     }
 
@@ -1104,7 +1115,7 @@ impl CaseResult {
         };
         let count = original.program().value().forms.len();
         let value = json!({"case": case, "concept": concept, "original_program": text, "filtered_program": text,
-            "old_to_new_clause_index": (0..count).collect::<Vec<_>>(), "removed_clauses": [], "edited_clauses": []});
+            "old_to_new_clause_index": (0..count).collect::<Vec<_>>(), "removed_clauses": [], "edited_clauses": [], "reason": null});
         CaseResult { value: value.clone(), original: value }
     }
 
@@ -1119,8 +1130,19 @@ impl CaseResult {
         let removed: Vec<Value> = filtered.deleted.iter().map(|(&index, &reason)| json!({"clause_index": index, "relation": form_relation(&forms[index], names), "clause": texts[index], "reason": reason})).collect();
         let edited: Vec<Value> = filtered.edited.iter().map(|&index| json!({"clause_index": index, "relation": form_relation(&forms[index], names), "clause": texts[index]})).collect();
         let value = json!({"case": case, "concept": concept, "original_program": text, "filtered_program": filtered_text,
-            "old_to_new_clause_index": map, "removed_clauses": removed, "edited_clauses": edited});
+            "old_to_new_clause_index": map, "removed_clauses": removed, "edited_clauses": edited, "reason": null});
         Ok(CaseResult { value, original: unchanged })
+    }
+
+    /// The case's original gold in a task whose other cases may be filtered,
+    /// with the reason the edit gives none. `Err` where the program has no
+    /// text in the source's names.
+    fn kept(case: &str, concept: bool, original: &StudyProgram, names: &Names, registry: &Registry, reason: &str) -> Result<CaseResult, String> {
+        let text = source_program(original, names, registry)?;
+        let count = original.program().value().forms.len();
+        let value = json!({"case": case, "concept": concept, "original_program": text, "filtered_program": text,
+            "old_to_new_clause_index": (0..count).collect::<Vec<_>>(), "removed_clauses": [], "edited_clauses": [], "reason": reason});
+        Ok(CaseResult { value, original: CaseResult::original(case, concept, original, Some(names), registry).original })
     }
 
     fn as_original(self) -> Value {
