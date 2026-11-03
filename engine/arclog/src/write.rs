@@ -606,20 +606,16 @@ mod synthesized {
             // has a `:Pose` column of its own, and a text names its columns
             // apart.
             let in_output = output_labels(form);
-            named_uses(uses, ranks, &in_output)
+            named_uses(Vec::new(), uses, ranks, &in_output)
         }
 
-        /// The names of the labels of a scope that holds `forms`, after the
-        /// labels `fields`, which the scope makes first, with the names
-        /// `reserved` held for the labels they name.
-        fn scope_names(&self, forms: &[&Form], fields: &[RelationColumn], reserved: Vec<(LabelId, Box<str>)>, ranks: Option<&Ranks>) -> Vec<(LabelId, Box<str>)> {
-            let mut uses = Uses { reserved, made: fields.iter().map(|field| (field.label, FIELD_BASE.to_owned())).collect() };
-            let mut in_output = Vec::new();
-            for form in forms {
-                self.form_uses(form, &mut uses);
-                in_output.extend(output_labels(form));
-            }
-            named_uses(uses, ranks.unwrap_or(&Ranks::default()), &in_output)
+        /// `names`, the names of a scope so far, with the names of the labels
+        /// of `form`, which the scope holds. The columns of the relations
+        /// that the forms before `form` declare are known.
+        fn form_names(&self, names: Vec<(LabelId, Box<str>)>, form: &Form, ranks: Option<&Ranks>) -> Vec<(LabelId, Box<str>)> {
+            let mut uses = Uses::default();
+            self.form_uses(form, &mut uses);
+            named_uses(names, uses, ranks.unwrap_or(&Ranks::default()), &output_labels(form))
         }
 
         /// `demonstrated`, a `DEMONSTRATED` form, in the order its labels and
@@ -799,6 +795,14 @@ mod synthesized {
                     SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Key(id)) => uses.made.push((*id, column.clone())),
                     SiteArg::Label(LabelUse::Join(_) | LabelUse::Zero) => {}
                     SiteArg::NamedLabel { name, label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => match written(name) {
+                        // A label at a second field, or at a field whose name
+                        // another label holds, takes a name of its own, and the
+                        // site names the field.
+                        Some(name) if uses.reserved.iter().any(|(own, held)| own == id || &**held == name) => {
+                            if !matches!(label, LabelUse::Join(_)) {
+                                uses.made.push((*id, name.to_owned()));
+                            }
+                        }
                         Some(name) => uses.reserved.push((*id, name.into())),
                         None if matches!(label, LabelUse::Join(_)) => {}
                         None => uses.made.push((*id, column.clone())),
@@ -872,10 +876,14 @@ mod synthesized {
                         continue;
                     }
                     for column in clause.columns.iter() {
-                        let label = targets.iter().position(|target| *target == column.name).and_then(|at| target_labels.get(at));
-                        if let Some(label) = label {
-                            reserved.push((column.label, names.get(*label).into()));
-                        }
+                        let Some(at) = targets.iter().position(|target| *target == column.name) else { continue };
+                        // A field of a record of the `value` head is named by
+                        // the field, and any other column by its label.
+                        let name: Option<Box<str>> = match &targets[at] {
+                            ColumnName::Written(field) => Some(field.clone()),
+                            ColumnName::Slot(_) => target_labels.get(at).map(|label| names.get(*label).into()),
+                        };
+                        reserved.extend(name.map(|name| (column.label, name)));
                     }
                 }
                 reserved
@@ -888,17 +896,23 @@ mod synthesized {
                 let at = children.path(NodeRef::DemoRule(rule));
                 let forms_at = super::arclog::ChildPaths::of(&at, NodeRef::DemoRule(rule));
                 let own: Vec<&Form> = rule.forms.iter().enumerate().filter(|(index, _)| !rule.forms.from_alt(*index)).map(|(_, form)| form).collect();
-                let rule_names = self.scope_names(&own, &rule.fields, reserved(&own), self.nested_ranks.get(&at));
+                let rule_ranks = self.nested_ranks.get(&at).cloned();
+                let fields = Uses { reserved: reserved(&own), made: rule.fields.iter().map(|field| (field.label, FIELD_BASE.to_owned())).collect() };
+                // Each form is named after the forms before it are written,
+                // whose relations its reads name.
+                let mut rule_names = named_uses(Vec::new(), fields, rule_ranks.as_ref().unwrap_or(&Ranks::default()), &[]);
                 let mut forms = Vec::new();
                 for (index, form) in rule.forms.iter().enumerate() {
                     let alt = rule.forms.from_alt(index);
                     let written_form = if alt {
                         let form_at = forms_at.path(NodeRef::from(form));
-                        let alt_names = self.scope_names(&[form], &[], reserved(&[form]), self.nested_ranks.get(&form_at));
+                        let alt_ranks = self.nested_ranks.get(&form_at).cloned();
+                        let alt_names = self.form_names(reserved(&[form]), form, alt_ranks.as_ref());
                         let written_form = self.form(form, &Names(&alt_names));
                         self.nested.push((form_at, alt_names));
                         written_form
                     } else {
+                        rule_names = self.form_names(rule_names, form, rule_ranks.as_ref());
                         self.form(form, &Names(&rule_names))
                     };
                     forms.push((written_form, alt));
@@ -1154,6 +1168,12 @@ mod synthesized {
                     }
                     SiteArg::Field(self.site_with_fields(None, &field, names, None))
                 },
+                // A field of a record whose label has another name.
+                SiteArg::NamedLabel { name: field @ ColumnName::Written(text), label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) }
+                    if site.value.args.len() > 1 && **text != *names.get(*id) =>
+                {
+                    SiteArg::Field(Site { column: field.clone(), value: SiteValue { args: Arc::from([SiteArg::Label(*label)]) } })
+                }
                 other => other.clone(),
             });
             Site {
@@ -1182,11 +1202,12 @@ mod synthesized {
         }
     }
 
-    /// The name of each label of `uses`: the reserved names, then the other
-    /// labels in the order of their places in `ranks`, or of their ids.
-    fn named_uses(mut uses: Uses, ranks: &Ranks, in_output: &[LabelId]) -> Vec<(LabelId, Box<str>)> {
+    /// `names` with the name of each label of `uses` that it lacks: the
+    /// reserved names, then the other labels in the order of their places in
+    /// `ranks`, or of their ids.
+    fn named_uses(mut names: Vec<(LabelId, Box<str>)>, mut uses: Uses, ranks: &Ranks, in_output: &[LabelId]) -> Vec<(LabelId, Box<str>)> {
         let reserved: Vec<&str> = uses.reserved.iter().map(|(_, name)| &**name).collect();
-        let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().collect();
+        names.extend(uses.reserved.iter().filter(|(id, _)| !names.iter().any(|(own, _)| own == id)).cloned().collect::<Vec<_>>());
         names.dedup_by_key(|(id, _)| *id);
         uses.made.sort_by_key(|(label, _)| ranks.get(label).copied().unwrap_or(label.0));
         for (label, base) in &uses.made {
