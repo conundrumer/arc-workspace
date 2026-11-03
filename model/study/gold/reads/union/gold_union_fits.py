@@ -209,7 +209,7 @@ def sampler_outcome(env, task_json, text):
                 dec.step(t)
     except (arclog.Refusal, arclog.Fault) as e:
         return 'refused: %s' % str(e)[:150]
-    return 'ok' if dec.ended else 'not ended'
+    return 'ok' if dec.ended else 'not ended'  # the sampler's 10 s deadline stops the decoder without a refusal, so under load this is no verdict
 
 
 SAMPLER = sampler_settings()

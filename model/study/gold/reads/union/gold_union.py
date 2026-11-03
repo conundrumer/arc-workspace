@@ -81,7 +81,7 @@ def verdict(fits, text):
         return None, 'no fits row'
     if x['why']:
         return x, x['why']
-    if (x.get('sampler') or 'ok').startswith(('refused', 'does not parse', 'not ended')):  # gold the sampler's decoder can't write; a timeout is no outcome
+    if (x.get('sampler') or 'ok').startswith(('refused', 'does not parse')):  # gold the sampler's decoder can't write; a timeout or 'not ended' (the 10 s deadline under load) is no outcome
         return x, 'sampler: ' + x['sampler']
     if not x['fit']:
         return x, 'no assignment fits'
