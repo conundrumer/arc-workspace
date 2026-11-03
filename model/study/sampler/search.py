@@ -69,7 +69,8 @@ REJECTS = ('try:', 'gate:', 'or:try:', 'or:fail', 'or:branch retry', 'or:empty',
 FRONTIER_CAP = 400000  # entries of the frontier, the lowest bounds dropped first
 SEEN_CAP = 2000000  # atom sets that Search.seen keeps
 OR_BITS = 3.0  # bits taken off the bound of a path for each OR it takes: a run that takes an OR costs more CPU, so its clauses come after plain ones of about the same q
-WRITER = os.environ.get('WRITER', '0') == '1'  # the token-level writer (writer.py) writes each query, in place of Run.form's per-atom draw; off by default
+WRITER = os.environ.get('WRITER', '0') == '1'
+PARTITION = WRITER and os.environ.get('SEARCH_PARTITION', '1') == '1'  # with the writer, each query has one slot that writes it: a query that reads no query of a scope belongs to the root slot (search-worker's draw records: 22 to 41% of draws wrote a known query again, nearly all a query that reads none of its scope). Not a legality rule: gold writes such queries at non-empty states, so the training rows' mask leaves them  # the token-level writer (writer.py) writes each query, in place of Run.form's per-atom draw; off by default
 WRITER_LOOKAHEAD = tuple(x for x in os.environ.get('WRITER_LOOKAHEAD', '').split(',') if x) or None  # the lookahead components of the writer's plan, in order (lookahead.ORDER names them; 'all' adds Completable); None: lookahead.DEFAULT
 EXTRA_COMPONENTS = []  # functions of a SearchRun that make a lookahead component, added to the end of the writer's plan (superdag_search.py adds its stop bars here)
 DISTRIBUTION = None  # the Distribution of the writer's plan (writer.Distribution); None: writer.Uniform
@@ -519,6 +520,9 @@ class SearchRun(Run):
             self.plan = writer.default_plan(self, OR_BITS, WRITER_LOOKAHEAD, DISTRIBUTION)
             if EXTRA_COMPONENTS and not (WRITER_LOOKAHEAD and 'legal' in WRITER_LOOKAHEAD):  # the legal plan holds legality rules only: the stop bars are preferences
                 self.plan = dataclasses.replace(self.plan, lookahead=self.plan.lookahead + tuple(make(self) for make in EXTRA_COMPONENTS))
+            if PARTITION:  # the slots partition the queries: a RULE or DET over a non-empty scope reads it in its first atom (lookahead_legal.ReadsScopeFirst)
+                import lookahead_legal
+                self.plan = dataclasses.replace(self.plan, lookahead=self.plan.lookahead + (lookahead_legal.ReadsScopeFirst(),))
         self.rng.keys = TieKeys(self) if 'tie' in S.ORDER_FREE else None
         pg.new = []
         start = writer.start_point(self, pg, self.open_form(pg, dec, kind), kind)

@@ -60,7 +60,7 @@ clause. A caller keeps the prefixes it wants as forms.
 With SEARCH_NEW_TABLE=1, a search bars the stop of a RULE or DET prefix whose table has the TableHashes (at all its assignments) of a pool table of that kind, so the path goes on past it. Such a stop would give a query with
 tables of known TableHash. The barred prefix's extensions stay in the search.
 
-  Environment: FIRST_PASS_SECONDS (0), FIRST_PASS_RULE (seconds of the RULE pass, default FIRST_PASS_SECONDS), POOL_CLAUSES, SEARCH_PATIENCE (default 8), SEARCH_VISIT_SECONDS (4), SEARCH_RESUME (0.3), SEARCH_HOT (6, searches that keep a run),
+  Environment: FIRST_PASS_SECONDS (4 where search.PARTITION is on, else 0), FIRST_PASS_RULE (seconds of the RULE pass, default FIRST_PASS_SECONDS), POOL_CLAUSES, SEARCH_PATIENCE (default 8), SEARCH_VISIT_SECONDS (4), SEARCH_RESUME (0.3), SEARCH_HOT (6, searches that keep a run),
   SEARCH_LIMIT_MIB (2048, resident memory past which a search gives up its run), SEARCH_READ_SCOPE (0), SEARCH_READ_PICK (0), SEARCH_NEW_TABLE (0), SEARCH_GOLD2, SEARCH_SCOPE_RULE (a file with picks(pool, k, rng); search arm only), SEARCH_TRACE (1: a line per visit).
 
   RAYON_NUM_THREADS=1 <runtime python> -u superdag_search.py TASK ... --clauses search --seconds 60 --policy DIR --models DIR --points FILE --out DIR
@@ -92,7 +92,7 @@ SAVE_SECONDS = float(os.environ.get('SEARCH_SAVE_SECONDS', 60))
 KEEP_COLD = int(os.environ.get('SEARCH_KEEP_COLD', 2))
 DISK_MIB = float(os.environ.get('SEARCH_DISK_MIB', 2048))  # state files of one task
 TRACE = int(os.environ.get('SEARCH_TRACE', 0) or 0)
-FIRST_PASS = float(os.environ.get('FIRST_PASS_SECONDS', 0))
+FIRST_PASS = float(os.environ.get('FIRST_PASS_SECONDS', 4 if search.PARTITION else 0))  # search.PARTITION writes a query that reads no scope only at the root slots, which the first pass makes
 FIRST_RULE = float(os.environ.get('FIRST_PASS_RULE', FIRST_PASS))
 READ_SCOPE = int(os.environ.get('SEARCH_READ_SCOPE', 0) or 0)
 NEW_TABLE = int(os.environ.get('SEARCH_NEW_TABLE', 0) or 0)
