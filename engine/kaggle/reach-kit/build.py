@@ -184,7 +184,9 @@ def merged_rows(want):
 
 
 def task_order(want):
-    """The set's tasks, in the order of union-identity-<set>.jsonl."""
+    """The set's tasks, in the order of union-identity-<set>.jsonl; while that file is missing, the tasks of the union lines so far, in their order."""
+    if not os.path.exists(UNION + 'union-identity-%s.jsonl' % want):
+        return list(merged_rows(want)[0])
     return [json.loads(l)['task'] for l in open(UNION + 'union-identity-%s.jsonl' % want)]
 
 
