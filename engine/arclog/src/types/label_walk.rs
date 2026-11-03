@@ -175,7 +175,9 @@ pub(crate) fn settle_label_types(
 /// program, which does not depend on the label asked: the type that the
 /// sites of an atom give a class of labels, and, for a body, the labels
 /// that stand in it, the labels fresh in it, and what it makes by zero.
-/// A part is identified by its address.
+/// A part is identified by its address. It holds as well the type that a
+/// walk of [`LabelWalk::key_type`] or [`LabelWalk::around_type`] gives,
+/// under the [`AroundKey`] of all that the walk reads.
 #[derive(Default)]
 pub(crate) struct WalkCache {
     atoms: std::cell::RefCell<crate::hash::StableHashMap<(usize, Vec<crate::program::LabelId>), Result<Option<ValueType>, LabelFault>>>,
@@ -183,6 +185,24 @@ pub(crate) struct WalkCache {
     fresh: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<crate::hash::StableHashSet<crate::program::LabelId>>>>,
     zero_made: std::cell::RefCell<crate::hash::StableHashMap<usize, std::rc::Rc<ZeroMade>>>,
     negated: std::cell::RefCell<crate::hash::StableHashMap<usize, bool>>,
+    around: std::cell::RefCell<crate::hash::StableHashMap<AroundKey, Result<Option<ValueType>, LabelFault>>>,
+}
+
+/// What a walk of another label, [`LabelWalk::key_type`] or
+/// [`LabelWalk::around_type`], reads beyond the walk cache and `site_type`:
+/// the label, the labels asked as a set, the sites read, the mode of
+/// branches without the label, the key clause's body, and, for a walk
+/// around a list, each list around it, innermost first, with its pairs and
+/// the index of its conjunct that holds the inner list. A body is
+/// identified by its address.
+#[derive(PartialEq, Eq, Hash)]
+struct AroundKey {
+    label: crate::program::LabelId,
+    asked: Vec<crate::program::LabelId>,
+    positive: bool,
+    binding_types: bool,
+    key: Option<usize>,
+    frames: Option<Vec<(usize, Vec<LabelPair>, usize)>>,
 }
 
 impl WalkCache {
@@ -209,6 +229,16 @@ impl WalkCache {
     fn zero_made(&self, body: &crate::program::Body) -> std::rc::Rc<ZeroMade> {
         let at = body as *const crate::program::Body as usize;
         std::rc::Rc::clone(self.zero_made.borrow_mut().entry(at).or_insert_with(|| std::rc::Rc::new(ZeroMade::of(body))))
+    }
+
+    /// The type of the walk of `key`, which `walk` gives where none is held.
+    fn walk(&self, key: AroundKey, walk: impl FnOnce() -> Result<Option<ValueType>, LabelFault>) -> Result<Option<ValueType>, LabelFault> {
+        if let Some(found) = self.around.borrow().get(&key) {
+            return found.clone();
+        }
+        let found = walk();
+        self.around.borrow_mut().insert(key, found.clone());
+        found
     }
 }
 
@@ -364,10 +394,13 @@ impl LabelWalk<'_> {
         around: Option<&Around<'_>>,
         outside: &Outside,
     ) -> Result<Option<ValueType>, LabelFault> {
+        let before = equal_labels(outer, self.label);
+        if !self.holds(body, &before) {
+            return Ok(None);
+        }
         let pairs = with_constraints(outer, body);
         let class = equal_labels(&pairs, self.label);
         let mut ty = self.list_type(body, &pairs, &class, around, None, outside)?;
-        let before = equal_labels(outer, self.label);
         for &other in class.iter().filter(|label| !before.contains(label) && !self.asked.contains(label)) {
             if let Some(around) = around {
                 ty = meet(ty, self.around_type(other, around)?)?;
@@ -380,24 +413,52 @@ impl LabelWalk<'_> {
     /// The type that the sites of `other` give it in the key clause.
     fn key_type(&self, other: crate::program::LabelId) -> Result<Option<ValueType>, LabelFault> {
         let Some(key) = self.key else { return Ok(None) };
-        let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache, sites: self.sites,binding_types:self.binding_types };
-        walk.list_type(key, &[], &[other], None, None, &Outside::Unchecked)
+        let asked: Vec<_> = self.asked.iter().copied().chain(std::iter::once(other)).collect();
+        let memo = self.around_key(other, &asked, Some(key), None);
+        self.cache.walk(memo, || {
+            let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: None, cache: self.cache, sites: self.sites,binding_types:self.binding_types };
+            walk.list_type(key, &[], &[other], None, None, &Outside::Unchecked)
+        })
     }
 
     /// The type that the sites of `other` give it in `around` and the lists
     /// around it, outside the conjunct of each that holds the inner list.
     fn around_type(&self, other: crate::program::LabelId, around: &Around<'_>) -> Result<Option<ValueType>, LabelFault> {
-        let asked = self.asked.iter().copied().chain(std::iter::once(other)).collect();
-        let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache, sites: self.sites,binding_types:self.binding_types };
-        let mut ty = None;
+        let asked: Vec<_> = self.asked.iter().copied().chain(std::iter::once(other)).collect();
+        let mut frames = Vec::new();
         let mut frame = Some(around);
         while let Some(list) = frame {
-            let class = equal_labels(list.pairs, other);
-            ty = meet(ty, walk.list_type(list.list, list.pairs, &class, list.outer, Some(list.holder), &Outside::Unchecked)?)?;
+            frames.push((list.list as *const crate::program::Body as usize, list.pairs.to_vec(), list.holder));
             frame = list.outer;
         }
-        Ok(ty)
+        let memo = self.around_key(other, &asked, self.key, Some(frames));
+        self.cache.walk(memo, || {
+            let walk = LabelWalk { label: other, site_type: self.site_type, asked, key: self.key, cache: self.cache, sites: self.sites,binding_types:self.binding_types };
+            let mut ty = None;
+            let mut frame = Some(around);
+            while let Some(list) = frame {
+                let class = equal_labels(list.pairs, other);
+                ty = meet(ty, walk.list_type(list.list, list.pairs, &class, list.outer, Some(list.holder), &Outside::Unchecked)?)?;
+                frame = list.outer;
+            }
+            Ok(ty)
+        })
+    }
+
+    /// The [`AroundKey`] of a walk of `other` with the labels `asked`, over
+    /// the key clause's body `key`, and around `frames`, where it is given.
+    fn around_key(&self, other: crate::program::LabelId, asked: &[crate::program::LabelId], key: Option<&crate::program::Body>, frames: Option<Vec<(usize, Vec<LabelPair>, usize)>>) -> AroundKey {
+        let mut asked = asked.to_vec();
+        asked.sort_unstable_by_key(|label| label.0);
+        asked.dedup();
+        AroundKey {
+            label: other,
+            asked,
+            positive: self.sites == Sites::Positive,
+            binding_types: self.binding_types,
+            key: key.map(|key| key as *const crate::program::Body as usize),
+            frames,
+        }
     }
 
     /// The meet of the types of the conjuncts of `list`, other than the one
@@ -415,9 +476,15 @@ impl LabelWalk<'_> {
         skip: Option<usize>,
         outside: &Outside,
     ) -> Result<Option<ValueType>, LabelFault> {
+        if !self.holds(list, class) {
+            return Ok(None);
+        }
         let mut ty = None;
         let mut types = Vec::new();
         for (holder, conjunct) in list.conjuncts.iter().enumerate().filter(|(index, _)| Some(*index) != skip) {
+            if !self.conjunct_holds(conjunct, class) {
+                continue;
+            }
             let here = Around { list, pairs, holder, outer };
             let conjunct_type = self.conjunct_type(conjunct, pairs, class, &here, &Outside::Unchecked)?;
             ty = meet(ty, conjunct_type.clone())?;
@@ -525,6 +592,33 @@ impl LabelWalk<'_> {
             }
         }
         Ok(ty)
+    }
+
+    /// Whether a label of `class` stands in `body`, at any depth.
+    ///
+    /// A body where none stands gives the label asked no type and no fault,
+    /// whatever its outside: no site there is of a label of `class`, and no
+    /// constraint there makes a label equal to one of `class`, so the class
+    /// in each list nested in it is `class`, and each of its conjuncts gives
+    /// no type.
+    fn holds(&self, body: &crate::program::Body, class: &[crate::program::LabelId]) -> bool {
+        let labels = self.cache.held(body);
+        class.iter().any(|label| labels.contains(label))
+    }
+
+    /// Whether a label of `class` stands in `conjunct`, at any depth. A
+    /// conjunct where none stands gives no type and no fault, as
+    /// [`LabelWalk::holds`] gives for a body.
+    fn conjunct_holds(&self, conjunct: &crate::program::Conjunct, class: &[crate::program::LabelId]) -> bool {
+        use crate::program::{Conjunct, Negated};
+        match conjunct {
+            Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => atom.value().sites.iter().any(|site| site_holds_class(site, class)),
+            Conjunct::Not(Negated::Form(form)) => self.conjunct_holds(form, class),
+            Conjunct::Or(branches) => branches.iter().any(|branch| self.holds(branch.value(), class)),
+            Conjunct::If { test, then, otherwise } => [test, then, otherwise].into_iter().any(|part| self.holds(part.value(), class)),
+            Conjunct::All { domain, body } => [domain, body].into_iter().any(|part| self.holds(part.value(), class)),
+            Conjunct::Constraint(_) => false,
+        }
     }
 
     /// Whether the label asked is fresh at a site or a constraint of
