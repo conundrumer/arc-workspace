@@ -6,7 +6,7 @@ gold prefix's own shape through `available`: on hop1 every available table is go
 import importlib.util
 import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/policy3'  # the data folder
 FAMILIES = {
     'out.code': ('output_coding', 'ha', ('ha_gain', 'ha_attr', 'ha_cover', 'ha_lav', 'ha_L0')),
     'out.variants': ('output_coding', 'ha', ('ha_n_variants', 'ha_var')),
