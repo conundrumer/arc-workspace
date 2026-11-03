@@ -4,7 +4,7 @@
 
 Reads OUTD/SET/rows/<task>.jsonl.gz (row_store.py). Writes OUTD/SET/tables/<task>.jsonl.gz, to a temp file and then a rename. A task whose file holds the
 sha of its row store and of this code is skipped. The AssignmentVector is computed by the sampler kit's `writer.assignment_vector` (`KIT`), so training and
-serving give one value; the kit's `arclog` needs the engine wheel on PYTHONPATH. Lines:
+serving give one value; ARC_SAMPLER_KIT, when set, names the kit's sampler folder. The kit's `arclog` needs the engine wheel on PYTHONPATH. Lines:
 
   header    task, split, src (the row store's), versions, names (the TableVector's), assignment_vector_names, function_names, use_names
   vec       one per distinct TableHash: hash, kind, values (null for NaN), in the order of header.names
@@ -42,7 +42,7 @@ import numpy as np
 
 OUTD = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/samples')
 TASKS = Path('/Users/davidlu/code/arc-workspace/data/tasks')
-KIT = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/kits/sampler-pool-m2-writer/model/study/sampler')
+KIT = Path(os.environ.get('ARC_SAMPLER_KIT', '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/kits/sampler-pool-m2-writer/model/study/sampler'))  # a release's model/study/sampler
 CODE = ['build_tables.py', 'table_facts.py', 'table_read.py', 'table_vec.py', 'function_vec.py', 'table_hash.py']
 AV_SCHEMA = 'a1'
 SCHEMA = f'{TV.SCHEMA}+{FV.SCHEMA}+{AV_SCHEMA}'
