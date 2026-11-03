@@ -28,7 +28,7 @@ use crate::check::{CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::Outcome;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{
-    written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, DemoRule, DemoRuleName,
+    written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, DemoRule,
     Demonstrated, Form, Instance, InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OneMark, Operand, OutputName, OutputOwner,
     OutputStep, PortName, Out, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
 };
@@ -2259,11 +2259,12 @@ fn prediction_clause(body: Node<Body>, columns: Vec<RelationColumn>) -> Clause {
 }
 
 /// The decoded `DEMO_RULE` form at `index` among the rules of its form,
-/// with the fields `fields` and the forms `forms`. A field's column is
-/// named by no name that a column of the key or of the `value` head has.
+/// with the fields `fields` and the forms `forms`, named as
+/// `crate::stream::demonstrated::rule_name` and `field_name` give.
 fn demo_rule(index: usize, fields: &[LabelId], forms: Vec<Form>) -> DemoRule {
-    let fields = fields.iter().enumerate().map(|(at, label)| RelationColumn { name: ColumnName::Slot(u32::MAX - at as u32), label: *label }).collect();
-    DemoRule { name: DemoRuleName(format!("$R{index}").into()), fields, text: None, forms: RuleForms::written(forms.into()) }
+    use crate::stream::demonstrated::{field_name, rule_name};
+    let fields = fields.iter().enumerate().map(|(at, label)| RelationColumn { name: field_name(at), label: *label }).collect();
+    DemoRule { name: rule_name(index), fields, text: None, forms: RuleForms::written(forms.into()) }
 }
 
 fn empty() -> Node<Body> {

@@ -552,7 +552,9 @@ impl ResolvedProgram {
     /// program does not keep. The closure is resolved with those sites in
     /// the order of the text ([`crate::write::in_text_order`]), so a decode
     /// and the reader of its text give one content. A clause's gloss changes
-    /// no table and no stream holds it, so the closure's clauses hold none
+    /// no table and no stream holds it, so the closure's clauses hold none;
+    /// nor do a `DEMONSTRATED` form's rule names and texts, and its
+    /// `&prediction` clauses hold the columns the stream fills alone
     /// ([`query_form`]). `None` where `position` names no node.
     pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
         let (closure, last) = self.query_closure(position, registry)?;
@@ -596,7 +598,7 @@ impl ResolvedProgram {
                 }
             }
         }
-        let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| query_form(form)).collect();
+        let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| query_form(form, registry)).collect();
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
         Some((build::resolve(&pruned, None, &SolverScope::default(), registry).value, last))
@@ -876,11 +878,14 @@ fn demo_rules<'d>(
     rules.map(move |(index, rule)| (path.child(demonstrated.position(crate::program::DemonstratedPart::Rule(index))), rule.value()))
 }
 
-/// `form` as the content of a query holds it: a clause with no gloss.
-fn query_form(form: &crate::program::Form) -> crate::program::Form {
+/// `form` as the content of a query holds it: a clause with no gloss, and
+/// a `DEMONSTRATED` form as a decode of its stream gives it
+/// ([`crate::stream::demonstrated::as_streamed`]).
+fn query_form(form: &crate::program::Form, registry: &Registry) -> crate::program::Form {
     use crate::program::{Clause, Form};
     match form {
         Form::Clause(clause) if clause.value().gloss.is_some() => Form::Clause(Node::new(Clause { gloss: None, ..clause.value().clone() })),
+        Form::Demonstrated(demonstrated) => Form::Demonstrated(Node::new(crate::stream::demonstrated::as_streamed(demonstrated.value(), registry))),
         form => form.clone(),
     }
 }

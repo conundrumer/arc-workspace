@@ -5,8 +5,10 @@
 
 use std::sync::OnceLock;
 
-use crate::program::{ColumnName, Demonstrated, InstanceInput, PortName};
-use crate::registry::{Column, ColumnType, Component, ComponentKind, InputPort, Port, TypeParameter};
+use crate::program::canonical::{prediction, relation_of};
+use crate::program::path::NodePath;
+use crate::program::{Clause, ColumnName, DemoRule, DemoRuleName, Demonstrated, Form, InstanceInput, Node, PortName, RelationColumn};
+use crate::registry::{Column, ColumnType, Component, ComponentKind, InputPort, Port, Registry, TypeParameter};
 use crate::resolver::columns::projection;
 use crate::resolver::form_columns::demonstrated_value;
 use crate::types::{each_site_label, use_label};
@@ -60,4 +62,58 @@ fn head_names(input: &InstanceInput) -> Vec<Option<ColumnName>> {
         }
     }
     names
+}
+
+/// The name of the decoded `DEMO_RULE` form at `index` among the rules of
+/// its form: `$R<index>`.
+pub(crate) fn rule_name(index: usize) -> DemoRuleName {
+    DemoRuleName(format!("$R{index}").into())
+}
+
+/// The name of the field at `at` of a decoded `DEMO_RULE` form, which no
+/// column of the key or of the `value` head has.
+pub(crate) fn field_name(at: usize) -> ColumnName {
+    ColumnName::Slot(u32::MAX - at as u32)
+}
+
+/// `demonstrated` as a decode of its stream gives it, up to the names that
+/// the stream gives by position, which the resolved content holds by
+/// position too: each rule named by [`rule_name`] with no text, its fields
+/// named by [`field_name`], its forms in the order the writer writes them,
+/// no clause of it with a gloss, and each `&prediction` clause with the
+/// columns that the stream fills alone, each named by the column it fills,
+/// in the order of [`prediction_targets`].
+pub(crate) fn as_streamed(demonstrated: &Demonstrated, registry: &Registry) -> Demonstrated {
+    let targets = prediction_targets(demonstrated);
+    let rules = demonstrated.rules.iter().enumerate().map(|(index, rule)| Node::new(streamed_rule(index, rule.value(), &targets, registry))).collect();
+    Demonstrated { rules, ..demonstrated.clone() }
+}
+
+/// The rule `rule`, at `index`, as [`as_streamed`] gives it.
+fn streamed_rule(index: usize, rule: &DemoRule, targets: &[Option<ColumnName>], registry: &Registry) -> DemoRule {
+    let leaves: Vec<(&Form, NodePath)> = rule.forms.iter().enumerate().map(|(at, form)| (form, NodePath::top(at as u32))).collect();
+    let forms = super::write::write_order(registry, &leaves)
+        .into_iter()
+        .map(|at| {
+            let form = match &rule.forms[at] {
+                Form::Clause(clause) if relation_of(&clause.value().derives) == prediction() => {
+                    let clause = clause.value();
+                    Form::Clause(Node::new(Clause { gloss: None, columns: filled_columns(clause, rule, targets).into(), ..clause.clone() }))
+                }
+                Form::Clause(clause) if clause.value().gloss.is_some() => Form::Clause(Node::new(Clause { gloss: None, ..clause.value().clone() })),
+                form => form.clone(),
+            };
+            (form, rule.forms.from_alt(at))
+        })
+        .collect();
+    let fields = rule.fields.iter().enumerate().map(|(at, field)| RelationColumn { name: field_name(at), label: field.label }).collect();
+    DemoRule { name: rule_name(index), fields, text: None, forms }
+}
+
+/// The columns of `targets` that the `&prediction` clause `clause` of
+/// `rule` fills, as the stream fills them: each with the label of the
+/// clause's column of its name, or of the rule's field of its name.
+pub(crate) fn filled_columns(clause: &Clause, rule: &DemoRule, targets: &[Option<ColumnName>]) -> Vec<RelationColumn> {
+    let filled = |name: &ColumnName| clause.columns.iter().chain(rule.fields.iter()).find(|column| column.name == *name);
+    targets.iter().flatten().filter_map(|name| filled(name).map(|column| RelationColumn { name: name.clone(), label: column.label })).collect()
 }

@@ -214,7 +214,7 @@ fn reads_below(node: NodeRef<'_>, reads: &mut Vec<ProgramRelation>) {
 /// written declares or that no form of `forms` declares. Where no form is
 /// ready, as in a cycle, the earliest form left. A list whose forms follow
 /// what they read keeps its order.
-fn write_order(registry: &Registry, forms: &[(&Form, NodePath)]) -> Vec<usize> {
+pub(super) fn write_order(registry: &Registry, forms: &[(&Form, NodePath)]) -> Vec<usize> {
     let declares: Vec<Vec<ProgramRelation>> = forms.iter().map(|(form, _)| declarations(registry, form)).collect();
     let reads: Vec<Vec<ProgramRelation>> = forms
         .iter()
