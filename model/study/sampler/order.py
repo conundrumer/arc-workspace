@@ -136,7 +136,7 @@ class Env:
         self.total: collections.Counter | None = None  # the label mentions of the query that ordered() walks
         self.lookahead = False  # ordered() sets it for the second try of a query that the plain rule cannot write
         self.look = 0  # above 0 inside completable: the walk asks whether a rest can be written, and does not probe each atom for a dead end
-        self.rcache = {}  # render of atoms, for one query (ordered clears it)
+        self.rcache = {}  # the ways of atoms (render) and the dead-end verdicts of states (closes), for one query (ordered clears it)
         self.label = {i for i in range(n) if self.kind[i] == 'label'}
         self.stats = collections.Counter()
         self.deadline: float | None = None  # a time.monotonic() value past which a walk raises Overflow
@@ -144,7 +144,7 @@ class Env:
         self.IF = V.id('IF')
         self.ONE = V.id('ONE')
         env_ONE[0] = self.ONE
-        self.probe = [END, OR_TOK, NOT, self.ALL, EQ, CMP[1], V.id('input')]  # tokens that close an atom: some is in the mask unless the atom is a dead end
+        self.probe = [END, OR_TOK, NOT, self.ALL, EQ, CMP[1], V.id('input')]  # tokens that close an atom: some is in the mask unless the atom is a dead end; END first (closes)
         self.open = np.array([k in ('column', 'label') or i in (STAR, CARET, ZERO) for i, k in enumerate(self.kind)])  # tokens that go on with an open atom
 
 
@@ -538,34 +538,45 @@ def describe(env, item):
 
 # ---------------------------------------------------------------- the walk of a set
 
-def render(env, marks, item, st, mode, sep=None, k=None):
+def closes(env, st):
+    """Whether the mask after an atom (state st) holds a token that closes it: where it holds none, the atom is a dead end. The decoder's verdict on END in a DET walks the DET's
+    domains over the partial body, which can take a second; the verdicts on the other closing tokens are quick. So END is asked only where the mask holds none of the others.
+    A verdict is kept in env.rcache, which keeps the state."""
+    key = ('closes', id(st[0]))
+    got = env.rcache.get(key)
+    if got is None:
+        got = env.rcache[key] = bool(any(st[0].admits(env.probe[1:])) or st[0].admits(env.probe[:1])[0])
+    return got
+
+
+def render(env, marks, item, st, mode, sep=None, k=None, probe=True):
     """[(tokens, state)] of the ways to write the item at the state, and an error text where none: for an atom one way; a compound item, every way of its inner sets
     under the mode ('min': the ordered rule, 'all': every order). sep: a token written before the item (ALSO). k: in mode 'min', a function from the state after the item to whether
-    the rest of the query can still be written; the ways returned are those that it accepts (see completable)."""
+    the rest of the query can still be written; the ways returned are those that it accepts (see completable). probe False: an atom's ways are not tested for a dead end (closes);
+    walk_set tests only the ways it may take."""
     if env.deadline is not None and time.monotonic() > env.deadline:
         raise Overflow()
     try:
         if sep is not None:
             st = step_one(env, st, sep)
         if isinstance(item, Atom):
-            ckey = (id(item), mode, env.look, nm_key(st[1]), st[0].trace_form())  # the same atom at the same form so far gives the same ways
-            hit = env.rcache.get(ckey)
-            if hit is not None:
-                return hit
-            outs, err = [], ''
-            for v in variants(item.toks, st[1], mode):
-                try:
-                    toks, st2 = step_syms(env, marks, st, v)
-                except Overflow:
-                    raise
-                except Exception as e:  # noqa: BLE001 - a refusal
-                    err = str(e).split('\n')[0][:160]
-                    continue
-                if mode == 'min' and not env.look and not any(st2[0].admits(env.probe)):  # the mask holds no token that closes the atom: it is a dead end (the 'all' walks find it at the next token)
-                    err = 'the atom cannot close'
-                    continue
-                outs.append((toks, st2))
-            env.rcache[ckey] = got = (outs, ('' if outs else err))
+            ckey = (id(item), mode, nm_key(st[1]), st[0].trace_form())  # the same atom at the same form so far gives the same ways
+            got = env.rcache.get(ckey)
+            if got is None:
+                outs, err = [], ''
+                for v in variants(item.toks, st[1], mode):
+                    try:
+                        toks, st2 = step_syms(env, marks, st, v)
+                    except Overflow:
+                        raise
+                    except Exception as e:  # noqa: BLE001 - a refusal
+                        err = str(e).split('\n')[0][:160]
+                        continue
+                    outs.append((toks, st2))
+                env.rcache[ckey] = got = (outs, ('' if outs else err))
+            if probe and mode == 'min' and not env.look:  # the 'all' walks find a dead end at the next token
+                outs = [o for o in got[0] if closes(env, o[1])]
+                return outs, ('' if outs else got[1] or 'the atom cannot close')
             return got
         if isinstance(item, Set):  # a branch
             outs = walk_set(env, marks, item, st, mode, k=k)
@@ -755,6 +766,7 @@ def walk_set(env, marks, node, st, mode, sep=None, branches=False, cap=None, k=N
     n = len(items)
     first = first_branches(items, st[1], env.total) if branches else None
     memo = {}
+    probe = mode == 'min' and not env.look  # an atom's ways are tested for a dead end (closes) here, and only the ways of the least keys
     frontier = [((), st, tuple(range(n)), frozenset())]
     for step in range(n):
         new = {}
@@ -775,42 +787,43 @@ def walk_set(env, marks, node, st, mode, sep=None, branches=False, cap=None, k=N
                 if mode == 'min' and env.lookahead:
                     kk = (lambda s1, idx=idx, s0=s0, rem=rem, cr=cr: completable(
                         env, marks, items, frozenset(rem) - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in s0[1]), sep, k, memo))
-                outs, err = render(env, marks, items[idx], s0, mode, sep if (sep is not None and step > 0) else None, kk)
+                outs, err = render(env, marks, items[idx], s0, mode, sep if (sep is not None and step > 0) else None, kk, probe=False)
                 if not outs:
                     why.append((describe(env, items[idx]), err))
                 for o in outs:
                     cands.append((o[0], idx, o))
-            if not cands:
-                if dead is None:
-                    dead = why
-                continue
-            if mode == 'min' and not env.lookahead:
-                kmin = min(c[0] for c in cands)
-                cands = [c for c in cands if c[0] == kmin]
-                if len({c[1] for c in cands}) > 1:
-                    env.stats['tie_choices'] += 1
-                    env.tie_log.append(node.kind)
-            elif mode == 'min':
+            if mode == 'min':
+                # the least keys first: a group of equal keys is kept where some of its ways pass the dead-end test (probe) and, with the lookahead, completable
                 cands.sort(key=lambda c: c[0])
-                kept, i = [], 0
+                kept, closing, i = [], False, 0
                 while i < len(cands) and not kept:
                     j = i
                     while j < len(cands) and cands[j][0] == cands[i][0]:
                         j += 1
                     for c in cands[i:j]:
-                        rem2 = frozenset(r for r in rem if r != c[1])
-                        made = frozenset((g, c[1]) for g in c[2][1][1] if g not in s0[1])
-                        if completable(env, marks, items, rem2, c[2][1], cr | made, sep, k, memo):
-                            kept.append(c)
+                        if probe and isinstance(items[c[1]], Atom) and not closes(env, c[2][1]):
+                            why.append((describe(env, items[c[1]]), 'the atom cannot close'))
+                            continue
+                        closing = True
+                        if env.lookahead:
+                            rem2 = frozenset(r for r in rem if r != c[1])
+                            made = frozenset((g, c[1]) for g in c[2][1][1] if g not in s0[1])
+                            if not completable(env, marks, items, rem2, c[2][1], cr | made, sep, k, memo):
+                                continue
+                        kept.append(c)
                     i = j
                 if not kept:
                     if dead is None:
-                        dead = why + [('the rest of the set', 'no order of the items that are left can be written')]
+                        dead = why + ([('the rest of the set', 'no order of the items that are left can be written')] if closing and env.lookahead else [])
                     continue
                 cands = kept
                 if len({c[1] for c in cands}) > 1:
                     env.stats['tie_choices'] += 1
                     env.tie_log.append(node.kind)
+            elif not cands:
+                if dead is None:
+                    dead = why
+                continue
             for key, idx, o in cands:
                 add = ((sep,) if sep is not None and step > 0 else ()) + o[0]
                 rem2 = tuple(i for i in rem if i != idx)
