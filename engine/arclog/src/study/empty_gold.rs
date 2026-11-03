@@ -13,7 +13,10 @@
 //! relation, and each clause whose body then has a positive atom on such a
 //! relation, until nothing changes. A relation becomes empty when each form
 //! that derives it is deleted. An `OR` with a branch the edit leaves with no
-//! conjunct is true, and the edit drops it where it exports no label. A
+//! conjunct is true, and the edit drops it where it exports no label. An `IF`
+//! whose test becomes false is its else, which then makes each label the
+//! `IF` exported; one whose else becomes false is the conjunction of its test
+//! and its then. An `ALL` whose domain or body becomes false is false. A
 //! clause whose `OR` loses branches takes as its columns the labels its body
 //! then keeps, and each read of its relation names its columns by their new
 //! slots. An `INIT` form whose key body becomes false is deleted, and so is
@@ -675,7 +678,9 @@ enum Rewritten {
 /// conjuncts. Where the first branch is dropped, the new first branch makes
 /// each label the `OR` exported, at its first site in a positive atom of
 /// the branch's own list or at the first label of a `=` there: every later
-/// branch named it, so each remaining branch still does.
+/// branch named it, so each remaining branch still does. An `IF` takes the
+/// edit of [`rewrite_if`]. An `ALL` whose domain or body becomes false is
+/// false.
 fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
     let mut kept: Vec<Conjunct> = Vec::new();
     let mut changed = false;
@@ -733,13 +738,73 @@ fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
                     _ => kept.push(Conjunct::Or(left.into_iter().map(|(_, branch)| branch).collect())),
                 }
             }
-            Conjunct::If { .. } | Conjunct::All { .. } if mentions(NodeRef::Conjunct(conjunct), empty) => {
-                return Err("an IF or ALL form reads an empty relation".into());
+            Conjunct::If { test, then, otherwise } if mentions(NodeRef::Conjunct(conjunct), empty) => {
+                changed = true;
+                match rewrite_if(conjunct, test, then, otherwise, empty)? {
+                    Some(conjuncts) => kept.extend(conjuncts),
+                    None => return Ok(Rewritten::Empty),
+                }
+            }
+            Conjunct::All { domain, body: each } if mentions(NodeRef::Conjunct(conjunct), empty) => {
+                // An ALL with a false domain has no member, and one with a
+                // false body fails at each member, so it is false.
+                let (Some(domain), Some(each)) = (list_left(domain, empty)?, list_left(each, empty)?) else { return Ok(Rewritten::Empty) };
+                if domain.is_empty() || each.is_empty() {
+                    return Err("an ALL with a list that the edit leaves with no conjunct".into());
+                }
+                changed = true;
+                kept.push(Conjunct::All { domain: Node::new(Body { conjuncts: domain.into() }), body: Node::new(Body { conjuncts: each.into() }) });
             }
             other => kept.push(other.clone()),
         }
     }
     Ok(if changed { Rewritten::Changed(kept) } else { Rewritten::Same })
+}
+
+/// The conjuncts of the list `body` after the edit, `None` where it is
+/// false.
+fn list_left(body: &Node<Body>, empty: &Empty) -> Result<Option<Vec<Conjunct>>, String> {
+    Ok(match rewrite(body.value(), empty)? {
+        Rewritten::Same => Some(body.value().conjuncts.to_vec()),
+        Rewritten::Empty => None,
+        Rewritten::Changed(conjuncts) => Some(conjuncts),
+    })
+}
+
+/// The conjuncts that take the place of the `IF` form `conjunct` after the
+/// edit, `None` where it is false.
+///
+/// A false test makes the `IF` its else, whose list then makes each label
+/// the `IF` exported, as a new first branch of an `OR` does. A test the edit
+/// leaves with no conjunct is true, so the `IF` is its then. A false else
+/// makes the `IF` the conjunction of its test and its then. A false then,
+/// or a list that the edit leaves with no conjunct, is not supported.
+fn rewrite_if(conjunct: &Conjunct, test: &Node<Body>, then: &Node<Body>, otherwise: &Node<Body>, empty: &Empty) -> Result<Option<Vec<Conjunct>>, String> {
+    let otherwise = list_left(otherwise, empty)?;
+    let Some(test) = list_left(test, empty)? else {
+        let Some(otherwise) = otherwise else { return Ok(None) };
+        let mut body = Body { conjuncts: otherwise.into() };
+        for label in made_labels(&Body { conjuncts: Arc::from([conjunct.clone()]) }) {
+            if !made_labels(&body).contains(&label) {
+                body = make_label(&body, label).ok_or("an IF with a false test whose else has no site that can make a label the IF exports")?;
+            }
+        }
+        return Ok(Some(body.conjuncts.to_vec()));
+    };
+    let then = list_left(then, empty)?;
+    if test.is_empty() {
+        return Ok(then);
+    }
+    match (then, otherwise) {
+        (None, _) => Err("an IF whose then the edit makes false".into()),
+        (Some(then), None) => Ok(Some(test.into_iter().chain(then).collect())),
+        (Some(then), Some(otherwise)) if then.is_empty() || otherwise.is_empty() => Err("an IF with a list that the edit leaves with no conjunct".into()),
+        (Some(then), Some(otherwise)) => Ok(Some(vec![Conjunct::If {
+            test: Node::new(Body { conjuncts: test.into() }),
+            then: Node::new(Body { conjuncts: then.into() }),
+            otherwise: Node::new(Body { conjuncts: otherwise.into() }),
+        }])),
+    }
 }
 
 /// `body` with `label` made at its first site in a positive atom of the
