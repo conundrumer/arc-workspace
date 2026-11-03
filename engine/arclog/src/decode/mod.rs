@@ -69,7 +69,7 @@ use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
 use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
-use crate::resolver::resolve_last;
+use crate::resolver::resolve_in_progress;
 use crate::session::TaskSession;
 use crate::stats::{self, Phase};
 use crate::judge::run::Tested;
@@ -742,7 +742,7 @@ impl<'a> Decoder<'a> {
             return Ok(());
         }
         let check = || {
-            let resolved = resolve_last(&self.state.resolved(self.context.registry), &program, self.context.registry);
+            let resolved = resolve_in_progress(&self.state.resolved(self.context.registry), &program, self.context.registry);
             match checks.check(&resolved, open.as_ref(), candidate, None) {
                 Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
                 None => Ok(()),

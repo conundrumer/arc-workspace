@@ -15,7 +15,7 @@ use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, Out, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
-use crate::resolver::{resolve_last, DependencyKind, ResolvedProgram, Side};
+use crate::resolver::{resolve_in_progress, DependencyKind, ResolvedProgram, Side};
 use crate::stats::{self, Phase};
 use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
@@ -339,7 +339,7 @@ impl PrefixChecks<'_> {
 
     /// The first check of [`checks`], in their order, that refuses the
     /// prefix whose partial form is the last form of `program`, a
-    /// resolution by [`crate::resolver::resolve_last`] over the complete
+    /// resolution by [`crate::resolver::resolve_in_progress`] over the complete
     /// forms, and whose open node is at `open`, with its refusals; `None`
     /// where none refuses. No check after it runs. Where `candidate` is
     /// [`Candidate::AtomHead`], a refusal of a check that ignores the open
@@ -386,7 +386,7 @@ impl PrefixChecks<'_> {
     /// at one open path share one resolution of the form in progress,
     /// retargeted to each one's relation
     /// ([`ResolvedProgram::retarget_atom`]); where that gives no retarget,
-    /// the resolution is [`resolve_last`]'s. They share as well the result
+    /// the resolution is [`resolve_in_progress`]'s. They share as well the result
     /// of each check, as `AtomHead` states: a candidate for which the
     /// checks, in their order up to the first that refuses, all hold a
     /// result that a candidate of its [`RelationClass`] gave takes the
@@ -439,7 +439,7 @@ impl PrefixChecks<'_> {
 
     /// Holds the resolution of `program` for the candidate that opens, at
     /// `at`, an atom of `relation`: the held one retargeted, or
-    /// [`resolve_last`]'s. A resolution already held for that candidate
+    /// [`resolve_in_progress`]'s. A resolution already held for that candidate
     /// stays.
     fn hold_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) {
         let mut held = self.head.resolution.borrow_mut();
@@ -449,7 +449,7 @@ impl PrefixChecks<'_> {
         let retargeted = held.as_mut().is_some_and(|held| held.at == *at && held.resolved.retarget_atom(program, at, relation, self.registry));
         match held.as_mut().filter(|_| retargeted) {
             Some(held) => held.relation = relation.clone(),
-            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_last(earlier, program, self.registry) }),
+            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_in_progress(earlier, program, self.registry) }),
         }
     }
 

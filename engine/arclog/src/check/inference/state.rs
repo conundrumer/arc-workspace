@@ -185,6 +185,7 @@ impl<'a> Inference<'a> {
         let held = earlier.held_state()?;
         held.types
             .get_or_init(|| {
+                let Some(Form::Clause(_)) = held.program.value().forms.last() else { return None };
                 let resolved = held.resolved.get_or_init(|| resolve_last(&held.earlier, &held.program, self.registry));
                 let Some(Form::Clause(clause)) = resolved.program.value().forms.last() else { return None };
                 let path = NodePath::top(resolved.program.value().forms.len() as u32 - 1);

@@ -40,7 +40,7 @@ use crate::read::is_type_parameter_column;
 use crate::registry::{Component, LibEntry, LibName};
 use crate::registry::Registry;
 use crate::resolver::columns::example;
-use crate::resolver::{resolve, resolve_last, ResolvedProgram, SolverScope};
+use crate::resolver::{resolve, resolve_in_progress, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
 use crate::resolver::form_columns::{demonstrated_columns, rigid_outputs};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
@@ -625,7 +625,7 @@ impl State {
     /// The resolution of `partial`, the finished forms with the form in
     /// progress as the last form, as [`State::partial`] gives it.
     fn resolved_partial(&self, partial: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-        resolve_last(&self.resolved(registry), partial, registry)
+        resolve_in_progress(&self.resolved(registry), partial, registry)
     }
 
     /// Whether `token` may pass [`State::step`] at this state: `false` only for
