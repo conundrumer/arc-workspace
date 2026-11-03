@@ -1,0 +1,241 @@
+"""Which programs of the union gold solve their task, on the current engine. A program fits when some assignment of its DETs gives every train output through its OUT query (each grid it gives is the output or the example's `alt` grid). It solves (test_ok) when it fits and, on each test example with an expected output, the fitting assignments give at most two distinct grids over all constraint models, and one is the expected output. Per task, each distinct program text of cases-SET.jsonl is run once. The fits go to fits-SET.jsonl in the gold-union folder, one line per task: task, and programs, a list of {text_sha, cases, assignments, fitting, fit, test_ok, why}. assignments counts the assignments of the OUT table, fitting those that give every train output, and why is the reason a program gives no tables (fit and test_ok are then null: no verdict). The union keeps a program when fit and test_ok.
+
+  ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET [K N]    SET: ramp, 37 or training; K N takes the tasks at positions K, K + N, ... and writes fits-SET-K.jsonl. A restart skips the tasks the file has. With FITS_TASKS set (tasks separated by spaces), K N name only the output file, and the run takes those tasks.
+  With FITS_CAP=S set, each program runs in a forked child that is killed after S seconds. A killed program has fit and test_ok null and why 'timeout S s', and the union leaves it out with that reason.
+  ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET merge     writes fits-SET.jsonl from the fits-SET-K.jsonl files, sorted by task, after a first line {"t": "header", "code": {"sha", "dirty"}} (gold_union_code.py: the commit of the code that merged it). A reader of fits-SET.jsonl skips the lines that have `t`.
+"""
+import glob, hashlib, importlib.util, json, os, re, select, signal, sys, time
+from pathlib import Path
+from types import SimpleNamespace
+
+import gold_union_code
+
+ROOT = Path('/Users/davidlu/code/arc-workspace')
+OUT = str(ROOT / 'work/lm/data-study/gold/gold-union') + '/'
+WORK_CAP = int(os.environ.get('FITS_WORK_CAP', 1 << 28))  # the engine's table work cap; its default, 1 << 20, stops programs that the old runtime finished
+DEADLINE = float(os.environ.get('FITS_DEADLINE', 120))  # the engine's deadline in seconds; its default, 10, stops programs by the machine's load
+SESSION_BYTES = int(os.environ.get('FITS_SESSION_BYTES', 8 << 30))  # the engine's session byte bound; its default is 512 MiB
+CAP = float(os.environ.get('FITS_CAP', 0))  # seconds per program; 0 runs each program in this process, with no cap
+
+
+def sha16(text):
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def engine():
+    """(cli, arclog, numpy): scripts/arclog.py as a module, and the engine it runs on."""
+    os.environ['ARCLOG_PY_INNER'] = str(ROOT)
+    spec = importlib.util.spec_from_file_location('arclog_cli', ROOT / 'scripts/arclog.py')
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    import arclog
+    import numpy as np
+    settings, evaluator = arclog.DecodeSettings, arclog.StudyTaskEvaluator
+    arclog.DecodeSettings = lambda *a, **k: settings(*a, **{'table_work_cap': WORK_CAP, 'deadline_seconds': DEADLINE, **k})
+    arclog.StudyTaskEvaluator = lambda *a, **k: evaluator(*a, **{'session_bytes': SESSION_BYTES, **k})
+    return cli, arclog, np
+
+
+def programs_of(set_name):
+    """{task: {text: [case]}} of the lines of cases-SET.jsonl that are not excluded, in the order of the file."""
+    got = {}
+    for l in open(OUT + 'cases-%s.jsonl' % set_name):
+        r = json.loads(l)
+        if r['excluded'] in (True, 'True'):
+            continue
+        got.setdefault(r['task'], {}).setdefault(r['gold_sexp'], []).append(r['case'])
+    return got
+
+
+def parse(text):
+    """The nested list of an s-expression."""
+    stack = [[]]
+    for tok in re.findall(r'[()]|[^\s()]+', text):
+        if tok == '(':
+            stack.append([])
+        elif tok == ')':
+            done = stack.pop()
+            stack[-1].append(done)
+        else:
+            stack[-1].append(tok)
+    return stack[0]
+
+
+def sites_of(text):
+    """[(relation name, site)] of the OUT query of a program, one for each site: the first selects the Position and the second the Color."""
+    out = parse(re.search(r'^\(OUT .*$', text, re.M)[0])[0]
+    return [('ex_input' if atom[0] == 'input' else atom[0], s) for atom in out[1:] for s in atom[1:]]
+
+
+def column_of(names, site):
+    """The column that a site selects: `^C` is the column C, `(:t ^V)` the field V of the record column t unless t is a column, `(:t (:V ^L))` the field V of t, and `(:C ^L)` the column C."""
+    if isinstance(site, str):
+        return site[1:]
+    if isinstance(site[1], list):
+        return '%s.%s' % (site[0][1:], site[1][0][1:])
+    return site[0][1:] if site[0][1:] in names else '%s.%s' % (site[0][1:], site[1][1:])
+
+
+def grids_of(tb, text):
+    """{assignment: {example: [grid]}} of the OUT query: a grid is the sorted distinct [position, color] rows of one entry, or None where there is no grid. With two atoms a grid is the product of the Positions of the first atom's table and the Color of the second's, on the entries that agree on the DETs that both read and on the model."""
+    (n1, s1), (n2, s2) = sites_of(text)[:2]
+    t1, t2 = tb.find(n1), tb.find(n2)
+    at = [tb.T['column_names'][t].index(column_of(tb.T['column_names'][t], s)) for t, s in ((t1, s1), (t2, s2))]
+
+    def entries(t):
+        """The entries of table t, an entry of the task (on no example) once for each example."""
+        return [(e if e[0] != 'task' else (x,) + e[1:]) for e in tb.entries(t) for x in ([e[0]] if e[0] != 'task' else ['%s/%d' % (k, j) for k in ('train', 'test') for j in range(len(tb.task[k]))])]
+
+    def column(t, c):
+        ty = tb.T['column_types'][t][c]
+        return [(ex, model, key, [tb.value(t, ty, r[c]) for r in raw]) for ex, model, key, raw, stop in entries(t)]
+
+    by_key = {}
+    if t1 == t2:
+        ty = tb.T['column_types'][t1]
+        for ex, model, key, raw, stop in entries(t1):
+            g = sorted({(tuple(tb.value(t1, ty[at[0]], r[at[0]])), tb.value(t1, ty[at[1]], r[at[1]])) for r in raw})
+            by_key.setdefault(key, {}).setdefault(ex, []).append([[list(p), c] for p, c in g])
+        return by_key
+    for ex, model, key, pos in column(t1, at[0]):
+        for ex2, model2, key2, col in column(t2, at[1]):
+            d1, d2 = {k[0]: k for k in key}, {k[0]: k for k in key2}
+            if ex == ex2 and model == model2 and all(d1[r] == d2[r] for r in d1.keys() & d2.keys()):
+                both = tuple(sorted({**d1, **d2}.values(), key=lambda k: k[0]))
+                cs = set(col)
+                g = sorted({(tuple(p), c) for p in pos for c in cs}) if len(cs) == 1 else None
+                by_key.setdefault(both, {}).setdefault(ex, []).append(None if g is None else [[list(p), c] for p, c in g])
+    return by_key
+
+
+def check(env, task, text, tasks, task_json):
+    """(assignments, fitting, test_ok, why) of a program text: the assignments of its OUT table, those that give every train output, whether the program solves (the fitting assignments give, on each test example, at most two distinct grids over all models, and one is the expected output), and the reason it gives no tables."""
+    cli, arclog, np = env
+    try:
+        tb, why = cli.run_case(arclog, np, SimpleNamespace(arclog=text, fault=None), task, tasks, task_json)
+        if tb is None:
+            return 0, 0, False, why[:200]
+        if not re.search(r'^\(OUT ', text, re.M):
+            return 0, 0, False, 'no OUT form'
+        by_key = grids_of(tb, text)
+    except Exception as e:  # noqa: BLE001
+        return 0, 0, False, '%s: %s' % (type(e).__name__, str(e)[:150])
+    wants = {}
+
+    def cells(g):
+        h, w = len(g), len(g[0])
+        return sorted([[r, h - 1 - r, c, w - 1 - c], g[r][c]] for r in range(h) for c in range(w))
+
+    def want(ex):
+        """The accepted grids of an example: its output, and its `alt` grid where the task gives one; None where it has no output."""
+        if ex not in wants:
+            kind, j = ex.split('/')
+            e = task_json[kind][int(j)]
+            wants[ex] = None if e.get('output') is None else [cells(e['output'])] + ([cells(e['alt']['grid'])] if e.get('alt') else [])
+        return wants[ex]
+
+    def gives(d, kind):
+        exs = ['%s/%d' % (kind, j) for j in range(len(task_json[kind]))]
+        return all(ex in d and all(g in want(ex) for g in d[ex]) for ex in exs if want(ex) is not None)
+
+    def solves(fitting):
+        """Whether, on each test example with an expected output, the fitting assignments give at most two distinct grids over all models, and one is an accepted grid."""
+        for j in range(len(task_json['test'])):
+            ex = 'test/%d' % j
+            if want(ex) is not None:
+                seen = {json.dumps(g) for d in fitting for g in d.get(ex, [])}
+                if len(seen) > 2 or not seen & {json.dumps(g) for g in want(ex)}:
+                    return False
+        return bool(fitting)
+
+    fitting = [d for d in by_key.values() if gives(d, 'train')]
+    return len(by_key), len(fitting), solves(fitting), None
+
+
+def capped(env, task, text, tasks, task_json):
+    """check() in a forked child. A child still running after CAP seconds is killed. Its outcome is a timeout, not a verdict: assignments, fitting, fit and test_ok are null, and why is 'timeout'."""
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(r)
+        with os.fdopen(w, 'w') as f:
+            f.write(json.dumps(check(env, task, text, tasks, task_json)))
+        os._exit(0)
+    os.close(w)
+    got, end = b'', time.time() + CAP
+    while (left := end - time.time()) > 0 and select.select([r], [], [], left)[0]:
+        chunk = os.read(r, 1 << 16)
+        if not chunk:
+            break
+        got += chunk
+    else:
+        os.kill(pid, signal.SIGKILL)
+    os.close(r)
+    os.waitpid(pid, 0)
+    return json.loads(got) if got else (None, None, None, 'timeout %ds' % CAP)
+
+
+def one(env, task, texts, tasks):
+    """The fits row of a task."""
+    task_json = json.load(open(tasks / (task + '.json')))
+    progs = []
+    for text, cases in texts.items():
+        n, k, ok, why = (capped if CAP else check)(env, task, text, tasks, task_json)
+        progs.append(dict(text_sha=sha16(text), cases=cases, assignments=n, fitting=k, fit=None if why else k > 0, test_ok=None if why else ok, why=why))
+    return dict(task=task, programs=progs)
+
+
+def shard_files(set_name):
+    return sorted(glob.glob(OUT + 'fits-%s-*.jsonl' % set_name))
+
+
+def rows_of(path):
+    """The task rows of a fits file, whole lines only, less its header line."""
+    for l in open(path):
+        if l.endswith('\n'):
+            r = json.loads(l)
+            if r.get('t') != 'header':
+                yield r
+
+
+def merge(set_name):
+    got = {}
+    for p in shard_files(set_name):
+        for r in rows_of(p):
+            for x in r['programs']:
+                if x['why']:  # an older run wrote false here
+                    x.update(fit=None, test_ok=None)
+            got[r['task']] = json.dumps(r) + '\n'
+    if got:
+        open(OUT + 'fits-%s.jsonl' % set_name, 'w').write(gold_union_code.header() + ''.join(got[t] for t in sorted(got)))
+    print(len(got), 'tasks')
+
+
+def run(set_name, shard=None):
+    k, n = shard or (0, 1)
+    todo = programs_of(set_name)
+    mine = [t for i, t in enumerate(sorted(todo)) if i % n == k]
+    if os.environ.get('FITS_TASKS'):  # tasks separated by spaces, in place of the shard's own
+        mine = [t for t in os.environ['FITS_TASKS'].split() if t in todo]
+    path = OUT + ('fits-%s-%d.jsonl' % (set_name, k) if shard else 'fits-%s.jsonl' % set_name)
+    done = {r['task'] for r in rows_of(path)} if os.path.exists(path) else set()
+    if os.path.exists(path):  # a killed run may leave half a line
+        text = open(path).read()
+        open(path, 'w').write(text[:text.rfind('\n') + 1])
+    left = [t for t in mine if t not in done]
+    env, tasks = engine(), ROOT / 'data/tasks'
+    rest, fit, seen, start = sum(len(todo[t]) for t in left), 0, 0, time.time()
+    with open(path, 'a') as f:
+        for i, t in enumerate(left, len(mine) - len(left) + 1):
+            row = one(env, t, todo[t], tasks)
+            f.write(json.dumps(row) + '\n')
+            f.flush()
+            fit += sum(bool(p['fit']) for p in row['programs'])
+            seen += len(row['programs'])
+            el = time.time() - start
+            print('%s %d/%d  programs fit %d/%d  %.0fs  eta %.0fs' % (t, i, len(mine), fit, seen, el, el / seen * (rest - seen)), flush=True)
+
+
+if __name__ == '__main__':
+    a = sys.argv[1:]
+    merge(a[0]) if a[1:] == ['merge'] else run(a[0], (int(a[1]), int(a[2])) if a[2:] else None)
