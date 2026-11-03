@@ -1,10 +1,11 @@
 """Sets a dev_run.py run's job limit to fit the machine, every --every seconds, from --start (HHMM, local time) on.
 
-    fit_limit.py RUN_FOLDER [--start 2245] [--every 120] [--min 3] [--max 12] [--job-gib 1.5] [--reserve 0] [--over RUN_FOLDER]
+    fit_limit.py RUN_FOLDER [--start 2245] [--every 120] [--min 3] [--max 12] [--job-gib 2.5] [--reserve 0] [--over RUN_FOLDER]
 
 The limit is the jobs running now plus the idle cores (the idle share of the second sample of `top -l 2 -n 0` times the core count, less
 one, less --reserve, which leaves cores for another run, plus the jobs running in the --over run, a run of a higher nice value that gives
-its cores up), held under the jobs that the free memory fits at --job-gib each. It prints each change, and ends when the run's results cover
+its cores up), held under the jobs that the free memory fits at --job-gib each (a worker stops itself at 2888 MiB; the default leaves room for the
+growth of the jobs that run). Where the memory pressure (`memory_pressure`) is not normal, the limit is one less than the jobs running. It prints each change, and ends when the run's results cover
 every job (no worker of the run is left for 10 minutes).
 """
 import argparse
@@ -28,6 +29,11 @@ def free_gib():
     return pages * page / 2 ** 30
 
 
+def normal_pressure():
+    out = subprocess.run(['sysctl', '-n', 'kern.memorystatus_vm_pressure_level'], capture_output=True, text=True).stdout.strip()
+    return out in ('', '1')
+
+
 def running(run):
     out = subprocess.run(['pgrep', '-f', 'kaggle_worker.py.*%s/jobs' % run.name], capture_output=True, text=True).stdout
     return len(out.split())
@@ -40,7 +46,7 @@ def main():
     ap.add_argument('--every', type=int, default=120)
     ap.add_argument('--min', type=int, default=3)
     ap.add_argument('--max', type=int, default=12)
-    ap.add_argument('--job-gib', type=float, default=1.5)
+    ap.add_argument('--job-gib', type=float, default=2.5)
     ap.add_argument('--reserve', type=int, default=0)
     ap.add_argument('--over')
     a = ap.parse_args()
@@ -53,6 +59,8 @@ def main():
         want = n + int(idle_cores()) - 1 - a.reserve + (running(Path(a.over)) if a.over else 0)
         fits = n + int(free_gib() / a.job_gib)
         limit = max(a.min, min(a.max, want, fits))
+        if not normal_pressure():
+            limit = max(a.min, min(limit, n - 1))
         try:
             old = int((run / 'limit').read_text())
         except (OSError, ValueError):
