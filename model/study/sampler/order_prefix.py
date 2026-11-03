@@ -160,10 +160,11 @@ def parse(core, kind, tokens):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Floor:
-    """The bound that the order puts on the next item started in one open set. depth: the set's place in the open sets, 0 outermost. kind: the set's kind (_List.kind).
-    rel: the least first token of a relation atom started next in the set, or None for no bound. other: the same for NOT, a comparison, OR and ALL; it holds while no label is
-    made before that start (a label made in between can lower it). A first token above the floor is not barred by the floor; one below it is removed; at the floor, the later
-    tokens decide. A key is the item's whole token string, so a floor bounds the first token alone."""
+    """The bound that the order puts on the first token of the next item started in one open set. depth: the set's place among the open sets, 0 outermost. kind: the set's kind
+    (_List.kind). rel: the bound for an atom of a relation whose sites all take a new label (not a lib relation), or None for no bound; it can fall only where a `^` label is made
+    before that start. other: the bound for an atom of a lib relation, NOT, a comparison, OR and ALL, or None; it holds while no label is made before that start, and a label
+    made in between can lower it. The rule removes a first token below the bound (unless the decoder refuses it at the state before the earlier item that sets the bound); a
+    first token above it is free of the bound; at the bound, the item's later tokens decide, since a key is the item's whole token string."""
     depth: int
     kind: str
     rel: int | None
@@ -551,7 +552,7 @@ class Rule:
                     continue
                 mj = self.made_before(info, s)
                 f = tokens[s]
-                if mn == mj:
+                if mn == mj:  # no label made since that item
                     other = f if other is None else max(other, f)
                 if mn == mj or not self.late_caret(info, tokens, mj, mn):
                     rel = f if rel is None else max(rel, f)
