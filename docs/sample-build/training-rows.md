@@ -35,6 +35,15 @@ The search's draws on train tasks are negative examples. A draw is never a targe
 - **Header.** The header of each task's file counts the last steps that match a sample, and the last steps that add one.
 - **Check.** `model/study/samples/run/draw_targets.py` counts, for draw files, the last steps whose gold part is a sample's state, and the distinct states and queries outside the union that the added samples need.
 
+## Fit noise
+
+The dev score of a fit varies with its seed (`fit_trees.py --seed`), which sets the trees' feature sampling and the choice of each task's points. Four seeds of one configuration were each scored on one set of dev points (`fit_trees.py --score` at seed 0). The configuration was the exp59 row stores, 854 train tasks, 161 dev tasks, 40 points per task, and the default tree settings. The scores were:
+
+- dev loss: 1.1241 to 1.1287, standard deviation 0.0022;
+- top-scored id is positive: 65.1% to 65.7%, standard deviation 0.3 points.
+
+A change counts as a gain only when its dev gain is outside this range. Fits are compared on one set of dev points: each fit is scored with `--score` at one seed.
+
 ## Table columns of the writing-point vector
 
 `model/study/samples/point_tables.py` computes these columns. Its functions take tables in the layout that `step_tables` gives with `by_assignment` and `rows`, and the task's base tables in the same layout.
