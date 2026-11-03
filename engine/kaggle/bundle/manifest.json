@@ -1,0 +1,21 @@
+{
+ "what": "The build script of a kernel bundle: steps 1 to 8 of the bundle designs (kernel-bundle-sampler-set-design.md, kernel-bundle-dag-both-design.md) as one command, with the steps that need a person's judgment as stops.",
+ "command": "work/synth-kaggle/kernel-bundle-build/build-bundle.sh <config.json> [steps]; then <bundle>/scratch/run-rest.sh; then python3 <bundle>/scratch/write-records.py",
+ "commit": "not committed; written on master at f8f6aff93",
+ "task_set": "none: the script builds a bundle for the 59-task ramp soak kit of the base bundle and runs its Mac checks",
+ "budget": "steps 1 to 7 take about 12 s together; run-rest.sh takes about 8 min; write-records.py under 30 s",
+ "measures": [
+  "the dataset of the built bundle against a reference bundle (files byte for byte, code.bin by members)",
+  "the pass conditions of pass_conditions.py for each check"
+ ],
+ "start_time": "2026-11-01T21:30:00-0500",
+ "files": {
+  "build-bundle.sh": "entry point",
+  "bundle_steps.py": "the steps",
+  "pass_conditions.py": "pass conditions of the Mac checks; copied into the bundle's scratch/",
+  "make-kit.py, make-manifest.py, write-records.py": "copied into the bundle's scratch/; they read scratch/build-params.json",
+  "config-example.json": "the config fields",
+  "config-reproduce-413397046.json": "the config that rebuilds kernel-bundle-413397046 from kernel-bundle-e8ded5733 on a worktree at 413397046, with its output under a scratchpad"
+ },
+ "tested": "Rebuild of kernel-bundle-413397046 on a throwaway worktree: dataset equals the real one (code.bin by members: its tar members differ in mtime, gid and gname alone), scratch files equal the real ones except the lines for the check root, kit files and kit manifest equal except the pass bar time, code.bin hash, result and checks. Merge with a conflict, with a resolution, files mode and worker_settings were tested on a second throwaway worktree. Steps 6 and 7 and the records step ran; run-rest.sh did not run: the records step read the real bundle's outputs of those checks, copied into the test scratch."
+}

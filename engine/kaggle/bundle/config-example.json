@@ -1,0 +1,71 @@
+{
+  "_comment": "Fields of the config of build-bundle.sh. A key that starts with _ is ignored. Paths are absolute. A field marked (optional) may be left out. Replace each <...> before use, and delete each key whose value starts with ( and says it is optional.",
+  "worktree": "/Users/davidlu/code/arc-workspace/.claude/worktrees/kernel-next",
+  "out_root": "(optional) where kernel-bundle-<C>, kernel-freeze-<name>-<C> and kernel-soak-<C>-... go. Default: <repo>/work/synth-kaggle",
+  "check_root": "(optional) where the checks write check-<C> and ramp59-<C>. Default: the scratchpad path that the base scripts hold",
+  "sp": "(optional) the SP line of common.sh, where nb-test.sh finds comp/arc-agi_test_challenges.json",
+  "base_bundle": "<path of the last bundle, kernel-bundle-<BASEC>: its scratch/ is copied and adapted, its manifest.json and dataset/ are the base>",
+  "prev_soak": "(optional) default: kernel-soak-<BASEC>-linux-ramp59-2400s beside the base bundle. It must hold soak-read.json, rss-peak.out, dag-read.json, peak-read.out, cpu.txt, manifest.json and run.sh",
+  "head_before": "<commit prefix that HEAD of the worktree has before the merge, or null>",
+  "merge": {
+    "_comment": "mode: merge (ref, expected_tree, resolutions), files (from, paths, message, expected_tree) or none. resolutions maps a conflict path to {file, blob}: the resolved text and its git blob hash. With a conflict that no resolution covers the script stops and leaves the merge in progress.",
+    "mode": "merge",
+    "ref": "<commit to merge, never a moving name>",
+    "expected_tree": "<tree of the merge commit, or leave out>",
+    "resolutions": {"<path under the worktree>": {"file": "<resolved file>", "blob": "<git hash-object of that file>"}}
+  },
+  "worker_settings": {"ORDER_FREE": "<new value>"},
+  "worker_settings_message": "(optional) the commit message of the settings change",
+  "expected_head": "<commit prefix of HEAD after steps 2, or leave out>",
+  "expected_tree": "<tree of HEAD after step 2, or leave out>",
+  "models": {
+    "dir": "<source models folder>",
+    "files": {"live_priors.pkl": "<sha256, 16 hex or more>", "relR4_o.pkl": "<...>", "choice5_o.pkl": "<...>", "tilt_v1.json": "<...>"}
+  },
+  "freeze": {
+    "_comment": "name gives kernel-freeze-<name>-<C>. template is a freeze folder or manifest.json whose fields are copied; manifest overrides them. reuse (a folder) skips the copy.",
+    "name": "<name>",
+    "template": "<kernel-freeze-.../manifest.json>",
+    "manifest": {"what": "<...>", "commit": "<...>"}
+  },
+  "wheel": {"path": "<Linux wheel>", "sha256": "<full sha256>"},
+  "mac": {"site": "<macsite folder>", "wheel": "<Mac wheel>", "so_sha256": "<sha256 prefix of arclog.abi3.so>", "wheel_sha256": "(optional)"},
+  "policy_dir": "(optional) default: <repo>/work/synth-kaggle/policy1",
+  "python": "(optional) the Kaggle Python, default: runtime-kaggle-py313",
+  "expect_dataset_differ": ["code.bin"],
+  "expect_notebook_equal": true,
+  "reference_bundle": "(optional) a finished bundle whose dataset/ this build must equal (code.bin by members)",
+  "code_vs_kit": {
+    "kit": "(optional) the tested kit folder, if it changes",
+    "models_subdir": "(optional) models-final or models-tk",
+    "differ_add": ["sampler/<file>.py"], "differ_remove": [], "no_kit_file_add": [], "no_kit_file_remove": [],
+    "differ": "(optional) the whole list under model/study/, in place of the base's",
+    "wheel_equals_kit": false
+  },
+  "scratch": {
+    "_comment": "add_files maps a path under scratch/ to a file to copy in; remove lists paths; edits are {file, old, new, count (default 1)} text replacements, applied after the derived substitutions.",
+    "add_files": {}, "remove": [], "edits": []
+  },
+  "extra_quick_checks": {"ident": ["$H/ident-check.sh"]},
+  "pass_extra": {"ident": ["ident value: \\d+ cells"]},
+  "session_mib": 1877,
+  "manifest": {
+    "commit": "<C> on branch kernel-next: <what it holds>",
+    "what": "(optional) the soak kit's what",
+    "arm": "(optional)",
+    "reads_as": "(optional) the soak kit's stands_for.reads_as, whole",
+    "reads_as_append": "(optional) text added to it",
+    "differs_code": "(optional) watch.differs_from_the_find.code",
+    "notes": ["(optional) the bundle manifest's notes, such as a lexical read named"]
+  },
+  "settings_add": {"<NAME>": "<text for settings in both manifests>"},
+  "wheel_engine": "(needed where the wheel changes) {commit, includes, engine_source, ...}",
+  "wheels_seconds": "(needed where the wheel changes) how the wheels were built",
+  "arclog_tests": "(optional) the result of the arclog tests; the default says not run, with the base's entry",
+  "code_notes": {"kaggle_worker": "(optional) text for code.<file>; @sha:kaggle_worker.py@ gives the file's 12-hex hash"},
+  "check_reads": {"code-read": "(optional) the read text of a quick check"},
+  "build_steps_extra": {},
+  "kit_manifest_edits": [{"path": "a.b.c", "op": "set | append | replace", "value": "...", "old": "...", "new": "..."}],
+  "bundle_manifest_edits": [],
+  "not_run": "(optional) text of checks.json not_run"
+}

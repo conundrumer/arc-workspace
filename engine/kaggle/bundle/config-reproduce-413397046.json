@@ -1,0 +1,68 @@
+{
+ "_comment": "Reproduces the build of kernel-bundle-413397046 from its base kernel-bundle-e8ded5733, on a throwaway worktree, with its output under the scratchpad.",
+ "worktree": "/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/ede6795c-2b6f-4633-a6da-08e90de33bc4/scratchpad/bundle-build-test",
+ "out_root": "/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/ede6795c-2b6f-4633-a6da-08e90de33bc4/scratchpad/bundle-build-out",
+ "check_root": "/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/ede6795c-2b6f-4633-a6da-08e90de33bc4/scratchpad/bundle-build-checks",
+ "base_bundle": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-bundle-e8ded5733",
+ "head_before": null,
+ "merge": {
+  "mode": "none"
+ },
+ "expected_head": "413397046",
+ "expected_tree": "26ab14be3b4fb7c71c234cd35b9a80fafb6c0c22",
+ "models": {
+  "dir": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-freeze-dag-both-2d21a0079",
+  "files": {
+   "live_priors.pkl": "7abf6c639111f01b",
+   "relR4_o.pkl": "3015d409597fff42",
+   "choice5_o.pkl": "04a895269d26541e",
+   "tilt_v1.json": "730b7596c1b841cc"
+  }
+ },
+ "freeze": {
+  "name": "dag-both",
+  "template": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-freeze-dag-both-2d21a0079/manifest.json"
+ },
+ "wheel": {
+  "path": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/wheel12/arclog-0.1.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "sha256": "c67a46f505451b49feb85b79717a212be2feef87cec98d74330ac30b88d1b6fa"
+ },
+ "mac": {
+  "site": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/macsite12",
+  "wheel": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/wheel12-mac/arclog-0.1.0-cp312-abi3-macosx_11_0_arm64.whl",
+  "so_sha256": "f9bcfa40674ec51a",
+  "wheel_sha256": "f2f154b3677d361f"
+ },
+ "expect_dataset_differ": [
+  "code.bin"
+ ],
+ "reference_bundle": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-bundle-413397046",
+ "code_vs_kit": {
+  "differ_add": [
+   "sampler/one_repair.py"
+  ]
+ },
+ "manifest": {
+  "commit": "413397046 on branch kernel-next: e8ded5733 with TABLE_MIB_SCALE 1.77 on the estimate of table_mib, from the ramp soak of kernel-bundle-e8ded5733, and one_repair.facts reading cells as numpy views, with no Python rows"
+ },
+ "kit_manifest_edits": [
+  {
+   "path": "settings.memory",
+   "op": "replace",
+   "old": "refuses a table whose Python rows would take RSS past it, TABLE_LINE_MIB",
+   "new": "refuses a table whose Python rows would take RSS past it, TABLE_MIB_SCALE 1.77 multiplies the estimate of table_mib (the median of the rise over the counts' estimate on the ramp soak of kernel-bundle-e8ded5733), TABLE_LINE_MIB"
+  },
+  {
+   "path": "stands_for.reads_as",
+   "op": "replace",
+   "old": "the table guard at ROOM_SHARE .9, and",
+   "new": "the table guard at ROOM_SHARE .9 with TABLE_MIB_SCALE 1.77, one_repair.facts on numpy views, and"
+  },
+  {
+   "path": "watch_items.guard_reference",
+   "op": "replace",
+   "old": "The guard settings of this soak are in settings, and its counts are read against these.",
+   "new": "This soak has TABLE_MIB_SCALE 1.77 on the estimate, so these counts may change."
+  }
+ ]
+}

@@ -1,0 +1,165 @@
+{
+ "_prev_soak": "make-kit.py (step 7) asserts that the previous soak has the same live_priors.pkl as the base bundle, and it reads soak-read.json, rss-peak.out, dag-read.json, peak-read.out and cpu.txt of that soak. Those are the results of the soak of ec15d12f0 (its pod run), which must be copied back first. Step 1 stops until they are there. Steps 2 to 6 do not read prev_soak, so they can run before.",
+ "worktree": "/Users/davidlu/code/arc-workspace/.claude/worktrees/kernel-next",
+ "base_bundle": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-bundle-ec15d12f0",
+ "prev_soak": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-soak-ec15d12f0-linux-ramp59-2400s",
+ "head_before": "ec15d12f0",
+ "merge": {
+  "mode": "merge",
+  "ref": "79af0a4f2",
+  "expected_tree": "ee323b1598331116522915b9d29abbeac70f5d28",
+  "resolutions": {}
+ },
+ "worker_settings": {
+  "ORDER_FREE": "col,tie,key"
+ },
+ "worker_settings_message": "Kaggle kit: the worker sets ORDER_FREE col,tie,key",
+ "models": {
+  "dir": "/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/kits/sampler-pool-colfix-value-79af0a4f2/models-cf",
+  "files": {
+   "live_priors.pkl": "7dafa0ce1e975027",
+   "relR4_o.pkl": "3015d409597fff42",
+   "choice5_o.pkl": "686949ea5cc5a89f",
+   "tilt_v1.json": "ca858276d4713e92"
+  }
+ },
+ "freeze": {
+  "name": "col",
+  "template": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/kernel-freeze-tiekey-ec15d12f0/manifest.json",
+  "manifest": {
+   "what": "The models of sampler-pool-colfix-value-79af0a4f2/models-cf: the tie,key priors and relR4_o, tilt_v1.json with every theta zero, and choice5_o refit with ORDER_FREE col.",
+   "commit": "master 79af0a4f2"
+  }
+ },
+ "wheel": {
+  "path": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/wheel13/arclog-0.1.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "sha256": "bcb74793501090b9ffed3e356777288de608271feede3fe86a8fce5b94483c87"
+ },
+ "mac": {
+  "site": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/macsite13",
+  "wheel": "/Users/davidlu/code/arc-workspace/work/synth-kaggle/wheel13-mac/arclog-0.1.0-cp312-abi3-macosx_11_0_arm64.whl",
+  "so_sha256": "83f9a8c57bad4e1bd32fa707b3538cc8b7d24a687edad90e7f79d57821167566",
+  "wheel_sha256": "661cdf820a2caac0f8b2b1dd7cc80e4d2fe61d3ba6d9c8d1a287af5b3cd99331"
+ },
+ "_expect_dataset_differ": "code.bin and choice5_o.pkl at least; step 4 prints the real list if it differs, and this must then name every file the Sampler-worker models change.",
+ "expect_dataset_differ": [
+  "choice5_o.pkl",
+  "code.bin"
+ ],
+ "expect_notebook_equal": true,
+ "code_vs_kit": {
+  "kit": "/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/kits/sampler-pool-colfix-value-79af0a4f2",
+  "models_subdir": "models-cf"
+ },
+ "scratch": {
+  "add_files": {},
+  "remove": [],
+  "edits": [
+   {
+    "file": "kit-files/steers-check.py",
+    "old": "('tie,key', 'value', '1')",
+    "new": "('col,tie,key', 'value', '1')"
+   },
+   {
+    "file": "code-read.py",
+    "old": " and not re.search(r'^\\s*(import|from) col_type_counts', sc, re.M)",
+    "new": " and re.search(r'^from col_type_counts import col_kind', sc, re.M)"
+   },
+   {
+    "file": "kit-files/steers-check.py",
+    "old": "S.ORDER_FREE == frozenset({'tie', 'key'})",
+    "new": "S.ORDER_FREE == frozenset({'col', 'tie', 'key'})"
+   },
+   {
+    "file": "kit-files/steers-check.py",
+    "old": "choice.nd == 1287,",
+    "new": "choice.nd == 1289,"
+   }
+  ]
+ },
+ "extra_quick_checks": {
+  "ident": [
+   "$H/ident-check.sh"
+  ],
+  "worker-start-74dd1130": [
+   "$H/worker-start-check.sh",
+   "74dd1130",
+   "8"
+  ]
+ },
+ "pass_extra": {
+  "ident": [
+   "ident value: \\d+ cells"
+  ],
+  "worker-start-74dd1130": [
+   "worker exit 0",
+   "pool clauses: search",
+   "Tracebacks 0",
+   "order_free col,key,tie, ident value True"
+  ]
+ },
+ "session_mib": 1877,
+ "manifest": {
+  "commit": "FILL_C on branch kernel-next: ec15d12f0 with master 79af0a4f2 merged in (ORDER_FREE col), and kaggle_worker.settings() setting ORDER_FREE col,tie,key and ARCLOG_IDENT_SOURCE value",
+  "differs_code": "ORDER_FREE col: the column kind fix in col_type_counts.py, sample2_col.py and live.py of master 79af0a4f2, and the approximated-stem filter of 8d9eed855, which acts only in fits."
+ },
+ "settings_add": {
+  "ORDER_FREE": "col,tie,key: kaggle_worker.settings() sets it"
+ },
+ "bundle_manifest_edits": [
+  {
+   "path": "code.kaggle_worker",
+   "op": "replace",
+   "old": "ORDER_FREE tie,key and ARCLOG_IDENT_SOURCE value",
+   "new": "ORDER_FREE col,tie,key and ARCLOG_IDENT_SOURCE value"
+  },
+  {
+   "path": "models.choice",
+   "op": "set",
+   "value": "choice5_o.pkl, sha256 starts 686949ea5cc5a89f: refit with ORDER_FREE col, from sampler-pool-colfix-value-79af0a4f2/models-cf."
+  },
+  {
+   "path": "models.steers",
+   "op": "set",
+   "value": "relR4_o.pkl 3015d409597fff42 and choice5_o.pkl 686949ea5cc5a89f, with P_DAG on and ORDER_FREE col,tie,key."
+  },
+  {
+   "path": "models.unchanged",
+   "op": "set",
+   "value": "live_priors.pkl 7dafa0ce1e975027, relR4_o.pkl, tilt_v1.json ca858276d4713e92 and policy_model.pkl are the files of kernel-bundle-ec15d12f0."
+  },
+  {
+   "path": "lexical_reads",
+   "op": "delete"
+  },
+  {
+   "path": "build_steps.worker_start",
+   "op": "delete"
+  }
+ ],
+ "kit_manifest_edits": [
+  {
+   "path": "watch_items.dag_read",
+   "op": "replace",
+   "old": "order_free key,tie,",
+   "new": "order_free col,key,tie,"
+  },
+  {
+   "path": "stands_for.reads_as",
+   "op": "replace",
+   "old": "It adds the tie,key set of sampler-pool-tiekey-value-0729e4943: ORDER_FREE tie,key, the Ident sources",
+   "new": "It adds ORDER_FREE col,tie,key (sampler-pool-colfix-value-79af0a4f2), the Ident sources"
+  },
+  {
+   "path": "stands_for.reads_as",
+   "op": "replace",
+   "old": "choice5_o.pkl 04a895269d26541e",
+   "new": "choice5_o.pkl 686949ea5cc5a89f"
+  },
+  {
+   "path": "watch.differs_from_the_find.priors",
+   "op": "set",
+   "value": "live_priors.pkl 7dafa0ce1e975027, the priors of the tie,key set, with choice5_o refit for ORDER_FREE col."
+  }
+ ]
+}
