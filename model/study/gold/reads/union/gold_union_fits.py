@@ -213,6 +213,30 @@ def sampler_outcome(env, task_json, text):
 
 
 SAMPLER = sampler_settings()
+SAMPLER_CAP = float(os.environ.get('SAMPLER_CAP', 60))  # seconds per program for sampler_outcome; a program past it is 'timeout'
+
+
+def sampler_capped(env, task_json, text):
+    """sampler_outcome() in a forked child that is killed after SAMPLER_CAP seconds: then 'timeout <cap>s', a count not made."""
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(r)
+        with os.fdopen(w, 'w') as f:
+            f.write(sampler_outcome(env, task_json, text))
+        os._exit(0)
+    os.close(w)
+    got, end = b'', time.time() + SAMPLER_CAP
+    while (left := end - time.time()) > 0 and select.select([r], [], [], left)[0]:
+        chunk = os.read(r, 1 << 16)
+        if not chunk:
+            break
+        got += chunk
+    else:
+        os.kill(pid, signal.SIGKILL)
+    os.close(r)
+    os.waitpid(pid, 0)
+    return got.decode() if got else 'timeout %ds' % SAMPLER_CAP
 
 
 def reuse_of():
@@ -233,12 +257,12 @@ def one(env, task, texts, tasks, reuse):
         old = reuse.get(sha16(text))
         if old:
             progs.append(dict(text_sha=old['text_sha'], cases=cases, **{k: old[k] for k in ('assignments', 'fitting', 'fit', 'test_ok', 'why')},
-                              sampler=old.get('sampler') or sampler_outcome(env, task_json, text)))
+                              sampler=old.get('sampler') or sampler_capped(env, task_json, text)))
             copied += 1
             continue
         n, k, ok, why = (capped if CAP else check)(env, task, text, tasks, task_json)
         progs.append(dict(text_sha=sha16(text), cases=cases, assignments=n, fitting=k, fit=None if why else k > 0, test_ok=None if why else ok, why=why,
-                          sampler=sampler_outcome(env, task_json, text)))
+                          sampler=sampler_capped(env, task_json, text)))
     return dict(task=task, programs=progs), copied
 
 
@@ -255,7 +279,7 @@ def sampler_run(set_name, k, n):
             if r['task'] in done:
                 continue
             task_json = json.load(open(ROOT / 'data/tasks' / (r['task'] + '.json')))
-            got = [dict(task=r['task'], text_sha=x['text_sha'], sampler=sampler_outcome(env, task_json, texts[r['task']][x['text_sha']]))
+            got = [dict(task=r['task'], text_sha=x['text_sha'], sampler=sampler_capped(env, task_json, texts[r['task']][x['text_sha']]))
                    for x in r['programs'] if not x.get('sampler') and x['text_sha'] in texts[r['task']]]
             f.write(''.join(json.dumps(g) + '\n' for g in got) or json.dumps(dict(task=r['task'], text_sha=None, sampler=None)) + '\n')
             f.flush()
