@@ -12,6 +12,7 @@ import live, live_try, or_q  # noqa: E401,E402
 import search_gold as G  # noqa: E402
 import superdag as D  # noqa: E402
 from nodefeat import Pair, features  # noqa: E402
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/policy')
 from outfeat import out_features  # noqa: E402
 try:
     import features_second as SECOND  # second-order features, where the kit has them
