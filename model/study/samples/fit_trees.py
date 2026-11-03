@@ -19,6 +19,9 @@ evaluation and the booster's scores do not read the weight. With A = 0, or with 
 
 --out is the file of `booster.save_model`. Beside it, `<out>.json` holds the params, the evaluation, the matrix sizes, the feature names, the header fields that define the features, and
 `plan`, the writer plan of the point files (their header's `plan`), which serving reads (sampler/writer_plan.py). The point files must all give one plan.
+
+The point files must all carry the same header fields that define the features. --wheels-alike W,W names engine wheels (header `wheel`, such as site-exp61,site-exp62) whose point
+files are equal where both build a task, so that files of those wheels go in one fit. The report's `wheel` is then the sorted list of the wheels of the files.
 """
 import argparse
 import base64
@@ -228,17 +231,21 @@ def layout_of(fields: dict[str, Any]) -> Layout:
     return Layout(names, *(np.array([at[n] for n in fields[k]], np.int64) for k in ('option_names', 'table_names', 'point_names')))
 
 
-def feature_fields(heads: list[dict]) -> dict[str, Any]:
-    """The header fields that define the features; every file must carry the same ones."""
+def feature_fields(heads: list[dict], wheels_alike: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The header fields that define the features; every file must carry the same ones, with the wheels of wheels_alike taken as one wheel."""
     if not heads:
         raise FitError('no point files')
-    fields = {k: heads[0].get(k) for k in FEATURE_FIELDS}
+
+    def of(h: dict) -> dict[str, Any]:
+        return {k: ('alike' if k == 'wheel' and h.get(k) in wheels_alike else h.get(k)) for k in FEATURE_FIELDS}
+    fields = of(heads[0])
     for h in heads[1:]:
-        other = {k: h.get(k) for k in FEATURE_FIELDS}
+        other = of(h)
         if other != fields:
             differ = [k for k in FEATURE_FIELDS if other[k] != fields[k]]
             raise FitError(f'the files of tasks {heads[0]["task"]} and {h["task"]} differ in {differ}')
-    return fields
+    wheels = sorted({h.get('wheel') for h in heads})
+    return fields | dict(wheel=wheels[0] if len(wheels) == 1 else wheels)
 
 
 def plan_of(heads: list[dict]) -> str | None:
@@ -580,7 +587,7 @@ def fit(args: argparse.Namespace) -> int:
     train_files, dev_files, heads = split_files(args.points, dev_tasks)
     if not train_files or not dev_files:
         raise FitError(f'{len(train_files)} train files and {len(dev_files)} dev files: the fit needs both')
-    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)])
+    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)], frozenset(filter(None, args.wheels_alike.split(','))))
     plan = plan_of([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)])
     layout = layout_of(fields)
     names = layout.names
@@ -638,7 +645,7 @@ def score(args: argparse.Namespace) -> int:
     if args.score_tasks:
         want = set(args.score_tasks.split(','))
         dev_files = [p for p in dev_files if p.name.removesuffix('.jsonl.gz') in want]
-    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in dev_files])
+    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in dev_files], frozenset(filter(None, args.wheels_alike.split(','))))
     layout = layout_of(fields)
     dev, _ = load(dev_files, heads, layout, args.points_per_task, args.seed)
     booster = lgb.Booster(model_file=str(args.score))
@@ -659,6 +666,7 @@ def main() -> int:
     ap.add_argument('--score-tasks', help='with --score: comma-separated dev tasks, the only ones scored')
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
+    ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
     ap.add_argument('--rounds', type=int, default=2000)
     ap.add_argument('--early-stopping', type=int, default=50, help='stop after this many rounds without a better dev loss')
     ap.add_argument('--log-every', type=int, default=50)
