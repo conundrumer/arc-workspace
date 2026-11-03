@@ -513,12 +513,110 @@ def _prepare_cases(stem: str, answers: Answers) -> Prepared:
         return Prepared(stem, {}, None, f"{type(e).__name__}: {e}")
 
 
+EQUALITY_RULES = {
+    "compose.left_zero": ("C", "B"),
+    "compose.right_zero": ("C", "A"),
+    "relative.zero_base": ("X_rel", "X"),
+    "relative.same": ("X_rel", None),
+    "jump.zero": ("Q", "P"),
+    "inset_outset.zero": ("B", None),
+    "axis_inset_outset.zero": ("B", None),
+    "jump_offset.zero": ("V", None),
+}
+"""The alias and constant rules of `engine/arclog/src/program/static_prune.rs` (`classify_atom`), by name: the column
+whose label the atom makes, and the column whose label it equals, or none where it equals `0`."""
+
+
+def _equality_edit(text: str, match: dict) -> tuple[int, int, str] | None:
+    """The edit of `text` that writes the atom of the static-prune `match` as the equality binding
+    `(= *X Y)` that the match gives, where the atom is a top-level conjunct of a `RULE` or `DET` body and each
+    conjunct up to it is an atom, a comparison or a `NOT` atom; none elsewhere. The decoder with static pruning
+    classifies only such atoms (`check_static_prune` in `engine/arclog/src/decode/mod.rs`)."""
+    from arclog_convert.pull_up import atom_sites
+    path, rule = match["path"], EQUALITY_RULES.get(match["rule"])
+    if match["class"] not in ("alias", "constant") or match.get("replacement") is None or rule is None \
+            or len(path) != 3 or path[1] != 0:
+        return None
+    forms = [x for x in read(text) if isinstance(x, L)]
+    if path[0] >= len(forms) or forms[path[0]].head not in ("RULE", "DET"):
+        return None
+    body = forms[path[0]].items[2:]
+    if path[2] >= len(body) or any(
+            not isinstance(x, L) or x.head in ("OR", "IF", "ALL")
+            or x.head == "NOT" and (len(x.items) != 2 or not isinstance(x.items[1], L) or x.items[1].head in ("OR", "IF", "ALL"))
+            for x in body[:path[2] + 1]):
+        return None
+    atom = body[path[2]]
+    sites = atom_sites(atom)
+    out_column, equal_column = rule
+    if sites is None or out_column not in sites or sites[out_column].mark != "*" or sites[out_column].label is None:
+        return None
+    if equal_column is None:
+        equal = "0"
+    elif equal_column in sites and sites[equal_column].mark == "" and sites[equal_column].label is not None:
+        equal = sites[equal_column].label
+    else:
+        return None
+    return atom.start, atom.end, f"(= *{sites[out_column].label} {equal})"
+
+
+EQUALITY_REFUSAL = "static prune: use the admitted equality binding"
+"""The refusal of the decoder with static pruning at an alias or constant atom whose equality binding the checker
+admits (`check_static_prune` in `engine/arclog/src/decode/mod.rs`)."""
+
+SAMPLER_DECODE = dict(deadline_seconds=120.0, rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
+"""The decode settings of the sampler (`model/study/sampler/live_try.py`), with a deadline that a loaded machine does
+not reach."""
+
+
+def _equality_refusal(stem: str, text: str) -> list[int] | None:
+    """The path of the token at which the decoder, with the sampler's settings on the task `stem` with no test output,
+    refuses the program `text` with `EQUALITY_REFUSAL`; none where it refuses it otherwise or takes it."""
+    import arclog
+    from arc.task import TASKS_DIR
+    task = json.loads((TASKS_DIR / f"{stem}.json").read_text())
+    for pair in task["test"]:
+        pair.pop("output", None)
+    session = arclog.Session(arclog.Task.from_json(json.dumps(task), arclog.World.Open),
+                             arclog.DecodeSettings(**SAMPLER_DECODE), session_bytes=2 << 30)
+    ids, model, token_paths = arclog.StudyProgram.from_sexp(text, session.settings).decode_stream()
+    decoder = session.decoder()
+    for token, stepped, path in zip(ids, model, token_paths):
+        if stepped:
+            try:
+                decoder.step(token)
+            except (arclog.Refusal, arclog.Fault) as e:
+                return list(path) if EQUALITY_REFUSAL in str(e) else None
+    return None
+
+
+def _equality_bindings(stem: str, text: str, matches: list[dict]) -> str:
+    """`text`, the program of a case of the solver `stem`, with each atom at which the decoder refuses it with
+    `EQUALITY_REFUSAL` written as its equality binding, one at a time. The refused atom is the alias or constant atom
+    that `_equality_edit` finds among the static-prune `matches` in the form of the refused token, the last before the
+    token's conjunct. `matches` are those of `text`."""
+    from arclog import DecodeSettings, StudyProgram
+    while True:
+        edits = {tuple(m["path"]): edit for m in matches if (edit := _equality_edit(text, m)) is not None}
+        refused = _equality_refusal(stem, text) if edits else None
+        if refused is None:
+            return text
+        before = [path for path in edits if path[0] == refused[0]
+                  and (len(refused) < 3 or refused[1] != 0 or path[2] < refused[2])]
+        if not before:
+            return text
+        start, end, equality = edits[max(before)]
+        text = text[:start] + equality + text[end:]
+        matches = json.loads(StudyProgram.from_sexp(text, DecodeSettings.corpus()).static_prune_json())["matches"]
+
+
 def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int, str | None]:
     """The second round of the case phase for the cases `part` of the solver `stem`: write the files of those whose
     normal form differs from the case as `arclog.case_files` gives it, `gen/cases/<stem>/<case>.arclog` and
     `.arcdata`. The normal form is the pull-up and projection passes (which read
-    Souffle's rows through `Rows.single`), the implied-atom pass, then deletion of native static-valid
-    tests. The last pass reads only the checked program, not task rows.
+    Souffle's rows through `Rows.single`), the implied-atom pass, deletion of native static-valid
+    tests, then `_equality_bindings`. Deletion reads only the checked program, and `_equality_bindings` the decoder on
+    the task's inputs, not task rows.
 
     Gives the stem, the number of cases it wrote files of, and the error that stopped it."""
     try:
@@ -539,10 +637,13 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
                 program = StudyProgram.from_sexp(text, DecodeSettings.corpus())
                 # With `normalize=True` the report also holds a provenance record of megabytes, which this pass does
                 # not use. The call is made only for a case in which the classifier finds a test to delete.
-                if any(m["class"] == "valid" for m in json.loads(program.static_prune_json())["matches"]):
+                matches = json.loads(program.static_prune_json())["matches"]
+                if any(m["class"] == "valid" for m in matches):
                     pruned = json.loads(program.static_prune_json(normalize=True))
                     if pruned["removed_atom_paths"]:
                         text = pruned["normalized_program_sexp"]
+                        matches = json.loads(StudyProgram.from_sexp(text, DecodeSettings.corpus()).static_prune_json())["matches"]
+                text = _equality_bindings(stem, text, matches)
             if text != arclog:
                 written.append((file, text, arcdata))
         directory = paths.OUT_DIR / CASES / stem
