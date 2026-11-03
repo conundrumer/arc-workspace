@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyCapsule, PyList, PyModule, PyString};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyCapsule, PyInt, PyList, PyModule, PyTuple};
 use pyo3::sync::PyOnceLock;
 
 /// The tables of one case program of a solver of a corpus, as flat columns
@@ -181,9 +181,11 @@ fn cell_bytes<T: Cell>(column: &[T]) -> Vec<u8> {
     bytes
 }
 
-// A raw consumer can retain a field after dropping CaseTables. Keep the
-// reservation on each actual escaped bytes/list object, not on the wrapper
-// or on a serialized mapping key. Buffer contents and isinstance stay native.
+// A raw consumer can retain a column after dropping CaseTables. Keep the
+// reservation on each column object, not on the wrapper or on a serialized
+// mapping key. The items of a list column are plain objects: a `bytes`
+// subclass has a `__dict__`, which would take ten times a short row's bytes.
+// Buffer contents and isinstance stay native.
 fn owned_types(py:Python<'_>)->PyResult<&'static (Py<PyAny>,Py<PyAny>)> {
     static TYPES:PyOnceLock<(Py<PyAny>,Py<PyAny>)>=PyOnceLock::new();
     TYPES.get_or_try_init(py,||{
@@ -199,46 +201,65 @@ class _OwnedList(list):
     })
 }
 
-/// The objects that the columns of a case become, which each hold the
-/// capsule of the columns' reservations once all of them are made, and an
-/// estimate of their bytes.
-#[derive(Default)]
+/// The column objects of a case, which each hold the capsule of the columns'
+/// reservations once all of them are made, and the bytes of the objects
+/// that they reach.
 struct Owned<'py> {
     objects: RefCell<Vec<Bound<'py, PyAny>>>,
     bytes: std::cell::Cell<usize>,
+    /// `sys.getsizeof`.
+    sizeof: Bound<'py, PyAny>,
 }
 
-impl Owned<'_> {
+/// The `__dict__` that `_owner` gives an `_OwnedBytes`, which `sys.getsizeof`
+/// does not count: 304 bytes on CPython 3.13.
+const OWNER_DICT_BYTES: usize = 320;
+
+impl<'py> Owned<'py> {
+    fn new(py: Python<'py>) -> PyResult<Self> {
+        Ok(Owned { objects: RefCell::default(), bytes: std::cell::Cell::new(0), sizeof: PyModule::import(py, "sys")?.getattr("getsizeof")? })
+    }
+
     fn add(&self, bytes: usize) {
         self.bytes.set(self.bytes.get().saturating_add(bytes));
     }
+
+    /// The bytes of `value` and of each object that it reaches through its
+    /// items, as `sys.getsizeof` gives each. None, a bool and an int from -5
+    /// to 256 are shared objects and take none.
+    fn reached(&self, value: &Bound<'py, PyAny>) -> PyResult<usize> {
+        if value.is_none() || value.is_instance_of::<PyBool>() || (value.is_instance_of::<PyInt>() && value.extract::<i64>().is_ok_and(|int| (-5..=256).contains(&int))) {
+            return Ok(0);
+        }
+        let mut bytes: usize = self.sizeof.call1((value,))?.extract()?;
+        if let Ok(items) = value.cast::<PyList>() {
+            for item in items.iter() {
+                bytes = bytes.saturating_add(self.reached(&item)?);
+            }
+        } else if let Ok(items) = value.cast::<PyTuple>() {
+            for item in items.iter() {
+                bytes = bytes.saturating_add(self.reached(&item)?);
+            }
+        }
+        Ok(bytes)
+    }
 }
 
-/// The estimate of the bytes of a `bytes` or `list` object beside its
-/// contents, and of an item of a list beside a `str` item's characters.
-const OBJECT_BYTES: usize = 128;
-const ITEM_BYTES: usize = 64;
-
-/// `value` as an object that `owned` makes hold the capsule: a `bytes` as an
-/// instance of a subclass of `bytes` with the same bytes, a `list` as an
-/// instance of a subclass of `list` with the items of the list so held, and
-/// any other value as it is.
+/// `value` as a column object that `owned` makes hold the capsule: a `bytes`
+/// as an instance of a subclass of `bytes` with the same bytes, a `list` as
+/// an instance of a subclass of `list` with the same items, and any other
+/// value as it is.
 fn owned_value<'py>(py:Python<'py>,value:&Bound<'py,PyAny>,owned:&Owned<'py>)->PyResult<Bound<'py,PyAny>> {
     let (bytes,list)=owned_types(py)?;
-    let made=if let Ok(data)=value.cast::<PyBytes>() {
-        owned.add(OBJECT_BYTES.saturating_add(data.as_bytes().len()));
+    let made=if value.is_instance_of::<PyBytes>() {
+        owned.add(OWNER_DICT_BYTES);
         bytes.bind(py).call1((value,))?
-    } else if let Ok(items)=value.cast::<PyList>() {
-        owned.add(OBJECT_BYTES);
-        let mut held=Vec::with_capacity(items.len());
-        for item in items.iter() {
-            owned.add(ITEM_BYTES.saturating_add(if item.is_instance_of::<PyString>() { item.len()? } else { 0 }));
-            held.push(if item.is_instance_of::<PyBytes>()||item.is_instance_of::<PyList>() { owned_value(py,&item,owned)? } else { item });
-        }
-        list.bind(py).call1((PyList::new(py,held)?,))?
+    } else if value.is_instance_of::<PyList>() {
+        list.bind(py).call1((value,))?
     } else {
         return Ok(value.clone());
     };
+    owned.add(owned.reached(&made)?);
     owned.objects.borrow_mut().push(made.clone());
     Ok(made)
 }
@@ -313,7 +334,7 @@ impl PyCaseTables {
     /// `columns` pass to the returned objects, which keep on the session's
     /// ledger the estimate of their own bytes alone.
     pub(crate) fn of(py: Python<'_>, task: String, case: String, concept: bool, projection_cap: u64, mut columns: CaseColumns, relations: Option<&[String]>, base: Option<Base>) -> PyResult<Self> {
-        let owned=Owned::default();
+        let owned=Owned::new(py)?;
         let dtypes = PyDict::new(py);
         let t = Part::new(py, "tables", &dtypes,&owned);
         let c = &columns.tables;
