@@ -221,7 +221,9 @@ def scope_of(members: list[str], queries: dict[str, dict]) -> tuple[list[str], d
 
 
 def rewrite(query: dict, label: dict[str, str], own: str) -> str:
-    """The query's own text with its local labels written as the global ones; `own` is the label of the query itself."""
+    """The query's own text with its local labels written as the global ones; `own` is the label of the query itself. A label past the query's own
+    is a relation that a DEMONSTRATED query declares in its rules, local to the query: it is written as a label past every label of the scope, so it
+    names no member. A member's rules read only members before it, so a later query's label in that range does not reach them."""
     program, closure = query['program'], query['closure']
     if len(program) != len(closure) + 1:
         raise Reject('the program is not its closure and then the query\'s own text')
@@ -234,7 +236,7 @@ def rewrite(query: dict, label: dict[str, str], own: str) -> str:
             return label[closure[i]]
         if i == len(closure):
             return own
-        raise Reject('a local label past the query\'s own')
+        return f'&r{len(label) + i - len(closure) - 1}'
     return LABEL.sub(put, program[-1])
 
 
