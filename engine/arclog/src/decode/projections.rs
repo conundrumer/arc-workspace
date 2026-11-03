@@ -216,9 +216,10 @@ impl Search<'_, '_> {
 
     /// The count of the rows of `part` of `relation` projected onto
     /// `positions`, without repeats, or one over the cap where more rows
-    /// than the cap result: `part_rows` gives the rows. A projection that
-    /// reads the rows counts each as one binding tried, once for each
-    /// projection whichever of the two reads it first.
+    /// than the cap result. The count reads the rows until its projection
+    /// passes the cap, counts each row it reads as one binding tried, and
+    /// keeps the count and no row: only the projections of the sets the
+    /// search finds are built, by `part_rows`.
     fn part_len(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<usize, ReachedBound> {
         let key = (relation, part, positions);
         if let Some(rows) = self.projected.get(&key) {
@@ -231,29 +232,50 @@ impl Search<'_, '_> {
         if key.2.len() == this.columns.len() {
             return Ok(this.rows.len());
         }
-        self.budget.charge_work(this.rows.len() as u64)?;
-        // A row of at most four cells packs into one key.
-        if key.2.len() > 4 {
-            let projection = Self::project(this, &key.2);
-            let count = projection.len();
-            self.projected.insert(key, projection);
-            return Ok(count);
-        }
-        let mut seen: StableHashSet<u128> = StableHashSet::default();
-        for row in this.rows.rows() {
-            seen.insert(key.2.iter().fold(0u128, |packed, &position| packed << 32 | u128::from(row[usize::from(position)].encoding())));
-            if seen.len() as u64 > self.cap {
-                break;
-            }
-        }
-        let count = seen.len();
+        self.budget.charge_work(0)?;
+        let (count, read) = Self::count(this, &key.2, self.cap);
+        self.budget.charge_work(read)?;
         self.counted.insert(key, count);
         Ok(count)
     }
 
+    /// The count of the rows of `part` projected onto `positions`, without
+    /// repeats, up to one over `cap`, and the count of the rows read to find
+    /// it.
+    fn count(part: &RelationPart, positions: &[u16], cap: u64) -> (usize, u64) {
+        let mut read = 0u64;
+        // A row of at most four cells packs into one key.
+        if positions.len() <= 4 {
+            let mut seen: StableHashSet<u128> = StableHashSet::default();
+            for row in part.rows.rows() {
+                read += 1;
+                seen.insert(positions.iter().fold(0u128, |packed, &position| packed << 32 | u128::from(row[usize::from(position)].encoding())));
+                if seen.len() as u64 > cap {
+                    break;
+                }
+            }
+            return (seen.len(), read);
+        }
+        let mut seen = RowSet::empty(positions.len() as u16);
+        let mut projected: Vec<TermId> = Vec::with_capacity(positions.len());
+        for row in part.rows.rows() {
+            read += 1;
+            projected.clear();
+            projected.extend(positions.iter().map(|&position| row[usize::from(position)]));
+            if !seen.contains(&projected) {
+                seen.insert(projected.as_slice().into());
+                if seen.len() as u64 > cap {
+                    break;
+                }
+            }
+        }
+        (seen.len(), read)
+    }
+
     /// The rows of `part` of `relation` projected onto `positions`, without
     /// repeats. A projection that reads the rows counts each as one binding
-    /// tried, unless `part_len` counted them.
+    /// tried, unless `part_len` counted them: it counted all of them, since
+    /// the search finds only sets under the cap.
     fn part_rows(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<&RowSet, ReachedBound> {
         let key = (relation, part, positions);
         if !self.projected.contains_key(&key) {
