@@ -39,7 +39,7 @@ type Table = tuple[QueryHash, Name] | str  # a query's table; a given table by i
 REL_KINDS = S.RELATION_KINDS
 GROUP_INITS = {'INIT': 1, 'RIGID_DET': 2, 'DEMONSTRATED': 1}  # kinds with port decisions, and the count of decisions that are key bodies
 PORT_KINDS = 'INIT', 'RIGID_DET', 'DEMONSTRATED'  # kinds whose bodies are ports, under the port caps
-DEMO_TOKEN_FACTOR = 16  # a DEMONSTRATED query ends at this many times Limits.model_tokens; each of its forms, and its own key and inputs, at Limits.model_tokens
+DEMO_TOKEN_FACTOR = 4  # a DEMONSTRATED query ends at this many times Limits.model_tokens; each of its forms, and its own key and inputs, at Limits.model_tokens. Gold's longest has 303 model tokens
 
 
 def query_hash(dec, index=-1):
@@ -167,6 +167,12 @@ class Track:
     predict: bool = False  # the form of the DEMO_RULE is its PREDICT clause
     alt: bool = False  # the next form of the DEMO_RULE follows ALT_FORM: a label scope of its own
     base: int = 0  # the index in the tokens of the kind token of the form that holds the next token (a DEMO_RULE's form, else the query's)
+    rules: int = 0  # the DEMO_RULEs of the DEMONSTRATED query so far
+    rule_forms: int = 0  # the forms of the current DEMO_RULE so far, its PREDICT clause included
+    rule_fields: int = 0  # the fields of the current DEMO_RULE
+    predicted: bool = False  # the current DEMO_RULE's PREDICT clause has closed
+    answered: bool = False  # a column of the PREDICT clause took a label
+    no_targets: bool = False  # a PREDICT clause closed with no column to fill: the key and the `value` head give none, so no rule fills one and the form has no END
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -192,6 +198,9 @@ class Limits:  # the loop's hard caps; a path past a cap ends
     port_atoms: int = 12
     branch_atoms: int = 12
     port_absent: int = 6  # a port body of a PORT_KINDS form ends after this count of top-level atoms in a row with END absent (Track.absent); 0 turns it off
+    demo_rules: int = 4  # the DEMO_RULEs of a DEMONSTRATED query; gold has at most 3
+    rule_forms: int = 8  # the forms of a DEMO_RULE, its PREDICT clause included; gold has at most 5
+    rule_fields: int = 4  # the fields of a DEMO_RULE; gold has at most 1
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -204,7 +213,7 @@ class Finished:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Ended:
-    reason: str  # 'empty', a cap ('cap:tokens', 'cap:branch', 'cap:port', 'cap:body', 'cap:stuck'), or the name of the component that removed the last id
+    reason: str  # 'empty', a cap ('cap:tokens', 'cap:branch', 'cap:port', 'cap:body', 'cap:stuck', 'cap:demo'), or the name of the component that removed the last id
 
 
 class Lookahead(Protocol):
@@ -400,6 +409,9 @@ class Core:
             else:
                 T.one = False
             return
+        if T.col is not None and not (k == 'column' or k == 'label' or t in (M.STAR, M.CARET, M.ZERO)):  # the site has no value, which the decoder admits in some bodies, such as a DEMONSTRATED form's key and PREDICT clause: the token is read at the site's atom
+            T.text += ')'
+            T.col = None
         if T.col is not None:  # a value is due
             if k == 'column':  # a record's field
                 if not T.rec:
@@ -513,6 +525,7 @@ class Core:
                 T.negated = False
                 if T.predict:  # the engine names the columns that the clause fills, and each takes a label or SKIP
                     T.where = 'answer'
+                    T.no_targets = not ((ids2 == SKIP_TOK).any() or self.is_label[ids2].any())
                     self._answered(T, ids2)
                 elif kind in ('RULE', 'DET'):
                     T.where = 'done' if np.isin(ids2, self.end_ids).any() else 'body'
@@ -528,20 +541,24 @@ class Core:
         demo = self.demo
         if t == demo['DEMO_RULE']:  # a rule is a label scope
             labs.clear()
-            T.alt = False
+            T.alt, T.rules, T.rule_forms, T.rule_fields, T.predicted = False, T.rules + 1, 0, 0, False
         elif t == M.STAR:
             lab = next(x for x in forced if self.kind[x] == 'label')
             labs.append(Label(lab, (ANY_TYPE,), T.body, (), False, (), False, True))
+            T.rule_fields += 1
         elif t == demo['ALT_FORM']:
             T.alt = True
         elif t == M.END:
             if np.isin(ids2, self.kind_ids).any():  # the form's END: the engine declared its relation
                 T.where = 'done'
+            else:  # the rule's END
+                T.predicted = False
         else:
             sub = self.form_kinds[t]
             labs[:] = [] if T.alt else [L for L in labs if L.field]  # a label of an earlier form is made anew; a form after ALT_FORM has labels of its own alone
             fresh = Track(where='start' if sub == 'INIT' else 'group' if sub in ('RIGID_DET', 'CHOOSE') else 'body', decision=0 if sub in ('RIGID_DET', 'CHOOSE') else -1, body=T.body + 1, uid=T.uid,
-                          rels=T.rels, form=T.form, sub=sub, predict=t == demo['PREDICT'], base=len(pt.tokens))
+                          rels=T.rels, form=T.form, sub=sub, predict=t == demo['PREDICT'], base=len(pt.tokens), rules=T.rules, rule_forms=T.rule_forms + 1,
+                          rule_fields=T.rule_fields)
             for f in dataclasses.fields(Track):
                 setattr(T, f.name, getattr(fresh, f.name))
 
@@ -549,6 +566,7 @@ class Core:
         """Token t at a column that a PREDICT clause fills: a label of the clause or a field, or SKIP."""
         if self.kind[t] == 'label':
             self._read(labs, t, T, ANY_TYPE)
+            T.answered = True
         self._answered(T, ids2)
 
     def _answered(self, T, ids2):
@@ -558,6 +576,7 @@ class Core:
 
     @staticmethod
     def _to_rule(T):
+        T.predicted = T.predicted or T.predict
         T.where, T.sub, T.predict, T.alt, T.path, T.atom, T.negated = 'rule', '', False, False, (), (), False
 
     def _read(self, labs, tok, T, ty):
@@ -655,7 +674,7 @@ def _atoms_begun(pt, ids):
 
 
 
-prefix_feature('tokens', 'point')(lambda pt, ids: np.float32(len(pt.tokens)))
+prefix_feature('tokens', 'point')(lambda pt, ids: np.float32(len(pt.tokens) - pt.track.base))  # the tokens of the form that holds the next token: in a DEMONSTRATED query, of the rule's form
 prefix_feature('labels', 'point')(lambda pt, ids: np.float32(len(pt.labels)))
 prefix_feature('phase', 'point')(lambda pt, ids: np.float32(pt.place.phase.value))
 
@@ -1517,7 +1536,7 @@ def options(pt, plan):
         return got
     ids = pt.ids_
     lim, T = plan.limits, pt.track
-    cap = None  # the name of the cap that the point is at: 'cap:tokens', 'cap:branch' (branch_atoms), 'cap:port' (port_atoms), 'cap:body' (max_atoms) or 'cap:stuck' (port_absent)
+    cap = None  # the name of the cap that the point is at: 'cap:tokens', 'cap:branch' (branch_atoms), 'cap:port' (port_atoms), 'cap:body' (max_atoms), 'cap:stuck' (port_absent) or 'cap:demo' (_demo_caps)
     if len(pt.tokens) - T.base >= lim.model_tokens or len(pt.tokens) >= lim.model_tokens * DEMO_TOKEN_FACTOR:
         cap = 'cap:tokens'
     elif lim.port_absent and T.absent >= lim.port_absent and pt.kind in PORT_KINDS:  # END was absent after port_absent top-level atoms in a row: the head is taken as one that cannot be filled, and the path ends
@@ -1537,6 +1556,8 @@ def options(pt, plan):
                 if T.atom:  # the open atom may take its other columns
                     keep |= core.is_column[ids]
                 ids, cap = ids[keep], name
+    if T.form and cap != 'cap:tokens' and len(ids):
+        ids, cap = _demo_caps(pt, lim, ids, cap)
     fac = np.zeros(len(ids))
     reason = cap if cap == 'cap:tokens' else None
     if not reason and len(ids) == 0:
@@ -1553,6 +1574,41 @@ def options(pt, plan):
                 break
     got = pt.memo[key] = (ids, fac, reason)
     return got
+
+
+def _demo_caps(pt, lim, ids, cap):
+    """(ids, cap) at a point of a DEMONSTRATED query, under the caps on its rules: a rule ends once its PREDICT clause closes, as each of gold's does, and the counts
+    of rules, of a rule's forms and of its fields stay within Limits. A NOT does not follow a NOT, which no gold DEMONSTRATED form writes. The decoder admits each id that these
+    caps take out, and the writer's distribution has no rows of such points, so without them the search's most likely path can repeat a token until cap:tokens.
+    A PREDICT clause has a body, its first column takes a label, and each head column of the form's inputs takes a label of its body: the most likely path otherwise
+    writes rules that fill no column, after which the decoder admits no END of the form. A path whose PREDICT clause has no column to fill ends."""
+    T, demo = pt.track, core_of(pt.run).demo
+    drop = []
+    if T.no_targets:
+        return ids[:0], 'cap:demo'
+    if T.where == 'rule':
+        if T.predicted:
+            drop = [x for x in ids if x != M.END]
+        else:
+            if T.rules >= lim.demo_rules:
+                drop.append(demo['DEMO_RULE'])
+            if T.rule_forms >= lim.rule_forms:
+                drop += [x for x in ids if x in core_of(pt.run).form_kinds and x != demo['PREDICT']] + [demo['ALT_FORM']]
+            if T.rule_fields >= lim.rule_fields:
+                drop.append(M.STAR)
+    elif T.where == 'head' and not T.sub and pt.tokens[-1] == M.END:  # gold gives each head column of the form's inputs a label of its body
+        drop += [M.END, M.STAR, M.ZERO]
+    elif T.where == 'answer' and not T.answered:  # gold's PREDICT clauses fill each column with a label
+        drop.append(SKIP_TOK)
+    elif T.negated and pt.place.phase == Phase.ATOM_START and pt.tokens[-1] == M.NOT:
+        drop.append(M.NOT)
+    elif T.predict and T.where == 'body' and not (T.top or T.atom or T.path or T.negated):  # gold's PREDICT clauses each have a body
+        drop.append(M.END)
+    if drop:
+        keep = ~np.isin(ids, np.array(drop, ids.dtype))
+        if not keep.all():
+            ids, cap = ids[keep], 'cap:demo'
+    return ids, cap
 
 
 def probabilities(pt, plan, ids, fac):
