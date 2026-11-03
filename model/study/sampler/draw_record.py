@@ -101,8 +101,9 @@ def write(pool, clause, kind, text, out, nforms, before, outs, seconds):
     write_line(pool, pool.draws, kind, steps, out, before, outs, seconds, STATE['tables'])
 
 
-def write_line(pool, draw, kind, steps, out, before, outs, seconds, made):
-    """One record, or a repeat line, for a draw whose program is steps [(text, query hash)]."""
+def write_line(pool, draw, kind, steps, out, before, outs, seconds, made, error=None):
+    """One record, or a repeat line, for a draw whose program is steps [(text, query hash)]. error: the reason of a draw that raised, which its
+    caller counts only after the record is written."""
     c = pool.run.c
     key = tuple(h for _, h in steps)
     first = STATE['seen'].get(key) if None not in key else None
@@ -111,7 +112,7 @@ def write_line(pool, draw, kind, steps, out, before, outs, seconds, made):
     else:
         if None not in key:
             STATE['seen'][key] = draw
-        rose = sorted(k for k, v in c.items() if k.startswith(FAILED) and v > before.get(k, 0))
+        rose = sorted(k for k, v in c.items() if k.startswith(FAILED) and v > before.get(k, 0)) + ([error] if error else [])
         kinds = collections.Counter(k for k, _ in outs)
         best = min(outs, key=lambda x: ORDER.index(x[0]) if x[0] in ORDER else len(ORDER), default=None)
         line = dict(task=pool.id.split('.')[0], draw=draw, seed=pool.a.seed, kind=kind, **STATE['fixed'],
@@ -172,10 +173,13 @@ def state_take(pool, st, f, pg, kind, nscope, bits=None):
     made = [r for s in pg.new for r in pg.tables.get(s, ())]
     scope = [(pool.forms[q].text, getattr(pool.forms[q], 'query_hash', None)) for q in SX.program(pool, st)]
     STATE['outs'] = []
-    got = None
+    got, error = None, None
     try:
         got = _state_take(pool, st, f, pg, kind, nscope, bits)
         return got
+    except BaseException as e:
+        error = 'error: %s: %s' % (type(e).__name__, str(e)[:200])
+        raise
     finally:
         outs, STATE['outs'] = STATE['outs'], None
         try:
@@ -183,7 +187,7 @@ def state_take(pool, st, f, pg, kind, nscope, bits=None):
             result = 'none' if out == 'no table' else 'new' if qid == nforms else 'equal'
             qh = getattr(pool.forms[qid], 'query_hash', None) if qid is not None else None
             steps = scope + [(pool.forms[qid].text if result == 'new' else text, qh)]
-            write_line(pool, pool.expanded, kind, steps, result, before, outs, time.monotonic() - t0, made if result == 'new' else None)
+            write_line(pool, pool.expanded, kind, steps, result, before, outs, time.monotonic() - t0, made if result == 'new' else None, error)
         except Exception as e:  # noqa: BLE001
             c['draw record:error %s' % type(e).__name__] += 1
 
