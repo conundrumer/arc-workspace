@@ -113,6 +113,8 @@ def query_of(got, f, lines, program):
 
 def record(row, ids, progs, hashes):
     """The task's row with its tables, one for each QueryHash: ids are the identities in order (dicts of form, programs), progs {program: its cases}, hashes {identity: [QueryHash or None, ...]} from query_of. Identities of one QueryHash make one union table, keyed by the least of their indexes; one the engine refused keeps its own table and is listed in `unhashed`."""
+    if SAMPLES not in sys.path:  # a row with every program left out runs no query_of
+        sys.path.insert(0, SAMPLES)
     import query_hash as Q
     at = {x['form']['ident']: k for k, x in enumerate(ids)}
     group = {}
@@ -158,12 +160,15 @@ def one(t, pubs, ex):
         except Exception as e:  # noqa: BLE001
             return dict(row, error='pinned: does not parse: %s %s' % (type(e).__name__, str(e)[:100]))
         x, why = verdict(fits, G.pinned(t))
-        if why == 'no fits row' or x['why']:
+        if why == 'no fits row':
             return dict(row, error='pinned: ' + why)
-        if why:
+        if why and not x['why']:
             return dict(row, error='pinned: no assignment fits')
         progs, norms, cases = {sha(pin): ['pinned']}, {sha(pin): pin}, {'pinned': sha(pin)}
-        kept = {sha(pin): dict(test_differs=not x['test_ok'])}
+        if why:  # the pinned program gives no tables (it stopped at the fits bound): it is left out, and the cases make the row
+            left_out[sha(pin)] = why
+        else:
+            kept = {sha(pin): dict(test_differs=not x['test_ok'])}
     for c in (pubs[t][1]['cases'] if t in pubs else []):
         if c['case'].replace('$', '').replace(' ', '+') in ex[t]:
             continue
