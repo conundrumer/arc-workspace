@@ -13,11 +13,11 @@ export ARCLOG_IDENT_SOURCE=value PYTHONPATH=$W ARC_SAMPLER_KIT=$KIT/model/study/
 export H PY SET
 shards() { seq 0 $((N - 1)) | sed "s|\$|/$N|"; }
 echo "== $SET skeleton on $(basename "$W") $(date +%T)"
-shards | xargs -P "$N" -n 1 sh -c '$H --cpus 1 --need soon uv run python model/study/samples/skeleton.py $SET --shard "$1" 2>&1 | tail -1 | cut -c1-300' _ || exit 1
+shards | xargs -P "$N" -n 1 bash -c 'set -o pipefail; $H --cpus 1 --need soon uv run python model/study/samples/skeleton.py $SET --shard "$1" 2>&1 | tail -1 | cut -c1-300' _ || exit 1
 echo "== $SET tables $(date +%T)"
-shards | xargs -P "$N" -n 1 sh -c '$H --cpus 1 --need soon $PY model/study/samples/build_tables.py $SET --shard "$1" 2>&1 | grep -v " 0 differ from Python, 0 from the dev module" | tail -1 | cut -c1-300' _ || exit 1
+shards | xargs -P "$N" -n 1 bash -c 'set -o pipefail; $H --cpus 1 --need soon $PY model/study/samples/build_tables.py $SET --shard "$1" 2>&1 | grep -v " 0 differ from Python, 0 from the dev module" | tail -1 | cut -c1-300' _ || exit 1
 echo "== $SET supplement $(date +%T)"
 $H --cpus "$N" --need soon $PY model/study/samples/supplement.py $SET --stage both --jobs "$N" 2>&1 | tail -2 | cut -c1-400 || exit 1
 echo "== $SET samples $(date +%T)"
-shards | xargs -P "$N" -n 1 sh -c '$H --cpus 1 --need soon uv run python model/study/samples/sample_write.py $SET --shard "$1" 2>&1 | tail -1 | cut -c1-600' _ || exit 1
+shards | xargs -P "$N" -n 1 bash -c 'set -o pipefail; $H --cpus 1 --need soon uv run python model/study/samples/sample_write.py $SET --shard "$1" 2>&1 | tail -1 | cut -c1-600' _ || exit 1
 echo "== $SET done $(date +%T)"

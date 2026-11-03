@@ -13,6 +13,7 @@ cd "$REPO" || exit 1
 export ARCLOG_IDENT_SOURCE=value PYTHONPATH=$W ARC_SAMPLER_KIT=$KIT/model/study/sampler
 export H PY SET HERE POINTS
 one() {
+    set -o pipefail
     s=$1
     say() { echo "$SET $s $1 $(date +%T): $(tail -1 | cut -c1-400)"; }
     $H --cpus 1 --need soon uv run python model/study/samples/skeleton.py $SET --shard $s 2>&1 | say skeleton || return 1
