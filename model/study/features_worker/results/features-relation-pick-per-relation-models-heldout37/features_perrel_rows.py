@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 
-ME = os.path.dirname(os.path.abspath(__file__)) + '/'
+ME = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-models-heldout37/'  # the data folder
 import sys
 sys.path.insert(0, ME)
 import features_perrel_read as RD  # noqa: E402

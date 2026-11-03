@@ -15,7 +15,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-models-heldout37')
 import features_perrel_lib as L  # noqa: E402
 
 CPS = (0, 1, 3, 6, 12, 25, 50, 100, 200, 400)
