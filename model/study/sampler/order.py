@@ -59,6 +59,10 @@ class Overflow(Exception):
     pass
 
 
+class Capped(Overflow):
+    """A search of completable in the order of the keys met its cap of states (LEAD_STATES)."""
+
+
 # ---------------------------------------------------------------- the tree of a query
 
 @dataclasses.dataclass
@@ -136,6 +140,7 @@ class Env:
         self.total: collections.Counter | None = None  # the label mentions of the query that ordered() walks
         self.lookahead = False  # ordered() sets it for the second try of a query that the plain rule cannot write
         self.look = 0  # above 0 inside completable: the walk asks whether a rest can be written, and does not probe each atom for a dead end
+        self.lead_left: int | None = None  # in a search of completable in the order of the keys: the states it may still take (LEAD_STATES), else None
         self.rcache = {}  # the ways of atoms (render) and the dead-end verdicts of states (closes), for one query (ordered clears it)
         self.rcache_kept = False  # True while ordered() tries a query again: _ordered keeps rcache
         self.label = {i for i in range(n) if self.kind[i] == 'label'}
@@ -145,6 +150,7 @@ class Env:
         self.IF = V.id('IF')
         self.ONE = V.id('ONE')
         env_ONE[0] = self.ONE
+        env_IF[0], env_ALL[0] = self.IF, self.ALL
         self.probe = [END, OR_TOK, NOT, self.ALL, EQ, CMP[1], V.id('input')]  # tokens that close an atom: some is in the mask unless the atom is a dead end; END first (closes)
         self.open = np.array([k in ('column', 'label') or i in (STAR, CARET, ZERO) for i, k in enumerate(self.kind)])  # tokens that go on with an open atom
 
@@ -473,6 +479,7 @@ def variants(s, nm, mode):
 
 
 env_ONE = [None]  # the token id of ONE (set by Env)
+env_IF, env_ALL = [None], [None]  # the token ids of IF and ALL (set by Env)
 
 
 class Unbound(Exception):
@@ -729,23 +736,62 @@ def after(env, k, st, tok):
     return k is None or k(st)
 
 
+LEAD_STATES = 300  # the states that a search of completable in the order of the keys may take before it starts again in the order of the query
+
+
 def completable(env, marks, items, rem, st, cr, sep, k, memo):
     """True where the items `rem` can be written, in some order, from the state st (cr: the items that made the labels), and k then accepts the state after them (k None: true).
     The decoder refuses some orders late (a label read outside each list that keeps it, a key label that is local to a form), so the greedy rule asks this before it takes an item.
-    The search follows the same rule (the least keys that complete, and no OR that exports_ok refuses), which finds a completion where one exists."""
+    The search follows the same rule (the least keys that complete, and no OR that exports_ok refuses), which finds a completion where one exists.
+
+    The answer does not depend on the order in which the search tries the items, only its time. A search in the order of the walk's keys finds the completion that the walk then
+    takes, so that the walk's next tests are in the memo; but where an item that comes first by key cannot be completed, it tries every order of the rest. A search in the order
+    of the query finds a completion at once where the query's own order is one. So the outer search goes in the order of the keys up to LEAD_STATES states, and else starts again
+    in the order of the query, with the answers that the first search finished."""
+    if env.look or env.lead_left is not None:
+        return _memo_completable(env, marks, items, rem, st, cr, sep, k, memo)
+    env.lead_left = LEAD_STATES
+    try:
+        return _memo_completable(env, marks, items, rem, st, cr, sep, k, memo)
+    except Capped:
+        pass
+    finally:
+        env.lead_left = None
+    return _memo_completable(env, marks, items, rem, st, cr, sep, k, memo)
+
+
+def _memo_completable(env, marks, items, rem, st, cr, sep, k, memo):
     key = (rem, nm_key(st[1]), cr, st[0].trace_form())  # the form so far: states of one naming can differ in what the atoms before them were
     got = memo.get(key)
     if got is not None:
         return got
+    if env.lead_left is not None:
+        if env.lead_left <= 0:
+            raise Capped()
+        env.lead_left -= 1
     memo[key] = False
-    res = False
     env.look += 1
     try:
         res = _completable(env, marks, items, rem, st, cr, sep, k, memo)
+    except BaseException:
+        del memo[key]  # a search that stopped leaves no answer
+        raise
     finally:
         env.look -= 1
     memo[key] = res
     return res
+
+
+def lead(item):
+    """The tokens that the key of the item starts with under any naming: an atom's tokens before its first label or column reference, the first token of a compound item."""
+    if isinstance(item, Atom):
+        out = []
+        for x in item.toks:
+            if x < 0 or x >= COLREF:
+                break
+            out.append(x)
+        return tuple(out)
+    return (OR_TOK,) if isinstance(item, Or) else (env_IF[0],) if isinstance(item, If) else (env_ALL[0],)
 
 
 def _completable(env, marks, items, rem, st, cr, sep, k, memo):
@@ -753,7 +799,8 @@ def _completable(env, marks, items, rem, st, cr, sep, k, memo):
     if not rem:
         res = k is None or bool(k(st))
     else:
-        for idx in sorted(rem):
+        order = sorted(rem, key=lambda i: (lead(items[i]), i)) if env.lead_left is not None else sorted(rem)
+        for idx in order:
             if one_waits(items, rem, idx, True):
                 continue
             if not exports_ok(env, items[idx], st[1]):  # walk_set does not take the OR at this state; the decoder refuses its END only after every order of the items in it
