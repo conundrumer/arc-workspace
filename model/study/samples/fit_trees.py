@@ -17,7 +17,8 @@ With --alpha A (default 0), the train loss weighs each id's term of the softmax 
 0 for an id it does not list): p = w e^s / sum(w e^s), and the loss, gradient and Hessian are as above with that p. A drawn count on a positive id is an error. The dev loss, the
 evaluation and the booster's scores do not read the weight. With A = 0, or with no drawn count, the fit is the one without --alpha.
 
---out is the file of `booster.save_model`. Beside it, `<out>.json` holds the params, the evaluation, the matrix sizes, the feature names and the header fields that define the features.
+--out is the file of `booster.save_model`. Beside it, `<out>.json` holds the params, the evaluation, the matrix sizes, the feature names, the header fields that define the features, and
+`plan`, the writer plan of the point files (their header's `plan`), which serving reads (sampler/writer_plan.py). The point files must all give one plan.
 """
 import argparse
 import base64
@@ -238,6 +239,14 @@ def feature_fields(heads: list[dict]) -> dict[str, Any]:
             differ = [k for k in FEATURE_FIELDS if other[k] != fields[k]]
             raise FitError(f'the files of tasks {heads[0]["task"]} and {h["task"]} differ in {differ}')
     return fields
+
+
+def plan_of(heads: list[dict]) -> str | None:
+    """The writer plan of the point files: their header's `plan`, the same in every file."""
+    plans = {h.get('plan') for h in heads}
+    if len(plans) > 1:
+        raise FitError(f'the point files give the plans {sorted(map(str, plans))}')
+    return next(iter(plans), None)
 
 
 @dataclass
@@ -572,6 +581,7 @@ def fit(args: argparse.Namespace) -> int:
     if not train_files or not dev_files:
         raise FitError(f'{len(train_files)} train files and {len(dev_files)} dev files: the fit needs both')
     fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)])
+    plan = plan_of([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)])
     layout = layout_of(fields)
     names = layout.names
     safe = booster_names(names)
@@ -612,7 +622,7 @@ def fit(args: argparse.Namespace) -> int:
     print(f'dev, trees:   mean loss {got["mean_loss"]:.6f}  top-scored id is positive {got["top_is_positive"]:.4f}  ({got["points"]} points)')
     print(f'dev, uniform: mean loss {base["mean_loss"]:.6f}  top-scored id is positive {base["top_is_positive"]:.4f}  (every id ties; credit shared)')
     report = dict(
-        model=str(out), params=dict(params, objective='custom: -log(sum of softmax over the positive ids), per point', alpha=args.alpha), rounds_run=booster.current_iteration(), best_round=best,
+        model=str(out), plan=plan, params=dict(params, objective='custom: -log(sum of softmax over the positive ids), per point', alpha=args.alpha), rounds_run=booster.current_iteration(), best_round=best,
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),

@@ -4,7 +4,7 @@
   build.py --kit KIT --overlay DIR --wheels W... --tree FILE --uses FILE --out OUT [--seconds S] [--pool P] [--env K=V ...]
 
 code.bin holds the kit's model/study trees and engine/lib/registry.sexpr, with the files of --overlay (a folder that holds model/study/...) over them.
-The dataset holds the wheels, the four model files of the kit's models-cf, policy_model.pkl, the kernel's supervisor.py (this folder), the tree and its feature list, and run_config.json.
+The dataset holds the wheels, the four model files of the kit's models-cf, policy_model.pkl, the kernel's supervisor.py (this folder), the tree with its feature list and its fit report, and run_config.json.
 """
 import argparse, hashlib, json, pathlib, runpy, shutil, subprocess, sys, tarfile
 
@@ -44,6 +44,11 @@ def main():
     if a.tree:
         shutil.copy(a.tree, D)
         shutil.copy(a.uses, D)
+        report = pathlib.Path(a.tree + '.json')  # fit_trees.py's report: the worker reads the tree's writer plan from it (sampler/writer_plan.py)
+        if report.exists():
+            shutil.copy(report, D)
+        elif 'ordered' not in pathlib.Path(a.tree).name and 'WRITER_PLAN' not in env:
+            sys.exit('%s has no report %s and no plan in its name: give --env WRITER_PLAN=ordered|unordered' % (a.tree, report))
         env.setdefault('WRITER_TREE', '{data}/' + pathlib.Path(a.tree).name)
     json.dump(dict(seconds=a.seconds, tasks=a.tasks, rss_limit_mib=a.rss_limit_mib, pool=a.pool, env=env), open(D / 'run_config.json', 'w'))
     files = {}
