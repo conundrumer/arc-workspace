@@ -494,7 +494,27 @@ class ReadsScope:
         return out
 
 
-CANDIDATES = ('RepeatEndBranch', 'ReadsScope')
+class ReadsScopeFirst:
+    """Over a non-empty scope, the first atom of a RULE's or DET's body: every id but a relation that names a query of the scope. A query reads the scope
+    exactly where some atom does, and the engine takes the atoms of a body in any order, so the query can be written with that atom first; a query
+    that reads no query of the scope belongs to the root slot. The rule ends a path at its first token where ReadsScope would let it run to a cap."""
+    name = 'ReadsScopeFirst'
+
+    def factors(self, pt, ids):
+        out = np.zeros(len(ids))
+        T = pt.track
+        if pt.kind not in ('RULE', 'DET') or T.firsts or not body_level(pt) or pt.place.phase not in (Phase.PROPOSER, Phase.ATOM_START):
+            return out
+        names = getattr(pt.pg, 'written', None)
+        if not names:  # the root slot: an empty scope
+            return out
+        V = pt.run.V
+        keep = np.array([V.kind(int(t)) == 'relation' and V.name(int(t)) in names for t in ids], bool)
+        out[~keep] = -np.inf
+        return out
+
+
+CANDIDATES = ('RepeatEndBranch', 'ReadsScope', 'ReadsScopeFirst')
 ADD = tuple(x for x in os.environ.get('WRITER_LEGAL_ADD', '').split(',') if x)  # candidates that a check adds to RULES
 
 

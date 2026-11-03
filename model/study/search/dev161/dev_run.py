@@ -34,7 +34,7 @@ from study_paths import DATA_ROOT, MAIN_ROOT  # noqa: E402
 DATASET = MAIN_ROOT / 'work/synth-kaggle/kernel-writer-dry8/dataset'  # the v9 bundle's dataset: models, policy model, supervisor
 PY = MAIN_ROOT / 'work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
-ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}, 'tree_reads': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScope'}}  # tree_reads: the check of the ReadsScope rule
+ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}, 'tree_reads': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': str(TREE), 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'}}  # the checks of the ReadsScope rules
 RSS_LIMIT_MIB = 2888
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
