@@ -52,7 +52,7 @@ def tables_of(s, u):
     recs = [json.loads(x) for x in gzip.open(p, 'rt')]
     if not recs or recs[0].get('hash_version') not in VERSIONS:
         return None
-    queries = [r for r in recs if r['t'] == 'function' and r.get('union_key') is not None]
+    queries = [r for r in recs if r['t'] == 'function' and r.get('union_key') is not None and r['outputs']]  # a function with no outputs exported no table, so its forms stay unmatched
     entries = [r for r in recs if r['t'] == 'entry']
     by_text = {(r['union_key'], r['text']): r['id'] for r in queries + [a for a in recs if a['t'] == 'alias' and a.get('union_key') is not None]}
     T = Tables()
