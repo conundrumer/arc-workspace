@@ -890,8 +890,17 @@ class RenderMixin:
                 cfs = [g for g in cfs if g.name in alone or case_text.get(g.name) != here_[g.name]]
                 if not cfs:
                     continue
-                ind = "    "
+                # the block of each other branch stands under the alts its
+                # point stands under, so that it is deeper than that branch's
+                # own block
+                path: list[str] = []
                 for b in others:
+                    for _, up in reversed(self.ancestors(field_of[b])):
+                        if up not in sib and up not in others and up not in path:
+                            path.append(up)
+                    path.append(b)
+                ind = "    "
+                for b in path:
                     out.append(f"{ind}(ALT ${b}")
                     ind += "  "
                 # the combination's forms serve the innermost alt's claims,
@@ -905,7 +914,7 @@ class RenderMixin:
                     close(out, ")")
                     cfs = tail_cfs
                 out.extend(render_forms(topo(cfs), ind))
-                close(out, ")" * len(others))
+                close(out, ")" * len(path))
             # the points that exist only with this branch
             for f2, adt2 in self.c.point_fields():
                 a2 = self.ancestors(f2)
