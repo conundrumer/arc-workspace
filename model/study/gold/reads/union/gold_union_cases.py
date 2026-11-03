@@ -1,4 +1,4 @@
-"""The programs of the union gold of one task set, one line per program: the pinned program (case `pinned`, source view-final) and every case of each task's solver from the latest empty-gold publication, with `excluded` true for the cases gen-v3's excluded-case-files.tsv lists. Writes cases-<set>.jsonl and its sha256 in this folder.
+"""The programs of the union gold of one task set, one line per program: the pinned program (case `pinned`, source view-final) and every case of each task's solver from the latest empty-gold publication, with `excluded` true for the cases gen-v3's excluded-case-files.tsv lists. Writes cases-<set>.jsonl and its sha256 in work/lm/data-study/gold/gold-union.
 
   python3 gold_union_cases.py SET      SET: ramp, 37, 62 or training
 """
@@ -6,7 +6,7 @@ import hashlib, json, os, sys
 import gold_case_counts as K
 from gold_union_identity import D, W, set_of
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union'
 
 
 def main():
@@ -14,7 +14,7 @@ def main():
     sets = [('ramp', set(open(W + 'ramp-fold.txt').read().split())),
             ('37', set(open(W + 'tasks.txt').read().split())), ('62', set(open(W + 'leave_out.txt').read().split()))]
     pubs, ex = K.publications(), K.excluded()
-    path = HERE + '/cases-%s.jsonl' % want
+    path = OUT + '/cases-%s.jsonl' % want
     with open(path, 'w') as out:
         for t in sorted(os.listdir(D + 'gold/gold-v3-combined-cut/view-final')):
             if set_of(t, sets) != want:
