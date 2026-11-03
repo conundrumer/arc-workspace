@@ -4,13 +4,14 @@ An engine release that changes the tables of some tasks only (its own list of af
 still name the old site, and the stages refuse a task whose stages name two query_hash_versions. This rewrites the header's hash_version and
 query_hash_version of each store that names OLD, except the tasks in --skip, to a temp file and then a rename.
 
-  python3 restamp.py ROWS_DIR OLD NEW [--skip id,id,...]      OLD and NEW are site folder names, such as site-exp50 and site-exp59
+  python3 restamp.py ROWS_DIR OLD NEW [--skip id,id,...] [--shard k/N]      OLD and NEW are site folder names, such as site-exp50 and site-exp59
 """
 import argparse
 import gzip
 import json
 import os
 import tempfile
+import zlib
 from pathlib import Path
 
 ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
@@ -18,11 +19,15 @@ ap.add_argument('rows', type=Path)
 ap.add_argument('old')
 ap.add_argument('new')
 ap.add_argument('--skip', default='', help='id,id: the tasks the new engine changes, which are built again instead')
+ap.add_argument('--shard', default='0/1', help='k/N: the tasks whose crc32 is k mod N')
 a = ap.parse_args()
 skip = set(filter(None, a.skip.split(',')))
+k, n = map(int, a.shard.split('/'))
 done = kept = 0
 for p in sorted(a.rows.glob('*.jsonl.gz')):
     task = p.name.removesuffix('.jsonl.gz')
+    if zlib.crc32(task.encode()) % n != k:
+        continue
     with gzip.open(p, 'rt') as f:
         head = json.loads(f.readline())
     if task in skip or head.get('hash_version') != 'engine@' + a.old:
