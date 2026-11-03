@@ -35,9 +35,11 @@ class Tables:
             return 'u%s.%s' % (ident, name) if name else 'u' + ident
         if (q, name) in self.graph:
             return self.graph[q, name]
-        if len(self.names.get(q, ())) == 1:  # a read the engine makes no table of, as a BoundingBox's `.cell`: its query's one table
-            return self.graph[q, self.names[q][0]]
         return 'u%s.%s' % (q, name)
+
+    def has(self, ident, name):
+        """Whether the export gives the union query `ident` a table at output `name`."""
+        return (self.query.get(ident), name) in self.graph
 
     def heads(self, ident):
         """The graph tables of every output of the union query `ident`, or None where it has no row store query."""

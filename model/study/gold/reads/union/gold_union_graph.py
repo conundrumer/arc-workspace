@@ -6,7 +6,7 @@
   Each output has a file <output>.code.json, {"code": {"sha", "dirty"}}: the commit of the code that wrote it (gold_union_code.py).
 
 - A query is one QueryHash of the engine's export (gold_union_tables.py): union queries of one QueryHash are one query, with their Python identities in `idents` and the least of them in `ident`. A query that the row store lacks keeps its Python identity.
-- A table is (QueryHash, Name), and a graph table is the class of tables of one map {Assignment → TableHash} (gold_union_tables.py gives the rule). A query's heads are the graph tables of every output the export gives it; the graph tables it uses are those of the tables its body uses. A graph table with more than one query is an OR. Roots are made by queries that use no table. The goal is an OR over options, one for each distinct set of graph tables that a kept case's OUT (or the pinned program's) uses; an option is an AND over its tables, with depth the most over them and cost the sum.
+- A table is (QueryHash, Name), and a graph table is the class of tables of one map {Assignment → TableHash} (gold_union_tables.py gives the rule). A query's heads are the graph tables of every output the export gives it; the graph tables it uses are those of the tables its body uses. A read of an input block of an INIT, where the engine makes no table of that block (its body is one positive atom and any NOT atoms: `renamed`), uses the tables of those atoms. A graph table with more than one query is an OR. Roots are made by queries that use no table. The goal is an OR over options, one for each distinct set of graph tables that a kept case's OUT (or the pinned program's) uses; an option is an AND over its tables, with depth the most over them and cost the sum.
 - A graph table has `members`, the union names of its tables ("key" for a query that is neither INIT nor RIGID_DET, "key.name" for an INIT output or a RIGID_DET table), `tables`, its (QueryHash, Name) pairs, `map` and `capped`, and `exported`, false where the row store has no query for it (the engine refused the program, or the text didn't match), so the graph table has no map. `kit_unreachable` marks a graph table with a member in the `left` of synth-worker's maps-SET.jsonl: a union output whose replay in the search kit doesn't finish or isn't collected. `kit_unreachable_reason` is that `left` entry's reason. search-worker's outmap-SET.jsonl names the outputs of `left`.
 - The queries and the tables they use come from the `text` of each kept case in union-keys-SET.jsonl.
 - Depth: depth(T) = min over T's queries of 1 + max over the tables each uses of depth, roots at 0, as the least fixed point from infinity, so a cycle gives the right result. `depth_cases` is the union file's depth of the union table, the least over the cases.
@@ -15,7 +15,7 @@
 - Hyperpath: a set of queries that makes the goal, and each table that a chosen query uses, each query's bits counted once. `path` is the hyperpath of least bits, on known bits where one exists, else on low bits. `within_2` is the count of hyperpaths within 2 bits of it, up to CAP. A search pushes each set of chosen queries once, and at most STATES partial hyperpaths (10 times that for the cheapest path); past that it stops and `capped` is set. Where the cheapest-path search stops before a path, `path` is the tree-cost path (tree_path), an upper bound, with `exact` false. `within_2` is null where the count stopped before any path. `max_production` is the query on it with the most bits, with that query's depth (1 + the most depth of the tables it uses). `minimax_path` is the hyperpath whose largest query bits are least, and among those the one of least sum. Each path lists its queries' Python identities in `idents` and their QueryHashes in `queries`.
 - Some output field names keep older terms: `productions` counts queries, `reads` lists the graph tables a query uses, `max_production` is the query with the most bits, and `bits_productions` counts queries with bits.
 """
-import collections, glob, hashlib, heapq, json, os, re, sys
+import collections, functools, glob, hashlib, heapq, json, os, re, sys
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-v3-combined-cut/dedup-final')
 import gold_case_counts as G
 import gold_union_code
@@ -100,12 +100,50 @@ def rigid_table(path):
     return 'slot ' + step[1:] if re.fullmatch(r'r\d+', step) else 'pose' if step == 'pose' else ''
 
 
+FACTS = ('input', 'ex_input', 'ex_output')
+
+
+def sexpr(text):
+    """The nested lists of the s-expression `text`."""
+    stack = [[]]
+    for t in re.findall(r'[()]|[^\s()]+', text):
+        if t == '(':
+            stack.append([])
+        elif t == ')':
+            x = stack.pop()
+            stack[-1].append(x)
+        else:
+            stack[-1].append(t)
+    return stack[0][0]
+
+
+@functools.cache
+def renamed(line, block):
+    """None where the engine gives the input `block` of the INIT `line` a table. Else the heads of its atoms: the one positive atom, then the NOT atoms. The engine gives no table to an input block whose body is one positive atom and any number of NOT atoms, each of a fact relation or an `&rN` relation (gives_no_table in engine/arclog-tables/src/tables.rs). Its rows are those of the positive atom, less the rows of the NOT atoms."""
+    def find(x):
+        if isinstance(x, list):
+            if x[:1] == [block] and len(x) > 2 and isinstance(x[1], list) and all(isinstance(c, list) and c[:1] and str(c[0]).startswith(':') for c in x[1]):
+                return x
+            return next((f for f in map(find, x) if f), None)
+    found = find(sexpr(line))
+    if not found:
+        return None
+    pos, neg = [], []
+    for c in found[2:]:
+        not_ = isinstance(c, list) and len(c) == 2 and c[0] == 'NOT'
+        atom = c[1] if not_ else c
+        if not (isinstance(atom, list) and atom and isinstance(atom[0], str) and (atom[0].startswith('&') or atom[0] in FACTS)):
+            return None
+        (neg if not_ else pos).append(atom[0])
+    return tuple(pos + neg) if len(pos) == 1 else None
+
+
 def name(key, out):
     return '%d.%s' % (key, out) if out else str(key)
 
 
 def graph(u, cases, T):
-    """({QueryHash: dict(heads, uses, kind, ident, idents, keys)}, [goal option: [graph table]], {graph table: {(union key, Name)}}) from the kept cases' texts. Union queries with one QueryHash are one query. A use of an INIT is a use of one of its outputs, and a use of a RIGID_DET is a use of its table 'slot N' or 'pose'. A query's heads are the graph tables of every output that the export gives it."""
+    """({QueryHash: dict(heads, uses, kind, ident, idents, keys)}, [goal option: [graph table]], {graph table: {(union key, Name)}}) from the kept cases' texts. Union queries with one QueryHash are one query. A use of an INIT is a use of one of its outputs, or of the tables of the atoms of an input block that has no table, and a use of a RIGID_DET is a use of its table 'slot N' or 'pose'. A query's heads are the graph tables of every output that the export gives it."""
     kept = {c for c, h in u['cases'].items() if h not in (u.get('left_out') or {})}
     queries, outs, goal, members = {}, collections.defaultdict(set), [], collections.defaultdict(set)
     texts = [(c['case'], c['text'], c['keys']) for c in cases if c['case'] in kept or c['case'] == 'pinned']
@@ -115,26 +153,30 @@ def graph(u, cases, T):
         qs, _ = forms_of([x for x in qt if not x.startswith('(OUT')])
         keys = [key_of.get(f['ident'], k) for f, k in zip(qs, keys)]
         label = {f['label']: (k, f['kind'], f['ident']) for f, k in zip(qs, keys)}
+        lines = {f['label']: f['line'] for f in qs}
 
         def used(n):
             rk, kind, ri = label[n[1]]
             out = n[2].lstrip('.').split('.')[0] if kind == 'INIT' else rigid_table(n[2]) if kind == 'RIGID_DET' else ''
+            atoms = renamed(lines[n[1]], out) if kind == 'INIT' and out and not T.has(ri, out) else None
+            if atoms is not None:  # an input block that the engine makes no table of: its rows are those of its atoms
+                return {g for a in atoms for m in G.NAME.finditer(a) if m[1] in label for g in used(m)}
             g = T.table(ri, out)
             if rk is not None and g not in T.maps:  # a graph table from the row store takes its members from its queries' outputs, below
                 members[g].add((rk, out))
             if kind in ('INIT', 'RIGID_DET'):
                 outs[ri].add(out)
-            return g
+            return {g}
         for f, k in zip(qs, keys):
             body = f['line'][G.HEAD.match(f['line']).end():]
-            uses = {used(n) for n in G.NAME.finditer(body) if n[1] in label}
+            uses = {g for n in G.NAME.finditer(body) if n[1] in label for g in used(n)}
             q = T.query.get(f['ident'], f['ident'])
             p = queries.setdefault(q, dict(key=k, kind=f['kind'], uses=uses, idents=set(), keys=set()))
             p['idents'].add(f['ident'])
             if k is not None:
                 p['keys'].add(k)
         out_text = next(x for x in qt if x.startswith('(OUT'))
-        goal.append([used(n) for n in G.NAME.finditer(out_text) if n[1] in label])
+        goal.append([g for n in G.NAME.finditer(out_text) if n[1] in label for g in used(n)])
     for q, p in queries.items():
         p['ident'] = min(p['idents'])
         if q in T.names:
