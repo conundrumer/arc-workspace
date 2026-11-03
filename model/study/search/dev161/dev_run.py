@@ -4,7 +4,8 @@
 
 RUN names the output folder, $DATA/search/dev161/RUN for dev and $DATA/search/train866/RUN for train (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
 Every arm runs under one writer plan (WRITER_PLAN): the plan that --tree records where an arm takes the tree, else WRITER_PLAN, else the plan with no tree (sampler/writer_plan.py).
-Each job is one task of one arm and one seed: the pool search with the v9 notebook's environment and a fresh store of its own. --models
+Each job is one task of one arm and one seed: the search of --source (the pool search, or the state search) with the v9 notebook's
+environment and a fresh store of its own. --models
 is the worker's models folder (default the v9 dataset's), and --tree the writer's tree of the arms that take one. With
 --budget cpu (the default), one worker runs on --seconds of its own CPU time (cpu_clock/sitecustomize.py), and the kernel supervisor's
 code (supervisor.py beside the --code kit, else the v9 dataset's) makes the submission from its candidates. With --budget wall, the
@@ -148,7 +149,7 @@ def run_job(a, out, task, arm, seed):
     (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
     samp = Path(a.code) / 'model/study/sampler'
     env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
-               POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES='search', ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
+               POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES=a.source, ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     for k in ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
@@ -223,6 +224,7 @@ def main():
     ap.add_argument('--tree', default=str(TREE))
     ap.add_argument('--skip', default='')
     ap.add_argument('--arms', default='tree,hand')
+    ap.add_argument('--source', choices=('search', 'state'), default='search', help='search: the pool search (superdag_search.py); state: the state search (state_search.py)')
     ap.add_argument('--seeds', default='0')
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
