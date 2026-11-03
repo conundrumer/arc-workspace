@@ -5,8 +5,8 @@
 A job reaches a graph table where it drew a query that gives that table. The graph table of a query output is named as
 gold/reads/union/gold_union_tables.py names it: "t" and 16 hex digits of a digest of its map {assignment -> TableHash}, with each DET
 value written as the TableHash of the DET's table at that value, each DET as the digest of its set of those TableHashes, and each DET of
-one value left out. Only "t" tables of --graph count, and none of a kind in --skip-kinds (default CHOOSE and DEMONSTRATED, which are
-out of scope).
+one value left out. Only "t" tables of --graph count, and none of a kind in --skip-kinds (default DEMONSTRATED, which is out of
+scope).
 
   --by qh      a lower bound: the job's drawn QueryHashes, each named through the task's row store (--rows), so a drawn query reaches the
                graph tables of the row store's query of the same QueryHash. A query of another QueryHash with equal tables is not counted.
@@ -120,7 +120,7 @@ def main():
     ap.add_argument('--arms', default='tree,hand')
     ap.add_argument('--by', choices=('qh', 'tables'), default='qh')
     ap.add_argument('--check', action='store_true')
-    ap.add_argument('--skip-kinds', default='CHOOSE,DEMONSTRATED', help='graph tables of these kinds do not count (out of scope)')
+    ap.add_argument('--skip-kinds', default='DEMONSTRATED', help='graph tables of these kinds do not count (out of scope)')
     a = ap.parse_args()
     rows, arms = Path(a.rows), a.arms.split(',')
     skip = set()
