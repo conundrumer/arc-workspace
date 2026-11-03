@@ -23,8 +23,9 @@ relations.
   ^P    a grid on the cell column P; a second ^Q draws a grid of Q in each cell of P
   Col   a column whose values stand side by side in the innermost cell
 
-An empty grid cell is `.`, and a cell that shows no column is `#`. The default layout is E, a grid on the first column
-that can hold one, then every other column. Past 6000 characters the last words of the layout are dropped, and the header
+An empty grid cell is `.`, and a cell that shows no column is `#`. For the relation that the case's OUT form reads, the
+default layout is E, a grid on OUT's position column, and OUT's color column. For another relation, it is E, a grid on the
+first column that can hold one, then every other column. Past 6000 characters the last words of the layout are dropped, and the header
 names them.
 
 `--runtime DIR` names another engine runtime that scripts/build_study_runtime.py built.
@@ -285,7 +286,10 @@ def view(tb, t, words, assignment, case):
     return '\n'.join(head + out)
 
 
-def default_words(tb, t):
+def default_words(tb, t, out=None):
+    """The default layout of table t. `out` is (position column, color column) of the OUT form where t is the relation it reads."""
+    if out:
+        return ['E', '^' + out[0], out[1]]
     names, types = tb.T['column_names'][t], tb.T['column_types'][t]
     frames = tb.T['column_frames'][t]
     for c, (n, ty) in enumerate(zip(names, types)):
@@ -394,7 +398,8 @@ def cmd_rows(a):
         sys.exit('no table for %s in case %s; the tables are %s' % (rel, c.case, ', '.join(n for n in tb.names if n)))
     tb.number_idents(t)
     if a.render is not None:
-        words = a.render.split() if a.render else default_words(tb, t)
+        m = re.search(r'^\(OUT \((&[\w.]+) \^(\w+) \^(\w+)\)\)', c.arclog or '', re.M)
+        words = a.render.split() if a.render else default_words(tb, t, (m[2], m[3]) if m and tb.find(m[1]) == t else None)
         print(view(tb, t, words, a.assignment, c.case))
         return
     names, types = tb.T['column_names'][t], tb.T['column_types'][t]
