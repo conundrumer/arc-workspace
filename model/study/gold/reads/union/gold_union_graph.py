@@ -405,8 +405,8 @@ def main():
             if not u.get('tables'):
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error=u.get('error', 'no tables'))) + '\n')
                 continue
-            T = tables_of(s, u)
             try:
+                T = tables_of(s, u)  # a task with no row store of an accepted version gets an error line, not unmatched tables
                 rows, task, queries = one(u, cases[u['task']], merged, T or Tables(), rows5)
             except Exception as e:  # noqa: BLE001  a task the graph can't build: its error line, and the run goes on
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error='graph: %s: %s' % (type(e).__name__, str(e)[:200]))) + '\n')

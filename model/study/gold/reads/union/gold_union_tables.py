@@ -5,7 +5,7 @@
 - A parameterized table whose output stopped at the cap of the engine's walk is `capped`; its map holds the assignments the walk reached.
 - A union query is matched to its row store query by (union key, text), from the query's own line or one of its `alias` lines (a later union query of the same QueryHash). A union query with no match keeps its Python identity, and its parameterized tables are named "u<identity>.<Name>", each its own graph table.
 
-  tables_of(s, u) -> Tables, or None where the task has no row store file of a version in VERSIONS
+  tables_of(s, u) -> Tables; raises LookupError where the task has no row store file, or its version is not in VERSIONS
 """
 import gzip, hashlib, json, os
 from dataclasses import dataclass, field
@@ -50,10 +50,10 @@ class Tables:
 def tables_of(s, u):
     p = ROWS % (s, u['task'])
     if not os.path.exists(p):
-        return None
+        raise LookupError('no row store: %s' % p)
     recs = [json.loads(x) for x in gzip.open(p, 'rt')]
     if not recs or recs[0].get('hash_version') not in VERSIONS:
-        return None
+        raise LookupError('row store version %s is not in ROWS_VERSION %s' % (recs[0].get('hash_version') if recs else None, ','.join(VERSIONS)))
     queries = [r for r in recs if r['t'] == 'function' and r.get('union_key') is not None and r['outputs']]  # a function with no outputs exported no table, so its forms stay unmatched
     entries = [r for r in recs if r['t'] == 'entry']
     by_text = {(r['union_key'], r['text']): r['id'] for r in queries + [a for a in recs if a['t'] == 'alias' and a.get('union_key') is not None]}
