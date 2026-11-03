@@ -12,7 +12,8 @@ scope).
                graph tables of the row store's query of the same QueryHash. A query of another QueryHash with equal tables is not counted.
   --by tables  the tables that the job's 'new' draws recorded (sampler/draw_record.py, field tables), named from those records alone.
 
-Only the job folders that results.jsonl names count, and each task counts where every arm of --arms has a job. --skip-file is a JSON file
+Only the job folders that results.jsonl names count, and each task counts where every arm of --arms has a job and the out-of-scope
+list (OUT_OF_SCOPE) does not name it. --skip-file is a JSON file
 whose A_tasks and B_tasks list tasks to leave out. Depths are grouped as 0, 1 and 2 and deeper. For each depth it prints the graph tables,
 the reached tables per arm, the paired difference (first arm less second) summed over tasks, its mean and standard deviation per task, and
 the bound 1.96 times the square root of the sum of squared per-task differences. With --by tables it also checks the naming from the
@@ -32,6 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT.parent.parent / 'work/lm/data-study'
 GRAPH = DATA / 'gold/gold-union-exp46/graph-tables-dev.jsonl'
+OUT_OF_SCOPE = DATA / 'gold/gold-union-exp46/out-of-scope.jsonl'  # dataset-worker's list of the tasks that are out of scope, one {task, set, reason} a line
 ROWS = DATA / 'samples/dev/rows'
 
 
@@ -123,10 +125,10 @@ def main():
     ap.add_argument('--skip-kinds', default='DEMONSTRATED', help='graph tables of these kinds do not count (out of scope)')
     a = ap.parse_args()
     rows, arms = Path(a.rows), a.arms.split(',')
-    skip = set()
+    skip = {json.loads(l)['task'] for l in open(OUT_OF_SCOPE)} if OUT_OF_SCOPE.exists() else set()
     if a.skip_file:
         d = json.load(open(a.skip_file))
-        skip = set(d.get('A_tasks', [])) | set(d.get('B_tasks', []))
+        skip |= set(d.get('A_tasks', [])) | set(d.get('B_tasks', []))
     depth = collections.defaultdict(dict)  # task -> graph table -> depth
     for r in map(json.loads, open(a.graph)):
         if r['table'].startswith('t') and r.get('kind') not in a.skip_kinds.split(','):
