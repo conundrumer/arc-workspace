@@ -2,7 +2,7 @@
 from pathlib import Path
 import sys
 
-CODE_ROOT = Path(__file__).resolve().parent
+CODE_ROOT = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-kaggle-allocation-signal-heldout37-soak46')  # the data folder
 REPO_ROOT = CODE_ROOT.parents[1]
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 MAIN_ROOT = Path('/Users/davidlu/code/arc-workspace')
