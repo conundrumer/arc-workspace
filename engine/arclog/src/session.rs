@@ -822,7 +822,7 @@ impl TaskSession {
 
     /// A session with this session's intern table and fact relations, and
     /// an empty result cache, no reserved bytes and no counts of its own.
-    pub(crate) fn sharing_terms(&self) -> Self {
+    pub fn sharing_terms(&self) -> Self {
         TaskSession {
             results: Arc::new(ResultCache::default()),
             allocated: Arc::new(AtomicUsize::new(0)),

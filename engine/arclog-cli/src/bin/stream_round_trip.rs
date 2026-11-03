@@ -1,4 +1,4 @@
-//! `stream_round_trip <corpus-dir> <tasks-dir> [--cases concept|all] [--no-mask] <task_id> ...`:
+//! `stream_round_trip <corpus-dir> <tasks-dir> [--cases concept|all] [--no-mask] [--variants] <task_id> ...`:
 //! a check of the token stream of each case program of the solvers given,
 //! which tracks the stream's `DEMONSTRATED` form while it is in progress
 //! and gates nothing.
@@ -18,12 +18,32 @@
 //! `arclog::decode::Decoder::query_hash` against that of the program the
 //! writer wrote, its forms in the stream's order. The last line counts the
 //! cases of each verdict.
+//!
+//! With `--variants`, each case whose text holds a `DEMONSTRATED` form
+//! also prints a line per variant of that form, a copy of the case's text
+//! that differs from it in one kind of content alone:
+//!
+//! `<task_id> <case> DEMONSTRATED <variant>: tables <same|differ ...>; query hash <same|differs>`
+//!
+//! The tables are the form's relation on each example, at each model, at
+//! the solver's stored `param` records, each evaluation in a session of its
+//! own that shares the terms of the others. The query hash is the form's.
+//! The variants are: `rule names`, each rule named apart from its name;
+//! `rule texts`, each rule with a text other than its own; `value head
+//! names`, each label name and field name of the `value` head renamed, and
+//! each column and field of a rule of that name with it; and `value head
+//! names alone`, the head's names renamed with no column or field of a rule.
 
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::process::ExitCode;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
+use arclog::decode::corpus::CorpusTask;
+use arclog::eval::examples::{scope_of, ExampleScope};
+use arclog::eval::{relation_of, Cancellation, Evaluation, Limits, ParameterValues, RelationValue};
+use arclog::program::{Clause, ColumnName, DeclaredName, RelationName, DemoRule, DemoRuleName, Demonstrated, InstanceInput, KeyClause, ProgramRelation, Site, SiteArg, SiteValue, Text};
+use arclog::session::TaskSession;
 use arclog::decode::corpus::{corpus_session, read_corpus_task};
 use arclog::decode::replay::replay;
 use arclog::decode::Decoder;
@@ -42,18 +62,20 @@ fn main() -> ExitCode {
     };
     let mut all = false;
     let mut masked = true;
+    let mut variants = false;
     let mut ids = Vec::new();
     let mut rest = args[2..].iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--cases" => all = rest.next().map(String::as_str) == Some("all"),
             "--no-mask" => masked = false,
+            "--variants" => variants = true,
             id => ids.push(id.to_owned()),
         }
     }
     let (mut same, mut cases) = (0, 0);
     for id in &ids {
-        match solver_lines(Path::new(corpus), Path::new(tasks), id, all, masked) {
+        match solver_lines(Path::new(corpus), Path::new(tasks), id, all, masked, variants) {
             Ok(lines) => {
                 for (line, round_trip) in lines {
                     println!("{line}");
@@ -70,7 +92,7 @@ fn main() -> ExitCode {
 
 /// The line of each wanted case of the solver `id`, with whether its round
 /// trip gives the same stream; or the fault that stops the solver.
-fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool) -> Result<Vec<(String, bool)>, String> {
+fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, variants: bool) -> Result<Vec<(String, bool)>, String> {
     let read = read_corpus_task(corpus, tasks, id)?;
     let registry = Registry::get();
     let cases = resolve_cases(&read.solver, registry);
@@ -97,6 +119,11 @@ fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool) 
         let (verdict, same) = round_trip(&mut decoder, &written, masked);
         let hashes = query_hashes(&decoder, &text, &written);
         lines.push((format!("{id} {spelled}: {} tokens; round trip {verdict}; query hashes {hashes}", written.tokens.len()), same));
+        if variants {
+            for line in variant_lines(&read, &text, constructions) {
+                lines.push((format!("{id} {spelled} DEMONSTRATED {line}"), true));
+            }
+        }
     }
     Ok(lines)
 }
@@ -188,4 +215,174 @@ fn kind(form: &Form) -> &'static str {
         Form::Claim(_) => "a claim",
         Form::Alts(_) => "ALTS",
     }
+}
+
+/// The line of each variant of the `DEMONSTRATED` form of `text`, as the
+/// module's text gives them, after the variant's name; none where `text`
+/// holds no `DEMONSTRATED` form.
+fn variant_lines(read: &CorpusTask, text: &Node<Program>, constructions: &arclog::eval::instance::Constructions) -> Vec<String> {
+    let mut leaves = Vec::new();
+    leaf_forms(&text.value().forms, &NodePath::default(), &mut leaves);
+    let forms: Vec<Form> = leaves.into_iter().map(|(_, form)| form).collect();
+    let Some(at) = forms.iter().position(|form| matches!(form, Form::Demonstrated(_))) else { return Vec::new() };
+    let Form::Demonstrated(original) = &forms[at] else { unreachable!("the position of a `DEMONSTRATED` form") };
+    let original = original.value();
+    let session = arclog::decode::corpus::corpus_session();
+    let base = match outcome(read, &forms, at, &original.name, &session, constructions) {
+        Ok(base) => base,
+        Err(fault) => return vec![format!("not compared: the text: {fault}")],
+    };
+    let renamed = head_renames(original);
+    let variants: [(&str, Demonstrated); 4] = [
+        ("rule names", with_rules(original, |index, rule| DemoRule { name: DemoRuleName(format!("$Variant{index}").into()), ..rule.clone() })),
+        ("rule texts", with_rules(original, |index, rule| DemoRule { text: Some(Text(format!("variant text {index}").into())), ..rule.clone() })),
+        ("value head names", with_rules(&with_value_head(original, &renamed), |_, rule| renamed_rule(rule, &renamed))),
+        ("value head names alone", with_value_head(original, &renamed)),
+    ];
+    let mut lines = Vec::new();
+    for (name, variant) in variants {
+        let mut changed = forms.clone();
+        changed[at] = Form::Demonstrated(Node::new(variant));
+        let line = match outcome(read, &changed, at, &original.name, &session, constructions) {
+            Ok((tables, hash)) => {
+                let tables = if tables == base.0 { "same".to_owned() } else { format!("differ ({} in place of {})", tables.join(" "), base.0.join(" ")) };
+                let hash = if hash == base.1 { "same" } else { "differs" };
+                format!("{name}: tables {tables}; query hash {hash}")
+            }
+            Err(fault) => format!("{name}: tables differ (the variant faults: {fault}); query hash not compared"),
+        };
+        lines.push(line);
+    }
+    lines
+}
+
+/// The tables of the relation `name` of the program of `forms`, checked,
+/// on each example at each model, and the query hash of the form at `at`.
+fn outcome(read: &CorpusTask, forms: &[Form], at: usize, name: &arclog::program::RelationName, session: &TaskSession, constructions: &arclog::eval::instance::Constructions) -> Result<(Vec<String>, Option<arclog::hash::StableHash>), String> {
+    let registry = Registry::get();
+    let program = Node::new(Program { forms: forms.into() });
+    let checked = checked(&program)?;
+    let hash = resolve(&program, None, &SolverScope::default(), registry).value.query_content(at, registry).map(|content| content.content_hash());
+    let relation = relation_of(&checked, &ProgramRelation::Declared(name.clone())).ok_or("the program has no relation of the form")?;
+    let parameters = ParameterValues::stored(read.solver.arcdata.value());
+    let limits = Limits::new(None, Cancellation::default());
+    let session = session.sharing_terms();
+    let evaluation = Evaluation { program: &checked, concept: None, task: &read.task, parameters: &parameters, session: &session, registry, constructions, limits: &limits };
+    let examples: Vec<_> = match scope_of(&checked, &relation) {
+        ExampleScope::PerExample => read.task.examples().map(Some).collect(),
+        _ => vec![None],
+    };
+    let mut tables = Vec::new();
+    for example in examples {
+        let mut models = Vec::new();
+        let ended = evaluation.models(&relation, example, &mut |value| {
+            models.push(match value {
+                RelationValue::Rows(rows) => format!("{}:{:?}", rows.len(), rows.rows_hash()),
+                RelationValue::Undefined => "undefined".to_owned(),
+                RelationValue::Stopped(_) => "stopped".to_owned(),
+            });
+            ControlFlow::Continue(())
+        });
+        match ended {
+            Ok(_) => tables.push(models.join(",")),
+            Err(fault) => tables.push(format!("fault:{}", fault.message)),
+        }
+    }
+    Ok((tables, hash))
+}
+
+/// `demonstrated` with each rule as `change` gives it from its index and
+/// the rule.
+fn with_rules(demonstrated: &Demonstrated, change: impl Fn(usize, &DemoRule) -> DemoRule) -> Demonstrated {
+    let rules = demonstrated.rules.iter().enumerate().map(|(index, rule)| Node::new(change(index, rule.value()))).collect();
+    Demonstrated { rules, ..demonstrated.clone() }
+}
+
+/// The new name of each label name and field name of the head of the
+/// `value` input of `demonstrated`.
+fn head_renames(demonstrated: &Demonstrated) -> Vec<(ColumnName, ColumnName)> {
+    let mut renames = Vec::new();
+    let rename = |name: &ColumnName| match name {
+        ColumnName::Written(text) => Some((name.clone(), ColumnName::Written(format!("{text}_variant").into()))),
+        ColumnName::Slot(_) => None,
+    };
+    for input in value_inputs(demonstrated) {
+        for site in input.head.iter() {
+            for arg in site.value.args.iter() {
+                match arg {
+                    SiteArg::NamedLabel { name, .. } => renames.extend(rename(name)),
+                    SiteArg::Field(field) => renames.extend(rename(&field.column)),
+                    SiteArg::Label(_) => {}
+                }
+            }
+        }
+    }
+    renames
+}
+
+/// The `value` inputs of `demonstrated`, in its key clause and after it.
+fn value_inputs(demonstrated: &Demonstrated) -> impl Iterator<Item = &InstanceInput> {
+    let keyed = demonstrated.key.iter().flat_map(|key| key.value().inputs.iter());
+    keyed.chain(demonstrated.inputs.iter()).map(|input| input.value()).filter(|input| &*input.name.0 == "value")
+}
+
+/// `demonstrated` with the names of the head of its `value` input renamed
+/// as `renames` gives.
+fn with_value_head(demonstrated: &Demonstrated, renames: &[(ColumnName, ColumnName)]) -> Demonstrated {
+    let new = |name: &ColumnName| renames.iter().find(|(old, _)| old == name).map_or_else(|| name.clone(), |(_, new)| new.clone());
+    let input = |input: &Node<InstanceInput>| -> Node<InstanceInput> {
+        let value = input.value();
+        if &*value.name.0 != "value" {
+            return input.clone();
+        }
+        let head = value
+            .head
+            .iter()
+            .map(|site| {
+                let args = site
+                    .value
+                    .args
+                    .iter()
+                    .map(|arg| match arg {
+                        SiteArg::NamedLabel { name, label } => SiteArg::NamedLabel { name: new(name), label: *label },
+                        SiteArg::Field(field) => SiteArg::Field(Site { column: new(&field.column), ..field.clone() }),
+                        arg => arg.clone(),
+                    })
+                    .collect();
+                Site { column: site.column.clone(), value: SiteValue { args } }
+            })
+            .collect();
+        Node::new(InstanceInput { head, ..value.clone() })
+    };
+    let key = demonstrated.key.as_ref().map(|key| Node::new(KeyClause { inputs: key.value().inputs.iter().map(input).collect(), ..key.value().clone() }));
+    Demonstrated { key, inputs: demonstrated.inputs.iter().map(input).collect(), ..demonstrated.clone() }
+}
+
+/// `rule` with each column of its `&prediction` clauses and each of its
+/// fields renamed as `renames` gives.
+fn renamed_rule(rule: &DemoRule, renames: &[(ColumnName, ColumnName)]) -> DemoRule {
+    let new = |column: &arclog::program::RelationColumn| arclog::program::RelationColumn {
+        name: renames.iter().find(|(old, _)| *old == column.name).map_or_else(|| column.name.clone(), |(_, new)| new.clone()),
+        label: column.label,
+    };
+    let forms = rule
+        .forms
+        .iter()
+        .enumerate()
+        .map(|(index, form)| {
+            let form = match form {
+                Form::Clause(clause) if is_prediction(clause.value()) => {
+                    Form::Clause(Node::new(Clause { columns: clause.value().columns.iter().map(new).collect(), ..clause.value().clone() }))
+                }
+                form => form.clone(),
+            };
+            (form, rule.forms.from_alt(index))
+        })
+        .collect();
+    DemoRule { fields: rule.fields.iter().map(new).collect(), forms, ..rule.clone() }
+}
+
+/// Whether `clause` is a `&prediction` clause.
+fn is_prediction(clause: &Clause) -> bool {
+    matches!(&clause.derives, ProgramRelation::Declared(RelationName(DeclaredName::Written(name))) if &**name == "&prediction")
 }
