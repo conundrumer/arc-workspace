@@ -524,7 +524,7 @@ def peak_rss_mib() -> float:
 
 
 def fit(args: argparse.Namespace) -> int:
-    t0 = time.time()
+    t0, commit = time.time(), code_commit()  # the code as the fit starts; a commit during the fit does not change what it ran
     dev_tasks = set(args.dev_tasks.split(',')) if args.dev_tasks else set()
     train_files, dev_files, heads = split_files(args.points, dev_tasks)
     if not train_files or not dev_files:
@@ -572,7 +572,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=str(args.points), matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=code_commit())
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0
