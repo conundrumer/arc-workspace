@@ -155,7 +155,7 @@ def graph(u, cases, T):
     """({QueryHash: dict(heads, uses, kind, ident, idents, keys)}, [goal option: [graph table]], {graph table: {(union key, Name)}}) from the kept cases' texts. Union queries with one QueryHash are one query. A use of an INIT is a use of one of its outputs, or of the tables of the atoms of an input block that has no table, and a use of a RIGID_DET is a use of its table 'slot N' or 'pose'. A query's heads are the graph tables of every output that the export gives it."""
     kept = {c for c, h in u['cases'].items() if h not in (u.get('left_out') or {})}
     queries, outs, goal, members = {}, collections.defaultdict(set), [], collections.defaultdict(set)
-    texts = [(c['case'], c['text'], c['keys']) for c in cases if c['case'] in kept or c['case'] == 'pinned']
+    texts = [(c['case'], c['text'], c['keys']) for c in cases if c['case'] in kept]  # the pinned program is a case of u['cases'] where the union keeps it
     key_of = {f['ident']: t['key'] for t in u['tables'] for f in t['forms']}
     for case, text, keys in texts:
         qt = program_lines(text)
