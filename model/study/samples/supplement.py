@@ -3,9 +3,10 @@
   python supplement.py SET [--stage rows|tables|both] [--tasks T,T,...] [--shard k/N] [--jobs n] [--retry]
 
 Stage 2 builds a query by replacing each table of a replayed query by the table of a state's member that stands for it, so that
-query is in no replayed program. The rows stage replays each such query over its use closure through the kit's worker in map mode, the path
-of the first pass (`row_store.RowSink`, `table_export.read_export`), and appends what it writes to OUTD/SET/rows/<task>.jsonl.gz as one more gzip
-member, so the first pass does not run again. The tables stage appends the tables at an assignment, vectors, assignment vectors and query vectors of the queries that the row
+query is in no replayed program. The rows stage replays each such query over its use closure, and appends what it writes to OUTD/SET/rows/<task>.jsonl.gz as one more gzip
+member, so the first pass does not run again. Where ARC_SAMPLER_KIT names the `model/study/sampler` of a writer kit release, the replay is
+`rows_replay.py --replay` on that release, the path of the first pass. Otherwise it is the union-read kit's worker in map mode (`row_store.RowSink`,
+`table_export.read_export`). The tables stage appends the tables at an assignment, vectors, assignment vectors and query vectors of the queries that the row
 store holds and the tables file lacks, to OUTD/SET/tables/<task>.jsonl.gz. For each table it passes `native` (whether the table's own Type has an
 Example column) to `table_read.table_at` and to `build_tables.dev_features`, as `build_tables.build_task` does, so the appended records equal those of a full rebuild.
 
@@ -37,6 +38,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -173,6 +175,33 @@ def union_record(task: str, sset: str, split: str, src: str, wanted: list[str], 
 
 # ---------------------------------------------------------------------- the rows stage
 
+def release_of_kit() -> Path | None:
+    """The writer kit release whose `model/study/sampler` ARC_SAMPLER_KIT names, or None."""
+    kit = os.environ.get('ARC_SAMPLER_KIT')
+    if not kit:
+        return None
+    release = Path(kit).resolve().parents[2]
+    return release if (release / 'manifest.json').exists() else None
+
+
+def replay_release(rec: dict, tmp: str, out: str, release: Path) -> dict:
+    """Replays the union record rec with `rows_replay.py --replay` on the release, into the row store out; the counts, or error."""
+    import rows_replay as RR
+    t = rec['task']
+    rec_path, log = f'{tmp}/{t}.record.json', f'{tmp}/{t}.log'
+    Path(rec_path).write_text(json.dumps(rec))
+    with open(log, 'w') as f:
+        p = subprocess.run([sys.executable, '-u', RR.__file__, '--replay', '--record', rec_path, '--task-file', str(TASK_DIR / f'{t}.json'), '--out', out,
+                            '--src', str(rec['src']), '--split', rec['split'], '--release', str(release), '--site', ENGINE_SITE,
+                            '--rss-mib', str(RR.RSS_MIB), '--deadline', str(RR.DEADLINE_SECONDS), '--session-share', str(RR.SESSION_SHARE)],
+                           stdout=f, stderr=subprocess.STDOUT, env=dict(os.environ, **RR.CHILD_ENV))
+    text = Path(log).read_text(errors='replace')
+    done = [line for line in text.splitlines() if line.startswith('rows_replay: {')]
+    if p.returncode or not done or not os.path.exists(out):
+        return dict(task=t, error=f'exit {p.returncode}: {text[-400:]}')
+    return dict(task=t, counts=json.loads(done[-1][len('rows_replay: '):]))
+
+
 def merge_rows(rows_path: Path, new_path: Path, present: Present, wanted: list[str], stats: dict[str, Any], seconds: float) -> dict:
     """Appends to the row store what the worker wrote for queries the store lacks, and a `supplement` line."""
     keep_queries: set[str] = set()
@@ -236,6 +265,7 @@ def rows_task(sset: str, task: str, base: Path, retry: bool, totals: Counter[str
 
 
 def run_rows(sset: str, tasks: list[str], base: Path, jobs: int, retry: bool) -> None:
+    release = release_of_kit()
     sys.path.insert(0, str(KIT_UNION_READ))
     import build_map  # pyright: ignore[reportMissingImports]
     build_map.SITE = ENGINE_SITE
@@ -252,7 +282,7 @@ def run_rows(sset: str, tasks: list[str], base: Path, jobs: int, retry: bool) ->
         def work(task: str, rec: dict) -> tuple[dict, str, float]:
             out = f'{tmp}/{task}.new.jsonl.gz'
             t1 = time.time()
-            m = build_map.one(rec, tmp, out)
+            m = replay_release(rec, tmp, out, release) if release else build_map.one(rec, tmp, out)
             return m, out, time.time() - t1
         futures = {}
         for task, (rows_path, rec, wanted, present) in prepared:
