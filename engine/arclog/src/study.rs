@@ -112,9 +112,9 @@ impl StudyProgram {
             .value()
             .forms
             .iter()
-            .any(|f| matches!(f, Form::Claim(_) | Form::Alts(_) | Form::Demonstrated(_)))
+            .any(|f| matches!(f, Form::Claim(_) | Form::Alts(_)))
         {
-            return Err("study input must be a standalone case; expand claims/alternatives with case_files first; DEMONSTRATED is not decodeable".into());
+            return Err("study input must be a standalone case; expand claims/alternatives with case_files first".into());
         }
         if !program
             .value()
@@ -390,6 +390,13 @@ pub(crate) fn interfaces_hold(form: &Form) -> bool {
             r.value().key.as_ref().is_none_or(key) && r.value().instance.as_ref().is_none_or(key)
         }
         Form::Out(o) => key(&o.value().key),
+        // A `&prediction` clause has the columns the form fills, which need
+        // not be the labels its body makes.
+        Form::Demonstrated(d) => {
+            let prediction = |form: &Form| matches!(form, Form::Clause(c) if crate::program::canonical::relation_of(&c.value().derives) == crate::program::canonical::prediction());
+            d.value().key.as_ref().is_none_or(|k| key(&k.value().key))
+                && d.value().rules.iter().all(|rule| rule.value().forms.iter().all(|form| prediction(form) || interfaces_hold(form)))
+        }
         _ => false,
     }
 }
