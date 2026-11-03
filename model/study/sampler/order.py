@@ -16,6 +16,10 @@ bound), the key being the item's model tokens under the current naming: a label 
 fresh index. An OR's branches, the atoms of a branch and the two parts of an ALL follow the same rule, each by itself. Items with equal keys are a tie, and every tie
 choice is followed: the number of distinct streams is the number of paths.
 
+In a DEMONSTRATED query, the sets are the bodies of its key and inputs and the bodies of each form of each rule, with the OR, ALL and IF inside them. The rules, the forms of a
+rule and the bodies of a CHOOSE form stay as the query has them: a permutation of the rules or of two forms of a rule changes the QueryHash. Its labels are read in their label
+scopes, and a read of a relation that a form of the rule declares names its columns by the labels of that form (segments). The query is unsupported (DEMONSTRATED_DEFERRED).
+
 The parts of a RIGID_DET are no set: each is an output slot by its position, and a permutation of the parts changes the QueryHash. They stay as the query has them.
 
 A site's order inside an atom is not an order that the QueryHash ignores in the engine wheel of the study (site-exp18): a permutation of the sites changes the QueryHash.
@@ -107,6 +111,7 @@ class Query:
     gold_hash: int
     unsupported: str = ''
     total: object = None  # Counter: the mentions of each label in the whole query
+    colrefs: dict = dataclasses.field(default_factory=dict)  # the column references of the query's tokens (segments)
 
 
 class Env:
@@ -125,6 +130,8 @@ class Env:
         self.rel = {i for i in range(n) if self.kind[i] in live.S.RELATION_KINDS}
         self.col = set(colpos)
         self.colpos = colpos
+        self.col_tok = {p: i for i, p in colpos.items()}
+        self.colrefs = {}  # the column references of the query that a walk reads (Query.colrefs)
         self.tie_log = []
         self.total: collections.Counter | None = None  # the label mentions of the query that ordered() walks
         self.lookahead = False  # ordered() sets it for the second try of a query that the plain rule cannot write
@@ -151,32 +158,85 @@ def is_sym(s):
 
 # ---------------------------------------------------------------- reading a query
 
-def segments(env, dec_kind, kind, full):
-    """full: [(token id, model flag)] after the kind token. Returns [('fixed', [model tokens]) | ('body', body kind, [tokens: model tokens and the labels after `*` and `^`])]."""
+def segments(env, dec_kind, kind, full, colrefs=None):
+    """full: [(token id, model flag)] after the kind token. Returns [('fixed', None, [tokens]) | ('body', body kind, [tokens])]: model tokens and the labels after `*` and `^`.
+    A label stands as its label token plus len(vocabulary) times its label scope: in a DEMONSTRATED query a label token is used again in each scope (the top of the form, each rule,
+    each form after ALT_FORM). In a DEMONSTRATED query, the column token of a site of a read of a relation that a RULE or DET form of the same rule declares stands as a column
+    reference (COLREF + an index into colrefs, which gets (the labels that the declaring form makes, in their order, the column's position)): that relation's columns are those
+    labels in the order the form makes them, which a reordering of the form's body changes."""
     pt = writer.start_point(env.run, env.pg, dec_kind, kind)
     segs, cur = [], None
+    NV = len(env.kind)
+    demo = live.DEMO_TOK
+    form_kinds = writer.core_of(env.run).form_kinds
+    scope = rule_scope = nscopes = 0
+    prev = None
+    rels, off = {}, {}  # relation token -> the columns (labels) of the RULE or DET form of the rule that declares it; relation token -> the position of its first column at the open atom
+    colrefs = {} if colrefs is None else colrefs
     for t, m in full:
         if not m:
-            if cur is not None and cur[0] == 'body' and cur[2] and cur[2][-1] in (STAR, CARET) and env.kind[t] == 'label':
-                cur[2].append(t)
+            if cur is not None and cur[2] and cur[2][-1] in (STAR, CARET) and env.kind[t] == 'label':
+                cur[2].append(t + NV * scope)
             continue
         T = pt.track
+        if T.where == 'rule':  # between the forms of a DEMONSTRATED form's rules
+            if t == demo.get('DEMO_RULE'):
+                nscopes += 1
+                scope = rule_scope = nscopes
+                rels = {}
+            elif t in form_kinds:
+                if prev == demo.get('ALT_FORM'):
+                    nscopes += 1
+                    scope = nscopes
+                else:
+                    scope = rule_scope
+        prev = t
         is_body = T.where == 'body' or (T.where == 'group' and t not in (SKIP_TOK, END))
+        fk = pt.kind  # the kind of the form that holds t
+        site = T.atom and T.rtok in rels and not T.rec and T.col is None and t in env.col  # a site's column of a read of a relation that a form of the rule declares
         pt = writer.step_point(pt, t)
-        if is_body:
+        if T.sub in ('RULE', 'DET') and not T.predict and pt.track.where == 'rule' and len(pt.track.rels) > len(T.rels):  # the form ended, and the decoder declared its relation
+            rels[pt.track.rels[-1]] = tuple(L.tok + NV * scope for L in pt.labels.items if not L.hidden and not L.field)  # its columns: the labels it makes and keeps, in order
+        if t in rels:  # a read of that relation: where it is per input and the form that reads it is an INIT, a CHOOSE or a RIGID_DET, its column 0 is the Example column
+            off[t] = int(env.col_tok.get(len(rels[t])) in pt.ids_)
+        x = t + NV * scope if env.kind[t] == 'label' else t
+        if site:
+            x = COLREF + len(colrefs)
+            colrefs[x] = (rels[T.rtok], env.colpos[t] - off[T.rtok], off[T.rtok])
+        if is_body and fk != 'CHOOSE':  # a CHOOSE form of a DEMO_RULE stays as written: no gold confirms that its bodies are sets of the QueryHash
             bid = pt.track.body
             if cur is not None and cur[0] == 'body' and cur[3] == bid:
-                cur[2].append(t)
+                cur[2].append(x)
             else:
-                bkind = 'body' if kind in ('RULE', 'DET') else ('key' if pt.track.inkey else 'port') if kind == 'INIT' else ('rigid key' if pt.track.inkey else 'part')
-                cur = ['body', bkind, [t], bid]
+                bkind = ('body' if fk in ('RULE', 'DET') else ('key' if pt.track.inkey else 'port') if fk in ('INIT', 'DEMONSTRATED')
+                         else ('rigid key' if pt.track.inkey else 'part'))
+                cur = ['body', bkind, [x], bid]
                 segs.append(cur)
         else:
             if cur is None or cur[0] != 'fixed':
                 cur = ['fixed', None, [], None]
                 segs.append(cur)
-            cur[2].append(t)
+            cur[2].append(x)
     return [(s[0], s[1], s[2]) for s in segs]
+
+
+def is_label(env, t):
+    """Whether t of a segment is a label (a label token in some label scope)."""
+    return len(env.kind) <= t < COLREF or (0 <= t < len(env.kind) and env.kind[t] == 'label')
+
+
+COLREF = 1 << 50  # a column reference of segments: COLREF + its index
+
+
+def is_col(env, t):
+    return t in env.col or t >= COLREF
+
+
+def column_token(env, ref, nm):
+    """The column token of column reference ref at naming nm: the position, among the columns of the declaring form (the labels it makes and keeps), of the label of the column,
+    by their label tokens, after the Example column where the read has one."""
+    labs, k, off = env.colrefs[ref]
+    return env.col_tok[off + sorted(nm[h] for h in labs).index(nm[labs[k]])]
 
 
 def symbolise(env, toks, marks):
@@ -190,7 +250,7 @@ def symbolise(env, toks, marks):
             out.append(sym(g))
             i += 2
             continue
-        out.append(sym(t) if env.kind[t] == 'label' else t)
+        out.append(sym(t) if is_label(env, t) else t)
         i += 1
     return out
 
@@ -206,13 +266,13 @@ def parse_atom(env, s, i):
     while j < len(s):
         t = s[j]
         if due:
-            if t in env.col:
+            if is_col(env, t):
                 rec = True
             else:
                 due = False
             j += 1
         elif rec:
-            if t in env.col:
+            if is_col(env, t):
                 due = True
                 j += 1
             elif t == END:
@@ -220,7 +280,7 @@ def parse_atom(env, s, i):
                 j += 1
             else:
                 break
-        elif t in env.col:
+        elif is_col(env, t):
             due = True
             j += 1
         elif is_sym(t) or t == ZERO:
@@ -287,11 +347,8 @@ def read_query(env, base, kind, full, gold_hash=None):
             d.step(t)
         gold_hash = d.query_hash(-1)
     q = Query(kind, [], marks, dec, gold, gold_hash)
-    if kind == 'DEMONSTRATED':  # its rules hold forms, which the tree of sets does not hold: the query is written in its own order
-        q.unsupported = 'DEMONSTRATED: no tree of sets of its rules'
-        return q
     try:
-        for tag, bkind, toks in segments(env, dec.fork(), kind, full):
+        for tag, bkind, toks in segments(env, dec.fork(), kind, full, q.colrefs):
             s = symbolise(env, toks, marks)
             if tag == 'fixed' or bkind == 'part':  # a RIGID_DET's parts are its output slots by position: the QueryHash depends on their order
                 q.plan.append(Fixed(tuple(s)))
@@ -305,7 +362,13 @@ def read_query(env, base, kind, full, gold_hash=None):
         set_needs(q)
     except (ParseError, IndexError) as e:
         q.unsupported = '%s: %s' % (type(e).__name__, e)
+    if kind == 'DEMONSTRATED' and not q.unsupported:
+        q.unsupported = DEMONSTRATED_DEFERRED
     return q
+
+
+DEMONSTRATED_DEFERRED = ('DEMONSTRATED: the decoder takes an atom of its bodies that it refuses at the form\'s END (the safety of the atom\'s mode), so the rule, which takes the least key '
+                         'among the items that the decoder takes, cannot write it')
 
 
 def labels_of(item):
@@ -454,6 +517,8 @@ def step_syms(env, marks, st, s):
                 forced = d.step(m)[0]
                 nm[g] = next(f for f in forced if kind[f] == 'label')
         else:
+            if x >= COLREF:
+                x = column_token(env, x, nm)
             out.append(x)
             d.step(x)
     return tuple(out), (d, nm)
@@ -467,7 +532,7 @@ def step_one(env, st, t):
 
 def describe(env, item):
     if isinstance(item, Atom):
-        return ' '.join(env.V.name(t) if t >= 0 else 'L%d' % (-t - 1) for t in item.toks)
+        return ' '.join(('C%d' % sum(env.colrefs[t][1:]) if t >= COLREF else env.V.name(t)) if t >= 0 else 'L%d' % (-t - 1) for t in item.toks)
     return type(item).__name__ + str(len(getattr(item, 'branches', ())) or '')
 
 
@@ -792,6 +857,7 @@ def ordered(env, q, cap=CAP):
 
 def _ordered(env, q, cap=CAP):
     env.total = q.total
+    env.colrefs = q.colrefs
     env.rcache = {}
     env.stats.clear()
     env.tie_log = []
@@ -937,6 +1003,7 @@ def gold_item(env, marks, item, st):
 def unordered_count(env, q, limit=20000):
     """(count or None, exact, states, per set [(kind, items, count or None)]). The count is the product of the counts of the bodies (each from the query's own state at its start)."""
     env.total = q.total
+    env.colrefs = q.colrefs
     env.rcache = {}
     starts = gold_states(env, q)
     total, exact, nst, per = 1, True, 0, []
@@ -1027,18 +1094,18 @@ def site_stats(env, q):
         cols, due, rec = [], False, False
         for t in toks[2:] if toks[0] == NOT else toks[1:]:
             if due:
-                if t in env.col:
+                if is_col(env, t):
                     rec = True
                 else:
                     due = False
             elif rec:
-                if t in env.col:
+                if is_col(env, t):
                     due = True
                 else:
                     rec = False if t == END else rec
-            elif t in env.col:
+            elif is_col(env, t):
                 due = True
-                cols.append(env.colpos[t])
+                cols.append(sum(env.colrefs[t][1:]) if t >= COLREF else env.colpos[t])
         hist[len(cols)] += 1
         bad += any(x >= y for x, y in zip(cols, cols[1:]))
     return dict(hist), bad, sym2
@@ -1408,6 +1475,7 @@ class Unordered:
         self.nseg = len(q.plan)
         self.bounds = {}
         env.total = q.total
+        env.colrefs = q.colrefs
         env.rcache = {}
         env.deadline = time.monotonic() + seconds
         try:
