@@ -16,7 +16,7 @@ import zlib
 import numpy as np
 import scipy.sparse as sp
 
-ME = os.path.dirname(os.path.abspath(__file__)) + '/'
+ME = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-pool-scope-heldout37/'  # the data folder
 sys.path.insert(0, ME)
 OUT = ME + 'scratch/'
 import features_rel_content as FC  # noqa: E402

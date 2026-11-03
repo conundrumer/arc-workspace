@@ -17,7 +17,7 @@ import time
 
 import zstandard
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-pool-scope-heldout37')
 import features_rel_walk as W  # noqa: E402
 
 C, G, S, live, live_rows, or_q, P = W.C, W.G, W.S, W.live, W.live_rows, W.or_q, W.P

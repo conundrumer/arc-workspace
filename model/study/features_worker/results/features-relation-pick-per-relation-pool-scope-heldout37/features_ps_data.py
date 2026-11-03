@@ -15,7 +15,7 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-pool-scope-heldout37')
 import features_perrel_data as PD  # noqa: E402
 import features_perrel_keys as K  # noqa: E402
 import features_rel_data as FD  # noqa: E402

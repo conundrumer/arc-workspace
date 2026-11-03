@@ -16,10 +16,10 @@ import time
 import zstandard
 import io
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-pool-scope-heldout37')
 import features_perrel_keys as K
 
-OUT = os.path.dirname(os.path.abspath(__file__)) + '/'
+OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-pool-scope-heldout37/'  # the data folder
 W = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-rank-context-rows-heldout37/walks/'
 CORPUS = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/corpus-v3mix/'
 HELD = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/sampler-helper-forms/gold-v3-helper-forms-a036da074/points-base.json'

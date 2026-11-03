@@ -19,7 +19,7 @@ import time
 
 import zstandard
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-per-relation-pool-scope-heldout37'  # the data folder
 sys.path.insert(0, os.environ['SAMPLER_CODE'])
 import live  # noqa: E402
 import or_q  # noqa: E402
