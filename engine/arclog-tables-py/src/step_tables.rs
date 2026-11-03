@@ -7,14 +7,15 @@ use std::sync::Arc;
 
 use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
-use arclog_tables::columns::{step_case_columns_by_assignment_in, step_case_columns_in};
+use arclog_tables::columns::{step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
-use arclog_tables::summary::{train_pairs, SummaryCache};
+use arclog_tables::summary::{train_pairs, Assemblies, SummaryCache};
 use arclog::eval::join::Materializer;
 use arclog_tables::columns::{CaseColumns, StreamTables};
 use arclog_tables::tables::successors::{successor_tables as successors_of, SuccessorKind};
 use arclog_tables::tables::{evidence_tables, input_table, mark_selected, selected_columns, step_tables as step_tables_of, Point, Points, Table};
-use arclog::decode::LeftOut;
+use arclog::decode::{Decoder, LeftOut};
+use arclog::program::Form;
 use arclog::eval::copies::CopyViolation;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -119,7 +120,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
                 let _timed = split::span(Part::OwnQueryHash);
                 tables.iter().map(|(_, table)| query_of(table)).collect()
             };
-            step_case_columns_by_assignment_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, &train_pairs(evidence), queries, rows, &summaries)
+            step_case_columns_by_assignment_with(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, &train_pairs(evidence), queries, rows, &summaries, assemblies(engine))
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
@@ -268,11 +269,11 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let _timed = split::span(Part::SuccessorTables);
             successors_of(engine, &limits, tokens, &before_tables, held)
         };
-        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>| {
+        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>| {
             let _timed = split::span(Part::SuccessorColumns);
-            step_case_columns_by_assignment_in(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries)
+            step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program))
         };
-        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None]).0);
+        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine).0);
         let mut unchanged: Option<(CaseColumns, StreamTables)> = None;
         // The copy violations of each id's successor, empty for a refused id.
         let mut copies: Vec<Vec<CopyViolation>> = Vec::with_capacity(found.each.len());
@@ -306,8 +307,8 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let violations = next.take_copy_violations();
             if successor.kind == SuccessorKind::Unchanged {
                 if unchanged.is_none() {
-                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None]);
-                    let (_, stream) = columns_of(Vec::new(), Vec::new());
+                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None], next);
+                    let (_, stream) = columns_of(Vec::new(), Vec::new(), next);
                     unchanged = Some((columns, stream));
                 }
                 copies.push(violations);
@@ -324,7 +325,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
                 Point::Body { .. } | Point::Evidence => None,
             }).collect();
             let own = u32::try_from(successor.tables.len()).expect("fewer than 2^32 tables");
-            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries);
+            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries, next);
             let columns = columns.with_copies(&violations);
             copies.push(violations);
             each.push(Ok((kind, note, Packed::Own(columns, stream, own))));
@@ -414,4 +415,20 @@ pub(crate) fn output_columns(py: Python<'_>, decoder: PyRef<'_, PyDecoder>) -> V
 #[pyo3(signature = (reset=false))]
 pub(crate) fn step_tables_split(reset: bool) -> Vec<(&'static str, u64, f64)> {
     split::snapshot(reset).into_iter().map(|(name, calls, nanos)| (name, calls, nanos as f64 / 1e9)).collect()
+}
+
+/// The QueryHash of each finished `RIGID_DET` form of the program of `decoder`,
+/// by the form's name, by which the hashes of a step name each Pose type.
+fn assemblies(decoder: &Decoder<'_>) -> Assemblies {
+    decoder
+        .program()
+        .value()
+        .forms
+        .iter()
+        .enumerate()
+        .filter_map(|(position, form)| match form {
+            Form::RigidDet(rigid) => Some((rigid.value().name.clone(), decoder.query_hash(position)?)),
+            _ => None,
+        })
+        .collect()
 }
