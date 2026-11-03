@@ -15,11 +15,7 @@ as `export_target` counts them.
 
 Each directory is written to `<id>.building` and renamed when it is complete. A directory that exists is skipped, and so
 is a task that has a record in `<cache>/done/`. A failure of one point, one case or one task is logged to
-`<cache>/failures.jsonl` when its task ends, and at once to `<cache>/failures-live.jsonl`, and the run goes on. A task
-whose first PREPARE_GIVE_UP cases all fail in preparation, before any point is built, skips its other cases, and a
-later run tries them again. With --stall or --task-gib, a task that builds no point for --stall seconds, or whose worker
-holds more than --task-gib GiB, is stopped and listed in `<cache>/set-aside.txt`, and such a run skips the tasks listed
-there; a run without both options builds them. The builder writes only under the output root and its cache directory
+`<cache>/failures.jsonl` and the run goes on. The builder writes only under the output root and its cache directory
 (default `<output>.cache`: scratch directories of the workers, the done records and the failure log).
 
 Run it with the python of a runtime with the current engine, for example
@@ -37,18 +33,16 @@ import multiprocessing
 import os
 import queue
 import shutil
-import subprocess
 import sys
 import time
 import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path('/Users/davidlu/code/arc-workspace')  # the repo root
 STUDY = REPO / 'model/study'
 KINDS = ('Rule', 'Det', 'INIT key', 'INIT input', 'CHOOSE clause')
 MIN_FREE_GB = 5
-PREPARE_GIVE_UP = 8  # the cases of a task often fail in preparation for one shared reason
 
 
 # ---------------------------------------------------------------------------------------------------------- naming
@@ -80,7 +74,6 @@ def resolve_corpus(path):
 
 class Env:
     """One process's evaluator and the study stack's policy objects."""
-    on_point = None  # called after each built point
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -537,10 +530,7 @@ def read_task(cfg, task):
 def catalogue(env, cfg, task, task_text):
     """[(case, ids, model)] as `model/export.py` keeps them, and [(case, reason)] of the streams it drops."""
     import numpy as np
-    # --step-cap: the replay stops after that many model steps, and each later stream gets a mask fault (dropped below)
-    cap = dict(step_cap=cfg.step_cap) if getattr(cfg, 'step_cap', 0) else {}
-    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir),
-                                                **cap)
+    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir))
     dropped = [('', f) for f in faults]
     kept, seen = [], set()
     for s in streams:
@@ -564,28 +554,13 @@ def build_task(env, cfg, task):
     t0 = time.time()
     out = Path(cfg.out)
     summary = dict(task=task, built=0, skipped=0, failed=0, cases=0, errors=[], points=[], dropped_cases=[])
-
-    def fail(error, n=1, **where):
-        """Count n failed points, and log the error to the summary and to <cache>/failures-live.jsonl."""
-        summary['failed'] += n
-        e = dict(where, error=f'{type(error).__name__}: {error}', trace=traceback.format_exc(limit=6))
-        summary['errors'].append(e)
-        with open(Path(cfg.cache) / 'failures-live.jsonl', 'a') as live:
-            live.write(json.dumps(dict(task=task, pid=os.getpid(), **e)) + '\n')
-    if getattr(cfg, 'table_max_cells', 0):
-        import evaluator_train
-        evaluator_train.TRAIN_TABLE_MAX_CELLS = cfg.table_max_cells
-    if getattr(cfg, 'case_max_cells', 0):
-        import evaluator_train
-        evaluator_train.TRAIN_CASE_MAX_CELLS = cfg.case_max_cells
     path, task_data = read_task(cfg, task)
     ntrain, ntest = len(task_data['train']), len(task_data['test'])
     train_bytes = (dumps(task_data['train']) + '\n').encode()
     cases, dropped = catalogue(env, cfg, task, task_data)
     summary['dropped_cases'] = dropped
     arclog = env.arclog
-    bound = dict(session_bytes=cfg.session_mib << 20) if getattr(cfg, 'session_mib', 0) else {}
-    sess = arclog.Session(arclog.Task.from_json(path.read_text(), arclog.World.Closed), **bound)
+    sess = arclog.Session(arclog.Task.from_json(path.read_text(), arclog.World.Closed))
     blobs = Path(cfg.cache) / 'blobs' / (task + '.' + str(os.getpid()))
     shutil.rmtree(blobs, ignore_errors=True)
     blobs.mkdir(parents=True)
@@ -598,9 +573,10 @@ def build_task(env, cfg, task):
         try:
             built.append(Case(env, task, name, ids, model, sess, ntrain, ntest, None, cfg.gen, None))
         except Exception as error:
-            fail(error, case=name)
+            summary['failed'] += 1
+            summary['errors'].append(dict(case=name, error=f'{type(error).__name__}: {error}',
+                                          trace=traceback.format_exc(limit=6)))
     counts = {}
-    prepare_failed = 0
 
     def table_count(case):
         """Original-table count of the cases before `case` in the catalogue, as export_target numbers the Tn."""
@@ -637,19 +613,14 @@ def build_task(env, cfg, task):
             if not todo:
                 continue
             summary['cases'] += 1
-            if prepare_failed >= PREPARE_GIVE_UP and not summary['built']:
-                summary['failed'] += len(todo)
-                continue
             try:
                 case.prepare()
                 case.feature_program = env.producer.programs.load(case.text, case.record)[0]
                 libraries = (dumps(env.ev.registry_interfaces(case.record)['entries']) + '\n').encode()
             except Exception as error:
-                fail(error, len(todo), case=case.name)
-                prepare_failed += 1
-                if prepare_failed == PREPARE_GIVE_UP and not summary['built']:
-                    fail(RuntimeError(f'the first {PREPARE_GIVE_UP} cases failed in preparation; '
-                                      'the other cases are skipped'), 0, case=case.name)
+                summary['failed'] += len(todo)
+                summary['errors'].append(dict(case=case.name, error=f'{type(error).__name__}: {error}',
+                                              trace=traceback.format_exc(limit=6)))
                 case.close()
                 env.clean_scratch()
                 continue
@@ -658,11 +629,12 @@ def build_task(env, cfg, task):
                     try:
                         build_point(env, case, kind, point, dest, libraries, blobs, cfg.link, cfg.ids)
                         summary['built'] += 1
-                        if env.on_point:
-                            env.on_point()
                     except Exception as error:
                         shutil.rmtree(dest.with_name(dest.name + '.building'), ignore_errors=True)
-                        fail(error, case=case.name, point=point, kind=kind)
+                        summary['failed'] += 1
+                        summary['errors'].append(dict(case=case.name, point=point, kind=kind,
+                                                      error=f'{type(error).__name__}: {error}',
+                                                      trace=traceback.format_exc(limit=6)))
             finally:
                 case.close()
                 env.clean_scratch()
@@ -682,8 +654,6 @@ def worker(wid, cfg, tasks, results):
     except BaseException:
         results.put(('dead', wid, None, traceback.format_exc()))
         return
-    # The main process sets a task aside when it has built no point for --stall seconds
-    env.on_point = (lambda: results.put(('point', wid, None, time.time()))) if getattr(cfg, 'stall', 0) else None
     done = 0
     while True:
         if cfg.recycle and done >= cfg.recycle:
@@ -712,18 +682,14 @@ def run(cfg):
     Path(cfg.out).mkdir(parents=True, exist_ok=True)
     cfg.run_json = str(cache / 'run.json')
     Path(cfg.run_json).write_text(json.dumps(dict(tasks=str(Path(cfg.tasks_dir).resolve()), work_cap=1048576,
-                                                  session_mib=getattr(cfg, 'session_mib', 0) or 512, deadline=1.0)))
+                                                  session_mib=512, deadline=1.0)))
     tasks = [t.strip() for t in Path(cfg.tasks).read_text().split() if t.strip()] if cfg.tasks else sorted(
         p.name[:-len('.arcdata')] for p in Path(cfg.gen).glob('*.arcdata'))
     for sub in ('scratch', 'blobs'):  # leftovers of a run that was killed
         shutil.rmtree(cache / sub, ignore_errors=True)
         (cache / sub).mkdir()
     absent = [t for t in tasks if not (Path(cfg.gen) / (t + '.arcdata')).exists()]
-    aside_path = cache / 'set-aside.txt'
-    aside = set(aside_path.read_text().split()) if (cfg.stall or cfg.task_gib) and aside_path.exists() else set()
-    todo = [t for t in tasks if t not in absent and t not in aside and not (cache / 'done' / (t + '.json')).exists()]
-    if aside:
-        print(f'{len([t for t in tasks if t in aside])} tasks set aside in {aside_path} (skipped)', flush=True)
+    todo = [t for t in tasks if t not in absent and not (cache / 'done' / (t + '.json')).exists()]
     print(f'{len(tasks)} tasks, {len(absent)} not in the corpus yet (skipped), {len(tasks) - len(absent) - len(todo)} done, '
           f'{len(todo)} to build; workers={cfg.workers}', flush=True)
     if not todo:
@@ -740,91 +706,39 @@ def run(cfg):
     for wid in range(min(cfg.workers, len(todo))):
         spawn(wid)
     running, finished, started = {}, 0, time.time()
-    progress, checked = {}, time.time()  # worker -> time of its task's start or last built point
-
-    def worker_gib():
-        """Memory of each worker as top reports it (resident plus compressed), in GiB."""
-        pids = {p.pid: wid for wid, p in procs.items()}
-        out = subprocess.run(['top', '-l', '1', '-stats', 'pid,mem'], capture_output=True, text=True).stdout
-        gib = {}
-        for line in out.splitlines():
-            f = line.split()
-            if len(f) == 2 and f[0].isdigit() and int(f[0]) in pids:
-                m = f[1].rstrip('+-')
-                unit = {'K': 2**-20, 'M': 2**-10, 'G': 1}.get(m[-1:], 2**-30)
-                gib[pids[int(f[0])]] = float(m.rstrip('KMGB') or 0) * unit
-        return gib
-
-    def set_aside():
-        """Stop each task that stalls or holds too much memory, list it in set-aside.txt, and give its worker a new
-        process. Returns the number of tasks stopped."""
-        gib = worker_gib() if cfg.task_gib else {}
-        stopped = 0
-        for wid, (task, _) in list(running.items()):
-            idle = time.time() - progress.get(wid, time.time())
-            if cfg.stall and idle > cfg.stall:
-                why = f'no point built for {idle:.0f}s'
-            elif cfg.task_gib and gib.get(wid, 0) > cfg.task_gib:
-                why = f'worker holds {gib[wid]:.1f} GiB'
-            else:
-                continue
-            procs[wid].terminate()
-            procs[wid].join(timeout=30)
-            running.pop(wid)
-            with open(aside_path, 'a') as f:
-                f.write(task + '\n')
-            print(f'set aside {task}: {why}', flush=True)
-            stopped += 1
-            spawn(wid)
-        return stopped
     totals = collections.Counter()
     failures = open(cache / 'failures.jsonl', 'a')
     last = time.time()
     seconds = []
     failed_tasks = 0
     while finished < len(todo):
-        if (cfg.stall or cfg.task_gib) and time.time() - checked > 30:
-            checked = time.time()
-            finished += set_aside()
-            if finished >= len(todo):
-                break
         try:
             kind, wid, task, value = results.get(timeout=5)
         except queue.Empty:
-            kind = None
-        # The workers are checked at each message, not only when the queue is quiet: with --stall, points come so often
-        # that a recycled worker would wait long for its new process
-        for w, proc in list(procs.items()):
-            if not proc.is_alive() and proc.exitcode == 0 and w not in running and finished < len(todo):
-                spawn(w)  # a recycled worker
-                continue
-            if not proc.is_alive() and proc.exitcode not in (0, None):
-                lost = running.pop(w, None)
-                print(f'worker {w} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
-                if lost is not None:
-                    failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
-                    failures.flush()
-                    finished += 1
-                    failed_tasks += 1
-                spawn(w)
-        if time.time() - last > 60:
-            last = time.time()
-            busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
-            print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
-        if kind is None:
+            for wid, proc in list(procs.items()):
+                if not proc.is_alive() and proc.exitcode == 0 and wid not in running and finished < len(todo):
+                    spawn(wid)  # a recycled worker
+                    continue
+                if not proc.is_alive() and proc.exitcode not in (0, None):
+                    lost = running.pop(wid, None)
+                    print(f'worker {wid} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
+                    if lost is not None:
+                        failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
+                        failures.flush()
+                        finished += 1
+                        failed_tasks += 1
+                    spawn(wid)
+            if time.time() - last > 60:
+                last = time.time()
+                busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
+                print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
             continue
         if kind == 'start':
             running[wid] = (task, value)
-            progress[wid] = value
-            continue
-        if kind == 'point':
-            progress[wid] = value
             continue
         if kind == 'dead':
             print(f'worker {wid} could not start:\n{value}', flush=True)
             return 1
-        if running.get(wid, (None,))[0] != task:
-            continue  # the result of a task that was set aside as it ended
         running.pop(wid, None)
         finished += 1
         if kind == 'fail':
@@ -902,18 +816,6 @@ def main():
     ap.add_argument('--tasks', help='file with one task id per line; the tasks are built in that order '
                                     '(default: every task of the corpus, sorted)')
     ap.add_argument('--workers', type=int, default=1)
-    ap.add_argument('--step-cap', type=int, default=0, metavar='N',
-                    help="stop each task's stream replay after N model steps; the later cases are dropped (default: no cap)")
-    ap.add_argument('--session-mib', type=int, default=0, metavar='N',
-                    help="bound each task's sessions at N MiB of charged bytes (default: 512)")
-    ap.add_argument('--table-max-cells', type=int, default=0, metavar='N',
-                    help='the most cells of a train table the features read (default: 524288)')
-    ap.add_argument('--case-max-cells', type=int, default=0, metavar='N',
-                    help="the most cells of one case's acquired train tables together (default: 1048576)")
-    ap.add_argument('--stall', type=float, default=0, metavar='S',
-                    help='set aside a task that builds no point for S seconds (default: no limit)')
-    ap.add_argument('--task-gib', type=float, default=0, metavar='G',
-                    help='set aside a task whose worker holds more than G GiB (default: no limit)')
     ap.add_argument('--recycle', type=int, default=0, metavar='N',
                     help='a worker exits after N tasks and a fresh one takes its place, which frees memory it holds')
     ap.add_argument('--cache', help='cache directory (default: <out>.cache)')

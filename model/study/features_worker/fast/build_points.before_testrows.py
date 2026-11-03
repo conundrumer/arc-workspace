@@ -44,7 +44,7 @@ import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path('/Users/davidlu/code/arc-workspace')  # the repo root
 STUDY = REPO / 'model/study'
 KINDS = ('Rule', 'Det', 'INIT key', 'INIT input', 'CHOOSE clause')
 MIN_FREE_GB = 5
@@ -534,13 +534,41 @@ def read_task(cfg, task):
     return path, json.loads(path.read_text())
 
 
+def case_stem(case):
+    """A case's file stem under `cases/<task>/`: '&bg=$Derived $Drawn' is '&bg=Derived+Drawn'."""
+    return case.replace('$', '').replace(' ', '+')
+
+
+def shipped_cases(cfg, task):
+    """(the file stems of the task's case files, or None where the task has no `cases/<task>/`; the names of the cases
+    that `gold-not-fitting-train.tsv` at the gold root lists). `corpus_streams(all_cases=True)` builds every
+    combination, the ones the gold step excluded included."""
+    folder = Path(cfg.gen) / 'cases' / task
+    stems = {p.stem for p in folder.glob('*.arclog')} if folder.is_dir() else None
+    for path in [p / 'gold-not-fitting-train.tsv' for p in Path(cfg.gen).resolve().parents[:2]]:
+        if path.exists():
+            rows = (line.split('\t', 1) for line in path.read_text().splitlines() if '\t' in line)
+            return stems, {case for t, case in rows if t == task}
+    return stems, set()
+
+
 def catalogue(env, cfg, task, task_text):
     """[(case, ids, model)] as `model/export.py` keeps them, and [(case, reason)] of the streams it drops."""
     import numpy as np
-    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir))
+    # --step-cap: the replay stops after that many model steps, and each later stream gets a mask fault (dropped below)
+    cap = dict(step_cap=cfg.step_cap) if getattr(cfg, 'step_cap', 0) else {}
+    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir),
+                                                **cap)
     dropped = [('', f) for f in faults]
     kept, seen = [], set()
+    shipped, unfit = shipped_cases(cfg, task)
     for s in streams:
+        if shipped is not None and case_stem(s.case) not in shipped:
+            dropped.append((s.case, 'no case file: the gold step excluded this combination'))
+            continue
+        if s.case in unfit:
+            dropped.append((s.case, 'gold does not fit TRAIN (gold-not-fitting-train.tsv)'))
+            continue
         if s.mask_fault is not None:
             dropped.append((s.case, 'mask fault: ' + str(s.mask_fault)))
             continue
@@ -569,13 +597,20 @@ def build_task(env, cfg, task):
         summary['errors'].append(e)
         with open(Path(cfg.cache) / 'failures-live.jsonl', 'a') as live:
             live.write(json.dumps(dict(task=task, pid=os.getpid(), **e)) + '\n')
+    if getattr(cfg, 'table_max_cells', 0):
+        import evaluator_train
+        evaluator_train.TRAIN_TABLE_MAX_CELLS = cfg.table_max_cells
+    if getattr(cfg, 'case_max_cells', 0):
+        import evaluator_train
+        evaluator_train.TRAIN_CASE_MAX_CELLS = cfg.case_max_cells
     path, task_data = read_task(cfg, task)
     ntrain, ntest = len(task_data['train']), len(task_data['test'])
     train_bytes = (dumps(task_data['train']) + '\n').encode()
     cases, dropped = catalogue(env, cfg, task, task_data)
     summary['dropped_cases'] = dropped
     arclog = env.arclog
-    sess = arclog.Session(arclog.Task.from_json(path.read_text(), arclog.World.Closed))
+    bound = dict(session_bytes=cfg.session_mib << 20) if getattr(cfg, 'session_mib', 0) else {}
+    sess = arclog.Session(arclog.Task.from_json(path.read_text(), arclog.World.Closed), **bound)
     blobs = Path(cfg.cache) / 'blobs' / (task + '.' + str(os.getpid()))
     shutil.rmtree(blobs, ignore_errors=True)
     blobs.mkdir(parents=True)
@@ -702,7 +737,7 @@ def run(cfg):
     Path(cfg.out).mkdir(parents=True, exist_ok=True)
     cfg.run_json = str(cache / 'run.json')
     Path(cfg.run_json).write_text(json.dumps(dict(tasks=str(Path(cfg.tasks_dir).resolve()), work_cap=1048576,
-                                                  session_mib=512, deadline=1.0)))
+                                                  session_mib=getattr(cfg, 'session_mib', 0) or 512, deadline=1.0)))
     tasks = [t.strip() for t in Path(cfg.tasks).read_text().split() if t.strip()] if cfg.tasks else sorted(
         p.name[:-len('.arcdata')] for p in Path(cfg.gen).glob('*.arcdata'))
     for sub in ('scratch', 'blobs'):  # leftovers of a run that was killed
@@ -781,23 +816,27 @@ def run(cfg):
         try:
             kind, wid, task, value = results.get(timeout=5)
         except queue.Empty:
-            for wid, proc in list(procs.items()):
-                if not proc.is_alive() and proc.exitcode == 0 and wid not in running and finished < len(todo):
-                    spawn(wid)  # a recycled worker
-                    continue
-                if not proc.is_alive() and proc.exitcode not in (0, None):
-                    lost = running.pop(wid, None)
-                    print(f'worker {wid} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
-                    if lost is not None:
-                        failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
-                        failures.flush()
-                        finished += 1
-                        failed_tasks += 1
-                    spawn(wid)
-            if time.time() - last > 60:
-                last = time.time()
-                busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
-                print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
+            kind = None
+        # The workers are checked at each message, not only when the queue is quiet: with --stall, points come so often
+        # that a recycled worker would wait long for its new process
+        for w, proc in list(procs.items()):
+            if not proc.is_alive() and proc.exitcode == 0 and w not in running and finished < len(todo):
+                spawn(w)  # a recycled worker
+                continue
+            if not proc.is_alive() and proc.exitcode not in (0, None):
+                lost = running.pop(w, None)
+                print(f'worker {w} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
+                if lost is not None:
+                    failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
+                    failures.flush()
+                    finished += 1
+                    failed_tasks += 1
+                spawn(w)
+        if time.time() - last > 60:
+            last = time.time()
+            busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
+            print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
+        if kind is None:
             continue
         if kind == 'start':
             running[wid] = (task, value)
@@ -888,6 +927,14 @@ def main():
     ap.add_argument('--tasks', help='file with one task id per line; the tasks are built in that order '
                                     '(default: every task of the corpus, sorted)')
     ap.add_argument('--workers', type=int, default=1)
+    ap.add_argument('--step-cap', type=int, default=0, metavar='N',
+                    help="stop each task's stream replay after N model steps; the later cases are dropped (default: no cap)")
+    ap.add_argument('--session-mib', type=int, default=0, metavar='N',
+                    help="bound each task's sessions at N MiB of charged bytes (default: 512)")
+    ap.add_argument('--table-max-cells', type=int, default=0, metavar='N',
+                    help='the most cells of a train table the features read (default: 524288)')
+    ap.add_argument('--case-max-cells', type=int, default=0, metavar='N',
+                    help="the most cells of one case's acquired train tables together (default: 1048576)")
     ap.add_argument('--stall', type=float, default=0, metavar='S',
                     help='set aside a task that builds no point for S seconds (default: no limit)')
     ap.add_argument('--task-gib', type=float, default=0, metavar='G',

@@ -44,7 +44,7 @@ import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path('/Users/davidlu/code/arc-workspace')  # the repo root
 STUDY = REPO / 'model/study'
 KINDS = ('Rule', 'Det', 'INIT key', 'INIT input', 'CHOOSE clause')
 MIN_FREE_GB = 5
@@ -534,24 +534,6 @@ def read_task(cfg, task):
     return path, json.loads(path.read_text())
 
 
-def case_stem(case):
-    """A case's file stem under `cases/<task>/`: '&bg=$Derived $Drawn' is '&bg=Derived+Drawn'."""
-    return case.replace('$', '').replace(' ', '+')
-
-
-def shipped_cases(cfg, task):
-    """(the file stems of the task's case files, or None where the task has no `cases/<task>/`; the names of the cases
-    that `gold-not-fitting-train.tsv` at the gold root lists). `corpus_streams(all_cases=True)` builds every
-    combination, the ones the gold step excluded included."""
-    folder = Path(cfg.gen) / 'cases' / task
-    stems = {p.stem for p in folder.glob('*.arclog')} if folder.is_dir() else None
-    for path in [p / 'gold-not-fitting-train.tsv' for p in Path(cfg.gen).resolve().parents[:2]]:
-        if path.exists():
-            rows = (line.split('\t', 1) for line in path.read_text().splitlines() if '\t' in line)
-            return stems, {case for t, case in rows if t == task}
-    return stems, set()
-
-
 def catalogue(env, cfg, task, task_text):
     """[(case, ids, model)] as `model/export.py` keeps them, and [(case, reason)] of the streams it drops."""
     import numpy as np
@@ -561,14 +543,7 @@ def catalogue(env, cfg, task, task_text):
                                                 **cap)
     dropped = [('', f) for f in faults]
     kept, seen = [], set()
-    shipped, unfit = shipped_cases(cfg, task)
     for s in streams:
-        if shipped is not None and case_stem(s.case) not in shipped:
-            dropped.append((s.case, 'no case file: the gold step excluded this combination'))
-            continue
-        if s.case in unfit:
-            dropped.append((s.case, 'gold does not fit TRAIN (gold-not-fitting-train.tsv)'))
-            continue
         if s.mask_fault is not None:
             dropped.append((s.case, 'mask fault: ' + str(s.mask_fault)))
             continue

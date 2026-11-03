@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/fast')  # the data folder
 sys.path[:0] = [str(HERE), '/Users/davidlu/code/arc-workspace/model/study']
 import rulecheck  # noqa: E402
 from rulecheck import RuleCheck, rename_relations  # noqa: E402

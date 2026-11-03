@@ -17,29 +17,13 @@ Each directory is written to `<id>.building` and renamed when it is complete. A 
 is a task that has a record in `<cache>/done/`. A failure of one point, one case or one task is logged to
 `<cache>/failures.jsonl` when its task ends, and at once to `<cache>/failures-live.jsonl`, and the run goes on. A task
 whose first PREPARE_GIVE_UP cases all fail in preparation, before any point is built, skips its other cases, and a
-later run tries them again. With --stall or --task-gib, a task that builds no point for --stall seconds, or whose worker
-holds more than --task-gib GiB, is stopped and listed in `<cache>/set-aside.txt`, and such a run skips the tasks listed
-there; a run without both options builds them. The builder writes only under the output root and its cache directory
+later run tries them again. The builder writes only under the output root and its cache directory
 (default `<output>.cache`: scratch directories of the workers, the done records and the failure log).
 
 Run it with the python of a runtime with the current engine, for example
 
     work/lm/data-study/ast/run/runtime-b157cc37/venv/bin/python -B work/lm/data-study/feat-exp/study/build_points.py \\
         work/arclog-v2-4b3e64f15/out <points root> --tasks <file> --workers 4
-
-With --all-assignments a visible table that reads a DET holds its entries at every live assignment, train and test,
-not only at the case's kept ones. `assignment` is the number of the assignment by first appearance of its DET slot rows
-over the table's entries (the numbering of `rulecheck._dets_key`). The table adds `kept_assignments` (the numbers of the
-case's kept assignments), `assignments` (the DET slot rows of each number, `{slot: [row, ...]}`), `assignments_partial`
-(True where the native walk stopped or an entry is unreadable, so an assignment lacks entries) and `assignments_fallback`
-(the reason, where the table is over the cell caps at every assignment and holds the kept assignments only, with the same
-numbers). A table that reads no DET is as without the option, and so is G. The done records of `<cache>` do not tell the
-option: build into a fresh output root and cache.
-
-With --test-rows, a visible table that is over the cell cap only because of its test entries (at every assignment, then
-at the kept ones) is written with its train entries only, at the kept assignments: it carries `"test_rows": false` and
-`"test_rows_fallback"` (the reason, with the cell count and the cap). A table that is over the cap without test entries
-fails as without the option, and so does G.
 
 `compare OLD NEW` compares the directories of the cases that both roots hold, file by file.
 """
@@ -51,14 +35,13 @@ import multiprocessing
 import os
 import queue
 import shutil
-import subprocess
 import sys
 import time
 import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path('/Users/davidlu/code/arc-workspace')  # the repo root
 STUDY = REPO / 'model/study'
 KINDS = ('Rule', 'Det', 'INIT key', 'INIT input', 'CHOOSE clause')
 MIN_FREE_GB = 5
@@ -94,7 +77,6 @@ def resolve_corpus(path):
 
 class Env:
     """One process's evaluator and the study stack's policy objects."""
-    on_point = None  # called after each built point
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -228,7 +210,7 @@ def make_context(env, record, export, view, gnodes, names):
     return ctx
 
 
-def gold_table(env, case, ctx, record, ntrain, point_name_, ntest=0):
+def gold_table(env, case, ctx, record, ntrain, point_name_):
     """The public G packet of a point: `acquire_train_point(side='gold')` for the kinds but Det, and
     `acquire_det_train_point(side='gold')` with the certified reader-header union for Det. A Det whose BODY has
     no column takes the read columns from the DET relation's own table (`relation_gold_table`)."""
@@ -284,14 +266,9 @@ def gold_table(env, case, ctx, record, ntrain, point_name_, ntest=0):
                    scope=view['scope'], projected_schema=fields)
     indices = projection(body, record, binding)
     fields = projection_fields(body, binding, indices)
-    test = dict(ntest=ntest) if ntest else {}
     packet = acquire_train_table(body['ev'], body['native'], body['table'], record, ntrain=ntrain, fields=fields,
                                  projection=indices, held_entries=body['held_entries'], source=dict(side='gold'),
-                                 copy_rows=False, **test)
-    if ntest and packet['missing'] and all(k[1] == 2 for k in packet['missing']):
-        # G reads the test output, or its test evaluation has no entry: G keeps its train entries only
-        from evaluator_train import without_test_rows
-        packet = without_test_rows(packet)
+                                 copy_rows=False)
     if packet['missing']:
         raise Incomplete('original gold BODY lacks required kept TRAIN entries')
     public = table_packet(packet, table_id='G', source_name=point_name_, case=record['case'], roles=['target'],
@@ -306,7 +283,7 @@ def relation_gold_table(env, case, ctx, view, point_name_):
     case's own native table of that relation, with the kept assignments of the case. None where no reader names a
     column: the BODY's projection on no column is then the G."""
     from definition_binding import definition_node
-    from evaluator_train import _projector, kept_form
+    from evaluator_train import _projector
     from judge3.dataset_format import table_packet
     from mech3.reader_projection import side_readers, reader_header_union, relation_field, compatible
     from tables import Incomplete
@@ -323,8 +300,6 @@ def relation_gold_table(env, case, ctx, view, point_name_):
     if len(found) != 1:
         raise Incomplete('Det without BODY columns lacks one native table of its relation')
     packet = case.bundle['tables'][found[0]]['table']
-    if packet is not None:
-        packet = kept_form(packet)  # G stays at the kept assignments, numbered by kept index
     if packet is None or packet['missing']:
         raise Incomplete('native table of the Det relation lacks required kept TRAIN entries')
     witnesses = definition['column_witnesses']
@@ -395,9 +370,7 @@ class Case:
         self.record['evaluation'] = dict(kept_assignments=acquired['kept_assignments'])
         context = dict(name=self.name, source_program=self.text, relation_source_names=self.names,
                        kept_assignments=acquired['kept_assignments'])
-        self.bundle = acquire_case_train(env.ev, self.record, context, self.ntrain, self.ntest, test_rows=bool(getattr(self, 'test_bytes', None)),
-                                         all_assignments=bool(getattr(self, 'all_assignments', False)),
-                                         test_rows_fallback=bool(getattr(self, 'test_bytes', None)))
+        self.bundle = acquire_case_train(env.ev, self.record, context, self.ntrain, self.ntest)
         if not self.bundle['native_table_inventory_complete']:
             observation = self.bundle.get('receipt', {}).get('observation', {})
             reasons = [g['reason'] for g in self.bundle.get('gaps', []) if g.get('kind') == 'replay' and g.get('reason')]
@@ -449,7 +422,6 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
     ctx = make_context(env, record, case.gexport, view, case.gnodes, case.name_policy)
     ctx.availability = ctx.dependency_scope()
     independent = set(ctx.availability['independent_nodes'])
-    output_dependent = set(ctx.availability.get('ex_output_test_blocked_nodes', ctx.availability.get('ex_output_dependent_nodes', ())))
     source_name = producer.point_source_name(case.gexport, view)
     tmp = dest.with_name(dest.name + '.building')
     shutil.rmtree(tmp, ignore_errors=True)
@@ -475,7 +447,7 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
         index.append(table_summary(public, path))
 
     # G
-    g = gold_table(env, case, ctx, record, case.ntrain, source_name, case.ntest if case.test_bytes else 0)
+    g = gold_table(env, case, ctx, record, case.ntrain, source_name)
     gpath = 'tables/G.json'
     put(tmp / gpath, (dumps(g) + '\n').encode())
     add(g, gpath)
@@ -504,12 +476,6 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
             raise ValueError('fresh table unavailable: ' + str(item.get('reason')))
         template = case.templates.get(i)
         if template is None:
-            from evaluator_train import without_test_rows
-            reads_output = case.test_bytes and (item['selector']['fact'] == 'ex_output' or any(
-                definition_node(case.export, d) in output_dependent for d in meta['definitions']))
-            if reads_output:
-                item = dict(item, table=without_test_rows(item['table']),
-                            input=None if item['input'] is None else without_test_rows(item['input']))
             fields = [dict(field, field_name=bound['display_name'])
                       for field, bound in zip(item['table']['fields'], meta['schema'])]
             if len(fields) != len(item['table']['fields']):
@@ -546,16 +512,12 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
     names = case.name_policy
     put(tmp / 'gold.arclog', (names.text(case.text) + '\n').encode())
     put(tmp / 'train.json', case.train_bytes)
-    test = {}
-    if case.test_bytes:
-        put(tmp / 'test_inputs.json', case.test_bytes)
-        test = dict(test_inputs='test_inputs.json', ntest=case.ntest)
     put(tmp / 'libraries.json', libraries)
     native = json.loads(env.arclog.study_feature_metadata_json(case.feature_program, point))
     native['x_nf4f_v1'] = None
     payload = {key: native[key] for key in ('types_frames_v1', 'canonical_clauses_v1', 'x_nf4f_v1')}
     info = dict(format=FORMAT, kind='features-point', task=case.task, case=case.name, point=point, tables=index,
-                programs=dict(gold='gold.arclog'), train='train.json', libraries='libraries.json', **test,
+                programs=dict(gold='gold.arclog'), train='train.json', libraries='libraries.json',
                 **point_payload(payload))
     put(tmp / 'point.json', (dumps(info) + '\n').encode())
     tmp.rename(dest)
@@ -568,41 +530,13 @@ def read_task(cfg, task):
     return path, json.loads(path.read_text())
 
 
-def case_stem(case):
-    """A case's file stem under `cases/<task>/`: '&bg=$Derived $Drawn' is '&bg=Derived+Drawn'."""
-    return case.replace('$', '').replace(' ', '+')
-
-
-def shipped_cases(cfg, task):
-    """(the file stems of the task's case files, or None where the task has no `cases/<task>/`; the names of the cases
-    that `gold-not-fitting-train.tsv` at the gold root lists). `corpus_streams(all_cases=True)` builds every
-    combination, the ones the gold step excluded included."""
-    folder = Path(cfg.gen) / 'cases' / task
-    stems = {p.stem for p in folder.glob('*.arclog')} if folder.is_dir() else None
-    for path in [p / 'gold-not-fitting-train.tsv' for p in Path(cfg.gen).resolve().parents[:2]]:
-        if path.exists():
-            rows = (line.split('\t', 1) for line in path.read_text().splitlines() if '\t' in line)
-            return stems, {case for t, case in rows if t == task}
-    return stems, set()
-
-
 def catalogue(env, cfg, task, task_text):
     """[(case, ids, model)] as `model/export.py` keeps them, and [(case, reason)] of the streams it drops."""
     import numpy as np
-    # --step-cap: the replay stops after that many model steps, and each later stream gets a mask fault (dropped below)
-    cap = dict(step_cap=cfg.step_cap) if getattr(cfg, 'step_cap', 0) else {}
-    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir),
-                                                **cap)
+    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir))
     dropped = [('', f) for f in faults]
     kept, seen = [], set()
-    shipped, unfit = shipped_cases(cfg, task)
     for s in streams:
-        if shipped is not None and case_stem(s.case) not in shipped:
-            dropped.append((s.case, 'no case file: the gold step excluded this combination'))
-            continue
-        if s.case in unfit:
-            dropped.append((s.case, 'gold does not fit TRAIN (gold-not-fitting-train.tsv)'))
-            continue
         if s.mask_fault is not None:
             dropped.append((s.case, 'mask fault: ' + str(s.mask_fault)))
             continue
@@ -615,9 +549,6 @@ def catalogue(env, cfg, task, task_text):
         kept.append((s.case, list(ids), [int(m) for m in model]))
     kept.sort(key=lambda r: r[0])
     return kept, dropped
-
-
-CELL_CAPS = {}  # 'base': evaluator_train's caps as imported
 
 
 def build_task(env, cfg, task):
@@ -636,20 +567,11 @@ def build_task(env, cfg, task):
             live.write(json.dumps(dict(task=task, pid=os.getpid(), **e)) + '\n')
     path, task_data = read_task(cfg, task)
     ntrain, ntest = len(task_data['train']), len(task_data['test'])
-    # The cell caps bound the cells per example: with test rows, a table holds the test examples' cells too
-    import evaluator_train
-    caps = CELL_CAPS.setdefault('base', (evaluator_train.TRAIN_TABLE_MAX_CELLS, evaluator_train.TRAIN_CASE_MAX_CELLS))
-    scale = (ntrain + ntest) / ntrain if getattr(cfg, 'test_rows', False) else 1
-    evaluator_train.TRAIN_TABLE_MAX_CELLS = int((getattr(cfg, 'table_max_cells', 0) or caps[0]) * scale)
-    evaluator_train.TRAIN_CASE_MAX_CELLS = int((getattr(cfg, 'case_max_cells', 0) or caps[1]) * scale)
     train_bytes = (dumps(task_data['train']) + '\n').encode()
-    # --test-rows: the test inputs' grids (never their outputs) and the visible tables' test entries
-    test_bytes = (dumps([dict(input=t['input']) for t in task_data['test']]) + '\n').encode() if getattr(cfg, 'test_rows', False) else None
     cases, dropped = catalogue(env, cfg, task, task_data)
     summary['dropped_cases'] = dropped
     arclog = env.arclog
-    bound = dict(session_bytes=cfg.session_mib << 20) if getattr(cfg, 'session_mib', 0) else {}
-    sess = arclog.Session(arclog.Task.from_json(path.read_text(), arclog.World.Closed), **bound)
+    sess = arclog.Session(arclog.Task.from_json(path.read_text(), arclog.World.Closed))
     blobs = Path(cfg.cache) / 'blobs' / (task + '.' + str(os.getpid()))
     shutil.rmtree(blobs, ignore_errors=True)
     blobs.mkdir(parents=True)
@@ -683,8 +605,6 @@ def build_task(env, cfg, task):
     for case in built:
         case.offset_of = table_count
         case.train_bytes = train_bytes
-        case.test_bytes = test_bytes
-        case.all_assignments = getattr(cfg, 'all_assignments', False)
     try:
         for case in built:
             wanted = [(k, p) for k, p in case.points if k in cfg.kinds]
@@ -724,8 +644,6 @@ def build_task(env, cfg, task):
                     try:
                         build_point(env, case, kind, point, dest, libraries, blobs, cfg.link, cfg.ids)
                         summary['built'] += 1
-                        if env.on_point:
-                            env.on_point()
                     except Exception as error:
                         shutil.rmtree(dest.with_name(dest.name + '.building'), ignore_errors=True)
                         fail(error, case=case.name, point=point, kind=kind)
@@ -748,8 +666,6 @@ def worker(wid, cfg, tasks, results):
     except BaseException:
         results.put(('dead', wid, None, traceback.format_exc()))
         return
-    # The main process sets a task aside when it has built no point for --stall seconds
-    env.on_point = (lambda: results.put(('point', wid, None, time.time()))) if getattr(cfg, 'stall', 0) else None
     done = 0
     while True:
         if cfg.recycle and done >= cfg.recycle:
@@ -778,18 +694,14 @@ def run(cfg):
     Path(cfg.out).mkdir(parents=True, exist_ok=True)
     cfg.run_json = str(cache / 'run.json')
     Path(cfg.run_json).write_text(json.dumps(dict(tasks=str(Path(cfg.tasks_dir).resolve()), work_cap=1048576,
-                                                  session_mib=getattr(cfg, 'session_mib', 0) or 512, deadline=1.0)))
+                                                  session_mib=512, deadline=1.0)))
     tasks = [t.strip() for t in Path(cfg.tasks).read_text().split() if t.strip()] if cfg.tasks else sorted(
         p.name[:-len('.arcdata')] for p in Path(cfg.gen).glob('*.arcdata'))
     for sub in ('scratch', 'blobs'):  # leftovers of a run that was killed
         shutil.rmtree(cache / sub, ignore_errors=True)
         (cache / sub).mkdir()
     absent = [t for t in tasks if not (Path(cfg.gen) / (t + '.arcdata')).exists()]
-    aside_path = cache / 'set-aside.txt'
-    aside = set(aside_path.read_text().split()) if (cfg.stall or cfg.task_gib) and aside_path.exists() else set()
-    todo = [t for t in tasks if t not in absent and t not in aside and not (cache / 'done' / (t + '.json')).exists()]
-    if aside:
-        print(f'{len([t for t in tasks if t in aside])} tasks set aside in {aside_path} (skipped)', flush=True)
+    todo = [t for t in tasks if t not in absent and not (cache / 'done' / (t + '.json')).exists()]
     print(f'{len(tasks)} tasks, {len(absent)} not in the corpus yet (skipped), {len(tasks) - len(absent) - len(todo)} done, '
           f'{len(todo)} to build; workers={cfg.workers}', flush=True)
     if not todo:
@@ -806,91 +718,39 @@ def run(cfg):
     for wid in range(min(cfg.workers, len(todo))):
         spawn(wid)
     running, finished, started = {}, 0, time.time()
-    progress, checked = {}, time.time()  # worker -> time of its task's start or last built point
-
-    def worker_gib():
-        """Memory of each worker as top reports it (resident plus compressed), in GiB."""
-        pids = {p.pid: wid for wid, p in procs.items()}
-        out = subprocess.run(['top', '-l', '1', '-stats', 'pid,mem'], capture_output=True, text=True).stdout
-        gib = {}
-        for line in out.splitlines():
-            f = line.split()
-            if len(f) == 2 and f[0].isdigit() and int(f[0]) in pids:
-                m = f[1].rstrip('+-')
-                unit = {'K': 2**-20, 'M': 2**-10, 'G': 1}.get(m[-1:], 2**-30)
-                gib[pids[int(f[0])]] = float(m.rstrip('KMGB') or 0) * unit
-        return gib
-
-    def set_aside():
-        """Stop each task that stalls or holds too much memory, list it in set-aside.txt, and give its worker a new
-        process. Returns the number of tasks stopped."""
-        gib = worker_gib() if cfg.task_gib else {}
-        stopped = 0
-        for wid, (task, _) in list(running.items()):
-            idle = time.time() - progress.get(wid, time.time())
-            if cfg.stall and idle > cfg.stall:
-                why = f'no point built for {idle:.0f}s'
-            elif cfg.task_gib and gib.get(wid, 0) > cfg.task_gib:
-                why = f'worker holds {gib[wid]:.1f} GiB'
-            else:
-                continue
-            procs[wid].terminate()
-            procs[wid].join(timeout=30)
-            running.pop(wid)
-            with open(aside_path, 'a') as f:
-                f.write(task + '\n')
-            print(f'set aside {task}: {why}', flush=True)
-            stopped += 1
-            spawn(wid)
-        return stopped
     totals = collections.Counter()
     failures = open(cache / 'failures.jsonl', 'a')
     last = time.time()
     seconds = []
     failed_tasks = 0
     while finished < len(todo):
-        if (cfg.stall or cfg.task_gib) and time.time() - checked > 30:
-            checked = time.time()
-            finished += set_aside()
-            if finished >= len(todo):
-                break
         try:
             kind, wid, task, value = results.get(timeout=5)
         except queue.Empty:
-            kind = None
-        # The workers are checked at each message, not only when the queue is quiet: with --stall, points come so often
-        # that a recycled worker would wait long for its new process
-        for w, proc in list(procs.items()):
-            if not proc.is_alive() and proc.exitcode == 0 and w not in running and finished < len(todo):
-                spawn(w)  # a recycled worker
-                continue
-            if not proc.is_alive() and proc.exitcode not in (0, None):
-                lost = running.pop(w, None)
-                print(f'worker {w} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
-                if lost is not None:
-                    failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
-                    failures.flush()
-                    finished += 1
-                    failed_tasks += 1
-                spawn(w)
-        if time.time() - last > 60:
-            last = time.time()
-            busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
-            print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
-        if kind is None:
+            for wid, proc in list(procs.items()):
+                if not proc.is_alive() and proc.exitcode == 0 and wid not in running and finished < len(todo):
+                    spawn(wid)  # a recycled worker
+                    continue
+                if not proc.is_alive() and proc.exitcode not in (0, None):
+                    lost = running.pop(wid, None)
+                    print(f'worker {wid} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
+                    if lost is not None:
+                        failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
+                        failures.flush()
+                        finished += 1
+                        failed_tasks += 1
+                    spawn(wid)
+            if time.time() - last > 60:
+                last = time.time()
+                busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
+                print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
             continue
         if kind == 'start':
             running[wid] = (task, value)
-            progress[wid] = value
-            continue
-        if kind == 'point':
-            progress[wid] = value
             continue
         if kind == 'dead':
             print(f'worker {wid} could not start:\n{value}', flush=True)
             return 1
-        if running.get(wid, (None,))[0] != task:
-            continue  # the result of a task that was set aside as it ended
         running.pop(wid, None)
         finished += 1
         if kind == 'fail':
@@ -968,24 +828,6 @@ def main():
     ap.add_argument('--tasks', help='file with one task id per line; the tasks are built in that order '
                                     '(default: every task of the corpus, sorted)')
     ap.add_argument('--workers', type=int, default=1)
-    ap.add_argument('--step-cap', type=int, default=0, metavar='N',
-                    help="stop each task's stream replay after N model steps; the later cases are dropped (default: no cap)")
-    ap.add_argument('--session-mib', type=int, default=0, metavar='N',
-                    help="bound each task's sessions at N MiB of charged bytes (default: 512)")
-    ap.add_argument('--test-rows', action='store_true',
-                    help="write the test inputs' grids and the tables' test entries (default: train entries only)")
-    ap.add_argument('--all-assignments', action='store_true',
-                    help="write each visible table that reads a DET at every live assignment, numbered by first appearance "
-                         "of the DET slot rows, with 'kept_assignments' and 'assignments' on the table (default: the case's "
-                         "kept assignments only; G always has those)")
-    ap.add_argument('--table-max-cells', type=int, default=0, metavar='N',
-                    help='the most cells of a train table the features read (default: 524288)')
-    ap.add_argument('--case-max-cells', type=int, default=0, metavar='N',
-                    help="the most cells of one case's acquired train tables together (default: 1048576)")
-    ap.add_argument('--stall', type=float, default=0, metavar='S',
-                    help='set aside a task that builds no point for S seconds (default: no limit)')
-    ap.add_argument('--task-gib', type=float, default=0, metavar='G',
-                    help='set aside a task whose worker holds more than G GiB (default: no limit)')
     ap.add_argument('--recycle', type=int, default=0, metavar='N',
                     help='a worker exits after N tasks and a fresh one takes its place, which frees memory it holds')
     ap.add_argument('--cache', help='cache directory (default: <out>.cache)')

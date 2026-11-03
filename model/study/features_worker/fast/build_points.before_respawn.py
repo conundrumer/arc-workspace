@@ -44,7 +44,7 @@ import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path('/Users/davidlu/code/arc-workspace')  # the repo root
 STUDY = REPO / 'model/study'
 KINDS = ('Rule', 'Det', 'INIT key', 'INIT input', 'CHOOSE clause')
 MIN_FREE_GB = 5
@@ -537,10 +537,7 @@ def read_task(cfg, task):
 def catalogue(env, cfg, task, task_text):
     """[(case, ids, model)] as `model/export.py` keeps them, and [(case, reason)] of the streams it drops."""
     import numpy as np
-    # --step-cap: the replay stops after that many model steps, and each later stream gets a mask fault (dropped below)
-    cap = dict(step_cap=cfg.step_cap) if getattr(cfg, 'step_cap', 0) else {}
-    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir),
-                                                **cap)
+    streams, faults = env.arclog.corpus_streams(str(cfg.gen), all_cases=True, task_ids=[task], tasks=str(cfg.tasks_dir))
     dropped = [('', f) for f in faults]
     kept, seen = [], set()
     for s in streams:
@@ -784,27 +781,23 @@ def run(cfg):
         try:
             kind, wid, task, value = results.get(timeout=5)
         except queue.Empty:
-            kind = None
-        # The workers are checked at each message, not only when the queue is quiet: with --stall, points come so often
-        # that a recycled worker would wait long for its new process
-        for w, proc in list(procs.items()):
-            if not proc.is_alive() and proc.exitcode == 0 and w not in running and finished < len(todo):
-                spawn(w)  # a recycled worker
-                continue
-            if not proc.is_alive() and proc.exitcode not in (0, None):
-                lost = running.pop(w, None)
-                print(f'worker {w} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
-                if lost is not None:
-                    failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
-                    failures.flush()
-                    finished += 1
-                    failed_tasks += 1
-                spawn(w)
-        if time.time() - last > 60:
-            last = time.time()
-            busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
-            print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
-        if kind is None:
+            for wid, proc in list(procs.items()):
+                if not proc.is_alive() and proc.exitcode == 0 and wid not in running and finished < len(todo):
+                    spawn(wid)  # a recycled worker
+                    continue
+                if not proc.is_alive() and proc.exitcode not in (0, None):
+                    lost = running.pop(wid, None)
+                    print(f'worker {wid} died with {proc.exitcode} on {lost and lost[0]}', flush=True)
+                    if lost is not None:
+                        failures.write(json.dumps(dict(task=lost[0], error=f'worker died with exit code {proc.exitcode}')) + '\n')
+                        failures.flush()
+                        finished += 1
+                        failed_tasks += 1
+                    spawn(wid)
+            if time.time() - last > 60:
+                last = time.time()
+                busy = ' '.join(f'{t}:{int(time.time() - s)}s' for t, s in running.values())
+                print(f'... {finished}/{len(todo)} tasks, running {busy}', flush=True)
             continue
         if kind == 'start':
             running[wid] = (task, value)
@@ -895,8 +888,6 @@ def main():
     ap.add_argument('--tasks', help='file with one task id per line; the tasks are built in that order '
                                     '(default: every task of the corpus, sorted)')
     ap.add_argument('--workers', type=int, default=1)
-    ap.add_argument('--step-cap', type=int, default=0, metavar='N',
-                    help="stop each task's stream replay after N model steps; the later cases are dropped (default: no cap)")
     ap.add_argument('--stall', type=float, default=0, metavar='S',
                     help='set aside a task that builds no point for S seconds (default: no limit)')
     ap.add_argument('--task-gib', type=float, default=0, metavar='G',

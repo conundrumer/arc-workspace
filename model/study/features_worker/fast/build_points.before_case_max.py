@@ -44,7 +44,7 @@ import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path('/Users/davidlu/code/arc-workspace')  # the repo root
 STUDY = REPO / 'model/study'
 KINDS = ('Rule', 'Det', 'INIT key', 'INIT input', 'CHOOSE clause')
 MIN_FREE_GB = 5
@@ -214,7 +214,7 @@ def make_context(env, record, export, view, gnodes, names):
     return ctx
 
 
-def gold_table(env, case, ctx, record, ntrain, point_name_, ntest=0):
+def gold_table(env, case, ctx, record, ntrain, point_name_):
     """The public G packet of a point: `acquire_train_point(side='gold')` for the kinds but Det, and
     `acquire_det_train_point(side='gold')` with the certified reader-header union for Det. A Det whose BODY has
     no column takes the read columns from the DET relation's own table (`relation_gold_table`)."""
@@ -270,14 +270,9 @@ def gold_table(env, case, ctx, record, ntrain, point_name_, ntest=0):
                    scope=view['scope'], projected_schema=fields)
     indices = projection(body, record, binding)
     fields = projection_fields(body, binding, indices)
-    test = dict(ntest=ntest) if ntest else {}
     packet = acquire_train_table(body['ev'], body['native'], body['table'], record, ntrain=ntrain, fields=fields,
                                  projection=indices, held_entries=body['held_entries'], source=dict(side='gold'),
-                                 copy_rows=False, **test)
-    if ntest and packet['missing'] and all(k[1] == 2 for k in packet['missing']):
-        # G reads the test output, or its test evaluation has no entry: G keeps its train entries only
-        from evaluator_train import without_test_rows
-        packet = without_test_rows(packet)
+                                 copy_rows=False)
     if packet['missing']:
         raise Incomplete('original gold BODY lacks required kept TRAIN entries')
     public = table_packet(packet, table_id='G', source_name=point_name_, case=record['case'], roles=['target'],
@@ -379,7 +374,7 @@ class Case:
         self.record['evaluation'] = dict(kept_assignments=acquired['kept_assignments'])
         context = dict(name=self.name, source_program=self.text, relation_source_names=self.names,
                        kept_assignments=acquired['kept_assignments'])
-        self.bundle = acquire_case_train(env.ev, self.record, context, self.ntrain, self.ntest, test_rows=bool(getattr(self, 'test_bytes', None)))
+        self.bundle = acquire_case_train(env.ev, self.record, context, self.ntrain, self.ntest)
         if not self.bundle['native_table_inventory_complete']:
             observation = self.bundle.get('receipt', {}).get('observation', {})
             reasons = [g['reason'] for g in self.bundle.get('gaps', []) if g.get('kind') == 'replay' and g.get('reason')]
@@ -431,7 +426,6 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
     ctx = make_context(env, record, case.gexport, view, case.gnodes, case.name_policy)
     ctx.availability = ctx.dependency_scope()
     independent = set(ctx.availability['independent_nodes'])
-    output_dependent = set(ctx.availability.get('ex_output_test_blocked_nodes', ctx.availability.get('ex_output_dependent_nodes', ())))
     source_name = producer.point_source_name(case.gexport, view)
     tmp = dest.with_name(dest.name + '.building')
     shutil.rmtree(tmp, ignore_errors=True)
@@ -457,7 +451,7 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
         index.append(table_summary(public, path))
 
     # G
-    g = gold_table(env, case, ctx, record, case.ntrain, source_name, case.ntest if case.test_bytes else 0)
+    g = gold_table(env, case, ctx, record, case.ntrain, source_name)
     gpath = 'tables/G.json'
     put(tmp / gpath, (dumps(g) + '\n').encode())
     add(g, gpath)
@@ -486,12 +480,6 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
             raise ValueError('fresh table unavailable: ' + str(item.get('reason')))
         template = case.templates.get(i)
         if template is None:
-            from evaluator_train import without_test_rows
-            reads_output = case.test_bytes and (item['selector']['fact'] == 'ex_output' or any(
-                definition_node(case.export, d) in output_dependent for d in meta['definitions']))
-            if reads_output:
-                item = dict(item, table=without_test_rows(item['table']),
-                            input=None if item['input'] is None else without_test_rows(item['input']))
             fields = [dict(field, field_name=bound['display_name'])
                       for field, bound in zip(item['table']['fields'], meta['schema'])]
             if len(fields) != len(item['table']['fields']):
@@ -528,16 +516,12 @@ def build_point(env, case, kind, point, dest, libraries, blobs, link, scheme):
     names = case.name_policy
     put(tmp / 'gold.arclog', (names.text(case.text) + '\n').encode())
     put(tmp / 'train.json', case.train_bytes)
-    test = {}
-    if case.test_bytes:
-        put(tmp / 'test_inputs.json', case.test_bytes)
-        test = dict(test_inputs='test_inputs.json', ntest=case.ntest)
     put(tmp / 'libraries.json', libraries)
     native = json.loads(env.arclog.study_feature_metadata_json(case.feature_program, point))
     native['x_nf4f_v1'] = None
     payload = {key: native[key] for key in ('types_frames_v1', 'canonical_clauses_v1', 'x_nf4f_v1')}
     info = dict(format=FORMAT, kind='features-point', task=case.task, case=case.name, point=point, tables=index,
-                programs=dict(gold='gold.arclog'), train='train.json', libraries='libraries.json', **test,
+                programs=dict(gold='gold.arclog'), train='train.json', libraries='libraries.json',
                 **point_payload(payload))
     put(tmp / 'point.json', (dumps(info) + '\n').encode())
     tmp.rename(dest)
@@ -550,24 +534,6 @@ def read_task(cfg, task):
     return path, json.loads(path.read_text())
 
 
-def case_stem(case):
-    """A case's file stem under `cases/<task>/`: '&bg=$Derived $Drawn' is '&bg=Derived+Drawn'."""
-    return case.replace('$', '').replace(' ', '+')
-
-
-def shipped_cases(cfg, task):
-    """(the file stems of the task's case files, or None where the task has no `cases/<task>/`; the names of the cases
-    that `gold-not-fitting-train.tsv` at the gold root lists). `corpus_streams(all_cases=True)` builds every
-    combination, the ones the gold step excluded included."""
-    folder = Path(cfg.gen) / 'cases' / task
-    stems = {p.stem for p in folder.glob('*.arclog')} if folder.is_dir() else None
-    for path in [p / 'gold-not-fitting-train.tsv' for p in Path(cfg.gen).resolve().parents[:2]]:
-        if path.exists():
-            rows = (line.split('\t', 1) for line in path.read_text().splitlines() if '\t' in line)
-            return stems, {case for t, case in rows if t == task}
-    return stems, set()
-
-
 def catalogue(env, cfg, task, task_text):
     """[(case, ids, model)] as `model/export.py` keeps them, and [(case, reason)] of the streams it drops."""
     import numpy as np
@@ -577,14 +543,7 @@ def catalogue(env, cfg, task, task_text):
                                                 **cap)
     dropped = [('', f) for f in faults]
     kept, seen = [], set()
-    shipped, unfit = shipped_cases(cfg, task)
     for s in streams:
-        if shipped is not None and case_stem(s.case) not in shipped:
-            dropped.append((s.case, 'no case file: the gold step excluded this combination'))
-            continue
-        if s.case in unfit:
-            dropped.append((s.case, 'gold does not fit TRAIN (gold-not-fitting-train.tsv)'))
-            continue
         if s.mask_fault is not None:
             dropped.append((s.case, 'mask fault: ' + str(s.mask_fault)))
             continue
@@ -616,14 +575,9 @@ def build_task(env, cfg, task):
     if getattr(cfg, 'table_max_cells', 0):
         import evaluator_train
         evaluator_train.TRAIN_TABLE_MAX_CELLS = cfg.table_max_cells
-    if getattr(cfg, 'case_max_cells', 0):
-        import evaluator_train
-        evaluator_train.TRAIN_CASE_MAX_CELLS = cfg.case_max_cells
     path, task_data = read_task(cfg, task)
     ntrain, ntest = len(task_data['train']), len(task_data['test'])
     train_bytes = (dumps(task_data['train']) + '\n').encode()
-    # --test-rows: the test inputs' grids (never their outputs) and the visible tables' test entries
-    test_bytes = (dumps([dict(input=t['input']) for t in task_data['test']]) + '\n').encode() if getattr(cfg, 'test_rows', False) else None
     cases, dropped = catalogue(env, cfg, task, task_data)
     summary['dropped_cases'] = dropped
     arclog = env.arclog
@@ -662,7 +616,6 @@ def build_task(env, cfg, task):
     for case in built:
         case.offset_of = table_count
         case.train_bytes = train_bytes
-        case.test_bytes = test_bytes
     try:
         for case in built:
             wanted = [(k, p) for k, p in case.points if k in cfg.kinds]
@@ -950,12 +903,8 @@ def main():
                     help="stop each task's stream replay after N model steps; the later cases are dropped (default: no cap)")
     ap.add_argument('--session-mib', type=int, default=0, metavar='N',
                     help="bound each task's sessions at N MiB of charged bytes (default: 512)")
-    ap.add_argument('--test-rows', action='store_true',
-                    help="write the test inputs' grids and the tables' test entries (default: train entries only)")
     ap.add_argument('--table-max-cells', type=int, default=0, metavar='N',
                     help='the most cells of a train table the features read (default: 524288)')
-    ap.add_argument('--case-max-cells', type=int, default=0, metavar='N',
-                    help="the most cells of one case's acquired train tables together (default: 1048576)")
     ap.add_argument('--stall', type=float, default=0, metavar='S',
                     help='set aside a task that builds no point for S seconds (default: no limit)')
     ap.add_argument('--task-gib', type=float, default=0, metavar='G',
