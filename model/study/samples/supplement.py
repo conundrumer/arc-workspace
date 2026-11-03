@@ -193,7 +193,7 @@ def replay_release(rec: dict, tmp: str, out: str, release: Path) -> dict:
     with open(log, 'w') as f:
         p = subprocess.run([sys.executable, '-u', RR.__file__, '--replay', '--record', rec_path, '--task-file', str(TASK_DIR / f'{t}.json'), '--out', out,
                             '--src', str(rec['src']), '--split', rec['split'], '--release', str(release), '--site', ENGINE_SITE,
-                            '--rss-mib', str(RR.RSS_MIB), '--deadline', str(RR.DEADLINE_SECONDS), '--session-share', str(RR.SESSION_SHARE)],
+                            '--rss-mib', str(RR.RSS_MIB), '--deadline', str(RR.DEADLINE_SECONDS), '--table-work-cap', str(RR.TABLE_WORK_CAP), '--session-share', str(RR.SESSION_SHARE)],
                            stdout=f, stderr=subprocess.STDOUT, env=dict(os.environ, **RR.CHILD_ENV))
     text = Path(log).read_text(errors='replace')
     done = [line for line in text.splitlines() if line.startswith('rows_replay: {')]
