@@ -7,7 +7,7 @@
 
 - A query is one QueryHash of the engine's export (gold_union_tables.py): union queries of one QueryHash are one query, with their Python identities in `idents` and the least of them in `ident`. A query that the row store lacks keeps its Python identity.
 - A table is (QueryHash, Name), and a graph table is the class of tables of one map {Assignment → TableHash} (gold_union_tables.py gives the rule). A query's heads are the graph tables of every output the export gives it; the graph tables it uses are those of the tables its body uses. A graph table with more than one query is an OR. Roots are made by queries that use no table. The goal is an OR over options, one for each distinct set of graph tables that a kept case's OUT (or the pinned program's) uses; an option is an AND over its tables, with depth the most over them and cost the sum.
-- A graph table has `members`, the union names of its tables ("key" for a query that isn't INIT, "key.name" for an INIT output), `tables`, its (QueryHash, Name) pairs, `map` and `capped`, and `exported`, false where the row store has no query for it (the engine refused the program, or the text didn't match), so the graph table has no map. `kit_unreachable` marks a graph table with a member in the `left` of synth-worker's maps-SET.jsonl: a union output whose replay in the search kit doesn't finish or isn't collected. `kit_unreachable_reason` is that `left` entry's reason. search-worker's outmap-SET.jsonl names the outputs of `left`.
+- A graph table has `members`, the union names of its tables ("key" for a query that is neither INIT nor RIGID_DET, "key.name" for an INIT output or a RIGID_DET table), `tables`, its (QueryHash, Name) pairs, `map` and `capped`, and `exported`, false where the row store has no query for it (the engine refused the program, or the text didn't match), so the graph table has no map. `kit_unreachable` marks a graph table with a member in the `left` of synth-worker's maps-SET.jsonl: a union output whose replay in the search kit doesn't finish or isn't collected. `kit_unreachable_reason` is that `left` entry's reason. search-worker's outmap-SET.jsonl names the outputs of `left`.
 - The queries and the tables they use come from the `text` of each kept case in union-keys-SET.jsonl.
 - Depth: depth(T) = min over T's queries of 1 + max over the tables each uses of depth, roots at 0, as the least fixed point from infinity, so a cycle gives the right result. `depth_cases` is the union file's depth of the union table, the least over the cases.
 - Query bits: the least bits of the query, joined by Python identity, over the rows of reread-kit/merged.jsonl, where the row's base_sha is the text of gold-export/flat/<task>.arclog, and the rows of reread5-all and reread6-all (whole lines only, so rows that stream in are taken as they land), one per union program (stem `<task>~<program sha>`), where the row's base_sha is the program's text (or_q.walk at b8e52e249 in both). Other queries have no bits. A graph table's `bits` is the least over its queries that have bits.
@@ -94,12 +94,18 @@ def ports():
     return got
 
 
+def rigid_table(path):
+    """The export's name of the table that a read of a RIGID_DET at `path` takes: 'slot N' for `.rN`, 'pose' for `.pose`, else ''."""
+    step = path.lstrip('.').split('.')[0]
+    return 'slot ' + step[1:] if re.fullmatch(r'r\d+', step) else 'pose' if step == 'pose' else ''
+
+
 def name(key, out):
     return '%d.%s' % (key, out) if out else str(key)
 
 
 def graph(u, cases, T):
-    """({QueryHash: dict(heads, uses, kind, ident, idents, keys)}, [goal option: [graph table]], {graph table: {(union key, Name)}}) from the kept cases' texts. Union queries with one QueryHash are one query. A use of an INIT is a use of one of its outputs. A query's heads are the graph tables of every output that the export gives it."""
+    """({QueryHash: dict(heads, uses, kind, ident, idents, keys)}, [goal option: [graph table]], {graph table: {(union key, Name)}}) from the kept cases' texts. Union queries with one QueryHash are one query. A use of an INIT is a use of one of its outputs, and a use of a RIGID_DET is a use of its table 'slot N' or 'pose'. A query's heads are the graph tables of every output that the export gives it."""
     kept = {c for c, h in u['cases'].items() if h not in (u.get('left_out') or {})}
     queries, outs, goal, members = {}, collections.defaultdict(set), [], collections.defaultdict(set)
     texts = [(c['case'], c['text'], c['keys']) for c in cases if c['case'] in kept or c['case'] == 'pinned']
@@ -112,11 +118,11 @@ def graph(u, cases, T):
 
         def used(n):
             rk, kind, ri = label[n[1]]
-            out = n[2].lstrip('.').split('.')[0] if kind == 'INIT' else ''
+            out = n[2].lstrip('.').split('.')[0] if kind == 'INIT' else rigid_table(n[2]) if kind == 'RIGID_DET' else ''
             g = T.table(ri, out)
             if rk is not None and g not in T.maps:  # a graph table from the row store takes its members from its queries' outputs, below
                 members[g].add((rk, out))
-            if kind == 'INIT':
+            if kind in ('INIT', 'RIGID_DET'):
                 outs[ri].add(out)
             return g
         for f, k in zip(qs, keys):
@@ -136,7 +142,7 @@ def graph(u, cases, T):
             for n in T.names[q]:
                 members[T.graph[q, n]].update((k, n) for k in p['keys'])
         else:
-            names = sorted({o for i in p['idents'] for o in outs[i]}) if p['kind'] == 'INIT' else []
+            names = sorted({o for i in p['idents'] for o in outs[i]}) if p['kind'] in ('INIT', 'RIGID_DET') else []
             p['heads'] = sorted({T.table(p['ident'], o) for o in names or ['']})
             for o in names or ['']:
                 members[T.table(p['ident'], o)].update((k, o) for k in p['keys'])
