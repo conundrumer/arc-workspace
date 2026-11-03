@@ -2,7 +2,7 @@
 
   <runtime python> gold_union_graph.py SET
   <runtime python> gold_union_graph.py SET K N    takes the tasks at positions K, K + N, ... of the union and writes graph-*-SET-K.jsonl; concatenate the N files of each kind for the set
-  With UNION_TASKS set (tasks separated by spaces), only those tasks are taken. GOLD_UNION_DIR is the folder of the inputs and outputs.
+  With UNION_TASKS set (tasks separated by spaces), only those tasks are taken, K N name only the output file (K is 0 where not given), and the files are graph-*-SET-K.jsonl, never graph-*-SET.jsonl. GOLD_UNION_DIR is the folder of the inputs and outputs.
 
   Each output has a file <output>.code.json, {"code": {"sha", "dirty"}}: the commit of the code that wrote it (gold_union_code.py).
 
@@ -367,8 +367,8 @@ def one(u, cases, merged, T, rows5):
 def main():
     s = sys.argv[1]
     k, n = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (0, 1)
-    tag = '%s-%d' % (s, k) if len(sys.argv) > 3 else s
     only = os.environ.get('UNION_TASKS', '').split()
+    tag = '%s-%d' % (s, k) if len(sys.argv) > 3 or only else s
     merged = {r['task']: r for r in map(json.loads, open(D + 'gold/gold-v3-dag-bits/reread-kit/merged.jsonl'))}
     rows5 = collections.defaultdict(list)
     for f in glob.glob(D + 'gold/gold-v3-dag-bits/reread[56]-all/rows-*.jsonl'):
@@ -393,7 +393,7 @@ def main():
                 left[r['task']][outname.get((r['task'], key, out)) or str(key)] = why
     part = '.part%d' % os.getpid()
     with open(OUT + 'graph-tables-%s.jsonl' % tag + part, 'w') as ft, open(OUT + 'graph-tasks-%s.jsonl' % tag + part, 'w') as fk, open(OUT + 'graph-prods-%s.jsonl' % tag + part, 'w') as fp:
-        for u in [u for u in union_rows(s) if u['task'] in only or not only][k::n]:
+        for u in [u for u in union_rows(s) if u['task'] in only] if only else union_rows(s)[k::n]:
             if not u.get('tables'):
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error=u.get('error', 'no tables'))) + '\n')
                 continue
