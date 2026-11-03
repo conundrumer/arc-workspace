@@ -1031,7 +1031,7 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
             },
         }
         let row = u32::try_from(place).expect("fewer than 2^32 tables");
-        push_table(materializer,out, names, runs, row, token, table, train, labels,row_export);
+        let settled=push_table(materializer,out, names, runs, row, token, table, train, labels,row_export);
         // The pointer memo is scratch for this table: release its cloned
         // types, sorted orders and relation/index owners before settlement.
         // Content run interning still spans every table and prefix copy.
@@ -1040,7 +1040,10 @@ fn push_tables<'t>(materializer:&Materializer<'_>,out: &mut CaseColumns, names: 
         // conversion scratch have also dropped.
         // Only this phase's new reservations may shrink; prefix clones and
         // native Contents/matrices keep their independent shared leases.
-        let retained=packing_allowance(packing_bytes(out,names,runs).saturating_sub(before));
+        // The entries and projection rows have settled to the bytes they
+        // keep, so the packing allowance covers only the rest of the growth.
+        let growth=packing_bytes(out,names,runs).saturating_sub(before);
+        let retained=packing_allowance(growth.saturating_sub(settled.heap)).saturating_add(settled.held);
         settle_packing(&mut out.allocations[first_allocation..],retained);
     }
 }
@@ -1423,8 +1426,9 @@ pub(crate) fn names_of(registry: &Registry, earlier: &[&Table]) -> TableNames {
     names
 }
 
-/// The columns of `table`, the table at `row`, after the tables before it.
-fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>, row_export:RowExport<'_>) {
+/// The columns of `table`, the table at `row`, after the tables before it,
+/// and what its entries and projection rows keep once each has settled.
+fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut TableNames, runs: &mut Runs, row: u32, token: usize, table: &Table, train: usize, labels: Option<&StreamLabels>, row_export:RowExport<'_>) -> Settled {
     let tables = &mut out.tables;
     tables.token.push(u32::try_from(token).expect("fewer than 2^32 tokens"));
     tables.form.push(form_path(&table.form));
@@ -1464,6 +1468,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.keys.push(Vec::new());
             tables.output_position.push(-1);
             tables.output_color.push(-1);
+            Settled::default()
         }
         Ok(contents) => {
             let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
@@ -1507,7 +1512,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.output_color.push(contents.selected.color.map_or(-1, i32::from));
             push_flows(out, names, row, contents);
             names.extend(own);
-            push_contents(materializer,&table.form,out, runs, row, contents, &types, &extent_columns, train,row_export);
+            push_contents(materializer,&table.form,out, runs, row, contents, &types, &extent_columns, train,row_export)
         }
     }
 }
@@ -1809,16 +1814,35 @@ fn kept_bytes(values: usize, order: usize, status: &[Vec<u8>]) -> usize {
     values.saturating_mul(4 * 4).saturating_add(order.saturating_mul(8)).saturating_add(status)
 }
 
+/// What the entries and projection rows of a table keep once each has
+/// settled: `heap`, the bytes that their cells and extent statuses take in
+/// the columns, as [`packing_bytes`] measures them, and `held`, the bytes
+/// that their reservations keep.
+#[derive(Clone, Copy, Default)]
+struct Settled {
+    heap: usize,
+    held: usize,
+}
+
+/// The bytes that a value buffer of `capacity` cells takes, as
+/// [`packing_bytes`] measures them.
+fn values_heap(capacity: usize) -> usize {
+    capacity.saturating_mul(std::mem::size_of::<i32>()).saturating_add(usize::from(capacity > 0) * 32)
+}
+
 /// Shrinks the reservations `allocations` that no other owner shares, in
 /// their order, so that they keep `bytes` in all, as the packing of an entry
 /// ends: the reservations covered its scratch, and keep only what it holds.
-fn settle(allocations: &mut [Arc<arclog::session::SessionAllocation>], mut bytes: usize) {
+/// Adds to `settled` the entry's `heap` and the bytes its reservations keep.
+fn settle(settled: &mut Settled, allocations: &mut [Arc<arclog::session::SessionAllocation>], mut bytes: usize, heap: usize) {
+    settled.heap = settled.heap.saturating_add(heap);
     for allocation in allocations {
         let held = allocation.bytes();
         if let Some(allocation) = Arc::get_mut(allocation) {
             allocation.shrink_to(bytes);
         }
         bytes = bytes.saturating_sub(held.min(bytes));
+        settled.held = settled.held.saturating_add(allocation.bytes());
     }
 }
 
@@ -1837,15 +1861,18 @@ fn annotation_copy(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclo
 
 /// The entries of `contents`, the table at `row`, and its projections;
 /// `extent_columns` are the table's columns that its entries hold extents for.
-fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize, row_export:RowExport<'_>) {
+/// Gives what the entries and projection rows keep once each has settled.
+fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize, row_export:RowExport<'_>) -> Settled {
+    let mut settled = Settled::default();
     let mut starts = Vec::with_capacity(contents.examples.len());
     for (place, example) in contents.examples.iter().enumerate() {
         starts.push(out.entries.table.len());
         let (kind, index) = crate::tables::example_axis(example.example, train);
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
-        let push = |out: &mut CaseColumns, runs: &mut Runs, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
+        let mut push = |out: &mut CaseColumns, runs: &mut Runs, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let count_only=row_export.count_only(out.entries.table.len(),contents.projections.is_some());
             let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
+            let heap_from=values_heap(out.values.capacity());
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
@@ -1903,7 +1930,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             } else {Vec::new()};
             let order_kept=if runs.1.len()>runs_from {order.len()} else {0};
             let kept=kept_bytes(out.values.len()-values_from,order_kept,&extent_status);
-            settle(&mut out.allocations[allocations_from..],kept);
+            settle(&mut settled,&mut out.allocations[allocations_from..],kept,values_heap(out.values.capacity())-heap_from+extent_status.heap_bytes());
             let entries = &mut out.entries;
             entries.extent_status.push(extent_status);
             entries.kind.push(value_kind as u8);
@@ -1966,6 +1993,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
                     let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
+                    let heap_from=values_heap(out.values.capacity());
                     let mut order:Arc<[usize]> = Arc::from([]);
                     let (defined, count, offset) = match projection_rows {
                         None => (0, 0, 0),
@@ -2012,7 +2040,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                     };
                     let order_kept=if runs.1.len()>runs_from {order.len()} else {0};
                     let kept=kept_bytes(out.values.len()-values_from,order_kept,&extent_status);
-                    settle(&mut out.allocations[allocations_from..],kept);
+                    settle(&mut settled,&mut out.allocations[allocations_from..],kept,values_heap(out.values.capacity())-heap_from+extent_status.heap_bytes());
                     out.projection_rows.extent_status.push(extent_status);
                     out.projection_rows.projection.push(projection_row);
                     out.projection_rows.entry.push((starts[example] + at) as u32);
@@ -2024,6 +2052,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             }
         }
     }
+    settled
 }
 
 /// For each example of `contents`, its entries in the order of the models of
