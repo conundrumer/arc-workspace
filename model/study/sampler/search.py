@@ -510,6 +510,10 @@ class SearchRun(Run):
         dr.root_cap, dr.node_cap = ROOT_CAP, 1 << 30
         return dr
 
+    def makes(self, kind):
+        """Run's, and with WRITER each kind that opens a query (live.KIND_TOK)."""
+        return (WRITER and kind in live.KIND_TOK) or super().makes(kind)
+
     def form(self, pg, dec, kind):
         """Run's, and with WRITER the query that the writer writes (writer.write): each choice of the writer is a node of the search. A path
         that the writer ends is a dead path."""

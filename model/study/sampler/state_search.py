@@ -315,7 +315,7 @@ def expand(pool, deadline):
         c['state:replayed queries'] += len(texts)
         dec, pg = run.scope(texts)
         c['state:seconds scope'] += time.perf_counter() - t0
-        kinds = [k for k in live.KIND_TOK if dec.admits([live.KIND_TOK[k]])[0]]
+        kinds = [k for k in live.KIND_TOK if (WRITER or run.makes(k)) and dec.admits([live.KIND_TOK[k]])[0]]
         kind = run.rng.choice(kinds)
         t0 = time.perf_counter()
         global _REC

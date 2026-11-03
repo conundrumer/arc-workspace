@@ -37,8 +37,9 @@ type Assignment = tuple[tuple[QueryHash, ValueHash], ...]  # over D(t), sorted b
 type Table = tuple[QueryHash, Name] | str  # a query's table; a given table by its own name
 
 REL_KINDS = S.RELATION_KINDS
-KIND_IDS = tuple(KIND_TOK.values())
-GROUP_INITS = {'INIT': 1, 'RIGID_DET': 2}  # kinds with port decisions, and the count of decisions that are key bodies
+GROUP_INITS = {'INIT': 1, 'RIGID_DET': 2, 'DEMONSTRATED': 1}  # kinds with port decisions, and the count of decisions that are key bodies
+PORT_KINDS = 'INIT', 'RIGID_DET', 'DEMONSTRATED'  # kinds whose bodies are ports, under the port caps
+DEMO_TOKEN_FACTOR = 16  # a DEMONSTRATED query ends at this many times Limits.model_tokens; each of its forms, and its own key and inputs, at Limits.model_tokens
 
 
 def query_hash(dec, index=-1):
@@ -69,7 +70,7 @@ class Phase(enum.Enum):
 @dataclasses.dataclass(frozen=True, slots=True)
 class Place:  # where the next model token goes
     phase: Phase
-    port: int | None  # the INIT input port whose body holds the next token (its column position); None outside a port
+    port: int | None  # the input port of an INIT or a DEMONSTRATED form whose body holds the next token (its column position); None outside a port
     branch: tuple[int, ...]  # the branch index at each open OR, outermost first
     negated: bool  # the open atom stands under NOT
     atoms: int  # closed atoms of the current body (a closed OR or ALL counts as one)
@@ -84,6 +85,7 @@ class Label:
     key: bool  # made by `^`
     reads: tuple  # (body, group path) of each atom that read it since
     hidden: bool  # its group closed and did not export it
+    field: bool = False  # a field of a DEMO_RULE, which each form of the rule may read
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -100,6 +102,9 @@ class Labels:  # each label so far, with its types and the places that may use i
         out = []
         for L in self.items:
             if L.hidden:
+                continue
+            if L.field:
+                out.append(L.tok)
                 continue
             if L.body != T.body:
                 if L.key and T.round == 0:
@@ -127,9 +132,9 @@ class Labels:  # each label so far, with its types and the places that may use i
 @dataclasses.dataclass(slots=True)
 class Track:
     """What `advance` keeps beyond Place: a mutable record that is copied at each step and never changed once a WritingPoint holds it."""
-    where: str = 'body'  # start, group, body, head or done
+    where: str = 'body'  # start, group, body, head, rule (between the forms of a DEMONSTRATED form's rules), answer (the columns after a PREDICT body) or done
     body: int = 0
-    decision: int = -1  # the port decision of an INIT or RIGID_DET that the next token answers
+    decision: int = -1  # the port decision of an INIT, RIGID_DET or DEMONSTRATED form that the next token answers
     last_pos: int = -1
     round: int = 0  # 1 after the key group: the ports that come again outside it
     cur_pos: int | None = None  # the column position of the port at the decision
@@ -157,13 +162,18 @@ class Track:
     end_atom: tuple = ()  # (body, top) of the last top-level atom, not negated, that had a COLUMN point
     end_ok: bool = False  # END was in the mask at the last COLUMN point of that atom
     absent: int = 0  # the count of those atoms in a row in the body with END absent at their last COLUMN point
+    form: str = ''  # 'DEMONSTRATED' in a DEMONSTRATED query, else ''
+    sub: str = ''  # the kind of the form of a DEMO_RULE that holds the next token ('RULE' for a PREDICT clause); '' outside one
+    predict: bool = False  # the form of the DEMO_RULE is its PREDICT clause
+    alt: bool = False  # the next form of the DEMO_RULE follows ALT_FORM: a label scope of its own
+    base: int = 0  # the index in the tokens of the kind token of the form that holds the next token (a DEMO_RULE's form, else the query's)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class WritingPoint:
     dec: arclog.Decoder  # the writing point's decoder; a component forks it and never steps it
     pg: object  # the scope's Program (live.Program), one for all writing points of a try
-    kind: str  # 'RULE', 'DET', 'INIT' or 'RIGID_DET'
+    kind: str  # 'RULE', 'DET', 'INIT', 'RIGID_DET' or 'DEMONSTRATED': the query's kind, or in a DEMO_RULE the kind of its form that holds the next token
     tokens: tuple[TokenId, ...]  # the query's model tokens so far, the kind token first
     place: Place
     atoms: tuple[tuple[TokenId, ...], ...]  # the model tokens of each closed atom of the current body
@@ -181,7 +191,7 @@ class Limits:  # the loop's hard caps; a path past a cap ends
     max_atoms: int = 16
     port_atoms: int = 12
     branch_atoms: int = 12
-    port_absent: int = 6  # an INIT or RIGID_DET port body ends after this count of top-level atoms in a row with END absent (Track.absent); 0 turns it off
+    port_absent: int = 6  # a port body of a PORT_KINDS form ends after this count of top-level atoms in a row with END absent (Track.absent); 0 turns it off
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -247,6 +257,11 @@ class Core:
         self.IF = V.id('IF')
         self.ONE = V.id('ONE')
         self.regtypes = run.pri['regtypes']
+        live.bind_vocabulary(V)
+        self.kind_ids = np.array(sorted(KIND_TOK.values()), np.uint32)  # the tokens that open a query
+        self.demo = dict(live.DEMO_TOK)  # the ids of the DEMONSTRATED form's control tokens; empty for a vocabulary without them
+        self.end_ids = np.array(sorted(set(KIND_TOK.values()) | set(self.demo.values())), np.uint32)  # a mask that holds one of these follows the end of a form
+        self.form_kinds = {i: n for n, i in KIND_TOK.items()} | ({V.id('CHOOSE'): 'CHOOSE', self.demo['PREDICT']: 'RULE'} if self.demo else {})  # a token that opens a form of a DEMO_RULE -> the form's kind
 
     def col_type(self, pt, rtok, pos, field=None):
         """The type of column `pos` of table or relation token rtok, without the type's parameters; ANY_TYPE where unknown."""
@@ -254,7 +269,7 @@ class Core:
             return ANY_TYPE
         name = self.names[rtok]
         if self.kind[rtok] == 'relation':
-            t = pt.pg.colmaps[pt.kind].get(M.slot_no(name), {}).get((pos, field))
+            t = pt.pg.colmaps.get(pt.kind, pt.pg.colmaps['INIT']).get(M.slot_no(name), {}).get((pos, field))  # a CHOOSE of a DEMO_RULE reads as an INIT does
         else:
             ts = self.regtypes.get(name)
             t = str(ts[pos]) if ts and field is None and 0 <= pos < len(ts) else None
@@ -262,16 +277,22 @@ class Core:
 
     def start(self, run, pg, dec, kind):
         """The first WritingPoint of a query of `kind`, at decoder `dec` after the kind token."""
-        T = Track(where='start' if kind == 'INIT' else 'group' if kind == 'RIGID_DET' else 'body')
-        if kind == 'RIGID_DET':
+        T = Track(where='start' if kind == 'INIT' else 'group' if kind in ('RIGID_DET', 'DEMONSTRATED') else 'body', form='DEMONSTRATED' if kind == 'DEMONSTRATED' else '')
+        if kind in ('RIGID_DET', 'DEMONSTRATED'):
             T.decision = 0
         pt = WritingPoint(dec, pg, kind, (KIND_TOK[kind],), None, (), Labels(), run, T, (), ids_of(dec.admissible()))
         return self._with_place(pt, T, (), Labels(), pt.tokens, ())
 
     def _with_place(self, pt, T, atoms, labels, tokens, ids):
-        place = Place(self.phase_of(T, pt.kind, len(tokens)), T.port if T.where in ('body', 'head') else T.cur_pos if T.where == 'group' and not self.inkey_next(T, pt.kind) else None,
+        kind = self.kind_at(T, pt.kind)
+        place = Place(self.phase_of(T, kind, len(tokens)), T.port if T.where in ('body', 'head') else T.cur_pos if T.where == 'group' and not self.inkey_next(T, kind) else None,
                       tuple(b for _, k, b in T.path if k == 'OR'), T.negated, T.top)
-        return dataclasses.replace(pt, place=place, atoms=atoms, labels=labels, tokens=tokens, track=T, open_atom=T.atom)
+        return dataclasses.replace(pt, kind=kind, place=place, atoms=atoms, labels=labels, tokens=tokens, track=T, open_atom=T.atom)
+
+    @staticmethod
+    def kind_at(T, kind):
+        """The kind of the form that holds the next token: a DEMO_RULE's form, else the query's."""
+        return T.sub or T.form or kind
 
     @staticmethod
     def inkey_next(T, kind):
@@ -285,8 +306,10 @@ class Core:
             return Phase.KEY if self.inkey_next(T, kind) else Phase.PORT
         if w == 'head':
             return Phase.HEAD
-        if w == 'done':
+        if w in ('done', 'rule'):
             return Phase.KIND
+        if w == 'answer':
+            return Phase.HEAD
         if T.col is not None:
             return Phase.VALUE
         if T.need > 0 or T.one:
@@ -295,7 +318,7 @@ class Core:
             return Phase.FIELD
         if T.atom:
             return Phase.COLUMN
-        if kind in ('RULE', 'DET') and ntok == 1:
+        if kind in ('RULE', 'DET') and ntok - T.base == 1 and not T.predict:
             return Phase.PROPOSER
         return Phase.ATOM_START
 
@@ -308,9 +331,12 @@ class Core:
         labs, atoms = list(pt.labels.items), pt.atoms
         kind, k = pt.kind, self.kind[t]
         T.rels += tuple(x for x in forced if self.kind[x] == 'relation')
-        done_here = False
         where = T.where
-        if where == 'start':  # the INIT's component
+        if where == 'rule':
+            self._rule(pt, T, t, forced, labs, ids2)
+        elif where == 'answer':
+            self._answer(T, t, labs, ids2)
+        elif where == 'start':  # the INIT's component
             self._classify(T, kind, ids2, forced)
         elif where == 'group':
             if t == SKIP_TOK:
@@ -332,7 +358,9 @@ class Core:
             box = [atoms]
             self._body(pt, T, t, k, forced, labs, ids2, box)
             atoms = box[0]
-        if T.where == 'body' and not T.path and not T.negated and self.phase_of(T, kind, len(pt.tokens) + 1) == Phase.COLUMN:  # a top-level atom that may close: the run of atoms after which END is absent
+        if T.sub and T.where == 'done':  # a form of a DEMO_RULE ended
+            self._to_rule(T)
+        if T.where == 'body' and not T.path and not T.negated and self.phase_of(T, self.kind_at(T, kind), len(pt.tokens) + 1) == Phase.COLUMN:  # a top-level atom that may close: the run of atoms after which END is absent
             key = (T.body, T.top)
             if key != T.end_atom:
                 T.absent = T.absent + 1 if T.end_atom[:1] == (T.body,) and not T.end_ok else 0
@@ -341,8 +369,12 @@ class Core:
         return T, Labels(tuple(labs)), atoms
 
     def _classify(self, T, kind, ids2, forced, head=False):
-        """Sets T after a step that left a body, a port decision or a head token: done, the next port decision, or a head."""
-        if np.isin(ids2, KIND_IDS).any():
+        """Sets T after a step that left a body, a port decision or a head token: done, the next port decision, or a head. After the last input of a
+        DEMONSTRATED form its rules follow."""
+        if T.form and not T.sub and (ids2 == self.demo['DEMO_RULE']).any():
+            T.where = 'rule'
+            return
+        if np.isin(ids2, self.end_ids).any():
             T.where = 'done'
             return
         if (ids2 == SKIP_TOK).any() or self.is_rel[ids2].any():
@@ -479,14 +511,54 @@ class Core:
                         T.top += 1
             else:
                 T.negated = False
-                if kind in ('RULE', 'DET'):
-                    T.where = 'done' if np.isin(ids2, KIND_IDS).any() else 'body'
+                if T.predict:  # the engine names the columns that the clause fills, and each takes a label or SKIP
+                    T.where = 'answer'
+                    self._answered(T, ids2)
+                elif kind in ('RULE', 'DET'):
+                    T.where = 'done' if np.isin(ids2, self.end_ids).any() else 'body'
                 else:
                     self._classify(T, kind, ids2, forced, head=not T.inkey)
                     if not T.inkey and T.where == 'head':
                         T.port = T.cur_pos
         elif k == 'proposer':
             T.proposed = True
+
+    def _rule(self, pt, T, t, forced, labs, ids2):
+        """Token t between the forms of a DEMONSTRATED form's rules: DEMO_RULE, a field's `*`, ALT_FORM, the token that opens a form or a PREDICT clause, or the END of a rule or of the form."""
+        demo = self.demo
+        if t == demo['DEMO_RULE']:  # a rule is a label scope
+            labs.clear()
+            T.alt = False
+        elif t == M.STAR:
+            lab = next(x for x in forced if self.kind[x] == 'label')
+            labs.append(Label(lab, (ANY_TYPE,), T.body, (), False, (), False, True))
+        elif t == demo['ALT_FORM']:
+            T.alt = True
+        elif t == M.END:
+            if np.isin(ids2, self.kind_ids).any():  # the form's END: the engine declared its relation
+                T.where = 'done'
+        else:
+            sub = self.form_kinds[t]
+            labs[:] = [] if T.alt else [L for L in labs if L.field]  # a label of an earlier form is made anew; a form after ALT_FORM has labels of its own alone
+            fresh = Track(where='start' if sub == 'INIT' else 'group' if sub in ('RIGID_DET', 'CHOOSE') else 'body', decision=0 if sub in ('RIGID_DET', 'CHOOSE') else -1, body=T.body + 1, uid=T.uid,
+                          rels=T.rels, form=T.form, sub=sub, predict=t == demo['PREDICT'], base=len(pt.tokens))
+            for f in dataclasses.fields(Track):
+                setattr(T, f.name, getattr(fresh, f.name))
+
+    def _answer(self, T, t, labs, ids2):
+        """Token t at a column that a PREDICT clause fills: a label of the clause or a field, or SKIP."""
+        if self.kind[t] == 'label':
+            self._read(labs, t, T, ANY_TYPE)
+        self._answered(T, ids2)
+
+    def _answered(self, T, ids2):
+        """After a PREDICT body or one of its columns: the next column, else the rule's next form or its END."""
+        if not ((ids2 == SKIP_TOK).any() or self.is_label[ids2].any()):
+            self._to_rule(T)
+
+    @staticmethod
+    def _to_rule(T):
+        T.where, T.sub, T.predict, T.alt, T.path, T.atom, T.negated = 'rule', '', False, False, (), (), False
 
     def _read(self, labs, tok, T, ty):
         for i, L in enumerate(labs):
@@ -795,7 +867,7 @@ class _Meta:
                 cls[i] = TOKEN_CLASSES.index(c)
         for i in M.CMP:
             cls[i] = TOKEN_CLASSES.index('operator')
-        for i in KIND_IDS:
+        for i in core.end_ids:  # the DEMONSTRATED form's DEMO_RULE, PREDICT and ALT_FORM are of the class of the kind tokens
             cls[i] = TOKEN_CLASSES.index('kind')
         for i, c in fixed.items():
             cls[i] = TOKEN_CLASSES.index(c)
@@ -1446,16 +1518,16 @@ def options(pt, plan):
     ids = pt.ids_
     lim, T = plan.limits, pt.track
     cap = None  # the name of the cap that the point is at: 'cap:tokens', 'cap:branch' (branch_atoms), 'cap:port' (port_atoms), 'cap:body' (max_atoms) or 'cap:stuck' (port_absent)
-    if len(pt.tokens) >= lim.model_tokens:
+    if len(pt.tokens) - T.base >= lim.model_tokens or len(pt.tokens) >= lim.model_tokens * DEMO_TOKEN_FACTOR:
         cap = 'cap:tokens'
-    elif lim.port_absent and T.absent >= lim.port_absent and (pt.kind == 'INIT' or pt.kind == 'RIGID_DET'):  # END was absent after port_absent top-level atoms in a row: the head is taken as one that cannot be filled, and the path ends
+    elif lim.port_absent and T.absent >= lim.port_absent and pt.kind in PORT_KINDS:  # END was absent after port_absent top-level atoms in a row: the head is taken as one that cannot be filled, and the path ends
         ids, cap = ids[:0], 'cap:stuck'
     elif T.where == 'body' and not T.negated:  # at a cap no atom starts: an open atom goes on with its values and closes, else only the tokens that close are left
         if T.path and T.path[-1][1] == 'OR':
             n, limit, closing, name = sum(1 for p, _ in T.texts if p == T.path) + bool(T.atom), lim.branch_atoms, (M.END, ALSO_TOK), 'cap:branch'
         elif not T.path:
-            n, limit, closing = T.top + bool(T.atom), (lim.port_atoms if pt.kind == 'INIT' or pt.kind == 'RIGID_DET' else lim.max_atoms), (M.END,)
-            name = 'cap:port' if pt.kind == 'INIT' or pt.kind == 'RIGID_DET' else 'cap:body'
+            n, limit, closing = T.top + bool(T.atom), (lim.port_atoms if pt.kind in PORT_KINDS else lim.max_atoms), (M.END,)
+            name = 'cap:port' if pt.kind in PORT_KINDS else 'cap:body'
         else:
             n = limit = name = closing = None
         if n is not None and n >= limit and (not T.atom or pt.place.phase == Phase.COLUMN):  # not inside an atom that a value or an operand is due in

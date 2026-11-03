@@ -98,7 +98,10 @@ S.ADMITS = True  # one Decoder.admits call per node, with no mask and no per-tok
 S.REACH = False  # no look-ahead below a column or a value: an atom that cannot close is redrawn, which costs less
 
 RULE_TOK, DET_TOK, INIT_TOK, RIGID_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 6, 7, 12, 13
-KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK, RIGID_DET=RIGID_TOK)
+KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK, RIGID_DET=RIGID_TOK)  # the kinds of query that a pick of a kind gives; bind_vocabulary adds DEMONSTRATED
+DRAWN_KINDS = 'RULE', 'DET', 'INIT', 'RIGID_DET'  # the kinds that Run.form draws; the writer (writer.py) writes these and DEMONSTRATED
+DEMO_TOKENS = 'DEMONSTRATED', 'DEMO_RULE', 'PREDICT', 'ALT_FORM'  # the control tokens of a DEMONSTRATED form. They stand after the vocabulary's label slots, so their ids differ by vocabulary
+DEMO_TOK = {}  # a name of DEMO_TOKENS -> its id, from bind_vocabulary
 KIND_SHARE = {}  # a sparse kind -> its share of the pool's picks
 REPLAYED = 'CHOOSE',  # the kinds of a scope's forms that no draw makes and a scope replays, for the forms after them
 EXAMPLE_TASK, EXAMPLE_TRAIN = 0, 1  # the example_kind of a task-wide table entry, and of a train pair's
@@ -165,6 +168,18 @@ def cell_masks(pair):
     cells = want.reshape(900, 10)
     wp, wc = cells.any(1), cells.any(0)
     return {9000: (want, right), 900: (wp, wp), 10: (wc, wc)}
+
+
+def bind_vocabulary(V):
+    """Sets DEMO_TOK from vocabulary V, and KIND_TOK['DEMONSTRATED']. A vocabulary with none of DEMO_TOKENS (an engine before the DEMONSTRATED form) sets nothing.
+    A process holds the ids of one vocabulary: a vocabulary that gives other ids raises."""
+    got = {name: V.id(name) for name in DEMO_TOKENS}
+    if any(i is None for i in got.values()):
+        return
+    if DEMO_TOK and DEMO_TOK != got:
+        raise ValueError('a vocabulary with other ids of %s: %s, after %s' % ('/'.join(DEMO_TOKENS), got, DEMO_TOK))
+    DEMO_TOK.update(got)
+    KIND_TOK['DEMONSTRATED'] = got['DEMONSTRATED']
 
 
 def kind_weights(pri):
@@ -639,6 +654,7 @@ class Run:
     def __init__(self, pri, session, seed, deadline, task, limits):
         self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
         self.V = V = session.vocabulary
+        bind_vocabulary(V)
         self.spent_after = DEADLINE_SHARE * (session.settings.deadline_seconds or math.inf)
         self.root = session.decoder()
         self.rng = random.Random(seed)
@@ -728,10 +744,14 @@ class Run:
         """The next clause's kind at dec, or None for the stop, from how many clauses of each kind pg has. The empty program has no stop."""
         w, top = self.walk, sum(self.walk_all.values())
         here = w['after'].get(tuple(min(pg.kinds.count(k), w['top']) for k in w['kinds']), {})
-        names = [k for k in KIND_TOK if dec.admits([KIND_TOK[k]])[0]] + ['stop'] * bool(pg.kinds)
+        names = [k for k in KIND_TOK if self.makes(k) and dec.admits([KIND_TOK[k]])[0]] + ['stop'] * bool(pg.kinds)
         ws = [here.get(k, 0) + KIND_BACKOFF * self.walk_all[k] / top + 0.01 for k in names]
         kind = self.pick(names, ws)
         return None if kind == 'stop' else kind
+
+    def makes(self, kind):
+        """Whether form() makes a query of the kind: Run.form draws the DRAWN_KINDS."""
+        return kind in DRAWN_KINDS
 
     def open_form(self, pg, dec, kind):
         """The decoder after kind's token at dec, a fork. A program's first model step has step_tables' first result."""
@@ -852,6 +872,8 @@ class Run:
     def form(self, pg, dec, kind):
         """The decoder after a clause of the kind at dec, redrawn where a draw of it fails."""
         pg.forms = S.strata.sexprs(dec.program_form())
+        if kind not in DRAWN_KINDS:
+            raise Drop('%s: no draw of the kind' % kind)
         for attempt in range(self.lim.form_tries):
             pg.new = []
             saved = copy.copy(pg)

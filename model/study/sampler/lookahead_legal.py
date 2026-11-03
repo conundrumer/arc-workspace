@@ -203,14 +203,14 @@ class StopOneAtom:
         if at is not None:
             T, run = pt.track, pt.run
             n = T.top + bool(T.atom)
-            if pt.kind in S.MIN2_KINDS and n == 1 and sum(1 for p, _ in T.texts if p == ()) + bool(T.atom) == 1 and 'single' not in run.pri \
+            if pt.kind in S.MIN2_KINDS and not T.predict and n == 1 and sum(1 for p, _ in T.texts if p == ()) + bool(T.atom) == 1 and 'single' not in run.pri \
                     and not S.one_call(type('D', (), dict(prog_names=pt.pg.names)), [(T.text + ')') if T.atom else T.texts[0][1]]):
                 out[at] = -np.inf
         return out
 
 
 class StopKeysUnread:
-    """An INIT's or RIGID_DET's key body ends with none of its keys read."""
+    """A port body of a writer.PORT_KINDS form ends with none of its keys read."""
     name = 'StopKeysUnread'
 
     def factors(self, pt, ids):
@@ -218,7 +218,7 @@ class StopKeysUnread:
         at = _stop_ctx(pt, ids)
         if at is not None:
             T = pt.track
-            if pt.kind in ('INIT', 'RIGID_DET') and not T.inkey and T.round == 0:
+            if pt.kind in writer.PORT_KINDS and not T.inkey and T.round == 0:
                 keys = pt.labels.keys(pt)
                 if keys:
                     read = {L.tok for L in pt.labels.items if any(b == T.body for b, _ in L.reads)}
@@ -237,7 +237,7 @@ class StopKeysPartial:
         at = _stop_ctx(pt, ids)
         if at is not None:
             T = pt.track
-            if pt.kind in ('INIT', 'RIGID_DET') and not T.inkey and T.round == 0:
+            if pt.kind in writer.PORT_KINDS and not T.inkey and T.round == 0:
                 keys = pt.labels.keys(pt)
                 if keys:
                     read = {L.tok for L in pt.labels.items if any(b == T.body for b, _ in L.reads)}
@@ -335,7 +335,7 @@ class HeadFill:
 
     def factors(self, pt, ids):
         out = np.zeros(len(ids))
-        if pt.kind != 'INIT' or pt.track.inkey or not body_level(pt) or pt.place.phase not in (Phase.ATOM_START, Phase.COLUMN):
+        if pt.kind not in ('INIT', 'DEMONSTRATED') or pt.track.inkey or not body_level(pt) or pt.place.phase not in (Phase.ATOM_START, Phase.COLUMN):
             return out
         if not (ids == M.END).any():
             return out
@@ -357,7 +357,7 @@ class HeadFill:
         open_ends = [False]
 
         def leaves(ids):
-            return np.isin(ids, writer.KIND_IDS).any() or (ids == writer.SKIP_TOK).any() or core.is_rel[ids].any()
+            return np.isin(ids, core.end_ids).any() or (ids == writer.SKIP_TOK).any() or core.is_rel[ids].any()
 
         def dfs(d, depth):
             ids = writer.ids_of(d.admissible())
@@ -483,7 +483,7 @@ class ReadsScope:
     def factors(self, pt, ids):
         out = np.zeros(len(ids))
         T = pt.track
-        if pt.kind not in ('RULE', 'DET') or T.path or T.where != 'body' or not (ids == M.END).any():
+        if pt.kind not in ('RULE', 'DET') or T.form or T.path or T.where != 'body' or not (ids == M.END).any():
             return out
         names = getattr(pt.pg, 'written', None)
         if not names:  # the root slot: an empty scope
@@ -503,7 +503,7 @@ class ReadsScopeFirst:
     def factors(self, pt, ids):
         out = np.zeros(len(ids))
         T = pt.track
-        if pt.kind not in ('RULE', 'DET') or T.firsts or not body_level(pt) or pt.place.phase not in (Phase.PROPOSER, Phase.ATOM_START):
+        if pt.kind not in ('RULE', 'DET') or T.form or T.firsts or not body_level(pt) or pt.place.phase not in (Phase.PROPOSER, Phase.ATOM_START):
             return out
         names = getattr(pt.pg, 'written', None)
         if not names:  # the root slot: an empty scope

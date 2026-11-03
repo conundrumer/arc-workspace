@@ -148,7 +148,7 @@ class EmptyPrefix:
 
     def factors(self, pt, ids):
         out = np.zeros(len(ids))
-        if pt.place.phase != Phase.COLUMN or pt.kind not in ('RULE', 'DET') or pt.track.path:
+        if pt.place.phase != Phase.COLUMN or pt.kind not in ('RULE', 'DET') or pt.track.path or pt.track.form:  # a form of a DEMO_RULE has no body table of its own
             return out
         got = pt.memo.get('empty')
         if got is None:
@@ -176,11 +176,11 @@ class StopGates:
         if n == 0 and pt.kind in S.MIN2_KINDS and not T.proposed:  # a RULE or DET with no atom and no proposer
             out[at] = -np.inf
             return out
-        if pt.kind in S.MIN2_KINDS and n == 1 and sum(1 for p, _ in T.texts if p == ()) + bool(T.atom) == 1 and 'single' not in run.pri \
+        if pt.kind in S.MIN2_KINDS and not T.predict and n == 1 and sum(1 for p, _ in T.texts if p == ()) + bool(T.atom) == 1 and 'single' not in run.pri \
                 and not S.one_call(type('D', (), dict(prog_names=pt.pg.names)), [(T.text + ')') if T.atom else T.texts[0][1]]):
             out[at] = -np.inf
             return out
-        if pt.kind in ('INIT', 'RIGID_DET') and not T.inkey and T.round == 0:
+        if pt.kind in writer.PORT_KINDS and not T.inkey and T.round == 0:
             keys = pt.labels.keys(pt)
             if keys:
                 read = {L.tok for L in pt.labels.items if any(b == T.body for b, _ in L.reads)}
@@ -202,7 +202,7 @@ class SoftCaps:
         if T.where != 'body' or T.rec or T.col is not None or T.need:
             return out
         go = starts(core_of(pt.run), ids)
-        if pt.kind in ('INIT', 'RIGID_DET') and not T.path and T.top + bool(T.atom) == live.PORT_SHORT:
+        if pt.kind in writer.PORT_KINDS and not T.path and T.top + bool(T.atom) == live.PORT_SHORT:
             out[go] += math.log(live.PORT_LONG)
         if T.path and T.path[-1][1] == 'OR' and T.path[-1][2] > 0:
             u, _, b = T.path[-1]
@@ -222,7 +222,7 @@ class HeadGate:
 
     def factors(self, pt, ids):
         out = np.zeros(len(ids))
-        if pt.kind != 'INIT' or pt.track.inkey or not body_level(pt) or pt.place.phase not in (Phase.ATOM_START, Phase.COLUMN):
+        if pt.kind not in ('INIT', 'DEMONSTRATED') or pt.track.inkey or not body_level(pt) or pt.place.phase not in (Phase.ATOM_START, Phase.COLUMN):
             return out
         if not (ids == M.END).any():
             return out
@@ -243,7 +243,7 @@ class HeadGate:
         labs = [L.tok for L in pt.labels.items if not L.hidden and L.body == pt.track.body]
         for _ in range(self.STEPS):
             ids = writer.ids_of(f.admissible())
-            if np.isin(ids, writer.KIND_IDS).any() or (ids == writer.SKIP_TOK).any() or core.is_rel[ids].any():
+            if np.isin(ids, core.end_ids).any() or (ids == writer.SKIP_TOK).any() or core.is_rel[ids].any():
                 return True
             if (ids == M.END).any():
                 f.step(M.END)
@@ -267,7 +267,7 @@ class Completable:
     def __init__(self, run):
         self.run, self.true, self.false = run, {}, {}
         pri = run.pri
-        self.counts = {k: pri['atoms'].get(k, pri['atoms']['INIT']) for k in ('RULE', 'DET', 'INIT', 'RIGID_DET')}
+        self.counts = {k: pri['atoms'].get(k, pri['atoms']['INIT']) for k in ('RULE', 'DET', 'INIT', 'RIGID_DET', 'DEMONSTRATED', 'CHOOSE')}  # a kind that the priors do not count takes INIT's
 
     def frontier(self, pt):
         run = pt.run

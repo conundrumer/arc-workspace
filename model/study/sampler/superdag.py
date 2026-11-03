@@ -203,7 +203,7 @@ class Pool:
         return sorted(seen, key=lambda f: (self.forms[f].depth, f))
 
     def kind(self, dec):
-        names = [k for k in live.KIND_TOK if dec.admits([live.KIND_TOK[k]])[0]]
+        names = [k for k in live.KIND_TOK if self.run.makes(k) and dec.admits([live.KIND_TOK[k]])[0]]
         return self.rng.choices(names, weights=[self.kinds[k] + 1 for k in names])[0]
 
     def draw(self, fids, deadline):

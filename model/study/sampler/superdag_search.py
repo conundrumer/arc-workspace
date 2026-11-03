@@ -231,7 +231,7 @@ class ReadScope:
     def factors(self, point, ids):
         import numpy as np
         out = np.zeros(len(ids))
-        if must_read_scope(self.run) and point.kind != 'INIT' and (ids == M.END).any() and not any(self.run.V.kind(t) == 'relation' for t in point.tokens):
+        if must_read_scope(self.run) and point.kind != 'INIT' and not point.track.form and (ids == M.END).any() and not any(self.run.V.kind(t) == 'relation' for t in point.tokens):
             out[ids == M.END] = -np.inf
             self.run.c['read scope:stop barred'] += 1
         return out
@@ -248,7 +248,7 @@ class ReadPick:
         import numpy as np
         out = np.zeros(len(ids))
         T = point.track
-        if self.run.picks and point.kind != 'INIT' and (ids == M.END).any() and not T.path:
+        if self.run.picks and point.kind != 'INIT' and not T.form and (ids == M.END).any() and not T.path:
             text = [x for _, x in T.texts] + ([T.text + ')'] if T.atom else [])
             if not reads_pick(self.run, ' '.join(text)):
                 out[ids == M.END] = -np.inf
@@ -781,6 +781,8 @@ def install(mode):
         _init, _one_task, _add_form = D.Pool.__init__, D.one_task, D.Pool.add_query
         _grow = grow_search if mode == 'search' else D.Pool.grow
         D.Pool.__init__, D.Pool.grow, D.Pool.add_query, D.one_task = pool_init, grow_first, add_query, one_task
+        if search.WRITER:  # the writer writes the queries of a visit, of each kind that opens a query, so the pool's pick of a kind offers each
+            D.Run.makes = lambda run, kind: kind in live.KIND_TOK
         patch_search_run()
         guard_saves()
 
