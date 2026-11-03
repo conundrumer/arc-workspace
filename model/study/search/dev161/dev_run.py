@@ -10,8 +10,10 @@ code (supervisor.py beside the --code kit, else the v9 dataset's) makes the subm
 kernel supervisor runs it for --seconds of wall-clock time. The jobs of a task
 run next to each other, so the arms are paired as results arrive.
 
-Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
-candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line, and runs.jsonl gets each start's arguments and the kit's manifest. The file <RUN>/limit, where it
+Each finished job appends one line to results.jsonl: task, arm, seed, job (its folder under jobs/), solved (every test example has an attempt equal to its output),
+candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. With --budget cpu, an
+attempt that reaches --wall-cap before it has used its CPU budget writes its line to capped.jsonl, with the CPU it used, and the job
+runs again in a fresh folder when the limit lets it; the capped attempt's folder, with its draws, is not the job's result. summary.txt is rewritten after each line, and runs.jsonl gets each start's arguments and the kit's manifest. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
 The run stops where its first STOP_AFTER jobs all die with no draw. Held-out tasks never run, and --skip leaves out the tasks it lists. With --record, each worker writes one draw record per draw to the
 job's draws.jsonl (sampler/draw_record.py).
@@ -97,12 +99,16 @@ def gate(out, a):
 
 
 def job(a, out, task, arm, seed):
-    gate(out, a)
-    try:
-        return run_job(a, out, task, arm, seed)
-    finally:
-        with LOCK:
-            RUNNING[0] -= 1
+    """Runs the job until an attempt ends within the wall cap: a capped attempt waits at the gate again and runs anew."""
+    while True:
+        gate(out, a)
+        try:
+            rec = run_job(a, out, task, arm, seed)
+        finally:
+            with LOCK:
+                RUNNING[0] -= 1
+        if rec['rc'] != 'wall cap':
+            return rec
 
 
 def cpu_job(a, w, task, seed, env, samp, sup):
@@ -167,11 +173,11 @@ def run_job(a, out, task, arm, seed):
     dk = re.search(r'deaths (\d+) kills (\d+)', last)
     cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
     draws, cpu = effort(w)
-    rec = dict(task=task, arm=arm, seed=seed, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
+    rec = dict(task=task, arm=arm, seed=seed, job=w.name, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
                deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
                tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))
     with LOCK:
-        with open(out / 'results.jsonl', 'a') as f:
+        with open(out / ('capped.jsonl' if rc == 'wall cap' else 'results.jsonl'), 'a') as f:
             f.write(json.dumps(rec) + '\n')
         summary(out)
     return rec
