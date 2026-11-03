@@ -22,7 +22,7 @@ and the forms of each rule before its PREDICT clause (Group 'forms'). The engine
 reads the other. A part of a Group follows the same rule: the least by its tokens among the parts that the decoder accepts now (a form that reads the relation of a form not yet
 written is not accepted). The bodies of a CHOOSE form stay as the query has them. Its labels are read in their label scopes; a read of a relation that a form of the rule declares
 names the relation by the form (RELREF, bound by the form's Decl) and its columns by the labels of that form (segments). The `unordered` plan has no walk of these Groups
-(no_groups).
+(no_groups). The query is unsupported (DEMONSTRATED_OUT_OF_SCOPE).
 
 The parts of a RIGID_DET are no set: each is an output slot by its position, and a permutation of the parts changes the QueryHash. They stay as the query has them.
 
@@ -454,7 +454,12 @@ def read_query(env, base, kind, full, gold_hash=None):
         set_needs(q)
     except (ParseError, IndexError) as e:
         q.unsupported = '%s: %s' % (type(e).__name__, e)
+    if kind == 'DEMONSTRATED' and not q.unsupported:
+        q.unsupported = DEMONSTRATED_OUT_OF_SCOPE
     return q
+
+
+DEMONSTRATED_OUT_OF_SCOPE = 'DEMONSTRATED: out of scope, so its targets give no points'
 
 
 def demo_plan(placed, info):
