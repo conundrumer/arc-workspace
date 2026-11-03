@@ -512,7 +512,7 @@ def add_drawn(env: Env, kind: str, scope: tuple[str, ...], points: dict[tuple[in
             s = s[1:]
         if env.plan == 'ordered':
             dec0, _ = env.run.scope(scope)
-            s, order, _ = env.tr.order.canonical_stream(env.tr.order_env(env.run), dec0, kind, s, env.seconds)
+            s, order, _ = env.tr.order.canonical_stream(env.tr.order_env(env.run), dec0, kind, s, env.tr.ORDER_SECONDS)  # the targets' time (train_rows.points_of_targets)
             if order != 'canonical':
                 env.draw_counts['walked as written: no canonical order'] += count
             p, t, no = first_drawn_ordered(points, s)

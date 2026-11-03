@@ -123,9 +123,10 @@ def order_env(run):
 
 
 PLANS = ('ordered', 'unordered')
+ORDER_SECONDS = 60.0  # the `ordered` plan's time for the canonical stream of one target (order.canonical_stream): a 9-atom DET of gold takes about 10 s
 
 
-def points_of_targets(run, forms, kind, streams, uses, prepare=None, plan=None, seconds=10.0, stats=None, max_states=20000, vectors=False):
+def points_of_targets(run, forms, kind, streams, uses, prepare=None, plan=None, seconds=10.0, stats=None, max_states=20000, vectors=False, order_seconds=ORDER_SECONDS):
     """The writing points of several queries of one kind over one scope, walked as a trie of their streams: a prefix that targets share is stepped and featured once.
 
     streams: the targets' model tokens, each as `points_of` takes one. Yields (target index, record), where the target's records come in its stream order (records of
@@ -134,7 +135,7 @@ def points_of_targets(run, forms, kind, streams, uses, prepare=None, plan=None, 
     If a step or the features of a point raise, every target that goes on from there gets (index, {'error': exception}) in place of its next records, and the walk goes on with the others.
     prepare: if given, a function from a target's stream (the kind token first) to the stream that is walked, for example the stream in the writer's fixed atom order.
     plan: None (the records above), 'ordered' or 'unordered'. With a plan a record also has positive_ids (int32 array, sorted, a subset of ids), live (int) and order (str).
-        'ordered': each target is walked in its canonical stream (order.canonical_stream, `seconds` for each); order is 'canonical', or 'gold' (with order_why) where the rule gives no
+        'ordered': each target is walked in its canonical stream (order.canonical_stream, `order_seconds` for each); order is 'canonical', or 'gold' (with order_why) where the rule gives no
         stream with the gold QueryHash. positive_ids are the next tokens of the live targets (the ones whose stream has the point's token prefix) that the mask holds.
         'unordered': see points_of_unordered; the records are those of its states, one for each live target.
     stats: if given, a Counter that gets counts (plan keys start with 'ordered:' or 'unordered:').
@@ -159,7 +160,7 @@ def points_of_targets(run, forms, kind, streams, uses, prepare=None, plan=None, 
         dec0, _ = run.scope(forms)
         env = order_env(run)
         for i, s in enumerate(streams):
-            walk_streams[i], o, why = order.canonical_stream(env, dec0, kind, s, seconds)
+            walk_streams[i], o, why = order.canonical_stream(env, dec0, kind, s, order_seconds)
             orders[i] = (o, why)
             if stats is not None:
                 stats['ordered:' + o + (':' + why.split(':')[0] if why else '')] += 1
