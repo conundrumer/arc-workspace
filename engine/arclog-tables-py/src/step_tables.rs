@@ -1,15 +1,22 @@
-//! `step_tables`: the tables of the last step of a decode, and
-//! `output_columns`: the columns that the `OUT` form at which the decode ended
-//! selects.
+//! `step_tables`: the tables of the last step of a decode,
+//! `successor_tables`: the tables after each of several tokens at a decode's
+//! state, and `output_columns`: the columns that the `OUT` form at which the
+//! decode ended selects.
 
 use std::sync::Arc;
 
 use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
-use arclog_tables::columns::step_case_columns_in;
+use arclog_tables::columns::{step_case_columns_by_assignment_in, step_case_columns_in};
+use arclog_tables::split::{self, Part};
+use arclog_tables::summary::{train_pairs, SummaryCache};
 use arclog::eval::join::Materializer;
-use arclog_tables::tables::{evidence_tables, mark_selected, selected_columns, step_tables as step_tables_of, Points, Table};
-use pyo3::exceptions::PyValueError;
+use arclog_tables::columns::{CaseColumns, StreamTables};
+use arclog_tables::tables::successors::{successor_tables as successors_of, SuccessorKind};
+use arclog_tables::tables::{evidence_tables, input_table, mark_selected, selected_columns, step_tables as step_tables_of, Point, Points, Table};
+use arclog::decode::LeftOut;
+use arclog::eval::copies::CopyViolation;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::case_tables::{Base, PyCaseTables, Step};
@@ -52,22 +59,36 @@ use crate::case_tables::{Base, PyCaseTables, Step};
 /// settings check copies, the `copies` part holds the violations that the
 /// decode found since the last call that took them, which this call takes.
 ///
+/// With `by_assignment` (the default), the result has a row of `tables` for each table at
+/// each of its assignments, and `assignments`, `example_keys` and the `tables`
+/// columns `table`, `query`, `name`, `hash`, `hashed`, `capped` and `features` as
+/// `arclog_tables::columns::step_case_columns_by_assignment_in` gives them; its
+/// `assigned` is `None`, and `query` is the QueryHash of the table's query (`Decoder::query_hash`,
+/// 16 bytes), with `has_query` 0 for a body table, which has none. `entries` gives the `hash` of its Rows,
+/// has no Count entry, and gives each entry without rows as kind 6 (`NotExported`). The TableHash and the
+/// `features` (named by `table_feature_names()`) are computed from the rows the engine holds, with
+/// `rows` or without. With `rows`, `entries` holds the full Set of Rows of each row of `tables`, with no
+/// count cap; without it, `entries` gives the count of rows alone and the call packs no row. Without
+/// `by_assignment`, the result is the layout of `stream_tables`, as it was before `by_assignment`
+/// existed, and `rows` has no effect.
+///
 /// `output_position` and `output_color` are -1 in each table, since the `OUT`
 /// form that selects a column ends the decode at a step after the one that
 /// gives that column's table: `output_columns` gives that selection.
 #[pyfunction]
-#[pyo3(signature = (decoder, task, case, bodies=false, before=None))]
-pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool, before: Option<PyRef<'_, PyCaseTables>>) -> PyResult<PyCaseTables> {
+#[pyo3(signature = (decoder, task, case, bodies=false, before=None, by_assignment=true, rows=false))]
+pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool, before: Option<PyRef<'_, PyCaseTables>>, by_assignment: bool, rows: bool) -> PyResult<PyCaseTables> {
     let _timed = arclog::stats::span(arclog::stats::Phase::PyStepTables);
     let points = if bodies { Points::All } else { Points::Relations };
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     // The evidence tables hold the task alone, so a session derives them once.
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
+    let summaries = decoder.derived(SummaryCache::default);
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
     let index = written.last().copied();
     let earlier = check_before(before.as_deref(), &task, &case, bodies, &written)?;
-    let (columns, stream) = py.detach(|| {
+    let (columns, stream, left) = py.detach(|| {
         let limits=engine.limits();
         let operation=engine.clone().with_operation_limits(limits.clone());
         let engine=&operation;
@@ -81,13 +102,239 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
             None => Vec::new(),
         };
         let materializer=Materializer::new(engine.evaluation_inputs().1,&limits);
-        let (columns, stream) = step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len());
-        (columns.with_copies(&engine.take_copy_violations()), stream)
+        let (columns, stream) = if by_assignment {
+            // The QueryHash of each table: the `query_hash` of its finished query; a body table has none.
+            let query_of = |table: &Table| match table.point {
+                Point::Relation => table.form.0.first().and_then(|top| engine.query_hash(top.0 as usize)),
+                Point::Body { .. } | Point::Evidence => None,
+            };
+            let queries = {
+                let _timed = split::span(Part::OwnQueryHash);
+                tables.iter().map(|(_, table)| query_of(table)).collect()
+            };
+            step_case_columns_by_assignment_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, &train_pairs(evidence), queries, rows, &summaries)
+        } else {
+            step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
+        };
+        (columns.with_copies(&engine.take_copy_violations()), stream, std::time::Instant::now())
     });
+    if arclog::stats::enabled() {
+        split::add(Part::GilWait, left.elapsed().as_nanos());
+    }
     let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });
     let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
     arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index }))
+    let own = stream.count() - earlier.map_or(evidence_tables.len() as u32, |step| step.stream.count());
+    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
+}
+
+/// The base tables of the task of `decoder`: `input`, `ex_input` and
+/// `ex_output`, numbered 0, 1 and 2, at token 0, with point 2, in the layout
+/// of `step_tables` with `by_assignment=True`, and `rows` as `step_tables`
+/// takes it. `input` has one entry for each example, train and test, which
+/// holds the cells of the example's input grid, with no Example column, and
+/// its TableVector and TableHash are those of those entries; `ex_input` and
+/// `ex_output` are the evidence tables that the first result of `step_tables`
+/// gives. The result has no `step`, and serves as no `before`. The call runs
+/// with the GIL released, but for the build of the `CaseTables`.
+#[pyfunction]
+#[pyo3(signature = (decoder, task, case, rows=false))]
+pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, rows: bool) -> PyResult<PyCaseTables> {
+    let (engine, evidence) = (decoder.decoder(), decoder.task());
+    let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
+    let columns = py.detach(|| {
+        let limits = engine.limits();
+        let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
+        let base: Vec<Table> = std::iter::once(input_table(evidence, engine.registry())).chain(evidence_tables.iter().cloned()).collect();
+        // A cache of its own: the evidence tables' summaries are kept by their place, which differs here.
+        step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train_pairs(evidence), Vec::new(), rows, &SummaryCache::default()).0
+    });
+    PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, &columns, None, None)
+}
+
+/// What `successor_tables` gives for one id: the tables of its successor,
+/// the result of an earlier id whose tables and copy violations are equal,
+/// or, for the ids whose successor is the body in progress, the one result
+/// they share.
+enum Packed {
+    /// The columns, the stream after the step, and the count of the step's own tables.
+    Own(CaseColumns, StreamTables, u32),
+    /// The place of that earlier id among the ids.
+    Same(usize),
+    Unchanged,
+}
+
+/// The tables after each token of `ids` at the state of `decoder`, a
+/// `Decoder` at a writing point: for each id, what `step_tables` with
+/// `bodies=True` and `by_assignment=True` gives at the decode that the id
+/// advances (a fork of `decoder` that steps the id), with `before` the result
+/// of `step_tables` at the last model step of `decoder` (made with
+/// `bodies=True`), or `None` where `decoder` has no model step. `decoder`
+/// stays as it was. Where `Decoder.admissible` has computed the mask at this
+/// state, the state after each admitted id comes from the mask, and no check
+/// runs again. The call runs with the GIL released, but for the build of the
+/// `CaseTables`.
+///
+/// The result is `(current, results)`. `current` is a `CaseTables` that holds
+/// the table of the body in progress at the state of `decoder`, numbered as a
+/// successor's tables are, at the token of the decode's last model step, with
+/// no `step`, or `None` where no clause is in progress or its body is empty.
+/// `results` has one `(kind, note, tables)` for each id, in the order of
+/// `ids`. `tables` is a `CaseTables` in the layout of `step_tables` with
+/// `by_assignment=True`, with `rows` as `step_tables` takes it, numbered from
+/// the count of the stream's tables before the step, at the token index of
+/// the step; it serves as the `before` of `step_tables` at the decode that
+/// steps the id. `kind` is
+///
+/// - `"body"`: the id changes the body in progress, and `tables` holds the
+///   table of the successor body, the body with the id's site or conjunct.
+///   Where the id leaves the point of the body as it was, as a label or a
+///   constant that fills a site already open, `step_tables` gives no table,
+///   and this is the table of the successor body as `step_tables` makes a
+///   body table;
+/// - `"left_out"`: the id changes the point of the body in progress (its count
+///   of conjuncts or of sites), and the successor body leaves out the conjunct
+///   in progress, as `note` says: an atom of a lib relation none of whose modes
+///   has a site at each of its bound columns yet, or a conjunct that is no atom
+///   (a `NOT`, an `OR`, an `IF`, an `ALL` or a constraint) before its end.
+///   `tables` holds the table at the new point, whose rows are those of the
+///   body without that conjunct, as `step_tables` gives it;
+/// - `"unchanged"`: the id leaves the body in progress and its point as they
+///   were, as an id that opens an atom of a lib relation that the body leaves out
+///   at the same point. `tables` holds the
+///   table of the body in progress, at the step's token, where `step_tables`
+///   gives no table. Every such id shares one `CaseTables`;
+/// - `"finished"`: the id finishes the form in progress, and `tables` holds the
+///   tables of the relations the form declares, as `step_tables` gives them,
+///   none for a form that declares none, such as an `OUT` form;
+/// - `"none"`: after the id no clause is in progress, or its body is empty,
+///   and no form finished, and `tables` holds no table;
+/// - `"refused"`: the decode refuses the id, `note` gives the refusal, and
+///   `tables` is `None`.
+///
+/// Ids whose `tables` would hold equal columns share one `CaseTables`: the ids
+/// of `"unchanged"`, and ids of `"body"`, `"left_out"` and `"none"`, and of
+/// `"finished"` with no table, whose successors' tables are equal
+/// (`arclog_tables::tables::successors::same_tables`) and whose evaluations
+/// found the same copy violations.
+///
+/// Where a table of the result faulted, as a body that no check passes, `note`
+/// also gives the fault, and the table's `fault` gives it as `step_tables`
+/// does. A successor body is evaluated as the evaluator joins one conjunct to
+/// the rows of the body's other parts (`arclog_tables::tables::successors`).
+///
+/// `IndexError` is raised for an id outside the vocabulary, and `ValueError`
+/// where `before` cannot stand before the step, as `step_tables` raises it.
+#[pyfunction]
+#[pyo3(signature = (decoder, ids, task, case, before=None, rows=false))]
+#[allow(clippy::type_complexity)]
+pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, ids: Vec<u32>, task: String, case: String, before: Option<PyRef<'_, PyCaseTables>>, rows: bool) -> PyResult<(Option<Py<PyCaseTables>>, Vec<(&'static str, String, Option<Py<PyCaseTables>>)>)> {
+    let (engine, evidence) = (decoder.decoder(), decoder.task());
+    let vocabulary = engine.vocabulary();
+    let tokens = ids.iter().map(|&id| vocabulary.token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))).collect::<PyResult<Vec<_>>>()?;
+    let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
+    let summaries = decoder.derived(SummaryCache::default);
+    let records = engine.trace().records();
+    let mut written: Vec<usize> = records.iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
+    let now = written.last().copied();
+    // The token of each successor's step is the next record of the trace.
+    let index = records.len();
+    written.push(index);
+    let earlier = check_before(before.as_deref(), &task, &case, true, &written)?;
+    let train = train_pairs(evidence);
+    let (current, each, unchanged) = py.detach(|| {
+        let limits = engine.limits();
+        let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
+        let stream = earlier.map(|step| &*step.stream);
+        let before_tables = stream.map_or_else(Vec::new, StreamTables::tables);
+        // The table of the body in progress, where the call at the decode's last model step gave it as its one table.
+        let held = earlier
+            .filter(|step| step.token.is_some() && step.token == now && step.own == 1)
+            .and_then(|step| step.stream.tables().last().filter(|table| matches!(table.point, Point::Body { .. })).map(|table| (*table).clone()));
+        let found = {
+            let _timed = split::span(Part::SuccessorTables);
+            successors_of(engine, &limits, tokens, &before_tables, held)
+        };
+        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>| {
+            let _timed = split::span(Part::SuccessorColumns);
+            step_case_columns_by_assignment_in(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries)
+        };
+        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None]).0);
+        let mut unchanged: Option<(CaseColumns, StreamTables)> = None;
+        // The copy violations of each id's successor, empty for a refused id.
+        let mut copies: Vec<Vec<CopyViolation>> = Vec::with_capacity(found.each.len());
+        let mut each: Vec<Result<(&'static str, String, Packed), String>> = Vec::with_capacity(found.each.len());
+        for successor in found.each {
+            let successor = match successor {
+                Ok(successor) => successor,
+                Err(refusal) => {
+                    copies.push(Vec::new());
+                    each.push(Err(format!("{refusal:?}")));
+                    continue;
+                }
+            };
+            let mut notes: Vec<String> = Vec::new();
+            let kind = match successor.kind {
+                SuccessorKind::Body => "body",
+                SuccessorKind::LeftOut(left_out) => {
+                    notes.push(match left_out {
+                        LeftOut::Atom => "the body leaves out the atom in progress: no mode of its relation has a site at each of its bound columns yet",
+                        LeftOut::Conjunct => "the body leaves out the conjunct in progress: it is no atom, and it has not ended",
+                    }.to_owned());
+                    "left_out"
+                }
+                SuccessorKind::Unchanged => "unchanged",
+                SuccessorKind::Finished => "finished",
+                SuccessorKind::NoBody => "none",
+            };
+            notes.extend(successor.tables.iter().filter_map(|table| table.contents.as_ref().err()).map(|fault| format!("fault: {}", fault.message)));
+            let note = notes.join("; ");
+            let next = &successor.decoder;
+            let violations = next.take_copy_violations();
+            if successor.kind == SuccessorKind::Unchanged {
+                if unchanged.is_none() {
+                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None]);
+                    let (_, stream) = columns_of(Vec::new(), Vec::new());
+                    unchanged = Some((columns, stream));
+                }
+                copies.push(violations);
+                each.push(Ok((kind, note, Packed::Unchanged)));
+                continue;
+            }
+            if let Some(first) = successor.same_as.filter(|&first| copies[first] == violations) {
+                copies.push(violations);
+                each.push(Ok((kind, note, Packed::Same(first))));
+                continue;
+            }
+            let queries = successor.tables.iter().map(|table| match table.point {
+                Point::Relation => table.form.0.first().and_then(|top| next.query_hash(top.0 as usize)),
+                Point::Body { .. } | Point::Evidence => None,
+            }).collect();
+            let own = u32::try_from(successor.tables.len()).expect("fewer than 2^32 tables");
+            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries);
+            let columns = columns.with_copies(&violations);
+            copies.push(violations);
+            each.push(Ok((kind, note, Packed::Own(columns, stream, own))));
+        }
+        (current, each, unchanged)
+    });
+    let _timed = split::span(Part::SuccessorObjects);
+    let base = |tokens: usize| earlier.map(|step| Base { case: case.clone(), tokens, tables: step.stream.count() });
+    let cap = engine.settings().projection_cap;
+    let pack = |columns: &CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens));
+    let current = current.map(|columns| Py::new(py, pack(&columns, now.unwrap_or(0))?)).transpose()?;
+    let unchanged = unchanged.map(|(columns, stream)| -> PyResult<Py<PyCaseTables>> { Py::new(py, pack(&columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own: 0 })) }).transpose()?;
+    let mut results: Vec<(&'static str, String, Option<Py<PyCaseTables>>)> = Vec::with_capacity(each.len());
+    for result in each {
+        let result = match result {
+            Err(refusal) => ("refused", refusal, None),
+            Ok((kind, note, Packed::Unchanged)) => (kind, note, unchanged.as_ref().map(|shared| shared.clone_ref(py))),
+            Ok((kind, note, Packed::Same(first))) => (kind, note, results[first].2.as_ref().map(|shared| shared.clone_ref(py))),
+            Ok((kind, note, Packed::Own(columns, stream, own))) => (kind, note, Some(Py::new(py, pack(&columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own }))?)),
+        };
+        results.push(result);
+    }
+    Ok((current, results))
 }
 
 /// The `Step` of `before`, the `before` of a call of `step_tables` for `task`
@@ -126,4 +373,11 @@ fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bo
 pub(crate) fn output_columns(py: Python<'_>, decoder: PyRef<'_, PyDecoder>) -> Vec<(u32, i32, i32)> {
     let engine = decoder.decoder();
     py.detach(|| selected_columns(engine).into_iter().map(|(slot, selected)| (slot, selected.position.map_or(-1, i32::from), selected.color.map_or(-1, i32::from))).collect())
+}
+
+/// The time spent in the parts of the export by assignment that `engine_stats` has no phase for, as `(part, calls, seconds)`: the QueryHash of the step's tables, the look-up of a `DET`'s QueryHash, the summary look-ups that found a summary and those that built one, the columns of the step's tables, their regrouping by assignment, and the wait to hold the GIL again after a call's work. A part's time includes the parts inside it. The counters are zero unless the environment variable `ARCLOG_STATS` is set; with `reset` they start again from zero after they are read.
+#[pyfunction]
+#[pyo3(signature = (reset=false))]
+pub(crate) fn step_tables_split(reset: bool) -> Vec<(&'static str, u64, f64)> {
+    split::snapshot(reset).into_iter().map(|(name, calls, nanos)| (name, calls, nanos as f64 / 1e9)).collect()
 }

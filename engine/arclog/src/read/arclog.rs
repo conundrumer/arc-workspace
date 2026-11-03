@@ -290,7 +290,16 @@ impl Reader {
                 } else {
                     OutputStep::Part(DeclaredName::Written(format!("{}{step}", sp::DECLARED_MARK).into()))
                 };
-                let path = std::iter::once(first).chain(rest.iter().map(|p| OutputStep::Port(PortName((*p).into())))).collect();
+                // After the part's name, a part that reads an `INIT` form's output
+                // takes the port, and a part that reads a `RIGID_DET` form's
+                // output takes that form's part or `pose`.
+                let reads_rigid = *step != sp::POSE && self.owners.rigid.contains(format!("{}{step}", sp::DECLARED_MARK).as_str());
+                let after = |p: &&str| match (reads_rigid, *p == sp::POSE) {
+                    (false, _) => OutputStep::Port(PortName((*p).into())),
+                    (true, true) => OutputStep::Pose,
+                    (true, false) => OutputStep::Part(DeclaredName::Written(format!("{}{p}", sp::DECLARED_MARK).into())),
+                };
+                let path = std::iter::once(first).chain(rest.iter().map(after)).collect();
                 Ok(OutputName { of: OutputOwner::RigidDet(RigidDetName(declared)), path })
             }
             (false, false, _) => self.refuse(format!("`{owner}` of `{text}` names no `INIT` or `RIGID_DET` form of the file"), place),

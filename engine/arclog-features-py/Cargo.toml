@@ -1,0 +1,21 @@
+[package]
+name = "arclog-features-py"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+# The crate is named apart from the Python module it builds. maturin names the
+# module `arclog_features`, as `pyproject.toml` gives.
+name = "arclog_features_py"
+crate-type = ["cdylib"]
+
+[features]
+# maturin enables this feature, since an extension module links no Python
+# library. `cargo build` and `cargo test` build the crate without it.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+# The one engine crate this module links: the features, on plain data.
+arclog-features = { path = "../arclog-features" }
+pyo3 = { version = "0.27.2", features = ["abi3-py312"] }

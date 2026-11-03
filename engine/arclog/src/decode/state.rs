@@ -289,6 +289,15 @@ struct SiteFrame {
     record: Option<u16>,
     /// The field whose column token stands, which its label follows.
     field: Option<u32>,
+    /// Whether the site's column is of a type parameter that the `INIT`
+    /// form in progress, whose output the site's atom reads, binds at no
+    /// head site yet. The first projection onto the parameter binds it
+    /// (`docs/arclog/arclog.md#instance`), and in a keyed instance that
+    /// projection can be the head of the input that holds the site, which
+    /// the stream writes after the input's body. So the site's first token
+    /// tells a label, the column's one label, from a field's column token,
+    /// a field of the record.
+    unbound: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -555,13 +564,21 @@ impl State {
     pub(super) fn mask_may_take(&self, token: &Token) -> bool {
         let top = self.stack.last();
         match token {
-            Token::Label(id) => *id < self.labels && matches!(top, Some(Frame::One(_) | Frame::Site(_) | Frame::Constraint(_) | Frame::HeadSite(_))),
+            Token::Label(id) => {
+                *id < self.labels
+                    && match top {
+                        Some(Frame::Site(SiteFrame { field: None, record: Some(_), .. })) => false,
+                        Some(Frame::One(_) | Frame::Site(_) | Frame::Constraint(_) | Frame::HeadSite(_)) => true,
+                        _ => false,
+                    }
+            }
             Token::Relation(id) if *id as usize >= self.declared.len() => false,
             Token::Column(position) => match top {
                 Some(Frame::Atom(atom)) => (*position as usize) < atom.columns.len(),
                 Some(Frame::Site(SiteFrame { field: None, record: Some(fields), .. })) => *position < u32::from(*fields),
-                Some(Frame::Site(SiteFrame { field: None, record: None, .. })) => {
-                    matches!(self.stack.iter().rev().nth(1), Some(Frame::Atom(atom)) if (*position as usize) < atom.columns.len())
+                Some(Frame::Site(site @ SiteFrame { field: None, record: None, .. })) => {
+                    (site.unbound && site.args.is_empty())
+                        || matches!(self.stack.iter().rev().nth(1), Some(Frame::Atom(atom)) if (*position as usize) < atom.columns.len())
                 }
                 Some(Frame::HeadSite(site)) => site.field.is_none() && !site.record_ended && *position == site.fields,
                 _ => false,
@@ -581,7 +598,7 @@ impl State {
                 Some(Frame::HeadSite(site)) if site.field.is_some() => matches!(control, Control::Fresh | Control::Zero),
                 Some(Frame::HeadSite(_)) => matches!(control, Control::End | Control::Fresh | Control::Zero),
                 Some(Frame::Site(site)) if site.field.is_some() => matches!(control, Control::Fresh | Control::Key | Control::Zero),
-                Some(Frame::Site(site)) if site.record.is_some() => matches!(control, Control::End | Control::Fresh | Control::Key | Control::Zero),
+                Some(Frame::Site(site)) if site.record.is_some() => matches!(control, Control::End | Control::Zero),
                 _ => true,
             },
         }
@@ -1201,14 +1218,37 @@ impl State {
 
     /// Opens the site on `column` of the atom on top. A site on a column of
     /// a type parameter holds a record where the resolver places one there.
+    /// The resolver places a record of no field on a parameter that no site
+    /// binds, and no site reads such a record, so a site there is on a
+    /// parameter that the `INIT` form in progress binds later
+    /// ([`SiteFrame::unbound`]).
     fn open_site(&mut self, context: &Context<'_>, column: ColumnName) {
         let typed = type_parameter(&column);
-        self.stack.push(Frame::Site(SiteFrame { column, args: Vec::new(), record: None, field: None }));
+        let own = self.reads_own_output();
+        self.stack.push(Frame::Site(SiteFrame { column, args: Vec::new(), record: None, field: None, unbound: false }));
         if typed {
             let (program, open) = self.partial().expect("a form that shows its site");
             let at = self.absolute(&open.expect("an open site"));
-            top!(self, Frame::Site).record = self.resolved_partial(&program, context.registry).column_group(&at).map(|group| group.len);
+            let record = self.resolved_partial(&program, context.registry).column_group(&at).map(|group| group.len);
+            let site = top!(self, Frame::Site);
+            match record {
+                Some(0) if own => site.unbound = true,
+                record => site.record = record,
+            }
         }
+    }
+
+    /// Whether the atom on top reads an output of the `INIT` form in
+    /// progress.
+    fn reads_own_output(&self) -> bool {
+        let Some(Frame::Atom(atom)) = self.stack.last() else { return false };
+        let Some(first) = self.stack.iter().find_map(|frame| match frame {
+            Frame::Instance(instance) => Some(instance.first),
+            _ => None,
+        }) else {
+            return false;
+        };
+        matches!(&atom.relation, RelationRef::Output(output) if output.of == OutputOwner::Instance(InstanceName(DeclaredName::Slot(first))))
     }
 
     /// The path in the program of the node at `open` in the form in
@@ -1223,6 +1263,13 @@ impl State {
         let in_key = self.in_key();
         let site = top!(self, Frame::Site);
         let (field, record) = (site.field, site.record);
+        // A field's column token as the first token of a site on a parameter not yet bound makes the site a record's,
+        // whose fields the projection that binds the parameter gives later.
+        if let (true, true, None, Token::Column(first)) = (site.unbound, site.args.is_empty(), record, token) {
+            site.record = Some(u16::MAX);
+            site.field = Some(*first);
+            return Ok(Offer::Taken);
+        }
         match (field, record, token) {
             (Some(field), _, _) => {
                 let label = self.label_token(token, in_key, forced).ok_or("a field's column token is followed by its label")?;
@@ -1236,6 +1283,9 @@ impl State {
                 return Ok(Offer::Taken);
             }
             (None, Some(_), Token::Control(Control::End)) => return Ok(Offer::Close { consumed: true }),
+            // A site on a record names its fields by their column tokens. A bare label there would take the
+            // number of its label as the name of its field, so the mask would read the label's number.
+            (None, Some(_), Token::Label(_) | Token::Control(Control::Fresh | Control::Key)) => return Err("a site on a record holds field columns, then `END`"),
             _ => {}
         }
         match self.label_token(token, in_key, forced) {

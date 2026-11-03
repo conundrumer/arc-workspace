@@ -80,7 +80,15 @@ impl ArclogProposer {
     /// `evaluation`, each fault and stop at `form`.
     fn rows(&self, evaluation: &Evaluation<'_>, trace: Option<&RefCell<RunTrace>>, task: &Task, form: &NodePath) -> Outcome<RelationValue> {
         let parameters = ParameterValues::default();
-        let inner = Evaluation { program: &self.program, concept: None, task, parameters: &parameters, ..*evaluation };
+        // The session keeps one fact relation for each fact, built from its first request, so a task other than the evaluation's reads its facts in a session of its own.
+        let own;
+        let session = if std::ptr::eq(task, evaluation.task) {
+            evaluation.session
+        } else {
+            own = evaluation.session.with_own_facts();
+            &own
+        };
+        let inner = Evaluation { program: &self.program, concept: None, task, session, parameters: &parameters, ..*evaluation };
         let value = Driver::nested(&inner, trace).clause(&self.form, None).map_err(|fault| RunFault { form: form.clone(), ..fault })?;
         Ok(match value {
             RelationValue::Rows(relation) => {

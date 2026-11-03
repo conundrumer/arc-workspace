@@ -9,6 +9,9 @@
 //!   from a second evaluation of the bodies that give its rows.
 //! - [`columns`]: the tables of one case program as flat columns, the layout
 //!   that the Python package and its export read.
+//! - [`summary`]: the TableHash, the example keys and the TableVector of a
+//!   table at each of its assignments, which the export by assignment of
+//!   [`columns`] writes. The features are those of `arclog-features`.
 //! - [`corpus`]: the walk of a solver of a corpus that records the tables of
 //!   its cases.
 //!
@@ -22,6 +25,8 @@ pub mod columns;
 pub mod corpus;
 pub mod extents;
 pub mod flows;
+pub mod split;
+pub mod summary;
 pub mod tables;
 pub mod study_filters;
 pub mod study_features;

@@ -8,7 +8,7 @@
 
 [workspace]
 resolver = "3"
-members = ["arclog", "arclog-constructions", "arclog-tables", "arclog-bindings", "arclog-tables-py", "arclog-cli", "arclog-py"]
+members = ["arclog", "arclog-constructions", "arclog-tables", "arclog-bindings", "arclog-tables-py", "arclog-cli", "arclog-py", "arclog-features", "arclog-features-py"]
 
 [workspace.package]
 version = "0.1.0"

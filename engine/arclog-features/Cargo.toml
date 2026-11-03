@@ -1,0 +1,9 @@
+[package]
+name = "arclog-features"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+# No dependency: the features read plain data, so the tables export and the
+# Python binding of `arclog-features-py` call the same functions.
+[dependencies]

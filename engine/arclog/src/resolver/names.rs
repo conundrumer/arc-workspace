@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::columns::{Columns, Place};
+use super::columns::{ColumnOrders, Columns, Place};
 use super::{DependencyKind, GraphNodeIndex};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{
@@ -11,7 +11,7 @@ use crate::program::canonical::{
 };
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
-    Body, Clause, ColumnName, DeclaredName, Demonstrated, Form, LabelId, NameScope, Node, OutputOwner, Program, RelationRef,
+    Body, Clause, ColumnName, DeclaredName, Demonstrated, Form, InstanceName, LabelId, NameScope, Node, OutputOwner, Program, RelationRef,
 };
 
 /// Writes the path of the output that `relation` reads, after the
@@ -112,6 +112,12 @@ enum Mark {
     Group,
     /// The content of a part of a clause's body.
     Part,
+    /// The relation that a part of a `RIGID_DET` form reads, in the path of
+    /// an output of that form.
+    PartRead,
+    /// A field of the `key` record of an `INIT` form's output, by the rank of
+    /// its label in the labeling of the form.
+    KeyRank,
 }
 
 /// The relation that the form being written declares: a relation, or the
@@ -173,6 +179,9 @@ pub(super) struct Names {
     pub(super) scopes: StableHashMap<NameScope, StableHashMap<RelationRef, Target>>,
     pub(super) contents: Vec<Option<CanonicalForm>>,
     pub(super) node_columns: Vec<Option<Columns>>,
+    /// The orders of the columns of each node, as `node_columns`, under
+    /// which its content is the same.
+    pub(super) node_orders: Vec<ColumnOrders>,
     pub(super) lib: StableHashMap<RelationRef, Columns>,
     /// The content of each form that resolves in the concept program,
     /// as [`super::ConceptReads`] gives, by its path.
@@ -191,6 +200,20 @@ pub(super) struct Names {
     /// [`super::ResolvedProgram::node_content`]; its entry of `contents`
     /// is then empty.
     pub(super) unwritten: Vec<Option<std::sync::OnceLock<CanonicalForm>>>,
+    /// For each `INIT` form with a key clause, by the scope that declares it
+    /// and its name, the rank of each field of its `key` record: the position
+    /// of the field's label in the canonical labeling of the form, so that
+    /// the order in which the key writes its columns is not in the content of
+    /// a read of a field. Written by [`super::Builder::contents`] when it
+    /// reaches the form's first node.
+    pub(super) key_ranks: StableHashMap<NameScope, StableHashMap<InstanceName, Box<[(ColumnName, u32)]>>>,
+    /// For each `INIT` form with a key clause, as in `key_ranks`, the rank
+    /// of each field of its `key` record in the form's own content: the
+    /// position of the field's label in the canonical labeling of the key's
+    /// body. A read of the form's own output stands in the labeling that
+    /// gives `key_ranks`, and the key's body reads no output of its form, so
+    /// this rank is known while that labeling is made.
+    pub(super) own_key_ranks: StableHashMap<NameScope, StableHashMap<InstanceName, Box<[(ColumnName, u32)]>>>,
 }
 
 impl Names {
@@ -227,11 +250,61 @@ impl Names {
         }
     }
 
+    /// The rank of the field `field` of the `key` record of the `INIT` form
+    /// `instance`, read in `scope`: found in the scope that declares the form,
+    /// as [`Names::find`] finds a name.
+    pub(super) fn key_rank(&self, scope: &NameScope, instance: &InstanceName, field: &ColumnName) -> Option<u32> {
+        let ranks = self.key_ranks_in(scope, instance).or_else(|| self.key_ranks_in(&NameScope::Program, instance))?;
+        ranks.iter().find(|(name, _)| name == field).map(|(_, rank)| *rank)
+    }
+
+    fn key_ranks_in(&self, scope: &NameScope, instance: &InstanceName) -> Option<&[(ColumnName, u32)]> {
+        let own = self.key_ranks.get(scope).and_then(|ranks| ranks.get(instance));
+        match own {
+            Some(ranks) => Some(ranks),
+            None => self.earlier.as_ref()?.names.key_ranks_in(scope, instance),
+        }
+    }
+
+    /// The rank of the field `field` of the `key` record of the `INIT` form
+    /// `instance` in the form's own content, read in `scope`, as
+    /// [`Names::key_rank`] finds a rank.
+    pub(super) fn own_key_rank(&self, scope: &NameScope, instance: &InstanceName, field: &ColumnName) -> Option<u32> {
+        let ranks = self.own_key_ranks_in(scope, instance).or_else(|| self.own_key_ranks_in(&NameScope::Program, instance))?;
+        ranks.iter().find(|(name, _)| name == field).map(|(_, rank)| *rank)
+    }
+
+    fn own_key_ranks_in(&self, scope: &NameScope, instance: &InstanceName) -> Option<&[(ColumnName, u32)]> {
+        let own = self.own_key_ranks.get(scope).and_then(|ranks| ranks.get(instance));
+        match own {
+            Some(ranks) => Some(ranks),
+            None => self.earlier.as_ref()?.names.own_key_ranks_in(scope, instance),
+        }
+    }
+
     /// The columns of `node`, where they are known.
     pub(super) fn node_columns_of(&self, node: usize) -> Option<&Columns> {
         match &self.earlier {
             Some(earlier) if node < self.first_node() => earlier.names.node_columns_of(node),
             _ => self.node_columns.get(node - self.first_node())?.as_ref(),
+        }
+    }
+
+    /// The orders of the columns of `node` under which its content is the
+    /// same, none where they are not known.
+    fn node_orders_of(&self, node: usize) -> &[Box<[u16]>] {
+        match &self.earlier {
+            Some(earlier) if node < self.first_node() => earlier.names.node_orders_of(node),
+            _ => self.node_orders.get(node - self.first_node()).map_or(&[], |orders| orders),
+        }
+    }
+
+    /// The orders of the columns of `relation` read in `scope` under which
+    /// its content is the same, as [`Names::columns`] gives the columns.
+    pub(super) fn column_orders(&self, scope: &NameScope, relation: &RelationRef) -> &[Box<[u16]>] {
+        match self.find(scope, relation) {
+            Some(Target { node, columns: ColumnsOf::OfNode }) => self.node_orders_of(node.0 as usize),
+            _ => &[],
         }
     }
 
@@ -455,6 +528,79 @@ impl Writer<'_> {
     fn own(&self, relation: &RelationRef) -> Option<&Own> {
         self.own.filter(|own| own.holds(relation))
     }
+
+    /// The path of `column`, a column of `relation`, an output of the form
+    /// being written, as its content writes it. A file names a field of a
+    /// type parameter's record by its written name and a decode by a slot,
+    /// so the path holds no name of a label or a field:
+    /// - A label that stands alone at a site on a column of a type
+    ///   parameter that holds no record, as `(:t B)` where the form binds
+    ///   `t` to one label, adds its name to the site's path
+    ///   ([`crate::program::SiteArg::NamedLabel`]). The column is the site's
+    ///   own column whatever the name, so the path stops at that column.
+    /// - A site on a field of a type parameter's record, as `(:t (:O O2))`
+    ///   where the form binds `t` to a record, names the field by its place
+    ///   among the record's fields, the slot a decode gives it.
+    /// - A site on a field of the `key` record, as `(:key Ko)`, names the
+    ///   field by its rank in the form's own content
+    ///   ([`Names::own_key_rank`]), so that the order in which the key
+    ///   writes its columns is not in the content either.
+    fn own_column<'c>(&self, relation: &RelationRef, column: &'c [ColumnName]) -> std::borrow::Cow<'c, [ColumnName]> {
+        use std::borrow::Cow;
+        let slot = |slot: u32| Cow::Owned(vec![column[0].clone(), ColumnName::Slot(slot)]);
+        match self.names.columns(self.scope, relation).and_then(|columns| columns.place(column)) {
+            Some(Place::Column(_)) => Cow::Borrowed(&column[..1]),
+            Some(Place::Field(position, group)) => match self.instance_key_field(relation, column) {
+                None => slot(u32::from(position.0 - group.start.0)),
+                Some((instance, field)) => match self.names.own_key_rank(self.scope, instance, field) {
+                    Some(rank) => slot(rank),
+                    // The ranks are made from the key's body alone, before any other labeling of the form, so only
+                    // a read in that body finds none.
+                    None => Cow::Borrowed(column),
+                },
+            },
+            _ => Cow::Borrowed(column),
+        }
+    }
+
+    /// The `INIT` form and the field, where `column` is `[key, field]` of an
+    /// output of an `INIT` form that `relation` names.
+    fn instance_key_field<'c>(&self, relation: &'c RelationRef, column: &'c [ColumnName]) -> Option<(&'c InstanceName, &'c ColumnName)> {
+        let RelationRef::Output(output) = relation else { return None };
+        let OutputOwner::Instance(instance) = &output.of else { return None };
+        let [record, field] = column else { return None };
+        (*record == super::columns::key()).then_some((instance, field))
+    }
+
+    /// Whether the node that `relation` resolves to has no content yet, and
+    /// is not left for its first read.
+    fn unwritten_target(&self, relation: &RelationRef) -> bool {
+        let Some(target) = self.names.find(self.scope, relation) else { return false };
+        let node = target.node.0 as usize;
+        matches!(self.names.node_content(node), Some(None)) && !self.names.is_unwritten(node)
+    }
+
+    /// Writes the path of the output that `relation` reads, other than the
+    /// content of its node. The first step of a `RIGID_DET` output's path
+    /// that names a part stands for the relation the part reads, and is
+    /// written as the content of that relation, since the name the part has
+    /// is a slot in a decode and a spelling in a file.
+    fn write_path(&self, relation: &RelationRef, out: &mut CanonicalWriter) {
+        use crate::program::{InstanceName, OutputName, OutputStep, RelationName, RigidDetName};
+        let RelationRef::Output(output) = relation else { return };
+        let (OutputOwner::RigidDet(_), [OutputStep::Part(owner), rest @ ..]) = (&output.of, &output.path[..]) else {
+            return write_output_path(out, relation);
+        };
+        let read = if rest.is_empty() {
+            RelationRef::Declared(RelationName(owner.clone()))
+        } else {
+            let of = |of| RelationRef::Output(OutputName { of, path: rest.into() });
+            let instance = of(OutputOwner::Instance(InstanceName(owner.clone())));
+            if self.names.find(self.scope, &instance).is_some() { instance } else { of(OutputOwner::RigidDet(RigidDetName(owner.clone()))) }
+        };
+        out.write(&[Mark::PartRead as u8]);
+        self.write_name(&read, out);
+    }
 }
 
 impl NameWriter for Writer<'_> {
@@ -483,7 +629,7 @@ impl NameWriter for Writer<'_> {
                 }
             }
         }
-        write_output_path(out, relation);
+        self.write_path(relation, out);
     }
 
     /// Writes a mark that holds no name, so that the resolved content of a
@@ -493,21 +639,58 @@ impl NameWriter for Writer<'_> {
         out.write(&[Mark::Own as u8]);
     }
 
+    fn write_column(&self, relation: &RelationRef, column: &[ColumnName], out: &mut CanonicalWriter) {
+        self.write_column_in(relation, column, 0, out);
+    }
+
+    /// The orders of the node's columns, none for the form's own relation,
+    /// whose orders its labeling gives.
+    fn column_orders(&self, relation: &RelationRef) -> usize {
+        if self.own(relation).is_some() {
+            return 0;
+        }
+        self.names.column_orders(self.scope, relation).len()
+    }
+
     /// Writes a column of the form's own relation by a mark that no
     /// labeling sets, since the labeling gives that column's position.
-    fn write_column(&self, relation: &RelationRef, column: &[ColumnName], out: &mut CanonicalWriter) {
+    fn write_column_in(&self, relation: &RelationRef, column: &[ColumnName], order: usize, out: &mut CanonicalWriter) {
         match self.own(relation) {
             Some(Own::Relation(_)) => return out.write(&[Mark::Own as u8]),
             Some(Own::Owner(_)) => {
                 out.write(&[Mark::Own as u8]);
-                return AsWritten.write_column(relation, column, out);
+                return AsWritten.write_column(relation, &self.own_column(relation, column), out);
             }
             None => {}
         }
         match self.names.columns(self.scope, relation).and_then(|columns| columns.place(column)) {
-            Some(Place::Column(position) | Place::Field(position, _)) => {
+            Some(Place::Field(position, _)) => match self.instance_key_field(relation, column) {
+                Some((instance, field)) => match self.names.key_rank(self.scope, instance, field) {
+                    Some(rank) => {
+                        out.write(&[Mark::KeyRank as u8]);
+                        out.write(&rank.to_le_bytes());
+                    }
+                    None => {
+                        // A key field is ranked once its `INIT` form's content is reached, and a read comes after the
+                        // content of the node it resolves to, so only a read on a cycle, which the cycle check refuses,
+                        // comes first. The field then stands as written, which no order of the key's columns changes.
+                        debug_assert!(self.unwritten_target(relation), "a key field is read before its `INIT` form is ranked, off a cycle");
+                        out.write(&[Mark::Written as u8]);
+                        AsWritten.write_column(relation, column, out);
+                    }
+                },
+                None => {
+                    out.write(&[Mark::Position as u8]);
+                    out.write(&position.0.to_le_bytes());
+                }
+            },
+            Some(Place::Column(position)) => {
+                // A kept write of another resolution can ask for an order that the relation lacks here: the position
+                // then stands as it is, and that write's count of the orders differs.
+                let orders = self.names.column_orders(self.scope, relation);
+                let position = order.checked_sub(1).and_then(|order| orders.get(order)?.get(usize::from(position.0)).copied()).unwrap_or(position.0);
                 out.write(&[Mark::Position as u8]);
-                out.write(&position.0.to_le_bytes());
+                out.write(&position.to_le_bytes());
             }
             Some(Place::Group(group)) => {
                 out.write(&[Mark::Group as u8]);

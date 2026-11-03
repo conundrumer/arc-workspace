@@ -18,7 +18,6 @@ mod det_read_columns;
 mod determination;
 mod evaluation_bounds;
 mod factorized_bodies;
-mod filter_body_order;
 mod filter_in_a_key_body;
 mod form_side_reads;
 mod instance_input_reads;

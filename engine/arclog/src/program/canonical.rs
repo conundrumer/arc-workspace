@@ -100,6 +100,10 @@ pub struct CanonicalLabeling {
     /// Whether the search reached [`SEARCH_NODE_CAP`], so that the labeling
     /// is the least one the search found.
     pub reached_cap: bool,
+    /// The other labelings the search found whose form is the canonical
+    /// form, each as `positions` gives a labeling: those that a symmetry of
+    /// the scope maps the labeling onto.
+    pub others: Box<[Box<[(super::LabelId, u32)]>]>,
 }
 
 /// The labels that one canonical labeling numbers: those of a label scope,
@@ -128,8 +132,10 @@ pub enum LabelScope<'a> {
 /// resolved content.
 pub fn canonical_labeling(scope: LabelScope, names: &dyn NameWriter, search: &mut SearchBudget) -> CanonicalLabeling {
     let mut cx = Context::new(search, names);
-    let (labels, reached_cap) = cx.labeling(scope);
-    CanonicalLabeling { positions: by_position(&labels), reached_cap }
+    let (labelings, reached_cap) = cx.labelings(scope);
+    let mut labelings = labelings.iter().map(by_position);
+    let positions = labelings.next().expect("the search reaches a leaf");
+    CanonicalLabeling { positions, reached_cap, others: labelings.collect() }
 }
 
 /// Each label's canonical position.
@@ -165,11 +171,17 @@ struct Context<'a> {
     order: Option<Recorded>,
     /// Feature-only site normalization never participates in resolver/check caches.
     feature_sites: bool,
+    /// The order of the columns of the relation of the atom being written,
+    /// as [`NameWriter::write_column_in`] takes it.
+    column_order: usize,
+    /// The field names of the head sites of the instance being written, by
+    /// order of first use.
+    head_fields: HeadFields,
 }
 
 impl<'a> Context<'a> {
     fn new(search: &'a mut SearchBudget, names: &'a dyn NameWriter) -> Self {
-        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: false }
+        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: false, column_order: 0, head_fields: HeadFields::default() }
     }
 
     fn position(&self, label: LabelId) -> u32 {
@@ -247,6 +259,14 @@ impl<'a> Context<'a> {
     /// The canonical labeling of `scope`, and whether its search reached
     /// the cap.
     fn labeling(&mut self, scope: LabelScope) -> (Labels, bool) {
+        let (mut labelings, cut_short) = self.labelings(scope);
+        (labelings.swap_remove(0), cut_short)
+    }
+
+    /// The canonical labeling of `scope`, then each other labeling the
+    /// search found whose form is the canonical form, and whether its
+    /// search reached the cap.
+    fn labelings(&mut self, scope: LabelScope) -> (Vec<Labels>, bool) {
         let mut graph = GraphBuilder::new(self.names, self.feature_sites);
         let root = graph.vertex(Tag::Root, |_| {});
         walk::scope(&mut graph, root, scope);
@@ -260,7 +280,7 @@ impl<'a> Context<'a> {
         graph.refine(&mut refined);
         if graph.target_cell(&refined).is_none() {
             self.search.remaining = outer;
-            return (graph.leaf_labels(&refined), false);
+            return (vec![graph.leaf_labels(&refined)], false);
         }
         self.visit(&graph, colors, scope, &mut best, &mut cut_short);
         self.search.remaining = outer;
@@ -270,9 +290,10 @@ impl<'a> Context<'a> {
 
     /// One node of the search: refines `colors`, then individualizes each
     /// label of the first largest cell of labels that is not a singleton, or,
-    /// at a leaf, keeps the least form. Where the budget is spent, the search
-    /// sets `cut_short` and goes on to its first leaf alone.
-    fn visit(&mut self, graph: &ColoredGraph, mut colors: Vec<u32>, scope: LabelScope, best: &mut Option<(Vec<u8>, Labels)>, cut_short: &mut bool) {
+    /// at a leaf, keeps the least form with each labeling that gives it, the
+    /// first found first. Where the budget is spent, the search sets
+    /// `cut_short` and goes on to its first leaf alone.
+    fn visit(&mut self, graph: &ColoredGraph, mut colors: Vec<u32>, scope: LabelScope, best: &mut Option<(Vec<u8>, Vec<Labels>)>, cut_short: &mut bool) {
         if self.search.remaining == 0 {
             *cut_short = true;
             if best.is_some() {
@@ -288,8 +309,10 @@ impl<'a> Context<'a> {
             let mut out = CanonicalWriter::default();
             self.with_labels(labels.clone(), |cx| scope.write(cx, &mut out));
             self.order = order;
-            if best.as_ref().is_none_or(|(form, _)| out.bytes < *form) {
-                *best = Some((out.bytes, labels));
+            match best {
+                Some((form, labelings)) if out.bytes == *form => labelings.push(labels),
+                Some((form, _)) if out.bytes > *form => {}
+                _ => *best = Some((out.bytes, vec![labels])),
             }
             return;
         };

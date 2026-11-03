@@ -17,11 +17,12 @@ pub(super) struct GraphBuilder<'n> {
     pub(super) colors: Vec<Vec<u8>>,
     pub(super) edges: Vec<(usize, usize, Vec<u8>)>,
     pub(super) labels: StableHashMap<LabelId, usize>,
+    head_fields: HeadFields,
 }
 
 impl<'n> GraphBuilder<'n> {
     pub(super) fn new(names: &'n dyn NameWriter, feature_sites: bool) -> Self {
-        GraphBuilder { names, feature_sites, colors: Vec::new(), edges: Vec::new(), labels: StableHashMap::default() }
+        GraphBuilder { names, feature_sites, colors: Vec::new(), edges: Vec::new(), labels: StableHashMap::default(), head_fields: HeadFields::default() }
     }
 
     pub(super) fn vertex(&mut self, tag: Tag, color: impl FnOnce(&mut CanonicalWriter)) -> usize {
@@ -57,9 +58,9 @@ impl<'n> GraphBuilder<'n> {
 
     pub(super) fn label_use(&mut self, from: usize, label: LabelUse, edge: impl FnOnce(&mut CanonicalWriter)) {
         let (to, mark) = match label {
-            LabelUse::Fresh(id) => (self.label(id), Tag::Fresh),
-            LabelUse::Join(id) => (self.label(id), Tag::Join),
-            LabelUse::Key(id) => (self.label(id), Tag::Key),
+            LabelUse::Fresh(id) | LabelUse::Join(id) => (self.label(id), Tag::Join),
+            // As in `form::label_use`, the `^` moves with a reorder, so it is not part of the form: the key's columns hold it.
+            LabelUse::Key(id) => (self.label(id), Tag::Join),
             LabelUse::Zero => (self.vertex(Tag::Zero, |_| {}), Tag::Zero),
         };
         self.edge(from, to, mark, edge);
@@ -170,7 +171,10 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         let names = self.names;
         match node {
             Open::Clause(clause) => self.vertex_under(at, role, index, Tag::Clause, |out| out.byte(clause.keyword as u8)),
-            Open::Instance(_) => self.vertex_under(at, role, index, Tag::Instance, |_| {}),
+            Open::Instance(_) => {
+                self.head_fields = HeadFields::default();
+                self.vertex_under(at, role, index, Tag::Instance, |_| {})
+            }
             Open::Choose(choose) => self.vertex_under(at, role, index, Tag::Choose, |out| out.flag(choose.from_inside_for)),
             Open::RigidDet(_) => self.vertex_under(at, role, index, Tag::RigidDet, |_| {}),
             Open::Out(_) => self.vertex_under(at, role, index, Tag::Out, |_| {}),
@@ -190,7 +194,6 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
             Open::Or => self.vertex_under(at, role, index, Tag::Or, |_| {}),
             Open::If => self.vertex_under(at, role, index, Tag::If, |_| {}),
             Open::All => self.vertex_under(at, role, index, Tag::All, |_| {}),
-            Open::One(_) => self.vertex_under(at, role, index, Tag::One, |_| {}),
         }
     }
 
@@ -198,8 +201,8 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         visit(self);
     }
 
-    fn members<T>(&mut self,at:usize,_parent: NodeRef<'a>, members: &'a [T],pinned:&[usize], _node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self,usize, &'a T)) {
-        for (index,member) in members.iter().enumerate() {
+    fn members<T>(&mut self,at:usize,_parent: NodeRef<'a>, members: &'a [T],pinned:&[usize],repeats:&[usize], _node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self,usize, &'a T)) {
+        for (index,member) in members.iter().enumerate().filter(|(index,_)|!repeats.contains(index)) {
             let at=match pinned.iter().position(|i|*i==index) {
                 Some(rank)=>self.vertex_under(at,Tag::Part,rank,Tag::Part,|_|{}),None=>at,
             };
@@ -207,15 +210,27 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         }
     }
 
+    fn head_field(&mut self, port: &ColumnName, key: HeadKey) -> ColumnName {
+        head_field(&mut self.head_fields, port, key)
+    }
+
     fn len(&mut self, _len: usize) {}
 
     fn option(&mut self, _present: bool) {}
 
+    fn atom_sites(&mut self, at: usize, _atom: &'a Atom, visit: impl Fn(&mut Self, usize)) {
+        visit(self, at);
+    }
+
     fn site(&mut self, _at: usize, _path: &[ColumnName], _args: usize, _relation: Option<&RelationRef>) {}
 
     /// An edge to the label, labeled by its column path as the name writer
-    /// writes it and its index among the site's arguments. The path of a
-    /// [`SiteArg::NamedLabel`] ends with its name.
+    /// writes it, in the order of the columns of `relation` in which it
+    /// writes the least bytes, and by its index among the site's arguments.
+    /// So the graph is the same in each order of the columns that
+    /// [`NameWriter::column_orders`] counts, and the form writer chooses the
+    /// order at each atom. The path of a [`SiteArg::NamedLabel`] ends with
+    /// its name.
     fn site_label(&mut self, at: usize, index: usize, path: &[ColumnName], named: Option<&ColumnName>, label: LabelUse, relation: Option<&RelationRef>) {
         let names = self.names;
         let feature_sites = self.feature_sites;
@@ -224,7 +239,13 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
             None => path.to_vec(),
         };
         self.label_use(at, label, |out| {
-            site_column(names, relation, &path, out);
+            let orders = relation.map_or(0, |relation| names.column_orders(relation));
+            let least = (0..=orders).map(|order| {
+                let mut column = CanonicalWriter::default();
+                site_column(names, relation, &path, order, &mut column);
+                column.bytes
+            }).min().expect("an order of the columns");
+            out.write(&least);
             out.len(if feature_sites && named.is_some(){0}else{index});
         });
     }
@@ -235,10 +256,7 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         match label {
             Some(label) => {
                 let to = self.label(label.label);
-                self.edge(at, to, Tag::Part, |out| {
-                    out.len(index);
-                    out.flag(label.fresh);
-                });
+                self.edge(at, to, Tag::Part, |out| out.len(index));
             }
             None => {
                 let zero = self.vertex(Tag::Zero, |_| {});
@@ -252,18 +270,25 @@ impl<'a> ScopeSink<'a> for GraphBuilder<'_> {
         for(i,label)in operands.into_iter().enumerate(){self.operand(at,if symmetric {0}else{i},label);}
     }
 
-    fn one_label(&mut self, at: usize, index: usize, label: LabelId) {
-        let to = self.label(label);
-        self.edge(at, to, Tag::Part, |out| out.len(index));
+    /// A vertex for each distinct mark, with an edge to each of its labels,
+    /// and no index on either.
+    fn marks(&mut self, at: usize, ones: &'a [OneMark]) {
+        for one in super::walk::distinct_marks(ones) {
+            let mark = self.vertex_under(at, Tag::One, 0, Tag::One, |_| {});
+            for label in one.key.iter() {
+                let to = self.label(*label);
+                self.edge(mark, to, Tag::Part, |out| out.len(0));
+            }
+        }
     }
 
     /// An edge to the label of each column, labeled by the column's name as
     /// the name writer writes it.
-    fn columns(&mut self, at: usize, columns: &'a [RelationColumn], relation: Option<&RelationRef>) {
+    fn columns(&mut self, at: usize, columns: &'a [RelationColumn], relation: Option<&RelationRef>, ordered: bool) {
         let names = self.names;
         for (index,column) in columns.iter().enumerate() {
             let to = self.label(column.label);
-            self.edge(at, to, Tag::Column, |out| {relation_column(names, relation, &column.name, out);if relation.is_none(){out.len(index);}});
+            self.edge(at, to, Tag::Column, |out| {relation_column(names, relation, &column.name, out);if relation.is_none() && ordered {out.len(index);}});
         }
     }
 

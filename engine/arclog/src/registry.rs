@@ -109,8 +109,10 @@
 //! A column of type `Position` or `Box` that no form names takes the rule
 //! `(of <each column of that type that the mode binds>)` in a relation or a
 //! macro, at each mode, and `(of <each column of that type, other than
-//! `key`, of the component's inputs>)` in an output. [`Registry::relation_frame`]
-//! and [`Registry::output_frame`] give the rule of a column. A rule on a
+//! `key`, of the component's inputs>)` in an output, or `(of <the input columns
+//! that the rows copy into it>)` in an output column that a `copies` row maps.
+//! [`Registry::relation_frame`] and [`Registry::output_frame`] give the rule of a
+//! column. A rule on a
 //! column of another type, a rule that names a column the element does not
 //! declare, and a rule on an output column that a `copies` row maps (a
 //! copied column has the frame of the column it copies) are faults of the

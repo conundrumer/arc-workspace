@@ -217,6 +217,16 @@ impl<'a> Materializer<'a> {
         Budget::new(self.limits,self.session).materialize(rows,bytes_per_row).map(Arc::new)
     }
 
+    /// Admits `rows` new held rows of `bytes` in all that no walk of a
+    /// product builds, such as rows kept per part of a relation, and returns
+    /// the owner of their retained bytes.
+    pub fn hold(&self,rows:u64,bytes:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
+        let mut budget=Budget::new(self.limits,self.session);
+        budget.charge_work(0)?;
+        budget.charge_rows(rows)?;
+        self.session.reserve(bytes.saturating_add(128)).map(Arc::new).map_err(ReachedBound::SessionBytes)
+    }
+
     /// Admits a genuine copy of an existing buffer before cloning it.
     pub fn copy(&self,bytes:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
         self.check()?;

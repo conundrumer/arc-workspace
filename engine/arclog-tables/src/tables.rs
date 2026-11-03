@@ -63,7 +63,7 @@ use arclog::types::{GraphRelation, ValueType};
 use arclog::stats::{self, Phase};
 use arclog::write::label_names;
 
-use crate::columns::{column_frames, fact_frames, names_of};
+use crate::columns::{column_frames, fact_frames, names_of, TableNames};
 use crate::extents::{table_extents_with_context, Extents};
 #[path = "assignment_context.rs"]
 pub mod assignment_context;
@@ -291,7 +291,7 @@ pub fn step_tables(decoder: &Decoder<'_>, points: Points, earlier: &[&Table]) ->
 
 /// The conjunct count and the open atom's site count of the clause in
 /// progress at `state` of `decoder`, none where no clause is in progress.
-fn body_point(decoder: &Decoder<'_>, state: &State) -> Option<Point> {
+pub(crate) fn body_point(decoder: &Decoder<'_>, state: &State) -> Option<Point> {
     let (program, open) = state.partial()?;
     let open = open?;
     let (last, _) = program.value().forms.split_last().expect("a partial program with an open node holds its partial form");
@@ -310,6 +310,28 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Opti
     if Some(point) == body_point(decoder, before) || point == (Point::Body { conjuncts: 0, sites: 0 }) {
         return None;
     }
+    let names = {
+        let _timed = stats::span(Phase::TableNames);
+        stats::units(Phase::TableNames, earlier.len());
+        names_of(decoder.registry(), earlier)
+    };
+    body_table_at(decoder, point, earlier, &names)
+}
+
+/// The table of the body in progress at the state of `decoder`, as
+/// [`step_tables`] gives it at a step that changes the body's point, whatever
+/// the last step did; none where no clause is in progress or its body is
+/// empty. `earlier` are as [`step_tables`] takes them.
+pub fn body_now(decoder: &Decoder<'_>, earlier: &[&Table]) -> Option<Table> {
+    let point = body_point(decoder, decoder.state()).filter(|point| *point != Point::Body { conjuncts: 0, sites: 0 })?;
+    body_table_at(decoder, point, earlier, &names_of(decoder.registry(), earlier))
+}
+
+/// The table of the sub-body of the clause in progress at the state of
+/// `decoder`, at `point`, that state's point, as [`body_table`] makes it;
+/// `names` are the names of `earlier` ([`names_of`]). None where no clause
+/// is in progress.
+pub(crate) fn body_table_at(decoder: &Decoder<'_>, point: Point, earlier: &[&Table], names: &TableNames) -> Option<Table> {
     let _timed = stats::span(Phase::TableBody);
     stats::seen(Phase::TableBody, || decoder.state().stats_digest());
     if let Point::Body { conjuncts, .. } = point {
@@ -322,7 +344,7 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Opti
         let slot = decoder.state().open_slot();
         let work = decoder.table_work();
         let examples = decoder.examples_of(sub.scope).into_iter().zip(decoder.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work).map(|contents| made(decoder, earlier, &sub.program, &relation, contents))
+        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work).map(|contents| made_named(decoder, names, earlier, &sub.program, &relation, contents))
     });
     Some(Table { form, point, contents: contents.and_then(|contents| contents) })
 }
@@ -330,7 +352,7 @@ fn body_table(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Opti
 /// The table of each relation the form that the step finished declares, but
 /// for each that gets no table ([`gives_no_table`]); `before` is the state
 /// before the step, and `earlier` the tables of the steps before it.
-fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Vec<Table> {
+pub(crate) fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[&Table]) -> Vec<Table> {
     let _timed = stats::span(Phase::TableRelation);
     let registry = decoder.registry();
     let program = decoder.program();
@@ -369,13 +391,22 @@ fn made(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relati
     made_with_context(decoder, seen, checked, relation, contents, AssignmentContext::Search)
 }
 
+/// [`made`], with `names`, the names of `seen` ([`names_of`]).
+fn made_named(decoder: &Decoder<'_>, names: &TableNames, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents) -> Contents {
+    named_with_context(decoder, names, seen, checked, relation, contents, AssignmentContext::Search)
+}
+
 fn made_with_context(decoder: &Decoder<'_>, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents, context: AssignmentContext<'_>) -> Contents {
     let names = {
         let _timed = stats::span(Phase::TableNames);
         stats::units(Phase::TableNames, seen.len());
         names_of(decoder.registry(), seen)
     };
-    let frames = column_frames(&names, &contents);
+    named_with_context(decoder, &names, seen, checked, relation, contents, context)
+}
+
+fn named_with_context(decoder: &Decoder<'_>, names: &TableNames, seen: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: Contents, context: AssignmentContext<'_>) -> Contents {
+    let frames = column_frames(names, &contents);
     let contents = Contents { frames, assignment_layout:context.layout(), ..contents };
     let extents = table_extents_with_context(decoder, seen, checked, relation, &contents, context);
     Contents { extents, ..contents }
@@ -500,6 +531,26 @@ fn projections_of(decoder: &Decoder<'_>, examples: &[ExampleRows], form: &NodePa
 pub fn evidence_tables(task: &Task, registry: &Registry) -> Vec<Table> {
     let _timed = stats::span(Phase::TableEvidence);
     EVIDENCE_FACTS.into_iter().map(|fact| evidence_table(task, registry, fact)).collect()
+}
+
+/// The base table of `input` of `task`, with the columns of the fact relation
+/// in `registry`, no `DET`s and no projections, and one entry for each example
+/// of the task, in the order of [`Task::examples`]: the cells of the example's
+/// input grid, at the one assignment, as the one model. Its key is `P`. No
+/// step gives it, and [`evidence_tables`] does not hold it.
+pub fn input_table(task: &Task, registry: &Registry) -> Table {
+    let examples = task
+        .examples()
+        .map(|example| {
+            let rows = task.fact_rows(FactRelation::Input, Some(example));
+            ExampleRows { example: Some(example), rows: Ok(Assigned { at: vec![(Vec::new(), vec![RelationValue::Rows(Arc::new(rows))])], stop: None }) }
+        })
+        .collect();
+    let mut table = evidence_table_of(registry, FactRelation::Input, examples);
+    if let Ok(contents) = &mut table.contents {
+        contents.keys = vec![vec![0]];
+    }
+    table
 }
 
 /// The fact relations of the evidence tables, in their order.
@@ -666,6 +717,7 @@ fn flatten(rows: &Assigned<Vec<RelationValue>>) -> Assigned<BodyValue> {
 #[path = "study_pair.rs"] pub mod study_pair;
 #[path = "study_render.rs"] pub mod study_render;
 #[path = "body_tables.rs"] pub(crate) mod body_tables;
+#[path = "successors.rs"] pub mod successors;
 
 #[cfg(test)]
 #[path = "gold_normalization_audit.rs"]

@@ -38,6 +38,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arclog-features"
+version = "0.1.0"
+
+[[package]]
+name = "arclog-features-py"
+version = "0.1.0"
+dependencies = [
+ "arclog-features",
+ "pyo3",
+]
+
+[[package]]
 name = "arclog-py"
 version = "0.1.0"
 dependencies = [
@@ -54,6 +66,7 @@ version = "0.1.0"
 dependencies = [
  "arclog",
  "arclog-constructions",
+ "arclog-features",
  "serde_json",
 ]
 
@@ -63,6 +76,7 @@ version = "0.1.0"
 dependencies = [
  "arclog",
  "arclog-bindings",
+ "arclog-features",
  "arclog-tables",
  "pyo3",
  "serde_json",

@@ -43,11 +43,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::check::CheckedProgram;
 use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
+use crate::eval::determinations::det_relation;
 use crate::eval::{Domain, Evaluation, Outcome};
 use crate::hash::{StableHash, StableHashMap};
 use crate::judge::determination::{Assignment, Det, Domains};
+use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::ProgramRelation;
 use crate::relations::Relation;
+use crate::resolver::GraphNodeIndex;
 use crate::session::{same_rows, ResultKey, TaskSession};
 use crate::types::ValueType;
 use crate::types::GraphRelation;
@@ -112,7 +115,8 @@ pub(crate) struct PartKey {
 
 /// A `DET` of a [`PartKey`]: its relation, whether it is open and a pick, the
 /// content of its node, which holds the content of each of its forms and,
-/// at any depth, of each relation they read, and the types of its columns.
+/// at any depth, of each relation they read, the types of its columns, and
+/// the forms it reads ([`forms_read`]).
 #[derive(PartialEq, Eq, Hash)]
 struct PartDet {
     relation: ProgramRelation,
@@ -120,6 +124,7 @@ struct PartDet {
     pick: bool,
     node: StableHash,
     columns: Box<[ValueType]>,
+    forms: Option<Box<[StableHash]>>,
 }
 
 /// The key of the walk of `dets` with `picks` in `program`, a program with no
@@ -130,7 +135,8 @@ pub(crate) fn part_key(program: &CheckedProgram, dets: &[Det], picks: &[Det], ca
     let part_det = |det: &Det| {
         let node = resolved.node_content(det.node)?.content_hash();
         let columns = program.types.columns(&GraphRelation { node: det.node, output: None })?.into();
-        Some(PartDet { relation: det.relation.clone(), open: det.open, pick: det.pick, node, columns })
+        let forms = forms_read(program, &resolved.graph.reached(det.node));
+        Some(PartDet { relation: det.relation.clone(), open: det.open, pick: det.pick, node, columns, forms })
     };
     Some(PartKey { cap, dets: dets.iter().map(part_det).collect::<Option<_>>()?, picks: picks.iter().map(part_det).collect::<Option<_>>()? })
 }
@@ -314,9 +320,38 @@ fn det_keys(program: &CheckedProgram, dets: &[Det]) -> Vec<Option<DetKey>> {
                 .filter(|(_, read)| reached[read.node.0 as usize])
                 .map(|(index, read)| Some((index, resolved.node_content(read.node)?.content_hash())))
                 .collect::<Option<Vec<_>>>()?;
-            Some(DetKey { node, columns, reads })
+            Some(DetKey { node, columns, reads, forms: forms_read(program, &reached) })
         })
         .collect()
+}
+
+/// The hashes of the forms as written, in no order, that give the nodes of
+/// `program` that `reached` marks, a node and each node it reads at any
+/// depth, where two `DET`s among those nodes have one content; `None` where
+/// no two do. A node's content writes each relation it reads as that
+/// relation's content, so it tells which `DET` each read reads only where no
+/// two of them have one content. A form as written names each relation it
+/// reads, so the forms tell it in each case.
+fn forms_read(program: &CheckedProgram, reached: &[bool]) -> Option<Box<[StableHash]>> {
+    let resolved = &program.program;
+    let nodes = || (0..resolved.graph.nodes.len()).filter(|&node| reached[node]).map(|node| GraphNodeIndex(node as u32));
+    let contents = nodes()
+        .filter(|node| det_relation(&resolved.graph.nodes[node.0 as usize].kind).is_some())
+        .map(|node| Some(resolved.node_content(node)?.content_hash().0))
+        .collect::<Option<Vec<_>>>();
+    if let Some(mut contents) = contents {
+        contents.sort_unstable();
+        if contents.windows(2).all(|pair| pair[0] != pair[1]) {
+            return None;
+        }
+    }
+    let mut tops: Vec<usize> = nodes().flat_map(|node| resolved.forms_of(node)).filter_map(|path| path.0.first()).map(|step| step.0 as usize).collect();
+    tops.sort_unstable();
+    tops.dedup();
+    let forms = &resolved.program.value().forms;
+    let mut written: Vec<StableHash> = tops.iter().map(|&top| CanonicalOrder::with_form(&forms[top], &mut SearchBudget::new()).1.hash).collect();
+    written.sort_unstable_by_key(|hash| hash.0);
+    Some(written.into())
 }
 
 /// The key of the domain of `dets[at]`, whose key parts are `det`, at the
@@ -327,7 +362,7 @@ fn key_at(dets: &[Det], det: &DetKey, assigned: &[Assignment]) -> Key {
         let value = assigned.iter().find(|(name, _)| name == relation).map(|(_, value)| Arc::clone(value));
         (relation.clone(), content, value)
     });
-    Key { node: det.node, columns: det.columns.clone(), reads: reads.collect() }
+    Key { node: det.node, columns: det.columns.clone(), reads: reads.collect(), forms: det.forms.clone() }
 }
 
 /// The domains of the `DET`s of one walk.
@@ -345,24 +380,28 @@ struct DetKey {
     /// Each `DET` before it in the walk that it reads at any depth, by its
     /// index in the walk, with that `DET`'s content.
     reads: Vec<(usize, StableHash)>,
+    forms: Option<Box<[StableHash]>>,
 }
 
 /// The key of a domain: the content of the `DET`'s node, which holds the
 /// content of each of its forms and, at any depth, of each relation they
 /// read; the types of its columns, by which the domain orders its values;
-/// and each `DET` it reads at any depth that the walk assigns before it,
-/// by its relation and its content, with its value, or none where the walk
-/// left it unassigned.
+/// each `DET` it reads at any depth that the walk assigns before it, by its
+/// relation and its content, with its value, or none where the walk left it
+/// unassigned; and the forms it reads ([`forms_read`]), which tell which of
+/// those `DET`s each of its reads reads where the content does not.
 struct Key {
     node: StableHash,
     columns: Box<[ValueType]>,
     reads: Box<[(ProgramRelation, StableHash, Option<Arc<Relation>>)]>,
+    forms: Option<Box<[StableHash]>>,
 }
 
 impl Hash for Key {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.node.hash(state);
         self.columns.hash(state);
+        self.forms.hash(state);
         for (relation, content, value) in self.reads.iter() {
             relation.hash(state);
             content.hash(state);
@@ -380,6 +419,7 @@ impl PartialEq for Key {
         };
         self.node == other.node
             && self.columns == other.columns
+            && self.forms == other.forms
             && self.reads.len() == other.reads.len()
             && self.reads.iter().zip(other.reads.iter()).all(|(a, b)| a.0 == b.0 && a.1 == b.1 && value(&a.2, &b.2))
     }

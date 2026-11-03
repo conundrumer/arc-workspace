@@ -70,7 +70,12 @@
 //! extents do not derive its rows.
 //!
 //! The extents of a table stand beside its rows in [`Contents`], for each
-//! example, assignment and model, as [`Extents::entry`] gives them.
+//! example, assignment and model, as [`Extents::entry`] gives them. Where the
+//! relation of an entry is the product of several parts and the extent of
+//! each column reads the cells of one part (a Position reads its own cell, and
+//! a Box whose frame is a grid reads its own cell and the cell that gives the
+//! row's example), the extents are held per part, with a row for each row of
+//! the part, and no row of the product is built or admitted ([`ExtentRows`]).
 
 use std::cell::RefCell;
 use std::ops::Range;
@@ -182,17 +187,66 @@ impl<T> std::ops::Deref for Materialized<T> {
     fn deref(&self)->&T {&self.value}
 }
 
-/// A full-row extent matrix admitted under the session byte bound. Cloning
+/// An entry's extent matrix admitted under the session byte bound. Cloning
 /// its Arc shares both the cells and their byte reservation.
+///
+/// The matrix is held as blocks: one block with a row for each row of the
+/// relation, or, where each extent column's extent reads the cells of one part
+/// of the relation, one block for each part that holds such a column, with a
+/// row for each row of that part. The row `at` of the relation, in the order of
+/// [`arclog::eval::join::each_row`], reads the row `at / stride % len` of each
+/// block, as that order walks the parts with the first outermost.
 #[derive(Debug)]
 pub struct ExtentRows {
-    rows: Box<[Box<[Option<Extent>]>]>,
+    blocks: Box<[ExtentBlock]>,
+    /// For each extent column, its block and its place among the block's
+    /// columns; none for a column whose extent is none at every row.
+    places: Box<[Option<(usize, usize)>]>,
+    /// The count of the relation's rows.
+    len: u64,
     _allocation: std::sync::Arc<arclog::session::SessionAllocation>,
 }
 
-impl std::ops::Deref for ExtentRows {
-    type Target = [Box<[Option<Extent>]>];
-    fn deref(&self) -> &Self::Target { &self.rows }
+#[derive(Debug)]
+struct ExtentBlock {
+    /// The part of the relation whose rows the block's rows are; none for a
+    /// block over the relation's rows.
+    part: Option<usize>,
+    /// The product of the counts of the rows of the later parts; 1 for a
+    /// block over the relation's rows.
+    stride: u64,
+    rows: Box<[Box<[Option<Extent>]>]>,
+}
+
+impl ExtentRows {
+    /// The extent of the extent column `k` at the row `at` of the relation,
+    /// none past its rows.
+    pub fn cell(&self, at: u64, k: usize) -> Option<Extent> {
+        if at >= self.len { return None; }
+        let (block, slot) = (*self.places.get(k)?)?;
+        let block = &self.blocks[block];
+        let row = usize::try_from(at / block.stride % block.rows.len() as u64).ok()?;
+        block.rows.get(row)?.get(slot).copied().flatten()
+    }
+
+    /// Whether the matrix is held per part of the relation.
+    pub fn by_part(&self) -> bool {
+        self.blocks.iter().all(|block| block.part.is_some())
+    }
+
+    /// For a matrix held per part, the part whose rows give the extent column
+    /// `k`; none for a column whose extent is none at every row.
+    pub fn part_of(&self, k: usize) -> Option<usize> {
+        let (block, _) = (*self.places.get(k)?)?;
+        self.blocks[block].part
+    }
+
+    /// For a matrix held per part, the extent of the extent column `k` at the
+    /// row `row` of its part.
+    pub fn part_cell(&self, k: usize, row: usize) -> Option<Extent> {
+        let (block, slot) = (*self.places.get(k)?)?;
+        self.blocks[block].rows.get(row)?.get(slot).copied().flatten()
+    }
 }
 
 /// The extents of the made frames of a table's `Box` columns.
@@ -358,29 +412,115 @@ fn no_grid_columns(decoder:&Decoder<'_>, earlier:&[&Table], contents:&Contents, 
     }).collect()
 }
 
+/// The extent of the extent column `k`, at `column`, of `row`, a row of an
+/// entry on `example`: the direct one, or else the one the derivations of the
+/// row give (`slots`).
+fn completed_cell(contexts:&DirectContexts,contents:&Contents,example:usize,k:usize,column:usize,no_grid:bool,row:&[TermId],slots:Option<&[Merged]>)->Option<Extent> {
+    if no_grid {return None;}
+    match &contents.columns[column].ty {
+        ValueType::Position=>position_extent(row[column],&ValueType::Position),
+        ValueType::Box=>{
+            let extent=contexts.at(contents,example,column,row)
+                .or_else(||slots.and_then(|s|s[k].extent()))?;
+            fitted_size(extent,margins_of(row[column],&ValueType::Box)?).map(|_|extent)
+        },
+        _=>None,
+    }
+}
+
+/// The extents of the rows of `relation`, held per part where
+/// [`part_places`] gives each column's part, and per row otherwise.
 fn completed_rows(reads:&Reads<'_>,contexts:&DirectContexts,contents:&Contents,example:usize,relation:&Relation,columns:&[u32],no_grid:&[bool],gathered:Option<&Gathered>)->Result<std::sync::Arc<ExtentRows>,Stop> {
+    match part_places(contexts,contents,relation,columns,no_grid,gathered) {
+        Some(places)=>part_rows(reads,contexts,contents,example,relation,columns,no_grid,&places),
+        None=>flat_rows(reads,contexts,contents,example,relation,columns,no_grid,gathered),
+    }
+}
+
+/// For each extent column, the part of `relation` whose cells alone give its
+/// extent at each row, none for a column whose extent is none at every row: a
+/// Position reads its own cell, and a Box its own cell and the cell that
+/// gives its row's example. None in all where the relation has one part or no
+/// row, or where a column reads the cells of two parts or the derivations of
+/// whole rows (`gathered`).
+fn part_places(contexts:&DirectContexts,contents:&Contents,relation:&Relation,columns:&[u32],no_grid:&[bool],gathered:Option<&Gathered>)->Option<Vec<Option<usize>>> {
+    let parts=relation.parts();
+    if parts.len()<2 || relation.is_empty() {return None;}
+    let part_of=|column:usize|parts.iter().position(|part|part.columns.iter().any(|own|usize::from(own.0)==column));
+    let mut derived=vec![false;columns.len()];
+    for slots in gathered.iter().flat_map(|entry|entry.rows.values()) {
+        for (held,slot) in derived.iter_mut().zip(slots) {*held|=slot.extent().is_some();}
+    }
+    columns.iter().enumerate().map(|(k,&column)| {
+        let column=column as usize;
+        if no_grid[k] {return Some(None);}
+        match contents.columns[column].ty {
+            ValueType::Position=>part_of(column).map(Some),
+            ValueType::Box if derived[k]=>None,
+            ValueType::Box=>{
+                let part=part_of(column)?;
+                match contexts.example_column(column) {
+                    Some(at) if part_of(at)!=Some(part)=>None,
+                    _=>Some(Some(part)),
+                }
+            }
+            _=>Some(None),
+        }
+    }).collect()
+}
+
+/// The extents of the rows of `relation` held per row, in the order of
+/// [`arclog::eval::join::each_row`].
+fn flat_rows(reads:&Reads<'_>,contexts:&DirectContexts,contents:&Contents,example:usize,relation:&Relation,columns:&[u32],no_grid:&[bool],gathered:Option<&Gathered>)->Result<std::sync::Arc<ExtentRows>,Stop> {
     let stopped=|bound|Stop {bound,form:reads.form.clone()};
     let materializer=reads.materializer();
     let bytes=Materializer::row_bytes(columns.len().saturating_mul(std::mem::size_of::<Option<Extent>>()),2);
     let allocation=materializer.admit(relation,bytes).map_err(stopped)?;
     let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));
     materializer.walk(relation,&mut |row| {
-        let slots=gathered.and_then(|e|e.rows.get(row));
-        result.push(columns.iter().enumerate().map(|(k,c)| {
-            if no_grid[k] {return None;}
-            let column=*c as usize;
-            match &contents.columns[column].ty {
-                ValueType::Position=>position_extent(row[column],&ValueType::Position),
-                ValueType::Box=>{
-                    let extent=contexts.at(contents,example,column,row)
-                        .or_else(||slots.and_then(|s|s[k].extent()))?;
-                    fitted_size(extent,margins_of(row[column],&ValueType::Box)?).map(|_|extent)
-                },
-                _=>None,
-            }
-        }).collect());
+        let slots=gathered.and_then(|e|e.rows.get(row)).map(Vec::as_slice);
+        result.push(columns.iter().enumerate().map(|(k,c)|completed_cell(contexts,contents,example,k,*c as usize,no_grid[k],row,slots)).collect());
     }).map_err(stopped)?;
-    Ok(std::sync::Arc::new(ExtentRows {rows:result.into_boxed_slice(),_allocation:allocation}))
+    let block=ExtentBlock {part:None,stride:1,rows:result.into_boxed_slice()};
+    let places=(0..columns.len()).map(|k|Some((0,k))).collect();
+    Ok(std::sync::Arc::new(ExtentRows {blocks:Box::new([block]),places,len:relation.len(),_allocation:allocation}))
+}
+
+/// The extents of the rows of `relation` held per part, each column in the
+/// part `places` gives it. No row of the product is built, and the rows
+/// admitted are those of the parts.
+fn part_rows(reads:&Reads<'_>,contexts:&DirectContexts,contents:&Contents,example:usize,relation:&Relation,columns:&[u32],no_grid:&[bool],places:&[Option<usize>])->Result<std::sync::Arc<ExtentRows>,Stop> {
+    let stopped=|bound|Stop {bound,form:reads.form.clone()};
+    let materializer=reads.materializer();
+    let parts=relation.parts();
+    // The parts that hold a column, each with the extent columns it holds.
+    let held=(0..parts.len()).filter_map(|p| {
+        let own=places.iter().enumerate().filter(|(_,place)|**place==Some(p)).map(|(k,_)|k).collect::<Vec<_>>();
+        (!own.is_empty()).then_some((p,own))
+    }).collect::<Vec<_>>();
+    let rows=held.iter().map(|(p,_)|parts[*p].rows.len() as u64).fold(0u64,u64::saturating_add);
+    let bytes=held.iter().map(|(p,own)|parts[*p].rows.len().saturating_mul(Materializer::row_bytes(own.len().saturating_mul(std::mem::size_of::<Option<Extent>>()),2))).fold(0usize,usize::saturating_add);
+    let allocation=materializer.hold(rows,bytes).map_err(stopped)?;
+    // A row of the relation's width, whose cells outside the part walked are never read.
+    let mut row=vec![Term::encode_number(0);usize::from(relation.arity())];
+    let mut visited=0usize;
+    let mut blocks=Vec::with_capacity(held.len());
+    for (p,own) in &held {
+        let part=&parts[*p];
+        let stride=parts[p+1..].iter().fold(1u64,|count,later|count.saturating_mul(later.rows.len() as u64));
+        let mut cells=Vec::with_capacity(part.rows.len());
+        for part_row in part.rows.rows() {
+            if visited%1024==0 {materializer.check().map_err(stopped)?;}visited+=1;
+            for (column,&value) in part.columns.iter().zip(part_row) {row[usize::from(column.0)]=value;}
+            cells.push(own.iter().map(|&k|completed_cell(contexts,contents,example,k,columns[k] as usize,no_grid[k],&row,None)).collect());
+        }
+        blocks.push(ExtentBlock {part:Some(*p),stride,rows:cells.into_boxed_slice()});
+    }
+    let mut at=vec![None;columns.len()];
+    for (block,(_,own)) in held.iter().enumerate() {
+        for (slot,&k) in own.iter().enumerate() {at[k]=Some((block,slot));}
+    }
+    Ok(std::sync::Arc::new(ExtentRows {blocks:blocks.into_boxed_slice(),places:at.into_boxed_slice(),len:relation.len(),_allocation:allocation}))
 }
 
 fn stopped_extents(contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>,stop:Stop)->Extents {
@@ -409,12 +549,12 @@ pub fn annotated_rows(materializer:&Materializer<'_>,form:&NodePath,contents:&Co
     if let Some(EntryExtents::Stopped(stop))=held { return Err(stop.clone()); }
     let stopped=|bound|Stop {bound,form:form.clone()};
     let allocation=materializer.admit(relation,Materializer::row_bytes(columns.len().saturating_mul(std::mem::size_of::<(u8,Option<Extent>)>()),2)).map_err(stopped)?;
-    let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));let mut at=0;
+    let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));let mut at=0u64;
     materializer.walk(relation,&mut |row| {
         result.push(columns.iter().enumerate().map(|(k,c)| {
             let no_grid=contents.columns[*c as usize].ty==ValueType::Offset || extents.is_some_and(|e|e.no_grid.get(k)==Some(&true));
             if no_grid {return (0,None);}
-            let extent=match held {Some(EntryExtents::Rows(rows))=>rows.get(at).and_then(|r|r.get(k)).copied().flatten(),_=>None}
+            let extent=match held {Some(EntryExtents::Rows(rows))=>rows.cell(at,k),_=>None}
                 .or_else(||match contents.columns[*c as usize].ty {
                     ValueType::Position=>position_extent(row[*c as usize],&ValueType::Position),
                     ValueType::Box=>extents?.direct_at(contents,example,*c as usize,row),
@@ -804,15 +944,15 @@ impl OutputPlan {
             for (example,e) in examples.iter().enumerate() {if let Ok(assigned)=&e.rows {
                 for (at,(_,models)) in assigned.at.iter().enumerate() {for model in models {
                     if let RelationValue::Rows(rows)=model {
-                        let completed=match completed_rows(reads,&plan.contexts,&contents,example,rows,&port.wanted,
+                        let completed=match flat_rows(reads,&plan.contexts,&contents,example,rows,&port.wanted,
                             &port.wanted.iter().map(|c|plan.columns.iter().position(|x|x==c).is_some_and(|k|plan.no_grid[k])).collect::<Vec<_>>(),Some(&derived[example][at])) {
                             Ok(rows)=>rows,Err(stop)=>{derived[example][at].stop=Some(stop);continue;}
                         };
                         if derived[example][at].admit(reads,rows,port.wanted.len(),form).is_err() {continue;}
-                        let mut i=0;
+                        let mut i=0u64;
                         let mut budget=Budget::new(&reads.limits,reads.session);
                         if let Err(bound)=budget.walk_rows(rows,&mut |row| {
-                            derived[example][at].rows.insert(row.into(),completed[i].iter().map(|v|v.map_or(Merged::None,Merged::One)).collect());
+                            derived[example][at].rows.insert(row.into(),(0..port.wanted.len()).map(|k|completed.cell(i,k).map_or(Merged::None,Merged::One)).collect());
                             i+=1;
                         }) {derived[example][at].stop=Some(Stop {bound,form:form.clone()});}
                     } else if let RelationValue::Stopped(stop)=model {
@@ -1107,11 +1247,11 @@ impl<'a> Reads<'a> {
         let materializer=self.materializer();
         let bytes=Materializer::row_bytes(fixed.len().saturating_mul(std::mem::size_of::<TermId>()).saturating_add(std::mem::size_of::<Merged>()),3);
         let allocation=materializer.admit(relation,bytes).map_err(|bound|Stop {bound,form:self.form.clone()})?;
-        let mut row_at = 0;
+        let mut row_at = 0u64;
         materializer.walk(relation, &mut |row| {
             let extent = match ty {
                 Some(ValueType::Position) => position_extent(row[index], &ValueType::Position),
-                _ => held.zip(held_at).and_then(|(held, column)| held.get(row_at)?.get(column).copied().flatten())
+                _ => held.zip(held_at).and_then(|(held, column)| held.cell(row_at, column))
                     .or_else(|| contents.extents.as_ref()?.direct_at(contents, place, index, row)),
             };
             let key: Box<[TermId]> = fixed.iter().map(|&column| row[column]).collect();

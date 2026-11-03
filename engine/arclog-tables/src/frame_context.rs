@@ -85,6 +85,15 @@ impl DirectContexts {
         }
     }
 
+    /// The column whose cell gives the example of a row for the grid of the
+    /// column `column`, none where no cell does.
+    pub(super) fn example_column(&self, column: usize) -> Option<usize> {
+        match self.row_examples.get(column)? {
+            Some(RowExample::Column(at)) => Some(*at),
+            _ => None,
+        }
+    }
+
     pub(super) fn complete(&self, materializer:&Materializer<'_>, contents:&Contents, column:usize)->Result<bool,arclog::eval::ReachedBound> {
         let frame=&contents.frames[column];
         let grid_for=|value:TermId|RowExample::Column(0).get(&[value]).and_then(|e|self.examples.get(usize::from(e.index()))).and_then(|g|g.at(frame)).is_some();

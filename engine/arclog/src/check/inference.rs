@@ -217,9 +217,13 @@ pub(super) struct FormInference<'a> {
     /// alone, so that a column of a relation that such a label gives takes
     /// a Pose type as that column does.
     given: Vec<LabelId>,
-    /// A hash of the owner form's name and canonical form, kept for
+    /// A hash of the owner form's resolved content, kept for
     /// [`FormInference::ident_source`].
     source_base: std::cell::OnceCell<StableHash>,
+    /// The program in which the owner stands at `path`, which gives the
+    /// owner form's resolved content.
+    program: &'a ResolvedProgram,
+    registry: &'a Registry,
 }
 
 /// The types of one label scope that a [`FormInference`] holds beyond its
@@ -237,26 +241,39 @@ impl<'a> FormInference<'a> {
     /// The inference of `form`, a form at `path`, whose types are `types`:
     /// those of `form` itself, or of a form that differs from `form` in an
     /// atom of no site alone.
-    fn of_types(types: InferredTypes, form: &'a Form, path: &NodePath, registry: &'a Registry) -> Self {
+    fn of_types(types: InferredTypes, form: &'a Form, path: &NodePath, program: &'a ResolvedProgram, registry: &'a Registry) -> Self {
         let component = match form {
             Form::Instance(instance) => component(registry, &instance.value().component),
             _ => None,
         };
         let InferredTypes { labels, bindings, zero_typed, given } = types;
-        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk: FormWalk::of(form), component, zero_typed, given, source_base: Default::default() }
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk: FormWalk::of(form), component, zero_typed, given, source_base: Default::default(), program, registry }
     }
 
     /// The inference of the scope of `owner` at `path` whose types are
     /// `types`, those that [`Inference::infer_form`] or
     /// [`Inference::infer_rule`] gave that scope.
-    fn of_owner_types(types: InferredTypes, owner: ScopeOwner<'a>, path: &NodePath, registry: &'a Registry) -> Self {
+    fn of_owner_types(types: InferredTypes, owner: ScopeOwner<'a>, path: &NodePath, program: &'a ResolvedProgram, registry: &'a Registry) -> Self {
         match owner {
-            ScopeOwner::Form(form) => Self::of_types(types, form, path, registry),
+            ScopeOwner::Form(form) => Self::of_types(types, form, path, program, registry),
             ScopeOwner::DemoRule(rule) => {
                 let InferredTypes { labels, bindings, zero_typed, given } = types;
-                FormInference { owner, path: path.clone(), labels, bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed, given, source_base: Default::default() }
+                FormInference { owner, path: path.clone(), labels, bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed, given, source_base: Default::default(), program, registry }
             }
         }
+    }
+
+    /// The hash of the owner form's resolved content: that of the query at
+    /// its top-level position ([`ResolvedProgram::query_content`]), which
+    /// one query has in every program, or else its content in this program
+    /// ([`ResolvedProgram::content`]). Neither holds a name that the program
+    /// declares.
+    fn content_hash(&self) -> Option<StableHash> {
+        let top = match &self.path.0[..] {
+            [top] => self.program.query_content(top.0 as usize, self.registry),
+            _ => None,
+        };
+        Some(top.or_else(|| self.program.content(&self.path))?.content_hash())
     }
 
     /// The source of the Ident values that the form makes at the output
@@ -268,8 +285,16 @@ impl<'a> FormInference<'a> {
         if !sources_on() {
             return IdentSource::Open;
         }
+        // The resolved content, so that one query has one source in every program, and two forms of one content in one program make
+        // equal Idents and have one source. A form with no content takes its name and its canonical form.
         let base = self.source_base.get_or_init(|| {
             let mut hasher = StableHasher::new();
+            if let Some(content) = self.content_hash() {
+                1u8.hash(&mut hasher);
+                content.hash(&mut hasher);
+                return hasher.finish128();
+            }
+            0u8.hash(&mut hasher);
             match form {
                 Form::Instance(instance) => instance.value().name.hash(&mut hasher),
                 Form::Clause(clause) => clause.value().derives.hash(&mut hasher),
@@ -292,7 +317,7 @@ impl<'a> FormInference<'a> {
     /// The types of this inference, of a form of the concept program, given
     /// to `owner`, the same scope at `path` in a case, whose sites `walk`
     /// walks.
-    fn at(&self, owner: ScopeOwner<'a>, path: &NodePath, walk: FormWalk<'a>) -> Self {
+    fn at(&self, owner: ScopeOwner<'a>, path: &NodePath, walk: FormWalk<'a>, program: &'a ResolvedProgram) -> Self {
         FormInference {
             owner,
             path: path.clone(),
@@ -303,6 +328,8 @@ impl<'a> FormInference<'a> {
             zero_typed: self.zero_typed.clone(),
             given: self.given.clone(),
             source_base: Default::default(),
+            program,
+            registry: self.registry,
         }
     }
 
@@ -783,7 +810,7 @@ impl<'a> Inference<'a> {
             (*label, Ok(ty))
         }).collect();
         self.share_pose(SiteReading { path, walk: &walk, labels: &[], component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut labels);
-        Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels, source_base: Default::default() })
+        Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels, source_base: Default::default(), program: self.program, registry: self.registry })
     }
 
     /// A scalar column type fixed by the already finished forms. No type
@@ -829,7 +856,7 @@ impl<'a> Inference<'a> {
     fn infer_form(&self, form: &'a Form, path: &NodePath) -> FormInference<'a> {
         let Some(shared) = self.shared.filter(|_| path.0.len() == 1) else { return self.infer_new(form, path) };
         if let Some(types) = shared.borrow().as_ref() {
-            return FormInference::of_types(types.clone(), form, path, self.registry);
+            return FormInference::of_types(types.clone(), form, path, self.program, self.registry);
         }
         let inferred = self.infer_new(form, path);
         *shared.borrow_mut() = Some(inferred.types());
@@ -875,7 +902,7 @@ impl<'a> Inference<'a> {
                 ScopeOwner::Form(form) => FormWalk::of(form),
                 ScopeOwner::DemoRule(rule) => FormWalk::of_rule(rule),
             };
-            let inferred = Rc::new(concept.infer(&at)?.at(owner, path, walk));
+            let inferred = Rc::new(concept.infer(&at)?.at(owner, path, walk, self.program));
             self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
             if self.cases.reads.ordered.get() != ordered {
                 self.ordered.borrow_mut().insert(path.clone());
@@ -885,7 +912,7 @@ impl<'a> Inference<'a> {
         let kept = self.kept_program().map(|program| (program, self.cases.clauses.kept_scopes()));
         if let Some(types) = kept.and_then(|(program, scopes)| scopes.get(program, self.registry, path)) {
             crate::stats::tick(crate::stats::Phase::InferFormKept);
-            let inferred = Rc::new(FormInference::of_owner_types(types, owner, path, self.registry));
+            let inferred = Rc::new(FormInference::of_owner_types(types, owner, path, self.program, self.registry));
             self.forms.borrow_mut().insert(path.clone(), Some(Rc::clone(&inferred)));
             return Some(inferred);
         }
@@ -1038,7 +1065,7 @@ impl<'a> Inference<'a> {
             }
         }
         self.share_pose(SiteReading { path, walk: &walk, labels: &[], component: scope.component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut types);
-        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels, source_base: Default::default() }
+        FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels: types, bindings, walk, component: scope.component, zero_typed, given: given_labels, source_base: Default::default(), program: self.program, registry: self.registry }
     }
 
     /// The types of the scope of `rule`, the `DEMO_RULE` at `path`: each
@@ -1064,7 +1091,7 @@ impl<'a> Inference<'a> {
             }
         }
         let no_bindings = StableHashMap::default();
-        FormInference { owner: ScopeOwner::DemoRule(rule), path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given, source_base: Default::default() }
+        FormInference { owner: ScopeOwner::DemoRule(rule), path: path.clone(), labels, bindings: no_bindings, walk: FormWalk::of_rule(rule), component: None, zero_typed: Vec::new(), given, source_base: Default::default(), program: self.program, registry: self.registry }
     }
 
     /// The type that the column at `path` of the relation `atom` reads gives

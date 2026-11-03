@@ -82,9 +82,12 @@ use arclog::relations::Relation;
 use arclog::stream::corpus::StreamLabels;
 use arclog::terms::{Constant, Ident, OrientationConstant, Term, TermId, ORIENTATION_TYPES};
 use arclog::types::ValueType;
+use arclog::types::{IdentSource, SourceId};
 
-use crate::extents::{EntryExtents, Extent, Merged};
+use crate::extents::{EntryExtents, Extent, ExtentRows, Merged};
 use crate::flows::{ColumnSource, SourceColumn, SourceFrame, SourceKind};
+use crate::split::{self, Part};
+use crate::summary::{bound_name, evidence_key, summarize_cached, DetFulls, SummaryCache, SummaryKey, TableSummary};
 use crate::tables::{evidence_shells, Contents, Point, Table, TableColumn, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
@@ -123,6 +126,10 @@ pub enum ValueKind {
     Fault = 4,
     /// The example has no entry, and its stop stands in `stop`.
     NoEntries = 5,
+    /// The export by assignment, called without rows: the count of rows in
+    /// `rows` and the hash of the Rows in `hash`, with no row cells. This
+    /// export has no [`ValueKind::Count`] entry.
+    NotExported = 6,
 }
 
 /// A bound that stopped a walk, and the form that reached it, as the
@@ -163,6 +170,17 @@ pub struct TableColumns {
     pub column_names: Vec<Vec<String>>,
     /// The name of each column's type, as `ValueType` spells it.
     pub column_types: Vec<Vec<String>>,
+    /// The source of each Ident in each column's type, in the order of
+    /// `column_names`: the form that makes the Ident values
+    /// ([`arclog::types::IdentSource`]), as the 32 hexadecimal digits of its
+    /// identity, which is a hash of the maker form's name, its canonical form
+    /// and its output port. A Record type gives the sources of its fields in
+    /// their order, joined by `,`. The empty string for a type with no Ident
+    /// of a source: an Ident of no source, such as one that an input names
+    /// or one written while `ARCLOG_IDENT_SOURCE` is off, gives none. Two
+    /// columns hold Idents of one source where `column_types` and this are
+    /// equal.
+    pub column_ident_sources: Vec<Vec<String>>,
     /// The frame that the values of each column stand in, in the order of
     /// `column_names`, and the empty string for a column with no frame:
     ///
@@ -252,6 +270,30 @@ pub struct TableColumns {
     /// each other table.
     pub output_position: Vec<i32>,
     pub output_color: Vec<i32>,
+    /// The export by assignment gives these, and a row for each table at each of
+    /// its assignments, in the order of the tables and of the walk; the other
+    /// export leaves them empty.
+    ///
+    /// The number of the table, which the other parts that name a table by its
+    /// number (`flows`, `projections`) give.
+    pub table: Vec<u32>,
+    /// The QueryHash of the table's query: the `query_hash` of its query, for a
+    /// table of a finished query, and 0 for a table that has none (a body table, whose
+    /// query is not finished, and an evidence table), where `has_query` is 0.
+    pub query: Vec<u128>,
+    pub has_query: Vec<u8>,
+    /// The table's Name: the output Name of an instance's or a `RIGID_DET` form's table, the fact
+    /// relation's name of an evidence table, and the empty string for any other.
+    pub name: Vec<String>,
+    /// The TableHash, and whether the assignment has one (1) or not (0, with the hash 0).
+    pub hash: Vec<u128>,
+    pub hashed: Vec<u8>,
+    /// Why the assignment has no TableHash (`hashed` 0): the name of a machine-dependent bound that stopped an example (`Models`, `Nodes`, `Assignments`, `TableWork`, `SessionBytes`, `Deadline`, `Cancelled`), or of the bound that stopped the summary, `RunFault`, `NoEntry`, `NoExamples` or `TableFault`. Empty where `hashed` is 1.
+    pub unhashed_reason: Vec<String>,
+    /// Whether the walk of the table stopped at the assignment cap.
+    pub capped: Vec<u8>,
+    /// The TableVector of each row, `arclog_features::FEATURES.len()` values.
+    pub features: Vec<f32>,
 }
 
 /// One row for each entry of a table on an example, in the order of the
@@ -297,6 +339,14 @@ pub struct EntryColumns {
     /// [entry][native sorted row][extent_columns index]: 0=no_grid,
     /// 1=resolved (positive extent pair), 2=unresolved. No renderer inference.
     pub extent_status: Vec<Vec<Vec<u8>>>,
+    /// The place of the entry's assignment among the table's assignments. The
+    /// export by assignment reads it and does not give it.
+    pub assignment: Vec<u32>,
+    /// The value hash of the entry's Rows (`crate::summary::value_hash_of`, which
+    /// has the columns in their order), and 0 for an entry that holds no Rows. For a `DET`'s own
+    /// table it is the value hash that a table reading the `DET` carries in its
+    /// `assignments`. The export by assignment gives it, and the other export leaves it empty.
+    pub hash: Vec<u128>,
 }
 
 /// One row for each `DET` of each entry's assignment, in the order of the
@@ -310,6 +360,39 @@ pub struct AssignedColumns {
     pub det: Vec<u32>,
     pub rows: Vec<u64>,
     pub offset: Vec<u64>,
+}
+
+/// One row for each `DET` of each row of the tables part in the export by
+/// assignment, sorted by the `DET`.
+#[derive(Clone, Debug, Default)]
+pub struct AssignmentColumns {
+    /// The row of the table in [`TableColumns`].
+    pub table: Vec<u32>,
+    /// The `DET`: for now its relation as the program spells it, as `det_relations` gives it. A base
+    /// `DET` is keyed by this name.
+    pub det: Vec<String>,
+    /// The QueryHash of the `DET`'s query (`Decoder::query_hash`), 0 where `has_det_query` is 0.
+    pub det_query: Vec<u128>,
+    /// 0 for a base `DET`, which has no query.
+    pub has_det_query: Vec<u8>,
+    /// The value hash of the `DET`'s value (`crate::summary::value_hash_of`): it
+    /// has the `DET`'s columns in their order, so it is not the TableHash of the value.
+    pub value: Vec<u128>,
+}
+
+/// One row for each example of each row of the tables part in the export by
+/// assignment.
+#[derive(Clone, Debug, Default)]
+pub struct ExampleKeyColumns {
+    /// The row of the table in [`TableColumns`].
+    pub table: Vec<u32>,
+    pub kind: Vec<u8>,
+    pub index: Vec<u32>,
+    /// The count of the example's distinct Rows, the most rows of one of them,
+    /// and the low 64 bits of the hash of its Set of Rows.
+    pub distinct: Vec<u32>,
+    pub rows: Vec<u64>,
+    pub hash: Vec<u64>,
 }
 
 /// One row for each projection of a table whose projections are found.
@@ -393,6 +476,12 @@ pub struct CaseColumns {
     pub projection_rows: ProjectionRowColumns,
     pub flows: FlowColumns,
     pub copies: CopyColumns,
+    /// Whether the columns are those of the export by assignment
+    /// ([`step_case_columns_by_assignment_in`]), which has no `assigned` part and
+    /// gives `assignments` and `example_keys`.
+    pub by_assignment: bool,
+    pub assignments: AssignmentColumns,
+    pub example_keys: ExampleKeyColumns,
     pub values: Vec<i32>,
     /// Reservations follow these owned packed buffers through their last drop.
     pub(crate) allocations: Vec<Arc<arclog::session::SessionAllocation>>,
@@ -434,15 +523,21 @@ enum RowExport<'a> {
     All,
     Selected {entries:&'a [usize],only:bool},
     Metadata,
+    /// The export that groups a table's entries by assignment: the rows of
+    /// every entry with no count cap where `rows`, and no rows alone where
+    /// not; no projections, and no `DET` value runs, since the assignments part
+    /// holds the value hashes.
+    Grouped {rows:bool},
 }
 impl RowExport<'_> {
-    fn omit_projections(self)->bool {matches!(self,Self::Metadata|Self::Selected {only:true,..})}
+    fn omit_projections(self)->bool {matches!(self,Self::Metadata|Self::Selected {only:true,..}|Self::Grouped {..})}
     fn count_only(self,entry:usize,projected:bool)->bool {
-        match self {Self::Metadata=>true,Self::Selected {entries,only:true}=>entries.binary_search(&entry).is_err(),_=>projected && !self.full_at(entry)}
+        match self {Self::Metadata=>true,Self::Grouped {rows}=>!rows,Self::Selected {entries,only:true}=>entries.binary_search(&entry).is_err(),_=>projected && !self.full_at(entry)}
     }
     fn full_at(self,entry:usize)->bool {
-        match self {Self::Default=>false,Self::All=>true,Self::Selected {entries,..}=>entries.binary_search(&entry).is_ok(),Self::Metadata=>false}
+        match self {Self::Default=>false,Self::All=>true,Self::Selected {entries,..}=>entries.binary_search(&entry).is_ok(),Self::Metadata=>false,Self::Grouped {rows}=>rows}
     }
+    fn skips_dets(self)->bool {matches!(self,Self::Grouped {..})}
 }
 
 /// Packs with the caller's CURRENT operation limits and native session.
@@ -545,6 +640,8 @@ pub fn cut_case_columns_in(materializer:&Materializer<'_>,evidence:&[Table],tabl
 #[derive(Clone)]
 pub struct StreamTables {
     tables: Vec<Arc<Table>>,
+    /// The QueryHash of each of `tables` as the step that made it gave it, none where the export by assignment did not give one.
+    queries: Vec<Option<StableHash>>,
     count: u32,
 }
 
@@ -577,6 +674,10 @@ pub fn step_case_columns(before: Option<&StreamTables>, evidence: &[Table], tabl
 
 /// Step packing under the current operation's native limits.
 pub fn step_case_columns_in(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:usize)->(CaseColumns,StreamTables) {
+    step_columns(materializer,before,evidence,tables,train,RowExport::Default)
+}
+
+fn step_columns(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:usize,row_export:RowExport<'_>)->(CaseColumns,StreamTables) {
     let mut columns = CaseColumns::default();
     let _timed = arclog::stats::span(arclog::stats::Phase::TablePack);
     let mut runs = Runs::default();
@@ -589,14 +690,220 @@ pub fn step_case_columns_in(materializer:&Materializer<'_>,before:Option<&Stream
             before.count as usize
         }
         None => {
-            push_tables(materializer,&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None,RowExport::Default);
+            push_tables(materializer,&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None,row_export);
             evidence.len()
         }
     };
-    push_tables(materializer,&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None,RowExport::Default);
+    push_tables(materializer,&mut columns, &mut names, &mut runs, first, tables.iter().map(|(token, table)| (*token, table)), train, None,row_export);
     let count = u32::try_from(first + tables.len()).expect("fewer than 2^32 tables");
+    let mut queries = before.map_or_else(Vec::new, |before| before.queries.clone());
+    queries.resize(first.saturating_sub(evidence.len()) + tables.len(), None);
     let kept = before.map_or_else(Vec::new, |before| before.tables.clone()).into_iter().chain(tables.into_iter().map(|(_, table)| Arc::new(table))).collect();
-    (columns, StreamTables { tables: kept, count })
+    (columns, StreamTables { tables: kept, queries, count })
+}
+
+/// The columns of the tables of one step, as [`step_case_columns_in`] gives
+/// them, but with the entries of a table grouped by assignment, on a task with
+/// the train pairs `train`:
+///
+/// - `tables` has a row for each table at each of its assignments, with the
+///   table's `query` (its QueryHash, given by `queries`, one for each of
+///   `tables`: none for a body table) and `name`, the TableHash (`hash` and `hashed`) and the
+///   TableVector (`features`);
+/// - `entries` has the Set of Rows of each row of `tables`: a row for each
+///   distinct Rows, with the example it is at (`example_kind` and
+///   `example_index`, the value of its Example column) and its place among the
+///   example's distinct Rows (`model`), and the hash of the Rows (`hash`). Its `table` is the row of `tables`,
+///   while `flows` and `projections` name a table by its number, which
+///   `tables.table` gives;
+/// - `assignments` has the `DET`s of each row of `tables` with their value
+///   hashes, and `example_keys` the key of each example at it;
+/// - `assigned` is empty, and no projection is exported.
+///
+/// An assignment names a `DET` by the relation's spelling, and the `DET`'s QueryHash is
+/// the one that the step of the first table of the stream so far (the earlier steps'
+/// tables, then this step's) at a slot with that name gave it; it is looked up when an
+/// assignment names it, and once for each name. It does not change with the columns that
+/// later steps read of the `DET`. A base `DET` has none. A table that reads a `DET` through
+/// some of its columns has a row for each full value of the `DET` that projects to the value
+/// it was evaluated at ([`crate::summary::DetFulls`]), and the `value` of its assignments is
+/// the value hash of the full value.
+///
+/// The summaries of the tables of a query come from `cache` where it holds them.
+/// The hash, the keys and the features come from the rows the table holds,
+/// whatever `rows` says, and no count cap applies. With `rows`, every entry
+/// is of kind [`ValueKind::Rows`] with all its rows. Without it, every entry
+/// that holds Rows is of kind [`ValueKind::NotExported`]: its count of rows and
+/// its hash, and the columns hold no row buffer.
+pub fn step_case_columns_by_assignment_in(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:&[arclog_features::Pair],queries:Vec<Option<StableHash>>,rows:bool,cache:&SummaryCache)->(CaseColumns,StreamTables) {
+    let mut stop = None;
+    let held: &[Table] = if before.is_some() {&[]} else {evidence};
+    // The cache key of each table: its QueryHash and its place among the step's tables of the same form. A body table and an evidence table have none.
+    let keys: Vec<Option<SummaryKey>> = held.iter().enumerate().map(|(at,_)|Some(evidence_key(at))).chain(tables.iter().enumerate().map(|(at,(_,table))|{
+        let query = queries.get(at).copied().flatten()?;
+        Some((query,tables[..at].iter().filter(|(_,earlier)|earlier.form==table.form).count() as u32))
+    })).collect();
+    let summaries: Vec<TableSummary> = {
+        // The full `DET`s of the stream so far, which a table that reads one through some of its columns stands for each full value of.
+        let fulls = DetFulls::new(before.into_iter().flat_map(|before|before.tables.iter().map(|table|&**table)).chain(tables.iter().map(|(_,table)|table)).collect());
+        held.iter().chain(tables.iter().map(|(_,table)|table)).zip(keys).map(|(table,key)|summarize_cached(materializer,table,train,&fulls,cache,key).unwrap_or_else(|bound|{
+            stop.get_or_insert(Stop {bound,form:table.form.clone()});
+            TableSummary::unhashed(table, bound_name(bound))
+        })).collect()
+    };
+    let (columns, mut stream) = {
+        let _timed = split::span(Part::StepColumns);
+        step_columns(materializer,before,evidence,tables,train.len(),RowExport::Grouped {rows})
+    };
+    // The QueryHash of each table of this step is the one the step gives: an assignment names a `DET` by that hash, whatever columns later steps read of it.
+    let own_from = stream.queries.len()-queries.len();
+    stream.queries[own_from..].copy_from_slice(&queries);
+    // The QueryHash of each table of the columns, the evidence tables having none.
+    let mut hashes = vec![None;held.len()];
+    hashes.extend(queries);
+    let mut columns = {
+        let _timed = split::span(Part::Regroup);
+        let found: std::cell::RefCell<StableHashMap<String,Option<StableHash>>> = Default::default();
+        let det_query = |spelled:&str|->Option<StableHash> {
+            if let Some(known) = found.borrow().get(spelled) {return *known;}
+            let _timed = split::span(Part::DetQuery);
+            let hash = stream.tables.iter().zip(&stream.queries).find_map(|(table,query)|{
+                let contents = table.contents.as_ref().ok()?;
+                matches!(contents.relation,TableRelation::Slot(_)).then_some(())?;
+                if contents.name!=spelled {return None;}
+                *query
+            });
+            found.borrow_mut().insert(spelled.to_owned(),hash);
+            hash
+        };
+        by_assignment(columns,&summaries,&hashes,&det_query,before.map_or(0,|before|before.count))
+    };
+    if columns.packing_stop.is_none() {columns.packing_stop=stop;}
+    (columns, stream)
+}
+
+impl StopColumns {
+    fn picked(&self,at:&[usize])->StopColumns {
+        StopColumns {bound:at.iter().map(|&entry|self.bound[entry].clone()).collect(),form:at.iter().map(|&entry|self.form[entry].clone()).collect()}
+    }
+}
+
+/// `columns`, the columns of the tables numbered from `base`, regrouped by the
+/// assignments of `summaries`, the summary of each of its tables.
+fn by_assignment(mut columns:CaseColumns,summaries:&[TableSummary],queries:&[Option<StableHash>],det_query:&dyn Fn(&str)->Option<StableHash>,base:u32)->CaseColumns {
+    let old = std::mem::take(&mut columns.tables);
+    // The old table and the assignment of each row of the new tables part, and the first row of each old table.
+    let mut source: Vec<(usize,usize,usize)> = Vec::new();
+    // The first row of each assignment of each old table: an assignment stands for a row for each variant, one for each full value of the `DET`s it reads through some of their columns.
+    let mut first: Vec<Vec<usize>> = Vec::with_capacity(old.token.len());
+    for (table,summary) in summaries.iter().take(old.token.len()).enumerate() {
+        first.push(summary.assignments.iter().enumerate().map(|(assignment,held)|{
+            let place = source.len();
+            source.extend((0..=held.more.len()).map(|variant|(table,assignment,variant)));
+            place
+        }).collect());
+    }
+    let at: Vec<usize> = source.iter().map(|&(table,_,_)|table).collect();
+    macro_rules! pick {($($field:ident),*)=>{TableColumns {
+        $($field: at.iter().map(|&table|old.$field[table].clone()).collect(),)*
+        projections_stop: old.projections_stop.picked(&at),
+        ..TableColumns::default()
+    }}}
+    let mut tables = pick!(token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,fault,depth,keys,output_position,output_color);
+    let features = arclog_features::FEATURES.len();
+    for (row,&(table,assignment,variant)) in source.iter().enumerate() {
+        let summary = &summaries[table];
+        let held = &summary.assignments[assignment];
+        let row = u32::try_from(row).expect("fewer than 2^32 table rows");
+        tables.table.push(base+u32::try_from(table).expect("fewer than 2^32 tables"));
+        tables.query.push(queries.get(table).copied().flatten().map_or(0,|hash|hash.0));
+        tables.has_query.push(u8::from(queries.get(table).copied().flatten().is_some()));
+        tables.name.push(summary.name.clone());
+        tables.hash.push(held.hash.map_or(0,|hash|hash.0));
+        tables.hashed.push(u8::from(held.hash.is_some()));
+        tables.unhashed_reason.push(held.reason.clone());
+        tables.capped.push(u8::from(summary.capped));
+        if held.features.len()==features {tables.features.extend(held.features.iter());} else {tables.features.extend(std::iter::repeat_n(0.0,features));}
+        for (place,(det,primary)) in held.dets.iter().enumerate() {
+            let value = if variant==0 {primary} else {&held.more[variant-1][place]};
+            columns.assignments.table.push(row);
+            columns.assignments.det.push(det.clone());
+            let query = det_query(det);
+            columns.assignments.det_query.push(query.map_or(0,|hash|hash.0));
+            columns.assignments.has_det_query.push(u8::from(query.is_some()));
+            columns.assignments.value.push(value.0);
+        }
+        for key in held.examples.iter() {
+            let keys = &mut columns.example_keys;
+            keys.table.push(row);
+            keys.kind.push(key.kind);
+            keys.index.push(key.index);
+            keys.distinct.push(key.distinct);
+            keys.rows.push(key.rows);
+            keys.hash.push(key.hash);
+        }
+    }
+    // The entries in the order of the new rows, one for each distinct Rows of an example.
+    let entries = std::mem::take(&mut columns.entries);
+    // An entry stands once in each row of its assignment.
+    let mut order: Vec<(usize,usize)> = Vec::with_capacity(entries.table.len());
+    for entry in 0..entries.table.len() {
+        let table = (entries.table[entry]-base) as usize;
+        let assignment = (entries.assignment[entry] as usize).min(summaries[table].assignments.len()-1);
+        order.extend((0..=summaries[table].assignments[assignment].more.len()).map(|variant|(entry,first[table][assignment]+variant)));
+    }
+    order.sort_by_key(|&(_,row)|row);
+    // The hash of the Rows of each entry that holds Rows, from the summary of its table.
+    let rows_hash: Vec<Option<u128>> = (0..entries.table.len()).map(|entry|{
+        let table = (entries.table[entry]-base) as usize;
+        let held = &summaries[table].assignments[(entries.assignment[entry] as usize).min(summaries[table].assignments.len()-1)];
+        let example = held.examples.iter().position(|key|key.kind==entries.example_kind[entry] && key.index==entries.example_index[entry])?;
+        let value = held.models.get(example)?.get(entries.model[entry] as usize)?;
+        value.map(|(_,hash)|hash)
+    }).collect();
+    let holds_rows = |entry:usize|entries.kind[entry]==ValueKind::Rows as u8 || entries.kind[entry]==ValueKind::Count as u8;
+    let mut kept: Vec<(usize,usize)> = Vec::new();
+    let mut seen: StableHashMap<(usize,u8,u32,u128),()> = StableHashMap::default();
+    let mut undefined: StableHashMap<(usize,u8,u32),()> = StableHashMap::default();
+    for &(entry,row) in &order {
+        // Equal Rows of an example stand once.
+        let key = (row,entries.example_kind[entry],entries.example_index[entry]);
+        let equal = match rows_hash[entry] {
+            Some(hash) if holds_rows(entry) => seen.insert((key.0,key.1,key.2,hash),()).is_some(),
+            _ => entries.kind[entry]==ValueKind::Undefined as u8 && undefined.insert(key,()).is_some(),
+        };
+        if !equal {kept.push((entry,row));}
+    }
+    let kept_entries: Vec<usize> = kept.iter().map(|&(entry,_)|entry).collect();
+    let mut next: StableHashMap<(usize,u8,u32),u32> = StableHashMap::default();
+    columns.entries = EntryColumns {
+        table: kept.iter().map(|&(_,row)|row as u32).collect(),
+        clause_index: kept.iter().map(|&(entry,_)|entries.clause_index[entry]).collect(),
+        example_kind: kept.iter().map(|&(entry,_)|entries.example_kind[entry]).collect(),
+        example_index: kept.iter().map(|&(entry,_)|entries.example_index[entry]).collect(),
+        model: kept.iter().map(|&(entry,row)|{
+            let place = next.entry((row,entries.example_kind[entry],entries.example_index[entry])).or_insert(0);
+            *place += 1;
+            *place-1
+        }).collect(),
+        // This export has no Count entry: without rows, an entry gives its count of rows and its hash.
+        kind: kept.iter().map(|&(entry,_)|if entries.kind[entry]==ValueKind::Count as u8 {ValueKind::NotExported as u8} else {entries.kind[entry]}).collect(),
+        rows: kept.iter().map(|&(entry,_)|entries.rows[entry]).collect(),
+        offset: kept.iter().map(|&(entry,_)|entries.offset[entry]).collect(),
+        stop: entries.stop.picked(&kept_entries),
+        value_stop: entries.value_stop.picked(&kept_entries),
+        fault: kept.iter().map(|&(entry,_)|entries.fault[entry].clone()).collect(),
+        extent_offset: kept.iter().map(|&(entry,_)|entries.extent_offset[entry]).collect(),
+        extent_stop: entries.extent_stop.picked(&kept_entries),
+        extent_fault: kept.iter().map(|&(entry,_)|entries.extent_fault[entry].clone()).collect(),
+        extent_status: kept.iter().map(|&(entry,_)|entries.extent_status[entry].clone()).collect(),
+        assignment: Vec::new(),
+        hash: kept.iter().map(|&(entry,_)|rows_hash[entry].filter(|_|holds_rows(entry)).unwrap_or(0)).collect(),
+    };
+    columns.tables = tables;
+    columns.assigned = AssignedColumns::default();
+    columns.by_assignment = true;
+    columns
 }
 
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
@@ -725,7 +1032,7 @@ fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,
     let Ok(contents)=&table.contents else {return Ok(bytes.saturating_add(table.contents.as_ref().err().map_or(0,|f|f.message.len().saturating_mul(8))));};
     let mut add=|value:usize|bytes=bytes.saturating_add(value);
     add(contents.name.len().saturating_mul(8));
-    for column in &contents.columns {add(2048usize.saturating_add(column.name.len().saturating_mul(8)).saturating_add(column.label.as_ref().map_or(0,|s|s.len().saturating_mul(8))));}
+    for column in &contents.columns {add(2048usize.saturating_add(column.name.len().saturating_mul(8)).saturating_add(column.label.as_ref().map_or(0,|s|s.len().saturating_mul(8))).saturating_add(type_spelling_bytes(&column.ty).saturating_mul(8)));}
     for frame in &contents.frames {add(1024usize.saturating_add(frame.len().saturating_mul(8)));}
     // A DET copies metadata from its referenced table only. Charging the
     // entire preceding name index per DET makes unrelated earlier tables
@@ -736,7 +1043,7 @@ fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,
     };
     for det in &contents.dets {
         if let Some(bytes)=det_table(names,own,&det.relation,HeapBytes::heap_bytes) {add(bytes.saturating_mul(8));}
-        add(2048usize.saturating_add(det.types.len().saturating_mul(2048)).saturating_add(det.columns.heap_bytes().saturating_mul(8)));
+        add(2048usize.saturating_add(det.types.iter().map(|ty|2048usize.saturating_add(type_spelling_bytes(ty).saturating_mul(8))).fold(0,usize::saturating_add)).saturating_add(det.columns.heap_bytes().saturating_mul(8)));
     }
     for key in &contents.keys {add(256usize.saturating_add(key.len().saturating_mul(32)));}
     for sources in &contents.flows {for source in sources {add(2048usize.saturating_add(source.row.heap_bytes().saturating_mul(8)).saturating_add(source.atom.0.len().saturating_mul(256)));}}
@@ -804,8 +1111,50 @@ pub(crate) fn fault_spelled(fault: &RunFault) -> String {
     format!("{} at {}", fault.message, form_path(&fault.form))
 }
 
-fn type_names(types: &[ValueType]) -> Vec<String> {
+pub(crate) fn type_names(types: &[ValueType]) -> Vec<String> {
     types.iter().map(|ty| format!("{:?}", ty.without_source())).collect()
+}
+
+/// The heap bytes of the spellings of `ty` in [`type_names`] and
+/// [`ident_sources`], with their string headers, counted without writing them.
+fn type_spelling_bytes(ty: &ValueType) -> usize {
+    struct Count(usize);
+    impl std::fmt::Write for Count {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.0 = self.0.saturating_add(s.len());
+            Ok(())
+        }
+    }
+    fn idents(ty: &ValueType) -> usize {
+        match ty {
+            ValueType::Ident(IdentSource::Form(_)) => 33,
+            ValueType::Record(fields) => fields.iter().map(|(_, field)| idents(field)).fold(0, usize::saturating_add),
+            _ => 0,
+        }
+    }
+    let mut spelled = Count(0);
+    let _ = std::fmt::Write::write_fmt(&mut spelled, format_args!("{:?}", ty.without_source()));
+    spelled.0.saturating_add(idents(ty)).saturating_add(64)
+}
+
+/// The sources of the Idents of each of `types`, as
+/// [`TableColumns::column_ident_sources`] spells them.
+pub(crate) fn ident_sources(types: &[ValueType]) -> Vec<String> {
+    fn push(ty: &ValueType, found: &mut Vec<String>) {
+        match ty {
+            ValueType::Ident(IdentSource::Form(SourceId(id))) => found.push(format!("{:032x}", id.0)),
+            ValueType::Record(fields) => fields.iter().for_each(|(_, field)| push(field, found)),
+            _ => {}
+        }
+    }
+    types
+        .iter()
+        .map(|ty| {
+            let mut found = Vec::new();
+            push(ty, &mut found);
+            found.join(",")
+        })
+        .collect()
 }
 
 /// The names of a column's path as a file writes them, or their slots, joined
@@ -815,7 +1164,7 @@ fn path_spelled(path: &[ColumnName]) -> String {
 }
 
 /// The width in cells of a row of columns of `types`.
-fn row_width(types: &[ValueType]) -> u32 {
+pub(crate) fn row_width(types: &[ValueType]) -> u32 {
     types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).sum()
 }
 
@@ -858,7 +1207,7 @@ impl Runs {
 /// [`arclog::eval::join::each_row`] ([`row_width`] cells for each row), and the places of the rows
 /// in that order, sorted by their cells, rows of equal cells in the order of
 /// [`arclog::eval::join::each_row`].
-fn sorted_rows(materializer:&Materializer<'_>,rows: &Relation, types: &[ValueType]) -> Result<(Vec<i32>, Vec<usize>),arclog::eval::ReachedBound> {
+pub(crate) fn sorted_rows(materializer:&Materializer<'_>,rows: &Relation, types: &[ValueType]) -> Result<(Vec<i32>, Vec<usize>),arclog::eval::ReachedBound> {
     assert_eq!(usize::from(rows.arity()), types.len(), "native relation arity differs from its packed schema");
     let width = row_width(types) as usize;
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
@@ -994,6 +1343,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.fact.push(None);
             tables.column_names.push(Vec::new());
             tables.column_types.push(Vec::new());
+            tables.column_ident_sources.push(Vec::new());
             tables.column_frames.push(Vec::new());
             tables.extent_columns.push(Vec::new());
             tables.column_slots.push(Vec::new());
@@ -1026,6 +1376,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.fact.push(fact);
             tables.column_names.push(contents.columns.iter().map(|column| column.name.clone()).collect());
             tables.column_types.push(type_names(&types));
+            tables.column_ident_sources.push(ident_sources(&types));
             let own = named(row, table, labels);
             let extent_columns = extent_columns(&types, &contents.frames);
             tables.column_frames.push(contents.frames.clone());
@@ -1368,6 +1719,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             let faulted = fault.is_some();
             let entries = &mut out.entries;
             entries.table.push(row);
+            entries.assignment.push(u32::try_from(at_assignment).expect("fewer than 2^32 assignments"));
             entries.clause_index.push(form.0.first().map_or(-1,|s|s.0 as i32));
             entries.example_kind.push(kind);
             entries.example_index.push(index);
@@ -1442,7 +1794,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                         push(out, runs, at, model as u32, Some(value), rows.stop.as_ref(), None, entry_extents(at, model));
                     }
                     let mut assigned_runs = Vec::new();
-                    for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate() {
+                    for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate().filter(|_| !row_export.skips_dets()) {
                         match push_rows(materializer,&mut out.allocations,&mut out.values,runs,det_rows,&det.types) {
                             Ok((count,offset,_))=>assigned_runs.push((position as u32,count,offset)),
                             Err(bound)=>{
@@ -1561,7 +1913,8 @@ fn projected_entries(contents: &Contents) -> Vec<Vec<(&RelationValue, Option<&En
 /// table's extent columns that `extents` indexes, in its order, the one extent
 /// over the table rows that project to the row, as `held` gives their extents
 /// in the order of `table_rows`.
-fn projected_extent_rows(materializer:&Materializer<'_>,rows: &Relation, table_rows: &Relation, held: &[Box<[Option<Extent>]>], columns: &[usize], extents: &[usize]) -> Result<crate::extents::Materialized<Vec<Box<[Option<Extent>]>>>,arclog::eval::ReachedBound> {
+fn projected_extent_rows(materializer:&Materializer<'_>,rows: &Relation, table_rows: &Relation, held: &ExtentRows, columns: &[usize], extents: &[usize]) -> Result<crate::extents::Materialized<Vec<Box<[Option<Extent>]>>>,arclog::eval::ReachedBound> {
+    if held.by_part() {return projected_part_rows(materializer,rows,table_rows,held,columns,extents);}
     // The full matrix is already admitted, but this hash map is a genuine
     // additional allocation. Its lease lasts until the projected matrix is
     // built; the returned matrix has its own retained lease.
@@ -1569,17 +1922,65 @@ fn projected_extent_rows(materializer:&Materializer<'_>,rows: &Relation, table_r
     let _map_allocation=materializer.admit(table_rows,Materializer::row_bytes(payload,4))?;
     let allocation=materializer.admit(rows,Materializer::row_bytes(extents.len().saturating_mul(std::mem::size_of::<Option<Extent>>()),1))?;
     let mut merged: StableHashMap<Box<[TermId]>, Vec<Merged>> = StableHashMap::default();
-    let mut at = 0;
+    let mut at = 0u64;
     materializer.walk(table_rows, &mut |row| {
         let key: Box<[TermId]> = columns.iter().map(|&column| row[column]).collect();
         let slots = merged.entry(key).or_insert_with(|| vec![Merged::Unset; extents.len()]);
         for (slot, &extent) in slots.iter_mut().zip(extents) {
-            slot.merge(held[at][extent]);
+            slot.merge(held.cell(at, extent));
         }
         at += 1;
     })?;
     let mut per_row = Vec::new();
     materializer.walk(rows, &mut |row| per_row.push(merged.get(row).map_or_else(|| vec![None; extents.len()].into(), |slots| slots.iter().map(Merged::extent).collect())))?;
+    Ok(crate::extents::Materialized::new(per_row,allocation))
+}
+
+/// [`projected_extent_rows`] where `held` holds the extents per part of
+/// `table_rows`. The table rows that project to a row are those that hold, in
+/// each part, a row that agrees with it at the projected columns the part
+/// holds; so the extent of a column at the row is merged over the rows of the
+/// column's part that agree with it, and none where a part has no such row.
+fn projected_part_rows(materializer:&Materializer<'_>,rows: &Relation, table_rows: &Relation, held: &ExtentRows, columns: &[usize], extents: &[usize]) -> Result<crate::extents::Materialized<Vec<Box<[Option<Extent>]>>>,arclog::eval::ReachedBound> {
+    let parts = table_rows.parts();
+    // For each part, the places among `columns` of the projected columns it
+    // holds, with their places in the part's rows, and the places among
+    // `extents` of the extent columns it gives.
+    let layout: Vec<(Vec<(usize, usize)>, Vec<usize>)> = parts.iter().enumerate().map(|(p, part)| (
+        columns.iter().enumerate().filter_map(|(j, &column)| part.columns.iter().position(|own| usize::from(own.0) == column).map(|local| (j, local))).collect(),
+        extents.iter().enumerate().filter(|&(_, &extent)| held.part_of(extent) == Some(p)).map(|(e, _)| e).collect(),
+    )).collect();
+    let payload=columns.len().saturating_mul(std::mem::size_of::<TermId>()).saturating_add(extents.len().saturating_mul(std::mem::size_of::<Merged>())).saturating_mul(4);
+    let count=parts.iter().map(|part|part.rows.len() as u64).fold(0u64,u64::saturating_add);
+    let _map_allocation=materializer.hold(count,usize::try_from(count).unwrap_or(usize::MAX).saturating_mul(Materializer::row_bytes(payload,4)))?;
+    let allocation=materializer.admit(rows,Materializer::row_bytes(extents.len().saturating_mul(std::mem::size_of::<Option<Extent>>()),1))?;
+    let mut merged: Vec<StableHashMap<Box<[TermId]>, Vec<Merged>>> = Vec::with_capacity(parts.len());
+    let mut visited = 0usize;
+    for (part, (projected, given)) in parts.iter().zip(&layout) {
+        let mut map: StableHashMap<Box<[TermId]>, Vec<Merged>> = StableHashMap::default();
+        for (at, part_row) in part.rows.rows().enumerate() {
+            if visited % 1024 == 0 { materializer.check()?; }
+            visited += 1;
+            let key: Box<[TermId]> = projected.iter().map(|&(_, local)| part_row[local]).collect();
+            let slots = map.entry(key).or_insert_with(|| vec![Merged::Unset; given.len()]);
+            for (slot, &e) in slots.iter_mut().zip(given) {
+                slot.merge(held.part_cell(extents[e], at));
+            }
+        }
+        merged.push(map);
+    }
+    let mut per_row = Vec::new();
+    materializer.walk(rows, &mut |row| {
+        let mut cells = vec![None; extents.len()];
+        for ((projected, given), map) in layout.iter().zip(&merged) {
+            let key: Box<[TermId]> = projected.iter().map(|&(j, _)| row[j]).collect();
+            let Some(slots) = map.get(&key) else { return per_row.push(vec![None; extents.len()].into()) };
+            for (&e, slot) in given.iter().zip(slots) {
+                cells[e] = slot.extent();
+            }
+        }
+        per_row.push(cells.into());
+    })?;
     Ok(crate::extents::Materialized::new(per_row,allocation))
 }
 
@@ -1630,8 +2031,8 @@ macro_rules! fields_heap {
     };
 }
 fields_heap!(StopColumns;bound,form);
-fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
-fields_heap!(EntryColumns;table,clause_index,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status);
+fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
+fields_heap!(EntryColumns;table,clause_index,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status,assignment);
 fields_heap!(AssignedColumns;entry,det,rows,offset);
 fields_heap!(ProjectionColumns;table,columns,width);
 fields_heap!(ProjectionRowColumns;projection,entry,defined,rows,offset,extent_offset,extent_status);
