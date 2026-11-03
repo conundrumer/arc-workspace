@@ -12,7 +12,7 @@ Exit 0 on success. PY is the engine venv (sklearn 1.6.1): work/lm/data-study/ast
 """
 import hashlib, json, os, pickle, subprocess, sys, time
 
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 PY = '/Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 HEAVY = '/Users/davidlu/code/arc-workspace/scripts/run_heavy.py'
 T0 = time.time()

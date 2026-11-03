@@ -4,7 +4,7 @@
 Reads N600's export (clause field) and every R120_STEP-th R120 task (default 8). Writes vocab.json. One pass; no resume.
 """
 import collections, json, os, subprocess, sys, time
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 sys.path.insert(0, HERE)
 import features_node_shape as SH
 T0 = time.time(); LIMIT = float(sys.argv[1]); STEP = int(sys.argv[2]) if len(sys.argv) > 2 else 8

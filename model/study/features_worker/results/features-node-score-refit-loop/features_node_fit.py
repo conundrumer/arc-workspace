@@ -17,7 +17,7 @@ Prints per round: loss, seconds. At the end: pooled AUC, for the record only.
 """
 import argparse, os, pickle, sys, time
 T0 = time.time()
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor

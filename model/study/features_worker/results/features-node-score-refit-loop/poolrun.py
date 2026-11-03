@@ -4,7 +4,7 @@
 """
 import bisect, collections, json, os, sys
 import numpy as np
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop')
 import common2 as C2
 
 C = C2.C

@@ -10,7 +10,7 @@ uses follow the replay's own picks. The openings (alive nodes, refused scopes) a
 Reads no model and no label of its own: the scorer and the rows are given.
 """
 import collections, glob, json, math, os, sys
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np
 import poolrun, common2 as C2

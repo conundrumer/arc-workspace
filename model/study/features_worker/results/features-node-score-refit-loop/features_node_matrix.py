@@ -9,7 +9,7 @@ from the fit, not counted as junk). Prints rate and ETA.
 """
 import json, os, re, sys, time, types as _types
 T0 = time.time()
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 SRC, SECONDS = sys.argv[1], float(sys.argv[2])
 NT = int(sys.argv[3]) if len(sys.argv) > 3 else 200
 assert SRC == 's120'

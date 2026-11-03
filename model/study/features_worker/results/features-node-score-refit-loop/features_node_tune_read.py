@@ -10,7 +10,7 @@ Tune measure: mean over tasks that have a ready form of log10 of the task's medi
 fit-out/ARM-fK.scores.npz, K = 0..4. A model is read on the 10 tasks of its fold only.
 """
 import glob, json, math, os, sys
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np
 import flat_common as C

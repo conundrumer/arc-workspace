@@ -10,7 +10,7 @@ import math, sys, os, zlib
 import numpy as np
 from scipy import ndimage
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop')
 import features_node_read as RD
 import features_node_shape as SH
 

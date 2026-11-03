@@ -12,7 +12,7 @@ no Ident column), other counts, no table (the replay gave no table for the node)
 """
 import collections, gzip, json, os, pickle, sys, time, types as _types
 T0 = time.time()
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 SET, ARM, TASK, SECONDS = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
 W = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/'
 G = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/'

@@ -12,7 +12,7 @@ Checks:
 """
 import glob, gzip, hashlib, json, os, pickle, random, re, subprocess, sys, time
 
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-node-score-refit-loop/'  # the data folder
 PY = '/Users/davidlu/code/arc-workspace/work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 HEAVY = '/Users/davidlu/code/arc-workspace/scripts/run_heavy.py'
 VIEW = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-v3-combined-cut/view-final/'
