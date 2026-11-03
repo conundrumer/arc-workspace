@@ -1,19 +1,16 @@
-"""The text-level union gold of one task set: every non-excluded case of each task's solver and the pinned program, with forms merged by identity only (text with each read replaced by its ancestry, labels dropped), so equal tables made by different text stay apart and the table count is an upper bound. Writes union-identity-<set>.jsonl and its sha256 in this folder. design.md gives the cases and the table fields.
+"""The text-level union gold of one task set: every non-excluded case of each task's solver and the pinned program, with forms merged by identity only (text with each read replaced by its ancestry, labels dropped), so equal tables made by different text stay apart and the table count is an upper bound. Writes union-identity-<set>.jsonl and its sha256 in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union). design.md gives the cases and the table fields.
 
-  python3 gold_union_identity.py SET      SET: ramp, 37, 62 or training
+  python3 gold_union_identity.py SET      SET: train, dev or held-out
 """
 import gzip, hashlib, json, os, re, sys
 import gold_case_counts as K
+from gold_union_fits import set_of
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union')  # GOLD_UNION_DIR: the folder of the outputs
 D = '/Users/davidlu/code/arc-workspace/work/lm/data-study/'
 W = D + 'sampler/sampler-worker/held/'
 HEAD = re.compile(r'\((\w+) &([A-Za-z_][\w]*)')
 NAME = re.compile(r'&([A-Za-z_]\w*)((?:\.\w+)*)')
-
-
-def set_of(t, sets):
-    return next((n for n, s in sets if t in s), 'training')
 
 
 def program(text):
@@ -34,13 +31,11 @@ def program(text):
 
 def main():
     want = sys.argv[1]
-    sets = [('ramp', set(open(W + 'ramp-fold.txt').read().split())),
-            ('37', set(open(W + 'tasks.txt').read().split())), ('62', set(open(W + 'leave_out.txt').read().split()))]
     pubs, ex = K.publications(), K.excluded()
-    path = HERE + '/union-identity-%s.jsonl' % want
+    path = OUT + '/union-identity-%s.jsonl' % want
     with open(path, 'w') as out:
         for t in sorted(os.listdir(D + 'gold/gold-v3-combined-cut/view-final')):
-            if set_of(t, sets) != want:
+            if set_of(t) != want:
                 continue
             progs = [('pinned', K.pinned(t))]
             if t in pubs:
