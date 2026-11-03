@@ -673,6 +673,12 @@ impl State {
         matches!(&self.stack[..], [Frame::Instance(InstanceFrame { component: None, demonstrated: false, .. })])
     }
 
+    /// Whether a `DEMONSTRATED` form stands open: its key and inputs, or its
+    /// rules.
+    pub(super) fn in_demonstrated(&self) -> bool {
+        self.stack.iter().any(|frame| matches!(frame, Frame::Demonstrated(_) | Frame::Instance(InstanceFrame { demonstrated: true, .. })))
+    }
+
     /// Whether `token` takes the grammar step alone, with no check of the
     /// prefix: an `INIT`'s component token, and the first proposer of a
     /// clause. At an `INIT` that holds its component alone, and at a clause

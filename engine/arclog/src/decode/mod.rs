@@ -314,6 +314,7 @@ impl<'a> Decoder<'a> {
             let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
             let conflicts = self.state.fixed_label_conflicts(self.context.registry, &column_type);
             let classes = self.state.native_classes(self.context.registry, &column_type);
+            let in_demonstrated_form = self.state.in_demonstrated();
             let mut class_of = vec![None; vocabulary.len()];
             let mut admitted = vec![None; classes.len()];
             for (class, tokens) in classes.iter().enumerate() {
@@ -336,6 +337,14 @@ impl<'a> Decoder<'a> {
                             let step = self.grammar_next(token).expect("a class member passes the same grammar");
                             mask.insert(id);
                             steps.insert(id, step);
+                        }
+                        continue;
+                    }
+                    if in_demonstrated_form && matches!(token, Token::Relation(_)) {
+                        // The verdict is the grammar's, and the step's state, whose atom's columns hold the Example
+                        // column where the read of the relation reads one, is made when the token is stepped.
+                        if self.grammar_verdict(token) {
+                            mask.insert(id);
                         }
                         continue;
                     }
@@ -367,6 +376,17 @@ impl<'a> Decoder<'a> {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
         Ok((state, forced))
+    }
+
+    /// Whether [`Decoder::next`] admits `token`, a relation token inside a
+    /// `DEMONSTRATED` form, where no check reads the prefix: whether the
+    /// grammar takes it. The Example column of the atom it opens, the one
+    /// part of its step that reads the resolution of the form in progress,
+    /// changes no verdict and no token the engine emits after it, so the
+    /// step reads none.
+    fn grammar_verdict(&self, token: &Token) -> bool {
+        let step = self.state.step(&self.context, token, &|_, _, _| false);
+        step.is_ok_and(|(_, forced, _)| forced.iter().all(|token| self.context.vocabulary.id(token).is_some()))
     }
 
     /// The mask of [`Decoder::next`] over every token.
