@@ -130,7 +130,28 @@ class Writer:
             for y in x:
                 go(y)
         go(tree)
+        self.drop_repeats(tree)
         return canon_text.write(tree)
+
+    def drop_repeats(self, tree: list[canon_text.Tree]) -> None:
+        """Drops each body atom that binds nothing and, but for its binders, is an earlier body atom: two references of a case program can be written as one
+        query, where their tables hold the same rows, and the engine refuses the repeated test ("the completed atom repeats an existing test")."""
+        def bare(x: canon_text.Tree) -> canon_text.Tree:
+            return [bare(y) for y in x] if isinstance(x, list) else x.lstrip('*') if isinstance(x, str) else x
+
+        def binds(x: canon_text.Tree) -> bool:
+            return any(binds(y) for y in x) if isinstance(x, list) else isinstance(x, str) and x.startswith('*')
+
+        seen: list[canon_text.Tree] = []
+        keep = tree[:2]
+        for atom in tree[2:]:
+            b = bare(atom)
+            if isinstance(atom, list) and b in seen and not binds(atom):
+                self.stats.counts['body atoms dropped: a repeat of an earlier atom'] += 1
+                continue
+            seen.append(b)
+            keep.append(atom)
+        tree[:] = keep
 
     def rigid_port(self, producer: Form, named: Form, token: str, uses: dict[str, Table]) -> str | None:
         """The QueryHash of the query that the port `token` of the RIGID_DET `named` (as its case program writes it, such as `&r18` in `&r20.r18`) reads, in the RIGID_DET `producer` with the members `uses`: the producer's reference that reads the same form. None where there is none."""
