@@ -506,7 +506,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
-    ap.add_argument('set', choices=('ramp', '37', 'training'))
+    ap.add_argument('set', choices=('train', 'dev', 'held-out'))
     ap.add_argument('--shard', default='0/1', help='k/N: the tasks with crc32(task) %% N == k')
     ap.add_argument('--tasks', help='comma-separated task ids')
     ap.add_argument('--samples-per-task', type=int, default=0, help='at most K samples of a task, chosen by a seeded hash of the sample id (0: all)')

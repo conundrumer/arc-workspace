@@ -542,7 +542,7 @@ def run_task(sset: str, task: str, idx: dict[str, LineIndex], out: Path, code: s
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
-    ap.add_argument('set', choices=('ramp', '37', 'training'))
+    ap.add_argument('set', choices=('train', 'dev', 'held-out'))
     ap.add_argument('--shard', default='0/1', help='k/N: the tasks with crc32(task) %% N == k')
     ap.add_argument('--tasks', help='comma-separated task ids')
     ap.add_argument('--out', type=Path)

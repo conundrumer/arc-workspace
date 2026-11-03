@@ -622,7 +622,7 @@ def show(rep: dict) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
-    ap.add_argument('set', choices=('ramp', '37', 'training'))
+    ap.add_argument('set', choices=('train', 'dev', 'held-out'))
     ap.add_argument('--plan', choices=('ordered', 'unordered'), required=True)
     ap.add_argument('--model', type=Path, required=True, help='the booster file that fit_trees.py wrote for the plan')
     ap.add_argument('--shard', default='0/1', help='k/N: the tasks with crc32(task) %% N == k')
