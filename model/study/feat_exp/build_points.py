@@ -17,7 +17,7 @@ Each directory is written to `<id>.building` and renamed when it is complete. A 
 is a task that has a record in `<cache>/done/`. A failure of one point, one case or one task is logged to
 `<cache>/failures.jsonl` when its task ends, and at once to `<cache>/failures-live.jsonl`, and the run goes on. A task
 whose first PREPARE_GIVE_UP cases all fail in preparation, before any point is built, skips its other cases, and a
-later run tries them again. With --stall or --task-gib, a task that builds no point for --stall seconds, or whose worker
+later run tries them again; --prepare-all tries every case. With --stall or --task-gib, a task that builds no point for --stall seconds, or whose worker
 holds more than --task-gib GiB, is stopped and listed in `<cache>/set-aside.txt`, and such a run skips the tasks listed
 there; a run without both options builds them. The builder writes only under the output root and its cache directory
 (default `<output>.cache`: scratch directories of the workers, the done records and the failure log).
@@ -45,6 +45,7 @@ fails as without the option, and so does G.
 """
 import argparse
 import collections
+import fcntl
 import gc
 import hashlib
 import json
@@ -707,7 +708,8 @@ def build_task(env, cfg, task):
             if not todo:
                 continue
             summary['cases'] += 1
-            if prepare_failed >= PREPARE_GIVE_UP and not summary['built']:
+            give_up = not getattr(cfg, 'prepare_all', False) and not summary['built']
+            if give_up and prepare_failed >= PREPARE_GIVE_UP:
                 summary['failed'] += len(todo)
                 continue
             try:
@@ -717,7 +719,7 @@ def build_task(env, cfg, task):
             except Exception as error:
                 fail(error, len(todo), case=case.name)
                 prepare_failed += 1
-                if prepare_failed == PREPARE_GIVE_UP and not summary['built']:
+                if give_up and prepare_failed == PREPARE_GIVE_UP:
                     fail(RuntimeError(f'the first {PREPARE_GIVE_UP} cases failed in preparation; '
                                       'the other cases are skipped'), 0, case=case.name)
                 case.close()
@@ -779,6 +781,11 @@ def run(cfg):
     cache = Path(cfg.cache)
     for sub in ('done', 'scratch', 'blobs'):
         (cache / sub).mkdir(parents=True, exist_ok=True)
+    lock = open(cache / 'lock', 'w')  # held to the end of the run: a second run on this cache would clear the first run's scratch
+    try:
+        fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(f'another run is using {cache}')
     Path(cfg.out).mkdir(parents=True, exist_ok=True)
     cfg.run_json = str(cache / 'run.json')
     Path(cfg.run_json).write_text(json.dumps(dict(tasks=str(Path(cfg.tasks_dir).resolve()), work_cap=1048576,
@@ -986,6 +993,7 @@ def main():
                     help='the most cells of a train table the features read (default: 524288)')
     ap.add_argument('--case-max-cells', type=int, default=0, metavar='N',
                     help="the most cells of one case's acquired train tables together (default: 1048576)")
+    ap.add_argument('--prepare-all', action='store_true', help='try every case of a task whose first cases fail in preparation')
     ap.add_argument('--stall', type=float, default=0, metavar='S',
                     help='set aside a task that builds no point for S seconds (default: no limit)')
     ap.add_argument('--task-gib', type=float, default=0, metavar='G',
