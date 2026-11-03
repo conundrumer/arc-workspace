@@ -473,6 +473,18 @@ def publish(args):
                               original_source=request['source'])
             if source_ref(corpus, tasks, task) != request['source']:
                 raise ValueError('task source changed during native operation; no result committed')
+            # A case whose selected program has no text gives no gold: it is
+            # skipped with the filter's reason, and an error line names it.
+            textless = [c for c in result['cases']
+                        if not isinstance(c.get('filtered_program') or c.get('original_program'), str)
+                        or not (c.get('filtered_program') or c.get('original_program')).strip()]
+            if textless:
+                result['cases'] = [c for c in result['cases'] if c not in textless]
+                result['skipped_cases'] = result['skipped_cases'] + [
+                    dict(case=c['case'], reason='no program text: %s' % (c.get('reason') or result.get('reason')))
+                    for c in textless]
+                print(json.dumps(dict(error='cases with no program text', task=task, cases=len(textless),
+                                      reason=result.get('reason'))), flush=True)
             failures += result['selection'] == 'original'
             lint_status = commit_lint(lint_out, seen_lint, result, request)
             row = dict(schema=SCHEMA, policy=POLICY, task=task, resume_key=key,
