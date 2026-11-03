@@ -95,8 +95,16 @@ def ports():
     return got
 
 
-def rigid_table(path):
-    """The export's name of the table that a read of a RIGID_DET at `path` takes: 'slot N' for `.rN`, 'pose' for `.pose`, else ''."""
+def rigid_table(text, label, path):
+    """The export's name of the table that the read `&label<path>` of a RIGID_DET in the program `text` takes. On an engine with arclog.rigid_slot_name (site-exp50 and later), that name: 'slot <i>' by the part's position in the form's canonical form, or 'pose'. On an older engine, 'slot N' for `.rN` and 'pose' for `.pose`. Else ''."""
+    try:
+        import arclog
+        return arclog.rigid_slot_name(text, '&' + label + path).split('.')[0] if hasattr(arclog, 'rigid_slot_name') else old_rigid_table(path)
+    except (ImportError, ValueError):
+        return old_rigid_table(path)
+
+
+def old_rigid_table(path):
     step = path.lstrip('.').split('.')[0]
     return 'slot ' + step[1:] if re.fullmatch(r'r\d+', step) else 'pose' if step == 'pose' else ''
 
@@ -158,7 +166,7 @@ def graph(u, cases, T):
 
         def used(n):
             rk, kind, ri = label[n[1]]
-            out = n[2].lstrip('.').split('.')[0] if kind == 'INIT' else rigid_table(n[2]) if kind == 'RIGID_DET' else ''
+            out = n[2].lstrip('.').split('.')[0] if kind == 'INIT' else rigid_table(text, n[1], n[2]) if kind == 'RIGID_DET' else ''
             atoms = renamed(lines[n[1]], out) if kind == 'INIT' and out and not T.has(ri, out) else None
             if atoms is not None:  # an input block that the engine makes no table of: its rows are those of its atoms
                 return {g for a in atoms for m in G.NAME.finditer(a) if m[1] in label for g in used(m)}
