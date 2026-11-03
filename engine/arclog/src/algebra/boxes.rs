@@ -77,6 +77,35 @@ box_relations! {
     Split => "split",
 }
 
+impl BoxRelation {
+    /// The columns, by their place in the relation, whose Position each row
+    /// reads only through the extents of its frame (the sums of its top and
+    /// bottom margins and of its left and right margins): a binding that puts
+    /// another Position of the same frame at such a column gives the same
+    /// rows, with that Position at the column.
+    const fn frame_columns(self) -> &'static [u16] {
+        match self {
+            BoxRelation::BoxExtent => &[1],
+            BoxRelation::FrameExtent | BoxRelation::SubExtent | BoxRelation::FrameOffset | BoxRelation::AxisExtents => &[0],
+            _ => &[],
+        }
+    }
+}
+
+/// The columns of the algebra relation `name` that [`BoxRelation`] reads
+/// only through the frame of their Position, and none for every other
+/// relation.
+pub fn frame_columns(name: &crate::registry::LibName) -> &'static [u16] {
+    BoxRelation::ALL.iter().find(|relation| relation.registry_name() == &*name.0).map_or(&[], |relation| relation.frame_columns())
+}
+
+/// The frame of the Position `id`: the sum of its top and bottom margins
+/// and the sum of its left and right margins.
+pub fn frame_of(id: TermId) -> (i32, i32) {
+    let m = Term::decode_box(id);
+    (m.top.saturating_add(m.bottom), m.left.saturating_add(m.right))
+}
+
 /// The margin of `m` at `edge`.
 pub fn margin(m: Margins, edge: Edge) -> i32 {
     match edge {
