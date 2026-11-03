@@ -26,7 +26,7 @@ import or_q  # noqa: E402
 import search_gold as G  # noqa: E402
 from live import ANY_TYPE, M  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-init-residual-bits-split-74forms/'  # the data folder
 ROOT = os.environ['ARC_ROOT']
 ENGINE_SO = ROOT + '/work/lm/data-study/ast/run/runtime-ba0754492/py313-path/arclog/arclog.abi3.so'
 SO_SHA256_16 = '4538e2630f39d751'  # census-bands-cheapest/manifest.json, wheel_engine

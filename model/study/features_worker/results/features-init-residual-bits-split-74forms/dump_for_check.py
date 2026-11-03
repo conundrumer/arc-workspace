@@ -6,7 +6,7 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-init-residual-bits-split-74forms')
 os.environ.setdefault('ARCLOG_THREADS', '1')
 import init_residual_bits as I  # noqa: E402
 import live  # noqa: E402
