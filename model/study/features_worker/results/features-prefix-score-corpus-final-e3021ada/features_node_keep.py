@@ -5,8 +5,9 @@
 import collections, glob, json, os, pickle, random, re, statistics as st, subprocess, sys, types
 sys.path[:0] = [os.environ['POLICY_DIR']]
 from nodefeat import Pair, features  # noqa: E402
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/policy')
 from outfeat import out_features  # noqa: E402
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + '/../prefix-score')
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-prefix-score-corpus-final-e3021ada' + '/../prefix-score')
 import numpy as np  # noqa: E402
 import features_second as SECOND  # noqa: E402
 rec, model, out = sys.argv[1:4]

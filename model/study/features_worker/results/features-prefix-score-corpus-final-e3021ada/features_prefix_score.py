@@ -8,14 +8,16 @@ FEATURES_PREFIX_MODEL names the fit file. A failure raises nothing: `score` retu
 import json
 import os
 import pickle
+import sys
 import numpy as np
 import live
 from nodefeat import Pair, features
+sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/policy')
 from outfeat import out_features
 import features_second as SECOND
 import superdag as D
 S = live.S
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-prefix-score-corpus-final-e3021ada'  # the data folder
 BUNDLE = None
 PAIRS = {}
 KEYS = None
