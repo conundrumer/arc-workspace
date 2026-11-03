@@ -145,8 +145,7 @@ pub fn replay_from(
     Ok(Replayed { forced, end: stream.len() })
 }
 
-/// Whether `program` holds a `DEMONSTRATED` form, whose stream the
-/// commands that replay do not decode.
+/// Whether `program` holds a `DEMONSTRATED` form.
 pub fn holds_demonstrated(program: &CheckedProgram) -> bool {
     program.program.graph.nodes.iter().any(|node| matches!(node.kind, DependencyKind::Demonstrated(_)))
 }
