@@ -13,7 +13,7 @@ run next to each other, so the arms are paired as results arrive.
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
 candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line, and runs.jsonl gets each start's arguments and the kit's manifest. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
-Held-out tasks never run, and --skip leaves out the tasks it lists. With --record, each worker writes one draw record per draw to the
+The run stops where its first STOP_AFTER jobs all die with no draw. Held-out tasks never run, and --skip leaves out the tasks it lists. With --record, each worker writes one draw record per draw to the
 job's draws.jsonl (sampler/draw_record.py).
 """
 import argparse
@@ -38,6 +38,7 @@ TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
 ARMS = {'tree': {'WRITER_TREE': None}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules
 RSS_LIMIT_MIB = 2888
+STOP_AFTER = 4  # the run stops where its first STOP_AFTER jobs all die with no draw
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
 CPU_MODE = [False]  # --budget cpu, where a worker's clock is its CPU time
@@ -224,11 +225,15 @@ def main():
     tasks = [t for t in split_tasks(a.split) if t not in a.skip.split(',')][:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
-    t0, n = time.time(), 0
+    t0, n, dead = time.time(), 0, 0
     with cf.ThreadPoolExecutor(16) as ex:  # gate() holds the jobs to the limit
         for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
             r = fut.result()
             n += 1
+            dead += r['deaths'] == 1 and r['draws'] == 0
+            if n == STOP_AFTER and dead == n:
+                print('the first %d jobs all died with no draw: the run stops' % n, flush=True)
+                os._exit(1)
             rate = n / (time.time() - t0)
             print('%s %s s%d solved %s cands %d kills %d tb %d | %d/%d, ETA %.0f min' % (
                 r['task'], r['arm'], r['seed'], r['solved'], r['candidates'], r['kills'], r['tracebacks'], n, len(todo), (len(todo) - n) / rate / 60), flush=True)
