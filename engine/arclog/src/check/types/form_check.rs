@@ -29,14 +29,25 @@ impl Check for TypesCheck {
     /// meet only narrows as sites are added and a join of branches only
     /// widens, but those of a label that takes its type from a column of
     /// `(pose-or <type>)` alone, which a later site may give a Pose type,
-    /// until the form is complete.
+    /// until its label scope ends, as [`scope_ended`] gives.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         let input = super::super::prefix::whole(prefix);
         let order = CanonicalOrder::of(prefix.partial, &mut SearchBudget::new());
-        let complete = prefix.open.is_none();
-        let (result, _) = infer_form_where(&input, &order, &|form, label| complete || !form.is_given(label), !input.scope.inference.is_mask());
+        let ended = |form: &FormInference<'_>| scope_ended(prefix, &NodePath(form.path.0[prefix.path.0.len()..].into()));
+        let (result, _) = infer_form_where(&input, &order, &|form, label| !form.is_given(label) || ended(form), !input.scope.inference.is_mask());
         super::super::prefix::settled_result(prefix, result)
     }
+}
+
+/// Whether the label scope whose form stands at `at`, a path relative to
+/// the partial form of `prefix`, takes no more sites: its form is complete,
+/// or it is the scope of the key and inputs of a `DEMONSTRATED` form whose
+/// first `DEMO_RULE` has begun.
+fn scope_ended(prefix: &Prefix<'_>, at: &NodePath) -> bool {
+    if !prefix.is_open(at) {
+        return true;
+    }
+    at.0.is_empty() && matches!(prefix.partial, Form::Demonstrated(demonstrated) if !demonstrated.value().rules.is_empty())
 }
 
 /// The [`FormTypes`] of each label scope of a form, by the scope's

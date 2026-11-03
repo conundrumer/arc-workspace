@@ -84,7 +84,23 @@ impl Source {
                 for atom in r.parts.iter() { self.atom(atom.value()); }
             }
             Form::Out(out) => self.key(&out.value().key),
-            Form::Claim(_) | Form::Alts(_) | Form::Demonstrated(_) => return None,
+            Form::Demonstrated(demonstrated) => {
+                let d = demonstrated.value();
+                self.scalar(&d.name); self.scalar(&d.key.is_some());
+                if let Some(key) = &d.key { self.key(&key.value().key); self.inputs(&key.value().inputs); }
+                self.inputs(&d.inputs);
+                self.scalar(&d.rules.len());
+                for rule in d.rules.iter() {
+                    let r = rule.value();
+                    self.scalar(&r.name); self.scalar(&r.fields); self.scalar(&r.text);
+                    self.scalar(&r.forms.len());
+                    for (index, form) in r.forms.iter().enumerate() {
+                        self.scalar(&r.forms.from_alt(index));
+                        self.form(form)?;
+                    }
+                }
+            }
+            Form::Claim(_) | Form::Alts(_) => return None,
         }
         Some(())
     }
@@ -123,8 +139,7 @@ pub(super) fn sub_body_key(clause: &Clause, kept: &[Conjunct]) -> Vec<u8> {
 /// `open`: each field of the form that the form's kind holds, in source
 /// order, and the path. Equal keys give the checks equal input: they read
 /// the source order, the open path and the original labels, which node
-/// equality leaves out. `Form::Claim`, `Form::Alts` and `Form::Demonstrated`
-/// take no key.
+/// equality leaves out. `Form::Claim` and `Form::Alts` take no key.
 pub(super) fn key(form: &Form, open: Option<&NodePath>) -> Option<Vec<u8>> {
     let mut source = Source::default();
     source.form(form)?;

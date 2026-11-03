@@ -36,31 +36,33 @@ impl Check for PicksCheck {
     ///   determine a row of the pick, which `ONE` marks state, as
     ///   `states_one` gives.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        refusals(input.form, true, input.scope.registry)
+        refusals(input.form, &|_| true, input.scope.registry)
     }
 
-    /// The check over the form once it ends: a mark follows the body of its
-    /// clause, and the checks of a `CHOOSE` form are decided at its `END`
-    /// (`docs/engine/synthesis.md#token-mask`). An atom that reads `ONE` is
-    /// refused once it is written.
+    /// The check over each clause and each `CHOOSE` form once it ends: a
+    /// mark follows the body of its clause, and the checks of a `CHOOSE`
+    /// form are decided at its `END` (`docs/engine/synthesis.md#token-mask`).
+    /// A form of a `DEMO_RULE` ends at its own `END`. An atom that reads
+    /// `ONE` is refused once it is written.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::settled_result(prefix, refusals(prefix.partial, prefix.open.is_none(), prefix.scope.registry))
+        super::prefix::settled_result(prefix, refusals(prefix.partial, &|at| !prefix.is_open(at), prefix.scope.registry))
     }
 }
 
-/// The refusals of [`PicksCheck`] on `form`, those of its `ONE` marks and
-/// its `CHOOSE` forms only where `ended`, where the form is written whole.
-fn refusals(form: &Form, ended: bool, registry: &Registry) -> CheckResult {
+/// The refusals of [`PicksCheck`] on `form`, those of the `ONE` marks of a
+/// clause and of a `CHOOSE` form only where `ended` holds at its path, where
+/// that clause or form is written whole.
+fn refusals(form: &Form, ended: &dyn Fn(&NodePath) -> bool, registry: &Registry) -> CheckResult {
     let mut refused: Vec<(NodePath, &str)> = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match (node, node.atom()) {
-        (NodeRef::Clause(clause), _) if ended && !marks_name_columns(clause) => refused.push((at.clone(), "a `ONE` mark names only columns of the clause")),
-        (NodeRef::Clause(clause), _) if ended && !set_mark_fits(clause, registry) => {
+        (NodeRef::Clause(clause), _) if ended(at) && !marks_name_columns(clause) => refused.push((at.clone(), "a `ONE` mark names only columns of the clause")),
+        (NodeRef::Clause(clause), _) if ended(at) && !set_mark_fits(clause, registry) => {
             refused.push((at.clone(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
         }
         (NodeRef::Clause(clause), _) if !proposers_fit(clause, registry) => {
             refused.push((at.clone(), "each proposer of a clause has, at each column of its first proposer, a type that joins that proposer's type"))
         }
-        (NodeRef::Choose(choose), _) if ended => choose_refusals(choose, at, &mut refused),
+        (NodeRef::Choose(choose), _) if ended(at) => choose_refusals(choose, at, &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
             refused.push((at.clone(), "`ONE` stands at a clause's top level, after its body"));
         }
