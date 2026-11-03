@@ -40,15 +40,16 @@ def keys_of(split):
 
 
 def concat(split):
+    batch = lambda p: int(p.rsplit('-', 1)[1].split('.')[0])
+    last = {}  # task -> the batch of its latest task line; its table and query lines are that batch's, so a task with no tables there has none
+    for p in sorted(glob.glob(O + 'graph-tasks-%s-[0-9]*.jsonl' % split), key=batch):
+        for l in open(p):
+            last[json.loads(l)['task']] = batch(p)
     for f in ('tables', 'prods', 'tasks'):
-        parts = sorted(glob.glob(O + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=lambda p: int(p.rsplit('-', 1)[1].split('.')[0]))
-        last = {}
-        for p in parts:  # a later batch's lines for a task replace an earlier batch's
-            for l in open(p):
-                last[json.loads(l)['task']] = p
+        parts = sorted(glob.glob(O + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=batch)
         with open(O + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
             for p in parts:
-                out.writelines(l for l in open(p) if last[json.loads(l)['task']] == p)
+                out.writelines(l for l in open(p) if last.get(json.loads(l)['task']) == batch(p))
         os.replace(O + 'graph-%s-%s.jsonl.part' % (f, split), O + 'graph-%s-%s.jsonl' % (f, split))
         subprocess.run(['python3', U + 'gold_union_code.py', 'concat', O + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
 
