@@ -63,6 +63,10 @@ class Overflow(Exception):
     pass
 
 
+class Capped(Overflow):
+    """A search of completable in the order of the keys met its cap of states (LEAD_STATES)."""
+
+
 # ---------------------------------------------------------------- the tree of a query
 
 @dataclasses.dataclass
@@ -162,7 +166,9 @@ class Env:
         self.total: collections.Counter | None = None  # the label mentions of the query that ordered() walks
         self.lookahead = False  # ordered() sets it for the second try of a query that the plain rule cannot write
         self.look = 0  # above 0 inside completable: the walk asks whether a rest can be written, and does not probe each atom for a dead end
+        self.lead_left: int | None = None  # in a search of completable in the order of the keys: the states it may still take (LEAD_STATES), else None
         self.rcache = {}  # the ways of atoms (render) and the dead-end verdicts of states (closes), for one query (ordered clears it)
+        self.rcache_kept = False  # True while ordered() tries a query again: _ordered keeps rcache
         self.label = {i for i in range(n) if self.kind[i] == 'label'}
         self.stats = collections.Counter()
         self.deadline: float | None = None  # a time.monotonic() value past which a walk raises Overflow
@@ -170,6 +176,7 @@ class Env:
         self.IF = V.id('IF')
         self.ONE = V.id('ONE')
         env_ONE[0] = self.ONE
+        env_IF[0], env_ALL[0] = self.IF, self.ALL
         self.probe = [END, OR_TOK, NOT, self.ALL, EQ, CMP[1], V.id('input')]  # tokens that close an atom: some is in the mask unless the atom is a dead end; END first (closes)
         self.open = np.array([k in ('column', 'label') or i in (STAR, CARET, ZERO) for i, k in enumerate(self.kind)])  # tokens that go on with an open atom
 
@@ -604,6 +611,7 @@ def variants(s, nm, mode):
 
 
 env_ONE = [None]  # the token id of ONE (set by Env)
+env_IF, env_ALL = [None], [None]  # the token ids of IF and ALL (set by Env)
 
 
 class Unbound(Exception):
@@ -697,11 +705,12 @@ def closes(env, st):
     return got
 
 
-def render(env, marks, item, st, mode, sep=None, k=None, probe=True):
+def render(env, marks, item, st, mode, sep=None, k=None, probe=True, one=False):
     """[(tokens, state)] of the ways to write the item at the state, and an error text where none: for an atom one way; a compound item, every way of its inner sets
     under the mode ('min': the ordered rule, 'all': every order). sep: a token written before the item (ALSO). k: in mode 'min', a function from the state after the item to whether
     the rest of the query can still be written; the ways returned are those that it accepts (see completable). probe False: an atom's ways are not tested for a dead end (closes);
-    walk_set tests only the ways it may take."""
+    walk_set tests only the ways it may take. one True: a compound item gives only the first of its ways that a depth-first walk finds (writes), or none: completable asks only
+    whether some way exists."""
     if env.deadline is not None and time.monotonic() > env.deadline:
         raise Overflow()
     try:
@@ -726,15 +735,17 @@ def render(env, marks, item, st, mode, sep=None, k=None, probe=True):
                 outs = [o for o in got[0] if closes(env, o[1])]
                 return outs, ('' if outs else got[1] or 'the atom cannot close')
             return got
+
+        def ways(node, st1, k1, **kw):  # the writes of an inner set: every one, or with `one` lazily, in the order of a depth-first walk
+            return writes(env, marks, node, st1, mode, k=k1, **kw) if one else walk_set(env, marks, node, st1, mode, k=k1, **kw)
         if isinstance(item, Set):  # a branch
-            outs = walk_set(env, marks, item, st, mode, k=k)
-            return [(o[0], o[1]) for o in outs], ''
+            return [(o[0], o[1]) for o in itertools.islice(ways(item, st, k), 1 if one else None)], ''
         if isinstance(item, Or):
             st = step_one(env, st, OR_TOK)
             k_or = None if k is None else (lambda s2: after(env, k, s2, END))
-            outs = walk_set(env, marks, Set(item.branches, 'or'), st, mode, sep=ALSO_TOK, branches=True, k=k_or)
+            outs = ways(Set(item.branches, 'or'), st, k_or, sep=ALSO_TOK, branches=True)
             res = []
-            for toks, st2 in outs:
+            for toks, st2 in itertools.islice(outs, 1 if one else None):
                 res.append(((OR_TOK,) + toks + (END,), step_end(env, st2)))
             return res, ''
         if isinstance(item, If):
@@ -758,12 +769,14 @@ def render(env, marks, item, st, mode, sep=None, k=None, probe=True):
                 except Exception:  # noqa: BLE001
                     return False
                 return completable(env, marks, item.then.items, full(item.then), s1, frozenset(), None, k_then, {})
-            for t1, s1 in walk_set(env, marks, item.test, st, mode, k=None if k is None else k_test):
+            for t1, s1 in ways(item.test, st, None if k is None else k_test):
                 s1 = step_end(env, s1)
-                for t2, s2 in walk_set(env, marks, item.then, s1, mode, k=None if k is None else k_then):
+                for t2, s2 in ways(item.then, s1, None if k is None else k_then):
                     s2 = step_end(env, s2)
-                    for t3, s3 in walk_set(env, marks, item.els, s2, mode, k=k_else):
+                    for t3, s3 in ways(item.els, s2, k_else):
                         res.append(((env.IF,) + t1 + (END,) + t2 + (END,) + t3 + (END,), step_end(env, s3)))
+                        if one:
+                            return res, ''
             return res, ''
         if isinstance(item, All):
             miss = [g for g in item.needs if g not in st[1]]
@@ -779,10 +792,12 @@ def render(env, marks, item, st, mode, sep=None, k=None, probe=True):
                 except Exception:  # noqa: BLE001
                     return False
                 return completable(env, marks, item.body.items, frozenset(range(len(item.body.items))), s1, frozenset(), None, k_body, {})
-            for t1, s1 in walk_set(env, marks, item.dom, st, mode, k=None if k is None else k_dom):
+            for t1, s1 in ways(item.dom, st, None if k is None else k_dom):
                 s1 = step_end(env, s1)
-                for t2, s2 in walk_set(env, marks, item.body, s1, mode, k=k_body):
+                for t2, s2 in ways(item.body, s1, k_body):
                     res.append(((env.ALL,) + t1 + (END,) + t2 + (END,), step_end(env, s2)))
+                    if one:
+                        return res, ''
             return res, ''
     except Stuck as e:
         return [], 'inner stuck: ' + ('; '.join('%s: %s' % w for w in e.why[:3]))
@@ -869,23 +884,62 @@ def after(env, k, st, tok):
     return k is None or k(st)
 
 
+LEAD_STATES = 300  # the states that a search of completable in the order of the keys may take before it starts again in the order of the query
+
+
 def completable(env, marks, items, rem, st, cr, sep, k, memo):
     """True where the items `rem` can be written, in some order, from the state st (cr: the items that made the labels), and k then accepts the state after them (k None: true).
     The decoder refuses some orders late (a label read outside each list that keeps it, a key label that is local to a form), so the greedy rule asks this before it takes an item.
-    The search follows the same rule (the least keys that complete), which finds a completion where one exists."""
+    The search follows the same rule (the least keys that complete, and no OR that exports_ok refuses), which finds a completion where one exists.
+
+    The answer does not depend on the order in which the search tries the items, only its time. A search in the order of the walk's keys finds the completion that the walk then
+    takes, so that the walk's next tests are in the memo; but where an item that comes first by key cannot be completed, it tries every order of the rest. A search in the order
+    of the query finds a completion at once where the query's own order is one. So the outer search goes in the order of the keys up to LEAD_STATES states, and else starts again
+    in the order of the query, with the answers that the first search finished."""
+    if env.look or env.lead_left is not None:
+        return _memo_completable(env, marks, items, rem, st, cr, sep, k, memo)
+    env.lead_left = LEAD_STATES
+    try:
+        return _memo_completable(env, marks, items, rem, st, cr, sep, k, memo)
+    except Capped:
+        pass
+    finally:
+        env.lead_left = None
+    return _memo_completable(env, marks, items, rem, st, cr, sep, k, memo)
+
+
+def _memo_completable(env, marks, items, rem, st, cr, sep, k, memo):
     key = (rem, nm_key(st[1]), cr, st[0].trace_form())  # the form so far: states of one naming can differ in what the atoms before them were
     got = memo.get(key)
     if got is not None:
         return got
+    if env.lead_left is not None:
+        if env.lead_left <= 0:
+            raise Capped()
+        env.lead_left -= 1
     memo[key] = False
-    res = False
     env.look += 1
     try:
         res = _completable(env, marks, items, rem, st, cr, sep, k, memo)
+    except BaseException:
+        del memo[key]  # a search that stopped leaves no answer
+        raise
     finally:
         env.look -= 1
     memo[key] = res
     return res
+
+
+def lead(item):
+    """The tokens that the key of the item starts with under any naming: an atom's tokens before its first label or column reference, the first token of a compound item."""
+    if isinstance(item, Atom):
+        out = []
+        for x in item.toks:
+            if x < 0 or x >= COLREF:
+                break
+            out.append(x)
+        return tuple(out)
+    return (OR_TOK,) if isinstance(item, Or) else (env_IF[0],) if isinstance(item, If) else (env_ALL[0],)
 
 
 def _completable(env, marks, items, rem, st, cr, sep, k, memo):
@@ -893,16 +947,73 @@ def _completable(env, marks, items, rem, st, cr, sep, k, memo):
     if not rem:
         res = k is None or bool(k(st))
     else:
-        for idx in sorted(rem):
+        order = sorted(rem, key=lambda i: (lead(items[i]), i)) if env.lead_left is not None else sorted(rem)
+        for idx in order:
             if one_waits(items, rem, idx, True):
+                continue
+            if not exports_ok(env, items[idx], st[1]):  # walk_set does not take the OR at this state; the decoder refuses its END only after every order of the items in it
                 continue
             def kk(s1, idx=idx, st=st, rem=rem, cr=cr):
                 return completable(env, marks, items, rem - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in st[1]), sep, k, memo)
-            outs, _ = render(env, marks, items[idx], st, 'min', sep, kk)
+            outs, _ = render(env, marks, items[idx], st, 'min', sep, kk, one=True)
             if any(kk(s1) for _, s1 in outs):
                 res = True
                 break
     return res
+
+
+def _cands(env, marks, items, first, s0, rem, cr, step, mode, sep, k, memo, why):
+    """[(key, item index, (tokens, state))] of the ways to write each item of rem next at state s0 (the ways of an atom not tested for a dead end); why gets each item that has none."""
+    cands = []
+    for idx in rem:
+        if step == 0 and first is not None and idx not in first:
+            why.append((describe(env, items[idx]), 'the branch does not keep a label that another branch names'))
+            continue
+        if one_waits(items, rem, idx, mode == 'min'):
+            why.append((describe(env, items[idx]), 'a ONE mark comes after the other items'))
+            continue
+        if mode == 'min' and not exports_ok(env, items[idx], s0[1]):
+            why.append((describe(env, items[idx]), 'the OR would make a label that it does not export'))
+            continue
+        kk = None
+        if mode == 'min' and env.lookahead:
+            kk = (lambda s1, idx=idx: completable(
+                env, marks, items, frozenset(rem) - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in s0[1]), sep, k, memo))
+        outs, err = render(env, marks, items[idx], s0, mode, sep if (sep is not None and step > 0) else None, kk, probe=False)
+        if not outs:
+            why.append((describe(env, items[idx]), err))
+        for o in outs:
+            cands.append((o[0], idx, o))
+    return cands
+
+
+def _closes_ok(env, items, c, probe, why):
+    """False where the way c of an atom is a dead end (closes), with probe on."""
+    if probe and isinstance(items[c[1]], Atom) and not closes(env, c[2][1]):
+        why.append((describe(env, items[c[1]]), 'the atom cannot close'))
+        return False
+    return True
+
+
+def _completes(env, marks, items, c, s0, rem, cr, sep, k, memo):
+    """With the lookahead: whether the rest of the set can be written after the way c, and k then accepts (completable)."""
+    if not env.lookahead:
+        return True
+    rem2 = frozenset(r for r in rem if r != c[1])
+    made = frozenset((g, c[1]) for g in c[2][1][1] if g not in s0[1])
+    return completable(env, marks, items, rem2, c[2][1], cr | made, sep, k, memo)
+
+
+def _groups(cands):
+    """The candidates sorted by key, in groups of equal keys, least first."""
+    cands.sort(key=lambda c: c[0])
+    i = 0
+    while i < len(cands):
+        j = i
+        while j < len(cands) and cands[j][0] == cands[i][0]:
+            j += 1
+        yield cands[i:j]
+        i = j
 
 
 def walk_set(env, marks, node, st, mode, sep=None, branches=False, cap=None, k=None):
@@ -920,46 +1031,20 @@ def walk_set(env, marks, node, st, mode, sep=None, branches=False, cap=None, k=N
         new = {}
         dead = None
         for toks, s0, rem, cr in frontier:
-            cands, why = [], []
-            for idx in rem:
-                if step == 0 and first is not None and idx not in first:
-                    why.append((describe(env, items[idx]), 'the branch does not keep a label that another branch names'))
-                    continue
-                if one_waits(items, rem, idx, mode == 'min'):
-                    why.append((describe(env, items[idx]), 'a ONE mark comes after the other items'))
-                    continue
-                if mode == 'min' and not exports_ok(env, items[idx], s0[1]):
-                    why.append((describe(env, items[idx]), 'the OR would make a label that it does not export'))
-                    continue
-                kk = None
-                if mode == 'min' and env.lookahead:
-                    kk = (lambda s1, idx=idx, s0=s0, rem=rem, cr=cr: completable(
-                        env, marks, items, frozenset(rem) - {idx}, s1, cr | frozenset((g, idx) for g in s1[1] if g not in s0[1]), sep, k, memo))
-                outs, err = render(env, marks, items[idx], s0, mode, sep if (sep is not None and step > 0) else None, kk, probe=False)
-                if not outs:
-                    why.append((describe(env, items[idx]), err))
-                for o in outs:
-                    cands.append((o[0], idx, o))
+            why = []
+            cands = _cands(env, marks, items, first, s0, rem, cr, step, mode, sep, k, memo, why)
             if mode == 'min':
                 # the least keys first: a group of equal keys is kept where some of its ways pass the dead-end test (probe) and, with the lookahead, completable
-                cands.sort(key=lambda c: c[0])
-                kept, closing, i = [], False, 0
-                while i < len(cands) and not kept:
-                    j = i
-                    while j < len(cands) and cands[j][0] == cands[i][0]:
-                        j += 1
-                    for c in cands[i:j]:
-                        if probe and isinstance(items[c[1]], Atom) and not closes(env, c[2][1]):
-                            why.append((describe(env, items[c[1]]), 'the atom cannot close'))
+                kept, closing = [], False
+                for group in _groups(cands):
+                    for c in group:
+                        if not _closes_ok(env, items, c, probe, why):
                             continue
                         closing = True
-                        if env.lookahead:
-                            rem2 = frozenset(r for r in rem if r != c[1])
-                            made = frozenset((g, c[1]) for g in c[2][1][1] if g not in s0[1])
-                            if not completable(env, marks, items, rem2, c[2][1], cr | made, sep, k, memo):
-                                continue
-                        kept.append(c)
-                    i = j
+                        if _completes(env, marks, items, c, s0, rem, cr, sep, k, memo):
+                            kept.append(c)
+                    if kept:
+                        break
                 if not kept:
                     if dead is None:
                         dead = why + ([('the rest of the set', 'no order of the items that are left can be written')] if closing and env.lookahead else [])
@@ -988,6 +1073,39 @@ def walk_set(env, marks, node, st, mode, sep=None, branches=False, cap=None, k=N
     return list(out.values())
 
 
+def writes(env, marks, node, st, mode, sep=None, branches=False, k=None):
+    """The complete writes (tokens, state) of a set's items in mode 'min' that walk_set gives, one by one, in the order of a depth-first walk of the same choices: completable
+    needs only whether one exists, and the first one ends its search. A state that the walk has met before is not walked again (walk_set merges them). No Stuck, and no cap.
+    The tie counts (env.stats) leave out its choices."""
+    items = node.items
+    first = first_branches(items, st[1], env.total) if branches else None
+    memo, seen = {}, set()
+    probe = mode == 'min' and not env.look
+
+    def walk(toks, s0, rem, cr, step):
+        if not rem:
+            yield toks, s0
+            return
+        cands = _cands(env, marks, items, first, s0, rem, cr, step, mode, sep, k, memo, [])
+        for group in _groups(cands):
+            kept = False
+            for c in group:
+                if not _closes_ok(env, items, c, probe, []) or not _completes(env, marks, items, c, s0, rem, cr, sep, k, memo):
+                    continue
+                kept = True
+                key, idx, o = c
+                add = ((sep,) if sep is not None and step > 0 else ()) + o[0]
+                rem2 = tuple(i for i in rem if i != idx)
+                seen_key = (toks + add, nm_key(o[1][1]), rem2)
+                if seen_key in seen:
+                    continue
+                seen.add(seen_key)
+                yield from walk(toks + add, o[1], rem2, cr | frozenset((g, idx) for g in o[1][1] if g not in s0[1]), step + 1)
+            if kept:
+                return
+    return walk((), st, tuple(range(len(items))), frozenset(), 0)
+
+
 # ---------------------------------------------------------------- the ordered plan
 
 @dataclasses.dataclass
@@ -1010,16 +1128,19 @@ def ordered(env, q, cap=CAP):
     if res.paths or res.overflow or res.stuck is None:
         return res
     env.lookahead = True
+    env.rcache_kept = True  # the second try keeps the ways of the atoms and the dead-end verdicts of the first: they do not depend on the lookahead
     try:
         return _ordered(env, q, cap)
     finally:
         env.lookahead = False
+        env.rcache_kept = False
 
 
 def _ordered(env, q, cap=CAP):
     env.total = q.total
     env.colrefs = q.colrefs
-    env.rcache = {}
+    if not env.rcache_kept:
+        env.rcache = {}
     env.stats.clear()
     env.tie_log = []
     states = {((), ()): ((), (q.base.fork(), {}))}
