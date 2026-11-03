@@ -55,10 +55,16 @@ impl Decoder<'_> {
         }
     }
 
+    /// The verdict on the `DET`s of `closed`: a fault where the finished
+    /// program does not check, and else, where the decode evaluates, the
+    /// liveness walk's.
     fn det_liveness(&self, closed: &State) -> Result<(), DetRefusal> {
         let _timed = stats::span(Phase::DetLiveness);
         let program = self.finished_checked(&self.state, closed).as_ref()
             .map_err(|fault| DetRefusal::Fault(format!("{fault:?}")))?;
+        if !self.evaluates {
+            return Ok(());
+        }
         let written = written_dets(program);
         let Some(root) = written.last().map(|det| det.node) else { return Ok(()) };
         if let Some(verdict) = self.verdict_past_cap(program, &written, root) {

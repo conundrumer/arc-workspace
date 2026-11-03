@@ -510,7 +510,7 @@ impl<'a> Decoder<'a> {
     /// the output sets of the test that ended at the model cap with the
     /// grids found so far.
     pub(super) fn consistency(&self, before: &State, after: &State, tested: Tested) -> Option<(Consistency, u64)> {
-        let train = self.train.as_ref()?;
+        let train = self.train.as_ref().filter(|_| self.evaluates)?;
         let program = after.program();
         let forms = &program.value().forms;
         if forms.len() == before.program().value().forms.len() {
