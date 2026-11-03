@@ -1,0 +1,142 @@
+"""Publish the gold of a converted corpus and stream each published task through the union stages of its split, in GOLD_UNION_DIR.
+
+  python3 regen_run.py CORPUS ROUND [P]
+
+CORPUS is the gen folder of a conversion (it holds <task>.arclog, <task>.arcdata and cases/). ROUND is the new gold round folder, as work/lm/data-study/gold/gen-r63. P (default 6) is the number of publish processes.
+
+- Publish: P processes of empty_gold_publication.py, each on every P-th task of CORPUS, write ROUND/publication-K/gold.jsonl.zst and log one line per task to ROUND/publish-K.log. A rerun reuses the tasks a publication has.
+- Every minute, the tasks that the publish logs name since the last batch form a batch. Per split of the batch's tasks:
+  - cases: gold_union_cases.py SPLIT (the whole split, written atomically);
+  - fits: FITS_TASKS in shard file fits-SPLIT-<batch>.jsonl, one process per 10 tasks, with FITS_REUSE set to every fits file of GOLD_UNION_DIR, so a program already fitted is not run again; then the merge;
+  - union rows (union-SPLIT-<batch>.jsonl), union keys (union-keys-SPLIT-<batch>.jsonl) and graph (graph-*-SPLIT-<batch>.jsonl), each with UNION_TASKS, each followed by its merge; the graph's merge concatenates the batch files into graph-*-SPLIT.jsonl.
+  - The steps after the fits run one batch at a time per split, so no step reads a file that a merge is writing. Batches overlap in their fits.
+- When publishing has ended and every batch is done, it writes the walks of each split.
+- Environment: SITE (the engine), GOLD_UNION_DIR, ROWS_VERSION (the row store versions the graph accepts), RUNTIME (the publish runtime, with venv/bin/python and ready.json), FITS_CAP (default 300). Logs go to ROUND/regen/.
+- It prints a line with the clock time for each publish count and each batch step.
+"""
+import glob, json, os, subprocess, sys, threading, time
+
+R = '/Users/davidlu/code/arc-workspace/'
+U = R + 'model/study/gold/reads/union/'
+E = R + 'model/study/gold/cover_forms/gold_union_env.sh'
+sys.path.insert(0, U)
+from gold_union_fits import set_of  # noqa: E402
+
+corpus, round_dir = sys.argv[1].rstrip('/'), sys.argv[2].rstrip('/')
+P = int(sys.argv[3]) if len(sys.argv) > 3 else 6
+G = os.environ['GOLD_UNION_DIR'] + '/'
+RUNTIME = os.environ['RUNTIME']
+LOG = round_dir + '/regen/'
+os.makedirs(LOG, exist_ok=True)
+locks = {}
+
+
+def say(*a):
+    print(time.strftime('%H:%M:%S'), *a, flush=True)
+
+
+def sh(name, cmd, env=None):
+    """Runs cmd through run_heavy, with its output in LOG/name.log; raises on failure."""
+    with open(LOG + name + '.log', 'a') as f:
+        subprocess.run([R + 'scripts/run_heavy.py', '--need', 'soon'] + cmd, cwd=R, env=dict(os.environ, **(env or {})), stdout=f, stderr=subprocess.STDOUT, check=True)
+
+
+def published():
+    """The tasks that the publish logs name."""
+    done = set()
+    for p in glob.glob(round_dir + '/publish-*.log'):
+        for l in open(p):
+            if l.startswith('{') and l.endswith('\n'):
+                r = json.loads(l)
+                if 'task' in r and 'done' in r:
+                    done.add(r['task'])
+    return done
+
+
+def fits_py(args, env):
+    return ['env', 'PYTHONPATH=' + os.environ['SITE'], 'ARCLOG_IDENT_SOURCE=value'] + ['%s=%s' % kv for kv in env.items()] + [R + '.venv/bin/python', U + 'gold_union_fits.py'] + args
+
+
+def batch(b, split, tasks):
+    """The union stages of one batch of one split."""
+    tag = '%s-%d' % (split, b)
+    say(tag, 'cases', len(tasks), 'tasks')
+    sh(tag + '-cases', [E, U + 'gold_union_cases.py', split])
+    reuse = ','.join(sorted(glob.glob(G + 'fits-*.jsonl')))
+    groups = [tasks[i:i + 10] for i in range(0, len(tasks), 10)]
+    say(tag, 'fits', len(groups), 'processes')
+    threads = [threading.Thread(target=sh, args=('%s-fits-%d' % (tag, i), fits_py([split, str(b * 100 + i), '1'], dict(FITS_TASKS=' '.join(g), FITS_REUSE=reuse, FITS_CAP=os.environ.get('FITS_CAP', '300')))))
+               for i, g in enumerate(groups)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    with locks.setdefault(split, threading.Lock()):
+        names = ' '.join(tasks)
+        sh(tag + '-fits-merge', fits_py([split, 'merge'], {}))
+        say(tag, 'union')
+        sh(tag + '-union', [E, U + 'gold_union.py', 'run', str(b), '1000', split], dict(UNION_TASKS=names))
+        sh(tag + '-union-merge', [E, U + 'gold_union.py', 'merge', split])
+        say(tag, 'keys')
+        sh(tag + '-keys', [E, U + 'gold_union_keys.py', split, str(b), '1000'], dict(UNION_TASKS=names))
+        sh(tag + '-keys-merge', [E, U + 'gold_union_keys.py', split, 'merge'])
+        say(tag, 'graph')
+        sh(tag + '-graph', [E, U + 'gold_union_graph.py', split, str(b), '1000'], dict(UNION_TASKS=names))
+        for f in ('tables', 'prods', 'tasks'):
+            parts = sorted(glob.glob(G + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=lambda p: int(p.rsplit('-', 1)[1].split('.')[0]))
+            last = {}
+            for p in parts:  # a later batch's line for a task replaces an earlier one
+                for l in open(p):
+                    last.setdefault(json.loads(l)['task'], {})[p] = None
+            keep = {t: list(ps)[-1] for t, ps in last.items()}
+            with open(G + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
+                for p in parts:
+                    out.writelines(l for l in open(p) if keep[json.loads(l)['task']] == p)
+            os.replace(G + 'graph-%s-%s.jsonl.part' % (f, split), G + 'graph-%s-%s.jsonl' % (f, split))
+            subprocess.run(['python3', U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
+        say(tag, 'done')
+
+
+def main():
+    tasks = sorted(p[:-len('.arcdata')].rsplit('/', 1)[1] for p in glob.glob(corpus + '/*.arcdata'))
+    say('publish', len(tasks), 'tasks in', P, 'processes')
+    pubs = []
+    for k in range(P):
+        os.makedirs(round_dir + '/publication-%d' % k, exist_ok=True)
+        cmd = [R + 'scripts/run_heavy.py', '--need', 'soon', RUNTIME + '/venv/bin/python', '-B', R + 'model/study/empty_gold_publication.py', 'publish',
+               '--corpus', corpus, '--tasks', R + 'data/tasks', '--runtime', RUNTIME, '--output', round_dir + '/publication-%d/gold.jsonl.zst' % k,
+               '--deadline-seconds', '240'] + [x for t in tasks[k::P] for x in ('--task', t)]
+        pubs.append(subprocess.Popen(cmd, cwd=R, stdout=open(round_dir + '/publish-%d.log' % k, 'a'), stderr=subprocess.STDOUT))
+    seen, b, running = set(), 0, []
+    while True:
+        ended = all(p.poll() is not None for p in pubs)
+        new = sorted(published() - seen)
+        if new:
+            seen |= set(new)
+            say('published', len(seen), 'of', len(tasks))
+            by = {}
+            for t in new:
+                try:
+                    by.setdefault(set_of(t), []).append(t)
+                except KeyError:
+                    say('no split for', t)
+            for split, ts in by.items():
+                th = threading.Thread(target=batch, args=(b, split, ts))
+                th.start()
+                running.append(th)
+            b += 1
+        if ended and not new:
+            break
+        time.sleep(60)
+    say('publish ended', [p.returncode for p in pubs], 'tasks published', len(seen), 'of', len(tasks))
+    for th in running:
+        th.join()
+    for split in ('train', 'dev', 'held-out'):
+        if os.path.exists(G + 'graph-tasks-%s.jsonl' % split):
+            sh('walks-' + split, ['python3', U + 'gold_union_walks.py', split])
+            say(split, 'walks')
+    say('done')
+
+
+if __name__ == '__main__':
+    main()
