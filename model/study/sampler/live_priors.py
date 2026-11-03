@@ -24,7 +24,7 @@ import sampler_paths as P
 
 KIND_STEP = 2  # the clause count is bucketed by this step in the next-kind counts
 KIND_TOP = 12  # the last bucket
-WALK_KINDS = 'DET', 'INIT', 'RIGID_DET', 'RULE'  # the kinds that a draw makes
+WALK_KINDS = 'DEMONSTRATED', 'DET', 'INIT', 'RIGID_DET', 'RULE'  # the kinds of query that a draw or the writer makes
 WALK_TOP = 8  # a kind's clause count is capped at this in a walk state
 WALK_ORDERS = 8  # random orders counted per program
 BORROW = 1.0  # a sparse kind's weight on its parent kind's atoms, against its own: RIGID_DET's parts from DET's bodies

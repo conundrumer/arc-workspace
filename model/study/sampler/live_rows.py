@@ -232,7 +232,7 @@ def task_rows(args):
     rows, statuses = [], []
     for i, line in enumerate(lines):
         kind = line.split()[0].lstrip('(')
-        if kind not in live.KIND_TOK:
+        if kind not in live.DRAWN_KINDS:  # rows stand where a draw of live.py consults a steer
             continue
         if kind in ('RULE', 'DET') and re.match(r'\((RULE|DET) \S+ [A-Za-z]\S*\)$', line.strip()):  # a proposer form: its pick is a count, which no steer scores
             statuses.append(dict(i=i, kind=kind, proposer=True))

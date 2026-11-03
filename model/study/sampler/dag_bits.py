@@ -153,7 +153,7 @@ def one(sampler, a, task, lines, source, canon, i, reuse):
     target = lines[i]
     kind = target.split()[0].lstrip('(')
     rec = dict(task=task, line=i, kind=kind, source=source, context=a.context, compound=any(w in target for w in COMPOUND))
-    if kind not in live.KIND_TOK:
+    if kind not in live.DRAWN_KINDS:  # or_q walks a form that live.py draws
         return dict(rec, total=None, skip=True)
     t0 = time.time()
     scope = or_q.canonical_scope(canon[0], i) if a.context == 'parents' else lines[:i]
@@ -254,7 +254,7 @@ def main():
             lines, source = texts[task]
             if canon.get('task') != task:
                 canon = dict(task=task, value=None)
-            if canon['value'] is None and a.context == 'parents' and lines[i].split()[0].lstrip('(') in live.KIND_TOK:
+            if canon['value'] is None and a.context == 'parents' and lines[i].split()[0].lstrip('(') in live.DRAWN_KINDS:
                 sess, _, _ = live_try.session_of(task)
                 canon['value'] = or_q.canonical_lines(lines, sess)
                 del sess

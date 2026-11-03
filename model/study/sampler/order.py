@@ -285,6 +285,9 @@ def read_query(env, base, kind, full, gold_hash=None):
             d.step(t)
         gold_hash = d.query_hash(-1)
     q = Query(kind, [], marks, dec, gold, gold_hash)
+    if kind == 'DEMONSTRATED':  # its rules hold forms, which the tree of sets does not hold: the query is written in its own order
+        q.unsupported = 'DEMONSTRATED: no tree of sets of its rules'
+        return q
     try:
         for tag, bkind, toks in segments(env, dec.fork(), kind, full):
             s = symbolise(env, toks, marks)

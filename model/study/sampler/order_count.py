@@ -23,7 +23,7 @@ import order
 
 PREP = '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/b9773fdd-d09f-4bd5-b2d0-ebeaa83d8c6d/scratchpad/canon-count/prep.jsonl'
 TRAIN = '/Users/davidlu/code/arc-workspace/work/lm/data-study/samples/training/skeleton'
-KINDS = ('RULE', 'DET', 'INIT', 'RIGID_DET')
+KINDS = ('RULE', 'DET', 'INIT', 'RIGID_DET', 'DEMONSTRATED')
 
 
 def gold_form(sess, scope, text):

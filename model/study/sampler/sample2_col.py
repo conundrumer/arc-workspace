@@ -2354,7 +2354,7 @@ class Drawer:
                     drawn.add(self.derived_base(self.V.name(t)))
             elif kind in DERIVED_BUILTIN:
                 builtin = True
-        st = dict(hk='DET' if self.kind == 'RIGID_DET' else self.kind, pl=self.place if self.place in DERIVED_PLACES else 'other', ph=n.phase,
+        st = dict(hk=DERIVED_KIND.get(self.kind, self.kind), pl=self.place if self.place in DERIVED_PLACES else 'other', ph=n.phase,
                   sty=frozenset(map(str, self.p_scope)), dd=drawn, bd=builtin)
         sc = self.derived_scope()
         return sc.gate_facts(st, len(dopts)), sc.option_facts(st, [self.derived_base(self.V.name(t)) for t in dopts])
@@ -2635,7 +2635,8 @@ def derived_model():
     return _DERIVED[0]
 
 
-DERIVED_FORMS = ('RULE', 'DET', 'INIT', 'RIGID_DET')
+DERIVED_FORMS = ('RULE', 'DET', 'INIT', 'RIGID_DET', 'DEMONSTRATED')
+DERIVED_KIND = dict(RIGID_DET='DET', DEMONSTRATED='INIT')  # a sparse kind -> the kind whose facts it takes: a DEMONSTRATED form is a DemonstrationConsistency instance
 DERIVED_PLACES = ('RULE', 'DET', 'port', 'key', 'other')
 DERIVED_BUILTIN = ('lib relation', 'relation macro', 'fact relation')
 class RelTable:
@@ -2672,7 +2673,7 @@ class DerivedScope:
         self.kind, reads = {}, {}
         for f in forms:
             if f and f[0] in DERIVED_FORMS and len(f) > 1 and isinstance(f[1], str):
-                self.kind[f[1]] = 'DET' if f[0] == 'RIGID_DET' else f[0]
+                self.kind[f[1]] = DERIVED_KIND.get(f[0], f[0])
                 reads[f[1]] = strata.reads_of(f[2:], set()) - {f[1]}
         self.parents = {h: rs & self.kind.keys() for h, rs in reads.items()}
         self.depth, self.anc = {}, {}

@@ -792,7 +792,7 @@ def canonical_lines(lines, sess):
     forms = live.S.strata.sexprs('\n'.join(lines))
     for i in sorted(range(len(lines)), key=lambda i: len(live.S.ancestor_order(forms, i))):
         kind = lines[i].split()[0].lstrip('(')
-        if kind not in live.KIND_TOK:
+        if kind not in live.DRAWN_KINDS:
             continue
         scope = canonical_scope(out, i)
         check, form = decoder_check(sess, scope, kind), O.Form(sorted_fields(lines[i], sess, scope))

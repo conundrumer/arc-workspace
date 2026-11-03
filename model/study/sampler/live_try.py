@@ -197,7 +197,7 @@ def clause_try(sampler, task, n, seed, seconds):
     for f in forms:
         print('  scope:', f[:150], flush=True)
     run = sampler.run
-    for kind in live.KIND_TOK:
+    for kind in live.DRAWN_KINDS:
         got = clause_calls(sampler, sess, d, range(seed + n, seed + 2 * n), deadline, forms, kind)
         for c in got:  # a Clause's text, with the scope's forms in another order, is the same program
             assert run.scope(forms + [c.text])[0].program_form() == c.decoder.program_form(), c.text
