@@ -13,18 +13,27 @@
 //! relation, and each clause whose body then has a positive atom on such a
 //! relation, until nothing changes. A relation becomes empty when each form
 //! that derives it is deleted. An `OR` with a branch the edit leaves with no
-//! conjunct is true, and the edit drops it where it exports no label. A
+//! conjunct is true, and the edit drops it where it exports no label. An `IF`
+//! whose test becomes false is its else, which then makes each label the
+//! `IF` exported; one whose else becomes false is the conjunction of its test
+//! and its then. An `ALL` whose domain or body becomes false is false. A
 //! clause whose `OR` loses branches takes as its columns the labels its body
 //! then keeps, and each read of its relation names its columns by their new
 //! slots. An `INIT` form whose key body becomes false is deleted, and so is
 //! one with an input body that becomes false where each of its outputs is
 //! proved empty; otherwise that input's clause is removed where the input
-//! then has no row. Any other read of such a relation, an `OUT` form that
+//! then has no row, and stands as it is where the component would fill an
+//! input with no clause, with each deleted form that it reads through the
+//! relations that have become empty, and so on, which the edit then keeps
+//! as it is. Any other read of such a relation, an `OUT` form that
 //! reads one, a clause with proposers whose body becomes empty, and a
 //! filtered program that the checker refuses, keep the original gold of the
-//! whole task. So does an `OUT` relation of the filtered program that
-//! differs from the original's on an example, an assignment or a model, or
-//! whose enumeration is not complete.
+//! case, with the reason. So does an `OUT` relation of the filtered program
+//! that differs from the original's on an example, an assignment or a model,
+//! or whose enumeration is not complete. A case whose stream does not read
+//! back, or whose program has no text in the source's names, keeps the
+//! original gold of the whole task, since the result has no text of that
+//! case's gold.
 //!
 //! The lint reports, on the original program, two positive atoms of one
 //! conjunction that read the same relation, bind the same columns to the same
@@ -67,8 +76,9 @@ use crate::types::GraphRelation;
 /// The schema of the result of [`empty_gold`].
 pub const SCHEMA: &str = "arclog-empty-gold-v1";
 
-/// The result of the task `id`: the filtered gold of each case, or the
-/// original gold of the whole task with the reason, and the lint. `Err` only
+/// The result of the task `id`: the filtered gold of each case, or its
+/// original gold with the reason, or the original gold of the whole task
+/// with the reason, and the lint. `Err` only
 /// where the task file does not read.
 pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Duration>, constructions: &Constructions) -> Result<Value, String> {
     let (task, _) = read_task_files(tasks, id)?;
@@ -115,23 +125,30 @@ pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Durati
                 lint_gap.get_or_insert(format!("{}: {reason}", case.case));
             }
         }
-        // Once a case keeps its original gold, the whole task does.
+        // Once the whole task keeps its original gold, later cases skip the
+        // edit.
         if fallback.is_some() {
             cases.push(CaseResult::original(&case.case, case.concept, &original, names.as_ref().ok(), registry));
             continue;
         }
-        let filtered = filter(&evaluator, &original, &mut tables, registry, &program_settings);
-        let result = match (filtered, &names) {
-            (Ok(filtered), Ok(names)) => CaseResult::filtered(&case.case, case.concept, &original, filtered, names, registry),
-            (Ok(_), Err(reason)) => Err(reason.clone()),
-            (Err(reason), _) => Err(reason),
-        };
-        match result {
-            Ok(result) => cases.push(result),
+        let names = match names {
+            Ok(names) => names,
             Err(reason) => {
                 fallback.get_or_insert(format!("{}: {reason}", case.case));
-                cases.push(CaseResult::original(&case.case, case.concept, &original, names.as_ref().ok(), registry));
+                cases.push(CaseResult::original(&case.case, case.concept, &original, None, registry));
+                continue;
             }
+        };
+        let result = filter(&evaluator, &original, &mut tables, registry, &program_settings).and_then(|filtered| CaseResult::filtered(&case.case, case.concept, &original, filtered, &names, registry));
+        match result {
+            Ok(result) => cases.push(result),
+            Err(reason) => match CaseResult::kept(&case.case, case.concept, &original, &names, registry, &reason) {
+                Ok(result) => cases.push(result),
+                Err(fault) => {
+                    fallback.get_or_insert(format!("{}: {reason}; {fault}", case.case));
+                    cases.push(CaseResult::original(&case.case, case.concept, &original, Some(&names), registry));
+                }
+            },
         }
     }
     if cases.is_empty() && fallback.is_none() {
@@ -304,74 +321,88 @@ struct Filtered {
 fn filter(evaluator: &Evaluator<'_>, original: &StudyProgram, tables: &mut Tables, registry: &Registry, settings: &DecodeSettings) -> Result<Filtered, String> {
     let checked = original.checked();
     let forms = &original.program().value().forms;
-    let mut deleted: BTreeMap<usize, &'static str> = BTreeMap::new();
-    for (index, form) in forms.iter().enumerate() {
-        let Form::Clause(clause) = form else { continue };
-        if !matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) {
-            continue;
-        }
-        let relation = derived_at(checked, &NodePath::top(index as u32));
-        if let Coverage::Complete { empty: true, .. } = evaluator.coverage(tables, checked, &relation) {
-            deleted.insert(index, EMPTY);
-        }
-    }
-    let plan = loop {
-        let empty = emptied(checked, &deleted);
-        let mut added = false;
-        let mut plan = Plan::default();
+    // The forms that stand as they are, since an input clause that the edit
+    // keeps reads them.
+    let mut pinned: BTreeSet<usize> = BTreeSet::new();
+    let (deleted, plan) = 'run: loop {
+        let mut deleted: BTreeMap<usize, &'static str> = BTreeMap::new();
         for (index, form) in forms.iter().enumerate() {
-            if deleted.contains_key(&index) || !mentions(NodeRef::from(form), &empty) {
+            let Form::Clause(clause) = form else { continue };
+            if !matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) || pinned.contains(&index) {
                 continue;
             }
-            let at = NodePath::top(index as u32);
-            match form {
-                Form::Out(_) => return Err(format!("the OUT form, form {index}, reads a relation that is empty on every input, so the case's output is empty")),
-                Form::Instance(instance) => match edit_instance(evaluator, tables, checked, registry, instance.value(), &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
-                    InstanceEdit::Delete(reason) => {
-                        deleted.insert(index, reason);
-                        added = true;
-                    }
-                    InstanceEdit::Keep { bodies, inputs } => {
-                        plan.bodies.extend(bodies);
-                        if !inputs.is_empty() {
-                            plan.inputs.insert(index, inputs);
+            let relation = derived_at(checked, &NodePath::top(index as u32));
+            if let Coverage::Complete { empty: true, .. } = evaluator.coverage(tables, checked, &relation) {
+                deleted.insert(index, EMPTY);
+            }
+        }
+        let plan = loop {
+            let empty = emptied(checked, &deleted);
+            let mut added = false;
+            let mut plan = Plan::default();
+            for (index, form) in forms.iter().enumerate() {
+                if deleted.contains_key(&index) || !mentions(NodeRef::from(form), &empty) {
+                    continue;
+                }
+                let at = NodePath::top(index as u32);
+                match form {
+                    Form::Out(_) => return Err(format!("the OUT form, form {index}, reads a relation that is empty on every input, so the case's output is empty")),
+                    Form::Instance(instance) => match edit_instance(evaluator, tables, checked, registry, instance.value(), &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                        InstanceEdit::Delete(reason) => {
+                            deleted.insert(index, reason);
+                            added = true;
                         }
-                        plan.edited.insert(index);
-                    }
-                },
-                _ => {
-                    let mut bodies = Vec::new();
-                    let mut parts = Vec::new();
-                    root_bodies(NodeRef::from(form), &at, &mut bodies, &mut parts);
-                    if parts.iter().any(|atom| reads(&atom.relation, &empty)) {
-                        return Err(format!("a RIGID_DET part of form {index} reads an empty relation"));
-                    }
-                    for (path, body) in bodies {
-                        match rewrite(body.value(), &empty).map_err(|reason| format!("form {index}: {reason}"))? {
-                            Rewritten::Same => {}
-                            Rewritten::Changed(conjuncts) => {
-                                plan.bodies.push((path, Node::new(Body { conjuncts: conjuncts.into() })));
-                                plan.edited.insert(index);
+                        InstanceEdit::Keep { bodies, inputs } => {
+                            plan.bodies.extend(bodies);
+                            if !inputs.is_empty() {
+                                plan.inputs.insert(index, inputs);
                             }
-                            Rewritten::Empty => {
-                                let deletable = match form {
-                                    Form::Clause(clause) => matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) && clause.value().proposers.is_empty() && path == at.child(0),
-                                    _ => false,
-                                };
-                                if !deletable {
-                                    return Err(format!("form {index} reads an empty relation where no deletion is supported"));
+                            plan.edited.insert(index);
+                        }
+                        InstanceEdit::Pin(bodies) => {
+                            let more = pins(checked, forms, &bodies, &empty, &deleted);
+                            if more.is_subset(&pinned) {
+                                return Err(format!("form {index}: an input clause that the edit keeps reads an empty relation that no deleted form derives"));
+                            }
+                            pinned.extend(more);
+                            continue 'run;
+                        }
+                    },
+                    _ => {
+                        let mut bodies = Vec::new();
+                        let mut parts = Vec::new();
+                        root_bodies(NodeRef::from(form), &at, &mut bodies, &mut parts);
+                        if parts.iter().any(|atom| reads(&atom.relation, &empty)) {
+                            return Err(format!("a RIGID_DET part of form {index} reads an empty relation"));
+                        }
+                        for (path, body) in bodies {
+                            match rewrite(body.value(), &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                                Rewritten::Same => {}
+                                Rewritten::Changed(conjuncts) => {
+                                    plan.bodies.push((path, Node::new(Body { conjuncts: conjuncts.into() })));
+                                    plan.edited.insert(index);
                                 }
-                                deleted.insert(index, READS_EMPTY);
-                                added = true;
+                                Rewritten::Empty => {
+                                    let deletable = match form {
+                                        Form::Clause(clause) => matches!(clause.value().keyword, ClauseKeyword::Rule | ClauseKeyword::Det) && clause.value().proposers.is_empty() && path == at.child(0),
+                                        _ => false,
+                                    };
+                                    if !deletable {
+                                        return Err(format!("form {index} reads an empty relation where no deletion is supported"));
+                                    }
+                                    deleted.insert(index, READS_EMPTY);
+                                    added = true;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        if !added {
-            break plan;
-        }
+            if !added {
+                break plan;
+            }
+        };
+        break (deleted, plan);
     };
     let edited: BTreeSet<usize> = plan.edited.iter().copied().filter(|index| !deleted.contains_key(index)).collect();
     if deleted.is_empty() && edited.is_empty() {
@@ -429,6 +460,8 @@ enum InstanceEdit {
     /// The bodies the edit replaces, and the inputs whose clauses it
     /// removes.
     Keep { bodies: Vec<(NodePath, Node<Body>)>, inputs: Vec<PortName> },
+    /// The bodies of the input clauses that stand as they are.
+    Pin(Vec<Node<Body>>),
 }
 
 /// The edit of the `INIT` form `instance` at `at`, one of whose bodies reads
@@ -436,9 +469,11 @@ enum InstanceEdit {
 /// each output of a keyed instance is empty at a key it does not have. An
 /// input body that becomes false gives the input no row: the instance is
 /// deleted where each of its outputs is proved empty in the original
-/// program, and otherwise the input's clause is removed where the component
-/// gives the input no default row and does not fill it from the key, since
-/// an input with no clause and no default has no row.
+/// program. Otherwise the input's clause is removed where the component
+/// gives the input no default row, does not fill it from the key and does
+/// not fill it from its outputs, since an input with no clause and no
+/// default has no row; where the component fills it, the input's clause
+/// stands as it is, which [`InstanceEdit::Pin`] gives.
 fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, registry: &Registry, instance: &crate::program::Instance, at: &NodePath, empty: &Empty) -> Result<InstanceEdit, String> {
     let mut bodies = Vec::new();
     let mut inputs: Vec<(NodePath, &Node<InstanceInput>)> = Vec::new();
@@ -454,11 +489,15 @@ fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
     let first = u32::from(instance.key.is_some());
     inputs.extend(instance.inputs.iter().enumerate().map(|(index, input)| (at.child(first + index as u32), input)));
     let mut falsified = Vec::new();
+    let mut false_bodies = Vec::new();
     for (path, input) in inputs {
         let input = input.value();
         match rewrite(input.body.value(), empty)? {
             Rewritten::Same => {}
-            Rewritten::Empty => falsified.push(input.name.clone()),
+            Rewritten::Empty => {
+                falsified.push(input.name.clone());
+                false_bodies.push(input.body.clone());
+            }
             Rewritten::Changed(conjuncts) => bodies.push((path.child(input.head.len() as u32), Node::new(Body { conjuncts: conjuncts.into() }))),
         }
     }
@@ -471,11 +510,15 @@ fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
     let Some(LibEntry::Component(component)) = registry.entry(&instance.component) else {
         return Err("the instance's component is not in the lib".into());
     };
-    for name in &falsified {
+    let mut kept = Vec::new();
+    for (name, body) in falsified.iter().zip(false_bodies) {
         let port = component.inputs.iter().find(|port| port.port.name == *name).ok_or("an input that the component does not declare")?;
         if port.default.is_some() || port.from_key || port.reads_outputs {
-            return Err(format!("the input {} reads an empty relation, and an input with no clause would hold rows", name.0));
+            kept.push(body);
         }
+    }
+    if !kept.is_empty() {
+        return Ok(InstanceEdit::Pin(kept));
     }
     Ok(InstanceEdit::Keep { bodies, inputs: falsified })
 }
@@ -488,6 +531,58 @@ fn outputs_empty(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
         DependencyKind::InstanceOutput { .. } => matches!(evaluator.coverage(tables, checked, &GraphRelation { node, output: None }), Coverage::Complete { empty: true, .. }),
         DependencyKind::InstanceInput { .. } => true,
         _ => false,
+    })
+}
+
+/// The deleted forms that `bodies` read through the relations of `empty`,
+/// and so on through the bodies of those forms.
+fn pins(checked: &CheckedProgram, forms: &[Form], bodies: &[Node<Body>], empty: &Empty, deleted: &BTreeMap<usize, &'static str>) -> BTreeSet<usize> {
+    let mut relations = Vec::new();
+    for body in bodies {
+        empty_reads(NodeRef::Body(body.value()), empty, &mut relations);
+    }
+    let resolved = &checked.program;
+    let mut found = BTreeSet::new();
+    while let Some(relation) = relations.pop() {
+        for (index, node) in resolved.graph.nodes.iter().enumerate() {
+            if node_relation(&node.kind).as_ref() != Some(&relation) {
+                continue;
+            }
+            for at in resolved.forms_of(crate::resolver::GraphNodeIndex(index as u32)) {
+                let Some(step) = at.0.first() else { continue };
+                let form = step.0 as usize;
+                if deleted.contains_key(&form) && found.insert(form) {
+                    empty_reads(NodeRef::from(&forms[form]), empty, &mut relations);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Pushes onto `out` each relation of `empty` that an atom at or below
+/// `node` reads.
+fn empty_reads(node: NodeRef<'_>, empty: &Empty, out: &mut Vec<ProgramRelation>) {
+    if let Some(atom) = node.atom() {
+        let relation = match &atom.relation {
+            RelationRef::Declared(name) => Some(ProgramRelation::Declared(name.clone())),
+            RelationRef::Output(name) => Some(ProgramRelation::Output(name.clone())),
+            _ => None,
+        };
+        out.extend(relation.filter(|relation| empty.contains(relation)));
+    }
+    for child in node.children() {
+        empty_reads(child, empty, out);
+    }
+}
+
+/// The relation that a graph node of kind `kind` gives, where it gives one.
+fn node_relation(kind: &DependencyKind) -> Option<ProgramRelation> {
+    Some(match kind {
+        DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation.clone(),
+        DependencyKind::Chosen(name) => ProgramRelation::Declared(name.clone()),
+        DependencyKind::InstanceOutput { instance, output } => ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(output.clone())]) }),
+        _ => return None,
     })
 }
 
@@ -611,12 +706,7 @@ fn emptied(checked: &CheckedProgram, deleted: &BTreeMap<usize, &'static str>) ->
     let mut empty = Empty::default();
     let mut live = Empty::default();
     for (index, node) in resolved.graph.nodes.iter().enumerate() {
-        let relation = match &node.kind {
-            DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation.clone(),
-            DependencyKind::Chosen(name) => ProgramRelation::Declared(name.clone()),
-            DependencyKind::InstanceOutput { instance, output } => ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(output.clone())]) }),
-            _ => continue,
-        };
+        let Some(relation) = node_relation(&node.kind) else { continue };
         let forms = resolved.forms_of(crate::resolver::GraphNodeIndex(index as u32));
         if !forms.is_empty() && forms.iter().all(|at| at.0.len() == 1 && deleted.contains_key(&(at.0[0].0 as usize))) {
             empty.insert(relation);
@@ -675,7 +765,9 @@ enum Rewritten {
 /// conjuncts. Where the first branch is dropped, the new first branch makes
 /// each label the `OR` exported, at its first site in a positive atom of
 /// the branch's own list or at the first label of a `=` there: every later
-/// branch named it, so each remaining branch still does.
+/// branch named it, so each remaining branch still does. An `IF` takes the
+/// edit of [`rewrite_if`]. An `ALL` whose domain or body becomes false is
+/// false.
 fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
     let mut kept: Vec<Conjunct> = Vec::new();
     let mut changed = false;
@@ -733,13 +825,73 @@ fn rewrite(body: &Body, empty: &Empty) -> Result<Rewritten, String> {
                     _ => kept.push(Conjunct::Or(left.into_iter().map(|(_, branch)| branch).collect())),
                 }
             }
-            Conjunct::If { .. } | Conjunct::All { .. } if mentions(NodeRef::Conjunct(conjunct), empty) => {
-                return Err("an IF or ALL form reads an empty relation".into());
+            Conjunct::If { test, then, otherwise } if mentions(NodeRef::Conjunct(conjunct), empty) => {
+                changed = true;
+                match rewrite_if(conjunct, test, then, otherwise, empty)? {
+                    Some(conjuncts) => kept.extend(conjuncts),
+                    None => return Ok(Rewritten::Empty),
+                }
+            }
+            Conjunct::All { domain, body: each } if mentions(NodeRef::Conjunct(conjunct), empty) => {
+                // An ALL with a false domain has no member, and one with a
+                // false body fails at each member, so it is false.
+                let (Some(domain), Some(each)) = (list_left(domain, empty)?, list_left(each, empty)?) else { return Ok(Rewritten::Empty) };
+                if domain.is_empty() || each.is_empty() {
+                    return Err("an ALL with a list that the edit leaves with no conjunct".into());
+                }
+                changed = true;
+                kept.push(Conjunct::All { domain: Node::new(Body { conjuncts: domain.into() }), body: Node::new(Body { conjuncts: each.into() }) });
             }
             other => kept.push(other.clone()),
         }
     }
     Ok(if changed { Rewritten::Changed(kept) } else { Rewritten::Same })
+}
+
+/// The conjuncts of the list `body` after the edit, `None` where it is
+/// false.
+fn list_left(body: &Node<Body>, empty: &Empty) -> Result<Option<Vec<Conjunct>>, String> {
+    Ok(match rewrite(body.value(), empty)? {
+        Rewritten::Same => Some(body.value().conjuncts.to_vec()),
+        Rewritten::Empty => None,
+        Rewritten::Changed(conjuncts) => Some(conjuncts),
+    })
+}
+
+/// The conjuncts that take the place of the `IF` form `conjunct` after the
+/// edit, `None` where it is false.
+///
+/// A false test makes the `IF` its else, whose list then makes each label
+/// the `IF` exported, as a new first branch of an `OR` does. A test the edit
+/// leaves with no conjunct is true, so the `IF` is its then. A false else
+/// makes the `IF` the conjunction of its test and its then. A false then,
+/// or a list that the edit leaves with no conjunct, is not supported.
+fn rewrite_if(conjunct: &Conjunct, test: &Node<Body>, then: &Node<Body>, otherwise: &Node<Body>, empty: &Empty) -> Result<Option<Vec<Conjunct>>, String> {
+    let otherwise = list_left(otherwise, empty)?;
+    let Some(test) = list_left(test, empty)? else {
+        let Some(otherwise) = otherwise else { return Ok(None) };
+        let mut body = Body { conjuncts: otherwise.into() };
+        for label in made_labels(&Body { conjuncts: Arc::from([conjunct.clone()]) }) {
+            if !made_labels(&body).contains(&label) {
+                body = make_label(&body, label).ok_or("an IF with a false test whose else has no site that can make a label the IF exports")?;
+            }
+        }
+        return Ok(Some(body.conjuncts.to_vec()));
+    };
+    let then = list_left(then, empty)?;
+    if test.is_empty() {
+        return Ok(then);
+    }
+    match (then, otherwise) {
+        (None, _) => Err("an IF whose then the edit makes false".into()),
+        (Some(then), None) => Ok(Some(test.into_iter().chain(then).collect())),
+        (Some(then), Some(otherwise)) if then.is_empty() || otherwise.is_empty() => Err("an IF with a list that the edit leaves with no conjunct".into()),
+        (Some(then), Some(otherwise)) => Ok(Some(vec![Conjunct::If {
+            test: Node::new(Body { conjuncts: test.into() }),
+            then: Node::new(Body { conjuncts: then.into() }),
+            otherwise: Node::new(Body { conjuncts: otherwise.into() }),
+        }])),
+    }
 }
 
 /// `body` with `label` made at its first site in a positive atom of the
@@ -952,7 +1104,7 @@ struct CaseResult {
 
 impl CaseResult {
     fn unread(case: &str, concept: bool) -> CaseResult {
-        let value = json!({"case": case, "concept": concept, "original_program": null, "filtered_program": null, "old_to_new_clause_index": [], "removed_clauses": [], "edited_clauses": []});
+        let value = json!({"case": case, "concept": concept, "original_program": null, "filtered_program": null, "old_to_new_clause_index": [], "removed_clauses": [], "edited_clauses": [], "reason": null});
         CaseResult { value: value.clone(), original: value }
     }
 
@@ -963,7 +1115,7 @@ impl CaseResult {
         };
         let count = original.program().value().forms.len();
         let value = json!({"case": case, "concept": concept, "original_program": text, "filtered_program": text,
-            "old_to_new_clause_index": (0..count).collect::<Vec<_>>(), "removed_clauses": [], "edited_clauses": []});
+            "old_to_new_clause_index": (0..count).collect::<Vec<_>>(), "removed_clauses": [], "edited_clauses": [], "reason": null});
         CaseResult { value: value.clone(), original: value }
     }
 
@@ -978,8 +1130,19 @@ impl CaseResult {
         let removed: Vec<Value> = filtered.deleted.iter().map(|(&index, &reason)| json!({"clause_index": index, "relation": form_relation(&forms[index], names), "clause": texts[index], "reason": reason})).collect();
         let edited: Vec<Value> = filtered.edited.iter().map(|&index| json!({"clause_index": index, "relation": form_relation(&forms[index], names), "clause": texts[index]})).collect();
         let value = json!({"case": case, "concept": concept, "original_program": text, "filtered_program": filtered_text,
-            "old_to_new_clause_index": map, "removed_clauses": removed, "edited_clauses": edited});
+            "old_to_new_clause_index": map, "removed_clauses": removed, "edited_clauses": edited, "reason": null});
         Ok(CaseResult { value, original: unchanged })
+    }
+
+    /// The case's original gold in a task whose other cases may be filtered,
+    /// with the reason the edit gives none. `Err` where the program has no
+    /// text in the source's names.
+    fn kept(case: &str, concept: bool, original: &StudyProgram, names: &Names, registry: &Registry, reason: &str) -> Result<CaseResult, String> {
+        let text = source_program(original, names, registry)?;
+        let count = original.program().value().forms.len();
+        let value = json!({"case": case, "concept": concept, "original_program": text, "filtered_program": text,
+            "old_to_new_clause_index": (0..count).collect::<Vec<_>>(), "removed_clauses": [], "edited_clauses": [], "reason": reason});
+        Ok(CaseResult { value, original: CaseResult::original(case, concept, original, Some(names), registry).original })
     }
 
     fn as_original(self) -> Value {

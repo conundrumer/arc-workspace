@@ -66,8 +66,9 @@ def source_ref(corpus, tasks, task):
 def validate_report(report, request):
     """Validate API shape, not invented native proof/runtime fields.
 
-    The native entry owns all semantic checks and returns original for the
-    whole task when any condition fails. Provenance is our outer envelope.
+    The native entry owns all semantic checks. A case whose edit fails keeps
+    its original program, with the case's reason; a case with no program text
+    selects original for the whole task. Provenance is our outer envelope.
     """
     if report.get('schema') != NATIVE_SCHEMA or report.get('task') != request['task']:
         raise ValueError('native task report schema/task differs')
@@ -132,6 +133,8 @@ def audit_check_set(publication, check_set, destination):
             fallbacks[task] = report['reason']
             continue
         for case in report['cases']:
+            if case.get('reason'):
+                fallbacks[(task, case['case'])] = case['reason']
             for clause in case['removed_clauses']:
                 value = dict(clause, task=task, case=case['case'])
                 removed[clause_key(value)] = value
@@ -140,7 +143,7 @@ def audit_check_set(publication, check_set, destination):
         check_sets=snapshots, check_lines=len(expected),
         publication=file_ref(publication),
         listed_removed=[v for v in expected if clause_key(v) in removed],
-        listed_kept=[dict(v, reason=fallbacks.get(v['task'], 'no matching removed source clause'))
+        listed_kept=[dict(v, reason=fallbacks.get((v['task'], v['case']), fallbacks.get(v['task'], 'no matching removed source clause')))
                      for v in expected if clause_key(v) not in removed and v['task'] in selected],
         listed_not_processed=[v for v in expected if v['task'] not in selected],
         removed_not_listed=[v for k, v in removed.items() if k not in expected_by_key])
