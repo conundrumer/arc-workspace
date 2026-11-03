@@ -16,9 +16,12 @@ bound), the key being the item's model tokens under the current naming: a label 
 fresh index. An OR's branches, the atoms of a branch and the two parts of an ALL follow the same rule, each by itself. Items with equal keys are a tie, and every tie
 choice is followed: the number of distinct streams is the number of paths.
 
-In a DEMONSTRATED query, the sets are the bodies of its key and inputs and the bodies of each form of each rule, with the OR, ALL and IF inside them. The rules, the forms of a
-rule and the bodies of a CHOOSE form stay as the query has them: a permutation of the rules or of two forms of a rule changes the QueryHash. Its labels are read in their label
-scopes, and a read of a relation that a form of the rule declares names its columns by the labels of that form (segments). The query is unsupported (DEMONSTRATED_DEFERRED).
+In a DEMONSTRATED query, the sets are the bodies of its key and inputs and the bodies of each form of each rule, with the OR, ALL and IF inside them; its rules (Group 'rules');
+and the forms of each rule before its PREDICT clause (Group 'forms'). The engine's QueryHash leaves out the order of the rules, and the order of two forms of a rule of which neither
+reads the other. A part of a Group follows the same rule: the least by its tokens among the parts that the decoder accepts now (a form that reads the relation of a form not yet
+written is not accepted). The bodies of a CHOOSE form stay as the query has them. Its labels are read in their label scopes; a read of a relation that a form of the rule declares
+names the relation by the form (RELREF, bound by the form's Decl) and its columns by the labels of that form (segments). The `unordered` plan has no walk of these Groups
+(no_groups).
 
 The parts of a RIGID_DET are no set: each is an output slot by its position, and a permutation of the parts changes the QueryHash. They stay as the query has them.
 
@@ -102,9 +105,31 @@ class Body:
 
 
 @dataclasses.dataclass
+class Decl:
+    """The relations that a form of a DEMO_RULE declares: rels, the query's relation tokens, in the order the decoder declares them; before, the count of relations that the
+    query declares before the form. A walk binds each RELREF + token of rels to the relation token that the decoder gives it in the walk's order of the forms."""
+    rels: tuple
+    before: int
+
+
+@dataclasses.dataclass
+class Part:
+    """An item of a Group: a plan (of Fixed, Body, Decl and Group). needs: the RELREF tokens of the relations of other forms that the part reads."""
+    plan: list
+    needs: frozenset = frozenset()
+
+
+@dataclasses.dataclass
+class Group:
+    """A set whose items are parts of a plan: kind 'rules', the DEMO_RULEs of a DEMONSTRATED query, or 'forms', the forms of a DEMO_RULE before its PREDICT clause."""
+    kind: str
+    parts: list
+
+
+@dataclasses.dataclass
 class Query:
     kind: str
-    plan: list  # of Fixed and Body
+    plan: list  # of Fixed, Body, Decl and Group
     marks: dict  # gold label token id -> STAR or CARET
     base: object  # the decoder after the kind token
     gold: list  # the model tokens of the query after the kind token, as written
@@ -158,12 +183,16 @@ def is_sym(s):
 
 # ---------------------------------------------------------------- reading a query
 
-def segments(env, dec_kind, kind, full, colrefs=None):
-    """full: [(token id, model flag)] after the kind token. Returns [('fixed', None, [tokens]) | ('body', body kind, [tokens])]: model tokens and the labels after `*` and `^`.
+def segments(env, dec_kind, kind, full, colrefs=None, demo_info=None):
+    """full: [(token id, model flag)] after the kind token. Returns [('fixed', None, [tokens], place) | ('body', body kind, [tokens], place)]: model tokens and the labels after `*`
+    and `^`. place: ('top',) outside the rules of a DEMONSTRATED query; (r,) for a token of its r-th DEMO_RULE between the rule's forms (DEMO_RULE, a field, the rule's END);
+    (r, f) for a token of the rule's f-th form (ALT_FORM and the kind token first).
     A label stands as its label token plus len(vocabulary) times its label scope: in a DEMONSTRATED query a label token is used again in each scope (the top of the form, each rule,
     each form after ALT_FORM). In a DEMONSTRATED query, the column token of a site of a read of a relation that a RULE or DET form of the same rule declares stands as a column
     reference (COLREF + an index into colrefs, which gets (the labels that the declaring form makes, in their order, the column's position)): that relation's columns are those
-    labels in the order the form makes them, which a reordering of the form's body changes."""
+    labels in the order the form makes them, which a reordering of the form's body changes. A read of a relation that a form of a rule declares stands as RELREF + its token: the
+    token that the decoder declares for it depends on the order of the forms and of the rules. demo_info gets 'decls', {(r, f): [the relation tokens that the form declares]},
+    'before', {(r, f): the count of relations that the query declares before the form}, and 'predict', the places of the PREDICT clauses."""
     pt = writer.start_point(env.run, env.pg, dec_kind, kind)
     segs, cur = [], None
     NV = len(env.kind)
@@ -173,10 +202,18 @@ def segments(env, dec_kind, kind, full, colrefs=None):
     prev = None
     rels, off = {}, {}  # relation token -> the columns (labels) of the RULE or DET form of the rule that declares it; relation token -> the position of its first column at the open atom
     colrefs = {} if colrefs is None else colrefs
+    info = {} if demo_info is None else demo_info
+    decls, before, predict = info.setdefault('decls', {}), info.setdefault('before', {}), info.setdefault('predict', set())
+    local = set()  # the relation tokens that the forms of the rules declare
+    rule = form = -1
+    place = last = ('top',)
     for t, m in full:
         if not m:
             if cur is not None and cur[2] and cur[2][-1] in (STAR, CARET) and env.kind[t] == 'label':
                 cur[2].append(t + NV * scope)
+            elif env.kind[t] == 'relation' and len(last) == 2:  # the decoder declares a relation of the form
+                decls[last].append(t)
+                local.add(t)
             continue
         T = pt.track
         if T.where == 'rule':  # between the forms of a DEMONSTRATED form's rules
@@ -184,40 +221,57 @@ def segments(env, dec_kind, kind, full, colrefs=None):
                 nscopes += 1
                 scope = rule_scope = nscopes
                 rels = {}
-            elif t in form_kinds:
+                rule, form = rule + 1, -1
+                place = (rule,)
+            elif t == demo.get('ALT_FORM') or (t in form_kinds and prev != demo.get('ALT_FORM')):
+                form += 1
+                place = (rule, form)
+                decls[place], before[place] = [], len(local)
+            elif t in form_kinds:  # the kind token after ALT_FORM
+                pass
+            else:  # a field, or the END of the rule or of the query (place after the step)
+                place = (rule,)
+            if t in form_kinds:
                 if prev == demo.get('ALT_FORM'):
                     nscopes += 1
                     scope = nscopes
                 else:
                     scope = rule_scope
+                if t == demo.get('PREDICT'):
+                    predict.add(place)
+        elif not T.sub:
+            place = ('top',)
         prev = t
         is_body = T.where == 'body' or (T.where == 'group' and t not in (SKIP_TOK, END))
         fk = pt.kind  # the kind of the form that holds t
         site = T.atom and T.rtok in rels and not T.rec and T.col is None and t in env.col  # a site's column of a read of a relation that a form of the rule declares
         pt = writer.step_point(pt, t)
+        if T.where == 'rule' and t == END and pt.track.where == 'done':  # the END of the query
+            place = ('top',)
+        last = place
         if T.sub in ('RULE', 'DET') and not T.predict and pt.track.where == 'rule' and len(pt.track.rels) > len(T.rels):  # the form ended, and the decoder declared its relation
             rels[pt.track.rels[-1]] = tuple(L.tok + NV * scope for L in pt.labels.items if not L.hidden and not L.field)  # its columns: the labels it makes and keeps, in order
         if t in rels:  # a read of that relation: where it is per input and the form that reads it is an INIT, a CHOOSE or a RIGID_DET, its column 0 is the Example column
             off[t] = int(env.col_tok.get(len(rels[t])) in pt.ids_)
-        x = t + NV * scope if env.kind[t] == 'label' else t
+        x = t + NV * scope if env.kind[t] == 'label' else RELREF + t if t in local else t
         if site:
             x = COLREF + len(colrefs)
             colrefs[x] = (rels[T.rtok], env.colpos[t] - off[T.rtok], off[T.rtok])
         if is_body and fk != 'CHOOSE':  # a CHOOSE form of a DEMO_RULE stays as written: no gold confirms that its bodies are sets of the QueryHash
             bid = pt.track.body
-            if cur is not None and cur[0] == 'body' and cur[3] == bid:
+            if cur is not None and cur[0] == 'body' and cur[3] == bid and cur[4] == place:
                 cur[2].append(x)
             else:
                 bkind = ('body' if fk in ('RULE', 'DET') else ('key' if pt.track.inkey else 'port') if fk in ('INIT', 'DEMONSTRATED')
                          else ('rigid key' if pt.track.inkey else 'part'))
-                cur = ['body', bkind, [x], bid]
+                cur = ['body', bkind, [x], bid, place]
                 segs.append(cur)
         else:
-            if cur is None or cur[0] != 'fixed':
-                cur = ['fixed', None, [], None]
+            if cur is None or cur[0] != 'fixed' or cur[4] != place:
+                cur = ['fixed', None, [], None, place]
                 segs.append(cur)
             cur[2].append(x)
-    return [(s[0], s[1], s[2]) for s in segs]
+    return [(s[0], s[1], s[2], s[4]) for s in segs]
 
 
 def is_label(env, t):
@@ -226,10 +280,16 @@ def is_label(env, t):
 
 
 COLREF = 1 << 50  # a column reference of segments: COLREF + its index
+RELREF = 1 << 52  # a read of a relation that a form of a DEMO_RULE declares: RELREF + the query's relation token (segments)
+RELCOUNT = 1 << 53  # the key of a naming that holds the count of relations that the walk's forms declared (Decl)
 
 
 def is_col(env, t):
-    return t in env.col or t >= COLREF
+    return t in env.col or COLREF <= t < RELREF
+
+
+def is_rel(env, t):
+    return t in env.rel or RELREF <= t < RELCOUNT
 
 
 def column_token(env, ref, nm):
@@ -295,7 +355,7 @@ def parse_item(env, s, i):
     if t == NOT:
         a, j = parse_atom(env, s, i + 1)
         return Atom((NOT,) + a), j
-    if t in env.rel:
+    if is_rel(env, t):
         a, j = parse_atom(env, s, i)
         return Atom(a), j
     if t in CMP:
@@ -348,27 +408,67 @@ def read_query(env, base, kind, full, gold_hash=None):
         gold_hash = d.query_hash(-1)
     q = Query(kind, [], marks, dec, gold, gold_hash)
     try:
-        for tag, bkind, toks in segments(env, dec.fork(), kind, full, q.colrefs):
+        info = {}
+        placed = []  # (place, plan element)
+        for tag, bkind, toks, place in segments(env, dec.fork(), kind, full, q.colrefs, info):
             s = symbolise(env, toks, marks)
             if tag == 'fixed' or bkind == 'part':  # a RIGID_DET's parts are its output slots by position: the QueryHash depends on their order
-                q.plan.append(Fixed(tuple(s)))
-            elif env.kind[s[0]] == 'proposer':
-                q.plan.append(Fixed(tuple(s)))
+                el = Fixed(tuple(s))
+            elif 0 <= s[0] < len(env.kind) and env.kind[s[0]] == 'proposer':
+                el = Fixed(tuple(s))
             else:
                 items, j = parse_items(env, s, 0, (END,))
                 if j != len(s) - 1:
                     raise ParseError('body ends early')
-                q.plan.append(Body(Set(items, bkind)))
+                el = Body(Set(items, bkind))
+            placed.append((place, el, s))
+        q.plan = demo_plan(placed, info) if kind == 'DEMONSTRATED' else [el for _, el, _ in placed]
         set_needs(q)
     except (ParseError, IndexError) as e:
         q.unsupported = '%s: %s' % (type(e).__name__, e)
-    if kind == 'DEMONSTRATED' and not q.unsupported:
-        q.unsupported = DEMONSTRATED_DEFERRED
     return q
 
 
-DEMONSTRATED_DEFERRED = ('DEMONSTRATED: the decoder takes an atom of its bodies that it refuses at the form\'s END (the safety of the atom\'s mode), so the rule, which takes the least key '
-                         'among the items that the decoder takes, cannot write it')
+def demo_plan(placed, info):
+    """The plan of a DEMONSTRATED query from its placed elements [(place, element, symbolic tokens)] (segments): the elements of its key and inputs, a Group of its rules, and its END.
+    A rule's part is its DEMO_RULE and fields, a Group of its forms before the PREDICT clause (each a Part that starts with its Decl), the PREDICT clause and the rule's END."""
+    plan, rules = [], {}
+    for place, el, s in placed:
+        if place == ('top',):
+            plan.append(el)
+        else:
+            if not rules:
+                plan.append(None)  # the place of the rules' Group
+            rules.setdefault(place[0], []).append((place, el, s))
+    parts = []
+    for r, els in rules.items():
+        head, forms, tail = [], {}, []
+        for place, el, s in els:
+            if len(place) == 2:
+                forms.setdefault(place[1], []).append((el, s))
+            else:
+                (tail if forms else head).append(el)
+        group, last = [], []
+        for f, fe in forms.items():
+            if (r, f) in info['predict']:
+                last.extend(el for el, _ in fe)
+                continue
+            decl = Decl(tuple(info['decls'][(r, f)]), info['before'][(r, f)])
+            own = {RELREF + g for g in decl.rels}
+            needs = frozenset(x for _, s in fe for x in s if RELREF <= x < RELCOUNT and x not in own)
+            group.append(Part([decl] + [el for el, _ in fe], needs))
+        parts.append(Part(head + [Group('forms', group)] + last + tail))
+    return [Group('rules', parts) if el is None else el for el in plan]
+
+
+def elements(plan):
+    """The Fixed, Body and Decl elements of a plan, those of the parts of its Groups included, in the query's order."""
+    for el in plan:
+        if isinstance(el, Group):
+            for p in el.parts:
+                yield from elements(p.plan)
+        else:
+            yield el
 
 
 def labels_of(item):
@@ -403,10 +503,10 @@ def set_needs(q):
                 walk(it.dom.items + it.body.items)
             elif isinstance(it, If):
                 walk(it.test.items + it.then.items + it.els.items)
-    for seg in q.plan:
+    for seg in elements(q.plan):
         if isinstance(seg, Body):
             walk(seg.set.items)
-        else:
+        elif isinstance(seg, Fixed):
             total.update(-x - 1 for x in seg.toks if x < 0)
     q.total = total
     for a in alls:
@@ -432,10 +532,21 @@ def sets_of(q):
                 walk(it.test)
                 walk(it.then)
                 walk(it.els)
-    for seg in q.plan:
+    for seg in elements(q.plan):
         if isinstance(seg, Body):
             walk(seg.set)
+    for g in groups_of(q.plan):
+        out.append((g.kind, len(g.parts)))
     return out
+
+
+def groups_of(plan):
+    """The Groups of a plan, nested ones too."""
+    for el in plan:
+        if isinstance(el, Group):
+            yield el
+            for p in el.parts:
+                yield from groups_of(p.plan)
 
 
 def upper_orders(q):
@@ -517,11 +628,26 @@ def step_syms(env, marks, st, s):
                 forced = d.step(m)[0]
                 nm[g] = next(f for f in forced if kind[f] == 'label')
         else:
-            if x >= COLREF:
+            if x >= RELREF:
+                if x not in nm:
+                    raise Unbound('the relation is not declared')
+                x = nm[x]
+            elif x >= COLREF:
                 x = column_token(env, x, nm)
             out.append(x)
             d.step(x)
     return tuple(out), (d, nm)
+
+
+def bind(env, st, decl):
+    """The state st with the relations of a form's Decl bound: the decoder gives the relations that a query declares the next relation names (`&r` and a number), in the order it
+    declares them, so a relation of the form takes the number it takes in the query, moved by the count of relations that the walk's forms declared before the form less decl.before."""
+    nm = dict(st[1])
+    w = nm.get(RELCOUNT, 0)
+    for g in decl.rels:
+        nm[RELREF + g] = g if w == decl.before else env.V.id('&r%d' % (int(env.V.name(g)[2:]) + w - decl.before))
+    nm[RELCOUNT] = w + len(decl.rels)
+    return (st[0], nm)
 
 
 def step_one(env, st, t):
@@ -532,7 +658,8 @@ def step_one(env, st, t):
 
 def describe(env, item):
     if isinstance(item, Atom):
-        return ' '.join(('C%d' % sum(env.colrefs[t][1:]) if t >= COLREF else env.V.name(t)) if t >= 0 else 'L%d' % (-t - 1) for t in item.toks)
+        return ' '.join(('R' + env.V.name(t - RELREF) if t >= RELREF else 'C%d' % sum(env.colrefs[t][1:]) if t >= COLREF else env.V.name(t)) if t >= 0 else 'L%d' % (-t - 1)
+                        for t in item.toks)
     return type(item).__name__ + str(len(getattr(item, 'branches', ())) or '')
 
 
@@ -875,38 +1002,11 @@ def _ordered(env, q, cap=CAP):
     env.stats.clear()
     env.tie_log = []
     states = {((), ()): ((), (q.base.fork(), {}))}
-    stuck, where, overflow = None, '', False
-    marks = q.marks
     # the base decoder has stepped the kind token
     try:
-        for seg in q.plan:
-            new = {}
-            for toks, st in states.values():
-                if isinstance(seg, Fixed):
-                    t2, st2 = step_syms(env, marks, st, seg.toks)
-                    new[(toks + t2, nm_key(st2[1]))] = (toks + t2, st2)
-                else:
-                    try:
-                        outs = walk_set(env, marks, seg.set, st, 'min', cap=cap, k=lambda s2: after(env, None, s2, END))
-                    except Stuck as e:
-                        stuck, where = e, seg.set.kind
-                        raise
-                    refused = []
-                    for t1, s1 in outs:
-                        try:
-                            s2 = step_end(env, s1)
-                        except Exception as e:  # noqa: BLE001 - the end of the body refused
-                            refused.append(('END', str(e).split('\n')[0][:160]))
-                            continue
-                        new[(toks + t1 + (END,), nm_key(s2[1]))] = (toks + t1 + (END,), s2)
-                    if not new:
-                        stuck, where = Stuck(refused, len(seg.set.items), len(seg.set.items)), seg.set.kind + ' end'
-                        raise stuck
-            if len(new) > cap:
-                raise Overflow()
-            states = new
-    except Stuck:
-        return Ordered([], [], stuck, where, False, env.stats['tie_choices'], [], 0)
+        states = walk_plan(env, q.marks, q.plan, states, cap)
+    except Stuck as e:
+        return Ordered([], [], e, getattr(e, 'where', ''), False, env.stats['tie_choices'], [], 0)
     except Overflow:
         return Ordered([], [], None, '', True, env.stats['tie_choices'], [], 0)
     except Exception as e:  # noqa: BLE001 - a refusal in a fixed part
@@ -919,6 +1019,92 @@ def _ordered(env, q, cap=CAP):
     tied = len(paths)
     best = min(paths)
     return Ordered([best], [paths[best]], None, '', False, env.stats['tie_choices'], [nms[best]], tied)
+
+
+def walk_plan(env, marks, plan, states, cap=CAP):
+    """The states {(tokens, naming key): (tokens, state)} after the elements of a plan, from `states`, under the `ordered` rule. Raises Stuck (with .where, the kind of the set),
+    Overflow, or the decoder's refusal of a fixed part."""
+    for seg in plan:
+        new = {}
+        for toks, st in states.values():
+            if isinstance(seg, Decl):
+                st2 = bind(env, st, seg)
+                new[(toks, nm_key(st2[1]))] = (toks, st2)
+            elif isinstance(seg, Fixed):
+                t2, st2 = step_syms(env, marks, st, seg.toks)
+                new[(toks + t2, nm_key(st2[1]))] = (toks + t2, st2)
+            elif isinstance(seg, Group):
+                for t2, st2 in walk_group(env, marks, seg, st, cap):
+                    new[(toks + t2, nm_key(st2[1]))] = (toks + t2, st2)
+            else:
+                try:
+                    outs = walk_set(env, marks, seg.set, st, 'min', cap=cap, k=lambda s2: after(env, None, s2, END))
+                except Stuck as e:
+                    e.where = getattr(e, 'where', seg.set.kind)
+                    raise
+                refused = []
+                for t1, s1 in outs:
+                    try:
+                        s2 = step_end(env, s1)
+                    except Exception as e:  # noqa: BLE001 - the end of the body refused
+                        refused.append(('END', str(e).split('\n')[0][:160]))
+                        continue
+                    new[(toks + t1 + (END,), nm_key(s2[1]))] = (toks + t1 + (END,), s2)
+                if not new:
+                    e = Stuck(refused, len(seg.set.items), len(seg.set.items))
+                    e.where = seg.set.kind + ' end'
+                    raise e
+        if len(new) > cap:
+            raise Overflow()
+        states = new
+    return states
+
+
+def walk_group(env, marks, group, st, cap=CAP):
+    """[(tokens, state)] of the complete writes of a Group's parts under the `ordered` rule: at each step, the part of least tokens among those that can be written now (a form
+    that reads the relation of a form not yet written cannot); every tie followed. Raises Stuck where no part can follow."""
+    parts = group.parts
+    frontier = {((), ()): ((), st, tuple(range(len(parts))))}
+    for step in range(len(parts)):
+        new = {}
+        why = []
+        for toks, s0, rem in frontier.values():
+            cands = []
+            for idx in rem:
+                p = parts[idx]
+                miss = [x for x in p.needs if x not in s0[1]]
+                if miss:
+                    why.append(('%s %d' % (group.kind, idx), 'reads a relation that no form has declared'))
+                    continue
+                try:
+                    outs = walk_plan(env, marks, p.plan, {((), ()): ((), s0)}, cap)
+                except Overflow:
+                    raise
+                except Stuck as e:
+                    why.append(('%s %d' % (group.kind, idx), 'stuck at %s: %s' % (getattr(e, 'where', ''), '; '.join('%s: %s' % w for w in e.why[:2]))))
+                    continue
+                except Exception as e:  # noqa: BLE001 - a refusal
+                    why.append(('%s %d' % (group.kind, idx), str(e).split('\n')[0][:160]))
+                    continue
+                cands.extend((t2, idx, s2) for t2, s2 in outs.values())
+            if not cands:
+                continue
+            least = min(c[0] for c in cands)
+            kept = [c for c in cands if c[0] == least]
+            if len({c[1] for c in kept}) > 1:
+                env.stats['tie_choices'] += 1
+                env.tie_log.append(group.kind)
+            for t2, idx, s2 in kept:
+                rem2 = tuple(i for i in rem if i != idx)
+                new[(toks + t2, nm_key(s2[1]), rem2)] = (toks + t2, s2, rem2)
+        if not new:
+            e = Stuck(why, step, len(parts))
+            e.where = group.kind
+            raise e
+        if len(new) > cap:
+            raise Overflow()
+        frontier = new
+    return [(toks, s0) for toks, s0, _ in frontier.values()]
 
 
 # ---------------------------------------------------------------- the unordered plan
@@ -1013,8 +1199,15 @@ def gold_item(env, marks, item, st):
     return step_one(env, st, END)
 
 
+def no_groups(q):
+    """Raises where q has a Group (a DEMONSTRATED query): the `unordered` plan has no walk of the orders of its rules and of their forms."""
+    if any(isinstance(el, Group) for el in q.plan):
+        raise ValueError('unsupported: the unordered plan has no walk of the orders of the rules and forms of a DEMONSTRATED query')
+
+
 def unordered_count(env, q, limit=20000):
     """(count or None, exact, states, per set [(kind, items, count or None)]). The count is the product of the counts of the bodies (each from the query's own state at its start)."""
+    no_groups(q)
     env.total = q.total
     env.colrefs = q.colrefs
     env.rcache = {}
@@ -1051,15 +1244,18 @@ def creation_sites(env, toks):
 
 
 def gold_naming(env, q):
+    """The naming (query label -> label token) at the end of the query, along its own order."""
     st = (q.base.fork(), {})
-    for seg in q.plan:
-        if isinstance(seg, Fixed):
+    for seg in elements(q.plan):
+        if isinstance(seg, Decl):
+            st = bind(env, st, seg)
+        elif isinstance(seg, Fixed):
             _, st = step_syms(env, q.marks, st, seg.toks)
         else:
             for it in seg.set.items:
                 st = gold_item(env, q.marks, it, st)
             st = step_one(env, st, END)
-    return st[1]
+    return {g: t for g, t in st[1].items() if g < COLREF}
 
 
 def site_diff(env, q, toks, nm):
@@ -1090,7 +1286,7 @@ def atoms_of(q):
                 walk(it.dom.items + it.body.items)
             elif isinstance(it, If):
                 walk(it.test.items + it.then.items + it.els.items)
-    for seg in q.plan:
+    for seg in elements(q.plan):
         if isinstance(seg, Body):
             walk(seg.set.items)
     return out
@@ -1424,8 +1620,7 @@ def full_of(env, scope_dec, kind, stream):
     for t in stream:
         forced = d.step(t)[0]
         full.append((t, True))
-        if t in (STAR, CARET):
-            full.extend((f, False) for f in forced if env.kind[f] == 'label')
+        full.extend((f, False) for f in forced if (t in (STAR, CARET) and env.kind[f] == 'label') or env.kind[f] == 'relation')
     return full
 
 
@@ -1484,6 +1679,7 @@ class Boundary:
 
 class Unordered:
     def __init__(self, env, q, limit=20000, seconds=10.0):
+        no_groups(q)
         self.env, self.q, self.limit = env, q, limit
         self.nseg = len(q.plan)
         self.bounds = {}
