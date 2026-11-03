@@ -30,7 +30,7 @@ Status: record. Nothing here is built. This contract gives the types of the samp
 | `TaskId` | a task's id | string | |
 | `SplitName` | a split | one of `train`, `dev`, `held` | |
 | `BaseName` | a base table | one of `input`, `ex_input`, `ex_output` | |
-| `Name` | an output of a query | string | for an INIT output, the port's name in `engine/lib/registry.sexpr`; for a RIGID_DET, the part's or the pose's name; for a RULE, DET or CHOOSE, the empty string, for its one output |
+| `Name` | an output of a query | string | for an INIT output, the port's name in `engine/lib/registry.sexpr`; for a RIGID_DET, `slot <n>`, n the part's position in the form's canonical form (`slot <n>.<port>` for a part that reads an instance output), or `pose`; for a RULE, DET or CHOOSE, the empty string, for its one output |
 | `QueryKind` | a query's kind | one of `DET`, `INIT`, `RULE`, `CHOOSE`, `RIGID_DET` | `OUT` is not a value: OUT queries are not target queries |
 
 ## `ParameterizedTable`

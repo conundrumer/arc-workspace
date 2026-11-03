@@ -139,7 +139,7 @@ The field names of a base table or a lib relation (`:P`, `:Col` of `input`) are 
 ### The canonical text
 
 - Drop the query's own label.
-- Write each Reference as the parameterized table it uses: (`QueryHash`, `Name`) of the query that computes it, where the `Name` is the port's name in `engine/lib/registry.sexpr` for an INIT output, the part's or the pose's name for a RIGID_DET, and the empty string for a RULE, DET or CHOOSE. Write a base table by its name. A body applies under every assignment, so a Reference holds no `Assignment`.
+- Write each Reference as the parameterized table it uses: (`QueryHash`, `Name`) of the query that computes it, where the `Name` is the port's name in `engine/lib/registry.sexpr` for an INIT output, `slot <n>` for a RIGID_DET part, n the part's position in the form's canonical form (`slot <n>.<port>` for a part that reads an instance output), or `pose`, and the empty string for a RULE, DET or CHOOSE. Write a base table by its name. A body applies under every assignment, so a Reference holds no `Assignment`.
 - Rename the variables by a labelling that depends only on the join structure of the body, not on the order of the atoms.
 - Write a computed parameterized table's field as the field it came from in the query that computes the parameterized table, not by its label.
 - Drop `*`. It follows from the join structure everywhere.
