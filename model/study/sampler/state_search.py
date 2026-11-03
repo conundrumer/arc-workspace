@@ -11,7 +11,7 @@ The kit gives the rest:
     TableVector), and superdag.Pool.add_query makes one TableAt per table;
   - the kept-scope reuse (live.SCOPE_REUSE): a state's program is given in append order, its parent's plus the query that led to it, so
     a child's scope extends its parent's by one query.
-The kind is drawn uniformly from the kinds the decoder admits. With WRITER=1 the writer (writer.write) drafts the query, one draw per choice from
+The kind is drawn uniformly from the kinds the decoder admits, apart from OUT_OF_SCOPE. With WRITER=1 the writer (writer.write) drafts the query, one draw per choice from
 search.DISTRIBUTION (WRITER_TREE where it loads), and the query's bits are the draws' log chance; with WRITER unset, the pool's form drawer drafts it
 and records no bits.
 
@@ -39,6 +39,7 @@ SCHEMA = 4
 SCORE = None
 DRAFT_LOG = os.environ.get('STATE_DRAFT_LOG')  # debug: a JSON line per draft with its whole program, written before the draft's close
 EXPANSIONS_BYTES = 64 << 20  # the most <out>.expansions holds, under the supervisor's limit on a file; past it the records stop and the search goes on
+OUT_OF_SCOPE = ('DEMONSTRATED',)  # kinds the search never drafts
 WRITER = os.environ.get('WRITER', '0') == '1'  # the writer (writer.write, with search.DISTRIBUTION) drafts each query, in place of Run.form's per-atom draw
 
 
@@ -315,7 +316,7 @@ def expand(pool, deadline):
         c['state:replayed queries'] += len(texts)
         dec, pg = run.scope(texts)
         c['state:seconds scope'] += time.perf_counter() - t0
-        kinds = [k for k in live.KIND_TOK if (WRITER or run.makes(k)) and dec.admits([live.KIND_TOK[k]])[0]]
+        kinds = [k for k in live.KIND_TOK if k not in OUT_OF_SCOPE and (WRITER or run.makes(k)) and dec.admits([live.KIND_TOK[k]])[0]]
         kind = run.rng.choice(kinds)
         t0 = time.perf_counter()
         global _REC
