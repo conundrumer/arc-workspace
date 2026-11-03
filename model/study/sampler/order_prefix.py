@@ -26,7 +26,10 @@ labels that are bound there only later (a label made in between; in a later bran
 input site of a lib relation takes a label that is new there. So the first two tests keep their tokens, and the test at the close decides. They keep a free relation's tokens too where a
 `^` label was made in between.
 
-A DEMONSTRATED query, a proposer body, the group tokens of an INIT or a RIGID_DET and the parts of a RIGID_DET have no sets: the rule keeps every id there. A test that passes SECONDS keeps the token.
+In a DEMONSTRATED query, the bodies of its key and inputs and of each form of a rule are sets as above, each read in its label scope (Rule._info). Its rules, and the forms of a rule
+before its PREDICT clause, are sets too (see demo_keep): a rule's tokens are compared with each earlier rule's as they come, and a form is compared with each earlier form of its rule
+where it closes.
+A proposer body, a CHOOSE form, the group tokens of an INIT or a RIGID_DET and the parts of a RIGID_DET have no sets: the rule keeps every id there. A test that passes SECONDS keeps the token.
 """
 import bisect
 import collections
@@ -71,21 +74,21 @@ class _Or:
         self.branches: list[tuple[int, int]] = []
 
 
-def parse(core, kind, tokens):
+def parse(core, kind, tokens, start=0):
     """The open sets of a query's model tokens (the kind token first), outermost first: a list of _List and _Or; [] where no set is open (between the bodies of an INIT or a RIGID_DET,
-    after a body's END); None for a proposer body."""
+    after a body's END); None for a proposer body. start: the index of the kind token of the form, where the form is a form of a DEMO_RULE, or the query's kind token."""
     rel, col, lab = core.is_rel, core.is_column, core.is_label
     ALLT, IFT, ONET = core.ALL, core.IF, core.ONE
     starts = (NOT, OR_TOK, ALLT, IFT, ONET)
     stack: list[Any] = []  # of _List and _Or
     if kind in ('RULE', 'DET'):
-        if len(tokens) > 1 and core.kind[tokens[1]] == 'proposer':
+        if len(tokens) > start + 1 and core.kind[tokens[start + 1]] == 'proposer':
             return None
-        stack.append(_List('body', 1))
+        stack.append(_List('body', start + 1))
     atom = one = notwait = due = rec = False
     need = 0
     decisions = 0  # the group-level decisions so far (a body or SKIP each); a RIGID_DET's parts follow its first two
-    for i in range(1, len(tokens)):
+    for i in range(start + 1, len(tokens)):
         t = tokens[i]
         if not stack:
             if kind in ('RULE', 'DET'):
@@ -193,6 +196,9 @@ class Rule:
         self.label_idx = {t: k for k, t in self.label_tok.items()}
         self.stats = collections.Counter()
         self.free = self.core.is_rel & np.array([k not in writer.LIB_KINDS for k in self.core.kind])  # relations whose sites all take a new label (a lib relation's input sites take bound labels alone)
+        self.demo = dict(live.DEMO_TOK)
+        self.form_starts = frozenset(self.core.form_kinds) | {self.demo[k] for k in ('ALT_FORM',) if k in self.demo}  # the tokens that start a form of a DEMO_RULE
+        self.made = {}  # id of a decoder of a DEMONSTRATED query -> (the decoder, the count of relations that the query declared before it): decls
 
     # ---- the facts of a point
 
@@ -203,13 +209,42 @@ class Rule:
         return got
 
     def _info(self, kind, tokens, T):
-        if T.form or kind not in ('RULE', 'DET', 'INIT', 'RIGID_DET'):
+        """The open sets of the form that holds the next token (parse), mk: the indexes of its `*` and `^`, off: the index of the label that its first `*` or `^` makes, fields: the
+        count of the labels that it reads from outside it (a DEMO_RULE's fields), base: the index of its kind token. In a DEMONSTRATED query, the form is its key and inputs or a form
+        of a DEMO_RULE (a PREDICT clause as a RULE); None in a CHOOSE form, between the forms and in the PREDICT clause's answers."""
+        base, off, fields = 0, 0, 0
+        if T.form:
+            if T.where not in ('body', 'group', 'start', 'head') or T.sub == 'CHOOSE':
+                return None
+            if T.sub:
+                base, kind = T.base, T.sub
+                rs = max(i for i in range(base) if tokens[i] == self.demo['DEMO_RULE'])
+                fields, off = self.label_offset(tokens, rs, base)
+            else:
+                kind = 'INIT'  # the key and inputs of a DEMONSTRATED form are bodies of ports, as an INIT's
+        elif kind not in ('RULE', 'DET', 'INIT', 'RIGID_DET'):
             return None
-        stack = parse(self.core, kind, tokens)
+        stack = parse(self.core, kind, tokens, base)
         if stack is None:
             return None
-        mk = [i for i, t in enumerate(tokens) if t in (STAR, CARET)]
-        return dict(stack=stack, mk=mk)
+        mk = [i for i in range(base + 1, len(tokens)) if tokens[i] in (STAR, CARET)]
+        return dict(stack=stack, mk=mk, off=off, fields=fields, base=base)
+
+    def label_offset(self, tokens, rs, fs):
+        """(fields, off) of the form of a DEMO_RULE whose first token is at fs, the rule's DEMO_RULE at rs: a rule is a label scope, its fields take its first labels and each `*` and `^`
+        of its forms the next one; a form after ALT_FORM is a label scope of its own, from the first label, and the rule's later forms go on from where the rule's labels stood."""
+        alt = self.demo.get('ALT_FORM')
+        if tokens[fs - 1] == alt or tokens[fs] == alt:
+            return 0, 0
+        starts = [i for i in range(rs + 1, fs) if tokens[i] in self.form_starts and tokens[i - 1] != alt]
+        fields = sum(tokens[i] == STAR for i in range(rs + 1, starts[0] if starts else fs))
+        off, in_alt = 0, False
+        for i in range(rs + 1, fs):
+            if i in starts:
+                in_alt = tokens[i] == alt
+            if tokens[i] in (STAR, CARET) and not in_alt:
+                off += 1
+        return fields, off
 
     @staticmethod
     def made_before(info, i):
@@ -221,9 +256,11 @@ class Rule:
         return any(tokens[info['mk'][k]] == CARET for k in range(lo, hi))
 
     def rendered(self, info, tokens, a, b, mj):
-        """(tokens, assign) of tokens[a:b] at a state with mj labels made: labels of index mj or above are named anew (assign: label index -> new index)."""
+        """(tokens, assign) of tokens[a:b] at a state with mj labels made: labels of index mj or above are named anew (assign: label index -> new index). A label index counts
+        from the form's first label (info['off']); a field has an index below 0."""
         out, assign, nxt = [], {}, mj
         lab = self.core.is_label
+        off = info['off']
         for p in range(a, b):
             t = tokens[p]
             if t in (STAR, CARET):
@@ -231,11 +268,11 @@ class Rule:
                 nxt += 1
                 out.append(t)
             elif lab[t]:
-                k = self.label_idx[t]
+                k = self.label_idx[t] - off
                 if k < mj:
                     out.append(t)
                 elif k in assign:
-                    out.append(self.label_tok[assign[k]])
+                    out.append(self.label_tok[off + assign[k]])
                 else:
                     assign[k] = nxt
                     nxt += 1
@@ -246,11 +283,11 @@ class Rule:
 
     def render_tok(self, info, tokens, t, mj, assign):
         if self.core.is_label[t]:
-            k = self.label_idx[t]
+            k = self.label_idx[t] - info['off']
             if k < mj:
                 return t
             if k in assign:
-                return self.label_tok[assign[k]]
+                return self.label_tok[info['off'] + assign[k]]
             return tokens[info['mk'][k]]
         return t
 
@@ -258,9 +295,17 @@ class Rule:
 
     def keep(self, pt, ids):
         out = np.ones(len(ids), bool)
-        T = pt.track
-        if T.where != 'body' or not len(ids):
+        if not len(ids):
             return out
+        if pt.track.form:
+            out &= self.demo_keep(pt, ids)
+        if pt.track.where == 'body':
+            out &= self.body_keep(pt, ids)
+        return out
+
+    def body_keep(self, pt, ids):
+        out = np.ones(len(ids), bool)
+        T = pt.track
         info = self.info(pt)
         if not info or not info['stack']:
             return out
@@ -302,7 +347,117 @@ class Rule:
         e = closing & out & (ids == END)
         if e.any() and not self.end_ok(pt, info):
             out[e] = False
+        e = closing & out & (ids == END)
+        if e.any() and T.sub in ('RULE', 'DET') and not T.predict and len(info['stack']) == 1 and not self.form_ok(pt, pt.tokens + (END,)):  # the END of a form of a DEMO_RULE
+            out[e] = False
         return out
+
+    # ---- the rules and forms of a DEMONSTRATED query
+    #
+    # The rules of a DEMONSTRATED query are a set, and the forms of a rule before its PREDICT clause are a set (order.Group). The key of a rule or a form is its model tokens.
+    # A rule is a label scope, and the decoder accepts it at any state of the rules; its relations take the next names (`&r` and a number) where it declares them. So a rule x,
+    # written at the state before an earlier rule p, is x's tokens with each relation that x declares named as the one the decoder declares at its place after p's start; the
+    # rule removes a token of x after which those tokens fall below p's tokens. A form x of a rule, written at the state before an earlier form p of the rule, is refused where x
+    # reads a relation that p or a form after p declares; else it is x's tokens with each label that x makes moved to the labels from p's first one. A form that fails this
+    # against an earlier form is removed at its END; an INIT, a RIGID_DET or a CHOOSE form, which has no END of its own, at the tokens after it.
+
+    def decls(self, pt, i):
+        """The count of relations that the query of pt declares with its first i tokens (1 <= i <= len(pt.tokens)). Kept by decoder (self.made); a count that is not kept comes
+        from the steps after the last kept one."""
+        n = len(pt.tokens)
+        decs, d, back = [None] * (n + 1), pt.dec, pt.back
+        for k in range(n, 0, -1):
+            decs[k] = d
+            if k > 1:
+                d, back = back
+        if len(self.made) > 20000:
+            self.made.clear()
+        self.made[id(pt.dec)] = (pt.dec, len(pt.track.rels))
+        got = self.made.get(id(decs[i]))
+        if got is not None and got[0] is decs[i]:
+            return got[1]
+        j = i
+        while j > 1 and not ((e := self.made.get(id(decs[j]))) is not None and e[0] is decs[j]):
+            j -= 1
+        c = self.made[id(decs[j])][1] if j > 1 else 0
+        for k in range(j, i):
+            c += sum(self.core.kind[x] == 'relation' for x in decs[k].fork().step(pt.tokens[k])[0])
+            self.made[id(decs[k + 1])] = (decs[k + 1], c)
+        return c
+
+    def rule_starts(self, tokens):
+        return [i for i, t in enumerate(tokens) if t == self.demo['DEMO_RULE']]
+
+    def form_starts_of(self, tokens, rs, n):
+        """The indexes of the starts of the forms of the rule at rs, before index n: ALT_FORM, or a form's kind token that does not follow ALT_FORM."""
+        alt = self.demo.get('ALT_FORM')
+        return [i for i in range(rs + 1, n) if tokens[i] in self.form_starts and tokens[i - 1] != alt]
+
+    def demo_keep(self, pt, ids):
+        out = np.ones(len(ids), bool)
+        tokens = pt.tokens
+        n = len(tokens)
+        starts = self.rule_starts(tokens)
+        if not starts:
+            return out
+        self.decls(pt, n)
+        xs = starts[-1]
+        rels = pt.track.rels
+        if len(starts) > 1:
+            ax = self.decls(pt, xs)
+            local = {r: k for k, r in enumerate(rels[ax:])}  # x's relations, by their place among them
+            for ps, pe in zip(starts, starts[1:]):
+                P = tokens[ps:pe]
+                if n - xs >= len(P):
+                    continue
+                ap = self.decls(pt, ps)
+                moved = lambda t: rels[ap + local[t]] if t in local else t  # noqa: E731
+                X = tuple(moved(t) for t in tokens[xs:n])
+                if X != P[:len(X)]:
+                    continue
+                bound = P[len(X)]
+                low = np.array([moved(int(t)) < bound for t in ids], bool)
+                if low.any():
+                    self.stats['rule below'] += 1
+                out &= ~low
+        if pt.track.where == 'rule' and n - 1 > xs:  # the form before this point has ended: an INIT, a RIGID_DET or a CHOOSE has no END of its own
+            fs = self.form_starts_of(tokens, xs, n)
+            if fs:
+                k = tokens[fs[-1] + 1] if tokens[fs[-1]] == self.demo.get('ALT_FORM') else tokens[fs[-1]]
+                if self.core.form_kinds.get(k) in ('INIT', 'RIGID_DET', 'CHOOSE') and k != self.demo.get('PREDICT') and not self.form_ok(pt, tokens):
+                    out[:] = False
+        return out
+
+    def form_ok(self, pt, toks):
+        """Whether the last form of the current DEMO_RULE, closed by toks (pt's tokens and, where it ends with it, the next token), passes the order of the rule's forms against
+        each earlier form of the rule."""
+        key = ('order_prefix_form', len(toks))
+        got = pt.memo.get(key)
+        if got is None:
+            got = pt.memo[key] = self._form_ok(pt, toks)
+        return got
+
+    def _form_ok(self, pt, toks):
+        xs = self.rule_starts(toks)[-1]
+        fs = self.form_starts_of(toks, xs, len(toks))
+        if len(fs) < 2:
+            return True
+        x0 = fs[-1]
+        rels = pt.track.rels
+        _, offx = self.label_offset(toks, xs, x0)
+        X = toks[x0:]
+        ax = self.decls(pt, x0)
+        for ps, pe in zip(fs, fs[1:]):
+            later = set(rels[self.decls(pt, ps):ax])
+            if any(t in later for t in X):  # x reads a relation of p or of a form after p: the decoder refuses x before p
+                continue
+            _, offp = self.label_offset(toks, xs, ps)
+            lab = self.core.is_label
+            moved = tuple(self.label_tok[self.label_idx[t] - offx + offp] if lab[t] and self.label_idx[t] >= offx else t for t in X)
+            if moved < toks[ps:pe]:
+                self.stats['form below'] += 1
+                return False
+        return True
 
     def operands(self, pt, ids):
         """The second operand of `=` or `!=` after a label: the operands of a symmetric comparison of two labels stand in the order of their label tokens, and a new label stands first."""
@@ -373,7 +528,7 @@ class Rule:
         for p in range(a, b):
             t = tokens[p]
             if t in (STAR, CARET):
-                out.append(order.sym(self.label_tok[self.made_before(info, p)]))
+                out.append(order.sym(self.label_tok[info['off'] + self.made_before(info, p)]))
             elif self.core.is_label[t]:
                 out.append(order.sym(t))
             else:
@@ -383,12 +538,13 @@ class Rule:
     def setup(self, info, tokens, b):
         """(marks, total) of the labels of tokens[:b], and the env ready for a test."""
         env = self.env
-        marks = {self.label_tok[k]: tokens[i] for k, i in enumerate(info['mk']) if i < b}
+        off = info['off']
+        marks = {self.label_tok[off + k]: tokens[i] for k, i in enumerate(info['mk']) if i < b}
         total = collections.Counter()
-        for p in range(1, b):
+        for p in range(info['base'] + 1, b):
             t = tokens[p]
             if t in (STAR, CARET):
-                total[self.label_tok[self.made_before(info, p)]] += 1
+                total[self.label_tok[off + self.made_before(info, p)]] += 1
             elif self.core.is_label[t]:
                 total[t] += 1
         env.total = total
@@ -398,7 +554,10 @@ class Rule:
         return marks, total
 
     def naming(self, info, i):
-        return {self.label_tok[k]: self.label_tok[k] for k in range(self.made_before(info, i))}
+        """The labels bound before token index i: the fields, and the labels that the form made before i."""
+        nm = {self.label_tok[k]: self.label_tok[k] for k in range(info['fields'])}
+        nm.update((self.label_tok[info['off'] + k], self.label_tok[info['off'] + k]) for k in range(self.made_before(info, i)))
+        return nm
 
     def set_needs(self, item, total):
         if isinstance(item, order.All):
@@ -504,7 +663,7 @@ class Rule:
     # ---- floors
 
     def has_sets(self, pt):
-        """Whether the query of pt has sets that the rule orders: False for a DEMONSTRATED query and a proposer body, where the rule keeps every id."""
+        """Whether the form of pt has sets that the rule orders: False for a proposer body, and in a DEMONSTRATED query outside the bodies of its key, inputs and forms."""
         return self.info(pt) is not None
 
     @staticmethod
@@ -515,8 +674,8 @@ class Rule:
 
     def floors(self, pt, t=None):
         """[Floor] of the open sets of pt, outermost first; with t, of the point after token t (no step is made). [] where no set is open (after a body's END, between the bodies
-        of an INIT or a RIGID_DET); None where the query has no sets (has_sets)."""
-        if not self.has_sets(pt):
+        of an INIT or a RIGID_DET); None where the query has no sets (has_sets), and in a DEMONSTRATED query."""
+        if pt.track.form or not self.has_sets(pt):
             return None
         tokens = pt.tokens if t is None else pt.tokens + (int(t),)
         info = self.info(pt) if t is None else self._info(pt.kind, tokens, pt.track)
