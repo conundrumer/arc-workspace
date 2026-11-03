@@ -1,6 +1,6 @@
 """The dev row store: for one task, each table once by its TableHash with its Set of Rows, and each extension entry (function, Name, Assignment)
-mapped to the TableHash of that entry. The union replay's map mode writes it from today's export; the new export, asked for `rows=True`, writes the
-same records in place of this writer, and the feature build reads them unchanged.
+mapped to the TableHash of that entry. `rows_replay.py` writes it on the engine and sampler code of a writer kit release; the reach kit's map mode
+(`build_map.py --rows`) writes it on the reach kit. The feature build reads either.
 
 One file per task, `OUTD/SET/rows/<task>.jsonl.gz`, written to a temp file and renamed. It holds no feature, so a change of a feature re-runs
 `build_tables.py` over the store and never the replay. Lines:
@@ -12,7 +12,8 @@ One file per task, `OUTD/SET/rows/<task>.jsonl.gz`, written to a temp file and r
             `aliases`, every (union_key, text) it stands for, its own first
   table     one per distinct TableHash: hash, types, rows (one Rows each: ex, n, cells, boxes). Two entries with one hash share it
   entry     one per (table, assignment): function, name, o, assignment [[DET id, value hash]], hash, kind (content or counts_only), types,
-            examples [[kind, index, distinct, rows, hash]] (the example keys), legacy (today's table_key, for the check of the hash)
+            examples [[kind, index, distinct, rows, hash]] (the example keys), legacy (the reach kit's table_key, for the check of the hash; null
+            where the writer has no reach kit)
   given     as entry, for input, ex_input and ex_output
   footer    counts
 
@@ -46,6 +47,7 @@ NO_EXAMPLE = -1
 PROBE = ['(RULE &r0 (input (:P *P) (:Col *Col)))', '(DET &r1 (ex_input (:E *E) (:P *P) (:Col *Col)))', '(DET &r2 (ex_output (:E *E) (:P *P) (:Col *Col)))']
 GIVEN = ['input', 'ex_input', 'ex_output']
 LABEL = re.compile(r'&r(\d+)')
+SLOT_NO = re.compile(r'(?:slot |&r)(\d+)')  # a DET of an assignment named by its slot, as the engine names it where it gives no QueryHash
 
 type AssignKey = tuple[tuple[str, str], ...]
 
@@ -235,7 +237,7 @@ def example_key_of(code: int) -> tuple[int, int]:
 class RowSink:
     """Takes the tables of the union replay, program by program, and writes the task's row store. `D` is the kit's `superdag` module."""
 
-    def __init__(self, D: Any, task: str, rec: dict, task_path: str, out: str, src: str | None):
+    def __init__(self, D: Any, task: str, rec: dict, task_path: str, out: str, src: str | None, split: str | None = None):
         TH.require_value_idents()
         arclog = DH.arclog
         self.D, self.M, self.task, self.out = D, D.M, task, out
@@ -254,7 +256,7 @@ class RowSink:
         fd, self.tmp = tempfile.mkstemp(dir=os.path.dirname(out), prefix=os.path.basename(out) + '.')
         os.close(fd)
         self.f = GzWriter(self.tmp)
-        self.put(dict(t='header', task=task, split=os.environ.get('ARC_UNION_ROWS_SPLIT'), src=src, version=VERSION, hash_source='engine', hash_version='engine@' + DH.VERSION.split('+')[0], code=code_sha(),
+        self.put(dict(t='header', task=task, split=split if split is not None else os.environ.get('ARC_UNION_ROWS_SPLIT'), src=src, version=VERSION, hash_source='engine', hash_version='engine@' + DH.VERSION.split('+')[0], code=code_sha(),
                       query_hash_version=DH.VERSION, engine_feature_names=list(arclog.table_feature_names()),
                       engine_features_version=arclog.table_features_version(), n_train=self.n_train, n_test=self.n_test, max_assignments=MAX_ASSIGNMENTS,
                       ident_source=os.environ.get('ARCLOG_IDENT_SOURCE')))
@@ -264,11 +266,11 @@ class RowSink:
 
     # ------------------------------------------------------------------ one program
 
-    def failed(self, prog: dict, err: str) -> None:
-        """A program that the replay refused: its functions get no entry."""
+    def failed(self, prog: dict, err: str, start: int = 0) -> None:
+        """A program that the replay refused at its form `start`: the functions of that form and the forms after it get no entry from it."""
         self.errors += 1
         self.counts['programs_failed'] = self.counts.get('programs_failed', 0) + 1
-        self.put(dict(t='error', case=prog['cases'][0], union_keys=[k for k in prog['form_keys'] if k is not None], error='program does not replay: ' + err))
+        self.put(dict(t='error', case=prog['cases'][0], union_keys=[k for k in prog['form_keys'][start:] if k is not None], error='program does not replay: ' + err))
 
     def hashes(self, prog: dict, forms: list[str]) -> list[str | None]:
         """The FunctionHash of each form of the program, over the lines before it. Two forms with one union key can have two (they differ in a column
@@ -291,13 +293,22 @@ class RowSink:
     def program(self, prog: dict, forms: list[str], collect: list, names: dict[str, str]) -> None:
         """Writes the functions of the program that no earlier program gave. `collect`: the `step_tables` result of each form, in the kit's layout;
         SHADOW holds each one by assignment, with rows."""
+        steps: list[tuple[Any, list[int], Any]] = []
+        for ct in collect:
+            got = SHADOW.get(id(ct))
+            steps.append((got if got is None or isinstance(got[1], Exception) else got[1], [s for s, _ in self.D.relation_tables(ct)], ct))
+        self.program_steps(prog, forms, steps)
+
+    def program_steps(self, prog: dict, forms: list[str], steps: list[tuple[Any, list[int], Any]]) -> None:
+        """Writes the functions of the program that no earlier program gave. `steps`: for each form, (its `step_tables` result by assignment, with
+        rows, or the reason it has none; the relation slots it defines; its result in the kit's layout, for the `legacy` key, or None)."""
         keys, fids = prog['form_keys'], self.hashes(prog, forms)
         slot_fid: dict[int, str] = {}  # slot -> the QueryHash of the form that defines it, in this program
-        for i, ct in enumerate(collect):
-            for s, _ in self.D.relation_tables(ct):
+        for i, (_, slots, _) in enumerate(steps):
+            for s in slots:
                 if i < len(fids) and (f := fids[i]) is not None:
                     slot_fid[s] = f
-        for i, ct in enumerate(collect):
+        for i, (export, _, legacy) in enumerate(steps):
             fid = fids[i] if i < len(fids) else None
             if fid is None:
                 continue
@@ -307,13 +318,18 @@ class RowSink:
             self.aliases[fid] = {(keys[i], forms[i])}
             self.done.add(fid)
             try:
-                got = SHADOW.get(id(ct))
-                if got is None or isinstance(got[1], Exception):
-                    raise TE.ExportError('no export by assignment: %s' % (got[1] if got else 'not replayed'))
-                self.function(prog, forms[i], keys[i], fid, ct, got[1], slot_fid)
+                if export is None or isinstance(export, tuple):
+                    raise TE.ExportError('no export by assignment: %s' % (export[1] if export else 'not replayed'))
+                self.function(prog, forms[i], keys[i], fid, legacy, export, slot_fid)
             except Exception as e:  # noqa: BLE001
                 self.errors += 1
                 self.put(dict(t='error', function=fid, error='%s: %s' % (type(e).__name__, str(e)[:300])))
+
+    def aliases_of(self, prog: dict, forms: list[str]) -> None:
+        """The alias lines of a program whose functions earlier programs gave all, with no replay."""
+        for i, fid in enumerate(self.hashes(prog, forms)):
+            if fid is not None and fid in self.done:
+                self.alias(fid, prog['form_keys'][i], forms[i])
 
     def fid_dets(self, fid: str) -> set[str]:
         """The DETs in the use closure of a function, by QueryHash, its own included where it is one."""
@@ -350,15 +366,14 @@ class RowSink:
         other = {a.query for t in export for a in t.at if a.query} - {fid}
         if other:  # the export computes a table of a query other than the one the program hashes to
             raise TE.ExportError('the export names the query %s, not %s' % (sorted(other)[0], fid))
-        legacy_tables = self.D.relation_tables(legacy)
+        legacy_tables = self.D.relation_tables(legacy) if legacy is not None else []  # the kit's merge key, where the caller gives the kit's layout
         for o, t in enumerate(export):
-            one = legacy_keys = None
+            legacy_keys = None
             if o < len(legacy_tables) and legacy_tables[o][0] == t.slot:
                 try:
                     legacy_keys = repr(self.D.table_key(self.D.S.parse_table(self.D.OneTable(legacy, legacy_tables[o][1])))[0])
                 except self.M.Fail:
                     legacy_keys = None
-            del one
             seen, kept, types_full, stopped = self.entries(fid, o, t, slot_id, legacy_keys, 'entry')
             outputs.append(dict(o=o, name=t.name, types=types_full, labels=t.labels, seen=seen, kept=kept, stopped=stopped))
             self.counts['tables'] += 1
@@ -380,8 +395,18 @@ class RowSink:
             self.counts['entries'] += 1
         return len(t.at), min(len(t.at), MAX_ASSIGNMENTS), types_full, any(a.capped for a in t.at)
 
+    @staticmethod
+    def det_id(name: str, query: str | None, slot_id: dict[int, str]) -> str:
+        """The id of a DET of an assignment: the QueryHash that the export gives, else that of the form that defines its slot, else 'slot <n>' for
+        a slot that no form of the program defines (a DET of the probe), else its name (a base DET)."""
+        if query:
+            return query
+        m = SLOT_NO.fullmatch(name)
+        return slot_id.get(int(m[1]), 'slot ' + m[1]) if m else name
+
     def entry(self, fid: str, o: int, t: TE.ExportTable, at: TE.At, slot_id: dict[int, str], types_full: list[str], native: bool, legacy: str | None, kind: str) -> None:
-        pairs = sorted((slot_id.get(int(d.split()[-1]), d), v) for d, v in at.dets)  # the DET by FunctionHash, its value by the engine's value hash
+        queries = at.det_queries if kind != 'given' else []  # a given table's DETs are the probe's, named by slot
+        pairs = sorted((self.det_id(d, queries[k] if k < len(queries) else None, slot_id), v) for k, (d, v) in enumerate(at.dets))  # the DET by QueryHash, its value by the engine's value hash
         r: dict[str, Any] = dict(t=kind, function=fid, o=o, name=t.name, assignment=[list(p) for p in pairs], types=types_full,
                                  legacy=legacy, engine_features=at.features)
         ex_at = sum(TH.WIDE.get(x, 1) for x in t.types[:t.types.index('Example')]) if native else -1
@@ -418,6 +443,12 @@ class RowSink:
         self.put(r)
 
     # ------------------------------------------------------------------ the given tables
+
+    def given_steps(self, cts: list) -> None:
+        """Writes the entries of the given tables from the `step_tables` results by assignment, with rows, of the probe program PROBE."""
+        for name, ct in zip(GIVEN, cts):
+            for o, t in enumerate(TE.read_export(self.M, ct)):
+                self.entries(name, o, t, {}, None, 'given')
 
     def given(self, run: Any) -> None:
         """Replays a probe program of three functions that copy the given tables, and writes their entries."""

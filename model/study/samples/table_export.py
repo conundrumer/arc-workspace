@@ -3,7 +3,7 @@
 `arclog.step_tables(..., by_assignment=True, rows=True)` writes a row of `tables` for each table at each of its assignments: `query` (the
 engine's QueryHash, `StudyProgram.query_hash`; `has_query` tells whether the row has one), `name` (the output Name), `hash` (the
 TableHash), `hashed`, `capped` and `features` (the engine's features); the part `assignments` (for each such row, each DET it depends on, by relation
-name, with the value hash of its value); the part `example_keys`; and `entries`, the TableRows of the row of `tables`, one entry for each example and
+name, with the value hash of its value, and, where the export gives `det_query`, the DET's QueryHash); the part `example_keys`; and `entries`, the TableRows of the row of `tables`, one entry for each example and
 constraint model, with the full rows. If the export changes,
 only `read_export` changes: it must give the same `ExportTable`s.
 
@@ -42,6 +42,7 @@ class At:
     dets: list[tuple[str, str]]  # (the DET's relation name, the value hash of its value)
     entries: list[Entry]
     keys: list[tuple[int, int, int, int, int]]  # (kind, index, distinct, rows, hash) of each example
+    det_queries: list[str | None] = field(default_factory=list)  # the QueryHash of each DET of `dets`, 32 hex digits, None for a base DET; empty where the export gives no `det_query`
 
 
 @dataclass
@@ -85,6 +86,11 @@ def read_export(M: Any, ct: Any) -> list[ExportTable]:
     dets: dict[int, list[tuple[str, str]]] = {}
     for q in range(len(at_t)):
         dets.setdefault(int(at_t[q]), []).append((str(at_d[q]), at_v[q * 16:q * 16 + 16].hex()))
+    det_queries: dict[int, list[str | None]] = {}
+    if 'det_query' in ct.assignments:
+        at_q, at_has = bytes(memoryview(ct.assignments['det_query']).cast('B')), M.col(ct, 'assignments', 'has_det_query')
+        for q in range(len(at_t)):
+            det_queries.setdefault(int(at_t[q]), []).append(hex_of(at_q[q * 16:q * 16 + 16]) if at_has[q] else None)
     keys: dict[int, list[tuple[int, int, int, int, int]]] = {}
     for q in range(len(kt)):
         keys.setdefault(int(kt[q]), []).append((int(kk[q]), int(ki[q]), int(kd[q]), int(kr[q]), int(kh[q])))
@@ -113,7 +119,7 @@ def read_export(M: Any, ct: Any) -> list[ExportTable]:
                                 boxes[i, boxcols[c]] = (V[k], V[k + 1])
             entries.append(Entry(int(ex[e]), int(ei[e]), int(em[e]), complete, cnt, rows, boxes))
         at = At(hex_of(df[r * 16:r * 16 + 16]) if has_def[r] else None, hex_of(hs[r * 16:r * 16 + 16]) if hashed[r] else None, bool(capped[r]),
-                [float(x) for x in feats[r]], dets.get(r, []), entries, keys.get(r, []))
+                [float(x) for x in feats[r]], dets.get(r, []), entries, keys.get(r, []), det_queries.get(r, []))
         t = tables.setdefault(int(tnum[r]), ExportTable(int(rel[r]), str(T['name'][r]), [str(x) for x in T['column_labels'][r]], types))
         t.at.append(at)
     return list(tables.values())
