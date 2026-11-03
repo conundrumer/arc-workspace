@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-backward-from-out-content-heldout37'  # the data folder
 sys.path.insert(0, HERE)
 import backward_edges as E  # noqa: E402
 import next_form_facts as F  # noqa: E402

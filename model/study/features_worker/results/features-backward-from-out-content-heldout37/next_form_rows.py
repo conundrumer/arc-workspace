@@ -21,7 +21,7 @@ import time
 import numpy as np
 from scipy import ndimage as ndi
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-backward-from-out-content-heldout37'  # the data folder
 sys.path.insert(0, HERE)
 import shape_facts as F  # noqa: E402
 

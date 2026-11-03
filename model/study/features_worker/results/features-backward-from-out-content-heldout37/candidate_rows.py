@@ -25,7 +25,7 @@ import time
 
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-backward-from-out-content-heldout37'  # the data folder
 sys.path.insert(0, HERE)
 import next_form_rows as R  # noqa: E402
 from next_form_rows import M, PR, S, arclog, live  # noqa: E402

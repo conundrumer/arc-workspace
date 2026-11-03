@@ -10,7 +10,7 @@ import math
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-backward-from-out-content-heldout37'  # the data folder
 sys.path.insert(0, HERE)
 import tune as T  # noqa: E402
 import backward_edges as E  # noqa: E402
