@@ -5,6 +5,7 @@
 - OUT_DIR holds links to union-SPLIT.jsonl and union-keys-SPLIT.jsonl of GOLD_UNION_DIR, so the graph reads the current union.
 - Every 30 seconds, the tasks of a split whose row store (work/lm/data-study/samples/SPLIT/rows/<task>.jsonl.gz) is newer than the task's last graph, and that have a union-keys line, form a batch. gold_union_graph.py runs on the batch (UNION_TASKS), 50 tasks a process, into graph-*-SPLIT-<n>.jsonl, and graph-*-SPLIT.jsonl is then the latest batch's lines of each task, with its .code.json. Then gold_union_walks.py writes the split's walks there.
 - A task whose union-keys line changes is built again too.
+- GRAPH_PROCS (default 4) caps the graph processes at once.
 - With STREAM_TASKS (tasks separated by spaces), only those tasks are built. With STREAM_SINCE (seconds since the epoch), only stores written after that time are built.
 - It stops when the file OUT_DIR/STOP exists, or after IDLE seconds (default 3600) with no new store. It prints a line with the clock time for each batch.
 """
@@ -20,6 +21,7 @@ SPLITS = sys.argv[1:] or ['train', 'dev', 'held-out']
 IDLE = float(os.environ.get('IDLE', 3600))
 ONLY = set(os.environ['STREAM_TASKS'].split()) if os.environ.get('STREAM_TASKS') else None
 SINCE = float(os.environ.get('STREAM_SINCE', 0))
+PROCS = int(os.environ.get('GRAPH_PROCS', 4))  # graph processes at once; each holds 1.3 to 2 GB
 
 
 def say(*a):
@@ -74,7 +76,9 @@ def main():
                 last_new = time.time()
                 say(s, 'batch', b, len(todo), 'tasks')
                 procs = []
-                for i in range(0, len(todo), 50):  # 50 tasks a process, all at once; run_heavy admits them by load
+                for i in range(0, len(todo), 50):  # 50 tasks a process, at most PROCS at once
+                    while sum(p.poll() is None for p in procs) >= PROCS:
+                        time.sleep(2)
                     env = dict(os.environ, GOLD_UNION_DIR=O[:-1], UNION_TASKS=' '.join(t for t, _ in todo[i:i + 50]))
                     procs.append(subprocess.Popen([R + 'scripts/run_heavy.py', '--need', 'soon', E, U + 'gold_union_graph.py', s, str(b), '1000'], cwd=R, env=env,
                                                   stdout=open(O + 'graph-%s-%d.log' % (s, b), 'w'), stderr=subprocess.STDOUT))
