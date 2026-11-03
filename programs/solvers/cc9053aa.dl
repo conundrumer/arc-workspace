@@ -145,8 +145,8 @@ impl_choice([R, Ro, W, M, H]) :-
 // A net walked from one of its markers.
 .type Trip = [n: Net, e: Position]
 
-// A candidate walk of a trip.
-.type Walk = [t: Trip, res: TiebreakResolution]
+// A trip's fewest-hop steps toward one direction.
+.type Heading = [t: Trip, d: Dir]
 
 // A net with the cell c cut out.
 .type Cut = [n: Net, c: Position]
@@ -225,30 +225,24 @@ hops.edge([N, E], P, Q) :- trip([N, E]), node(N, P), dir_elem(D), neighbor(P, D,
 fewest.source(T, E2) :- goal(T, E2), hops.distance(T, E2, _).
 fewest.edge(T, B, A) :- hops.pred(T, B, A).
 
-// --- $RouteFewest, $RouteTieFewestTurns ---
+// --- $RouteFewest ---
 
 // Each fewest-hop walk, as its cell at each hop count.
 .init walks = TiebreakResolutions<Trip, number, Position>
 walks.cand(T, K, P) :- fewest.reached(T, P), hops.distance(T, P, K).
 
-// b is one hop past a on a candidate walk.
-.decl walk_step(w: Walk, a: Position, b: Position)
-walk_step([T, Res], A, B) :-
-    walks.assign(T, Res, _, B), hops.pred(T, B, A), walks.assign(T, Res, _, A).
-
-// A candidate walk with a cell past the start that no cell of it steps to.
-.decl broken_walk(w: Walk)
-broken_walk([[N, E], Res]) :-
-    walks.assign([N, E], Res, _, B), B != E, !walk_step([[N, E], Res], _, B).
-
-.decl walk(w: Walk)
-walk([T, Res]) :- walks.resolution(T, Res), !broken_walk([T, Res]).
-
-// --- $RouteFewest ---
+// A candidate walk with a cell b one hop past the cell a of it, where b does
+// not step from a.
+.decl broken_walk(t: Trip, res: TiebreakResolution)
+broken_walk(T, Res) :-
+    walks.assign(T, Res, K, A), walks.assign(T, Res, _, B),
+    hops.pred(T, B, A2), hops.distance(T, A2, K),     // b is one hop past a's hop count
+    !hops.pred(T, B, A).
 
 route_cell([R, $RouteFewest(), W, M, H], Res, P) :-
     impl_choice([R, $RouteFewest(), W, M, H]),
-    walk([[[R, W, M, H], E], Res]), walks.assign([[R, W, M, H], E], Res, _, P).
+    walks.resolution([[R, W, M, H], E], Res), !broken_walk([[R, W, M, H], E], Res),
+    walks.assign([[R, W, M, H], E], Res, _, P).
 
 // --- $RouteTieUnion ---
 
@@ -289,13 +283,16 @@ route_cell([R, $RouteAnyWalk(), W, M, H], $End(), P) :-
 line.node(N, P) :- node(N, P).
 line.dir(N, D) :- net(N), dir_elem(D).
 
-// Legs: each hop turns onto the other axis and runs straight. At a marker no
+// q is reached from p toward d by one straight run: a leg may end at q.
+.decl leg_run(t: Trip, p: Position, d: Dir, q: Position)
+leg_run([N, E], P, D, Q) :- trip([N, E]), line.run(N, P, D, Q), dir_elem(D).
+
+// Legs: each leg turns onto the other axis and runs straight. At a marker no
 // leg has run yet, so either axis may come next.
 // @claim route
 .init turns = GraphDistance<Trip, Leg>
 turns.seed([N, E], [E, A]) :- trip([N, E]), axis_elem(A).
-turns.edge([N, E], [P, A], [Q, A2]) :-
-    trip([N, E]), line.run(N, P, D, Q), dir_elem(D), axis_of(D, A2), perp(A2, A).
+turns.edge(T, [P, A], [Q, A2]) :- leg_run(T, P, D, Q), axis_of(D, A2), perp(A2, A).
 
 // @claim route
 .init least_turns = Extremes<Trip>
@@ -303,53 +300,107 @@ least_turns.cand(T, K) :- goal(T, E2), turns.distance(T, [E2, _], K).
 
 // The legs of the walks with the fewest turns.
 .init turn_back = Propagation<Trip, Leg>
-turn_back.source(T, [E2, A]) :-
-    goal(T, E2), turns.distance(T, [E2, A], K), least_turns.low(T, K).
+turn_back.source(T, [E2, A]) :- goal(T, E2), turns.distance(T, [E2, A], K), least_turns.low(T, K).
 turn_back.edge(T, B, A) :- turns.pred(T, B, A).
 
 // Each walk with the fewest turns, as its cell at each leg count.
 .init legs = TiebreakResolutions<Trip, number, Position>
 legs.cand(T, K, P) :- turn_back.reached(T, [P, A]), turns.distance(T, [P, A], K).
 
-// q is one leg past p on a candidate walk.
-.decl leg_step(w: Walk, p: Position, q: Position)
-leg_step([T, Res], P, Q) :-
-    legs.assign(T, Res, K2, Q), turns.distance(T, [Q, A2], K2),
-    turns.pred(T, [Q, A2], [P, A]), turns.distance(T, [P, A], K), legs.assign(T, Res, K, P).
+// q, at leg count k2, is one leg past p, at leg count k.
+.decl leg_link(t: Trip, p: Position, k: number, q: Position, k2: number)
+leg_link(T, P, K, Q, K2) :-
+    turns.distance(T, [Q, A2], K2), turns.pred(T, [Q, A2], [P, A]),
+    turns.distance(T, [P, A], K).
 
-// A candidate walk with a leg end past the start that no leg of it reaches.
-.decl broken_legs(w: Walk)
-broken_legs([[N, E], Res]) :-
-    legs.assign([N, E], Res, _, Q), Q != E, !leg_step([[N, E], Res], _, Q).
+// q is one leg past p on a candidate walk.
+.decl leg_step(t: Trip, res: TiebreakResolution, p: Position, q: Position)
+leg_step(T, Res, P, Q) :-
+    legs.assign(T, Res, K2, Q), leg_link(T, P, K, Q, K2), legs.assign(T, Res, K, P).
+
+// A candidate walk with a leg end q one leg past the leg end p of it, where no
+// leg runs from p to q.
+.decl broken_legs(t: Trip, res: TiebreakResolution)
+broken_legs(T, Res) :-
+    legs.assign(T, Res, K, P), legs.assign(T, Res, K2, Q),
+    leg_link(T, _, K, Q, K2),                         // q is one leg past p's leg count
+    !leg_link(T, P, K, Q, K2).
 
 route_cell([R, $RouteFewestTurns(), W, M, H], Res, X) :-
     impl_choice([R, $RouteFewestTurns(), W, M, H]),
-    legs.resolution([[R, W, M, H], E], Res), !broken_legs([[[R, W, M, H], E], Res]),
-    leg_step([[[R, W, M, H], E], Res], P, Q), line.run([R, W, M, H], P, D, Q),
+    legs.resolution([[R, W, M, H], E], Res), !broken_legs([[R, W, M, H], E], Res),
+    leg_step([[R, W, M, H], E], Res, P, Q), leg_run([[R, W, M, H], E], P, D, Q),
     ( X = P
     ; X = Q
-    ; line.run([R, W, M, H], P, D, X), line.run([R, W, M, H], X, D, Q)   // between
+    ; leg_run([[R, W, M, H], E], P, D, X), leg_run([[R, W, M, H], E], X, D, Q)   // between
     ).
 
 // --- $RouteTieFewestTurns ---
 
-// A cell a walk runs straight through.
-.decl straight(w: Walk, p: Position)
-straight(Wk, P) :-
-    walk_step(Wk, A, P), walk_step(Wk, P, B), axis_elem(Ax), same_line(Ax, A, B).
+// A fewest-hop walk steps from x to its neighbor toward d.
+.decl ahead(t: Trip, x: Position, d: Dir)
+ahead(T, X, D) :-
+    fewest.reached(T, X), dir_elem(D), neighbor(X, D, Y), fewest.reached(T, Y), hops.pred(T, Y, X).
 
 // @claim route
-.init bends = Tally<Walk, Position>
-bends.domain(Wk) :- walk(Wk).
-bends.item(Wk, P) :- walk(Wk), walk_step(Wk, _, P), walk_step(Wk, P, _), !straight(Wk, P).
+.init ahead_line = Slide<Heading>
+ahead_line.node([T, D], X) :- ahead(T, X, D).
+ahead_line.dir([T, D], D) :- ahead(T, _, D).
+
+// q is reached from p toward d by a straight run of fewest-hop steps: a leg
+// may end at q.
+.decl tie_leg_run(t: Trip, p: Position, d: Dir, q: Position)
+tie_leg_run(T, P, D, Q) :-
+    ahead(T, P, D), ( X = P ; ahead_line.run([T, D], P, D, X) ), neighbor(X, D, Q).
+
+// Legs: each leg turns onto the other axis and runs straight. At a marker no
+// leg has run yet, so either axis may come next.
+// @claim route
+.init tie_turns = GraphDistance<Trip, Leg>
+tie_turns.seed([N, E], [E, A]) :- trip([N, E]), axis_elem(A).
+tie_turns.edge(T, [P, A], [Q, A2]) :- tie_leg_run(T, P, D, Q), axis_of(D, A2), perp(A2, A).
 
 // @claim route
-.init fewest_bends = ArgExtremes<Trip, TiebreakResolution>
-fewest_bends.cand(T, Res, N) :- bends.tally([T, Res], N).
+.init tie_least_turns = Extremes<Trip>
+tie_least_turns.cand(T, K) :- goal(T, E2), tie_turns.distance(T, [E2, _], K).
 
-route_cell([R, $RouteTieFewestTurns(), W, M, H], Res, P) :-
+// The legs of the walks with the fewest turns.
+.init tie_turn_back = Propagation<Trip, Leg>
+tie_turn_back.source(T, [E2, A]) :-
+    goal(T, E2), tie_turns.distance(T, [E2, A], K), tie_least_turns.low(T, K).
+tie_turn_back.edge(T, B, A) :- tie_turns.pred(T, B, A).
+
+// Each walk with the fewest turns, as its cell at each leg count.
+.init tie_legs = TiebreakResolutions<Trip, number, Position>
+tie_legs.cand(T, K, P) :- tie_turn_back.reached(T, [P, A]), tie_turns.distance(T, [P, A], K).
+
+// q, at leg count k2, is one leg past p, at leg count k.
+.decl tie_leg_link(t: Trip, p: Position, k: number, q: Position, k2: number)
+tie_leg_link(T, P, K, Q, K2) :-
+    tie_turns.distance(T, [Q, A2], K2), tie_turns.pred(T, [Q, A2], [P, A]),
+    tie_turns.distance(T, [P, A], K).
+
+// q is one leg past p on a candidate walk.
+.decl tie_leg_step(t: Trip, res: TiebreakResolution, p: Position, q: Position)
+tie_leg_step(T, Res, P, Q) :-
+    tie_legs.assign(T, Res, K2, Q), tie_leg_link(T, P, K, Q, K2), tie_legs.assign(T, Res, K, P).
+
+// A candidate walk with a leg end q one leg past the leg end p of it, where no
+// leg runs from p to q.
+.decl tie_broken_legs(t: Trip, res: TiebreakResolution)
+tie_broken_legs(T, Res) :-
+    tie_legs.assign(T, Res, K, P), tie_legs.assign(T, Res, K2, Q),
+    tie_leg_link(T, _, K, Q, K2),                         // q is one leg past p's leg count
+    !tie_leg_link(T, P, K, Q, K2).
+
+route_cell([R, $RouteTieFewestTurns(), W, M, H], Res, X) :-
     impl_choice([R, $RouteTieFewestTurns(), W, M, H]),
-    fewest_bends.low([[R, W, M, H], E], Res, _), walks.assign([[R, W, M, H], E], Res, _, P).
+    tie_legs.resolution([[R, W, M, H], E], Res), !tie_broken_legs([[R, W, M, H], E], Res),
+    tie_leg_step([[R, W, M, H], E], Res, P, Q), tie_leg_run([[R, W, M, H], E], P, D, Q),
+    ( X = P
+    ; X = Q
+    ; tie_leg_run([[R, W, M, H], E], P, D, X), tie_leg_run([[R, W, M, H], E], X, D, Q)   // between
+    ).
 
 // --- $WallGiven ---
 
