@@ -3,19 +3,21 @@
     run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N]
 
 RUN names the output folder, $DATA/search/dev161/RUN (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
-Each job is one task of one arm and one seed: the kernel supervisor (supervisor.py beside this file's --code kit, else the v9
-dataset's) runs the pool search for --seconds, with the v9 notebook's environment, and a fresh store of its own. The jobs of a task
+Each job is one task of one arm and one seed: the pool search with the v9 notebook's environment and a fresh store of its own. With
+--budget cpu (the default), one worker runs on --seconds of its own CPU time (cpu_clock/sitecustomize.py), and the kernel supervisor's
+code (supervisor.py beside the --code kit, else the v9 dataset's) makes the submission from its candidates. With --budget wall, the
+kernel supervisor runs it for --seconds of wall-clock time. The jobs of a task
 run next to each other, so the arms are paired as results arrive.
 
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
-candidates, draws, CPU seconds, deaths and kills, and seconds. The budget is wall-clock time, so draws and CPU seconds show what a job got
-on a loaded machine. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/jobs, where it
+candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/jobs, where it
 holds a number, sets how many jobs run at once while the run goes on.
 Only dev tasks run: the split's guard refuses any other.
 """
 import argparse
 import collections
 import concurrent.futures as cf
+import importlib.util
 import json
 import os
 import re
@@ -91,6 +93,31 @@ def job(a, out, task, arm, seed):
             RUNNING[0] -= 1
 
 
+def cpu_job(a, w, task, seed, env, samp, sup):
+    """One worker of the task on a budget of a.seconds of its own CPU time (cpu_clock/sitecustomize.py), with no supervisor, so a death
+    ends the job. The submission is the supervisor's: its candidates best first, two attempts per test input. Gives (rc, log text, submission)."""
+    work = w / 'work'
+    work.mkdir()
+    env = dict(env, ARC_CPU_CLOCK='1', PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
+    out = work / (task + '.out.jsonl')
+    (work / (task + '.beat')).touch()
+    cmd = [str(PY), '-u', str(samp / 'kaggle_worker.py'), '--task', str(MAIN_ROOT / 'data/tasks' / (task + '.json')), '--out', str(out),
+           '--beat', str(work / (task + '.beat')), '--seconds', str(a.seconds), '--seed', str(1000 * seed), '--rss-limit-mib', str(RSS_LIMIT_MIB)]
+    with open(work / (task + '.log'), 'w') as log:
+        try:
+            rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=a.wall_cap).returncode
+        except subprocess.TimeoutExpired:
+            rc = 'wall cap'
+    spec = importlib.util.spec_from_file_location('kernel_supervisor', sup)
+    S = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(S)
+    challenges = json.loads((w / 'challenges.json').read_text())
+    S.write_submission(str(w / 'submission.json'), challenges, {task: S.read_candidates(str(out))})
+    died = rc not in (0, 'wall cap')
+    text = 'submission written; deaths %d kills %d' % (int(died), int(rc == 'wall cap'))
+    return rc, text, json.loads((w / 'submission.json').read_text())
+
+
 def run_job(a, out, task, arm, seed):
     n = 0
     while (out / 'jobs' / ('%s.%s.s%d.%d' % (task, arm, seed, n))).exists():  # an attempt that a stopped run left keeps its folder; each attempt has a fresh store
@@ -110,19 +137,22 @@ def run_job(a, out, task, arm, seed):
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
-    cmd = [str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
-           '--submission', str(w / 'submission.json'), '--work', str(w / 'work'), '--seconds', str(a.seconds), '--workers', '1',
-           '--rss-limit-mib', str(RSS_LIMIT_MIB), '--worker-cmd', '%s -u %s' % (PY, samp / 'kaggle_worker.py')]
-    with open(w / 'supervisor.log', 'w') as log:
-        rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=a.seconds + 600).returncode
-    text = (w / 'supervisor.log').read_text()
-    sub = json.loads((w / 'submission.json').read_text()) if (w / 'submission.json').exists() else {}
+    if a.budget == 'cpu':
+        rc, text, sub = cpu_job(a, w, task, seed, env, samp, sup)
+    else:
+        cmd = [str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
+               '--submission', str(w / 'submission.json'), '--work', str(w / 'work'), '--seconds', str(a.seconds), '--workers', '1',
+               '--rss-limit-mib', str(RSS_LIMIT_MIB), '--worker-cmd', '%s -u %s' % (PY, samp / 'kaggle_worker.py')]
+        with open(w / 'supervisor.log', 'w') as log:
+            rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=a.seconds + 600).returncode
+        text = (w / 'supervisor.log').read_text()
+        sub = json.loads((w / 'submission.json').read_text()) if (w / 'submission.json').exists() else {}
     ok, ntest = solved(task, sub)
     last = next((l for l in reversed(text.splitlines()) if 'submission written; deaths' in l), '')
     dk = re.search(r'deaths (\d+) kills (\d+)', last)
     cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
     draws, cpu = effort(w)
-    rec = dict(task=task, arm=arm, seed=seed, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
+    rec = dict(task=task, arm=arm, seed=seed, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
                deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
                tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))
     with LOCK:
@@ -159,6 +189,8 @@ def main():
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
+    ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
+    ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
     out = DATA_ROOT / 'search/dev161' / a.run
     out.mkdir(parents=True, exist_ok=True)
