@@ -116,6 +116,7 @@ def check_any(run, env, sess, split, task):
                 opts, fac, reason = writer.options(pt, plan)
                 if opts is None or t not in set(int(x) for x in opts):
                     cut = 'the legal plan (with the order rule) removes the gold token'
+                    starts['legal cut at %s in %s' % (run.V.name(t), text[:120])] += 1
                     break
                 t1 = time.perf_counter()
                 f = rule.factors(pt, list(opts))
