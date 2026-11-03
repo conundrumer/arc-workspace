@@ -16,7 +16,7 @@ Only the job folders that results.jsonl names count, and each task counts where 
 list (OUT_OF_SCOPE) does not name it. --skip-file is a JSON file
 whose A_tasks and B_tasks list tasks to leave out. Depths are grouped as 0, 1 and 2 and deeper. For each depth it prints the graph tables,
 the reached tables per arm, the paired difference (first arm less second) summed over tasks, its mean and standard deviation per task, and
-the bound 1.96 times the square root of the sum of squared per-task differences. With --by tables it also checks the naming from the
+the bound 1.96 times the square root of the sum of squared per-task differences; --per-task adds the tasks whose difference is not 0. With --by tables it also checks the naming from the
 draw records: each graph table that a drawn query of a gold QueryHash gives must be named alike from the job's records. --check names the row store's tables both ways and stops
 at the first difference from gold_union_tables.tables_of.
 """
@@ -122,6 +122,7 @@ def main():
     ap.add_argument('--arms', default='tree,hand')
     ap.add_argument('--by', choices=('qh', 'tables'), default='qh')
     ap.add_argument('--check', action='store_true')
+    ap.add_argument('--per-task', action='store_true', help='also print, per depth, the tasks whose paired difference is not 0')
     ap.add_argument('--skip-kinds', default='DEMONSTRATED', help='graph tables of these kinds do not count (out of scope)')
     a = ap.parse_args()
     rows, arms = Path(a.rows), a.arms.split(',')
@@ -172,6 +173,8 @@ def main():
         print('depth %-2s  tables %5d  %s %4d  %s %4d  difference %+d (mean %+.2f, sd %.2f per task, bound %.1f)' % (
             b, tot[b], arms[0], sum(reach[t, arms[0]][b] for t in tasks), arms[1], sum(reach[t, arms[1]][b] for t in tasks), sum(d), mean, sd,
             1.96 * math.sqrt(sum(x * x for x in d))))
+        if a.per_task:
+            print('  ' + ', '.join('%s %+d (%d/%d)' % (t, x, reach[t, arms[0]][b], reach[t, arms[1]][b]) for t, x in sorted(zip(tasks, d), key=lambda p: -abs(p[1])) if x))
 
 
 if __name__ == '__main__':
