@@ -1,6 +1,7 @@
 """Which programs of the union gold solve their task, on the current engine. A program fits when some assignment of its DETs gives every train output through its OUT query (each grid it gives is the output or the example's `alt` grid). It solves (test_ok) when it fits and, on each test example with an expected output, the fitting assignments give at most two distinct grids over all constraint models, and one is the expected output. Per task, each distinct program text of cases-SET.jsonl is run once. The fits go to fits-SET.jsonl in the gold-union folder, one line per task: task, and programs, a list of {text_sha, cases, assignments, fitting, fit, test_ok, why}. assignments counts the assignments of the OUT table, fitting those that give every train output, and why is the reason a program gives no tables (fit and test_ok are then null: no verdict). The union keeps a program when fit and test_ok.
 
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET [K N]    SET: train, dev or held-out; K N takes the tasks at positions K, K + N, ... and writes fits-SET-K.jsonl. A restart skips the tasks the file has. With FITS_TASKS set (tasks separated by spaces), K N name only the output file, and the run takes those tasks.
+  With FITS_REUSE set (fits files separated by commas, with or without the header line), a program that has a row (same task and text_sha) in one of those files, the first that has it, is not run: its row copies that row's assignments, fitting, fit, test_ok and why, and its cases are those of the current cases-SET.jsonl. The progress line of each task says how many of its programs were copied.
   With FITS_CAP=S set, each program runs in a forked child that is killed after S seconds. A killed program has fit and test_ok null and why 'timeout S s', and the union leaves it out with that reason.
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET merge     writes fits-SET.jsonl from the fits-SET-K.jsonl files, sorted by task, after a first line {"t": "header", "code": {"sha", "dirty"}} (gold_union_code.py: the commit of the code that merged it). A reader of fits-SET.jsonl skips the lines that have `t`.
 """
@@ -181,14 +182,29 @@ def capped(env, task, text, tasks, task_json):
     return json.loads(got) if got else (None, None, None, 'timeout %ds' % CAP)
 
 
-def one(env, task, texts, tasks):
-    """The fits row of a task."""
+def reuse_of():
+    """{task: {text_sha: program}} of the files of FITS_REUSE, the first file that has a program in place of a later one."""
+    got = {}
+    for p in filter(None, os.environ.get('FITS_REUSE', '').split(',')):
+        for r in rows_of(p):
+            for x in r['programs']:
+                got.setdefault(r['task'], {}).setdefault(x['text_sha'], x)
+    return got
+
+
+def one(env, task, texts, tasks, reuse):
+    """(the fits row of a task, how many of its programs it copies). `reuse` is {text_sha: program} of the task, from reuse_of()."""
     task_json = json.load(open(tasks / (task + '.json')))
-    progs = []
+    progs, copied = [], 0
     for text, cases in texts.items():
+        old = reuse.get(sha16(text))
+        if old:
+            progs.append(dict(text_sha=old['text_sha'], cases=cases, **{k: old[k] for k in ('assignments', 'fitting', 'fit', 'test_ok', 'why')}))
+            copied += 1
+            continue
         n, k, ok, why = (capped if CAP else check)(env, task, text, tasks, task_json)
         progs.append(dict(text_sha=sha16(text), cases=cases, assignments=n, fitting=k, fit=None if why else k > 0, test_ok=None if why else ok, why=why))
-    return dict(task=task, programs=progs)
+    return dict(task=task, programs=progs), copied
 
 
 def shard_files(set_name):
@@ -229,17 +245,17 @@ def run(set_name, shard=None):
         text = open(path).read()
         open(path, 'w').write(text[:text.rfind('\n') + 1])
     left = [t for t in mine if t not in done]
-    env, tasks = engine(), ROOT / 'data/tasks'
+    env, tasks, reuse = engine(), ROOT / 'data/tasks', reuse_of()
     rest, fit, seen, start = sum(len(todo[t]) for t in left), 0, 0, time.time()
     with open(path, 'a') as f:
         for i, t in enumerate(left, len(mine) - len(left) + 1):
-            row = one(env, t, todo[t], tasks)
+            row, copied = one(env, t, todo[t], tasks, reuse.get(t, {}))
             f.write(json.dumps(row) + '\n')
             f.flush()
             fit += sum(bool(p['fit']) for p in row['programs'])
             seen += len(row['programs'])
             el = time.time() - start
-            print('%s %d/%d  programs fit %d/%d  %.0fs  eta %.0fs' % (t, i, len(mine), fit, seen, el, el / seen * (rest - seen)), flush=True)
+            print('%s %d/%d  programs fit %d/%d  reused %d/%d  %.0fs  eta %.0fs' % (t, i, len(mine), fit, seen, copied, len(row['programs']), el, el / seen * (rest - seen)), flush=True)
 
 
 if __name__ == '__main__':
