@@ -1,13 +1,13 @@
 """Fit the two folds of the policy model on the super DAG pools. Each fold trains on half of the tasks, so a loop test on a task uses the fold that did not see it."""
 import glob, json, os, pickle, sys
-sys.path[:0] = ['/Users/davidlu/code/arc-workspace/model/study', os.path.dirname(os.path.abspath(__file__))]
+sys.path[:0] = ['/Users/davidlu/code/arc-workspace/model/study', '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/policy']
 import numpy as np
 from judge3.framed_jsonl import iter_json
 from nodefeat import features, load_pairs
 from outfeat import link_features, out_features
 from policy import task_key
 from sklearn.ensemble import HistGradientBoostingClassifier as H
-P = sys.argv[1]; OUT = sys.argv[2]; HERE = os.path.dirname(os.path.abspath(__file__))
+P = sys.argv[1]; OUT = sys.argv[2]; HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/policy'
 CACHE = HERE + '/cache2'
 os.makedirs(CACHE, exist_ok=True)
 data = {}

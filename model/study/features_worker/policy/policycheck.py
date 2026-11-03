@@ -1,9 +1,9 @@
 """Check that Policy's live features equal the fit's features on one dump, and print the cost of add and scope."""
 import json, os, pickle, random, sys, time, types
-sys.path[:0] = ['/Users/davidlu/code/arc-workspace/model/study', os.path.dirname(os.path.abspath(__file__))]
+sys.path[:0] = ['/Users/davidlu/code/arc-workspace/model/study', '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/policy']
 from judge3.framed_jsonl import iter_json
 from policy import Policy
-P = sys.argv[1]; HERE = os.path.dirname(os.path.abspath(__file__))
+P = sys.argv[1]; HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/policy'
 for t in sys.argv[2:]:
     task = json.load(open(f'/Users/davidlu/code/arc-workspace/data/tasks/{t}.json'))
     fit = pickle.load(open(f'{HERE}/cache2/{t}.pkl', 'rb'))
