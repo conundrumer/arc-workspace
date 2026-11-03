@@ -4,7 +4,7 @@ The step of the [build order](overview.md#build-order) after [Determination](det
 
 The step ends when each of these holds, or the difference is reported as a fault, as the Principles requirement of [Requirements](overview.md#requirements) gives:
 
-- The decoder admits the token stream that the writer gives each case program of `gen/` that holds no `DEMONSTRATED` form, in full, or through the `END` of its first `OUT` form that holds, as [Decode interface](#decode-interface) gives, with the tokens after it no part of the program the decode reads. A case program that holds a fault of its solver or of the conversion that [Determination](determination.md) names is reported as that fault.
+- The decoder admits the token stream that the writer gives each case program of `gen/`, in full, or through the `END` of its first `OUT` form that holds, as [Decode interface](#decode-interface) gives, with the tokens after it no part of the program the decode reads. A case program that holds a fault of its solver or of the conversion that [Determination](determination.md) names is reported as that fault.
 - At the `END` of each such stream's `OUT` form, the consistency result equals the solves outcome of the case at the values that [Determination](determination.md) determines.
 - The rows of each prefix of those streams equal the rows that the evaluator gives the prefix's sub-body.
 - The concept case program of aba27056, run in the Kaggle notebook on its task with the test output held out, gives one attempt on its test input, and that attempt is the test output.

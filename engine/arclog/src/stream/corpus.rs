@@ -51,9 +51,8 @@ pub struct CaseStream {
     pub case: String,
     /// Whether the case is the solver's concept case.
     pub concept: bool,
-    /// Whether the case program holds a `DEMONSTRATED` form, whose stream
-    /// the commands that replay do not decode. False for a case that the
-    /// checker refuses.
+    /// Whether the case program holds a `DEMONSTRATED` form. False for a
+    /// case that the checker refuses.
     pub demonstrated: bool,
     /// The case's token stream with the relation at each slot, or the checker's
     /// refusal of the case or the writer's fault.

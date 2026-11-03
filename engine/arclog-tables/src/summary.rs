@@ -36,7 +36,11 @@
 //! identity of that source ([`hashed_names`]). So two tables are equal only
 //! where their Types, Ident sources included, and their TableRows are equal.
 //! A type with no Ident source, as every type is while `ARCLOG_IDENT_SOURCE`
-//! is off, has the name that the export writes.
+//! is off, has the name that the export writes. A Pose type is the exception:
+//! the name that the export writes holds the slots of its `RIGID_DET` and of the
+//! `DET`s that the form reads, which differ between programs of one query, so
+//! its name in the TableHash names the assembly by the QueryHash of its
+//! `RIGID_DET` ([`pose_name`]).
 //!
 //! The value hash of a TableRows has its columns in their order. The readers
 //! of a `DET` read its columns by position, so two values that differ only by
@@ -62,7 +66,8 @@ use arclog::read::spelling::{spelling, FACT_RELATIONS};
 use arclog::relations::Relation;
 use arclog::session::SessionAllocation;
 use arclog::task::{Grid, Task};
-use arclog::types::{IdentSource, SourceId, ValueType};
+use arclog::program::RigidDetName;
+use arclog::types::{AssemblyId, IdentSource, SourceId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 use crate::columns::{row_width, sorted_rows, type_names};
@@ -209,8 +214,10 @@ pub const SUMMARY_CACHE_ENTRIES: usize = 4096;
 /// assignments, so the count bounds the generation's size.
 const SUMMARY_CACHE_ASSIGNMENTS: usize = 1 << 17;
 
-/// The key of a table's summary in a [`SummaryCache`]: the QueryHash of the
-/// table's query, and the table's place among the tables of its query.
+/// The key of a table's summary in a [`SummaryCache`]: the hash of the
+/// QueryHash of the table's query and of the `DET`s of its assignments in their
+/// order ([`crate::columns`]), and the table's place among the tables of its
+/// query.
 pub type SummaryKey = (StableHash, u32);
 
 /// The key of the summary of the evidence table at place `at`. An evidence table
@@ -223,8 +230,9 @@ pub fn evidence_key(at: usize) -> SummaryKey {
 }
 
 /// The summaries of the tables of one session, by [`SummaryKey`]. A query's
-/// QueryHash fixes the content of its tables within a task, so a summary holds
-/// for every later table of that query. A summary does not depend on whether
+/// QueryHash fixes the content of its tables within a task, and the order of
+/// its `DET`s fixes the place of each `DET`'s value in the summary, so a summary
+/// holds for every later table of that query with its `DET`s in that order. A summary does not depend on whether
 /// the export packs rows. The cache keeps two generations, each with at most
 /// [`SUMMARY_CACHE_ENTRIES`] summaries and a bounded count of assignments:
 /// when the young generation is full it becomes the old one and the old one is
@@ -364,10 +372,10 @@ fn encode(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType],
 }
 
 /// The value hash of `rows`, a TableRows of `types` ([`value_hash_of`]).
-fn value_hash(materializer: &Materializer<'_>, types: &[ValueType], rows: &Relation) -> Result<StableHash, ReachedBound> {
+fn value_hash(materializer: &Materializer<'_>, types: &[ValueType], rows: &Relation, assemblies: &Assemblies) -> Result<StableHash, ReachedBound> {
     let mut held = Vec::new();
     let value = encode(materializer, rows, types, &mut held)?;
-    Ok(value_hash_of(types, &value))
+    Ok(value_hash_of(types, &value, assemblies))
 }
 
 /// The value hash of `rows`, a TableRows of columns of `types`: the hash of the
@@ -376,7 +384,7 @@ fn value_hash(materializer: &Materializer<'_>, types: &[ValueType], rows: &Relat
 /// one TableRows, and every place that gives its hash gives this one: the `value`
 /// of the `assignments` of a table that reads the `DET`, and the `hash` of an entry
 /// of the `DET`'s own table, whose columns are the `DET`'s in their order.
-fn value_hash_of(types: &[ValueType], rows: &Encoded) -> StableHash {
+fn value_hash_of(types: &[ValueType], rows: &Encoded, assemblies: &Assemblies) -> StableHash {
     let width = row_width(types) as usize;
     let mut row_hashes: Vec<u128> = (0..rows.count as usize)
         .map(|row| {
@@ -391,7 +399,7 @@ fn value_hash_of(types: &[ValueType], rows: &Encoded) -> StableHash {
     let mut hasher = StableHasher::new();
     hasher.write(b"arclog.value_hash");
     hasher.write_u64(types.len() as u64);
-    for name in hashed_names(types) {
+    for name in hashed_names(types, assemblies) {
         hasher.write(name.as_bytes());
         hasher.write_u8(0);
     }
@@ -408,7 +416,7 @@ fn at_assignment(materializer: &Materializer<'_>, contents: &Contents, types: &[
         for ((_, rows), det) in values.iter().zip(contents.dets.iter()) {
             choices.push(match fulls.choices(materializer, det, rows, values)? {
                 Some(found) => found,
-                None => vec![value_hash(materializer, &det.types, rows)?],
+                None => vec![value_hash(materializer, &det.types, rows, &fulls.assemblies)?],
             });
         }
         let mut all: Vec<Vec<StableHash>> = vec![Vec::new()];
@@ -475,9 +483,9 @@ fn at_assignment(materializer: &Materializer<'_>, contents: &Contents, types: &[
         places.push(place);
     }
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
-    let (hash, hashes) = table_hash(types, &views);
+    let (hash, hashes) = table_hash(types, &views, &fulls.assemblies);
     // The value hash of each distinct TableRows.
-    let sets: Vec<Vec<u128>> = views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| value_hash_of(types, rows).0).collect()).collect();
+    let sets: Vec<Vec<u128>> = views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| value_hash_of(types, rows, &fulls.assemblies).0).collect()).collect();
     failed.sort_unstable();
     failed.dedup();
     let hash = if failed.is_empty() {
@@ -546,9 +554,10 @@ fn run_of(rows: &Encoded, width: usize, start: usize, len: usize, row: usize) ->
 }
 
 /// The names of `types` as the TableHash writes them: the name that the export
-/// writes, and `@` and the 32 hexadecimal digits of the identity of the source
-/// after it for each Ident of a source in the type, in the order of the type.
-fn hashed_names(types: &[ValueType]) -> Vec<String> {
+/// writes, with [`pose_name`] for each Pose type in it, and `@` and the 32
+/// hexadecimal digits of the identity of the source after it for each Ident of
+/// a source in the type, in the order of the type.
+fn hashed_names(types: &[ValueType], assemblies: &Assemblies) -> Vec<String> {
     fn push_sources(ty: &ValueType, name: &mut String) {
         match ty {
             ValueType::Ident(IdentSource::Form(SourceId(id))) => name.push_str(&format!("@{:032x}", id.0)),
@@ -558,12 +567,49 @@ fn hashed_names(types: &[ValueType]) -> Vec<String> {
     }
     types
         .iter()
-        .zip(type_names(types))
-        .map(|(ty, mut name)| {
+        .map(|ty| {
+            let mut name = hashed_type_name(ty, assemblies);
             push_sources(ty, &mut name);
             name
         })
         .collect()
+}
+
+/// The name of `ty` that the export writes ([`type_names`]), with
+/// [`pose_name`] in place of the name of each Pose type in it.
+fn hashed_type_name(ty: &ValueType, assemblies: &Assemblies) -> String {
+    fn has_pose(ty: &ValueType) -> bool {
+        match ty {
+            ValueType::Pose(_) => true,
+            ValueType::Record(fields) => fields.iter().any(|(_, field)| has_pose(field)),
+            _ => false,
+        }
+    }
+    match ty {
+        ValueType::Pose(assembly) => pose_name(assembly, assemblies),
+        ValueType::Record(fields) if has_pose(ty) => {
+            let fields: Vec<String> = fields.iter().map(|(name, field)| format!("({name:?}, {})", hashed_type_name(field, assemblies))).collect();
+            format!("Record([{}])", fields.join(", "))
+        }
+        _ => type_names(std::slice::from_ref(ty)).pop().expect("a name for the type"),
+    }
+}
+
+/// The QueryHash of the `RIGID_DET` of each assembly of a program, by the
+/// form's name.
+pub type Assemblies = HashMap<RigidDetName, StableHash>;
+
+/// The name of the Pose type of `assembly` in the TableHash and the value hash:
+/// `Pose(`, the 32 hexadecimal digits of the QueryHash of its `RIGID_DET` in
+/// `assemblies`, and its key row, `)`. The name that the export writes holds the
+/// slots of the form and of the `DET`s that the form reads, which differ
+/// between two programs of one query, and the QueryHash holds no slot. Where
+/// `assemblies` lacks the form, the name is the one that the export writes.
+fn pose_name(assembly: &AssemblyId, assemblies: &Assemblies) -> String {
+    match assemblies.get(&assembly.name) {
+        Some(query) => format!("Pose({:032x}, {:?})", query.0, assembly.key),
+        None => type_names(&[ValueType::Pose(assembly.clone())]).pop().expect("a name for the type"),
+    }
 }
 
 /// The next order of `items` in the lexicographic order, or, where `items`
@@ -583,8 +629,8 @@ fn next_permutation(items: &mut [usize]) -> bool {
 /// index and distinct TableRows, over columns of `types`, and the low 64 bits of
 /// the hash of each example's Set of TableRows under the order of the columns that
 /// gives the TableHash.
-fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])]) -> (StableHash, Vec<u64>) {
-    let names = hashed_names(types);
+fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies) -> (StableHash, Vec<u64>) {
+    let names = hashed_names(types, assemblies);
     let widths: Vec<usize> = types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).collect();
     let starts: Vec<usize> = widths.iter().scan(0, |at, width| { let start = *at; *at += width; Some(start) }).collect();
     let width: usize = widths.iter().sum();
@@ -697,6 +743,8 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])]) -> (Stabl
 pub struct DetFulls<'t> {
     tables: Vec<&'t Table>,
     built: RefCell<HashMap<String, Option<Rc<FullDet<'t>>>>>,
+    /// The assemblies of the program, by which the hashes name each Pose type ([`pose_name`]).
+    assemblies: Assemblies,
 }
 
 /// A `DET` of the stream with all its columns.
@@ -718,7 +766,14 @@ struct FullValue {
 impl<'t> DetFulls<'t> {
     /// The full `DET`s of `tables`, the tables of the stream, in order.
     pub fn new(tables: Vec<&'t Table>) -> Self {
-        DetFulls { tables, built: RefCell::default() }
+        DetFulls { tables, built: RefCell::default(), assemblies: Assemblies::default() }
+    }
+
+    /// These full `DET`s, with `assemblies`, the QueryHash of the `RIGID_DET`
+    /// of each assembly of the program, by which the hashes name each Pose type.
+    pub fn with_assemblies(mut self, assemblies: Assemblies) -> Self {
+        self.assemblies = assemblies;
+        self
     }
 
     /// No full `DET`: every `DET` is read as the table holds it.
@@ -758,7 +813,7 @@ impl<'t> DetFulls<'t> {
                 if values.iter().any(|value| value.cells.key == cells.key && value.others == others) {
                     continue;
                 }
-                let hash = value_hash_of(&det.types, &cells);
+                let hash = value_hash_of(&det.types, &cells, &self.assemblies);
                 values.push(FullValue { others, cells, hash });
             }
         }

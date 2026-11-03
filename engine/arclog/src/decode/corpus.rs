@@ -24,7 +24,7 @@ use crate::program::ProgramRelation;
 use crate::registry::Registry;
 use crate::session::{SessionBound, TaskSession, SESSION_BYTES};
 use crate::solver::Solver;
-use crate::stream::corpus::{solver_streams, token_ids, CaseStream, WantedCases};
+use crate::stream::corpus::{solver_streams, token_ids, WantedCases};
 use crate::stream::{DecodeSettings, Emitter, Token, Vocabulary};
 use crate::task::{read_judged_task, read_task, JudgedTask, Task};
 
@@ -84,9 +84,9 @@ pub struct SolverReplay<T> {
 /// the lib's constructions `constructions`, and the corpus's
 /// session. The replay computes the token mask before each step where
 /// `masked` holds. `record` runs after each step of a token the model emits,
-/// with the case's record, which starts as `T::default()`. A case that holds
-/// a `DEMONSTRATED` form is left out. Gives the fault that stops the solver,
-/// which is the panic's message where the replay panics.
+/// with the case's record, which starts as `T::default()`. Gives the fault
+/// that stops the solver, which is the panic's message where the replay
+/// panics.
 pub fn replay_solver<T: Default + Clone>(
     corpus: &Path,
     tasks: &Path,
@@ -131,7 +131,7 @@ fn replay_cases<T: Default + Clone>(
 }
 
 /// The count of train pairs of the task `id` and, for each wanted case of the
-/// solver that holds no `DEMONSTRATED` form, the replay of its stream, as
+/// solver, the replay of its stream, as
 /// [`replay_prefix_tree`] gives it.
 fn replay_streams<T: Default + Clone>(
     corpus: &Path,
@@ -146,7 +146,6 @@ fn replay_streams<T: Default + Clone>(
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let cases = solver_streams(corpus, id, wanted, &vocabulary, false)?;
     let (task, judged) = read_task_files(tasks, id)?;
-    let cases: Vec<CaseStream> = cases.into_iter().filter(|case| !case.demonstrated).collect();
     let ids: Vec<Vec<(u32, Emitter)>> = cases.iter().filter_map(|case| case.stream.as_ref().ok()).map(|stream| token_ids(&stream.tokens, &vocabulary)).collect();
     let mut outcomes = replay_prefix_tree(&task, &judged, &ids, constructions, settings, masked, record).into_iter();
     let replayed = cases
@@ -196,9 +195,9 @@ pub struct CaseVerdict {
 }
 
 /// The verdict of each case of the solver `id` of `corpus` on its task in
-/// `tasks`, every case of the solver that holds no `DEMONSTRATED` form (the
-/// combinations its `exclude` forms leave out are no cases), replayed with the
-/// default settings and no token mask; or the fault that stops the solver.
+/// `tasks`, every case of the solver (the combinations its `exclude` forms
+/// leave out are no cases), replayed with the default settings and no token
+/// mask; or the fault that stops the solver.
 pub fn solver_verdicts(corpus: &Path, tasks: &Path, id: &str, constructions: &Constructions) -> Result<Vec<CaseVerdict>, String> {
     let record = |last: &mut Option<(usize, Recorded)>, decoder: &Decoder<'_>, stepped: Stepped<'_>| {
         let verdict = match &stepped.consistency {

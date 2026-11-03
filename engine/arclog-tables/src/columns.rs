@@ -87,7 +87,7 @@ use arclog::types::{IdentSource, SourceId};
 use crate::extents::{EntryExtents, Extent, ExtentRows, Merged};
 use crate::flows::{ColumnSource, SourceColumn, SourceFrame, SourceKind};
 use crate::split::{self, Part};
-use crate::summary::{bound_name, evidence_key, summarize_cached, DetFulls, SummaryCache, SummaryKey, TableSummary};
+use crate::summary::{bound_name, evidence_key, summarize_cached, Assemblies, DetFulls, SummaryCache, SummaryKey, TableSummary};
 use crate::tables::{evidence_shells, Contents, Point, Table, TableColumn, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
@@ -758,17 +758,39 @@ fn step_columns(materializer:&Materializer<'_>,before:Option<&StreamTables>,evid
 /// is of kind [`ValueKind::Rows`] with all its rows. Without it, every entry
 /// that holds Rows is of kind [`ValueKind::NotExported`]: its count of rows and
 /// its hash, and the columns hold no row buffer.
+///
+/// A Pose type is named in the hashes by the form's spelling, which holds slots,
+/// as no QueryHash of its `RIGID_DET` is given:
+/// [`step_case_columns_by_assignment_with`] gives them.
 pub fn step_case_columns_by_assignment_in(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:&[arclog_features::Pair],queries:Vec<Option<StableHash>>,rows:bool,cache:&SummaryCache)->(CaseColumns,StreamTables) {
+    step_case_columns_by_assignment_with(materializer,before,evidence,tables,train,queries,rows,cache,Assemblies::default())
+}
+
+/// [`step_case_columns_by_assignment_in`], with `assemblies`, the QueryHash of
+/// the `RIGID_DET` of each assembly of the program, by which the TableHash and
+/// the value hashes name each Pose type ([`crate::summary`]).
+#[allow(clippy::too_many_arguments)]
+pub fn step_case_columns_by_assignment_with(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:&[arclog_features::Pair],queries:Vec<Option<StableHash>>,rows:bool,cache:&SummaryCache,assemblies:Assemblies)->(CaseColumns,StreamTables) {
     let mut stop = None;
     let held: &[Table] = if before.is_some() {&[]} else {evidence};
-    // The cache key of each table: its QueryHash and its place among the step's tables of the same form. A body table and an evidence table have none.
-    let keys: Vec<Option<SummaryKey>> = held.iter().enumerate().map(|(at,_)|Some(evidence_key(at))).chain(tables.iter().enumerate().map(|(at,(_,table))|{
-        let query = queries.get(at).copied().flatten()?;
-        Some((query,tables[..at].iter().filter(|(_,earlier)|earlier.form==table.form).count() as u32))
-    })).collect();
+    // The cache key of each table: its QueryHash with its `DET`s ([`summary_query`]), and its place among the step's tables of the same form. A body
+    // table and an evidence table have none.
+    let keys: Vec<Option<SummaryKey>> = {
+        // The QueryHash of each `DET` table of the stream by its spelling, the first table of the spelling, as `det_query` below finds it.
+        let mut det_queries: StableHashMap<&str,Option<StableHash>> = StableHashMap::default();
+        let earlier = before.into_iter().flat_map(|before|before.tables.iter().map(|table|&**table).zip(before.queries.iter().copied()));
+        for (table,query) in earlier.chain(tables.iter().map(|(_,table)|table).zip(queries.iter().copied())) {
+            let Ok(contents) = &table.contents else {continue};
+            if matches!(contents.relation,TableRelation::Slot(_)) {det_queries.entry(contents.name.as_str()).or_insert(query);}
+        }
+        held.iter().enumerate().map(|(at,_)|Some(evidence_key(at))).chain(tables.iter().enumerate().map(|(at,(_,table))|{
+            let query = queries.get(at).copied().flatten()?;
+            Some((summary_query(query,table,&det_queries),tables[..at].iter().filter(|(_,earlier)|earlier.form==table.form).count() as u32))
+        })).collect()
+    };
     let summaries: Vec<TableSummary> = {
         // The full `DET`s of the stream so far, which a table that reads one through some of its columns stands for each full value of.
-        let fulls = DetFulls::new(before.into_iter().flat_map(|before|before.tables.iter().map(|table|&**table)).chain(tables.iter().map(|(_,table)|table)).collect());
+        let fulls = DetFulls::new(before.into_iter().flat_map(|before|before.tables.iter().map(|table|&**table)).chain(tables.iter().map(|(_,table)|table)).collect()).with_assemblies(assemblies);
         held.iter().chain(tables.iter().map(|(_,table)|table)).zip(keys).map(|(table,key)|summarize_cached(materializer,table,train,&fulls,cache,key).unwrap_or_else(|bound|{
             stop.get_or_insert(Stop {bound,form:table.form.clone()});
             TableSummary::unhashed(table, bound_name(bound))
@@ -803,6 +825,40 @@ pub fn step_case_columns_by_assignment_in(materializer:&Materializer<'_>,before:
     };
     if columns.packing_stop.is_none() {columns.packing_stop=stop;}
     (columns, stream)
+}
+
+/// The hash that keys the summary of `table`, whose QueryHash is `query`, in a
+/// [`SummaryCache`]: `query`, and, for each `DET` of the table's assignments in
+/// their order, the QueryHash of the `DET`'s table (`det_queries`, by the
+/// spelling of the `DET`), or its spelling where the stream has no QueryHash of
+/// it, and the columns of it that the table reads. A summary holds the value of
+/// each `DET` by its place, and the walk of the assignments follows the order
+/// of the `DET`s, so two programs of one query whose `DET`s stand in another
+/// order take two keys.
+fn summary_query(query:StableHash,table:&Table,det_queries:&StableHashMap<&str,Option<StableHash>>)->StableHash {
+    let Ok(contents) = &table.contents else {return query};
+    if contents.dets.is_empty() {return query;}
+    use std::hash::Hasher;
+    let mut hasher = StableHasher::new();
+    hasher.write(b"arclog.summary.dets");
+    hasher.write_u128(query.0);
+    hasher.write_u64(contents.dets.len() as u64);
+    for det in contents.dets.iter() {
+        let spelled = relation_spelled(&det.relation);
+        match det_queries.get(spelled.as_str()).copied().flatten() {
+            Some(hash) => {hasher.write_u8(1);hasher.write_u128(hash.0);}
+            None => {hasher.write_u8(0);hasher.write(spelled.as_bytes());hasher.write_u8(0);}
+        }
+        match &det.columns {
+            Some(columns) => {
+                hasher.write_u8(1);
+                hasher.write_u64(columns.len() as u64);
+                for column in columns.iter() {hasher.write(path_spelled(column).as_bytes());hasher.write_u8(0);}
+            }
+            None => hasher.write_u8(0),
+        }
+    }
+    hasher.finish128()
 }
 
 impl StopColumns {

@@ -1,5 +1,5 @@
 //! `decode`: steps the decoder through the token stream of each case
-//! program of the corpus that holds no `DEMONSTRATED` form, as
+//! program of the corpus, as
 //! `docs/engine/synthesis.md#synthesis` gives the end checks of the step: the
 //! decoder admits the stream, closed-world; the consistency result at the
 //! `END` of its `OUT` form equals the case's solves outcome at the values
@@ -51,7 +51,7 @@ use arclog::stream::corpus::{case_spelled, check_case, check_cases, corpus_case_
 use arclog::decode::corpus::{corpus_session, read_corpus_task, CorpusTask};
 use crate::concept_case::{corpus_limits, determined_cases};
 use arclog_constructions::shared as constructions;
-use arclog::decode::replay::{holds_demonstrated, replay, Stepped};
+use arclog::decode::replay::{replay, Stepped};
 use crate::select::selected;
 
 /// Whether the rows of each prefix are compared with those of a second
@@ -152,19 +152,17 @@ impl Kind {
     }
 }
 
-/// The counts of cases: those decoded, those skipped for a
-/// `DEMONSTRATED` form, and those with a finding of each kind.
+/// The counts of cases: those decoded, and those with a finding of each
+/// kind.
 #[derive(Default)]
 struct Counts {
     decoded: usize,
-    demonstrated: usize,
     found: BTreeMap<Kind, usize>,
 }
 
 impl Counts {
     fn add(&mut self, other: &Counts) {
         self.decoded += other.decoded;
-        self.demonstrated += other.demonstrated;
         for (kind, count) in &other.found {
             *self.found.entry(*kind).or_default() += count;
         }
@@ -177,7 +175,7 @@ impl Counts {
             .iter()
             .map(|kind| if *kind == Kind::Rows && rows == RowsMode::NotChecked { "rows not checked".to_owned() } else { format!("{} {}", found(*kind), kind.label()) })
             .collect();
-        format!("{} cases decoded, {} skipped for a `DEMONSTRATED` form, {}", self.decoded, self.demonstrated, others.join(", "))
+        format!("{} cases decoded, {}", self.decoded, others.join(", "))
     }
 }
 
@@ -245,10 +243,6 @@ fn decode_cases(corpus: &Path, tasks: &Path, id: &str, all: bool, rows: RowsMode
     let base_cases: Vec<DeterminedCase<'_>> = determined.iter().filter(|case| bases.contains(case.name)).copied().collect();
     let determination = determine(&base_cases, &judged, World::Closed);
     for case in determined.iter().filter(|case| decoded.contains(case.name)) {
-        if holds_demonstrated(case.program) {
-            gathered.counts.demonstrated += 1;
-            continue;
-        }
         let expected = expected_solves(case, &determination, &judged);
         let case_run = catch_unwind(AssertUnwindSafe(|| decode_case(corpus, id, resolved_case(&cases, case.name), case.program, expected, &task, &judged, rows, gathered)))
             .unwrap_or_else(|payload| vec![(Kind::Refused, format!("the decoder panicked: {}", panic_message(&*payload)))]);

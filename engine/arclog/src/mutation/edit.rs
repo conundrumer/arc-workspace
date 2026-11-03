@@ -340,6 +340,34 @@ fn rewrite_form(old: &Form, at: &NodePath, patches: &Patches, used: &mut usize) 
                 ..value.clone()
             }))
         }
+        Form::Demonstrated(demonstrated) => {
+            let value = demonstrated.value();
+            let inputs = value
+                .inputs
+                .iter()
+                .enumerate()
+                .map(|(i, inp)| {
+                    input(
+                        inp,
+                        &at.child(value.position(DemonstratedPart::Input(i))),
+                        patches,
+                        used,
+                    )
+                })
+                .collect();
+            Form::Demonstrated(Node::new(Demonstrated {
+                key: value.key.as_ref().map(|k| {
+                    key(
+                        k,
+                        &at.child(value.position(DemonstratedPart::Key)),
+                        patches,
+                        used,
+                    )
+                }),
+                inputs,
+                ..value.clone()
+            }))
+        }
         _ => old.clone(),
     }
 }
