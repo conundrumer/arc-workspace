@@ -1,8 +1,9 @@
 //! The Python extension module `arclog`, built by maturin as an abi3 wheel
 //! from the bindings of the streams export (`arclog-bindings`) and of the
 //! tables export (`arclog-tables-py`). The init calls the `register` of each
-//! and adds `streams_digest`, and sets the allocator of the extension. It
-//! holds no other code. A name that both
+//! and adds `streams_digest`, and sets the allocator of the extension, which
+//! counts the heap's live bytes for the task sessions' byte bounds
+//! ([`arclog::heap`]). It holds no other code. A name that both
 //! register ends the init with an `ImportError` that names it, so that no
 //! tables binding stands in place of a streams binding.
 
@@ -10,7 +11,7 @@ use arclog_bindings::Names;
 use pyo3::prelude::*;
 
 #[global_allocator]
-static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static ALLOCATOR: arclog::heap::Counted<mimalloc::MiMalloc> = arclog::heap::Counted(mimalloc::MiMalloc);
 
 /// The sha256, fixed when the package is built, over every input of the
 /// compile of the crates that the streams bindings and this init are built

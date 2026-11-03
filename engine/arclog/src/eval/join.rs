@@ -81,7 +81,7 @@ impl<'a> Budget<'a> {
         if self.rows > caps.rows {
             return Err(ReachedBound::Rows { cap: caps.rows });
         }
-        self.session.within_bound().map_err(ReachedBound::SessionBytes)?;
+        self.session.within_bound(&self.limits.heap_starts).map_err(ReachedBound::SessionBytes)?;
         if self.limits.deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
             return Err(ReachedBound::Deadline);
         }

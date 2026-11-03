@@ -822,7 +822,7 @@ impl TaskSession {
 
     /// A session with this session's intern table and fact relations, and
     /// an empty result cache, no reserved bytes and no counts of its own.
-    pub(crate) fn sharing_terms(&self) -> Self {
+    pub fn sharing_terms(&self) -> Self {
         TaskSession {
             results: Arc::new(ResultCache::default()),
             allocated: Arc::new(AtomicUsize::new(0)),
@@ -868,11 +868,27 @@ impl TaskSession {
         facts.entry((fact, example)).or_insert_with(|| Arc::new(task.fact_rows(fact, example))).clone()
     }
 
-    /// Whether the session's bytes, the intern table's and the result
-    /// cache's, lie within its bound.
-    pub fn within_bound(&self) -> Result<(), ReachedSessionBound> {
+    /// Whether the session's bytes lie within its bound. The bytes are the
+    /// larger of two counts:
+    ///
+    /// - the ledger ([`TaskSession::ledger`]): the intern table's, the result
+    ///   cache's and the live reservations';
+    /// - where the global allocator counts the heap ([`crate::heap::live`]),
+    ///   the ledger when the session first checked its bound in the operation
+    ///   of `starts`, plus the growth of the heap since then.
+    ///
+    /// The second count covers the bytes the ledger does not count: the rows
+    /// and indexes of relations that a driver, a memo or a table holds, also
+    /// after the result cache evicts them, and the scratch of a walk. It
+    /// counts the growth of every thread of the process.
+    pub fn within_bound(&self, starts: &HeapStarts) -> Result<(), ReachedSessionBound> {
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
-        self.check_bytes(intern, self.allocated.load(Ordering::Relaxed))
+        let ledger = intern.saturating_add(self.results.bytes()).saturating_add(self.allocated.load(Ordering::Relaxed));
+        let bytes = match crate::heap::live() {
+            None => ledger,
+            Some(heap) => ledger.max(starts.grown(Arc::as_ptr(&self.allocated) as usize, heap, ledger)),
+        };
+        if bytes > self.bound.bytes { Err(ReachedSessionBound { bytes, bound: self.bound }) } else { Ok(()) }
     }
 
     /// Reserves a buffer before allocation, together with all live buffer
@@ -914,6 +930,48 @@ impl TaskSession {
     /// stop.
     pub fn largest_counts(&self) -> Counts {
         Counts { bindings: self.largest_bindings.load(Ordering::Relaxed), rows: self.largest_rows.load(Ordering::Relaxed) }
+    }
+}
+
+/// The live bytes of the heap and the ledger of each session when it first
+/// checked its bound in one operation, by the session's ledger of
+/// reservations. The clones of an operation's [`crate::eval::Limits`] share
+/// them.
+#[derive(Clone, Debug, Default)]
+pub struct HeapStarts {
+    /// The first session's start, read with no lock.
+    first: Arc<OnceLock<HeapStart>>,
+    /// The start of each other session.
+    others: Arc<Mutex<Vec<HeapStart>>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct HeapStart {
+    session: usize,
+    heap: usize,
+    ledger: usize,
+}
+
+impl HeapStarts {
+    /// The ledger at the start of `session`, plus the heap's growth from its
+    /// start to `heap`. A session's first check is its start, at `heap` and
+    /// `ledger`.
+    fn grown(&self, session: usize, heap: usize, ledger: usize) -> usize {
+        let fresh = HeapStart { session, heap, ledger };
+        let start = match self.first.get_or_init(|| fresh) {
+            first if first.session == session => *first,
+            _ => {
+                let mut others = self.others.lock().expect("heap starts that no panic poisoned");
+                match others.iter().find(|start| start.session == session) {
+                    Some(start) => *start,
+                    None => {
+                        others.push(fresh);
+                        fresh
+                    }
+                }
+            }
+        };
+        (start.ledger + heap).saturating_sub(start.heap)
     }
 }
 

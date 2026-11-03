@@ -11,6 +11,16 @@
 //! extends only the sets under it. A set under the cap has every smaller set
 //! under the cap too, so the search reads no row for a set that a set it read
 //! as under the cap holds, or that holds a set it read as over the cap.
+//!
+//! A column is a function of a set where adding it to the set leaves the
+//! set's count the same on every relation, and then of each larger set. A read
+//! of a set under the cap finds each column that its rows give one value in each
+//! row of the set's projection, and the search finds others where two sets it
+//! knows the counts of differ by the column and have the same counts. A set that holds such a set and the column has the count
+//! of the set without the column, so the search reads no row for it. A set
+//! that holds such a set and not the column is under the cap with the column
+//! added, so no set that holds it and not the column is maximal: the search
+//! visits none of them.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +29,7 @@ use super::interface::Assigned;
 use super::Decoder;
 use crate::eval::join::Budget;
 use crate::eval::{BodyValue, Limits, Outcome, ReachedBound, RelationValue, Stop};
-use crate::hash::{StableHashMap, StableHashSet};
+use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::terms::TermId;
@@ -66,7 +76,13 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
     }
     let stopped = |bound: ReachedBound| Projections::Stopped(Stop { bound, form: form.clone() });
     let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Projections::Found(Vec::new()) };
-    let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(), read_under: Vec::new(), read_over: Vec::new() };
+    let exact = relations.iter().map(|relation| usize::from(!relation.is_empty())).collect();
+    let mut search = Search {
+        relations, cap, budget,
+        projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(),
+        read_under: Vec::new(), read_over: Vec::new(),
+        exact: StableHashMap::from_iter([(Box::default(), exact)]), determined: Vec::new(),
+    };
     let sets = match search.maximal(arity) {
         Ok(sets) => sets,
         Err(bound) => return stopped(bound),
@@ -108,13 +124,23 @@ struct Search<'a, 'b> {
     /// The count of the rows of a part projected, without repeats and up to
     /// one over the cap, for a projection that `is_under` counted and that
     /// `projected` does not hold.
-    counted: StableHashMap<(usize, usize, Box<[u16]>), usize>,
+    /// With each count, the columns of the relation outside the projection
+    /// that are a function of it in the part's rows, none where the count is
+    /// over the cap.
+    counted: StableHashMap<(usize, usize, Box<[u16]>), (usize, Box<[u16]>)>,
     /// Whether a set of columns, in increasing order, is under the cap.
     under: StableHashMap<Box<[u16]>, bool>,
     /// The sets that `is_under` read the rows of and found under the cap.
     read_under: Vec<Box<[u16]>>,
     /// The sets that `is_under` read the rows of and found over the cap.
     read_over: Vec<Box<[u16]>>,
+    /// The count of the projection of each relation onto a set under the
+    /// cap, 0 for an empty relation, where the search knows it.
+    exact: StableHashMap<Box<[u16]>, Box<[usize]>>,
+    /// Each column found to be a function of a set, on every relation, with
+    /// that set, which does not hold it. No set of a pair holds the set of
+    /// another pair of the same column.
+    determined: Vec<(Box<[u16]>, u16)>,
 }
 
 impl Search<'_, '_> {
@@ -135,7 +161,14 @@ impl Search<'_, '_> {
 
     /// Visits each set under the cap that adds columns from `from` on to
     /// `set`, and gives those that are maximal.
+    /// A set that holds `set` and lacks a column that `set` determines
+    /// is not maximal, so the visit skips each such set: it ends where
+    /// `set` determines a column under `from`, and adds no column after one
+    /// that `set` determines.
     fn extend(&mut self, set: &mut Vec<u16>, from: u16, arity: u16, found: &mut Vec<Vec<u16>>) -> Result<(), ReachedBound> {
+        if self.determines_up_to(set, from.checked_sub(1)) {
+            return Ok(());
+        }
         let mut larger = false;
         for column in from..arity {
             set.push(column);
@@ -144,6 +177,9 @@ impl Search<'_, '_> {
                 self.extend(set, column + 1, arity, found)?;
             }
             set.pop();
+            if self.determines_up_to(set, Some(column)) {
+                break;
+            }
         }
         if !set.is_empty() && !larger {
             for column in (0..from.saturating_sub(1)).filter(|column| !set.contains(column)) {
@@ -166,6 +202,15 @@ impl Search<'_, '_> {
             return Ok(under);
         }
         self.budget.charge_work(1)?;
+        let reduced = self.reduced(set);
+        if reduced.len() < set.len() {
+            let under = self.is_under(&reduced)?;
+            if let Some(counts) = self.exact.get(reduced.as_slice()).cloned() {
+                self.exact.insert(set.into(), counts);
+            }
+            self.under.insert(set.into(), under);
+            return Ok(under);
+        }
         let known = if self.read_under.iter().any(|read| is_subset(set, read)) {
             Some(true)
         } else if self.read_over.iter().any(|read| is_subset(read, set)) {
@@ -178,26 +223,87 @@ impl Search<'_, '_> {
             return Ok(under);
         }
         let mut under = true;
+        let mut counts = vec![0usize; self.relations.len()];
+        // The columns that are a function of `set` on every relation read.
+        let mut functions: Option<Vec<u16>> = None;
         for relation in 0..self.relations.len() {
             if self.relations[relation].is_empty() {
                 continue;
             }
             let mut count: u128 = 1;
+            let mut own: Vec<u16> = Vec::new();
             for part in 0..self.relations[relation].parts().len() {
                 let positions = self.positions(relation, part, set);
                 if positions.is_empty() {
                     continue;
                 }
-                count = count.saturating_mul(self.part_len(relation, part, positions)? as u128);
+                let (part_count, part_functions) = self.part_len(relation, part, positions)?;
+                count = count.saturating_mul(part_count as u128);
+                own.extend_from_slice(&part_functions);
             }
             if count > u128::from(self.cap) {
                 under = false;
                 break;
             }
+            counts[relation] = count as usize;
+            functions = Some(match functions {
+                None => own,
+                Some(held) => held.into_iter().filter(|column| own.contains(column)).collect(),
+            });
         }
         self.under.insert(set.into(), under);
         if under { &mut self.read_under } else { &mut self.read_over }.push(set.into());
+        if under {
+            for column in functions.unwrap_or_default() {
+                self.determine(set, column);
+            }
+            self.learn(set, counts.into());
+        }
         Ok(under)
+    }
+
+    /// Keeps `counts`, the exact counts of `set`, which is under the cap,
+    /// and each column of `set` that the rest of `set` determines: the rest
+    /// has the same counts. A column is a function of the rest wherever the
+    /// two counts are equal, since the count of a projection grows with its
+    /// columns.
+    fn learn(&mut self, set: &[u16], counts: Box<[usize]>) {
+        for at in 0..set.len() {
+            let column = set[at];
+            let rest: Vec<u16> = set.iter().copied().filter(|&other| other != column).collect();
+            if self.exact.get(rest.as_slice()) == Some(&counts) {
+                self.determine(&rest, column);
+            }
+        }
+        self.exact.insert(set.into(), counts);
+    }
+
+    /// Keeps that `column` is a function of `from`, where no set that
+    /// `from` holds is known to determine it, and drops each larger set
+    /// kept for it.
+    fn determine(&mut self, from: &[u16], column: u16) {
+        if self.determined.iter().any(|(held, by)| *by == column && is_subset(held, from)) {
+            return;
+        }
+        self.determined.retain(|(held, by)| *by != column || !is_subset(from, held));
+        self.determined.push((from.into(), column));
+    }
+
+    /// `set` without each column that a set it holds without that column
+    /// determines, one column at a time. It has the counts of `set`.
+    fn reduced(&self, set: &[u16]) -> Vec<u16> {
+        let mut reduced = set.to_vec();
+        while let Some(column) = self.determined.iter().find(|(from, by)| reduced.contains(by) && is_subset(from, &reduced)).map(|(_, by)| *by) {
+            reduced.retain(|&other| other != column);
+        }
+        reduced
+    }
+
+    /// Whether `set` determines a column it does not hold, at or under
+    /// `column`; none where `column` is `None`.
+    fn determines_up_to(&self, set: &[u16], column: Option<u16>) -> bool {
+        let Some(column) = column else { return false };
+        self.determined.iter().any(|(from, by)| *by <= column && !set.contains(by) && is_subset(from, set))
     }
 
     /// The positions in the rows of `part` of `relation` of the columns of
@@ -216,44 +322,93 @@ impl Search<'_, '_> {
 
     /// The count of the rows of `part` of `relation` projected onto
     /// `positions`, without repeats, or one over the cap where more rows
-    /// than the cap result: `part_rows` gives the rows. A projection that
-    /// reads the rows counts each as one binding tried, once for each
-    /// projection whichever of the two reads it first.
-    fn part_len(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<usize, ReachedBound> {
+    /// than the cap result. The count reads the rows until its projection
+    /// passes the cap, counts each row it reads as one binding tried, and
+    /// keeps the count and no row: only the projections of the sets the
+    /// search finds are built, by `part_rows`.
+    /// With the count, it gives the columns that are a function of the
+    /// projection in the part's rows ([`Search::count`]).
+    fn part_len(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<(usize, Box<[u16]>), ReachedBound> {
         let key = (relation, part, positions);
         if let Some(rows) = self.projected.get(&key) {
-            return Ok(rows.len());
+            return Ok((rows.len(), Box::default()));
         }
-        if let Some(&count) = self.counted.get(&key) {
-            return Ok(count);
+        if let Some(counted) = self.counted.get(&key) {
+            return Ok(counted.clone());
         }
         let this = &self.relations[relation].parts()[part];
         if key.2.len() == this.columns.len() {
-            return Ok(this.rows.len());
+            return Ok((this.rows.len(), Box::default()));
         }
-        self.budget.charge_work(this.rows.len() as u64)?;
+        self.budget.charge_work(0)?;
+        let (count, read, functions) = Self::count(this, &key.2, self.cap);
+        self.budget.charge_work(read)?;
+        let functions: Box<[u16]> = functions.into_iter().map(|position| this.columns[usize::from(position)].0).collect();
+        self.counted.insert(key, (count, functions.clone()));
+        Ok((count, functions))
+    }
+
+    /// The count of the rows of `part` projected onto `positions`, without
+    /// repeats, up to one over `cap`, the count of the rows read to find it,
+    /// and, where the count is under the cap, the positions of the part's rows
+    /// outside `positions` that hold one value in all the rows of each row of
+    /// the projection: each is a function of the projection.
+    fn count(part: &RelationPart, positions: &[u16], cap: u64) -> (usize, u64, Vec<u16>) {
         // A row of at most four cells packs into one key.
-        if key.2.len() > 4 {
-            let projection = Self::project(this, &key.2);
-            let count = projection.len();
-            self.projected.insert(key, projection);
-            return Ok(count);
+        if positions.len() <= 4 {
+            let mut groups: StableHashMap<u128, u32> = StableHashMap::default();
+            return Self::scan(part, positions, cap, |row| {
+                let next = groups.len() as u32;
+                let key = positions.iter().fold(0u128, |packed, &position| packed << 32 | u128::from(row[usize::from(position)].encoding()));
+                let group = *groups.entry(key).or_insert(next);
+                (group, group == next)
+            });
         }
-        let mut seen: StableHashSet<u128> = StableHashSet::default();
-        for row in this.rows.rows() {
-            seen.insert(key.2.iter().fold(0u128, |packed, &position| packed << 32 | u128::from(row[usize::from(position)].encoding())));
-            if seen.len() as u64 > self.cap {
-                break;
+        let mut groups: StableHashMap<Box<[TermId]>, u32> = StableHashMap::default();
+        let mut projected: Vec<TermId> = Vec::with_capacity(positions.len());
+        Self::scan(part, positions, cap, |row| {
+            projected.clear();
+            projected.extend(positions.iter().map(|&position| row[usize::from(position)]));
+            // A repeat of a row takes no allocation.
+            if let Some(&group) = groups.get(projected.as_slice()) {
+                return (group, false);
+            }
+            let next = groups.len() as u32;
+            groups.insert(projected.as_slice().into(), next);
+            (next, true)
+        })
+    }
+
+    /// [`Search::count`] where `group` gives the number of a row's projection,
+    /// numbered from 0 in the order first read, and whether the row is the
+    /// first read of it.
+    fn scan(part: &RelationPart, positions: &[u16], cap: u64, mut group: impl FnMut(&[TermId]) -> (u32, bool)) -> (usize, u64, Vec<u16>) {
+        let width = part.columns.len();
+        let mut functions: Vec<u16> = (0..width as u16).filter(|position| !positions.contains(position)).collect();
+        // The cells of the first row read of each projection, row after row.
+        let mut first: Vec<TermId> = Vec::new();
+        let (mut count, mut read) = (0usize, 0u64);
+        for row in part.rows.rows() {
+            read += 1;
+            let (number, new) = group(row);
+            if new {
+                count += 1;
+                if count as u64 > cap {
+                    return (count, read, Vec::new());
+                }
+                first.extend_from_slice(row);
+            } else if !functions.is_empty() {
+                let held = &first[number as usize * width..(number as usize + 1) * width];
+                functions.retain(|&position| row[usize::from(position)] == held[usize::from(position)]);
             }
         }
-        let count = seen.len();
-        self.counted.insert(key, count);
-        Ok(count)
+        (count, read, functions)
     }
 
     /// The rows of `part` of `relation` projected onto `positions`, without
     /// repeats. A projection that reads the rows counts each as one binding
-    /// tried, unless `part_len` counted them.
+    /// tried, unless `part_len` counted them: it counted all of them, since
+    /// the search finds only sets under the cap.
     fn part_rows(&mut self, relation: usize, part: usize, positions: Box<[u16]>) -> Result<&RowSet, ReachedBound> {
         let key = (relation, part, positions);
         if !self.projected.contains_key(&key) {

@@ -1519,8 +1519,9 @@ impl<'a> Inference<'a> {
         let (first, rest) = path.split_first()?;
         let local = |ty: ValueType| try_map_labels(&ty, &|_| None);
         let key = columns::key();
-        if *first == key {
-            let Some(key_body) = &rigid_value.key else { return None };
+        // A form with no key clause has no `key` column of its own, so a
+        // `key` column there is a part's, such as a keyed `INIT` output's.
+        if let (true, Some(key_body)) = (*first == key, &rigid_value.key) {
             let field = |column: &RelationColumn| Some((column.name.clone(), inference.label(column.label)?));
             let record = ValueType::Record(key_body.columns.iter().map(field).collect::<Option<_>>()?);
             return local(project(&record, rest)?);

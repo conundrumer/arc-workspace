@@ -4,7 +4,9 @@
 //! [`crate::stream::token_stream`] writes, and its mask,
 //! [`Decoder::admissible`], admits a token where every check of
 //! [`crate::check::checks`] holds, by its prefix form, on the program that
-//! the token gives: one [`PrefixChecks`] per state resolves, and infers the
+//! the token gives, but within a `DEMONSTRATED` form, where it admits each
+//! token the grammar takes and the checks read the form at the token that
+//! ends it: one [`PrefixChecks`] per state resolves, and infers the
 //! types of, the finished forms once, and each candidate token costs the
 //! resolution and the checks of its form in progress alone. The candidates
 //! whose step opens an atom are one program but for the atom's relation,
@@ -312,6 +314,7 @@ impl<'a> Decoder<'a> {
             let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
             let conflicts = self.state.fixed_label_conflicts(self.context.registry, &column_type);
             let classes = self.state.native_classes(self.context.registry, &column_type);
+            let in_demonstrated_form = self.state.in_demonstrated();
             let mut class_of = vec![None; vocabulary.len()];
             let mut admitted = vec![None; classes.len()];
             for (class, tokens) in classes.iter().enumerate() {
@@ -334,6 +337,14 @@ impl<'a> Decoder<'a> {
                             let step = self.grammar_next(token).expect("a class member passes the same grammar");
                             mask.insert(id);
                             steps.insert(id, step);
+                        }
+                        continue;
+                    }
+                    if in_demonstrated_form && matches!(token, Token::Relation(_)) {
+                        // The verdict is the grammar's, and the step's state, whose atom's columns hold the Example
+                        // column where the read of the relation reads one, is made when the token is stepped.
+                        if self.grammar_verdict(token) {
+                            mask.insert(id);
                         }
                         continue;
                     }
@@ -365,6 +376,17 @@ impl<'a> Decoder<'a> {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
         Ok((state, forced))
+    }
+
+    /// Whether [`Decoder::next`] admits `token`, a relation token inside a
+    /// `DEMONSTRATED` form, where no check reads the prefix: whether the
+    /// grammar takes it. The Example column of the atom it opens, the one
+    /// part of its step that reads the resolution of the form in progress,
+    /// changes no verdict and no token the engine emits after it, so the
+    /// step reads none.
+    fn grammar_verdict(&self, token: &Token) -> bool {
+        let step = self.state.step(&self.context, token, &|_, _, _| false);
+        step.is_ok_and(|(_, forced, _)| forced.iter().all(|token| self.context.vocabulary.id(token).is_some()))
     }
 
     /// The mask of [`Decoder::next`] over every token.
@@ -618,7 +640,7 @@ impl<'a> Decoder<'a> {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
         if let Some((program, open)) = state.partial() {
-            if !program.value().forms.is_empty() {
+            if !program.value().forms.is_empty() && !in_demonstrated(&program, open.as_ref()) {
                 if self.context.settings.static_pruning {
                     self.check_static_prune(&program, open.as_ref(), checks)?;
                 }
@@ -717,7 +739,7 @@ impl<'a> Decoder<'a> {
     /// `checks` on that program, with `candidate`.
     fn check_state(&self, state: &state::State, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
         let Some((program, open)) = state.partial() else { return Ok(()) };
-        if program.value().forms.is_empty() {
+        if program.value().forms.is_empty() || in_demonstrated(&program, open.as_ref()) {
             return Ok(());
         }
         let check = || {
@@ -832,6 +854,13 @@ impl<'a> Decoder<'a> {
             Err(unexpected) => Err(Refusal::Grammar(unexpected)),
         }
     }
+}
+
+/// Whether the last form of `program`, whose innermost open node is at
+/// `open`, is a `DEMONSTRATED` form in progress. The checks read no prefix
+/// of such a form: they read the form whole, at the step that ends it.
+fn in_demonstrated(program: &Node<Program>, open: Option<&NodePath>) -> bool {
+    open.is_some() && matches!(program.value().forms.last(), Some(crate::program::Form::Demonstrated(_)))
 }
 
 /// The steps of the completion search of a projection, per token. A token

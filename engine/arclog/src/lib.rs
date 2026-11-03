@@ -97,6 +97,7 @@ pub mod eval;
 pub mod safety;
 pub mod harness;
 pub mod hash;
+pub mod heap;
 pub mod judge;
 pub mod layout;
 mod product;

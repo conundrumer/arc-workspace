@@ -96,6 +96,15 @@ pub enum Control {
     /// `0`.
     Zero,
     Op(ConstraintOp),
+    /// `DEMONSTRATED`, the keyword of the form of `docs/arclog/arclog.md#demonstrated`.
+    Demonstrated,
+    /// `DEMO_RULE`, the keyword of a demonstrated rule of a `DEMONSTRATED` form.
+    DemoRule,
+    /// `PREDICT`, the keyword of a `DEMO_RULE`'s `&prediction` clause.
+    Predict,
+    /// `ALT_FORM`, which marks the next form of a `DEMO_RULE` as one that an
+    /// `ALT` gives it, a label scope of its own.
+    AltForm,
 }
 
 impl fmt::Display for Token {
@@ -134,6 +143,10 @@ impl Control {
             Control::Key => "^",
             Control::Zero => "0",
             Control::Op(op) => spelling(sp::CONSTRAINT_OPS, &op),
+            Control::Demonstrated => "DEMONSTRATED",
+            Control::DemoRule => "DEMO_RULE",
+            Control::Predict => "PREDICT",
+            Control::AltForm => "ALT_FORM",
         }
     }
 
@@ -164,6 +177,10 @@ impl Control {
         Control::Op(ConstraintOp::Gt),
         Control::Op(ConstraintOp::Ge),
     ];
+
+    /// The control tokens of the `DEMONSTRATED` form, whose slots follow
+    /// every other slot of the vocabulary, in this order.
+    pub const DEMONSTRATED_FORM: [Control; 4] = [Control::Demonstrated, Control::DemoRule, Control::Predict, Control::AltForm];
 }
 
 /// Which side emits a token: the language model, or the engine, as the

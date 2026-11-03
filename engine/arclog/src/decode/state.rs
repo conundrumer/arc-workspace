@@ -10,6 +10,19 @@
 //! column's position among the relation's columns; a field of a record, by
 //! its position in the record; and the name of a bare label at a column of a
 //! type parameter, by the label's id.
+//!
+//! A `DEMONSTRATED` form's key and inputs step as an instance's do, with the
+//! inputs of `crate::stream::demonstrated::ports`, and its rules then follow.
+//! A rule is a label scope of its own, which its forms share, and each of its
+//! forms steps as a form of the program does. A form after `ALT_FORM`, one
+//! that an `ALT` gives the rule, is a label scope of its own, whose labels
+//! take slots from the first; after it the rule's labels go on from where
+//! they stood. A relation that a rule's form
+//! declares is read within the rule alone. A decoded rule is named `$R<n>`,
+//! by its position among the form's rules, and holds no text. Its
+//! `&prediction` clause names its columns as the stream fills them: each
+//! filled column of the key, and of the `value` input's head, by that
+//! column's name.
 
 use std::sync::Arc;
 
@@ -18,9 +31,9 @@ use crate::check::{CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::Outcome;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{
-    written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, Form, Instance,
-    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OneMark, Operand, OutputName, OutputOwner, OutputStep, PortName,
-    Out, Program, ProgramRelation, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg, SiteValue,
+    written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName, DemoRule,
+    Demonstrated, Form, Instance, InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OneMark, Operand, OutputName, OutputOwner,
+    OutputStep, PortName, Out, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, RigidDet, RigidDetName, Site, SiteArg, SiteValue,
 };
 use crate::read::columns::{key_labels, made_labels, slot_columns};
 use crate::read::is_type_parameter_column;
@@ -29,7 +42,7 @@ use crate::registry::Registry;
 use crate::resolver::columns::example;
 use crate::resolver::{resolve, resolve_last, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
-use crate::resolver::form_columns::rigid_outputs;
+use crate::resolver::form_columns::{demonstrated_columns, rigid_outputs};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
 use crate::stream::{Control, Token};
 use crate::types::{Meet, ValueType};
@@ -41,12 +54,20 @@ pub(super) type Unexpected = &'static str;
 /// names of its columns in order, and whether a read of it resolves: an
 /// instance's relation of an input resolves where the instance writes the
 /// input, as `crate::registry::Component::relation_ports` gives.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Declared {
     relation: ProgramRelation,
     columns: Arc<[ColumnName]>,
     readable: bool,
+    /// The names of the fields of each column of a record whose fields are
+    /// not named by their positions: a `DEMONSTRATED` form's key and the
+    /// records of its `value` head.
+    fields: Fields,
 }
+
+/// The names of the fields of a relation's columns, by column, for each
+/// column whose fields are not named by their positions.
+type Fields = Arc<[(ColumnName, Arc<[ColumnName]>)]>;
 
 /// The state of a decode. A clone copies the stack's frames, each of which
 /// holds its children as shared nodes, and shares the finished forms and the
@@ -216,6 +237,11 @@ enum Frame {
     Rigid(RigidFrame),
     /// An `OUT` form, whose body stands open above it.
     Out,
+    /// A `DEMONSTRATED` form after its key and inputs, at its rules.
+    Demonstrated(DemonstratedFrame),
+    DemoRule(DemoRuleFrame),
+    /// A `&prediction` clause after its body, at the columns it fills.
+    Predict(PredictFrame),
 }
 
 /// The frame of `$variant` on top of `$state`'s stack.
@@ -233,6 +259,9 @@ struct ClauseFrame {
     keyword: ClauseKeyword,
     proposers: Vec<LibName>,
     stage: ClauseStage,
+    /// Whether the clause is a `DEMO_RULE`'s `&prediction` clause, which
+    /// `PREDICT` opens: a body alone, which `END` closes.
+    predict: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -276,6 +305,9 @@ struct AtomFrame {
     /// The names of the relation's columns, by the position of a column
     /// token.
     columns: Arc<[ColumnName]>,
+    /// The fields of the relation's columns that are not named by their
+    /// positions, as [`Declared::fields`] gives them.
+    fields: Fields,
     sites: Vec<Site>,
     negated: bool,
 }
@@ -284,6 +316,9 @@ struct AtomFrame {
 struct SiteFrame {
     column: ColumnName,
     args: Vec<SiteArg>,
+    /// The names of the fields of the record the site's column holds, where
+    /// they are not named by their positions.
+    names: Option<Arc<[ColumnName]>>,
     /// The count of the fields of the record the site's column holds, where
     /// it holds one.
     record: Option<u16>,
@@ -319,6 +354,9 @@ struct InstanceFrame {
     first: u32,
     /// The component, from its token on.
     component: Option<LibName>,
+    /// Whether the frame holds the key and inputs of a `DEMONSTRATED` form,
+    /// whose inputs are those of `crate::stream::demonstrated::ports`.
+    demonstrated: bool,
     key: Option<Node<KeyClause>>,
     inputs: Vec<Node<InstanceInput>>,
     stage: Naming,
@@ -395,6 +433,39 @@ struct RigidFrame {
     stage: RigidStage,
 }
 
+#[derive(Clone, Debug)]
+struct DemonstratedFrame {
+    key: Option<Node<KeyClause>>,
+    inputs: Vec<Node<InstanceInput>>,
+    rules: Vec<Node<DemoRule>>,
+}
+
+#[derive(Clone, Debug)]
+struct DemoRuleFrame {
+    /// The rule's position among the form's rules.
+    index: usize,
+    /// The slot of the first relation that a form of the rule declares.
+    first: u32,
+    fields: Vec<LabelId>,
+    /// Each form, with whether an `ALT` gives it to the rule.
+    forms: Vec<(Form, bool)>,
+    /// Where `ALT_FORM` has opened a form that an `ALT` gives the rule, a
+    /// label scope of its own, the count of the rule's labels, which the
+    /// rule takes back once that form is complete.
+    rule_labels: Option<u32>,
+}
+
+#[derive(Clone, Debug)]
+struct PredictFrame {
+    body: Node<Body>,
+    /// The name of each column the clause may fill, as
+    /// `crate::stream::demonstrated::prediction_targets` gives them.
+    targets: Vec<Option<ColumnName>>,
+    columns: Vec<RelationColumn>,
+    /// The position of the column whose label or `SKIP` comes next.
+    next: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum RigidStage {
     Key,
@@ -416,6 +487,7 @@ enum Built {
     Input { input: Node<InstanceInput>, position: usize },
     KeyClause(Node<KeyClause>),
     Form(Form),
+    Rule(Node<DemoRule>),
 }
 
 /// What a frame does with a token.
@@ -506,7 +578,7 @@ impl State {
         }
         let ends = match self.stack.as_slice() {
             [Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, stage: ClauseStage::Marks { .. }, .. })] => 1,
-            [Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, proposers, stage: ClauseStage::Marks { .. } }), Frame::One(_)] if !proposers.is_empty() => 2,
+            [Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, proposers, stage: ClauseStage::Marks { .. }, .. }), Frame::One(_)] if !proposers.is_empty() => 2,
             _ => return None,
         };
         let mut state = self.clone();
@@ -568,7 +640,7 @@ impl State {
                 *id < self.labels
                     && match top {
                         Some(Frame::Site(SiteFrame { field: None, record: Some(_), .. })) => false,
-                        Some(Frame::One(_) | Frame::Site(_) | Frame::Constraint(_) | Frame::HeadSite(_)) => true,
+                        Some(Frame::One(_) | Frame::Site(_) | Frame::Constraint(_) | Frame::HeadSite(_) | Frame::Predict(_)) => true,
                         _ => false,
                     }
             }
@@ -592,7 +664,7 @@ impl State {
                 _ => true,
             },
             Token::Control(control) => match top {
-                None => matches!(control, Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet | Control::Out),
+                None => matches!(control, Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet | Control::Out | Control::Demonstrated),
                 Some(Frame::One(_)) => *control == Control::End,
                 Some(Frame::Constraint(_)) => matches!(control, Control::Fresh | Control::Zero),
                 Some(Frame::HeadSite(site)) if site.field.is_some() => matches!(control, Control::Fresh | Control::Zero),
@@ -606,7 +678,13 @@ impl State {
 
     /// Whether the state holds an `INIT` form that has no component yet.
     pub(super) fn awaits_component(&self) -> bool {
-        matches!(&self.stack[..], [Frame::Instance(InstanceFrame { component: None, .. })])
+        matches!(&self.stack[..], [Frame::Instance(InstanceFrame { component: None, demonstrated: false, .. })])
+    }
+
+    /// Whether a `DEMONSTRATED` form stands open: its key and inputs, or its
+    /// rules.
+    pub(super) fn in_demonstrated(&self) -> bool {
+        self.stack.iter().any(|frame| matches!(frame, Frame::Demonstrated(_) | Frame::Instance(InstanceFrame { demonstrated: true, .. })))
     }
 
     /// Whether `token` takes the grammar step alone, with no check of the
@@ -708,6 +786,9 @@ impl State {
     }
 
     fn component_from_input<'r>(&self, registry: &'r Registry) -> &'r Component {
+        if self.instance().demonstrated {
+            return crate::stream::demonstrated::ports();
+        }
         let name = self.instance().component.as_ref().expect("an input's component");
         component(registry, name).expect("the instance names a component")
     }
@@ -972,7 +1053,7 @@ impl State {
     /// gives it.
     fn declare(&mut self, relation: ProgramRelation, columns: Arc<[ColumnName]>, readable: bool) -> u32 {
         let slot = self.next_slot();
-        self.declared = self.declared.iter().cloned().chain([Arc::new(Declared { relation, columns, readable })]).collect();
+        self.declared = self.declared.iter().cloned().chain([Arc::new(Declared { relation, columns, readable, fields: Arc::from([]) })]).collect();
         slot
     }
 
@@ -1046,6 +1127,19 @@ impl State {
             Some(Frame::HeadSite(_)) => self.offer_head_site(token, forced),
             Some(Frame::Choose(_)) => self.offer_choose(token, forced),
             Some(Frame::Rigid(_)) => self.offer_rigid(context, token, forced),
+            Some(Frame::Demonstrated(_)) => match token {
+                Token::Control(Control::DemoRule) => {
+                    let index = top!(self, Frame::Demonstrated).rules.len();
+                    let first = self.next_slot();
+                    self.stack.push(Frame::DemoRule(DemoRuleFrame { index, first, fields: Vec::new(), forms: Vec::new(), rule_labels: None }));
+                    self.labels = 0;
+                    Ok(Offer::Taken)
+                }
+                Token::Control(Control::End) => Ok(Offer::Close { consumed: true }),
+                _ => Err("a `DEMONSTRATED` form's rules each open with `DEMO_RULE`, then its `END`"),
+            },
+            Some(Frame::DemoRule(_)) => self.offer_rule(token, forced),
+            Some(Frame::Predict(_)) => self.offer_predict(token, forced),
             Some(Frame::Out) => unreachable!("an `OUT` form whose body stands open"),
             Some(Frame::Or(_) | Frame::Lists(_) | Frame::Input(_)) => unreachable!("a frame that stands below an open child"),
         }
@@ -1054,10 +1148,14 @@ impl State {
     /// The keyword of a form.
     fn open_form(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
         let frame = match token {
-            Token::Control(Control::Rule) => Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Rule, proposers: Vec::new(), stage: ClauseStage::Proposers }),
-            Token::Control(Control::Det) => Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, proposers: Vec::new(), stage: ClauseStage::Proposers }),
+            Token::Control(Control::Rule) => Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Rule, proposers: Vec::new(), stage: ClauseStage::Proposers, predict: false }),
+            Token::Control(Control::Det) => Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, proposers: Vec::new(), stage: ClauseStage::Proposers, predict: false }),
             Token::Control(Control::Init) => {
-                Frame::Instance(InstanceFrame { first: self.next_slot(), component: None, key: None, inputs: Vec::new(), stage: Naming::Open })
+                Frame::Instance(InstanceFrame { first: self.next_slot(), component: None, demonstrated: false, key: None, inputs: Vec::new(), stage: Naming::Open })
+            }
+            Token::Control(Control::Demonstrated) => {
+                forced.push(Token::Column(0));
+                Frame::Instance(InstanceFrame { first: self.next_slot(), component: None, demonstrated: true, key: None, inputs: Vec::new(), stage: Naming::Named(None) })
             }
             Token::Control(Control::Choose) => {
                 forced.push(Token::Column(0));
@@ -1085,9 +1183,14 @@ impl State {
     fn offer_clause(&mut self, token: &Token) -> Result<Offer, Unexpected> {
         let clause = top!(self, Frame::Clause);
         match (&clause.stage, token) {
-            (ClauseStage::Proposers, Token::Proposer(name)) => {
+            (ClauseStage::Proposers, Token::Proposer(name)) if !clause.predict => {
                 clause.proposers.push(name.clone());
                 Ok(Offer::Taken)
+            }
+            (ClauseStage::Proposers, _) if clause.predict => {
+                clause.stage = ClauseStage::Body;
+                self.push_body(Close::List, false);
+                Ok(Offer::Again)
             }
             (ClauseStage::Proposers, _) if !clause.proposers.is_empty() => {
                 clause.stage = ClauseStage::Marks { body: empty(), ones: Vec::new(), set: false };
@@ -1167,12 +1270,14 @@ impl State {
             Some(LibEntry::Relation(_) | LibEntry::Macro(_)) if component(registry, name).is_none() => Ok(RelationRef::Lib(name.clone())),
             _ => Err("the lib name is no relation"),
         };
+        let mut fields: Fields = Arc::from([]);
         let (relation, columns): (RelationRef, Arc<[ColumnName]>) = match token {
             Token::Relation(slot) => {
                 if self.stack.iter().any(|frame| matches!(frame, Frame::Instance(instance) if *slot >= instance.first)) && !self.reads_outputs(context) {
                     return Err("an instance's relations are read within it only by an input that reads its outputs");
                 }
                 let declared = self.declared.get(*slot as usize).filter(|declared| declared.readable).ok_or("the slot holds no relation that a read resolves")?;
+                fields = declared.fields.clone();
                 let relation = match &declared.relation {
                     ProgramRelation::Declared(name) => RelationRef::Declared(name.clone()),
                     ProgramRelation::Output(output) => RelationRef::Output(output.clone()),
@@ -1191,7 +1296,7 @@ impl State {
             Some(Frame::Body(body)) => std::mem::take(&mut body.negate),
             _ => false,
         };
-        self.stack.push(Frame::Atom(AtomFrame { relation, columns, sites: Vec::new(), negated }));
+        self.stack.push(Frame::Atom(AtomFrame { relation, columns, fields, sites: Vec::new(), negated }));
         self.opened = Some(Opened);
         Ok(())
     }
@@ -1225,7 +1330,11 @@ impl State {
     fn open_site(&mut self, context: &Context<'_>, column: ColumnName) {
         let typed = type_parameter(&column);
         let own = self.reads_own_output();
-        self.stack.push(Frame::Site(SiteFrame { column, args: Vec::new(), record: None, field: None, unbound: false }));
+        let names = match self.stack.last() {
+            Some(Frame::Atom(atom)) => atom.fields.iter().find(|(name, _)| *name == column).map(|(_, names)| names.clone()),
+            _ => None,
+        };
+        self.stack.push(Frame::Site(SiteFrame { column, args: Vec::new(), names, record: None, field: None, unbound: false }));
         if typed {
             let (program, open) = self.partial().expect("a form that shows its site");
             let at = self.absolute(&open.expect("an open site"));
@@ -1274,7 +1383,8 @@ impl State {
             (Some(field), _, _) => {
                 let label = self.label_token(token, in_key, forced).ok_or("a field's column token is followed by its label")?;
                 let site = top!(self, Frame::Site);
-                site.args.push(field_arg(&site.column, field, label));
+                let name = site.names.as_ref().and_then(|names| names.get(field as usize).cloned()).unwrap_or(ColumnName::Slot(field));
+                site.args.push(field_arg(&site.column, name, label));
                 site.field = None;
                 return Ok(Offer::Taken);
             }
@@ -1320,7 +1430,7 @@ impl State {
 
     fn offer_instance(&mut self, context: &Context<'_>, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
         let instance = top!(self, Frame::Instance);
-        match (instance.component.is_some(), instance.stage, token) {
+        match (instance.component.is_some() || instance.demonstrated, instance.stage, token) {
             (false, _, Token::Lib(name)) => {
                 let declared = component(context.registry, name).ok_or("an `INIT` names a component")?;
                 instance.component = Some(name.clone());
@@ -1363,11 +1473,13 @@ impl State {
     /// A projection's column: its labels, or its fields, each a column
     /// token and a label, then the record's `END`; then the column's `END`.
     fn offer_head_site(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
+        let demonstrated = self.instance().demonstrated;
         let site = top!(self, Frame::HeadSite);
         if let Some(field) = site.field {
             let label = self.label_token(token, false, forced).ok_or("a field's column token is followed by its label")?;
             let site = top!(self, Frame::HeadSite);
-            site.args.push(field_arg(&site.column, field, label));
+            let name = if demonstrated { head_field(&site.column, field) } else { ColumnName::Slot(field) };
+            site.args.push(field_arg(&site.column, name, label));
             site.field = None;
             site.fields += 1;
             return Ok(Offer::Taken);
@@ -1468,11 +1580,133 @@ impl State {
         }
     }
 
+    /// A rule's fields, each a made label, then its forms, each opened by
+    /// its keyword, `PREDICT` for its `&prediction` clause, and after
+    /// `ALT_FORM` where an `ALT` gives it, then its `END`.
+    fn offer_rule(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
+        let rule = top!(self, Frame::DemoRule);
+        let alt_open = rule.rule_labels.is_some();
+        let fields_open = rule.forms.is_empty() && !alt_open;
+        if alt_open && !matches!(token, Token::Control(Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet | Control::Predict)) {
+            return Err("`ALT_FORM` is followed by the keyword of a form");
+        }
+        match token {
+            Token::Control(Control::AltForm) => {
+                let labels = self.labels;
+                top!(self, Frame::DemoRule).rule_labels = Some(labels);
+                self.labels = 0;
+                Ok(Offer::Taken)
+            }
+            Token::Control(Control::Fresh) if fields_open => {
+                let Some(LabelUse::Fresh(label)) = self.label_token(token, false, forced) else { unreachable!("`*` makes a label") };
+                top!(self, Frame::DemoRule).fields.push(label);
+                Ok(Offer::Taken)
+            }
+            Token::Control(Control::Rule | Control::Det | Control::Init | Control::Choose | Control::RigidDet) => self.open_form(token, forced),
+            Token::Control(Control::Predict) => {
+                self.stack.push(Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Rule, proposers: Vec::new(), stage: ClauseStage::Proposers, predict: true }));
+                Ok(Offer::Taken)
+            }
+            Token::Control(Control::End) => Ok(Offer::Close { consumed: true }),
+            _ => Err("a `DEMO_RULE` holds its fields, then its forms, then its `END`"),
+        }
+    }
+
+    /// The label, or `SKIP`, of each column that a `&prediction` clause
+    /// fills, each after the engine's column token.
+    fn offer_predict(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
+        let labels = self.labels;
+        let predict = top!(self, Frame::Predict);
+        let label = match token {
+            Token::Label(id) if *id < labels => Some(LabelId(*id)),
+            Token::Control(Control::Skip) => None,
+            _ => return Err("a `&prediction` clause fills each column with a label seen, or `SKIP`"),
+        };
+        if let Some(label) = label {
+            let position = predict.next;
+            let name = predict.targets[position].clone().unwrap_or(ColumnName::Slot(u32::MAX - position as u32));
+            predict.columns.push(RelationColumn { name, label });
+        }
+        predict.next += 1;
+        if predict.next < predict.targets.len() {
+            forced.push(Token::Column(predict.next as u32));
+            return Ok(Offer::Taken);
+        }
+        Ok(Offer::Close { consumed: true })
+    }
+
+    /// The columns that a `&prediction` clause of the `DEMONSTRATED` form in
+    /// progress fills.
+    fn prediction_targets(&self) -> Vec<Option<ColumnName>> {
+        let found = self.stack.iter().rev().find_map(|frame| match frame {
+            Frame::Demonstrated(demonstrated) => Some(demonstrated),
+            _ => None,
+        });
+        let Some(demonstrated) = found else { return Vec::new() };
+        let value = Demonstrated { name: RelationName(DeclaredName::Slot(0)), key: demonstrated.key.clone(), inputs: demonstrated.inputs.iter().cloned().collect(), rules: Arc::from([]) };
+        crate::stream::demonstrated::prediction_targets(&value)
+    }
+
+    /// Gives `form`, which is complete, to the `DEMO_RULE` form on top, or
+    /// finishes it as a form of the program.
+    fn complete_form(&mut self, form: Form) {
+        match self.stack.last_mut() {
+            Some(Frame::DemoRule(rule)) => {
+                let rule_labels = rule.rule_labels.take();
+                rule.forms.push((form, rule_labels.is_some()));
+                if let Some(labels) = rule_labels {
+                    self.labels = labels;
+                }
+            }
+            _ => self.finish_form(form),
+        }
+    }
+
     /// Pops the top frame and gives its node, or none where the frame
     /// below has taken it.
     fn close(&mut self, context: &Context<'_>, forced: &mut Vec<Token>) -> Result<Option<Built>, Unexpected> {
         let frame = self.stack.pop().expect("an open frame");
         let built = match frame {
+            Frame::Clause(clause) if clause.predict => {
+                let ClauseStage::Marks { body, .. } = clause.stage else { unreachable!("a clause closes at its marks' `END`") };
+                let targets = self.prediction_targets();
+                if targets.is_empty() {
+                    return Ok(Some(Built::Form(Form::Clause(Node::new(prediction_clause(body, Vec::new()))))));
+                }
+                forced.push(Token::Column(0));
+                self.stack.push(Frame::Predict(PredictFrame { body, targets, columns: Vec::new(), next: 0 }));
+                return Ok(None);
+            }
+            Frame::Predict(predict) => Built::Form(Form::Clause(Node::new(prediction_clause(predict.body, predict.columns)))),
+            Frame::DemoRule(rule) => {
+                // The rule's relations are read within it alone.
+                let first = rule.first as usize;
+                let hidden = |slot: usize, declared: &Arc<Declared>| slot >= first && declared.readable;
+                self.declared = self
+                    .declared
+                    .iter()
+                    .enumerate()
+                    .map(|(slot, declared)| match hidden(slot, declared) {
+                        true => Arc::new(Declared { readable: false, ..Declared::clone(declared) }),
+                        false => declared.clone(),
+                    })
+                    .collect();
+                Built::Rule(Node::new(demo_rule(rule.index, &rule.fields, rule.forms)))
+            }
+            Frame::Demonstrated(demonstrated) => {
+                let slot = self.next_slot();
+                let name = RelationName(DeclaredName::Slot(slot));
+                let value = Demonstrated { name: name.clone(), key: demonstrated.key, inputs: demonstrated.inputs.into(), rules: demonstrated.rules.into() };
+                let columns = demonstrated_columns(&value).names().cloned().collect();
+                self.declare(ProgramRelation::Declared(name), columns, true);
+                let fields = demonstrated_fields(&value);
+                self.declared = self.declared.iter().cloned().map(|declared| match declared.relation == ProgramRelation::Declared(value.name.clone()) {
+                    true => Arc::new(Declared { fields: fields.clone(), ..Declared::clone(&declared) }),
+                    false => declared,
+                }).collect();
+                forced.push(Token::Relation(slot));
+                Built::Form(Form::Demonstrated(Node::new(value)))
+            }
             Frame::Clause(clause) => {
                 let ClauseStage::Marks { body, ones, set } = clause.stage else { unreachable!("a clause closes at its marks' `END`") };
                 let slot = self.next_slot();
@@ -1518,7 +1752,7 @@ impl State {
     /// frame below it.
     fn deliver(&mut self, context: &Context<'_>, built: Built, closer: Option<&Token>, forced: &mut Vec<Token>) -> Result<(), Unexpected> {
         if let Built::Form(form) = built {
-            self.finish_form(form);
+            self.complete_form(form);
             return Ok(());
         }
         let in_key = self.in_key();
@@ -1529,8 +1763,9 @@ impl State {
                 clause.stage = ClauseStage::Marks { body, ones: Vec::new(), set };
                 match (ends, set) {
                     (true, _) => {
-                        let built = self.close(context, forced)?.expect("a clause gives its form");
-                        self.deliver(context, built, closer, forced)?;
+                        if let Some(built) = self.close(context, forced)? {
+                            self.deliver(context, built, closer, forced)?;
+                        }
                     }
                     (false, true) => {}
                     (false, false) => self.stack.push(Frame::One(Vec::new())),
@@ -1545,6 +1780,7 @@ impl State {
                 self.close_not();
             }
             (Frame::Rigid(rigid), Built::Atom { atom, .. }) => rigid.parts.push(atom),
+            (Frame::Demonstrated(demonstrated), Built::Rule(rule)) => demonstrated.rules.push(rule),
             (Frame::Atom(atom), Built::Site(site)) => atom.sites.push(site),
             (Frame::Or(branches), Built::Body(body)) => {
                 branches.push(body);
@@ -1598,7 +1834,7 @@ impl State {
             }
             (Frame::Out, Built::Body(body)) => {
                 self.stack.pop();
-                self.finish_form(Form::Out(Node::new(Out { key: key_body(body) })));
+                self.complete_form(Form::Out(Node::new(Out { key: key_body(body) })));
             }
             (Frame::Choose(choose), Built::Body(body)) => match choose.stage {
                 ChooseStage::ForOpen => {
@@ -1656,6 +1892,9 @@ impl State {
     }
 
     fn component<'r>(&self, context: &Context<'r>) -> &'r Component {
+        if self.instance().demonstrated {
+            return crate::stream::demonstrated::ports();
+        }
         let name = self.instance().component.as_ref().expect("a named component");
         component(context.registry, name).expect("a component the lib names")
     }
@@ -1680,9 +1919,14 @@ impl State {
         }
         match self.stack.pop() {
             Some(Frame::KeyClause(clause)) => {
-                let key = KeyClause { key: key_body(clause.body.expect("a key clause's body")), inputs: clause.inputs.into() };
+                let body = clause.body.expect("a key clause's body");
+                let body = if self.instance().demonstrated { demonstrated_key_body(body) } else { key_body(body) };
+                let key = KeyClause { key: body, inputs: clause.inputs.into() };
                 top!(self, Frame::Instance).key = Some(Node::new(key));
                 self.name_input(context, 0, forced);
+            }
+            Some(Frame::Instance(instance)) if instance.demonstrated => {
+                self.stack.push(Frame::Demonstrated(DemonstratedFrame { key: instance.key, inputs: instance.inputs, rules: Vec::new() }));
             }
             Some(Frame::Instance(instance)) => {
                 let name = InstanceName(DeclaredName::Slot(instance.first));
@@ -1697,10 +1941,10 @@ impl State {
                 };
                 let declared = self.declared.iter().enumerate().map(|(slot, declared)| match resolved(declared, slot) == declared.readable {
                     true => declared.clone(),
-                    false => Arc::new(Declared { relation: declared.relation.clone(), columns: declared.columns.clone(), readable: true }),
+                    false => Arc::new(Declared { readable: true, ..Declared::clone(declared) }),
                 });
                 self.declared = declared.collect();
-                self.finish_form(Form::Instance(Node::new(value)));
+                self.complete_form(Form::Instance(Node::new(value)));
             }
             _ => unreachable!("an input stands in a key clause or an instance"),
         }
@@ -1753,7 +1997,7 @@ impl State {
         let value = Choose { name: name.clone(), rows: choose.rows, candidate_columns, from, from_inside_for, never: choose.never.into() };
         self.declare(ProgramRelation::Declared(name), columns, true);
         forced.push(Token::Relation(slot));
-        self.finish_form(Form::Choose(Node::new(value)));
+        self.complete_form(Form::Choose(Node::new(value)));
     }
 
     /// The partial node of `frame`, with `child`, the partial node of the
@@ -1770,10 +2014,42 @@ impl State {
                     ClauseStage::Marks { body, ones, set } => (body.clone(), ones.clone(), *set),
                     _ => (open_body(child), Vec::new(), false),
                 };
+                if clause.predict {
+                    return Some(Built::Form(Form::Clause(Node::new(prediction_clause(body, Vec::new())))));
+                }
                 let derives = ProgramRelation::Declared(RelationName(slot));
                 let proposers = clause.proposers.iter().cloned().collect();
                 let value = Clause { keyword: clause.keyword, derives, gloss: None, proposers, body, ones: ones.into(), set, columns: Arc::from([]) };
                 Built::Form(Form::Clause(Node::new(value)))
+            }
+            Frame::Predict(predict) => Built::Form(Form::Clause(Node::new(prediction_clause(predict.body.clone(), predict.columns.clone())))),
+            Frame::DemoRule(rule) => {
+                let child = match child {
+                    Some(Built::Form(form)) => Some(form),
+                    _ => None,
+                };
+                let forms = rule.forms.iter().cloned().chain(child.map(|form| (form, rule.rule_labels.is_some()))).collect();
+                Built::Rule(Node::new(demo_rule(rule.index, &rule.fields, forms)))
+            }
+            Frame::Demonstrated(demonstrated) => {
+                let child = match child {
+                    Some(Built::Rule(rule)) => Some(rule),
+                    _ => None,
+                };
+                let rules = demonstrated.rules.iter().cloned().chain(child).collect();
+                let value = Demonstrated { name: RelationName(slot), key: demonstrated.key.clone(), inputs: demonstrated.inputs.iter().cloned().collect(), rules };
+                Built::Form(Form::Demonstrated(Node::new(value)))
+            }
+            Frame::Instance(instance) if instance.demonstrated => {
+                let mut key = instance.key.clone();
+                let mut inputs = instance.inputs.clone();
+                match child {
+                    Some(Built::KeyClause(clause)) => key = Some(clause),
+                    Some(Built::Input { input, .. }) => inputs.push(input),
+                    _ => {}
+                }
+                let value = Demonstrated { name: RelationName(slot), key, inputs: inputs.into(), rules: Arc::from([]) };
+                Built::Form(Form::Demonstrated(Node::new(value)))
             }
             Frame::One(_) | Frame::Constraint(_) => return None,
             Frame::Body(frame) => {
@@ -1823,12 +2099,13 @@ impl State {
             }
             Frame::KeyClause(clause) => {
                 let mut inputs = clause.inputs.clone();
+                let demonstrated = matches!(self.stack.first(), Some(Frame::Instance(InstanceFrame { demonstrated: true, .. })));
                 let key = match (&clause.body, child) {
                     (Some(body), child) => {
                         if let Some(Built::Input { input, .. }) = child {
                             inputs.push(input);
                         }
-                        key_body(body.clone())
+                        if demonstrated { demonstrated_key_body(body.clone()) } else { key_body(body.clone()) }
                     }
                     (None, child) => KeyBody { body: open_body(child), columns: Arc::from([]) },
                 };
@@ -1920,7 +2197,9 @@ fn child_step(frame: &Frame, above: &Frame) -> u32 {
                 _ => count(key + usize::from(rigid.instance.is_some()) + rigid.parts.len()),
             }
         }
-        Frame::One(_) | Frame::Constraint(_) | Frame::HeadSite(_) => unreachable!("a frame that holds no open child"),
+        Frame::Demonstrated(demonstrated) => count(usize::from(demonstrated.key.is_some()) + demonstrated.inputs.len() + demonstrated.rules.len()),
+        Frame::DemoRule(rule) => count(rule.forms.len()),
+        Frame::One(_) | Frame::Constraint(_) | Frame::HeadSite(_) | Frame::Predict(_) => unreachable!("a frame that holds no open child"),
     }
 }
 
@@ -1952,12 +2231,43 @@ fn bare_arg(column: &ColumnName, label: LabelUse) -> SiteArg {
     }
 }
 
-/// The label at the field at `field` of a record at a site on `column`.
-fn field_arg(column: &ColumnName, field: u32, label: LabelUse) -> SiteArg {
+/// The label at the field named `name` of a record at a site on `column`.
+fn field_arg(column: &ColumnName, name: ColumnName, label: LabelUse) -> SiteArg {
     match type_parameter(column) {
-        true => SiteArg::NamedLabel { name: ColumnName::Slot(field), label },
-        false => SiteArg::Field(Site { column: ColumnName::Slot(field), value: SiteValue { args: Arc::from([SiteArg::Label(label)]) } }),
+        true => SiteArg::NamedLabel { name, label },
+        false => SiteArg::Field(Site { column: name, value: SiteValue { args: Arc::from([SiteArg::Label(label)]) } }),
     }
+}
+
+/// The name of the field at `field` of a record at a head site on `column`
+/// of an input of a `DEMONSTRATED` form: `O_0` for the first field of `o`.
+/// No label's name and no key column's name is one, so a `&prediction`
+/// clause's column names one column of the form's relation alone.
+fn head_field(column: &ColumnName, field: u32) -> ColumnName {
+    let column = match column {
+        ColumnName::Written(text) => text.to_uppercase(),
+        ColumnName::Slot(slot) => format!("C{slot}"),
+    };
+    ColumnName::Written(format!("{column}_{field}").into())
+}
+
+/// A `DEMONSTRATED` form's key body, whose columns are its `^` labels, each
+/// named by its label's id, as a bare label at a column of a type parameter
+/// is: a column of the key and a column of the `value` head that one label
+/// gives have one name.
+fn demonstrated_key_body(body: Node<Body>) -> KeyBody {
+    let columns = key_labels(body.value()).into_iter().map(|label| RelationColumn { name: ColumnName::Slot(label.0), label }).collect();
+    KeyBody { columns, body }
+}
+
+/// The fields of the columns of the relation of `demonstrated` whose
+/// fields are not named by their positions: the key's, and each record of
+/// the `value` head's.
+fn demonstrated_fields(demonstrated: &Demonstrated) -> Fields {
+    let key = demonstrated.key.iter().map(|key| (crate::resolver::columns::key(), key.value().key.columns.iter().map(|column| column.name.clone()).collect()));
+    let value = crate::resolver::form_columns::demonstrated_value(demonstrated).into_iter().flat_map(|input| input.head.iter());
+    let records = value.filter_map(|site| crate::resolver::columns::projection(site).map(|names| (site.column.clone(), Arc::from(names))));
+    key.chain(records).collect()
 }
 
 /// Whether a `CHOOSE` form's `from` stands inside its `for`, which is where
@@ -1971,6 +2281,23 @@ fn inside_for(rows: Option<&KeyBody>, from: &Body) -> bool {
 /// A key's body, whose columns are its `^` labels.
 fn key_body(body: Node<Body>) -> KeyBody {
     KeyBody { columns: slot_columns(key_labels(body.value()), 0), body }
+}
+
+/// The `&prediction` clause of a `DEMO_RULE` form, with `body` and the
+/// columns `columns`.
+fn prediction_clause(body: Node<Body>, columns: Vec<RelationColumn>) -> Clause {
+    let RelationRef::Declared(name) = crate::program::canonical::prediction() else { unreachable!("`&prediction` is a declared relation") };
+    Clause { keyword: ClauseKeyword::Rule, derives: ProgramRelation::Declared(name), gloss: None, proposers: Arc::from([]), body, ones: Arc::from([]), set: false, columns: columns.into() }
+}
+
+/// The decoded `DEMO_RULE` form at `index` among the rules of its form,
+/// with the fields `fields` and the forms `forms`, each with whether an
+/// `ALT` gives it, named as `crate::stream::demonstrated::rule_name` and
+/// `field_name` give.
+fn demo_rule(index: usize, fields: &[LabelId], forms: Vec<(Form, bool)>) -> DemoRule {
+    use crate::stream::demonstrated::{field_name, rule_name};
+    let fields = fields.iter().enumerate().map(|(at, label)| RelationColumn { name: field_name(at), label: *label }).collect();
+    DemoRule { name: rule_name(index), fields, text: None, forms: forms.into_iter().collect() }
 }
 
 fn empty() -> Node<Body> {

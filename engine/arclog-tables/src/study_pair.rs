@@ -321,15 +321,27 @@ fn complete() -> Value {
     json!({"status":"complete"})
 }
 
+/// The status of `tables`: the first fault or stop that loses rows or
+/// extents, or complete. A stop of a table's projections loses no row, so it
+/// leaves the status as it is; each such stop is listed in
+/// `projection_stops`, with the form of its table.
 fn table_status(tables: &[(usize, Table)]) -> Value {
+    let mut status = rows_status(tables);
+    let projection_stops: Vec<Value> = tables.iter().filter_map(|(_, table)| match &table.contents {
+        Ok(Contents { projections: Some(Projections::Stopped(stop)), .. }) =>
+            Some(json!({"table_form":format!("{:?}",table.form), "reason":format!("{:?}",stop.bound), "form":format!("{:?}",stop.form)})),
+        _ => None,
+    }).collect();
+    status["projection_stops"] = json!(projection_stops);
+    status
+}
+
+fn rows_status(tables: &[(usize, Table)]) -> Value {
     for (_, table) in tables {
         let c = match &table.contents {
             Ok(c) => c,
             Err(f) => return faulted(f),
         };
-        if let Some(Projections::Stopped(stop)) = &c.projections {
-            return stopped(stop);
-        }
         for example in &c.examples {
             let rows = match &example.rows {
                 Ok(r) => r,
