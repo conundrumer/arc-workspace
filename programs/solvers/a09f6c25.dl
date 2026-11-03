@@ -289,9 +289,18 @@ two_axis_color([B, F], C, Id, $TwoAxisErased(), BG) :-
     two_axis([B, F], C, Id), background.value(B, BG).
 
 .comp Determine {
+    // The input colors of the cells the output changes: every figure cell
+    // takes a class color or the background color, and every other cell
+    // keeps its color.
+    .init changed = Unanimous<Unit, Color>
+    changed.item($U(), Col) :- ex_in(E, P, Col), ex_out(E, P, Col_out), Col != Col_out.
+
+    .decl figure_color(c: Color)
+    figure_color(Col) :- changed.value($U(), Col).
+
     // The figure cells under the concept reading.
     .init parse = Parse<Example>
-    parse.figure(E, P) :- ex_in(E, P, Col), params.figure_color(Col).
+    parse.figure(E, P) :- ex_in(E, P, Col), figure_color(Col).
 
     // @claim erase-noise
     .init commonest = Mode<Example, Color, Position>

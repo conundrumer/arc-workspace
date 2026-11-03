@@ -84,6 +84,11 @@ out(P, Col, $NearestSeed()) :- nearest.low(P, S, _), hue(P, S, Col).
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
+    // The field: the input color of a cell the output repaints. The seed
+    // keeps its color, at ring 0, so every repainted cell is a field cell.
+    .decl bg(c: Color)
+    bg(C) :- ex_in(E, P, C), ex_out(E, P, C2), C != C2.
+
     // The colors of two neighboring cells, the second one ring farther out.
     .decl cycle_succ(c: Color, c_next: Color)
     cycle_succ(C, C2) :-

@@ -336,3 +336,17 @@ class_size.item([K, Id], Id2) :- same_shape(K, Id, Id2).
 
 odd([A, $CopyCountClass(), C], Id) :-
     class_size.tally([[A, C], Id], N), !params.copy_count(N).
+
+.comp Determine {
+    // A color some train output recolors at an input cell of it.
+    .decl recolored(col: Color)
+    recolored(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    // A color some train output keeps at an input cell of it.
+    .decl kept(col: Color)
+    kept(Col) :- ex_in(E, P, Col), ex_out(E, P, Col).
+
+    // The objects' color: the output recolors every cell of it.
+    .decl object_color(c: Color)
+    object_color(Col) :- recolored(Col), !kept(Col).
+}

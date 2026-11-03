@@ -523,3 +523,46 @@ step_dir($FirstChange(), Ck, Sc, D) :- next_frame(_, Ck, Sc, D, _, _).
 
 result($FirstChange(), Ck, Sc, K, nil, P_intile, Col) :-
     next_frame(K, Ck, Sc, D, P_intile, Col), step_dir($FirstChange(), Ck, Sc, D).
+
+.comp Determine {
+    // A count of cells an example's input admits.
+    .decl admitted(e: Example, n: number)
+    admitted(E, N) :- ex_in(E, P, _), dir_elem(D), dist(P, D, N), N > 0.
+
+    .type ExampleLine = [e: Example, a: Axis, l: Position]
+
+    // The color of an input line all of one color.
+    .init line_color = Unanimous<ExampleLine, Color>
+    line_color.item([E, A, L], Col) :- ex_in(E, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // A line inside a panel when dividers g wide cut an example's input
+    // along the time axis into n panels.
+    .decl panel_line(e: Example, a: Axis, g: number, n: number, l: Position)
+    panel_line(E, A, G, N, L) :-
+        params.time_dir(T), axis_of(T, A),
+        line_color.item([E, A, L], _), admitted(E, G), admitted(E, N),
+        divide_slab(L, A, N, G, _, _).
+
+    // A cut whose dividers are not the full lines of color c.
+    .decl cut_defect(e: Example, c: Color, g: number, n: number)
+    cut_defect(E, C, G, N) :-
+        panel_line(E, A, G, N, _), ex_in(E, _, C), line_color.item([E, A, L], _),
+        ( !panel_line(E, A, G, N, L), !line_color.value([E, A, L], C)  // a divider line not full of c
+        ; panel_line(E, A, G, N, L), line_color.value([E, A, L], C)    // a full line inside a panel
+        ).
+
+    // The full lines of color c cut the example's input into panels.
+    .decl cut(e: Example, c: Color)
+    cut(E, C) :-
+        panel_line(E, A, G, N, _),
+        line_color.item([E, A, L], _), !panel_line(E, A, G, N, L),   // the cut has a divider
+        ex_in(E, _, C), !cut_defect(E, C, G, N).
+
+    // A train input whose full lines of color c cut it into no panels.
+    .decl uncut(c: Color)
+    uncut(C) :- cut(_, C), ex_out(E, _, _), !cut(E, C).
+
+    // The color whose full lines cut every train input into panels.
+    .decl divider_color(c: Color)
+    divider_color(C) :- cut(E, C), ex_out(E, _, _), !uncut(C).
+}

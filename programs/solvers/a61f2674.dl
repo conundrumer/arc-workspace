@@ -231,3 +231,16 @@ shortest($Unique(), [V, Id]) :- bottom.value(V, Id).
 // --- $TieAll ---
 tallest($TieAll(), [V, Id]) :- rank.high(V, Id, _).
 shortest($TieAll(), [V, Id]) :- rank.low(V, Id, _).
+
+.comp Determine {
+    // The input colors at cells the output changes, and at cells it keeps.
+    .decl changed(col: Color)
+    changed(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl kept(col: Color)
+    kept(Col) :- ex_in(E, P, Col), ex_out(E, P, Col).
+
+    // Every bar cell takes a new color, and no other cell does.
+    .decl bar_color(col: Color)
+    bar_color(Col) :- changed(Col), !kept(Col).
+}

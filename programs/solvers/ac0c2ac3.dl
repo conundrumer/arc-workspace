@@ -156,3 +156,16 @@ frame(G, $RankRings(), P) :- canvas(G, P).
 blank(G, U) :- frame(G, U, P), !draw(G, U, P, _).
 
 out(P, Col, [G, U]) :- impl_choice([G, U]), draw(G, U, P, Col), !blank(G, U).
+
+.comp Determine {
+    // Each ring of a train input holds a mark, and the output paints every
+    // ring with its mark's color, so the field color is the one color that
+    // every train input holds and no train output holds.
+
+    // Some train input lacks the color.
+    .decl lacking(c: Color)
+    lacking(Col) :- ex_in(_, _, Col), ex_out(E, _, _), !ex_in(E, _, Col).
+
+    .decl bg(c: Color)
+    bg(Col) :- ex_in(E, _, Col), ex_out(E, _, _), !ex_out(_, _, Col), !lacking(Col).
+}

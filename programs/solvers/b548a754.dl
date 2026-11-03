@@ -271,3 +271,14 @@ fill($RepeatInnerSlice(), R, P, Col) :-
     in(P, _), axis_elem(A), perp(A, A2), split(P, A, L1, L2),
     line_src(R, A, L1, L1_src), line_src(R, A2, L2, L2_src),
     compose(L1_src, L2_src, Q), in(Q, Col).
+
+.comp Determine {
+    // A color of a train output.
+    .decl out_color(e: Example, col: Color)
+    out_color(E, Col) :- ex_out(E, _, Col).
+
+    // The marker turns into border, so its color is the one a train input
+    // holds and its output drops.
+    .decl marker_color(col: Color)
+    marker_color(Col) :- ex_in(E, _, Col), out_color(E, _), !out_color(E, Col).
+}

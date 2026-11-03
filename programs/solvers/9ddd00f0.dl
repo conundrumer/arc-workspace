@@ -166,3 +166,38 @@ out(P, Col, [S, $Blank()]) :-
     ( blank(P, S), paint(P, Col, S)   // a blank block takes the picture
     ; !blank(P, S), Col = C           // every other cell keeps its color
     ).
+
+// A run of background lines in a train output: the example, the axis, the
+// run's first line, and the direction it runs in.
+.type Run = [e: Example, a: Axis, l: Position, d: Dir]
+
+.comp Determine {
+    // A line of axis A that a train output inks.
+    .decl out_ink(e: Example, a: Axis, l: Position)
+    out_ink(E, A, L) :- ex_out(E, P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+    // A run of background lines starts at L: L holds no ink, and the line
+    // one step back from D does.
+    .decl run_start(e: Example, a: Axis, l: Position, d: Dir)
+    run_start(E, A, L, D) :-
+        ex_out(E, P, _), axis_elem(A), split(P, A, L, _), !out_ink(E, A, L),
+        axis_of(D, A), opposite(D, D2), neighbor(L, D2, L0), out_ink(E, A, L0).
+
+    // The extents a run can take.
+    .decl cand(k: number)
+    cand(K) :- ex_out(_, P, _), axis_elem(A), sub_extent(P, A, K).
+
+    // An inked line lies K lines past the run's start toward D.
+    .decl ink_past(e: Example, a: Axis, l: Position, d: Dir, k: number)
+    ink_past(E, A, L, D, K) :-
+        run_start(E, A, L, D), cand(K), jump(L, D, K, L2), out_ink(E, A, L2).
+
+    // The nearest inked line ends the run.
+    .init run_end = Extremes<Run>
+    run_end.cand([E, A, L, D], K) :- ink_past(E, A, L, D, K).
+
+    // The thickness of a run of background lines between two inked lines of
+    // a train output.
+    .decl gap(g: number)
+    gap(G) :- run_end.low(_, G).
+}

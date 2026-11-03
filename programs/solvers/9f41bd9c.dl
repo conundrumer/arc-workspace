@@ -253,3 +253,20 @@ paint([C, H, Dg, T], P, Col) :-
 
 out(P, Col, Ch) :- paint(Ch, P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(Ch, P, _).
+
+.comp Determine {
+    // A color some of whose train-input cells the output gives to the sky:
+    // the cells a crossing comb left.
+    .decl vacated(e: Example, c: Color)
+    vacated(E, Col) :-
+        ex_in(E, P, Col), !params.bg(Col),
+        ex_out(E, P, Col_sky), params.bg(Col_sky).
+
+    // A vacated color that some train pair does not vacate.
+    .decl unvacated(c: Color)
+    unvacated(Col) :- vacated(_, Col), ex_out(E, _, _), !vacated(E, Col).
+
+    // The comb is the color every train pair vacates.
+    .decl comb(c: Color)
+    comb(Col) :- vacated(_, Col), !unvacated(Col).
+}
