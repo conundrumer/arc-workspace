@@ -5,7 +5,7 @@
 #   model/study     sampler, policy, samples, ast/run, feat_exp and judge3 as MODEL_COMMIT (default HEAD) has them, with
 #                   kit_study_paths.py as study_paths.py and kit_build_tables.py as samples/build_tables.py
 #   <SITE's name>   the engine site folder SITE, built from ENGINE_COMMIT
-#   models-current  the models of MODELS
+#   models-current  the models of MODELS, as files (a link in MODELS is followed)
 #   manifest.json   the two commits and the site's name
 #   SHA256SUMS      every file above; <id> is the first 12 hex digits of the sha256 of this file
 # The release folder is read-only. A release with the same id that exists already is left as it is.
@@ -22,7 +22,7 @@ git -C "$REPO" archive "$MODEL_COMMIT" -- model/study/sampler model/study/policy
 git -C "$REPO" show "$MODEL_COMMIT:model/study/sampler/release/kit_study_paths.py" > "$T/model/study/study_paths.py"
 git -C "$REPO" show "$MODEL_COMMIT:model/study/sampler/release/kit_build_tables.py" > "$T/model/study/samples/build_tables.py"
 rsync -a --exclude __pycache__ "${SITE%/}" "$T/"
-cp -R "$MODELS" "$T/models-current"
+cp -RL "$MODELS" "$T/models-current"
 python3 - "$T/manifest.json" "$MODEL_COMMIT" "$ENGINE_COMMIT" "$(basename "${SITE%/}")" <<'EOF'
 import json, sys
 path, model, engine, site = sys.argv[1:]
