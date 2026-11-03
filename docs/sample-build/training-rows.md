@@ -18,6 +18,21 @@ The rows that the gradient-boosted trees fit on. The trees score the admitted id
     - The chance of writing some target query, summed over every path that writes it under the plan.
     - The share of samples whose most probable completed query is a target query.
 
+## Search draws
+
+The search's draws on train tasks are negative examples. A draw is never a target and never a feature, because serving has no draws.
+
+- **Source.** A recorded search over the train tasks writes one record per draw. Draws of dev and held-out tasks are not used, and `points_write.py` refuses them.
+- **Record.** Each draw record has these fields:
+    - The task, the search run, the draw's index, the seed, the writer plan, the writer kit release, the model file's sha and the engine site.
+    - For each query of the program, in the order the writer wrote it: its text as written, its `QueryHash` on the run's engine site, and the `QueryHash`es of the queries written before it. That set is the step's state.
+    - The outcome: whether the program ran; for each train example, whether the output equals the expected output; the first query that failed, with its reason (an engine error, a refusal, no table, the deadline); and whether the draw solves every train example.
+    - The count of identical draws that the record stands for.
+- **Matching.** A step of a draw matches a sample when the step's state equals the sample's state. A draw that solves every train example gives no negatives.
+- **Drawn ids.** At each writing point of a matched step, the draw's next token is a drawn id when no live target has that token next. An id's `drawn` count is the number of failed draws that took it at that writing point. A positive id has no `drawn` count.
+- **Loss.** In the fit only, each id's term in the softmax denominator has the weight 1 + α · `drawn`, with α a fit option. The trees' scores do not read the weight.
+- **Unmatched steps.** A step whose state equals no sample's state gives no rows. The header of each task's file counts the matched and unmatched steps.
+
 ## Table columns of the writing-point vector
 
 `model/study/samples/point_tables.py` computes these columns. Its functions take tables in the layout that `step_tables` gives with `by_assignment` and `rows`, and the task's base tables in the same layout.
