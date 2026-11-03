@@ -622,6 +622,22 @@ def fit(args: argparse.Namespace) -> int:
     return 0
 
 
+def score(args: argparse.Namespace) -> int:
+    """Scores the saved booster --score on the dev files of --points, or on the tasks of --score-tasks among them, as the fit scores its dev points."""
+    _, dev_files, heads = split_files(args.points, set())
+    if args.score_tasks:
+        want = set(args.score_tasks.split(','))
+        dev_files = [p for p in dev_files if p.name.removesuffix('.jsonl.gz') in want]
+    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in dev_files])
+    layout = layout_of(fields)
+    dev, _ = load(dev_files, heads, layout, args.points_per_task, args.seed)
+    booster = lgb.Booster(model_file=str(args.score))
+    got, base = evaluate(np.asarray(booster.predict(dev.matrix, raw_score=True)), dev), uniform_baseline(dev)
+    print(f'dev, trees:   mean loss {got["mean_loss"]:.6f}  top-scored id is positive {got["top_is_positive"]:.4f}  ({got["points"]} points, {len(set(dev.tasks))} tasks)')
+    print(f'dev, uniform: mean loss {base["mean_loss"]:.6f}  top-scored id is positive {base["top_is_positive"]:.4f}')
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('--points', type=Path, nargs='+', required=True, help='the folders samples/SET/points/<plan>, such as the train and the dev one')
@@ -629,6 +645,8 @@ def main() -> int:
     ap.add_argument('--check', action='store_true', help='check the gradient against a finite difference on one real group, then stop')
     ap.add_argument('--points-per-task', type=int, default=0, help='at most N points of a task, chosen by a seeded hash (0: all)')
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--score', type=Path, help='a saved booster: score it on the dev points, and fit nothing')
+    ap.add_argument('--score-tasks', help='with --score: comma-separated dev tasks, the only ones scored')
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
     ap.add_argument('--rounds', type=int, default=2000)
@@ -643,8 +661,10 @@ def main() -> int:
     try:
         if args.check:
             return check(args.points[0], args.seed, args.alpha)
+        if args.score:
+            return score(args)
         if args.out is None:
-            ap.error('--out is required unless --check')
+            ap.error('--out is required unless --check or --score')
         return fit(args)
     except FitError as e:
         print(f'error: {e}', file=sys.stderr)
