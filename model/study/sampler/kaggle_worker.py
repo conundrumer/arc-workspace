@@ -327,6 +327,9 @@ def source(a, sampler):
         search.attach(sampler, store_of(name, a.out), a.rss_limit_mib)
         search.load_rule()
         search.install('search')
+        if os.environ.get('ARC_DRAW_RECORD'):  # the draw records of a recorded train run (draw_record.py)
+            import draw_record
+            draw_record.install(os.environ['ARC_DRAW_RECORD'])
         return search
     except Exception as e:  # noqa: BLE001
         print('pool clauses: draws, search failed:', repr(e)[:300], flush=True)

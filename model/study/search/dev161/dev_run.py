@@ -12,8 +12,8 @@ run next to each other, so the arms are paired as results arrive.
 Each finished job appends one line to results.jsonl: task, arm, seed, solved (every test example has an attempt equal to its output),
 candidates, draws, CPU seconds, deaths and kills, and seconds. A restart skips the jobs that have a line. summary.txt is rewritten after each line. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
-Held-out tasks never run. With --record, which only a train run takes, each worker writes its node records (ARC_RECORD) to the job's
-record/ folder.
+Held-out tasks never run. With --record, which only a train run takes, each worker writes one draw record per draw to the job's
+draws.jsonl (sampler/draw_record.py).
 """
 import argparse
 import collections
@@ -143,9 +143,9 @@ def run_job(a, out, task, arm, seed):
     for k in ('WRITER_TREE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
         env.pop(k, None)
     env.update(ARMS[arm])
-    if a.record:
-        (w / 'record').mkdir()
-        env['ARC_RECORD'] = str(w / 'record')
+    if a.record:  # the draw records (sampler/draw_record.py), one file per job
+        env.update(ARC_DRAW_RECORD=str(w / 'draws.jsonl'), ARC_DRAW_RUN='%s/%s' % (a.run, w.name), ARC_DRAW_SITE=Path(a.site).name,
+                   ARC_DRAW_RELEASE=Path(a.code).name)
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
