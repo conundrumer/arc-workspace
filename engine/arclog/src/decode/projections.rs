@@ -82,16 +82,8 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
         projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(),
         read_under: Vec::new(), read_over: Vec::new(),
         exact: StableHashMap::from_iter([(Box::default(), exact)]), determined: Vec::new(),
-        probe: (0, 0, 0),
     };
-    let started = Instant::now();
-    let sets = search.maximal(arity);
-    if std::env::var_os("ARCLOG_PROJECTION_STATS").is_some() {
-        let (visits, reads, rows) = search.probe;
-        eprintln!("projection-stats form={:?} relations={} arity={arity} visits={visits} reads={reads} rows_read={rows} determined={} found={:?} seconds={:.2}",
-            form.0, search.relations.len(), search.determined.len(), sets.as_ref().map(Vec::len).map_err(|bound| format!("{bound:?}")), started.elapsed().as_secs_f64());
-    }
-    let sets = match sets {
+    let sets = match search.maximal(arity) {
         Ok(sets) => sets,
         Err(bound) => return stopped(bound),
     };
@@ -149,8 +141,6 @@ struct Search<'a, 'b> {
     /// that set, which does not hold it. No set of a pair holds the set of
     /// another pair of the same column.
     determined: Vec<(Box<[u16]>, u16)>,
-    /// For a probe: the sets visited, the sets read and the rows read.
-    probe: (u64, u64, u64),
 }
 
 impl Search<'_, '_> {
@@ -212,7 +202,6 @@ impl Search<'_, '_> {
             return Ok(under);
         }
         self.budget.charge_work(1)?;
-        self.probe.0 += 1;
         let reduced = self.reduced(set);
         if reduced.len() < set.len() {
             let under = self.is_under(&reduced)?;
@@ -233,7 +222,6 @@ impl Search<'_, '_> {
             self.under.insert(set.into(), under);
             return Ok(under);
         }
-        self.probe.1 += 1;
         let mut under = true;
         let mut counts = vec![0usize; self.relations.len()];
         // The columns that are a function of `set` on every relation read.
@@ -354,7 +342,6 @@ impl Search<'_, '_> {
         }
         self.budget.charge_work(0)?;
         let (count, read, functions) = Self::count(this, &key.2, self.cap);
-        self.probe.2 += read;
         self.budget.charge_work(read)?;
         let functions: Box<[u16]> = functions.into_iter().map(|position| this.columns[usize::from(position)].0).collect();
         self.counted.insert(key, (count, functions.clone()));
