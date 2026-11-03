@@ -3,7 +3,7 @@
   SITE=<site> ROWS_VERSION=<versions> GOLD_UNION_DIR=<union folder> OUT_DIR=<graph folder> python3 graph_stream.py [SPLIT ...]
 
 - OUT_DIR holds links to union-SPLIT.jsonl and union-keys-SPLIT.jsonl of GOLD_UNION_DIR, so the graph reads the current union.
-- Every 30 seconds, the tasks of a split whose row store (work/lm/data-study/samples/SPLIT/rows/<task>.jsonl.gz) is newer than the task's last graph, and that have a union-keys line, form a batch. gold_union_graph.py runs on the batch (UNION_TASKS), 50 tasks a process, into graph-*-SPLIT-<n>.jsonl, and graph-*-SPLIT.jsonl is then the latest batch's lines of each task, with its .code.json.
+- Every 30 seconds, the tasks of a split whose row store (work/lm/data-study/samples/SPLIT/rows/<task>.jsonl.gz) is newer than the task's last graph, and that have a union-keys line, form a batch. gold_union_graph.py runs on the batch (UNION_TASKS), 50 tasks a process, into graph-*-SPLIT-<n>.jsonl, and graph-*-SPLIT.jsonl is then the latest batch's lines of each task, with its .code.json. Then gold_union_walks.py writes the split's walks there.
 - A task whose union-keys line changes is built again too.
 - It stops when the file OUT_DIR/STOP exists, or after IDLE seconds (default 3600) with no new store. It prints a line with the clock time for each batch.
 """
@@ -80,6 +80,7 @@ def main():
                 for t, now in todo:  # a task of a failed process is not tried again until its store or keys change
                     built[s, t] = now
                 concat(s)
+                subprocess.run(['python3', U + 'gold_union_walks.py', s], env=dict(os.environ, GOLD_UNION_DIR=O[:-1]), stdout=open(O + 'walks-%s.log' % s, 'w'), stderr=subprocess.STDOUT)
                 say(s, 'done', len(todo), 'tasks; failed processes', sum(c != 0 for c in codes))
         time.sleep(30)
     say('stopped')

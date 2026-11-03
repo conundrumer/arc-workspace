@@ -100,14 +100,17 @@ def main():
             print(s, 'distinct states', json.dumps(out['union']['distinct']['all']), 'distinct table sets', len(tables_seen))
             print(s, 'over steps', json.dumps(out['union']['over_steps']['all']))
             line = {}
-            with open(OUT + 'walk-states-%s.jsonl' % s, 'w') as f:
+            with open(OUT + 'walk-states-%s.jsonl.part' % s, 'w') as f:
                 for i, ((task, added), v) in enumerate(states.items()):
                     line[task, added] = i
                     f.write(json.dumps(dict(task=task, forms=sorted(added), queries=sorted(query_of[task, i] for i in added), built=sorted(v['built']), depth=v['depth'], redundant_forms=v['redundant_forms'])) + '\n')
-            with open(OUT + 'walk-seqs-%s.jsonl' % s, 'w') as f:
+            with open(OUT + 'walk-seqs-%s.jsonl.part' % s, 'w') as f:
                 for task, seed, ok, keys in seqs:
                     f.write(json.dumps(dict(task=task, seed=seed, reached_goal=bool(ok), states=[line[k] for k in keys])) + '\n')
-        json.dump(out, open(OUT + 'walks-%s.json' % s, 'w'), indent=1)
+            for name in ('walk-states-%s.jsonl' % s, 'walk-seqs-%s.jsonl' % s):  # a reader never sees a part-written file, nor states without their sequences
+                os.replace(OUT + name + '.part', OUT + name)
+        json.dump(out, open(OUT + 'walks-%s.json.part' % s, 'w'), indent=1)
+        os.replace(OUT + 'walks-%s.json.part' % s, OUT + 'walks-%s.json' % s)
 
 
 if __name__ == '__main__':
