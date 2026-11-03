@@ -37,6 +37,7 @@ ARMS = {'tree': {'WRITER_TREE': str(TREE)}, 'hand': {}}
 RSS_LIMIT_MIB = 2888
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
+CPU_MODE = [False]  # --budget cpu, where a worker's clock is its CPU time
 
 
 def dev_tasks():
@@ -64,9 +65,11 @@ def effort(w):
                 if c < seg:
                     cpu += seg
                 seg, draws = c, int(m.group(2))
-            m = re.match(r'end: [^,]*, (\d+) draws', l)
+            m = re.match(r'end: [^,]*, (\d+) draws.*, (\d+) s$', l)
             if m:
                 draws = int(m.group(1))
+                if os.environ.get('ARC_CPU_CLOCK') == '1' or CPU_MODE[0]:  # the end line's seconds are the process's CPU seconds
+                    seg = max(seg, float(m.group(2)))
     return draws, round(cpu + seg)
 
 
@@ -192,6 +195,7 @@ def main():
     ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
+    CPU_MODE[0] = a.budget == 'cpu'
     out = DATA_ROOT / 'search/dev161' / a.run
     out.mkdir(parents=True, exist_ok=True)
     done = set()
