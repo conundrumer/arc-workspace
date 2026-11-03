@@ -896,7 +896,9 @@ class Run:
             pg.rel_tabs = pg.rel_tabs | {s: S.RelTable(rs) for s, rs in by.items()}
         if self.lim.one_repair and len(pg.new) == 1:
             import one_repair
+            t = time.perf_counter()
             got = one_repair.facts(b)
+            self.c['one_all_seconds'] += time.perf_counter() - t
             if got[0] or got[1] or got[3]:
                 pg.facts = pg.facts | {pg.new[0]: got}
         if self.lim.choose_lift and len(pg.new) == 1 and pg.kinds and pg.kinds[-1] == 'RULE':
@@ -1812,13 +1814,19 @@ class Run:
         """Counts the consistency cons of the OUT that decoder f ended: yields f where it is a fit that counts."""
         kind = str(getattr(cons, 'kind', None)).rsplit('.', 1)[-1]
         self.c['out:%s' % kind] += 1
+        if kind == 'Stopped':
+            self.c['out:Stopped:%s' % str(getattr(cons, 'stop', None)).rsplit('.', 1)[-1]] += 1
         self.stopped = self.stopped or kind == 'Stopped'
         repair = self.lim.one_repair and not label.endswith((ONE_LABEL, CHOOSE_LABEL))
         if self.lim.choose_lift and label == 'plain' and self.lift_plans(f):
             self.lift_queue.append((f, label))
         if not f.ended:
-            if repair and (why := self.one_wants(f, kind, label)):
-                self.one_queue.append((f, label, why))
+            if repair:
+                t = time.perf_counter()
+                why = self.one_wants(f, kind, label)
+                self.c['one_all_seconds'] += time.perf_counter() - t
+                if why:
+                    self.one_queue.append((f, label, why))
             return
         attempts = f.attempts()
         broken = self.gate.refused(attempts)
@@ -1871,6 +1879,18 @@ class Run:
             self.one_view[1][columns] = one_repair.two_colors(self.pg.before, columns, self.gate.masks)
         return 'two colors' if self.one_view[1][columns] else 'DET several' if self.one_chain(f, lambda got: got[3]) else None
 
+    def timed(self, found, key):
+        """Yields what generator found yields, and adds to counter key the seconds that found runs, with none of the seconds of whoever reads it."""
+        while True:
+            t = time.perf_counter()
+            try:
+                got = next(found, None)
+            finally:
+                self.c[key] += time.perf_counter() - t
+            if got is None:
+                return
+            yield got
+
     def repaired(self, f, label, why):
         """Yields the decoders that the ONE repair of the program of decoder f makes (one_repair.py), each judged as an OUT test is. why is the trigger's name, which
         the counts keep. A repair runs once for a program, for at most the limit's seconds, and not once the repairs have taken their share of the Run's time and one more limit."""
@@ -1898,6 +1918,7 @@ class Run:
             finally:
                 self.one_seconds += time.monotonic() - t
                 self.c['one_seconds'] = self.one_seconds
+                self.c['one_seconds ' + why] += time.monotonic() - t
             if got is None:
                 return
             self.c['one:found'] += 1
@@ -2075,7 +2096,7 @@ class Run:
         yield from self.out_search(pg, dec)
         queue, self.one_queue = self.one_queue, []
         for f, label, why in queue:
-            yield from self.repaired(f, label, why)
+            yield from self.timed(self.repaired(f, label, why), 'one_all_seconds')
         queue, self.lift_queue = self.lift_queue, []
         if queue and self.c['consistent'] > fits:  # a search that found a fit has no stalled program to lift
             self.c['choose:skipped fit'] += len(queue)

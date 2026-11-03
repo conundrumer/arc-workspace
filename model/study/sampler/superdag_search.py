@@ -42,7 +42,14 @@ reads only ancestors could come from an earlier scope. The stop is barred, or th
 With SEARCH_ORACLE_CONTEXT=1 and --seed-level, each new visit's scope is the read forms of a gold form that the seed makes ready, and its kind is that form's. This reads
 gold, so it bounds what a policy's pick can give, and it is never for a real run. With 2, the scope is those forms with the policy's other picks, up to --k picks in all.
 With SEARCH_GOLD2=FILE, a file of task and gold_sexp, an event `cover2` gives each form of that second gold when a node first has its table.
-With SEARCH_LOG_VISITS=1, an event `visit` gives each visit's scope, kind, tries and new nodes, and whether it resumed a parked slot (`resume`).
+With SEARCH_LOG_VISITS=1, an event `visit` gives each visit's scope, kind, tries and new nodes.
+
+A table in SearchRun.memo keeps no CaseTables, except where SEARCH_NEW_TABLE, a SEARCH_PREFIX_SCORE module or SearchRun.trace reads its rows. ARC_MEMO_NO_CT=0 keeps them in each table.
+Slot.run_seen keeps a run's number in place of the run. ARC_SLOT_NO_RUN=0 keeps the run.
+
+VISIT_FORMS (env, as `RIGID_DET=3,KIND=N`; empty for none; default RIGID_DET=3): a visit of a listed kind ends when it has that many new forms, and the slot parks with last_rate 0, so
+next_slot never resumes it. The nodes of the forms that the visits of one slot made get their score cut by the log of the slot's count of forms in the policy's pick of a scope, so that
+the slot's forms weigh as one form there (picked_scope). The oldest-among-least-used share of a pick is not weighted.
 
 With SEARCH_PREFIX_SCORE=FILE, a file with install() and score(tb, ctx), and SEARCH_PREFIX_BETA, a run adds beta x score, in nats, to its log chance at each prefix of a kind in
 SEARCH_PREFIX_KINDS, in place of the parent prefix's score. Entries pushed below the prefix carry it, so the score orders subtrees, one atom after the prefix.
@@ -80,7 +87,7 @@ VISIT_SECONDS = float(os.environ.get('SEARCH_VISIT_SECONDS', 4))
 RESUME = float(os.environ.get('SEARCH_RESUME', 0.3))
 HOT = int(os.environ.get('SEARCH_HOT', 6))
 LIMIT_MIB = float(os.environ.get('SEARCH_LIMIT_MIB', 2048))
-LIMIT_SHARE = float(os.environ.get('SEARCH_LIMIT_SHARE', 0.5))  # of a worker's RSS limit, where its Manager starts giving up runs
+LIMIT_SHARE = float(os.environ.get('SEARCH_LIMIT_SHARE', 0.65))  # of a worker's RSS limit, where its Manager starts giving up runs: over the line where a worker renews, so that a worker renews before the Manager sheds
 SAVE_SECONDS = float(os.environ.get('SEARCH_SAVE_SECONDS', 60))
 KEEP_COLD = int(os.environ.get('SEARCH_KEEP_COLD', 2))
 DISK_MIB = float(os.environ.get('SEARCH_DISK_MIB', 2048))  # state files of one task
@@ -92,7 +99,9 @@ NEW_TABLE = int(os.environ.get('SEARCH_NEW_TABLE', 0) or 0)
 READ_PICK = int(os.environ.get('SEARCH_READ_PICK', 0) or 0)
 ORACLE = int(os.environ.get('SEARCH_ORACLE_CONTEXT', 0) or 0)
 LOG_VISITS = int(os.environ.get('SEARCH_LOG_VISITS', 0) or 0)
+VISIT_FORMS = {k: int(v) for k, v in (x.split('=') for x in os.environ.get('VISIT_FORMS', 'RIGID_DET=3').split(',') if x)}  # kind -> the new forms that end a visit of the kind
 FREE_STOP = int(os.environ.get('SEARCH_FREE_STOP', 0) or 0)
+SLOT_NO_RUN = os.environ.get('ARC_SLOT_NO_RUN') != '0'  # Slot.run_seen keeps a run's number in place of the run, so a run that its Search gave up can go; 0 keeps the run
 SCOPE_RULE = None  # the module of SEARCH_SCOPE_RULE
 PREFIX_SCORE = None  # the module of SEARCH_PREFIX_SCORE
 PREFIX_BETA = float(os.environ.get('SEARCH_PREFIX_BETA', 0))  # nats of chance per unit of score
@@ -118,7 +127,7 @@ def patch_search_run():
             search.EXTRA_COMPONENTS.append(ReadScope)
         if READ_PICK:
             search.EXTRA_COMPONENTS.append(ReadPick)
-    init, open_form, body, clause_of, failed, stop_barred, table = cls.__init__, cls.open_form, cls.body, cls.clause_of, cls.failed, cls.stop_barred, cls.table
+    init, open_form, body, clause_of, failed, stop_barred, table, keeps_ct = cls.__init__, cls.open_form, cls.body, cls.clause_of, cls.failed, cls.stop_barred, cls.table, cls.keeps_ct
 
     def must_read(self):
         return READ_SCOPE and self.scoped is not None and bool(self.scoped[0])
@@ -188,7 +197,11 @@ def patch_search_run():
             print(''.join(traceback.format_exception(e)[-12:]), flush=True)
         failed(self, e)
 
-    cls.__init__, cls.open_form, cls.body, cls.clause_of, cls.failed, cls.stop_barred, cls.table = __init__, open_form_, body_, clause_of_, failed_, stop_barred_, table_
+    def keeps_ct_(self):
+        """The readers of rows on memoized tables: prefix_key under NEW_TABLE, a PREFIX_SCORE module, and whoever reads the tables that cls.trace collects."""
+        return keeps_ct(self) or bool(NEW_TABLE) or PREFIX_SCORE is not None or cls.trace is not None
+
+    cls.__init__, cls.open_form, cls.body, cls.clause_of, cls.failed, cls.stop_barred, cls.table, cls.keeps_ct = __init__, open_form_, body_, clause_of_, failed_, stop_barred_, table_, keeps_ct_
     cls.trace = None  # a list that a caller sets to collect each table a walk makes
     coin = search.Chooser.coin
 
@@ -355,8 +368,10 @@ class Slot:
     def __init__(self, fids, texts, kind, picks=frozenset()):
         self.fids, self.texts, self.kind, self.picks = fids, texts, kind, picks
         self.visits = self.tries = self.new = 0
+        self.resumes = 0  # the resumes of this generation, which the slots file leaves out
         self.seconds = 0.0
-        self.last_rate = 0.0  # new nodes per second in the last visit
+        self.last_rate = 0.0  # new nodes per second in the last visit; 0 after a visit that the form cap ended
+        self.made = []  # the ids of the forms of a VISIT_FORMS kind that this slot's visits made
         self.exhausted = False
         self.stats_seen = {}  # the Search.stats and the SearchRun counts already added to the run's counts
         self.run_seen = (None, {})
@@ -373,14 +388,14 @@ def add_delta(c, prefix, now, seen):
 def pool_init(self, *args):
     _init(self, *args)
     self.slots, self.parked, self.seeding, self.oracle = {}, [], False, None
+    self.grouped, self.visiting = [], None  # the slots that made forms of a VISIT_FORMS kind; the slot in a visit
     self.sampler = SAMPLER[0]
     POOL[:] = [self]
-    getattr(self.policy, 'bind', lambda pool: None)(self)
     self.picks = []
     self.gold2 = {}
     path = os.environ.get('SEARCH_GOLD2')
     if path:  # a second gold of the same task, for a second cover count
-        sexp = {x['task']: x['gold_sexp'] for x in json.load(open(path))}.get(self.id.split('.')[0])
+        sexp = {x['task']: x['gold_sexp'] for x in json.load(open(path))}.get(self.id)
         if sexp:
             self.gold2 = D.gold_keys(self.run, sexp)
 
@@ -396,15 +411,27 @@ def picked_scope(self):
     pick = self.policy.scope
 
     def scope(k, rng):
-        self.picks = list(SCOPE_RULE.picks(self, k, rng) or pick(k, rng) if SCOPE_RULE else pick(k, rng))
+        score, shifted = getattr(self.policy, 'score', None), {}
+        if score is not None:  # the score of the nodes that one slot's forms made, less the log of the slot's forms: together they weigh as one form
+            for slot in self.grouped:
+                if len(slot.made) > 1:
+                    cut = math.log(len(slot.made))
+                    for f in slot.made:
+                        for n in self.forms[f].nodes:
+                            if n in score and n not in shifted:
+                                shifted[n] = score[n]
+                                score[n] -= cut
+        try:
+            self.picks = list(SCOPE_RULE.picks(self, k, rng) or pick(k, rng) if SCOPE_RULE else pick(k, rng))
+        finally:
+            if score is not None:
+                score.update(shifted)  # the policy's scores are pickled with the bank, so they are put back
         return self.picks
     self.policy.scope = scope
     try:
-        fids = self.scope()
+        return self.scope()
     finally:
         del self.policy.scope
-    self.event(dict(event='picks', picks=list(self.picks), n=len(self.policy.ids), draw=self.draws))
-    return fids
 
 
 def oracle_targets(self):
@@ -437,7 +464,12 @@ def next_slot(self):
     rng = self.rng
     live_parked = [s for s in self.parked if not s.exhausted and s.last_rate > 0]
     if live_parked and rng.random() < RESUME:
-        return max(live_parked, key=lambda s: (s.last_rate, -s.visits)), False
+        slot = max(live_parked, key=lambda s: (s.last_rate, -s.visits))
+        slot.resumes += 1
+        c = self.run.c
+        c['resume:' + slot.kind] += 1
+        c['resume top:' + slot.kind] = max(c['resume top:' + slot.kind], slot.resumes)
+        return slot, False
     if ORACLE:
         fids, kind, parents = rng.choice(oracle_targets(self))
         if ORACLE == 2 and parents < self.a.k:  # the parents, with the policy's other picks up to k
@@ -476,6 +508,7 @@ def try_clause(self, clause, texts, kind):
     equal0, out = run.c['state:known'], 'none'
     try:
         kept = self.take(clause.decoder, clause.pg, kind, len(texts))
+        self.mark('keep')
         if clause.prefix_key is not None:
             run.c['new table:prefix key ' + ('is a table' if clause.prefix_key in self.table_sets else 'is no table')] += 1
         if run.c['state:known'] > equal0:
@@ -486,11 +519,13 @@ def try_clause(self, clause, texts, kind):
             out = 'new'
             t0 = time.monotonic()
             self.test(clause.decoder, clause.pg, kept)
+            self.mark('test')
             run.c['search:seconds test'] += time.monotonic() - t0
         else:
             run.c['search:no table tries'] += 1
     except M.Fail as e:
-        run.c['drop:table:%s: %s' % (kind, re.sub(r'\d+', 'N', str(e))[:40])] += 1
+        self.mark('keep')
+        D.count_drop(run.c, e)
         run.c['search:failed tries'] += 1
     except Exception as e:  # noqa: BLE001
         run.failed(e)
@@ -505,11 +540,13 @@ def try_clause(self, clause, texts, kind):
 def visit(self, slot, deadline, patience=PATIENCE):
     """Pulls clauses from the slot's search until a stop rule ends the visit. Gives the new nodes of the visit."""
     run, c = self.run, self.run.c
-    t_start, resume = time.monotonic(), slot.visits > 0  # whether the visit resumes a parked slot
+    t_start = time.monotonic()
+    self.visiting = slot
     vdead = min(deadline, t_start + VISIT_SECONDS)
     s = self.sampler.search(run.session, 0, vdead, self.task, slot.texts, slot.kind)
     s.run.picks = slot.picks
     self.scoped = slot.fids
+    self.mark('setup')
     c['search:seconds visit setup'] += time.monotonic() - t_start
     c['search:visits'] += 1
     it, miss, new, tries, trace, end = iter(s), 0, 0, 0, [], 'deadline'
@@ -523,6 +560,7 @@ def visit(self, slot, deadline, patience=PATIENCE):
         try:
             clause = next(it)
         except StopIteration:
+            self.mark('next')
             c['search:seconds next'] += time.monotonic() - now
             if s.exhausted or not s.heap:
                 slot.exhausted, end = True, 'exhausted'
@@ -544,6 +582,7 @@ def visit(self, slot, deadline, patience=PATIENCE):
             continue
         t1 = time.monotonic()
         c['search:seconds next'] += t1 - now
+        self.mark('next')
         out = try_clause(self, clause, slot.texts, slot.kind)
         if TRACE > 1:
             print('    %s %s' % (out, clause.text[:300]), flush=True)
@@ -554,6 +593,9 @@ def visit(self, slot, deadline, patience=PATIENCE):
         trace.append({'new': 'N', 'equal': 'e' if D.SPLIT_FORM.search(clause.text) else 'f', 'none': 'x'}[out])
         if out == 'new':
             new, miss = new + 1, 0
+            if new >= VISIT_FORMS.get(slot.kind, math.inf):
+                end = 'forms'
+                break
         else:
             miss += 1
             if miss >= patience:
@@ -561,9 +603,6 @@ def visit(self, slot, deadline, patience=PATIENCE):
                 break
     it = None
     c['search:end ' + end] += 1
-    c['search:visits:' + slot.kind] += 1
-    if resume:
-        c['search:resume:' + slot.kind] += 1
     for k, v in self.sampler.search_manager.counts.items():
         c['search:manager ' + k] = v
     if PREFIX_SCORE is not None:
@@ -572,13 +611,16 @@ def visit(self, slot, deadline, patience=PATIENCE):
     slot.stats_seen = add_delta(c, 'search.', s.stats, seen)
     r = s.run
     if r is not None:
-        base = slot.run_seen[1] if slot.run_seen[0] is r else {}
-        slot.run_seen = r, add_delta(c, 'sr:', r.c, base)
+        tag = r.number if SLOT_NO_RUN else r
+        base = slot.run_seen[1] if slot.run_seen[0] == tag else {}
+        slot.run_seen = tag, add_delta(c, 'sr:', r.c, base)
     secs = time.monotonic() - t_start
     slot.visits, slot.tries, slot.new, slot.seconds = slot.visits + 1, slot.tries + tries, slot.new + new, slot.seconds + secs
-    slot.last_rate = new / max(secs, 1e-9)
+    slot.last_rate = 0.0 if end == 'forms' else new / max(secs, 1e-9)  # a capped visit is short, and its rate would win the resumes
+    self.visiting = None
+    c['seconds:' + slot.kind] += secs
     if LOG_VISITS:
-        self.event(dict(event='visit', fids=slot.fids, kind=slot.kind, tries=tries, new=new, seconds=round(time.monotonic() - self.a.t0, 1), resume=resume))
+        self.event(dict(event='visit', fids=slot.fids, kind=slot.kind, tries=tries, new=new, seconds=round(time.monotonic() - self.a.t0, 1)))
     if TRACE:
         print('  visit %d: %d forms %s, %d tries, %d new, %.1f s, end %s: %s' % (slot.visits, len(slot.texts), slot.kind, tries, new, secs, end, ''.join(trace)), flush=True)
     return new
@@ -596,6 +638,7 @@ def grow_search(self, deadline, every=50):
             self.run.failed(e)
             c['search:scope refused'] += 1
             continue
+        self.mark('slot')
         c['search:seconds visit setup'] += time.monotonic() - t1
         c['search:new scope' if fresh else 'search:resume'] += 1
         visit(self, slot, deadline)
@@ -640,7 +683,13 @@ def add_query(self, fid, text, kind, depth, parents, reads, made, ct, pg, seeded
     for _, r, _ in made:
         if r.hash in self.gold2:
             self.event(dict(event='cover2', gold=self.gold2[r.hash], draw=self.draws, seconds=round(time.monotonic() - self.a.t0, 1)))
-    return _add_form(self, fid, text, kind, depth, parents, reads, made, ct, pg, seeded=seeded or self.seeding)
+    query = _add_form(self, fid, text, kind, depth, parents, reads, made, ct, pg, seeded=seeded or self.seeding)
+    slot = self.visiting
+    if slot is not None and kind in VISIT_FORMS and not self.seeding:
+        if not slot.made:
+            self.grouped.append(slot)
+        slot.made.append(fid)
+    return query
 
 
 def grow_first(self, deadline, every=50):
@@ -677,7 +726,7 @@ def after_bank(pool, bank):
     mgr = pool.sampler.search_manager
     if not mgr.directory:
         return
-    rows = [[slot.fids, slot.kind, sorted(slot.picks), slot.visits, slot.tries, slot.new, slot.seconds, slot.last_rate, slot.exhausted] for slot in pool.slots.values()]
+    rows = [[slot.fids, slot.kind, sorted(slot.picks), slot.visits, slot.tries, slot.new, slot.seconds, slot.last_rate, slot.exhausted, slot.made] for slot in pool.slots.values()]
     try:
         with open(bank + '.slots.tmp', 'w') as f:
             json.dump(rows, f)
@@ -707,11 +756,14 @@ def read_slots(pool, bank):
             rows = json.load(f)
     except (OSError, ValueError):
         return 0
-    for fids, kind, picks, visits, tries, new, seconds, last_rate, exhausted in rows:
+    for fids, kind, picks, visits, tries, new, seconds, last_rate, exhausted, *made in rows:
         if all(x in pool.forms for x in fids):
             texts = tuple(pool.forms[x].text for x in fids)
             slot = pool.slots[texts, kind] = Slot(fids, texts, kind, frozenset(picks))
             slot.visits, slot.tries, slot.new, slot.seconds, slot.last_rate, slot.exhausted = visits, tries, new, seconds, last_rate, exhausted
+            slot.made = [f for f in (made[0] if made else []) if f in pool.forms]
+            if slot.made:
+                pool.grouped.append(slot)
             pool.parked.append(slot)
     return len(pool.slots)
 

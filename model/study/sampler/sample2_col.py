@@ -158,6 +158,8 @@ import sys
 import time
 import traceback
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sample import M, arclog, M_sexprs, SHAPES, SPLITS, TASKS, OPS, CORPUS, body_hazard, GOLD_APPROXIMATED, left_out, first_row, table_rows, static_prune, n_forms  # noqa: E402
 import sample as _sample  # noqa: E402
@@ -1254,7 +1256,7 @@ class FastFrontier:
 
 # ---------------------------------------------------------------- tables with frames and models
 
-parse_table, full = TA.parse_table, TA.full  # the one adapter reads the rows of a table
+parse_table, full, entry_cells = TA.parse_table, TA.full, TA.entry_cells  # the one adapter reads the rows of a table
 
 
 def body_table(fr, task, case, parent_dec, parent_before, rows=True):

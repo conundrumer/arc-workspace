@@ -23,6 +23,7 @@ NOT_EXPORTED = 6  # the kind of an entry of a rows=False result: its row count a
 UNDEFINED = 2  # the kind of an entry of a model that is Undefined on its example: no rows
 KEEP = 4  # the results whose AssignmentSummaries tables() keeps
 _kept = []  # [(ct, rows)], the last KEEP
+ROW_CHECK = None  # kaggle_worker.py's check before parse_table makes a table's rows: a function of (rows of each entry, cells of a row, wide columns, assigned rows). It raises M.Fail, or gives None, or gives a function to call when the rows exist
 
 
 def export(dec, task, case, before, rows=True):
@@ -132,6 +133,9 @@ def parse_table(ct, js=None, with_rows=True):
     stop, vstop, efault = ct.entries['stop_bound'], ct.entries['value_stop_bound'], ct.entries['fault']
     asg_of = assignments_of(ct) if with_rows else {}
     mine = set(js)
+    done = None
+    if with_rows and ROW_CHECK is not None:  # an assignment is a value hash here, so the table has no assigned rows to count
+        done = ROW_CHECK([int(er[e]) for e in range(len(et)) if et[e] in mine and ek[e] == 0], tw, len(boxcols), 0)
     out = []
     for e in range(len(et)):
         if et[e] not in mine:
@@ -158,6 +162,8 @@ def parse_table(ct, js=None, with_rows=True):
                         ext[c] = [int(V[k]), int(V[k + 1])]
             exts.append([ext.get(c) for c in boxcols])
         out.append(((int(ex[e]), int(ei[e])), asg_of.get(int(et[e]), {}), rows, exts, int(em[e])))
+    if done is not None:
+        done()
     mine_rows = tables(ct)
     return dict(labels=labels, types=types, widths=widths, frames=list(T['column_frames'][j0]), entries=out, ct=None if with_rows else ct, js=js,
                 assignment_summaries=[mine_rows[j] for j in js])
@@ -173,12 +179,23 @@ def rows_of(tb, cap=500):
 
 
 def full(tb):
-    """tb with its rows, extents and assignments, where parse_table left them out."""
+    """tb with its rows, extents and assignments, where parse_table left them out. A table whose CaseTables went (search.MEMO_NO_CT) has no rows to give, and raises."""
+    if tb is not None and tb.get('ct_dropped'):
+        raise RuntimeError('full: this table kept no CaseTables, so it has no rows')
     if tb is None or tb.get('ct') is None:
         return tb
     if 'full' not in tb:
         tb['full'] = parse_table(tb['ct'], tb['js'])
     return tb['full']
+
+
+def entry_cells(tb):
+    """The cells of each entry of tb, a table that parse_table gave with with_rows False, in the order of tb['entries']: an int32 array of shape (rows, cells of a row)
+    that views the CaseTables' values with no copy. The arrays are read-only."""
+    ct, mine = tb['ct'], set(tb['js'])
+    et, ek = M.col(ct, 'entries', 'table'), M.col(ct, 'entries', 'kind')
+    tw = sum(tb['widths'])
+    return [matrix(ct, e, tw) for e in range(len(et)) if et[e] in mine and ek[e] != UNDEFINED]
 
 
 def summary(tb):

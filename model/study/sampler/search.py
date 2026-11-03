@@ -323,6 +323,8 @@ class Counts(collections.Counter):
             raise Dead(key)
 
 
+MEMO_NO_CT = os.environ.get('ARC_MEMO_NO_CT') != '0'  # a table that SearchRun.memo keeps has no CaseTables, so `full` cannot give its rows; 0 keeps them
+RUN_NUMBERS = itertools.count(1)  # SearchRun.number: no two runs of a process have one number
 SHARED = 'rel_pre', 'srel_cache', 'rel_dag_f', 'rel_dag_p', 'scope_facts'  # the Drawer caches that the Drawers of one scope and kind share
 SHARED_HIDDEN = 'rel_cache', 'choice_cache', 'roots'  # those whose entries also depend on the labels that a frontier hides
 MEMO_CAP = 3000  # decoders whose table, or whose END check, Run keeps
@@ -466,6 +468,7 @@ class SearchRun(Run):
         self.seen = {}  # stable number of (body context, atoms as a set) -> low 32 bits of the hash of the path that reached it
         self.shared = collections.defaultdict(dict)  # (kind, place, path) -> the caches that Drawers of one scope share
         self.memo = {}  # (what, id of a decoder) -> (the decoder, the answer): a decoder of a node that a shared root keeps stays the same one
+        self.number = next(RUN_NUMBERS)
         self.keyed, self.table_keys = None, {}  # ORDER_FREE tie: the queries of the scope, and table_keys of them
         self.points = {}  # the writer's prefix cache: the model tokens of a path -> its WritingPoint
         self.points_cap = MEMO_CAP
@@ -560,8 +563,17 @@ class SearchRun(Run):
             got = self.memo[key] = dec, make()
         return got[1]
 
+    def keeps_ct(self):
+        """Whether a table goes into the memo with its CaseTables. A caller that reads rows from memoized tables adds its case here (superdag_search.patch_search_run)."""
+        return not MEMO_NO_CT
+
     def table(self, fr, dec, pg):
-        return self.memoed('table', dec, lambda: super(SearchRun, self).table(fr, dec, pg))
+        def make():
+            got = super(SearchRun, self).table(fr, dec, pg)
+            if got[0] is not None and not self.keeps_ct():
+                got[0].update(ct=None, ct_dropped=True)
+            return got
+        return self.memoed('table', dec, make)
 
     def can_end(self, d):
         return self.memoed('end', d, lambda: super(SearchRun, self).can_end(d))

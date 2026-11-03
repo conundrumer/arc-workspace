@@ -90,58 +90,77 @@ def passes(got):
     return got.kind == 'Consistent' and got.attempts is not None and all(got.attempts)
 
 
-def view(ct):
-    """(column labels, column types, the width of each column, the offset of each, the entries) of the one new table of step_tables result ct. Raises M.Fail where
-    the table is a count."""
-    T = ct.tables
-    labels, types = [str(x) for x in T['column_labels'][0]], [str(t) for t in T['column_types'][0]]
-    widths = [4 if t in M.WIDE else 1 for t in types]
-    return labels, types, widths, list(itertools.accumulate(widths, initial=0)), S.parse_table(ct)['entries']
-
-
-def values(row, widths, at, i):
-    return tuple(row[at[i]:at[i] + widths[i]])
-
-
 def repeated(ct):
     """(the labels of the columns of the one new table of step_tables result ct that hold a value in more than one row of an entry, the most rows of an
     entry); the rows are None for a table that holds counts."""
     try:
-        labels, _, widths, at, entries = view(ct)
+        tb = S.parse_table(ct, with_rows=False)
     except M.Fail:
         return [], None
-    got, top = set(), 0
-    for _, _, rows, _, _ in entries:
-        top = max(top, len(rows))
-        for i, label in enumerate(labels):
-            if label and len({values(r, widths, at, i) for r in rows}) < len(rows):
-                got.add(label)
-    return [x for x in labels if x in got], top
+    labels = [str(x) for x in tb['labels']]
+    at = list(itertools.accumulate(tb['widths'], initial=0))
+    cells = [c for c in S.entry_cells(tb) if len(c) > 1]
+    got = {lab for i, lab in enumerate(labels) if lab and any(has_equal_rows(c[:, at[i]:at[i + 1]]) for c in cells)}
+    return [x for x in labels if x in got], max((len(en[2]) for en in tb['entries']), default=0)
 
 
 def two_colors(ct, columns, masks=None):
     """Whether, in a train entry of the one new table of step_tables result ct, two rows have the same value in a Position or Box column of the labels columns
     and different values in a Color column of them. With masks, the cell_masks of each train pair, the rows of some entry of each train pair must also hold every cell
-    that the pair wants, since a mark only takes rows away."""
+    that the pair wants, since a mark only takes rows away. Of a Position or Box column, cell 0 is the top and cell 2 the left."""
     try:
-        labels, types, widths, at, entries = view(ct)
+        tb = S.parse_table(ct, with_rows=False)
     except M.Fail:
         return False
+    labels, types = [str(x) for x in tb['labels']], [str(t) for t in tb['types']]
     pos = [labels.index(c) for c in columns if c in labels and types[labels.index(c)] in ('Position', 'Box')]
     col = [labels.index(c) for c in columns if c in labels and types[labels.index(c)] == 'Color']
     if not pos or not col:
         return False
+    at = list(itertools.accumulate(tb['widths'], initial=0))
+    p, k = at[pos[0]], at[col[0]]
     twice, covers = False, collections.defaultdict(bool)
-    for ex, _, rows, _, _ in entries:
-        if ex[0] == TRAIN:
-            seen = collections.defaultdict(set)
-            for r in rows:
-                seen[values(r, widths, at, pos[0])[::2]].add(values(r, widths, at, col[0]))
-            twice = twice or any(len(v) > 1 for v in seen.values())
-            if masks is not None:
-                cells = {300 * i + 10 * j + c[0] for (i, j), v in seen.items() if 0 <= i < 30 and 0 <= j < 30 for c in v if 0 <= c[0] < 10}
-                covers[ex[1]] = covers[ex[1]] or all(k in cells for k in np.flatnonzero(masks[ex[1]][9000][0]))
+    for en, c in zip(tb['entries'], S.entry_cells(tb)):
+        ex = en[0]
+        if ex[0] != TRAIN:
+            continue
+        i, j, v = c[:, p], c[:, p + 2], c[:, k]
+        if not twice and len(c) > 1:
+            o = np.lexsort((v, j, i))
+            si, sj, sv = i[o], j[o], v[o]
+            twice = bool(((si[1:] == si[:-1]) & (sj[1:] == sj[:-1]) & (sv[1:] != sv[:-1])).any())
+        if masks is None:
+            if twice:
+                return True
+        elif not covers[ex[1]]:
+            ok = (i >= 0) & (i < 30) & (j >= 0) & (j < 30) & (v >= 0) & (v < 10)
+            cells = 300 * i[ok].astype(np.int64) + 10 * j[ok] + v[ok]
+            covers[ex[1]] = bool(np.isin(np.flatnonzero(masks[ex[1]][9000][0]), cells).all())
     return twice and (masks is None or all(covers[i] for i in range(len(masks))))
+
+
+def has_equal_rows(a):
+    """Whether two rows of a, an int32 array of shape (rows, cells), are equal. The rows of a column of several cells are packed into one int64 where the ranges of
+    its cells fit in 62 bits, else compared as bytes. Every sort is on a copy: a view of a CaseTables' values is read-only."""
+    n, w = a.shape
+    if n < 2:
+        return False
+    if w == 1:
+        key = a[:, 0].copy()
+    else:
+        lo, hi = a.min(axis=0).astype(np.int64), a.max(axis=0).astype(np.int64)
+        bits = [int(s).bit_length() for s in hi - lo]
+        if sum(bits) <= 62:
+            key = a[:, 0].astype(np.int64)
+            key -= lo[0]
+            for j in range(1, w):
+                key <<= bits[j]
+                key += a[:, j]
+                key -= lo[j]
+        else:
+            key = a.copy().view(np.dtype((np.void, a.itemsize * w))).ravel()
+    key.sort()
+    return bool((key[1:] == key[:-1]).any())
 
 
 def facts(ct):
@@ -149,17 +168,22 @@ def facts(ct):
     least having several rows, and repeat in a test entry. empty: whether each train entry has one row at most and a test entry has several. rows: the most rows of
     an entry. several: whether a task-wide entry, the value of a DET, has several rows."""
     try:
-        labels, _, widths, at, entries = view(ct)
+        tb = S.parse_table(ct, with_rows=False)
     except M.Fail:
         return [], False, None, False
-    train, test = [e[2] for e in entries if e[0][0] == TRAIN], [e[2] for e in entries if e[0][0] == TEST]
-    top = max((len(e[2]) for e in entries), default=0)
-
-    def repeats(rows, i):
-        return len({values(r, widths, at, i) for r in rows}) < len(rows)
-    cols = [lab for i, lab in enumerate(labels) if lab and any(len(r) > 1 for r in train) and not any(repeats(r, i) for r in train) and any(repeats(r, i) for r in test)]
-    empty = bool(train) and all(len(r) <= 1 for r in train) and any(len(r) > 1 for r in test)
-    return cols, empty, top, any(e[0][0] == 0 and len(e[2]) > 1 for e in entries)
+    labels = [str(x) for x in tb['labels']]
+    at = list(itertools.accumulate(tb['widths'], initial=0))
+    kinds = [en[0][0] for en in tb['entries']]
+    cells = S.entry_cells(tb)
+    train = [c for k, c in zip(kinds, cells) if k == TRAIN]
+    test = [c for k, c in zip(kinds, cells) if k == TEST and len(c) > 1]
+    top = max((len(c) for c in cells), default=0)
+    cols = []
+    if any(len(c) > 1 for c in train) and test:
+        cols = [lab for i, lab in enumerate(labels) if lab and not any(has_equal_rows(c[:, at[i]:at[i + 1]]) for c in train if len(c) > 1)
+                and any(has_equal_rows(c[:, at[i]:at[i + 1]]) for c in test)]
+    empty = bool(train) and all(len(c) <= 1 for c in train) and bool(test)
+    return cols, empty, top, any(k == 0 and len(c) > 1 for k, c in zip(kinds, cells))
 
 
 def keys(cols, rows, det, empty=True):

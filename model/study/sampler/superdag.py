@@ -54,6 +54,22 @@ MAX_SCOPE_FORMS = 96
 CLAUSE_SECONDS = 20.0
 SPLIT_FORM = re.compile(r'&f(\d+)')
 NAME = re.compile(r'&[A-Za-z_]\w*')
+ENTRY_STOP = re.compile(r'\bstop (.*?)(?:, fault | at )')  # the bounds in the text of an entry that a stop left incomplete; ` at ` ends a Count entry's projection stop
+STOP_DETAIL = re.compile(r'\s*(?:\{[^{}]*\}|\([^()]*\))')  # what the engine's text of a bound adds to its name
+
+
+def count_drop(c, e):
+    """Adds to counter c the clause that M.Fail e dropped at its table: `drop:table: ` with the reason's first 40 characters and digits as N, and `drop:stop:<bound>` for each bound
+    that stopped an entry, with the bound's whole name. The engine's bounds are a fixed list, so these keys are bounded."""
+    text = str(e)
+    c['drop:table: ' + re.sub(r'\d+', 'N', text)[:40]] += 1
+    if text.startswith('entry '):
+        for stops in ENTRY_STOP.findall(text):
+            while STOP_DETAIL.search(stops):
+                stops = STOP_DETAIL.sub('', stops)
+            for bound in stops.split():
+                if bound != 'None' and bound.isalpha():
+                    c['drop:stop:' + bound] += 1
 
 
 def written_names(line, names):
@@ -137,9 +153,7 @@ class Run(live.Run):
         fit = self.gate.leave_one_out
 
         def leave_one_out(text):
-            t0 = time.process_time()
             self.last_loo = fit(text)
-            self.c['loo cpu seconds'] += time.process_time() - t0
             return self.last_loo
         self.gate.leave_one_out = leave_one_out
 
@@ -167,6 +181,7 @@ class Pool:
         self.candidates, self.covered, self.draws, self.rng = {}, {}, 0, random.Random('%s %d' % (task_id, a.seed))
         self.keep_rows, self.tick, self.stop = True, lambda: None, None  # stop gives a reason to end growth, or None
         self.save, self.saved_before_end = None, False  # save writes the worker's bank; save_before_end calls it once
+        self.mark = lambda phase: None  # kaggle_worker.Meter.mark: called at the end of each phase of a visit
         self.scoped = ()  # the forms of the scope of the current draw
         self.kinds = {k: sum(c.get(k, 0) for c in run.pri['kinds1'].values()) for k in live.KIND_TOK}
         self.c = run.c
@@ -207,7 +222,7 @@ class Pool:
             if kept:
                 self.test(f, pg, kept)
         except M.Fail as e:
-            run.c['drop:table: ' + re.sub(r'\d+', 'N', str(e))[:40]] += 1
+            count_drop(run.c, e)
         except Exception as e:  # noqa: BLE001
             run.failed(e)
 
@@ -222,6 +237,7 @@ class Pool:
         parents = sorted({int(x) for x in SPLIT_FORM.findall(text)} - {fid})
         depth = 1 + max((self.forms[p].depth for p in parents), default=0)
         made = [(s, r, j) for s in pg.new for r, j in zip(pg.tables.get(s, ()), pg.indexes.get(s, ()))]
+        self.mark('key')
         if not made:
             run.c['state:no table'] += 1
             return None
@@ -337,6 +353,11 @@ class Pool:
                 self.candidates[key] = dict(attempts=att, program=text, form=form.id)
                 self.event(dict(event='candidate', form=form.id, depth=form.depth, draw=self.draws, seconds=round(time.monotonic() - self.a.t0, 1), attempts=att, program=text,
                                 score=sum(r == 'pass' for r in loo) / len(loo) if loo else 0, size=text.count('\n')))
+        fills = getattr(run, 'fills', None)  # the forms leave-one-out refused, which may fill attempt slots that candidates leave open
+        if fills:
+            for text, att in fills:
+                self.event(dict(event='fill', attempts=att, size=text.count('\n'), program=text))
+            fills.clear()
         run.c['search_seconds'] += time.perf_counter() - t0
 
     def save_before_end(self, deadline):
