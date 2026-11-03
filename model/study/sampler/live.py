@@ -13,7 +13,7 @@ counts so far: draws, finished programs, drops by reason, errors by type, and th
 
 clause draws one clause of the kind over a scope that the caller picks: forms, the text of one form each in dependency order, with
 no OUT. The forms are replayed into a decoder and a Program as if this module had drawn them, so what a clause reads of the scope
-comes from the decoder. A CHOOSE form is replayed and never drawn. A form's relation slot is its place among the scope's declarations, so the written name of a relation
+comes from the decoder. Run.form draws no CHOOSE form: a scope replays one, and the writer (writer.py) writes one. A form's relation slot is its place among the scope's declarations, so the written name of a relation
 means nothing to a decoder: two forms need two head names, any names, and a Clause's text uses the names of forms. The Run stays
 between calls on one session, seed sets its draws for each call, and sampler.run.c has the counts of its calls.
 
@@ -97,13 +97,12 @@ from sample2_col import M, arclog  # noqa: E402
 S.ADMITS = True  # one Decoder.admits call per node, with no mask and no per-token call
 S.REACH = False  # no look-ahead below a column or a value: an atom that cannot close is redrawn, which costs less
 
-RULE_TOK, DET_TOK, INIT_TOK, RIGID_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 6, 7, 12, 13
-KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK, RIGID_DET=RIGID_TOK)  # the kinds of query that a pick of a kind gives; bind_vocabulary adds DEMONSTRATED
-DRAWN_KINDS = 'RULE', 'DET', 'INIT', 'RIGID_DET'  # the kinds that Run.form draws; the writer (writer.py) writes these and DEMONSTRATED
+RULE_TOK, DET_TOK, INIT_TOK, CHOOSE_TOK, RIGID_TOK, OUT_TOK, SKIP_TOK, ALSO_TOK = 0, 1, 2, 5, 6, 7, 12, 13
+KIND_TOK = dict(RULE=RULE_TOK, DET=DET_TOK, INIT=INIT_TOK, CHOOSE=CHOOSE_TOK, RIGID_DET=RIGID_TOK)  # the kinds of query that a pick of a kind gives; bind_vocabulary adds DEMONSTRATED
+DRAWN_KINDS = 'RULE', 'DET', 'INIT', 'RIGID_DET'  # the kinds that Run.form draws; the writer (writer.py) writes these, CHOOSE and DEMONSTRATED
 DEMO_TOKENS = 'DEMONSTRATED', 'DEMO_RULE', 'PREDICT', 'ALT_FORM'  # the control tokens of a DEMONSTRATED form. They stand after the vocabulary's label slots, so their ids differ by vocabulary
 DEMO_TOK = {}  # a name of DEMO_TOKENS -> its id, from bind_vocabulary
 KIND_SHARE = {}  # a sparse kind -> its share of the pool's picks
-REPLAYED = 'CHOOSE',  # the kinds of a scope's forms that no draw makes and a scope replays, for the forms after them
 EXAMPLE_TASK, EXAMPLE_TRAIN = 0, 1  # the example_kind of a task-wide table entry, and of a train pair's
 TABLES = 'live', 'live'  # step_tables' task and case names; a decoder holds neither, and they only label its result
 READER_OUT = '(OUT (input ^P ^Col))'  # the reader takes whole programs; this closes a scope's text and is not stepped
@@ -801,7 +800,7 @@ class Run:
                     continue
                 first, *toks = [t for _, t in group]
                 kind = self.V.name(first)
-                if kind not in KIND_TOK and kind not in REPLAYED:  # a form that no draw makes
+                if kind not in KIND_TOK:  # a form that no query of a pick of a kind gives
                     raise Drop('scope: a %s form' % kind)
                 pg.new = []
                 f = self.open_form(pg, dec, kind)

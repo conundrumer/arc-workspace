@@ -37,7 +37,7 @@ type Assignment = tuple[tuple[QueryHash, ValueHash], ...]  # over D(t), sorted b
 type Table = tuple[QueryHash, Name] | str  # a query's table; a given table by its own name
 
 REL_KINDS = S.RELATION_KINDS
-GROUP_INITS = {'INIT': 1, 'RIGID_DET': 2, 'DEMONSTRATED': 1}  # kinds with port decisions, and the count of decisions that are key bodies
+GROUP_INITS = {'INIT': 1, 'RIGID_DET': 2, 'DEMONSTRATED': 1, 'CHOOSE': 1}  # kinds with port decisions, and the count of decisions that are key bodies (a CHOOSE's `for`)
 PORT_KINDS = 'INIT', 'RIGID_DET', 'DEMONSTRATED'  # kinds whose bodies are ports, under the port caps
 DEMO_TOKEN_FACTOR = 4  # a DEMONSTRATED query ends at this many times Limits.model_tokens; each of its forms, and its own key and inputs, at Limits.model_tokens. Gold's longest has 303 model tokens
 
@@ -107,7 +107,7 @@ class Labels:  # each label so far, with its types and the places that may use i
                 out.append(L.tok)
                 continue
             if L.body != T.body:
-                if L.key and T.round == 0:
+                if (L.key and T.round == 0) or L.body == T.shared:
                     out.append(L.tok)
                 continue
             ok = True
@@ -173,13 +173,14 @@ class Track:
     predicted: bool = False  # the current DEMO_RULE's PREDICT clause has closed
     answered: bool = False  # a column of the PREDICT clause took a label
     no_targets: bool = False  # a PREDICT clause closed with no column to fill: the key and the `value` head give none, so no rule fills one and the form has no END
+    shared: int = -1  # in a CHOOSE form, the body of its `from` once that body has started: its `never` bodies may read its labels; -1 elsewhere
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class WritingPoint:
     dec: arclog.Decoder  # the writing point's decoder; a component forks it and never steps it
     pg: object  # the scope's Program (live.Program), one for all writing points of a try
-    kind: str  # 'RULE', 'DET', 'INIT', 'RIGID_DET' or 'DEMONSTRATED': the query's kind, or in a DEMO_RULE the kind of its form that holds the next token
+    kind: str  # 'RULE', 'DET', 'INIT', 'CHOOSE', 'RIGID_DET' or 'DEMONSTRATED': the query's kind, or in a DEMO_RULE the kind of its form that holds the next token
     tokens: tuple[TokenId, ...]  # the query's model tokens so far, the kind token first
     place: Place
     atoms: tuple[tuple[TokenId, ...], ...]  # the model tokens of each closed atom of the current body
@@ -287,7 +288,7 @@ class Core:
             return ANY_TYPE
         name = self.names[rtok]
         if self.kind[rtok] == 'relation':
-            t = pt.pg.colmaps.get(pt.kind, pt.pg.colmaps['INIT']).get(M.slot_no(name), {}).get((pos, field))  # a CHOOSE of a DEMO_RULE reads as an INIT does
+            t = pt.pg.colmaps.get('INIT' if pt.kind == 'CHOOSE' else pt.kind, pt.pg.colmaps['INIT']).get(M.slot_no(name), {}).get((pos, field))  # a CHOOSE reads as an INIT does
         else:
             ts = self.regtypes.get(name)
             t = str(ts[pos]) if ts and field is None and 0 <= pos < len(ts) else None
@@ -295,8 +296,8 @@ class Core:
 
     def start(self, run, pg, dec, kind):
         """The first WritingPoint of a query of `kind`, at decoder `dec` after the kind token."""
-        T = Track(where='start' if kind == 'INIT' else 'group' if kind in ('RIGID_DET', 'DEMONSTRATED') else 'body', form='DEMONSTRATED' if kind == 'DEMONSTRATED' else '')
-        if kind in ('RIGID_DET', 'DEMONSTRATED'):
+        T = Track(where='start' if kind == 'INIT' else 'group' if kind in ('RIGID_DET', 'DEMONSTRATED', 'CHOOSE') else 'body', form='DEMONSTRATED' if kind == 'DEMONSTRATED' else '')
+        if kind in ('RIGID_DET', 'DEMONSTRATED', 'CHOOSE'):
             T.decision = 0
         pt = WritingPoint(dec, pg, kind, (KIND_TOK[kind],), None, (), Labels(), run, T, (), ids_of(dec.admissible()))
         return self._with_place(pt, T, (), Labels(), pt.tokens, ())
@@ -368,6 +369,8 @@ class Core:
                 T.inkey = T.decision < GROUP_INITS.get(kind, 0)
                 T.port = None if T.inkey else T.cur_pos
                 T.path = ()
+                if kind == 'CHOOSE' and T.decision == 1:  # the `from` body, after the `for` body or its SKIP
+                    T.shared = T.body
                 self._body(pt, T, t, k, forced, labs, ids2, atoms_box := [atoms])
                 atoms = atoms_box[0]
         elif where == 'head':
@@ -399,6 +402,9 @@ class Core:
             T.where = 'group'
             T.decision += 1
             pos = next((self.colpos[x] for x in reversed(forced) if x in self.colpos), None)
+            if pos is None and kind == 'CHOOSE' and T.decision >= 3:  # a CHOOSE's later `never` body follows ALSO, which forces no column: it is on the port of the first
+                T.cur_pos, T.port = T.last_pos, None
+                return
             if pos is not None:
                 if pos <= T.last_pos:
                     T.round += 1
