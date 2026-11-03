@@ -229,8 +229,8 @@ fn variant_lines(read: &CorpusTask, text: &Node<Program>, constructions: &arclog
     let original = original.value();
     let session = arclog::decode::corpus::corpus_session();
     let base = match outcome(read, &forms, at, &original.name, &session, constructions) {
-        Ok(base) => base,
-        Err(fault) => return vec![format!("not compared: the text: {fault}")],
+        (Ok(tables), hash) => (tables, hash),
+        (Err(fault), _) => return vec![format!("not compared: the text: {fault}")],
     };
     let renamed = head_renames(original);
     let variants: [(&str, Demonstrated); 4] = [
@@ -243,26 +243,34 @@ fn variant_lines(read: &CorpusTask, text: &Node<Program>, constructions: &arclog
     for (name, variant) in variants {
         let mut changed = forms.clone();
         changed[at] = Form::Demonstrated(Node::new(variant));
-        let line = match outcome(read, &changed, at, &original.name, &session, constructions) {
-            Ok((tables, hash)) => {
-                let tables = if tables == base.0 { "same".to_owned() } else { format!("differ ({} in place of {})", tables.join(" "), base.0.join(" ")) };
-                let hash = if hash == base.1 { "same" } else { "differs" };
-                format!("{name}: tables {tables}; query hash {hash}")
-            }
-            Err(fault) => format!("{name}: tables differ (the variant faults: {fault}); query hash not compared"),
+        let (tables, hash) = outcome(read, &changed, at, &original.name, &session, constructions);
+        let tables = match tables {
+            Ok(tables) if tables == base.0 => "same".to_owned(),
+            Ok(tables) => format!("differ ({} in place of {})", tables.join(" "), base.0.join(" ")),
+            Err(fault) => format!("differ (the variant faults: {fault})"),
         };
+        let hash = if hash == base.1 { "same" } else { "differs" };
+        let line = format!("{name}: tables {tables}; query hash {hash}");
         lines.push(line);
     }
     lines
 }
 
 /// The tables of the relation `name` of the program of `forms`, checked,
-/// on each example at each model, and the query hash of the form at `at`.
-fn outcome(read: &CorpusTask, forms: &[Form], at: usize, name: &arclog::program::RelationName, session: &TaskSession, constructions: &arclog::eval::instance::Constructions) -> Result<(Vec<String>, Option<arclog::hash::StableHash>), String> {
+/// on each example at each model, or the fault that gives none, and the
+/// query hash of the form at `at`.
+fn outcome(read: &CorpusTask, forms: &[Form], at: usize, name: &arclog::program::RelationName, session: &TaskSession, constructions: &arclog::eval::instance::Constructions) -> (Result<Vec<String>, String>, Option<arclog::hash::StableHash>) {
     let registry = Registry::get();
     let program = Node::new(Program { forms: forms.into() });
-    let checked = checked(&program)?;
     let hash = resolve(&program, None, &SolverScope::default(), registry).value.query_content(at, registry).map(|content| content.content_hash());
+    (tables(read, &program, name, session, constructions), hash)
+}
+
+/// The tables of the relation `name` of `program`, checked, on each
+/// example at each model, or the fault that gives none.
+fn tables(read: &CorpusTask, program: &Node<Program>, name: &arclog::program::RelationName, session: &TaskSession, constructions: &arclog::eval::instance::Constructions) -> Result<Vec<String>, String> {
+    let registry = Registry::get();
+    let checked = checked(program)?;
     let relation = relation_of(&checked, &ProgramRelation::Declared(name.clone())).ok_or("the program has no relation of the form")?;
     let parameters = ParameterValues::stored(read.solver.arcdata.value());
     let limits = Limits::new(None, Cancellation::default());
@@ -288,7 +296,7 @@ fn outcome(read: &CorpusTask, forms: &[Form], at: usize, name: &arclog::program:
             Err(fault) => tables.push(format!("fault:{}", fault.message)),
         }
     }
-    Ok((tables, hash))
+    Ok(tables)
 }
 
 /// `demonstrated` with each rule as `change` gives it from its index and
