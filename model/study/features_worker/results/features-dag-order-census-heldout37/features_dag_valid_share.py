@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-HERE = Path(__file__).resolve().parent
+HERE = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-dag-order-census-heldout37')  # the data folder
 sys.path.insert(0, str(HERE))
 import features_dag_census as C  # noqa: E402
 import features_dag_order as D  # noqa: E402

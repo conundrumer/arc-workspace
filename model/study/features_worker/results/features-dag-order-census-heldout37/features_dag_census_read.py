@@ -17,7 +17,7 @@ import statistics
 import subprocess
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-dag-order-census-heldout37')  # the data folder
 CENSUS_BASE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-worker/sampler-helper-forms/gold-v3-helper-forms-a036da074/census-base.jsonl'
 BASE_REVISION = 'gold-v3-helper-forms-a036da074-base'
 
