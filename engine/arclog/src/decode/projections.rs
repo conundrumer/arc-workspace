@@ -11,6 +11,14 @@
 //! extends only the sets under it. A set under the cap has every smaller set
 //! under the cap too, so the search reads no row for a set that a set it read
 //! as under the cap holds, or that holds a set it read as over the cap.
+//!
+//! Where adding a column to a set it read under the cap leaves the set's count
+//! the same on every relation, the column is a function of the set, and of
+//! each larger set. A set that holds such a set and the column has the count
+//! of the set without the column, so the search reads no row for it. A set
+//! that holds such a set and not the column is under the cap with the column
+//! added, so no set that holds it and not the column is maximal: the search
+//! visits none of them.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -66,7 +74,13 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
     }
     let stopped = |bound: ReachedBound| Projections::Stopped(Stop { bound, form: form.clone() });
     let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Projections::Found(Vec::new()) };
-    let mut search = Search { relations, cap, budget, projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(), read_under: Vec::new(), read_over: Vec::new() };
+    let exact = relations.iter().map(|relation| usize::from(!relation.is_empty())).collect();
+    let mut search = Search {
+        relations, cap, budget,
+        projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(),
+        read_under: Vec::new(), read_over: Vec::new(),
+        exact: StableHashMap::from_iter([(Box::default(), exact)]), determined: Vec::new(),
+    };
     let sets = match search.maximal(arity) {
         Ok(sets) => sets,
         Err(bound) => return stopped(bound),
@@ -115,6 +129,13 @@ struct Search<'a, 'b> {
     read_under: Vec<Box<[u16]>>,
     /// The sets that `is_under` read the rows of and found over the cap.
     read_over: Vec<Box<[u16]>>,
+    /// The count of the projection of each relation onto a set under the
+    /// cap, 0 for an empty relation, where the search knows it.
+    exact: StableHashMap<Box<[u16]>, Box<[usize]>>,
+    /// Each column found to be a function of a set, on every relation, with
+    /// that set, which does not hold it. No set of a pair holds the set of
+    /// another pair of the same column.
+    determined: Vec<(Box<[u16]>, u16)>,
 }
 
 impl Search<'_, '_> {
@@ -135,7 +156,14 @@ impl Search<'_, '_> {
 
     /// Visits each set under the cap that adds columns from `from` on to
     /// `set`, and gives those that are maximal.
+    /// A set that holds `set` and lacks a column that `set` determines
+    /// is not maximal, so the visit skips each such set: it ends where
+    /// `set` determines a column under `from`, and adds no column after one
+    /// that `set` determines.
     fn extend(&mut self, set: &mut Vec<u16>, from: u16, arity: u16, found: &mut Vec<Vec<u16>>) -> Result<(), ReachedBound> {
+        if self.determines_up_to(set, from.checked_sub(1)) {
+            return Ok(());
+        }
         let mut larger = false;
         for column in from..arity {
             set.push(column);
@@ -144,6 +172,9 @@ impl Search<'_, '_> {
                 self.extend(set, column + 1, arity, found)?;
             }
             set.pop();
+            if self.determines_up_to(set, Some(column)) {
+                break;
+            }
         }
         if !set.is_empty() && !larger {
             for column in (0..from.saturating_sub(1)).filter(|column| !set.contains(column)) {
@@ -166,6 +197,15 @@ impl Search<'_, '_> {
             return Ok(under);
         }
         self.budget.charge_work(1)?;
+        let reduced = self.reduced(set);
+        if reduced.len() < set.len() {
+            let under = self.is_under(&reduced)?;
+            if let Some(counts) = self.exact.get(reduced.as_slice()).cloned() {
+                self.exact.insert(set.into(), counts);
+            }
+            self.under.insert(set.into(), under);
+            return Ok(under);
+        }
         let known = if self.read_under.iter().any(|read| is_subset(set, read)) {
             Some(true)
         } else if self.read_over.iter().any(|read| is_subset(read, set)) {
@@ -178,6 +218,7 @@ impl Search<'_, '_> {
             return Ok(under);
         }
         let mut under = true;
+        let mut counts = vec![0usize; self.relations.len()];
         for relation in 0..self.relations.len() {
             if self.relations[relation].is_empty() {
                 continue;
@@ -194,10 +235,52 @@ impl Search<'_, '_> {
                 under = false;
                 break;
             }
+            counts[relation] = count as usize;
         }
         self.under.insert(set.into(), under);
         if under { &mut self.read_under } else { &mut self.read_over }.push(set.into());
+        if under {
+            self.learn(set, counts.into());
+        }
         Ok(under)
+    }
+
+    /// Keeps `counts`, the exact counts of `set`, which is under the cap,
+    /// and each column of `set` that the rest of `set` determines: the rest
+    /// has the same counts. A column is a function of the rest wherever the
+    /// two counts are equal, since the count of a projection grows with its
+    /// columns.
+    fn learn(&mut self, set: &[u16], counts: Box<[usize]>) {
+        for at in 0..set.len() {
+            let column = set[at];
+            let rest: Vec<u16> = set.iter().copied().filter(|&other| other != column).collect();
+            if self.exact.get(rest.as_slice()) != Some(&counts) {
+                continue;
+            }
+            if self.determined.iter().any(|(from, by)| *by == column && is_subset(from, &rest)) {
+                continue;
+            }
+            self.determined.retain(|(from, by)| *by != column || !is_subset(&rest, from));
+            self.determined.push((rest.into(), column));
+        }
+        self.exact.insert(set.into(), counts);
+    }
+
+    /// `set` without each column that a set it holds without that column
+    /// determines, one column at a time. It has the counts of `set`.
+    fn reduced(&self, set: &[u16]) -> Vec<u16> {
+        let mut reduced = set.to_vec();
+        while let Some(column) = self.determined.iter().find(|(from, by)| reduced.contains(by) && is_subset(from, &reduced)).map(|(_, by)| *by) {
+            reduced.retain(|&other| other != column);
+        }
+        reduced
+    }
+
+    /// Whether `set` determines a column it does not hold, at or under
+    /// `column`; none where `column` is `None`.
+    fn determines_up_to(&self, set: &[u16], column: Option<u16>) -> bool {
+        let Some(column) = column else { return false };
+        self.determined.iter().any(|(from, by)| *by <= column && !set.contains(by) && is_subset(from, set))
     }
 
     /// The positions in the rows of `part` of `relation` of the columns of
