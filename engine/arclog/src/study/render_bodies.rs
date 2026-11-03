@@ -13,9 +13,12 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
     for point in program.mutation_points() {
         let view = crate::eval::body_view::BodyView::keyed_at(program.checked(), &point.body)
             .map_err(|e| format!("body render compile at {:?}: {}", point.body, e.message))?;
+        // The names of the labels are those of the top-level form's scope;
+        // a body within a `DEMO_RULE` stands in the rule's scope.
+        let top_scope=crate::eval::ir::scope_of(program.checked(),&point.body).0.len()==1;
         let columns=view.clause.columns.iter().enumerate().map(|(i,v)| {
             let label=view.paths.labels[v.0 as usize];
-            let spelling=names[view.form.0[0].0 as usize].iter().find(|(id,_)|*id==label).map(|(_,n)|n.as_ref());
+            let spelling=names[view.form.0[0].0 as usize].iter().filter(|_|top_scope).find(|(id,_)|*id==label).map(|(_,n)|n.as_ref());
             json!({"body_column":i,"native_column_name":format!("c{i}"),"label_id":label.0,
                 "label_spelling":spelling,"type":format!("{:?}",view.clause.variables[v.0 as usize].ty)})
         }).collect::<Vec<_>>();
@@ -33,12 +36,18 @@ pub fn export(program: &StudyProgram, registry: &Registry) -> Result<Value, Stri
                 head_uses(child, &at.child(i as u32), out);
             }
         }
-        if let Some(NodeRef::InstanceInput(input)) =
-            node_at(NodeRef::Program(program.program().value()), &parent)
+        // The form whose input the body is: an `INIT` form, at the top level
+        // or within a `DEMO_RULE`. The inputs of a `DEMONSTRATED` form read
+        // no component's port, so they have no port projection.
+        let root = NodeRef::Program(program.program().value());
+        let owner = (1..parent.0.len()).rev().map(|end| NodePath(parent.0[..end].into()))
+            .find(|path| matches!(node_at(root, path), Some(NodeRef::Instance(_) | NodeRef::Demonstrated(_))))
+            .unwrap_or_else(|| view.form.clone());
+        if let (Some(NodeRef::InstanceInput(input)), Some(NodeRef::Instance(_))) = (node_at(root, &parent), node_at(root, &owner))
         {
             let (head, types, key, port_columns) = crate::eval::init_form::render_metadata::input_projection(
                 program.checked(),
-                &view.form,
+                &owner,
                 input,
                 registry,
             )?;
