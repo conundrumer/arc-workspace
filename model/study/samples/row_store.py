@@ -345,6 +345,8 @@ class RowSink:
         slot_id = slot_fid
         outputs = []
         export = TE.read_export(self.M, shadow)
+        if not export:
+            raise TE.ExportError('the engine gives no table for this form')
         other = {a.query for t in export for a in t.at if a.query} - {fid}
         if other:  # the export computes a table of a query other than the one the program hashes to
             raise TE.ExportError('the export names the query %s, not %s' % (sorted(other)[0], fid))
