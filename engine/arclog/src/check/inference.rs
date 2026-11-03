@@ -389,7 +389,7 @@ impl<'a> FormInference<'a> {
                 let misfit = sites.later.iter().map(|(_, site)| *site).find(|site| !reads_binding(fields.as_deref(), site));
                 if let Some(second) = misfit {
                     if let Some(at) = path_to(root, NodeRef::Site(second), NodePath::default()) {
-                        let message = format!("a head site onto the type parameter `{}` does not read the labels, or the fields, that the first site onto it binds", sites.parameter.name);
+                        let message = format!("a head site onto the type parameter `{}` takes more than the one label that the first site onto it binds", sites.parameter.name);
                         faults.push((at, message));
                     }
                     continue;
@@ -1663,21 +1663,18 @@ fn join_types(types: impl Iterator<Item = ValueType>) -> Result<Option<ValueType
 }
 
 /// Whether `site`, a head site onto a type parameter after the site that
-/// binds it, reads what that binding gives: one label where the binding site
-/// projects one label (`fields` none), and a label at each of the record's
-/// `fields` where it projects a record, as the evaluation of the form reads
-/// the site (`docs/arclog/arclog.md#instance`).
+/// binds it, takes one label where the binding site projects one label
+/// (`fields` none), as the evaluation of the form reads it. A site after a
+/// binding record is not tested: the search for the completions of a head
+/// site (`Decoder::completes_projection`) finds a record's fields only after
+/// a search that its budget does not cover.
 fn reads_binding(fields: Option<&[ColumnName]>, site: &Site) -> bool {
-    let mut paths: Vec<Vec<ColumnName>> = Vec::new();
-    each_site_label(site, &mut Vec::new(), &mut |use_, path| {
-        if use_label(use_).is_some() {
-            paths.push(path.to_vec());
-        }
-    });
-    match fields {
-        None => paths.len() == 1,
-        Some(fields) => fields.iter().all(|field| paths.iter().any(|path| path.len() > 1 && path.last() == Some(field))),
+    if fields.is_some() {
+        return true;
     }
+    let mut labels = 0;
+    each_site_label(site, &mut Vec::new(), &mut |use_, _| labels += usize::from(use_label(use_).is_some()));
+    labels == 1
 }
 
 /// The path of the node `target` among the descendants of `root`, which stands
