@@ -9,7 +9,7 @@ R = '/Users/davidlu/code/arc-workspace'
 W = R + '/work/lm/data-study/sampler/sampler-worker/'
 RANK = R + '/work/lm/data-study/features-worker/results/features-relation-pick-rank-context-rows-heldout37/'
 GOLD_BASE = W + 'sampler-helper-forms/gold-v3-helper-forms-a036da074/'
-HERE = os.path.dirname(os.path.abspath(__file__)) + '/'
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/results/features-relation-pick-feasible-by-value-join-heldout37/'  # the data folder
 ENGINE = R + '/work/lm/data-study/ast/run/runtime-ba0754492/py313-path'
 
 os.environ.setdefault('SAMPLER_CODE', R + '/.claude/worktrees/agent-a47849b35e6caf985/model/study/sampler')
