@@ -252,7 +252,46 @@ def rewrite(atom: list[Tree], head: str, onto: dict[str, str], records: set[str]
             nested.setdefault(at, []).append([':' + field, *rest])
         else:
             plain.append([new, *rest])
-    return [head, *([[at, *fs] for at, fs in nested.items()]), *plain]
+    return marks_first([head, *([[at, *fs] for at, fs in nested.items()]), *plain])
+
+
+def marks_first(atom: list[Tree]) -> list[Tree]:
+    """The atom with the `*` mark of each label that it marks at a later place than its first place moved to the first place. The engine's decoder takes a label as made at the token that marks it, so it
+    refuses a text that reads a label in an earlier site than the site that marks it, and `rewrite` puts the sites on a record first. A `^` mark stays where it is, since only a key may hold it."""
+    first: dict[str, str] = {}
+    marked: dict[str, str] = {}
+
+    def scan(t: Tree) -> None:
+        if isinstance(t, list):
+            for x in t[1:]:
+                scan(x)
+        elif (m := MARK.match(t)) and m[1] not in first:
+            first[m[1]] = t[0] if t[0] in '*^' else ''
+
+    def find(t: Tree) -> None:
+        if isinstance(t, list):
+            for x in t[1:]:
+                find(x)
+        elif (m := MARK.match(t)) and t[0] == '*':
+            marked.setdefault(m[1], t[0])
+    scan(atom)
+    find(atom)
+    late = {name: mark for name, mark in marked.items() if not first[name]}
+    if not late:
+        return atom
+    seen: set[str] = set()
+
+    def put(t: Tree) -> Tree:
+        if isinstance(t, list):
+            return [t[0], *map(put, t[1:])]
+        m = MARK.match(t)
+        if not m or m[1] not in late:
+            return t
+        if m[1] in seen:
+            return m[1]
+        seen.add(m[1])
+        return late[m[1]] + m[1]
+    return put(atom)
 
 
 COMPARISONS = ('=', '!=', '<', '<=', '>', '>=')
