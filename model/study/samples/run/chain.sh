@@ -11,7 +11,7 @@ PY=$REPO/work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python
 H=$REPO/scripts/run_heavy.py
 cd "$REPO" || exit 1
 export ARCLOG_IDENT_SOURCE=value PYTHONPATH=$W ARC_SAMPLER_KIT=$KIT/model/study/sampler
-export H PY SET HERE POINTS
+export H PY SET HERE POINTS REPO
 one() {
     set -o pipefail
     s=$1
