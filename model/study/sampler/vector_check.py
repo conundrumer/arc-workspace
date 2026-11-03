@@ -2,10 +2,13 @@
 """Checks of the writing-point vector (writer.Features.vectors, train_rows.points_of_targets(vectors=True)) on the gold queries of ramp tasks (prep.jsonl). A check of an in-progress
 feature: it prints one line per check (PASS or FAIL, with counts), gates nothing, and exits 1 where a check fails.
 
-    vector_check.py TASK [TASK ...] [--groups N] [--only shape,nan,unchanged,engine,legal,serve] [--engine-points N] [--serve-tree MODEL]
+    vector_check.py TASK [TASK ...] [--plan ordered|unordered] [--groups N] [--only shape,nan,unchanged,engine,legal,serve] [--engine-points N] [--serve-tree MODEL]
+
+The checks run under one writer plan (--plan), in a process whose writer plan it is (WRITER_PLAN). With no --plan, the script runs itself once for each plan, with --plan and
+WRITER_PLAN set and WRITER_TREE unset, prints the lines of each run under the plan's name, and exits 1 where a run fails.
 
 The checks, each over the first N groups (plan_check.groups_of) of each task (--only names the ones to run):
-  shape      every record of points_of_targets(plan='ordered' and 'unordered', vectors=True) has vectors of shape (len(ids), width), float32, and names, the same tuple at every
+  shape      every record of points_of_targets(plan=--plan, vectors=True) has vectors of shape (len(ids), width), float32, and names, the same tuple at every
              point and for every task; the names are distinct, and each starts with one of the six block names and a colon, in block order.
   nan        at each writing point of gold's walk: the token, place and task:ex_input / task:ex_output columns have no NaN; the pq columns repeat over the ids; pq:body is all NaN
              where writer.current_body gives none and has no NaN where it gives one; the state columns are not all NaN; cand: a row with cand:defined 0 has NaN in every other cand
@@ -15,7 +18,10 @@ The checks, each over the first N groups (plan_check.groups_of) of each task (--
   engine     (--engine-points N: the first N writing points with two ids or more of each task) the vectors of writer.Features with the engine's successor_tables (writer.SUCCESSOR
              'engine') and with the oracle ('oracle') are equal, row by row, on the ids that both define; the ids that only the engine defines are counted by the engine's kind (the
              oracle gives no table where a step leaves the point as it was); an id that only the oracle defines fails.
-  legal      at each writing point of gold's walk, gold's next token is in writer.point_ids (the engine's mask with the legality rules), which the rules must not remove.
+  legal      at each writing point of gold's walk, gold's next token is in writer.point_ids (the engine's mask with the legality rules and the plan's rules), which the rules must not
+             remove.
+Under `ordered`, gold's walk of nan, unchanged, engine and legal is its canonical stream (order.canonical_stream), as the training rows walk it; a gold query that the order rule
+gives no canonical stream for is walked as given, and is counted.
   serve      (--serve-tree MODEL, a tree over the writing-point vector) at each writing point of gold's walk, the vector of the serving Run (a search.SearchRun with WRITER on and
              the tree as its distribution, as the pool search makes it) equals the vector of the Run that train_rows makes rows on, over
              the same ids, with NaN in the same places; a difference is counted by block.
@@ -25,6 +31,7 @@ The checks, each over the first N groups (plan_check.groups_of) of each task (--
 import argparse
 import collections
 import os
+import subprocess
 import sys
 import time
 
@@ -32,6 +39,7 @@ import numpy as np
 
 import live
 import live_try
+import order
 import plan_check
 import train_rows as tr
 import writer
@@ -89,14 +97,38 @@ def walk(run, scope, kind, stream):
         pt = writer.step_point(pt, t)
 
 
+def each_plan(argv):
+    """Runs this script once for each writer plan, each in a process of that plan; exits 1 where a run fails."""
+    fails = 0
+    for plan in tr.PLANS:
+        env = dict(os.environ, WRITER_PLAN=plan)
+        env.pop('WRITER_TREE', None)
+        print('plan %s' % plan, flush=True)
+        fails += subprocess.run([sys.executable, os.path.abspath(__file__), *argv, '--plan', plan], env=env).returncode != 0
+    sys.exit(1 if fails else 0)
+
+
+def plan_stream(run, scope, kind, stream, plan, seen):
+    """The stream of gold's walk under plan: under `ordered` the canonical stream where the order rule gives one, else the stream as given."""
+    if plan != 'ordered':
+        return stream
+    dec0, _ = run.scope(scope)
+    got, o, why = order.canonical_stream(tr.order_env(run), dec0, kind, stream, tr.ORDER_SECONDS)
+    seen['legal: streams walked as given, with no canonical stream (%s)' % why.split(':')[0] if o != 'canonical' else 'legal: streams walked in canonical order'] += 1
+    return got
+
+
 def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('tasks', nargs='+')
+    ap.add_argument('--plan', choices=tr.PLANS, help='the writer plan of the checks, which must be the plan of the process (default: one run for each plan)')
     ap.add_argument('--groups', type=int, default=4)
     ap.add_argument('--only', default='shape,nan,unchanged,engine,legal')
     ap.add_argument('--engine-points', type=int, default=25)
     ap.add_argument('--serve-tree', default='')
     a = ap.parse_args(argv)
+    if a.plan is None:
+        each_plan(argv)
     only = set(a.only.split(','))
     live_try.P.REPO = os.environ.get('ARC_ROOT', '/Users/davidlu/code/arc-workspace')
     smp = live.Sampler(os.environ['SAMPLER_CODE'] + '/../../../models-current', steers=())
@@ -146,7 +178,7 @@ def main(argv):
                         writer.drop_successors(ps)
             del srv
         uses = writer.feature_names()
-        for plan in ('ordered', 'unordered') if 'shape' in only else ():
+        for plan in (a.plan,) if 'shape' in only else ():
             for scope, kind, streams in groups:
                 for i, rec in tr.points_of_targets(run, scope, kind, streams, uses, plan=plan, vectors=True):
                     if 'error' in rec or rec['left_mask']:
@@ -158,7 +190,7 @@ def main(argv):
         engine_left = a.engine_points
         for scope, kind, streams in groups if only - {'shape', 'serve'} else ():
             for stream in streams:
-                for pt, t in walk(run, scope, kind, stream):
+                for pt, t in walk(run, scope, kind, plan_stream(run, scope, kind, stream, a.plan, seen)):
                     ids = writer.point_ids(pt)
                     if 'legal' in only:
                         seen['legal: points'] += 1
