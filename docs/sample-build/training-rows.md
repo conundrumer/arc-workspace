@@ -31,7 +31,9 @@ The search's draws on train tasks are negative examples. A draw is never a targe
 - **Matching.** Only a draw's last step, the query the draw wrote, gives negatives. Its other steps are queries of its scope, which earlier draws wrote. The last step matches a sample when its state equals the sample's state. A draw that solves every train example gives no negatives.
 - **Drawn ids.** At each writing point of a matched step, the draw's next token is a drawn id when no live target has that token next. An id's `drawn` count is the number of failed draws that took it at that writing point. A positive id has no `drawn` count.
 - **Loss.** In the fit only, each id's term in the softmax denominator has the weight 1 + α · `drawn`, with α a fit option. The trees' scores do not read the weight.
-- **Unmatched steps.** A step whose state equals no sample's state gives no rows. The header of each task's file counts the matched and unmatched steps.
+- **States off the samples.** A last step whose state equals no sample's state adds that state as a sample. Its targets are the graph queries that are applicable over the state's own queries and that the state has not written. No graph query reads a query outside the union, so these are the targets of the sample whose state is the step state's gold part: the step state's queries that are union queries. The step state's queries outside the union get row-store tables from the engine, as the union's queries do. The drawn ids at its writing points are counted as above.
+- **Header.** The header of each task's file counts the last steps that match a sample, and the last steps that add one.
+- **Check.** `model/study/samples/run/draw_targets.py` counts, for draw files, the last steps whose gold part is a sample's state, and the distinct states and queries outside the union that the added samples need.
 
 ## Table columns of the writing-point vector
 
