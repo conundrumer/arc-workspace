@@ -7,7 +7,8 @@
 //! it writes the case's stream as `arclog::stream::corpus::corpus_case_stream`
 //! does, steps a decoder through it, with the mask at each token the model
 //! emits unless `--no-mask` is given, checks the program that the decode
-//! gives, and writes that program's stream. It prints one line per case:
+//! gives, and writes that program's stream. It prints one line per case, as
+//! each case ends:
 //!
 //! `<task_id> <case>: <n> tokens; round trip <verdict>; query hashes <s> of <q> the same[, first differs at form <i> (<kind>)]`
 //!
@@ -78,24 +79,25 @@ fn main() -> ExitCode {
     }
     let (mut same, mut cases) = (0, 0);
     for id in &ids {
-        match solver_lines(Path::new(corpus), Path::new(tasks), id, all, masked, variants) {
-            Ok(lines) => {
-                for (line, round_trip) in lines {
-                    println!("{line}");
-                    cases += 1;
-                    same += usize::from(round_trip);
-                }
+        let mut print = |line: String, round_trip: Option<bool>| {
+            println!("{line}");
+            if let Some(round_trip) = round_trip {
+                cases += 1;
+                same += usize::from(round_trip);
             }
-            Err(fault) => println!("{id}: {fault}"),
+        };
+        if let Err(fault) = solver_lines(Path::new(corpus), Path::new(tasks), id, all, masked, variants, &mut print) {
+            println!("{id}: {fault}");
         }
     }
     println!("{same} of {cases} cases give the same stream again");
     ExitCode::SUCCESS
 }
 
-/// The line of each wanted case of the solver `id`, with whether its round
-/// trip gives the same stream; or the fault that stops the solver.
-fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, variants: bool) -> Result<Vec<(String, bool)>, String> {
+/// Gives `print` the line of each wanted case of the solver `id`, as the
+/// case ends, with whether its round trip gives the same stream, and each
+/// line of its variants, with none; or the fault that stops the solver.
+fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, variants: bool, print: &mut dyn FnMut(String, Option<bool>)) -> Result<(), String> {
     let read = read_corpus_task(corpus, tasks, id)?;
     let registry = Registry::get();
     let cases = resolve_cases(&read.solver, registry);
@@ -106,7 +108,6 @@ fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, 
     let session = corpus_session();
     let constructions = arclog_constructions::shared()?;
     let settings = DecodeSettings::default();
-    let mut lines = Vec::new();
     for (name, checked) in &programs {
         let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
         let mut decoder = Decoder::new(&read.task, &session, registry, constructions, &settings);
@@ -114,7 +115,7 @@ fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, 
         let (written, files) = match corpus_case_stream_of_files(corpus, id, case, checked, decoder.vocabulary(), false) {
             Ok(written) => written,
             Err(fault) => {
-                lines.push((format!("{id} {spelled}: no stream: {fault}"), false));
+                print(format!("{id} {spelled}: no stream: {fault}"), Some(false));
                 continue;
             }
         };
@@ -125,14 +126,14 @@ fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, 
         };
         let (verdict, same) = round_trip(&mut decoder, &written, masked);
         let hashes = query_hashes(&decoder, &text, &written);
-        lines.push((format!("{id} {spelled}: {} tokens; round trip {verdict}; query hashes {hashes}", written.tokens.len()), same));
+        print(format!("{id} {spelled}: {} tokens; round trip {verdict}; query hashes {hashes}", written.tokens.len()), Some(same));
         if variants {
             for line in variant_lines(&read, &text, constructions) {
-                lines.push((format!("{id} {spelled} DEMONSTRATED {line}"), true));
+                print(format!("{id} {spelled} DEMONSTRATED {line}"), None);
             }
         }
     }
-    Ok(lines)
+    Ok(())
 }
 
 /// The verdict of the round trip of `written` through `decoder`, and
