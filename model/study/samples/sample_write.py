@@ -2,7 +2,7 @@
 
   python3 sample_write.py SET [--shard k/N] [--tasks T,T,...] [--out DIR]
 
-For each task with a skeleton file it writes OUTD/SET/samples/<task>.jsonl.gz, to a temp file and then renamed, and skips a task whose file holds the same input shas and code sha. It is not a fit: it writes every task, held ones included, and calls no split guard. A task with no row store or no tables file is skipped, and a task whose stages hold two `query_hash_version`s is refused.
+For each task with a skeleton file it writes OUTD/SET/samples/<task>.jsonl.gz, to a temp file and then renamed, and skips a task whose file holds the same input shas and code sha. It is not a fit: it writes every task, held-out ones included, and calls no split guard. A task with no row store or no tables file is skipped, and a task whose stages hold two `query_hash_version`s is refused.
 
 Names of the records that stages 3 reads (their writers are frozen or are not this stage's): in the row store, `function` is a query's record (future name: `query`); in the tables file, `entry` is a table at an assignment (future name: `table at an assignment`), `function` is a query vector (future name: `query`), and `given` is a base table (future name: `base`).
 

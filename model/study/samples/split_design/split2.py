@@ -1,6 +1,6 @@
-"""Held set, train and dev split, strata, salt choice, sizes, and where the 22, the 37 and the 99 fall. Reads facts.jsonl here; writes split2.tsv and split2.out here.
+"""Held-out set, train and dev split, strata, salt choice, sizes, and where the 22, the 37 and the 99 fall. Reads facts.jsonl here; writes split2.tsv and split2.out here.
 
-Held: every task whose data/tasks/<id>.json `source` has arc-agi-2/evaluation (block E, 120 tasks).
+Held-out: every task whose data/tasks/<id>.json `source` has arc-agi-2/evaluation (block E, 120 tasks).
 Train and dev: the other tasks (block T, 1,027 tasks), by strata within T.
 Stratum name = depth bin / size bin.
 - depth bin: graph-tasks-SET.jsonl `goal_depth`: d1-4, d5-7, d8+; `none` where the task has no graph row, an `error` row, or goal_depth inf.
@@ -41,7 +41,7 @@ def u(salt, t):
 
 def split_of(r, salt):
     if block(r) == 'E':
-        return 'held'
+        return 'held-out'
     return 'train' if u(salt, r['task']) < CUT else 'dev'
 
 
@@ -73,15 +73,15 @@ def p(*a):
 
 p('salt %d of %d; chi-square %.2f (median over salts %.2f; %d terms, dev counts by stratum)' % (salt, SALTS, best_chi, med, len(order)))
 tot = collections.Counter(r['split'] for r in allrows)
-p('overall: pool %d, train %d, dev %d, held %d (T %d, E %d); dev share of T %.4f' % (len(allrows), tot['train'], tot['dev'], tot['held'], len(rows), len(E), tot['dev'] / len(rows)))
+p('overall: pool %d, train %d, dev %d, held-out %d (T %d, E %d); dev share of T %.4f' % (len(allrows), tot['train'], tot['dev'], tot['held-out'], len(rows), len(E), tot['dev'] / len(rows)))
 p('\n| Stratum | T pool | Train | Dev | Dev expected |')
 p('|---|---|---|---|---|')
 for s in order:
     c = collections.Counter(r['split'] for r in rows if r['stratum'] == s)
     p('| %s | %d | %d | %d | %.1f |' % (s, cells[s], c['train'], c['dev'], cells[s] * DEV))
 p('| All | %d | %d | %d | %.1f |' % (len(rows), tot['train'], tot['dev'], len(rows) * DEV))
-# held composition
-p('\nheld (E): %d tasks' % len(E))
+# held-out composition
+p('\nheld-out (E): %d tasks' % len(E))
 for name, f in (('depth bin', depth_bin), ('size bin', size_bin)):
     pass
 hg = [r for r in E if r.get('goal_depth') is not None and r['goal_depth'] != float('inf')]
@@ -93,7 +93,7 @@ SETS = [('r22', 'the 22'), ('h37', 'the 37'), ('h99', 'the 99')]
 p('\ncurrent sets under the rule:')
 for k, lab in SETS:
     c = collections.Counter(r['split'] for r in allrows if r[k])
-    p('  %s: train %d, dev %d, held %d (of %d)' % (lab, c['train'], c['dev'], c['held'], sum(r[k] for r in allrows)))
+    p('  %s: train %d, dev %d, held-out %d (of %d)' % (lab, c['train'], c['dev'], c['held-out'], sum(r[k] for r in allrows)))
 p('  the 22 by block: %s' % dict(collections.Counter(block(r) for r in allrows if r['r22'])))
 p('\nthe 22 per stratum: stratum, T pool, in the 22, of those train, dev')
 for s in order:
@@ -124,15 +124,15 @@ def tbin(r):
 
 
 for name, f in (('case-counts cases', cbin), ('input cells median', ibin), ('fewest productions (upper bound)', fbin), ('graph tables', tbin), ('train pairs', lambda r: str(min(r['train_pairs'], 5)) + ('+' if r['train_pairs'] >= 5 else ''))):
-    p('\ncheck, %s: per bin T pool, train, dev; then held' % name)
+    p('\ncheck, %s: per bin T pool, train, dev; then held-out' % name)
     for v in sorted(set(f(r) for r in allrows)):
         c = collections.Counter(r['split'] for r in rows if f(r) == v)
         m = sum(c.values())
         h = sum(f(r) == v for r in E)
         if m:
-            p('  %-8s T pool %4d  train %4d (%.2f)  dev %3d (%.2f)  held %3d (of %d: %.2f)' % (v, m, c['train'], c['train'] / m, c['dev'], c['dev'] / m, h, len(E), h / len(E)))
+            p('  %-8s T pool %4d  train %4d (%.2f)  dev %3d (%.2f)  held-out %3d (of %d: %.2f)' % (v, m, c['train'], c['train'] / m, c['dev'], c['dev'] / m, h, len(E), h / len(E)))
         else:
-            p('  %-8s T pool    0  held %3d (of %d: %.2f)' % (v, h, len(E), h / len(E)))
+            p('  %-8s T pool    0  held-out %3d (of %d: %.2f)' % (v, h, len(E), h / len(E)))
 # seeds
 p('\nseeds per arm, two-sided .05, power .8, D0 scaled from the ramp (per task 0.0625/22 solves; 0.625/22 solves or has a candidate):')
 for N in (len(E), len(hg), tot['dev']):
@@ -150,8 +150,8 @@ for N in (len(E), tot['dev']):
     dl = 3
     s = (1.960 * math.sqrt(D0 + dl) + 0.842 * math.sqrt(max(D0 + dl - dl * dl / N, 0))) ** 2 / dl ** 2
     p('  N=%d, change of 3 solves: seeds %.2f' % (N, s))
-p('  standard error ratio against the 22: held sqrt(%d/22) = %.2f, dev sqrt(%d/22) = %.2f' % (len(E), math.sqrt(len(E) / 22), tot['dev'], math.sqrt(tot['dev'] / 22)))
-p('  base solves at 8/989 on held: %.2f; on dev: %.2f' % (8 / 989 * len(E), 8 / 989 * tot['dev']))
+p('  standard error ratio against the 22: held-out sqrt(%d/22) = %.2f, dev sqrt(%d/22) = %.2f' % (len(E), math.sqrt(len(E) / 22), tot['dev'], math.sqrt(tot['dev'] / 22)))
+p('  base solves at 8/989 on held-out: %.2f; on dev: %.2f' % (8 / 989 * len(E), 8 / 989 * tot['dev']))
 out.close()
 with open(HERE + '/split2.tsv', 'w') as f:
     f.write('task\tblock\tstratum\tsplit\tu\n')

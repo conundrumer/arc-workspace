@@ -5,8 +5,8 @@ Strata (stratum name = source block / depth bin / size bin):
 - depth bin: graph-tasks-SET.jsonl `goal_depth`: d1-4, d5-7, d8+; `none` where the task has no graph row, an `error` row, or goal_depth inf.
   In block E the depth bins d1-4, d5-7, d8+ are one bin `graph`, since E has 35 graph tasks.
 - size bin: `same` where every train pair's output has its input's height and width, else `diff`.
-Assignment: u = first 16 hex digits of sha256("<salt>:<task id>") / 16**16; train where u < 0.70, dev where u < 0.85, else held.
-The salt is the one of 0..SALTS-1 whose split has the least chi-square of dev and held counts against their expected counts over the strata.
+Assignment: u = first 16 hex digits of sha256("<salt>:<task id>") / 16**16; train where u < 0.70, dev where u < 0.85, else held-out.
+The salt is the one of 0..SALTS-1 whose split has the least chi-square of dev and held-out counts against their expected counts over the strata.
 """
 import collections, hashlib, json, math, os, sys
 
@@ -38,21 +38,21 @@ def u(salt, t):
 
 
 def split_of(x):
-    return 'train' if x < CUT[0] else 'dev' if x < CUT[1] else 'held'
+    return 'train' if x < CUT[0] else 'dev' if x < CUT[1] else 'held-out'
 
 
 for r in rows:
     r['stratum'] = stratum(r)
 cells = collections.Counter(r['stratum'] for r in rows)
 order = sorted(cells)
-share = dict(train=CUT[0], dev=CUT[1] - CUT[0], held=1 - CUT[1])
+share = {'train': CUT[0], 'dev': CUT[1] - CUT[0], 'held-out': 1 - CUT[1]}
 
 
 def chi(salt):
     got = collections.Counter((r['stratum'], split_of(u(salt, r['task']))) for r in rows)
     c = 0.0
     for s in order:
-        for sp in ('dev', 'held'):
+        for sp in ('dev', 'held-out'):
             e = cells[s] * share[sp]
             c += (got[(s, sp)] - e) ** 2 / e
     return c
@@ -72,12 +72,12 @@ def p(*a):
 
 p('salt %d of %d; chi-square %.2f (median over salts %.2f; cells x 2 = %d terms)' % (salt, SALTS, best_chi, med, 2 * len(order)))
 tot = collections.Counter(r['split'] for r in rows)
-p('overall: pool %d, train %d, dev %d, held %d' % (len(rows), tot['train'], tot['dev'], tot['held']))
-p('\n| Stratum | Pool | Train | Dev | Held | Held expected |')
+p('overall: pool %d, train %d, dev %d, held-out %d' % (len(rows), tot['train'], tot['dev'], tot['held-out']))
+p('\n| Stratum | Pool | Train | Dev | Held-out | Held-out expected |')
 p('|---|---|---|---|---|---|')
 for s in order:
     c = collections.Counter(r['split'] for r in rows if r['stratum'] == s)
-    p('| %s | %d | %d | %d | %d | %.1f |' % (s, cells[s], c['train'], c['dev'], c['held'], cells[s] * share['held']))
+    p('| %s | %d | %d | %d | %d | %.1f |' % (s, cells[s], c['train'], c['dev'], c['held-out'], cells[s] * share['held-out']))
 # current sets per stratum
 SETS = [('r22', 'the 22'), ('h37', 'the 37'), ('h99', 'the 99')]
 p('\n| Stratum | Pool | The 22 | The 37 | The 99 | 22 exp | 37 exp | 99 exp |')
@@ -98,14 +98,14 @@ for name, f in (('block', block), ('depth bin (E graph as one)', depth_bin), ('s
 p('\ncurrent sets under the rule:')
 for k, lab in SETS:
     c = collections.Counter(r['split'] for r in rows if r[k])
-    p('  %s: train %d, dev %d, held %d (of %d)' % (lab, c['train'], c['dev'], c['held'], size[k]))
+    p('  %s: train %d, dev %d, held-out %d (of %d)' % (lab, c['train'], c['dev'], c['held-out'], size[k]))
 legacy = [r for r in rows if r['r22'] or r['h99']]
 c = collections.Counter(r['split'] for r in legacy)
-p('  the 22 and the 99 together: train %d, dev %d, held %d (of %d)' % (c['train'], c['dev'], c['held'], len(legacy)))
-# option: keep current sets held; rule on the rest
+p('  the 22 and the 99 together: train %d, dev %d, held-out %d (of %d)' % (c['train'], c['dev'], c['held-out'], len(legacy)))
+# option: keep current sets held-out; rule on the rest
 rest = [r for r in rows if not (r['r22'] or r['h99'])]
 c = collections.Counter(r['split'] for r in rest)
-p('option keep: held = 121 current + rule-held of the rest %d -> held %d, dev %d, train %d' % (c['held'], 121 + c['held'], c['dev'], c['train']))
+p('option keep: held-out = 121 current + rule-held-out of the rest %d -> held-out %d, dev %d, train %d' % (c['held-out'], 121 + c['held-out'], c['dev'], c['train']))
 eb = collections.Counter((r['split'], r['r22'] or r['h99']) for r in rows if block(r) == 'E')
 p('block E (120): rule split', dict(collections.Counter(r['split'] for r in rows if block(r) == 'E')), '; E tasks outside the 99 by rule split', {k[0]: v for k, v in eb.items() if not k[1]})
 # balance checks on variables that are not strata
@@ -130,14 +130,14 @@ def tbin(r):
 
 
 for name, f in (('case-counts cases', cbin), ('input cells median', ibin), ('fewest productions (upper bound)', fbin), ('graph tables', tbin), ('train pairs', lambda r: str(min(r['train_pairs'], 5)) + ('+' if r['train_pairs'] >= 5 else ''))):
-    p('\ncheck, %s: per bin pool, then train/dev/held' % name)
+    p('\ncheck, %s: per bin pool, then train/dev/held-out' % name)
     for v in sorted(set(f(r) for r in rows)):
         c = collections.Counter(r['split'] for r in rows if f(r) == v)
         m = sum(c.values())
-        p('  %-8s pool %4d  train %4d (%.2f)  dev %3d (%.2f)  held %3d (%.2f)' % (v, m, c['train'], c['train'] / m, c['dev'], c['dev'] / m, c['held'], c['held'] / m))
+        p('  %-8s pool %4d  train %4d (%.2f)  dev %3d (%.2f)  held-out %3d (%.2f)' % (v, m, c['train'], c['train'] / m, c['dev'], c['dev'] / m, c['held-out'], c['held-out'] / m))
 # seeds for a solve change on sets of each size (normal formula of solve-noise-test-size/read.md Part B)
 p('\nseeds per arm, two-sided .05, power .8, D0 scaled from the ramp (per task 0.0625/22 solves; 0.625/22 solves or has a candidate):')
-for N in (22, 37, 99, tot['dev'], tot['held']):
+for N in (22, 37, 99, tot['dev'], tot['held-out']):
     for lab, d0t in (('solves', 0.0625 / 22), ('solves or cand', 0.625 / 22)):
         D0 = d0t * N
         cells_ = []

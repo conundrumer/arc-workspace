@@ -12,7 +12,7 @@ Paths that start with `gold-union/` are under `/Users/davidlu/code/arc-workspace
 
 ## The design
 
-- **Held** is exactly the 120 tasks whose `source` has arc-agi-2/evaluation (block E). They are held out for academic reasons, by the user's ruling. No rule, hash or stratum moves an E task out of held.
+- **Held-out** is exactly the 120 tasks whose `source` has arc-agi-2/evaluation (block E). They are held out for academic reasons, by the user's ruling. No rule, hash or stratum moves an E task out of held-out.
 - **Train and dev** cover the other 1,027 tasks (block T), by a hash rule and by strata within T (Part 2).
 - Dev is about 15% of T: 161 tasks, against 154.1 expected.
 
@@ -20,7 +20,7 @@ Paths that start with `gold-union/` are under `/Users/davidlu/code/arc-workspace
 |---|---|---|
 | Train | 866 | 1,027 (T) |
 | Dev | 161 | 1,027 (T) |
-| Held | 120 | 1,147 (pool) |
+| Held-out | 120 | 1,147 (pool) |
 
 ## Part 0: the pool and the data
 
@@ -68,7 +68,7 @@ A task has a graph where a graph-tasks row has no `error` and a finite `goal_dep
 - The "pinned: ..." errors are "rows unread: ... TableWork cap" for all but one ("does not end", e872b94a).
 - The 63 tasks that have gold and no graph row are 62 of the 62 and 1 of the 37: no `graph-tasks-62.jsonl` exists.
 - Of the 37, 29 have a graph, 7 have an `error` row (3 "no tables", 4 "pinned"), and 1 has no row. Of the 99, 29 have a graph. All 22 of the ramp fold have a graph.
-- Held (E) has 85 of 120 tasks without a usable union graph. A measurement of reach on held covers the 35 tasks that have one. T has 89 of 1,027 without a graph.
+- Held-out (E) has 85 of 120 tasks without a usable union graph. A measurement of reach on held-out covers the 35 tasks that have one. T has 89 of 1,027 without a graph.
 
 ## Part 1: strata variables and bin edges
 
@@ -93,7 +93,7 @@ Bin edges for goal depth are near the tertiles of the 973 pool tasks that have a
 
 ## Part 2: the assignment rule
 
-1. A task whose `source` has arc-agi-2/evaluation is held.
+1. A task whose `source` has arc-agi-2/evaluation is held-out.
 2. For any other task `t`, u = (the first 16 hex digits of sha256 of the text `1533:t`, as an integer) / 16^16. So u is in [0, 1). The task is in train where u < 0.85, and in dev where u ≥ 0.85. The cut is the same in every stratum.
 3. The salt 1533 was chosen once, and is fixed from now on. `split2.py` tried salts 0 to 1,999. For each salt it summed (count − expected)² / expected over the 8 strata, on the dev count (expected is 0.15 of the stratum). Salt 1533 has the least sum, 0.71. The median over the 2,000 salts is 6.27.
 
@@ -101,12 +101,12 @@ Stability:
 
 - A task's split depends only on its `source` and its id, through the fixed salt. A new task does not move an old one.
 - The rule does not hash the stratum into u. A task's stratum can change: for example, a T task goes from `none` to a depth bin when a graph of it is built. Its split stays the same.
-- The strata set the salt only. A T task added after this design falls in train and dev at the rates 0.85 and 0.15, with no balance by stratum. A task added with arc-agi-2/evaluation in its source is held.
+- The strata set the salt only. A T task added after this design falls in train and dev at the rates 0.85 and 0.15, with no balance by stratum. A task added with arc-agi-2/evaluation in its source is held-out.
 - The rule reads no held list.
 
 ## Part 3: sizes
 
-Overall: pool 1,147; train 866 of 1,027 (T); dev 161 of 1,027 (T); held 120 of 1,147 (pool).
+Overall: pool 1,147; train 866 of 1,027 (T); dev 161 of 1,027 (T); held-out 120 of 1,147 (pool).
 
 The salt's sum does not constrain the dev total. Dev is 161 against 154.1 expected, and every stratum is within 3 tasks of its expected count.
 
@@ -124,7 +124,7 @@ Train and dev per stratum (`split2.out`). "Dev expected" is 0.15 of the stratum.
 | none / same | 60 | 51/60 | 9/60 | 9.0 |
 | All | 1,027 | 866/1,027 | 161/1,027 | 154.1 |
 
-Held (E) is not split by strata. Its makeup, by the same facts, over its 120 tasks:
+Held-out (E) is not split by strata. Its makeup, by the same facts, over its 120 tasks:
 
 | Group | Tasks |
 |---|---|
@@ -134,9 +134,9 @@ Held (E) is not split by strata. Its makeup, by the same facts, over its 120 tas
 | No graph, output size same | 56/120 |
 | Graph tasks at goal depth 1-4, 5-7, 8 and up | 0, 5, 30 (of 35) |
 
-Balance checks on variables that are not strata. Each row gives the bin's T pool count, then its train and dev counts with their share of the bin, then the held count with its share of the 120. The `cases` bin 0 has 1 task, and is joined with the no-row bin.
+Balance checks on variables that are not strata. Each row gives the bin's T pool count, then its train and dev counts with their share of the bin, then the held-out count with its share of the 120. The `cases` bin 0 has 1 task, and is joined with the no-row bin.
 
-| Variable, bin | T pool | Train | Dev | Held |
+| Variable, bin | T pool | Train | Dev | Held-out |
 |---|---|---|---|---|
 | `cases` 1 | 262 | 219 (0.84) | 43 (0.16) | 37 (0.31) |
 | `cases` 2-3 | 368 | 309 (0.84) | 59 (0.16) | 36 (0.30) |
@@ -158,34 +158,34 @@ Balance checks on variables that are not strata. Each row gives the bin's T pool
 | `train_pairs` 4 | 195 | 165 (0.85) | 30 (0.15) | 18 (0.15) |
 | `train_pairs` 5 and up | 80 | 68 (0.85) | 12 (0.15) | 6 (0.05) |
 
-Train and dev match each other on these variables. Held does not match T: 86 of its 120 tasks have `input_cells_median` 226 and up (0.72, against 304 of 1,027 in T, 0.30), and its graph tasks are deep (30 of 35 at goal depth 8 and up).
+Train and dev match each other on these variables. Held-out does not match T: 86 of its 120 tasks have `input_cells_median` 226 and up (0.72, against 304 of 1,027 in T, 0.30), and its graph tasks are deep (30 of 35 at goal depth 8 and up).
 
-### What a dev set and a held set of this size can show
+### What a dev set and a held-out set of this size can show
 
 Scale is from `solve-noise-test-size/read.md` Part B. That record's normal formula gives the seeds per arm for a paired test at two-sided 0.05 and power 0.8: s = [1.960 √(D0 + Δ) + 0.842 √(D0 + Δ − Δ²/N)]² / Δ², where Δ is the change in solves and D0 the count of discordant tasks in a control pair. Here D0 is scaled from the ramp fold's per-task rate (0.0625 per 22 tasks for solves, 0.625 per 22 for "solves or has a candidate"), so every D0 and seed count below is an estimate. The ramp fold is a T set, so the rate is untested on E. A change is given as a lift in the share of tasks solved, so Δ = lift × N.
 
 | Set | N | Lift 1 point: Δ, seeds | Lift 2 points: Δ, seeds | Lift 5 points: Δ, seeds |
 |---|---|---|---|---|
-| Held | 120 | 1.2, 9 | 2.4, 4 | 6.0, 2 |
-| Held, tasks that have a graph | 35 | 0.35, 29 | 0.7, 13 | 1.75, 5 |
+| Held-out | 120 | 1.2, 9 | 2.4, 4 | 6.0, 2 |
+| Held-out, tasks that have a graph | 35 | 0.35, 29 | 0.7, 13 | 1.75, 5 |
 | Dev | 161 | 1.6, 7 | 3.2, 3 | 8.1, 2 |
 
-(Solves. For "solves or has a candidate" the seeds are 26, 8 and 3 on held; 87, 28 and 7 on the 35 held tasks that have a graph; 19, 6 and 2 on dev. `split2.out`.)
+(Solves. For "solves or has a candidate" the seeds are 26, 8 and 3 on held-out; 87, 28 and 7 on the 35 held-out tasks that have a graph; 19, 6 and 2 on dev. `split2.out`.)
 
-- A change of 3 solves on 22 tasks needs about 4 seeds, and is a lift of 14 points. On held, a change of 3 solves is a lift of 2.5 points, and it needs 3 seeds (estimate, s = 2.89 before rounding up). On dev it is a lift of 1.9 points, and it needs about 3 seeds (s = 3.00). The seeds follow Δ more than N. A larger set turns the same lift per task into a larger Δ.
-- A measurement of reach on held covers 35 tasks, since 85 of the 120 held tasks have no usable union graph. On those 35, a lift of 1 point is Δ = 0.35, which is below one task. A change of 3 tasks is a lift of 8.6 points.
-- Base rate, for scale: R120 solves 8 of 989 training tasks at 120 s (record Part A). At that rate, held has about 1.0 base solves and dev about 1.3 (estimates; the rate comes from T tasks).
-- For a per-task mean over held, such as a fit's score per task, the standard error is √(120/22) = 2.3 times smaller than on the 22, and over dev √(161/22) = 2.7 times smaller, at equal spread per task (arithmetic).
-- Dev takes the choices of a fit (settings, when to stop). Held is scored once per decision.
+- A change of 3 solves on 22 tasks needs about 4 seeds, and is a lift of 14 points. On held-out, a change of 3 solves is a lift of 2.5 points, and it needs 3 seeds (estimate, s = 2.89 before rounding up). On dev it is a lift of 1.9 points, and it needs about 3 seeds (s = 3.00). The seeds follow Δ more than N. A larger set turns the same lift per task into a larger Δ.
+- A measurement of reach on held-out covers 35 tasks, since 85 of the 120 held-out tasks have no usable union graph. On those 35, a lift of 1 point is Δ = 0.35, which is below one task. A change of 3 tasks is a lift of 8.6 points.
+- Base rate, for scale: R120 solves 8 of 989 training tasks at 120 s (record Part A). At that rate, held-out has about 1.0 base solves and dev about 1.3 (estimates; the rate comes from T tasks).
+- For a per-task mean over held-out, such as a fit's score per task, the standard error is √(120/22) = 2.3 times smaller than on the 22, and over dev √(161/22) = 2.7 times smaller, at equal spread per task (arithmetic).
+- Dev takes the choices of a fit (settings, when to stop). Held-out is scored once per decision.
 
 ## Part 4: where the 22, the 37 and the 99 fall
 
-- The 37 and the 99 are all E, so all 37 and all 99 are held.
-- The 22 are all T, so they fall into train or dev by the rule: 19 in train, 3 in dev. None is held.
+- The 37 and the 99 are all E, so all 37 and all 99 are held-out.
+- The 22 are all T, so they fall into train or dev by the rule: 19 in train, 3 in dev. None is held-out.
 
-The 37 and the 99 by held group:
+The 37 and the 99 by held-out group:
 
-| Held group | Held | The 37 | The 99 |
+| Held-out group | Held-out | The 37 | The 99 |
 |---|---|---|---|
 | Has a graph, output size diff | 10 | 5/37 | 5/99 |
 | Has a graph, output size same | 25 | 24/37 | 24/99 |
@@ -193,7 +193,7 @@ The 37 and the 99 by held group:
 | No graph, output size same | 56 | 7/37 | 49/99 |
 | All | 120 | 37/37 | 99/99 |
 
-The 99 are 99 of the 120 held tasks. The other 21 held tasks are in none of the three lists.
+The 99 are 99 of the 120 held-out tasks. The other 21 held-out tasks are in none of the three lists.
 
 The 22 by stratum:
 
@@ -213,11 +213,11 @@ The 22 by stratum:
 
 ## Part 5: what the ruling fixes
 
-- Held is the 120 E tasks, and no other task. The 37 and the 99 are inside it, so no fit trains on either. A held result on the 37 or the 99 stays comparable between fits.
-- A fit trains on train, which has no E task. Dev has no E task, so dev shows nothing about E. Held is the only set that measures E, and its tasks differ from T in grid size and in graph depth (Part 3).
-- The 22 are not a held set. A fit trains on 19 of them and may use the other 3 as dev tasks. A score on the 22 is no longer a held score.
+- Held-out is the 120 E tasks, and no other task. The 37 and the 99 are inside it, so no fit trains on either. A held-out result on the 37 or the 99 stays comparable between fits.
+- A fit trains on train, which has no E task. Dev has no E task, so dev shows nothing about E. Held-out is the only set that measures E, and its tasks differ from T in grid size and in graph depth (Part 3).
+- The 22 are not a held-out set. A fit trains on 19 of them and may use the other 3 as dev tasks. A score on the 22 is no longer a held-out score.
 - Train and dev are balanced by goal depth and output size, so a dev score applies to T with the same strata mix.
-- Held is 120 tasks, and a measurement of reach on held covers 35 of them. Part 3 gives what that size can show.
+- Held-out is 120 tasks, and a measurement of reach on held-out covers 35 of them. Part 3 gives what that size can show.
 - The lists in `held/` are not changed by this record. `split2.tsv` is the assignment.
 
 ## Notes

@@ -4,7 +4,7 @@
   python3 fit_trees.py --points DIR --check
 
 DIR is `samples/SET/points/`. The point files of train tasks give the fit and those of dev tasks give the evaluation, by the split in each file's header. A file whose header split is
-held is an error, and so is a DIR below `points_held`. --dev-tasks names tasks to treat as dev whatever their header says (for development on a small set; held stays an error).
+held-out (or `held`, its name in older files) is an error, and so is a DIR below `points_held-out` or `points_held`. --dev-tasks names tasks to treat as dev whatever their header says (for development on a small set; held-out stays an error).
 With --points-per-task N a task keeps at most N of its points, chosen by a hash of the seed, the sample id and the point's position in its file (0: all).
 
 A row is one (point, id): the id's option values, the id's table vector and the point's values. The columns are in the order of the header's `uses` (the writer's feature names, which
@@ -36,7 +36,9 @@ from typing import Any, Callable, Iterator
 import lightgbm as lgb
 import numpy as np
 
-HELD_FOLDER = 'points_held'
+from split import is_held_out
+
+HELD_FOLDERS = ('points_held-out', 'points_held')  # the folder name, and the one that earlier runs wrote
 FEATURE_FIELDS = ('schema', 'extractor_sha', 'writer_sha', 'wheel', 'point_names', 'option_names', 'table_names', 'uses', 'vector_names', 'vector_point_cols')
 HESSIAN_FLOOR = 1e-6
 SPECIAL = re.compile(r'[\s",:\[\]{}]')  # the characters that LightGBM refuses in a feature name
@@ -149,8 +151,8 @@ def header_of(path: Path) -> dict:
 
 
 def point_folder(folder: Path) -> Path:
-    if HELD_FOLDER in folder.resolve().parts:
-        raise FitError(f'{folder}: a fit never reads {HELD_FOLDER}')
+    if any(name in folder.resolve().parts for name in HELD_FOLDERS):
+        raise FitError(f'{folder}: a fit never reads {" or ".join(HELD_FOLDERS)}')
     if not folder.is_dir():
         raise FitError(f'{folder}: not a folder')
     return folder
@@ -168,6 +170,8 @@ def split_files(folder: Path, dev_tasks: set[str]) -> tuple[list[Path], list[Pat
     for p in paths:
         task = p.name.removesuffix('.jsonl.gz')
         split = heads[task]['split']
+        if is_held_out(split):
+            raise FitError(f'{p}: the header split is {split!r}; a fit never reads a held-out file')
         if split not in ('train', 'dev'):
             raise FitError(f'{p}: the header split is {split!r}; only train and dev files are read')
         (dev if split == 'dev' or task in dev_tasks else train).append(p)

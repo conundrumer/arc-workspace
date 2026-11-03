@@ -5,7 +5,7 @@
 
 SET is ramp, 37 or training. FILE is the booster file that fit_trees.py wrote for the plan. Run it as points_write.py runs: the runtime python, PYTHONPATH with the extractor's folder
 and the engine wheel's site folder, ARCLOG_IDENT_SOURCE=value. It measures dev tasks only (task splits come from OUTD/split.tsv, and a task that is not dev is not opened;
---include-train adds train tasks, for a pipeline check). A held task is never read.
+--include-train adds train tasks, for a pipeline check). A held-out task is never read.
 
 The samples, the scope and `uses` are those of points_write.py. The tree scores the ids that the decoder's mask admits at each writing point (no lookahead factor), as
 tree_dist.TreeDistribution does for serving, on the features of writer.Features. A query is written one kind at a time (the kind token is not a choice of the tree), so a
@@ -635,7 +635,7 @@ def main() -> int:
     ap.add_argument('--sample-seconds', type=float, default=120.0, help='the most time of the search for value 2, for one kind of one sample')
     ap.add_argument('--check', action='store_true', help='also compute value 1 a second way (unordered: enumerate the paths; ordered: the extractor\'s records) and write the difference')
     ap.add_argument('--check-paths', type=int, default=20000, help='--check: the most paths to enumerate')
-    ap.add_argument('--include-train', action='store_true', help='also run train tasks (a pipeline check); a held task is never run')
+    ap.add_argument('--include-train', action='store_true', help='also run train tasks (a pipeline check); a held-out task is never run')
     ap.add_argument('--tag', help='the folder name under the plan (default: the first 8 digits of the model file\'s sha256)')
     ap.add_argument('--report', action='store_true', help='print the means over the result files of the tasks and stop')
     ap.add_argument('--out', type=Path, default=OUTD)

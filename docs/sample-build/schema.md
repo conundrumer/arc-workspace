@@ -153,7 +153,7 @@ The field names of a base table or a lib relation (`:P`, `:Col` of `input`) are 
 
 ### Sets and their split
 
-Each task's split (train, dev or held) comes from the rule in the [split design](split.md). Every data stage processes every set.
+Each task's split (train, dev or held-out) comes from the rule in the [split design](split.md). Every data stage processes every set.
 
 | Set | Tasks in the graph | Tasks with state sequences | Split | Source |
 |---|---|---|---|---|

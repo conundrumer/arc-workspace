@@ -1,8 +1,8 @@
 """The held-out split by task: the rule, the guard that every stage of the sample build calls, and the file that records it.
 
-A task is held where its data/tasks/<id>.json `source` has arc-agi-2/evaluation (120 tasks). Any other task has u = first 16 hex digits
+A task is held-out where its data/tasks/<id>.json `source` has arc-agi-2/evaluation (120 tasks). Any other task has u = first 16 hex digits
 of sha256("1533:<id>") / 16**16, and is train where u < 0.85, else dev. The stratum of a train or dev task is
-`<depth bin>/<size bin>`, and `-` for a held task:
+`<depth bin>/<size bin>`, and `-` for a held-out task:
 - depth bin: `goal_depth` of the task's row in gold-union/graph-tasks-{training,ramp,37}.jsonl (a later file's row replaces an earlier one's):
   d1-4, d5-7, d8+; `none` for a task with no row, an `error` row, or goal_depth inf.
 - size bin: `same` where every train pair's output has its input's height and width, else `diff`.
@@ -25,8 +25,10 @@ OUTD = DATA_ROOT / 'samples'
 DESIGN = Path(__file__).resolve().parent / 'split_design/split2.tsv'
 SALT = 1533
 CUT = 0.85
-HELD_SOURCE = {'dataset': 'arc-agi-2', 'split': 'evaluation'}
-type Split = str  # 'train', 'dev' or 'held'
+HELD_OUT_SOURCE = {'dataset': 'arc-agi-2', 'split': 'evaluation'}
+HELD_OUT = 'held-out'
+OLD_HELD_OUT = 'held'  # the name that files written before the rename carry in a split field
+type Split = str  # 'train', 'dev' or 'held-out'
 
 
 @functools.cache
@@ -39,9 +41,14 @@ def u(task: str) -> float:
 
 
 def split_of(task: str) -> Split:
-    if any(s['dataset'] == HELD_SOURCE['dataset'] and s['split'] == HELD_SOURCE['split'] for s in task_file(task)['source']):
-        return 'held'
+    if any(s['dataset'] == HELD_OUT_SOURCE['dataset'] and s['split'] == HELD_OUT_SOURCE['split'] for s in task_file(task)['source']):
+        return HELD_OUT
     return 'train' if u(task) < CUT else 'dev'
+
+
+def is_held_out(split: str) -> bool:
+    """True for the held-out split under its name and under the name that older files carry. A reader of a split field asks this, so that no held-out task enters a fit by its old name."""
+    return split in (HELD_OUT, OLD_HELD_OUT)
 
 
 def guard(task: str, allowed: Iterable[Split]) -> None:
@@ -63,7 +70,7 @@ def goal_depths() -> dict[str, float | None]:
 
 
 def stratum(task: str) -> str:
-    if split_of(task) == 'held':
+    if split_of(task) == HELD_OUT:
         return '-'
     d = goal_depths().get(task)
     depth = 'none' if d is None or d == float('inf') else 'd1-4' if d <= 4 else 'd5-7' if d <= 7 else 'd8+'
@@ -87,7 +94,7 @@ def write() -> None:
 
 def table(path: Path, cols: tuple[int, int, int]) -> dict[str, tuple[str, str]]:
     lines = [l.split('\t') for l in path.read_text().splitlines()[1:]]
-    return {l[cols[0]]: (l[cols[1]], l[cols[2]]) for l in lines}
+    return {l[cols[0]]: (HELD_OUT if is_held_out(l[cols[1]]) else l[cols[1]], l[cols[2]]) for l in lines}  # a split.tsv written before the rename holds the old name
 
 
 def check() -> int:

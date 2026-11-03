@@ -5,7 +5,7 @@
 SET is ramp, 37 or training. For each task of walk-states-SET.jsonl it writes OUTD/SET/skeleton/<task>.jsonl, to a temp file and then renamed, and skips a task whose file holds the same input shas and code sha. Its lines are JSON:
 - one `header`: the versions, `inputs` (sha256 of the task's lines of each input file, `split`, and `row_store`: the sha of the stage 3 row store's header fields `version`, `code`, `src`, `hash_version` and `query_hash_version`, which name the code, the source and the hash versions that wrote it; 'none' where there is no readable store), `code`, and the counts, among them `samples_with_refused_targets` (samples that lost at least one target to the engine's refusal) and `samples_with_all_targets_refused` (samples that lost at least one and kept none);
 - one `query` for each QueryHash that a state holds or a target query has: hash, kind, hash_exact, body (canonical text), body_decodes (null: the decoder check is not run), inputs (list of {query, name}, a base table with only its name), outputs (sorted Names), graph_tables (Name -> graph table), graph_queries (the union identities), program (the engine program text of the query: the lines of its use closure in dependency order under the labels &r0.., then its own line, as `Writer.program` gives them), closure (the QueryHashes of the closure lines, in the order of those lines);
-- one `sample` for each distinct (task, set of QueryHash), in the order of walk-states-SET.jsonl: id, task, split, eval_only (true for a held task: its samples serve evaluation, and the skeleton is no fit, so it calls no guard), state {id, queries}, target_queries (hashes sorted; the fields are those of the `query` line), target_tables ([hash, name] sorted), refused_target_queries (the count of this sample's targets that the engine refused, so dropped), no_progress_queries, frontier_depth.
+- one `sample` for each distinct (task, set of QueryHash), in the order of walk-states-SET.jsonl: id, task, split, eval_only (true for a held-out task: its samples serve evaluation, and the skeleton is no fit, so it calls no guard), state {id, queries}, target_queries (hashes sorted; the fields are those of the `query` line), target_tables ([hash, name] sorted), refused_target_queries (the count of this sample's targets that the engine refused, so dropped), no_progress_queries, frontier_depth.
 The fields of the contract's `Sample` that come from table values (`state.members`' hashes and vectors, `computes*`, `query_vector`, `capped_target_tables`) are absent: stage 3 adds them.
 
 A query in a state is written over the state's own members: each graph table it uses is the table of a member that computes it (where several members do, the least (hash, Name)). A target query is a graph query that is applicable (every graph table it reads is built), not a member, and has a head not built; it is written once for each combination of members, one member at each table that several members compute, with no cap on the combinations. Its QueryHash is `query_hash` of its canonical text.
@@ -26,7 +26,7 @@ import column_map
 import column_names
 import query_hash
 import union_forms
-from split import GRAPHS, OUTD, split_of
+from split import GRAPHS, OUTD, is_held_out, split_of
 from union_forms import Form, LineIndex, TaskGraph
 
 SCHEMA = 'skeleton-3'
@@ -433,7 +433,7 @@ def state_sample(task: str, split: str, state: dict, w: Writer, st: Counter[str]
     st['no progress differs from redundant_forms'] += no_progress != state['redundant_forms']
     st['frontier depth differs from depth'] += (min(depths) if depths else None) != state['depth']
     st['target queries'] += len(targets)
-    return dict(record='sample', id=hashlib.sha256((task + '\n' + '\n'.join(member_hashes)).encode()).hexdigest()[:32], task=task, split=split, eval_only=split == 'held',
+    return dict(record='sample', id=hashlib.sha256((task + '\n' + '\n'.join(member_hashes)).encode()).hexdigest()[:32], task=task, split=split, eval_only=is_held_out(split),
                 state=dict(id=sid, queries=member_hashes), target_queries=sorted(targets),
                 target_tables=sorted({(h, n) for h, q in targets.items() for n in q.outputs}),
                 refused_target_queries=refused, no_progress_queries=no_progress, frontier_depth=min(depths) if depths else None)

@@ -3,9 +3,9 @@
   python3 points_write.py SET --plan ordered|unordered [--shard k/N] [--tasks T,T,...] [--samples-per-task K] [--seed S] [--seconds X] [--max-states N] [--vectors] [--out DIR]
 
 SET is ramp, 37 or training. The extractor (train_rows.points_of, with writer.Features) and the engine wheel come from sys.path: run it with the runtime python and with PYTHONPATH holding the
-extractor's folder and the wheel's site folder. For each task of OUTD/SET/skeleton it writes OUTD/SET/points/<plan>/<task>.jsonl.gz (train and dev tasks) or OUTD/SET/points_held/<plan>/<task>.jsonl.gz
-(held tasks), to a temp file and then renamed, and skips a task whose file holds the same skeleton sha, extractor shas, wheel, code sha and sample choice. It is not a fit: it writes every
-task, held ones included, and calls no split guard. With --samples-per-task K a task keeps at most K samples, chosen by a hash of the seed and the sample id (0: all).
+extractor's folder and the wheel's site folder. For each task of OUTD/SET/skeleton it writes OUTD/SET/points/<plan>/<task>.jsonl.gz (train and dev tasks) or OUTD/SET/points_held-out/<plan>/<task>.jsonl.gz
+(held-out tasks), to a temp file and then renamed, and skips a task whose file holds the same skeleton sha, extractor shas, wheel, code sha and sample choice. It is not a fit: it writes every
+task, held-out ones included, and calls no split guard. With --samples-per-task K a task keeps at most K samples, chosen by a hash of the seed and the sample id (0: all).
 
 For each sample:
 - Scope: the union of the members' programs, members in dependency order (fewest closure queries first, then QueryHash), each with one global label `&r<position>`, and each query's own text
@@ -53,6 +53,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from split import is_held_out
 
 OUTD = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/samples')
 REPO = Path(__file__).resolve().parents[3]
@@ -451,7 +453,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     queries = {r['hash']: r for r in records if r['record'] == 'query'}
     samples = chosen([r for r in records if r['record'] == 'sample'], args.samples_per_task, args.seed)
     split = head['split']
-    folder = out / set_name / ('points_held' if split == 'held' else 'points') / args.plan
+    folder = out / set_name / ('points_held-out' if is_held_out(split) else 'points') / args.plan
     path = folder / f'{task}.jsonl.gz'
     header = dict(record='header', schema=SCHEMA, task=task, set=set_name, plan=args.plan, split=split, skeleton_sha=file_sha(skeleton), extractor_sha=shas['extractor'], writer_sha=shas['writer'],
                   wheel=shas['wheel'], code=shas['code'], samples_per_task=args.samples_per_task, seed=args.seed, seconds=args.seconds, max_states=args.max_states,

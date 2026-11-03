@@ -288,7 +288,7 @@ All files are Parquet with zstd compression. The Mac venv has pyarrow 26.0.0 (`P
 | Field | Type | Content |
 |---|---|---|
 | `task` | string | the task id |
-| `eval_only` | bool | true exactly where `split(task)` is `held` (part 5) |
+| `eval_only` | bool | true exactly where `split(task)` is `held-out` (part 5) |
 | `sample` | string | hex of H(task, the sorted built graph table names): a row id that does not depend on file order |
 | `frontier_depth` | int8 | the least depth among the state's enabled queries, as `walk-states-SET.jsonl` gives it (`UN/gold_union_walks.py:8`). It is gold's depth, so it serves only to split counts, never as an input |
 | `tables` | list of struct | the base tables first (3 items), then the built tables, one item per (parameterized table, `Assignment`), at most 256 per parameterized table, sorted by (`depth`, `table_hash`). Per item: `table_hash`, `assignment` (the `Assignment`, null for a base table), `graph` (graph table name, null for a base table), `made_by` (identity, null for a base table), `uses` (list of int16: places in this list of the tables its `made_by` query uses), `depth` (int8, null for a base table) |
@@ -322,10 +322,10 @@ The side files of part 2 hold every table instance. Est.: training about 32,641 
 
 ## Part 5. The split by task
 
-The rule that gives each task its split, `train`, `dev` or `held`, is in [the split design](split.md), Part 2. `NEW/split.py` holds it as `split(task) -> SplitName`.
+The rule that gives each task its split, `train`, `dev` or `held-out`, is in [the split design](split.md), Part 2. `NEW/split.py` holds it as `split(task) -> SplitName`.
 
-- The data stages (the export, the feature build, the canonical text, the state sequences and the sample writer) process every task, whatever its split. The sample writer sets `eval_only` on each sample of a held task (part 4). No data stage guards.
-- Only fit code guards. `samples_io.load(SET, role='fit')` returns no sample with `eval_only` set, and runs `split(task)` on every task it loads. A task that is `held` and has a sample without `eval_only` is an error, not a warning: it prints each bad id and exits with status 2.
+- The data stages (the export, the feature build, the canonical text, the state sequences and the sample writer) process every task, whatever its split. The sample writer sets `eval_only` on each sample of a held-out task (part 4). No data stage guards.
+- Only fit code guards. `samples_io.load(SET, role='fit')` returns no sample with `eval_only` set, and runs `split(task)` on every task it loads. A task that is `held-out` and has a sample without `eval_only` is an error, not a warning: it prints each bad id and exits with status 2.
 - The build computes no statistic over tasks (no normalization, no vocabulary). Where the loader computes one, it takes it from fit rows only.
 - Vectors, texts and samples are keyed by task, and no output pools rows of two tasks.
 
@@ -420,7 +420,7 @@ Their size depends on the model, which is not specified yet, so they are not pri
 - **Model training on the samples.** The forward and backward passes of the model are dense array math, which a GPU speeds up many times over a CPU.
     - A model that fits in 24 GB: first choice RTX 4090 ($0.89 an hour); fallback RTX PRO 6000 96 GB ($2.49 an hour).
     - A larger model: first choice H100 SXM ($3.99 an hour); fallback RTX PRO 6000 96 GB, or MI300X 192 GB ($2.39 an hour), which is an AMD GPU, so the training code must run on ROCm.
-- **Evaluation of a trained model on the held tasks.** The model writes a query body at each state, on a GPU; the engine checks each body, on CPU, parallel over tasks. First choice RTX 4090; fallback RTX PRO 6000 96 GB.
+- **Evaluation of a trained model on the held-out tasks.** The model writes a query body at each state, on a GPU; the engine checks each body, on CPU, parallel over tasks. First choice RTX 4090; fallback RTX PRO 6000 96 GB.
 
 ### Streaming and resume
 

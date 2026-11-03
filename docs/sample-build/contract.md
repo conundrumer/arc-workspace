@@ -28,7 +28,7 @@ Status: record. Nothing here is built. This contract gives the types of the samp
 | Type | Meaning | Type | Invariants |
 |---|---|---|---|
 | `TaskId` | a task's id | string | |
-| `SplitName` | a split | one of `train`, `dev`, `held` | |
+| `SplitName` | a split | one of `train`, `dev`, `held-out` | |
 | `BaseName` | a base table | one of `input`, `ex_input`, `ex_output` | |
 | `Name` | an output of a query | string | for an INIT output, the port's name in `engine/lib/registry.sexpr`; for a RIGID_DET, `slot <n>`, n the part's position in the form's canonical form (`slot <n>.<port>` for a part that reads an instance output), or `pose`; for a RULE, DET or CHOOSE, the empty string, for its one output |
 | `QueryKind` | a query's kind | one of `DET`, `INIT`, `RULE`, `CHOOSE`, `RIGID_DET` | `OUT` is not a value: OUT queries are not target queries |
@@ -417,7 +417,7 @@ A task's assignment to a split. Which tasks go to which split is a separate desi
 
 Further invariants:
 
-- No fit uses a sample of a `held` task.
+- No fit uses a sample of a `held-out` task.
 - A statistic over tasks (a normalization, a vocabulary) is computed from `train` samples only.
 - No record pools rows of two tasks.
 
@@ -471,7 +471,7 @@ This is a judgement about computed parameterized tables. It makes no claim about
 - A written query is accepted by the acceptance test of a written query (see "Assignments").
 - OUT queries are not target queries.
 - `*` is not in a query's identity or body. `^` is in them in a key group, where it selects the key columns. In an OUT, `^` is dropped.
-- Held tasks are never in a fit.
+- Held-out tasks are never in a fit.
 - The target queries of a state are the gold graph queries written over its members that make progress: some parameterized table they compute has, at some assignment, a TableHash that no member's table has. A query that makes no progress is not a target query and not a step of a state sequence, and its count per state is a measurement.
 - States come from the state sequences of type `union`, one sample for each distinct (task, set of `QueryHash`).
 - The lib's relations and components are not in the state.
