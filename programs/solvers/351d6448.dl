@@ -248,9 +248,8 @@ change(K, P_tile, P_intile, Col, Col2) :-
 // @ignore: store — the stored cells are those of the pairs' panels: on
 //  panels of that frame they are the derived ones, and on others they name
 //  cells the panels lack, so the base subsumes the case
-// @ignore: head-zero — under $WholePanel the scope is the whole panel,
-//  and its key splits the cell along no axis: ZERO is the absence of the
-//  line $StepPerLine keys on, and the readers join on it as a key alone
+// Under $WholePanel the scope is the whole panel, and its key is the tile of
+// the first step's frame, which the readers join on as a key alone.
 .decl scope(k: Frames, sc: StepScope, p_intile: Position, s: Position)
 
 // --- $EveryStep ---
@@ -262,7 +261,7 @@ checked(K, $StepFromFirstTwo(), P_tile2) :-
     first_step(K, P_tile), succ_panel(K, P_tile, P_tile2), succ_panel(K, P_tile2, _).
 
 // --- $WholePanel ---
-scope(K, $WholePanel(), P_intile, ZERO) :- panel(K, _, P_intile, _).
+scope(K, $WholePanel(), P_intile, P_tile) :- panel(K, _, P_intile, _), first_step(K, P_tile).
 
 // --- $StepPerLine ---
 scope([T, C, G, N], $StepPerLine(), P_intile, S) :-
