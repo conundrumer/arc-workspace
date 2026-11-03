@@ -2,12 +2,12 @@
 
   python apply_reruns.py SET RESULTS.jsonl
 """
-import glob, json, sys
+import glob, json, os, sys
 s, res = sys.argv[1], {}
 for l in open(sys.argv[2]):
     if l.startswith('{'):
         r = json.loads(l); res[r['task'], r['text_sha']] = r['result']
-G = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
+G = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union') + '/'
 n = 0
 for p in glob.glob(G + 'fits-%s-*.jsonl' % s):
     out = []

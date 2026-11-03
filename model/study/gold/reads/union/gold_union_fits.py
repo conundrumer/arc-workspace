@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import gold_union_code
 
 ROOT = Path('/Users/davidlu/code/arc-workspace')
-OUT = str(ROOT / 'work/lm/data-study/gold/gold-union') + '/'
+OUT = os.environ.get('GOLD_UNION_DIR', str(ROOT / 'work/lm/data-study/gold/gold-union')) + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 WORK_CAP = int(os.environ.get('FITS_WORK_CAP', 1 << 28))  # the engine's table work cap; its default, 1 << 20, stops programs that the old runtime finished
 DEADLINE = float(os.environ.get('FITS_DEADLINE', 120))  # the engine's deadline in seconds; its default, 10, stops programs by the machine's load
 SESSION_BYTES = int(os.environ.get('FITS_SESSION_BYTES', 8 << 30))  # the engine's session byte bound; its default is 512 MiB

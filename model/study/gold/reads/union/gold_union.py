@@ -19,7 +19,7 @@ from gold_cheapest_common import Bar, ROOT, D, program_lines, sha
 from gold_cheapest_prune import dead_lines
 C.GIB = 4  # a task past 4 GiB is set aside; 6 shards share the machine
 
-OUT = D + 'gold/gold-union/'
+OUT = os.environ.get('GOLD_UNION_DIR', D + 'gold/gold-union') + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 HEAD, NAME = G.HEAD, G.NAME
 RAMP = open(F.RAMP).read().split()
 LEFT_OUT = [t for t in open(D + 'sampler/sampler-worker/held/leave_out.txt').read().split() if t not in F.P.HELD]  # the 62

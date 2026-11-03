@@ -6,7 +6,7 @@ import hashlib, json, os, sys
 import gold_case_counts as K
 from gold_union_identity import D, W, set_of
 
-OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union'
+OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union')
 
 
 def main():
