@@ -18,7 +18,7 @@ one() {
     say() { echo "$SET $s $1 $(date +%T): $(tail -1 | cut -c1-400)"; }
     $H --cpus 1 --need soon uv run python model/study/samples/skeleton.py $SET --shard $s 2>&1 | say skeleton || return 1
     $H --cpus 1 --need soon $PY model/study/samples/build_tables.py $SET --shard $s 2>&1 | grep -v " 0 differ from Python, 0 from the dev module" | say tables || return 1
-    $H --cpus 1 --need soon $PY model/study/samples/supplement.py $SET --stage both --jobs "${SUPPLEMENT_JOBS:-1}" --shard $s 2>&1 | say supplement || return 1
+    $H --cpus "${SUPPLEMENT_JOBS:-1}" --need soon $PY model/study/samples/supplement.py $SET --stage both --jobs "${SUPPLEMENT_JOBS:-1}" --shard $s 2>&1 | say supplement || return 1
     $H --cpus 1 --need soon uv run python model/study/samples/sample_write.py $SET --shard $s 2>&1 | say samples || return 1
     [ -z "$POINTS" ] && return 0
     # points_write's memory grows with the tasks a process has done, so each process takes POINTS_BATCH tasks of the shard
