@@ -34,6 +34,7 @@ import os
 import subprocess
 import sys
 import time
+from typing import NoReturn
 
 import numpy as np
 
@@ -97,7 +98,7 @@ def walk(run, scope, kind, stream):
         pt = writer.step_point(pt, t)
 
 
-def each_plan(argv):
+def each_plan(argv) -> NoReturn:
     """Runs this script once for each writer plan, each in a process of that plan; exits 1 where a run fails."""
     fails = 0
     for plan in tr.PLANS:
