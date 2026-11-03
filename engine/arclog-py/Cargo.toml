@@ -23,6 +23,9 @@ arclog-tables-py = { path = "../arclog-tables-py" }
 # The allocator of the extension: the engine allocates many small blocks that
 # live for a short time, which this allocator serves faster than the system's.
 mimalloc = { version = "0.1", default-features = false }
+# The count of the heap's live bytes around that allocator, which a task
+# session's byte bound reads.
+arclog = { path = "../arclog" }
 # The abi3 wheel runs on Python 3.12 and later.
 pyo3 = { version = "0.27.2", features = ["abi3-py312"] }
 

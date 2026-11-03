@@ -412,12 +412,16 @@ pub struct Limits {
     /// outputs break ([`crate::eval::copies`]); the evaluation checks none
     /// where this is `None`.
     pub copies: Option<super::copies::CopyViolations>,
+    /// Where each session's bytes stood when it first checked its bound
+    /// under these limits, as [`crate::session::TaskSession::within_bound`]
+    /// reads them. The clones of these limits share them.
+    pub heap_starts: crate::session::HeapStarts,
 }
 
 impl Limits {
     /// The limits of an evaluation outside a table and outside a decode.
     pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None }
+        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default() }
     }
 
     /// These limits with the evaluation checking the declared rows of the

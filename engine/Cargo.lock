@@ -53,6 +53,7 @@ dependencies = [
 name = "arclog-py"
 version = "0.1.0"
 dependencies = [
+ "arclog",
  "arclog-bindings",
  "arclog-tables-py",
  "mimalloc",
