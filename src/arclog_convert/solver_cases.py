@@ -152,11 +152,16 @@ class CasesMixin:
         def redone(fs: list[Form]) -> bool:
             return any(touched(f) or revived(f) for f in fs)
 
+        def standing(fs: list[Form]) -> bool:
+            # one parameter for every case: the concept's `DET` reads the
+            # concept's derivation, so what the alt leaves empty empties none
+            return all(f.side == "DET" and not f.branches and not f.concept_dead and f.concept_form is None for f in fs)
+
         changed = True
         while changed:
             changed = False
             for name, fs in groups.items():
-                if name in empty or name in mine or not (redone(fs) or name in fixed):
+                if name in empty or name in mine or standing(fs) or not (redone(fs) or name in fixed):
                     continue
                 if all(f.src is not None or f.src_inst is not None for f in fs) \
                         and all(touched(f) for f in fs) and all(rerender(f) is None for f in fs):
@@ -164,8 +169,8 @@ class CasesMixin:
                     changed = True
         redo: list[Form] = []
         for name, fs in groups.items():
-            if all(f.side == "DET" and not f.branches and not f.concept_dead and f.concept_form is None for f in fs):
-                continue    # one parameter for every case: the concept's `DET` stands
+            if standing(fs):
+                continue    # the concept's `DET` stands
             if name in adds and name not in empty:
                 # the case's own clauses of the relation stand beside these,
                 # less each that the case's own form derives `again`
