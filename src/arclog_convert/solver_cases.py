@@ -92,7 +92,8 @@ class CasesMixin:
             cur = parent[0]
 
     def dead_clauses(self, main: list[Form], empty: set[str], mine: set[str],
-                     live: Callable[[Form], bool], adds: set[str] | frozenset[str] = frozenset()) -> list[Form]:
+                     live: Callable[[Form], bool], adds: set[str] | frozenset[str] = frozenset(),
+                     again: Callable[[Form], bool] = lambda f: False) -> list[Form]:
         """The alt's rederivations of the concept relations whose clauses
         read a relation the alt derives no rows of: a clause that reads
         one positively is dead, a `NOT` of one holds and is dropped, and a
@@ -166,8 +167,11 @@ class CasesMixin:
             if all(f.side == "DET" and not f.branches and not f.concept_dead and f.concept_form is None for f in fs):
                 continue    # one parameter for every case: the concept's `DET` stands
             if name in adds and name not in empty:
-                # the case's own clauses of the relation stand beside these
+                # the case's own clauses of the relation stand beside these,
+                # less each that the case's own form derives `again`
                 for f in fs:
+                    if again(f):
+                        continue
                     g = rerender(f) if touched(f) and (f.src is not None or f.src_inst is not None) else f
                     if g is not None:
                         redo.append(g)

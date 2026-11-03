@@ -980,8 +980,14 @@ class RenderMixin:
         adds = {f.name for f in fs if f.side == "RULE" and f.lines[0].startswith("(RULE ") and f.name not in reps
                 and all(g.side == "RULE" and g.lines[0].startswith("(RULE ") and g.cols == f.cols
                         for g in clauses if g.name == f.name)}
+
+        def again(g: "Form") -> bool:
+            # a concept clause that the case's own form derives again from
+            # the same Souffle clause holds no row beside it
+            return g.src is not None and any(
+                f.name == g.name and f.src is not None and f.src[0] is g.src[0] for f in fs)
         while True:
-            redo = self.dead_clauses(main, empty, mine, holds, adds)
+            redo = self.dead_clauses(main, empty, mine, holds, adds, again)
             # an instance whose branch forms all read a relation that
             # `dead_clauses` put in `empty` is empty too
             lapsed = (fixed_only & instances) - empty - derived_without(empty)
@@ -1040,7 +1046,7 @@ class RenderMixin:
         case_text = defaultdict(list, main_text)
         for name in {f.name for f in fs}:
             case_text[name] = [f.lines for f in fs if f.name == name]
-        beside = [f.concept_form or f for f in main if f.name in adds and not f.concept_dead]
+        beside = [f.concept_form or f for f in main if f.name in adds and not f.concept_dead and not again(f)]
         self.c.note_writing(fs + beside, frozenset(at.values()) - concept)
         return fs, case_text
 
