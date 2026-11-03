@@ -21,7 +21,9 @@ evaluation and the booster's scores do not read the weight. With A = 0, or with 
 `plan`, the writer plan of the point files (their header's `plan`), which serving reads (sampler/writer_plan.py). The point files must all give one plan.
 
 The point files must all carry the same header fields that define the features. --wheels-alike W,W names engine wheels (header `wheel`, such as site-exp61,site-exp62) whose point
-files are equal where both build a task, so that files of those wheels go in one fit. The report's `wheel` is then the sorted list of the wheels of the files.
+files are equal where both build a task, so that files of those wheels go in one fit. The report's `wheel` is then the sorted list of the wheels of the files. A fit with
+--wheels-alike needs --wheels-alike-check, the JSON files of run/points_alike.py that show the equality: each with no differing task, and together naming every wheel of
+--wheels-alike. The report's `wheels_alike` holds those files.
 """
 import argparse
 import base64
@@ -229,6 +231,21 @@ def layout_of(fields: dict[str, Any]) -> Layout:
         raise FitError('the header\'s uses are not the option, table and point names')
     at = {n: i for i, n in enumerate(names)}
     return Layout(names, *(np.array([at[n] for n in fields[k]], np.int64) for k in ('option_names', 'table_names', 'point_names')))
+
+
+def alike_checks(args: argparse.Namespace) -> list[dict]:
+    """The points_alike.py files of --wheels-alike-check, which must show that the wheels of --wheels-alike give equal points."""
+    wheels = set(filter(None, args.wheels_alike.split(',')))
+    if not wheels:
+        return []
+    checks = [json.loads(Path(f).read_text()) for f in args.wheels_alike_check]
+    for f, c in zip(args.wheels_alike_check, checks):
+        if c.get('differ') or not c.get('tasks'):
+            raise FitError(f'{f}: {len(c.get("differ") or {})} tasks differ, {len(c.get("tasks") or [])} compared')
+    shown = {w for c in checks for w in c.get('wheels', [])}
+    if not wheels <= shown:
+        raise FitError(f'--wheels-alike {sorted(wheels)}: no --wheels-alike-check file names {sorted(wheels - shown)}')
+    return checks
 
 
 def feature_fields(heads: list[dict], wheels_alike: frozenset[str] = frozenset()) -> dict[str, Any]:
@@ -584,6 +601,7 @@ def peak_rss_mib() -> float:
 def fit(args: argparse.Namespace) -> int:
     t0, commit = time.time(), code_commit()  # the code as the fit starts; a commit during the fit does not change what it ran
     dev_tasks = set(args.dev_tasks.split(',')) if args.dev_tasks else set()
+    alike = alike_checks(args)
     train_files, dev_files, heads = split_files(args.points, dev_tasks)
     if not train_files or not dev_files:
         raise FitError(f'{len(train_files)} train files and {len(dev_files)} dev files: the fit needs both')
@@ -633,7 +651,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0
@@ -667,6 +685,7 @@ def main() -> int:
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
     ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
+    ap.add_argument('--wheels-alike-check', nargs='+', default=[], help='with --wheels-alike: the JSON files of run/points_alike.py that show the wheels give equal points')
     ap.add_argument('--rounds', type=int, default=2000)
     ap.add_argument('--early-stopping', type=int, default=50, help='stop after this many rounds without a better dev loss')
     ap.add_argument('--log-every', type=int, default=50)
