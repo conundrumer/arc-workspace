@@ -16,8 +16,11 @@
 //! refusal of the decoded program, or the first token at which the streams
 //! differ. The query hash of each form is that of
 //! `arclog::decode::Decoder::query_hash` against that of the program the
-//! writer wrote, its forms in the stream's order. The last line counts the
-//! cases of each verdict.
+//! writer wrote, its forms in the stream's order: the program of the case's
+//! files where the corpus holds them, as
+//! `arclog::stream::corpus::corpus_case_stream_of_files` gives it, and
+//! otherwise the case's program. The last line counts the cases of each
+//! verdict.
 //!
 //! With `--variants`, each case whose text holds a `DEMONSTRATED` form
 //! also prints a line per variant of that form, a copy of the case's text
@@ -51,7 +54,7 @@ use arclog::program::path::NodePath;
 use arclog::program::{Form, Node, Program};
 use arclog::registry::Registry;
 use arclog::resolver::{resolve, resolve_cases, SolverScope};
-use arclog::stream::corpus::{case_spelled, check_cases, corpus_case_stream, decoded_cases};
+use arclog::stream::corpus::{case_spelled, check_cases, corpus_case_stream_of_files, decoded_cases};
 use arclog::stream::{token_stream, DecodeSettings, WrittenStream};
 
 fn main() -> ExitCode {
@@ -108,14 +111,18 @@ fn solver_lines(corpus: &Path, tasks: &Path, id: &str, all: bool, masked: bool, 
         let case = cases.cases().find(|case| case.case.name == *name).expect("a checked case is a case of the solver");
         let mut decoder = Decoder::new(&read.task, &session, registry, constructions, &settings);
         let spelled = case_spelled(name);
-        let written = match corpus_case_stream(corpus, id, case, checked, decoder.vocabulary(), false) {
+        let (written, files) = match corpus_case_stream_of_files(corpus, id, case, checked, decoder.vocabulary(), false) {
             Ok(written) => written,
             Err(fault) => {
                 lines.push((format!("{id} {spelled}: no stream: {fault}"), false));
                 continue;
             }
         };
-        let text = if case.case.reads_alone_as_it_stands() { checked.program.program.clone() } else { case.case.program_alone().clone() };
+        let text = match files {
+            Some(program) => program,
+            None if case.case.reads_alone_as_it_stands() => checked.program.program.clone(),
+            None => case.case.program_alone().clone(),
+        };
         let (verdict, same) = round_trip(&mut decoder, &written, masked);
         let hashes = query_hashes(&decoder, &text, &written);
         lines.push((format!("{id} {spelled}: {} tokens; round trip {verdict}; query hashes {hashes}", written.tokens.len()), same));

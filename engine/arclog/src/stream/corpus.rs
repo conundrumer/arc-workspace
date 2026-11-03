@@ -225,10 +225,30 @@ fn files_program(corpus: &Path, id: &str, name: &CaseName, cache: &mut CheckCach
 /// read, or the solver they make has no stream, the fault. Where `prefix`,
 /// the case's files are read as [`solver_streams`] reads them.
 pub fn corpus_case_stream(corpus: &Path, id: &str, case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, prefix: bool) -> Result<WrittenStream, String> {
+    corpus_case_stream_of_files(corpus, id, case, checked, vocabulary, prefix).map(|(stream, _)| stream)
+}
+
+/// The stream of [`corpus_case_stream`], and, where `corpus` holds the files
+/// of `case`, the program of the concept case of the solver those files
+/// make: its checked program where it reads alone as it stands, and
+/// otherwise its program read alone.
+pub fn corpus_case_stream_of_files(
+    corpus: &Path,
+    id: &str,
+    case: &ResolvedCase,
+    checked: &CheckedProgram,
+    vocabulary: &Vocabulary,
+    prefix: bool,
+) -> Result<(WrittenStream, Option<crate::program::Node<crate::program::Program>>), String> {
     let mut cache = CheckCache::default();
     match files_program(corpus, id, &case.case.name, &mut cache, prefix)? {
-        None => case_stream_with(case, checked, vocabulary, &mut cache),
-        Some(files) => case_stream_with(files.cases.concept(), &files.checked, vocabulary, &mut cache),
+        None => Ok((case_stream_with(case, checked, vocabulary, &mut cache)?, None)),
+        Some(files) => {
+            let concept = files.cases.concept();
+            let stream = case_stream_with(concept, &files.checked, vocabulary, &mut cache)?;
+            let program = if concept.case.reads_alone_as_it_stands() { files.checked.program.program.clone() } else { concept.case.program_alone().clone() };
+            Ok((stream, Some(program)))
+        }
     }
 }
 
