@@ -25,7 +25,14 @@
 //! then has no row, and stands as it is where the component would fill an
 //! input with no clause, with each deleted form that it reads through the
 //! relations that have become empty, and so on, which the edit then keeps
-//! as it is. Any other read of such a relation, an `OUT` form that
+//! as it is. A `DEMONSTRATED` form takes the edit of an `INIT` form in its
+//! key clause and inputs: one whose key body becomes false is deleted, and
+//! so is one with an input body that becomes false where its relation is
+//! proved empty; otherwise that input's clause stands as it is. A
+//! `DEMO_RULE` form that reads a relation that has become empty stands as
+//! it is, with each deleted form that it reads through such relations, and
+//! so on. A relation that a deleted `DEMONSTRATED` form declares becomes
+//! empty. Any other read of such a relation, an `OUT` form that
 //! reads one, a clause with proposers whose body becomes empty, and a
 //! filtered program that the checker refuses, keep the original gold of the
 //! case, with the reason. So does an `OUT` relation of the filtered program
@@ -59,7 +66,7 @@ use crate::eval::instance::Constructions;
 use crate::eval::{output_relation, relation_of, Evaluation, ModelsEnd, RelationValue};
 use crate::judge::determination::{descend_assignments, Assignment, End, EvaluationInputs};
 use crate::program::path::{Handle, NodePath, NodeRef};
-use crate::program::{column_spelled, Atom, Body, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, Form, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
+use crate::program::{column_spelled, Atom, Body, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DemoRule, Demonstrated, DemonstratedPart, Form, InstanceInput, InstanceInputPart, KeyBody, KeyClause, KeyClausePart, LabelId, LabelUse, Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationName, RelationRef, RuleForms, Site, SiteArg, SiteValue};
 use crate::read::columns::{made_labels, slot_columns};
 use crate::registry::LibEntry;
 use crate::registry::Registry;
@@ -107,8 +114,7 @@ pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Durati
                 continue;
             }
         };
-        let read = if case.demonstrated { Err("the case program holds a DEMONSTRATED form".to_owned()) } else { read_case(&stream, &vocabulary, registry, &program_settings) };
-        let original = match read {
+        let original = match read_case(&stream, &vocabulary, registry, &program_settings) {
             Ok(original) => original,
             Err(reason) => {
                 fallback.get_or_insert(format!("{}: {reason}", case.case));
@@ -347,7 +353,7 @@ fn filter(evaluator: &Evaluator<'_>, original: &StudyProgram, tables: &mut Table
                 let at = NodePath::top(index as u32);
                 match form {
                     Form::Out(_) => return Err(format!("the OUT form, form {index}, reads a relation that is empty on every input, so the case's output is empty")),
-                    Form::Instance(instance) => match edit_instance(evaluator, tables, checked, registry, instance.value(), &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
+                    Form::Instance(_) | Form::Demonstrated(_) => match edit_keyed(evaluator, tables, checked, registry, form, &at, &empty).map_err(|reason| format!("form {index}: {reason}"))? {
                         InstanceEdit::Delete(reason) => {
                             deleted.insert(index, reason);
                             added = true;
@@ -359,8 +365,8 @@ fn filter(evaluator: &Evaluator<'_>, original: &StudyProgram, tables: &mut Table
                             }
                             plan.edited.insert(index);
                         }
-                        InstanceEdit::Pin(bodies) => {
-                            let more = pins(checked, forms, &bodies, &empty, &deleted);
+                        InstanceEdit::Pin(relations) => {
+                            let more = pins(checked, forms, relations, &empty, &deleted);
                             if more.is_subset(&pinned) {
                                 return Err(format!("form {index}: an input clause that the edit keeps reads an empty relation that no deleted form derives"));
                             }
@@ -460,8 +466,9 @@ enum InstanceEdit {
     /// The bodies the edit replaces, and the inputs whose clauses it
     /// removes.
     Keep { bodies: Vec<(NodePath, Node<Body>)>, inputs: Vec<PortName> },
-    /// The bodies of the input clauses that stand as they are.
-    Pin(Vec<Node<Body>>),
+    /// The relations of the empty set that the parts which stand as they
+    /// are read.
+    Pin(Vec<ProgramRelation>),
 }
 
 /// The edit of the `INIT` form `instance` at `at`, one of whose bodies reads
@@ -514,13 +521,69 @@ fn edit_instance(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
     for (name, body) in falsified.iter().zip(false_bodies) {
         let port = component.inputs.iter().find(|port| port.port.name == *name).ok_or("an input that the component does not declare")?;
         if port.default.is_some() || port.from_key || port.reads_outputs {
-            kept.push(body);
+            empty_reads(NodeRef::Body(body.value()), empty, &mut kept);
         }
     }
     if !kept.is_empty() {
         return Ok(InstanceEdit::Pin(kept));
     }
     Ok(InstanceEdit::Keep { bodies, inputs: falsified })
+}
+
+/// The edit of `form`, an `INIT` or a `DEMONSTRATED` form at `at`.
+fn edit_keyed(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, registry: &Registry, form: &Form, at: &NodePath, empty: &Empty) -> Result<InstanceEdit, String> {
+    match form {
+        Form::Instance(instance) => edit_instance(evaluator, tables, checked, registry, instance.value(), at, empty),
+        Form::Demonstrated(demonstrated) => edit_demonstrated(evaluator, tables, checked, demonstrated.value(), at, empty),
+        _ => unreachable!("an INIT or a DEMONSTRATED form"),
+    }
+}
+
+/// The edit of the `DEMONSTRATED` form `demonstrated` at `at`, one of whose
+/// parts reads a relation of `empty`. Its key clause and inputs take the
+/// edit of an instance's: a key body that becomes false gives no key, so
+/// the form's relation is empty and the form is deleted, and an input body
+/// that becomes false deletes the form where its relation is proved empty
+/// in the original program. Otherwise that input's clause stands as it is,
+/// and so does each `DEMO_RULE` form that reads a relation of `empty`, which
+/// [`InstanceEdit::Pin`] gives.
+fn edit_demonstrated(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, demonstrated: &Demonstrated, at: &NodePath, empty: &Empty) -> Result<InstanceEdit, String> {
+    let mut bodies = Vec::new();
+    let mut inputs: Vec<(NodePath, &Node<InstanceInput>)> = Vec::new();
+    if let Some(key) = &demonstrated.key {
+        let clause = at.child(demonstrated.position(DemonstratedPart::Key));
+        match rewrite(key.value().key.body.value(), empty)? {
+            Rewritten::Same => {}
+            Rewritten::Empty => return Ok(InstanceEdit::Delete(READS_EMPTY)),
+            Rewritten::Changed(conjuncts) => bodies.push((clause.child(0), Node::new(Body { conjuncts: conjuncts.into() }))),
+        }
+        inputs.extend(key.value().inputs.iter().enumerate().map(|(index, input)| (clause.child(key.value().position(KeyClausePart::Input(index))), input)));
+    }
+    inputs.extend(demonstrated.inputs.iter().enumerate().map(|(index, input)| (at.child(demonstrated.position(DemonstratedPart::Input(index))), input)));
+    let mut kept = Vec::new();
+    for (path, input) in inputs {
+        let input = input.value();
+        match rewrite(input.body.value(), empty)? {
+            Rewritten::Same => {}
+            Rewritten::Empty if demonstrated_empty(evaluator, tables, checked, at) => return Ok(InstanceEdit::Delete(EMPTY)),
+            Rewritten::Empty => empty_reads(NodeRef::Body(input.body.value()), empty, &mut kept),
+            Rewritten::Changed(conjuncts) => bodies.push((path.child(input.position(InstanceInputPart::Body)), Node::new(Body { conjuncts: conjuncts.into() }))),
+        }
+    }
+    for rule in demonstrated.rules.iter() {
+        empty_reads(NodeRef::DemoRule(rule.value()), empty, &mut kept);
+    }
+    if !kept.is_empty() {
+        return Ok(InstanceEdit::Pin(kept));
+    }
+    Ok(InstanceEdit::Keep { bodies, inputs: Vec::new() })
+}
+
+/// Whether the relation of the `DEMONSTRATED` form at `at` is proved empty.
+fn demonstrated_empty(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &CheckedProgram, at: &NodePath) -> bool {
+    let resolved = &checked.program;
+    let nodes: Vec<_> = resolved.nodes_of(at).iter().copied().filter(|node| matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Demonstrated(_))).collect();
+    !nodes.is_empty() && nodes.into_iter().all(|node| matches!(evaluator.coverage(tables, checked, &GraphRelation { node, output: None }), Coverage::Complete { empty: true, .. }))
 }
 
 /// Whether each output of the instance at `at` that the program reads is
@@ -534,13 +597,9 @@ fn outputs_empty(evaluator: &Evaluator<'_>, tables: &mut Tables, checked: &Check
     })
 }
 
-/// The deleted forms that `bodies` read through the relations of `empty`,
-/// and so on through the bodies of those forms.
-fn pins(checked: &CheckedProgram, forms: &[Form], bodies: &[Node<Body>], empty: &Empty, deleted: &BTreeMap<usize, &'static str>) -> BTreeSet<usize> {
-    let mut relations = Vec::new();
-    for body in bodies {
-        empty_reads(NodeRef::Body(body.value()), empty, &mut relations);
-    }
+/// The deleted forms that derive `relations`, relations of `empty`, and so
+/// on through the reads of those forms.
+fn pins(checked: &CheckedProgram, forms: &[Form], mut relations: Vec<ProgramRelation>, empty: &Empty, deleted: &BTreeMap<usize, &'static str>) -> BTreeSet<usize> {
     let resolved = &checked.program;
     let mut found = BTreeSet::new();
     while let Some(relation) = relations.pop() {
@@ -580,7 +639,7 @@ fn empty_reads(node: NodeRef<'_>, empty: &Empty, out: &mut Vec<ProgramRelation>)
 fn node_relation(kind: &DependencyKind) -> Option<ProgramRelation> {
     Some(match kind {
         DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => relation.clone(),
-        DependencyKind::Chosen(name) => ProgramRelation::Declared(name.clone()),
+        DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => ProgramRelation::Declared(name.clone()),
         DependencyKind::InstanceOutput { instance, output } => ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(output.clone())]) }),
         _ => return None,
     })
@@ -662,6 +721,17 @@ fn remap_form(form: &Form, moved: &Moved) -> Result<Form, String> {
                 never: choose.never.iter().map(|body| map_body(body, &atom)).collect(),
                 ..choose.clone()
             }))
+        }
+        Form::Demonstrated(demonstrated) => {
+            let demonstrated = demonstrated.value();
+            let clause = demonstrated.key.as_ref().map(|clause| Node::new(KeyClause { key: key(&clause.value().key), inputs: clause.value().inputs.iter().map(input).collect() }));
+            let rule = |rule: &Node<DemoRule>| -> Result<Node<DemoRule>, String> {
+                let rule = rule.value();
+                let forms = rule.forms.iter().enumerate().map(|(index, form)| Ok((remap_form(form, moved)?, rule.forms.from_alt(index)))).collect::<Result<RuleForms, String>>()?;
+                Ok(Node::new(DemoRule { forms, ..rule.clone() }))
+            };
+            let rules = demonstrated.rules.iter().map(rule).collect::<Result<_, String>>()?;
+            Form::Demonstrated(Node::new(Demonstrated { key: clause, inputs: demonstrated.inputs.iter().map(input).collect(), rules, ..demonstrated.clone() }))
         }
         _ => return Err("a form of a kind the edit does not rewrite reads a relation whose columns change".into()),
     })
@@ -1092,6 +1162,7 @@ fn form_texts(program: &StudyProgram, names: &Names, registry: &Registry) -> Res
 fn form_relation(form: &Form, names: &Names) -> String {
     match form {
         Form::Clause(clause) => names.source_text(&spelled(&clause.value().derives)),
+        Form::Demonstrated(demonstrated) => names.source_text(&spelled(&ProgramRelation::Declared(demonstrated.value().name.clone()))),
         _ => String::new(),
     }
 }

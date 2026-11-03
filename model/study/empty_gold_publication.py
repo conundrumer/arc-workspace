@@ -86,8 +86,8 @@ def validate_report(report, request):
         if (not isinstance(indices, list)
                 or any(v is not None and (type(v) is not int or v < 0) for v in indices)):
             raise ValueError('native clause map malformed')
-        # The native API returns null texts for an unreadable case (for
-        # example DEMONSTRATED), and selects the whole original task.
+        # The native API returns null texts for an unreadable case, and
+        # selects the whole original task.
         unreadable_original = (report['selection'] == 'original'
             and case['original_program'] is None and case['filtered_program'] is None)
         if not unreadable_original and not all(
