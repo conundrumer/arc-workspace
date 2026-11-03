@@ -11,7 +11,7 @@ import os
 import pickle
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = '/Users/davidlu/code/arc-workspace/work/lm/data-study/features-worker/policy5'  # the data folder
 sys.path.insert(0, HERE)
 import numpy as np  # noqa: E402
 from nodefeat import Pair, features  # noqa: E402
