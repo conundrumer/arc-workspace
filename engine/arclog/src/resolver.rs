@@ -170,6 +170,20 @@ pub enum Resolution {
     Unresolved,
 }
 
+/// The identity of a query: its resolved content, and the canonical order of
+/// its form through the resolver's writer, which gives the canonical path
+/// of each of its nodes and the canonical position of each of its labels,
+/// as [`ResolvedProgram::query_identity`] gives them. Both are free of the
+/// names the program declares and of the order of its forms, of the
+/// conjuncts of a body, of the branches of an `OR` and of the columns a
+/// clause writes. The paths and labels are those of the form in the program
+/// that was resolved, since the order is of the form itself.
+#[derive(Clone, Debug)]
+pub struct QueryIdentity {
+    pub content: ResolvedContent,
+    pub order: crate::program::canonical::CanonicalOrder,
+}
+
 /// A column of a derived relation, resolved to its canonical position: the
 /// position of its label in the canonical labeling of the clause, as
 /// [`crate::program::canonical::CanonicalLabeling`] gives it. The resolver
@@ -561,6 +575,19 @@ impl ResolvedProgram {
     pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
         let (closure, last) = self.query_closure(position, registry)?;
         closure.content(&last)
+    }
+
+    /// The resolved content of the finished query at the top-level position
+    /// `position`, as [`ResolvedProgram::query_content`] gives it, with the
+    /// canonical order of the query's form through the resolver's writer of
+    /// the same closure, so that the content and the order name the form's
+    /// lists and labels alike. `None` where `position` names no node, and
+    /// for a `DEMONSTRATED` form, which has no such order.
+    pub fn query_identity(&self, position: usize, registry: &Registry) -> Option<QueryIdentity> {
+        let (closure, last) = self.query_closure(position, registry)?;
+        let content = closure.content(&last)?;
+        let (order, _) = closure.names.order(&closure.program, &last)?;
+        Some(QueryIdentity { content, order })
     }
 
     /// For each part of the `RIGID_DET` form at the top-level position

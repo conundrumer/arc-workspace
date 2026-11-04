@@ -4,7 +4,7 @@
 
 use super::super::path::{NodePath, NodeRef, PathStep};
 use super::super::{Form, LabelId};
-use super::{form_root, AsWritten, CanonicalForm, CanonicalWriter, Context, SearchBudget};
+use super::{form_root, AsWritten, CanonicalForm, CanonicalWriter, Context, NameWriter, SearchBudget};
 use crate::hash::StableHashMap;
 
 /// The canonical order of one form: for each list of the form, the source
@@ -25,14 +25,14 @@ pub struct CanonicalOrder {
 /// The write of `form` under [`AsWritten`] that its node keeps, made on the
 /// first call for the node.
 fn written(form: &Form) -> &(CanonicalOrder, CanonicalForm, bool) {
-    super::form::cache(form).order.get_or_init(|| write_order(form, false))
+    super::form::cache(form).order.get_or_init(|| write_order(form, &AsWritten, false))
 }
 
 /// Both policies use the same walk, labeling search and path recording.
 /// Feature writes are never stored in the production form cache.
-fn write_order(form: &Form, feature_sites: bool) -> (CanonicalOrder, CanonicalForm, bool) {
+fn write_order(form: &Form, names: &dyn NameWriter, feature_sites: bool) -> (CanonicalOrder, CanonicalForm, bool) {
     let mut own = SearchBudget::new();
-    let mut cx = Context::new(&mut own, &AsWritten);
+    let mut cx = Context::new(&mut own, names);
     cx.feature_sites = feature_sites;
     cx.order = Some(Recorded::default());
     let mut out = CanonicalWriter::default();
@@ -95,11 +95,23 @@ impl CanonicalOrder {
         kept.clone()
     }
 
+    /// The canonical order of `form` and its canonical form through `names`,
+    /// from one write of `form`, made on each call and kept nowhere: the
+    /// orders of its sorted lists and the positions of its labels as the
+    /// content that `names` writes gives them, which the order under
+    /// [`AsWritten`] does not, since the names a form reads stand in them.
+    /// [`CanonicalOrder::with_form`] gives the order under [`AsWritten`].
+    pub fn with_names(form: &Form, names: &dyn NameWriter, search: &mut SearchBudget) -> (Self, CanonicalForm) {
+        let (order, canonical, reached) = write_order(form, names, false);
+        search.reached |= reached;
+        (order, canonical)
+    }
+
     /// An independent feature write that normalizes named site order. This
     /// never reads or writes the form's production canonical-order cache:
     /// those labels also define callable relation column order.
     pub fn for_features(form: &Form, search: &mut SearchBudget) -> (Self, CanonicalForm) {
-        let (order, canonical, reached) = write_order(form, true);
+        let (order, canonical, reached) = write_order(form, &AsWritten, true);
         search.reached |= reached;
         (order, canonical)
     }
@@ -112,6 +124,28 @@ impl CanonicalOrder {
             return Box::default();
         }
         written(form).0.scope_labels(&NodePath::default()).iter().map(|(label, _)| *label).collect()
+    }
+
+    /// The canonical path of the node at `source`, as
+    /// [`CanonicalOrder::canonical_path`] gives it, and `None` where a step
+    /// of `source` names no member of its list.
+    pub fn try_canonical_path(&self, source: &NodePath) -> Option<NodePath> {
+        let mut canonical = Vec::with_capacity(source.0.len());
+        for (depth, step) in source.0.iter().enumerate() {
+            let mapped = match self.lists.get(&NodePath(source.0[..depth].into())) {
+                Some(order) => PathStep(order.iter().position(|&index| index == step.0)? as u32),
+                None => *step,
+            };
+            canonical.push(mapped);
+        }
+        Some(NodePath(canonical.into()))
+    }
+
+    /// The canonical position of `label` of the scope whose form stands at
+    /// `scope`, a source path relative to the form, and `None` where the
+    /// form holds no such scope or the scope no such label.
+    pub fn label_position(&self, scope: &NodePath, label: LabelId) -> Option<u32> {
+        self.labels.get(scope)?.iter().find(|(l, _)| *l == label).map(|(_, position)| *position)
     }
 
     /// The source path of the node at `canonical`, a path in canonical

@@ -7,7 +7,7 @@ use super::columns::{ColumnOrders, Columns, Place};
 use super::{DependencyKind, GraphNodeIndex};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{
-    cached_write, canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalWriter, LabelScope, NameWriter, SearchBudget,
+    cached_write, canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalOrder, CanonicalWriter, LabelScope, NameWriter, SearchBudget,
 };
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
@@ -347,6 +347,22 @@ impl Names {
         let at = At::of(program, path)?;
         let writer = Writer { names: self, scope: &at.scope, own: at.own.as_ref() };
         self.form_content(program.value(), at.node, path, at.atom, &writer)
+    }
+
+    /// The canonical order of the top-level form at `path` of `program`
+    /// through the resolver's writer, and the form it writes (the form of
+    /// [`Names::form_content`] before any kept columns). `None` where `path`
+    /// is no top-level form, or is a `DEMONSTRATED` form, whose content
+    /// writes its rules through writers of their own scopes.
+    pub(super) fn order(&self, program: &Node<Program>, path: &NodePath) -> Option<(CanonicalOrder, CanonicalForm)> {
+        let [top] = &path.0[..] else { return None };
+        let form = program.value().forms.get(top.0 as usize)?;
+        if matches!(form, Form::Demonstrated(_)) {
+            return None;
+        }
+        let at = At::of(program, path)?;
+        let writer = Writer { names: self, scope: &at.scope, own: at.own.as_ref() };
+        Some(CanonicalOrder::with_names(form, &writer, &mut SearchBudget::new()))
     }
 
     /// The content of the part of the body of the clause at `clause` of

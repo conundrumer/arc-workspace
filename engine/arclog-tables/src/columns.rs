@@ -220,6 +220,20 @@ pub struct TableColumns {
     /// [`cut_case_columns`] gives the label names of the case's stream, the
     /// names are those, and otherwise those of `column_labels`.
     pub column_source_labels: Vec<Vec<String>>,
+    /// The identity of each table, as 32 hexadecimal digits, and the empty
+    /// string for a table that has none. Given only where the call that makes
+    /// the columns gives identities ([`CaseColumns::with_identities`]); empty
+    /// otherwise. Two tables of any two case programs have one identity where
+    /// the resolved contents of their queries are equal, whatever names the
+    /// programs declare and in whatever order they write their forms,
+    /// conjuncts, branches and columns ([`crate::identity`]).
+    pub ident: Vec<String>,
+    /// The identity of each column of each table, in the order of
+    /// `column_names`: the lib's column name for a column the lib declares,
+    /// and `#` with the canonical position of the column's label for any
+    /// other, a field of a lib column's record included. The identities of
+    /// the columns of a table differ. Given as `ident` is.
+    pub column_idents: Vec<Vec<String>>,
     /// The width in cells of a row.
     pub width: Vec<u32>,
     /// The relation of each `DET` the table reads, its columns' types, and
@@ -453,6 +467,15 @@ pub struct FlowColumns {
     /// The path of the atom that reads the source as `form` spells a path,
     /// empty where no atom does.
     pub atom: Vec<String>,
+    /// The identity of the form that holds the atom ([`CaseColumns::with_identities`]):
+    /// 32 hexadecimal digits, and the empty string where no atom reads the
+    /// source. Given as `TableColumns::ident` is.
+    pub atom_form: Vec<String>,
+    /// The canonical path of the atom in its form, the steps joined by `.`,
+    /// where the sorted lists of the form (the conjuncts of a body, the
+    /// branches of an `OR`) stand in canonical order under the resolver's writer.
+    /// With `atom_form` it is the atom's identity.
+    pub atom_path: Vec<String>,
     /// The row of the atom's relation that the value comes from in one
     /// derivation of the table's row ([`ColumnSource::occurrence`]), -1 where
     /// the source claims none.
@@ -482,6 +505,9 @@ pub struct CaseColumns {
     /// ([`step_case_columns_by_assignment_in`]), which has no `assigned` part and
     /// gives `assignments` and `example_keys`.
     pub by_assignment: bool,
+    /// Whether the columns hold identities: `ident` and `column_idents` of
+    /// the tables part, `atom_form` and `atom_path` of the flows part.
+    pub identified: bool,
     pub assignments: AssignmentColumns,
     pub example_keys: ExampleKeyColumns,
     pub values: Vec<i32>,

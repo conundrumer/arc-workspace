@@ -5,6 +5,8 @@
 //!   of a task.
 //! - [`flows`]: the sources of each column of a table, over the dependency
 //!   graph of a checked program.
+//! - [`identity`]: the identity of each table, column and flow atom of a
+//!   case, free of the names and the order that the program's author chose.
 //! - [`extents`]: the extent of the made frame of each `Box` value of a table,
 //!   from a second evaluation of the bodies that give its rows.
 //! - [`columns`]: the tables of one case program as flat columns, the layout
@@ -25,6 +27,7 @@ pub mod columns;
 pub mod corpus;
 pub mod extents;
 pub mod flows;
+pub mod identity;
 pub mod split;
 pub mod summary;
 pub mod tables;

@@ -6,6 +6,7 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
 use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in,case_columns_selected_entries_in,case_columns_metadata_in,ValueKind};
 use arclog::eval::join::Materializer;
+use arclog_tables::identity::identify;
 use arclog_tables::tables::{evidence_tables, study_pair};
 use study_pair::STUDY_SESSION_BYTES;
 use pyo3::exceptions::PyValueError;
@@ -312,6 +313,7 @@ impl PyStudyTaskEvaluator {
                 None if metadata_only=>case_columns_metadata_in(&materializer,&self.evidence,&tables,self.task.train.len(),None),
                 None=>case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows),
             };
+            let columns=columns.with_identities(identify(gold.program.checked(),Registry::get(),&self.evidence,&tables));
             let metadata_complete=columns.packing_stop().is_none() && columns.tables.form.len()==self.evidence.len()+tables.len();
             if !full_rows && metadata_complete {cache.record_gold_tables_metadata(&gold.program,columns.entries.table.len())?;}
             report["full_rows"]=full_rows.into();

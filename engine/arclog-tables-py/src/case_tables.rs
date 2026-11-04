@@ -77,6 +77,27 @@ use pyo3::sync::PyOnceLock;
 /// corpus's `cases/` directory holds, those files; in those of `stream_tables` and `step_tables`, whose
 /// program comes from a decode, the entries of `column_labels` and `det_labels`.
 ///
+/// `gold_tables` also gives identities, which depend on no name and no order that the program's author
+/// chose (a rename of the declared relations, instances and labels, a reorder of the top-level forms that
+/// keeps dependency order, of a body's conjuncts, of an `OR`'s branches and of the columns a clause writes
+/// change none of them, apart from a swap of two things that a symmetry of the content exchanges):
+///
+/// - `tables.ident`, one string per table: 32 hexadecimal digits, the hash of the resolved content of the
+///   table's query, so two tables of any two case programs have one `ident` where the contents of their
+///   queries are equal. A port of an instance (and a part of a `RIGID_DET` form) has the hash of its form's
+///   content and the port's name in the lib; a fact relation's table has the hash of the relation's name.
+///   The empty string for a table with no identity: one that faulted or stands at a body in progress.
+/// - `tables.column_idents`, per table one string per column in the order of `column_names`: the lib's
+///   column name for a column the lib declares (the columns of a fact relation, a port's columns other than
+///   a field of a record, a proposer's columns), and `#<n>` for every other column, a field of a record
+///   column of the lib included, with `n` the canonical position of the column's label in the labeling of
+///   its form's label scope under the resolver's writer. The identities of the columns of one table differ.
+/// - `flows.atom_form` and `flows.atom_path`, one string per flow: the identity (32 hexadecimal digits, the
+///   hash of the resolved content) of the top-level form that holds the flow's atom, and the atom's
+///   canonical path in that form (steps joined by `.`, the first step an index among the form's children,
+///   each sorted list of the form in canonical order); both are empty where no atom reads the source. A
+///   path that the form's canonical order cannot place is spelled `?` and its source path.
+///
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 ///
@@ -354,6 +375,10 @@ impl PyCaseTables {
         t.list("column_slots", &c.column_slots)?;
         t.list("column_labels", &c.column_labels)?;
         t.list("column_source_labels", &c.column_source_labels)?;
+        if columns.identified {
+            t.list("ident", &c.ident)?;
+            t.list("column_idents", &c.column_idents)?;
+        }
         t.ints("width", &c.width)?;
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
@@ -449,6 +474,10 @@ impl PyCaseTables {
         f.ints("source_column", &c.source_column)?;
         f.ints("det", &c.det)?;
         f.list("atom", &c.atom)?;
+        if columns.identified {
+            f.list("atom_form", &c.atom_form)?;
+            f.list("atom_path", &c.atom_path)?;
+        }
         f.ints("occurrence", &c.occurrence)?;
         let k = Part::new(py, "copies", &dtypes,&owned);
         k.list("detail", &columns.copies.detail)?;

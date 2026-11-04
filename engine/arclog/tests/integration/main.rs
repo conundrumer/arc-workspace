@@ -40,6 +40,7 @@ mod orientation_tables;
 mod panic_isolation;
 mod program_edits;
 mod proposer_column_types;
+mod query_identity;
 mod reader;
 mod record_sites;
 mod registry_file;
