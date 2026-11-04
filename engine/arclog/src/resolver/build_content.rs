@@ -211,6 +211,7 @@ impl Builder<'_> {
                 let own = Own::of(NodeRef::Clause(clause));
                 let writer = Writer { names: &self.names, scope, own: own.as_ref() };
                 let (canonical, _) = canonical_columns(clause, &writer);
+                let columns = self.in_kept_order(columns, &canonical);
                 if !columns.names().eq(canonical.names()) {
                     // `kept` only enters a form's content, which holds each
                     // column by its canonical position, not by its name,
@@ -235,6 +236,16 @@ impl Builder<'_> {
         Some(Columns::of_names(kept.map(|column| column.name.clone())))
     }
 
+    /// `kept`, the columns a clause keeps in the order it writes them, in the
+    /// order of `canonical`, the clause's columns in their canonical positions,
+    /// where the content is to be free of the order the clause writes them.
+    fn in_kept_order(&self, kept: Columns, canonical: &Columns) -> Columns {
+        if !self.canonical_kept {
+            return kept;
+        }
+        Columns::of_names(canonical.names().filter(|name| kept.names().any(|other| other == *name)).cloned())
+    }
+
     /// The columns of the relation a clause of `node` derives: for a `DET`
     /// parameter node that an atom reads, as [`Builder::kept_columns`]
     /// gives them; for another clause, its labels in
@@ -244,6 +255,7 @@ impl Builder<'_> {
     fn clause_columns(&self, node: usize, clause: &Clause, scope: &NameScope, writer: &Writer<'_>) -> Option<(Columns, ColumnOrders)> {
         let unordered = |columns: Columns| (columns, ColumnOrders::default());
         if let Some(kept) = self.kept_columns(node, clause) {
+            let kept = if self.canonical_kept { self.in_kept_order(kept, &canonical_columns(clause, writer).0) } else { kept };
             return Some(unordered(kept));
         }
         if !clause.columns.is_empty() {

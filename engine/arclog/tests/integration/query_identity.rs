@@ -88,3 +88,20 @@ fn a_form_alone_in_a_program_that_declares_nothing_else_has_an_identity() {
     let resolved = resolve(&program, None, &Default::default(), Registry::get());
     assert!(resolved.value.query_identity(0, Registry::get()).is_some());
 }
+
+/// A `DET` keeps the columns that a read names in the order its clause writes them, so the order
+/// of the clause's labels is in the content of a read of it, but not in the identity of the read.
+#[test]
+fn a_determination_read_in_another_column_order_gives_its_reader_one_identity() {
+    let reader = "(DET &mismatch (&src *E *Diag) (d4_elem (:D *D4)) (NOT (diag_dir_elem (:D Diag))))\n";
+    let first = format!("(DET &src (ex_input *E (:P *P)) (diag_dir_elem (:D *Diag)))\n{reader}");
+    let second = format!("(DET &src (diag_dir_elem (:D *Diag)) (ex_input *E (:P *P)))\n{reader}");
+    let (first_identity, _) = identity(&first, 1);
+    let (second_identity, _) = identity(&second, 1);
+    assert_eq!(first_identity.content, second_identity.content);
+    let content = |text: &str| {
+        let program = read(text);
+        resolve(&program, None, &Default::default(), Registry::get()).value.query_content(1, Registry::get()).expect("a content")
+    };
+    assert_ne!(content(&first), content(&second));
+}

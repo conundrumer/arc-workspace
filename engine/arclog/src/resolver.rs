@@ -573,7 +573,7 @@ impl ResolvedProgram {
     /// `&prediction` clauses hold the columns the stream fills alone
     /// ([`query_form`]). `None` where `position` names no node.
     pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
-        let (closure, last) = self.query_closure(position, registry)?;
+        let (closure, last) = self.query_closure(position, registry, false)?;
         closure.content(&last)
     }
 
@@ -583,8 +583,14 @@ impl ResolvedProgram {
     /// the same closure, so that the content and the order name the form's
     /// lists and labels alike. `None` where `position` names no node, and
     /// for a `DEMONSTRATED` form, which has no such order.
+    ///
+    /// Unlike [`ResolvedProgram::query_content`], the closure keeps the
+    /// columns of each `DET` node that its reads name in the order of their
+    /// labels' canonical positions, not in the order the `DET`'s clause writes
+    /// them, so the content is also free of the order of those columns. It
+    /// therefore differs from `query_content` for a `DET` read in another order.
     pub fn query_identity(&self, position: usize, registry: &Registry) -> Option<QueryIdentity> {
-        let (closure, last) = self.query_closure(position, registry)?;
+        let (closure, last) = self.query_closure(position, registry, true)?;
         let content = closure.content(&last)?;
         let (order, _) = closure.names.order(&closure.program, &last)?;
         Some(QueryIdentity { content, order })
@@ -598,7 +604,7 @@ impl ResolvedProgram {
     /// tie read relations of one content at sites of one form, and hold the
     /// same rows. `None` where `position` names no `RIGID_DET` form.
     pub fn rigid_part_positions(&self, position: usize, registry: &Registry) -> Option<Box<[u32]>> {
-        let (closure, last) = self.query_closure(position, registry)?;
+        let (closure, last) = self.query_closure(position, registry, false)?;
         closure.names.part_positions(&closure.program, &last)
     }
 
@@ -606,7 +612,7 @@ impl ResolvedProgram {
     /// top-level position `position`, resolved as
     /// [`ResolvedProgram::query_content`] gives, and the path of the query
     /// in it.
-    fn query_closure(&self, position: usize, registry: &Registry) -> Option<(ResolvedProgram, NodePath)> {
+    fn query_closure(&self, position: usize, registry: &Registry, canonical_kept: bool) -> Option<(ResolvedProgram, NodePath)> {
         let forms = &self.program.value().forms;
         let mut keep = vec![false; forms.len()];
         *keep.get_mut(position)? = true;
@@ -630,7 +636,7 @@ impl ResolvedProgram {
         let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| query_form(form, registry)).collect();
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
-        Some((build::resolve(&pruned, None, &SolverScope::default(), registry).value, last))
+        Some((build::resolve_with(&pruned, None, &SolverScope::default(), registry, canonical_kept).value, last))
     }
 
     /// The nodes that the top-level form at `top` gives, and, for a

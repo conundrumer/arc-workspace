@@ -139,6 +139,11 @@ struct Builder<'a> {
     /// layered resolution reads and no earlier read names, which change the
     /// earlier node's entries.
     widenings: Vec<(GraphNodeIndex, Vec<ColumnName>)>,
+    /// Whether the columns that a `DET` node keeps stand in the order of their
+    /// labels' canonical positions, in place of the order the clause writes
+    /// them, so that the content of the node and of each read of it is free of
+    /// that order ([`super::ResolvedProgram::query_identity`]).
+    canonical_kept: bool,
 }
 
 impl<'a> Builder<'a> {
@@ -178,6 +183,7 @@ impl<'a> Builder<'a> {
             earlier: None,
             shared_node: false,
             widenings: Vec::new(),
+            canonical_kept: false,
         };
         if let Some(earlier) = earlier {
             let count = earlier.graph.nodes.len();
@@ -308,7 +314,20 @@ pub(super) fn resolve(
     scope: &SolverScope,
     registry: &Registry,
 ) -> WithDiagnostics<ResolvedProgram> {
+    resolve_with(case, concept, scope, registry, false)
+}
+
+/// [`resolve`], with the columns that a `DET` node keeps in the order of their
+/// labels' canonical positions where `canonical_kept`.
+pub(super) fn resolve_with(
+    case: &Node<Program>,
+    concept: Option<ConceptReads<'_>>,
+    scope: &SolverScope,
+    registry: &Registry,
+    canonical_kept: bool,
+) -> WithDiagnostics<ResolvedProgram> {
     let mut builder = Builder::new(case, scope, registry, None);
+    builder.canonical_kept = canonical_kept;
     for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput] {
         let node = builder.node(DependencyKind::Fact(fact), &NameScope::Program, None);
         let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));
