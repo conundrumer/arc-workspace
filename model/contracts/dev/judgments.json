@@ -1,0 +1,109 @@
+{
+ "_doc": "Judgments written before any computed novelty or relevance was seen. novelty: N = new information (the result shows structure that the observations of what it reads don't show: topology, geometry, a match between tables, a selection whose shape is new); R = re-encoding (summaries, regroupings, orders, set differences, translations, frames, bounding boxes, arithmetic of what the reads show); ? = unsure. relevance: Y = bears on the output beyond the input grid; N = doesn't; ? = unsure. Task-wide tables (DETs, constant across input worlds) are not judged.",
+ "00d62c1b": {
+  "&bg_cell": ["N", "?", "figure/ground: the shape of the background region is new; the fill cells are among them"],
+  "&outside.source": ["?", "N", "background cells on the grid edge: a simple geometric filter"],
+  "&outside.reached": ["N", "Y", "flood: reachability from the edge is not shown by the background cells' observations"],
+  "&enclosed": ["R", "Y", "set difference of background cells and reached cells; these are the cells to fill"],
+  "&output": ["R", "Y", "re-encodes enclosed cells with the fill color over the input"]
+ },
+ "25d487eb": {
+  "&ink": ["N", "?", "figure/ground"],
+  "&body_count.size": ["R", "N", "counts per color of the ink cells"],
+  "&body.rank": ["R", "N", "order over counts"],
+  "&body.dual_rank": ["R", "N", "order over counts"],
+  "&body.minimal": ["R", "N", "order over counts"],
+  "&body.maximal": ["R", "?", "order over counts; marks the body color"],
+  "&body.successor": ["R", "N", "order over counts"],
+  "&body.cyclic_successor": ["R", "N", "order over counts"],
+  "&mark": ["R", "Y", "ink cells not of the largest color: a set difference"],
+  "&bbox.box": ["R", "?", "bounding box of the ink"],
+  "&cast_dir": ["N", "Y", "which side of the box the mark faces: a geometric relation between two tables"],
+  "&rays_cell": ["N", "?", "figure/ground of the background"],
+  "&rays.ray": ["N", "Y", "ray casting until blocked"],
+  "&rays.end": ["N", "N", "ends of the rays"],
+  "&beam": ["R", "Y", "ray cells on the background, colored by the mark: a filter and recolor of the rays"],
+  "&output": ["R", "Y", "the beam over the input"]
+ },
+ "3194b014": {
+  "&comps.component": ["N", "Y", "connected components per color"],
+  "&comps.adjacent": ["?", "N", "adjacency inside components"],
+  "&biggest_count.size": ["R", "Y", "size of each component: a summary of the components"],
+  "&biggest.rank": ["R", "?", "order over sizes"],
+  "&biggest.dual_rank": ["R", "?", "order over sizes"],
+  "&biggest.minimal": ["R", "N", "order over sizes"],
+  "&biggest.maximal": ["R", "Y", "order over sizes; its color is the output color"],
+  "&biggest.successor": ["R", "N", "order over sizes"],
+  "&biggest.cyclic_successor": ["R", "N", "order over sizes"]
+ },
+ "85c4e7cd": {
+  "&peel.boundary": ["R", "N", "the grid edge: given by the grid size"],
+  "&peel.exposed": ["R", "N", "the grid edge with directions"],
+  "&peel_depth.distance": ["R", "?", "depth of each cell from the edge: a function of the grid size"],
+  "&peel_depth.predecessor": ["R", "N", "a function of the grid size"],
+  "&rings.rank": ["R", "Y", "order over depths; maps a ring to its reversed ring"],
+  "&rings.dual_rank": ["R", "Y", "order over depths"],
+  "&rings.minimal": ["R", "?", "order over depths"],
+  "&rings.maximal": ["R", "?", "order over depths"],
+  "&rings.successor": ["R", "N", "order over depths"],
+  "&rings.cyclic_successor": ["R", "N", "order over depths"],
+  "&ring_color": ["N", "Y", "one color per ring: the concentric structure is new"],
+  "&output": ["R", "Y", "ring colors reversed by depth"]
+ },
+ "93b4f4b3": {
+  "&closed.enclosed": ["N", "Y", "holes: enclosed background regions"],
+  "&panel": ["N", "Y", "the color around the holes: a relation between holes and the input"],
+  "&panel_box.box": ["R", "Y", "bounding box of the panel color"],
+  "&shape": ["N", "Y", "figure/ground: cells not background and not the panel color"],
+  "&hole_box.box": ["R", "?", "bounding box of each hole"],
+  "&shape_box.box": ["R", "?", "bounding box of each shape"],
+  "&fits.superset": ["N", "?", "match of shapes to holes by footprint"],
+  "&fits.equal": ["N", "Y", "match of shapes to holes by footprint"],
+  "&output": ["?", "Y", "the panel cropped, with matched shapes in the holes"]
+ },
+ "a59b95c0": {
+  "&palette.size": ["R", "Y", "count of input colors"],
+  "&arr.cell": ["R", "Y", "a frame of that size"],
+  "&output_tiling.cell": ["R", "Y", "tiling of the input"],
+  "&output": ["R", "Y", "the tiled input"]
+ },
+ "342dd610": {
+  "&moved": ["R", "Y", "input cells translated by a task-wide offset"],
+  "&output": ["R", "Y", "the moved cells over the background"]
+ },
+ "3906de3d": {
+  "&mover2": ["N", "Y", "figure/ground of the rarest color"],
+  "&pack.distance": ["N", "Y", "how far each mover cell travels before it is blocked"],
+  "&pack.predecessor": ["?", "N", "predecessors in that search"],
+  "&pack_travel_full": ["R", "Y", "offsets from the distances"],
+  "&landed": ["R", "Y", "positions after the move"],
+  "&output": ["R", "Y", "the landed cells over the input"]
+ },
+ "73ccf9c2": {
+  "&objs.component": ["N", "Y", "8-connected objects"],
+  "&objs.adjacent": ["?", "N", "adjacency inside objects"],
+  "&bbox.box": ["R", "Y", "bounding box of each object"],
+  "&figure": ["?", "?", "object cells in box coordinates: a normalization"],
+  "&inv.mismatch": ["N", "Y", "which objects fail which symmetry"],
+  "&inv.conflict": ["N", "?", "which objects conflict under which symmetry"],
+  "&output": ["R", "Y", "the odd object cropped"]
+ },
+ "aaef0977": {
+  "&seed": ["N", "Y", "figure/ground: the one non-background cell"],
+  "&taxicab": ["R", "Y", "Manhattan distance to the seed: a function of the seed position and the grid size"],
+  "&nearest.rank": ["R", "N", "order per cell over seeds; trivial with one seed"],
+  "&nearest.minimal": ["R", "N", "trivial with one seed"],
+  "&cycle.walk": ["R", "Y", "walk along the color cycle"],
+  "&hue": ["R", "Y", "color by distance along the cycle"]
+ },
+ "6b9890af": {
+  "&frame_box.box": ["R", "Y", "bounding box of the frame color"],
+  "&hole.box": ["R", "Y", "bounding box of the cells inside the frame box"],
+  "&object_cell": ["N", "Y", "figure/ground: cells not background and not the frame color"],
+  "&object_box.box": ["R", "Y", "bounding box of the object"],
+  "&tile_col": ["R", "Y", "object cells in box coordinates"],
+  "&blocks_dim": ["R", "Y", "extents of the object box"],
+  "&blocks.tile": ["R", "Y", "the hole divided into parts"],
+  "&output": ["R", "Y", "the frame with the scaled object"]
+ }
+}
