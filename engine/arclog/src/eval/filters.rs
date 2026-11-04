@@ -38,7 +38,8 @@ pub fn compile_not(builder: &mut IrBuilder<'_>, negated: &Negated, path: &NodePa
         Negated::Form(form) => inner.conjunct(form, &path.child(0))?,
     }
     let outer = variables_of(builder, &outer_labels(builder, path));
-    builder.push(IrNode::Not(filter(outer, inner)), NodePaths::None);
+    let (filter, paths) = filter(outer, inner);
+    builder.push(IrNode::Not(filter), NodePaths::Filter(Box::new(paths)));
     Ok(())
 }
 
@@ -57,18 +58,21 @@ pub fn compile_all(
     let around = outer_labels(builder, path);
     let mut fails = nested(builder)?;
     fails.body(body.value(), &body_path)?;
-    let fails = filter(variables_of(builder, &outer_labels(builder, &body_path)), fails);
+    let (fails, fails_paths) = filter(variables_of(builder, &outer_labels(builder, &body_path)), fails);
     let mut counterexample = nested(builder)?;
     counterexample.body(domain.value(), &domain_path)?;
-    counterexample.push(IrNode::Not(fails), NodePaths::None);
+    counterexample.push(IrNode::Not(fails), NodePaths::Filter(Box::new(fails_paths)));
     let mut members = nested(builder)?;
     members.body(domain.value(), &domain_path)?;
     let domain_outer = variables_of(builder, &outer_of(domain.value(), &around));
     let mut empty = nested(builder)?;
-    empty.push(IrNode::Not(filter(domain_outer.clone(), members)), NodePaths::None);
-    builder.push(IrNode::Not(filter(domain_outer, empty)), NodePaths::None);
+    let (members, members_paths) = filter(domain_outer.clone(), members);
+    empty.push(IrNode::Not(members), NodePaths::Filter(Box::new(members_paths)));
+    let (empty, empty_paths) = filter(domain_outer, empty);
+    builder.push(IrNode::Not(empty), NodePaths::Filter(Box::new(empty_paths)));
     let outer = variables_of(builder, &around);
-    builder.push(IrNode::Counterexample(filter(outer, counterexample)), NodePaths::None);
+    let (counterexample, counterexample_paths) = filter(outer, counterexample);
+    builder.push(IrNode::Counterexample(counterexample), NodePaths::Filter(Box::new(counterexample_paths)));
     Ok(())
 }
 
@@ -87,9 +91,10 @@ pub fn compile_if(
     let mut negated = nested(builder)?;
     negated.body(test.value(), &test_path)?;
     let test_outer = variables_of(builder, &outer_of(test.value(), &around));
+    let (test_filter, test_paths) = filter(test_outer, negated);
     let branches = [
         Branch { lists: vec![(test, test_path.clone()), (then, then_path.clone())], negated: None },
-        Branch { lists: vec![(otherwise, else_path.clone())], negated: Some((filter(test_outer, negated), test.value())) },
+        Branch { lists: vec![(otherwise, else_path.clone())], negated: Some((test_filter, test_paths, test.value())) },
     ];
     let made = exported_labels(then.value(), &[otherwise.value()]);
     compile_union(builder, &branches, around, made)
@@ -108,10 +113,11 @@ pub fn compile_or(builder: &mut IrBuilder<'_>, branches: &[Node<Body>], path: &N
 }
 
 /// One branch of a union: its lists of conjuncts, each with its path, and
-/// the negated test of an `IF`'s else, with the test.
+/// the negated test of an `IF`'s else, with the paths of its nodes and the
+/// test.
 struct Branch<'b> {
     lists: Vec<(&'b Node<Body>, NodePath)>,
-    negated: Option<(Filter, &'b Body)>,
+    negated: Option<(Filter, IrPaths, &'b Body)>,
 }
 
 /// Adds to `builder`'s clause the union of `branches`. `around` holds the
@@ -133,7 +139,7 @@ fn compile_union(
         for (list, _) in &branch.lists {
             labels.extend(labels_of(list.value()));
         }
-        if let Some((_, test)) = &branch.negated {
+        if let Some((_, _, test)) = &branch.negated {
             labels.extend(outer_of(test, &around));
         }
         let body = Body { conjuncts: branch.lists.iter().flat_map(|(list, _)| list.value().conjuncts.iter().cloned()).collect() };
@@ -161,8 +167,8 @@ fn compile_union(
         for (list, path) in &branch.lists {
             clause.body(list.value(), path)?;
         }
-        if let Some((test, _)) = &branch.negated {
-            clause.push(IrNode::Not(test.clone()), NodePaths::None);
+        if let Some((test, test_paths, _)) = &branch.negated {
+            clause.push(IrNode::Not(test.clone()), NodePaths::Filter(Box::new(test_paths.clone())));
         }
         let columns = variables_of(builder, &labels.intersection(&shared).copied().collect());
         let (clause, paths) = clause.finish(columns);
@@ -219,9 +225,10 @@ fn nested<'a>(builder: &IrBuilder<'a>) -> Result<IrBuilder<'a>, CompileFault> {
 }
 
 /// The filter over `outer` whose body is the clause of `body`, a relation
-/// with no column.
-fn filter(outer: Box<[Variable]>, body: IrBuilder<'_>) -> Filter {
-    Filter { outer, body: Box::new(body.finish(Box::new([])).0) }
+/// with no column, with the paths of the clause's nodes.
+fn filter(outer: Box<[Variable]>, body: IrBuilder<'_>) -> (Filter, IrPaths) {
+    let (clause, paths) = body.finish(Box::new([]));
+    (Filter { outer, body: Box::new(clause) }, paths)
 }
 
 /// The labels that stand at `path` and also outside it, in the conjuncts

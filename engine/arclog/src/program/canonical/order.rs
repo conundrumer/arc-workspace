@@ -20,6 +20,9 @@ use crate::hash::StableHashMap;
 pub struct CanonicalOrder {
     lists: StableHashMap<NodePath, Box<[u32]>>,
     labels: StableHashMap<NodePath, Box<[(LabelId, u32)]>>,
+    /// For each label scope, by the source path of its form, the other
+    /// labelings that its search found whose form is the canonical form.
+    symmetries: StableHashMap<NodePath, Box<[Box<[(LabelId, u32)]>]>>,
 }
 
 /// The write of `form` under [`AsWritten`] that its node keeps, made on the
@@ -38,15 +41,17 @@ fn write_order(form: &Form, names: &dyn NameWriter, feature_sites: bool) -> (Can
     let mut out = CanonicalWriter::default();
     form_root(&mut cx, &mut out, form);
     let recorded = cx.order.take().expect("the order is recorded");
-    (CanonicalOrder { lists: recorded.lists, labels: recorded.labels }, out.finish(), own.reached)
+    (CanonicalOrder { lists: recorded.lists, labels: recorded.labels, symmetries: recorded.symmetries }, out.finish(), own.reached)
 }
 
 /// The orders a write records for [`CanonicalOrder`]: each sorted list's,
-/// and each scope's labels, by source path.
+/// and each scope's labels, by source path, and the other labelings that the
+/// search of each scope found.
 #[derive(Default)]
 pub(super) struct Recorded {
     pub(super) lists: StableHashMap<NodePath, Box<[u32]>>,
     pub(super) labels: StableHashMap<NodePath, Box<[(LabelId, u32)]>>,
+    pub(super) symmetries: StableHashMap<NodePath, Box<[Box<[(LabelId, u32)]>]>>,
 }
 
 impl CanonicalOrder {
@@ -100,9 +105,13 @@ impl CanonicalOrder {
     /// orders of its sorted lists and the positions of its labels as the
     /// content that `names` writes gives them, which the order under
     /// [`AsWritten`] does not, since the names a form reads stand in them.
-    /// [`CanonicalOrder::with_form`] gives the order under [`AsWritten`].
+    /// [`CanonicalOrder::with_form`] gives the order under [`AsWritten`]. The
+    /// write has the order of the named sites and the head sites outside the
+    /// form where `names` says so ([`NameWriter::feature_sites`]), as the
+    /// content that `names` writes does, so the order and the content name the
+    /// lists and labels alike.
     pub fn with_names(form: &Form, names: &dyn NameWriter, search: &mut SearchBudget) -> (Self, CanonicalForm) {
-        let (order, canonical, reached) = write_order(form, names, false);
+        let (order, canonical, reached) = write_order(form, names, names.feature_sites());
         search.reached |= reached;
         (order, canonical)
     }
@@ -217,6 +226,33 @@ impl CanonicalOrder {
             self.labels.iter().map(|(source, labels)| (self.canonical_path(source), source.clone(), &labels[..])).collect();
         scopes.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
         scopes.into_iter().map(|(_, source, labels)| (source, labels)).collect()
+    }
+
+    /// The permutations of the canonical positions of the labels of the scope
+    /// whose form stands at `scope`, a source path relative to the form, under
+    /// which the form is the same: one for each other labeling that the
+    /// scope's search found whose form is the canonical form, other than the
+    /// identity. A permutation `p` has `p[a] = b` where a label has position
+    /// `a` in the canonical labeling and `b` in the other. The permutations
+    /// are those of the search; where it reached its cap ([`super::SEARCH_NODE_CAP`])
+    /// they may not hold every symmetry of the scope. Empty where the form
+    /// holds no such scope.
+    pub fn label_permutations(&self, scope: &NodePath) -> Vec<Vec<u32>> {
+        let (Some(canonical), Some(others)) = (self.labels.get(scope), self.symmetries.get(scope)) else { return Vec::new() };
+        let mut found: Vec<Vec<u32>> = Vec::new();
+        for other in others.iter() {
+            let mut permutation = vec![0; canonical.len()];
+            for (label, position) in canonical.iter() {
+                let Some((_, moved)) = other.iter().find(|(found, _)| found == label) else { continue };
+                permutation[*position as usize] = *moved;
+            }
+            let identity = permutation.iter().enumerate().all(|(at, to)| *to as usize == at);
+            if !identity && !found.contains(&permutation) {
+                found.push(permutation);
+            }
+        }
+        found.sort();
+        found
     }
 
     fn scope_labels(&self, scope: &NodePath) -> &[(LabelId, u32)] {

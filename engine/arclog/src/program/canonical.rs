@@ -177,11 +177,14 @@ struct Context<'a> {
     /// The field names of the head sites of the instance being written, by
     /// order of first use.
     head_fields: HeadFields,
+    /// The other labelings of the scope whose canonical labeling was found
+    /// last, for [`Context::with_labels`] to record with the labels.
+    others: Option<Box<[Box<[(LabelId, u32)]>]>>,
 }
 
 impl<'a> Context<'a> {
     fn new(search: &'a mut SearchBudget, names: &'a dyn NameWriter) -> Self {
-        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: names.feature_sites(), column_order: 0, head_fields: HeadFields::default() }
+        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: names.feature_sites(), column_order: 0, head_fields: HeadFields::default(), others: None }
     }
 
     fn position(&self, label: LabelId) -> u32 {
@@ -241,15 +244,32 @@ impl<'a> Context<'a> {
 
     /// Runs `write` with the labels of `scope`.
     fn in_scope(&mut self, scope: LabelScope, write: impl FnOnce(&mut Self)) {
-        let labels = self.labeling(scope).0;
+        let labels = self.recorded_labeling(scope);
         self.with_labels(labels, write);
+    }
+
+    /// The canonical labeling of `scope`; where the write records a
+    /// [`CanonicalOrder`], it keeps the other labelings the search found for
+    /// the next [`Context::with_labels`].
+    fn recorded_labeling(&mut self, scope: LabelScope) -> Labels {
+        let (labelings, _) = self.labelings(scope);
+        let mut labelings = labelings.into_iter();
+        let labels = labelings.next().expect("the search reaches a leaf");
+        if self.order.is_some() {
+            self.others = Some(labelings.map(|other| by_position(&other)).collect());
+        }
+        labels
     }
 
     /// Runs `write` with `labels`, the labels of the scope whose form stands
     /// at the node being written, and records them.
     fn with_labels(&mut self, labels: Labels, write: impl FnOnce(&mut Self)) {
         if let Some(order) = &mut self.order {
-            order.labels.insert(NodePath(self.path.clone().into()), by_position(&labels));
+            let path = NodePath(self.path.clone().into());
+            if let Some(others) = self.others.take() {
+                order.symmetries.insert(path.clone(), others);
+            }
+            order.labels.insert(path, by_position(&labels));
         }
         let outer = std::mem::replace(&mut self.labels, labels);
         write(self);

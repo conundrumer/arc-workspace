@@ -166,8 +166,9 @@ pub enum NodePaths {
     Key(Box<IrPaths>),
     /// The paths of each branch of an `Or` node.
     Branches(Box<[IrPaths]>),
-    /// A comparison, a `NOT` or a counterexample: no atom of the program
-    /// text to read from.
+    /// The paths of the body of a `Not` or a `Counterexample` node.
+    Filter(Box<IrPaths>),
+    /// A comparison: no atom of the program text to read from.
     None,
 }
 

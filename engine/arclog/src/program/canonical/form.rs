@@ -474,7 +474,7 @@ pub fn opens_scope(parent: NodeRef<'_>, index: usize, child: NodeRef<'_>) -> boo
 /// Writes a form that is a label scope of its own, as
 /// [`crate::program::LabelId`] gives scopes.
 pub(super) fn form_root(cx: &mut Context, out: &mut CanonicalWriter, form: &Form) {
-    let labels = form_scope(form).map(|scope| cx.labeling(scope).0);
+    let labels = form_scope(form).map(|scope| cx.recorded_labeling(scope));
     form_with(cx, out, form, labels);
 }
 
