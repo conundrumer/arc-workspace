@@ -89,9 +89,11 @@ use pyo3::sync::PyOnceLock;
 ///   The empty string for a table with no identity: one that faulted or stands at a body in progress.
 /// - `tables.column_idents`, per table one string per column in the order of `column_names`: the lib's
 ///   column name for a column the lib declares (the columns of a fact relation, a port's columns other than
-///   a field of a record, a proposer's columns), and `#<n>` for every other column, a field of a record
-///   column of the lib included, with `n` the canonical position of the column's label in the labeling of
-///   its form's label scope under the resolver's writer. The identities of the columns of one table differ.
+///   a field of a record, a proposer's columns), `<lib column>.#<n>` for a field of the record of a lib
+///   column (`key.#2`, `t.#4`, `a.#2`), and `#<n>` for every other column, with `n` the canonical position
+///   of the column's label (the least of the positions of the labels that several heads bind to the field)
+///   in the labeling of its form's label scope under the resolver's writer. No identity holds a name from
+///   the program's text. The identities of the columns of one table differ.
 /// - `flows.atom_form` and `flows.atom_path`, one string per flow: the identity (32 hexadecimal digits, the
 ///   hash of the resolved content) of the top-level form that holds the flow's atom, and the atom's
 ///   canonical path in that form (steps joined by `.`, the first step an index among the form's children,

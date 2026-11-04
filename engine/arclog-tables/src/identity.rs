@@ -8,10 +8,12 @@
 //!   of an instance (or a part of a `RIGID_DET` form) has the hash of its
 //!   form's identity and the port's name in the lib. A table of a fact
 //!   relation has the hash of the relation's name.
-//! - A column the lib declares has the lib's column name. Any other column,
-//!   a field of a record column of the lib included, has `#` and the
-//!   canonical position of its label in the labeling of the form's label
-//!   scope under the resolver's writer.
+//! - A column the lib declares has the lib's column name. A field of a record
+//!   column of the lib has the lib column's name, `.#` and the canonical
+//!   position of its label in the labeling of the form's label scope under
+//!   the resolver's writer (the least of the positions where the heads of
+//!   several inputs write the column with several labels). Any other column
+//!   has `#` and that position.
 //! - A flow's atom has the identity of its form, and its canonical path in
 //!   the form (the path of the atom with each sorted list in canonical
 //!   order), under the resolver's writer.
@@ -174,12 +176,21 @@ fn table_identity(forms: &mut Forms, table: &Table) -> (String, Vec<String>) {
     let mut columns: Vec<String> = contents
         .columns
         .iter()
-        .map(|column| {
-            // A column of an instance's port that has no field is the lib's own.
-            let lib = (instance && !column.name.contains('.')) || column.label_id.is_none();
-            match column.label_id.and_then(|label| query.order.label_position(&NodePath::default(), label)) {
-                Some(position) if !lib => format!("#{position}"),
-                _ => column.name.clone(),
+        .enumerate()
+        .map(|(at, column)| {
+            // The column's labels, among which the least position stands for it: the label the table selects for a port column
+            // depends on the order the heads are written in, and the set of labels does not.
+            let bound = contents.bound_labels.get(at).map(|labels| &labels[..]).unwrap_or_default();
+            let selected = column.label_id.iter().chain(bound);
+            let position = selected.filter_map(|label| query.order.label_position(&NodePath::default(), *label)).min();
+            match (column.name.split_once('.'), position) {
+                // A field of a record below a lib column: the lib column and the position of its label.
+                (Some((lib, _)), Some(position)) => format!("{lib}.#{position}"),
+                (Some(_), None) => column.name.clone(),
+                // A column of an instance's port that has no field is the lib's own.
+                (None, _) if instance => column.name.clone(),
+                (None, Some(position)) => format!("#{position}"),
+                (None, None) => column.name.clone(),
             }
         })
         .collect();

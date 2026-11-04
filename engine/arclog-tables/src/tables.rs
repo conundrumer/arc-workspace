@@ -175,6 +175,11 @@ pub struct Contents {
     /// ([`arclog::resolver::ResolvedProgram::row_paths`]), where the relation
     /// is a program node whose columns have as many positions as `columns`.
     pub rows: Option<Vec<Box<[ColumnName]>>>,
+    /// For each column, every label that the table's form binds to it, the
+    /// selected `label_id` of the column among them: a port column that the
+    /// heads of several inputs write has a label for each. Empty where the
+    /// table is not made from a relation's checked columns.
+    pub bound_labels: Box<[Vec<LabelId>]>,
     /// The depth of the relation in the dependency graph ([`arclog::resolver::ResolvedProgram::depth`]).
     pub depth: u32,
     /// The candidate keys the program text gives, each as column positions.
@@ -473,6 +478,8 @@ pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, f
         .collect();
     let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, registry).into();
     let mut contents = metadata(program, form, TableRelation::Slot(slot), columns, dets, examples, flows)?;
+    contents.bound_labels = program.program.column_bindings(relation.node, relation.output.as_deref(), form, types.len(), registry)
+        .into_iter().map(|column| column.bindings.iter().map(|binding| binding.label).collect()).collect();
     contents.depth = program.program.depth(relation.node);
     contents.rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
     Ok(contents)
@@ -500,7 +507,7 @@ pub(crate) fn metadata(program: &CheckedProgram, form: &NodePath, relation: Tabl
         }
     }}
     Ok(Contents { assignment_layout:AssignmentLayout::Search, relation, columns, dets, examples: examples.into(), projections: None, name: String::new(), output_name: String::new(), flows,
-        rows: None, depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
+        rows: None, bound_labels: Box::default(), depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
 }
 
 /// Projection policy shared by both schema adapters; metadata-only callers do
@@ -611,7 +618,7 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
         })
         .collect();
     let frames = fact_frames(fact, &columns);
-    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), output_name: String::new(), flows: Box::new([]), rows: None, depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
+    Table { form: NodePath::default(), point: Point::Evidence, contents: Ok(Contents { assignment_layout:AssignmentLayout::Search, relation: TableRelation::Fact(fact), columns, dets: Box::new([]), examples, projections: None, name: String::new(), output_name: String::new(), flows: Box::new([]), rows: None, bound_labels: Box::default(), depth: 0, keys: vec![vec![0, 1]], selected: SelectedColumns::default(), frames, extents: None }) }
 }
 
 /// The relation of the graph that the form at `form` of `program` declares as

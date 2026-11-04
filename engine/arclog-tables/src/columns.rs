@@ -229,10 +229,13 @@ pub struct TableColumns {
     /// conjuncts, branches and columns ([`crate::identity`]).
     pub ident: Vec<String>,
     /// The identity of each column of each table, in the order of
-    /// `column_names`: the lib's column name for a column the lib declares,
-    /// and `#` with the canonical position of the column's label for any
-    /// other, a field of a lib column's record included. The identities of
-    /// the columns of a table differ. Given as `ident` is.
+    /// `column_names`: the lib's column name for a column the lib declares;
+    /// `<lib column>.#<n>` for a field of the record of a lib column, with `n`
+    /// the canonical position of the field's label (the least position of the
+    /// labels that several heads bind to it); and `#<n>` for any other
+    /// column, with `n` the canonical position of its label. No identity holds
+    /// a name that the program's author chose. The identities of the columns
+    /// of a table differ. Given as `ident` is.
     pub column_idents: Vec<Vec<String>>,
     /// The width in cells of a row.
     pub width: Vec<u32>,

@@ -201,7 +201,7 @@ fn same_table(a: &Table, b: &Table) -> bool {
 
 fn same_contents(a: &Contents, b: &Contents) -> bool {
     // Each field is named, so that a field added to `Contents` is compared here too.
-    let Contents { assignment_layout, relation, columns, dets, examples, projections, name, output_name, flows, rows, depth, keys, selected, frames, extents } = a;
+    let Contents { assignment_layout, relation, columns, dets, examples, projections, name, output_name, flows, rows, bound_labels, depth, keys, selected, frames, extents } = a;
     let layout = match (assignment_layout, &b.assignment_layout) {
         (AssignmentLayout::Search, AssignmentLayout::Search) => true,
         (AssignmentLayout::Held(a), AssignmentLayout::Held(b)) => Arc::ptr_eq(a, b),
@@ -220,6 +220,7 @@ fn same_contents(a: &Contents, b: &Contents) -> bool {
         && *selected == b.selected
         && *frames == b.frames
         && *flows == b.flows
+        && *bound_labels == b.bound_labels
         && *rows == b.rows
         && columns.len() == b.columns.len()
         && columns.iter().zip(b.columns.iter()).all(|(a, b)| same_column(a, b))
