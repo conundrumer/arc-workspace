@@ -71,7 +71,7 @@ A model of a case on an input is one choice at each of its picks, as [Semantics]
 
 - A parameter has open values under one of three readings:
     - A `DET` whose body ends in `ONE` marks is a chosen relation, task-wide as [Program](../../docs/arclog/arclog.md#program) gives, and the constraint module solves it. Its models are its open values.
-    - A `DET` by a proposer with `(ONE)` keeps the values that the train pairs leave, as [`DET`](determination.md#det) gives, and those are its open values.
+    - Of the values that a `DET` by a proposer with `(ONE)` gives, those that the train pairs leave are its open values, as [`DET`](determination.md#det) gives.
     - On the derived reading of a `DET_OR_RULE` line with `(ONE)`, each value the proposer gives on the input is a model, as [Open values](../../docs/arclog/arclog.md#open-values) gives, per input.
 - The open values that M_open uses are those left after the intersection across cases of [`DET`](determination.md#det).
 - M_open, as [Open parameters](../../docs/handbook/principles.md#open-parameters) gives, is used by the solves test alone, as [Cases](../../docs/handbook/principles.md#cases) gives. So the output is undefined where the case is undefined at some open value, in that test alone.

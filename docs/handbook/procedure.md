@@ -204,7 +204,7 @@
     + xref: src/checker/render/surveys.py:JUDGE_FREE, src/checker/sweep.py:survey_sweep, docs/handbook/principles.md#choice-points-and-open-parameters
     - An open parameter here is one `analyze.md` gives.
         * comment: The Create passes on c8cbb738, c62e2108 and bda2d7a6 on master, and on cfb2ce5a and d2acf2cb on branch create-rest-pass, read "an open parameter" as a parameter the pairs do not fix, and added `@open` parameters their `analyze.md` lists under "Open parameters: none"; ticket 26-1 records them, from the coordinator session c3a1e90b, 2026-10-26T21:14:17Z.
-    - Where it reports that a parameter's determination keeps fewer values than those at which the model fits every train pair, and the concept fixes that parameter's value, derive that value in the program, as [Stored or derived](docs/handbook/principles.md#stored-or-derived) gives a derivation.
+    - Where it reports that a parameter's determination gives fewer values than those at which the model fits every train pair, and the concept fixes that parameter's value, derive that value in the program, as [Stored or derived](docs/handbook/principles.md#stored-or-derived) gives a derivation.
         + xref: docs/handbook/principles.md#stored-or-derived
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).
     + xref: src/checker/determination_plan.py:survey_determination_plan

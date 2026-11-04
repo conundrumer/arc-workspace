@@ -66,7 +66,7 @@
         - S_M = (M, stored_M)
             + formal
             - stored_M : D(T) ↦ θ, the assignment the determination derives from the evidence
-- **determination**: what derives a stored value from the evidence: the solver's clauses, or, among the values a proposer gives or the values of the parameter's type, those at which the model fits every train pair.
+- **determination**: what derives a parameter's possible values from the evidence: the solver's clauses, the values a proposer gives, or the values of the parameter's type. The stage after the determination keeps the assignments at which the model fits every train pair.
     + xref: programs/proposers.dl
     * comment: The user's words, session 129de8fc-2a0d-4d4d-b950-3a0194c762e2, 2026-10-15T15:02:55Z: "where do we draw the line? maybe there's a grey area where it's nearly bruteforce but , say, stops short of reaching the output?", 15:51:39Z: "in positive?", and 15:53:02Z: "we still use DET to say where a param comes from, and we can attach a proposer to it in arclog", with "send" at 16:21:48Z, which picks the coordinator's option 1 of 16:08:50Z.
     - A determination's clauses read the value from the whole evidence, or keep each value at which a fact of the inputs alone, or of the outputs alone, holds.

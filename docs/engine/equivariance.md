@@ -31,7 +31,7 @@ A program is equivariant when each of these conditions holds:
 - The only constant is `0`, and every γ fixes it: the number zero, and the zero box, which `apply` maps to itself. A constant of any other task type, such as `DIR_T` or a color, is moved by some γ.
 - An instance applies a component to relations of the program. A composition of equivariant functions is equivariant.
 - A chosen relation has the set of models that its constraints give, and no model is preferred. So γ maps the models on a task onto the models on the transformed task, and the output set, one grid per model, moves with the task.
-- A determination keeps every value at which the case solves every train pair. The hypothesis is equivariant, so the case solves T's train pairs at θ exactly when it solves γ·T's at γ·θ, and the kept values move with the task. Where a parameter keeps more than one value, the values are its open values under `(ONE)`, and an error without it. They are never a pick, as [`DET`](determination.md#det) gives.
+- The stage after the determination keeps every value at which the case solves every train pair. The hypothesis is equivariant, so the case solves T's train pairs at θ exactly when it solves γ·T's at γ·θ, and the kept values move with the task. Where a parameter keeps more than one value, the values are its open values under `(ONE)`, and an error without it. They are never a pick, as [`DET`](determination.md#det) gives.
 - A pose label of a `RIGID_DET` meets the type rule of [The RIGID_DET frame](#the-rigid_det-frame).
 
 So equivariance follows from the checker's rules and the lib's definitions, and no run checks it.
