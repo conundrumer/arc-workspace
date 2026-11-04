@@ -628,7 +628,7 @@ fn evidence_table_of(registry: &Registry, fact: FactRelation, examples: Box<[Exa
 /// relation stands before the clause of its `ONE` marks. A shared node gives
 /// only the outputs it has: for an instance, the outputs of its component
 /// in `registry`, and for an assembly, the relations of its own name.
-fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath, declared: &ProgramRelation) -> Option<GraphRelation> {
+pub(crate) fn graph_relation(program: &CheckedProgram, registry: &Registry, form: &NodePath, declared: &ProgramRelation) -> Option<GraphRelation> {
     let nodes = program.program.nodes_of(form);
     let kind = |node: &GraphNodeIndex| &program.program.graph.nodes[node.0 as usize].kind;
     let chosen = nodes.iter().find(|node| matches!(kind(node), DependencyKind::Chosen(name) if ProgramRelation::Declared(name.clone()) == *declared));

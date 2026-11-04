@@ -24,12 +24,13 @@ use std::sync::Arc;
 use arclog::check::CheckedProgram;
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::program::path::NodePath;
-use arclog::program::Form;
+use arclog::program::{Form, ProgramRelation};
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
 use arclog::registry::Registry;
 use arclog::resolver::QueryIdentity;
 
 use crate::columns::CaseColumns;
+use crate::structure::Structure;
 use crate::tables::{Contents, Point, Table, TableRelation};
 
 /// The identities of the tables of a case, the first of them the first
@@ -51,18 +52,22 @@ pub struct Identities {
     /// steps joined by `.`, and the empty string for a flow with no atom or
     /// the atom of the empty path.
     pub atom_paths: Vec<String>,
+    /// The structure of each table's bodies, the instance of each table that
+    /// an instance's output gives and the symmetries of each table's
+    /// columns, as [`crate::structure`] gives them.
+    pub structure: Structure,
 }
 
 /// The query identity of each top-level form of `checked` that a table
 /// stands at, made on its first use.
-struct Forms<'a> {
+pub(crate) struct Forms<'a> {
     checked: &'a CheckedProgram,
     registry: &'a Registry,
     held: StableHashMap<usize, Option<Arc<(QueryIdentity, String)>>>,
 }
 
 impl Forms<'_> {
-    fn of(&mut self, top: usize) -> Option<Arc<(QueryIdentity, String)>> {
+    pub(crate) fn of(&mut self, top: usize) -> Option<Arc<(QueryIdentity, String)>> {
         let (checked, registry) = (self.checked, self.registry);
         self.held
             .entry(top)
@@ -108,11 +113,13 @@ fn port_of(spelled: &str) -> &str {
 }
 
 /// The identities of `evidence`, then of `tables`, each with its token, in a
-/// case of `checked`.
-pub fn identify(checked: &CheckedProgram, registry: &Registry, evidence: &[Table], tables: &[(usize, Table)]) -> Identities {
+/// case of `checked`, whose program declares at each slot the relation in
+/// `relations`.
+pub fn identify(checked: &CheckedProgram, registry: &Registry, relations: &[ProgramRelation], evidence: &[Table], tables: &[(usize, Table)]) -> Identities {
     let mut forms = Forms { checked, registry, held: StableHashMap::default() };
     let mut out = Identities::default();
-    for table in evidence.iter().chain(tables.iter().map(|(_, table)| table)) {
+    let all: Vec<&Table> = evidence.iter().chain(tables.iter().map(|(_, table)| table)).collect();
+    for &table in &all {
         let (ident, columns) = table_identity(&mut forms, table);
         out.tables.push(ident);
         out.columns.push(columns);
@@ -126,12 +133,14 @@ pub fn identify(checked: &CheckedProgram, registry: &Registry, evidence: &[Table
             }
         }
     }
+    let graphs = crate::structure::graph_relations(checked, registry, relations, &all);
+    out.structure = crate::structure::describe(checked, registry, &mut forms, all, graphs, &out);
     out
 }
 
 /// The identity of the form of the atom at `atom` and the atom's canonical
 /// path in it, both empty for the empty path.
-fn atom_identity(forms: &mut Forms, atom: &NodePath) -> (String, String) {
+pub(crate) fn atom_identity(forms: &mut Forms, atom: &NodePath) -> (String, String) {
     let Some((top, rest)) = atom.0.split_first() else { return (String::new(), String::new()) };
     let top = top.0 as usize;
     let Some(identity) = forms.of(top) else { return (String::new(), format!("?{}", spelled(atom))) };
@@ -143,7 +152,7 @@ fn atom_identity(forms: &mut Forms, atom: &NodePath) -> (String, String) {
     }
 }
 
-fn spelled(path: &NodePath) -> String {
+pub(crate) fn spelled(path: &NodePath) -> String {
     path.0.iter().map(|step| step.0.to_string()).collect::<Vec<_>>().join(".")
 }
 
@@ -218,6 +227,9 @@ impl CaseColumns {
         self.tables.column_idents = identities.columns.into_iter().take(tables).collect();
         self.flows.atom_form = identities.atom_forms.into_iter().take(flows).collect();
         self.flows.atom_path = identities.atom_paths.into_iter().take(flows).collect();
+        self.tables.body_ir = identities.structure.bodies.into_iter().take(tables).collect();
+        self.tables.instance = identities.structure.instances.into_iter().take(tables).collect();
+        self.tables.column_symmetries = identities.structure.column_symmetries.into_iter().take(tables).collect();
         debug_assert_eq!(self.flows.atom_form.len(), flows);
         self.identified = true;
         self

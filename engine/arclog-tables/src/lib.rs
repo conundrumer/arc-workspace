@@ -7,6 +7,8 @@
 //!   graph of a checked program.
 //! - [`identity`]: the identity of each table, column and flow atom of a
 //!   case, free of the names and the order that the program's author chose.
+//! - [`structure`]: the bodies that the evaluator joins for each table and the
+//!   symmetries of the tables and bodies, under those identities.
 //! - [`extents`]: the extent of the made frame of each `Box` value of a table,
 //!   from a second evaluation of the bodies that give its rows.
 //! - [`columns`]: the tables of one case program as flat columns, the layout
@@ -29,6 +31,7 @@ pub mod extents;
 pub mod flows;
 pub mod identity;
 pub mod split;
+pub mod structure;
 pub mod summary;
 pub mod tables;
 pub mod study_filters;

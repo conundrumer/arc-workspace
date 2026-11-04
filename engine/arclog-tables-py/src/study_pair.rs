@@ -313,7 +313,8 @@ impl PyStudyTaskEvaluator {
                 None if metadata_only=>case_columns_metadata_in(&materializer,&self.evidence,&tables,self.task.train.len(),None),
                 None=>case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows),
             };
-            let columns=columns.with_identities(identify(gold.program.checked(),Registry::get(),&self.evidence,&tables));
+            let written=gold.program.written_stream(Registry::get(),&self.settings).map_err(|d|d.message.to_string())?;
+            let columns=columns.with_identities(identify(gold.program.checked(),Registry::get(),&written.relations,&self.evidence,&tables));
             let metadata_complete=columns.packing_stop().is_none() && columns.tables.form.len()==self.evidence.len()+tables.len();
             if !full_rows && metadata_complete {cache.record_gold_tables_metadata(&gold.program,columns.entries.table.len())?;}
             report["full_rows"]=full_rows.into();

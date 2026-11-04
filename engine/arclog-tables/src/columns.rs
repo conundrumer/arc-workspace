@@ -237,6 +237,18 @@ pub struct TableColumns {
     /// a name that the program's author chose. The identities of the columns
     /// of a table differ. Given as `ident` is.
     pub column_idents: Vec<Vec<String>>,
+    /// The bodies that the evaluator joins for each table, as JSON
+    /// ([`crate::structure`]), `[]` where a table has none. Given as `ident` is.
+    pub body_ir: Vec<String>,
+    /// For each table that an output of an instance gives, the instance's
+    /// component and the numbers of the tables of its inputs, as JSON
+    /// ([`crate::structure`]), and the empty string for every other table.
+    /// Given as `ident` is.
+    pub instance: Vec<String>,
+    /// For each table, the permutations of its column identities under which
+    /// its content is the same, as JSON ([`crate::structure`]). Given as
+    /// `ident` is.
+    pub column_symmetries: Vec<String>,
     /// The width in cells of a row.
     pub width: Vec<u32>,
     /// The relation of each `DET` the table reads, its columns' types, and
@@ -508,8 +520,9 @@ pub struct CaseColumns {
     /// ([`step_case_columns_by_assignment_in`]), which has no `assigned` part and
     /// gives `assignments` and `example_keys`.
     pub by_assignment: bool,
-    /// Whether the columns hold identities: `ident` and `column_idents` of
-    /// the tables part, `atom_form` and `atom_path` of the flows part.
+    /// Whether the columns hold identities: `ident`, `column_idents`,
+    /// `body_ir`, `instance` and `column_symmetries` of the tables part,
+    /// `atom_form` and `atom_path` of the flows part.
     pub identified: bool,
     pub assignments: AssignmentColumns,
     pub example_keys: ExampleKeyColumns,

@@ -100,6 +100,56 @@ use pyo3::sync::PyOnceLock;
 ///   each sorted list of the form in canonical order); both are empty where no atom reads the source. A
 ///   path that the form's canonical order cannot place is spelled `?` and its source path.
 ///
+/// `gold_tables` also gives, with the identities, the structure of the bodies and the symmetries. Each is
+/// a JSON text, one per table in the order of `column_names`, that depends on no name and no order that the
+/// program's author chose (the edits above, and a reorder of the sites of an atom, of the head sites of an
+/// instance input and of the fields of a record), apart from a swap of two things that a symmetry of the
+/// content exchanges and apart from the table numbers, which follow the order of the tables. A list of the
+/// texts that has no meaning in its order is sorted by the text of its members.
+///
+/// - `tables.body_ir`: a list of the bodies that the evaluator joins for the table, `[]` for a table with none
+///   (an evidence table, a fact relation, a table that faulted). A body is
+///   `{"form","scope","variables","table_columns","symmetries","clause"}`:
+///   `form` is the identity of the top-level form that holds the body (as `flows.atom_form` gives it) and
+///   `scope` the canonical path in it of the body's label scope, empty for the form's own; `variables` lists
+///   `{"id","type"}` for each label of the scope in the order of its canonical position, with `id` `#<n>` for
+///   position `n` (`<scope>/#<n>` in a scope other than the form's own), which is also the `n` of a column
+///   identity `#<n>`, and differs for each variable of the form; `table_columns` lists
+///   `[column identity, variable id]` for each variable that the body binds at a column of the table;
+///   `symmetries` lists the permutations `p` of the positions of the scope's labels that the canonical
+///   search found, under which the scope's content is the same (`p[a] = b` maps variable `#a` to `#b`),
+///   without the identity; and `clause` is the clause IR `{"columns": [variable ids], "nodes": [node]}`
+///   with a node one of:
+///   `{"k":"atom","form","path","read","train_only","args"}`, an atom of a relation with rows, with `form`
+///   and `path` the atom's identity (as `flows.atom_form` and `flows.atom_path` give it, `key` for the
+///   path of the read of an `INIT` form's key clause), `read` one of `{"table": n}` (the table number that
+///   the relation read is, -1 if the export holds no such table), `{"fact": name, "table": n}`,
+///   `{"key": clause}` and `{"undefined": true}`, and `args` a list of `[column identity of the table read,
+///   argument]` (`@example` for the example column of a lifted read, `@<n>` where the table is not in the
+///   export, and, for a key read, the id of the key clause's variable at that column); an argument is
+///   `{"v": variable id}` or `{"t": term}`;
+///   `{"k":"lib","form","path","relation","args","mode","computes"}`, an atom of an algebra relation of the
+///   lib, with `args` at the lib's column names, `mode` the lib columns that the mode the evaluator holds
+///   binds first (`null` for a relation with no mode), and `computes` the ids of the variables that the atom
+///   gives values to: those of its variables that no atom of a relation with rows, no `=` with `0`, no
+///   union's export and no earlier round of algebra relations or `=` places, other than those of an
+///   orientation type, which the evaluator binds by their domain;
+///   `{"k":"cmp","op","first","second","binds_first"}`, a comparison, with `op` one of `= != < <= > >=`,
+///   `first` a variable id, `second` an argument, and `binds_first` whether it makes `first`;
+///   `{"k":"not","outer","body"}` and `{"k":"all","outer","body"}`, a `NOT` and the counterexample
+///   relation of an `ALL`, with `outer` the ids of the enclosing clause's variables that the body reads and
+///   `body` a clause (whose variables are the enclosing form's); and
+///   `{"k":"or","exported","branches"}`, an `OR` or an `IF`, with the ids of the variables it exports and its
+///   clauses.
+/// - `tables.instance`: for a table that an output of an instance gives,
+///   `{"component": lib name, "inputs": [[port name, table number]]}` with the table number of each input
+///   port of the component (-1 for an input that the export holds no table of), and the empty string for
+///   every other table.
+/// - `tables.column_symmetries`: a list of the permutations of the table's column identities under which
+///   the table's content is the same (the permutations of the form's label symmetries that permute the
+///   labels of its columns), each a list of `[column identity, identity of the column it is replaced by]`
+///   for each column it moves.
+///
 /// `projection_cap` is the cap of the projection rows that the tables ran
 /// under.
 ///
@@ -380,6 +430,9 @@ impl PyCaseTables {
         if columns.identified {
             t.list("ident", &c.ident)?;
             t.list("column_idents", &c.column_idents)?;
+            t.list("body_ir", &c.body_ir)?;
+            t.list("instance", &c.instance)?;
+            t.list("column_symmetries", &c.column_symmetries)?;
         }
         t.ints("width", &c.width)?;
         t.list("det_relations", &c.det_relations)?;
