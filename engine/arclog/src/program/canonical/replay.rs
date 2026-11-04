@@ -94,6 +94,9 @@ impl NameWriter for Recording<'_> {
 /// answers with the same bytes. `write` writes `form` alone and reads no
 /// name but through the name writer it is given.
 pub(crate) fn cached_write(form: &Form, names: &dyn NameWriter, write: impl FnOnce(&dyn NameWriter) -> CanonicalForm) -> CanonicalForm {
+    if names.feature_sites() {
+        return write(names);
+    }
     let cache = &super::form::cache(form).writes.0;
     let matches = |found: &CachedWrite| found.calls.iter().all(|(call, bytes)| call.bytes(names)[..] == bytes[..]);
     if let Some(found) = cache.lock().expect("no write panics while it holds the cached writes").iter().find(|found| matches(found)) {

@@ -181,7 +181,7 @@ struct Context<'a> {
 
 impl<'a> Context<'a> {
     fn new(search: &'a mut SearchBudget, names: &'a dyn NameWriter) -> Self {
-        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: false, column_order: 0, head_fields: HeadFields::default() }
+        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: names.feature_sites(), column_order: 0, head_fields: HeadFields::default() }
     }
 
     fn position(&self, label: LabelId) -> u32 {

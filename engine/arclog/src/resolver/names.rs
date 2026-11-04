@@ -214,6 +214,9 @@ pub(super) struct Names {
     /// gives `key_ranks`, and the key's body reads no output of its form, so
     /// this rank is known while that labeling is made.
     pub(super) own_key_ranks: StableHashMap<NameScope, StableHashMap<InstanceName, Box<[(ColumnName, u32)]>>>,
+    /// Whether the content is written with the order of the named sites and
+    /// head sites outside it, as [`NameWriter::feature_sites`] says.
+    pub(super) feature_sites: bool,
 }
 
 impl Names {
@@ -740,6 +743,10 @@ impl Writer<'_> {
 }
 
 impl NameWriter for Writer<'_> {
+    fn feature_sites(&self) -> bool {
+        self.names.feature_sites
+    }
+
     fn write_name(&self, relation: &RelationRef, out: &mut CanonicalWriter) {
         if self.own(relation).is_some() {
             out.write(&[Mark::Own as u8]);

@@ -328,6 +328,7 @@ pub(super) fn resolve_with(
 ) -> WithDiagnostics<ResolvedProgram> {
     let mut builder = Builder::new(case, scope, registry, None);
     builder.canonical_kept = canonical_kept;
+    builder.names.feature_sites = canonical_kept;
     for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput] {
         let node = builder.node(DependencyKind::Fact(fact), &NameScope::Program, None);
         let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));

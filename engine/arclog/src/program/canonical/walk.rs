@@ -322,11 +322,19 @@ pub(super) fn key_body<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: No
 pub(super) fn input<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, input: &'a InstanceInput) {
     let at = sink.open(at, Tag::Input, index, Open::Input(input));
     sink.len(input.head.len());
+    if sink.feature_sites() {
+        // The head sites name their columns, so the order they are written in scopes nothing.
+        sink.members(at, NodeRef::InstanceInput(input), &input.head, &[], &[], |site| NodeRef::Site(site), |sink, at, site| {
+            let head = sink.open(at, Tag::Head, 0, Open::Head);
+            self::site(sink, head, site, &[], None)
+        });
+    } else {
     for (index, site) in input.head.iter().enumerate() {
         let head = sink.open(at, Tag::Head, index, Open::Head);
         // A head site owns its own children, not the input's BODY/sibling
         // sites. Keep every recorded list anchored at that actual node.
         sink.child(NodeRef::InstanceInput(input),NodeRef::Site(site),|sink|self::site(sink, head, site, &[], None));
+    }
     }
     let body = input.body.value();
     sink.child(NodeRef::InstanceInput(input), NodeRef::Body(body), |sink| self::body(sink, at, Tag::Body, 0, body));

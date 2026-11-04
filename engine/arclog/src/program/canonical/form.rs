@@ -63,6 +63,14 @@ pub trait NameWriter {
     fn write_column_in(&self, relation: &super::RelationRef, column: &[super::ColumnName], _order: usize, out: &mut CanonicalWriter) {
         self.write_column(relation, column, out);
     }
+
+    /// Whether the forms written through this writer have the order of their
+    /// named sites and head sites outside them, as a write for features has
+    /// them. A write under such a writer is kept in no cache of a form's
+    /// writes.
+    fn feature_sites(&self) -> bool {
+        false
+    }
 }
 
 /// The relation whose columns a `DEMO_RULE` form's fields are: its
@@ -916,8 +924,10 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         }
         forms.sort();
         if let Some(order) = &mut self.order {
-            assert_eq!(members.len(), parent.children().len(), "{CHILD_FAULT}");
-            order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_,_, index)| *index).collect());
+            // The members are the first children of `parent`; the children after them stay in place.
+            let children = parent.children().len();
+            assert!(members.len() <= children, "{CHILD_FAULT}");
+            order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_,_, index)| *index).chain(members.len() as u32..children as u32).collect());
         }
         let written = || forms.iter().filter(|(_, _, index)| !repeats.contains(&(*index as usize)));
         self.out.len(written().count());
