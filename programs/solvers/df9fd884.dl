@@ -193,6 +193,7 @@ overhang(K, N, B, Id) :-
 
 // The object enters at the entry cup, crosses axis a by offset v to the exit
 // cup, and leaves through a mouth facing d.
+// @ignore: store — its box and offset differ between inputs, `flip_axis` stores its axis, and $StoredDirection stores its direction
 .decl trip(pl: Placement, k: Cups, n: Count, b: Box, a: Axis, v: Offset, d: Dir)
 trip(Pl, K, N, B, A, V, D) :-
     entry(Pl, K, N, B, Id), facing([K, Id], D_in), axis_of(D_in, A),
