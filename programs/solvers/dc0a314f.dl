@@ -301,5 +301,5 @@ out(P_inner, Col, [S, C, U, I]) :-
     // The square of the inputs' one extent: the whole grid, as a box in the
     // grid frame.
     .decl center_frame(b: Box)
-    center_frame(ZERO) :- extent(N), !extent_clash(N).
+    center_frame(B) :- extent(N), !extent_clash(N), uniform_inset(0, B).
 }
