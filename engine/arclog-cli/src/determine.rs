@@ -21,7 +21,7 @@ use arclog::eval::determinations::{det_node, relation_spelled};
 use arclog::eval::examples::{scope_of, ExampleScope};
 use arclog::eval::join::{each_row, union};
 use arclog::eval::rigid::image;
-use arclog::eval::{RelationValue, RunFault};
+use arclog::eval::{output_relation, RelationValue, RunFault};
 use arclog::hash::StableHashMap;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
@@ -32,7 +32,7 @@ use arclog::task::{JudgedTask, Task};
 use arclog::program::{OutputOwner, ParamValue, ProgramRelation, RigidDetName};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
-use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex};
+use arclog::resolver::{resolve_cases, DependencyKind, GraphNodeIndex, Side};
 use arclog::session::TaskSession;
 use arclog::solver::{CaseName, Exclusion, Solver};
 use arclog::terms::{Ident, Term, TermId};
@@ -220,7 +220,7 @@ impl Comparison<'_> {
                 Parameter::Open(values) => union(values.clone()),
             };
             let Some(record) = self.record(relation) else {
-                if !self.in_compared_assembly(relation) {
+                if !self.in_compared_assembly(relation) && self.read_by_program(relation) {
                     findings.push(Finding::Fault(format!("{name}: no `param` record gives the parameter, so its determined value is not compared")));
                 }
                 continue;
@@ -268,6 +268,34 @@ impl Comparison<'_> {
     /// that `DET`'s node in it, or `None` where no case runs it.
     fn det(&self, relation: &ProgramRelation) -> Option<(&CheckedProgram, GraphNodeIndex)> {
         self.determined.iter().find_map(|case| Some((case.program, det_node(case.program, relation)?)))
+    }
+
+    /// Whether the `OUT` form of some case reads the `DET` of `relation`,
+    /// through clauses and instances and through no task-wide relation's
+    /// body. Such a `DET` is a parameter, which the program reads as stored
+    /// facts. Each other `DET` is part of the determination.
+    fn read_by_program(&self, relation: &ProgramRelation) -> bool {
+        self.determined.iter().any(|case| {
+            let (Some(node), Some(output)) = (det_node(case.program, relation), output_relation(case.program)) else { return false };
+            let graph = &case.program.program.graph;
+            let mut seen = vec![false; graph.nodes.len()];
+            let mut stack = vec![output.node];
+            while let Some(at) = stack.pop() {
+                if std::mem::replace(&mut seen[at.0 as usize], true) {
+                    continue;
+                }
+                if at == node {
+                    return true;
+                }
+                let kind = &graph.nodes[at.0 as usize].kind;
+                if !matches!(kind, DependencyKind::Parameter(_) | DependencyKind::RigidAssembly(_))
+                    && !(matches!(kind, DependencyKind::Chosen(_)) && case.program.program.side(at) == Side::TaskWide)
+                {
+                    stack.extend(graph.reads[at.0 as usize].iter().copied());
+                }
+            }
+            false
+        })
     }
 
     /// Whether the `DET` of `relation` is read by a `RIGID_DET` assembly
