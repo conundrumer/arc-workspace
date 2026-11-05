@@ -489,6 +489,9 @@ fn assignment_key(assignment: &[Assignment]) -> Vec<(String, Vec<Vec<u32>>)> {
     let mut key: Vec<(String, Vec<Vec<u32>>)> = assignment
         .iter()
         .map(|(name, rows)| (arclog::eval::determinations::relation_spelled(name), rows_of(rows).into_iter().map(|row| row.into_iter().map(|id| id.encoding()).collect()).collect()))
+        // A `DET` of the expression's own forms has one value at each assignment
+        // of the state's.
+        .filter(|(name, _): &(String, Vec<Vec<u32>>)| !name.starts_with("&feature_"))
         .collect();
     key.sort();
     key

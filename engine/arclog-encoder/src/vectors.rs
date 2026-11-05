@@ -9,24 +9,26 @@ use std::ops::ControlFlow;
 use arclog::registry::Registry;
 use arclog::types::ValueType;
 
-use crate::encoder::with_table;
+use crate::encoder::with_tables;
 use crate::enumerate::{value_kinds, Space, Typed};
 use crate::expand::Rows;
-use crate::expression::{Feature, Leaf, Reader, Rel};
-use crate::library::library;
-use crate::run::{Evaluated, Host, ModelValue, Value};
+use crate::expression::{Feature, Leaf, Rel};
+use crate::run::{AtAssignment, Evaluated, Host, ModelValue, Value};
 use crate::schema::{ColumnFacts, TableSchema, Tables};
 
-/// The hole of a vector's table, which stands for every table.
+/// The hole of a TableVector's one table, which stands for every table.
 pub const TABLE_HOLE: &str = "&table";
+
+/// An assignment's values, as [`AtAssignment`] holds them.
+type Assignment = Vec<(String, Vec<Vec<u32>>)>;
 
 /// The tables of the enumeration of a vector's names: its one table has no
 /// column that a name could write.
-struct AbstractTable;
+struct AbstractTable<'h>(&'h [String]);
 
-impl Tables for AbstractTable {
+impl Tables for AbstractTable<'_> {
     fn table(&self, name: &str) -> Option<TableSchema> {
-        (name == TABLE_HOLE).then(|| TableSchema { columns: Vec::new(), stored: None, per_input: true, has_example: false })
+        self.0.iter().any(|hole| hole == name).then(|| TableSchema { columns: Vec::new(), stored: None, per_input: true, has_example: false })
     }
 
     fn accepts(&self, _forms: &[String]) -> Result<(), String> {
@@ -52,43 +54,46 @@ pub struct Entry {
 
 /// Whether a root gives a number: a count, whether a relation has a row, or a
 /// value-set over one number column.
-fn gives_number(feature: &Feature, term: &Typed, space: &Space<'_>) -> bool {
-    let _ = space;
+fn gives_number(feature: &Feature, term: &Typed) -> bool {
     match feature {
         Feature::Nonempty(_) | Feature::Cardinality(_) => true,
         Feature::ValueSet(_, columns) => {
             let [one] = &columns[..] else { return false };
-            let name = one.trim_start_matches('?');
-            let name = crate::expand::label_of(name);
+            let name = crate::expand::label_of(one.trim_start_matches('?'));
             term.columns.iter().any(|column| (column.name == *one || column.name == name) && matches!(column.ty, Some(ValueType::Int | ValueType::Nat)))
         }
         Feature::Call(..) => false,
     }
 }
 
-/// The vector entries of every size up to `size`, sorted by name.
-pub fn entries(size: usize, program_relations: bool, max_inputs: Option<usize>, limit: Option<usize>) -> Vec<Entry> {
+/// The vector entries of every size up to `size`, over the table holes `holes`,
+/// sorted by name.
+pub fn entries(holes: &[String], size: usize, program_relations: bool, max_inputs: Option<usize>, limit: Option<usize>) -> Vec<Entry> {
     let registry = Registry::get();
-    let tables = AbstractTable;
+    let tables = AbstractTable(holes);
     let mut found: BTreeMap<String, Entry> = BTreeMap::new();
     for task_wide in [false, true] {
         let space = Space {
             registry,
             tables: &tables,
             task_wide,
-            table_names: vec![TABLE_HOLE.to_string()],
+            table_names: holes.to_vec(),
             program_relations,
             kinds: value_kinds(),
             max_inputs,
             frames: Vec::new(),
+            thin: None,
         };
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for at in 0..=size {
             let mut terms = Vec::new();
             let _ = space.generate(&lower, at, &mut |term| {
                 let flow = space.roots(&term, &mut |feature| {
-                    if gives_number(&feature, &term, &space) {
-                        add_entry(&mut found, feature, task_wide);
+                    if gives_number(&feature, &term) {
+                        // A term of the task-wide space is task-wide only with a task-wide leaf.
+                        if let Some(entry) = entry_of(feature).filter(|entry| !task_wide || !entry.per_input) {
+                            found.entry(entry.expression.clone()).or_insert(entry);
+                        }
                     }
                     if limit.is_some_and(|limit| found.len() >= limit) { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
                 });
@@ -103,28 +108,24 @@ pub fn entries(size: usize, program_relations: bool, max_inputs: Option<usize>, 
     found.into_values().collect()
 }
 
-fn add_entry(found: &mut BTreeMap<String, Entry>, feature: Feature, task_wide: bool) {
-    let Some(rel) = feature.relation() else { return };
+/// The vector entry of the expression `feature`.
+pub fn entry_of(feature: Feature) -> Option<Entry> {
+    let rel = feature.relation()?;
     let mut wide = false;
     let mut reads_output = false;
     rel.each_leaf(&mut |leaf| {
         wide |= matches!(leaf, Leaf::ExInput | Leaf::ExOutput | Leaf::Proposer(_));
         reads_output |= matches!(leaf, Leaf::Output);
     });
-    // A term of the task-wide space is task-wide only with a task-wide leaf.
-    if task_wide && !wide {
-        return;
-    }
-    let expression = feature.to_string();
-    found.entry(expression.clone()).or_insert(Entry { expression, feature, per_input: !wide, reads_output });
+    Some(Entry { expression: feature.to_string(), per_input: !wide, reads_output, feature })
 }
 
-/// The ground expression that `entry` gives on `table`.
-fn ground(entry: &Entry, table: &str) -> Feature {
+/// The ground expression that `entry` gives on `tables`, each hole's table.
+fn ground(entry: &Entry, tables: &[(String, String)]) -> Feature {
     match &entry.feature {
-        Feature::Nonempty(rel) => Feature::Nonempty(with_table(rel, table)),
-        Feature::Cardinality(rel) => Feature::Cardinality(with_table(rel, table)),
-        Feature::ValueSet(rel, columns) => Feature::ValueSet(with_table(rel, table), columns.clone()),
+        Feature::Nonempty(rel) => Feature::Nonempty(with_tables(rel, tables)),
+        Feature::Cardinality(rel) => Feature::Cardinality(with_tables(rel, tables)),
+        Feature::ValueSet(rel, columns) => Feature::ValueSet(with_tables(rel, tables), columns.clone()),
         Feature::Call(name, args) => Feature::Call(name.clone(), args.clone()),
     }
 }
@@ -144,64 +145,73 @@ fn model_number(feature: &Feature, value: &Value, model: &ModelValue) -> Option<
     }
 }
 
-/// One vector: the name of each number, and its value, NaN where it has none.
-pub type Vector = Vec<(String, f64)>;
+/// One vector at one assignment of the table: the name of each number, and its
+/// value, NaN where it has none.
+#[derive(Clone, Debug)]
+pub struct Vector {
+    pub assignment: Assignment,
+    pub numbers: Vec<(String, f64)>,
+}
 
 fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
 
-/// The numbers of `entries` on `table` at the assignment of index `assignment`
-/// of each expression's walk.
-pub fn vector(host: &Host, entries: &[Entry], table: &str, assignment: usize) -> Vector {
-    let mut out = Vec::new();
-    let reader = Reader { registry: Registry::get(), library: library(), program_relations: &crate::program_relations::is_program_relation };
-    let _ = reader;
-    for entry in entries {
-        let feature = ground(entry, table);
-        let evaluated = host.evaluate(&feature);
-        let Evaluated::Value(value) = evaluated else {
-            if entry.per_input {
-                for suffix in ["min", "mean", "max"] {
-                    out.push((format!("{}:{suffix}", entry.expression), f64::NAN));
-                }
-            } else {
-                out.push((entry.expression.clone(), f64::NAN));
-            }
-            continue;
-        };
-        let at = value.at.get(assignment).or_else(|| value.at.first());
-        // Within an example, the mean over the models.
-        let mut per_example: Vec<(Option<arclog::terms::Example>, Option<f64>)> = Vec::new();
-        for (example, models) in at.map(|at| &at.examples[..]).unwrap_or_default() {
-            let numbers: Option<Vec<f64>> = models.iter().map(|model| model_number(&feature, &value, model)).collect();
+/// The value of `value` at `assignment`: the entry whose assignment agrees with
+/// it at each `DET` that both name.
+fn at_assignment<'v>(value: &'v Value, assignment: &Assignment) -> Option<&'v AtAssignment> {
+    value.at.iter().find(|at| at.assignment.iter().all(|(name, rows)| assignment.iter().find(|(own, _)| own == name).is_none_or(|(_, own)| own == rows)))
+}
+
+/// The numbers that `entry` gives at one value.
+fn entry_numbers(host: &Host, entry: &Entry, feature: &Feature, value: Option<(&Value, &AtAssignment)>) -> Vec<(String, f64)> {
+    let mut per_example: Vec<(Option<arclog::terms::Example>, Option<f64>)> = Vec::new();
+    if let Some((value, at)) = value {
+        for (example, models) in &at.examples {
+            // Within an example, the mean over the models.
+            let numbers: Option<Vec<f64>> = models.iter().map(|model| model_number(feature, value, model)).collect();
             per_example.push((*example, numbers.filter(|numbers| !numbers.is_empty()).map(|numbers| mean(&numbers))));
         }
-        if entry.per_input {
-            let train = host.task.train.len() as u16;
-            // Over the train examples where the expression has an `output` leaf,
-            // and over every example otherwise.
-            let kept: Vec<Option<f64>> = per_example
-                .iter()
-                .filter(|(example, _)| !entry.reads_output || example.is_none_or(|example| example.index() < train))
-                .map(|(_, number)| *number)
-                .collect();
-            let numbers: Option<Vec<f64>> = kept.iter().copied().collect();
-            let (min, average, max) = match numbers.filter(|numbers| !numbers.is_empty()) {
-                Some(numbers) => (numbers.iter().copied().fold(f64::INFINITY, f64::min), mean(&numbers), numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
-                None => (f64::NAN, f64::NAN, f64::NAN),
+    }
+    if !entry.per_input {
+        return vec![(entry.expression.clone(), per_example.first().and_then(|(_, number)| *number).unwrap_or(f64::NAN))];
+    }
+    let train = host.task.train.len() as u16;
+    // Over the train examples where the expression has an `output` leaf, and
+    // over every example otherwise.
+    let kept: Vec<Option<f64>> = per_example
+        .iter()
+        .filter(|(example, _)| !entry.reads_output || example.is_none_or(|example| example.index() < train))
+        .map(|(_, number)| *number)
+        .collect();
+    let numbers: Option<Vec<f64>> = kept.iter().copied().collect();
+    let (min, average, max) = match numbers.filter(|numbers| !numbers.is_empty()) {
+        Some(numbers) => (numbers.iter().copied().fold(f64::INFINITY, f64::min), mean(&numbers), numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+        None => (f64::NAN, f64::NAN, f64::NAN),
+    };
+    vec![(format!("{}:min", entry.expression), min), (format!("{}:mean", entry.expression), average), (format!("{}:max", entry.expression), max)]
+}
+
+/// The vector of `entries` on the tables `tables`, one table for each hole, at
+/// each assignment of the first of them.
+pub fn vectors(host: &Host, entries: &[Entry], tables: &[(String, String)]) -> Vec<Vector> {
+    let table = tables.first().map_or("", |(_, table)| table.as_str());
+    // The assignments of the table.
+    let assignments: Vec<Assignment> = match host.evaluate(&Feature::Nonempty(Rel::Leaf(Leaf::Table(table.to_string())))) {
+        Evaluated::Value(value) => value.at.iter().map(|at| at.assignment.clone()).collect(),
+        _ => vec![Vec::new()],
+    };
+    let mut out: Vec<Vector> = assignments.into_iter().map(|assignment| Vector { assignment, numbers: Vec::new() }).collect();
+    for entry in entries {
+        let feature = ground(entry, tables);
+        let evaluated = host.evaluate(&feature);
+        for vector in &mut out {
+            let value = match &evaluated {
+                Evaluated::Value(value) => at_assignment(value, &vector.assignment).map(|at| (value, at)),
+                _ => None,
             };
-            out.push((format!("{}:min", entry.expression), min));
-            out.push((format!("{}:mean", entry.expression), average));
-            out.push((format!("{}:max", entry.expression), max));
-        } else {
-            out.push((entry.expression.clone(), per_example.first().and_then(|(_, number)| *number).unwrap_or(f64::NAN)));
+            vector.numbers.extend(entry_numbers(host, entry, &feature, value));
         }
     }
     out
-}
-
-/// The relation under `feature`.
-pub fn relation_of(feature: &Feature) -> Option<&Rel> {
-    feature.relation()
 }

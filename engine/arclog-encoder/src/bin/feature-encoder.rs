@@ -5,9 +5,9 @@
 //!   feature-encoder worked [--corpus DIR] [--tasks DIR]
 //!   feature-encoder encode SOLVER TABLE... [--size D] [--out FILE] [--work-cap N] [--limit N] [--max-inputs N] [--program-relations]
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
-//!   feature-encoder vector SOLVER TABLE [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
+//!   feature-encoder vector SOLVER TABLE [--size D] [--names FILE] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
-//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--tasks-count N] [--shard I/N] [--control] [--out FILE]
+//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
 //! concept case of a solver, and `rows` those of a relation term. `worked`
@@ -28,7 +28,7 @@ use std::time::Instant;
 
 use arclog_encoder::encoder::{encode, json_string, value_json, Counts, Law, Options, Outcome};
 use arclog_encoder::run::{cell_text, concept_program, Evaluated, Host, ModelValue, Value};
-use arclog_encoder::vectors::{entries, vector};
+use arclog_encoder::vectors::{entries, vectors, TABLE_HOLE};
 
 struct Arguments {
     positional: Vec<String>,
@@ -46,10 +46,13 @@ struct Arguments {
     tasks_count: usize,
     shard: (usize, usize),
     control: bool,
+    names: Option<PathBuf>,
+    thin: u32,
+    seconds: f64,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false };
+    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0 };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -64,6 +67,9 @@ fn arguments() -> Arguments {
             "--program-relations" => parsed.program_relations = true,
             "--rate" => parsed.rate = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --rate"),
             "--control" => parsed.control = true,
+            "--thin" => parsed.thin = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --thin"),
+            "--seconds" => parsed.seconds = args.next().and_then(|text| text.parse().ok()).expect("a number after --seconds"),
+            "--names" => parsed.names = Some(args.next().expect("a file after --names").into()),
             "--tables" => parsed.tables_per_task = args.next().and_then(|text| text.parse().ok()).expect("a number after --tables"),
             "--tasks-count" => parsed.tasks_count = args.next().and_then(|text| text.parse().ok()).expect("a number after --tasks-count"),
             "--shard" => {
@@ -98,7 +104,7 @@ fn finished(path: &PathBuf) -> HashSet<String> {
 
 fn run_encode(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(), String> {
     let host = host(arguments, solver)?;
-    let options = Options { size: arguments.size, tables: tables.to_vec(), program_relations: arguments.program_relations, work_cap: arguments.work_cap, limit: arguments.limit, max_inputs: arguments.max_inputs };
+    let options = Options { size: arguments.size, tables: tables.to_vec(), program_relations: arguments.program_relations, work_cap: arguments.work_cap, max_inputs: arguments.max_inputs };
     let skip = arguments.out.as_ref().map(finished).unwrap_or_default();
     let mut out: Box<dyn Write> = match &arguments.out {
         Some(path) => Box::new(std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|error| error.to_string())?)),
@@ -153,7 +159,7 @@ fn json_list(items: &[String]) -> String {
 }
 
 fn run_names(arguments: &Arguments) -> Result<(), String> {
-    let found = entries(arguments.size, arguments.program_relations, arguments.max_inputs, arguments.limit.map(|limit| limit as usize));
+    let found = entries(&[TABLE_HOLE.to_string()], arguments.size, arguments.program_relations, arguments.max_inputs, arguments.limit.map(|limit| limit as usize));
     let mut out: Box<dyn Write> = match &arguments.out {
         Some(path) => Box::new(std::io::BufWriter::new(std::fs::File::create(path).map_err(|error| error.to_string())?)),
         None => Box::new(std::io::BufWriter::new(std::io::stdout())),
@@ -166,18 +172,32 @@ fn run_names(arguments: &Arguments) -> Result<(), String> {
 }
 
 fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), String> {
+    let holes = vec![TABLE_HOLE.to_string()];
     let host = host(arguments, solver)?;
     host.set_work_cap(arguments.work_cap);
-    let found = entries(arguments.size, arguments.program_relations, arguments.max_inputs, arguments.limit.map(|limit| limit as usize));
-    let numbers = vector(&host, &found, table, 0);
+    let found = match &arguments.names {
+        Some(path) => {
+            let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+            let mut found = Vec::new();
+            for line in text.lines().filter(|line| !line.trim().is_empty()) {
+                let feature = host.with_reader(|reader| reader.feature_text(line))?;
+                found.extend(arclog_encoder::vectors::entry_of(feature));
+            }
+            found
+        }
+        None => entries(&holes, arguments.size, arguments.program_relations, arguments.max_inputs, arguments.limit.map(|limit| limit as usize)),
+    };
+    let vectors = vectors(&host, &found, &[(TABLE_HOLE.to_string(), table.to_string())]);
     let mut out: Box<dyn Write> = match &arguments.out {
         Some(path) => Box::new(std::io::BufWriter::new(std::fs::File::create(path).map_err(|error| error.to_string())?)),
         None => Box::new(std::io::BufWriter::new(std::io::stdout())),
     };
-    for (name, number) in &numbers {
-        let _ = writeln!(out, "{number}\t{name}");
+    for (at, vector) in vectors.iter().enumerate() {
+        for (name, number) in &vector.numbers {
+            let _ = writeln!(out, "{at}\t{number}\t{name}");
+        }
     }
-    eprintln!("{} numbers", numbers.len());
+    eprintln!("{} assignments, {} numbers each", vectors.len(), vectors.first().map_or(0, |vector| vector.numbers.len()));
     Ok(())
 }
 
@@ -186,7 +206,7 @@ fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(
     use arclog_encoder::expression::Rel;
     let host = host(arguments, solver)?;
     for task_wide in [false, true] {
-        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, kinds: value_kinds(), max_inputs: arguments.max_inputs, frames: Vec::new() };
+        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, kinds: value_kinds(), max_inputs: arguments.max_inputs, frames: Vec::new(), thin: None };
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for size in 0..=arguments.size {
             let start = Instant::now();
@@ -258,7 +278,7 @@ fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
     }).collect();
     let mut out = std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|error| error.to_string())?);
     let control = arguments.control.then(|| arclog_encoder::law::Element::new("D4_TB", [1, 0, 2, 3, 4, 5, 6, 7, 8, 9]));
-    let sample = Sample { size: arguments.size, rate_per_million: arguments.rate, max_inputs: arguments.max_inputs, work_cap: arguments.work_cap, control };
+    let sample = Sample { size: arguments.size, rate_per_million: arguments.rate, thin_per_million: arguments.thin, seconds: arguments.seconds, max_inputs: arguments.max_inputs, work_cap: arguments.work_cap, control };
     let start = Instant::now();
     let total = tasks.iter().enumerate().filter(|(at, _)| at % arguments.shard.1 == arguments.shard.0).count();
     let mut finished_tasks = 0usize;
@@ -308,7 +328,7 @@ fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
                 });
                 let differences: Vec<String> = tally.differences.iter().take(40).map(|difference| format!("{{\"expression\":{},\"law\":\"{:?}\",\"detail\":{}}}", json_string(&difference.expression), difference.law, json_string(&difference.detail))).collect();
                 let fault = result.err().map_or("null".to_string(), |message| json_string(&message));
-                let _ = writeln!(out, "{{\"key\":\"{key}\",\"seconds\":{:.1},\"compared\":{},\"invariant\":{},\"equivariant\":{},\"both_refused\":{},\"both_fault\":{},\"stopped\":{},\"difference_count\":{},\"fault\":{fault},\"differences\":[{}]}}", began.elapsed().as_secs_f64(), tally.compared, tally.invariant, tally.equivariant, tally.both_refused, tally.both_fault, tally.stopped, tally.differences.len(), differences.join(","));
+                let _ = writeln!(out, "{{\"key\":\"{key}\",\"seconds\":{:.1},\"compared\":{},\"invariant\":{},\"equivariant\":{},\"both_refused\":{},\"both_fault\":{},\"stopped\":{},\"out_of_time\":{},\"difference_count\":{},\"fault\":{fault},\"differences\":[{}]}}", began.elapsed().as_secs_f64(), tally.compared, tally.invariant, tally.equivariant, tally.both_refused, tally.both_fault, tally.stopped, tally.out_of_time, tally.differences.len(), differences.join(","));
                 let _ = out.flush();
             }
         }

@@ -38,8 +38,6 @@ pub struct Options {
     pub program_relations: bool,
     /// The bindings that one expression's evaluation may try.
     pub work_cap: u64,
-    /// The most expressions to visit, for a run that stops early.
-    pub limit: Option<u64>,
     /// The most inputs that a component's binding writes.
     pub max_inputs: Option<usize>,
 }
@@ -105,6 +103,7 @@ pub fn encode(host: &Host, options: &Options, visit: &mut dyn FnMut(Record) -> C
             kinds: value_kinds(),
             max_inputs: options.max_inputs,
             frames: Vec::new(),
+            thin: None,
         })
         .collect();
     let mut lower: Vec<Vec<Vec<Typed>>> = vec![Vec::new(), Vec::new()];
@@ -210,11 +209,14 @@ pub fn json_string(text: &str) -> String {
     out
 }
 
-/// The relation term with each table named by `$T` replaced by `table`.
-pub fn with_table(rel: &Rel, table: &str) -> Rel {
-    let swap = |rel: &Rel| Box::new(with_table(rel, table));
+/// The relation term with each table hole of `tables` replaced by its table.
+pub fn with_tables(rel: &Rel, tables: &[(String, String)]) -> Rel {
+    let swap = |rel: &Rel| Box::new(with_tables(rel, tables));
     match rel {
-        Rel::Leaf(Leaf::Table(name)) if name == crate::vectors::TABLE_HOLE => Rel::Leaf(Leaf::Table(table.to_string())),
+        Rel::Leaf(Leaf::Table(name)) => match tables.iter().find(|(hole, _)| hole == name) {
+            Some((_, table)) => Rel::Leaf(Leaf::Table(table.clone())),
+            None => rel.clone(),
+        },
         Rel::Leaf(_) | Rel::Call(..) => rel.clone(),
         Rel::Project(inner, columns) => Rel::Project(swap(inner), columns.clone()),
         Rel::Select(inner, column, op, operand) => Rel::Select(swap(inner), column.clone(), *op, operand.clone()),
@@ -224,7 +226,7 @@ pub fn with_table(rel: &Rel, table: &str) -> Rel {
         Rel::LibJoin(inner, name, bindings) => Rel::LibJoin(swap(inner), name.clone(), bindings.clone()),
         Rel::Component(name, bindings, port) => Rel::Component(
             name.clone(),
-            bindings.iter().map(|binding| crate::expression::Binding { relation: with_table(&binding.relation, table), ..binding.clone() }).collect(),
+            bindings.iter().map(|binding| crate::expression::Binding { relation: with_tables(&binding.relation, tables), ..binding.clone() }).collect(),
             port.clone(),
         ),
         Rel::Pool { hole, over, kind, body } => Rel::Pool { hole: hole.clone(), over: swap(over), kind: kind.clone(), body: swap(body) },

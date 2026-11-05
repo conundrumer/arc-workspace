@@ -48,6 +48,18 @@ pub struct Space<'a> {
     pub max_inputs: Option<usize>,
     /// The holes in scope, innermost last.
     pub frames: Vec<Frame>,
+    /// For a sample: a salt, and the bindings of a component's first input per
+    /// million that a term of several inputs starts from. The walk then skips
+    /// the terms it leaves out, where a sample of the terms it visits would
+    /// still enumerate them.
+    pub thin: Option<(String, u32)>,
+}
+
+/// Whether the text `text` falls in the sample of `rate` in a million.
+pub fn sampled(text: &str, salt: &str, rate: u32) -> bool {
+    let digest = arclog::hash::digest_text(&format!("{salt}/{text}"));
+    let bits = u32::from_str_radix(&digest[..7], 16).unwrap_or(0);
+    bits % 1_000_000 < rate
 }
 
 fn written(name: &ColumnName) -> String {
@@ -211,6 +223,11 @@ impl Space<'_> {
                 if at == other_at || !meets(&column.ty, &other.ty) {
                     continue;
                 }
+                // Two comparisons of one pair of columns in either order have one
+                // expansion, under the name that comes first in text order.
+                if self.reference(other) < name {
+                    continue;
+                }
                 let operand = Operand::Column(self.reference(other));
                 for op in Op::ALL {
                     if matches!(op, Op::Eq | Op::Ne) || (is_number(&column.ty) && is_number(&other.ty)) {
@@ -365,6 +382,7 @@ impl Space<'_> {
                         kinds: self.kinds.clone(),
                         max_inputs: self.max_inputs,
                         frames,
+                        thin: self.thin.clone(),
                     };
                     // The body's terms, bottom up, with the hole among the relation's columns.
                     let mut held: Vec<Vec<Typed>> = Vec::new();
@@ -446,6 +464,11 @@ impl Space<'_> {
             let Some(relations) = lower.get(own) else { continue };
             for relation in relations {
                 for (binding, key, parameters) in self.input_bindings(input, relation, state) {
+                    if let Some((salt, rate)) = self.thin.as_ref().filter(|_| at == 0 && chosen.len() > 1) {
+                        if !sampled(&binding.to_string(), salt, *rate) {
+                            continue;
+                        }
+                    }
                     let before_key = state.key.clone();
                     let before_parameters = state.parameters.clone();
                     if state.key.is_none() && !key.is_empty() {

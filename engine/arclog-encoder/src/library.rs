@@ -142,6 +142,37 @@ pub fn library() -> &'static Library {
     LIBRARY.get_or_init(|| Library::parse(LIBRARY_TEXT).unwrap_or_else(|fault| panic!("the feature library does not read: {fault}")))
 }
 
+/// The size of a call: the operators of its expansion. Each `INIT` form is one
+/// `component`, and each `QUERY` that reads no instance of the macro is one
+/// operator, since a `QUERY` over an instance's output only labels its columns.
+/// Each relation hole adds the size of what it takes.
+pub fn call_size(name: &str, args: &[Written]) -> usize {
+    let Some(found) = library().get(name) else { return 0 };
+    let mut size = 0;
+    for form in &found.forms {
+        let Ok(list) = items_of(form) else { continue };
+        match list.first().and_then(|head| symbol_of(head).ok()) {
+            Some("INIT") => size += 1,
+            Some("QUERY") => {
+                let reads_instance = list[2..].iter().any(|atom| match items_of(atom).ok().and_then(|atom| atom.first()) {
+                    Some(SExpr::Symbol { text, .. }) => text.starts_with('&') && text.contains('.'),
+                    _ => false,
+                });
+                size += usize::from(!reads_instance);
+            }
+            _ => {}
+        }
+    }
+    let registry = arclog::registry::Registry::get();
+    let reader = crate::expression::Reader { registry, library: library(), program_relations: &crate::program_relations::is_program_relation };
+    for (hole, arg) in found.holes.iter().zip(args) {
+        if matches!(hole.kind, HoleKind::Relation) {
+            size += reader.rel_text(&arg.to_string()).map_or(0, |rel| rel.size());
+        }
+    }
+    size
+}
+
 /// What a hole holds at a call.
 #[derive(Clone, Debug)]
 pub enum Bound {

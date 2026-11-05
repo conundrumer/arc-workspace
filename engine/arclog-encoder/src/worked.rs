@@ -62,6 +62,8 @@ macro_rules! class_ { () => { text!("(component Quotient (equivalent ", equal_!(
 macro_rules! pool_ { () => { "(pool ?x &output Color (component Cardinality (member (project &output ?x) () (?x)) size))" } }
 macro_rules! order_of { ($pool:expr) => { text!("(component Order (member (project ", $pool, " N) () (N)) (score (project ", $pool, " N) () (N N)) maximal)") } }
 
+const TWO: &str = "(INIT &a Connectivity (node (P) (&ink *P)))\n(INIT &b Connectivity (key ((&ink ^Col)) (node (P) (&ink Col *P))))\n(RULE &two (&a.component *P *Id) (&b.component (:key *Col) P (:Id *Id_2)))";
+
 /// Each worked expansion.
 pub const CASES: &[Case] = &[
     feature("25d487eb", "(cardinality (project &ink Col))", Expect::Numbers(&[2, 2, 2, 2])),
@@ -112,6 +114,9 @@ pub const CASES: &[Case] = &[
     feature("009d5c81", "(cardinality SharedColor)", Expect::TaskCells(&["N"], &["3"])),
     feature("070dd51e", "(value-set RarestColor C)", Expect::TaskCells(&["C"], &["c3", "c8"])),
     rel("25d487eb", "(join &ink ChangedPairs (Col C_to))", Expect::TaskRows(19)),
+    Case { solver: "25d487eb", state: TWO, term: "(pool ?x &two Ident (project &two ?x))", relation: true, task_wide: false, columns: &[], expect: Expect::Refused },
+    Case { solver: "25d487eb", state: TWO, term: "(pool ?x &two Ident (component Cardinality (member (project &two ?x) () (?x)) size))", relation: true, task_wide: false, columns: &[], expect: Expect::FirstCells(&["N"], &["1", "2"]) },
+    Case { solver: "142ca369", state: "(RULE &poses (&marker.pose *Pz))", term: "(value-set &poses Pz)", relation: false, task_wide: false, columns: &[], expect: Expect::Refused },
 ];
 
 fn numbers(value: &Value) -> Vec<Vec<usize>> {

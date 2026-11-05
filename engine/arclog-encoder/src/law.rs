@@ -16,7 +16,7 @@ use arclog::terms::{Color, Constant, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::encoder::{law_of, Law};
-use crate::enumerate::{value_kinds, Space, Typed};
+use crate::enumerate::{sampled, value_kinds, Space, Typed};
 use crate::expression::{Feature, Leaf};
 use crate::run::{Evaluated, Host, ModelValue, StoredRows, Value};
 
@@ -134,6 +134,8 @@ pub struct Tally {
     pub both_refused: u64,
     pub both_fault: u64,
     pub stopped: u64,
+    /// The spaces whose walk its time ended.
+    pub out_of_time: u64,
     pub differences: Vec<Difference>,
 }
 
@@ -196,18 +198,16 @@ fn compare_models(expression: &str, element: &Element, value: &Value, moved: &Va
     }
 }
 
-/// Whether the text `expression` falls in the sample of `rate` in a million.
-fn sampled(expression: &str, salt: &str, rate: u32) -> bool {
-    let digest = arclog::hash::digest_text(&format!("{salt}/{expression}"));
-    let bits = u32::from_str_radix(&digest[..7], 16).unwrap_or(0);
-    bits % 1_000_000 < rate
-}
-
 /// What a sample covers.
 #[derive(Clone, Debug)]
 pub struct Sample {
     pub size: usize,
     pub rate_per_million: u32,
+    /// The bindings of a component's first input per million that a term of
+    /// several inputs starts from.
+    pub thin_per_million: u32,
+    /// The seconds that the walk of one space may take.
+    pub seconds: f64,
     pub max_inputs: Option<usize>,
     pub work_cap: u64,
     /// A negative control: the element that the comparison expects, in place
@@ -235,12 +235,18 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
             kinds: value_kinds(),
             max_inputs: sample.max_inputs,
             frames: Vec::new(),
+            thin: Some((element.name.clone(), sample.thin_per_million)),
         };
+        let began = std::time::Instant::now();
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for size in 0..=sample.size {
             let keep = size < sample.size;
             let mut terms = Vec::new();
-            let _ = space.generate(&lower, size, &mut |term| {
+            let walked = space.generate(&lower, size, &mut |term| {
+                if began.elapsed().as_secs_f64() > sample.seconds {
+                    tally.out_of_time += 1;
+                    return ControlFlow::Break(());
+                }
                 let _ = space.roots(&term, &mut |feature| {
                     if space.task_wide && !has_task_wide_leaf(&feature, table) {
                         return ControlFlow::Continue(());
@@ -270,6 +276,9 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
                 }
                 ControlFlow::Continue(())
             });
+            if walked.is_break() {
+                break;
+            }
             lower.push(terms);
         }
     }

@@ -218,7 +218,8 @@ impl Rel {
     /// The count of the term's operators, leaves left out.
     pub fn size(&self) -> usize {
         match self {
-            Rel::Leaf(_) | Rel::Call(..) => 0,
+            Rel::Leaf(_) => 0,
+            Rel::Call(name, args) => crate::library::call_size(name, args),
             Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => 1 + rel.size(),
             Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Union(left, right, _) => 1 + left.size() + right.size(),
             Rel::Component(_, bindings, _) => 1 + bindings.iter().map(|binding| binding.relation.size()).sum::<usize>(),
@@ -237,8 +238,12 @@ impl Feature {
     }
 
     /// The count of the expression's operators, leaves and the root left out.
+    /// A macro's call has the size of its expansion.
     pub fn size(&self) -> usize {
-        self.relation().map_or(0, Rel::size)
+        match self {
+            Feature::Call(name, args) => crate::library::call_size(name, args),
+            _ => self.relation().map_or(0, Rel::size),
+        }
     }
 }
 
