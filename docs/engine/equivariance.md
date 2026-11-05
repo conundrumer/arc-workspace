@@ -114,9 +114,9 @@ The rule is the rule of [The pose](../../docs/arclog/rigid.md#the-pose). It cost
 
 ### Wallpaper's shift
 
-An isometry of a periodic set is a D4 element and a coset of the period translations. `symmetry` holds each shift of the coset under which some cell of the frame lands in the frame, and `action` holds each image under those shifts that lands in the frame, as the Wallpaper row of [Detectors](../../docs/lib-spec.md#detectors) gives. A coset is a set, so no member is chosen. The cost is at most the count of period translations inside the frame, per candidate.
+An isometry of a periodic set is a D4 element and a coset of the period translations. The candidates hold each coset with a member that the frame admits on each axis, toward either edge, whatever the period, so a D4 element takes the candidates of a frame onto those of its image. `symmetry` holds each shift of the coset under which some cell of the frame lands in the frame, and `action` holds each image under those shifts that lands in the frame, as the Wallpaper row of [Detectors](../../docs/lib-spec.md#detectors) gives. A coset is a set, so no member is chosen. The cost is at most the count of period translations inside the frame, per candidate.
 
-The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:582-583`, which a reflection does not map onto the member it keeps. The lib comparison reports that difference as a fault of the Souffle lib. Three files of `gen/` read `action`, 0dfd9992, abbfd121 and c663677b, and none changes. No file reads `symmetry`.
+The Souffle form keeps the one member toward the bottom-right corner, `cells.dl:618-624`, which a reflection does not map onto the member it keeps. The lib comparison reports that difference as a fault of the Souffle lib. Three files of `gen/` read `action`, 0dfd9992, abbfd121 and c663677b, and none changes. No file reads `symmetry`.
 
 ### `same_line`'s margin
 

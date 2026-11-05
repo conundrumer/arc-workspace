@@ -3,7 +3,8 @@
 //! An Ident column has one source. A label at two Ident columns of two
 //! sources has an empty meet, and an `OR`, an `IF` or a type parameter that
 //! takes columns of two sources has no join, so the type check refuses them.
-//! The environment variable `ARCLOG_IDENT_SOURCE` turns the sources on.
+//! The environment variable `ARCLOG_IDENT_SOURCE` can turn the sources off,
+//! as [`ident_mode`] gives.
 
 use std::sync::OnceLock;
 
@@ -47,12 +48,14 @@ pub enum IdentMode {
     Off,
     /// The type check gives each maker's Ident output its own source.
     Type,
-    /// As `Type`, and an Ident's value holds the identity of its maker.
+    /// As `Type`, and the intern table keeps a digest of each content, which
+    /// a table export gives as the Ident's cell.
     Value,
 }
 
-/// The mode that `ARCLOG_IDENT_SOURCE` gives, read at the first call:
-/// unset, empty or `0` for [`IdentMode::Off`], `type`, or `value`.
+/// The mode that `ARCLOG_IDENT_SOURCE` gives, read at the first call: unset
+/// or `type` for [`IdentMode::Type`], `value` for [`IdentMode::Value`], and
+/// empty or `0` for [`IdentMode::Off`].
 ///
 /// # Panics
 ///
@@ -60,12 +63,12 @@ pub enum IdentMode {
 pub fn ident_mode() -> IdentMode {
     static MODE: OnceLock<IdentMode> = OnceLock::new();
     *MODE.get_or_init(|| match std::env::var("ARCLOG_IDENT_SOURCE") {
-        Err(_) => IdentMode::Off,
+        Err(_) => IdentMode::Type,
         Ok(text) => match text.as_str() {
             "" | "0" => IdentMode::Off,
             "type" => IdentMode::Type,
             "value" => IdentMode::Value,
-            other => panic!("ARCLOG_IDENT_SOURCE is `{other}`; it must be unset, `type` or `value`"),
+            other => panic!("ARCLOG_IDENT_SOURCE is `{other}`; it must be unset, empty, `0`, `type` or `value`"),
         },
     })
 }

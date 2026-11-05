@@ -45,7 +45,7 @@
 ### Disjunction
 - An `OR` form holds the branches, each a list of atoms. A fresh variable made in the first branch is exported when every later branch names it; otherwise it is local to its branch. The first branch makes it at a site, or with `(= *X Y)` or `(= *X 0)`. A later branch names it at a site, or with `(= X Z)` or `(= X 0)`.
 - An `OR` that is a clause's whole body is a union: each branch is one body of the relation, and the relation's columns are the labels that the `OR` exports.
-- A label that the `OR` exports has one type over its branches. Where `ARCLOG_IDENT_SOURCE` is set, branches that give an exported label `Ident` columns of two sources are refused ([Ident](lib.md#types)). The same holds for the branches of an `IF`, and for the clauses of one relation.
+- A label that the `OR` exports has one type over its branches. Branches that give an exported label `Ident` columns of two sources are refused ([Ident](lib.md#types)). The same holds for the branches of an `IF`, and for the clauses of one relation.
 
 ### Conditional
 - An `IF` form holds three lists of atoms: the test, the then, and the else. The then holds where the test holds, and the else holds where no binding of the test's fresh labels makes it hold. A label fresh in the test is local to the test and the then. An `IF` with no else would be a conjunction, so it is refused.

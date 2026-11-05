@@ -22,8 +22,8 @@ use crate::domain;
 ///
 /// The period translations are the translations by a multiple of the period
 /// on each axis that has a `period` row, and by none on an axis that has none. A
-/// candidate is a transform with one coset, given by a shift along each
-/// axis less than the period and the frame's extent; a transform that is
+/// candidate is a transform with one coset that has, along each axis, a
+/// member less than the frame's extent, toward either edge; a transform that is
 /// its own inverse is a candidate only where the candidate's square, a
 /// translation, lies in the period translations, or lies off both axes, where the
 /// cells decide. A candidate is one correspondence: each cell with each
@@ -174,18 +174,21 @@ fn is_vertical(axis: TermId) -> bool {
     Geometry::get().axis_edges(axis).contains(Edge::Top)
 }
 
-/// One shift of each coset of the period translations of `periods` that the frame of `grid`
-/// admits: on each axis, zero, or, on an axis with a period, a
-/// magnitude that the frame admits and that is less than the period,
-/// toward the bottom or right edge.
+/// One shift of each coset of the period translations of `periods` that has
+/// a member the frame of `grid` admits: on each axis, zero, or, on an axis
+/// with a period, the [`least_member`] of a magnitude that the frame admits,
+/// toward either edge. So the cosets of a D4 image of the frame are the
+/// images of these cosets.
 fn cosets(lib: Lib<'_>, grid: &StableHashSet<TermId>, periods: &Periods) -> Result<Vec<TermId>, ReachedBound> {
     let geometry = Geometry::get();
     let mut along: StableHashMap<TermId, StableHashSet<i32>> =
         geometry.domain(&ValueType::Axis).iter().map(|&axis| (axis, StableHashSet::from_iter([0]))).collect();
     for &p in grid {
         for (axis, k) in lib.sub_extents(p)? {
-            if periods.of_axis(axis).is_some_and(|period| k < period) {
-                along.get_mut(&axis).expect("an axis of the domain").insert(k);
+            if let Some(period) = periods.of_axis(axis) {
+                let members = along.get_mut(&axis).expect("an axis of the domain");
+                members.insert(least_member(k, period));
+                members.insert(least_member(-k, period));
             }
         }
     }
@@ -201,4 +204,14 @@ fn cosets(lib: Lib<'_>, grid: &StableHashSet<TermId>, periods: &Periods) -> Resu
         shifts = next;
     }
     Ok(shifts)
+}
+
+/// The member of least magnitude of the coset of `shift` under the multiples
+/// of `period`, and the positive one where two members have that magnitude.
+/// Its magnitude is at most that of `shift`, so a long period takes no Box
+/// past the margin bound. It is zero only for the coset of zero, since
+/// [`Periods::admits_square`] reads whether a shift is zero on an axis.
+fn least_member(shift: i32, period: i32) -> i32 {
+    let residue = shift.rem_euclid(period);
+    if residue <= period - residue { residue } else { residue - period }
 }

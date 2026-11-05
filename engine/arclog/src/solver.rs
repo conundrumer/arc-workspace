@@ -1565,7 +1565,7 @@ fn derives(form: &Form) -> Option<Derives> {
 }
 
 /// Whether two forms are of one variant and have equal nodes.
-fn equal_forms(left: &Form, right: &Form) -> bool {
+pub(crate) fn equal_forms(left: &Form, right: &Form) -> bool {
     match (left, right) {
         (Form::Claim(a), Form::Claim(b)) => a == b,
         (Form::Clause(a), Form::Clause(b)) => a == b,
