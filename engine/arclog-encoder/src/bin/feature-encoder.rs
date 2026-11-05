@@ -7,7 +7,7 @@
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder vector SOLVER TABLE [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
-//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--tasks-count N] [--shard I/N] [--out FILE]
+//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--tasks-count N] [--shard I/N] [--control] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
 //! concept case of a solver, and `rows` those of a relation term. `worked`
@@ -45,10 +45,11 @@ struct Arguments {
     tables_per_task: usize,
     tasks_count: usize,
     shard: (usize, usize),
+    control: bool,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1) };
+    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -62,6 +63,7 @@ fn arguments() -> Arguments {
             "--max-inputs" => parsed.max_inputs = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --max-inputs")),
             "--program-relations" => parsed.program_relations = true,
             "--rate" => parsed.rate = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --rate"),
+            "--control" => parsed.control = true,
             "--tables" => parsed.tables_per_task = args.next().and_then(|text| text.parse().ok()).expect("a number after --tables"),
             "--tasks-count" => parsed.tasks_count = args.next().and_then(|text| text.parse().ok()).expect("a number after --tasks-count"),
             "--shard" => {
@@ -240,7 +242,9 @@ fn elements_of(task: &str) -> Vec<arclog_encoder::law::Element> {
     let mut permuted = [0u8; 10];
     permuted.copy_from_slice(&colors);
     let identity = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    vec![Element::new("D4_CW", identity), Element::new("D4_LR", permuted), Element::new("D4_ID", permuted), Element::new("D4_DG", permuted)]
+    let _ = identity;
+    // A quarter turn and a reflection generate D4.
+    vec![Element::new("D4_CW", permuted), Element::new("D4_LR", permuted)]
 }
 
 fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
@@ -253,7 +257,8 @@ fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
         Some(line[start..end].to_string())
     }).collect();
     let mut out = std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|error| error.to_string())?);
-    let sample = Sample { size: arguments.size, rate_per_million: arguments.rate, max_inputs: arguments.max_inputs, work_cap: arguments.work_cap };
+    let control = arguments.control.then(|| arclog_encoder::law::Element::new("D4_TB", [1, 0, 2, 3, 4, 5, 6, 7, 8, 9]));
+    let sample = Sample { size: arguments.size, rate_per_million: arguments.rate, max_inputs: arguments.max_inputs, work_cap: arguments.work_cap, control };
     let start = Instant::now();
     let total = tasks.iter().enumerate().filter(|(at, _)| at % arguments.shard.1 == arguments.shard.0).count();
     let mut finished_tasks = 0usize;

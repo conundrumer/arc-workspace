@@ -139,6 +139,11 @@ pub struct Tally {
 
 fn compare_models(expression: &str, element: &Element, value: &Value, moved: &Value, tally: &mut Tally) {
     let law = law_of(&value.types);
+    // A bound stopped the walk of a side, so that side has no value to compare.
+    if value.stop.is_some() || moved.stop.is_some() {
+        tally.stopped += 1;
+        return;
+    }
     let (Some(first), Some(second)) = (value.at.first(), moved.at.first()) else {
         tally.differences.push(Difference { expression: expression.to_string(), law: Some(law), detail: "a value with no assignment".to_string() });
         return;
@@ -205,6 +210,9 @@ pub struct Sample {
     pub rate_per_million: u32,
     pub max_inputs: Option<usize>,
     pub work_cap: u64,
+    /// A negative control: the element that the comparison expects, in place
+    /// of the one that moves the table, so the check must report differences.
+    pub control: Option<Element>,
 }
 
 /// Compares the features of `table` on `task` with those of its image under
@@ -242,7 +250,7 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
                         return ControlFlow::Continue(());
                     }
                     match (plain.evaluate(&feature), moved.evaluate(&feature)) {
-                        (Evaluated::Value(value), Evaluated::Value(image)) => compare_models(&expression, element, &value, &image, tally),
+                        (Evaluated::Value(value), Evaluated::Value(image)) => compare_models(&expression, sample.control.as_ref().unwrap_or(element), &value, &image, tally),
                         (Evaluated::Refused(_), Evaluated::Refused(_)) => tally.both_refused += 1,
                         (Evaluated::Fault(_), Evaluated::Fault(_)) => tally.both_fault += 1,
                         (a, b) => {
