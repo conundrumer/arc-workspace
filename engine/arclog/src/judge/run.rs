@@ -290,8 +290,10 @@ fn output_sets(
     let mut enumerations: Vec<(Enumeration<'_, '_>, Next)> =
         comparisons.iter().map(|&comparison| (Enumeration::new(comparison), Next::GoOn)).collect();
     let end = evaluation.models(relation, Some(example), &mut |value| {
+        // A model with no row of the relation reads no grid.
+        let no_row = matches!(value, RelationValue::Rows(rows) if rows.is_empty());
         for (&columns, (enumeration, next)) in columns.iter().zip(&mut enumerations) {
-            if *next == Next::GoOn {
+            if *next == Next::GoOn && !no_row {
                 *next = enumeration.push(grid(value, columns));
             }
         }

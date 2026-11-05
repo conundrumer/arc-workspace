@@ -101,18 +101,18 @@ impl<'p, 'a> Enumeration<'p, 'a> {
         if self.ended.is_some() { Next::Stop } else { Next::GoOn }
     }
 
-    /// The output set the enumeration ends with. An enumeration of no model
-    /// is a fault of the caller, since a case has at least one model, so
-    /// this panics on one.
+    /// The output set the enumeration ends with. An enumeration that took no
+    /// grid, since no model read one, is an undefined grid's.
     pub fn finish(self) -> OutputSet {
         match self.ended {
             Some(Ended::Stopped(stop)) => OutputSet::Stopped(stop),
             Some(Ended::Outside) => OutputSet::Outside,
             None if self.undefined => OutputSet::Undefined,
-            None => {
-                assert!(!self.grids.is_empty(), "an enumeration of at least one model");
-                OutputSet::Grids(self.grids.into_boxed_slice())
-            }
+            None if self.grids.is_empty() => match self.comparison {
+                Comparison::Pair(_) => OutputSet::Outside,
+                Comparison::Full => OutputSet::Undefined,
+            },
+            None => OutputSet::Grids(self.grids.into_boxed_slice()),
         }
     }
 }
