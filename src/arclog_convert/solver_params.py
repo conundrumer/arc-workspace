@@ -473,6 +473,8 @@ class ParamsMixin:
             return "$" + a.name if not a.args else "($" + a.name + " " + " ".join(self.value_text(x) for x in a.args) + ")"
         if isinstance(a, RecordTerm):
             return "(" + " ".join(self.value_text(x) for x in a.args) + ")"
+        if isinstance(a, DefinedName) and a.name == "ZERO":
+            return "(0 0 0 0)"
         return souffle_term(a)
 
     def ignore_line(self, rel: str, rest: str, concept, under: str | None) -> list[str]:
