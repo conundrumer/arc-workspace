@@ -37,7 +37,8 @@
 //! record, no `assign` and no clause of its own. There they are the image of
 //! the record of `&<assembly>.<part>` under the elements that take the
 //! records of the other parts onto the frame, which must agree on the image;
-//! where none does or they differ, the assembly has no value.
+//! where none does or they differ, the assembly has no value. In a form with
+//! no `instance` clause, a part is a frame part only at those stored records.
 
 pub mod renaming;
 
@@ -79,7 +80,7 @@ pub fn evaluate_assembly(
 ) -> Outcome<RelationValue> {
     let root = NodeRef::Program(evaluation.program.program.program.value());
     let Some(NodeRef::RigidDet(rigid)) = node_at(root, form) else { panic!("a `RIGID_DET` form at the form of an assembly output") };
-    let assembly = Assembly::of(evaluation.program, form, rigid)?;
+    let assembly = Assembly::of(evaluation.program, form, rigid)?.with_recorded_parts(bodies);
     let rows = match output {
         OutputStep::Pose => assembly.poses(bodies, example, budget)?,
         step => assembly.placements(assembly.part(step)?, bodies, example, budget)?,
@@ -208,6 +209,18 @@ impl<'e, 'p> Assembly<'e, 'p> {
             parts.push(Part { atom, path: form.child(index), labels, types, own, frame });
         }
         Ok(Assembly { program, form, name: &rigid.name, key, key_labels, key_types, key_own, instance, instance_labels, parts })
+    }
+
+    /// The assembly, where its form has no `instance` clause, with each part
+    /// that [`Assembly::frame_record`] gives a record as a frame part.
+    fn with_recorded_parts(mut self, bodies: &FormBodies<'_>) -> Self {
+        if self.instance.is_none() {
+            let recorded: Vec<bool> = self.parts.iter().map(|part| self.frame_record(part, bodies).is_some()).collect();
+            for (part, recorded) in self.parts.iter_mut().zip(recorded) {
+                part.frame = recorded;
+            }
+        }
+        self
     }
 
     fn fault(&self, message: String) -> RunFault {
