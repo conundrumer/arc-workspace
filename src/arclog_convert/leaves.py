@@ -2676,7 +2676,7 @@ class Converter:
             if len(kept) == len(pcols) and all(
                     [l.path for l in cols[i][1] if l.kind == "keep"] == [()]
                     and self.alias_base(col.type, r.scope.components) == self.alias_base(
-                        "number" if pc.type == "Nat" else pc.type, ())   # the registry's Nat is Souffle's number
+                        "number" if pc.type in ("Nat", "Int") else pc.type, ())   # the registry's Nat and Int are Souffle's number
                     for (i, col), pc in zip(kept, pcols)):
                 for (i, _), pc in zip(kept, pcols):
                     cols[i] = (dc_replace(cols[i][0], name=pc.name),
