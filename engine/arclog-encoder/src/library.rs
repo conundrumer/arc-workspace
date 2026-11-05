@@ -279,12 +279,6 @@ impl Expander<'_> {
         self.rel(&rel)
     }
 
-    /// The macro `name`, at holes already bound.
-    pub(crate) fn call_named(&mut self, name: &str, holes: Vec<(&str, Bound)>) -> Result<Rows, String> {
-        let found: Macro = self.library.get(name).ok_or_else(|| format!("the library has no macro `{name}`"))?.clone();
-        self.call(&found, holes.into_iter().map(|(hole, bound)| (hole.to_string(), bound)).collect())
-    }
-
     fn call(&mut self, found: &Macro, holes: HashMap<String, Bound>) -> Result<Rows, String> {
         for hole in &found.holes {
             let (of, names) = match holes.get(&hole.name) {

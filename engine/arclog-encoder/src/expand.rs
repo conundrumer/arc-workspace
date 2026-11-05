@@ -1,5 +1,7 @@
 //! The expansion of a ground expression into arclog forms, by the rules of
-//! `work/feature-spec/feature-spec.md#how-an-expression-expands`.
+//! `work/feature-spec/feature-spec.md#how-an-expression-expands`. Each
+//! operator of the grammar is a primitive of this expander, and a macro of the
+//! library names a composition of primitives.
 //!
 //! What reaches the checker is plain arclog, so the expansion decides nothing
 //! that the checker decides: a binding the checker refuses gives forms that it
@@ -11,7 +13,7 @@ use arclog::registry::{ColumnType, Component, Column as LibColumn, InputPort, Li
 use arclog::resolver::registry_columns::component;
 
 use crate::expression::{Binding, Column, Feature, Field, Leaf, Op, Operand, Reader, Rel, Written};
-use crate::library::{library, Bound, HoleKind, Library};
+use crate::library::{library, HoleKind, Library};
 use crate::schema::Tables;
 
 /// The forms of one expression.
@@ -241,18 +243,28 @@ impl Expander<'_> {
         match feature {
             Feature::Nonempty(rel) => {
                 let rows = self.rel(rel)?;
-                self.call_named("nonempty", vec![("?R", Bound::Relation(rows))])
+                let atom = rows.atom(&[]);
+                Ok(self.query(&[atom], Vec::new()))
             }
             Feature::Cardinality(rel) => {
                 let rows = self.rel(rel)?;
-                self.call_named("cardinality", vec![("?R", Bound::Relation(rows))])
+                self.cardinality(&rows)
             }
             Feature::ValueSet(rel, cols) => {
                 let rows = self.rel(rel)?;
-                self.call_named("value-set", vec![("?R", Bound::Relation(rows)), ("?xs", Bound::Columns { of: "?R".to_string(), names: cols.clone() })])
+                self.project(&rows, cols)
             }
             Feature::Call(name, args) => self.call_written(name, args),
         }
+    }
+
+    /// The count of the rows of `rows`, over all its columns.
+    pub(crate) fn cardinality(&mut self, rows: &Rows) -> Result<Rows, String> {
+        let (marks, labels) = fresh_marks(rows);
+        let head = if labels.is_empty() { "()".to_string() } else { format!("((:m {}))", labels.join(" ")) };
+        let instance = self.fresh();
+        self.forms.push(format!("(INIT {instance} Cardinality\n  (member {head}\n    {}))", rows.atom(&marks)));
+        Ok(self.query(&[format!("({instance}.size (:N *N))")], vec!["N".to_string()]))
     }
 
     pub(crate) fn rel(&mut self, rel: &Rel) -> Result<Rows, String> {
@@ -260,7 +272,7 @@ impl Expander<'_> {
             Rel::Leaf(leaf) => self.leaf(leaf),
             Rel::Project(inner, cols) => {
                 let rows = self.rel(inner)?;
-                self.call_named("project", vec![("?R", Bound::Relation(rows)), ("?xs", Bound::Columns { of: "?R".to_string(), names: cols.clone() })])
+                self.project(&rows, cols)
             }
             Rel::Select(inner, column, op, operand) => {
                 let rows = self.rel(inner)?;
@@ -352,6 +364,23 @@ impl Expander<'_> {
         }
         rows.columns.insert(0, Col::plain("E"));
         Ok(rows)
+    }
+
+    pub(crate) fn project(&mut self, rows: &Rows, cols: &[Column]) -> Result<Rows, String> {
+        let mut taken = Vec::new();
+        let mut marks = Vec::new();
+        let mut labels = Vec::new();
+        for name in cols {
+            let index = rows.index(name)?;
+            if marks.iter().any(|(held, _): &(usize, Mark)| *held == index) {
+                return Err(format!("`project` names `{name}` twice"));
+            }
+            let label = unique(&label_of(name), &mut taken);
+            marks.push((index, Mark::Fresh(label.clone())));
+            labels.push(label);
+        }
+        let atom = rows.atom(&marks);
+        Ok(self.query(&[atom], labels))
     }
 
     pub(crate) fn select(&mut self, rows: &Rows, column: &str, op: Op, operand: &Operand) -> Result<Rows, String> {

@@ -1,27 +1,6 @@
-;; The feature library: the generating set that `engine/arclog-encoder` reads.
-;; A `fragment` gives a relation with one label per column, which its `gives`
-;; names. A `feature` ends in `EXPORT`.
-;;
-;; The operators whose arguments are no relation, column, grid or list of
-;; columns, and those that read the registry, stand in the crate's expander:
-;; `select`, `join`, `antijoin`, `union`, `lib-join`, `component` and `pool`.
-
-;; The aggregates.
-
-(feature (nonempty (?R relation))
-  "Whether the relation has a row."
-  (EXPORT (?R)))
-
-(feature (cardinality (?R relation))
-  "The relation's count of rows, over all its columns."
-  (INIT &c Cardinality
-    (member ((:m (others ?R)))
-      (?R (*others ?R))))
-  (EXPORT (&c.size ^N)))
-
-(feature (value-set (?R relation) (?xs columns ?R))
-  "The set of the values of the relation's columns."
-  (EXPORT (?R (?xs ^))))
+;; The feature library: compositions of the expander's primitives, which
+;; `engine/arclog-encoder` reads. A `fragment` gives a relation with one label
+;; per column, which its `gives` names. A `feature` ends in `EXPORT`.
 
 ;; A ratio is two numbers, each from its own atom.
 
@@ -34,14 +13,6 @@
     (member ((:m (others ?B)))
       (?B (*others ?B))))
   (EXPORT (&a.size ^N) (&b.size (:N ^N_2))))
-
-;; The fragments.
-
-(fragment (project (?R relation) (?xs columns ?R))
-  "The relation's rows at some of its columns."
-  (QUERY &p
-    (?R (?xs *)))
-  (gives &p))
 
 (fragment (join-label (?R relation) (?p column ?R) (?grid grid))
   "A relation's rows with a grid's color at a column of cells."
