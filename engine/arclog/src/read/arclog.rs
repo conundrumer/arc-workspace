@@ -176,6 +176,9 @@ pub(super) struct Reader {
     /// Whether the reader reads the body of a key clause, where a `^`
     /// label stands (`docs/arclog/arclog.md#instance`).
     in_key_body: bool,
+    /// Whether the reader reads a feature's forms, which read `output`, the
+    /// program relations and a lib name constant.
+    pub(super) feature_forms: bool,
     pub(super) diagnostics: Vec<Diagnostic>,
     nodes: Vec<(NodePath, NodeLayout)>,
 }
@@ -191,7 +194,7 @@ impl Reader {
 
     /// A reader whose read `&x.y` names the outputs of `owners`.
     pub(super) fn with_owners(owners: Owners) -> Self {
-        Reader { owners, in_key_body: false, diagnostics: Vec::new(), nodes: Vec::new() }
+        Reader { owners, in_key_body: false, feature_forms: false, diagnostics: Vec::new(), nodes: Vec::new() }
     }
 
     /// The layout of the nodes read, as nodes of `file`.
@@ -319,6 +322,14 @@ impl Reader {
     fn relation_ref(&mut self, text: &str, place: SourcePlace) -> R<RelationRef> {
         if let Some(fact) = parse(sp::FACT_RELATIONS, text) {
             return Ok(RelationRef::Fact(fact));
+        }
+        if self.feature_forms {
+            if text == sp::OUTPUT_FACT {
+                return Ok(RelationRef::Fact(FactRelation::Output));
+            }
+            if let Some(fact) = ProgramFact::of_name(text) {
+                return Ok(RelationRef::Fact(FactRelation::Program(fact)));
+            }
         }
         if text.starts_with(sp::DECLARED_MARK) {
             return Ok(match self.program_relation(text, place)? {
@@ -695,6 +706,13 @@ impl Reader {
     /// children of `path`, with its tokens in `record`.
     fn atom(&mut self, list: &List, path: &NodePath, scope: &LabelScope, record: &mut Record) -> R<Atom> {
         let (name, place) = self.symbol(list.items.first(), "an atom's relation", list.place)?;
+        if self.feature_forms && name == sp::LIB_NAME {
+            let (text, text_place) = self.string(list.items.get(1), "a lib name's text", list.place)?;
+            record.token(place);
+            record.token(text_place);
+            let sites = self.sites(&list.items[2..], path, scope, record, false);
+            return Ok(Atom { relation: RelationRef::Fact(FactRelation::Name(crate::terms::LibNameId::of(text))), sites });
+        }
         let relation = self.relation_ref(name, place)?;
         record.token(place);
         let sites = self.sites(&list.items[1..], path, scope, record, false);

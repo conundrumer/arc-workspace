@@ -20,6 +20,8 @@ pub enum ValueType {
     Color,
     Example,
     Unit,
+    /// A lib name: equality alone, and every element of the group fixes it.
+    LibName,
     Box,
     Position,
     Offset,
@@ -56,6 +58,7 @@ impl std::fmt::Debug for ValueType {
             ValueType::Color => "Color",
             ValueType::Example => "Example",
             ValueType::Unit => "Unit",
+            ValueType::LibName => "LibName",
             ValueType::Box => "Box",
             ValueType::Position => "Position",
             ValueType::Offset => "Offset",
@@ -196,6 +199,7 @@ impl ValueType {
             | ValueType::Color
             | ValueType::Example
             | ValueType::Unit
+            | ValueType::LibName
             | ValueType::Box
             | ValueType::Position
             | ValueType::Offset

@@ -868,6 +868,12 @@ impl TaskSession {
         facts.entry((fact, example)).or_insert_with(|| Arc::new(task.fact_rows(fact, example))).clone()
     }
 
+    /// Gives `fact`, task-wide, the rows `rows`, for a fact relation that the
+    /// task does not give: a program relation of the session's state.
+    pub fn provide_fact(&self, fact: FactRelation, rows: Relation) {
+        self.facts.lock().expect(UNPOISONED).insert((fact, None), Arc::new(rows));
+    }
+
     /// Whether the session's bytes lie within its bound. The bytes are the
     /// larger of two counts:
     ///

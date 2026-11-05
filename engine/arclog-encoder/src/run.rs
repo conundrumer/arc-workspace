@@ -30,7 +30,8 @@ use arclog::types::{GraphRelation, ValueType};
 use crate::expand::{expand, expand_at, expand_rel, Expanded};
 use crate::expression::{Feature, Reader, Rel};
 use crate::library::library;
-use crate::schema::{graph_relation, table_schema, TableSchema, Tables};
+use crate::expand::Rows;
+use crate::schema::{graph_relation, table_schema, ColumnFacts, TableSchema, Tables};
 
 /// The text of an `OUT` form, for a state that has none: it reads nothing that
 /// a feature reads, and the checker refuses a program with no `OUT` form.
@@ -94,6 +95,16 @@ pub struct Host {
 impl Tables for Host {
     fn table(&self, name: &str) -> Option<TableSchema> {
         table_schema(self.base.checked(), name)
+    }
+
+    fn accepts(&self, forms: &[String]) -> Result<(), String> {
+        self.checked_with(forms).map(|_| ())
+    }
+
+    fn columns_of(&self, forms: &[String], rows: &Rows) -> Result<Vec<ColumnFacts>, String> {
+        let registry = Registry::get();
+        let program = self.checked_with(forms)?;
+        crate::schema::column_facts(program.checked(), registry, rows)
     }
 }
 
@@ -184,11 +195,16 @@ impl Host {
         }
     }
 
+    /// The state with `forms` after its queries, checked.
+    fn checked_with(&self, forms: &[String]) -> Result<StudyProgram, String> {
+        let text = format!("{}\n{}\n{}\n", self.before, forms.join("\n"), self.out);
+        StudyProgram::from_feature_forms_cached(&text, Registry::get(), &mut self.cache.borrow_mut())
+    }
+
     /// Checks and evaluates the forms of `expanded`.
     pub fn run(&self, expanded: Expanded) -> Evaluated {
-        let text = format!("{}\n{}\n{}\n", self.before, expanded.forms.join("\n"), self.out);
         let registry = Registry::get();
-        let program = match StudyProgram::from_sexp_cached(&text, registry, &mut self.cache.borrow_mut()) {
+        let program = match self.checked_with(&expanded.forms) {
             Ok(program) => program,
             Err(message) => return Evaluated::Refused(message),
         };
@@ -197,6 +213,11 @@ impl Host {
             return Evaluated::Fault(format!("the program has no relation `{}`", expanded.export));
         };
         let types: Vec<ValueType> = checked.types.columns(&relation).map(<[ValueType]>::to_vec).unwrap_or_default();
+        // A `Pose` is not observable: the pose rule lets a derived column take
+        // one, and a frame change moves it.
+        if types.iter().any(|ty| matches!(ty, ValueType::Pose(_))) {
+            return Evaluated::Refused("a `Pose` stands at an exported column".to_string());
+        }
         let row_names = checked.program.column_names(relation.node).unwrap_or_default();
         let dets = relation_dets(checked, relation.node);
         let decoder = Decoder::new(&self.task, &self.session, registry, self.constructions, &self.settings);
@@ -280,6 +301,7 @@ pub fn cell_text(id: TermId, ty: &ValueType) -> String {
         Term::Constant(Constant::Example(example)) => format!("e{}", example.index()),
         Term::Constant(Constant::Orientation(constant)) => Registry::get().constant_name(constant).to_string(),
         Term::Constant(Constant::Unit) => "unit".to_string(),
+        Term::Constant(Constant::LibName(name)) => format!("{:?}", &*name.text()),
         Term::Box(margins) => format!("[{},{},{},{}]", margins.top, margins.bottom, margins.left, margins.right),
         Term::Ident(_) => format!("#{}", id.encoding()),
     }

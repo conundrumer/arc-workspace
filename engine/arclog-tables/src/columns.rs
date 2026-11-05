@@ -1326,6 +1326,7 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType, idents: Option<&mu
         Term::Constant(Constant::Color(color)) => out.push(i32::from(color.digit())),
         Term::Constant(Constant::Example(example)) => out.push(i32::from(example.index())),
         Term::Constant(Constant::Unit) => out.push(0),
+        Term::Constant(Constant::LibName(_)) => out.push(id.encoding() as i32),
         term @ (Term::Constant(Constant::Orientation(_)) | Term::Ident(_)) => out.push(cell_of(term)),
     }
 }
@@ -1722,8 +1723,9 @@ pub(crate) fn column_frames(names: &TableNames, contents: &Contents) -> Vec<Stri
 /// `columns`, empty for none: `input` or `output` at `P`.
 pub(crate) fn fact_frames(fact: FactRelation, columns: &[TableColumn]) -> Vec<String> {
     let grid = match fact {
-        FactRelation::ExOutput => OUTPUT_FRAME,
+        FactRelation::ExOutput | FactRelation::Output => OUTPUT_FRAME,
         FactRelation::Input | FactRelation::ExInput => INPUT_FRAME,
+        FactRelation::Program(_) | FactRelation::Name(_) => "",
     };
     columns.iter().map(|column| if column.name == "P" && has_frame(&column.ty) { grid.to_owned() } else { String::new() }).collect()
 }

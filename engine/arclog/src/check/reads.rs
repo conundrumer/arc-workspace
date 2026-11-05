@@ -109,7 +109,7 @@ fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, ato
     };
     match (side, fact) {
         (Side::PerInput, Some(FactRelation::ExInput | FactRelation::ExOutput)) => Some(Refused::ExFact),
-        (Side::TaskWide, Some(FactRelation::Input)) => Some(Refused::InputFact),
+        (Side::TaskWide, Some(FactRelation::Input | FactRelation::Output)) => Some(Refused::InputFact),
         (Side::PerInput, None) if reads_example(program.example_columns(node, crate::resolver::output_of(&atom.relation)), atom) => {
             Some(Refused::ExampleColumn)
         }

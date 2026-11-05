@@ -6,11 +6,13 @@
 //! - [`expand`]: the expansion of a ground expression into arclog forms.
 //! - [`library`]: the reader of the feature library, and the expansion of a
 //!   call of one of its macros.
+//! - `pool`: the expansion of a `pool`.
 //! - [`run`]: the check and the evaluation of those forms, through the
 //!   engine's evaluator.
 pub mod expand;
 pub mod expression;
 pub mod library;
+pub(crate) mod pool;
 pub mod program_relations;
 pub mod run;
 pub mod schema;

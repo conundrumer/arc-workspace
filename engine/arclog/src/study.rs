@@ -85,6 +85,17 @@ impl StudyProgram {
         Self::from_program_cached(program, Some(layout), registry, cache)
     }
 
+    /// [`StudyProgram::from_sexp_cached`], of a program that holds a feature's
+    /// forms, as [`crate::read::read_feature_forms`] reads them.
+    pub fn from_feature_forms_cached(text:&str,registry:&Registry,cache:&mut CheckCache)->Result<Self,String> {
+        let read = crate::read::read_feature_forms(text).map_err(|d| diagnostics_text(&d))?;
+        if read.diagnostics.iter().any(|d| d.severity == Severity::Error) {
+            return Err(diagnostics_text(&read.diagnostics));
+        }
+        let (program, layout) = read.value;
+        Self::from_program_cached(program, Some(layout), registry, cache)
+    }
+
     /// Takes a decoder's completed AST directly, without printing/reparsing it.
     pub fn from_decoded(program: Node<Program>, registry: &Registry) -> Result<Self, String> {
         Self::from_program(program, None, registry)

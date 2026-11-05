@@ -257,13 +257,24 @@ impl Expander<'_> {
             let arg = args.get(index).ok_or_else(|| format!("the call of `{name}` lacks `{}`", hole.name))?;
             let bound = match &hole.kind {
                 HoleKind::Relation | HoleKind::Grid => Bound::Relation(self.rows_written(arg)?),
-                HoleKind::Column(of) => Bound::Column { of: of.clone(), name: written_symbol(arg)?.to_string() },
+                HoleKind::Column(of) => {
+                    let name = written_symbol(arg)?;
+                    let name = match holes.get(of) {
+                        Some(Bound::Relation(rows)) => self.resolved(rows, name),
+                        _ => name.to_string(),
+                    };
+                    Bound::Column { of: of.clone(), name }
+                }
                 HoleKind::Columns(of) => {
                     // The last hole takes the rest of the call, or one list.
                     let names = match (arg, index + 1 == found.holes.len()) {
                         (Written::List(items), _) => items.iter().map(|item| written_symbol(item).map(str::to_string)).collect::<Result<_, _>>()?,
                         (Written::Symbol(_), true) => args[index..].iter().map(|item| written_symbol(item).map(str::to_string)).collect::<Result<_, _>>()?,
                         (Written::Symbol(one), false) => vec![one.clone()],
+                    };
+                    let names: Vec<String> = match holes.get(of) {
+                        Some(Bound::Relation(rows)) => self.resolved_all(rows, &names),
+                        _ => names,
                     };
                     Bound::Columns { of: of.clone(), names }
                 }

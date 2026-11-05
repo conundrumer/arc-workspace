@@ -217,7 +217,7 @@ pub(super) fn program_relation(relation: &ProgramRelation) -> String {
 /// as `declared` spells it.
 pub(crate) fn relation_ref<'n, S: AsRef<str>>(relation: &'n RelationRef, declared: impl Fn(&'n DeclaredName) -> S) -> String {
     match relation {
-        RelationRef::Fact(fact) => spelling(sp::FACT_RELATIONS, fact).to_owned(),
+        RelationRef::Fact(fact) => fact.spelled(),
         RelationRef::Lib(crate::registry::LibName(name)) => name.to_string(),
         RelationRef::Declared(RelationName(name)) => declared(name).as_ref().to_owned(),
         RelationRef::Output(name) => output_name(name, declared),

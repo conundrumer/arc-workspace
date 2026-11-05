@@ -277,7 +277,7 @@ pub(super) fn reads_example_column(program: &Node<Program>, read: &NodePath, reg
     }
     let scope = SolverScope::default();
     let mut builder = Builder::new(program, &scope, registry, None);
-    for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput] {
+    for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput].into_iter().chain(feature_facts(program)) {
         let node = builder.node(DependencyKind::Fact(fact), &NameScope::Program, None);
         let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));
         builder.target(&NameScope::Program, RelationRef::Fact(fact), Target { node, columns: ColumnsOf::Fixed(columns) });
@@ -308,6 +308,22 @@ pub(super) fn reads_example_column(program: &Node<Program>, read: &NodePath, reg
     }
 }
 
+/// The fact relations that a feature's forms in `program` read, each once: no
+/// other program reads them.
+fn feature_facts(program: &Node<Program>) -> Vec<FactRelation> {
+    let mut facts = Vec::new();
+    for (index, form) in program.value().forms.iter().enumerate() {
+        for read in crate::check::reads::form_reads(form, &NodePath::top(index as u32)) {
+            if let RelationRef::Fact(fact @ (FactRelation::Output | FactRelation::Program(_) | FactRelation::Name(_))) = &read.atom.relation {
+                if !facts.contains(fact) {
+                    facts.push(*fact);
+                }
+            }
+        }
+    }
+    facts
+}
+
 pub(super) fn resolve(
     case: &Node<Program>,
     concept: Option<ConceptReads<'_>>,
@@ -329,7 +345,7 @@ pub(super) fn resolve_with(
     let mut builder = Builder::new(case, scope, registry, None);
     builder.canonical_kept = canonical_kept;
     builder.names.feature_sites = canonical_kept;
-    for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput] {
+    for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput].into_iter().chain(feature_facts(case)) {
         let node = builder.node(DependencyKind::Fact(fact), &NameScope::Program, None);
         let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));
         builder.target(&NameScope::Program, RelationRef::Fact(fact), Target { node, columns: ColumnsOf::Fixed(columns) });

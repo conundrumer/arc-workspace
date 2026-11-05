@@ -286,6 +286,95 @@ pub enum FactRelation {
     Input,
     ExInput,
     ExOutput,
+    /// `output`: the train output of the current example, with no rows on a
+    /// test input. A feature's forms alone read it, as
+    /// [`crate::read::read_feature_forms`] gives them.
+    Output,
+    /// A relation that holds a state's program as data, which a feature's
+    /// forms alone read.
+    Program(ProgramFact),
+    /// The one row of a lib name constant, `(lib_name "text" (:Name *C))`,
+    /// which a feature's forms alone read.
+    Name(crate::terms::LibNameId),
+}
+
+/// The relations that hold a state's program as data. A column holds a lib
+/// name, so the group fixes each of them.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum ProgramFact {
+    QueryKind,
+    QueryAtom,
+    QueryReads,
+    QueryComputes,
+    ColumnType,
+    ColumnSource,
+    ColumnFrame,
+    ColumnLineage,
+    LabelSite,
+}
+
+impl ProgramFact {
+    /// Each program relation.
+    pub const ALL: [ProgramFact; 9] = [
+        ProgramFact::QueryKind,
+        ProgramFact::QueryAtom,
+        ProgramFact::QueryReads,
+        ProgramFact::QueryComputes,
+        ProgramFact::ColumnType,
+        ProgramFact::ColumnSource,
+        ProgramFact::ColumnFrame,
+        ProgramFact::ColumnLineage,
+        ProgramFact::LabelSite,
+    ];
+
+    /// The relation's name.
+    pub fn name(self) -> &'static str {
+        match self {
+            ProgramFact::QueryKind => "query_kind",
+            ProgramFact::QueryAtom => "query_atom",
+            ProgramFact::QueryReads => "query_reads",
+            ProgramFact::QueryComputes => "query_computes",
+            ProgramFact::ColumnType => "column_type",
+            ProgramFact::ColumnSource => "column_source",
+            ProgramFact::ColumnFrame => "column_frame",
+            ProgramFact::ColumnLineage => "column_lineage",
+            ProgramFact::LabelSite => "label_site",
+        }
+    }
+
+    /// The relation's columns.
+    pub fn columns(self) -> &'static [&'static str] {
+        match self {
+            ProgramFact::QueryKind => &["Q", "Kind"],
+            ProgramFact::QueryAtom => &["Q", "Name"],
+            ProgramFact::QueryReads | ProgramFact::QueryComputes => &["Q", "T"],
+            ProgramFact::ColumnType => &["T", "C", "Type"],
+            ProgramFact::ColumnSource => &["T", "C", "Source"],
+            ProgramFact::ColumnFrame => &["T", "C", "Frame"],
+            ProgramFact::ColumnLineage => &["T", "C", "Kind", "Upstream"],
+            ProgramFact::LabelSite => &["Q", "L", "T", "C"],
+        }
+    }
+
+    /// The program relation named `name`.
+    pub fn of_name(name: &str) -> Option<ProgramFact> {
+        ProgramFact::ALL.into_iter().find(|fact| fact.name() == name)
+    }
+}
+
+impl FactRelation {
+    /// The relation's name as a feature's forms write it. A lib name
+    /// constant's is the name, with the text of the constant.
+    pub fn spelled(self) -> String {
+        match self {
+            FactRelation::Input => "input".to_string(),
+            FactRelation::ExInput => "ex_input".to_string(),
+            FactRelation::ExOutput => "ex_output".to_string(),
+            FactRelation::Output => "output".to_string(),
+            FactRelation::Program(fact) => fact.name().to_string(),
+            FactRelation::Name(name) => format!("lib_name {:?}", &*name.text()),
+        }
+    }
 }
 
 /// An atom: a relation and its sites.

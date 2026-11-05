@@ -7,7 +7,6 @@ use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::NodePath;
 use crate::eval::determinations::relation_spelled;
 use crate::program::{column_spelled, Form, OutputOwner, ProgramRelation, RelationRef, SiteArg};
-use crate::read::spelling::{spelling, FACT_RELATIONS};
 use crate::registry::{LibEntry, Registry};
 use crate::resolver::{Resolution, ResolvedProgram};
 
@@ -145,7 +144,7 @@ fn has_columns(program: &ResolvedProgram, registry: &Registry, atom: &NodePath) 
 /// `relation` as the program spells it.
 fn relation_text(relation: &RelationRef) -> String {
     match relation {
-        RelationRef::Fact(fact) => spelling(FACT_RELATIONS, fact).to_owned(),
+        RelationRef::Fact(fact) => fact.spelled(),
         RelationRef::Lib(name) => name.0.to_string(),
         RelationRef::Declared(name) => relation_spelled(&ProgramRelation::Declared(name.clone())),
         RelationRef::Output(name) => relation_spelled(&ProgramRelation::Output(name.clone())),
