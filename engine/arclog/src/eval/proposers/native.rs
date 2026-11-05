@@ -40,11 +40,29 @@ pub(super) struct Context<'a> {
 type Row = Box<[TermId]>;
 type Rows = StableHashSet<Row>;
 
+/// The common extent of each axis across the selected grid scope.
+fn constant_dimensions(grids: Vec<&Grid>, axes: &Axes, with_axis: bool) -> Rows {
+    let mut rows = Rows::default();
+    let Some(&first) = grids.first() else { return rows };
+    for axis in axes.each() {
+        let extent = axis.extent(first);
+        if grids.iter().all(|grid| axis.extent(grid) == extent) {
+            let row: Row = if with_axis {Box::new([axis.term, count(extent)])} else {Box::new([count(extent)])};
+            rows.insert(row);
+        }
+    }
+    rows
+}
+
 /// The rows of the native proposer `name`, whose declaration is `proposer`,
 /// over `grids`, or `None` where no function of this module ports it.
 pub(super) fn rows(name: &str, proposer: &Proposer, grids: &Grids<'_>, context: &Context<'_>) -> Option<RowSet> {
     let axes = Axes::of(context.registry);
     let rows: Rows = match name {
+        "ConstInDim" => constant_dimensions(grids.inputs.clone(), &axes, false),
+        "ConstInDimAxis" => constant_dimensions(grids.inputs.clone(), &axes, true),
+        "ConstOutDim" => constant_dimensions(grids.pairs.iter().map(|(_, output)| *output).collect(), &axes, false),
+        "ConstOutDimAxis" => constant_dimensions(grids.pairs.iter().map(|(_, output)| *output).collect(), &axes, true),
         "AxisDomain" | "ColorDomain" | "D4Domain" | "DiagAxisDomain" | "DiagDirDomain" | "DirDomain" | "NumberDomain"
         | "SenseDomain" | "SymDomain" | "ColorColorDomain" | "DiagDirAxisDomain" | "NumberDirDomain" => {
             domain(proposer, grids, context.registry)

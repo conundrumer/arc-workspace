@@ -727,14 +727,14 @@
 ;;; Along some axis, each output extent differs from its input extent by D, more or less.
 (proposer DimDiff native (columns (D Nat)))
 ;;; An extent of every input.
-(proposer ConstInDim arclog (columns N))
+(proposer ConstInDim native (columns (N Int)))
 ;;; @rare
 ;;; An extent of every input, with its axis.
-(proposer ConstInDimAxis arclog (columns A N))
+(proposer ConstInDimAxis native (columns (A Axis) (N Int)))
 ;;; An extent of every train output.
-(proposer ConstOutDim arclog (columns N))
+(proposer ConstOutDim native (columns (N Int)))
 ;;; An extent of every train output, with its axis.
-(proposer ConstOutDimAxis arclog (columns A N))
+(proposer ConstOutDimAxis native (columns (A Axis) (N Int)))
 ;;; N tiles, with a gap of 0 to 3 between each two, fill an axis of every input. N is 2 to 8. `TileDim` is found apart, so an N and a D need not come from one tiling.
 (proposer TileCount native (columns (N Nat)))
 ;;; Tiles of D cells, with a gap of 0 to 3 between each two, fill an axis of every input. There are 2 to 8 tiles.
