@@ -1,10 +1,3 @@
----
-name: code-editor
-description: "[An editor's brief](prompts/agents/notes/launching.md#an-editors-brief), [A change's brief](prompts/agents/notes/launching.md#a-changes-brief), [Items and files](prompts/agents/notes/launching.md#items-and-files)"
-model: sonnet
-tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
----
-
 + lib: none
 + message: brief
 + document-size-budget: 20600
