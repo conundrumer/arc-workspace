@@ -61,7 +61,7 @@ def grids_values(grids_path, out_path, encoder, rule, size, log=None, work_cap=1
 
 def read_values(path, max_size):
     """The roots of a values file up to `max_size`: their names, their sizes, and a matrix
-    with a row per root and a column per grid, of int64 digests, with 0 for no value."""
+    with a row per root and a column per grid, of words, with 0 for no value."""
     names, sizes, rows = [], [], []
     with open(path) as lines:
         for line in lines:
@@ -73,15 +73,15 @@ def read_values(path, max_size):
                 continue
             names.append(parts[0])
             sizes.append(size)
-            rows.append([0 if v == NO_VALUE else int(v, 16) >> 1 | 1 for v in parts[2].split(' ')])
-    matrix = np.array(rows, dtype=np.int64) if rows else np.zeros((0, 0), dtype=np.int64)
+            rows.append([0 if v == NO_VALUE else int(v, 16) for v in parts[2].split(' ')])
+    matrix = np.array(rows, dtype=np.uint64) if rows else np.zeros((0, 0), dtype=np.uint64)
     return names, np.array(sizes, dtype=np.int32), matrix
 
 
 def claims_of(matrix, others):
     """The roots with one value at every grid of `others`: a mask, and each claim's value."""
     if len(others) == 0 or matrix.shape[0] == 0:
-        return np.zeros(matrix.shape[0], dtype=bool), np.zeros(matrix.shape[0], dtype=np.int64)
+        return np.zeros(matrix.shape[0], dtype=bool), np.zeros(matrix.shape[0], dtype=np.uint64)
     first = matrix[:, others[0]]
     same = np.all(matrix[:, others] == first[:, None], axis=1)
     return same, first
@@ -107,6 +107,22 @@ def classes(matrix):
     if matrix.shape[0] == 0:
         return 0
     return len(np.unique(matrix, axis=0))
+
+
+def item_statistics(held, unique, others, true_place, places):
+    """What an item's statistics read, by class and by root. `held` has a row per root, `unique`
+    a row per class of roots with an equal value vector over the task's instances; `others` are
+    the places that the claims come from, `places` the places compared with `true_place`."""
+    out = {}
+    for tag, matrix in (('', unique), ('_root', held)):
+        mask, value = claims_of(matrix, others)
+        v_true = float(violation(matrix, mask, value, [true_place])[0]) if len(matrix) else 0.0
+        v_other = violation(matrix, mask, value, places) if len(places) else np.zeros(0)
+        out['claims' + tag] = int(mask.sum())
+        out['v_true' + tag] = v_true
+        out['v_other' + tag] = v_other
+        out['auc' + tag] = auc_of(v_true, v_other)
+    return out
 
 
 def write_json_atomic(path, value):
