@@ -69,6 +69,9 @@ def outer(argv):
 
 # ---- the engine's tables
 
+COUNT = 1  # the kind of an entry that gives its row count alone
+
+
 class Tables:
     """The tables of one case, read from the engine's CaseTables."""
 
@@ -144,6 +147,16 @@ class Tables:
         for v in sorted(ids):
             self.ident_label(t, v)
 
+    def entry_key(self, e, t):
+        """The assignment key of an entry, without decoding its row payload."""
+        key = []
+        for i in sorted(self.assigned.get(e, []), key=lambda i: int(self.A['det'][i])):
+            d = int(self.A['det'][i])
+            dtypes = self.T['det_types'][t][d]
+            rows = self.raw_rows(self.A['offset'][i], int(self.A['rows'][i]), dtypes)
+            key.append((self.T['det_relations'][t][d], tuple(tuple(tuple(v) if isinstance(v, tuple) else v for v in r) for r in rows), tuple(dtypes)))
+        return tuple(key)
+
     def entries(self, t):
         """Each entry of table t as (example name, model, assignment key, raw rows, stop)."""
         types = self.T['column_types'][t]
@@ -151,24 +164,24 @@ class Tables:
         for e in self.by_table.get(t, []):
             kind, idx = int(self.E['example_kind'][e]), int(self.E['example_index'][e])
             ex = 'task' if kind == 0 else '%s/%d' % (KIND[kind], idx)
-            key = []
-            for i in sorted(self.assigned.get(e, []), key=lambda i: int(self.A['det'][i])):
-                d = int(self.A['det'][i])
-                dtypes = self.T['det_types'][t][d]
-                rows = self.raw_rows(self.A['offset'][i], int(self.A['rows'][i]), dtypes)
-                key.append((self.T['det_relations'][t][d], tuple(tuple(map(lambda v: tuple(v) if isinstance(v, tuple) else v, r)) for r in rows), tuple(dtypes)))
+            key = self.entry_key(e, t)
             stop = None
             for field in ('fault', 'stop_bound', 'value_stop_bound'):
                 v = self.E[field][e] if field in self.E else None
                 if v is not None and not (isinstance(v, (int,)) and v < 0):
                     stop = '%s %s' % (field, v)
-            rows = self.raw_rows(self.E['offset'][e], int(self.E['rows'][e]), types)
+            rows = self.raw_rows(self.E['offset'][e], int(self.E['rows'][e]), types) if not stop and ('kind' not in self.E or int(self.E['kind'][e]) == 0) else []
             out.append((ex, int(self.E['model'][e]), tuple(key), rows, stop))
         return out
 
+    def counted(self, entry):
+        """Whether the entry gives its row count alone: the engine holds its rows as a product of parts too large to build."""
+        return 'kind' in self.E and int(self.E['kind'][entry]) == COUNT
+
     def assignments(self, t):
         keys = []
-        for _, _, key, _, _ in self.entries(t):
+        for entry in self.by_table.get(t, []):
+            key = self.entry_key(entry, t)
             if key not in keys:
                 keys.append(key)
         return keys
@@ -332,21 +345,24 @@ def pick_cases(cases, name):
     return cases
 
 
-def run_case(arclog, np, c, task, tasks, task_json, query=None):
-    """(Tables, None) for a case, or (None, the reason it gives no tables)."""
+def run_case(arclog, np, c, task, tasks, task_json, query=None, *, settings=None):
+    """(Tables, None) for a case, or (None, the reason it gives no tables). Uses the engine's defaults unless settings is supplied."""
     if c.arclog is None:
         return None, 'no case program: %s' % c.fault
     text = c.arclog
     if query:
         at = text.rfind('(OUT')
         text = (text[:at] + query + '\n\n' + text[at:]) if at >= 0 else text + '\n\n' + query + '\n'
-    settings = arclog.DecodeSettings()
+    if settings is None:
+        settings = arclog.DecodeSettings()
     try:
         program = arclog.StudyProgram.from_sexp(text, settings)
     except ValueError as e:
         return None, 'refused: %s' % e
     evaluator = arclog.StudyTaskEvaluator(task, str(tasks.resolve()), settings)
-    status, ct = evaluator.gold_tables(program, full_rows=True)
+    # The runtime can hold an engine older than this file. Both arguments give each entry's rows; the newer one gives a large product as its parts.
+    rows = 'held_rows' if 'held_rows' in type(evaluator).gold_tables.__text_signature__ else 'full_rows'
+    status, ct = evaluator.gold_tables(program, **{rows: True})
     st = json.loads(status)
     if st.get('status') not in (None, 'complete'):
         return None, 'replay: %s' % st.get('status')
@@ -365,9 +381,9 @@ def cmd_tables(a):
             rec['tables'] = []
             for t, name in enumerate(tb.names):
                 counts, stops = {}, {}
-                for ex, model, key, raw, stop in tb.entries(t):
+                for entry, (ex, model, key, raw, stop) in zip(tb.by_table.get(t, []), tb.entries(t)):
                     if key == (tb.assignments(t) or [()])[0]:
-                        counts.setdefault(ex, []).append(len(raw))
+                        counts.setdefault(ex, []).append(int(tb.E['rows'][entry]) if tb.counted(entry) else len(raw))
                         if stop:
                             stops[ex] = stop
                 columns = []
@@ -404,10 +420,12 @@ def cmd_rows(a):
         return
     names, types = tb.T['column_names'][t], tb.T['column_types'][t]
     keys = tb.assignments(t)
-    for ex, model, key, raw, stop in tb.entries(t):
+    for entry, (ex, model, key, raw, stop) in zip(tb.by_table.get(t, []), tb.entries(t)):
         rec = {'solver': a.task, 'case': c.case, 'input': ex, 'relation': tb.names[t], 'model': model,
                'columns': [{'name': n, 'type': ty} for n, ty in zip(names, types)],
                'rows': [[tb.value(t, ty, v) for ty, v in zip(types, r)] for r in raw]}
+        if tb.counted(entry):
+            rec['product_of_parts'] = int(tb.E['rows'][entry])
         if key:
             rec['assignment'] = {'number': keys.index(key) + 1, 'of': len(keys), 'values': tb.assignment_json(t, key)}
         if stop:
