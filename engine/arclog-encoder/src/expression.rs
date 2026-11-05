@@ -110,6 +110,11 @@ pub enum Rel {
     Select(Box<Rel>, Column, Op, Operand),
     Join(Box<Rel>, Box<Rel>, Vec<(Column, Column)>),
     Antijoin(Box<Rel>, Box<Rel>, Vec<(Column, Column)>),
+    /// The left relation's rows that have a match in the right.
+    Semijoin(Box<Rel>, Box<Rel>, Vec<(Column, Column)>),
+    /// The values of the outer columns at which the domain has a row and each of
+    /// its rows there has a match in the body.
+    All(Box<Rel>, Box<Rel>, Vec<Column>, Vec<(Column, Column)>),
     Union(Box<Rel>, Box<Rel>, Vec<(Column, Operand)>),
     LibJoin(Box<Rel>, String, Vec<(String, Column)>),
     Component(String, Vec<Binding>, String),
@@ -158,6 +163,8 @@ pub enum Feature {
     Nonempty(Rel),
     Cardinality(Rel),
     ValueSet(Rel, Vec<Column>),
+    /// The first relation's count of rows over the second's, as an exact fraction.
+    Ratio(Rel, Rel),
     /// A call of a `feature` of the library, with each argument as written.
     Call(String, Vec<Written>),
 }
@@ -168,7 +175,7 @@ impl Rel {
         match self {
             Rel::Leaf(leaf) => visit(leaf),
             Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => rel.each_leaf(visit),
-            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Union(left, right, _) => {
+            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Semijoin(left, right, _) | Rel::All(left, right, ..) | Rel::Union(left, right, _) => {
                 left.each_leaf(visit);
                 right.each_leaf(visit);
             }
@@ -186,7 +193,7 @@ impl Rel {
         match self {
             Rel::Leaf(_) => {}
             Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => rel.each_call(visit),
-            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Union(left, right, _) => {
+            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Semijoin(left, right, _) | Rel::All(left, right, ..) | Rel::Union(left, right, _) => {
                 left.each_call(visit);
                 right.each_call(visit);
             }
@@ -205,9 +212,34 @@ impl Rel {
             Rel::Leaf(_) => 0,
             Rel::Call(name, args) => crate::library::call_size(name, args),
             Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => 1 + rel.size(),
-            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Union(left, right, _) => 1 + left.size() + right.size(),
+            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Semijoin(left, right, _) | Rel::All(left, right, ..) | Rel::Union(left, right, _) => 1 + left.size() + right.size(),
             // Each bound input past the first combines one more relation, as a `join` does.
             Rel::Component(_, bindings, _) => bindings.len().max(1) + bindings.iter().map(|binding| binding.relation.size()).sum::<usize>(),
+        }
+    }
+}
+
+impl Rel {
+    /// The count of the term's distinct operators: a subexpression that appears
+    /// twice counts once.
+    pub fn distinct_size(&self) -> usize {
+        let mut seen = std::collections::HashSet::new();
+        self.add_distinct(&mut seen)
+    }
+
+    /// The count of the distinct operators of this term that `seen` does not hold.
+    pub fn add_distinct<'r>(&'r self, seen: &mut std::collections::HashSet<&'r Rel>) -> usize {
+        if matches!(self, Rel::Leaf(_)) || !seen.insert(self) {
+            return 0;
+        }
+        match self {
+            Rel::Leaf(_) => 0,
+            Rel::Call(name, args) => crate::library::call_size(name, args),
+            Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => 1 + rel.add_distinct(seen),
+            Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Semijoin(left, right, _) | Rel::All(left, right, ..) | Rel::Union(left, right, _) => {
+                1 + left.add_distinct(seen) + right.add_distinct(seen)
+            }
+            Rel::Component(_, bindings, _) => bindings.len().max(1) + bindings.iter().map(|binding| binding.relation.add_distinct(seen)).sum::<usize>(),
         }
     }
 }
@@ -217,7 +249,7 @@ impl Feature {
     pub fn relation(&self) -> Option<&Rel> {
         match self {
             Feature::Nonempty(rel) | Feature::Cardinality(rel) | Feature::ValueSet(rel, _) => Some(rel),
-            Feature::Call(..) => None,
+            Feature::Ratio(..) | Feature::Call(..) => None,
         }
     }
 
@@ -226,6 +258,10 @@ impl Feature {
     pub fn size(&self) -> usize {
         match self {
             Feature::Call(name, args) => crate::library::call_size(name, args),
+            Feature::Ratio(first, second) => {
+                let mut seen = std::collections::HashSet::new();
+                first.add_distinct(&mut seen) + second.add_distinct(&mut seen)
+            }
             _ => self.relation().map_or(0, Rel::size),
         }
     }
@@ -299,6 +335,7 @@ impl Reader<'_> {
         match (head, &list[1..]) {
             ("nonempty", [rel]) => Ok(Feature::Nonempty(self.rel(rel)?)),
             ("cardinality", [rel]) => Ok(Feature::Cardinality(self.rel(rel)?)),
+            ("ratio", [first, second]) => Ok(Feature::Ratio(self.rel(first)?, self.rel(second)?)),
             ("value-set", [rel, cols @ ..]) if !cols.is_empty() => Ok(Feature::ValueSet(self.rel(rel)?, columns(cols)?)),
             (name, args) if self.library.get(name).is_some_and(|found| found.kind == MacroKind::Feature) => Ok(Feature::Call(name.to_string(), args.iter().map(Written::of).collect::<Result<_, _>>()?)),
             _ => Err(format!("no aggregate at {}", show(expr))),
@@ -325,6 +362,8 @@ impl Reader<'_> {
             }
             ("join", [left, right, rest @ ..]) => Ok(Rel::Join(boxed(left)?, boxed(right)?, pairs(rest)?)),
             ("antijoin", [left, right, rest @ ..]) => Ok(Rel::Antijoin(boxed(left)?, boxed(right)?, pairs(rest)?)),
+            ("semijoin", [left, right, rest @ ..]) => Ok(Rel::Semijoin(boxed(left)?, boxed(right)?, pairs(rest)?)),
+            ("all", [domain, body, outer, rest @ ..]) => Ok(Rel::All(boxed(domain)?, boxed(body)?, columns(items(outer)?)?, pairs(rest)?)),
             ("union", [left, right, rest @ ..]) if !rest.is_empty() => {
                 let pairs = pairs(rest)?.into_iter().map(|(column, operand)| (column, if operand == "0" { Operand::Zero } else { Operand::Column(operand) })).collect();
                 Ok(Rel::Union(boxed(left)?, boxed(right)?, pairs))
@@ -446,6 +485,16 @@ impl fmt::Display for Rel {
                 write_pairs(f, rest)?;
                 f.write_str(")")
             }
+            Rel::Semijoin(left, right, rest) => {
+                write!(f, "(semijoin {left} {right}")?;
+                write_pairs(f, rest)?;
+                f.write_str(")")
+            }
+            Rel::All(domain, body, outer, rest) => {
+                write!(f, "(all {domain} {body} ({})", outer.join(" "))?;
+                write_pairs(f, rest)?;
+                f.write_str(")")
+            }
             Rel::Union(left, right, rest) => {
                 write!(f, "(union {left} {right}")?;
                 for (column, operand) in rest {
@@ -485,6 +534,7 @@ impl fmt::Display for Feature {
             Feature::Nonempty(rel) => write!(f, "(nonempty {rel})"),
             Feature::Cardinality(rel) => write!(f, "(cardinality {rel})"),
             Feature::ValueSet(rel, cols) => write!(f, "(value-set {rel} {})", cols.join(" ")),
+            Feature::Ratio(first, second) => write!(f, "(ratio {first} {second})"),
             Feature::Call(name, args) => {
                 write!(f, "({name}")?;
                 for arg in args {

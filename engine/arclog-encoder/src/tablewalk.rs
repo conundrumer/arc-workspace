@@ -533,7 +533,7 @@ pub struct Stored {
     pub rows: Vec<Option<Arc<Table>>>,
 }
 
-fn cell_bits(value: &serde_json::Value, ty: &ValueType) -> Option<u32> {
+pub fn cell_bits(value: &serde_json::Value, ty: &ValueType) -> Option<u32> {
     use arclog::terms::{Color, Constant, Margins, Term, TermId};
     let term = match ty {
         ty if ty.is_box() => {

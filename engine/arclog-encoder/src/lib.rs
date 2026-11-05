@@ -22,6 +22,13 @@
 //! - [`tablewalk`]: a table's closed roots, keyed by shape.
 //! - [`family`]: the relational shapes that read a table and `output`, in one pass
 //!   per table.
+pub mod catalog;
+mod catalog_boxes;
+mod catalog_cells;
+pub mod catalog_facts;
+mod catalog_orient;
+mod catalog_pairs;
+pub mod catalog_run;
 pub mod closed;
 pub mod encoder;
 pub mod enumerate;

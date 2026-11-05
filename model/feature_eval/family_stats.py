@@ -41,8 +41,17 @@ def family_line(records, d):
         'gain': float(np.mean(gains)) if gains else None, 'gain_interval_99': bootstrap(gains) if len(gains) > 1 else None,
         'auc_last': float(np.mean(last)) if last else None,
         'contingent': float(np.mean([row['contingent'] or 0 for row in rows])),
+        **rows_line(rows),
         'left_out_items': int(sum(len(record['left_out']) for record in records)),
     }
+
+
+def rows_line(rows):
+    """The gain over the comparisons whose mutant has rows at every train pair."""
+    gains = [row['auc_rows'] - row['null_rows'] for row in rows if row.get('auc_rows') is not None and row.get('null_rows') is not None]
+    if not gains:
+        return {}
+    return {'rows_tasks': len(gains), 'rows_gain': float(np.mean(gains)), 'rows_interval_99': bootstrap(gains) if len(gains) > 1 else None}
 
 
 def shape_table(records):

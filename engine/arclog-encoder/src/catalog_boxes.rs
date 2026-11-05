@@ -1,0 +1,156 @@
+//! The catalog's kinds over Box columns. A box's frame is the input's.
+
+use crate::catalog::*;
+use crate::catalog_facts::*;
+
+/// A box as first row, last row, first column and last column.
+type Span = [i32; 4];
+
+pub(crate) fn crop_tests(spans: &[[i32; 4]], f: &PairFacts) -> [bool; 3] {
+    let (input, output) = (&f.input, &f.output);
+    let (mut exact, mut turned, mut mapped) = (false, false, false);
+    for span in spans {
+        let [r0, r1, c0, c1] = *span;
+        if !(0 <= r0 && r0 <= r1 && (r1 as usize) < input.h && 0 <= c0 && c0 <= c1 && (c1 as usize) < input.w) {
+            continue;
+        }
+        let (h, w) = ((r1 - r0 + 1) as usize, (c1 - c0 + 1) as usize);
+        let at = |r: usize, c: usize| input.at(r0 as usize + r, c0 as usize + c);
+        if (h, w) == (output.h, output.w) {
+            let mut same = true;
+            let mut map = [255u8; 10];
+            let mut function = true;
+            for r in 0..h {
+                for c in 0..w {
+                    let (from, to) = (at(r, c), output.at(r, c));
+                    same &= from == to;
+                    let held = &mut map[from as usize];
+                    if *held == 255 {
+                        *held = to;
+                    } else if *held != to {
+                        function = false;
+                    }
+                }
+            }
+            exact |= same;
+            mapped |= function;
+        }
+        if !turned && ((h, w) == (output.h, output.w) || (h, w) == (output.w, output.h)) {
+            turned = (0..8).any(|which| {
+                let (ih, iw) = if which >= 4 { (w, h) } else { (h, w) };
+                (ih, iw) == (output.h, output.w) && (0..ih).all(|r| (0..iw).all(|c| {
+                    let (sr, sc) = image_source(which, r, c, h, w);
+                    at(sr, sc) == output.at(r, c)
+                }))
+            });
+        }
+    }
+    [exact, turned, mapped]
+}
+
+/// The cell of an h by w grid that the image `which` puts at (r, c).
+pub(crate) fn image_source(which: usize, r: usize, c: usize, h: usize, w: usize) -> (usize, usize) {
+    match which {
+        0 => (r, c),
+        1 => (r, w - 1 - c),
+        2 => (h - 1 - r, c),
+        3 => (h - 1 - r, w - 1 - c),
+        4 => (c, r),
+        5 => (h - 1 - c, r),
+        6 => (c, w - 1 - r),
+        _ => (h - 1 - c, w - 1 - r),
+    }
+}
+
+pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
+    let t = view.t;
+    let f = view.f;
+    let output = &f.output;
+    let (hi, wi) = (f.input.h as i32, f.input.w as i32);
+    let mut spans: Vec<Span> = (0..t.rows).map(|row| {
+        let cell = t.at(row, b);
+        [cell[0], hi - 1 - cell[1], cell[2], wi - 1 - cell[3]]
+    }).collect();
+    let by_row = spans.clone();
+    spans.sort_unstable();
+    spans.dedup();
+    // `some box has the output size` reads every box.
+    let sized = spans.iter().any(|span| ((span[1] - span[0] + 1) as usize, (span[3] - span[2] + 1) as usize) == (output.h, output.w));
+    view.put("C some box has the output size", &[b], Value::Bool(sized));
+    if spans.len() > 200 {
+        return;
+    }
+    let crops = crop_tests(&spans, f);
+    view.put("C some box crop of the input is the output", &[b], Value::Bool(crops[0]));
+    view.put("C some box crop of the input is the output up to rotation and reflection", &[b], Value::Bool(crops[1]));
+    view.put("C some box crop of the input maps onto the output by a color map", &[b], Value::Bool(crops[2]));
+    if !f.same {
+        return;
+    }
+    let (h, w) = (output.h as i32, output.w as i32);
+    let hits = spans.iter().filter(|span| output.pieces.iter().any(|piece| [i32::from(piece.span[0]), i32::from(piece.span[1]), i32::from(piece.span[2]), i32::from(piece.span[3])] == **span)).count() as u32;
+    view.put("C boxes that are the box of a component in the output, proportion", &[b], share(hits, spans.len() as u32));
+    // Each box cut to the grid.
+    let cut = |span: &Span| -> Option<[usize; 4]> {
+        let (r0, r1, c0, c1) = (span[0].max(0), span[1].min(h - 1), span[2].max(0), span[3].min(w - 1));
+        (r0 <= r1 && c0 <= c1).then_some([r0 as usize, r1 as usize, c0 as usize, c1 as usize])
+    };
+    let real: Vec<[usize; 4]> = spans.iter().filter_map(cut).collect();
+    if real.is_empty() || real.iter().map(|s| (s[1] - s[0] + 1) * (s[3] - s[2] + 1)).sum::<usize>() > 20000 {
+        return;
+    }
+    let colors: Vec<u16> = real.iter().map(|s| output.colors_in(s[0], s[1], s[2], s[3])).collect();
+    let one = colors.iter().filter(|mask| mask.count_ones() == 1).count() as u32;
+    view.put("C boxes of one output color, proportion", &[b], Value::Share(one, real.len() as u32));
+    view.put("C output colors inside its boxes distinct", &[b], Value::Num(i64::from(colors.iter().fold(0u16, |held, mask| held | mask).count_ones())));
+    if !f.changed.is_empty() {
+        let width = output.w;
+        let mut inside = 0;
+        let mut holding = vec![false; real.len()];
+        f.changed.each(|at| {
+            let (r, c) = (at / width, at % width);
+            let mut any = false;
+            for (place, s) in real.iter().enumerate() {
+                if s[0] <= r && r <= s[1] && s[2] <= c && c <= s[3] {
+                    any = true;
+                    holding[place] = true;
+                }
+            }
+            inside += u32::from(any);
+        });
+        view.put("C changed cells inside its boxes, proportion", &[b], Value::Share(inside, f.changed.count()));
+        view.put("C boxes holding a changed cell, proportion", &[b], Value::Share(holding.iter().filter(|held| **held).count() as u32, real.len() as u32));
+        if let Some(span) = f.changed_span {
+            let whole = [span[0] as usize, span[1] as usize, span[2] as usize, span[3] as usize];
+            view.put("C some box is the box of the changed cells", &[b], Value::Bool(real.contains(&whole)));
+        }
+    }
+    if t.rows > 2000 {
+        return;
+    }
+    let box_colors = |span: &Span| -> u16 { cut(span).map_or(0, |s| output.colors_in(s[0], s[1], s[2], s[3])) };
+    let row_colors: Vec<u16> = by_row.iter().map(box_colors).collect();
+    for other in 0..t.kinds.len() {
+        if other == b {
+            continue;
+        }
+        let (ids, count) = &view.dense[other];
+        let mut first: Vec<Option<u16>> = vec![None; *count as usize];
+        let mut function = true;
+        for row in 0..t.rows {
+            let held = &mut first[ids[row] as usize];
+            match held {
+                None => *held = Some(row_colors[row]),
+                Some(mask) => function &= *mask == row_colors[row],
+            }
+        }
+        view.put("C,C determines the output colors in the box", &[b, other], Value::Bool(function));
+        if t.kinds[other] == Kind::Color {
+            let hits = (0..t.rows).filter(|row| {
+                let value = t.at(*row, other)[0];
+                (0..10).contains(&value) && row_colors[*row] == 1 << value
+            }).count() as u32;
+            view.put("C,C is the output color of the box, proportion", &[b, other], Value::Share(hits, t.rows as u32));
+        }
+    }
+}

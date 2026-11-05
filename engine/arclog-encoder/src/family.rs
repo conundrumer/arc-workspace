@@ -716,11 +716,21 @@ pub fn family_task(path: &str, task_dir: &std::path::Path, families: &Families, 
     let started = std::time::Instant::now();
     let results = run(&outputs, false, &mut tallies);
     let is_last = |at: usize| parsed[at].query == last_query;
+    // The comparisons whose mutant has rows at every train pair, since no feature is
+    // needed to reject a table with no rows.
+    let mutant_rows: Vec<Vec<bool>> = parsed.iter().map(|item| item.mutants.iter().map(&everywhere).collect()).collect();
+    let with_rows = |results: &[Vec<(usize, f64, Vec<f64>, usize)>], size: usize| -> Vec<(usize, f64, Vec<f64>)> {
+        results.iter().enumerate().filter(|(at, _)| !is_last(*at)).map(|(at, item)| {
+            let kept = item[size].2.iter().zip(&mutant_rows[at]).filter(|(_, rows)| **rows).map(|(score, _)| *score).collect();
+            (item[size].0, item[size].1, kept)
+        }).collect()
+    };
     let per_size = |results: &[Vec<(usize, f64, Vec<f64>, usize)>], size: usize, last: bool| -> Vec<(usize, f64, Vec<f64>)> {
         results.iter().enumerate().filter(|(at, _)| is_last(*at) == last).map(|(_, item)| (item[size].0, item[size].1, item[size].2.clone())).collect()
     };
     let distinct_outputs = outputs.iter().map(|table| table.hash).collect::<std::collections::BTreeSet<_>>().len() > 1;
     let mut null_aucs: Vec<Vec<f64>> = vec![Vec::new(); d];
+    let mut null_rows: Vec<Vec<f64>> = vec![Vec::new(); d];
     if distinct_outputs && train > 1 {
         let mut state = 0x2545_f491_4f6c_dd1du64 ^ hash_words(task_name.bytes().map(u64::from)) as u64;
         for _ in 0..nulls {
@@ -742,6 +752,9 @@ pub fn family_task(path: &str, task_dir: &std::path::Path, families: &Families, 
                 if let Some(auc) = auc_of(&per_size(&found, size, false)) {
                     aucs.push(auc);
                 }
+                if let Some(auc) = auc_of(&with_rows(&found, size)) {
+                    null_rows[size].push(auc);
+                }
             }
         }
     }
@@ -755,6 +768,8 @@ pub fn family_task(path: &str, task_dir: &std::path::Path, families: &Families, 
             "auc": auc_of(&rest),
             "auc_last": auc_of(&last),
             "null": mean(&null_aucs[size]),
+            "auc_rows": auc_of(&with_rows(&results, size)),
+            "null_rows": mean(&null_rows[size]),
             "contingent": mean(&rest.iter().map(|found| found.0 as f64).collect::<Vec<_>>()),
             "items": rest.iter().map(|found| found.2.len()).sum::<usize>(),
         })

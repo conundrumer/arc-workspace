@@ -281,6 +281,14 @@ impl Expander<'_> {
                 let rows = self.rel(rel)?;
                 self.project(&rows, cols)
             }
+            Feature::Ratio(first, second) => {
+                let first = self.rel(first)?;
+                let second = self.rel(second)?;
+                let first = self.cardinality(&first)?;
+                let second = self.cardinality(&second)?;
+                let conjuncts = [first.atom(&[(0, Mark::Fresh("N".to_string()))]), second.atom(&[(0, Mark::Fresh("N_2".to_string()))])];
+                Ok(self.query(&conjuncts, vec![Col::typed("N", Some(ValueType::Nat)), Col::typed("N_2", Some(ValueType::Nat))]))
+            }
             Feature::Call(name, args) => self.call_written(name, args),
         }
     }
@@ -315,6 +323,16 @@ impl Expander<'_> {
                 let left = self.rel(left)?;
                 let right = self.rel(right)?;
                 self.antijoin(&left, &right, pairs)
+            }
+            Rel::Semijoin(left, right, pairs) => {
+                let left = self.rel(left)?;
+                let right = self.rel(right)?;
+                self.semijoin(&left, &right, pairs)
+            }
+            Rel::All(domain, body, outer, pairs) => {
+                let domain = self.rel(domain)?;
+                let body = self.rel(body)?;
+                self.all(&domain, &body, outer, pairs)
             }
             Rel::Union(left, right, pairs) => {
                 let left = self.rel(left)?;
@@ -500,6 +518,44 @@ impl Expander<'_> {
         Ok(self.query(&conjuncts, labels))
     }
 
+    pub(crate) fn semijoin(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Column)]) -> Result<Rows, String> {
+        let mut taken = Vec::new();
+        let (left_marks, left_labels) = left_reads(left, &mut taken);
+        let mut right_marks = Vec::new();
+        for (l, r) in pairs {
+            right_marks.push((right.index(r)?, Mark::Join(left_labels[left.index(l)?].clone())));
+        }
+        let conjuncts = [left.atom(&left_marks), right.atom(&right_marks)];
+        let labels = typed_labels(&left_labels, left);
+        Ok(self.query(&conjuncts, labels))
+    }
+
+    /// Arclog's `ALL` form. An outer column's label is bound by a read of the
+    /// domain's projection, and the form's own labels are local to it.
+    pub(crate) fn all(&mut self, domain: &Rows, body: &Rows, outer: &[Column], pairs: &[(Column, Column)]) -> Result<Rows, String> {
+        let mut taken = Vec::new();
+        let (mut domain_marks, labels) = left_reads(domain, &mut taken);
+        let mut conjuncts = Vec::new();
+        let mut columns = Vec::new();
+        if !outer.is_empty() {
+            let values = self.project(domain, outer)?;
+            let mut value_marks = Vec::new();
+            for (place, name) in outer.iter().enumerate() {
+                let index = domain.index(name)?;
+                value_marks.push((place, Mark::Fresh(labels[index].clone())));
+                domain_marks[index].1 = Mark::Join(labels[index].clone());
+                columns.push(Col::typed(labels[index].clone(), domain.columns[index].ty.clone()));
+            }
+            conjuncts.push(values.atom(&value_marks));
+        }
+        let mut body_marks = Vec::new();
+        for (d, b) in pairs {
+            body_marks.push((body.index(b)?, Mark::Join(labels[domain.index(d)?].clone())));
+        }
+        conjuncts.push(format!("(ALL ({}) ({}))", domain.atom(&domain_marks), body.atom(&body_marks)));
+        Ok(self.query(&conjuncts, columns))
+    }
+
     pub(crate) fn union(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Operand)]) -> Result<Rows, String> {
         let mut taken = Vec::new();
         let (left_marks, left_labels) = left_reads(left, &mut taken);
@@ -548,6 +604,7 @@ impl Expander<'_> {
                     lib_marks.push((index, Mark::Fresh(label.clone())));
                     labels.push(Col::typed(label, column.ty.clone()));
                 }
+                [(_, c)] if c == "0" => lib_marks.push((index, Mark::Zero)),
                 [(_, c)] => lib_marks.push((index, Mark::Join(row_labels[rows.index(c)?].clone()))),
                 _ => return Err(format!("`lib-join` binds the column `{}` twice", column.name)),
             }

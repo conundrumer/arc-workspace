@@ -46,7 +46,7 @@ pub struct Entry {
 /// value-set over one number column.
 fn gives_number(feature: &Feature, term: &Typed) -> bool {
     match feature {
-        Feature::Nonempty(_) | Feature::Cardinality(_) => true,
+        Feature::Nonempty(_) | Feature::Cardinality(_) | Feature::Ratio(..) => true,
         Feature::ValueSet(_, columns) => {
             let [one] = &columns[..] else { return false };
             let name = crate::expand::label_of(one);
@@ -118,6 +118,7 @@ fn ground(entry: &Entry, tables: &[(String, String)]) -> Feature {
         Feature::Nonempty(rel) => Feature::Nonempty(with_tables(rel, tables)),
         Feature::Cardinality(rel) => Feature::Cardinality(with_tables(rel, tables)),
         Feature::ValueSet(rel, columns) => Feature::ValueSet(with_tables(rel, tables), columns.clone()),
+        Feature::Ratio(first, second) => Feature::Ratio(with_tables(first, tables), with_tables(second, tables)),
         Feature::Call(name, args) => Feature::Call(name.clone(), args.clone()),
     }
 }
@@ -128,6 +129,11 @@ fn model_number(feature: &Feature, value: &Value, model: &ModelValue) -> Option<
     match feature {
         Feature::Nonempty(_) => Some(if rows.is_empty() { 0.0 } else { 1.0 }),
         Feature::Cardinality(_) => rows.first().and_then(|row| row.first()).map(|id| f64::from(arclog::terms::Term::decode_number(*id))),
+        // A ratio with no rows in its second relation has no value.
+        Feature::Ratio(..) => rows.first().and_then(|row| match row[..] {
+            [first, second] if arclog::terms::Term::decode_number(second) != 0 => Some(f64::from(arclog::terms::Term::decode_number(first)) / f64::from(arclog::terms::Term::decode_number(second))),
+            _ => None,
+        }),
         // A value-set over one number column gives a number where the set has one member.
         Feature::ValueSet(..) => match &rows[..] {
             [row] if value.types.len() == 1 => row.first().map(|id| f64::from(arclog::terms::Term::decode_number(*id))),

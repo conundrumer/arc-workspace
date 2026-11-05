@@ -12,6 +12,7 @@
 //!   feature-encoder walk-check GRIDS_JSON (--scene | --rule) [--size D] [--rate R]
 //!   feature-encoder candidate OUT_DIR FILE... [--size D] [--rate R] [--passes NULLS] [--threads N] [--max-columns K] [--relational] [--rule]
 //!   feature-encoder family OUT_DIR FILE... [--size D] [--passes NULLS] [--threads N] [--rule] [--names SHAPES_FILE]
+//!   feature-encoder stored-eval REQUESTS_JSONL --out FILE
 //!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--program-compare] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
@@ -410,6 +411,135 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The catalog's values on each requested table, with the time of its pass.
+fn run_catalog_values(arguments: &Arguments, requests: &str) -> Result<(), String> {
+    let path = arguments.out.clone().ok_or("`catalog-values` writes to --out")?;
+    let mut out = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|error| error.to_string())?);
+    let (passes, spent) = arclog_encoder::catalog_run::values_of(requests, &arguments.tasks, &mut out)?;
+    out.flush().map_err(|error| error.to_string())?;
+    eprintln!("{passes} passes, {:.2} us per table at a pair", spent.as_secs_f64() * 1e6 / passes.max(1) as f64);
+    Ok(())
+}
+
+/// Candidate's stable templates per task, on the catalog's values.
+fn run_catalog_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
+    use arclog_encoder::catalog_run::{dump_task, Form};
+    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
+    let form = if arguments.rule { Form::All } else { Form::Ratio };
+    let path = arguments.names.clone().ok_or("`catalog-dump` reads the derangements from --names")?;
+    let orders: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let totals = std::sync::Mutex::new((0u64, 0f64, 0f64));
+    let begun = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..arguments.threads.max(1) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(file) = files.get(at) else { break };
+                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+                let target = format!("{out}/{stem}.json");
+                if std::path::Path::new(&target).exists() {
+                    continue;
+                }
+                match dump_task(file, &arguments.tasks, &orders, form) {
+                    Ok((result, spent, facts)) => {
+                        let temporary = format!("{target}.tmp");
+                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                            eprintln!("{stem}: the result does not write");
+                        }
+                        let mut held = totals.lock().expect("no panic");
+                        held.0 += spent.0;
+                        held.1 += spent.1.as_secs_f64();
+                        held.2 += facts.as_secs_f64();
+                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        let rate = done as f64 / begun.elapsed().as_secs_f64();
+                        eprintln!("{done}/{} {stem}: {:.1} us per table at a pair so far; ETA {:.0}s", files.len(), held.1 * 1e6 / held.0.max(1) as f64, (files.len() - done) as f64 / rate);
+                    }
+                    Err(message) => eprintln!("{stem}: {message}"),
+                }
+            });
+        }
+    });
+    Ok(())
+}
+
+/// The value of relation terms on a stored table, through the engine. Each request
+/// is a line with `task`, `types`, `rows` by `train/i`, and `terms`, whose table is
+/// `&t`, with columns `T0`, `T1`. Each result line gives a term's size, why the
+/// checker refuses it, and at each example its count of rows and its first cell.
+fn run_stored_eval(arguments: &Arguments, requests: &str) -> Result<(), String> {
+    use arclog_encoder::expression::Reader;
+    use arclog_encoder::run::StoredRows;
+    use arclog_encoder::schema::{type_of_name, TableColumn};
+    use arclog_encoder::tablewalk::cell_bits;
+    let path = arguments.out.clone().ok_or("`stored-eval` writes to --out")?;
+    let mut out = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|error| error.to_string())?);
+    let registry = arclog::registry::Registry::get();
+    let reader = Reader { registry, library: arclog_encoder::library::library(), program_relations: &arclog_encoder::program_relations::is_program_relation };
+    let text = std::fs::read_to_string(requests).map_err(|error| error.to_string())?;
+    for (at, line) in text.lines().enumerate() {
+        let request: serde_json::Value = serde_json::from_str(line).map_err(|error| error.to_string())?;
+        let task_name = request["task"].as_str().ok_or("a request's task")?;
+        let task = arclog::task::read_task(&arguments.tasks.join(format!("{task_name}.json"))).map_err(|error| format!("{error:?}"))?;
+        let types: Vec<arclog::types::ValueType> = request["types"].as_array().ok_or("a request's types")?.iter().map(|name| type_of_name(name.as_str().unwrap_or(""))).collect::<Option<_>>().ok_or("a type with no name")?;
+        let mut rows = Vec::new();
+        for pair in 0..task.train.len() {
+            let held = request["rows"].get(format!("train/{pair}")).and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+            let mut table: Vec<Vec<arclog::terms::TermId>> = Vec::with_capacity(held.len());
+            for row in &held {
+                let row = row.as_array().ok_or("a row")?;
+                let cells: Option<Vec<arclog::terms::TermId>> = row.iter().zip(&types).map(|(cell, ty)| cell_bits(cell, ty).map(arclog::terms::TermId::from_encoding)).collect();
+                table.push(cells.ok_or("a cell")?);
+            }
+            rows.push((Some(arclog::terms::Example::at(pair as u16)), table));
+        }
+        for extra in 0..task.test.len() {
+            rows.push((Some(arclog::terms::Example::at((task.train.len() + extra) as u16)), Vec::new()));
+        }
+        let columns: Vec<TableColumn> = types.iter().enumerate().map(|(place, ty)| TableColumn { name: format!("T{place}"), path: vec![format!("T{place}")], ty: Some(ty.clone()) }).collect();
+        let stored = StoredRows { table: "&t".to_string(), stored_name: format!("stored-eval/{at}"), columns, types: types.clone(), per_input: true, has_example: false, rows };
+        let train = task.train.len();
+        let host = Host::stored(task, &stored)?;
+        for term in request["terms"].as_array().ok_or("a request's terms")? {
+            let written = term.as_str().ok_or("a term")?;
+            let outcome = reader.rel_text(written).and_then(|rel| {
+                let size = rel.size();
+                host.evaluate_terms(&[&rel], false).pop().expect("one term").map(|values| (size, values))
+            });
+            let record = match outcome {
+                Err(message) => serde_json::json!({"line": at, "term": written, "refused": message.chars().take(240).collect::<String>()}),
+                Ok((size, values)) => {
+                    let mut counts = Vec::new();
+                    let mut firsts = Vec::new();
+                    for relation in values.examples.iter().take(train) {
+                        match relation {
+                            None => {
+                                counts.push(serde_json::Value::Null);
+                                firsts.push(serde_json::Value::Null);
+                            }
+                            Some(relation) => {
+                                counts.push(serde_json::json!(relation.len()));
+                                let mut first = None;
+                                arclog::eval::join::each_row(relation, &mut |row| {
+                                    if first.is_none() {
+                                        first = row.first().map(|cell| arclog::terms::Term::decode_number(*cell));
+                                    }
+                                });
+                                firsts.push(serde_json::json!(first));
+                            }
+                        }
+                    }
+                    serde_json::json!({"line": at, "term": written, "size": size, "counts": counts, "firsts": firsts})
+                }
+            };
+            writeln!(out, "{record}").map_err(|error| error.to_string())?;
+        }
+        out.flush().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 /// Candidate recognition on the relational shapes: one result per file, as each ends,
 /// and a restart skips those written. `--names` limits it to the shapes a file lists,
 /// one per line.
@@ -539,6 +669,8 @@ fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(
                     Rel::Select(..) => "select".to_string(),
                     Rel::Join(..) => "join".to_string(),
                     Rel::Antijoin(..) => "antijoin".to_string(),
+                    Rel::Semijoin(..) => "semijoin".to_string(),
+                    Rel::All(..) => "all".to_string(),
                     Rel::Union(..) => "union".to_string(),
                     Rel::LibJoin(..) => "lib-join".to_string(),
                     Rel::Component(name, bindings, _) => format!("component/{} inputs/{name}", bindings.len()),
@@ -740,6 +872,9 @@ fn main() {
         ("walk-check", [grids]) => run_walk_check(&arguments, grids),
         ("candidate", [out, files @ ..]) if !files.is_empty() => run_candidate(&arguments, out, files),
         ("family", [out, files @ ..]) if !files.is_empty() => run_family(&arguments, out, files),
+        ("stored-eval", [requests]) => run_stored_eval(&arguments, requests),
+        ("catalog-values", [requests]) => run_catalog_values(&arguments, requests),
+        ("catalog-dump", [out, files @ ..]) if !files.is_empty() => run_catalog_dump(&arguments, out, files),
         _ => Err("usage: feature-encoder eval|rows|worked|encode|names|vector ...; the file's first lines give each form".to_string()),
     };
     if let Err(message) = result {

@@ -1100,6 +1100,8 @@ pub fn rebased(term: &Rel, reps: &[&Typed], to: &[&Typed]) -> Rel {
         }),
         Rel::Join(_, _, pairs) => Rel::Join(child(0), child(1), pairs.iter().map(|(l, r)| (name_in(0, l), name_in(1, r))).collect()),
         Rel::Antijoin(_, _, pairs) => Rel::Antijoin(child(0), child(1), pairs.iter().map(|(l, r)| (name_in(0, l), name_in(1, r))).collect()),
+        Rel::Semijoin(_, _, pairs) => Rel::Semijoin(child(0), child(1), pairs.iter().map(|(l, r)| (name_in(0, l), name_in(1, r))).collect()),
+        Rel::All(_, _, outer, pairs) => Rel::All(child(0), child(1), outer.iter().map(|name| name_in(0, name)).collect(), pairs.iter().map(|(l, r)| (name_in(0, l), name_in(1, r))).collect()),
         Rel::Union(_, _, pairs) => Rel::Union(child(0), child(1), pairs.iter().map(|(l, operand)| (name_in(0, l), match operand {
             Operand::Column(r) => Operand::Column(name_in(1, r)),
             Operand::Zero => Operand::Zero,

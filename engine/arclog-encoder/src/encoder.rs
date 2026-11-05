@@ -227,6 +227,8 @@ pub fn with_tables(rel: &Rel, tables: &[(String, String)]) -> Rel {
         Rel::Select(inner, column, op, operand) => Rel::Select(swap(inner), column.clone(), *op, operand.clone()),
         Rel::Join(left, right, pairs) => Rel::Join(swap(left), swap(right), pairs.clone()),
         Rel::Antijoin(left, right, pairs) => Rel::Antijoin(swap(left), swap(right), pairs.clone()),
+        Rel::Semijoin(left, right, pairs) => Rel::Semijoin(swap(left), swap(right), pairs.clone()),
+        Rel::All(domain, body, outer, pairs) => Rel::All(swap(domain), swap(body), outer.clone(), pairs.clone()),
         Rel::Union(left, right, pairs) => Rel::Union(swap(left), swap(right), pairs.clone()),
         Rel::LibJoin(inner, name, bindings) => Rel::LibJoin(swap(inner), name.clone(), bindings.clone()),
         Rel::Component(name, bindings, port) => Rel::Component(
