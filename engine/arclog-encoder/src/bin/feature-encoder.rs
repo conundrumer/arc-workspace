@@ -6,13 +6,19 @@
 //!   feature-encoder encode SOLVER TABLE... [--size D] [--out FILE] [--work-cap N] [--limit N] [--max-inputs N] [--program-relations]
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder vector SOLVER TABLE [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
+//!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
+//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--tasks-count N] [--shard I/N] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
 //! concept case of a solver, and `rows` those of a relation term. `worked`
 //! checks the worked expansions of the specification. `encode` writes one JSON
 //! line for each ground expression up to a size, small sizes first; on a restart
 //! with the same `--out` it skips the expressions the file holds. `names` writes
-//! the vector entries at a size, and `vector` their numbers on a table.
+//! the vector entries at a size, and `vector` their numbers on a table. `count`
+//! prints the terms at each size, by operator, with no evaluation. `law` compares
+//! a sample of features on a sample of tables with their images under the group,
+//! writing a line per table and element, and on a restart skips those the file
+//! holds.
 
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
@@ -35,10 +41,14 @@ struct Arguments {
     limit: Option<u64>,
     max_inputs: Option<usize>,
     program_relations: bool,
+    rate: u32,
+    tables_per_task: usize,
+    tasks_count: usize,
+    shard: (usize, usize),
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false };
+    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1) };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -51,6 +61,14 @@ fn arguments() -> Arguments {
             "--limit" => parsed.limit = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --limit")),
             "--max-inputs" => parsed.max_inputs = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --max-inputs")),
             "--program-relations" => parsed.program_relations = true,
+            "--rate" => parsed.rate = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --rate"),
+            "--tables" => parsed.tables_per_task = args.next().and_then(|text| text.parse().ok()).expect("a number after --tables"),
+            "--tasks-count" => parsed.tasks_count = args.next().and_then(|text| text.parse().ok()).expect("a number after --tasks-count"),
+            "--shard" => {
+                let text = args.next().expect("I/N after --shard");
+                let (at, of) = text.split_once('/').expect("I/N after --shard");
+                parsed.shard = (at.parse().expect("a number"), of.parse().expect("a number"));
+            }
             _ => parsed.positional.push(arg),
         }
     }
@@ -161,6 +179,145 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     Ok(())
 }
 
+fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(), String> {
+    use arclog_encoder::enumerate::{value_kinds, Space, Typed};
+    use arclog_encoder::expression::Rel;
+    let host = host(arguments, solver)?;
+    for task_wide in [false, true] {
+        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, kinds: value_kinds(), max_inputs: arguments.max_inputs, frames: Vec::new() };
+        let mut lower: Vec<Vec<Typed>> = Vec::new();
+        for size in 0..=arguments.size {
+            let start = Instant::now();
+            let mut counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+            let mut terms = Vec::new();
+            let _ = space.generate(&lower, size, &mut |term| {
+                let name = match &term.rel {
+                    Rel::Leaf(_) => "leaf".to_string(),
+                    Rel::Project(..) => "project".to_string(),
+                    Rel::Select(..) => "select".to_string(),
+                    Rel::Join(..) => "join".to_string(),
+                    Rel::Antijoin(..) => "antijoin".to_string(),
+                    Rel::Union(..) => "union".to_string(),
+                    Rel::LibJoin(..) => "lib-join".to_string(),
+                    Rel::Component(name, bindings, _) => format!("component/{} inputs/{name}", bindings.len()),
+                    Rel::Pool { .. } => "pool".to_string(),
+                    Rel::Call(..) => "call".to_string(),
+                };
+                *counts.entry(name).or_default() += 1;
+                if size < arguments.size {
+                    terms.push(term);
+                }
+                ControlFlow::Continue(())
+            });
+            let total: u64 = counts.values().sum();
+            println!("task_wide {task_wide} size {size}: {total} terms in {:.1}s", start.elapsed().as_secs_f64());
+            for (name, count) in &counts {
+                println!("  {count:>10} {name}");
+            }
+            lower.push(terms);
+        }
+    }
+    Ok(())
+}
+
+/// The train tasks of `path` that the law check samples, by a hash of each id.
+fn sampled_tasks(path: &str, count: usize) -> Result<Vec<String>, String> {
+    let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let mut tasks: Vec<(String, String)> = text.split_whitespace().filter(|task| *task != "981571dc").map(|task| (arclog::hash::digest_text(&format!("law-sample/{task}")), task.to_string())).collect();
+    tasks.sort();
+    Ok(tasks.into_iter().take(count).map(|(_, task)| task).collect())
+}
+
+fn elements_of(task: &str) -> Vec<arclog_encoder::law::Element> {
+    use arclog_encoder::law::Element;
+    // A color permutation by a hash of the task, so a run is the same each time.
+    let digest = arclog::hash::digest_text(&format!("law-colors/{task}"));
+    let mut colors: Vec<u8> = (0..10).collect();
+    for (at, byte) in digest.bytes().take(9).enumerate() {
+        let other = at + usize::from(byte) % (10 - at);
+        colors.swap(at, other);
+    }
+    let mut permuted = [0u8; 10];
+    permuted.copy_from_slice(&colors);
+    let identity = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    vec![Element::new("D4_CW", identity), Element::new("D4_LR", permuted), Element::new("D4_ID", permuted), Element::new("D4_DG", permuted)]
+}
+
+fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
+    use arclog_encoder::law::{compare_table, Sample, Tally};
+    let tasks = sampled_tasks(tasks_file, arguments.tasks_count)?;
+    let path = arguments.out.clone().ok_or("`law` writes to --out")?;
+    let done: HashSet<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter_map(|line| {
+        let start = line.find("\"key\":\"")? + 7;
+        let end = line[start..].find('"')? + start;
+        Some(line[start..end].to_string())
+    }).collect();
+    let mut out = std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|error| error.to_string())?);
+    let sample = Sample { size: arguments.size, rate_per_million: arguments.rate, max_inputs: arguments.max_inputs, work_cap: arguments.work_cap };
+    let start = Instant::now();
+    let total = tasks.iter().enumerate().filter(|(at, _)| at % arguments.shard.1 == arguments.shard.0).count();
+    let mut finished_tasks = 0usize;
+    for (at, solver) in tasks.iter().enumerate() {
+        if at % arguments.shard.1 != arguments.shard.0 {
+            continue;
+        }
+        let state = (|| -> Result<Host, String> {
+            let program = concept_program(&arguments.corpus, solver)?;
+            Host::new(&program, &arguments.tasks.join(format!("{solver}.json")))
+        })();
+        let state = match state {
+            Ok(state) => state,
+            Err(message) => {
+                let _ = writeln!(out, "{{\"key\":\"{solver}\",\"skipped\":{}}}", json_string(&message));
+                let _ = out.flush();
+                continue;
+            }
+        };
+        let mut names = state.table_names();
+        names.sort_by_key(|name| arclog::hash::digest_text(&format!("law-table/{solver}/{name}")));
+        let mut tables = Vec::new();
+        let mut left_out = Vec::new();
+        for name in &names {
+            if tables.len() >= arguments.tables_per_task {
+                break;
+            }
+            match state.stored_rows(solver, name) {
+                Ok(rows) => tables.push(rows),
+                Err(message) => left_out.push(format!("{name}: {message}")),
+            }
+        }
+        for table in &tables {
+            for element in elements_of(solver) {
+                let key = format!("{solver}/{}/{}", table.table, element.name);
+                if done.contains(&key) {
+                    continue;
+                }
+                let mut tally = Tally::default();
+                let mut last = Instant::now();
+                let began = Instant::now();
+                let result = compare_table(table, &state.task, &element, &sample, &mut tally, &mut |tally| {
+                    if last.elapsed().as_secs() >= 20 {
+                        last = Instant::now();
+                        eprintln!("{} {} compared {} differences {} ({:.0}s)", solver, table.table, tally.compared, tally.differences.len(), began.elapsed().as_secs_f64());
+                    }
+                });
+                let differences: Vec<String> = tally.differences.iter().take(40).map(|difference| format!("{{\"expression\":{},\"law\":\"{:?}\",\"detail\":{}}}", json_string(&difference.expression), difference.law, json_string(&difference.detail))).collect();
+                let fault = result.err().map_or("null".to_string(), |message| json_string(&message));
+                let _ = writeln!(out, "{{\"key\":\"{key}\",\"seconds\":{:.1},\"compared\":{},\"invariant\":{},\"equivariant\":{},\"both_refused\":{},\"both_fault\":{},\"stopped\":{},\"difference_count\":{},\"fault\":{fault},\"differences\":[{}]}}", began.elapsed().as_secs_f64(), tally.compared, tally.invariant, tally.equivariant, tally.both_refused, tally.both_fault, tally.stopped, tally.differences.len(), differences.join(","));
+                let _ = out.flush();
+            }
+        }
+        if !left_out.is_empty() {
+            let _ = writeln!(out, "{{\"key\":\"{solver}/left-out\",\"left_out\":{}}}", json_list(&left_out));
+            let _ = out.flush();
+        }
+        finished_tasks += 1;
+        let elapsed = start.elapsed().as_secs_f64();
+        eprintln!("{finished_tasks}/{total} tasks; {:.2} tasks/min; ETA {:.0}s; last {solver}", finished_tasks as f64 / elapsed * 60.0, elapsed / finished_tasks as f64 * (total - finished_tasks) as f64);
+    }
+    Ok(())
+}
+
 fn print_value(value: &Value) {
     for form in &value.expanded.forms {
         println!("{form}");
@@ -218,6 +375,8 @@ fn main() {
         ("encode", [solver, tables @ ..]) if !tables.is_empty() => run_encode(&arguments, solver, tables),
         ("names", []) => run_names(&arguments),
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
+        ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
+        ("law", [tasks_file]) => run_law(&arguments, tasks_file),
         _ => Err("usage: feature-encoder eval|rows|worked|encode|names|vector ...; the file's first lines give each form".to_string()),
     };
     if let Err(message) = result {

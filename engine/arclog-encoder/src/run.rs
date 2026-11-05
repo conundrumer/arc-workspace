@@ -24,14 +24,18 @@ use arclog::stream::corpus::case_files;
 use arclog::stream::DecodeSettings;
 use arclog::study::StudyProgram;
 use arclog::task::{read_task, Task};
-use arclog::terms::{Constant, Example, Term, TermId};
+use arclog::eval::join::one_part;
+use arclog::program::FactRelation;
+use arclog::registry::declare_stored_table;
+use arclog::relations::RowSet;
+use arclog::terms::{Constant, Content, Example, LibNameId, Term, TermId, WrittenIdent};
 use arclog::types::{GraphRelation, ValueType};
 
 use crate::expand::{expand, expand_at, expand_rel, Expanded};
 use crate::expression::{Feature, Reader, Rel};
 use crate::library::library;
 use crate::expand::Rows;
-use crate::schema::{graph_relation, table_schema, ColumnFacts, TableSchema, Tables};
+use crate::schema::{graph_relation, table_schema, ColumnFacts, StoredReads, TableColumn, TableSchema, Tables};
 
 /// The text of an `OUT` form, for a state that has none: it reads nothing that
 /// a feature reads, and the checker refuses a program with no `OUT` form.
@@ -86,6 +90,29 @@ pub struct Value {
     pub stop: Option<String>,
 }
 
+/// A table's rows at one assignment and one model, as a law check reads them.
+#[derive(Clone, Debug)]
+pub struct StoredRows {
+    /// The table's name in the program, by which an expression addresses it.
+    pub table: String,
+    /// A name of the stored table, the same for each session that holds it.
+    pub stored_name: String,
+    pub columns: Vec<TableColumn>,
+    pub types: Vec<ValueType>,
+    pub per_input: bool,
+    pub has_example: bool,
+    /// Each example's rows, or the rows of the task.
+    pub rows: Vec<(Option<Example>, Vec<Vec<TermId>>)>,
+}
+
+impl StoredRows {
+    /// These rows under the element `element`.
+    pub fn moved(&self, element: &crate::law::Element) -> StoredRows {
+        let rows = self.rows.iter().map(|(example, rows)| (*example, element.rows(rows, &self.types))).collect();
+        StoredRows { rows, ..self.clone() }
+    }
+}
+
 /// A state on a task, and what its expressions share.
 pub struct Host {
     pub task: Task,
@@ -102,10 +129,17 @@ pub struct Host {
     provided: std::cell::Cell<bool>,
     /// The bindings that one expression's evaluation may try, where a cap holds.
     work_cap: std::cell::Cell<Option<u64>>,
+    /// The table that the state holds as stored rows.
+    stored: Option<(String, TableSchema)>,
 }
 
 impl Tables for Host {
     fn table(&self, name: &str) -> Option<TableSchema> {
+        if let Some((own, schema)) = &self.stored {
+            if own == name {
+                return Some(schema.clone());
+            }
+        }
         table_schema(self.base.checked(), name)
     }
 
@@ -116,6 +150,15 @@ impl Tables for Host {
     fn columns_of(&self, forms: &[String], rows: &Rows) -> Result<Vec<ColumnFacts>, String> {
         let registry = Registry::get();
         let program = self.checked_with(forms)?;
+        // A stored table's columns are those its reads write.
+        if rows.relation.starts_with("stored_table") {
+            return Ok(rows.columns.iter().map(|column| ColumnFacts {
+                path: column.path.clone(),
+                ty: column.ty.clone().unwrap_or(ValueType::Unit),
+                identity: format!("{}/{}", rows.relation, column.path.join(".")),
+                roots: vec![format!("{}.{}", rows.relation, column.path.join("."))],
+            }).collect());
+        }
         crate::schema::column_facts(program.checked(), registry, rows)
     }
 }
@@ -161,7 +204,113 @@ impl Host {
             cache: RefCell::new(cache),
             provided: std::cell::Cell::new(false),
             work_cap: std::cell::Cell::new(None),
+            stored: None,
         })
+    }
+
+    /// A state that holds one table, `table`, as stored rows on `task`.
+    pub fn stored(task: Task, table: &StoredRows) -> Result<Host, String> {
+        let mut host = Host::of_task(NO_OUT, task)?;
+        let registry_type = |ty: &ValueType| ty.clone();
+        let plain_columns: Vec<(String, ValueType)> = table.columns.iter().zip(&table.types).map(|(column, ty)| (column.path[0].clone(), registry_type(ty))).collect();
+        let plain = LibNameId::of(&table.stored_name);
+        declare_stored_table(plain, &plain_columns, table.per_input);
+        let lifted = LibNameId::of(&format!("{}@lifted", table.stored_name));
+        if table.per_input {
+            let mut columns = vec![("E".to_string(), ValueType::Example)];
+            columns.extend(plain_columns.iter().cloned());
+            declare_stored_table(lifted, &columns, false);
+        }
+        // An Ident holds nothing but its identity, so the session interns its
+        // numbers as a file's.
+        let mut idents: std::collections::BTreeMap<u32, TermId> = std::collections::BTreeMap::new();
+        {
+            let mut held: Vec<u32> = Vec::new();
+            for (_, rows) in &table.rows {
+                for row in rows {
+                    for (id, ty) in row.iter().zip(&table.types) {
+                        if matches!(ty, ValueType::Ident(_)) {
+                            held.push(id.encoding());
+                        }
+                    }
+                }
+            }
+            held.sort_unstable();
+            held.dedup();
+            let mut intern = host.session.intern.write().expect("an intern table that no panic poisoned");
+            for (number, id) in held.into_iter().enumerate() {
+                let content = Content::FromFile { ty: ValueType::OPEN_IDENT, written: WrittenIdent::new(number as u32) };
+                let ident = intern.intern(content);
+                idents.insert(id, Term::Ident(ident).encode().expect("an Ident's term id"));
+            }
+        }
+        let cell = |id: TermId, ty: &ValueType| if matches!(ty, ValueType::Ident(_)) { idents[&id.encoding()] } else { id };
+        let mut lifted_rows = RowSet::empty(table.types.len() as u16 + 1);
+        for (example, rows) in &table.rows {
+            let mut set = RowSet::empty(table.types.len() as u16);
+            for row in rows {
+                let row: Vec<TermId> = row.iter().zip(&table.types).map(|(id, ty)| cell(*id, ty)).collect();
+                if let Some(example) = example {
+                    let e = Term::Constant(Constant::Example(*example)).encode().expect("an Example's term id");
+                    lifted_rows.insert(std::iter::once(e).chain(row.iter().copied()).collect());
+                }
+                set.insert(row.into());
+            }
+            host.session.provide_fact(FactRelation::Stored(plain), *example, one_part(set));
+        }
+        if table.per_input {
+            host.session.provide_fact(FactRelation::Stored(lifted), None, one_part(lifted_rows));
+        }
+        let schema = TableSchema {
+            columns: table.columns.clone(),
+            stored: Some(StoredReads { plain: format!("stored_table {:?}", table.stored_name), lifted: table.per_input.then(|| format!("stored_table {:?}", format!("{}@lifted", table.stored_name))) }),
+            per_input: table.per_input,
+            has_example: table.has_example,
+        };
+        host.stored = Some((table.table.clone(), schema));
+        Ok(host)
+    }
+
+    /// The rows of the table `name` of the state, at its first assignment and
+    /// one model.
+    pub fn stored_rows(&self, solver: &str, name: &str) -> Result<StoredRows, String> {
+        let checked = self.base.checked();
+        let schema = table_schema(checked, name).ok_or_else(|| format!("no table {name}"))?;
+        let relation = graph_relation(checked, name).ok_or_else(|| format!("no table {name}"))?;
+        let types: Vec<ValueType> = checked.types.columns(&relation).map(<[ValueType]>::to_vec).ok_or_else(|| format!("{name} has no types"))?;
+        if types.iter().any(|ty| matches!(ty, ValueType::Pose(_))) {
+            return Err(format!("{name} has a Pose column"));
+        }
+        let dets = relation_dets(checked, relation.node);
+        let decoder = Decoder::new(&self.task, &self.session, Registry::get(), self.constructions, &self.settings);
+        let mut rows = Vec::new();
+        for example in decoder.examples_of(scope_of(checked, &relation)) {
+            let assigned = decoder.assigned(checked, relation.node, &dets, None, &mut |evaluation| models_at(evaluation, &relation, example)).map_err(|fault| fault.message.to_string())?;
+            let (_, models) = assigned.at.into_iter().next().ok_or_else(|| format!("{name} has no assignment"))?;
+            match &models[..] {
+                [RelationValue::Rows(held)] => rows.push((example, rows_of(held))),
+                [_] => return Err(format!("{name} has no rows at {example:?}")),
+                _ => return Err(format!("{name} has several models at {example:?}")),
+            }
+        }
+        // A stored column has a PascalCase name, since a lower-case column is a
+        // type parameter's.
+        let mut taken: Vec<String> = Vec::new();
+        let columns: Vec<TableColumn> = schema.columns.iter().take(types.len()).zip(&types).map(|(column, ty)| TableColumn {
+            name: column.name.clone(),
+            path: vec![crate::expand::unique(&crate::expand::label_of(&column.name), &mut taken)],
+            ty: Some(ty.clone()),
+        }).collect();
+        Ok(StoredRows { table: name.to_string(), stored_name: format!("{solver}/{name}"), columns, types, per_input: schema.per_input, has_example: schema.has_example, rows })
+    }
+
+    /// The tables of the state, sorted by name.
+    pub fn table_names(&self) -> Vec<String> {
+        let resolved = &self.base.checked().program;
+        let mut names: Vec<String> = resolved.graph.nodes.iter().filter_map(|node| crate::program_relations::table_name(&node.kind)).collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     /// The reader of a term, over the registry.

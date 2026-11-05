@@ -11,12 +11,14 @@
 //! - [`encoder`]: the value of each ground expression at a size, on tables of a
 //!   state.
 //! - [`vectors`]: the vector entries, their names and their numbers.
+//! - [`law`]: the check of the transformation law on stored rows.
 //! - [`run`]: the check and the evaluation of those forms, through the
 //!   engine's evaluator.
 pub mod encoder;
 pub mod enumerate;
 pub mod expand;
 pub mod expression;
+pub mod law;
 pub mod library;
 pub mod pool;
 pub mod program_relations;

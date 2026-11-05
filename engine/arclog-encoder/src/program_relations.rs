@@ -60,7 +60,7 @@ struct TableOf {
 }
 
 /// The relation that a table of `node` reads as, where the node gives a table.
-fn table_name(kind: &DependencyKind) -> Option<String> {
+pub(crate) fn table_name(kind: &DependencyKind) -> Option<String> {
     match kind {
         DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => Some(relation_spelled(relation)),
         DependencyKind::Chosen(name) => Some(relation_spelled(&ProgramRelation::Declared(name.clone()))),

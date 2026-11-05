@@ -184,3 +184,11 @@ pub type StableHashMap<K, V> = std::collections::HashMap<K, V, StableState>;
 /// A hash set under the engine's fixed hash function, with the iteration rule
 /// of [`StableHashMap`].
 pub type StableHashSet<T> = std::collections::HashSet<T, StableState>;
+
+/// The hexadecimal digest of `text`, for a comparison that reads no order of
+/// encodings.
+pub fn digest_text(text: &str) -> String {
+    let mut hasher = StableHasher::new();
+    std::hash::Hasher::write(&mut hasher, text.as_bytes());
+    format!("{:032x}", hasher.finish128().0)
+}
