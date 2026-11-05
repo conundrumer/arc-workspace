@@ -896,6 +896,12 @@ impl<'a> ScopeSink<'a> for Context<'_> {
         Context::child(self, parent, child, visit);
     }
 
+    fn children_order(&mut self, source_indices: &[u32]) {
+        if let Some(order) = &mut self.order {
+            order.lists.insert(NodePath(self.path.clone().into()), source_indices.into());
+        }
+    }
+
     /// Writes `members` sorted by the bytes of their forms, less those at
     /// `repeats`, and records the order of all of them.
     ///

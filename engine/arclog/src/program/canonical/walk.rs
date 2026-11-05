@@ -48,6 +48,10 @@ pub(super) trait ScopeSink<'a> {
     /// Runs `visit` on `child`, a child of `parent`, the node being walked.
     fn child(&mut self, parent: NodeRef<'a>, child: NodeRef<'a>, visit: impl FnOnce(&mut Self));
 
+    /// Records the source index of each child in the current node's
+    /// canonical order, without adding bytes to its form.
+    fn children_order(&mut self, _source_indices: &[u32]) {}
+
     /// Runs `visit` on each of `members`, the whole list of the children of
     /// `parent`, which `node` gives as nodes, in the order the sink takes.
     /// The members at `repeats` repeat an earlier member, so they are not
@@ -283,32 +287,49 @@ pub(super) fn site<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, site: &'a Site
 pub(super) fn instance<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, instance: &'a Instance) {
     let at = sink.open(at, Tag::Form, index, Open::Instance(instance));
     let parent = NodeRef::Instance(instance);
-    key_and_inputs(sink, at, parent, instance.key.as_ref(), &instance.inputs);
+    key_and_inputs(sink, at, parent, instance.key.as_ref(), &instance.inputs, false);
 }
 
 /// Walks the key clause where the form has one, then `inputs`, children of
 /// `parent`, the node at `at`.
-fn key_and_inputs<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, key: Option<&'a Node<KeyClause>>, inputs: &'a [Node<InstanceInput>]) {
+fn key_and_inputs<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, key: Option<&'a Node<KeyClause>>, inputs: &'a [Node<InstanceInput>], value_first: bool) {
     sink.option(key.is_some());
     if let Some(key) = key {
-        sink.child(parent, NodeRef::KeyClause(key.value()), |sink| key_clause(sink, at, key.value()));
+        sink.child(parent, NodeRef::KeyClause(key.value()), |sink| key_clause_inputs(sink, at, key.value(), value_first));
     }
-    self::inputs(sink, at, parent, inputs);
+    self::inputs(sink, at, parent, inputs, value_first);
 }
 
-fn inputs<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, inputs: &'a [Node<InstanceInput>]) {
+fn inputs<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, parent: NodeRef<'a>, inputs: &'a [Node<InstanceInput>], value_first: bool) {
+    let mut indices: Vec<usize> = (0..inputs.len()).collect();
+    if value_first {
+        // Demonstrated inputs have fixed language roles. Keep the stream's
+        // value-then-demonstration order, including for inputs inside a key.
+        indices.sort_by_key(|&index| inputs[index].value().name.0.as_ref() != "value");
+        let slots: Vec<u32> = inputs.iter().map(|input| child_step(parent, NodeRef::InstanceInput(input.value()))).collect();
+        let mut children: Vec<u32> = (0..parent.children().len() as u32).collect();
+        for (slot, &index) in slots.iter().zip(&indices) {
+            children[*slot as usize] = slots[index];
+        }
+        sink.children_order(&children);
+    }
     sink.len(inputs.len());
-    for (index, input) in inputs.iter().enumerate() {
+    for (index, source) in indices.into_iter().enumerate() {
+        let input = &inputs[source];
         sink.child(parent, NodeRef::InstanceInput(input.value()), |sink| self::input(sink, at, index, input.value()));
     }
 }
 
 pub(super) fn key_clause<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, key: &'a KeyClause) {
+    key_clause_inputs(sink, at, key, false);
+}
+
+fn key_clause_inputs<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, key: &'a KeyClause, value_first: bool) {
     let at = sink.open(at, Tag::KeyClause, 0, Open::KeyClause);
     let parent = NodeRef::KeyClause(key);
     // A key is a record of its `^` labels, which a site reads by field name, so the order of its columns is not part of the form.
     key_body(sink, at, parent, Tag::Key, &key.key, false);
-    inputs(sink, at, parent, &key.inputs);
+    inputs(sink, at, parent, &key.inputs, value_first);
 }
 
 /// Walks `key`, whose body is a child of `parent`, the node at `at`.
@@ -382,7 +403,8 @@ pub(super) fn out<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, o
 /// Walks the key clause and the inputs of `demonstrated`, below the node
 /// at `at`.
 pub(super) fn demonstrated_key<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, demonstrated: &'a Demonstrated) {
-    key_and_inputs(sink, at, NodeRef::Demonstrated(demonstrated), demonstrated.key.as_ref(), &demonstrated.inputs);
+    let value_first = sink.feature_sites() && crate::resolver::demonstrated_on();
+    key_and_inputs(sink, at, NodeRef::Demonstrated(demonstrated), demonstrated.key.as_ref(), &demonstrated.inputs, value_first);
 }
 
 pub(super) fn demo_rule<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, rule: &'a DemoRule) {

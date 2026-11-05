@@ -3,8 +3,8 @@
 //! every clause of its relation is dropped, as
 //! `docs/engine/arclog-expansion.md#zero-columns` gives the rule.
 //!
-//! A case program has one clause for each relation, so a column is `0` in
-//! every clause of its relation where its clause makes it `0`. An instance
+//! For a relation with one clause, a column is `0` in every clause where
+//! its clause makes it `0`. An instance or demonstration catalog
 //! counts as a relation whose columns are the `^` labels of its key, and the
 //! reads of its outputs read it at their key site, `(:key ...)`, one field
 //! for each key column.
@@ -18,7 +18,8 @@
 
 use std::sync::Arc;
 
-use super::path::NodeRef;
+use super::path::{NodeRef, PathNode};
+use super::canonical::{prediction, relation_of};
 use super::*;
 use crate::hash::{StableHashMap, StableHashSet};
 use crate::registry::Registry;
@@ -165,6 +166,12 @@ impl<'r> Lowering<'r> {
                         *clauses.entry(name).or_default() += 1;
                     }
                 }
+                Form::Demonstrated(demo) if crate::resolver::demonstrated_on() => {
+                    let demo = demo.value();
+                    if let Some(key) = &demo.key {
+                        keys.insert(InstanceName(demo.name.0.clone()), key.value().key.columns.iter().map(|column| column.name.clone()).collect());
+                    }
+                }
                 Form::Instance(instance) => {
                     let instance = instance.value();
                     let Some(key) = &instance.key else { continue };
@@ -200,6 +207,12 @@ impl<'r> Lowering<'r> {
                 let instance = instance.value();
                 let columns = instance.key.iter().flat_map(|key| key.value().key.columns.iter());
                 columns.map(|column| (Column { owner: Owner::Key(instance.name.clone()), name: column.name.clone() }, column.label)).collect()
+            }
+            Form::Demonstrated(demo) if crate::resolver::demonstrated_on() => {
+                let demo = demo.value();
+                demo.key.iter().flat_map(|key| key.value().key.columns.iter()).map(|column| {
+                    (Column { owner: Owner::Key(InstanceName(demo.name.0.clone())), name: column.name.clone() }, column.label)
+                }).collect()
             }
             _ => Vec::new(),
         }
@@ -247,29 +260,33 @@ impl<'r> Lowering<'r> {
                 let own = self.heads(form).into_iter().filter(|(column, _)| self.droppable(column)).map(|(column, label)| (label, column)).collect();
                 FormZeros { body: self.forced(clause.body.value(), &own), inputs: Vec::new() }
             }
-            Form::Instance(instance) => {
-                let instance = instance.value();
-                let none = StableHashMap::default();
-                let mut key = Zeros::default();
-                let mut key_labels = StableHashSet::default();
-                if let Some(clause) = &instance.key {
-                    key = self.forced(clause.value().key.body.value(), &none);
-                    crate::safety::each_label_use(clause.value().key.body.value(), &mut |use_| key_labels.extend(use_label(use_)));
-                }
-                let keyed = instance.key.iter().flat_map(|clause| clause.value().inputs.iter()).map(|input| {
-                    let mut zeros = self.forced(input.value().body.value(), &none);
-                    zeros.0.retain(|label, _| !key_labels.contains(label));
-                    for (label, causes) in &key.0 {
-                        zeros.0.insert(*label, causes.clone());
-                    }
-                    zeros
-                });
-                let others = instance.inputs.iter().map(|input| self.forced(input.value().body.value(), &none));
-                let inputs = keyed.chain(others).collect();
-                FormZeros { body: key, inputs }
-            }
+            Form::Instance(instance) => self.key_zeros(instance.value().key.as_ref(), &instance.value().inputs),
+            Form::Demonstrated(demo) if crate::resolver::demonstrated_on() => self.key_zeros(demo.value().key.as_ref(), &demo.value().inputs),
             _ => FormZeros::default(),
         }
+    }
+
+    /// The zeros of a key and its inputs, with key labels shared only by
+    /// the inputs inside the key clause.
+    fn key_zeros(&self, key: Option<&Node<KeyClause>>, inputs: &[Node<InstanceInput>]) -> FormZeros {
+        let none = StableHashMap::default();
+        let mut zeros = Zeros::default();
+        let mut key_labels = StableHashSet::default();
+        if let Some(clause) = key {
+            zeros = self.forced(clause.value().key.body.value(), &none);
+            crate::safety::each_label_use(clause.value().key.body.value(), &mut |use_| key_labels.extend(use_label(use_)));
+        }
+        let keyed = key.into_iter().flat_map(|clause| clause.value().inputs.iter()).map(|input| {
+            let mut own = self.forced(input.value().body.value(), &none);
+            own.0.retain(|label, _| !key_labels.contains(label));
+            for (label, causes) in &zeros.0 {
+                own.0.insert(*label, causes.clone());
+            }
+            own
+        });
+        let others = inputs.iter().map(|input| self.forced(input.value().body.value(), &none));
+        let inputs = keyed.chain(others).collect();
+        FormZeros { body: zeros, inputs }
     }
 
     /// The labels that `body` makes `0`: those at a dropped column of a
@@ -317,20 +334,26 @@ impl<'r> Lowering<'r> {
     /// What `site` of `atom` is, given the columns dropped so far.
     fn dropped_parts(&self, atom: &Atom, site: &Site) -> Dropped {
         match &atom.relation {
+            RelationRef::Declared(name) if crate::resolver::demonstrated_on() && site.column == crate::resolver::columns::key() && self.keys.contains_key(&InstanceName(name.0.clone())) => {
+                self.dropped_key_parts(&InstanceName(name.0.clone()), site)
+            }
             RelationRef::Declared(name) => {
                 let column = Column { owner: Owner::Relation(name.clone()), name: site.column.clone() };
                 if self.dropped.contains(&column) { Dropped::Whole(column) } else { Dropped::No }
             }
             RelationRef::Output(OutputName { of: OutputOwner::Instance(instance), .. }) if site.column == crate::resolver::columns::key() => {
-                let fields = site.value.args.iter().enumerate().filter_map(|(index, arg)| {
-                    let column = Column { owner: Owner::Key(instance.clone()), name: arg_field(arg)?.clone() };
-                    self.dropped.contains(&column).then_some((index, column))
-                });
-                let fields: Vec<(usize, Column)> = fields.collect();
-                if fields.is_empty() { Dropped::No } else { Dropped::Fields(fields) }
+                self.dropped_key_parts(instance, site)
             }
             _ => Dropped::No,
         }
+    }
+
+    fn dropped_key_parts(&self, instance: &InstanceName, site: &Site) -> Dropped {
+        let fields: Vec<(usize, Column)> = site.value.args.iter().enumerate().filter_map(|(index, arg)| {
+            let column = Column { owner: Owner::Key(instance.clone()), name: arg_field(arg)?.clone() };
+            self.dropped.contains(&column).then_some((index, column))
+        }).collect();
+        if fields.is_empty() { Dropped::No } else { Dropped::Fields(fields) }
     }
 
     /// The columns that make `0` the label of a head column that stays: they
@@ -358,6 +381,7 @@ impl<'r> Lowering<'r> {
             .map(|(form, zeros)| match form {
                 Form::Clause(clause) => self.clause(form, clause, zeros, &mut refused),
                 Form::Instance(instance) => self.instance(form, instance, zeros, &mut refused),
+                Form::Demonstrated(demo) if crate::resolver::demonstrated_on() => self.demonstrated(form, demo, zeros, &mut refused),
                 other => {
                     let mut pass = Pass::new(self, &none);
                     each_atom(NodeRef::from(other), &mut |atom| {
@@ -409,6 +433,125 @@ impl<'r> Lowering<'r> {
             key = Some(Node::new(KeyClause { key: clause.value().key.clone(), inputs: Arc::new([]) }));
         }
         Form::Instance(Node::new(Instance { name: value.name.clone(), component: value.component.clone(), key, inputs }))
+    }
+
+    /// A demonstration catalog has the same key and input scopes as an
+    /// instance. Each rule has its own declarations; only its reads of the
+    /// enclosing program inherit that program's dropped columns.
+    fn demonstrated(&self, form: &Form, demo: &Node<Demonstrated>, zeros: &FormZeros, refused: &mut Vec<Column>) -> Form {
+        let value = demo.value();
+        let name = InstanceName(value.name.0.clone());
+        let mut input_zeros = zeros.inputs.iter();
+        let key = value.key.as_ref().map(|key| self.key_clause(&name, key, zeros, &mut input_zeros, refused));
+        let inputs = self.inputs(&value.inputs, &mut input_zeros, refused);
+        let mut changed = key.as_ref().is_some_and(Option::is_some) || inputs.is_some();
+        let rules = value.rules.iter().map(|rule| {
+            let forms = &rule.value().forms;
+            let (lowered, faults) = self.rule_forms(rule.value(), &name);
+            refused.extend(faults);
+            if let Some(lowered) = lowered {
+                changed = true;
+                let forms = lowered.into_iter().enumerate().map(|(index, form)| (form, forms.from_alt(index))).collect();
+                Node::new(DemoRule { forms, ..rule.value().clone() })
+            } else {
+                rule.clone()
+            }
+        }).collect();
+        if !changed {
+            return form.clone();
+        }
+        let mut key = key.flatten().or_else(|| value.key.clone());
+        let mut inputs = inputs.unwrap_or_else(|| value.inputs.clone());
+        if let Some(clause) = key.as_ref().filter(|key| key.value().key.columns.is_empty() && !key.value().inputs.is_empty()) {
+            let mut moved: Vec<Node<InstanceInput>> = clause.value().inputs.iter().chain(inputs.iter()).cloned().collect();
+            let ports = crate::stream::demonstrated::ports();
+            moved.sort_by_key(|input| ports.inputs.iter().position(|port| port.port.name == input.value().name));
+            inputs = moved.into();
+            key = Some(Node::new(KeyClause { key: clause.value().key.clone(), inputs: Arc::new([]) }));
+        }
+        Form::Demonstrated(Node::new(Demonstrated { key, inputs, rules, ..value.clone() }))
+    }
+
+    /// Lower one rule's local declarations while preserving the enclosing
+    /// program's decisions. A blocked enclosing column is returned to the
+    /// enclosing pass, which retries the whole program with that column kept.
+    fn rule_forms(&self, rule: &DemoRule, catalog: &InstanceName) -> (Option<Vec<Form>>, Vec<Column>) {
+        let forms = &rule.forms;
+        let mut local = Lowering::new(forms, self.registry);
+        let names: StableHashSet<DeclaredName> = forms.iter().filter_map(|form| match form {
+            Form::Clause(clause) => match &clause.value().derives {
+                ProgramRelation::Declared(name) => Some(name.0.clone()),
+                _ => None,
+            },
+            Form::Instance(instance) => Some(instance.value().name.0.clone()),
+            Form::Demonstrated(demo) if crate::resolver::demonstrated_on() => Some(demo.value().name.0.clone()),
+            Form::Choose(choose) => Some(choose.value().name.0.clone()),
+            _ => None,
+        }).collect();
+        let shadowed = |owner: &Owner| match owner {
+            Owner::Relation(name) => names.contains(&name.0),
+            Owner::Key(name) => names.contains(&name.0),
+            Owner::Opaque => false,
+        };
+        // A prediction's value and field columns belong to its interface.
+        // Its key columns drop only together with the catalog's key.
+        let key_columns = self.keys.get(catalog).map_or(&[][..], Vec::as_slice);
+        let prediction = forms.iter().find_map(|form| match form {
+            Form::Clause(clause) if relation_of(&clause.value().derives) == prediction() => Some(clause.value()),
+            _ => None,
+        });
+        if let Some(prediction) = prediction {
+            for column in prediction.columns.iter() {
+                let key = Column { owner: Owner::Key(catalog.clone()), name: column.name.clone() };
+                if !key_columns.contains(&column.name) || !self.dropped.contains(&key) || rule.fields.iter().any(|field| field.name == column.name) {
+                    if let ProgramRelation::Declared(name) = &prediction.derives {
+                        local.kept.insert(Column { owner: Owner::Relation(name.clone()), name: column.name.clone() });
+                    }
+                }
+            }
+        }
+        let inherited: StableHashSet<Column> = self.dropped.iter().filter(|column| !shadowed(&column.owner)).cloned().collect();
+        local.keys.extend(self.keys.iter().filter(|(name, _)| !names.contains(&name.0)).map(|(name, columns)| (name.clone(), columns.clone())));
+        local.bare.extend(self.bare.iter().filter(|name| !names.contains(&name.0)).cloned());
+        let inherited_bare = local.bare.clone();
+        loop {
+            local.dropped.extend(inherited.iter().cloned());
+            let zeros = local.settle(forms);
+            local.bare.extend(inherited_bare.iter().cloned());
+            let (lowered, mut faults) = local.rewrite(forms, &zeros);
+            faults.extend(local.stranded(forms, &zeros));
+            let external: Vec<Column> = faults.iter().filter(|column| inherited.contains(*column)).cloned().collect();
+            if !external.is_empty() {
+                return (None, external);
+            }
+            if faults.is_empty() {
+                if let Some(prediction) = prediction {
+                    let mut blocked = Vec::new();
+                    for column in prediction.columns.iter() {
+                        let key = Column { owner: Owner::Key(catalog.clone()), name: column.name.clone() };
+                        if self.dropped.contains(&key) {
+                            if let ProgramRelation::Declared(name) = &prediction.derives {
+                                let output = Column { owner: Owner::Relation(name.clone()), name: column.name.clone() };
+                                if !local.dropped.contains(&output) {
+                                    blocked.push(key);
+                                }
+                            }
+                        }
+                    }
+                    if !blocked.is_empty() {
+                        return (None, blocked);
+                    }
+                }
+                let changed = forms.iter().zip(&lowered).any(|(before, after)| NodeRef::from(before).address() != NodeRef::from(after).address());
+                return (changed.then_some(lowered), Vec::new());
+            }
+            let before = local.kept.len();
+            local.kept.extend(faults);
+            if local.kept.len() == before {
+                return (None, Vec::new());
+            }
+            local.dropped.clear();
+        }
     }
 
     /// The key clause of the instance `name` after the rewrite, or `None`
@@ -622,9 +765,13 @@ impl<'a> Pass<'a> {
     /// A key site of a read of a keyed instance's output with an argument
     /// that names no field cannot be rewritten: the instance's key stays.
     fn unreadable_key(&mut self, atom: &Atom, site: &Site) {
-        let RelationRef::Output(OutputName { of: OutputOwner::Instance(instance), .. }) = &atom.relation else { return };
+        let instance = match &atom.relation {
+            RelationRef::Output(OutputName { of: OutputOwner::Instance(instance), .. }) => instance.clone(),
+            RelationRef::Declared(name) if crate::resolver::demonstrated_on() && self.lowering.keys.contains_key(&InstanceName(name.0.clone())) => InstanceName(name.0.clone()),
+            _ => return,
+        };
         if site.column == crate::resolver::columns::key() && site.value.args.iter().any(|arg| arg_field(arg).is_none() && labels_of_arg(arg) != [LabelUse::Zero]) {
-            let columns = self.lowering.keys.get(instance).into_iter().flatten();
+            let columns = self.lowering.keys.get(&instance).into_iter().flatten();
             self.refused.extend(columns.map(|name| Column { owner: Owner::Key(instance.clone()), name: name.clone() }));
         }
     }

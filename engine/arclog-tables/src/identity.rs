@@ -13,7 +13,11 @@
 //!   position of its label in the labeling of the form's label scope under
 //!   the resolver's writer (the least of the positions where the heads of
 //!   several inputs write the column with several labels). Any other column
-//!   has `#` and that position.
+//!   has `#` and that position. Under `ARCLOG_DEMONSTRATED`,
+//!   demonstrated columns use their fixed value roles and key, with record
+//!   fields identified by canonical outer labels. A rigid part column that
+//!   repeats a key's label prefixes its identity with `part.` to distinguish
+//!   the two roles.
 //! - A flow's atom has the identity of its form, and its canonical path in
 //!   the form (the path of the atom with each sorted list in canonical
 //!   order), under the resolver's writer.
@@ -39,7 +43,8 @@ use crate::tables::{Contents, Point, Table, TableRelation};
 pub struct Identities {
     /// The identity of each table, as 32 hexadecimal digits, and the empty
     /// string for a table that has none: a table that faulted or stands at a
-    /// body in progress, and a `DEMONSTRATED` form's.
+    /// body in progress, and a `DEMONSTRATED` form's while
+    /// `ARCLOG_DEMONSTRATED` is off.
     pub tables: Vec<String>,
     /// The identity of each column of each table, in the order of its
     /// columns.
@@ -182,16 +187,22 @@ fn table_identity(forms: &mut Forms, table: &Table) -> (String, Vec<String>) {
         hex(form)
     };
     let instance = matches!(forms.form(top), Some(Form::Instance(_)));
+    if arclog::resolver::demonstrated_on() && matches!(forms.form(top), Some(Form::Demonstrated(_))) {
+        // The paths give fixed roles independently of the synthetic header
+        // names and the authored order of the value input's head sites.
+        let Some(paths) = contents.rows.as_ref().filter(|paths| paths.len() == contents.columns.len()) else { return Default::default() };
+        let columns: Option<Vec<String>> = paths.iter().enumerate().map(|(at, path)| {
+            let lib = arclog::program::column_spelled(path.first()?);
+            Some(if path.len() == 1 { lib } else { format!("{lib}.#{}", column_position(query, contents, at)?) })
+        }).collect();
+        return columns.map(|columns| (ident, columns)).unwrap_or_default();
+    }
     let mut columns: Vec<String> = contents
         .columns
         .iter()
         .enumerate()
         .map(|(at, column)| {
-            // The column's labels, among which the least position stands for it: the label the table selects for a port column
-            // depends on the order the heads are written in, and the set of labels does not.
-            let bound = contents.bound_labels.get(at).map(|labels| &labels[..]).unwrap_or_default();
-            let selected = column.label_id.iter().chain(bound);
-            let position = selected.filter_map(|label| query.order.label_position(&NodePath::default(), *label)).min();
+            let position = column_position(query, contents, at);
             match (column.name.split_once('.'), position) {
                 // A field of a record below a lib column: the lib column and the position of its label.
                 (Some((lib, _)), Some(position)) => format!("{lib}.#{position}"),
@@ -203,8 +214,33 @@ fn table_identity(forms: &mut Forms, table: &Table) -> (String, Vec<String>) {
             }
         })
         .collect();
+    let rigid = matches!(forms.form(top), Some(Form::RigidDet(rigid)) if rigid.value().key.is_some())
+        && contents.output_name != arclog::read::spelling::POSE;
+    if rigid {
+        rigid_key_aliases(&mut columns, &contents.columns.iter().map(|column| column.slot).collect::<Vec<_>>());
+    }
     distinct(&mut columns, contents);
     (ident, columns)
+}
+
+/// The least canonical position among a column's bound labels. Selection
+/// of one header label depends on head order; the set of labels does not.
+fn column_position(query: &QueryIdentity, contents: &Contents, at: usize) -> Option<u32> {
+    let bound = contents.bound_labels.get(at).map(|labels| &labels[..]).unwrap_or_default();
+    contents.columns[at].label_id.iter().chain(bound)
+        .filter_map(|label| query.order.label_position(&NodePath::default(), *label)).min()
+}
+
+/// A rigid output's key precedes its pose and part columns by the language's
+/// schema. A part may read the same label as the key; its role distinguishes
+/// that occurrence without using its authored name or its site's order.
+fn rigid_key_aliases(columns: &mut [String], slots: &[Option<u32>]) {
+    let keys: Vec<String> = columns.iter().zip(slots).filter(|(_, slot)| **slot == Some(0)).map(|(column, _)| column.clone()).collect();
+    for (column, slot) in columns.iter_mut().zip(slots) {
+        if slot.is_some_and(|slot| slot > 1) && keys.contains(column) {
+            *column = format!("part.{column}");
+        }
+    }
 }
 
 /// Makes the identities of `columns` differ where two label positions or

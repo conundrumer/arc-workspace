@@ -49,7 +49,7 @@ pub(crate) const FROM: &str = "from";
 pub(crate) const NEVER: &str = "never";
 pub(crate) const INSTANCE: &str = "instance";
 /// The step of `&marker.pose`.
-pub(crate) const POSE: &str = "pose";
+pub const POSE: &str = "pose";
 /// The prefix of a read of a port of the component a registry definition
 /// defines, `(self.<port> ...)`.
 pub(crate) const SELF_PREFIX: &str = "self.";
