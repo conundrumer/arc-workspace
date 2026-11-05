@@ -207,7 +207,7 @@ impl Lib<'_> {
     }
 
     /// The translation by `k` along `axis`, toward its bottom or right
-    /// edge.
+    /// edge, and toward the opposite edge where `k` is negative.
     pub(crate) fn translation(&self, axis: TermId, k: i32) -> Result<TermId, ReachedBound> {
         let geometry = Geometry::get();
         let edge = geometry.axis_edges(axis).each().find(|edge| matches!(edge, Edge::Bottom | Edge::Right)).expect("an axis with a bottom or a right edge");
