@@ -70,6 +70,8 @@ proposer's, after a gloss where the line has one."""
 class RenderMixin:
     """The rendering of a solver's forms, its state combinations, sinks and choices."""
 
+    excluded_alts: list[frozenset[str]] | None = None
+
     # ---- placement and rendering
 
     def render(self, forms: list[Form], claims: list[Claim], points, concept, all_ctors) -> str:
@@ -948,6 +950,16 @@ class RenderMixin:
             g.comments, g.claim_slugs, g.branches = f.comments, f.claim_slugs, f.branches
         return g
 
+    def excluded_sets(self) -> list[frozenset[str]]:
+        """The alts of each `exclude` line of the arcdata file that `impl_choice` gives."""
+        if self.excluded_alts is None:
+            saved = list(self.todo.pending), Counter(self.todo.kinds)
+            excludes = self.choice_excludes(list(self.c.point_fields()))
+            self.todo.pending, self.todo.kinds = saved
+            self.excluded_alts = [frozenset(re.findall(r"\$\w+", m.group(1)))
+                                  for x in excludes if (m := re.match(r"\(exclude \(([^)]*)\)", x))]
+        return self.excluded_alts
+
     def alt_case(self, alts: list[tuple[str, str]], branch_forms, concept, main, main_text, out: list[str]
                  ) -> tuple[list["Form"], dict[str, list]]:
         """The forms of the case that takes each (point, constructor) of
@@ -982,7 +994,11 @@ class RenderMixin:
             # clause once it is written again without the relations `gone`
             return {f.name for f in branch_forms if holds(f) and self.without_reads(f, gone) is not None}
         rowless = self.rowless_sets(at)
-        empty = (fixed_only - derived_without(rowless)) | rowless
+        # a combination that an `exclude` leaves out is no case, so what it would leave empty stands for the cases
+        # that take the alts with another constructor at each other point
+        chosen = {"$" + k for k in at.values()} | {"$" + k for k in concept if field_of.get(k) not in at}
+        no_case = any(x <= chosen for x in self.excluded_sets())
+        empty = rowless if no_case else (fixed_only - derived_without(rowless)) | rowless
         # a concept clause that holds in the case holds beside the case's own
         # clauses of its relation
         reps = getattr(self, "concept_repeats", {})
