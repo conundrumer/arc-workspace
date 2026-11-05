@@ -98,6 +98,8 @@ pub enum Kind {
 pub enum Field {
     One(Column),
     Record(Vec<Column>),
+    /// The value `0`, at a column whose type has one.
+    Zero,
 }
 
 /// One input of a `component`, written from a relation.
@@ -117,7 +119,7 @@ pub enum Rel {
     Select(Box<Rel>, Column, Op, Operand),
     Join(Box<Rel>, Box<Rel>, Vec<(Column, Column)>),
     Antijoin(Box<Rel>, Box<Rel>, Vec<(Column, Column)>),
-    Union(Box<Rel>, Box<Rel>, Vec<(Column, Column)>),
+    Union(Box<Rel>, Box<Rel>, Vec<(Column, Operand)>),
     LibJoin(Box<Rel>, String, Vec<(String, Column)>),
     Component(String, Vec<Binding>, String),
     Pool { hole: String, over: Box<Rel>, kind: Kind, body: Box<Rel> },
@@ -222,7 +224,8 @@ impl Rel {
             Rel::Call(name, args) => crate::library::call_size(name, args),
             Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => 1 + rel.size(),
             Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Union(left, right, _) => 1 + left.size() + right.size(),
-            Rel::Component(_, bindings, _) => 1 + bindings.iter().map(|binding| binding.relation.size()).sum::<usize>(),
+            // Each bound input past the first combines one more relation, as a `join` does.
+            Rel::Component(_, bindings, _) => bindings.len().max(1) + bindings.iter().map(|binding| binding.relation.size()).sum::<usize>(),
             Rel::Pool { over, body, .. } => 1 + over.size() + body.size(),
         }
     }
@@ -341,7 +344,10 @@ impl Reader<'_> {
             }
             ("join", [left, right, rest @ ..]) => Ok(Rel::Join(boxed(left)?, boxed(right)?, pairs(rest)?)),
             ("antijoin", [left, right, rest @ ..]) => Ok(Rel::Antijoin(boxed(left)?, boxed(right)?, pairs(rest)?)),
-            ("union", [left, right, rest @ ..]) if !rest.is_empty() => Ok(Rel::Union(boxed(left)?, boxed(right)?, pairs(rest)?)),
+            ("union", [left, right, rest @ ..]) if !rest.is_empty() => {
+                let pairs = pairs(rest)?.into_iter().map(|(column, operand)| (column, if operand == "0" { Operand::Zero } else { Operand::Column(operand) })).collect();
+                Ok(Rel::Union(boxed(left)?, boxed(right)?, pairs))
+            }
             ("lib-join", [rel, name, rest @ ..]) => Ok(Rel::LibJoin(boxed(rel)?, symbol(name)?.to_string(), pairs(rest)?)),
             ("component", [name, rest @ ..]) if !rest.is_empty() => {
                 let (port, bindings) = rest.split_last().expect("a component holds its port");
@@ -369,6 +375,7 @@ impl Reader<'_> {
             let fields = fields
                 .iter()
                 .map(|field| match field {
+                    SExpr::Symbol { text, .. } if &**text == "0" => Ok(Field::Zero),
                     SExpr::Symbol { text, .. } => Ok(Field::One(text.to_string())),
                     list => Ok(Field::Record(columns(items(list)?)?)),
                 })
@@ -436,6 +443,7 @@ impl fmt::Display for Field {
         match self {
             Field::One(name) => f.write_str(name),
             Field::Record(names) => list(f, names),
+            Field::Zero => f.write_str("0"),
         }
     }
 }
@@ -479,7 +487,12 @@ impl fmt::Display for Rel {
             }
             Rel::Union(left, right, rest) => {
                 write!(f, "(union {left} {right}")?;
-                write_pairs(f, rest)?;
+                for (column, operand) in rest {
+                    match operand {
+                        Operand::Column(name) => write!(f, " ({column} {name})")?,
+                        Operand::Zero => write!(f, " ({column} 0)")?,
+                    }
+                }
                 f.write_str(")")
             }
             Rel::LibJoin(rel, name, rest) => {

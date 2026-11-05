@@ -163,7 +163,15 @@ fn compare_models(expression: &str, element: &Element, value: &Value, moved: &Va
             match (model, moved_model) {
                 (ModelValue::Rows(rows), ModelValue::Rows(moved_rows)) => {
                     let image = element.rows(rows, &value.types);
-                    let (a, b) = (canonical(&image, &value.types), canonical(moved_rows, &moved.types));
+                    // Each side holds its columns in its own order, so the comparison
+                    // reads them by name.
+                    let order: Vec<usize> = value.row_names.iter().map(|name| moved.row_names.iter().position(|own| own == name).unwrap_or(usize::MAX)).collect();
+                    if order.contains(&usize::MAX) {
+                        tally.differences.push(Difference { expression: expression.to_string(), law: Some(law), detail: format!("the columns {:?} and {:?}", value.row_names, moved.row_names) });
+                        return;
+                    }
+                    let aligned: Vec<Vec<TermId>> = moved_rows.iter().map(|row| order.iter().map(|at| row[*at]).collect()).collect();
+                    let (a, b) = (canonical(&image, &value.types), canonical(&aligned, &value.types));
                     if a != b {
                         let shown = |items: &[String]| items.iter().take(4).cloned().collect::<Vec<_>>().join(" ");
                         tally.differences.push(Difference {
@@ -221,6 +229,22 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
     let plain = Host::stored(task.clone(), table)?;
     let moved_table = table.moved(element);
     let moved = Host::stored(element.task(task), &moved_table)?;
+    compare_hosts(&plain, &moved, table, element, sample, tally, progress);
+    Ok(())
+}
+
+/// Compares the features of `table` as stored rows with those of the same table
+/// as its program computes it in `state`: the element is the identity, so a
+/// difference is a fault of the stored rows or of the expansion.
+pub fn compare_with_program(table: &StoredRows, state: &Host, sample: &Sample, tally: &mut Tally, progress: &mut dyn FnMut(&Tally)) -> Result<(), String> {
+    let plain = Host::stored(state.task.clone(), table)?;
+    let identity = Element::new("D4_ID", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    compare_hosts(&plain, state, table, &identity, sample, tally, progress);
+    Ok(())
+}
+
+/// Compares each sampled feature of `table` on `plain` and `moved`, by `element`.
+fn compare_hosts(plain: &Host, moved: &Host, table: &StoredRows, element: &Element, sample: &Sample, tally: &mut Tally, progress: &mut dyn FnMut(&Tally)) {
     plain.set_work_cap(sample.work_cap);
     moved.set_work_cap(sample.work_cap);
     let registry = Registry::get();
@@ -228,7 +252,7 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
     for task_wide in [false, true] {
         let space = Space {
             registry,
-            tables: &plain,
+            tables: plain,
             task_wide,
             table_names: vec![name.clone()],
             program_relations: false,
@@ -236,6 +260,7 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
             max_inputs: sample.max_inputs,
             frames: Vec::new(),
             thin: Some((element.name.clone(), sample.thin_per_million)),
+            no_output: false,
         };
         let began = std::time::Instant::now();
         let mut lower: Vec<Vec<Typed>> = Vec::new();
@@ -247,7 +272,13 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
                     tally.out_of_time += 1;
                     return ControlFlow::Break(());
                 }
+                // An expression of the encoder for a table reads that table.
+                let mut reads_table = false;
+                term.rel.each_leaf(&mut |leaf| reads_table |= matches!(leaf, Leaf::Table(_)));
                 let _ = space.roots(&term, &mut |feature| {
+                    if !reads_table {
+                        return ControlFlow::Continue(());
+                    }
                     if space.task_wide && !has_task_wide_leaf(&feature, table) {
                         return ControlFlow::Continue(());
                     }
@@ -282,7 +313,6 @@ pub fn compare_table(table: &StoredRows, task: &Task, element: &Element, sample:
             lower.push(terms);
         }
     }
-    Ok(())
 }
 
 fn has_task_wide_leaf(feature: &Feature, table: &StoredRows) -> bool {

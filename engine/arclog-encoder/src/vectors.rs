@@ -83,13 +83,17 @@ pub fn entries(holes: &[String], size: usize, program_relations: bool, max_input
             max_inputs,
             frames: Vec::new(),
             thin: None,
+            no_output: false,
         };
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for at in 0..=size {
             let mut terms = Vec::new();
             let _ = space.generate(&lower, at, &mut |term| {
+                // A vector entry reads its table.
+                let mut reads_table = false;
+                term.rel.each_leaf(&mut |leaf| reads_table |= matches!(leaf, Leaf::Table(_)));
                 let flow = space.roots(&term, &mut |feature| {
-                    if gives_number(&feature, &term) {
+                    if reads_table && gives_number(&feature, &term) {
                         // A term of the task-wide space is task-wide only with a task-wide leaf.
                         if let Some(entry) = entry_of(feature).filter(|entry| !task_wide || !entry.per_input) {
                             found.entry(entry.expression.clone()).or_insert(entry);

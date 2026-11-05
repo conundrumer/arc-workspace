@@ -12,8 +12,11 @@
 //!   state.
 //! - [`vectors`]: the vector entries, their names and their numbers.
 //! - [`law`]: the check of the transformation law on stored rows.
+//! - [`closed`]: the values of the closed roots on grids alone, which the
+//!   evaluation reads.
 //! - [`run`]: the check and the evaluation of those forms, through the
 //!   engine's evaluator.
+pub mod closed;
 pub mod encoder;
 pub mod enumerate;
 pub mod expand;

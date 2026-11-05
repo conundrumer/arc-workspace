@@ -335,7 +335,10 @@ impl Expander<'_> {
             Rel::Union(left, right, pairs) => {
                 let left = self.rel(left)?;
                 let right = self.rel(right)?;
-                let pairs = self.resolved_pairs(&left, &right, pairs);
+                let pairs: Vec<(Column, Operand)> = pairs.iter().map(|(l, r)| (self.resolved(&left, l), match r {
+                    Operand::Column(name) => Operand::Column(self.resolved(&right, name)),
+                    Operand::Zero => Operand::Zero,
+                })).collect();
                 self.union(&left, &right, &pairs)
             }
             Rel::LibJoin(inner, name, bindings) => {
@@ -520,31 +523,36 @@ impl Expander<'_> {
         Ok(self.query(&conjuncts, labels))
     }
 
-    pub(crate) fn union(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Column)]) -> Result<Rows, String> {
+    pub(crate) fn union(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Operand)]) -> Result<Rows, String> {
         let mut taken = Vec::new();
         let (left_marks, left_labels) = left_reads(left, &mut taken);
-        if pairs.len() != left.columns.len() || pairs.len() != right.columns.len() {
+        let named = pairs.iter().filter(|(_, operand)| matches!(operand, Operand::Column(_))).count();
+        if pairs.len() != left.columns.len() || named != right.columns.len() {
             return Err("the pairs of a `union` name every column of both relations".to_string());
         }
         let mut right_marks = Vec::new();
-        for (l, r) in pairs {
-            let index = right.index(r)?;
-            if right_marks.iter().any(|(held, _): &(usize, Mark)| *held == index) {
-                return Err(format!("the pairs of a `union` name the right column `{r}` twice"));
-            }
-            right_marks.push((index, Mark::Join(left_labels[left.index(l)?].clone())));
-        }
-        let body = format!("(OR ({}) ({}))", left.atom(&left_marks), right.atom(&right_marks));
+        let mut zeros = Vec::new();
         // A label of two types has their join.
         let mut labels = typed_labels(&left_labels, left);
-        for (l, r) in pairs {
+        for (l, operand) in pairs {
             let at = left.index(l)?;
-            let joined = match (&left.columns[at].ty, &right.columns[right.index(r)?].ty) {
-                (Some(a), Some(b)) => a.join(b),
-                _ => None,
-            };
-            labels[at].ty = joined;
+            match operand {
+                Operand::Column(r) => {
+                    let index = right.index(r)?;
+                    if right_marks.iter().any(|(held, _): &(usize, Mark)| *held == index) {
+                        return Err(format!("the pairs of a `union` name the right column `{r}` twice"));
+                    }
+                    right_marks.push((index, Mark::Join(left_labels[at].clone())));
+                    labels[at].ty = match (&left.columns[at].ty, &right.columns[index].ty) {
+                        (Some(a), Some(b)) => a.join(b),
+                        _ => None,
+                    };
+                }
+                Operand::Zero => zeros.push(format!("(= {} 0)", left_labels[at])),
+            }
         }
+        let right_branch = std::iter::once(right.atom(&right_marks)).chain(zeros).collect::<Vec<_>>().join(" ");
+        let body = format!("(OR ({}) ({right_branch}))", left.atom(&left_marks));
         Ok(self.query(&[body], labels))
     }
 
@@ -595,6 +603,7 @@ impl Expander<'_> {
                 fields: binding.fields.iter().map(|field| match field {
                     Field::One(name) => Field::One(self.resolved(&rows, name)),
                     Field::Record(names) => Field::Record(self.resolved_all(&rows, names)),
+                    Field::Zero => Field::Zero,
                 }).collect(),
             };
             bound.push(BoundInput { input, rows, binding });
@@ -653,6 +662,9 @@ fn lib_col(column: &LibColumn) -> Col {
     Col::typed(spelled(&column.name), column.ty.fixed().cloned())
 }
 
+/// The field `0` among the names of a binding's fields, which no column has.
+const ZERO_FIELD: &str = "0";
+
 /// An input of a component, with the relation that writes it.
 struct BoundInput<'b> {
     input: &'b InputPort,
@@ -679,6 +691,7 @@ fn input_fields<'b>(input: &'b InputPort, binding: &Binding) -> Result<Vec<(&'b 
     let flat = |field: &Field| match field {
         Field::One(name) => vec![name.clone()],
         Field::Record(names) => names.clone(),
+        Field::Zero => vec![ZERO_FIELD.to_string()],
     };
     match columns[..] {
         [] if binding.fields.is_empty() => Ok(Vec::new()),
@@ -776,10 +789,19 @@ fn component_form(name: &str, declared: &Component, instance: &str, bound: &[Bou
             }
         }
         let mut heads = Vec::new();
+        let mut zeros: Vec<String> = Vec::new();
         for (column, fields) in input_fields(b.input, &b.binding)? {
             let mut labels = Vec::new();
             let mut types = Vec::new();
             for field in &fields {
+                // A field `0`: the body makes a label of its own with `(= *X 0)`.
+                if field == ZERO_FIELD {
+                    let label = unique("Z", &mut taken);
+                    zeros.push(format!("(= *{label} 0)"));
+                    types.push(column.ty.fixed().cloned());
+                    labels.push(label);
+                    continue;
+                }
                 let index = b.rows.index(field)?;
                 types.push(b.rows.columns[index].ty.clone());
                 let label = match marks.iter().find(|(held, _)| *held == index) {
@@ -802,7 +824,8 @@ fn component_form(name: &str, declared: &Component, instance: &str, bound: &[Bou
         }
         keep_example(&b.rows, &mut marks, &mut taken, 0);
         let order = declared.inputs.iter().position(|input| input.port.name == b.input.port.name).expect("a binding's input is one of the component's");
-        let text = format!("({} ({})\n      {})", b.binding.input, heads.join(" "), b.rows.atom(&marks));
+        let body = std::iter::once(b.rows.atom(&marks)).chain(zeros).collect::<Vec<_>>().join("\n      ");
+        let text = format!("({} ({})\n      {body})", b.binding.input, heads.join(" "));
         if keyed { inside.push((order, text)) } else { after.push((order, text)) }
     }
     inside.sort_by_key(|(order, _)| *order);

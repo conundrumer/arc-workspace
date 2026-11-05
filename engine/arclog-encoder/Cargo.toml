@@ -11,6 +11,8 @@ arclog = { path = "../arclog" }
 arclog-constructions = { path = "../arclog-constructions" }
 # The sources of each column of a table, which a pool's kind reads.
 arclog-tables = { path = "../arclog-tables" }
+# The grids of an evaluation are read from JSON.
+serde_json = "1"
 
 [[bin]]
 name = "feature-encoder"

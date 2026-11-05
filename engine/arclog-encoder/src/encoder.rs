@@ -104,6 +104,7 @@ pub fn encode(host: &Host, options: &Options, visit: &mut dyn FnMut(Record) -> C
             max_inputs: options.max_inputs,
             frames: Vec::new(),
             thin: None,
+            no_output: false,
         })
         .collect();
     let mut lower: Vec<Vec<Vec<Typed>>> = vec![Vec::new(), Vec::new()];
@@ -132,6 +133,12 @@ pub fn encode(host: &Host, options: &Options, visit: &mut dyn FnMut(Record) -> C
 }
 
 fn root_walk(host: &Host, space: &Space<'_>, term: &Typed, size: usize, seen: &mut HashMap<u128, String>, visit: &mut dyn FnMut(Record) -> ControlFlow<()>) -> ControlFlow<()> {
+    // An expression that reads no table has one value on every table.
+    let mut reads_table = false;
+    term.rel.each_leaf(&mut |leaf| reads_table |= matches!(leaf, Leaf::Table(_)));
+    if !reads_table {
+        return ControlFlow::Continue(());
+    }
     space.roots(term, &mut |feature| {
         if space.task_wide && !has_task_wide_leaf(&feature, host) {
             return ControlFlow::Continue(());

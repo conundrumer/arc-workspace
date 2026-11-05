@@ -6,8 +6,9 @@
 //!   feature-encoder encode SOLVER TABLE... [--size D] [--out FILE] [--work-cap N] [--limit N] [--max-inputs N] [--program-relations]
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder vector SOLVER TABLE [--size D] [--names FILE] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
+//!   feature-encoder grid-values GRIDS_JSON (--scene | --rule) [--size D] [--max-inputs N] [--work-cap N] --out FILE
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
-//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--out FILE]
+//!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--program-compare] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
 //! concept case of a solver, and `rows` those of a relation term. `worked`
@@ -15,10 +16,14 @@
 //! line for each ground expression up to a size, small sizes first; on a restart
 //! with the same `--out` it skips the expressions the file holds. `names` writes
 //! the vector entries at a size, and `vector` their numbers on a table. `count`
-//! prints the terms at each size, by operator, with no evaluation. `law` compares
+//! prints the terms at each size, by operator, with no evaluation. `grid-values`
+//! writes the value of each closed root at each grid of a file: a list of grids
+//! for Scene recognition, of pairs of grids for Rule recognition. A line holds the
+//! root, its size and its values; on a restart it skips the roots the file holds. `law` compares
 //! a sample of features on a sample of tables with their images under the group,
 //! writing a line per table and element, and on a restart skips those the file
-//! holds.
+//! holds. With `--program-compare` it compares each table's stored rows with the
+//! table as its program computes it.
 
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
@@ -49,10 +54,12 @@ struct Arguments {
     names: Option<PathBuf>,
     thin: u32,
     seconds: f64,
+    program_compare: bool,
+    rule: bool,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0 };
+    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -67,6 +74,9 @@ fn arguments() -> Arguments {
             "--program-relations" => parsed.program_relations = true,
             "--rate" => parsed.rate = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --rate"),
             "--control" => parsed.control = true,
+            "--program-compare" => parsed.program_compare = true,
+            "--rule" => parsed.rule = true,
+            "--scene" => parsed.rule = false,
             "--thin" => parsed.thin = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --thin"),
             "--seconds" => parsed.seconds = args.next().and_then(|text| text.parse().ok()).expect("a number after --seconds"),
             "--names" => parsed.names = Some(args.next().expect("a file after --names").into()),
@@ -201,12 +211,65 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     Ok(())
 }
 
+fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
+    use arclog_encoder::closed::{closed_values, task_of_inputs, task_of_pairs, ClosedCounts, ClosedRun, OutputLeaf};
+    let text = std::fs::read_to_string(grids).map_err(|error| error.to_string())?;
+    let (task, output_leaf) = if arguments.rule {
+        let pairs: Vec<(Vec<Vec<u8>>, Vec<Vec<u8>>)> = parse_grids(&text, true)?.into_iter().map(|pair| (pair.0, pair.1.expect("a pair"))).collect();
+        (task_of_pairs(&pairs)?, OutputLeaf::Required)
+    } else {
+        let inputs: Vec<Vec<Vec<u8>>> = parse_grids(&text, false)?.into_iter().map(|pair| pair.0).collect();
+        (task_of_inputs(&inputs)?, OutputLeaf::None)
+    };
+    let host = Host::of_task("(OUT (input ^P ^Col))", task)?;
+    let run = ClosedRun { size: arguments.size, max_inputs: arguments.max_inputs, output_leaf, work_cap: arguments.work_cap };
+    let path = arguments.out.clone().ok_or("`grid-values` writes to --out")?;
+    let done: HashSet<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter_map(|line| line.split('\t').next().map(str::to_string)).collect();
+    let mut out = std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|error| error.to_string())?);
+    let mut counts = ClosedCounts::default();
+    let start = Instant::now();
+    let mut last = Instant::now();
+    let mut written = 0u64;
+    closed_values(&host, &run, &done, &mut counts, &mut |expression, size, values| {
+        let _ = writeln!(out, "{expression}\t{size}\t{}", values.join(" "));
+        written += 1;
+        if last.elapsed().as_secs() >= 10 {
+            last = Instant::now();
+            let _ = out.flush();
+            eprintln!("{written} roots written; {:.0}/s", written as f64 / start.elapsed().as_secs_f64());
+        }
+        ControlFlow::Continue(())
+    });
+    let _ = out.flush();
+    eprintln!("done in {:.1}s: {counts:?}", start.elapsed().as_secs_f64());
+    Ok(())
+}
+
+/// The grids of `text`, a JSON list of grids, or of pairs of grids where `pairs`
+/// holds: a small reader of nested lists of digits.
+fn parse_grids(text: &str, pairs: bool) -> Result<Vec<(Vec<Vec<u8>>, Option<Vec<Vec<u8>>>)>, String> {
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
+    let grid = |value: &serde_json::Value| -> Result<Vec<Vec<u8>>, String> {
+        let rows = value.as_array().ok_or("a grid is a list")?;
+        rows.iter().map(|row| row.as_array().ok_or("a row is a list".to_string()).and_then(|row| row.iter().map(|cell| cell.as_u64().map(|cell| cell as u8).ok_or("a cell is a digit".to_string())).collect())).collect()
+    };
+    let items = value.as_array().ok_or("a list of grids")?;
+    items.iter().map(|item| {
+        if pairs {
+            let pair = item.as_array().ok_or("a pair is a list")?;
+            Ok((grid(&pair[0])?, Some(grid(&pair[1])?)))
+        } else {
+            Ok((grid(item)?, None))
+        }
+    }).collect()
+}
+
 fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(), String> {
     use arclog_encoder::enumerate::{value_kinds, Space, Typed};
     use arclog_encoder::expression::Rel;
     let host = host(arguments, solver)?;
     for task_wide in [false, true] {
-        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, kinds: value_kinds(), max_inputs: arguments.max_inputs, frames: Vec::new(), thin: None };
+        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, kinds: value_kinds(), max_inputs: arguments.max_inputs, frames: Vec::new(), thin: None, no_output: false };
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for size in 0..=arguments.size {
             let start = Instant::now();
@@ -268,7 +331,7 @@ fn elements_of(task: &str) -> Vec<arclog_encoder::law::Element> {
 }
 
 fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
-    use arclog_encoder::law::{compare_table, Sample, Tally};
+    use arclog_encoder::law::{compare_table, compare_with_program, Sample, Tally};
     let tasks = sampled_tasks(tasks_file, arguments.tasks_count)?;
     let path = arguments.out.clone().ok_or("`law` writes to --out")?;
     let done: HashSet<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter_map(|line| {
@@ -312,6 +375,20 @@ fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
             }
         }
         for table in &tables {
+            if arguments.program_compare {
+                let key = format!("{solver}/{}/program", table.table);
+                if done.contains(&key) {
+                    continue;
+                }
+                let mut tally = Tally::default();
+                let began = Instant::now();
+                let result = compare_with_program(table, &state, &sample, &mut tally, &mut |_| {});
+                let differences: Vec<String> = tally.differences.iter().take(40).map(|difference| format!("{{\"expression\":{},\"law\":\"{:?}\",\"detail\":{}}}", json_string(&difference.expression), difference.law, json_string(&difference.detail))).collect();
+                let fault = result.err().map_or("null".to_string(), |message| json_string(&message));
+                let _ = writeln!(out, "{{\"key\":\"{key}\",\"seconds\":{:.1},\"compared\":{},\"invariant\":{},\"equivariant\":{},\"both_refused\":{},\"both_fault\":{},\"stopped\":{},\"out_of_time\":{},\"difference_count\":{},\"fault\":{fault},\"differences\":[{}]}}", began.elapsed().as_secs_f64(), tally.compared, tally.invariant, tally.equivariant, tally.both_refused, tally.both_fault, tally.stopped, tally.out_of_time, tally.differences.len(), differences.join(","));
+                let _ = out.flush();
+                continue;
+            }
             for element in elements_of(solver) {
                 let key = format!("{solver}/{}/{}", table.table, element.name);
                 if done.contains(&key) {
@@ -401,6 +478,7 @@ fn main() {
         ("names", []) => run_names(&arguments),
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
+        ("grid-values", [grids]) => run_grid_values(&arguments, grids),
         ("law", [tasks_file]) => run_law(&arguments, tasks_file),
         _ => Err("usage: feature-encoder eval|rows|worked|encode|names|vector ...; the file's first lines give each form".to_string()),
     };

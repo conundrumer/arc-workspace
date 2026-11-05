@@ -53,6 +53,8 @@ pub struct Space<'a> {
     /// the terms it leaves out, where a sample of the terms it visits would
     /// still enumerate them.
     pub thin: Option<(String, u32)>,
+    /// Whether no term reads `output`.
+    pub no_output: bool,
 }
 
 /// Whether the text `text` falls in the sample of `rate` in a million.
@@ -138,7 +140,10 @@ impl Space<'_> {
         if self.task_wide {
             leaves.extend([Leaf::ExInput, Leaf::ExOutput]);
         } else {
-            leaves.extend([Leaf::Input, Leaf::Output]);
+            leaves.push(Leaf::Input);
+            if !self.no_output {
+                leaves.push(Leaf::Output);
+            }
         }
         for (name, _, no_mode) in self.lib_relations() {
             if no_mode {
@@ -292,7 +297,7 @@ impl Space<'_> {
                         }
                         self.emit(Rel::Antijoin(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), visit)?;
                     }
-                    if in_order && !left.columns.is_empty() && left.columns.len() == right.columns.len() {
+                    if in_order && !left.columns.is_empty() && left.columns.len() >= right.columns.len() {
                         for pairs in self.matchings(left, right) {
                             self.emit(Rel::Union(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), visit)?;
                         }
@@ -322,11 +327,14 @@ impl Space<'_> {
         sets
     }
 
-    /// Each way that the pairs of a `union` name every column of both.
-    fn matchings(&self, left: &Typed, right: &Typed) -> Vec<Vec<(String, String)>> {
-        fn walk(space: &Space<'_>, left: &Typed, right: &Typed, at: usize, used: &mut Vec<bool>, held: &mut Vec<(String, String)>, out: &mut Vec<Vec<(String, String)>>) {
+    /// Each way that the pairs of a `union` name every column of both: each
+    /// left column pairs with a right column, or with `0` where its type has one.
+    fn matchings(&self, left: &Typed, right: &Typed) -> Vec<Vec<(String, Operand)>> {
+        fn walk(space: &Space<'_>, left: &Typed, right: &Typed, at: usize, used: &mut Vec<bool>, held: &mut Vec<(String, Operand)>, out: &mut Vec<Vec<(String, Operand)>>) {
             if at == left.columns.len() {
-                out.push(held.clone());
+                if used.iter().all(|used| *used) {
+                    out.push(held.clone());
+                }
                 return;
             }
             for (other, column) in right.columns.iter().enumerate() {
@@ -334,10 +342,15 @@ impl Space<'_> {
                     continue;
                 }
                 used[other] = true;
-                held.push((space.reference(&left.columns[at]), space.reference(column)));
+                held.push((space.reference(&left.columns[at]), Operand::Column(space.reference(column))));
                 walk(space, left, right, at + 1, used, held, out);
                 held.pop();
                 used[other] = false;
+            }
+            if has_zero(&left.columns[at].ty) {
+                held.push((space.reference(&left.columns[at]), Operand::Zero));
+                walk(space, left, right, at + 1, used, held, out);
+                held.pop();
             }
         }
         let mut out = Vec::new();
@@ -383,6 +396,7 @@ impl Space<'_> {
                         max_inputs: self.max_inputs,
                         frames,
                         thin: self.thin.clone(),
+                        no_output: self.no_output,
                     };
                     // The body's terms, bottom up, with the hole among the relation's columns.
                     let mut held: Vec<Vec<Typed>> = Vec::new();
@@ -431,12 +445,13 @@ impl Space<'_> {
     fn components(&self, lower: &[Vec<Typed>], size: usize, visit: &mut Visit<'_>) -> ControlFlow<()> {
         let components = self.component_names();
         let most = components.iter().map(|(_, held)| held.inputs.len()).max().unwrap_or(0);
-        for count in 1..=most.min(self.max_inputs.unwrap_or(most)) {
+        // A component with k bound inputs counts as k.
+        for count in 1..=most.min(self.max_inputs.unwrap_or(most)).min(size) {
             for (name, held) in &components {
                 let inputs: Vec<&InputPort> = held.inputs.iter().collect();
                 for chosen in subsets(&inputs).into_iter().filter(|chosen| chosen.len() == count) {
                     let mut state = Bindings { key: None, parameters: Vec::new(), held: Vec::new() };
-                    self.bind(name, held, &chosen, 0, lower, size - 1, &mut state, visit)?;
+                    self.bind(name, held, &chosen, 0, lower, size - count, &mut state, visit)?;
                 }
             }
         }
@@ -511,8 +526,8 @@ impl Space<'_> {
         } else {
             keys.push(Vec::new());
         }
-        // The fields of each column.
-        let mut field_sets: Vec<(Vec<Vec<&Col>>, Vec<(String, Vec<Option<ValueType>>)>)> = vec![(Vec::new(), Vec::new())];
+        // The fields of each column, `None` for the field `0`.
+        let mut field_sets: Vec<(Vec<Option<Vec<&Col>>>, Vec<(String, Vec<Option<ValueType>>)>)> = vec![(Vec::new(), Vec::new())];
         for column in &columns {
             let mut next = Vec::new();
             for (fields, parameters) in &field_sets {
@@ -525,7 +540,7 @@ impl Space<'_> {
                         };
                         for choice in choices {
                             let mut with = fields.clone();
-                            with.push(choice.clone());
+                            with.push(Some(choice.clone()));
                             let mut bound = parameters.clone();
                             if shape.is_none() {
                                 bound.push((parameter.name.to_string(), choice.iter().map(|column| column.ty.clone()).collect()));
@@ -540,7 +555,12 @@ impl Space<'_> {
                         };
                         for choice in all.iter().filter(|column| meets(&ty, &column.ty)) {
                             let mut with = fields.clone();
-                            with.push(vec![*choice]);
+                            with.push(Some(vec![*choice]));
+                            next.push((with, parameters.clone()));
+                        }
+                        if has_zero(&ty) && ty.is_some() {
+                            let mut with = fields.clone();
+                            with.push(None);
                             next.push((with, parameters.clone()));
                         }
                     }
@@ -557,12 +577,14 @@ impl Space<'_> {
                     key: key.iter().map(|column| self.reference(column)).collect(),
                     fields: match &fields[..] {
                         // One column: the fields are that column's.
-                        [one] => one.iter().map(|column| Field::One(self.reference(column))).collect(),
+                        [Some(one)] => one.iter().map(|column| Field::One(self.reference(column))).collect(),
+                        [None] => vec![Field::Zero],
                         several => several
                             .iter()
-                            .map(|field| match &field[..] {
-                                [one] => Field::One(self.reference(one)),
-                                many => Field::Record(many.iter().map(|column| self.reference(column)).collect()),
+                            .map(|field| match field.as_deref() {
+                                None => Field::Zero,
+                                Some([one]) => Field::One(self.reference(one)),
+                                Some(many) => Field::Record(many.iter().map(|column| self.reference(column)).collect()),
                             })
                             .collect(),
                     },

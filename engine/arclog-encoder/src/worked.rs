@@ -114,9 +114,11 @@ pub const CASES: &[Case] = &[
     feature("009d5c81", "(cardinality SharedColor)", Expect::TaskCells(&["N"], &["3"])),
     feature("070dd51e", "(value-set RarestColor C)", Expect::TaskCells(&["C"], &["c3", "c8"])),
     rel("25d487eb", "(join &ink ChangedPairs (Col C_to))", Expect::TaskRows(19)),
+    named("25d487eb", "(union (lib-join (project &ink P) margin (B P)) (project (lib-join (project &ink P) margin (B P)) P D) (P P) (D D) (K 0))", &["P", "D", "K"], Expect::Rows(&[72, 128, 72, 128])),
+    rel("25d487eb", "(component Order (member (project &ink Col) () (Col)) (score (project &ink Col) () (Col 0)) maximal)", Expect::Rows(&[2, 2, 2, 2])),
     Case { solver: "25d487eb", state: TWO, term: "(pool ?x &two Ident (project &two ?x))", relation: true, task_wide: false, columns: &[], expect: Expect::Refused },
     Case { solver: "25d487eb", state: TWO, term: "(pool ?x &two Ident (component Cardinality (member (project &two ?x) () (?x)) size))", relation: true, task_wide: false, columns: &[], expect: Expect::FirstCells(&["N"], &["1", "2"]) },
-    Case { solver: "150deff5", state: "(RULE &poses (&piece.member (:Pose *Pz)))", term: "(value-set &poses Pz)", relation: false, task_wide: false, columns: &[], expect: Expect::Refused },
+    Case { solver: "150deff5", state: "(RULE &poses (&piece.member (:key *Id) (:Pose *Pz) (:P *S)))", term: "(value-set &poses Id Pz)", relation: false, task_wide: false, columns: &[], expect: Expect::Refused },
 ];
 
 fn numbers(value: &Value) -> Vec<Vec<usize>> {

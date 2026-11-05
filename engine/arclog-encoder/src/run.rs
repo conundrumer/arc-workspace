@@ -13,10 +13,10 @@ use std::path::Path;
 use arclog::check::CheckCache;
 use arclog::decode::corpus::corpus_session;
 use arclog::decode::{relation_dets, Decoder};
-use arclog::eval::examples::scope_of;
+use arclog::eval::examples::{scope_of, ExampleScope};
 use arclog::eval::instance::Constructions;
 use arclog::eval::join::each_row;
-use arclog::eval::{Evaluation, ModelsEnd, RelationValue, TableWork};
+use arclog::eval::{Cancellation, Evaluation, Limits, ModelsEnd, ParameterValues, RelationValue, TableWork};
 use arclog::judge::determination::{Assignment, End};
 use arclog::registry::Registry;
 use arclog::session::TaskSession;
@@ -428,10 +428,35 @@ impl Host {
         }
         let row_names = checked.program.column_names(relation.node).unwrap_or_default();
         let dets = relation_dets(checked, relation.node);
+        let scope = scope_of(checked, &relation);
+        // With no `DET` there is one assignment, and no walk to make.
+        if dets.is_empty() {
+            let parameters = ParameterValues::determined(Vec::new());
+            let mut examples = Vec::new();
+            let per_example: Vec<Option<Example>> = match scope {
+                ExampleScope::PerExample => self.task.examples().map(Some).collect(),
+                ExampleScope::TaskWide => vec![None],
+            };
+            for example in per_example {
+                let limits = Limits::new(None, Cancellation::default());
+                let limits = match self.work_cap.get() {
+                    Some(cap) => limits.counted_in(TableWork::new(cap)),
+                    None => limits,
+                };
+                let evaluation = Evaluation { program: checked, concept: None, task: &self.task, parameters: &parameters, session: &self.session, registry, constructions: self.constructions, limits: &limits };
+                let models = match models_at(&evaluation, &relation, example) {
+                    Ok(models) => models,
+                    Err(End::Fault(fault)) => return Evaluated::Fault(format!("{} at {:?}", fault.message, fault.form)),
+                    Err(End::Stop(stop)) => vec![RelationValue::Stopped(stop)],
+                };
+                examples.push((example, models.iter().map(model_value).collect()));
+            }
+            return Evaluated::Value(Value { expanded, row_names, types, at: vec![AtAssignment { assignment: Vec::new(), examples }], stop: None });
+        }
         let decoder = Decoder::new(&self.task, &self.session, registry, self.constructions, &self.settings);
         let mut at: Vec<AtAssignment> = Vec::new();
         let mut stop = None;
-        for example in decoder.examples_of(scope_of(checked, &relation)) {
+        for example in decoder.examples_of(scope) {
             let work = self.work_cap.get().map(TableWork::new);
             let assigned = decoder.assigned(checked, relation.node, &dets, work.as_ref(), &mut |evaluation| models_at(evaluation, &relation, example));
             let assigned = match assigned {
