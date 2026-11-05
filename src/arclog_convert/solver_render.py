@@ -890,6 +890,12 @@ class RenderMixin:
                 # nor one it derives as this branch alone does, where the
                 # other branch alone derives none of its name
                 cfs = [g for g in cfs if g.name in alone or case_text.get(g.name) != here_[g.name]]
+                # a concept clause that holds in the combination stands beside the combination's own clauses of its
+                # relation; a block of these alone would hide it, so `state_combinations` states the relation
+                at = dict(self.ancestors(fname)) | {fname: k.name} | {field_of[b]: b for b in others}
+                beside = {f.name for f in main if f.side == "RULE" and not or_line(f) and not f.concept_dead
+                          and holds_at(f, at, concept, field_of)}
+                cfs = [g for g in cfs if not (g.side == "RULE" and g.name in beside)]
                 if not cfs:
                     continue
                 # the block of each other branch stands under the alts its
