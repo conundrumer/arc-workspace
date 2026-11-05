@@ -266,6 +266,7 @@ pub(crate) struct Walked {
     /// The `DET`s met with several values in the domain, in the order met.
     pub(crate) branching: Vec<ProgramRelation>,
     pub(crate) end: Result<(), End>,
+    pub(crate) stop: Option<Stop>,
 }
 
 /// The walk of the joint assignments of `dets`, the `DET`s that `output`
@@ -287,8 +288,8 @@ pub(crate) fn walk(inputs: EvaluationInputs<'_>, dets: &[Det], output: &GraphRel
         kept.push(Kept { values: assigned.to_vec(), fault, observed });
         Ok(())
     };
-    let (branching, end) = descend_assignments(inputs, dets, output.node, cap, &mut leaf);
-    Walked { kept, branching, end }
+    let (branching, end, stop) = descend_assignments(inputs, dets, output.node, cap, &mut leaf);
+    Walked { kept, branching, end, stop }
 }
 
 /// The determination of the `DET`s of `cases` on the train pairs of
@@ -300,6 +301,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
     let mut picks: StableHashSet<ProgramRelation> = StableHashSet::default();
     let mut opens: StableHashSet<ProgramRelation> = StableHashSet::default();
     let mut walked: Vec<(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)> = Vec::new();
+    let mut walk_stops = Vec::new();
     for case in cases {
         let program = &case.program.program;
         let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
@@ -323,17 +325,27 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         if holds_demonstrated {
             demonstrated.extend(reads.iter().cloned());
         }
-        let Walked { kept, branching, end } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments, Tested::Out, AtCap::Stop);
+        let Walked { kept, branching, end, stop } = walk(case.inputs(), &dets, &output, &train, case.session.caps.assignments, Tested::Out, AtCap::Stop);
+        walk_stops.push(stop.clone().or_else(|| match &end {Err(End::Stop(stop)) => Some(stop.clone()), _ => None}).map(|stop|(stop,branching.clone())));
         let outcome = match end {
-            Ok(()) if kept.is_empty() => CaseOutcome::Unsolved,
-            Ok(()) => CaseOutcome::Solved,
-            Err(End::Stop(stop)) => CaseOutcome::Stopped { stop, parameters: branching },
+            Ok(()) if !kept.is_empty() => CaseOutcome::Solved,
+            Ok(()) => match stop {
+                Some(stop) => CaseOutcome::Stopped { stop, parameters: branching },
+                None => CaseOutcome::Unsolved,
+            },
+            // The walk ended before its last assignment, so what it kept is not the determination.
+            Err(End::Stop(found)) => CaseOutcome::Stopped { stop: found, parameters: branching },
             Err(End::Fault(fault)) => CaseOutcome::Fault(fault),
         };
         let kept = if matches!(outcome, CaseOutcome::Solved) { kept } else { Vec::new() };
         walked.push((outcome, reads, kept));
     }
     restrict(&mut walked);
+    for ((outcome, _, _), stop) in walked.iter_mut().zip(walk_stops) {
+        if matches!(outcome, CaseOutcome::Unsolved) {
+            if let Some((stop, parameters)) = stop { *outcome = CaseOutcome::Stopped {stop, parameters}; }
+        }
+    }
     let demonstrated: Vec<ProgramRelation> = order.iter().filter(|relation| demonstrated.contains(*relation)).cloned().collect();
     let mut parameters = Vec::new();
     for relation in order {
@@ -359,8 +371,9 @@ pub type Assignment = (ProgramRelation, Arc<Relation>);
 
 /// The joint assignments of `dets`, depth-first in their dependency order,
 /// under the assignment cap `cap`: `leaf` runs at each, with the
-/// evaluation at it and the values, and a leaf that gives an [`End`] ends
-/// the walk. Also gives the `DET`s met with several values in the domain,
+/// evaluation at it and the values. An evaluation stop rejects only its
+/// path; other stops and faults end the walk. Also gives the first path stop
+/// and the `DET`s met with several values in the domain,
 /// in the order met. `root` is the node of the relation evaluated, whose
 /// form a stop at the cap names where `dets` is empty.
 pub(crate) fn descend_assignments(
@@ -369,7 +382,7 @@ pub(crate) fn descend_assignments(
     root: GraphNodeIndex,
     cap: u64,
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
-) -> (Vec<ProgramRelation>, Result<(), End>) {
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
     descend_with(inputs, dets, root, cap, leaf, None)
 }
 
@@ -390,15 +403,15 @@ pub(crate) fn descend_with(
     cap: u64,
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
     domains: Option<&dyn Domains>,
-) -> (Vec<ProgramRelation>, Result<(), End>) {
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
     let _timed = stats::span(Phase::TableWalk);
     stats::seen(Phase::TableWalk, || {
         let program = &inputs.program.program;
         stats::digest(&(program.stats_finished_id(), program.program.value().forms.len(), dets.iter().map(|det| &det.relation).collect::<Vec<_>>()))
     });
-    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains };
+    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains, stop: None };
     let end = walk.descend(0, &mut Vec::new());
-    (walk.branching, end)
+    (walk.branching, end, walk.stop)
 }
 
 /// The walk of one relation's joint assignments.
@@ -413,6 +426,7 @@ struct Walk<'w, 'a> {
     branching: Vec<ProgramRelation>,
     leaf: &'w mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
     domains: Option<&'w dyn Domains>,
+    stop: Option<Stop>,
 }
 
 impl Walk<'_, '_> {
@@ -420,6 +434,17 @@ impl Walk<'_, '_> {
     /// before `at`, with the domain of each later `DET` at the values
     /// before it.
     fn descend(&mut self, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
+        let end = self.path(at, assigned);
+        match end {
+            Err(End::Stop(stop)) if stop.bound.is_assignment() => {
+                self.stop.get_or_insert(stop);
+                Ok(())
+            }
+            end => end,
+        }
+    }
+
+    fn path(&mut self, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
         let parameters = ParameterValues::determined(assigned.clone());
         let Some(det) = self.dets.get(at) else {
             let evaluation = self.inputs.at(&parameters);

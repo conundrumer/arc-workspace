@@ -104,7 +104,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
     // The parts of the complete conjuncts first, which the body in progress and each successor body join one conjunct to.
     if body.is_some() {
         if let Some(Ok(complete)) = operation.complete_sub_body() {
-            let work = operation.table_work();
+            let work = operation.query_work();
             drop(operation.values_of(&complete, Some(&work)));
         }
     }

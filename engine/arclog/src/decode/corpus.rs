@@ -336,7 +336,7 @@ fn replay_prefix_tree_testing<T: Default + Clone>(
     record: &dyn Fn(&mut T, &Decoder<'_>, Stepped<'_>),
 ) -> Vec<StreamReplay<T>> {
     let registry = Registry::get();
-    let session = corpus_session();
+    let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, settings.caps);
     let train: Arc<[PairCandidates<'_>]> = judged.train.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Closed)).collect();
     let root = Decoder::new(task, &session, registry, constructions, settings).judging(train);
     let order = sorted_streams(streams);

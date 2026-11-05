@@ -29,6 +29,7 @@ pub mod prefix;
 #[path = "study_judgement.rs"]
 mod judgement;
 
+
 /// Per-session study budget: 16 workers share the pipeline's 8 GiB memory
 /// alert allowance. Callers can explicitly choose another session bound.
 pub const STUDY_SESSION_BYTES:usize=512*1024*1024;
@@ -71,12 +72,8 @@ struct PrefixMemo {
     row_bytes:usize,
 }
 struct GoldRelationMemo {
-    source:Arc<CheckedProgram>,
     tables:Outcome<Vec<(usize,Table)>>,
     snapshot_ref:String,
-    /// Entry ordinals are certified by a complete default packing, never a
-    /// second implementation of the packer's entry traversal.
-    metadata_entries:Option<usize>,
 }
 /// Export-local native identity shared by immutable snapshots and packed views.
 pub fn table_transport_ref()->String {
@@ -86,9 +83,8 @@ pub fn table_transport_ref()->String {
     format!("{}:{:?}:{}",std::process::id(),START.get_or_init(std::time::SystemTime::now),NEXT.fetch_add(1,Ordering::Relaxed))
 }
 impl GoldRelationMemo {
-    fn new(source:Arc<CheckedProgram>,tables:Outcome<Vec<(usize,Table)>>)->Self {
-        let snapshot_ref=table_transport_ref();
-        Self {source,tables,snapshot_ref,metadata_entries:None}
+    fn new(tables:Outcome<Vec<(usize,Table)>>)->Self {
+        Self {tables,snapshot_ref:table_transport_ref()}
     }
     fn view(&self,cached:bool)->(Value,Vec<(usize,Table)>) {
         let (mut report,tables)=match &self.tables {
@@ -153,26 +149,6 @@ impl PairCache {
         self.active=Some(Arc::clone(gold.checked()));
         true
     }
-    /// The masked transport must use an already packed native snapshot. A
-    /// different program/case/session cannot reinterpret its entry ordinals.
-    pub fn gold_tables_snapshot(&self,gold:&StudyProgram,expected:&str)->Result<(Value,Vec<(usize,Table)>,usize),String> {
-        let key=Arc::as_ptr(gold.checked()) as usize;
-        let memo=self.gold_relations.get(&key).ok_or("entry mask requires an existing gold_tables snapshot; no replay is performed")?;
-        if !Arc::ptr_eq(&memo.source,gold.checked()) || memo.snapshot_ref!=expected {
-            return Err("entry mask snapshot reference or gold handle differs".into());
-        }
-        let count=memo.metadata_entries.ok_or("entry mask requires a complete metadata packing first")?;
-        let (report,tables)=memo.view(true);
-        Ok((report,tables,count))
-    }
-
-    pub fn record_gold_tables_metadata(&mut self,gold:&StudyProgram,count:usize)->Result<(),String> {
-        let memo=self.gold_relations.get_mut(&(Arc::as_ptr(gold.checked()) as usize)).ok_or("gold_tables snapshot was discarded")?;
-        if memo.metadata_entries.is_some_and(|previous|previous!=count) {return Err("native gold_tables entry order changed within an immutable snapshot".into());}
-        memo.metadata_entries=Some(count);
-        Ok(())
-    }
-
     fn remember(&mut self,key:Vec<u32>,tables:Vec<(usize,Table)>) {
         // Replace, never accumulate cumulative prefix tables. Checked IR
         // remains owned by the single active gold case.
@@ -252,14 +228,15 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
             }
         }
     }
+    let too_large=TooLarge::default();
     for form in forms.iter().skip(start) {
         let mut held=Vec::new();
         for slot in materialized_slots(program.program().value(),written,form) {
             let declared=&written.relations[slot];
             let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
-            let dets=relation_dets(checked,relation.node);let work=decoder.table_work();
-            let examples=relation_examples(decoder,checked,&relation,&dets,&work);
-            let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples,&work).map(|c| {
+            let dets=relation_dets(checked,relation.node);let work=decoder.query_work();
+            let examples=if until.is_none() {relation_examples_skipping(decoder,checked,&relation,&dets,&work,&too_large)} else {relation_examples(decoder,checked,&relation,&dets,&work)};
+            let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
                 let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
                 let seen=tables.iter().chain(held.iter()).map(|(_,t)|t).collect::<Vec<_>>();
                 made(decoder,&seen,checked,&relation,c)
@@ -284,7 +261,7 @@ fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePat
     let written=source_stream(program,decoder,cache)?;
     let (mut tables,prefix)=original_relations(program,&written,Some(&view.form),decoder,cache)?;
     let dets=super::body_tables::dets(program.checked(),&view);
-    let work=decoder.table_work();
+    let work=decoder.query_work();
     let examples=super::body_tables::examples(decoder,program.checked(),&view,&dets,&work);
     let seen=tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
     let slot=written.relations.len() as u32;
@@ -303,7 +280,7 @@ fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePat
 /// gold-only acquisition use this boundary, including recursive owner context.
 fn held_body_contents(program:&StudyProgram,origin:&Arc<CheckedProgram>,view:&arclog::eval::body_view::BodyView,
     slot:u32,dets:&[Det],decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],earlier:&[&Table],completed:Option<&[ExampleRows]>)->Outcome<Contents> {
-    let work=decoder.table_work();
+    let work=decoder.query_work();
     let limits=decoder.limits().counted_in(work.clone());
     let receipt=HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed)?;
     let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
@@ -321,10 +298,10 @@ fn complete() -> Value {
     json!({"status":"complete"})
 }
 
-/// The status of `tables`: the first fault or stop that loses rows or
-/// extents, or complete. A stop of a table's projections loses no row, so it
-/// leaves the status as it is; each such stop is listed in
-/// `projection_stops`, with the form of its table.
+/// Row status with annotation diagnostics. Projection stops and extent stops
+/// at an observation or evaluation bound leave row status intact; they are
+/// listed in `projection_stops` and `extent_stops`. Extent loss is a fault,
+/// and machine-dependent extent stops stop the table.
 fn table_status(tables: &[(usize, Table)]) -> Value {
     let mut status = rows_status(tables);
     let projection_stops: Vec<Value> = tables.iter().filter_map(|(_, table)| match &table.contents {
@@ -333,6 +310,25 @@ fn table_status(tables: &[(usize, Table)]) -> Value {
         _ => None,
     }).collect();
     status["projection_stops"] = json!(projection_stops);
+    let mut extent_stops = Vec::new();
+    for (_, table) in tables {
+        if let Ok(c) = &table.contents {
+            if let Some(extents) = &c.extents {
+                for (e, example) in c.examples.iter().enumerate() {
+                    if let Ok(rows) = &example.rows {
+                        for (a, (_, models)) in rows.at.iter().enumerate() {
+                            for m in 0..models.len() {
+                                if let Some(crate::extents::EntryExtents::Stopped(stop)) = extents.entry(e,a,m) {
+                                    extent_stops.push(json!({"table_form":format!("{:?}",table.form),"example":e,"assignment":a,"model":m,"reason":format!("{:?}",stop.bound),"form":format!("{:?}",stop.form)}));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    status["extent_stops"] = json!(extent_stops);
     status
 }
 
@@ -359,14 +355,13 @@ fn rows_status(tables: &[(usize, Table)]) -> Value {
             }
         }
         if let Some(extents) = &c.extents {
-            // Extent loss/stop is part of completeness, never silently
-            // collapsed to an unknown size in the pair's status.
+            // Only an annotation budget or evaluation stop leaves rows intact.
             for (e, example) in c.examples.iter().enumerate() {
                 if let Ok(rows) = &example.rows {
                     for (a, (_, models)) in rows.at.iter().enumerate() {
                         for m in 0..models.len() {
                             match extents.entry(e, a, m) {
-                                Some(crate::extents::EntryExtents::Stopped(stop)) => {
+                                Some(crate::extents::EntryExtents::Stopped(stop)) if !stop.bound.is_annotation() => {
                                     return stopped(stop);
                                 }
                                 Some(crate::extents::EntryExtents::Lost(reason)) => {
@@ -736,7 +731,7 @@ pub fn gold_kept_cached(gold:&StudyProgram,task:&Task,judged:&JudgedTask,session
     let Some(output)=output_relation(gold.checked()) else {
         report["reason"]=json!("gold has no OUT");return report;
     };
-    let work=decoder.table_work();
+    let work=decoder.query_work();
     let (memo,hit)=match gold_observation(gold,&output,&judge,&decoder,&work,cache) {
         Ok(observation)=>observation,
         Err(fault)=>{report["reason"]=json!(fault.message);return report;}
@@ -762,7 +757,7 @@ fn gold_observation_report(gold:&StudyProgram,session:&TaskSession,settings:&Dec
                 "nodes":session.caps.nodes,"assignments":session.caps.assignments},"session_bytes":session.bound.bytes},
         "program_provenance":{"program_sexp":gold.sexp(Registry::get()),"stream":null},
         "assignment_contract":"kept_assignments are ordered native full-program DET choices; raw rows and relation names use the existing pair encoding; Undefined DETs may have no assigned value and are listed separately",
-        "bound_scope":"one current operation deadline and table-work budget for the native gold walk; cached observations retain their original completion/stop"});
+        "bound_scope":"one operation deadline; per-evaluation binding and row caps for the native gold walk; cached observations retain their original completion/stop"});
     let stream=match gold.decode_stream(Registry::get(),settings) {
         Ok(stream)=>stream,
         Err(reason)=>{report["reason"]=json!(reason);return report;}
@@ -852,7 +847,7 @@ fn evaluate_pair_inner(
         result.report = faulted(&fault("mutant has no OUT", &point.clause));
         return result;
     };
-    let work = gd.table_work();
+    let work = gd.query_work();
     // An unused gold clause can read a DET that OUT does not reach. Walk
     // the program's DETs so its FITS records still assign that clause's
     // parameters explicitly; OUT remains the sole FITS criterion.
@@ -1062,7 +1057,7 @@ pub fn gold_tables_cached_in(gold:&StudyProgram,task:&Task,session:&TaskSession,
             let written=source_stream(gold,&decoder,cache)?;
             original_relations(gold,&written,None,&decoder,cache).map(|(tables,_)|tables)
         })).unwrap_or_else(|payload|Err(fault(format!("gold relation evaluation panicked: {}",arclog::decode::corpus::replay_panic(&*payload)),&NodePath::default())));
-        cache.gold_relations.insert(key,GoldRelationMemo::new(Arc::clone(gold.checked()),held));
+        cache.gold_relations.insert(key,GoldRelationMemo::new(held));
     }
     cache.gold_relations[&key].view(hit)
 }

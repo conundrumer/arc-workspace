@@ -243,6 +243,11 @@ impl<'a> Decoder<'a> {
         TableWork::new(self.context.settings.table_work_cap)
     }
 
+    /// The work of a query walk, counted without an observation budget.
+    pub fn query_work(&self) -> TableWork {
+        TableWork::uncapped()
+    }
+
     /// The state of the decode: its finished forms and the form in progress.
     #[inline]
     pub fn state(&self) -> &State {
@@ -510,7 +515,7 @@ impl<'a> Decoder<'a> {
         self.before = Some(std::mem::replace(&mut self.state, state));
         self.held = Held::default();
         self.record(token, &step);
-        if let Some(Consistency::Consistent { assignments }) = &step.consistency {
+        if let Some(Consistency::Consistent { assignments, .. }) = &step.consistency {
             self.assignments = assignments.clone();
             self.output = Some(NodePath::top(self.state.program().value().forms.len() as u32 - 1));
         }
@@ -523,7 +528,7 @@ impl<'a> Decoder<'a> {
     fn record(&mut self, token: Token, step: &Step) {
         let mut record = DecodeRecord::new(token, Emitter::Model);
         let verdict = |consistency: &Consistency| match consistency {
-            Consistency::Consistent { assignments } => (Verdict::Consistent { assignments: assignments.len() }, None),
+            Consistency::Consistent { assignments, stop } => (Verdict::Consistent { assignments: assignments.len() }, stop.as_ref().map(|s| s.bound.into())),
             Consistency::NotConsistent => (Verdict::NotConsistent, None),
             Consistency::SeveralValues { .. } => (Verdict::SeveralValues, None),
             Consistency::Fault(_) => (Verdict::Fault, None),

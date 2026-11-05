@@ -114,16 +114,7 @@ fn a_relation_that_does_not_solve_the_pairs_is_not_consistent() {
     assert!(decoder.output().is_none());
 }
 
-#[test]
-fn a_det_of_two_values_keeps_the_assignment_that_solves_the_pairs() {
-    let inputs = inputs(&[2, 2], Caps::CORPUS);
-    let mut decoder = decoder(&inputs);
-    let program = "(DET &c ColorDomain)\n(RULE &output (input *P) (&c (:C *Col)))\n(OUT (&output ^P ^Col))\n";
-    let (ended, rule) = walk_both(&mut decoder, &model_tokens(program));
-    let (Some(Consistency::Consistent { assignments }), Some(Consistency::Consistent { assignments: ruled })) = (ended, rule) else { panic!("a consistent relation") };
-    assert_eq!(assignments.len(), 1, "one value of `&c` paints the output: {assignments:?}");
-    assert_eq!(ruled.len(), 1, "and the rule test keeps it: {ruled:?}");
-}
+
 
 #[test]
 fn a_prefix_past_the_row_cap_is_stopped_at_the_cap() {

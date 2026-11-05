@@ -283,10 +283,11 @@ impl Evaluator<'_> {
                 }
                 if problem.is_some() { Err(End::Fault(crate::eval::RunFault { message: "incomplete".into(), form: NodePath::default() })) } else { Ok(()) }
             };
-            let (_, end) = descend_assignments(inputs, &dets, relation.node, self.settings.caps.assignments, &mut leaf);
+            let (_, end, stop) = descend_assignments(inputs, &dets, relation.node, self.settings.caps.assignments, &mut leaf);
             if let Some(problem) = problem {
                 return Err(problem);
             }
+            let end = end.and_then(|()| stop.map_or(Ok(()), |stop| Err(End::Stop(stop))));
             match end {
                 Ok(()) => {}
                 Err(End::Stop(stop)) => return Err(format!("the enumeration stops at {:?}", stop.bound)),

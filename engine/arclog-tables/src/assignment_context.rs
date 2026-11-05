@@ -139,6 +139,7 @@ pub(crate) fn examples_reusing(
                 let mut budget = Budget::new(&limits, session);
                 let mut found = Vec::new();
                 let mut end = Ok(());
+                let mut first_stop = None;
                 for full in &receipt.values {
                     if let Err(bound) = budget.charge_work(0) {
                         end = Err(End::Stop(Stop { bound, form: form.clone() }));
@@ -161,11 +162,15 @@ pub(crate) fn examples_reusing(
                     }, Ok);
                     match value {
                         Ok(value) => found.push((projected, value)),
+                        Err(End::Stop(stop)) if stop.bound.is_assignment() => {
+                            first_stop.get_or_insert_with(||stop.clone());
+                            found.push((projected, vec![RelationValue::Stopped(stop)]));
+                        }
                         Err(fault) => { end = Err(fault); break; }
                     }
                 }
                 match end {
-                    Ok(()) => Ok(Assigned { at: found, stop: None }),
+                    Ok(()) => Ok(Assigned { at: found, stop: first_stop }),
                     Err(End::Stop(stop)) => Ok(Assigned { at: found, stop: Some(stop) }),
                     Err(End::Fault(fault)) => Err(fault),
                 }

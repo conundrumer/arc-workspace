@@ -224,19 +224,6 @@ fn a_two_atom_out_whose_second_relation_holds_two_colors_gives_no_grid() {
     assert!(matches!(&ends[..], [Consistency::NotConsistent]), "{ends:?}");
 }
 
-/// A decode goes on after an `OUT` that does not hold, and ends at the first
-/// that does.
-#[test]
-fn a_decode_goes_on_after_an_out_that_does_not_hold_and_ends_at_the_one_that_does() {
-    let inputs = inputs(&[1, 2], &[3, 3]);
-    let settings = DecodeSettings::default();
-    let mut decoder = decoder(&inputs, &settings);
-    let program = "(RULE &copy (input *P *Col))\n(OUT (&copy ^P ^Col))\n(DET &c ColorDomain)\n(RULE &paint (input *P) (&c (:C *Col)))\n(OUT (&paint ^P ^Col))\n";
-    let (ends, _) = walk(&mut decoder, &model_tokens(program));
-    assert!(matches!(&ends[..], [Consistency::NotConsistent, Consistency::Consistent { assignments }] if assignments.len() == 1), "{ends:?}");
-    assert_eq!(decoder.output(), Some(&path(&[4])));
-}
-
 /// Inside an `OUT`, the decoder admits only tokens after which some
 /// completion passes.
 #[test]

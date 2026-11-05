@@ -87,7 +87,7 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
         std::mem::size_of::<Vec<Assignment>>().saturating_add(dets.len().saturating_mul(std::mem::size_of::<Assignment>()))))
         .saturating_add(std::mem::size_of::<Universe>()+512);
     let allocation=Materializer::new(session,&limits).copy(bytes).map_err(OpenError::Stopped)?;
-    let work=decoder.table_work();
+    let work=decoder.query_work();
     let root=dets.last().map_or(arclog::resolver::GraphNodeIndex(0),|d|d.node);
     let walk_start=Instant::now();
     let walked=decoder.assigned(&frontier,root,&dets,Some(&work),&mut |_|Ok(()));
@@ -189,7 +189,7 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
     let available_start=Instant::now();
     let cached=universe.available.is_some();
     if !cached {
-        let work=decoder.table_work();let mut budget=Budget::new(&limits,session);
+        let work=decoder.query_work();let mut budget=Budget::new(&limits,session);
         let mut excluded=Vec::new();
         let tables=component_tables::relation_tables_with_receipt_where(&universe.frontier,&decoder,&universe.receipt,&limits,&work,&mut budget,
             &mut |form,relation| {
@@ -228,7 +228,7 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
     if dets.iter().any(|d|!prior.iter().any(|p|p.relation==d.relation)) {
         return Err("BODY requires a parameter not declared at common frontier".into());
     }
-    let work=decoder.table_work();
+    let work=decoder.query_work();
     let context=AssignmentContext::Held {receipt:&universe.receipt,limits:&limits,work:&work};
     let body_start=Instant::now();
     let examples=super::super::body_tables::examples_with_context(&decoder,&checked,&view,&dets,&work,context);

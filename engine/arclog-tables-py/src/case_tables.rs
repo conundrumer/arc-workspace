@@ -77,6 +77,9 @@ use pyo3::sync::PyOnceLock;
 /// corpus's `cases/` directory holds, those files; in those of `stream_tables` and `step_tables`, whose
 /// program comes from a decode, the entries of `column_labels` and `det_labels`.
 ///
+/// A query that `gold_tables` stops at the binding cap or the row cap ends its assignment: each later query
+/// at values that hold that assignment, at any example, takes the same stop and does not run.
+///
 /// `gold_tables` also gives identities, which depend on no name and no order that the program's author
 /// chose (a rename of the declared relations, instances and labels, a reorder of the top-level forms that
 /// keeps dependency order, of a body's conjuncts, of an `OR`'s branches and of the columns a clause writes
@@ -167,6 +170,12 @@ use pyo3::sync::PyOnceLock;
 pub(crate) struct PyCaseTables {
     #[pyo3(get)]
     pub(crate) task: String,
+    /// Largest completed query's (bindings, rows), before export packing.
+    #[pyo3(get)]
+    pub(crate) largest_counts: Option<(u64, u64)>,
+    /// JSON diagnostics of row queries stopped during a corpus replay.
+    #[pyo3(get)]
+    pub(crate) query_stops: Option<String>,
     #[pyo3(get)]
     pub(crate) case: String,
     #[pyo3(get)]
@@ -549,6 +558,8 @@ impl PyCaseTables {
         }
         Ok(PyCaseTables {
             task,
+            largest_counts: None,
+            query_stops: None,
             case,
             concept,
             projection_cap,

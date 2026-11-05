@@ -42,7 +42,7 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
     }
     let operation=settings.operation_limits();
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(operation);
-    let work=decoder.table_work();let limits=decoder.limits().counted_in(work.clone());
+    let work=decoder.query_work();let limits=decoder.limits().counted_in(work.clone());
     let mut budget=Budget::new(&limits,session);
     let g=relation_tables(gold,gold.checked(),&decoder,&fixed,&limits,&work,&mut budget);
     let m=relation_tables(mutant.program(),gold.checked(),&decoder,&fixed,&limits,&work,&mut budget);
@@ -56,7 +56,7 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
         "mutant_assignment_map":assignment_map(&m.tables,2,task.train.len()),
         "scope":"native materialized relations including computed INIT outputs under exact cached gold DET interventions; no new FITS or OUT search",
         "assignment_contract":"table_entry is the zero-based position among native entries for its table; kept_assignment indexes the full kept_assignments list even when DET subsets repeat",
-        "bound_scope":"one shared native deadline and table-work budget"});
+        "bound_scope":"one operation deadline; per-evaluation binding and row caps"});
     Ok(ComponentTables {limits:limits.clone(),report,gold:g.tables,mutant:m.tables,_allocations:choice_allocations})
 }
 

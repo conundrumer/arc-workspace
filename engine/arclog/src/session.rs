@@ -766,8 +766,7 @@ pub struct TaskSession {
     pub results: Arc<ResultCache>,
     /// The caps of every evaluation in the session.
     pub caps: Caps,
-    /// The bound on the session's bytes, which the intern table's bytes
-    /// count toward.
+    /// The bound on the session's bytes.
     pub bound: SessionBound,
     /// Byte reservations owned by transient/materialized buffers outside the
     /// intern and result stores. Shared buffers retain one reservation.
@@ -906,7 +905,7 @@ impl TaskSession {
         }
     }
 
-    /// The bytes that the session's bound counts: the intern table's, the
+    /// The bytes that the session's bound counts: its charged intern storage,
     /// result cache's, and those of the live reservations
     /// ([`TaskSession::reserve`]).
     pub fn ledger(&self) -> (usize, usize, usize) {

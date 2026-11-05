@@ -93,7 +93,7 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
     }
     let operation=settings.operation_limits();
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(operation);
-    let work=decoder.table_work();let limits=decoder.limits().counted_in(work.clone());
+    let work=decoder.query_work();let limits=decoder.limits().counted_in(work.clone());
     let mut budget=Budget::new(&limits,session);
     let mut choices=Vec::new();
     for (index,assigned) in fixed.iter().enumerate() {
@@ -114,6 +114,6 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
         "assignment_scope":"exact cached gold FITS interventions; no alternate assignment search",
         "out_scope":"conditional OUT under held gold DET values; held values override DET proposal bodies even when inadmissible",
         "tables_scope":"all materialized native relations in written order, including INIT computed output ports; each table assignment index follows kept_assignments",
-        "bound_scope":"one shared native deadline and table-work budget for this operation"});
+        "bound_scope":"one operation deadline; per-evaluation binding and row caps for this operation"});
     Ok(Continuation {limits:limits.clone(),report,gold:g.tables,mutant:m.tables})
 }

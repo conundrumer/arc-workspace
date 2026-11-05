@@ -17,8 +17,9 @@ use crate::solver::CaseName;
 use crate::task::Grid;
 use crate::terms::ReachedMarginBound;
 
-/// The caps of an evaluation, each a count, so none depends on the
-/// machine.
+/// The caps of one query's evaluation, independent of the machine. A query
+/// evaluates a clause, finished or in progress, on one example at one
+/// assignment. No cap sums the evaluations of a program.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
     /// The bindings the join of one part of a body, a native construction,
@@ -41,15 +42,18 @@ impl Caps {
     /// on the corpus, and the model cap from the corpus survey's bound from
     /// Souffle's `out`.
     ///
-    /// The binding cap and the row cap are each about twice the largest count
-    /// of one evaluation that `arclog-cli speed` gave over `work/arclog/gen/`
-    /// on 2026-10-19, in a run under a binding cap of `1 << 32` and a row cap of
-    /// `1 << 24`: 474 894 549 bindings tried, of `c3fa4749`, and 995 900
-    /// rows held, of `b71a7747`. Those counts are of the 798 solvers of 953
-    /// that gave counts, each extreme of the corpus survey's runs among them.
-    /// They leave out the outliers: `ac0c5833`, whose 1 956 915 734 bindings
-    /// tried go with a Souffle run of 124 s, and `3ad05f52`, `c3f564a4` and
-    /// `ca8f78db`, whose runs stopped at the row cap of `1 << 24`.
+    /// The binding cap and the row cap are each the least power of two at or
+    /// above twice the largest count of one query, finished or in progress, at
+    /// an assignment that solves the train pairs, over the concept cases of
+    /// `work/arclog/gen/`. Over the train tasks, `corpus_tables` with `bodies`
+    /// gave on 2026-11-04 3 276 242 bindings tried and 3 240 000 rows held, of
+    /// `&mirror_mismatch` of `47996f11` in progress. Past the train tasks, a
+    /// finished query of `a395ee82` reaches 13 832 382 bindings tried, which
+    /// sets the binding cap. Over the train tasks, a finished query reaches
+    /// 851 286 bindings tried, of `50846271`, and 360 576 rows held, of
+    /// `1d0a4b61`, as `arclog-cli speed` gave them. A query at an assignment
+    /// that solves no train pair goes far past them: 35 820 150 248 bindings
+    /// tried, of `94133066`.
     ///
     /// The model cap is about twice 256, the largest count of the models of
     /// one case on one input that `arclog-cli row-counts` gave over the 18
@@ -75,7 +79,7 @@ impl Caps {
     /// counts are of the 939 solvers of 953 whose determination ran to its
     /// end before the run's bound of 30 minutes; the next largest are 72, of
     /// `ba26e723`, and 64, of `abc82100`.
-    pub const CORPUS: Caps = Caps { bindings: 1 << 30, rows: 1 << 21, models: 1 << 9, nodes: 1 << 10, assignments: 1 << 8 };
+    pub const CORPUS: Caps = Caps { bindings: 1 << 25, rows: 1 << 23, models: 1 << 9, nodes: 1 << 10, assignments: 1 << 8 };
 }
 
 /// The bound an evaluation reached.
@@ -86,8 +90,7 @@ pub enum ReachedBound {
     Models { cap: u64 },
     Nodes { cap: u64 },
     Assignments { cap: u64 },
-    /// The bindings that all the evaluations of one table try, a stop of the
-    /// table's walk.
+    /// The work budget of an observation.
     TableWork { cap: u64 },
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
@@ -100,6 +103,21 @@ pub enum ReachedBound {
 }
 
 impl ReachedBound {
+    /// Whether this bound rejects only the assignment being evaluated.
+    pub fn is_assignment(self) -> bool {
+        matches!(self, Self::Bindings { .. } | Self::Rows { .. } | Self::Margin(_) | Self::NoValues | Self::Models { .. } | Self::Nodes { .. })
+    }
+
+    /// Whether this bound stops a query that grew past a cap on its size.
+    pub fn is_size(self) -> bool {
+        matches!(self, Self::Bindings { .. } | Self::Rows { .. })
+    }
+
+    /// Whether a stop of an extent derivation leaves the table's rows complete.
+    pub fn is_annotation(self) -> bool {
+        self.is_assignment() || matches!(self, Self::TableWork { .. })
+    }
+
     /// Whether the result cache stores a stop at this bound: a stop at the
     /// binding cap, the row cap, a margin or a variable with no values, which
     /// is the same at every later
@@ -275,10 +293,9 @@ impl Cancellation {
 }
 
 /// The stops of the evaluations of a decode and its forks, each held by the
-/// result-cache key of its entry, of two kinds, each with its own rule of
-/// use. A stop at the table work cap is held for the tables of one case: a
-/// table whose evaluation needs a held evaluation takes its stop, at the
-/// form that stopped, and tries no binding for it. A stop at the deadline is
+/// result-cache key of its entry. A table-work stop is read only by a bounded
+/// observation: one that needs that evaluation takes the stop at its form
+/// without trying bindings. A stop at the deadline is
 /// held with the time its evaluation ran: a later request takes it, at the
 /// form that stopped, where the request has at most [`DEADLINE_STOP_REUSE`]
 /// times that time left to its own deadline.
@@ -351,10 +368,9 @@ impl HeldStops {
 
 const UNPOISONED: &str = "a store that no panic poisoned";
 
-/// The bindings that the evaluations of one table try, counted over all its
-/// examples, assignments, models and projections, and the rows that the
-/// derivation of its extents visits, and the cap on the count. Clones share one
-/// count.
+/// A shared count of work. Row queries count without an observation budget;
+/// projections, extents, mask walks and row comparisons supply their own cap.
+/// Clones share the count.
 #[derive(Clone, Debug)]
 pub struct TableWork {
     count: Arc<AtomicU64>,
@@ -362,9 +378,14 @@ pub struct TableWork {
 }
 
 impl TableWork {
-    /// A table with no bindings counted, under `cap`.
+    /// An observation with no work counted, under `cap`.
     pub fn new(cap: u64) -> Self {
         TableWork { count: Arc::new(AtomicU64::new(0)), cap }
+    }
+
+    /// A count with no observation budget.
+    pub fn uncapped() -> Self {
+        Self::new(u64::MAX)
     }
 
     /// Adds `bindings` to the count, and gives the stop once the count is past
@@ -381,6 +402,11 @@ impl TableWork {
     /// begins now stops at once.
     pub fn is_past_cap(&self) -> bool {
         self.count.load(Ordering::Relaxed) > self.cap
+    }
+
+    /// Whether this count has an observation budget.
+    pub fn is_capped(&self) -> bool {
+        self.cap != u64::MAX
     }
 
     /// The cap on the count.
@@ -401,7 +427,7 @@ impl TableWork {
 
 /// The bounds of one evaluation that differ between the evaluations of a
 /// session: the deadline where it has one, its cancellation, the work
-/// count of its table where it runs for a table, the stops held by the decode
+/// count of its query or observation, the stops held by the decode
 /// it runs for, and whether it checks the declared rows of the outputs it
 /// builds. The caps stand in the [`crate::session::TaskSession`].
 #[derive(Clone, Debug)]

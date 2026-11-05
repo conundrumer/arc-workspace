@@ -13,6 +13,7 @@ const MAX_DERIVATIONS:usize=32;
 
 #[derive(Clone)]
 pub struct BodyView {
+    pub union_expanded: bool,
     pub form:NodePath,
     pub clause:ClauseIr,
     pub paths:IrPaths,
@@ -200,6 +201,15 @@ impl BodyView {
             &|atom|ir::atom_modes(crate::registry::Registry::get(),atom),
             &|label|types.label(label).cloned());
         columns.retain(|label|bound.contains(label));
+        if physical_input && prefix.is_none() && input.is_none() {
+            let native = match node_at(root, &inner) {
+                Some(node @ NodeRef::Clause(_)) => Some(ir::relation_columns(&program.program, &inner, node)),
+                _ => None,
+            };
+            if let Some(native) = native {
+                columns.sort_by_key(|label| native.iter().position(|at| at == label).unwrap_or(usize::MAX));
+            }
+        }
         let (clause,paths)=ir::compile_query(program,&inner,key.as_ref().map(|(read,paths,labels)|(read.clone(),paths.clone(),labels.as_slice())),conjuncts,&columns)
             .map_err(|e|fault(format!("checked body compile: {e:?}")))?;
         let scope=match program.program.form_side(&form) {
@@ -207,7 +217,7 @@ impl BodyView {
             Some(Side::TaskWide)=>ExampleScope::TaskWide,
             None=>return Err(fault("body owner has no checked evaluation scope".into())),
         };
-        Ok(Self {form,clause,paths,scope,input})
+        Ok(Self {union_expanded:false,form,clause,paths,scope,input})
     }
 
     /// The body of each `&prediction` clause of the `DEMONSTRATED` form at
@@ -233,7 +243,7 @@ impl BodyView {
             let columns=crate::read::columns::made_labels(body);
             let (compiled,paths)=ir::compile_query(program,&clause,None,conjuncts,&columns)
                 .map_err(|e|fault(format!("checked prediction compile: {e:?}")))?;
-            Ok((Self {form:form.clone(),clause:compiled,paths,scope,input:None},labels))
+            Ok((Self {union_expanded:false,form:form.clone(),clause:compiled,paths,scope,input:None},labels))
         }).collect()
     }
 
@@ -257,7 +267,7 @@ impl BodyView {
             Some(Side::TaskWide)=>ExampleScope::TaskWide,
             None=>return Err(fault("CHOOSE owner has no checked evaluation scope".into())),
         };
-        Ok(Self {form:form.clone(),clause,paths,scope,input:None})
+        Ok(Self {union_expanded:false,form:form.clone(),clause,paths,scope,input:None})
     }
 
     /// The compiled native key queries read by this body. They retain their
@@ -267,7 +277,7 @@ impl BodyView {
         self.clause.nodes.iter().zip(self.paths.nodes.iter()).filter_map(|(node,paths)| {
             let (IrNode::Atom(atom),NodePaths::Key(paths))=(node,paths) else {return None};
             let AtomSource::Key(key)=&atom.source else {return None};
-            Some(Self {form:self.form.clone(),clause:key.clause.clone(),paths:(**paths).clone(),scope:self.scope,input:None})
+            Some(Self {union_expanded:false,form:self.form.clone(),clause:key.clause.clone(),paths:(**paths).clone(),scope:self.scope,input:None})
         }).collect()
     }
 
@@ -278,7 +288,7 @@ impl BodyView {
     /// expose their positive locals, and keep all original result columns.
     /// Native equality nodes bind aliases without public AST normalization.
     pub fn widened(&self)->Outcome<Vec<Self>> {
-        fn expand(mut clause:ClauseIr,paths:IrPaths,out:&mut Vec<(ClauseIr,IrPaths)>)->bool {
+        fn expand(mut clause:ClauseIr,paths:IrPaths,out:&mut Vec<(ClauseIr,IrPaths,bool)>, expanded:bool)->bool {
             if out.len()>=MAX_DERIVATIONS {return false;}
             for i in 0..clause.nodes.len() {
                 if let (IrNode::Or(union),NodePaths::Branches(branch_paths))=(&clause.nodes[i],&paths.nodes[i]) {
@@ -286,7 +296,7 @@ impl BodyView {
                         let mut next=clause.clone();let mut at=paths.clone();
                         next.nodes=clause.nodes[..i].iter().chain(branch.nodes.iter()).chain(clause.nodes[i+1..].iter()).cloned().collect();
                         at.nodes=paths.nodes[..i].iter().chain(branch_paths.nodes.iter()).chain(paths.nodes[i+1..].iter()).cloned().collect();
-                        if !expand(next,at,out) {return false;}
+                        if !expand(next,at,out,true) {return false;}
                     }
                     return true;
                 }
@@ -299,10 +309,10 @@ impl BodyView {
                 IrNode::Comparison(c) if c.op==crate::program::ConstraintOp::Eq=>{add(c.first);if let ir::Operand::Variable(v)=c.second {add(v)}},
                 _=>{}
             }}
-            clause.columns=columns.into();out.push((clause,paths));true
+            clause.columns=columns.into();out.push((clause,paths,expanded));true
         }
         let mut out=Vec::new();
-        if !expand(self.clause.clone(),self.paths.clone(),&mut out) {return Err(RunFault {message:format!("the checked body widens to more than {} derivations",MAX_DERIVATIONS).into(),form:self.form.clone()});}
-        Ok(out.into_iter().map(|(clause,paths)|Self {form:self.form.clone(),clause,paths,scope:self.scope,input:self.input.clone()}).collect())
+        if !expand(self.clause.clone(),self.paths.clone(),&mut out,self.union_expanded) {return Err(RunFault {message:format!("the checked body widens to more than {} derivations",MAX_DERIVATIONS).into(),form:self.form.clone()});}
+        Ok(out.into_iter().map(|(clause,paths,expanded)|Self {union_expanded:expanded,form:self.form.clone(),clause,paths,scope:self.scope,input:self.input.clone()}).collect())
     }
 }

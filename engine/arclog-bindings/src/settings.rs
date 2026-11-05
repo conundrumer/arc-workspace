@@ -19,6 +19,8 @@ pub struct PyDecodeSettings {
     deadline_seconds: Option<f64>,
     projection_cap: u64,
     table_work_cap: u64,
+    binding_cap: u64,
+    row_cap: u64,
     rule_tests: bool,
     static_pruning: bool,
     grids_at_model_cap: bool,
@@ -35,6 +37,8 @@ impl PyDecodeSettings {
             deadline_seconds: settings.deadline.map(|deadline| deadline.as_secs_f64()),
             projection_cap: settings.projection_cap,
             table_work_cap: settings.table_work_cap,
+            binding_cap: settings.caps.bindings,
+            row_cap: settings.caps.rows,
             rule_tests: settings.rule_tests,
             static_pruning: settings.static_pruning,
             grids_at_model_cap: settings.grids_at_model_cap,
@@ -51,6 +55,7 @@ impl PyDecodeSettings {
             deadline,
             projection_cap: self.projection_cap,
             table_work_cap: self.table_work_cap,
+            caps: arclog::eval::Caps {bindings:self.binding_cap,rows:self.row_cap,..arclog::eval::Caps::CORPUS},
             rule_tests: self.rule_tests,
             static_pruning: self.static_pruning,
             grids_at_model_cap: self.grids_at_model_cap,
@@ -69,7 +74,7 @@ impl PyDecodeSettings {
     }
 
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, binding_cap=None, row_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -79,6 +84,8 @@ impl PyDecodeSettings {
         deadline_seconds: Option<f64>,
         projection_cap: Option<u64>,
         table_work_cap: Option<u64>,
+        binding_cap: Option<u64>,
+        row_cap: Option<u64>,
         rule_tests: Option<bool>,
         static_pruning: Option<bool>,
         grids_at_model_cap: Option<bool>,
@@ -93,6 +100,8 @@ impl PyDecodeSettings {
             deadline_seconds: deadline_seconds.or(base.deadline_seconds),
             projection_cap: projection_cap.unwrap_or(base.projection_cap),
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
+            binding_cap: binding_cap.unwrap_or(base.binding_cap),
+            row_cap: row_cap.unwrap_or(base.row_cap),
             rule_tests: rule_tests.unwrap_or(base.rule_tests),
             static_pruning: static_pruning.unwrap_or(base.static_pruning),
             grids_at_model_cap: grids_at_model_cap.unwrap_or(base.grids_at_model_cap),

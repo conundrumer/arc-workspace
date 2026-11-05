@@ -73,8 +73,8 @@ impl Decoder<'_> {
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
         match self.walked(program, &dets, &picks, root).1 {
-            // The table work cap bounds this walk's time. The consistency test
-            // does not read it, so a walk it stops says nothing of the program.
+            // This budget bounds the walk's time. Reaching it establishes
+            // no property of the program.
             Err(DetRefusal::Bound(ReachedBound::TableWork { .. })) => Ok(()),
             verdict => verdict,
         }
@@ -206,11 +206,13 @@ impl Decoder<'_> {
             live = true;
             Ok(())
         };
-        let end = descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains).1;
+        let (_, end, stop) = descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains);
         let verdict = match end {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
-            Err(End::Stop(stop)) => Err(DetRefusal::Bound(stop.bound)),
-            Ok(()) if live => Ok(()),
+            Err(End::Stop(found)) if matches!(found.bound, ReachedBound::Assignments { .. }) => Err(DetRefusal::Bound(found.bound)),
+            _ if live => Ok(()),
+            Ok(()) if stop.is_some() => Err(DetRefusal::Bound(stop.expect("a recorded stop").bound)),
+            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
             Ok(()) => Err(DetRefusal::NoLiveAssignment),
         };
         (leaves, verdict)

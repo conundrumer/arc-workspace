@@ -42,7 +42,7 @@ pub struct DecodeSettings {
     /// The rows a projection may hold on one example at one assignment, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub projection_cap: u64,
-    /// The bindings that all the evaluations of one table may try, as
+    /// The work budget of an annotation or a mask walk, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub table_work_cap: u64,
     /// Whether the evaluations check the rows that the outputs of a

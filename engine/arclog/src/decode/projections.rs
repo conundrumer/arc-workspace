@@ -32,6 +32,7 @@ use crate::eval::{BodyValue, Limits, Outcome, ReachedBound, RelationValue, Stop}
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
+use crate::session::TaskSession;
 use crate::terms::TermId;
 
 /// One projection: a set of the body's columns, and the body's rows projected
@@ -53,23 +54,27 @@ pub enum Projections {
     /// The projections, in the order of their columns. Empty where no column
     /// stands alone under the cap.
     Found(Vec<Projection>),
-    /// A bound that ended the body on some example or assignment, or the
-    /// search: no set's projection is known on every example.
+    /// A bound that ended the walk of the body's assignments, or the search:
+    /// no set's projection is known on every example. A bound of one evaluation
+    /// leaves that assignment without rows, and the search reads the others.
     Stopped(Stop),
 }
 
 /// The projections of `values`, the body's value on each example at each
-/// assignment, at `cap` rows. A stop is at `form`.
-pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget<'_>, form: &NodePath) -> Projections {
+/// assignment, at `cap` rows. The rows the search reads of one value count
+/// under the binding cap, as the bindings of one evaluation count. A stop is at
+/// `form`.
+pub fn projections(values: &[Assigned<BodyValue>], cap: u64, limits: &Limits, session: &TaskSession, form: &NodePath) -> Projections {
     let mut relations: Vec<&Relation> = Vec::new();
     for assigned in values {
-        if let Some(stop) = &assigned.stop {
+        if let Some(stop) = assigned.stop.as_ref().filter(|stop| !stop.bound.is_assignment()) {
             return Projections::Stopped(stop.clone());
         }
         for (_, value) in &assigned.at {
             match &value.0 {
                 RelationValue::Rows(relation) => relations.push(relation),
                 RelationValue::Undefined => {}
+                RelationValue::Stopped(stop) if stop.bound.is_assignment() => {}
                 RelationValue::Stopped(stop) => return Projections::Stopped(stop.clone()),
             }
         }
@@ -77,8 +82,9 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
     let stopped = |bound: ReachedBound| Projections::Stopped(Stop { bound, form: form.clone() });
     let Some(arity) = relations.first().map(|relation| relation.arity()) else { return Projections::Found(Vec::new()) };
     let exact = relations.iter().map(|relation| usize::from(!relation.is_empty())).collect();
+    let budgets = relations.iter().map(|_| Budget::new(limits, session)).collect();
     let mut search = Search {
-        relations, cap, budget,
+        relations, cap, budgets,
         projected: StableHashMap::default(), counted: StableHashMap::default(), under: StableHashMap::default(),
         read_under: Vec::new(), read_over: Vec::new(),
         exact: StableHashMap::from_iter([(Box::default(), exact)]), determined: Vec::new(),
@@ -114,10 +120,11 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, budget: &mut Budget
 }
 
 /// The search over the sets of columns of `relations`, which hold one arity.
-struct Search<'a, 'b> {
+struct Search<'a> {
     relations: Vec<&'a Relation>,
     cap: u64,
-    budget: &'a mut Budget<'b>,
+    /// The count of the rows read of each relation.
+    budgets: Vec<Budget<'a>>,
     /// The plain projections of a part, by relation, part and the positions in the
     /// part's rows, in increasing order.
     projected: StableHashMap<(usize, usize, Box<[u16]>), RowSet>,
@@ -143,7 +150,7 @@ struct Search<'a, 'b> {
     determined: Vec<(Box<[u16]>, u16)>,
 }
 
-impl Search<'_, '_> {
+impl Search<'_> {
     /// The sets under the cap that no larger set under the cap holds, in the
     /// order of their columns: the set of all columns where it is under the
     /// cap, with no further search. Each set tested counts as one binding
@@ -152,6 +159,14 @@ impl Search<'_, '_> {
         let all: Vec<u16> = (0..arity).collect();
         if arity > 0 && self.is_under(&all)? {
             return Ok(vec![all]);
+        }
+        // A set that leaves out one column holds most of the sets the visit
+        // below tests, so one read of it answers them with no read of their own.
+        for column in 0..arity {
+            let rest: Vec<u16> = all.iter().copied().filter(|&other| other != column).collect();
+            if !rest.is_empty() {
+                self.is_under(&rest)?;
+            }
         }
         let mut found = Vec::new();
         self.extend(&mut Vec::new(), 0, arity, &mut found)?;
@@ -201,7 +216,7 @@ impl Search<'_, '_> {
         if let Some(&under) = self.under.get(set) {
             return Ok(under);
         }
-        self.budget.charge_work(1)?;
+        self.budgets[0].charge_work(1)?;
         let reduced = self.reduced(set);
         if reduced.len() < set.len() {
             let under = self.is_under(&reduced)?;
@@ -340,9 +355,9 @@ impl Search<'_, '_> {
         if key.2.len() == this.columns.len() {
             return Ok((this.rows.len(), Box::default()));
         }
-        self.budget.charge_work(0)?;
+        self.budgets[relation].charge_work(0)?;
         let (count, read, functions) = Self::count(this, &key.2, self.cap);
-        self.budget.charge_work(read)?;
+        self.budgets[relation].charge_work(read)?;
         let functions: Box<[u16]> = functions.into_iter().map(|position| this.columns[usize::from(position)].0).collect();
         self.counted.insert(key, (count, functions.clone()));
         Ok((count, functions))
@@ -417,7 +432,7 @@ impl Search<'_, '_> {
                 this.rows.clone()
             } else {
                 if !self.counted.contains_key(&key) {
-                    self.budget.charge_work(this.rows.len() as u64)?;
+                    self.budgets[relation].charge_work(this.rows.len() as u64)?;
                 }
                 Self::project(this, &key.2)
             };
@@ -480,9 +495,9 @@ impl Decoder<'_> {
     /// The projections of the sub-body that [`Decoder::rows`] gives, at the
     /// decode's projection cap, as `docs/engine/synthesis.md#decode-interface`
     /// gives them. `None` where no clause is in progress, and the sub-body's
-    /// fault where it gives one. The search runs as one evaluation of its
-    /// own, under the binding cap, the deadline and the cancellation. It
-    /// writes no record of the trace.
+    /// fault where it gives one. The search reads under the binding cap, as
+    /// [`projections`] gives, the deadline and the cancellation. It writes no
+    /// record of the trace.
     pub fn projections(&self) -> Option<Outcome<Projections>> {
         let values = self.sub_body_values()?;
         let (program, _) = self.state.partial()?;
@@ -495,10 +510,7 @@ impl Decoder<'_> {
             }
         }
         let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone());
-        let mut budget = Budget::new(&limits, self.session);
-        let found = projections(&assigned, self.context.settings.projection_cap, &mut budget, &form);
-        budget.record();
-        Some(Ok(found))
+        Some(Ok(projections(&assigned, self.context.settings.projection_cap, &limits, self.session, &form)))
     }
 }
 
@@ -528,8 +540,7 @@ mod tests {
             .collect();
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
         let limits = Limits::new(None, Default::default());
-        let mut budget = Budget::new(&limits, &session);
-        let Projections::Found(found) = projections(&values, cap, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
+        let Projections::Found(found) = projections(&values, cap, &limits, &session, &NodePath::top(0)) else { panic!("the search ends") };
         found.iter().map(|projection| projection.columns.iter().map(|column| column.0).collect()).collect()
     }
 
@@ -581,8 +592,7 @@ mod tests {
         let values = [Assigned { at: vec![(Vec::new(), BodyValue(RelationValue::Rows(Arc::new(pak()))))], stop: None }];
         let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
         let limits = Limits::new(None, Default::default());
-        let mut budget = Budget::new(&limits, &session);
-        let Projections::Found(found) = projections(&values, 6, &mut budget, &NodePath::top(0)) else { panic!("the search ends") };
+        let Projections::Found(found) = projections(&values, 6, &limits, &session, &NodePath::top(0)) else { panic!("the search ends") };
         let [(_, Some(projected))] = &found[0].rows[0].at[..] else { panic!("one projection") };
         assert_eq!((projected.arity(), projected.len()), (2, 6));
     }

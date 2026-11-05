@@ -61,7 +61,7 @@ pub(crate) struct PyConsistency {
     kind: PyConsistencyKind,
     /// The consistent joint assignments, for `Consistent`.
     assignments: Option<usize>,
-    /// The bound the test reached, for `Stopped`.
+    /// The first bound reached, including beside a consistent assignment.
     stop: Option<PyStopKind>,
     /// The fault, for `Fault`.
     message: Option<String>,
@@ -73,7 +73,7 @@ pub(crate) struct PyConsistency {
 impl PyConsistency {
     pub(crate) fn of(consistency: &Consistency, capped_sets: u64) -> PyConsistency {
         let (assignments, stop, message) = match consistency {
-            Consistency::Consistent { assignments } => (Some(assignments.len()), None, None),
+            Consistency::Consistent { assignments, stop } => (Some(assignments.len()), stop.as_ref().map(|s|Stop::from(s.bound).into()), None),
             Consistency::Fault(fault) => (None, None, Some(fault.message.to_string())),
             Consistency::Stopped(stop) => (None, Some(Stop::from(stop.bound).into()), None),
             Consistency::NotConsistent | Consistency::SeveralValues { .. } => (None, None, None),

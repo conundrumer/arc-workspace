@@ -144,6 +144,22 @@ impl ParameterValues {
         }
     }
 
+    /// Whether these values, determined from the evidence, give each relation
+    /// of `rows` its rows there.
+    pub fn holds(&self, rows: &[(ProgramRelation, Arc<Relation>)]) -> bool {
+        let ParameterSource::Determined(held) = &self.source else { return false };
+        rows.iter().all(|(name, value)| held.get(name).is_some_and(|own| crate::session::same_rows(own, value)))
+    }
+
+    /// The rows of each relation at these values, determined from the
+    /// evidence; none at stored values.
+    pub fn determined_rows(&self) -> Vec<(ProgramRelation, Arc<Relation>)> {
+        match &self.source {
+            ParameterSource::Determined(held) => held.iter().map(|(name, rows)| (name.clone(), Arc::clone(rows))).collect(),
+            ParameterSource::Stored { .. } => Vec::new(),
+        }
+    }
+
     pub(super) fn source(&self) -> &ParameterSource {
         &self.source
     }

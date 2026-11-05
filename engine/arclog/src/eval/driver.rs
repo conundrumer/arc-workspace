@@ -433,8 +433,8 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// at the form that stopped, in place of an evaluation that tries
     /// bindings, where one of these holds:
     ///
-    /// - the evaluation runs for a table, and the stop is at the table work
-    ///   cap;
+    /// - the evaluation runs for a bounded observation, and the stop is at
+    ///   its table work cap;
     /// - the evaluation has a deadline, and the stop is at the deadline,
     ///   with at most [`super::values::DEADLINE_STOP_REUSE`] times the time
     ///   its evaluation ran left to the deadline.
@@ -448,13 +448,13 @@ impl<'e, 'a> Driver<'e, 'a> {
         let session = self.evaluation.session;
         let limits = self.evaluation.limits;
         let Some(held) = &limits.held_stops else { return compute() };
-        if limits.table_work.is_none() && limits.deadline.is_none() {
+        if !limits.table_work.as_ref().is_some_and(|work|work.is_capped()) && limits.deadline.is_none() {
             return compute();
         }
         let entry_key = || cache::key(session, request);
         if !held.is_empty() {
             let key = entry_key();
-            let table_work = limits.table_work.as_ref().and_then(|_| held.table_work_stop(&key));
+            let table_work = limits.table_work.as_ref().filter(|work|work.is_capped()).and_then(|_| held.table_work_stop(&key));
             let deadline = || limits.deadline.and_then(|deadline| held.deadline_stop(&key, deadline.saturating_duration_since(Instant::now())));
             if let Some(stop) = table_work.or_else(deadline) {
                 return Ok(RelationValue::Stopped(stop));

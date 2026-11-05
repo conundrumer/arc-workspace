@@ -66,7 +66,7 @@ pub(super) fn input_value(driver:&Driver<'_, '_>,relation:&GraphRelation,port:&P
         match key_relation(evaluation,&driver.bodies(),form,&shape.key_body,&shape.key_labels(),example)? {Ok(key)=>key,Err(value)=>return Ok(value)}
     } else {None};
     let scope=super::examples::scope_of(evaluation.program,relation);
-    let view=BodyView {form:form.clone(),clause:(*input.clause).clone(),paths:(*input.paths).clone(),scope,input:Some(port.clone())};
+    let view=BodyView {union_expanded:false,form:form.clone(),clause:(*input.clause).clone(),paths:(*input.paths).clone(),scope,input:Some(port.clone())};
     match value(driver,&view,example)? {
         RelationValue::Rows(rows)=>{
             if let Err(stop)=super::join::charge_walk(evaluation,&rows,form) {return Ok(RelationValue::Stopped(stop));}

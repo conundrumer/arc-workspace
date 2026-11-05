@@ -10,17 +10,12 @@
 //! every example at each assignment of the `DET`s it reads, at each model for
 //! a relation with picks. Where a relation holds more rows on an example than
 //! the projection cap of the decode settings, the table gives its projections in place of
-//! its rows. Each table counts the bindings that all its evaluations try, over the
-//! domains of its walk, its examples, assignments and models, and its projections.
-//! The first batch that takes the count past the table work cap of the decode
-//! settings stops the evaluation it is in with [`ReachedBound::TableWork`](arclog::eval::ReachedBound::TableWork),
-//! and each later batch of the table stops at once. The table keeps the entries
-//! found before, and records the stop as it records a stop at another bound.
-//! No result-cache entry holds that stop. An evaluation that begins within the
-//! cap and whose batches take the count past it is held, with its stop, in the store of
-//! held stops that the decode's requests share ([`Decoder::limits`]), and a later table of the case that
-//! needs that evaluation, at the same result-cache key, records that stop at the
-//! form that stopped and tries no binding for it. The recording makes no choice among the points: it keeps each,
+//! its rows. Each evaluation reads the session's binding and row caps, and no
+//! count sums evaluations across assignments or examples. A stopped assignment
+//! gives no rows on that example; the walk keeps earlier rows and visits the
+//! next assignment. The search for projections reads each value's rows under
+//! the binding cap, and extents have an observation budget of their own.
+//! The recording keeps every requested point,
 //! and a caller that reads no body in progress asks for [`Points::Relations`],
 //! so that no body table is evaluated.
 //!
@@ -349,9 +344,9 @@ pub(crate) fn body_table_at(decoder: &Decoder<'_>, point: Point, earlier: &[&Tab
     let contents = sub.map(|sub| {
         let relation = derived_at(&sub.program, &sub.form);
         let slot = decoder.state().open_slot();
-        let work = decoder.table_work();
+        let work = decoder.query_work();
         let examples = decoder.examples_of(sub.scope).into_iter().zip(decoder.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples, &work).map(|contents| made_named(decoder, names, earlier, &sub.program, &relation, contents))
+        contents(decoder, &sub.program, &sub.form, &relation, slot, &walked_dets(&sub.program, relation.node), examples).map(|contents| made_named(decoder, names, earlier, &sub.program, &relation, contents))
     });
     Some(Table { form, point, contents: contents.and_then(|contents| contents) })
 }
@@ -376,9 +371,9 @@ pub(crate) fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[
         let contents = match graph_relation(checked, registry, &form, declared) {
             Some(relation) => {
                 let dets = relation_dets(checked, relation.node);
-                let work = decoder.table_work();
+                let work = decoder.query_work();
                 let examples = relation_examples(decoder, checked, &relation, &dets, &work);
-                contents(decoder, checked, &form, &relation, slot, &dets, examples, &work).map(|contents| {
+                contents(decoder, checked, &form, &relation, slot, &dets, examples).map(|contents| {
                     let contents = Contents { name: relation_spelled(declared), output_name: output_name(program.value(), &form, declared), keys: checked.program.column_keys(relation.node), ..contents };
                     let seen: Vec<&Table> = earlier.iter().copied().chain(&tables).collect();
                     made(decoder, &seen, checked, &relation, contents)
@@ -430,13 +425,33 @@ pub(crate) fn relation_examples_with_context(decoder: &Decoder<'_>, checked: &Ch
         &mut |evaluation, example| models_at(evaluation, relation, example))
 }
 
+/// The assignments that one export of a program's tables has stopped at a cap on
+/// a query's size. A reader of the export drops such an assignment whole, so a
+/// later query at values that hold it takes its stop, and does not run.
+#[derive(Default)]
+pub(crate) struct TooLarge(std::cell::RefCell<Vec<(Vec<Assignment>, arclog::eval::Stop)>>);
+
+/// [`relation_examples`], with the stops that `too_large` holds, and adding to it.
+pub(crate) fn relation_examples_skipping(decoder: &Decoder<'_>, checked: &CheckedProgram, relation: &GraphRelation, dets: &[Det], work: &TableWork, too_large: &TooLarge) -> Vec<ExampleRows> {
+    assignment_context::examples(decoder, checked, scope_of(checked, relation), relation.node, dets, work, AssignmentContext::Search, &mut |evaluation, example| {
+        if let Some(stop) = too_large.0.borrow().iter().find(|(rows, _)| evaluation.parameters.holds(rows)).map(|(_, stop)| stop.clone()) {
+            return Ok(vec![RelationValue::Stopped(stop)]);
+        }
+        let values = models_at(evaluation, relation, example)?;
+        if let Some(stop) = values.iter().find_map(|value| match value { RelationValue::Stopped(stop) if stop.bound.is_size() => Some(stop.clone()), _ => None }) {
+            too_large.0.borrow_mut().push((evaluation.parameters.determined_rows(), stop));
+        }
+        Ok(values)
+    })
+}
+
 /// The contents of the table of `relation` in `program`, from its rows on each
 /// example: its slot, its columns, its `DET`s, and its projections where a
 /// relation holds more rows than the projection cap. The frames and extents are
 /// those of `made`, which sets them.
-fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>, work: &TableWork) -> Outcome<Contents> {
+fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
     let mut contents = relation_metadata(decoder.registry(), program, form, relation, slot, dets, examples)?;
-    add_projections(decoder, &mut contents, form, work);
+    add_projections(decoder, &mut contents, form);
     Ok(contents)
 }
 
@@ -513,36 +528,21 @@ pub(crate) fn metadata(program: &CheckedProgram, form: &NodePath, relation: Tabl
         rows: None, bound_labels: Box::default(), depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None })
 }
 
-/// Projection policy shared by both schema adapters; metadata-only callers do
-/// not invoke this evaluator.
-pub(crate) fn add_projections(decoder: &Decoder<'_>, contents: &mut Contents, form: &NodePath, work: &TableWork) {
+/// Projection policy shared by both schema adapters.
+pub(crate) fn add_projections(decoder: &Decoder<'_>, contents: &mut Contents, form: &NodePath) {
     let over = contents.examples.iter().any(|example| example.rows.as_ref().is_ok_and(|rows|
         rows.at.iter().flat_map(|(_, models)| models).any(|model|
             matches!(model, RelationValue::Rows(rows) if rows.len() > decoder.settings().projection_cap))));
-    if over { contents.projections = projections_of(decoder, &contents.examples, form, work); }
+    if over { contents.projections = projections_of(decoder, &contents.examples, form); }
 }
 
-/// The share of a table's work cap that the search for its projections may
-/// count: a quarter. Provisional.
-const PROJECTION_SHARE: u64 = 4;
-
 /// The projections of the rows of `examples`, none where an example gives a
-/// fault. Its search counts its bindings in a count of its own, under the
-/// lesser of [`PROJECTION_SHARE`] of the cap of `work`, the count of the
-/// table, and what `work` has left, and then adds them to `work`. A search
-/// past its own cap stops at that cap, and leaves the rest of the table's work
-/// to the table's other evaluations and to later tables.
-fn projections_of(decoder: &Decoder<'_>, examples: &[ExampleRows], form: &NodePath, work: &TableWork) -> Option<Projections> {
+/// fault.
+fn projections_of(decoder: &Decoder<'_>, examples: &[ExampleRows], form: &NodePath) -> Option<Projections> {
     let flat: Vec<Assigned<BodyValue>> = examples.iter().map(|example| example.rows.as_ref().ok().map(flatten)).collect::<Option<_>>()?;
-    let own = TableWork::new((work.cap() / PROJECTION_SHARE).min(work.cap().saturating_sub(work.count())));
-    let limits = decoder.limits().counted_in(own.clone());
+    let limits = decoder.limits();
     let (_, session, _) = decoder.evaluation_inputs();
-    let mut budget = Budget::new(&limits, session);
-    let found = projections(&flat, decoder.settings().projection_cap, &mut budget, form);
-    budget.record();
-    // A count past the table's cap stops the table's next evaluation.
-    let _ = work.charge(own.count());
-    Some(found)
+    Some(projections(&flat, decoder.settings().projection_cap, &limits, session, form))
 }
 
 /// The evidence tables of `task`, `ex_input` then `ex_output`, each with the

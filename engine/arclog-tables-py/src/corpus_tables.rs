@@ -40,9 +40,11 @@ struct TableCase {
 /// the evidence tables `ex_input` and `ex_output` of the task, which stand at
 /// token 0 with point 2. The tables are those of a decode under `projection_cap`,
 /// the cap of `DecodeSettings`, the engine's default where it is `None`, and
-/// each `CaseTables` gives it. `table_work_cap` is the cap of the bindings that
-/// all the evaluations of one table try, with the same default and the same
-/// `None`; a table past it ends with a stop whose bound is `TableWork`. The relations of the
+/// each `CaseTables` gives it. `table_work_cap` budgets projections and extents,
+/// with the same default and the same `None`. Row queries have only the
+/// evaluation caps, whose `binding_cap` and `row_cap` overrides default to
+/// `DecodeSettings::corpus()`. `largest_counts` gives their largest completed binding
+/// and row counts, and `query_stops` lists stopped queries as JSON. The relations of the
 /// finished forms are tabled, and with `bodies` the bodies in progress as well.
 /// The second value holds a line for each case that gives no tables and each
 /// solver that gives none, in the form of `corpus_streams`, in the order of
@@ -86,15 +88,15 @@ struct TableCase {
 /// construction's run that an earlier run of the call cached is not checked again.
 /// With `prefix`, each solver's files hold a prefix of a solver, read as `corpus_streams` reads them.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None, copies=false, prefix=false))]
-pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>, copies: bool, prefix: bool) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
+#[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None, copies=false, prefix=false, binding_cap=None, row_cap=None))]
+pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>, copies: bool, prefix: bool, binding_cap: Option<u64>, row_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
     let units = units.map(|count| NonZeroUsize::new(count).ok_or_else(|| PyValueError::new_err("units must be a positive integer"))).transpose()?;
     let points = if bodies { Points::All } else { Points::Relations };
     let wanted = if all_cases { WantedCases::All } else { WantedCases::Concept };
     let constructions = constructions()?;
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let base = DecodeSettings::default();
-    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), check_copies: copies, ..base };
+    let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), check_copies: copies, caps: arclog::eval::Caps {bindings:binding_cap.unwrap_or(base.caps.bindings),rows:row_cap.unwrap_or(base.caps.rows),..base.caps}, ..base };
     let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
@@ -156,7 +158,8 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
                     let empty_session=arclog::session::TaskSession::new(arclog::session::SessionBound {bytes:arclog::session::SESSION_BYTES},settings.caps);
                     let session=record.session.as_ref().unwrap_or(&empty_session);
                     let materializer=Materializer::new(session,&limits);
-                    (case_columns_in(&materializer,&evidence[solver],&record.tables,trains[solver],Some(streamed[solver].2[stream])).with_copies(&record.copies),record.ended)
+                    let counts = session.largest_counts();
+                    (case_columns_in(&materializer,&evidence[solver],&record.tables,trains[solver],Some(streamed[solver].2[stream])).with_copies(&record.copies),record.ended,counts,record.query_stops())
                 }),
                 &|solver| progress.settle(solver),
                 step_cap,
@@ -177,9 +180,12 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
                 Err(fault) => Err(fault.clone()),
             };
             match outcome {
-                Ok(((columns, ended), relations)) => {
+                Ok(((columns, ended, counts, query_stops), relations)) => {
                     if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {}: native packing stopped {:?} at {:?}",case.case,stop.bound,stop.form));}
-                    tables.push(PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, columns, Some(relations), None)?);
+                    let mut table = PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, columns, Some(relations), None)?;
+                    table.largest_counts = Some((counts.bindings, counts.rows));
+                    table.query_stops = Some(query_stops);
+                    tables.push(table);
                     if let Some(at) = ended.filter(|at| matches!(at.kind, PyConsistencyKind::Stopped)) {
                         faults.push(at.line(task, &case.case));
                     }

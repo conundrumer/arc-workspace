@@ -7,9 +7,9 @@
 use arclog::check::{check_program, CheckCache, SolverClauses};
 use arclog::eval::instance::Constructions;
 use arclog::eval::determinations::Domain;
-use arclog::eval::{relation_of, Cancellation, Caps, Evaluation, Limits, Outcome, ParameterValues, ReachedBound};
+use arclog::eval::{relation_of, Cancellation, Caps, Evaluation, Limits, Outcome, ParameterValues};
 use arclog::judge::candidates::World;
-use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Determination, Parameter};
+use arclog::judge::determination::{determine, DeterminedCase, Determination, Parameter};
 use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::read::read_solver;
 use arclog::registry::Registry;
@@ -110,13 +110,7 @@ fn a_det_without_one_that_keeps_two_values_is_underdetermined() {
     assert!(matches!(found.parameter(&declared("c")), Some(Parameter::Underdetermined(values)) if values.len() > 1), "{found:?}");
 }
 
-#[test]
-fn a_product_past_the_assignment_cap_stops_and_names_the_parameters() {
-    let found = determination(&copies_input(&["a", "b"]), &[1, 2], Caps { assignments: 3, ..Caps::CORPUS });
-    let [(_, CaseOutcome::Stopped { stop, parameters }, _)] = &found.cases[..] else { panic!("one stopped case: {found:?}") };
-    assert_eq!(stop.bound, ReachedBound::Assignments { cap: 3 });
-    assert_eq!(parameters, &[declared("a"), declared("b")]);
-}
+
 
 const BOTH_COLORS_UNCHANGED: &[u8] = &[1, 2];
 

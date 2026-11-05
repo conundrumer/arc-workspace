@@ -3,8 +3,11 @@
 //! A `Box` value in a made frame covers a box of the frame, and its margins
 //! alone do not say which: the frame's extent (V rows, H columns) does. The
 //! engine keeps no extent, since a Box term is its four margins, so the extent
-//! is computed here, from a second evaluation of the bodies that give the
-//! table's rows, with the label of each of their columns kept
+//! is computed here from the bodies that give the table's rows, with the
+//! label of each column kept. An intact body whose columns are the relation's
+//! columns, and which is its sole derivation, reads the table's rows relabeled
+//! into query order; other bodies
+//! are evaluated under the query caps
 //! ([`arclog::eval::body_view::BodyView::widened`]).
 //!
 //! The extent of a frame follows from the own size of a value, the size of the
@@ -58,12 +61,15 @@
 //! own size plus margins fall below 1: such a derivation gives no extent, and
 //! so does a value that does not fit in its extent (`fitted_size`).
 //!
-//! The derivation visits no more rows than the table's work cap admits. Each
+//! The derivation has a work budget of the table work cap times the number
+//! of assignments, at least one. Each
 //! model of a body or of an output charges its count of rows to the count of
 //! [`TableWork`] before the derivation visits them, as does each read of an
 //! earlier table's rows. An entry whose model is refused the charge, or whose
 //! derivation leaves the count past the cap, gets the stop
-//! ([`EntryExtents::Stopped`]) in place of extents.
+//! ([`EntryExtents::Stopped`]) in place of extents. A stop at this budget or
+//! an evaluation bound leaves the table's rows available. Session-byte,
+//! deadline and cancellation stops remain stops of the table.
 //!
 //! An entry that holds rows and has no extent says why in
 //! [`EntryExtents::Lost`]: the fault of a widened body, or the reason the
@@ -84,7 +90,7 @@ use std::sync::Arc;
 
 use arclog::algebra::geometry::{Edge, Geometry};
 use arclog::check::CheckedProgram;
-use arclog::decode::{relation_dets, Decoder};
+use arclog::decode::{relation_dets, Assigned, Decoder};
 use arclog::eval::body_view::BodyView;
 use arclog::eval::ir::{Argument, Arguments, IrNode, IrPaths, NodePaths};
 use arclog::eval::determinations::relation_spelled;
@@ -204,6 +210,8 @@ pub struct ExtentRows {
     places: Box<[Option<(usize, usize)>]>,
     /// The count of the relation's rows.
     len: u64,
+    /// Direct evidence is computed from the row when read, with no matrix.
+    direct: bool,
     _allocation: std::sync::Arc<arclog::session::SessionAllocation>,
 }
 
@@ -219,6 +227,7 @@ struct ExtentBlock {
 }
 
 impl ExtentRows {
+    pub(crate) fn is_direct(&self)->bool {self.direct}
     /// The extent of the extent column `k` at the row `at` of the relation,
     /// none past its rows.
     pub fn cell(&self, at: u64, k: usize) -> Option<Extent> {
@@ -231,7 +240,7 @@ impl ExtentRows {
 
     /// Whether the matrix is held per part of the relation.
     pub fn by_part(&self) -> bool {
-        self.blocks.iter().all(|block| block.part.is_some())
+        !self.direct && self.blocks.iter().all(|block| block.part.is_some())
     }
 
     /// For a matrix held per part, the part whose rows give the extent column
@@ -287,9 +296,13 @@ impl Extents {
         self.examples.get(example)?.get(assignment)?.get(model)
     }
 
+    pub(crate) fn projected_ready(&self,column:usize,projected:&[usize])->bool {
+        self.contexts.example_column(column).is_none_or(|example|projected.contains(&example))
+    }
+
     /// Evidence that does not depend on a widened-body query. Also used by
     /// downstream native reads when another column's derivation stopped.
-    fn direct_at(&self, contents: &Contents, example: usize, column: usize, row: &[TermId]) -> Option<Extent> {
+    pub(crate) fn direct_at(&self, contents: &Contents, example: usize, column: usize, row: &[TermId]) -> Option<Extent> {
         match contents.columns[column].ty {
             ValueType::Position => position_extent(row[column], &ValueType::Position),
             ValueType::Box => {
@@ -483,7 +496,7 @@ fn flat_rows(reads:&Reads<'_>,contexts:&DirectContexts,contents:&Contents,exampl
     }).map_err(stopped)?;
     let block=ExtentBlock {part:None,stride:1,rows:result.into_boxed_slice()};
     let places=(0..columns.len()).map(|k|Some((0,k))).collect();
-    Ok(std::sync::Arc::new(ExtentRows {blocks:Box::new([block]),places,len:relation.len(),_allocation:allocation}))
+    Ok(std::sync::Arc::new(ExtentRows {blocks:Box::new([block]),places,len:relation.len(),direct:false,_allocation:allocation}))
 }
 
 /// The extents of the rows of `relation` held per part, each column in the
@@ -520,7 +533,7 @@ fn part_rows(reads:&Reads<'_>,contexts:&DirectContexts,contents:&Contents,exampl
     for (block,(_,own)) in held.iter().enumerate() {
         for (slot,&k) in own.iter().enumerate() {at[k]=Some((block,slot));}
     }
-    Ok(std::sync::Arc::new(ExtentRows {blocks:blocks.into_boxed_slice(),places:at.into_boxed_slice(),len:relation.len(),_allocation:allocation}))
+    Ok(std::sync::Arc::new(ExtentRows {blocks:blocks.into_boxed_slice(),places:at.into_boxed_slice(),len:relation.len(),direct:false,_allocation:allocation}))
 }
 
 fn stopped_extents(contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>,stop:Stop)->Extents {
@@ -529,9 +542,12 @@ fn stopped_extents(contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,n
 }
 
 fn direct_extents(reads:&Reads<'_>,contexts:DirectContexts,contents:&Contents,columns:Vec<u32>,no_grid:Vec<bool>)->Extents {
-    let examples=contents.examples.iter().enumerate().map(|(example,e)|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|(_,models)|models.iter().map(|v|match v {
-        RelationValue::Rows(rows)=>match completed_rows(reads,&contexts,contents,example,rows,&columns,&no_grid,None) {
-            Ok(rows)=>EntryExtents::Rows(rows),Err(stop)=>EntryExtents::Stopped(stop),
+    // Position cells and proved grid frames carry their extent already.
+    // Keep the evidence and compute it at a read; no per-row matrix is needed.
+    let examples=contents.examples.iter().map(|e|e.rows.as_ref().map_or_else(|_|Vec::new(),|a|a.at.iter().map(|(_,models)|models.iter().map(|v|match v {
+        RelationValue::Rows(rows)=>match reads.materializer().copy(128+columns.len()*std::mem::size_of::<Option<(usize,usize)>>()) {
+            Ok(allocation)=>EntryExtents::Rows(Arc::new(ExtentRows {blocks:Box::new([]),places:vec![None;columns.len()].into_boxed_slice(),len:rows.len(),direct:true,_allocation:allocation})),
+            Err(bound)=>EntryExtents::Stopped(Stop {bound,form:reads.form.clone()}),
         },
         _=>EntryExtents::Absent,
     }).collect()).collect())).collect();
@@ -541,6 +557,19 @@ fn direct_extents(reads:&Reads<'_>,contexts:DirectContexts,contents:&Contents,co
 /// Native per-cell annotation, in the relation's each_row order. This is used
 /// for body/component buffers and the full-held-choice sidecar alike.
 pub fn annotated_rows(materializer:&Materializer<'_>,form:&NodePath,contents:&Contents,example:usize,assignment:usize,model:usize,relation:&Relation)->Result<Materialized<Vec<Vec<(u8,Option<Extent>)>>>,Stop> {
+    if let Some(EntryExtents::Stopped(stop))=contents.extents.as_ref().and_then(|e|e.entry(example,assignment,model)) {return Err(stop.clone());}
+    let columns=contents.columns.iter().filter(|c|c.ty.is_box()).count();
+    let allocation=materializer.admit(relation,Materializer::row_bytes(columns.saturating_mul(std::mem::size_of::<(u8,Option<Extent>)>()),2))
+        .map_err(|bound|Stop {bound,form:form.clone()})?;
+    let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));
+    visit_annotated_rows(materializer,form,contents,example,assignment,model,relation,&mut |row|result.push(row.to_vec()))?;
+    Ok(Materialized::new(result,allocation))
+}
+
+/// Visits annotations in native row order, reusing one row of scratch. The
+/// caller admits its destination before the walk; no full annotation matrix
+/// is retained here.
+pub(crate) fn visit_annotated_rows(materializer:&Materializer<'_>,form:&NodePath,contents:&Contents,example:usize,assignment:usize,model:usize,relation:&Relation,visit:&mut dyn FnMut(&[(u8,Option<Extent>)]))->Result<(),Stop> {
     let columns=contents.columns.iter().enumerate().filter(|(_,c)|c.ty.is_box()).map(|(i,_)|i as u32).collect::<Vec<_>>();
     let extents=contents.extents.as_ref();
     let held=extents.and_then(|e|e.entry(example,assignment,model));
@@ -548,10 +577,10 @@ pub fn annotated_rows(materializer:&Materializer<'_>,form:&NodePath,contents:&Co
     // Preserve its stop rather than retrying through direct-cell fallbacks.
     if let Some(EntryExtents::Stopped(stop))=held { return Err(stop.clone()); }
     let stopped=|bound|Stop {bound,form:form.clone()};
-    let allocation=materializer.admit(relation,Materializer::row_bytes(columns.len().saturating_mul(std::mem::size_of::<(u8,Option<Extent>)>()),2)).map_err(stopped)?;
-    let mut result=Vec::with_capacity(usize::try_from(relation.len()).expect("admitted row count"));let mut at=0u64;
+    let mut annotations=Vec::with_capacity(columns.len());let mut at=0u64;
     materializer.walk(relation,&mut |row| {
-        result.push(columns.iter().enumerate().map(|(k,c)| {
+        annotations.clear();
+        annotations.extend(columns.iter().enumerate().map(|(k,c)| {
             let no_grid=contents.columns[*c as usize].ty==ValueType::Offset || extents.is_some_and(|e|e.no_grid.get(k)==Some(&true));
             if no_grid {return (0,None);}
             let extent=match held {Some(EntryExtents::Rows(rows))=>rows.cell(at,k),_=>None}
@@ -561,8 +590,9 @@ pub fn annotated_rows(materializer:&Materializer<'_>,form:&NodePath,contents:&Co
                     _=>None,
                 });
             (if extent.is_some(){1}else{2},extent)
-        }).collect());at+=1;
-    }).map_err(stopped)?;Ok(Materialized::new(result,allocation))
+        }));
+        visit(&annotations);at+=1;
+    }).map_err(stopped)
 }
 
 /// The extents of the made frames of the `Box` columns of the table of
@@ -576,7 +606,7 @@ pub fn table_extents(decoder: &Decoder<'_>, earlier: &[&Table], checked: &Checke
 
 pub(crate) fn table_extents_with_context(decoder: &Decoder<'_>, earlier: &[&Table], checked: &CheckedProgram, relation: &GraphRelation, contents: &Contents, context: AssignmentContext<'_>) -> Option<Extents> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let reads=Reads::with_context(decoder,earlier,checked.program.form_of(relation.node),context);
+    let reads=Reads::with_context(decoder,earlier,checked.program.form_of(relation.node),context,contents);
     let EvidencePlan {columns,no_grid,contexts,needed,stop}=EvidencePlan::new(&reads.materializer(),decoder,earlier,checked,checked.program.form_of(relation.node),contents);
     if columns.is_empty() { return None; }
     if let Some(stop)=stop {return Some(stopped_extents(contexts,contents,columns,no_grid,stop));}
@@ -595,7 +625,7 @@ pub fn body_extents(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgr
 }
 
 pub(crate) fn body_extents_with_context(decoder:&Decoder<'_>,earlier:&[&Table],checked:&CheckedProgram,view:&BodyView,contents:&Contents,context:AssignmentContext<'_>)->Option<Extents> {
-    let reads=Reads::with_context(decoder,earlier,&view.form,context);
+    let reads=Reads::with_context(decoder,earlier,&view.form,context,contents);
     body_extents_in(decoder,&reads,checked,view,contents)
 }
 
@@ -756,7 +786,37 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
     };
     let analysis=Analysis {decoder,registry:decoder.registry(),checked,sub,types:&types,sources,reads,dets,keys:&keys};
     let walked=crate::tables::body_tables::dets(checked,sub);
-    let values=crate::tables::body_tables::examples_with_context(decoder,checked,sub,&walked,&reads.work,reads.query_context());
+    let sole_derivation = subject.relation.is_none_or(|relation| {
+        let givens = checked.program.given(relation.node, decoder.registry()).into_iter().filter(|given|
+            !relation.output.as_deref().zip(given.output.as_deref()).is_some_and(|(read, own)| read != own)).collect::<Vec<_>>();
+        if givens.len() != 1 || givens[0].form != sub.form {return false;}
+        match &checked.program.graph.nodes[relation.node.0 as usize].kind {
+            DependencyKind::Clause(_) => true,
+            DependencyKind::InstanceInput {input, ..} => checked.program.input_bodies(&sub.form, input).len() == 1,
+            _ => false,
+        }
+    });
+    let values = if sole_derivation && !sub.union_expanded && key.len() == sub.clause.columns.len() && {
+        let mut columns = key.clone(); columns.sort_unstable(); columns == (0..key.len()).collect::<Vec<_>>()
+    } {
+        // Relabel the compact parts; no product or second join is evaluated.
+        subject.examples.iter().map(|example| ExampleRows {
+            example: example.example,
+            rows: example.rows.clone().map(|assigned| Assigned {
+                at: assigned.at.into_iter().map(|(assignment, models)| {
+                    let models = models.into_iter().map(|model| match model {
+                        RelationValue::Rows(rows) => RelationValue::Rows(Arc::new(Relation::from_parts(rows.arity(), rows.parts().iter().map(|part|
+                            arclog::relations::RelationPart {columns: part.columns.iter().map(|c| arclog::relations::ColumnIndex(key[c.0 as usize] as u16)).collect(), rows: part.rows.clone()}).collect()))),
+                        other => other,
+                    }).collect();
+                    (assignment, models)
+                }).collect(),
+                stop: assigned.stop,
+            }),
+        }).collect::<Vec<_>>()
+    } else {
+        crate::tables::body_tables::examples_with_context(decoder,checked,sub,&walked,&reads.work,reads.query_context())
+    };
     for (place, example) in subject.examples.iter().enumerate() {
         let Ok(rows) = &example.rows else { continue };
         let entries = &mut gathered[place];
@@ -793,7 +853,11 @@ fn gather(decoder: &Decoder<'_>, reads: &Reads<'_>, dets: &[String], subject: &S
                                 let derived: Box<[TermId]> = key.iter().map(|&column| row[column]).collect();
                                 let slots = entry.rows.entry(derived).or_insert_with(|| vec![Merged::Unset; subject.columns.len()]);
                                 for (k, (slot, &column)) in slots.iter_mut().zip(subject.columns).enumerate() {
-                                    if subject.needs(k) {
+                                    // None absorbs every later derivation.
+                                    // Re-reading its sources can add no frame
+                                    // evidence and needlessly spends the table's
+                                    // budget on an already settled cell.
+                                    if subject.needs(k) && *slot != Merged::None {
                                         slot.merge(analysis.extent_of(key[column as usize], row, &ctx, 0));
                                     }
                                 }
@@ -1137,6 +1201,9 @@ fn finish(reads:&Reads<'_>,contexts: &DirectContexts, contents: &Contents, gathe
                     models
                         .iter()
                         .map(|value| match (value, &entry.stop) {
+                            (RelationValue::Rows(relation), _) if entry.lost.is_some() => {
+                                if relation.is_empty() {EntryExtents::Absent} else {EntryExtents::Lost(entry.lost.clone().expect("a recorded loss"))}
+                            },
                             (RelationValue::Rows(_), Some(stop)) => EntryExtents::Stopped(stop.clone()),
                             (RelationValue::Rows(relation), None) => match &entry.lost {
                                 Some(reason) if !relation.is_empty() => EntryExtents::Lost(reason.clone()),
@@ -1200,19 +1267,29 @@ type LookupKey = (u32, usize, usize, usize, Vec<usize>);
 impl<'a> Reads<'a> {
     fn materializer(&self)->Materializer<'_> {Materializer::new(self.session,&self.limits)}
 
-    fn new(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath)->Self {
-        Self::new_in(decoder,tables,form,decoder.limits(),decoder.table_work(),None)
+    fn new(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,contents:&Contents)->Self {
+        let mut assignments: Vec<&[Assignment]> = Vec::new();
+        for (values, _) in contents.examples.iter().filter_map(|e|e.rows.as_ref().ok()).flat_map(|a|&a.at) {
+            if !assignments.iter().any(|held| held.len() == values.len() && held.iter().zip(values).all(|((name, rows), (other, value))| name == other && arclog::session::same_rows(rows, value))) {
+                assignments.push(values);
+            }
+        }
+        let assignments = (assignments.len() as u64).max(1);
+        let work = TableWork::new(decoder.settings().table_work_cap.saturating_mul(assignments));
+        Self::new_in(decoder,tables,form,decoder.limits(),work,None)
     }
 
     fn new_in(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,limits:arclog::eval::Limits,work:TableWork,receipt:Option<&'a Arc<HeldAssignments>>)->Self {
         Self {names:names_of(decoder.registry(),tables),tables,cache:RefCell::default(),limits:limits.counted_in(work.clone()),work,receipt,session:decoder.evaluation_inputs().1,form:form.clone(),failure:RefCell::new(None)}
     }
 
-    fn with_context(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,context:AssignmentContext<'a>)->Self {
-        match context {
-            AssignmentContext::Search => Self::new(decoder,tables,form),
-            AssignmentContext::Held {receipt,limits,work} => Self::new_in(decoder,tables,form,limits.clone(),work.clone(),Some(receipt)),
+    fn with_context(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,context:AssignmentContext<'a>,contents:&Contents)->Self {
+        let mut reads = Self::new(decoder,tables,form,contents);
+        if let AssignmentContext::Held {receipt,limits,..} = context {
+            reads.receipt = Some(receipt);
+            reads.limits = limits.clone().counted_in(reads.work.clone());
         }
+        reads
     }
 
     fn query_context(&self)->AssignmentContext<'_> {

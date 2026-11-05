@@ -4,7 +4,7 @@ use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
 use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
-use arclog_tables::columns::{case_columns_in,case_columns_with_full_rows_in,case_columns_selected_entries_in,case_columns_metadata_in,ValueKind};
+use arclog_tables::columns::{case_columns_held_in,case_columns_in};
 use arclog::eval::join::Materializer;
 use arclog_tables::identity::identify;
 use arclog_tables::tables::{evidence_tables, study_pair};
@@ -29,7 +29,7 @@ mod component_tables;
 /// Undefined OUT counts all expected cells as missing. For non-grid OUT,
 /// count missing/ambiguous/wrong-frame cells and occupied extra positions.
 #[pyfunction]
-#[pyo3(signature = (gold, point, mutant, *, task, tasks, session_bytes=STUDY_SESSION_BYTES))]
+#[pyo3(signature = (gold, point, mutant, *, task, tasks, session_bytes=None))]
 fn evaluate_pair(
     py: Python<'_>,
     gold: &PyStudyProgram,
@@ -37,11 +37,12 @@ fn evaluate_pair(
     mutant: &PyValidMutant,
     task: &str,
     tasks: &str,
-    session_bytes: usize,
+    session_bytes: Option<usize>,
 ) -> PyResult<(String, PyCaseTables, PyCaseTables)> {
     let constructions = constructions()?;
     let (read, judged) = read_task_files(Path::new(tasks), task).map_err(PyValueError::new_err)?;
     let settings = gold.settings;
+    let session_bytes=session_bytes.unwrap_or(STUDY_SESSION_BYTES);
     let session=TaskSession::new(SessionBound {bytes:session_bytes},settings.caps);
     let mut result=py.detach(||study_pair::evaluate_pair(
         &gold.program,&point.inner,&mutant.inner,&read,&judged,&session,constructions,&settings));
@@ -55,6 +56,7 @@ fn evaluate_pair(
 
 pub(crate) fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.module().add("STUDY_SESSION_BYTES",STUDY_SESSION_BYTES)?;
+    names.module().add("SESSION_BYTES",arclog::session::SESSION_BYTES)?;
     names.class::<PyStudyTaskEvaluator>()?;
     names.class::<PyStudyPrefixUniverse>()?;
     continuation::register(names)?;
@@ -113,9 +115,10 @@ impl PyStudyTaskEvaluator {
 #[pymethods]
 impl PyStudyTaskEvaluator {
     #[new]
-    #[pyo3(signature=(task,tasks,settings,session_bytes=STUDY_SESSION_BYTES,compact=true,observation_start=0))]
-    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:usize,compact:bool,observation_start:u64)->PyResult<Self> {
+    #[pyo3(signature=(task,tasks,settings,session_bytes=None,compact=true,observation_start=0))]
+    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:Option<usize>,compact:bool,observation_start:u64)->PyResult<Self> {
         let settings=settings.engine()?;
+        let session_bytes=session_bytes.unwrap_or(STUDY_SESSION_BYTES);
         let (read,judged)=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?;
         let evidence=evidence_tables(&read,Registry::get());
         let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
@@ -274,59 +277,33 @@ impl PyStudyTaskEvaluator {
     }
 
     /// All export relation tables (plus evidence), in this evaluator's Ident
-    /// namespace. Native evaluation is cached once per gold handle. Returns
-    /// (status_json, CaseTables); stops and faults retain their native reason.
-    /// full_rows packs native rows/extents even when synthesis projections exist.
-    #[pyo3(signature=(gold,*,full_rows=false,full_rows_entries=None,expected_tables_ref=None,metadata_only=false,selected_only=false))]
-    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,full_rows:bool,mut full_rows_entries:Option<Vec<usize>>,expected_tables_ref:Option<&str>,metadata_only:bool,selected_only:bool)->PyResult<(String,PyCaseTables)> {
+    /// namespace, as the decode gives them: a table over the projection cap gives
+    /// its entries' counts and its projections in place of its rows. With
+    /// held_rows, each entry gives its rows as its evaluation holds them: a
+    /// product of parts over the projection cap gives its count and its parts,
+    /// and every other entry its rows. Native evaluation is cached once per gold
+    /// handle. Returns (status_json, CaseTables); stops and faults retain their
+    /// native reason.
+    #[pyo3(signature=(gold,*,held_rows=false))]
+    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,held_rows:bool)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
-        if full_rows_entries.is_some()!=expected_tables_ref.is_some() || full_rows_entries.is_some() && !full_rows {
-            return Err(PyValueError::new_err("entry mask requires full_rows=True and expected_tables_ref together"));
-        }
-        if metadata_only && (full_rows || full_rows_entries.is_some() || expected_tables_ref.is_some() || selected_only) {
-            return Err(PyValueError::new_err("metadata_only cannot request row payload or a snapshot mask"));
-        }
-        if selected_only && full_rows_entries.is_none() {
-            return Err(PyValueError::new_err("selected_only requires a full-row snapshot mask"));
-        }
-        if let Some(entries)=&mut full_rows_entries {
-            entries.sort_unstable();
-            if entries.windows(2).any(|pair|pair[0]==pair[1]) {return Err(PyValueError::new_err("duplicate full_rows_entries index"));}
-        }
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
             let limits=self.settings.operation_limits();
-            let (mut report,tables)=if let Some(expected)=expected_tables_ref {
-                let (report,tables,count)=cache.gold_tables_snapshot(&gold.program,expected)?;
-                if full_rows_entries.as_ref().is_some_and(|entries|entries.last().is_some_and(|last|*last>=count)) {
-                    return Err("full_rows_entries index is outside the default metadata snapshot".into());
-                }
-                (report,tables)
-            } else {
-                if cache.activate(&gold.program) {self.session.results.clear();}
-                study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits)
-            };
+            if cache.activate(&gold.program) {self.session.results.clear();}
+            let (mut report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
             let started=std::time::Instant::now();
             let materializer=Materializer::new(&self.session,&limits);
-            let columns=match &full_rows_entries {
-                Some(entries)=>case_columns_selected_entries_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,entries,selected_only),
-                None if metadata_only=>case_columns_metadata_in(&materializer,&self.evidence,&tables,self.task.train.len(),None),
-                None=>case_columns_with_full_rows_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,full_rows),
+            let columns=if held_rows {
+                case_columns_held_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,self.settings.projection_cap)
+            } else {
+                case_columns_in(&materializer,&self.evidence,&tables,self.task.train.len(),None)
             };
             let written=gold.program.written_stream(Registry::get(),&self.settings).map_err(|d|d.message.to_string())?;
             let columns=columns.with_identities(identify(gold.program.checked(),Registry::get(),&written.relations,&self.evidence,&tables));
-            let metadata_complete=columns.packing_stop().is_none() && columns.tables.form.len()==self.evidence.len()+tables.len();
-            if !full_rows && metadata_complete {cache.record_gold_tables_metadata(&gold.program,columns.entries.table.len())?;}
-            report["full_rows"]=full_rows.into();
-            report["metadata_only"]=metadata_only.into();
-            report["selected_only"]=selected_only.into();
-            report["projection_payload_omitted"]=(metadata_only || selected_only).into();
             report["entry_count"]=columns.entries.table.len().into();
-            report["entry_metadata_complete"]=metadata_complete.into();
-            report["full_rows_entries"]=serde_json::json!(full_rows_entries);
-            if let Some(entries)=&full_rows_entries {
-                report["selected_rows_entries"]=serde_json::json!(entries.iter().copied().filter(|i|columns.entries.kind.get(*i)==Some(&(ValueKind::Rows as u8))).collect::<Vec<_>>());
-            }
+            let counts = self.session.largest_counts();
+            report["largest_counts"] = serde_json::json!({"bindings":counts.bindings,"rows":counts.rows});
             packing_status(&mut report,[&columns]);
             report["packed_correspondence"]=table_binding(&columns,"gold",&report,&self.ident_namespace);
             report["packed_correspondence"]["program_sexp"]=gold.program.sexp(Registry::get()).into();
@@ -460,7 +437,27 @@ fn table_binding(columns:&arclog_tables::columns::CaseColumns,side:&str,report:&
 }
 
 fn packing_status<'a>(report:&mut serde_json::Value,columns:impl IntoIterator<Item=&'a arclog_tables::columns::CaseColumns>) {
-    packing_stops(report,columns.into_iter().filter_map(|c|c.packing_stop()));
+    let columns: Vec<_> = columns.into_iter().collect();
+    packing_stops(report,columns.iter().filter_map(|c|c.packing_stop()));
+    let mut entry_stops = report["entry_stops"].as_array().cloned().unwrap_or_default();
+    let mut extent_stops = report["extent_stops"].as_array().cloned().unwrap_or_default();
+    for columns in columns {
+        for (entry, bound) in columns.entries.extent_stop.bound.iter().enumerate() {
+            if let Some(bound) = bound {
+                extent_stops.push(serde_json::json!({"entry":entry,"table":columns.entries.table[entry],"reason":bound,"form":columns.entries.extent_stop.form[entry],"source":"packing"}));
+            }
+        }
+        for (entry, bound) in columns.entries.value_stop.bound.iter().enumerate() {
+            if let Some(bound) = bound {
+                entry_stops.push(serde_json::json!({"entry":entry,"table":columns.entries.table[entry],"bound":bound,"form":columns.entries.value_stop.form[entry]}));
+            }
+        }
+    }
+    report["extent_stops"] = extent_stops.into();
+    if !entry_stops.is_empty() {
+        if report["status"]!="fault" {report["status"]="stopped".into();}
+        report["entry_stops"] = entry_stops.into();
+    }
 }
 
 fn packing_stops<'a>(report:&mut serde_json::Value,stops:impl IntoIterator<Item=&'a arclog::eval::Stop>) {
@@ -497,6 +494,7 @@ fn pack_pair<R:PackingReport+Send+Sync>(
         let mut binding=table_binding(&columns,sides[index],result.packing_report(),ident_namespace);
         binding["program_sexp"]=programs[index].sexp(Registry::get()).into();
         bindings.push(binding);
+        packing_status(result.packing_report(),[&columns]);
         PyCaseTables::of(py,task.into(),sides[index].into(),false,projection_cap,columns,None,None)
     };
     let gold=side(0)?;

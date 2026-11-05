@@ -128,7 +128,7 @@ The judge checks the [case conditions](../../docs/handbook/principles.md#cases) 
 
 ### Reports
 
-- A case stopped at a bound has no output on that input, and the judge reports the stop as a fault, as [Joins](evaluator.md#joins) gives. It is not the output `outside` of an enumeration that stops early.
+- A case stopped at a bound at an assignment has no output on that input at that assignment. A determination or consistency walk continues with the other assignments, and a surviving assignment can establish a consistent verdict beside the recorded stop. In a judged run, the stopped case has no output on that input, and the judge reports the stop as a fault, as [Joins](evaluator.md#joins) gives. It is not the output `outside` of an enumeration that stops early.
 - A report names the case, the pair or the witness, and the cause, in the file's names.
 - A set that ended at the model cap is no stop at a bound, and the judge reports it as a count.
 - Per input, the judge's work past the evaluation of the cases is linear in the cases: one interned output per case, the enumeration up to its stop, and, in the refine step, the comparisons over the distinct vectors.

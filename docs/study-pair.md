@@ -77,12 +77,17 @@ the engine writer's source/decode correspondence, not numeric slot guesses.
 A pair and its components report `complete`, `stopped` with the reached
 bound, or `fault` with its reason. No fault is replaced by an empty table or
 a guessed assignment. Projections and extent failures remain visible.
-A stop of a table's projections search loses no row, so it leaves the status
-as the rows give it. The report lists each such stop in `projection_stops`,
-and the table's `projections_stop` columns hold it.
-Table evaluations use the native table work caps; OUT shares a work budget
-with the gold assignment walk; row comparison also charges row visits to
-a bounded budget before materialization. Native run, assignment, deadline,
+A projection stop leaves a table over the projection cap with its entries'
+row counts alone and is listed in `projection_stops`. An extent stop at its observation budget or an evaluation
+bound is listed in `extent_stops` and leaves row status intact. Extent faults
+and machine-dependent stops remain faults and stops of the table.
+One query evaluates a clause, finished or in progress, on one example at one
+assignment. Its evaluations read the native binding and row caps. Relation,
+body and OUT walks count work without a total work cap; a bounded assignment
+loses only its own rows and later assignments remain available. The search for
+projections reads each value's rows under the binding cap, and extents have an
+observation budget of their own. Row comparison charges row
+visits to its own bounded budget before materialization. Native run, assignment, deadline,
 and cancellation bounds still apply. A panic becomes an explicit pair
 fault. A complete pair can have no FITS assignment.
 
@@ -161,8 +166,7 @@ The task never retains a history of gold handles, mutations or cumulative
 prefix snapshots. A later visit to a released handle creates a fresh observation.
 
 The native prefix's row estimate and packed prefix's owned capacities share
-an admission budget of half `session_bytes` (32 MiB with the default 64 MiB
-session). Packed accounting includes nested vectors, strings, table names and
+an admission budget of half `session_bytes`. Packed accounting includes nested vectors, strings, table names and
 run-interning metadata. Packing's relation-address memo is dropped before a
 prefix is retained, so it cannot keep native relation indexes alive. Checked
 program metadata and active gold observations are limited to the current case;
@@ -179,7 +183,11 @@ one packing operation are sorted once at each typed schema.
 `evaluator.gold_tables(gold)` returns `(status_json, CaseTables)` containing
 the full export relation tables and evidence in the same task session as
 pair tables. Native evaluation is retained for the active gold case, including
-explicit stops and faults. Call it once when recording each gold case.
+explicit stops and faults. Call it once when recording each gold case. A table
+over the projection cap gives its entries' row counts and its projections in
+place of its rows. With `held_rows=True`, each entry gives its rows as its
+evaluation holds them: a product of parts over the projection cap gives its row
+count and its parts, as the table's projections, and every other entry its rows.
 
 The task evaluator defaults to `compact=True`: the first pair for a gold
 handle contains the gold assignment records and train observations;

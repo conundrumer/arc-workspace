@@ -35,7 +35,7 @@ use crate::types::{each_site_label, each_site_use, use_label, GraphRelation};
 pub enum Consistency {
     /// M_open over these joint assignments solves every train pair. Of an
     /// `OUT` form, the decode ends at it.
-    Consistent { assignments: Vec<Vec<(ProgramRelation, Arc<Relation>)>> },
+    Consistent { assignments: Vec<Vec<(ProgramRelation, Arc<Relation>)>>, stop: Option<Stop> },
     /// M_open does not solve every train pair.
     NotConsistent,
     /// Of a rule test: a `DET` without `(ONE)` that the relation reads takes
@@ -78,8 +78,9 @@ pub struct Step {
 #[derive(Clone, Debug)]
 pub struct Assigned<T> {
     pub at: Vec<(Vec<Assignment>, T)>,
-    /// The bound that ended the walk before its last assignment: the
-    /// assignment cap, the table work cap, a bound of a run, the deadline or a cancellation.
+    /// The stop that ended the walk, or else the first stop of one assignment's
+    /// path, whose bound is [`crate::eval::ReachedBound::is_assignment`] and which
+    /// leaves the other assignments' entries available.
     pub stop: Option<Stop>,
 }
 
@@ -360,8 +361,9 @@ impl<'a> Decoder<'a> {
         // kept (`det_memo::SessionMemo`), where they would compute the same.
         let memo = work.map(|_| self.session.det_domains().get_or_init(|| SessionMemo::new(self.det_scope(), self.session)));
         let domains = memo.and_then(|memo| memo.domains(self.det_scope(), program, dets));
-        match descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains.as_ref().map(|domains| domains as &dyn Domains)).1 {
-            Ok(()) => Ok(Assigned { at: found, stop: None }),
+        let (_, end, first) = descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains.as_ref().map(|domains| domains as &dyn Domains));
+        match end {
+            Ok(()) => Ok(Assigned { at: found, stop: first }),
             Err(End::Stop(stop)) => Ok(Assigned { at: found, stop: Some(stop) }),
             Err(End::Fault(fault)) => Err(fault),
         }
@@ -544,14 +546,15 @@ impl<'a> Decoder<'a> {
     fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>], tested: Tested, at_cap: AtCap<'_>) -> Consistency {
         let dets: Vec<_> = dets_read(program, output.node);
         let limits = self.limits();
-        let Walked { kept, end, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested, at_cap);
+        let Walked { kept, end, stop, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested, at_cap);
         match end {
-            Err(End::Stop(stop)) => return Consistency::Stopped(stop),
+            // The walk ended before its last assignment, so what it kept depends on the order of the walk.
+            Err(End::Stop(found)) => return Consistency::Stopped(found),
             Err(End::Fault(fault)) => return Consistency::Fault(fault),
             Ok(()) => {}
         }
         if kept.is_empty() {
-            return Consistency::NotConsistent;
+            return stop.map_or(Consistency::NotConsistent, Consistency::Stopped);
         }
         if tested == Tested::Rule {
             for det in dets.iter().filter(|det| !det.open) {
@@ -565,7 +568,7 @@ impl<'a> Decoder<'a> {
         let inputs = self.inputs(program, &limits);
         let evaluations: Vec<_> = parameters.iter().map(|values| inputs.at(values)).collect();
         match tested.observed(&evaluations, &mut kept.iter().map(|assignment| assignment.observed.clone()).collect::<Vec<_>>(), output, train, at_cap) {
-            Ok(Found::Columns(_)) => Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect() },
+            Ok(Found::Columns(_)) => Consistency::Consistent { assignments: kept.into_iter().map(|assignment| assignment.values).collect(), stop },
             Ok(Found::None) => Consistency::NotConsistent,
             Ok(Found::Stopped(stop)) => Consistency::Stopped(stop),
             Err(fault) => Consistency::Fault(fault),
