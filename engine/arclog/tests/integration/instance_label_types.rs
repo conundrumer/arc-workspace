@@ -77,22 +77,3 @@ fn a_label_equal_to_a_key_label_takes_the_type_of_the_key_clause() {
     let types = scope_types(KEY_ARCLOG, &|form| matches!(form, Form::Instance(_)));
     assert_eq!(types[0].len(), 5, "{types:?}");
 }
-
-const PORT_ARCLOG: &str = "
-(RULE &passable (input *P (:Col *C)))
-
-(RULE &seed (input *P (:Col *C)))
-
-(INIT &flood4 Flood
-  (node (P) (&passable *P))
-  (source (P) (&seed *P)))
-
-(RULE &walk_step
-  (&flood4.step (:Delta *V)))
-";
-
-#[test]
-fn a_read_of_an_input_port_with_no_clause_takes_the_port_types() {
-    let types = scope_types(PORT_ARCLOG, &|form| matches!(form, Form::Clause(clause) if clause.value().columns.len() == 1));
-    assert_eq!(types.last(), Some(&vec![ValueType::Offset]));
-}

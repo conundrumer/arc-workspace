@@ -5,8 +5,8 @@ use super::reads::form_reads;
 use super::types::{component, result};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::LabelUse;
+use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
+use crate::program::{Conjunct, Form, LabelUse};
 use crate::types::each_site_label;
 
 /// [`CheckId::UnfoldReads`].
@@ -26,11 +26,22 @@ impl Check for UnfoldReadsCheck {
     /// input that [`crate::registry::InputPort::reads_outputs`] does not
     /// mark, or in the key clause's body, and a read in a marked input with
     /// a site that makes a label, since another atom of the clause binds
-    /// each label of such a read.
+    /// each label of such a read. Where a read in a marked input names the
+    /// `key` column, it also refuses each such read of that instance under a
+    /// negation, since the evaluation runs the keys' walks again until the
+    /// rows of the other keys stop growing, and a negation of them would
+    /// depend on the order of those runs.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let program = input.scope.program;
         let mut refusals = Vec::new();
-        for read in form_reads(input.form, input.path) {
+        let reads = form_reads(input.form, input.path);
+        let mut at_keys: Vec<&NodePath> = Vec::new();
+        for read in &reads {
+            if matches!(read.node(program, input.path), Some((_, true))) && read.atom.sites.iter().any(|site| site.column == crate::resolver::columns::key()) {
+                at_keys.push(&read.form);
+            }
+        }
+        for read in &reads {
             let Some((_, true)) = read.node(program, input.path) else { continue };
             let form_at = NodePath(read.form.0[input.path.0.len()..].into());
             let Some(NodeRef::Instance(instance)) = node_at(NodeRef::from(input.form), &form_at) else { continue };
@@ -42,14 +53,17 @@ impl Check for UnfoldReadsCheck {
             for site in read.atom.sites.iter() {
                 each_site_label(site, &mut Vec::new(), &mut |use_, _| makes |= matches!(use_, LabelUse::Fresh(_)));
             }
+            let negated = at_keys.contains(&&read.form) && under_negation(input.form, &read.at.0);
             let message = if !marked {
                 "the read is of an output of its own instance, which only an input that reads the instance's outputs, as `Unfold`'s `step`, `skip` and `take`, makes"
             } else if makes {
                 "a site of a read of an output of its own instance makes a label, where each site joins a label that another atom of the clause binds"
+            } else if negated {
+                "a read of an output of its own instance stands under a negation, in an instance that reads its outputs at a key it names"
             } else {
                 continue;
             };
-            refusals.push(Refusal { message: message.into(), at: read.at });
+            refusals.push(Refusal { message: message.into(), at: read.at.clone() });
         }
         if refusals.is_empty() {
             return CheckResult::Pass;
@@ -66,4 +80,19 @@ impl Check for UnfoldReadsCheck {
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }
+}
+
+/// Whether the node at `at`, a path relative to `form`, stands under `NOT`,
+/// in an `ALL`, or in the test of an `IF`.
+fn under_negation(form: &Form, at: &[PathStep]) -> bool {
+    let mut node = NodeRef::from(form);
+    for step in at {
+        match node {
+            NodeRef::Conjunct(Conjunct::Not(_) | Conjunct::All { .. }) => return true,
+            NodeRef::Conjunct(Conjunct::If { .. }) if step.0 == 0 => return true,
+            _ => {}
+        }
+        node = node.children()[step.0 as usize];
+    }
+    matches!(node, NodeRef::Conjunct(Conjunct::Not(_)))
 }

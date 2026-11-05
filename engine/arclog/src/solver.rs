@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use crate::program::{
     written_inputs, Alt, Alts, AltsName, Block, Arcdata, Body, Clause, ClauseKeyword, ColumnName, DeclaredName, DemoRule, Demonstrated, DemonstratedPart, Form, Instance,
-    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, Out, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
+    InstanceInput, InstanceName, KeyBody, KeyClause, LabelId, LabelUse, Atom, Choose, Conjunct, FactRelation, Negated, Node, OutputName, OutputOwner, OutputStep, PortName, Program, ProgramRelation, RelationColumn, RelationName, RelationRef, Out, RigidDet, RigidDetName, RuleForms, Site, SiteArg, SiteValue,
 };
 
 /// A solver read from its two files: the claims, the tree of alts, the
@@ -470,6 +470,7 @@ impl Solver {
     pub fn derived(&self) -> StableHashSet<ProgramRelation> {
         let mut derived = StableHashSet::default();
         let mut owners = StableHashSet::default();
+        let mut ports: StableHashMap<InstanceName, Vec<PortName>> = StableHashMap::default();
         let mut outputs = Vec::new();
         let claims = self.representative_claims().map(|(_, form)| form);
         let forms: Vec<&Form> = self.program.value().forms.iter().chain(claims).collect();
@@ -490,6 +491,9 @@ impl Solver {
                     derived.insert(relation);
                 }
                 Some(Derives::Instance(name)) => {
+                    if let Form::Instance(instance) = form {
+                        ports.entry(name.clone()).or_default().extend(instance_ports(instance.value()));
+                    }
                     owners.insert(OutputOwner::Instance(name));
                 }
                 Some(Derives::RigidDet(name)) => {
@@ -503,7 +507,11 @@ impl Solver {
                 }
             });
         }
-        derived.extend(outputs.into_iter().filter(|o| owners.contains(&o.of)).map(ProgramRelation::Output));
+        let given = |output: &OutputName| match (&output.of, &output.path[..]) {
+            (OutputOwner::Instance(name), [OutputStep::Port(port)]) => ports.get(name).is_some_and(|ports| ports.contains(port)),
+            _ => true,
+        };
+        derived.extend(outputs.into_iter().filter(|o| owners.contains(&o.of) && given(o)).map(ProgramRelation::Output));
         derived
     }
 
@@ -1562,6 +1570,14 @@ fn derives(form: &Form) -> Option<Derives> {
         Form::Out(_) => Some(Derives::Out),
         Form::Claim(_) | Form::Alts(_) => None,
     }
+}
+
+/// The ports of `instance` that a clause reads: each output of its component,
+/// and each input that the form writes.
+fn instance_ports(instance: &Instance) -> Vec<PortName> {
+    let Some(component) = crate::resolver::registry_columns::component(crate::registry::Registry::get(), &instance.component) else { return Vec::new() };
+    let written: Vec<&PortName> = crate::program::written_inputs(instance.key.as_ref(), &instance.inputs).map(|input| &input.name).collect();
+    component.relation_ports(&written).map(|port| port.name.clone()).collect()
 }
 
 /// Whether two forms are of one variant and have equal nodes.

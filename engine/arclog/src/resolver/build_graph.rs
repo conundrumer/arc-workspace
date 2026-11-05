@@ -475,15 +475,6 @@ impl<'a> Builder<'a> {
         if let Some(target) = self.names.find(scope, relation) {
             return Resolution::Node(target.node);
         }
-        if let RelationRef::Output(OutputName { of: OutputOwner::Instance(name), path: steps }) = relation {
-            if let [OutputStep::Port(port)] = &steps[..] {
-                for at in [scope, &NameScope::Program] {
-                    if let Some(input) = self.instance_input(at, name, port) {
-                        return Resolution::Node(input);
-                    }
-                }
-            }
-        }
         match program_relation {
             Some(program_relation) if self.derived.contains(&program_relation) => Resolution::Undefined(program_relation),
             _ => self.unresolved(path, &name()),
