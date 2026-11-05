@@ -762,8 +762,26 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                               "  (ONE))"], amp, set(), line=r.span.first)
                 else:
                     mark = self.set_mark(amp, r, props, param_facts.get(r.name, []), grid_params.get(r.name, []))
-                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
-                             line=r.span.first)
+                    types = [col.type.name for col in r.columns]
+                    covers = plan_proposer(self.plan().get(r.name), types, r.name in c.open_params)
+                    if covers and covers not in props and not mark and len(PROPOSER_COLS.get(covers, ())) == 1 \
+                            and len(PROPOSER_COLS.get(props[0], ())) == 1:
+                        # the stored value is one the plan found another proposer to cover: the stored reading's
+                        # determination reads a `DET` of that proposer, and the derived readings keep their own
+                        cand, n = f"{r.name}_stored", 2
+                        while cand in c.used_names:
+                            cand, n = f"{r.name}_stored{n}", n + 1
+                        c.used_names.add(cand)
+                        stored = "&" + cand
+                        forms.append(Form([f"(DET {stored} {covers})"], stored, set(), line=r.span.first))
+                        site = PROPOSER_COLS[covers][0].name
+                        lab = PROPOSER_COLS[props[0]][0].name
+                        f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}",
+                                  f"  ({stored} {f'*{lab}' if site == lab else f'(:{site} *{lab})'}))"], amp, {stored},
+                                 line=r.span.first)
+                    else:
+                        f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
+                                 line=r.span.first)
                 forms.append(f)
                 derive_points.append((amp, derives, "Derived", r.name))
             elif r.name in c.cand_params:
