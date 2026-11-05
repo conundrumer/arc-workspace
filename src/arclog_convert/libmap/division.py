@@ -91,10 +91,34 @@ def _zero_gap(ex, inst) -> bool:
                for c in cs)
 
 
+def _derived_gap(ex, inst) -> bool:
+    """Whether a clause of the gap input reads a parameter under an `@derive` line, whose derived rows may be several."""
+    comments = {c.line: c.text for c in ex.prog.comments}
+    derived = set()
+    for r in ex.prog.relations:
+        line = r.span.first - 1 if r.span else 0
+        while line in comments:
+            if "@derive " in comments[line]:
+                derived.add(r.name)
+            line -= 1
+    return any(l.atom.relation.name in derived and l.atom.relation.instances == ("params",)
+               for c in ex.inputs(inst, "gap") for l in c.body or () if isinstance(l, AtomLiteral))
+
+
 def divide2d(by: str):
     def spec(inst, ex):
         unit = inst.type_args[0].text == "Unit"
         ky = "$U()" if unit else "Ky"
+        if _derived_gap(ex, inst):
+            # the input holds one gap for both axes, and `Division` takes a gap per axis, so an instance per gap keeps
+            # several gaps from mixing on the two axes
+            return Spec(".type {x}_key = [key: {Key}, g: number]\n.init {x} = Division<{x}_key>", {},
+                        {"tile(Ky, P, Q, R)": "{x}.tile([Ky, _], P, Q, R)", "cell(P)": "in_cell(P)",
+                         "dim(Ky, A, N)": "in_dim(Ky, A, N)", "gap(G)": "in_gap(G)"},
+                        (f"{{x}}.cell([{ky}, G], P) :- in_gap(G), in_cell(P).\n" if unit else
+                         "{x}.cell([Ky, G], P) :- in_dim(Ky, _, _), in_gap(G), in_cell(P).\n")
+                        + f"{{x}}.{by}([Ky, G], A, N) :- in_gap(G), in_dim(Ky, A, N).\n"
+                        + f"{{x}}.gap([{ky}, G], A, G) :- in_dim({ky}, A, _), in_gap(G).")
         cell = "{x}.cell($U(), P) :- in_cell(P)." if unit else "{x}.cell(Ky, P) :- in_dim(Ky, _, _), in_cell(P)."
         clauses = [cell, f"{{x}}.{by}(Ky, A, N) :- in_dim(Ky, A, N)."]
         if not _zero_gap(ex, inst):
