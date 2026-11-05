@@ -375,7 +375,7 @@ pub struct Evaluator<'a> {
 }
 
 /// The most cells of component outputs that an evaluation keeps for a later hit.
-const HELD_OUTPUT_CELLS: usize = 1 << 25;
+const HELD_OUTPUT_CELLS: usize = 1 << 22;
 
 impl<'a> Evaluator<'a> {
     pub fn new(shapes: &'a [CompShape], instances: &'a [CompInstance], libs: &'a [LibRelation], session: TaskSession) -> Self {
@@ -435,7 +435,27 @@ impl<'a> Evaluator<'a> {
                 let part = held.iter().find(|part| part.columns.contains(at))?;
                 let a = part.columns.iter().position(|column| column == at)?;
                 let b = match other {
-                    Some(other) => Some(part.columns.iter().position(|column| column == other)?),
+                    Some(other) => match part.columns.iter().position(|column| column == other) {
+                        Some(place) => Some(place),
+                        // Two columns of two parts: a dot product of their histograms.
+                        None => {
+                            let second = held.iter().find(|part| part.columns.contains(other))?;
+                            let place = second.columns.iter().position(|column| column == other)?;
+                            if !matches!(op, Op::Eq | Op::Ne) {
+                                return None;
+                            }
+                            let both = part.table.len as u64 * second.table.len as u64;
+                            let matched = if part.table.mask(a) & second.table.mask(place) == 0 {
+                                0
+                            } else {
+                                let histogram = self.histogram(&second.table, &[place]);
+                                part.table.rows().map(|row| histogram.get(&u64::from(row[a])).copied().map_or(0, u64::from)).sum()
+                            };
+                            let kept = if *op == Op::Eq { matched } else { both - matched };
+                            let others: Vec<&Part> = held.iter().filter(|own| !std::ptr::eq(*own, part) && !std::ptr::eq(*own, second)).collect();
+                            return Some(Some(kept.saturating_mul(product(&others))));
+                        }
+                    },
                     None => None,
                 };
                 let others: Vec<&Part> = held.iter().filter(|own| !std::ptr::eq(*own, part)).collect();

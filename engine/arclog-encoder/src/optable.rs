@@ -292,7 +292,7 @@ impl Builder<'_> {
         let refs: Vec<&Rel> = probes.iter().collect();
         let mut answers: Vec<bool> = Vec::with_capacity(refs.len());
         for batch in refs.chunks(BATCH) {
-            for check in self.host.check_terms(batch) {
+            for check in self.host.check_terms(batch, false) {
                 answers.push(check.is_ok_and(|check| check.row_names.iter().position(|name| name == "X_rel").and_then(|at| check.types.get(at).cloned()) == Some(ValueType::Offset)));
             }
         }
@@ -324,7 +324,7 @@ impl Builder<'_> {
     fn add_leaves(&mut self) -> Result<Vec<(u32, u8)>, String> {
         let leaves = self.space.as_ref().expect("the space between two walks").leaves();
         let refs: Vec<&Rel> = leaves.iter().map(|leaf| &leaf.rel).collect();
-        let checks = self.host.check_terms(&refs);
+        let checks = self.host.check_terms(&refs, true);
         let mut typed: Vec<(usize, Vec<String>, Vec<ValueType>)> = Vec::new();
         for (at, (leaf, check)) in leaves.iter().zip(checks).enumerate() {
             let check = check.map_err(|message| format!("the leaf {} is refused: {message}", leaf.rel))?;
@@ -516,7 +516,7 @@ impl Builder<'_> {
         if self.checked % (BATCH as u64 * 16) < refs.len() as u64 {
             self.host.clear_check_cache();
         }
-        let checks = if refs.is_empty() { Vec::new() } else { self.host.check_terms(&refs) };
+        let checks = if refs.is_empty() { Vec::new() } else { self.host.check_terms(&refs, true) };
         let mut held: FastMap<usize, TermCheck> = FastMap::default();
         for (at, check) in ask.iter().zip(checks) {
             let accepted = check.is_ok();
@@ -555,7 +555,9 @@ impl Builder<'_> {
                 None => self.table.no_native.push(format!("{}: columns {columns:?} against {:?}", pending.term.rel, check.row_names)),
             }
         }
-        let frames: Vec<Vec<bool>> = if self.top {
+        // Only `relative` reads frames. A stored table's cells stand in no grid that the
+        // checker knows, so a table's run reads no frame.
+        let frames: Vec<Vec<bool>> = if self.top || matches!(self.mode, Mode::Table(_)) {
             vec![Vec::new(); compiled.len()]
         } else {
             let probes: Vec<(&Rel, &[String], &[ValueType])> = compiled.iter().map(|(pending, columns, types)| (&pending.term.rel, &columns[..], &types[..])).collect();
@@ -967,12 +969,12 @@ fn mirror_of(rel: &Rel) -> (bool, bool) {
 /// The op table up to size `d`. At the top size it holds only operators with
 /// children that together read what a root reads, since any other term is no root.
 pub fn build(host: &Host, mode: Mode, d: usize, keep_terms: bool, max_columns: Option<usize>) -> Result<OpTable, String> {
-    build_with(host, mode, d, keep_terms, max_columns, FastMap::default()).map(|(table, _)| table)
+    build_with(host, mode, d, keep_terms, max_columns, true, FastMap::default()).map(|(table, _)| table)
 }
 
 /// [`build`], starting from the answers `answers` that earlier builds gave, which
 /// hold for any schema. It gives the answers it holds at its end.
-pub fn build_with(host: &Host, mode: Mode, d: usize, keep_terms: bool, max_columns: Option<usize>, answers: FastMap<u128, bool>) -> Result<(OpTable, FastMap<u128, bool>), String> {
+pub fn build_with(host: &Host, mode: Mode, d: usize, keep_terms: bool, max_columns: Option<usize>, top_components: bool, answers: FastMap<u128, bool>) -> Result<(OpTable, FastMap<u128, bool>), String> {
     let registry = Registry::get();
     let table_names = match &mode {
         Mode::Table(name) => vec![name.clone()],
@@ -990,7 +992,9 @@ pub fn build_with(host: &Host, mode: Mode, d: usize, keep_terms: bool, max_colum
         // No later term reads the names of a term of the top size.
         if let Some(space) = builder.space.as_mut() {
             space.quick = top;
-            space.max_bound_columns = if top || table_mode { max_columns } else { None };
+            // A component binds a relation of some columns, so a limit of none leaves
+            // the top size with its relational operators alone.
+            space.max_bound_columns = if top && !top_components { Some(0) } else if top || table_mode { max_columns } else { None };
         }
         // Below the top size, a table's run needs only terms that read something.
         let keep = |flags: u8| if top { flags & required == required } else { !table_mode || flags != 0 };

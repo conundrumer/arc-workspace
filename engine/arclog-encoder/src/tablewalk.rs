@@ -83,7 +83,8 @@ pub fn shape_text(text: &str, table: &str, types: &[ValueType]) -> String {
                     numbers.len()
                 }
             };
-            out.push_str(&format!("?{number}:{:?}", types.get(usize::from(column)).map(ValueType::without_source)));
+            let ty = types.get(usize::from(column)).map_or_else(String::new, |ty| format!("{:?}", ty.without_source()));
+            out.push_str(&format!("?{number}:{ty}"));
             if reading > 1 {
                 out.push_str(&format!("#{reading}"));
             }
@@ -106,9 +107,9 @@ pub fn shape_text(text: &str, table: &str, types: &[ValueType]) -> String {
 
 /// The operators of the schema `types`, whose table is `table` in `host`, with the
 /// small terms over the leaves.
-pub fn table_ops(host: &Host, table: &str, types: &[ValueType], d: usize, max_columns: Option<usize>, answers: FastMap<u128, bool>) -> Result<(TableOps, FastMap<u128, bool>), String> {
+pub fn table_ops(host: &Host, table: &str, types: &[ValueType], d: usize, max_columns: Option<usize>, top_components: bool, answers: FastMap<u128, bool>) -> Result<(TableOps, FastMap<u128, bool>), String> {
     // The small terms read their operators' terms, which the top size keeps only when asked.
-    let (held, answers) = crate::optable::build_with(host, Mode::Table(table.to_string()), d, d == 1, max_columns, answers)?;
+    let (held, answers) = crate::optable::build_with(host, Mode::Table(table.to_string()), d, d == 1, max_columns, top_components, answers)?;
     let mut small = Vec::new();
     let registry = Registry::get();
     let mut add = |entry: u32, a: u32, b: u32, flags: u8| {
@@ -156,7 +157,7 @@ pub struct Entry2 {
 
 pub type ShapeMap = FastMap<u128, Entry2>;
 
-fn mix_word(word: u64) -> u64 {
+pub fn mix_word(word: u64) -> u64 {
     let mut x = word;
     x ^= x >> 33;
     x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
@@ -583,14 +584,16 @@ pub fn stored_of(value: &serde_json::Value, train: usize) -> Option<Stored> {
 pub struct OpsCache {
     pub d: usize,
     pub max_columns: Option<usize>,
+    /// Whether the top size holds components.
+    pub top_components: bool,
     ops: std::sync::Mutex<FastMap<u128, (Arc<TableOps>, u64)>>,
     answers: std::sync::Mutex<FastMap<u128, bool>>,
     uses: std::sync::atomic::AtomicU64,
 }
 
 impl OpsCache {
-    pub fn new(d: usize, max_columns: Option<usize>) -> Self {
-        OpsCache { d, max_columns, ops: Default::default(), answers: Default::default(), uses: Default::default() }
+    pub fn new(d: usize, max_columns: Option<usize>, top_components: bool) -> Self {
+        OpsCache { d, max_columns, top_components, ops: Default::default(), answers: Default::default(), uses: Default::default() }
     }
 
     /// The operators of the schema of `types`.
@@ -614,19 +617,19 @@ impl OpsCache {
         let task = crate::closed::task_of_inputs(&[vec![vec![0u8]]])?;
         let host = Host::stored(task, &stored)?;
         let answers = self.answers.lock().expect("no panic").clone();
-        let (ops, answers) = table_ops(&host, "&t", types, self.d, self.max_columns, answers)?;
+        let (ops, answers) = table_ops(&host, "&t", types, self.d, self.max_columns, self.top_components, answers)?;
         self.answers.lock().expect("no panic").extend(answers);
         let ops = Arc::new(ops);
         let mut held = self.ops.lock().expect("no panic");
         held.insert(hash, (ops.clone(), tick));
         // The operators of a schema are large, so the cache keeps those used last.
         let total: usize = held.values().map(|(ops, _)| ops.table.entries.len()).sum();
-        if total > 12_000_000 {
+        if total > 3_000_000 {
             let mut order: Vec<(u64, u128)> = held.iter().filter(|(_, (ops, _))| Arc::strong_count(ops) == 1).map(|(key, (_, tick))| (*tick, *key)).collect();
             order.sort_unstable();
             let mut left = total;
             for (_, key) in order {
-                if left <= 6_000_000 {
+                if left <= 1_500_000 {
                     break;
                 }
                 if let Some((ops, _)) = held.remove(&key) {
@@ -638,6 +641,11 @@ impl OpsCache {
     }
 }
 
+/// Whether a root has one value at every pair that is not its default.
+pub fn active_entry(entry: Option<&Entry2>, pairs: usize) -> bool {
+    active(entry, pairs)
+}
+
 /// Whether a root has one value at every pair that is not its default: an entry
 /// with no pair of no value, and one nonzero hash of its multiset.
 fn active(entry: Option<&Entry2>, pairs: usize) -> bool {
@@ -647,31 +655,63 @@ fn active(entry: Option<&Entry2>, pairs: usize) -> bool {
     }
 }
 
+/// Which roots a table has as stable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StableRule {
+    /// One value at every pair that is not the root's default.
+    Active,
+    /// One value at every pair, not no value, on a table with rows at every pair: a
+    /// default counts, so an empty table meets nothing vacuously.
+    NonVacuous,
+}
+
+/// A table's map, and whether it has rows at every pair.
+#[derive(Clone, Copy)]
+struct Held<'m> {
+    map: &'m ShapeMap,
+    rows_everywhere: bool,
+}
+
+fn holds(rule: StableRule, held: Held<'_>, name: &u128, pairs: usize) -> bool {
+    let entry = held.map.get(name);
+    match rule {
+        StableRule::Active => active(entry, pairs),
+        StableRule::NonVacuous => {
+            held.rows_everywhere
+                && match entry {
+                    None => true,
+                    Some(entry) => entry.none == 0 && entry.sums[..pairs].iter().all(|sum| *sum == entry.sums[0]),
+                }
+        }
+    }
+}
+
 /// An item's scores at size `d`: the count of contingent classes, gold's score, and
 /// each mutant's. A contingent root is one that `input` or a table the query reads
-/// does not have as active, and a score is the share of contingent classes active on
+/// does not have as stable, and a score is the share of contingent classes stable on
 /// the table.
-fn item_scores(bases: &[&ShapeMap], gold: &ShapeMap, mutants: &[&ShapeMap], pairs: usize, d: u8) -> (usize, f64, Vec<f64>) {
-    let every: Vec<&ShapeMap> = bases.iter().copied().chain(std::iter::once(gold)).chain(mutants.iter().copied()).collect();
+fn item_scores(rule: StableRule, bases: &[Held<'_>], gold: Held<'_>, mutants: &[Held<'_>], pairs: usize, d: u8) -> (usize, f64, Vec<f64>) {
+    let every: Vec<Held<'_>> = bases.iter().copied().chain(std::iter::once(gold)).chain(mutants.iter().copied()).collect();
     let mut names: FastMap<u128, ()> = FastMap::default();
-    for map in &every {
-        for (name, entry) in map.iter() {
-            if entry.size <= d && !names.contains_key(name) && !bases.iter().all(|base| active(base.get(name), pairs)) {
+    for held in &every {
+        for (name, entry) in held.map.iter() {
+            if entry.size <= d && !names.contains_key(name) && !bases.iter().all(|base| holds(rule, *base, name, pairs)) {
                 names.insert(*name, ());
             }
         }
     }
     let mut classes: FastMap<u128, u128> = FastMap::default();
     for name in names.keys() {
-        let mut words: Vec<u64> = Vec::with_capacity(every.len() * (pairs + 1));
-        for map in &every {
-            match map.get(name) {
+        let mut words: Vec<u64> = Vec::with_capacity(every.len() * (pairs + 2));
+        for held in &every {
+            match held.map.get(name) {
                 Some(entry) => {
                     words.extend_from_slice(&entry.sums[..pairs]);
                     words.push(u64::from(entry.none));
                 }
                 None => words.extend(std::iter::repeat_n(0, pairs + 1)),
             }
+            words.push(u64::from(held.rows_everywhere));
         }
         classes.entry(hash_words(words)).or_insert(*name);
     }
@@ -679,8 +719,8 @@ fn item_scores(bases: &[&ShapeMap], gold: &ShapeMap, mutants: &[&ShapeMap], pair
     if contingent.is_empty() {
         return (0, 0.0, vec![0.0; mutants.len()]);
     }
-    let score = |map: &ShapeMap| contingent.iter().filter(|name| active(map.get(*name), pairs)).count() as f64 / contingent.len() as f64;
-    (contingent.len(), score(gold), mutants.iter().map(|map| score(map)).collect())
+    let score = |held: Held<'_>| contingent.iter().filter(|name| holds(rule, held, name, pairs)).count() as f64 / contingent.len() as f64;
+    (contingent.len(), score(gold), mutants.iter().map(|held| score(*held)).collect())
 }
 
 /// The AUC of `scores`: gold against each mutant, over a task's items.
@@ -697,7 +737,7 @@ fn auc_of(scores: &[(usize, f64, Vec<f64>)]) -> Option<f64> {
 }
 
 /// A file's result: per size, each item's scores, and the null's AUC per draw.
-pub fn candidate_task(path: &str, task_dir: &std::path::Path, cache: &OpsCache, rate: u64, nulls: usize, max_table_columns: usize) -> Result<serde_json::Value, String> {
+pub fn candidate_task(path: &str, task_dir: &std::path::Path, cache: &OpsCache, rate: u64, nulls: usize, max_table_columns: usize, rule: StableRule) -> Result<serde_json::Value, String> {
     let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
@@ -782,15 +822,17 @@ pub fn candidate_task(path: &str, task_dir: &std::path::Path, cache: &OpsCache, 
             done.insert(content, map.clone());
             map
         };
+        let everywhere = |stored: &Stored| stored.rows.iter().all(|rows| rows.as_ref().is_some_and(|table| table.len > 0));
         let input_map = map_of(&input_table);
         parsed.iter().map(|item| {
-            let reads: Vec<Arc<ShapeMap>> = item.reads.iter().map(&mut map_of).collect();
-            let gold = map_of(&item.gold);
-            let mutants: Vec<Arc<ShapeMap>> = item.mutants.iter().map(&mut map_of).collect();
-            let mut bases: Vec<&ShapeMap> = vec![&input_map];
-            bases.extend(reads.iter().map(|map| map.as_ref()));
-            let mutant_refs: Vec<&ShapeMap> = mutants.iter().map(|map| map.as_ref()).collect();
-            (1..=d).map(|size| item_scores(&bases, &gold, &mutant_refs, train, size as u8)).collect()
+            let reads: Vec<(Arc<ShapeMap>, bool)> = item.reads.iter().map(|table| (map_of(table), everywhere(table))).collect();
+            let gold_map = map_of(&item.gold);
+            let mutants: Vec<(Arc<ShapeMap>, bool)> = item.mutants.iter().map(|table| (map_of(table), everywhere(table))).collect();
+            let mut bases: Vec<Held<'_>> = vec![Held { map: &input_map, rows_everywhere: everywhere(&input_table) }];
+            bases.extend(reads.iter().map(|(map, rows_everywhere)| Held { map: map.as_ref(), rows_everywhere: *rows_everywhere }));
+            let mutant_refs: Vec<Held<'_>> = mutants.iter().map(|(map, rows_everywhere)| Held { map: map.as_ref(), rows_everywhere: *rows_everywhere }).collect();
+            let gold = Held { map: &gold_map, rows_everywhere: everywhere(&item.gold) };
+            (1..=d).map(|size| item_scores(rule, &bases, gold, &mutant_refs, train, size as u8)).collect()
         }).collect()
     };
     let started = std::time::Instant::now();
@@ -841,5 +883,5 @@ pub fn candidate_task(path: &str, task_dir: &std::path::Path, cache: &OpsCache, 
         })
     }).collect();
     let shapes: usize = evals.len();
-    Ok(serde_json::json!({ "task": task_name, "rate": rate, "max_columns": cache.max_columns, "bounded": rate < 1_000_000 || cache.max_columns.is_some(), "sizes": sizes, "left_out": left_out, "schemas": shapes, "primary_seconds": primary_seconds, "seconds": started.elapsed().as_secs_f64() }))
+    Ok(serde_json::json!({ "task": task_name, "rule": format!("{rule:?}"), "rate": rate, "max_columns": cache.max_columns, "top_components": cache.top_components, "bounded": rate < 1_000_000 || cache.max_columns.is_some(), "sizes": sizes, "left_out": left_out, "schemas": shapes, "primary_seconds": primary_seconds, "seconds": started.elapsed().as_secs_f64() }))
 }

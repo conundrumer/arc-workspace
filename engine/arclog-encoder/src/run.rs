@@ -451,8 +451,9 @@ impl Host {
     }
 
     /// What the checker gives each of `rels`, as one program. A term the checker
-    /// refuses gives its message, and a batch that it refuses splits.
-    pub fn check_terms(&self, rels: &[&Rel]) -> Vec<Result<TermCheck, String>> {
+    /// refuses gives its message, and a batch that it refuses splits. Where `run`
+    /// holds, a term whose body does not compile when it runs is refused too.
+    pub fn check_terms(&self, rels: &[&Rel], run: bool) -> Vec<Result<TermCheck, String>> {
         let registry = Registry::get();
         let mut forms: Vec<String> = Vec::new();
         let mut exports: Vec<Result<String, String>> = Vec::new();
@@ -473,8 +474,8 @@ impl Host {
                     return vec![Err(message)];
                 }
                 let (left, right) = rels.split_at(rels.len() / 2);
-                let mut out = self.check_terms(left);
-                out.extend(self.check_terms(right));
+                let mut out = self.check_terms(left, run);
+                out.extend(self.check_terms(right, run));
                 return out;
             }
         };
@@ -491,7 +492,7 @@ impl Host {
                     return Err("a `Pose` stands at an exported column".to_string());
                 }
                 // A body that does not compile shows when it runs, on any rows.
-                if let Some(example) = self.task.examples().next() {
+                if let Some(example) = self.task.examples().next().filter(|_| run) {
                     let limits = Limits::new(None, Cancellation::default()).counted_in(TableWork::new(1 << 12));
                     let evaluation = Evaluation { program: checked, concept: None, task: &self.task, parameters: &parameters, session: &self.session, registry, constructions: self.constructions, limits: &limits };
                     evaluation.relation(&relation, Some(example)).map_err(|fault| fault.message.to_string())?;

@@ -10,7 +10,8 @@
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
 //!   feature-encoder walk MANIFEST (--scene | --rule) [--size D] [--threads N] [--seconds S] [--passes P] [--shard I/N] [--max-columns K]
 //!   feature-encoder walk-check GRIDS_JSON (--scene | --rule) [--size D] [--rate R]
-//!   feature-encoder candidate OUT_DIR FILE... [--size D] [--rate R] [--passes NULLS] [--threads N] [--max-columns K]
+//!   feature-encoder candidate OUT_DIR FILE... [--size D] [--rate R] [--passes NULLS] [--threads N] [--max-columns K] [--relational] [--rule]
+//!   feature-encoder family OUT_DIR FILE... [--size D] [--passes NULLS] [--threads N] [--rule] [--names SHAPES_FILE]
 //!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--program-compare] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
@@ -62,10 +63,12 @@ struct Arguments {
     threads: usize,
     max_columns: Option<usize>,
     passes: usize,
+    /// Whether the top size holds relational operators alone.
+    relational: bool,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1 };
+    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -82,6 +85,7 @@ fn arguments() -> Arguments {
             "--control" => parsed.control = true,
             "--program-compare" => parsed.program_compare = true,
             "--rule" => parsed.rule = true,
+            "--relational" => parsed.relational = true,
             "--passes" => parsed.passes = args.next().and_then(|text| text.parse().ok()).expect("a number after --passes"),
             "--max-columns" => parsed.max_columns = args.next().and_then(|text| text.parse().ok()),
             "--threads" => parsed.threads = args.next().and_then(|text| text.parse().ok()).expect("a number after --threads"),
@@ -406,28 +410,75 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Candidate recognition on shapes: one result per file, as each ends, and a restart
-/// skips those written. `--passes` gives the null's draws, `--rate` the sample of
-/// size 2's shapes per million.
-fn run_candidate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::tablewalk::{candidate_task, OpsCache};
+/// Candidate recognition on the relational shapes: one result per file, as each ends,
+/// and a restart skips those written. `--names` limits it to the shapes a file lists,
+/// one per line.
+fn run_family(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
+    use arclog_encoder::family::{family_task, Families};
+    use arclog_encoder::native::hash_words;
+    use arclog_encoder::tablewalk::StableRule;
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
-    let cache = OpsCache::new(arguments.size, arguments.max_columns);
+    let families = Families::default();
+    let rule = if arguments.rule { StableRule::NonVacuous } else { StableRule::Active };
+    let allow: Option<HashSet<u128>> = match &arguments.names {
+        Some(path) => Some(std::fs::read_to_string(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
+        None => None,
+    };
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let begun = Instant::now();
-    let rate = u64::from(arguments.rate);
     std::thread::scope(|scope| {
         for _ in 0..arguments.threads.max(1) {
             scope.spawn(|| loop {
                 let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(file) = files.get(at) else { break };
                 let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
-                let target = format!("{out}/{stem}.d{}.r{rate}.json", arguments.size);
+                let target = format!("{out}/{stem}.d{}.json", arguments.size);
                 if std::path::Path::new(&target).exists() {
                     continue;
                 }
-                match candidate_task(file, &arguments.tasks, &cache, rate, arguments.passes, 12) {
+                match family_task(file, &arguments.tasks, &families, arguments.size, arguments.passes, rule, allow.as_ref(), 8) {
+                    Ok(result) => {
+                        let temporary = format!("{target}.tmp");
+                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                            eprintln!("{stem}: the result does not write");
+                        }
+                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        let rate = done as f64 / begun.elapsed().as_secs_f64();
+                        eprintln!("{done}/{} {stem}: {}; {} walks, {:.3}s per walk; ETA {:.0}s", files.len(), result["sizes"].to_string().chars().take(220).collect::<String>(), result["walks"], result["walk_seconds"].as_f64().unwrap_or(0.0) / result["walks"].as_f64().unwrap_or(1.0).max(1.0), (files.len() - done) as f64 / rate);
+                    }
+                    Err(message) => eprintln!("{stem}: {message}"),
+                }
+            });
+        }
+    });
+    Ok(())
+}
+
+/// Candidate recognition on shapes: one result per file, as each ends, and a restart
+/// skips those written. `--passes` gives the null's draws, `--rate` the sample of
+/// size 2's shapes per million.
+fn run_candidate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
+    use arclog_encoder::tablewalk::{candidate_task, OpsCache, StableRule};
+    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
+    let cache = OpsCache::new(arguments.size, arguments.max_columns, !arguments.relational);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let begun = Instant::now();
+    let rate = u64::from(arguments.rate);
+    // `--rule` chooses the rule of the non-vacuous claims; otherwise the active ones.
+    let rule = if arguments.rule { StableRule::NonVacuous } else { StableRule::Active };
+    std::thread::scope(|scope| {
+        for _ in 0..arguments.threads.max(1) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(file) = files.get(at) else { break };
+                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+                let target = format!("{out}/{stem}{}.d{}.r{rate}.json", if arguments.relational { ".relational" } else { "" }, arguments.size);
+                if std::path::Path::new(&target).exists() {
+                    continue;
+                }
+                match candidate_task(file, &arguments.tasks, &cache, rate, arguments.passes, 12, rule) {
                     Ok(result) => {
                         let temporary = format!("{target}.tmp");
                         if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
@@ -688,6 +739,7 @@ fn main() {
         ("walk", [manifest]) => run_walk(&arguments, manifest),
         ("walk-check", [grids]) => run_walk_check(&arguments, grids),
         ("candidate", [out, files @ ..]) if !files.is_empty() => run_candidate(&arguments, out, files),
+        ("family", [out, files @ ..]) if !files.is_empty() => run_family(&arguments, out, files),
         _ => Err("usage: feature-encoder eval|rows|worked|encode|names|vector ...; the file's first lines give each form".to_string()),
     };
     if let Err(message) = result {

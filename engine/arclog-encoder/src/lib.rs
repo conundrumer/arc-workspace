@@ -20,11 +20,14 @@
 //! - [`optable`]: the operators on each schema, each checked once.
 //! - [`walk`]: the bottom-up walk over classes of relations on one task.
 //! - [`tablewalk`]: a table's closed roots, keyed by shape.
+//! - [`family`]: the relational shapes that read a table and `output`, in one pass
+//!   per table.
 pub mod closed;
 pub mod encoder;
 pub mod enumerate;
 pub mod expand;
 pub mod expression;
+pub mod family;
 pub mod law;
 pub mod library;
 pub mod native;

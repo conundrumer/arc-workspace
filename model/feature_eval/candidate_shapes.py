@@ -204,32 +204,61 @@ def active(name, vector):
     return any(value != default for value in vector[0])
 
 
-def item_scores(item, input_values, outputs, train, cache):
+def has_rows(table, train):
+    """Whether the table has rows at every train pair."""
+    return all(table['rows'].get(f'train/{i}') for i in range(train))
+
+
+def non_vacuous(vector, rows_everywhere):
+    """Whether a root has one value at every pair, none of them no value, on a table with rows at
+    every pair. A root with no binding is at its default at every pair."""
+    if not rows_everywhere:
+        return False
+    return vector is None or stable(vector)
+
+
+def item_scores(item, input_values, outputs, train, cache, rule='active', net=None):
     def values_of(table):
         key = id(table)
         if key not in cache:
             cache[key] = shape_values(table, outputs, train)
         return cache[key]
 
-    reads = [values_of(table) for table in item['reads'].values()]
-    gold = values_of(item['gold'])
-    mutants = [values_of(mutant['table']) for mutant in item['mutants']]
+    reads = [(values_of(table), has_rows(table, train)) for table in item['reads'].values()]
+    gold = (values_of(item['gold']), has_rows(item['gold'], train))
+    mutants = [(values_of(mutant['table']), has_rows(mutant['table'], train)) for mutant in item['mutants']]
     bases = [input_values, *reads]
     every = [*bases, gold, *mutants]
     names = set()
-    for values in every:
+    for values, _ in every:
         names.update(values)
-    # A contingent root is one that `input` or a table Q reads does not have as active.
-    contingent_names = [name for name in names if not all(active(name, values.get(name)) for values in bases)]
+
+    def holds(name, held):
+        values, rows_everywhere = held
+        if rule == 'active':
+            return active(name, values.get(name))
+        return non_vacuous(values.get(name), rows_everywhere)
+
+    # A contingent root is one that `input` or a table Q reads does not have as stable.
+    contingent_names = [name for name in names if not all(holds(name, held) for held in bases)]
     classes = {}
     for name in contingent_names:
-        classes.setdefault((name.split('|')[0], tuple(values.get(name) for values in every)), name)
+        classes.setdefault((name.split('|')[0], tuple(held[0].get(name) for held in every), tuple(held[1] for held in every)), name)
     contingent = list(classes.values())
+    if net is not None:
+        for name in contingent_names:
+            on_gold = holds(name, gold)
+            for held in mutants:
+                on_mutant = holds(name, held)
+                if on_gold != on_mutant:
+                    record = net.setdefault(name, [0, 0])
+                    record[0 if on_gold else 1] += 1
     if not contingent:
         return 0.0, [0.0 for _ in mutants], 0
-    def score(values):
-        return sum(active(name, values.get(name)) for name in contingent) / len(contingent)
-    return score(gold), [score(values) for values in mutants], len(contingent)
+
+    def score(held):
+        return sum(holds(name, held) for name in contingent) / len(contingent)
+    return score(gold), [score(held) for held in mutants], len(contingent)
 
 
 def auc_items(scores):
@@ -241,7 +270,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--nulls', type=int, default=20)
     parser.add_argument('--first', type=int, default=60)
+    parser.add_argument('--rule', choices=['active', 'nonvacuous'], default='active')
     a = parser.parse_args()
+    target = RESULTS / f'candidate/shapes-size1.{a.rule}.json'
+    net = {}
     rng = random.Random(23)
     per_task = {}
     for path in sorted(glob.glob(str(RESULTS / 'candidate-tables/????????.json')))[:a.first]:
@@ -253,14 +285,14 @@ def main():
         outputs = [grid_rows(task['train'][i]['output']) for i in range(train)]
         table_of_input = input_table(task, train)
 
-        def run(items, moved):
+        def run(items, moved, net=None):
             cache = {}
-            input_values = shape_values(table_of_input, moved, train)
-            return [item_scores(item, input_values, moved, train, cache) for item in items]
+            input_values = (shape_values(table_of_input, moved, train), True)
+            return [item_scores(item, input_values, moved, train, cache, a.rule, net) for item in items]
 
         rest = [item for item in data['items'] if item['query'] != data['last_query']]
         last = [item for item in data['items'] if item['query'] == data['last_query']]
-        scores = run(rest, outputs)
+        scores = run(rest, outputs, net)
         scores_last = run(last, outputs)
         nulls = []
         if len({json.dumps(task['train'][i]['output']) for i in range(train)}) > 1:
@@ -277,19 +309,23 @@ def main():
             'contingent_classes': float(np.mean([found[2] for found in scores])) if scores else 0.0,
         }
         print(data['task'], per_task[data['task']], flush=True)
-        write_json_atomic(RESULTS / 'candidate/shapes-size1.active.json', {'per_task': per_task})
+        write_json_atomic(target, {'per_task': per_task})
     aucs = {task: record['auc'] for task, record in per_task.items() if record['auc'] is not None}
     gains = [record['auc'] - record['null'] for record in per_task.values() if record['auc'] is not None and record['null'] is not None]
     bootstrap = lambda values: [float(q) for q in np.quantile(np.array(values)[np.random.default_rng(7).integers(0, len(values), (2000, len(values)))].mean(axis=1), [.005, .995])]
     summary = {
         'tasks': len(aucs), 'auc': float(np.mean(list(aucs.values()))), 'interval_99': bootstrap(list(aucs.values())),
-        'null': float(np.mean([record['null'] for record in per_task.values() if record['null'] is not None])),
-        'gain_over_null': float(np.mean(gains)), 'gain_interval_99': bootstrap(gains),
+        'null': float(np.mean([record['null'] for record in per_task.values() if record['null'] is not None])) if gains else None,
+        'gain_over_null': float(np.mean(gains)) if gains else None, 'gain_interval_99': bootstrap(gains) if gains else None,
         'auc_last': float(np.mean([record['auc_last'] for record in per_task.values() if record['auc_last'] is not None])),
         'items': int(sum(record['items'] for record in per_task.values())),
         'contingent_classes_mean': float(np.mean([record['contingent_classes'] for record in per_task.values()])),
     }
-    write_json_atomic(RESULTS / 'candidate/shapes-size1.active.json', {'summary': summary, 'per_task': per_task})
+    top = sorted(net.items(), key=lambda item: -(item[1][0] - item[1][1]))[:30]
+    bottom = sorted(net.items(), key=lambda item: item[1][0] - item[1][1])[:10]
+    summary['top_shapes'] = [{'shape': name, 'gold_not_mutant': found[0], 'mutant_not_gold': found[1], 'net': found[0] - found[1]} for name, found in top]
+    summary['bottom_shapes'] = [{'shape': name, 'gold_not_mutant': found[0], 'mutant_not_gold': found[1], 'net': found[0] - found[1]} for name, found in bottom]
+    write_json_atomic(target, {'summary': summary, 'per_task': per_task})
     print(json.dumps(summary))
 
 

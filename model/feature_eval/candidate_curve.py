@@ -5,6 +5,7 @@ paired with the first version's line where it exists.
 
   uv run python model/feature_eval/candidate_curve.py
 """
+import argparse
 import glob
 import json
 import re
@@ -21,32 +22,38 @@ def bootstrap(values):
     return [float(np.quantile(means, 0.005)), float(np.quantile(means, 0.995))]
 
 
-def reference():
+def reference(base):
+    """The first version's AUC and null per task, on the active rule, each a mean over its items."""
     out = {}
-    for path in glob.glob(str(RESULTS / 'candidate-reference-active/????????.json')):
+    for path in glob.glob(str(base / 'candidate-reference-active/????????.json')):
         record = json.load(open(path))
-        if record.get('auc') is not None and record.get('null') is not None:
-            out[record['task']] = record
+        task = record.get('task')
+        if record.get('auc') is not None:
+            out[task] = record
     return out
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dev', action='store_true', help='read the dev split')
+    a = parser.parse_args()
+    base = RESULTS / 'dev' if a.dev else RESULTS
     found = {}
-    for path in glob.glob(str(RESULTS / 'candidate/walk/*.json')):
+    for path in glob.glob(str(base / 'candidate/walk*/*.json')):
         match = re.search(r'\.d(\d+)\.r(\d+)\.json$', path)
         if not match:
             continue
         record = json.load(open(path))
         for row in record['sizes']:
-            found.setdefault((row['d'], int(match.group(2)), int(match.group(1))), []).append((record, row))
-    first = reference()
+            found.setdefault((record.get('rule', 'Active'), record.get('top_components', True), row['d'], int(match.group(2)), int(match.group(1))), []).append((record, row))
+    first = reference(base)
     curve = []
-    for (d, rate, top), held in sorted(found.items()):
+    for (rule, components, d, rate, top), held in sorted(found.items()):
         aucs = [row['auc'] for _, row in held if row['auc'] is not None]
         gains = [row['auc'] - row['null'] for _, row in held if row['auc'] is not None and row['null'] is not None]
         last = [row['auc_last'] for _, row in held if row['auc_last'] is not None]
         item = {
-            'd': d, 'rate_per_million': rate, 'top': top, 'tasks': len(aucs), 'bounded': bool(held[0][0]['bounded']),
+            'rule': rule, 'top_components': components, 'd': d, 'rate_per_million': rate, 'top': top, 'tasks': len(aucs), 'bounded': bool(held[0][0]['bounded']),
             'auc': float(np.mean(aucs)) if aucs else None, 'interval_99': bootstrap(aucs) if len(aucs) > 1 else None,
             'null': float(np.mean([row['null'] for _, row in held if row['null'] is not None])) if gains else None,
             'gain_over_null': float(np.mean(gains)) if gains else None, 'gain_interval_99': bootstrap(gains) if len(gains) > 1 else None,
@@ -59,9 +66,14 @@ def main():
         if paired:
             item['paired_with_first_version'] = float(np.mean(paired))
             item['paired_interval_99'] = bootstrap(paired)
+        gains_paired = [(row['auc'] - row['null']) - (first[record['task']]['auc'] - first[record['task']]['null']) for record, row in held if record['task'] in first and row['auc'] is not None and row['null'] is not None and first[record['task']].get('null') is not None]
+        if gains_paired:
+            item['gain_paired_with_first_version'] = float(np.mean(gains_paired))
+            item['gain_paired_interval_99'] = bootstrap(gains_paired)
+            item['gain_paired_tasks'] = len(gains_paired)
         curve.append(item)
         print(json.dumps(item))
-    write_json_atomic(RESULTS / 'candidate/curve.json', {'statistic': 'shares of active classes', 'curve': curve})
+    write_json_atomic(base / 'candidate/curve.json', {'curve': curve})
 
 
 if __name__ == '__main__':

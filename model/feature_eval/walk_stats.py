@@ -14,6 +14,8 @@ walk appears, until none has appeared for S seconds.
 import argparse
 import glob
 import json
+import os
+import random
 import time
 
 import numpy as np
@@ -25,6 +27,7 @@ import scene as scene_test
 TESTS = {'scene': 'scene-input', 'rule': 'rule-base'}
 PAYLOAD = (1 << 62) - 1
 FRACTIONS = (0.002, 0.01, 0.05, 0.2, 1.0)
+NULL_DRAWS = 20
 
 
 def directory(test):
@@ -53,6 +56,59 @@ def items_of(test, task, limit):
     for h in range(count):
         out.append(([k for k in range(count) if k != h], h, [place for place, _ in near[h]], np.array([flag for _, flag in near[h]], dtype=bool)))
     return pairs, out
+
+
+def extra_instances(test, task, limit, count=8):
+    """The true instances of `count` other tasks, drawn with a seed of the task: the grids that give
+    the null's claims, which a walk reads beside the task's own."""
+    others = [other for other in eval_tasks(60) if other != task]
+    chosen = random.Random(f'null/{task}').sample(others, min(count, len(others)))
+    extras = {}
+    for other in chosen:
+        if test == 'scene':
+            grids, input_places, _ = scene_test.items_of(other, 0)
+            extras[other] = [grids[place] for place in input_places]
+        else:
+            pairs, instances, _ = rule_test.items_of(other)
+            extras[other] = pairs[:instances]
+    return extras
+
+
+def null_auc(words, inverse, sizes, d, items, extras):
+    """The AUC with the claims from another task, over `NULL_DRAWS` draws with a fixed seed. A unit
+    is a distinct pair of a value vector over this task's instances and a claim."""
+    if not extras:
+        return None
+    rng = random.Random(f'draws/{d}')
+    keep = sizes <= d
+    held = words[keep]
+    classes = inverse[keep]
+    per_draw = []
+    tasks = sorted(extras)
+    for _ in range(NULL_DRAWS):
+        aucs = []
+        for others, true_place, places, _ in items:
+            if not len(places):
+                continue
+            places_of = extras[rng.choice(tasks)]
+            leave = rng.randrange(len(places_of))
+            claim_places = [place for at, place in enumerate(places_of) if at != leave]
+            if not claim_places:
+                continue
+            first = held[:, claim_places[0]]
+            mask = np.all(held[:, claim_places] == first[:, None], axis=1) & ((first & np.uint64(PAYLOAD)) != 0)
+            if not mask.any():
+                aucs.append(0.5)
+                continue
+            units, at = np.unique(np.stack([classes[mask].astype(np.uint64), first[mask]], axis=1), axis=0, return_index=True)
+            rows = held[mask][at]
+            claim = first[mask][at]
+            v_true = float((rows[:, true_place] != claim).mean())
+            v_other = (rows[:, places] != claim[:, None]).mean(axis=0)
+            aucs.append(auc_of(v_true, v_other))
+        if aucs:
+            per_draw.append(float(np.mean(aucs)))
+    return float(np.mean(per_draw)) if per_draw else None
 
 
 def read_walk(prefix, size):
@@ -117,8 +173,22 @@ def coverage_of(words, sizes, order, meta, items, top, hard):
 
 
 def task_stats(test, task, prefix, top, limit):
-    meta, sizes, words, order = read_walk(prefix, top)
-    _, items = items_of(test, task, limit)
+    meta, sizes, every, order = read_walk(prefix, top)
+    grids, items = items_of(test, task, limit)
+    # The columns past the task's own hold the null's other tasks, whose classes split ones of
+    # this task: the statistics count classes over the task's own instances.
+    extras = {}
+    extras_path = f'{prefix}.extras.json'
+    if os.path.exists(extras_path):
+        extras = json.load(open(extras_path))
+    own = len(grids)
+    words, first_at, inverse = np.unique(every[:, :own], axis=0, return_index=True, return_inverse=True)
+    inverse = inverse.reshape(-1)
+    # A class's size and order are those of its first root.
+    earliest = np.full(len(words), len(sizes), dtype=np.int64)
+    np.minimum.at(earliest, inverse, np.arange(len(sizes)))
+    all_sizes, sizes = sizes, sizes[earliest]
+    order = order[earliest]
     records = {}
     hard = {}
     for d in range(1, top + 1):
@@ -146,13 +216,14 @@ def task_stats(test, task, prefix, top, limit):
                 record['auc_survive_hard'] = auc_of(v_true, v_other[flags & hard[at]])
             per_item.append(record)
         keep = sizes <= d
-        default = (words[keep] & PAYLOAD) == 0
+        default = (words[keep] & np.uint64(PAYLOAD)) == 0
         stopped = words[keep] == 0
         covered = meta['top_done'] / meta['top_edges'] if meta.get('top_edges') else 1.0
         record = {
             'task': task, 'd': d, 'grids': int(words.shape[1]), 'classes': int(keep.sum()), 'classes_at_size': int((sizes == d).sum()), 'seconds': meta['seconds'],
             'bounded': covered < 1.0, 'covered': covered, 'top_edges': meta.get('top_edges'), 'top_done': meta.get('top_done'),
             'active_classes': float((~default & ~stopped).sum(axis=0).mean()),
+            'null': null_auc(every, inverse, all_sizes, d, items, extras),
             'per_item': per_item,
         }
         for key in ('auc', 'auc_absence', 'auc_all', 'auc_hard', 'auc_survive', 'auc_other', 'auc_survive_hard'):
@@ -192,6 +263,10 @@ def write_curve(test, top, limit, tasks):
             continue
         low, high = bootstrap(aucs)
         row = {'d': d, 'tasks': len(aucs), 'auc': float(np.mean(aucs)), 'interval_99': [low, high]}
+        nulls = [out[d]['null'] for out in tasks.values() if out[d].get('null') is not None]
+        if nulls:
+            row['null'] = float(np.mean(nulls))
+            row['null_tasks'] = len(nulls)
         hard = [out[d]['auc_hard'] for out in tasks.values() if out[d]['auc_hard'] is not None]
         if hard:
             row['auc_hard'] = float(np.mean(hard))
@@ -294,13 +369,20 @@ def watch(test, top, limit, seconds):
             time.sleep(15)
 
 
-def manifest(test, limit, first):
+def manifest(test, limit, first, null_tasks):
     suffix = f'.n{limit}' if limit and test == 'scene' else ''
     folder = directory(test)
     folder.mkdir(parents=True, exist_ok=True)
     lines = []
     for task in eval_tasks(first):
         grids, _ = items_of(test, task, limit)
+        grids = list(grids)
+        if null_tasks:
+            places = {}
+            for other, instances in extra_instances(test, task, limit, null_tasks).items():
+                places[other] = list(range(len(grids), len(grids) + len(instances)))
+                grids.extend(instances)
+            (folder / f'{task}{suffix}.extras.json').write_text(json.dumps(places))
         path = folder / f'{task}{suffix}.grids.json'
         path.write_text(json.dumps(grids))
         lines.append(f'{task}\t{path}\t{folder / (task + suffix)}')
@@ -318,11 +400,12 @@ def main():
     parser.add_argument('--first', type=int, default=60)
     parser.add_argument('--seconds', type=float, default=7200)
     parser.add_argument('--folder', default='walk2')
+    parser.add_argument('--null-tasks', type=int, default=0, help='the other tasks whose true instances a walk reads, for the null')
     a = parser.parse_args()
     global FOLDER
     FOLDER = a.folder
     if a.command == 'manifest':
-        manifest(a.test, a.negatives, a.first)
+        manifest(a.test, a.negatives, a.first, a.null_tasks)
     elif a.command == 'watch':
         watch(a.test, a.size, a.negatives, a.seconds)
     else:
