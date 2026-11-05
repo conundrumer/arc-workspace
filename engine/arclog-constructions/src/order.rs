@@ -40,6 +40,7 @@ struct Ranking<'r> {
     minimal: Vec<Element<'r>>,
     maximal: Vec<Element<'r>>,
     successors: Vec<(Element<'r>, Element<'r>)>,
+    score_levels: Option<Vec<Vec<Element<'r>>>>,
     work: usize,
 }
 
@@ -76,7 +77,7 @@ fn before_ranking<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r
             !between.iter().any(|x| successors[a].contains(x))
         })
         .collect();
-    Ranking { ranks, minimal, maximal, successors: immediate, work }
+    Ranking { ranks, minimal, maximal, successors: immediate, score_levels: None, work }
 }
 
 /// What an element is compared by in the score form: its `score`, then its
@@ -89,6 +90,7 @@ type Level = (Number, Option<Number>);
 /// scores tie and its `secondary_score` is less, tied members share a rank,
 /// and a member with no score is related to no other. Each element has at
 /// most one score and one `secondary_score`, as [`crate::domain`] checks.
+#[cfg(test)]
 fn score_ranking<'r>(
     members: &StableHashSet<Element<'r>>,
     probes: &[Element<'r>],
@@ -96,6 +98,11 @@ fn score_ranking<'r>(
     secondary_score: &'r RowSet,
     width: usize,
 ) -> Ranking<'r> {
+    score_ranking_with_successors(members,probes,score,secondary_score,width,true)
+}
+
+fn score_ranking_with_successors<'r>(members: &StableHashSet<Element<'r>>, probes: &[Element<'r>],
+    score: &'r RowSet, secondary_score: &'r RowSet, width: usize, wants_successors: bool) -> Ranking<'r> {
     let mut scores: StableHashMap<Element<'r>, Level> = StableHashMap::default();
     for row in score.rows() {
         let (t, s) = row.split_at(width);
@@ -133,9 +140,11 @@ fn score_ranking<'r>(
     let maximal = level(distinct.last()).iter().chain(&unscored).copied().collect();
     let successors = distinct
         .windows(2)
+        .filter(|_|wants_successors)
         .flat_map(|pair| levels[&pair[0]].iter().flat_map(|&a| levels[&pair[1]].iter().map(move |&b| (a, b))))
         .collect();
-    Ranking { ranks, minimal, maximal, successors, work: sorted.len() }
+    let score_levels=(!wants_successors).then(||distinct.iter().map(|s|levels[s].clone()).collect());
+    Ranking { ranks, minimal, maximal, successors, score_levels, work: sorted.len() }
 }
 
 /// Rank, dual rank, the minimal and maximal members and the successors of
@@ -181,19 +190,24 @@ impl Construction for Order {
         let width = usize::from(member.arity());
         let members: StableHashSet<Element<'_>> = member.rows().collect();
         let probes: Vec<Element<'_>> = probe.rows().filter(|t| !members.contains(t)).collect();
+        let [wants_rank, wants_dual_rank, wants_minimal, wants_maximal, wants_successor, wants_cyclic_successor] = group.wanted else {
+            panic!("Order's six outputs")
+        };
         let ranking = if score.is_empty() {
             before_ranking(&members, &probes, before, width)
         } else {
-            score_ranking(&members, &probes, score, secondary_score, width)
+            score_ranking_with_successors(&members, &probes, score, secondary_score, width,false)
         };
-        context.budget.charge_work((ranking.successors.len() + ranking.maximal.len() * ranking.minimal.len()) as u64)?;
+        // Score levels already describe adjacent pairs. Stream those pairs
+        // into their requested outputs rather than allocating an intermediate
+        // pair vector and then traversing it again. `charged` counts the
+        // generated output tuples; the before form still counts its retained
+        // immediate-edge vector separately.
+        context.budget.charge_work(ranking.successors.len() as u64)?;
         let [mut rank, mut dual_rank, mut minimal, mut maximal, mut successor, mut cyclic_successor]: [RowSet; 6] =
             empty_outputs(&[width + 1, width + 1, width, width, 2 * width, 2 * width])
                 .try_into()
                 .expect("six outputs");
-        let [wants_rank, wants_dual_rank, wants_minimal, wants_maximal, wants_successor, wants_cyclic_successor] = group.wanted else {
-            panic!("Order's six outputs")
-        };
         for &(t, r, d) in &ranking.ranks {
             if *wants_rank {
                 rank.insert(t.iter().copied().chain([Term::encode_count(r)]).collect());
@@ -215,6 +229,14 @@ impl Construction for Order {
             }
             if *wants_cyclic_successor {
                 cyclic_successor.insert(pair(a, b));
+            }
+        }
+        if let Some(levels)=ranking.score_levels.as_ref().filter(|_|*wants_successor || *wants_cyclic_successor) {
+            for levels in levels.windows(2) {
+                for &a in &levels[0] {for &b in &levels[1] {
+                    if *wants_successor {successor.insert(pair(a,b));}
+                    if *wants_cyclic_successor {cyclic_successor.insert(pair(a,b));}
+                }}
             }
         }
         if *wants_cyclic_successor {
