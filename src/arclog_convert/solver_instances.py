@@ -48,7 +48,7 @@ from arclog_convert.forms import (
 )
 from arclog_convert.implied import ELEM
 from arclog_convert.leaves import Written
-from arclog_convert.lib import ALGEBRA_MODES, FROM_KEY, domain_proposer, field_names, field_sites, pascal
+from arclog_convert.lib import ALGEBRA_MODES, COPIED_INPUTS, FROM_KEY, domain_proposer, field_names, field_sites, pascal
 from arclog_convert.terms import ctor_names, subst_terms
 
 LABEL = re.compile(r"(?<![(:\w&.])[*^]?([A-Z]\w*)")
@@ -383,7 +383,8 @@ class InstancesMixin:
         of those writes, the clauses of that input that fix the point's first
         constructor through a constructor of a column and through no
         `impl_choice` atom, as an alt reads from the concept an input that it
-        does not write. A clause fixes a branch through a constructor of its
+        does not write. No such form stands where those clauses make no row
+        alone. A clause fixes a branch through a constructor of its
         head, or through the constructors its body fixes as the clause writer
         records the branches of any clause, and it fixes the branch of each
         point that the branch's point is nested under. Where clauses fix
@@ -434,9 +435,13 @@ class InstancesMixin:
                     out.append(g)
             c0 = adt_.constructors[0].name
             rest = {k.name for k in adt_.constructors} - set(ks)
-            # an input that reads the instance's outputs makes no row alone
-            gen = [u for u in free if u.body is None or not any(
-                isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,) for l in u.body)]
+            # an input that reads the instance's outputs, or that no output copies, makes no row alone
+            ren_ = libmap.COMP.get(inst.component)
+            copied = COPIED_INPUTS.get(ren_.name if ren_ else inst.component)
+            gen = [u for u in free if (copied is None or (
+                ren_.parts.get(u.head.relation.name, u.head.relation.name) if ren_ else u.head.relation.name) in copied)
+                and (u.body is None or not any(
+                    isinstance(l, AtomLiteral) and l.atom.relation.instances[:1] == (inst.name,) for l in u.body))]
             if gen and rest:
                 # an alt reads a relation that it does not derive from the concept,
                 # and so an input that no clause of `free` writes: the form at

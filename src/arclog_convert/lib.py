@@ -86,7 +86,39 @@ def from_key_inputs() -> dict[str, set[str]]:
     return out
 
 
+def sexpr(text: str) -> list:
+    """The first list of `text`, as nested lists of words."""
+    stack: list[list] = [[]]
+    for word in re.findall(r"[()]|[^\s()]+", text):
+        if word == "(":
+            stack.append([])
+        elif word == ")":
+            done = stack.pop()
+            stack[-1].append(done)
+            if len(stack) == 1:
+                return done
+        else:
+            stack[-1].append(word)
+    raise ValueError("no closed list")
+
+
+def copied_inputs() -> dict[str, set[str]]:
+    """The inputs that some output of each component copies, by component, as its `copies` forms in
+    engine/lib/registry.sexpr give them. A component with an output that has no such form is left out, since that
+    output may take a row from any input."""
+    def heads(sources: list) -> set[str]:
+        return {n for s in sources for n in (heads(s[1:]) if s[0] == "either" else {s[0]})}
+    out: dict[str, set[str]] = {}
+    for m in re.finditer(r"^\(component (\w+) .*?(?=^\(component |^;;|\Z)", REGISTRY.read_text(), re.M | re.S):
+        outputs = next((x[1:] for x in sexpr(m.group(0)) if isinstance(x, list) and x[0] == "outputs"), [])
+        copies = [[c[1:] for c in o if isinstance(c, list) and c[0] == "copies"] for o in outputs]
+        if outputs and all(copies):
+            out[m.group(1)] = {n for c in copies for n in heads(c[0])}
+    return out
+
+
 FROM_KEY = from_key_inputs()   # the inputs the engine fills from the key, by component
+COPIED_INPUTS = copied_inputs()   # the inputs that the outputs copy, by component
 PROPOSER_COLS = proposer_columns()   # each proposer's columns
 DOMAIN_PROPOSERS = registry_columns("proposer", r"native domain")   # the type-domain proposers, which give one value per row
 DERIVATION_COLS = registry_columns("derivation", r"\(fields(?: \(\w+ \w+\))*\)")   # each fixed derivation's columns
