@@ -40,7 +40,7 @@
     - A column of the assembly's own Idents of the same assembly.
     - A column of a derived relation, or a column of an `INIT` form's key, input or output that its component types by a type parameter, which then takes the type.
     - `=` and `!=`.
-- A site in the body of a determination relation that an `instance` clause reads is not counted, since that body gives the instance its reading. A label that stands at any other `Ident` site makes the column a plain `Ident`, a later read of the part included. Where `ARCLOG_IDENT_SOURCE` is set, the plain `Ident` of a column stands under the `Ident` of a source, and a label at columns of two sources is refused ([Ident](lib.md#types)).
+- A site in the body of a determination relation that an `instance` clause reads is not counted, since that body gives the instance its reading. A label that stands at any other `Ident` site makes the column a plain `Ident`, a later read of the part included. The plain `Ident` of a column stands under the `Ident` of a source, and a label at columns of two sources is refused ([Ident](lib.md#types)).
 
 ## Subgroups
 - A task may admit an assembly in only some orientations. For example, the instances stand rotated but never mirrored. The program says so by comparing each placement with the training instances' poses:

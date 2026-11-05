@@ -267,13 +267,27 @@ impl<'a> FormInference<'a> {
     /// its top-level position ([`ResolvedProgram::query_content`]), which
     /// one query has in every program, or else its content in this program
     /// ([`ResolvedProgram::content`]). Neither holds a name that the program
-    /// declares.
+    /// declares. A form of a case that the concept program holds too has the
+    /// query content it has there ([`Self::concept_query_content`]).
     fn content_hash(&self) -> Option<StableHash> {
         let top = match &self.path.0[..] {
-            [top] => self.program.query_content(top.0 as usize, self.registry),
+            [top] => self.concept_query_content().or_else(|| self.program.query_content(top.0 as usize, self.registry)),
             _ => None,
         };
         Some(top.or_else(|| self.program.content(&self.path))?.content_hash())
+    }
+
+    /// The query content that the concept program gives a form equal to the
+    /// owner form, where the program is a case's. A `DET` that a case takes
+    /// from the concept program has its types there, so the Idents it reads
+    /// have sources of the concept program. It also resolves its reads there,
+    /// so the case's graph holds none of them, and the case's own closure of
+    /// a form that reads such a `DET` leaves them out.
+    fn concept_query_content(&self) -> Option<crate::resolver::ResolvedContent> {
+        let ScopeOwner::Form(form) = self.owner else { return None };
+        let concept = self.program.concept()?;
+        let position = concept.program.value().forms.iter().position(|other| crate::solver::equal_forms(other, form))?;
+        concept.query_content(position, self.registry)
     }
 
     /// The source of the Ident values that the form makes at the output
