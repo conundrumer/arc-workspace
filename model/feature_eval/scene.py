@@ -8,22 +8,21 @@ skips those written. The values of the closed roots stand in results/scene-input
 """
 import argparse
 import json
-import random
 import time
 
 import numpy as np
 
-from common import (RESULTS, auc_of, claims_of, classes, corpus_records, eval_tasks, flush_print, grids_values, mutator,
-                    read_values, task_json, violation, write_json_atomic)
+from common import (RESULTS, auc_of, claims_of, classes, eval_tasks, flush_print, grids_values, read_values, task_json,
+                    violation, write_json_atomic)
 
 OUT = RESULTS / 'scene-input'
-TEST_MUTATIONS = 100
 
 
-def items_of(task):
+def items_of(task, limit=None):
     """The grids to compare: each input, then its mutations; and each input's place and its
-    mutations' places among the grids."""
+    mutations' places among the grids. `limit` keeps the first N negatives of an input."""
     data = task_json(task)
+    items = json.load(open(RESULTS / f'items/{task}.json'))
     train = [pair['input'] for pair in data['train']]
     test = [pair['input'] for pair in data['test']]
     inputs = train + test
@@ -38,22 +37,11 @@ def items_of(task):
 
     input_places = [at(grid) for grid in inputs]
     negatives = [[] for _ in inputs]
-    trains = {json.dumps(grid) for grid in train}
-    for record in corpus_records(task):
-        if record.get('kind') != 'in' or record.get('stored') != 'same' or 'grid' not in record:
-            continue
-        if json.dumps(record['grid']) in trains:
-            continue
+    for record in items['negatives'] + items['test_negatives']:
         kind, index = record['source'].split('/')
-        if kind == 'train':
-            negatives[int(index)].append(at(record['grid']))
-    mutate = mutator()
-    for index, grid in enumerate(test):
-        rng = random.Random(f'scene/{task}/test/{index}')
-        for _ in range(TEST_MUTATIONS):
-            mutated, _ = mutate(grid, rng)
-            if json.dumps(mutated) not in place or place[json.dumps(mutated)] not in input_places:
-                negatives[len(train) + index].append(at(mutated))
+        h = int(index) if kind == 'train' else len(train) + int(index)
+        if limit is None or len(negatives[h]) < limit:
+            negatives[h].append(at(record['grid']))
     negatives = [sorted(set(found) - set(input_places)) for found in negatives]
     return grids, input_places, negatives
 
@@ -79,17 +67,18 @@ def statistics(matrix, sizes, d, input_places, negatives):
     return per_input
 
 
-def run_task(task, encoder, size):
+def run_task(task, encoder, size, limit):
+    suffix = f'.n{limit}' if limit else ''
     values_dir = OUT / 'values'
     values_dir.mkdir(parents=True, exist_ok=True)
-    done = [OUT / f'{task}.d{d}.json' for d in range(1, size + 1)]
+    done = [OUT / f'{task}{suffix}.d{d}.json' for d in range(1, size + 1)]
     if all(path.exists() for path in done):
         return None
     start = time.time()
-    grids, input_places, negatives = items_of(task)
-    grids_path = values_dir / f'{task}.grids.json'
+    grids, input_places, negatives = items_of(task, limit)
+    grids_path = values_dir / f'{task}{suffix}.grids.json'
     grids_path.write_text(json.dumps(grids))
-    values_path = values_dir / f'{task}.values.tsv'
+    values_path = values_dir / f'{task}{suffix}.values.tsv'
     grids_values(grids_path, values_path, encoder, False, size, log=values_dir / f'{task}.log')
     names, sizes, matrix = read_values(values_path, size)
     summary = None
@@ -97,9 +86,9 @@ def run_task(task, encoder, size):
         keep = sizes <= d
         per_input = statistics(matrix, sizes, d, input_places, negatives)
         aucs = [item['auc'] for item in per_input if item['auc'] is not None]
-        summary = {'task': task, 'd': d, 'grids': len(grids), 'roots': int(keep.sum()), 'classes': classes(matrix[keep]),
+        summary = {'task': task, 'd': d, 'negatives_limit': limit, 'grids': len(grids), 'roots': int(keep.sum()), 'classes': classes(matrix[keep]),
                    'auc': float(np.mean(aucs)) if aucs else None, 'per_input': per_input, 'seconds': time.time() - start}
-        write_json_atomic(OUT / f'{task}.d{d}.json', summary)
+        write_json_atomic(OUT / f'{task}{suffix}.d{d}.json', summary)
     return summary
 
 
@@ -109,12 +98,13 @@ def main():
     parser.add_argument('--size', type=int, default=1)
     parser.add_argument('--first', type=int, default=60)
     parser.add_argument('--shard', default='0/1')
+    parser.add_argument('--negatives', type=int, default=None, help='the first N negatives of each input')
     a = parser.parse_args()
     at, of = map(int, a.shard.split('/'))
     tasks = [task for index, task in enumerate(eval_tasks(a.first)) if index % of == at]
     started = time.time()
     for count, task in enumerate(tasks):
-        summary = run_task(task, a.encoder, a.size)
+        summary = run_task(task, a.encoder, a.size, a.negatives)
         rate = (count + 1) / (time.time() - started)
         if summary:
             flush_print(f"{count + 1}/{len(tasks)} {task} roots {summary['roots']} classes {summary['classes']} grids {summary['grids']} auc {summary['auc']} {summary['seconds']:.0f}s; ETA {(len(tasks) - count - 1) / rate:.0f}s")

@@ -9,6 +9,7 @@
 use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::path::Path;
+use std::sync::Arc;
 
 use arclog::check::CheckCache;
 use arclog::decode::corpus::corpus_session;
@@ -27,7 +28,7 @@ use arclog::task::{read_task, Task};
 use arclog::eval::join::one_part;
 use arclog::program::FactRelation;
 use arclog::registry::declare_stored_table;
-use arclog::relations::RowSet;
+use arclog::relations::{Relation, RowSet};
 use arclog::terms::{Constant, Content, Example, LibNameId, Term, TermId, WrittenIdent};
 use arclog::types::{GraphRelation, ValueType};
 
@@ -88,6 +89,18 @@ pub struct Value {
     pub at: Vec<AtAssignment>,
     /// The walk's stop, where a cap stopped it.
     pub stop: Option<String>,
+}
+
+/// The rows of a relation term at each example, with no root over them: an
+/// evaluation that reads its rows once for all its roots.
+pub struct TermValues {
+    pub row_names: Vec<String>,
+    pub types: Vec<ValueType>,
+    /// The engine's canonical hash of the term's expansion.
+    pub identity: Option<u128>,
+    /// The rows at each example, none where a bound stopped the evaluation or
+    /// the relation is undefined.
+    pub examples: Vec<Option<Arc<Relation>>>,
 }
 
 /// A table's rows at one assignment and one model, as a law check reads them.
@@ -384,6 +397,65 @@ impl Host {
             Ok(expanded) => self.checked_with(&expanded.forms).is_ok(),
             Err(_) => false,
         }
+    }
+
+    /// The rows of each of `rels` at each example of the task, as one program.
+    /// A term the checker refuses gives its message. A batch that the checker
+    /// refuses splits, so the check is once per batch where every term passes.
+    pub fn evaluate_terms(&self, rels: &[&Rel], task_wide: bool) -> Vec<Result<TermValues, String>> {
+        let registry = Registry::get();
+        let mut forms: Vec<String> = Vec::new();
+        let mut exports: Vec<Result<String, String>> = Vec::new();
+        let mut next = 0;
+        for rel in rels {
+            match crate::expand::expand_rel_from(rel, self, registry, task_wide, &mut next) {
+                Ok(expanded) => {
+                    exports.push(Ok(expanded.export));
+                    forms.extend(expanded.forms);
+                }
+                Err(message) => exports.push(Err(message)),
+            }
+        }
+        let program = match self.checked_with(&forms) {
+            Ok(program) => program,
+            Err(message) => {
+                if rels.len() == 1 {
+                    return vec![Err(message)];
+                }
+                let (left, right) = rels.split_at(rels.len() / 2);
+                let mut out = self.evaluate_terms(left, task_wide);
+                out.extend(self.evaluate_terms(right, task_wide));
+                return out;
+            }
+        };
+        let checked = program.checked();
+        let parameters = ParameterValues::determined(Vec::new());
+        exports
+            .into_iter()
+            .map(|export| {
+                let export = export?;
+                let relation = graph_relation(checked, &export).ok_or_else(|| format!("no relation {export}"))?;
+                let types: Vec<ValueType> = checked.types.columns(&relation).map(<[ValueType]>::to_vec).unwrap_or_default();
+                let row_names = checked.program.column_names(relation.node).unwrap_or_default();
+                let top = checked.program.form_of(relation.node).0.first().map(|step| step.0 as usize);
+                let identity = top.and_then(|top| checked.program.query_identity(top, registry)).map(|identity| identity.content.content_hash().0);
+                let mut examples = Vec::new();
+                for example in self.task.examples() {
+                    let limits = Limits::new(None, Cancellation::default());
+                    let limits = match self.work_cap.get() {
+                        Some(cap) => limits.counted_in(TableWork::new(cap)),
+                        None => limits,
+                    };
+                    let evaluation = Evaluation { program: checked, concept: None, task: &self.task, parameters: &parameters, session: &self.session, registry, constructions: self.constructions, limits: &limits };
+                    match evaluation.relation(&relation, Some(example)) {
+                        Ok(RelationValue::Rows(rows)) => examples.push(Some(rows)),
+                        Ok(_) => examples.push(None),
+                        Err(fault) => return Err(fault.message.to_string()),
+                    }
+                }
+                Ok(TermValues { row_names, types, identity, examples })
+            })
+            .collect()
     }
 
     /// The forms of `feature`, checked, with their identity.

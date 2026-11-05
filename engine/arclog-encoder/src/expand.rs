@@ -218,6 +218,17 @@ pub fn columns_of(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide
     Ok(expander.rel(rel)?.columns)
 }
 
+/// [`expand_rel`], with each name fresh after those `next` counts, so the forms
+/// of several terms can stand in one program.
+pub fn expand_rel_from(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool, next: &mut usize) -> Result<Expanded, String> {
+    let task_wide = task_wide || rel_is_task_wide(rel, tables, &reader_of(registry));
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: *next, frames: Vec::new(), dry: false };
+    let rows = expander.rel(rel)?;
+    let rows = expander.copy_of(&rows);
+    *next = expander.next;
+    Ok(Expanded { forms: expander.forms, export: rows.relation, columns: rows.columns.into_iter().map(|column| column.name).collect(), task_wide })
+}
+
 /// The forms of the relation `rel`, to read it apart from a root.
 pub fn expand_rel(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool) -> Result<Expanded, String> {
     let task_wide = task_wide || rel_is_task_wide(rel, tables, &reader_of(registry));
