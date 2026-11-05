@@ -71,8 +71,8 @@
 // A copy in a train output: the example and the copy's piece.
 .type CopyPiece = [e: Example, id: Ident]
 
-.type CopyAnchorValue = [d: DiagDir]
-.type OpenValue = [copy_anchor: CopyAnchorValue]
+.type AnchorCornerValue = [d: DiagDir]
+.type OpenValue = [anchor_corner: AnchorCornerValue]
 
 .decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
 
@@ -100,8 +100,12 @@
     .decl copy_gap(k: number) copy_gap(1).
 
     // --- $FixedAnchors ---
-    // The canvas cell each copy's corner d sits on.
+    // The corner of the copies that sits on a stored cell.
     // @open
+    .decl anchor_corner(d: DiagDir)
+    anchor_corner(DIAG_TL). anchor_corner(DIAG_TR). anchor_corner(DIAG_BL). anchor_corner(DIAG_BR).
+
+    // The canvas cell each copy's corner d sits on.
     .decl copy_anchor(d: DiagDir, p: Position)
     copy_anchor(DIAG_TL, [2, 12, 2, 12]). copy_anchor(DIAG_TL, [8, 6, 8, 6]).
     copy_anchor(DIAG_TR, [2, 12, 6, 8]). copy_anchor(DIAG_TR, [8, 6, 12, 2]).
@@ -209,7 +213,7 @@ copy_cell(K, D, V, Col) :-
 
 // The canvas cell that each copy's corner d sits on.
 // @ignore: store — a stored anchor set is the model of $FixedAnchors
-// @ignore: head-repeat — the open value holds the `copy_anchor` corner a fact is derived at
+// @ignore: head-repeat — the open value holds the `anchor_corner` corner a fact is derived at
 .decl anchor(ch: Choice, d: DiagDir, a: Position, ov: OpenValue)
 
 .decl paint(ch: Choice, ov: OpenValue, p: Position, col: Color)
@@ -273,7 +277,7 @@ anchor([$StoredCanvas($CenterGap()), B, W], Od, A, [nil]) :-
 
 // --- $FixedAnchors ---
 anchor([$StoredCanvas($FixedAnchors()), B, W], D, A, [[D]]) :-
-    impl_choice([$StoredCanvas($FixedAnchors()), B, W]), params.copy_anchor(D, A).
+    impl_choice([$StoredCanvas($FixedAnchors()), B, W]), params.anchor_corner(D), params.copy_anchor(D, A).
 
 // --- $ChainFromCorner ---
 // The first copy's corner cell, corner_inset in from chain_corner.
@@ -325,4 +329,7 @@ anchor([$StoredCanvas($ChainFromCorner()), B, W], Diag, A2, [nil]) :-
 
     .decl copy_anchor(d: DiagDir, p: Position)
     copy_anchor(D, A) :- seen_anchor(_, D, A), !missed_anchor(D, A).
+
+    .decl anchor_corner(d: DiagDir)
+    anchor_corner(D) :- copy_anchor(D, _).
 }

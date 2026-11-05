@@ -193,15 +193,17 @@ overhang(K, N, B, Id) :-
 
 // The object enters at the entry cup, crosses axis a by offset v to the exit
 // cup, and leaves through a mouth facing d.
-// @store: variant concept
-// @ignore: store $KeepShape — only the flip reads the stored axis, so each of
-//  these cases is equivalent to the case that slides toward params.fall_dir
 .decl trip(pl: Placement, k: Cups, n: Count, b: Box, a: Axis, v: Offset, d: Dir)
 trip(Pl, K, N, B, A, V, D) :-
     entry(Pl, K, N, B, Id), facing([K, Id], D_in), axis_of(D_in, A),
     facing([K, Id2], D), Id2 != Id,                                   // the other cup
     mouth_box.box([K, Id], M_in), mouth_box.box([K, Id2], M_out),
     relative(M_in, M_out, V_mouth), split(V_mouth, A, _, V).          // across part of the shift
+
+// The axis of the mouths, which the flip reflects along.
+// @store: variant concept
+.decl flip_axis(pl: Placement, k: Cups, n: Count, a: Axis)
+flip_axis(Pl, K, N, A) :- trip(Pl, K, N, _, A, _, _).
 
 // Each object cell, reshaped and moved across to the exit mouth.
 .decl carried(sh: Shape, pl: Placement, k: Cups, n: Count, b: Box, q: Position, col: Color)
@@ -294,7 +296,7 @@ carried($KeepShape(), Pl, K, N, B, Q, Col) :-
 
 // --- $FlipShape ---
 carried($FlipShape(), Pl, K, N, B, Q, Col) :-
-    trip(Pl, K, N, B, A, V, _), unit(K, N, B, P), in(P, Col),
+    trip(Pl, K, N, B, _, V, _), flip_axis(Pl, K, N, A), unit(K, N, B, P), in(P, Col),
     crop(P, B, P_rel), flip_of(A, F), apply(F, P_rel, P_rel2),     // reflected in the object's box
     compose(B, P_rel2, P2), compose(P2, V, Q).
 
