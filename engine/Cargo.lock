@@ -38,6 +38,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arclog-encoder"
+version = "0.1.0"
+dependencies = [
+ "arclog",
+ "arclog-constructions",
+ "arclog-tables",
+]
+
+[[package]]
 name = "arclog-features"
 version = "0.1.0"
 
