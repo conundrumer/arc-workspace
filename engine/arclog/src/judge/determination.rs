@@ -21,7 +21,7 @@ use crate::program::path::{node_at, NodeRef};
 use crate::program::{ClauseKeyword, ProgramRelation};
 use crate::registry::Registry;
 use crate::relations::{Relation, Row, RowSet};
-use crate::resolver::{DependencyKind, GraphNodeIndex};
+use crate::resolver::{DependencyKind, GraphNodeIndex, Side};
 use crate::session::{same_rows, TaskSession};
 use crate::solver::CaseName;
 use crate::stats::{self, Phase};
@@ -146,6 +146,11 @@ pub struct Determination {
     /// `arclog-cli decode` leave these to `arclog-cli compare`, as
     /// `docs/engine/cases.md#every-case` gives.
     pub demonstrated: Vec<ProgramRelation>,
+    /// Each `DET` that the `OUT` form of some case reads, as
+    /// [`read_by_output`] gives. Such a `DET` is a parameter, which the
+    /// program reads as stored facts. Each other `DET` is part of the
+    /// determination, so its value may differ across cases.
+    pub read_by_program: StableHashSet<ProgramRelation>,
 }
 
 impl Determination {
@@ -344,6 +349,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
     let mut demonstrated: StableHashSet<ProgramRelation> = StableHashSet::default();
     let mut picks: StableHashSet<ProgramRelation> = StableHashSet::default();
     let mut opens: StableHashSet<ProgramRelation> = StableHashSet::default();
+    let mut read_by_program: StableHashSet<ProgramRelation> = StableHashSet::default();
     let mut walked: Vec<(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)> = Vec::new();
     let mut walk_stops = Vec::new();
     for case in cases {
@@ -351,11 +357,15 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
         let mut dets = Vec::new();
         let mut reads = Vec::new();
+        let read = read_by_output(case.program, output.node);
         for det in dets_read(case.program, output.node) {
             if !order.contains(&det.relation) {
                 order.push(det.relation.clone());
             }
             reads.push(det.relation.clone());
+            if read[det.node.0 as usize] {
+                read_by_program.insert(det.relation.clone());
+            }
             if det.open {
                 opens.insert(det.relation.clone());
             }
@@ -384,7 +394,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         let kept = if matches!(outcome, CaseOutcome::Solved) { kept } else { Vec::new() };
         walked.push((outcome, reads, kept));
     }
-    restrict(&mut walked);
+    restrict(&mut walked, &read_by_program);
     for ((outcome, _, _), stop) in walked.iter_mut().zip(walk_stops) {
         if matches!(outcome, CaseOutcome::Unsolved) {
             if let Some((stop, parameters)) = stop { *outcome = CaseOutcome::Stopped {stop, parameters}; }
@@ -401,13 +411,35 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
                 (_, 0) => continue,
                 (true, _) => Parameter::Open(values),
                 (false, 1) => Parameter::Determined(values.pop().expect("one value")),
+                (false, _) if !read_by_program.contains(&relation) => continue,
                 (false, _) => Parameter::Underdetermined(values),
             }
         };
         parameters.push((relation, parameter));
     }
     let cases = cases.iter().zip(walked).map(|(case, (outcome, reads, _))| (case.name.clone(), outcome, reads)).collect();
-    Determination { parameters, cases, demonstrated }
+    Determination { parameters, cases, demonstrated, read_by_program }
+}
+
+/// Each node that the `OUT` form at `output` of `program` reads, through
+/// clauses, instances and `RIGID_DET` assemblies, and through no `DET`'s
+/// body.
+fn read_by_output(program: &CheckedProgram, output: GraphNodeIndex) -> Vec<bool> {
+    let resolved = &program.program;
+    let graph = &resolved.graph;
+    let mut seen = vec![false; graph.nodes.len()];
+    let mut stack = vec![output];
+    while let Some(at) = stack.pop() {
+        if std::mem::replace(&mut seen[at.0 as usize], true) {
+            continue;
+        }
+        let kind = &graph.nodes[at.0 as usize].kind;
+        let det = matches!(kind, DependencyKind::Parameter(_)) || (matches!(kind, DependencyKind::Chosen(_)) && resolved.side(at) == Side::TaskWide);
+        if !det {
+            stack.extend(graph.reads[at.0 as usize].iter().copied());
+        }
+    }
+    seen
 }
 
 /// A value for a `DET`.
@@ -568,10 +600,11 @@ pub(crate) fn distinct_values<'k>(assignments: impl IntoIterator<Item = &'k Kept
 }
 
 /// Restricts the kept assignments of each case to those that agree, on
-/// each parameter they share, with some kept assignment of each other case
-/// that keeps one, until no case loses one. A case left with none is
-/// unsolved, and a case whose assignments left hold a fault gives it.
-fn restrict(walked: &mut [(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)]) {
+/// each parameter in `parameters` they share, with some kept assignment of
+/// each other case that keeps one, until no case loses one. A case left
+/// with none is unsolved, and a case whose assignments left hold a fault
+/// gives it.
+fn restrict(walked: &mut [(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)], parameters: &StableHashSet<ProgramRelation>) {
     loop {
         let mut changed = false;
         for a in 0..walked.len() {
@@ -581,7 +614,7 @@ fn restrict(walked: &mut [(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)]) {
                 }
                 let others = walked[b].2.clone();
                 let before = walked[a].2.len();
-                walked[a].2.retain(|kept| others.iter().any(|other| agree(kept, other)));
+                walked[a].2.retain(|kept| others.iter().any(|other| agree(kept, other, parameters)));
                 changed |= walked[a].2.len() != before;
             }
         }
@@ -602,10 +635,10 @@ fn restrict(walked: &mut [(CaseOutcome, Vec<ProgramRelation>, Vec<Kept>)]) {
     }
 }
 
-/// Whether two assignments give the same rows to each parameter they both
-/// assign.
-fn agree(a: &Kept, b: &Kept) -> bool {
-    a.values.iter().all(|(name, value)| b.values.iter().filter(|(other, _)| other == name).all(|(_, other)| same_rows(value, other)))
+/// Whether two assignments give the same rows to each parameter in
+/// `parameters` they both assign.
+fn agree(a: &Kept, b: &Kept, parameters: &StableHashSet<ProgramRelation>) -> bool {
+    a.values.iter().filter(|(name, _)| parameters.contains(name)).all(|(name, value)| b.values.iter().filter(|(other, _)| other == name).all(|(_, other)| same_rows(value, other)))
 }
 
 /// Each row of each of `domain` as a value of its own, the
