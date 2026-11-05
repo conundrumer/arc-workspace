@@ -344,6 +344,20 @@ impl Relation {
             .clone()
     }
 
+    /// The Cartesian bindings traversed to build an index. Unread factors
+    /// contribute no work. A projected factor contributes its distinct
+    /// projections, as `build_index` traverses them. A single factor needs
+    /// no Cartesian expansion, like a flat relation.
+    pub fn index_work(&self, order: &ColumnOrder) -> u64 {
+        if self.is_empty() || order.0.is_empty() { return 0; }
+        let read: Vec<&RelationPart> = self.parts.iter().filter(|part|part.columns.iter().any(|column|order.0.contains(column))).collect();
+        if read.len() < 2 { return 0; }
+        read.iter().map(|part|match WalkedPart::new(part,order).rows {
+            WalkedRows::All(rows)=>rows.len() as u64,
+            WalkedRows::Projected(rows)=>rows.len() as u64,
+        }).fold(1,u64::saturating_mul)
+    }
+
     /// The index of the relation in `order`. It reads the parts that hold a
     /// column of `order` and no other. Where several parts do, it reads
     /// each part that holds a column outside `order` by its distinct
@@ -510,6 +524,13 @@ pub struct IndexNode<'i> {
 }
 
 impl<'i> IndexNode<'i> {
+    /// The distinct values at this level, in encoding order. A join can
+    /// intersect these runs before creating bindings or moving child cursors.
+    pub fn values(self) -> &'i [TermId] {
+        let Some(level) = self.index.levels.get(self.depth) else { return &[] };
+        &level.keys[self.start..self.end]
+    }
+
     /// The subtrie of the key at `at`.
     fn below(self, at: usize) -> IndexNode<'i> {
         let ends = &self.index.levels[self.depth].ends;

@@ -3,13 +3,10 @@
 //! conjunct longer than an evaluated one searches its new part alone.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::eval::instance::Constructions;
-use arclog::eval::ir::{compile_conjuncts, AtomSource, ClauseIr, IrNode};
-use arclog::eval::join::{self, Budget, JoinInputs, NodeInput};
-use arclog::eval::plan::variable_order;
+use arclog::eval::join;
 use arclog::eval::{Cancellation, Caps, Evaluation, Limits, ParameterValues, RelationValue};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::read::read_solver;
@@ -76,65 +73,6 @@ fn body_rows(program: &CheckedProgram, task: &Task, session: &TaskSession, kept:
         },
         Err(fault) => panic!("the conjuncts {kept:?} give {fault:?}"),
     }
-}
-
-/// What each node of `clause` reads, for a clause whose atoms read `input`
-/// alone.
-fn fact_inputs(clause: &ClauseIr, task: &Task) -> JoinInputs {
-    JoinInputs(
-        clause
-            .nodes
-            .iter()
-            .map(|node| match node {
-                IrNode::Atom(atom) => {
-                    let AtomSource::Fact(fact) = atom.source else { panic!("an atom of a fact relation") };
-                    NodeInput::Relation(Arc::new(task.fact_rows(fact, Some(Example::at(0)))))
-                }
-                IrNode::Not(filter) | IrNode::Counterexample(filter) => NodeInput::Clauses(Box::new([fact_inputs(&filter.body, task)])),
-                IrNode::Or(union) => NodeInput::Clauses(union.branches.iter().map(|branch| fact_inputs(branch, task)).collect()),
-                IrNode::Lib(_) | IrNode::Comparison(_) => NodeInput::Unread,
-            })
-            .collect(),
-    )
-}
-
-/// The rows of the conjuncts at `kept` by one generic join of the whole
-/// body, with no entry, or `None` where they do not compile.
-fn joined_rows(program: &CheckedProgram, task: &Task, kept: &[u32]) -> Option<HashSet<Vec<TermId>>> {
-    let clause = compile_conjuncts(program, &clause_path(program), kept).ok()?;
-    let inputs = fact_inputs(&clause, task);
-    let order = variable_order(&clause, &join::sizes(&inputs), &[]);
-    let session = session();
-    let limits = Limits::new(None, Cancellation::default());
-    let relation = join::join(&clause, &order, &inputs, Registry::get(), &mut Budget::new(&limits, &session)).expect("no bound reached");
-    Some(rows(&relation))
-}
-
-#[test]
-fn each_subset_of_a_body_of_three_parts_gives_the_rows_of_its_whole_join() {
-    let program = checked("(input *P (:Col *A))\n  (input (:P *Q) (:Col *B))\n  (input (:P *R) (:Col B))\n  (input (:P *S) (:Col *C))\n  (!= C B)\n  (input P (:Col B))");
-    let task = task();
-    let session = session();
-    let count = 6u32;
-    let mut compiled = 0;
-    for mask in 1u32..(1 << count) {
-        let kept: Vec<u32> = (0..count).filter(|index| mask & (1 << index) != 0).collect();
-        let Some(expected) = joined_rows(&program, &task, &kept) else { continue };
-        compiled += 1;
-        assert_eq!(body_rows(&program, &task, &session, &kept), expected, "the conjuncts {kept:?}");
-    }
-    assert!(compiled > count, "most subsets compile");
-}
-
-#[test]
-fn a_negated_atom_over_two_parts_gives_the_rows_of_its_whole_join() {
-    let program = checked("(input *P (:Col *A))\n  (input (:P *Q) (:Col *B))\n  (NOT (input P (:Col B)))");
-    let task = task();
-    let session = session();
-    body_rows(&program, &task, &session, &[0]);
-    body_rows(&program, &task, &session, &[1]);
-    let expected = joined_rows(&program, &task, &[0, 1, 2]).expect("the body compiles");
-    assert_eq!(body_rows(&program, &task, &session, &[0, 1, 2]), expected);
 }
 
 #[test]

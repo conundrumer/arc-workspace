@@ -19,8 +19,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
+mod spatial;
+
 use super::plan::{
-    algebra_relation, bound_variables, kept_nodes, mode_holds, values_first, variable_order, NodeSize, RelationSizes,
+    algebra_relation, bound_variables, grounds, kept_nodes, mode_holds, values_first, variable_order, NodeSize, RelationSizes,
     VariableOrder,
 };
 use super::{Caps, Evaluation, Limits, ReachedBound, Stop};
@@ -355,6 +357,15 @@ fn join_ordered(
     bound: &[(Variable, TermId)],
     budget: &mut Budget<'_>,
 ) -> Result<Relation, ReachedBound> {
+    if bound.is_empty() {
+        let (order,nodes)=order_at(&[]);
+        if clause.columns.iter().all(|v|nodes.iter().any(|&node|node_variables(&clause.nodes[node]).contains(v))) {
+            let columns:Vec<ColumnIndex>=(0..clause.columns.len()).map(|at|ColumnIndex(at as u16)).collect();
+            if frame_split(clause,&nodes,&columns).is_some() {
+                return search_part(clause,&nodes,order.0.to_vec(),inputs,registry,&columns,budget);
+            }
+        }
+    }
     let plan = memo.plan(clause, order_at, inputs, bound, budget)?;
     let mut found = Vec::new();
     for part in &plan.parts {
@@ -431,10 +442,9 @@ pub fn search(
 /// them: the borrower is searched once, at the first, and the relation is the
 /// product of the lender's rows and the borrower's.
 ///
-/// The row cap counts the rows of that product, as it counts the rows of the
-/// search of all the nodes at once, so the relation stops at the row cap where
-/// that search stops. Where the values have several frames, or the lender's
-/// rows alone pass the row cap, the nodes are searched at once.
+/// The row cap counts the rows that each part holds, and no row of their
+/// product is built. Where the values have several frames, or the lender's rows
+/// alone pass the row cap, the nodes are searched at once.
 #[allow(clippy::too_many_arguments)]
 pub fn search_part(
     clause: &ClauseIr,
@@ -472,8 +482,6 @@ pub fn search_part(
                 Some(first) => search(clause, &split.borrower.nodes, &[], borrower_order, &[(split.variable, first)], inputs, registry, &borrower_columns, budget)?,
                 None => RowSet::empty(borrower_columns.len() as u16),
             };
-            let product = (lent.len() as u64).saturating_mul(borrowed.len() as u64);
-            budget.charge_rows(product.saturating_sub(borrowed.len() as u64))?;
             let parts = [RelationPart { columns: lender_local.into(), rows: lent }, RelationPart { columns: borrower_local.into(), rows: borrowed }];
             return Ok(product_of(columns.len() as u16, parts.into()));
         }
@@ -592,7 +600,7 @@ fn union_rows(
         .iter()
         .zip(bodies.iter())
         .map(|(branch, inputs)| {
-            let order = variable_order(branch, &sizes(inputs), &[]).0.to_vec();
+            let order = variable_order(branch, &sizes(branch, inputs), &[]).0.to_vec();
             let columns: Option<Vec<ColumnIndex>> = projected
                 .iter()
                 .map(|variable| {
@@ -626,7 +634,7 @@ fn union_rows(
 /// whose inputs are `inputs`, takes at the variables bound before it: the
 /// variable order of the branch, and the nodes that [`kept_nodes`] leaves.
 fn branch_order<'a>(branch: &'a ClauseIr, inputs: &'a JoinInputs) -> impl Fn(&[Variable]) -> (VariableOrder, Vec<usize>) + 'a {
-    move |bound| (variable_order(branch, &sizes(inputs), bound), kept_nodes(branch, bound))
+    move |bound| (variable_order(branch, &sizes(branch, inputs), bound), kept_nodes(branch, bound))
 }
 
 /// Calls `visit` on each row of `relation`, the product of its parts, in an
@@ -679,19 +687,27 @@ pub fn union(mut relations: Vec<Arc<Relation>>) -> Arc<Relation> {
     Arc::new(one_part(rows))
 }
 
-/// The sizes of the relations of `inputs`, for [`variable_order`].
-pub fn sizes(inputs: &JoinInputs) -> RelationSizes {
-    RelationSizes(
-        inputs
-            .0
-            .iter()
-            .map(|input| match input {
-                NodeInput::Relation(relation) => NodeSize::Rows(relation.len()),
-                NodeInput::Unread => NodeSize::Unread,
-                NodeInput::Clauses(bodies) => NodeSize::Clauses(bodies.iter().map(sizes).collect()),
-            })
-            .collect(),
-    )
+/// The row and distinct column counts of `inputs`, for [`variable_order`].
+/// A unary index reads only the part that holds its column. The relation
+/// caches it and includes its retained storage in the index byte ledger.
+pub fn sizes(clause: &ClauseIr, inputs: &JoinInputs) -> RelationSizes {
+    RelationSizes(clause.nodes.iter().zip(inputs.0.iter()).map(|(node, input)| match input {
+        NodeInput::Relation(relation) => {
+            let mut distinct = vec![relation.len(); relation.arity() as usize];
+            if let IrNode::Atom(atom) = node {
+                for (column, _) in &atom.arguments.0 {
+                    distinct[column.0 as usize] = relation.index(&ColumnOrder(Box::new([*column]))).root().len() as u64;
+                }
+            }
+            NodeSize::Columns {rows: relation.len(), distinct: distinct.into()}
+        }
+        NodeInput::Unread => NodeSize::Unread,
+        NodeInput::Clauses(bodies) => NodeSize::Clauses(match node {
+            IrNode::Or(union) => union.branches.iter().zip(bodies.iter()).map(|(branch, inputs)| sizes(branch, inputs)).collect(),
+            IrNode::Not(filter) | IrNode::Counterexample(filter) => Box::new([sizes(&filter.body, &bodies[0])]),
+            _ => unreachable!("nested clause inputs"),
+        }),
+    }).collect())
 }
 
 /// A part of a clause's body: a connected set of its nodes, two nodes
@@ -786,6 +802,37 @@ struct AtomTrie {
     empty: bool,
 }
 
+/// Intersects sorted index runs by seeking past missing values. Values
+/// excluded by another positive atom never become candidate bindings. This
+/// avoids scanning and binding an entire phase class before another class
+/// rejects most of its cells. The work of emitted bindings is charged by
+/// the search; long runs still check the operation's other bounds here.
+fn intersect_values(nodes: &[IndexNode<'_>], budget: &mut Budget<'_>) -> Result<Vec<TermId>, ReachedBound> {
+    intersect_runs(nodes.iter().map(|node| node.values()).collect(), budget)
+}
+
+fn intersect_runs(mut runs: Vec<&[TermId]>, budget: &mut Budget<'_>) -> Result<Vec<TermId>, ReachedBound> {
+    let mut found = Vec::new();
+    let Some(mut candidate) = runs.first().and_then(|run| run.first()).copied() else { return Ok(found) };
+    let mut steps = 0usize;
+    'seek: loop {
+        if steps % BATCH as usize == 0 { budget.charge_work(0)?; }
+        steps += 1;
+        for run in &mut runs {
+            *run = &run[run.partition_point(|value| value.encoding() < candidate.encoding())..];
+            let Some(&value) = run.first() else { return Ok(found) };
+            if value != candidate {
+                candidate = value;
+                continue 'seek;
+            }
+        }
+        found.push(candidate);
+        runs[0] = &runs[0][1..];
+        let Some(&next) = runs[0].first() else { return Ok(found) };
+        candidate = next;
+    }
+}
+
 /// What the search of one connected set of a clause's nodes builds that
 /// depends on no bound value, for one set of variables bound before the
 /// search.
@@ -825,19 +872,20 @@ impl Plan {
         for (r, v) in order.iter().enumerate() {
             rank[usize::from(v.0)] = r;
         }
-        let trie = |relation: &Relation, arguments: &Arguments| {
+        let trie = |relation: &Relation, arguments: &Arguments, budget: &mut Budget<'_>| -> Result<AtomTrie,ReachedBound> {
             let mut columns: Vec<(ColumnIndex, Argument)> = arguments.0.iter().copied().collect();
             columns.sort_by_key(|(column, argument)| match argument {
                 Argument::Variable(v) if !bound.contains(v) => (1 + rank[usize::from(v.0)], column.0 as usize),
                 _ => (0, column.0 as usize),
             });
-            let index = relation.index(&ColumnOrder(columns.iter().map(|(c, _)| *c).collect()));
-            AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect(), empty: relation.is_empty() }
+            let order=ColumnOrder(columns.iter().map(|(c, _)| *c).collect());
+            budget.charge_work(relation.index_work(&order))?;
+            let index = relation.index(&order);
+            Ok(AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect(), empty: relation.is_empty() })
         };
         let mut atoms: Vec<AtomTrie> = Vec::with_capacity(tries.len());
         for (relation, arguments) in tries {
-            budget.charge_product(relation)?;
-            atoms.push(trie(relation, arguments));
+            atoms.push(trie(relation, arguments, budget)?);
         }
         let mut checks = vec![Vec::new(); order.len() + 1];
         let mut libs = vec![Vec::new(); clause.variables.len()];
@@ -849,8 +897,7 @@ impl Plan {
             match &clause.nodes[node] {
                 IrNode::Atom(atom) => {
                     let NodeInput::Relation(relation) = &inputs.0[node] else { panic!("the relation of each atom") };
-                    budget.charge_product(relation)?;
-                    atoms.push(trie(relation, &atom.arguments));
+                    atoms.push(trie(relation, &atom.arguments, budget)?);
                 }
                 IrNode::Lib(atom) => {
                     for v in super::plan::variables_of(&atom.arguments) {
@@ -860,7 +907,7 @@ impl Plan {
                 }
                 IrNode::Not(filter) | IrNode::Counterexample(filter) => {
                     let NodeInput::Clauses(bodies) = &inputs.0[node] else { panic!("the inputs of each filter's body") };
-                    filter_orders.insert(node, variable_order(&filter.body, &sizes(&bodies[0]), &filter.outer));
+                    filter_orders.insert(node, variable_order(&filter.body, &sizes(&filter.body, &bodies[0]), &filter.outer));
                     checks[last].push(node);
                 }
                 IrNode::Or(_) => {
@@ -923,6 +970,7 @@ struct MemoTables {
     libs: StableHashMap<LibName, StableHashMap<Vec<Option<TermId>>, LibRows>>,
     probes: StableHashMap<(usize, Vec<TermId>), (bool, Charges)>,
     branches: StableHashMap<(usize, Vec<(Variable, TermId)>), (Arc<Relation>, Charges)>,
+    spatial: StableHashMap<(usize, usize, u8), Rc<spatial::DistanceIndex>>,
 }
 
 impl MemoTables {
@@ -1113,9 +1161,16 @@ impl<'c> Search<'c> {
         } else if let Some(&smallest) = sources.iter().min_by_key(|&&a| (cursors[a].0.len(), a)) {
             // A lib atom that a mode satisfies gives the values through the
             // atoms' indexes where it gives fewer than the smallest atom holds.
-            match self.lib_values(variable)? {
-                Some(values) if values.len() < cursors[smallest].0.len() => values,
-                _ => cursors[smallest].0.entries().map(|(value, _)| value).collect(),
+            if let Some(values) = self.lib_values(variable)?.filter(|values| values.len() < cursors[smallest].0.len()) {
+                values
+            } else if self.ready_union(variable) {
+                self.union_values(variable, budget)?.expect("a ready union exports the variable").1
+            } else if let Some(values) = self.spatial_values(variable, &atoms[smallest].index, cursors[smallest].0, budget)? {
+                values
+            } else if sources.len() > 1 {
+                intersect_values(&sources.iter().map(|&a| cursors[a].0).collect::<Vec<_>>(), budget)?
+            } else {
+                cursors[smallest].0.values().to_vec()
             }
         } else if let Some(values) = self.lib_values(variable)? {
             values
@@ -1128,6 +1183,14 @@ impl<'c> Search<'c> {
         };
         let early = rank >= self.plan.stop_from;
         let mut candidates = candidates;
+        if !sources.is_empty() {
+            // Generated values are another index run: intersect them with
+            // every positive atom before counting attempted bindings.
+            candidates.sort_unstable_by_key(|value| value.encoding());
+            let mut runs = vec![candidates.as_slice()];
+            runs.extend(sources.iter().map(|&a| cursors[a].0.values()));
+            candidates = intersect_runs(runs, budget)?;
+        }
         if early {
             candidates.sort_by_key(|value| value.encoding());
         }
@@ -1158,6 +1221,14 @@ impl<'c> Search<'c> {
             }
         }
         Ok(passed)
+    }
+
+    /// A union can narrow an atom's candidate run once its inputs are
+    /// available. Keep its final check: another export may still be unbound.
+    fn ready_union(&self, variable: Variable) -> bool {
+        let placed: Vec<bool> = self.binding.iter().map(Option::is_some).collect();
+        self.plan.unions.iter().any(|&node| matches!(&self.clause.nodes[node], IrNode::Or(union)
+            if union.exported.contains(&variable) && grounds(union, &placed)))
     }
 
     /// The value an `=` gives `variable` from a bound variable or `0`.
@@ -1215,8 +1286,10 @@ impl<'c> Search<'c> {
     /// branches. Where no column is unbound, each value is a row of a branch,
     /// so the union holds at it.
     fn union_values(&self, variable: Variable, budget: &mut Budget<'_>) -> Result<Option<(usize, Vec<TermId>)>, ReachedBound> {
+        let placed: Vec<bool> = self.binding.iter().map(Option::is_some).collect();
+        let ready = self.ready_union(variable);
         let found = self.plan.unions.iter().find_map(|&node| match &self.clause.nodes[node] {
-            IrNode::Or(union) if union.exported.contains(&variable) => Some((node, union)),
+            IrNode::Or(union) if union.exported.contains(&variable) && (!ready || grounds(union, &placed)) => Some((node, union)),
             _ => None,
         });
         let Some((node, union)) = found else { return Ok(None) };
@@ -1273,6 +1346,16 @@ impl<'c> Search<'c> {
                 Argument::Term(term) => Some(*term),
                 Argument::Variable(v) => self.binding[usize::from(v.0)],
             };
+        }
+        // A ground predicate has no generated values to reuse. In a large
+        // spatial join most such tuples are tested once; retaining a key,
+        // a row and a vector for each tuple can dwarf the actual result.
+        if bound.iter().all(Option::is_some) {
+            let algebra=crate::algebra::algebra(&atom.relation).expect("a native form of each algebra relation");
+            algebra.evaluate(&bound,self.registry,&mut |row| {
+                if bound.iter().zip(row).all(|(b,value)|b==&Some(*value)) {emit(row);}
+            }).map_err(ReachedBound::Margin)?;
+            return Ok(());
         }
         let rows = match self.memo.lib(&atom.relation, &bound) {
             Some(rows) => rows,

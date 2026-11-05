@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::examples::{self, ExampleScope};
-use super::ir::{self, Argument, Arguments, AtomSource, ClauseIr, CompiledBody, IrNode};
+use super::ir::{self, AtomSource, ClauseIr, CompiledBody, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::Domain;
@@ -296,7 +296,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// that stops stops the relation.
     fn body_relation(&self, form: &NodePath, body: &CompiledBody, inputs: &JoinInputs, example: Option<Example>) -> RelationValue {
         let clause = &body.clause;
-        let order = plan::variable_order(clause, &join::sizes(inputs), &[]);
+        let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let all: Vec<usize> = (0..clause.nodes.len()).collect();
         let mut placed = Vec::new();
         let mut value = None;
@@ -317,9 +317,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The value of `part`, a part of `body` whose entry `entry` gives: the
-    /// value the result cache holds for it, or else its rows, from the
-    /// entries of the parts that remain once one of its conjuncts is taken
-    /// out, where [`Driver::linked`] finds them, or by generic join over the
+    /// value the result cache holds for it, or by generic join over the
     /// part alone, which the cache then stores. The part is an evaluation
     /// of its own, under the caps, so its value depends on its entry alone
     /// and on no other entry the cache holds.
@@ -341,10 +339,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         let Ok(value) = self.holding_stops::<Infallible>(&request, || {
-            let relation = match self.linked(form, body, part, inputs, order, example, &entry.columns, &mut budget) {
-                Some(rows) => rows.map(join::one_part),
-                None => join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget),
-            };
+            let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
             Ok(match relation {
                 Ok(relation) => RelationValue::Rows(Arc::new(relation)),
                 Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
@@ -353,88 +348,6 @@ impl<'e, 'a> Driver<'e, 'a> {
         record_whole(&budget, [&value]);
         cache::store(evaluation.session, &request, &value);
         value
-    }
-
-    /// The rows of `columns` of `part`, a part of `body` with no entry, from
-    /// the entries of the parts that remain once one of its conjuncts is
-    /// taken out, the last such conjunct first: the generic join of that
-    /// conjunct's nodes and those parts' rows, from their indexes, where the
-    /// result cache holds the rows of each of those parts and they hold
-    /// each variable the conjunct shares with them. `None` where no
-    /// conjunct of the part leaves such parts.
-    #[allow(clippy::too_many_arguments)]
-    fn linked(
-        &self,
-        form: &NodePath,
-        body: &CompiledBody,
-        part: &Part,
-        inputs: &JoinInputs,
-        order: &plan::VariableOrder,
-        example: Option<Example>,
-        columns: &[ColumnIndex],
-        budget: &mut Budget<'_>,
-    ) -> Option<Result<RowSet, crate::eval::ReachedBound>> {
-        let clause = &body.clause;
-        let mut conjuncts: Vec<u32> = part.nodes.iter().map(|&node| body.conjuncts[node]).collect();
-        conjuncts.dedup();
-        if conjuncts.len() < 2 {
-            return None;
-        }
-        'conjunct: for &conjunct in conjuncts.iter().rev() {
-            let (taken, rest): (Vec<usize>, Vec<usize>) = part.nodes.iter().partition(|&&node| body.conjuncts[node] == conjunct);
-            let remaining = join::parts(clause, &rest, &|node| body.conjuncts[node]);
-            if !remaining.iter().all(|other| other.links(clause, &taken)) {
-                continue;
-            }
-            let mut found = Vec::with_capacity(remaining.len());
-            for other in &remaining {
-                let entry = self.part_entry(form, body, other, inputs);
-                let Some(RelationValue::Rows(relation)) = cache::lookup(self.evaluation.session, &entry.reads.request(&entry.content, example), form) else {
-                    continue 'conjunct;
-                };
-                let variables: Vec<ir::Variable> = entry.columns.iter().map(|column| clause.columns[usize::from(column.0)]).collect();
-                let arguments = Arguments(variables.iter().zip(0u16..).map(|(&v, at)| (ColumnIndex(at), Argument::Variable(v))).collect());
-                found.push(LinkedPart { relation, arguments, variables, columns: entry.columns });
-            }
-            let _timed = crate::stats::span(crate::stats::Phase::EvalPartLinked);
-            return Some(self.link(clause, &taken, found, order, inputs, columns, budget));
-        }
-        None
-    }
-
-    /// The rows of `columns` over the nodes `taken` of `clause` and the
-    /// rows of the parts `found` that they link: where every node of `taken` is an atom,
-    /// each part's rows first filtered by a semi-join with those atoms, and
-    /// then the generic join of `taken` and the rows that remain, in
-    /// `order`.
-    #[allow(clippy::too_many_arguments)]
-    fn link(
-        &self,
-        clause: &ClauseIr,
-        taken: &[usize],
-        found: Vec<LinkedPart>,
-        order: &plan::VariableOrder,
-        inputs: &JoinInputs,
-        columns: &[ColumnIndex],
-        budget: &mut Budget<'_>,
-    ) -> Result<RowSet, crate::eval::ReachedBound> {
-        let registry = self.evaluation.registry;
-        let own: Vec<ir::Variable> = taken.iter().flat_map(|&node| join::node_variables(&clause.nodes[node])).collect();
-        let within = |held: &[ir::Variable]| -> Vec<ir::Variable> { order.0.iter().copied().filter(|v| own.contains(v) || held.contains(v)).collect() };
-        let atoms = taken.iter().all(|&node| matches!(clause.nodes[node], IrNode::Atom(_)));
-        let mut tries = Vec::with_capacity(found.len());
-        let mut held = Vec::new();
-        for LinkedPart { relation, arguments, variables, columns: part_columns } in found {
-            let relation = if atoms {
-                let trie = [(relation, arguments.clone())];
-                Arc::new(join::one_part(join::search(clause, taken, &trie, within(&variables), &[], inputs, registry, &part_columns, budget)?))
-            } else {
-                relation
-            };
-            held.extend(variables);
-            tries.push((relation, arguments));
-        }
-        join::search(clause, taken, &tries, within(&held), &[], inputs, registry, columns, budget)
     }
 
     /// The entry of `part`, a part of `body`, the conjuncts of the body of
@@ -605,7 +518,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// join over `inputs`, or the stop of the join at a bound.
     fn join(&self, form: &NodePath, clause: &ClauseIr, inputs: &JoinInputs) -> RelationValue {
         let evaluation = self.evaluation;
-        let order = plan::variable_order(clause, &join::sizes(inputs), &[]);
+        let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
         let value = match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
             Ok(relation) => RelationValue::Rows(Arc::new(relation)),
@@ -705,16 +618,6 @@ struct PartEntry {
     columns: Box<[ColumnIndex]>,
 }
 
-/// A part that a conjunct links, read as an atom: the rows of its entry,
-/// the arguments that read them, the variables at the rows' columns, and
-/// the clause's columns that the rows hold, in their order.
-struct LinkedPart {
-    relation: Arc<Relation>,
-    arguments: Arguments,
-    variables: Vec<ir::Variable>,
-    columns: Box<[ColumnIndex]>,
-}
-
 /// The relations an entry reads: the relations of its `DET`s, its
 /// parameters, and the other relations, its reads.
 #[derive(Default)]
@@ -767,7 +670,7 @@ impl FormBodies<'_> {
     pub(super) fn bound_relation(&self,form:&NodePath,clause:&ClauseIr,example:Option<Example>,bound:&[(ir::Variable,crate::terms::TermId)])->Outcome<RelationValue> {
         let inputs=match self.driver.inputs(clause,scope_at(example),example)? {Ok(inputs)=>inputs,Err(value)=>return Ok(value)};
         let evaluation=self.driver.evaluation;
-        let order=plan::variable_order(clause,&join::sizes(&inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
+        let order=plan::variable_order(clause,&join::sizes(clause, &inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
         let mut budget=Budget::new(evaluation.limits,evaluation.session);
         let value=match join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget) {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
         record_whole(&budget,[&value]);Ok(value)

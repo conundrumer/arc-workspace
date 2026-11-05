@@ -241,6 +241,45 @@ enum Value {
 }
 
 impl Algebra for BoxRelation {
+    fn narrowings(&self) -> &'static [super::Narrowing] {
+        use super::Narrowing;
+        match self {
+            Self::Inside | Self::Interior => &[
+                Narrowing {column: 0, required: &[1]}, Narrowing {column: 1, required: &[0]},
+            ],
+            Self::SameLine | Self::SameDist | Self::SameCorner | Self::SameSlab | Self::Nearer => &[
+                Narrowing {column: 1, required: &[0, 2]}, Narrowing {column: 2, required: &[0, 1]},
+            ],
+            _ => &[],
+        }
+    }
+
+    fn margin_ranges(&self, column: u16, bound: &[Option<TermId>]) -> Vec<Vec<super::MarginRange>> {
+        use super::MarginRange;
+        if !self.narrowings().iter().any(|n| n.column == column && n.required.iter().all(|&c| bound[c as usize].is_some())) {
+            return Vec::new();
+        }
+        let geometry = Geometry::get();
+        let reference = bound[if matches!(self, Self::Inside | Self::Interior) {1 - column} else {3 - column} as usize].expect("a required column");
+        let reference = Term::decode_box(reference);
+        let range = |edges, comparison| MarginRange {edges, value: distance(reference, edges), comparison};
+        match self {
+            Self::Inside | Self::Interior => {
+                let comparison = (if *self == Self::Inside {2} else {1}) * (if column == 0 {1} else {-1});
+                Edge::ALL.into_iter().map(|edge| vec![range(Edges::of(&[edge]), comparison)]).collect()
+            }
+            Self::SameLine => vec![geometry.perpendicular_directions(bound[0].unwrap()).into_iter().map(|edges| range(edges, 0)).collect()],
+            Self::SameDist => vec![vec![range(Edges::of(&[geometry.edge(bound[0].unwrap())]), 0)]],
+            Self::SameCorner => geometry.edges(bound[0].unwrap()).each().map(|edge| vec![range(Edges::of(&[edge]), 0)]).collect(),
+            Self::SameSlab => {
+                let opposite = geometry.edge(bound[0].unwrap()).opposite();
+                Edge::ALL.into_iter().filter(|&edge| edge != opposite).map(|edge| vec![range(Edges::of(&[edge]), 0)]).collect()
+            }
+            Self::Nearer => vec![vec![range(geometry.edges(bound[0].unwrap()), if column == 1 {-1} else {1})]],
+            _ => Vec::new(),
+        }
+    }
+
     fn name(&self) -> &'static str {
         self.registry_name()
     }

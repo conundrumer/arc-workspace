@@ -17,10 +17,33 @@ use crate::hash::StableHashMap;
 use crate::registry::{AlgebraRelation, LibName, Registry};
 use crate::terms::{ReachedMarginBound, TermId};
 
+/// A column narrowed once the required columns are bound.
+#[derive(Clone, Copy, Debug)]
+pub struct Narrowing {
+    pub column: u16,
+    pub required: &'static [u16],
+}
+
+/// A comparison against the sum of the margins at `edges`. Comparison is
+/// zero for equality, -1/1 for less/greater, and -2/2 for at most/at least.
+#[derive(Clone, Copy, Debug)]
+pub struct MarginRange {
+    pub edges: geometry::Edges,
+    pub value: i32,
+    pub comparison: i8,
+}
+
 /// An algebra relation of the lib, evaluated natively.
 pub trait Algebra: Send + Sync {
     /// The relation's name in the registry, such as `margin`.
     fn name(&self) -> &'static str;
+
+    /// The columns this relation can narrow from other bound columns.
+    fn narrowings(&self) -> &'static [Narrowing] { &[] }
+
+    /// Conjunctive groups of alternative margin ranges for `column`.
+    /// Each row of the relation satisfies at least one range in every group.
+    fn margin_ranges(&self, _column: u16, _bound: &[Option<TermId>]) -> Vec<Vec<MarginRange>> { Vec::new() }
 
     /// Calls `emit` on each row of the relation that agrees with `bound`,
     /// one entry per column, `Some` at each bound column. The bound columns

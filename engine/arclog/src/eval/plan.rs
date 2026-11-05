@@ -6,7 +6,7 @@
 //! ids has one plan. It is the order of least estimated bindings. A choice
 //! of the order is a variable that an atom binds, estimated at the least,
 //! over the atoms that bind it, of the atom's row count divided by the
-//! domains of the atom's other variables that are placed before the choice,
+//! distinct value counts of the atom's other variables that are placed before the choice,
 //! and at least 1, or a variable that a union exports
 //! and no atom or comparison binds, estimated at the sum over the union's
 //! branches of the estimate of the variable in the branch, and chosen only
@@ -14,7 +14,7 @@
 //! branches that it does not export is placed or has a finite orientation
 //! domain, and each branch, with its
 //! placed columns bound, grounds every variable it holds. The domain of a
-//! variable is the row count of the smallest atom that binds it, or the size
+//! variable is its smallest distinct value count in an atom that binds it, or the size
 //! of its orientation type where that is less, so a variable that an atom
 //! gives from placed variables, such as a remainder that an atom keys by a
 //! cell and a direction, has a small estimate once they are placed. A
@@ -62,6 +62,9 @@ pub enum NodeSize {
     Unread,
     /// The count of rows of an atom's relation.
     Rows(u64),
+    /// Its row count and the distinct value count at each column. Unary
+    /// indexes give these counts without expanding a product of parts.
+    Columns { rows: u64, distinct: Box<[u64]> },
     /// The sizes of the node's own clauses: a filter's body, or a union's
     /// branches, in the node's order.
     Clauses(Box<[RelationSizes]>),
@@ -71,6 +74,22 @@ pub enum NodeSize {
 /// index in [`ClauseIr::nodes`].
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct RelationSizes(pub Box<[NodeSize]>);
+
+impl NodeSize {
+    fn rows(&self) -> Option<u64> {
+        match self {
+            Self::Rows(rows) | Self::Columns { rows, .. } => Some(*rows),
+            _ => None,
+        }
+    }
+
+    fn distinct(&self, column: crate::relations::ColumnIndex) -> Option<u64> {
+        match self {
+            Self::Columns { distinct, .. } => distinct.get(usize::from(column.0)).copied(),
+            _ => self.rows(),
+        }
+    }
+}
 
 /// The variable order of `clause` over relations of `sizes`: the sequence of
 /// choices of least estimated bindings, each followed by its closure, as the
@@ -164,7 +183,10 @@ fn follow(clause: &ClauseIr, placed: &mut [bool], order: &mut Vec<Variable>) {
                     let relation = algebra_relation(registry, &atom.relation);
                     if mode_holds(relation, &atom.arguments, clause, placed) {
                         let mut outputs: Vec<Variable> = variables_of(&atom.arguments).collect();
-                        outputs.sort_by_key(|v| v.0);
+                        // A mode can enumerate an unbound orientation, but
+                        // an atom may restrict it to one value. Bind that
+                        // argument before generating the mode's outputs.
+                        outputs.sort_by_key(|v| (orientation_domain(&clause.variables[usize::from(v.0)].ty).is_none(),v.0));
                         outputs.into_iter().for_each(|v| place(v, placed, order));
                     }
                 }
@@ -291,7 +313,7 @@ fn bound_or_finite(clause: &ClauseIr, variable: Variable, bound: &[bool]) -> boo
 /// that an `=` binds from a grounded one, that a union of the branch binds
 /// where that union grounds at the variables grounded so far, and a variable
 /// of an orientation type, whose values are finite.
-fn grounds(union: &Union, placed: &[bool]) -> bool {
+pub(super) fn grounds(union: &Union, placed: &[bool]) -> bool {
     let reads_placed = |branch: &ClauseIr| branch.columns.iter().all(|column| union.exported.contains(column) || bound_or_finite(branch, *column, placed));
     union.branches.iter().all(reads_placed) && grounds_leaving(union, placed)
 }
@@ -393,8 +415,8 @@ impl Choice<'_> {
 }
 
 /// The choices of `clause` in the order of estimate then variable: each
-/// variable that an atom binds, estimated at the rows of the smallest atom
-/// that binds it, and each variable that a union exports and no atom or
+/// variable that an atom binds, estimated at its smallest distinct value
+/// count in those atoms, and each variable that a union exports and no atom or
 /// comparison binds, estimated by [`union_estimate`], that the closure of the
 /// choices before it has not placed, and whose union [`grounds`] at that
 /// closure. `placed` holds the variables placed before any choice,
@@ -405,7 +427,7 @@ fn choices<'c>(
     placed: &[bool],
     extend: &mut impl FnMut(&mut Vec<bool>, Variable),
 ) -> Vec<Choice<'c>> {
-    let atoms = atom_rows(clause, sizes);
+    let atoms = atom_domains(clause, sizes);
     let mut choices: Vec<Choice> = (0..clause.variables.len())
         .filter_map(|v| Some(Choice { variable: Variable(v as u16), estimate: atoms[v]?, union: None }))
         .collect();
@@ -516,10 +538,14 @@ fn sequence_in_order(choices: &[Choice<'_>], estimates: &Estimates, placed: &[bo
 struct Estimates {
     /// Each atom of known size: its row count and its variables.
     atoms: Vec<(u64, Vec<Variable>)>,
-    /// The domain of each variable, by the variable's index: the row count of
-    /// the smallest atom that binds it, or the size of its orientation type
+    /// The domain of each variable, by the variable's index: its smallest
+    /// distinct value count in an atom, or the size of its orientation type
     /// where that is less; 1 where neither is known.
     domains: Vec<u64>,
+    /// Access paths declared by the algebra. A bound reference narrows a
+    /// variable's values to about one line of them: the square root of its
+    /// domain, as a line of a square frame holds the root of the frame's cells.
+    narrowings: Vec<(Variable, Vec<Variable>)>,
 }
 
 impl Estimates {
@@ -528,13 +554,13 @@ impl Estimates {
             .nodes
             .iter()
             .zip(sizes.0.iter())
-            .filter_map(|(node, size)| match (node, size) {
-                (IrNode::Atom(atom), NodeSize::Rows(count)) => Some((*count, variables_of(&atom.arguments).collect())),
+            .filter_map(|(node, size)| match node {
+                IrNode::Atom(atom) => Some((size.rows()?, variables_of(&atom.arguments).collect())),
                 _ => None,
             })
             .collect();
         let registry = Registry::get();
-        let domains = atom_rows(clause, sizes)
+        let domains = atom_domains(clause, sizes)
             .into_iter()
             .zip(clause.variables.iter())
             .map(|(rows, variable)| {
@@ -546,7 +572,21 @@ impl Estimates {
                 .max(1)
             })
             .collect();
-        Estimates { atoms, domains }
+        let mut narrowings = Vec::new();
+        for node in &clause.nodes {
+            let IrNode::Lib(atom) = node else {continue};
+            let Some(algebra) = crate::algebra::algebra(&atom.relation) else {continue};
+            for narrowing in algebra.narrowings() {
+                let argument = |c| atom.arguments.0.iter().find(|(at,_)|at.0==c).map(|(_,a)|*a);
+                let Some(Argument::Variable(target)) = argument(narrowing.column) else {continue};
+                if !narrowing.required.iter().all(|&c|argument(c).is_some()) {continue;}
+                let required = narrowing.required.iter().filter_map(|&c| match argument(c) {
+                    Some(Argument::Variable(v)) => Some(v), _ => None,
+                }).collect();
+                narrowings.push((target,required));
+            }
+        }
+        Estimates { atoms, domains, narrowings }
     }
 
     /// The estimate of `choice` at `closure`, the variables placed before it.
@@ -559,7 +599,7 @@ impl Estimates {
             return choice.estimate;
         }
         let variable = choice.variable;
-        self.atoms
+        let estimate = self.atoms
             .iter()
             .filter(|(_, variables)| variables.contains(&variable))
             .map(|(rows, variables)| {
@@ -571,19 +611,26 @@ impl Estimates {
             })
             .min()
             .unwrap_or(choice.estimate)
+            .min(self.domains[usize::from(variable.0)]);
+        if self.narrowings.iter().any(|(target,required)|*target==variable && required.iter().all(|v|closure[usize::from(v.0)])) {
+            estimate.min(self.domains[usize::from(variable.0)].isqrt().max(1))
+        } else {estimate}
     }
 }
 
-/// The count of rows of the smallest atom of `clause` that binds each
-/// variable, by the variable's index, `None` for a variable that no atom of
-/// known size binds.
-fn atom_rows(clause: &ClauseIr, sizes: &RelationSizes) -> Vec<Option<u64>> {
+/// The smallest distinct value count of each variable in the atoms of
+/// `clause`, or the row count where the caller supplied no column counts.
+/// A repeated column contributes its own domain, rather than the number of
+/// rows that repeat those values.
+fn atom_domains(clause: &ClauseIr, sizes: &RelationSizes) -> Vec<Option<u64>> {
     let mut rows: Vec<Option<u64>> = vec![None; clause.variables.len()];
     for (node, size) in clause.nodes.iter().zip(sizes.0.iter()) {
-        if let (IrNode::Atom(atom), NodeSize::Rows(count)) = (node, size) {
-            for variable in variables_of(&atom.arguments) {
-                let held = &mut rows[usize::from(variable.0)];
-                *held = Some(held.map_or(*count, |held| held.min(*count)));
+        if let IrNode::Atom(atom) = node {
+            for (column, argument) in &atom.arguments.0 {
+                if let (Argument::Variable(variable), Some(count)) = (argument, size.distinct(*column)) {
+                    let held = &mut rows[usize::from(variable.0)];
+                    *held = Some(held.map_or(count, |held| held.min(count)));
+                }
             }
         }
     }
@@ -611,15 +658,15 @@ fn union_binders(clause: &ClauseIr) -> Vec<Option<(usize, &Union)>> {
 }
 
 /// The estimate of the count of values that the union which binds `variable`
-/// in `clause` gives it: the sum over the union's branches of the rows of
-/// the smallest atom of the branch that binds it, or, where a union of the
+/// in `clause` gives it: the sum over the union's branches of its smallest
+/// distinct value count in an atom of the branch, or, where a union of the
 /// branch binds it, that union's estimate. `None` where `variable` has no
 /// such union or a branch has no estimate.
 fn union_estimate(clause: &ClauseIr, sizes: &RelationSizes, variable: Variable) -> Option<u64> {
     let (node, union) = union_binders(clause)[usize::from(variable.0)]?;
     let NodeSize::Clauses(branch_sizes) = &sizes.0[node] else { return None };
     union.branches.iter().zip(branch_sizes.iter()).try_fold(0u64, |total, (branch, sizes)| {
-        let rows = atom_rows(branch, sizes)[usize::from(variable.0)].or_else(|| union_estimate(branch, sizes, variable))?;
+        let rows = atom_domains(branch, sizes)[usize::from(variable.0)].or_else(|| union_estimate(branch, sizes, variable))?;
         Some(total.saturating_add(rows))
     })
 }
