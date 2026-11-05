@@ -1011,7 +1011,7 @@ class Converter:
                     i -= 1
         one_color = {r.name for r in prog.relations if r.scope.components == ("Params",)
                      and [c.type.name for c in r.columns] == ["Color"]}
-        # (a derived parameter's stored reading lists the candidates, where they are the task's colors)
+        # (a derived parameter's stored reading takes a `DET` of its type's domain, where it is one color)
         self.cand_params = {x for x in self.cand_params if refuted(x) and x not in rigid
                             and (x not in derived or x in one_color)}
         if not self.cand_params:

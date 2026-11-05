@@ -17,6 +17,7 @@ from engine.program import (
     Disjunction,
     GridCall,
     RecordTerm,
+    RelationDecl,
     Unit,
     Variable,
     Wildcard,
@@ -532,6 +533,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         det_units_all = {k: list(v) for k, v in det_units.items()}
         self.rigid_proposed: set[str] = set()   # the rigid parts a proposer's table gives
         determined_copies: set[str] = set()   # the derived parameters whose determination has a DET of its own
+        stored_decls: dict[str, RelationDecl] = {}   # each stored reading's `DET` of a proposer, with its parameter's declaration
         param_facts: dict[str, list] = defaultdict(list)
         param_rules: dict[str, list] = defaultdict(list)
         for u in prog.units:
@@ -755,33 +757,33 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                 self.set_param_order(amp, r, made)
             elif derives:
                 props = self.derive_props[r.name]
-                if r.name in c.cand_params:
-                    # the stored reading: the candidates the examples show, one of them per model
-                    lab = pascal(r.columns[0].name)
-                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}", f"  (ex_input (:Col *{lab}))",
-                              "  (ONE))"], amp, set(), line=r.span.first)
+                candidates = r.name in c.cand_params
+                facts, grids = param_facts.get(r.name, []), grid_params.get(r.name, [])
+                mark = "" if candidates else self.set_mark(amp, r, props, facts, grids)
+                types = [col.type.name for col in r.columns]
+                covers = domain_proposer(types) if candidates else \
+                    plan_proposer(self.plan().get(r.name), types, r.name in c.open_params)
+                if covers and covers not in props and not mark and len(PROPOSER_COLS.get(covers, ())) == 1 \
+                        and len(PROPOSER_COLS.get(props[0], ())) == 1:
+                    # the stored value is one the plan found another proposer to cover, or one the fit keeps among the
+                    # candidates: the stored reading's determination reads a `DET` of that proposer, with a record of
+                    # its own, since a stored run reads the determination's clause, and the derived readings keep their own
+                    cand, n = f"{r.name}_stored", 2
+                    while cand in c.used_names:
+                        cand, n = f"{r.name}_stored{n}", n + 1
+                    c.used_names.add(cand)
+                    stored = "&" + cand
+                    forms.append(Form([f"(DET {stored} {covers})"], stored, set(), line=r.span.first))
+                    stored_decls[stored] = r
+                    arcdata_params.append(self.param_line(stored, r, facts, grids))
+                    site = PROPOSER_COLS[covers][0].name
+                    lab = PROPOSER_COLS[props[0]][0].name
+                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}",
+                              f"  ({stored} {f'*{lab}' if site == lab else f'(:{site} *{lab})'}))"], amp, {stored},
+                             line=r.span.first)
                 else:
-                    mark = self.set_mark(amp, r, props, param_facts.get(r.name, []), grid_params.get(r.name, []))
-                    types = [col.type.name for col in r.columns]
-                    covers = plan_proposer(self.plan().get(r.name), types, r.name in c.open_params)
-                    if covers and covers not in props and not mark and len(PROPOSER_COLS.get(covers, ())) == 1 \
-                            and len(PROPOSER_COLS.get(props[0], ())) == 1:
-                        # the stored value is one the plan found another proposer to cover: the stored reading's
-                        # determination reads a `DET` of that proposer, and the derived readings keep their own
-                        cand, n = f"{r.name}_stored", 2
-                        while cand in c.used_names:
-                            cand, n = f"{r.name}_stored{n}", n + 1
-                        c.used_names.add(cand)
-                        stored = "&" + cand
-                        forms.append(Form([f"(DET {stored} {covers})"], stored, set(), line=r.span.first))
-                        site = PROPOSER_COLS[covers][0].name
-                        lab = PROPOSER_COLS[props[0]][0].name
-                        f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}",
-                                  f"  ({stored} {f'*{lab}' if site == lab else f'(:{site} *{lab})'}))"], amp, {stored},
-                                 line=r.span.first)
-                    else:
-                        f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
-                                 line=r.span.first)
+                    f = Form([f"(DET_OR_RULE {amp}{or_gloss(gloss)} {' '.join(props)}{mark})"], amp, set(),
+                             line=r.span.first)
                 forms.append(f)
                 derive_points.append((amp, derives, "Derived", r.name))
             elif r.name in c.cand_params:
@@ -818,7 +820,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
         # each parameter's types, after its name
         self.param_types: dict[str, list[str]] = {}
         self.type_order: dict[str, list[int]] = {}   # per reordered parameter, its types' indices in the order of its record
-        decl_of = {c.rel_name(("Params",), r.name): r for r in params_decls}
+        decl_of = {c.rel_name(("Params",), r.name): r for r in params_decls} | stored_decls
         for r in params_decls:
             if r.name.startswith("_rigid_") and r.name[len("_rigid_"):] in c.rigid:
                 decl_of[c.rel_name(("Params",), r.name[len("_rigid_"):])] = r
