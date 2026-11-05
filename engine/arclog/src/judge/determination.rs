@@ -219,10 +219,54 @@ pub struct Det {
 /// Each `DET` that the relation at `root` reads in `program`, at any depth,
 /// in dependency order.
 pub(crate) fn dets_read(program: &CheckedProgram, root: GraphNodeIndex) -> Vec<Det> {
+    let read = program.program.graph.reached(root);
+    let all = determinations(program);
+    if program.program.concept().is_none() {
+        return all.into_iter().filter(|node| read[node.0 as usize]).map(|node| det(program, node)).collect();
+    }
+    let mut placed = vec![false; read.len()];
+    let mut order = Vec::new();
+    for node in all.iter().copied().filter(|node| read[node.0 as usize]) {
+        place(program, &all, node, &mut placed, &mut order);
+    }
+    order.into_iter().map(|node| det(program, node)).collect()
+}
+
+/// Adds to `order` the `DET` node `node`, after each `DET` of `all` that it
+/// reads: at any depth in the case's graph, and, where the case takes it from
+/// the concept program, there too. Such a `DET` resolves its reads in the
+/// concept program, so the case's graph holds none of them, and the
+/// evaluation there takes their values from the assignment.
+fn place(program: &CheckedProgram, all: &[GraphNodeIndex], node: GraphNodeIndex, placed: &mut [bool], order: &mut Vec<GraphNodeIndex>) {
+    if std::mem::replace(&mut placed[node.0 as usize], true) {
+        return;
+    }
     let resolved = &program.program;
-    let read = resolved.graph.reached(root);
-    let nodes = determinations(program).into_iter().filter(|node| read[node.0 as usize]);
-    nodes.map(|node| det(program, node)).collect()
+    let read = resolved.graph.reached(node);
+    let through_concept = read_in_concept(program, node);
+    for &other in all {
+        let in_case = read[other.0 as usize];
+        let in_concept = det_relation(&resolved.graph.nodes[other.0 as usize].kind).is_some_and(|(found, _)| through_concept.contains(&found));
+        if other != node && (in_case || in_concept) {
+            place(program, all, other, placed, order);
+        }
+    }
+    order.push(node);
+}
+
+/// The relation of each `DET` that the `DET` at `node` reads in the concept
+/// program, at any depth, where the case takes it from there.
+fn read_in_concept(program: &CheckedProgram, node: GraphNodeIndex) -> Vec<ProgramRelation> {
+    let resolved = &program.program;
+    let (Some(concept), Some(_), Some((relation, _))) = (resolved.concept(), resolved.concept_path(resolved.form_of(node)), det_relation(&resolved.graph.nodes[node.0 as usize].kind)) else {
+        return Vec::new();
+    };
+    let nodes = &concept.graph.nodes;
+    let Some(at) = nodes.iter().position(|other| det_relation(&other.kind).is_some_and(|(found, _)| found == relation)) else {
+        return Vec::new();
+    };
+    let reached = concept.graph.reached(GraphNodeIndex(at as u32));
+    nodes.iter().zip(reached).filter(|(_, reached)| *reached).filter_map(|(other, _)| det_relation(&other.kind).map(|(found, _)| found)).collect()
 }
 
 /// All assignable DETs, without a relation-specific dependency traversal.
