@@ -31,7 +31,7 @@ impl TermId {
     }
 
     /// The term id whose 32 bits are `bits`.
-    pub(crate) fn from_encoding(bits: u32) -> Self {
+    pub fn from_encoding(bits: u32) -> Self {
         TermId(bits)
     }
 }

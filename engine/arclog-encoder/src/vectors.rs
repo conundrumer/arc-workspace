@@ -83,7 +83,7 @@ pub fn entries(holes: &[String], size: usize, program_relations: bool, max_input
             max_inputs,
             frames: Vec::new(),
             thin: None,
-            no_output: false,
+            no_output: false, quick: false, max_bound_columns: None,
         };
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for at in 0..=size {

@@ -87,7 +87,7 @@ impl Element {
 /// content has no number that a feature can read, so two values compare up to a
 /// renaming of their Idents. Each Ident takes the sorted texts of the rows it
 /// stands in, with the other Idents under their names of the round before.
-fn canonical(rows: &[Vec<TermId>], types: &[ValueType]) -> Vec<String> {
+pub(crate) fn canonical(rows: &[Vec<TermId>], types: &[ValueType]) -> Vec<String> {
     let cell = |id: TermId, ty: &ValueType, names: &BTreeMap<(usize, u32), String>, at: usize| -> String {
         match ty {
             ValueType::Ident(_) => names.get(&(at, id.encoding())).cloned().unwrap_or_default(),
@@ -260,7 +260,7 @@ fn compare_hosts(plain: &Host, moved: &Host, table: &StoredRows, element: &Eleme
             max_inputs: sample.max_inputs,
             frames: Vec::new(),
             thin: Some((element.name.clone(), sample.thin_per_million)),
-            no_output: false,
+            no_output: false, quick: false, max_bound_columns: None,
         };
         let began = std::time::Instant::now();
         let mut lower: Vec<Vec<Typed>> = Vec::new();

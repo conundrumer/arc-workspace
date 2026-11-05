@@ -16,6 +16,11 @@
 //!   evaluation reads.
 //! - [`run`]: the check and the evaluation of those forms, through the
 //!   engine's evaluator.
+//! - [`native`]: the operators over materialized rows, a faster evaluation of
+//!   what those forms compute.
+//! - [`optable`]: the operators on each schema, each checked once.
+//! - [`walk`]: the bottom-up walk over classes of relations on one task.
+//! - [`tablewalk`]: a table's closed roots, keyed by shape.
 pub mod closed;
 pub mod encoder;
 pub mod enumerate;
@@ -23,9 +28,13 @@ pub mod expand;
 pub mod expression;
 pub mod law;
 pub mod library;
+pub mod native;
+pub mod optable;
 pub mod pool;
 pub mod program_relations;
 pub mod run;
 pub mod schema;
+pub mod tablewalk;
 pub mod vectors;
+pub mod walk;
 pub mod worked;

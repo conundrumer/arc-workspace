@@ -36,7 +36,7 @@ impl Frame {
 }
 
 /// The value type that a kind's name gives.
-pub(crate) fn kind_type(name: &str) -> Option<ValueType> {
+pub fn kind_type(name: &str) -> Option<ValueType> {
     Some(match name {
         "Int" | "number" | "Number" => ValueType::Int,
         "Nat" => ValueType::Nat,
@@ -129,13 +129,16 @@ impl Expander<'_> {
         self.frames.iter().rev().find(|frame| frame.over == *rel).and_then(|frame| frame.empty.clone())
     }
 
-    pub(crate) fn pool(&mut self, hole: &str, over: &Rel, kind: &Kind, body: &Rel) -> Result<Rows, String> {
+    /// The branches of a pool that the checker accepts: each one's relation,
+    /// with the column bound to the hole under the hole's name, the column's
+    /// identity, and the column's name in the relation it ranges over.
+    fn pool_branches(&mut self, hole: &str, over: &Rel, kind: &Kind, body: &Rel) -> Result<Vec<(Rows, String, String)>, String> {
         // The columns of the relation, from its forms alone.
         let start = self.forms.len();
         let rows = self.rel(over)?;
         let facts = self.tables.columns_of(&self.forms, &rows)?;
         self.forms.truncate(start);
-        let mut branches: Vec<(Rows, String)> = Vec::new();
+        let mut branches: Vec<(Rows, String, String)> = Vec::new();
         for column in &rows.columns {
             let Some(found) = facts.iter().find(|facts| facts.path == column.path) else { continue };
             if !of_kind(found, kind)? {
@@ -152,18 +155,23 @@ impl Expander<'_> {
             match accepted {
                 Some(branch) => {
                     let renamed = rename_bound(branch, &frame);
-                    branches.push((renamed, found.identity.clone()));
+                    branches.push((renamed, found.identity.clone(), column.name.clone()));
                 }
                 None => self.forms.truncate(mark),
             }
         }
+        Ok(branches)
+    }
+
+    pub(crate) fn pool(&mut self, hole: &str, over: &Rel, kind: &Kind, body: &Rel) -> Result<Rows, String> {
+        let branches = self.pool_branches(hole, over, kind, body)?;
         if branches.is_empty() {
             return self.empty_pool(hole, over, kind, body);
         }
         // Every branch has one set of column names.
         let mut names: Vec<String> = branches[0].0.columns.iter().map(|column| column.name.clone()).collect();
         names.sort();
-        for (branch, _) in &branches {
+        for (branch, _, _) in &branches {
             let mut own: Vec<String> = branch.columns.iter().map(|column| column.name.clone()).collect();
             own.sort();
             if own != names {
@@ -175,7 +183,7 @@ impl Expander<'_> {
         let labels: Vec<(String, String)> = names.iter().map(|name| (name.clone(), unique(name, &mut taken))).collect();
         let type_of = |name: &str| branches[0].0.columns.iter().find(|column| column.name == name).and_then(|column| column.ty.clone());
         let mut parts = Vec::new();
-        for (index, (branch, identity)) in branches.iter().enumerate() {
+        for (index, (branch, identity, _)) in branches.iter().enumerate() {
             let marks: Vec<(usize, Mark)> = branch.columns.iter().enumerate().map(|(at, column)| {
                 let label = labels.iter().find(|(name, _)| *name == column.name).expect("a column of one set of names").1.clone();
                 (at, if index == 0 { Mark::Fresh(label) } else { Mark::Join(label) })
@@ -257,6 +265,25 @@ impl Expander<'_> {
         self.forms.push(format!("({keyword} {relation}\n  ({grid} {cell})\n  (NOT ({grid} {color}))\n  {binder})"));
         Ok(Rows { relation, columns: vec![Col::typed(name, Some(ty.clone()))] })
     }
+}
+
+/// A branch of a pool, as a native evaluation reads it.
+#[derive(Clone, Debug)]
+pub struct PlanBranch {
+    /// The name, in the relation the pool ranges over, of the bound column.
+    pub column: String,
+    /// The column's identity in the engine.
+    pub identity: String,
+    /// The columns of the branch's relation, with the bound column under the
+    /// hole's name.
+    pub columns: Vec<String>,
+}
+
+/// The branches of a pool that the checker accepts.
+pub fn pool_plan(hole: &str, over: &Rel, kind: &Kind, body: &Rel, tables: &dyn crate::schema::Tables, registry: &arclog::registry::Registry) -> Result<Vec<PlanBranch>, String> {
+    let mut expander = Expander { registry, tables, task_wide: false, library: crate::library::library(), forms: Vec::new(), next: 0, frames: Vec::new(), dry: false };
+    let branches = expander.pool_branches(hole, over, kind, body)?;
+    Ok(branches.into_iter().map(|(rows, identity, column)| PlanBranch { column, identity, columns: rows.columns.into_iter().map(|column| column.name).collect() }).collect())
 }
 
 /// `rows`, with the column that the frame's hole holds under the hole's name.

@@ -147,7 +147,7 @@ pub fn closed_values(host: &Host, run: &ClosedRun, done: &HashSet<String>, count
         max_inputs: run.max_inputs,
         frames: Vec::new(),
         thin: None,
-        no_output: run.output_leaf == OutputLeaf::None,
+        no_output: run.output_leaf == OutputLeaf::None, quick: false, max_bound_columns: None,
     };
     let mut lower: Vec<Vec<Typed>> = Vec::new();
     let mut seen: HashSet<u128> = HashSet::new();

@@ -103,6 +103,13 @@ pub struct TermValues {
     pub examples: Vec<Option<Arc<Relation>>>,
 }
 
+/// What the checker gives a relation term.
+#[derive(Clone, Debug)]
+pub struct TermCheck {
+    pub row_names: Vec<String>,
+    pub types: Vec<ValueType>,
+}
+
 /// A table's rows at one assignment and one model, as a law check reads them.
 #[derive(Clone, Debug)]
 pub struct StoredRows {
@@ -454,6 +461,62 @@ impl Host {
                     }
                 }
                 Ok(TermValues { row_names, types, identity, examples })
+            })
+            .collect()
+    }
+
+    /// Drops what the checks so far hold, which each check of new forms only adds to.
+    pub fn clear_check_cache(&self) {
+        *self.cache.borrow_mut() = CheckCache::default();
+    }
+
+    /// What the checker gives each of `rels`, as one program. A term the checker
+    /// refuses gives its message, and a batch that it refuses splits.
+    pub fn check_terms(&self, rels: &[&Rel]) -> Vec<Result<TermCheck, String>> {
+        let registry = Registry::get();
+        let mut forms: Vec<String> = Vec::new();
+        let mut exports: Vec<Result<String, String>> = Vec::new();
+        let mut next = 0;
+        for rel in rels {
+            match crate::expand::expand_rel_from(rel, self, registry, false, &mut next) {
+                Ok(expanded) => {
+                    exports.push(Ok(expanded.export));
+                    forms.extend(expanded.forms);
+                }
+                Err(message) => exports.push(Err(message)),
+            }
+        }
+        let program = match self.checked_with(&forms) {
+            Ok(program) => program,
+            Err(message) => {
+                if rels.len() == 1 {
+                    return vec![Err(message)];
+                }
+                let (left, right) = rels.split_at(rels.len() / 2);
+                let mut out = self.check_terms(left);
+                out.extend(self.check_terms(right));
+                return out;
+            }
+        };
+        let checked = program.checked();
+        let parameters = ParameterValues::determined(Vec::new());
+        exports
+            .into_iter()
+            .map(|export| {
+                let export = export?;
+                let relation = graph_relation(checked, &export).ok_or_else(|| format!("no relation {export}"))?;
+                let types: Vec<ValueType> = checked.types.columns(&relation).map(<[ValueType]>::to_vec).unwrap_or_default();
+                let row_names = checked.program.column_names(relation.node).unwrap_or_default();
+                if types.iter().any(|ty| matches!(ty, ValueType::Pose(_))) {
+                    return Err("a `Pose` stands at an exported column".to_string());
+                }
+                // A body that does not compile shows when it runs, on any rows.
+                if let Some(example) = self.task.examples().next() {
+                    let limits = Limits::new(None, Cancellation::default()).counted_in(TableWork::new(1 << 12));
+                    let evaluation = Evaluation { program: checked, concept: None, task: &self.task, parameters: &parameters, session: &self.session, registry, constructions: self.constructions, limits: &limits };
+                    evaluation.relation(&relation, Some(example)).map_err(|fault| fault.message.to_string())?;
+                }
+                Ok(TermCheck { row_names, types })
             })
             .collect()
     }

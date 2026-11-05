@@ -16,6 +16,9 @@ import numpy as np
 
 from common import RESULTS, write_json_atomic
 
+# The words of an aggregate on no rows, in the value files of the slower path.
+DEFAULT_WORDS = np.array([1 << 61, 1 << 62], dtype=np.uint64)
+
 
 def per_task(test, suffix, d):
     out = {}
@@ -76,7 +79,9 @@ def null_auc(test, suffix, tasks, d, draws, seed=11):
                 other_order = orders[other]
                 here = [at for at, name in enumerate(names) if name in other_order]
                 there = [other_order[names[at]] for at in here]
-                keep = mask[there]
+                # An active claim: not a root's value on no rows, and not no value.
+                claim_values = value[np.array(there)] if there else np.zeros(0, dtype=np.uint64)
+                keep = mask[there] & ~np.isin(claim_values, DEFAULT_WORDS) & (claim_values != 0)
                 if not keep.any():
                     aucs.append(0.5)
                     continue

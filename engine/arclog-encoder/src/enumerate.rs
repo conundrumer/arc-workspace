@@ -55,6 +55,13 @@ pub struct Space<'a> {
     pub thin: Option<(String, u32)>,
     /// Whether no term reads `output`.
     pub no_output: bool,
+    /// Whether a term's columns need types alone, which the operators give with
+    /// no expansion: no later term reads their names.
+    pub quick: bool,
+    /// The most columns that a relation bound to a component's input has, where a
+    /// run limits them: a component's bindings grow with the square of the subsets
+    /// of its relation's columns.
+    pub max_bound_columns: Option<usize>,
 }
 
 /// Whether the text `text` falls in the sample of `rate` in a million.
@@ -204,21 +211,38 @@ impl Space<'_> {
         }
     }
 
+    /// `rel`, whose columns have the types `types`, in quick mode; otherwise as
+    /// the expansion gives its columns.
+    fn emit_typed(&self, rel: Rel, types: impl FnOnce() -> Vec<Option<ValueType>>, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        if !self.quick {
+            return self.emit(rel, visit);
+        }
+        let columns = types().into_iter().map(|ty| Col { name: String::new(), path: Vec::new(), ty }).collect();
+        visit(Typed { rel, columns, size: 0 })
+    }
+
     /// The terms of `project`, `select` and `lib-join`.
     fn unary(&self, lower: &[Vec<Typed>], size: usize, visit: &mut Visit<'_>) -> ControlFlow<()> {
         let Some(inner) = lower.get(size - 1) else { return ControlFlow::Continue(()) };
         for typed in inner {
-            let names: Vec<String> = typed.columns.iter().map(|column| self.reference(column)).collect();
-            // A `project` of every column gives the relation itself.
-            for columns in subsets(&names) {
-                if !columns.is_empty() && columns.len() < names.len() {
-                    self.emit(Rel::Project(Box::new(typed.rel.clone()), columns), visit)?;
-                }
-            }
-            self.selects(typed, visit)?;
-            self.lib_joins(typed, visit)?;
+            self.unary_of(typed, visit)?;
         }
         ControlFlow::Continue(())
+    }
+
+    /// The terms of `project`, `select` and `lib-join` over `typed`.
+    pub fn unary_of(&self, typed: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        let names: Vec<String> = typed.columns.iter().map(|column| self.reference(column)).collect();
+        // A `project` of every column gives the relation itself.
+        let places: Vec<usize> = (0..names.len()).collect();
+        for chosen in subsets(&places) {
+            if !chosen.is_empty() && chosen.len() < names.len() {
+                let columns = chosen.iter().map(|at| names[*at].clone()).collect();
+                self.emit_typed(Rel::Project(Box::new(typed.rel.clone()), columns), || chosen.iter().map(|at| typed.columns[*at].ty.clone()).collect(), visit)?;
+            }
+        }
+        self.selects(typed, visit)?;
+        self.lib_joins(typed, visit)
     }
 
     fn selects(&self, typed: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
@@ -236,14 +260,16 @@ impl Space<'_> {
                 let operand = Operand::Column(self.reference(other));
                 for op in Op::ALL {
                     if matches!(op, Op::Eq | Op::Ne) || (is_number(&column.ty) && is_number(&other.ty)) {
-                        self.emit(Rel::Select(Box::new(typed.rel.clone()), name.clone(), op, operand.clone()), visit)?;
+                        let dropped = (op == Op::Eq).then_some(other_at);
+                        self.emit_typed(Rel::Select(Box::new(typed.rel.clone()), name.clone(), op, operand.clone()), || types_without(typed, dropped), visit)?;
                     }
                 }
             }
             if has_zero(&column.ty) {
                 for op in Op::ALL {
                     if matches!(op, Op::Eq | Op::Ne) || is_number(&column.ty) {
-                        self.emit(Rel::Select(Box::new(typed.rel.clone()), name.clone(), op, Operand::Zero), visit)?;
+                        let dropped = (op == Op::Eq).then_some(at);
+                        self.emit_typed(Rel::Select(Box::new(typed.rel.clone()), name.clone(), op, Operand::Zero), || types_without(typed, dropped), visit)?;
                     }
                 }
             }
@@ -275,7 +301,8 @@ impl Space<'_> {
             for binding in bindings {
                 let bound_mode = modes.is_empty() || modes.iter().any(|mode| mode.bound.iter().all(|column| binding.iter().any(|(lib, _)| *lib == written(column))));
                 if bound_mode {
-                    self.emit(Rel::LibJoin(Box::new(typed.rel.clone()), name.clone(), binding), visit)?;
+                    let fresh: Vec<Option<ValueType>> = columns.iter().filter(|lib| !binding.iter().any(|(own, _)| *own == written(&lib.name))).map(|lib| lib.ty.fixed().cloned()).collect();
+                    self.emit_typed(Rel::LibJoin(Box::new(typed.rel.clone()), name.clone(), binding), || typed.columns.iter().map(|column| column.ty.clone()).chain(fresh).collect(), visit)?;
                 }
             }
         }
@@ -289,20 +316,26 @@ impl Space<'_> {
             let (Some(lefts), Some(rights)) = (lower.get(left_size), lower.get(right_size)) else { continue };
             for left in lefts {
                 for right in rights {
-                    let in_order = left.rel.to_string() <= right.rel.to_string();
-                    for pairs in self.pair_sets(left, right) {
-                        // A swap of a join's sides gives the same rows.
-                        if in_order {
-                            self.emit(Rel::Join(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs.clone()), visit)?;
-                        }
-                        self.emit(Rel::Antijoin(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), visit)?;
-                    }
-                    if in_order && !left.columns.is_empty() && left.columns.len() >= right.columns.len() {
-                        for pairs in self.matchings(left, right) {
-                            self.emit(Rel::Union(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), visit)?;
-                        }
-                    }
+                    self.binary_of(left, right, visit)?;
                 }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// The terms of `join`, `antijoin` and `union` with `left` on the left. The
+    /// enumeration takes the two relations in both orders, so the set of names
+    /// does not depend on text order.
+    pub fn binary_of(&self, left: &Typed, right: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        let left_types = || left.columns.iter().map(|column| column.ty.clone());
+        for pairs in self.pair_sets(left, right) {
+            let kept: Vec<Option<ValueType>> = right.columns.iter().filter(|column| !pairs.iter().any(|(_, r)| *r == self.reference(column))).map(|column| column.ty.clone()).collect();
+            self.emit_typed(Rel::Join(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs.clone()), || left_types().chain(kept).collect(), visit)?;
+            self.emit_typed(Rel::Antijoin(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), || left_types().collect(), visit)?;
+        }
+        if !left.columns.is_empty() && left.columns.len() >= right.columns.len() {
+            for pairs in self.matchings(left, right) {
+                self.emit_typed(Rel::Union(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), || left_types().collect(), visit)?;
             }
         }
         ControlFlow::Continue(())
@@ -397,6 +430,8 @@ impl Space<'_> {
                         frames,
                         thin: self.thin.clone(),
                         no_output: self.no_output,
+                        quick: false,
+                        max_bound_columns: None,
                     };
                     // The body's terms, bottom up, with the hole among the relation's columns.
                     let mut held: Vec<Vec<Typed>> = Vec::new();
@@ -439,6 +474,107 @@ impl Space<'_> {
         }).collect();
         found.sort_by(|a, b| a.0.cmp(&b.0));
         found
+    }
+
+    /// The terms of `pool` over `over` whose body is one operator over `over`
+    /// itself and names the hole: a `project`, or a `component` of one bound
+    /// input. A pool of a kind that no column of `over` has has no branch and
+    /// no rows, so this leaves it out.
+    pub fn small_pools_of(&self, over: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        let hole = format!("?{}", ["x", "y", "z", "w"][self.frames.len().min(3)]);
+        for kind in &self.kinds {
+            let Kind::Type(type_name) = kind else { continue };
+            let Some(ty) = kind_type(type_name) else { continue };
+            if ty == ValueType::Example && !self.task_wide {
+                continue;
+            }
+            if !over.columns.iter().any(|column| column.ty.as_ref().is_some_and(|held| held.is_below(&ty))) {
+                continue;
+            }
+            let frame = Frame { hole: hole.clone(), over: over.rel.clone(), column: hole.trim_start_matches('?').to_uppercase(), empty: None, open: Some(ty) };
+            let mut frames = self.frames.clone();
+            frames.push(frame);
+            let inner = Space {
+                registry: self.registry,
+                tables: self.tables,
+                task_wide: self.task_wide,
+                table_names: Vec::new(),
+                program_relations: self.program_relations,
+                kinds: Vec::new(),
+                max_inputs: self.max_inputs,
+                frames,
+                thin: None,
+                no_output: self.no_output,
+                quick: false,
+                max_bound_columns: None,
+            };
+            let Some(own) = inner.typed(over.rel.clone()) else { continue };
+            let mut wrap = |term: Typed| -> ControlFlow<()> {
+                if !term.rel.to_string().contains(&hole) {
+                    return ControlFlow::Continue(());
+                }
+                let pool = Rel::Pool { hole: hole.clone(), over: Box::new(over.rel.clone()), kind: kind.clone(), body: Box::new(term.rel) };
+                match self.typed(pool) {
+                    Some(typed) => visit(typed),
+                    None => ControlFlow::Continue(()),
+                }
+            };
+            let names: Vec<String> = own.columns.iter().map(|column| inner.reference(column)).collect();
+            for columns in subsets(&names) {
+                if !columns.is_empty() && columns.len() < names.len() {
+                    inner.emit(Rel::Project(Box::new(own.rel.clone()), columns), &mut wrap)?;
+                }
+            }
+            inner.components_of(&[&own], &mut wrap)?;
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// The terms of `component` with one bound input per relation of `reps`, in
+    /// order, over every set of that many inputs of every component.
+    pub fn components_of(&self, reps: &[&Typed], visit: &mut Visit<'_>) -> ControlFlow<()> {
+        if self.max_bound_columns.is_some_and(|most| reps.iter().any(|rep| rep.columns.len() > most)) {
+            return ControlFlow::Continue(());
+        }
+        for (name, held) in &self.component_names() {
+            let inputs: Vec<&InputPort> = held.inputs.iter().collect();
+            for chosen in subsets(&inputs).into_iter().filter(|chosen| chosen.len() == reps.len()) {
+                let mut state = Bindings { key: None, parameters: Vec::new(), held: Vec::new() };
+                self.bind_exact(name, held, &chosen, reps, 0, &mut state, visit)?;
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// Each binding of the inputs `chosen` from `at` on, each from its relation
+    /// of `reps`, after those that `state` holds.
+    #[allow(clippy::too_many_arguments)]
+    fn bind_exact(&self, name: &str, held: &Component, chosen: &[&InputPort], reps: &[&Typed], at: usize, state: &mut Bindings, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        let Some(input) = chosen.get(at) else {
+            for port in held.outputs.iter() {
+                self.emit_typed(Rel::Component(name.to_string(), state.held.clone(), port.name.0.to_string()), || port_types(port, state), visit)?;
+            }
+            return ControlFlow::Continue(());
+        };
+        for (binding, key, parameters) in self.input_bindings(input, reps[at], state) {
+            let before_key = state.key.clone();
+            let before_parameters = state.parameters.clone();
+            if state.key.is_none() && !key.is_empty() {
+                state.key = Some(key);
+            }
+            for (parameter, types) in parameters {
+                if !state.parameters.iter().any(|(held, _)| *held == parameter) {
+                    state.parameters.push((parameter, types));
+                }
+            }
+            state.held.push(binding);
+            let done = self.bind_exact(name, held, chosen, reps, at + 1, state, visit);
+            state.held.pop();
+            state.key = before_key;
+            state.parameters = before_parameters;
+            done?;
+        }
+        ControlFlow::Continue(())
     }
 
     /// The terms of `component`, by their count of bound inputs.
@@ -556,9 +692,18 @@ impl Space<'_> {
                         for choice in all.iter().filter(|column| meets(&ty, &column.ty)) {
                             let mut with = fields.clone();
                             with.push(Some(vec![*choice]));
-                            next.push((with, parameters.clone()));
+                            let mut bound = parameters.clone();
+                            // A bounded parameter's column gives its type to the outputs that have it.
+                            if let ColumnType::Parameter(parameter) = declared {
+                                if !state.parameters.iter().chain(bound.iter()).any(|(held, _)| **held == *parameter.name) {
+                                    bound.push((parameter.name.to_string(), vec![choice.ty.clone()]));
+                                }
+                            }
+                            next.push((with, bound));
                         }
-                        if has_zero(&ty) && ty.is_some() {
+                        // The label of a field `0` takes its type from the column, so a
+                        // type parameter's column leaves it with none.
+                        if has_zero(&ty) && ty.is_some() && !matches!(declared, ColumnType::Parameter(_)) {
                             let mut with = fields.clone();
                             with.push(None);
                             next.push((with, parameters.clone()));
@@ -594,6 +739,34 @@ impl Space<'_> {
         }
         out
     }
+}
+
+/// The types of the columns of `typed`, without the column at `dropped`.
+fn types_without(typed: &Typed, dropped: Option<usize>) -> Vec<Option<ValueType>> {
+    typed.columns.iter().enumerate().filter(|(at, _)| Some(*at) != dropped).map(|(_, column)| column.ty.clone()).collect()
+}
+
+/// The types of the columns of `port` under the bindings `state`: the key's, then
+/// the port's other columns, a type parameter's by its first binding.
+fn port_types(port: &arclog::registry::Port, state: &Bindings) -> Vec<Option<ValueType>> {
+    let mut types = Vec::new();
+    if port.columns.iter().any(is_key) {
+        types.extend(state.key.iter().flatten().cloned());
+    }
+    for column in port.columns.iter().filter(|column| !is_key(column)) {
+        match &column.ty {
+            ColumnType::Parameter(parameter) => match state.parameters.iter().find(|(held, _)| **held == *parameter.name) {
+                Some((_, held)) => types.extend(held.iter().cloned()),
+                None => {
+                    if let Some(bound) = &parameter.bound {
+                        types.push(Some(bound.clone()));
+                    }
+                }
+            },
+            other => types.push(other.fixed().cloned()),
+        }
+    }
+    types
 }
 
 /// What the bindings before an input fix.

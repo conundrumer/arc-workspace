@@ -134,7 +134,7 @@ pub(crate) fn unique(name: &str, taken: &mut Vec<String>) -> String {
     held
 }
 
-fn spelled(name: &ColumnName) -> String {
+pub(crate) fn spelled(name: &ColumnName) -> String {
     match name {
         ColumnName::Written(text) => text.to_string(),
         ColumnName::Slot(slot) => format!("c{slot}"),
@@ -674,7 +674,7 @@ fn lib_col(column: &LibColumn) -> Col {
 }
 
 /// The field `0` among the names of a binding's fields, which no column has.
-const ZERO_FIELD: &str = "0";
+pub(crate) const ZERO_FIELD: &str = "0";
 
 /// An input of a component, with the relation that writes it.
 struct BoundInput<'b> {
@@ -686,7 +686,7 @@ struct BoundInput<'b> {
 /// The name of the type parameter at `column`, where its name in the registry
 /// is in lower case: the columns such a parameter holds take the names of the
 /// columns that its first binding writes.
-fn parameter_of(column: &LibColumn) -> Option<&str> {
+pub(crate) fn parameter_of(column: &LibColumn) -> Option<&str> {
     let ColumnType::Parameter(parameter) = &column.ty else { return None };
     spelled(&column.name).starts_with(|c: char| c.is_ascii_lowercase()).then_some(&parameter.name)
 }
@@ -697,7 +697,7 @@ type Parameters = Vec<(String, Vec<(String, Option<ValueType>)>)>;
 
 /// The fields of each column of an input other than `key`, each column by its
 /// index in the port, in the registry's order.
-fn input_fields<'b>(input: &'b InputPort, binding: &Binding) -> Result<Vec<(&'b LibColumn, Vec<String>)>, String> {
+pub(crate) fn input_fields<'b>(input: &'b InputPort, binding: &Binding) -> Result<Vec<(&'b LibColumn, Vec<String>)>, String> {
     let columns: Vec<&LibColumn> = input.port.columns.iter().filter(|column| !is_key(column)).collect();
     let flat = |field: &Field| match field {
         Field::One(name) => vec![name.clone()],
