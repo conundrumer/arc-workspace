@@ -24,15 +24,28 @@ pub(super) fn value(driver:&Driver<'_, '_>,view:&BodyView,example:Option<Example
     let contexts=match models::walk_contexts(driver,node,example)? {Ok(contexts)=>contexts,Err(value)=>return Ok(value)};
     let mut rows=crate::relations::RowSet::empty(view.clause.columns.len() as u16);
     let layout=super::unfold::OutputLayout::at(evaluation,&view.form)?;
+    // A body that reads the outputs at a key it names reads the other keys' rows of this model.
+    let mut reached=Vec::new();
+    if shape.reads_outputs_at_keys(&instance.name,component) {
+        for which in UnfoldOutput::ALL {
+            let mut held=crate::relations::RowSet::empty(contexts.first().map_or(0,|context|context.key.len()+layout.width()) as u16);
+            for context in &contexts {
+                let branch=super::unfold::Branch {take:context.take.clone(),next:Box::default()};
+                which.add_rows(layout,&context.records,&context.key,&context.state,&branch,&mut held);
+            }
+            reached.push(held);
+        }
+    }
     for context in contexts {
         let Some(bound)=input.at_state(&context.key,context.state.cursor,&context.records).map_err(fault)? else {continue};
         let take=if port.0.as_ref()=="take" {&[][..]} else {&context.take};
         let mut saved=Vec::new();
-        for which in UnfoldOutput::ALL {
+        for (at,which) in UnfoldOutput::ALL.into_iter().enumerate() {
             let relation=GraphRelation {node,output:Some(Arc::from([OutputStep::Port(which.port())]))};
             let mut local=crate::relations::RowSet::empty((context.key.len()+layout.width()) as u16);
             let branch=super::unfold::Branch {take:take.into(),next:Box::default()};
             which.add_rows(layout,&context.records,&context.key,&context.state,&branch,&mut local);
+            if let Some(reached)=reached.get(at) {super::unfold::add_other_keys(reached,&context.key,&mut local);}
             let entry=(relation,example);
             let old=driver.values.borrow_mut().insert(entry.clone(),RelationValue::Rows(Arc::new(super::join::one_part(local))));
             saved.push((entry,old));

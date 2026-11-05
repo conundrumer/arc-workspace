@@ -297,6 +297,23 @@ impl<'p> InstanceShape<'p> {
         Ok(Some(InputClause { clause, paths, key, head, cursor }))
     }
 
+    /// Whether an input that may read the outputs of `instance`, as the form
+    /// writes it, names the `key` column in such a read.
+    pub(super) fn reads_outputs_at_keys(&self, instance: &crate::program::InstanceName, component: &Component) -> bool {
+        fn names_key(node: NodeRef<'_>, instance: &crate::program::InstanceName) -> bool {
+            if let Some(atom) = node.atom() {
+                let own = matches!(&atom.relation, crate::program::RelationRef::Output(output)
+                    if matches!(&output.of, crate::program::OutputOwner::Instance(name) if name == instance));
+                return own && atom.sites.iter().any(|site| site.column == crate::resolver::columns::key());
+            }
+            node.children().into_iter().any(|child| names_key(child, instance))
+        }
+        self.written.iter().any(|(_, _, written)| {
+            component.inputs.iter().any(|declared| declared.port.name == written.name && declared.reads_outputs)
+                && names_key(NodeRef::Body(written.body.value()), instance)
+        })
+    }
+
     /// The clause that the evaluation joins for the body at `at`, a path
     /// after the form's own, of the `INIT` form at `form` of `component`:
     /// its key body, or the body of a written input. `None` where `at` is

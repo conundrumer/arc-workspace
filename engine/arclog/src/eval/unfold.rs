@@ -11,6 +11,11 @@
 //! `docs/handbook/solver-file.md#alt-outputs` gives, and walks that reach
 //! states of equal content share that state.
 //!
+//! A body reads the outputs at the current state of the current key. Where
+//! such a read names the `key` column, the reads of the instance also hold
+//! the rows of the other keys at each state their walks reach, and the keys'
+//! graphs are built again until those rows stop growing.
+//!
 //! A step from a state moves the items of its take as `Take` of
 //! `programs/lib/orders.dl` does at one cursor: the take joins `taken`, an
 //! untaken item that differs from an item of the take stays `untaken`, or
@@ -243,7 +248,7 @@ pub fn unfold<'a>(
 ) -> Outcome<Result<Vec<(Row, StateGraph)>, RelationValue>> {
     let (instance, component) = instance_at(evaluation, form)?;
     let shape = InstanceShape::of(evaluation.program, form, instance, component);
-    let run = Run { evaluation, bodies, form, shape: &shape, component, example, own: own_outputs(evaluation, output, example), records: RefCell::default() };
+    let run = Run { instance: &instance.name, evaluation, bodies, form, shape: &shape, component, example, own: own_outputs(evaluation, output, example), records: RefCell::default(), reached: RefCell::default() };
     run.graphs(budget)
 }
 
@@ -521,6 +526,7 @@ const GIVEN: [UnfoldInput; 5] = [UnfoldInput::Start, UnfoldInput::InitialTaken, 
 
 /// One evaluation of an `Unfold` instance.
 struct Run<'r, 'a> {
+    instance: &'r crate::program::InstanceName,
     evaluation: &'r Evaluation<'a>,
     bodies: &'r FormBodies<'r>,
     form: &'r NodePath,
@@ -530,6 +536,9 @@ struct Run<'r, 'a> {
     own: Vec<(UnfoldOutput, (GraphRelation, Option<Example>))>,
     /// The handles that the run's states hold.
     records: RefCell<RecordHandles>,
+    /// The rows of each output of `own` at each state each key has reached,
+    /// where a body reads the outputs at a key it names; empty otherwise.
+    reached: RefCell<Vec<RowSet>>,
 }
 
 /// The bodies that read the outputs, each where the form writes it.
@@ -548,18 +557,50 @@ impl<'r, 'a> Run<'r, 'a> {
         let compile = |input| self.compile(input);
         let recursive = Recursive { step: compile(UnfoldInput::Step)?, skip: compile(UnfoldInput::Skip)?, take: compile(UnfoldInput::Take)? };
         let reads = DriverReads { run: self, recursive: &recursive };
-        let mut graphs = Vec::with_capacity(groups.len());
-        for group in &groups {
-            match graph(group, &reads, budget) {
-                Ok(graph) => graphs.push((group.key.to_vec().into(), graph)),
-                Err(Halt::Fault(fault)) => return Err(fault),
-                Err(Halt::Value(value)) => return Ok(Err(value)),
-                Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.form.clone() }))),
+        let at_keys = self.shape.reads_outputs_at_keys(self.instance, self.component);
+        let mut graphs: Vec<(Row, StateGraph)>;
+        loop {
+            graphs = Vec::with_capacity(groups.len());
+            for group in &groups {
+                match graph(group, &reads, budget) {
+                    Ok(graph) => graphs.push((group.key.to_vec().into(), graph)),
+                    Err(Halt::Fault(fault)) => return Err(fault),
+                    Err(Halt::Value(value)) => return Ok(Err(value)),
+                    Err(Halt::Bound(bound)) => return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.form.clone() }))),
+                }
+            }
+            if !at_keys || !self.reached_more(&graphs) {
+                break;
             }
         }
         let records = Arc::new(self.records.take());
         graphs.iter_mut().for_each(|(_, graph): &mut (Row, StateGraph)| graph.records = records.clone());
         Ok(Ok(graphs))
+    }
+
+    /// Whether the states of `graphs` give a row that [`Run::reached`] lacks,
+    /// each such row added to it.
+    fn reached_more(&self, graphs: &[(Row, StateGraph)]) -> bool {
+        let widths = self.shape.widths(&self.component.outputs[0].columns).expect("checked output widths");
+        let layout = OutputLayout::of(self.shape, self.component).expect("checked output widths");
+        let arity = self.shape.arity(&widths) as u16;
+        let records = self.records.borrow();
+        let mut held = self.reached.borrow_mut();
+        held.resize_with(self.own.len(), || RowSet::empty(arity));
+        let mut grew = false;
+        for ((which, _), held) in self.own.iter().zip(held.iter_mut()) {
+            for (key, graph) in graphs {
+                let before = held.len();
+                for (state, branches) in graph.states.iter().zip(&graph.branches) {
+                    which.add_rows(layout, &records, key, state, &Branch { take: Box::default(), next: Box::default() }, held);
+                    for branch in branches.iter() {
+                        which.add_rows(layout, &records, key, state, branch, held);
+                    }
+                }
+                grew |= held.len() != before;
+            }
+        }
+        grew
     }
 
     /// A fault at the instance's form, with `message`.
@@ -646,16 +687,21 @@ impl<'r, 'a> Run<'r, 'a> {
     }
 
     /// The value of `evaluate`, with each read of the instance's outputs
-    /// reading the rows of `state` and `take` at the key of `group`.
+    /// reading the rows of `state` and `take` at the key of `group`, and the
+    /// rows that [`Run::reached`] holds at each other key.
     fn with_state<T>(&self, group: &Group, state: &UnfoldState, take: &[TermId], evaluate: impl FnOnce() -> T) -> T {
         let key = &group.key;
         let branch = Branch { take: take.into(), next: Box::default() };
         let values = &self.bodies.driver.values;
-        for (which, entry) in &self.own {
+        let reached = self.reached.borrow();
+        for (at, (which, entry)) in self.own.iter().enumerate() {
             let widths=self.shape.widths(&self.component.outputs[0].columns).expect("checked output widths");
             let layout=OutputLayout::of(self.shape,self.component).expect("checked output widths");
             let mut rows = RowSet::empty(self.shape.arity(&widths) as u16);
             which.add_rows(layout,&self.records.borrow(),key, state, &branch, &mut rows);
+            if let Some(reached) = reached.get(at) {
+                add_other_keys(reached, key, &mut rows);
+            }
             values.borrow_mut().insert(entry.clone(), RelationValue::Rows(Arc::new(join::one_part(rows))));
         }
         let value = evaluate();
@@ -663,6 +709,13 @@ impl<'r, 'a> Run<'r, 'a> {
             values.borrow_mut().remove(entry);
         }
         value
+    }
+}
+
+/// Adds to `rows` the rows of `reached` at each key but `key`.
+pub(super) fn add_other_keys(reached: &RowSet, key: &[TermId], rows: &mut RowSet) {
+    for row in reached.rows().filter(|row| row[..key.len()] != *key) {
+        rows.insert(row.into());
     }
 }
 
