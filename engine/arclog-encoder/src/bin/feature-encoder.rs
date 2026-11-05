@@ -85,6 +85,11 @@ fn main() {
     let result = match (command, &arguments.positional[1.min(arguments.positional.len())..]) {
         ("eval", [solver, text]) => host(&arguments, solver).map(|host| print(&host.feature(text))),
         ("rows", [solver, text]) => host(&arguments, solver).map(|host| print(&host.relation(text, arguments.task_wide))),
+        ("worked", []) => {
+            let (passed, failed) = arclog_encoder::worked::run(&arguments.corpus, &arguments.tasks);
+            println!("{passed} cases pass, {failed} fail");
+            Ok(())
+        }
         _ => Err("usage: feature-encoder eval|rows SOLVER 'TERM' [--corpus DIR] [--tasks DIR] [--task-wide]".to_string()),
     };
     if let Err(message) = result {

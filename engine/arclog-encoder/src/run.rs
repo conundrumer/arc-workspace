@@ -90,6 +90,8 @@ pub struct Host {
     out: String,
     base: StudyProgram,
     cache: RefCell<CheckCache>,
+    /// Whether the session holds the rows of the program relations.
+    provided: std::cell::Cell<bool>,
 }
 
 impl Tables for Host {
@@ -147,6 +149,7 @@ impl Host {
             out,
             base,
             cache: RefCell::new(cache),
+            provided: std::cell::Cell::new(false),
         })
     }
 
@@ -195,6 +198,15 @@ impl Host {
         }
     }
 
+    /// Gives the session the rows of the program relations of the state.
+    fn provide_program_relations(&self) {
+        if !self.provided.replace(true) {
+            for (fact, rows) in crate::program_relations::program_relations(self.base.checked(), Registry::get()) {
+                self.session.provide_fact(fact, rows);
+            }
+        }
+    }
+
     /// The state with `forms` after its queries, checked.
     fn checked_with(&self, forms: &[String]) -> Result<StudyProgram, String> {
         let text = format!("{}\n{}\n{}\n", self.before, forms.join("\n"), self.out);
@@ -204,6 +216,9 @@ impl Host {
     /// Checks and evaluates the forms of `expanded`.
     pub fn run(&self, expanded: Expanded) -> Evaluated {
         let registry = Registry::get();
+        if expanded.forms.iter().any(|form| arclog::program::ProgramFact::ALL.iter().any(|fact| form.contains(fact.name()))) {
+            self.provide_program_relations();
+        }
         let program = match self.checked_with(&expanded.forms) {
             Ok(program) => program,
             Err(message) => return Evaluated::Refused(message),

@@ -360,7 +360,10 @@ impl Expander<'_> {
                 self.forms.push(format!("(DET {relation} {name}{set})"));
                 Ok(Rows { relation, columns })
             }
-            Leaf::Program(name) => Err(format!("the program relation `{name}` is not in the language yet")),
+            Leaf::Program(name) => {
+                let fact = arclog::program::ProgramFact::of_name(name).ok_or_else(|| format!("`{name}` is no program relation"))?;
+                Ok(Rows { relation: name.clone(), columns: fact.columns().iter().map(|column| Col::plain(*column)).collect() })
+            }
         }
     }
 
