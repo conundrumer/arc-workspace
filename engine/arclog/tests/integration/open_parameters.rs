@@ -114,15 +114,6 @@ fn a_single_assignment_gives_one_attempt() {
     assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::One(grid(&[2, 2]))]);
 }
 
-#[test]
-fn a_body_det_uses_its_models_as_parameter_values() {
-    let inputs = inputs(&[2, 2], Caps::CORPUS);
-    let mut decoder = decoder(&inputs);
-    let program = "(DET &a (ex_input *E *P *Col) (ONE))\n(RULE &output (input (:P *Q)) (&a (:Col *Col)))\n(OUT (&output ^Q ^Col))\n";
-    walk_consistent(&mut decoder, program);
-    assert_eq!(&*decoder.attempts().unwrap().unwrap(), &[arclog::judge::attempts::Attempts::One(grid(&[2, 2]))]);
-}
-
 /// A case whose pick has two models on each input, and whose output is the
 /// input at each model, run under a model cap of one.
 const PICKED_CELL: &str = "(RULE &pick (input *P *Col) (ONE))\n(RULE &output (input *P *Col) (&pick (:P *Q) (:Col *C)))\n(OUT (&output ^P ^Col))\n";

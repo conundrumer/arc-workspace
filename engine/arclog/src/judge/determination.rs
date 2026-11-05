@@ -216,8 +216,8 @@ pub struct Det {
     /// Whether it ends in `(ONE)`.
     pub open: bool,
     /// Whether it ends in `(ONE)` and names no proposer, so that the models
-    /// of the constraint module give its values. A solver determination
-    /// leaves it unassigned.
+    /// of the constraint module give its values. A solver determination and
+    /// a decode's consistency test leave it unassigned.
     pub pick: bool,
 }
 
