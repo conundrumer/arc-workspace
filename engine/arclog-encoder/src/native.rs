@@ -268,16 +268,6 @@ pub enum Step {
     Union { map: Box<[Option<u16>]> },
     LibJoin { relation: u32, bound: Box<[Option<u16>]>, left_arity: u16 },
     Component { instance: u32, port: u16 },
-    Pool { branches: Box<[PoolBranch]>, arity: u16 },
-}
-
-/// A branch of a pool: the column's identity, the body over the relation the
-/// pool ranges over, and for each column after `C`, its place in the body.
-#[derive(Clone, Debug)]
-pub struct PoolBranch {
-    pub identity: Cell,
-    pub step: Box<Step>,
-    pub map: Box<[u16]>,
 }
 
 impl Step {
@@ -411,7 +401,6 @@ impl<'a> Evaluator<'a> {
                     Some(tables) => Val::of_table(tables[usize::from(*port)].clone()),
                 }
             }
-            Step::Pool { branches, arity } => self.pool(branches, *arity, children[0]),
         }
     }
 
@@ -561,32 +550,6 @@ impl<'a> Evaluator<'a> {
         }
         self.histograms.insert((table.hash, word), counts.clone());
         counts
-    }
-
-    fn pool(&mut self, branches: &[PoolBranch], arity: u16, over: &Val) -> Val {
-        let arity = usize::from(arity);
-        let mut cells: Vec<Cell> = Vec::new();
-        for branch in branches {
-            let width = branch.map.len();
-            let value = self.apply(&branch.step, &[over]);
-            match value {
-                Val::None => return Val::None,
-                Val::Empty => {}
-                Val::Rows(_) => {
-                    let inner = branch.map.iter().map(|at| usize::from(*at)).max().map_or(0, |at| at + 1);
-                    let Some(rows) = value.rows(inner, CELL_CAP) else { return Val::None };
-                    for row in rows {
-                        cells.push(branch.identity);
-                        cells.extend(branch.map.iter().map(|at| row[usize::from(*at)]));
-                    }
-                    debug_assert_eq!(width + 1, arity);
-                }
-            }
-        }
-        if cells.is_empty() {
-            return Val::Empty;
-        }
-        Val::of_table(Table::distinct(arity, cells))
     }
 
     /// The rows of `relation` that agree with `bound`: a flat list, all of its

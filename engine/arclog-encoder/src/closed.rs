@@ -14,7 +14,7 @@ use arclog::task::{Grid, Task, TrainPair};
 use arclog::terms::{Color, TermId};
 use arclog::types::ValueType;
 
-use crate::enumerate::{value_kinds, Space, Typed};
+use crate::enumerate::{Space, Typed};
 use crate::expand::{label_of, Col};
 use crate::expression::{Feature, Leaf, Rel};
 use crate::run::{cell_text, Host, TermValues};
@@ -143,9 +143,7 @@ pub fn closed_values(host: &Host, run: &ClosedRun, done: &HashSet<String>, count
         task_wide: false,
         table_names: Vec::new(),
         program_relations: false,
-        kinds: value_kinds(),
         max_inputs: run.max_inputs,
-        frames: Vec::new(),
         thin: None,
         no_output: run.output_leaf == OutputLeaf::None, quick: false, max_bound_columns: None,
     };

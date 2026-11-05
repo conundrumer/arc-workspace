@@ -16,7 +16,7 @@ use arclog::terms::{Color, Constant, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::encoder::{law_of, Law};
-use crate::enumerate::{sampled, value_kinds, Space, Typed};
+use crate::enumerate::{sampled, Space, Typed};
 use crate::expression::{Feature, Leaf};
 use crate::run::{Evaluated, Host, ModelValue, StoredRows, Value};
 
@@ -256,9 +256,7 @@ fn compare_hosts(plain: &Host, moved: &Host, table: &StoredRows, element: &Eleme
             task_wide,
             table_names: vec![name.clone()],
             program_relations: false,
-            kinds: value_kinds(),
             max_inputs: sample.max_inputs,
-            frames: Vec::new(),
             thin: Some((element.name.clone(), sample.thin_per_million)),
             no_output: false, quick: false, max_bound_columns: None,
         };

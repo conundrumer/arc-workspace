@@ -34,6 +34,11 @@ def directory(test):
 FOLDER = 'walk2'
 
 
+def run_tag():
+    """The mark of a later run's files, so a partial run leaves the last whole one in place."""
+    return '' if FOLDER == 'walk2' else f'.{FOLDER}'
+
+
 def items_of(test, task, limit):
     """What to compare, per item: the places the claims come from, the true place, the other
     places, and the flag of each other place that survives where the test has one."""
@@ -171,7 +176,7 @@ def reference_of(test):
     folder = 'reference-active' if glob.glob(str(RESULTS / 'reference-active/????????.json')) else 'reference-class'
     for path in glob.glob(str(RESULTS / f'{folder}/????????.json')):
         record = json.load(open(path))
-        values = [item.get('auc_active', item.get('auc_class')) for item in record[test] if item.get('auc_active', item.get('auc_class')) is not None]
+        values = [item['auc_class'] for item in record[test] if item.get('auc_class') is not None]
         if values:
             out[record['task']] = float(np.mean(values))
     return out
@@ -236,7 +241,7 @@ def write_curve(test, top, limit, tasks):
         if survive:
             row['auc_survive'] = float(np.mean(survive))
         rows.append(row)
-    write_json_atomic(RESULTS / TESTS[test] / f'curve{suffix}.json', {'test': test, 'top': top, 'bounded': True, 'statistic': 'shares of active classes', 'tasks': sorted(tasks), 'left_out': left_out, 'curve': curve, 'coverage': rows})
+    write_json_atomic(RESULTS / TESTS[test] / f'curve{suffix}{run_tag()}.json', {'test': test, 'top': top, 'bounded': True, 'statistic': 'shares of active classes', 'tasks': sorted(tasks), 'left_out': left_out, 'curve': curve, 'coverage': rows})
     return curve
 
 
@@ -249,7 +254,7 @@ def read_task(test, task, top, limit, suffix):
     out = task_stats(test, task, prefix, top, limit)
     for d, record in out.items():
         write_json_atomic(folder / f'{task}{suffix}.stats.d{d}.json', record)
-    write_json_atomic(RESULTS / TESTS[test] / f'{task}{suffix}.d{top}.json', out[top])
+    write_json_atomic(RESULTS / TESTS[test] / f'{task}{suffix}{run_tag()}.d{top}.json', out[top])
     return out
 
 

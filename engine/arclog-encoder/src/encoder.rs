@@ -9,7 +9,7 @@ use std::ops::ControlFlow;
 use arclog::registry::Registry;
 use arclog::types::ValueType;
 
-use crate::enumerate::{value_kinds, Space, Typed};
+use crate::enumerate::{Space, Typed};
 use crate::expression::{Feature, Leaf, Rel};
 use crate::run::{cell_text, Checked, Host, ModelValue, Value};
 
@@ -100,9 +100,7 @@ pub fn encode(host: &Host, options: &Options, visit: &mut dyn FnMut(Record) -> C
             task_wide,
             table_names: options.tables.clone(),
             program_relations: options.program_relations,
-            kinds: value_kinds(),
             max_inputs: options.max_inputs,
-            frames: Vec::new(),
             thin: None,
             no_output: false, quick: false, max_bound_columns: None,
         })
@@ -236,6 +234,5 @@ pub fn with_tables(rel: &Rel, tables: &[(String, String)]) -> Rel {
             bindings.iter().map(|binding| crate::expression::Binding { relation: with_tables(&binding.relation, tables), ..binding.clone() }).collect(),
             port.clone(),
         ),
-        Rel::Pool { hole, over, kind, body } => Rel::Pool { hole: hole.clone(), over: swap(over), kind: kind.clone(), body: swap(body) },
     }
 }

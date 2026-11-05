@@ -154,11 +154,6 @@ pub struct Expander<'a> {
     pub(crate) library: &'a Library,
     pub(crate) forms: Vec<String>,
     pub(crate) next: usize,
-    /// The pools in progress, innermost last.
-    pub(crate) frames: Vec<crate::pool::Frame>,
-    /// Whether the expansion reads only the columns of a relation, for the
-    /// enumeration of bindings: no form it writes runs.
-    pub(crate) dry: bool,
 }
 
 /// Whether an expression with these leaves is task-wide: a leaf has an Example
@@ -206,15 +201,15 @@ pub fn expand(feature: &Feature, tables: &dyn Tables, registry: &Registry) -> Re
 
 /// [`expand`], with the expression read as task-wide where `task_wide` holds.
 pub fn expand_at(feature: &Feature, tables: &dyn Tables, registry: &Registry, task_wide: bool) -> Result<Expanded, String> {
-    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: Vec::new(), dry: false };
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0 };
     let rows = expander.feature(feature)?;
     Ok(Expanded { forms: expander.forms, export: rows.relation, columns: rows.columns.into_iter().map(|column| column.name).collect(), task_wide })
 }
 
-/// The columns of the relation `rel` with `frames` in progress, as the
-/// expansion names and types them. No form it writes runs.
-pub fn columns_of(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool, frames: &[crate::pool::Frame]) -> Result<Vec<Col>, String> {
-    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: frames.to_vec(), dry: true };
+/// The columns of the relation `rel`, as the expansion names and types them. No
+/// form it writes runs.
+pub fn columns_of(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool) -> Result<Vec<Col>, String> {
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0 };
     Ok(expander.rel(rel)?.columns)
 }
 
@@ -222,7 +217,7 @@ pub fn columns_of(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide
 /// of several terms can stand in one program.
 pub fn expand_rel_from(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool, next: &mut usize) -> Result<Expanded, String> {
     let task_wide = task_wide || rel_is_task_wide(rel, tables, &reader_of(registry));
-    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: *next, frames: Vec::new(), dry: false };
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: *next };
     let rows = expander.rel(rel)?;
     let rows = expander.copy_of(&rows);
     *next = expander.next;
@@ -232,7 +227,7 @@ pub fn expand_rel_from(rel: &Rel, tables: &dyn Tables, registry: &Registry, task
 /// The forms of the relation `rel`, to read it apart from a root.
 pub fn expand_rel(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool) -> Result<Expanded, String> {
     let task_wide = task_wide || rel_is_task_wide(rel, tables, &reader_of(registry));
-    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: Vec::new(), dry: false };
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0 };
     let rows = expander.rel(rel)?;
     // A leaf or a table of the state gives no form, so the read of it does.
     let rows = expander.copy_of(&rows);
@@ -240,10 +235,6 @@ pub fn expand_rel(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide
 }
 
 impl Expander<'_> {
-    fn resolved_pairs(&self, left: &Rows, right: &Rows, pairs: &[(Column, Column)]) -> Vec<(Column, Column)> {
-        pairs.iter().map(|(l, r)| (self.resolved(left, l), self.resolved(right, r))).collect()
-    }
-
     pub(crate) fn fresh(&mut self) -> String {
         self.next += 1;
         format!("&feature_{}", self.next)
@@ -288,8 +279,7 @@ impl Expander<'_> {
             }
             Feature::ValueSet(rel, cols) => {
                 let rows = self.rel(rel)?;
-                let cols = self.resolved_all(&rows, cols);
-                self.project(&rows, &cols)
+                self.project(&rows, cols)
             }
             Feature::Call(name, args) => self.call_written(name, args),
         }
@@ -304,62 +294,38 @@ impl Expander<'_> {
         Ok(self.query(&[format!("({instance}.size (:N *N))")], vec![Col::typed("N", Some(ValueType::Nat))]))
     }
 
-    /// The relation `rel`: the relation of its forms, with the column of each
-    /// pool in progress over `rel` under the hole's name.
+    /// The relation `rel`: the relation of its forms.
     pub(crate) fn rel(&mut self, rel: &Rel) -> Result<Rows, String> {
-        if let Some(empty) = self.empty_for(rel) {
-            return Ok(empty);
-        }
-        let rows = self.rel_of(rel)?;
-        Ok(self.under_holes(rel, rows))
-    }
-
-    fn rel_of(&mut self, rel: &Rel) -> Result<Rows, String> {
         match rel {
             Rel::Leaf(leaf) => self.leaf(leaf),
             Rel::Project(inner, cols) => {
                 let rows = self.rel(inner)?;
-                let cols = self.resolved_all(&rows, cols);
-                self.project(&rows, &cols)
+                self.project(&rows, cols)
             }
             Rel::Select(inner, column, op, operand) => {
                 let rows = self.rel(inner)?;
-                let column = self.resolved(&rows, column);
-                let operand = match operand {
-                    Operand::Column(name) => Operand::Column(self.resolved(&rows, name)),
-                    Operand::Zero => Operand::Zero,
-                };
-                self.select(&rows, &column, *op, &operand)
+                self.select(&rows, column, *op, operand)
             }
             Rel::Join(left, right, pairs) => {
                 let left = self.rel(left)?;
                 let right = self.rel(right)?;
-                let pairs = self.resolved_pairs(&left, &right, pairs);
-                self.join(&left, &right, &pairs)
+                self.join(&left, &right, pairs)
             }
             Rel::Antijoin(left, right, pairs) => {
                 let left = self.rel(left)?;
                 let right = self.rel(right)?;
-                let pairs = self.resolved_pairs(&left, &right, pairs);
-                self.antijoin(&left, &right, &pairs)
+                self.antijoin(&left, &right, pairs)
             }
             Rel::Union(left, right, pairs) => {
                 let left = self.rel(left)?;
                 let right = self.rel(right)?;
-                let pairs: Vec<(Column, Operand)> = pairs.iter().map(|(l, r)| (self.resolved(&left, l), match r {
-                    Operand::Column(name) => Operand::Column(self.resolved(&right, name)),
-                    Operand::Zero => Operand::Zero,
-                })).collect();
-                self.union(&left, &right, &pairs)
+                self.union(&left, &right, pairs)
             }
             Rel::LibJoin(inner, name, bindings) => {
                 let rows = self.rel(inner)?;
-                let bindings: Vec<(String, Column)> = bindings.iter().map(|(lib, column)| (lib.clone(), self.resolved(&rows, column))).collect();
-                self.lib_join(&rows, name, &bindings)
+                self.lib_join(&rows, name, bindings)
             }
             Rel::Component(name, bindings, port) => self.component(name, bindings, port),
-            Rel::Pool { hole, over, kind, body } if self.dry => self.pool_columns(hole, over, kind, body),
-            Rel::Pool { hole, over, kind, body } => self.pool(hole, over, kind, body),
             Rel::Call(name, args) => self.call_written(name, args),
         }
     }
@@ -607,17 +573,7 @@ impl Expander<'_> {
                 return Err(format!("the input `{}` of `{name}` reads the instance's outputs, so a binding for it is a program", binding.input));
             }
             let rows = self.rel(&binding.relation)?;
-            let binding = Binding {
-                input: binding.input.clone(),
-                relation: binding.relation.clone(),
-                key: self.resolved_all(&rows, &binding.key),
-                fields: binding.fields.iter().map(|field| match field {
-                    Field::One(name) => Field::One(self.resolved(&rows, name)),
-                    Field::Record(names) => Field::Record(self.resolved_all(&rows, names)),
-                    Field::Zero => Field::Zero,
-                }).collect(),
-            };
-            bound.push(BoundInput { input, rows, binding });
+            bound.push(BoundInput { input, rows, binding: binding.clone() });
         }
         let instance = self.fresh();
         let (form, parameters, key_labels, key_types) = component_form(name, component_of, &instance, &bound)?;

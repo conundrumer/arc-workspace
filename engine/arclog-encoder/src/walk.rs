@@ -102,7 +102,6 @@ fn step_kind(step: &Step) -> u8 {
         Step::Union { .. } => 4,
         Step::LibJoin { .. } => 5,
         Step::Component { .. } => 6,
-        Step::Pool { .. } => 7,
     }
 }
 
@@ -419,7 +418,7 @@ impl<'a, 'h> Walk<'a, 'h> {
         };
         let meta = entry.meta.as_ref().expect("a comparison keeps its terms");
         let arity = meta.columns.len();
-        let names: Vec<String> = if matches!(entry.step, Step::Pool { .. }) { meta.columns.clone() } else { rel.columns.iter().map(|column| column.name.clone()).collect() };
+        let names: Vec<String> = rel.columns.iter().map(|column| column.name.clone()).collect();
         let places: Option<Vec<usize>> = names.iter().map(|name| values_outcome.row_names.iter().position(|own| *own == crate::expand::label_of(name) || own == name)).collect();
         let Some(places) = places else {
             checker.tally.fault += 1;
@@ -630,7 +629,7 @@ impl<'a, 'h> Walk<'a, 'h> {
 }
 
 fn typed_of(host: &Host, rel: Rel) -> Typed {
-    let columns = crate::expand::columns_of(&rel, host, arclog::registry::Registry::get(), false, &[]).unwrap_or_default();
+    let columns = crate::expand::columns_of(&rel, host, arclog::registry::Registry::get(), false).unwrap_or_default();
     let size = rel.size();
     Typed { rel, columns, size }
 }

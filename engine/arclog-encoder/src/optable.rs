@@ -11,14 +11,12 @@ use arclog::algebra::algebra;
 use arclog::program::ColumnName;
 use arclog::registry::{is_key, key_fill, ColumnType, LibName, Registry};
 use arclog::resolver::registry_columns::component;
-use arclog::terms::{LibNameId, Term, Constant};
 use arclog::types::ValueType;
 
-use crate::enumerate::{value_kinds, Space, Typed};
-use crate::expand::{input_fields, label_of, spelled, unique, ZERO_FIELD};
+use crate::enumerate::{Space, Typed};
+use crate::expand::{input_fields, label_of, spelled, ZERO_FIELD};
 use crate::expression::{Binding, Field, Leaf, Op, Operand, Rel};
-use crate::native::{BoundInput, CompInstance, CompShape, FastMap, InputFill, InputShape, LibRelation, PoolBranch, Step};
-use crate::pool::pool_plan;
+use crate::native::{BoundInput, CompInstance, CompShape, FastMap, InputFill, InputShape, LibRelation, Step};
 use crate::run::{Host, TermCheck};
 
 /// The result of an operator whose schema nothing reads.
@@ -185,7 +183,6 @@ pub struct OpTable {
     pub entries: Vec<Entry>,
     pub leaves: Vec<LeafEntry>,
     pub unary: FastMap<u32, Vec<u32>>,
-    pub pools: FastMap<u32, Vec<u32>>,
     pub binary: FastMap<(u32, u32), Vec<u32>>,
     pub two_inputs: FastMap<(u32, u32), Vec<u32>>,
     pub shapes: Vec<CompShape>,
@@ -202,7 +199,6 @@ pub struct OpTable {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Family {
     Unary(u32),
-    Pool(u32),
     Binary(u32, u32),
     TwoInputs(u32, u32),
 }
@@ -422,18 +418,21 @@ impl Builder<'_> {
             }
             // With one binding, a column of an unbounded type parameter takes any
             // type, and so does the key, so only the number of its fields counts.
-            Rel::Component(name, bindings, port) if bindings.len() == 1 => {
+            Rel::Component(name, bindings, port) if bindings.len() == 1 && !schema(0).open_d4 => {
                 let binding = &bindings[0];
                 let held = component(Registry::get(), &LibName(name.as_str().into()))?;
                 let input = held.inputs.iter().find(|input| input.port.name.0.as_ref() == binding.input)?;
                 let mut kept = Vec::new();
                 let mut shape = format!("k{}", binding.key.len());
-                for (column, fields) in input_fields(input, binding).ok()? {
+                let columns = input_fields(input, binding).ok()?;
+                // Two columns of one parameter in an input take types that meet.
+                let once = |name: &str| columns.iter().filter(|(column, _)| matches!(&column.ty, ColumnType::Parameter(parameter) if &*parameter.name == name)).count() == 1;
+                for (column, fields) in &columns {
                     match &column.ty {
-                        ColumnType::Parameter(parameter) if parameter.bound.is_none() => shape.push_str(&format!("g{}", fields.len())),
+                        ColumnType::Parameter(parameter) if parameter.bound.is_none() && once(&parameter.name) => shape.push_str(&format!("g{}", fields.len())),
                         _ => {
                             shape.push('f');
-                            for field in &fields {
+                            for field in fields {
                                 if field == ZERO_FIELD {
                                     shape.push('0');
                                 } else {
@@ -481,7 +480,7 @@ impl Builder<'_> {
 
     fn children_of(family: Family) -> Vec<u32> {
         match family {
-            Family::Unary(a) | Family::Pool(a) => vec![a],
+            Family::Unary(a) => vec![a],
             Family::Binary(a, b) | Family::TwoInputs(a, b) => vec![a, b],
         }
     }
@@ -564,7 +563,7 @@ impl Builder<'_> {
         };
         for ((pending, columns, types), frames) in compiled.into_iter().zip(frames) {
             let (children, mirrored, self_first) = match pending.family {
-                Family::Unary(a) | Family::Pool(a) => (vec![a], false, true),
+                Family::Unary(a) => (vec![a], false, true),
                 Family::Binary(a, b) => {
                     let (mirrored, self_first) = mirror_of(&pending.term.rel);
                     (vec![a, b], mirrored, self_first)
@@ -575,7 +574,7 @@ impl Builder<'_> {
             let rep_types: Vec<Vec<ValueType>> = children.iter().map(|child| self.table.schemas[*child as usize].types.clone()).collect();
             let rep_refs: Vec<&Typed> = reps.iter().collect();
             let type_refs: Vec<&[ValueType]> = rep_types.iter().map(|types| &types[..]).collect();
-            let step = match self.compile(&pending.term.rel, &rep_refs, &type_refs, None) {
+            let step = match self.compile(&pending.term.rel, &rep_refs, &type_refs) {
                 Ok(step) => step,
                 Err(message) => {
                     self.table.no_native.push(format!("{}: {message}", pending.term.rel));
@@ -606,7 +605,6 @@ impl Builder<'_> {
             self.table.entries.push(Entry { step, result, invariant, roots, meta, mirrored, self_first, tier });
             match pending.family {
                 Family::Unary(a) => self.table.unary.entry(a).or_default().push(at),
-                Family::Pool(a) => self.table.pools.entry(a).or_default().push(at),
                 Family::Binary(a, b) => self.table.binary.entry((a, b)).or_default().push(at),
                 Family::TwoInputs(a, b) => self.table.two_inputs.entry((a, b)).or_default().push(at),
             }
@@ -617,22 +615,13 @@ impl Builder<'_> {
         }
     }
 
-    /// The position of the column `name` of `child`, with the hole of a pool's
-    /// branch at the column it binds.
-    fn position(child: &Typed, name: &str, hole: Option<(&str, &str)>) -> Result<u16, String> {
-        let mut name = name;
-        if let Some((held, column)) = hole {
-            if name == held {
-                name = column;
-            } else if name == column {
-                return Err(format!("the branch holds `{column}` under its hole's name"));
-            }
-        }
+    /// The position of the column `name` of `child`.
+    fn position(child: &Typed, name: &str) -> Result<u16, String> {
         child.columns.iter().position(|column| column.name == name).map(|at| at as u16).ok_or_else(|| format!("no column `{name}`"))
     }
 
-    fn compile(&mut self, rel: &Rel, children: &[&Typed], types: &[&[ValueType]], hole: Option<(&str, &str)>) -> Result<Step, String> {
-        let at = |child: usize, name: &str| Builder::position(children[child], name, hole);
+    fn compile(&mut self, rel: &Rel, children: &[&Typed], types: &[&[ValueType]]) -> Result<Step, String> {
+        let at = |child: usize, name: &str| Builder::position(children[child], name);
         match rel {
             Rel::Project(_, columns) => {
                 let columns: Result<Box<[u16]>, String> = columns.iter().map(|name| at(0, name)).collect();
@@ -687,31 +676,12 @@ impl Builder<'_> {
                 }
                 Ok(Step::LibJoin { relation, bound: bound.into_boxed_slice(), left_arity: children[0].columns.len() as u16 })
             }
-            Rel::Component(name, bindings, port) => self.compile_component(name, bindings, port, children, types, hole),
-            Rel::Pool { hole: name, over, kind, body } => {
-                let plan = pool_plan(name, over, kind, body, self.host, Registry::get())?;
-                let Some(first) = plan.first() else {
-                    return Ok(Step::Pool { branches: Box::new([]), arity: 0 });
-                };
-                let mut sorted = first.columns.clone();
-                sorted.sort();
-                let mut branches = Vec::with_capacity(plan.len());
-                for branch in &plan {
-                    let step = self.compile(body, children, types, Some((name, &branch.column)))?;
-                    let map: Result<Box<[u16]>, String> = sorted
-                        .iter()
-                        .map(|name| branch.columns.iter().position(|own| own == name).map(|at| at as u16).ok_or_else(|| format!("the branches have the columns {:?} and {:?}", first.columns, branch.columns)))
-                        .collect();
-                    let identity = Term::Constant(Constant::LibName(LibNameId::of(&branch.identity))).encode().map_err(|_| "a lib name's term id".to_string())?.encoding();
-                    branches.push(PoolBranch { identity, step: Box::new(step), map: map? });
-                }
-                Ok(Step::Pool { branches: branches.into_boxed_slice(), arity: sorted.len() as u16 + 1 })
-            }
+            Rel::Component(name, bindings, port) => self.compile_component(name, bindings, port, children, types),
             other => Err(format!("{other} has no native form")),
         }
     }
 
-    fn compile_component(&mut self, name: &str, bindings: &[Binding], port: &str, children: &[&Typed], types: &[&[ValueType]], hole: Option<(&str, &str)>) -> Result<Step, String> {
+    fn compile_component(&mut self, name: &str, bindings: &[Binding], port: &str, children: &[&Typed], types: &[&[ValueType]]) -> Result<Step, String> {
         let registry = Registry::get();
         let held = component(registry, &LibName(name.into())).ok_or_else(|| format!("`{name}` is no component"))?;
         let construction = arclog_constructions::shared()?.get(&LibName(name.into())).ok_or_else(|| format!("`{name}` has no construction"))?;
@@ -725,13 +695,13 @@ impl Builder<'_> {
             let input = &held.inputs[input_at];
             let mut positions: Vec<Option<u16>> = Vec::new();
             for column in &binding.key {
-                let place = Builder::position(children[child], column, hole)?;
+                let place = Builder::position(children[child], column)?;
                 positions.push(Some(place));
             }
             if key_types.is_empty() {
                 key_types = positions.iter().flatten().map(|place| types[child][usize::from(*place)].clone()).collect();
             }
-            for (column, fields) in input_fields(input, &resolved_fields(binding, hole))? {
+            for (column, fields) in input_fields(input, binding)? {
                 let mut labels: Vec<(String, ValueType)> = Vec::new();
                 for field in &fields {
                     if field == ZERO_FIELD {
@@ -742,7 +712,7 @@ impl Builder<'_> {
                         }.ok_or("a field `0` at a column with no type")?;
                         labels.push(("Z".to_string(), ty));
                     } else {
-                        let place = Builder::position(children[child], field, None)?;
+                        let place = Builder::position(children[child], field)?;
                         positions.push(Some(place));
                         labels.push((label_of(field), types[child][usize::from(place)].clone()));
                     }
@@ -945,23 +915,6 @@ fn narrowed(step: &Step, children: &[Vec<ValueType>], mut types: Vec<ValueType>,
     types
 }
 
-/// `binding`, with the hole of a pool's branch at the column it binds. A name of
-/// the column itself is refused where a position is read.
-fn resolved_fields(binding: &Binding, hole: Option<(&str, &str)>) -> Binding {
-    let Some((held, column)) = hole else { return binding.clone() };
-    let name = |own: &String| if own == held { column.to_string() } else { own.clone() };
-    Binding {
-        input: binding.input.clone(),
-        relation: binding.relation.clone(),
-        key: binding.key.clone(),
-        fields: binding.fields.iter().map(|field| match field {
-            Field::One(own) => Field::One(name(own)),
-            Field::Record(own) => Field::Record(own.iter().map(name).collect()),
-            Field::Zero => Field::Zero,
-        }).collect(),
-    }
-}
-
 type ColumnAt<'c> = dyn Fn(usize, &str) -> Result<u16, String> + 'c;
 
 fn pair_positions(pairs: &[(String, String)], at: &ColumnAt<'_>) -> Result<(Box<[u16]>, Box<[u16]>), String> {
@@ -976,18 +929,6 @@ fn pair_positions(pairs: &[(String, String)], at: &ColumnAt<'_>) -> Result<(Box<
         right.push(place);
     }
     Ok((left.into_boxed_slice(), right.into_boxed_slice()))
-}
-
-/// The names of a pool's columns: `C`, then the names of a branch's, sorted.
-fn pool_names(columns: &[String]) -> Vec<String> {
-    let mut names = columns.to_vec();
-    names.sort();
-    let mut taken = vec!["C".to_string()];
-    let mut out = vec!["C".to_string()];
-    for name in &names {
-        out.push(unique(name, &mut taken));
-    }
-    out
 }
 
 /// Whether `rel`, a `join` or a `union`, gives the same rows with its children
@@ -1040,7 +981,7 @@ pub fn build_with(host: &Host, mode: Mode, d: usize, keep_terms: bool, max_colum
     let no_output = mode == Mode::Scene;
     let required = mode.required();
     let table_mode = matches!(mode, Mode::Table(_));
-    let space = Space { registry, tables: host, task_wide: false, table_names, program_relations: false, kinds: value_kinds(), max_inputs: None, frames: Vec::new(), thin: None, no_output, quick: false, max_bound_columns: None };
+    let space = Space { registry, tables: host, task_wide: false, table_names, program_relations: false, max_inputs: None, thin: None, no_output, quick: false, max_bound_columns: None };
     let mut builder = Builder { host, space: Some(space), table: OpTable::default(), pending: Vec::new(), done: BTreeSet::new(), top: false, mode, log_every: std::time::Instant::now(), answers, checked: 0, answered: 0, keep_terms };
     let mut members: Vec<BTreeSet<(u32, u8)>> = vec![builder.add_leaves()?.into_iter().collect()];
     for size in 1..=d {
@@ -1170,6 +1111,5 @@ pub fn rebased(term: &Rel, reps: &[&Typed], to: &[&Typed]) -> Rel {
                 Field::Zero => Field::Zero,
             }).collect(),
         }).collect(), port.clone()),
-        Rel::Pool { hole, kind, body, .. } => Rel::Pool { hole: hole.clone(), over: child(0), kind: kind.clone(), body: Box::new(rebased(body, reps, to)) },
     }
 }

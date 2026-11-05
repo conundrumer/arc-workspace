@@ -9,17 +9,11 @@
 use std::sync::Arc;
 
 use arclog::check::CheckedProgram;
-use arclog::eval::determinations::relation_spelled;
 use arclog::eval::relation_of;
 use arclog::program::path::{node_at, NodeRef};
-use arclog::program::{ColumnName, DeclaredName, FactRelation, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramFact, ProgramRelation, RelationName, RelationRef};
-use arclog::registry::{Column as LibColumn, LibEntry, LibName, Macro, Registry};
+use arclog::program::{ColumnName, DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
 use arclog::resolver::{DependencyKind, Side};
 use arclog::types::{GraphRelation, ValueType};
-use arclog_tables::flows::{ColumnSource, SourceColumn, SourceKind};
-use arclog_tables::identity::{relation_contents, relation_identity};
-
-use crate::expand::Rows;
 
 /// A column of a table.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,27 +48,36 @@ pub struct TableSchema {
     pub has_example: bool,
 }
 
-/// What a pool reads of a column of a relation.
-#[derive(Clone, Debug)]
-pub struct ColumnFacts {
-    /// The steps of a site on the column.
-    pub path: Vec<String>,
-    pub ty: ValueType,
-    /// The column's identity in the engine, free of the labels of its program.
-    pub identity: String,
-    /// The roots of the column's lineage, each as `<relation>.<column>`.
-    pub roots: Vec<String>,
-}
-
 /// The tables of a state that an expansion reads.
 pub trait Tables {
     fn table(&self, name: &str) -> Option<TableSchema>;
-    /// Whether the checker accepts the state's forms with `forms` after them,
-    /// or why it refuses them.
-    fn accepts(&self, forms: &[String]) -> Result<(), String>;
-    /// The columns of `rows`, a relation that the state's forms with `forms`
-    /// after them can read.
-    fn columns_of(&self, forms: &[String], rows: &crate::expand::Rows) -> Result<Vec<ColumnFacts>, String>;
+}
+
+/// The value type that a type's name in a table's description gives.
+pub fn type_of_name(name: &str) -> Option<ValueType> {
+    Some(match name {
+        "Int" => ValueType::Int,
+        "Nat" => ValueType::Nat,
+        "Color" => ValueType::Color,
+        "Example" => ValueType::Example,
+        "Unit" => ValueType::Unit,
+        "LibName" => ValueType::LibName,
+        "Box" => ValueType::Box,
+        "Position" => ValueType::Position,
+        "Offset" => ValueType::Offset,
+        "Ident" => ValueType::OPEN_IDENT,
+        "C4" => ValueType::C4,
+        "D4" => ValueType::D4,
+        "Dir" => ValueType::Dir,
+        "DiagDir" => ValueType::DiagDir,
+        "Dir8" => ValueType::Dir8,
+        "Axis" => ValueType::Axis,
+        "DiagAxis" => ValueType::DiagAxis,
+        "Axis4" => ValueType::Axis4,
+        "Sym" => ValueType::Sym,
+        "Sense" => ValueType::Sense,
+        _ => return None,
+    })
 }
 
 /// The relation that a program's text names `name`: `&ink`, or `&rays.ray`.
@@ -155,135 +158,4 @@ pub fn table_schema(program: &CheckedProgram, name: &str) -> Option<TableSchema>
         per_input: resolved.side(relation.node) == Side::PerInput,
         has_example: program.types.has_example_column(&relation),
     })
-}
-
-/// The columns of `rows`, a relation of `program`: a fact relation, a lib
-/// relation or a relation of the program. A lifted read's `E` holds an Example.
-pub fn column_facts(program: &CheckedProgram, registry: &Registry, rows: &Rows) -> Result<Vec<ColumnFacts>, String> {
-    let example = || ColumnFacts { path: vec!["E".to_string()], ty: ValueType::Example, identity: "E".to_string(), roots: vec!["ex_input.E".to_string()] };
-    let declared = |prefix: &str, columns: &[LibColumn]| -> Vec<ColumnFacts> {
-        columns
-            .iter()
-            .filter_map(|column| {
-                let name = written(&column.name)?.to_string();
-                let ty = column.ty.fixed()?.clone();
-                Some(ColumnFacts { path: vec![name.clone()], ty, identity: format!("{prefix}.{name}"), roots: vec![format!("{prefix}.{name}")] })
-            })
-            .collect()
-    };
-    let relation = rows.relation.as_str();
-    if let Some(fact) = fact_of(relation) {
-        let mut facts = declared(relation, registry.fact_columns(fact));
-        // A read of `input` has the columns and the lineage of `ex_input`.
-        for column in &mut facts {
-            column.roots = vec![column.roots[0].replace("output.", "ex_output.").replacen("ex_ex_", "ex_", 1).replacen("input.", "ex_input.", usize::from(relation == "input"))];
-        }
-        return Ok(facts);
-    }
-    if !relation.starts_with('&') {
-        let Some(columns) = lib_columns(registry, relation) else { return Err(format!("`{relation}` is no relation")) };
-        return Ok(declared(relation, columns));
-    }
-    let Some(graph) = graph_relation(program, relation) else { return Err(format!("the program has no relation `{relation}`")) };
-    let resolved = &program.program;
-    let form = resolved.form_of(graph.node).clone();
-    let Some(names) = resolved.column_names(graph.node) else { return Err(format!("the columns of `{relation}` are not known")) };
-    let types = program.types.columns(&graph).ok_or_else(|| format!("the columns of `{relation}` have no types"))?;
-    if names.len() != types.len() {
-        return Err(format!("`{relation}` has {} columns and {} types", names.len(), types.len()));
-    }
-    let (table, identities) = relation_identity(program, registry, &graph, &form, relation).ok_or_else(|| format!("`{relation}` has no identity"))?;
-    let contents = relation_contents(program, registry, &graph, &form, relation).map_err(|fault| fault.message.to_string())?;
-    let mut facts = vec![example()];
-    for (at, (name, ty)) in names.iter().zip(types).enumerate() {
-        let path: Vec<String> = name.split('.').map(str::to_string).collect();
-        let identity = identities.get(at).map_or_else(|| format!("{table}/?{at}"), |column| format!("{table}/{column}"));
-        let roots = contents.flows.get(at).map(|sources| lineage_roots(program, registry, sources, &mut Vec::new())).unwrap_or_default();
-        facts.push(ColumnFacts { path, ty: ty.clone(), identity, roots });
-    }
-    Ok(facts)
-}
-
-fn fact_of(name: &str) -> Option<FactRelation> {
-    match name {
-        "input" => Some(FactRelation::Input),
-        "output" => Some(FactRelation::Output),
-        "ex_input" => Some(FactRelation::ExInput),
-        "ex_output" => Some(FactRelation::ExOutput),
-        other => ProgramFact::of_name(other).map(FactRelation::Program),
-    }
-}
-
-fn lib_columns<'r>(registry: &'r Registry, name: &str) -> Option<&'r [LibColumn]> {
-    match registry.entry(&LibName(name.into()))? {
-        LibEntry::Relation(relation) | LibEntry::Macro(Macro::Relation { relation, .. }) => Some(&relation.columns),
-        LibEntry::Proposer(proposer) => Some(&proposer.columns),
-        LibEntry::Component(_) => None,
-    }
-}
-
-/// The lineage roots that `sources` reach: following each copy back to a fact
-/// relation, a proposer or a lib column.
-fn lineage_roots(program: &CheckedProgram, registry: &Registry, sources: &[ColumnSource], visiting: &mut Vec<(String, u16)>) -> Vec<String> {
-    let mut roots: Vec<String> = Vec::new();
-    for source in sources {
-        let found: Vec<String> = match (&source.relation, source.column) {
-            (None, _) => vec!["0".to_string()],
-            (Some(RelationRef::Fact(fact)), column) => {
-                // A read of `input` is a read of `ex_input`, as a source gives it.
-                let fact = match *fact {
-                    FactRelation::Input => FactRelation::ExInput,
-                    FactRelation::Output => FactRelation::ExOutput,
-                    other => other,
-                };
-                vec![format!("{}.{}", fact.spelled(), column_at(registry.fact_columns(fact), column))]
-            }
-            (Some(RelationRef::Lib(name)), column) => match lib_columns(registry, &name.0) {
-                Some(columns) if !matches!(column, SourceColumn::None) => vec![format!("{}.{}", name.0, column_at(columns, column))],
-                _ => vec![name.0.to_string()],
-            },
-            (Some(RelationRef::DefinedPort(port)), _) => vec![port.0.to_string()],
-            (Some(relation @ (RelationRef::Declared(_) | RelationRef::Output(_))), SourceColumn::Position(at)) if source.kind == SourceKind::Copy => {
-                let spelled = match relation {
-                    RelationRef::Declared(name) => relation_spelled(&ProgramRelation::Declared(name.clone())),
-                    RelationRef::Output(name) => relation_spelled(&ProgramRelation::Output(name.clone())),
-                    _ => unreachable!("the arm's relations"),
-                };
-                let key = (spelled.clone(), at);
-                if visiting.contains(&key) {
-                    Vec::new()
-                } else {
-                    visiting.push(key);
-                    let found = upstream_roots(program, registry, &spelled, usize::from(at), visiting);
-                    visiting.pop();
-                    found
-                }
-            }
-            (Some(_), SourceColumn::Example) => vec!["ex_input.E".to_string()],
-            (Some(_), _) => Vec::new(),
-        };
-        for root in found {
-            if !roots.contains(&root) {
-                roots.push(root);
-            }
-        }
-    }
-    roots
-}
-
-/// The name of `column` among `columns`.
-fn column_at(columns: &[LibColumn], column: SourceColumn) -> String {
-    match column {
-        SourceColumn::Position(at) => columns.get(usize::from(at)).and_then(|own| written(&own.name)).unwrap_or_default().to_string(),
-        SourceColumn::Example => "E".to_string(),
-        SourceColumn::None => String::new(),
-    }
-}
-
-fn upstream_roots(program: &CheckedProgram, registry: &Registry, name: &str, at: usize, visiting: &mut Vec<(String, u16)>) -> Vec<String> {
-    let Some(graph) = graph_relation(program, name) else { return Vec::new() };
-    let resolved = &program.program;
-    let form = resolved.form_of(graph.node).clone();
-    let Ok(contents) = relation_contents(program, registry, &graph, &form, name) else { return Vec::new() };
-    contents.flows.get(at).map(|sources| lineage_roots(program, registry, sources, visiting)).unwrap_or_default()
 }

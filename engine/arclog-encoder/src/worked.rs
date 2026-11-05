@@ -59,13 +59,13 @@ macro_rules! boxes { () => { text!("(component BoundingBox (cell ", cells!(), " 
 macro_rules! rel_ { () => { text!("(lib-join (join ", cells!(), " ", boxes!(), " (Id Id)) relative (Base B) (X P))") } }
 macro_rules! equal_ { () => { text!("(component Inclusion (pattern ", rel_!(), " () (Id X_rel)) (observed ", rel_!(), " () (Id X_rel)) equal)") } }
 macro_rules! class_ { () => { text!("(component Quotient (equivalent ", equal_!(), " () (Id Id_2)) class)") } }
-macro_rules! pool_ { () => { "(pool ?x &output Color (component Cardinality (member (project &output ?x) () (?x)) size))" } }
 macro_rules! order_of { ($pool:expr) => { text!("(component Order (member (project ", $pool, " N) () (N)) (score (project ", $pool, " N) () (N N)) maximal)") } }
 
 const TWO: &str = "(INIT &a Connectivity (node (P) (&ink *P)))\n(INIT &b Connectivity (key ((&ink ^Col)) (node (P) (&ink Col *P))))\n(RULE &two (&a.component *P *Id) (&b.component (:key *Col) P (:Id *Id_2)))";
 
 /// Each worked expansion.
 pub const CASES: &[Case] = &[
+    Case { solver: "25d487eb", state: TWO, term: "(select &two Id = Id_2)", relation: true, task_wide: false, columns: &[], expect: Expect::Refused },
     feature("25d487eb", "(cardinality (project &ink Col))", Expect::Numbers(&[2, 2, 2, 2])),
     feature("25d487eb", "(cardinality &ink)", Expect::Numbers(&[9, 16, 9, 16])),
     rel("25d487eb", "(join &mark input (P P))", Expect::Rows(&[1, 1, 1, 1])),
@@ -106,18 +106,11 @@ pub const CASES: &[Case] = &[
     Case { solver: "25d487eb", state: "(RULE &x (&ink *P (:Col *E)))", term: "(project &x E P E_2)", relation: true, task_wide: true, columns: &["E", "P", "E_2"], expect: Expect::TaskRows(50) },
     rel("a6953f00", "&corner", Expect::Rows(&[1; 32])),
     wide("a6953f00", "(project &corner D)", Expect::Fault),
-    named("25d487eb", pool_!(), &["C", "N"], Expect::Rows(&[2, 2, 2, 2])),
-    rel("25d487eb", order_of!(pool_!()), Expect::Numbers(&[3, 3, 3, 3])),
-    feature("25d487eb", text!("(cardinality ", pool_!(), ")"), Expect::Numbers(&[2, 2, 2, 2])),
-    feature("25d487eb", "(cardinality (pool ?x &ink Offset (component Cardinality (member (project &ink ?x) () (?x)) size)))", Expect::Numbers(&[0, 0, 0, 0])),
-    rel("25d487eb", order_of!("(pool ?x &ink Offset (component Cardinality (member (project &ink ?x) () (?x)) size))"), Expect::Rows(&[0, 0, 0, 0])),
     feature("009d5c81", "(cardinality SharedColor)", Expect::TaskCells(&["N"], &["3"])),
     feature("070dd51e", "(value-set RarestColor C)", Expect::TaskCells(&["C"], &["c3", "c8"])),
     rel("25d487eb", "(join &ink ChangedPairs (Col C_to))", Expect::TaskRows(19)),
     named("25d487eb", "(union (lib-join (project &ink P) margin (B P)) (project (lib-join (project &ink P) margin (B P)) P D) (P P) (D D) (K 0))", &["P", "D", "K"], Expect::Rows(&[72, 128, 72, 128])),
     rel("25d487eb", "(component Order (member (project &ink Col) () (Col)) (score (project &ink Col) () (Col 0)) maximal)", Expect::Rows(&[2, 2, 2, 2])),
-    Case { solver: "25d487eb", state: TWO, term: "(pool ?x &two Ident (project &two ?x))", relation: true, task_wide: false, columns: &[], expect: Expect::Refused },
-    Case { solver: "25d487eb", state: TWO, term: "(pool ?x &two Ident (component Cardinality (member (project &two ?x) () (?x)) size))", relation: true, task_wide: false, columns: &[], expect: Expect::FirstCells(&["N"], &["1", "2"]) },
     Case { solver: "150deff5", state: "(RULE &poses (&piece.member (:key *Id) (:Pose *Pz) (:P *S)))", term: "(value-set &poses Id Pz)", relation: false, task_wide: false, columns: &[], expect: Expect::Refused },
 ];
 

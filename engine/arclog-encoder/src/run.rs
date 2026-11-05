@@ -35,8 +35,7 @@ use arclog::types::{GraphRelation, ValueType};
 use crate::expand::{expand, expand_at, expand_rel, Expanded};
 use crate::expression::{Feature, Reader, Rel};
 use crate::library::library;
-use crate::expand::Rows;
-use crate::schema::{graph_relation, table_schema, ColumnFacts, StoredReads, TableColumn, TableSchema, Tables};
+use crate::schema::{graph_relation, table_schema, StoredReads, TableColumn, TableSchema, Tables};
 
 /// The text of an `OUT` form, for a state that has none: it reads nothing that
 /// a feature reads, and the checker refuses a program with no `OUT` form.
@@ -161,25 +160,6 @@ impl Tables for Host {
             }
         }
         table_schema(self.base.checked(), name)
-    }
-
-    fn accepts(&self, forms: &[String]) -> Result<(), String> {
-        self.checked_with(forms).map(|_| ())
-    }
-
-    fn columns_of(&self, forms: &[String], rows: &Rows) -> Result<Vec<ColumnFacts>, String> {
-        let registry = Registry::get();
-        let program = self.checked_with(forms)?;
-        // A stored table's columns are those its reads write.
-        if rows.relation.starts_with("stored_table") {
-            return Ok(rows.columns.iter().map(|column| ColumnFacts {
-                path: column.path.clone(),
-                ty: column.ty.clone().unwrap_or(ValueType::Unit),
-                identity: format!("{}/{}", rows.relation, column.path.join(".")),
-                roots: vec![format!("{}.{}", rows.relation, column.path.join("."))],
-            }).collect());
-        }
-        crate::schema::column_facts(program.checked(), registry, rows)
     }
 }
 

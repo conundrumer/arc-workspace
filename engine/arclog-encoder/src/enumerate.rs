@@ -16,8 +16,7 @@ use arclog::resolver::registry_columns::component;
 use arclog::types::ValueType;
 
 use crate::expand::{columns_of, Col};
-use crate::expression::{Binding, Feature, Field, Kind, Leaf, Op, Operand, Rel};
-use crate::pool::{kind_type, Frame};
+use crate::expression::{Binding, Feature, Field, Leaf, Op, Operand, Rel};
 use crate::schema::Tables;
 
 /// A relation term with its columns.
@@ -41,13 +40,9 @@ pub struct Space<'a> {
     pub table_names: Vec<String>,
     /// Whether a leaf can name a program relation.
     pub program_relations: bool,
-    /// The kinds that a pool can range over.
-    pub kinds: Vec<Kind>,
     /// The most inputs that a component's binding writes, where a caller limits
     /// them; the grammar limits them to the component's inputs.
     pub max_inputs: Option<usize>,
-    /// The holes in scope, innermost last.
-    pub frames: Vec<Frame>,
     /// For a sample: a salt, and the bindings of a component's first input per
     /// million that a term of several inputs starts from. The walk then skips
     /// the terms it leaves out, where a sample of the terms it visits would
@@ -101,26 +96,17 @@ fn subsets<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
     (0u32..1 << count).map(|mask| (0..count).filter(|at| mask & (1 << at) != 0).map(|at| items[at].clone()).collect()).collect()
 }
 
-/// The value types that a pool can range over.
-pub fn value_kinds() -> Vec<Kind> {
-    ["Int", "Nat", "Color", "Box", "Position", "Offset", "Ident", "C4", "D4", "Dir", "DiagDir", "Dir8", "Axis", "DiagAxis", "Axis4", "Sym", "Sense", "LibName", "Example"]
-        .into_iter()
-        .map(|name| Kind::Type(name.to_string()))
-        .collect()
-}
-
 impl Space<'_> {
     /// `rel` with its columns, where the expansion can write it.
     pub fn typed(&self, rel: Rel) -> Option<Typed> {
-        let columns = columns_of(&rel, self.tables, self.registry, self.task_wide, &self.frames).ok()?;
+        let columns = columns_of(&rel, self.tables, self.registry, self.task_wide).ok()?;
         let size = rel.size();
         Some(Typed { rel, columns, size })
     }
 
-    /// The name of the column `column` in a term: a hole, where it stands for
-    /// one in scope.
+    /// The name of the column `column` in a term.
     fn reference(&self, column: &Col) -> String {
-        self.frames.iter().rev().find(|frame| frame.name() == column.name).map_or_else(|| column.name.clone(), |frame| frame.hole.clone())
+        column.name.clone()
     }
 
     /// The lib relations that an expression can name, sorted.
@@ -200,7 +186,6 @@ impl Space<'_> {
         }
         self.unary(lower, size, visit)?;
         self.binary(lower, size, visit)?;
-        self.pools(lower, size, visit)?;
         self.components(lower, size, visit)
     }
 
@@ -391,81 +376,6 @@ impl Space<'_> {
         out
     }
 
-    /// The terms of `pool`: a hole over a relation of a smaller size, of each
-    /// kind, and a body over it that names the hole and ends in a `project` or
-    /// a `component`.
-    fn pools(&self, lower: &[Vec<Typed>], size: usize, visit: &mut Visit<'_>) -> ControlFlow<()> {
-        if size < 2 {
-            return ControlFlow::Continue(());
-        }
-        let hole = format!("?{}", ["x", "y", "z", "w"][self.frames.len().min(3)]);
-        for over_size in 0..size.saturating_sub(1) {
-            let body_size = size - 1 - over_size;
-            if body_size == 0 {
-                continue;
-            }
-            let Some(overs) = lower.get(over_size) else { continue };
-            for over in overs {
-                for kind in &self.kinds {
-                    let mut root = kind;
-                    while let Kind::LineageRoot(inner, _) = root {
-                        root = inner;
-                    }
-                    let Kind::Type(type_name) = root else { continue };
-                    let Some(ty) = kind_type(type_name) else { continue };
-                    if ty == ValueType::Example && !self.task_wide {
-                        continue;
-                    }
-                    let frame = Frame { hole: hole.clone(), over: over.rel.clone(), column: hole.trim_start_matches('?').to_uppercase(), empty: None, open: Some(ty) };
-                    let mut frames = self.frames.clone();
-                    frames.push(frame);
-                    let inner = Space {
-                        registry: self.registry,
-                        tables: self.tables,
-                        task_wide: self.task_wide,
-                        table_names: self.table_names.clone(),
-                        program_relations: self.program_relations,
-                        kinds: self.kinds.clone(),
-                        max_inputs: self.max_inputs,
-                        frames,
-                        thin: self.thin.clone(),
-                        no_output: self.no_output,
-                        quick: false,
-                        max_bound_columns: None,
-                    };
-                    // The body's terms, bottom up, with the hole among the relation's columns.
-                    let mut held: Vec<Vec<Typed>> = Vec::new();
-                    for at in 0..=body_size {
-                        let mut terms = Vec::new();
-                        let mut done = ControlFlow::Continue(());
-                        if at == over_size {
-                            if let Some(own) = inner.typed(over.rel.clone()) {
-                                terms.push(own);
-                            }
-                        }
-                        let ended = inner.generate(&held, at, &mut |term| {
-                            if at == body_size && matches!(term.rel, Rel::Project(..) | Rel::Component(..)) && term.rel.to_string().contains(&hole) {
-                                let pool = Rel::Pool { hole: hole.clone(), over: Box::new(over.rel.clone()), kind: kind.clone(), body: Box::new(term.rel.clone()) };
-                                if let Some(typed) = self.typed(pool) {
-                                    done = visit(typed);
-                                    if done.is_break() {
-                                        return ControlFlow::Break(());
-                                    }
-                                }
-                            }
-                            terms.push(term);
-                            ControlFlow::Continue(())
-                        });
-                        done?;
-                        ended?;
-                        held.push(terms);
-                    }
-                }
-            }
-        }
-        ControlFlow::Continue(())
-    }
-
     /// The components that a term can name, sorted.
     fn component_names(&self) -> Vec<(String, &Component)> {
         let mut found: Vec<(String, &Component)> = self.registry.names().filter_map(|name| {
@@ -474,60 +384,6 @@ impl Space<'_> {
         }).collect();
         found.sort_by(|a, b| a.0.cmp(&b.0));
         found
-    }
-
-    /// The terms of `pool` over `over` whose body is one operator over `over`
-    /// itself and names the hole: a `project`, or a `component` of one bound
-    /// input. A pool of a kind that no column of `over` has has no branch and
-    /// no rows, so this leaves it out.
-    pub fn small_pools_of(&self, over: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
-        let hole = format!("?{}", ["x", "y", "z", "w"][self.frames.len().min(3)]);
-        for kind in &self.kinds {
-            let Kind::Type(type_name) = kind else { continue };
-            let Some(ty) = kind_type(type_name) else { continue };
-            if ty == ValueType::Example && !self.task_wide {
-                continue;
-            }
-            if !over.columns.iter().any(|column| column.ty.as_ref().is_some_and(|held| held.is_below(&ty))) {
-                continue;
-            }
-            let frame = Frame { hole: hole.clone(), over: over.rel.clone(), column: hole.trim_start_matches('?').to_uppercase(), empty: None, open: Some(ty) };
-            let mut frames = self.frames.clone();
-            frames.push(frame);
-            let inner = Space {
-                registry: self.registry,
-                tables: self.tables,
-                task_wide: self.task_wide,
-                table_names: Vec::new(),
-                program_relations: self.program_relations,
-                kinds: Vec::new(),
-                max_inputs: self.max_inputs,
-                frames,
-                thin: None,
-                no_output: self.no_output,
-                quick: false,
-                max_bound_columns: None,
-            };
-            let Some(own) = inner.typed(over.rel.clone()) else { continue };
-            let mut wrap = |term: Typed| -> ControlFlow<()> {
-                if !term.rel.to_string().contains(&hole) {
-                    return ControlFlow::Continue(());
-                }
-                let pool = Rel::Pool { hole: hole.clone(), over: Box::new(over.rel.clone()), kind: kind.clone(), body: Box::new(term.rel) };
-                match self.typed(pool) {
-                    Some(typed) => visit(typed),
-                    None => ControlFlow::Continue(()),
-                }
-            };
-            let names: Vec<String> = own.columns.iter().map(|column| inner.reference(column)).collect();
-            for columns in subsets(&names) {
-                if !columns.is_empty() && columns.len() < names.len() {
-                    inner.emit(Rel::Project(Box::new(own.rel.clone()), columns), &mut wrap)?;
-                }
-            }
-            inner.components_of(&[&own], &mut wrap)?;
-        }
-        ControlFlow::Continue(())
     }
 
     /// The terms of `component` with one bound input per relation of `reps`, in

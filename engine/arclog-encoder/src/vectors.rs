@@ -1,7 +1,6 @@
-//! The vector entries: feature expressions whose only free holes are a
-//! vector's table holes, so a `pool` binds every column hole. A version of the
-//! library and the registry, and a size, fix one list of names, sorted by name,
-//! for every table (`work/feature-spec/feature-spec.md#vectors`).
+//! The vector entries that name no column of their tables, with their numbers
+//! through the engine. A table's entries that name its columns are shapes, which
+//! `tablewalk` gives (`work/feature-spec/feature-spec.md#vectors`).
 
 use std::collections::BTreeMap;
 use std::ops::ControlFlow;
@@ -10,11 +9,10 @@ use arclog::registry::Registry;
 use arclog::types::ValueType;
 
 use crate::encoder::with_tables;
-use crate::enumerate::{value_kinds, Space, Typed};
-use crate::expand::Rows;
+use crate::enumerate::{Space, Typed};
 use crate::expression::{Feature, Leaf, Rel};
 use crate::run::{AtAssignment, Evaluated, Host, ModelValue, Value};
-use crate::schema::{ColumnFacts, TableSchema, Tables};
+use crate::schema::{TableSchema, Tables};
 
 /// The hole of a TableVector's one table, which stands for every table.
 pub const TABLE_HOLE: &str = "&table";
@@ -29,14 +27,6 @@ struct AbstractTable<'h>(&'h [String]);
 impl Tables for AbstractTable<'_> {
     fn table(&self, name: &str) -> Option<TableSchema> {
         self.0.iter().any(|hole| hole == name).then(|| TableSchema { columns: Vec::new(), stored: None, per_input: true, has_example: false })
-    }
-
-    fn accepts(&self, _forms: &[String]) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn columns_of(&self, _forms: &[String], _rows: &Rows) -> Result<Vec<ColumnFacts>, String> {
-        Err("no program stands behind a vector's table".to_string())
     }
 }
 
@@ -59,7 +49,7 @@ fn gives_number(feature: &Feature, term: &Typed) -> bool {
         Feature::Nonempty(_) | Feature::Cardinality(_) => true,
         Feature::ValueSet(_, columns) => {
             let [one] = &columns[..] else { return false };
-            let name = crate::expand::label_of(one.trim_start_matches('?'));
+            let name = crate::expand::label_of(one);
             term.columns.iter().any(|column| (column.name == *one || column.name == name) && matches!(column.ty, Some(ValueType::Int | ValueType::Nat)))
         }
         Feature::Call(..) => false,
@@ -79,9 +69,7 @@ pub fn entries(holes: &[String], size: usize, program_relations: bool, max_input
             task_wide,
             table_names: holes.to_vec(),
             program_relations,
-            kinds: value_kinds(),
             max_inputs,
-            frames: Vec::new(),
             thin: None,
             no_output: false, quick: false, max_bound_columns: None,
         };

@@ -2,9 +2,8 @@
 //! `work/feature-spec/feature-spec.md#the-generating-set`, its reader from an
 //! s-expression, and its text, which is the name of a vector entry.
 //!
-//! A column is written by its name, or by a hole, `?x`, that an enclosing
-//! `pool` binds. A ground expression has every table and every column bound
-//! to a name, so its text says what it computes on one state.
+//! A column is written by its name. A ground expression has every table and every
+//! column bound to a name, so its text says what it computes on one state.
 
 use std::fmt;
 
@@ -84,14 +83,6 @@ impl Leaf {
     }
 }
 
-/// What a `pool` ranges over: the columns of a value type, or those with one
-/// lineage root.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
-pub enum Kind {
-    Type(String),
-    LineageRoot(Box<Kind>, String),
-}
-
 /// A field of an input binding: a column, or a list that fills a type
 /// parameter's column with a record.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
@@ -122,7 +113,6 @@ pub enum Rel {
     Union(Box<Rel>, Box<Rel>, Vec<(Column, Operand)>),
     LibJoin(Box<Rel>, String, Vec<(String, Column)>),
     Component(String, Vec<Binding>, String),
-    Pool { hole: String, over: Box<Rel>, kind: Kind, body: Box<Rel> },
     /// A call of a fragment of the library, with each argument as written.
     Call(String, Vec<Written>),
 }
@@ -187,10 +177,6 @@ impl Rel {
                     binding.relation.each_leaf(visit);
                 }
             }
-            Rel::Pool { over, body, .. } => {
-                over.each_leaf(visit);
-                body.each_leaf(visit);
-            }
             Rel::Call(..) => {}
         }
     }
@@ -209,10 +195,6 @@ impl Rel {
                     binding.relation.each_call(visit);
                 }
             }
-            Rel::Pool { over, body, .. } => {
-                over.each_call(visit);
-                body.each_call(visit);
-            }
             Rel::Call(name, args) => visit(name, args),
         }
     }
@@ -226,7 +208,6 @@ impl Rel {
             Rel::Join(left, right, _) | Rel::Antijoin(left, right, _) | Rel::Union(left, right, _) => 1 + left.size() + right.size(),
             // Each bound input past the first combines one more relation, as a `join` does.
             Rel::Component(_, bindings, _) => bindings.len().max(1) + bindings.iter().map(|binding| binding.relation.size()).sum::<usize>(),
-            Rel::Pool { over, body, .. } => 1 + over.size() + body.size(),
         }
     }
 }
@@ -354,19 +335,8 @@ impl Reader<'_> {
                 let bindings = bindings.iter().map(|binding| self.binding(binding)).collect::<Result<_, _>>()?;
                 Ok(Rel::Component(symbol(name)?.to_string(), bindings, symbol(port)?.to_string()))
             }
-            ("pool", [hole, over, kind, body]) => Ok(Rel::Pool { hole: symbol(hole)?.to_string(), over: boxed(over)?, kind: self.kind(kind)?, body: boxed(body)? }),
             (name, args) if self.library.get(name).is_some_and(|found| found.kind == MacroKind::Fragment) => Ok(Rel::Call(name.to_string(), args.iter().map(Written::of).collect::<Result<_, _>>()?)),
             _ => Err(format!("no operator at {}", show(expr))),
-        }
-    }
-
-    fn kind(&self, expr: &SExpr) -> Result<Kind, String> {
-        if let SExpr::Symbol { text, .. } = expr {
-            return Ok(Kind::Type(text.to_string()));
-        }
-        match items(expr)? {
-            [head, kind, root] if symbol(head)? == "lineage-root" => Ok(Kind::LineageRoot(Box::new(self.kind(kind)?), symbol(root)?.to_string())),
-            _ => Err(format!("no kind at {}", show(expr))),
         }
     }
 
@@ -427,15 +397,6 @@ fn write_pairs(f: &mut fmt::Formatter<'_>, pairs: &[(String, String)]) -> fmt::R
         write!(f, " ({a} {b})")?;
     }
     Ok(())
-}
-
-impl fmt::Display for Kind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Kind::Type(name) => f.write_str(name),
-            Kind::LineageRoot(kind, root) => write!(f, "(lineage-root {kind} {root})"),
-        }
-    }
 }
 
 impl fmt::Display for Field {
@@ -507,7 +468,6 @@ impl fmt::Display for Rel {
                 }
                 write!(f, " {port})")
             }
-            Rel::Pool { hole, over, kind, body } => write!(f, "(pool {hole} {over} {kind} {body})"),
             Rel::Call(name, args) => {
                 write!(f, "({name}")?;
                 for arg in args {

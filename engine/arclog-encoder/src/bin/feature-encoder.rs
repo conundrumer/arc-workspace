@@ -471,11 +471,11 @@ fn run_walk_check(arguments: &Arguments, grids: &str) -> Result<(), String> {
 }
 
 fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(), String> {
-    use arclog_encoder::enumerate::{value_kinds, Space, Typed};
+    use arclog_encoder::enumerate::{Space, Typed};
     use arclog_encoder::expression::Rel;
     let host = host(arguments, solver)?;
     for task_wide in [false, true] {
-        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, kinds: value_kinds(), max_inputs: arguments.max_inputs, frames: Vec::new(), thin: None, no_output: false, quick: false, max_bound_columns: None };
+        let space = Space { registry: arclog::registry::Registry::get(), tables: &host, task_wide, table_names: tables.to_vec(), program_relations: arguments.program_relations, max_inputs: arguments.max_inputs, thin: None, no_output: false, quick: false, max_bound_columns: None };
         let mut lower: Vec<Vec<Typed>> = Vec::new();
         for size in 0..=arguments.size {
             let start = Instant::now();
@@ -491,7 +491,6 @@ fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(
                     Rel::Union(..) => "union".to_string(),
                     Rel::LibJoin(..) => "lib-join".to_string(),
                     Rel::Component(name, bindings, _) => format!("component/{} inputs/{name}", bindings.len()),
-                    Rel::Pool { .. } => "pool".to_string(),
                     Rel::Call(..) => "call".to_string(),
                 };
                 *counts.entry(name).or_default() += 1;

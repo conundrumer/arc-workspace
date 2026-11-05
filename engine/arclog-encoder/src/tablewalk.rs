@@ -120,7 +120,7 @@ pub fn table_ops(host: &Host, table: &str, types: &[ValueType], d: usize, max_co
             to.push(&held.leaves[b as usize].rep);
         }
         let rel = rebased(&meta.term, &reps, &to);
-        let columns = columns_of(&rel, host, registry, false, &[]).unwrap_or_default();
+        let columns = columns_of(&rel, host, registry, false).unwrap_or_default();
         let shape = hash_words(shape_text(&rel.to_string(), table, types).bytes().map(u64::from)) as u64;
         let symbols = columns.iter().map(|column| symbol_of(&column.name)).collect();
         small.push(SmallTerm { entry, a, b, flags, schema: record.result, shape, symbols });
@@ -429,7 +429,6 @@ fn step_code(table: &OpTable, step: &Step) -> u64 {
             let held = &table.instances[*instance as usize];
             table.shapes[held.shape as usize].code ^ (u64::from(*port) << 48)
         }
-        Step::Pool { .. } => 29,
     }
 }
 
@@ -558,7 +557,7 @@ fn cell_bits(value: &serde_json::Value, ty: &ValueType) -> Option<u32> {
 /// The table of a candidate file's `value`.
 pub fn stored_of(value: &serde_json::Value, train: usize) -> Option<Stored> {
     let names = value["types"].as_array()?;
-    let types: Vec<ValueType> = names.iter().map(|name| crate::pool::kind_type(name.as_str()?)).collect::<Option<_>>()?;
+    let types: Vec<ValueType> = names.iter().map(|name| crate::schema::type_of_name(name.as_str()?)).collect::<Option<_>>()?;
     let mut order: Vec<usize> = (0..types.len()).collect();
     order.sort_by_key(|at| format!("{:?}", types[*at]));
     let sorted: Vec<ValueType> = order.iter().map(|at| types[*at].clone()).collect();

@@ -6,7 +6,6 @@
 //! - [`expand`]: the expansion of a ground expression into arclog forms.
 //! - [`library`]: the reader of the feature library, and the expansion of a
 //!   call of one of its macros.
-//! - `pool`: the expansion of a `pool`.
 //! - [`enumerate`]: the feature expressions at a size.
 //! - [`encoder`]: the value of each ground expression at a size, on tables of a
 //!   state.
@@ -30,7 +29,6 @@ pub mod law;
 pub mod library;
 pub mod native;
 pub mod optable;
-pub mod pool;
 pub mod program_relations;
 pub mod run;
 pub mod schema;
