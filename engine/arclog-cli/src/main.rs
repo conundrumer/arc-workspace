@@ -21,12 +21,13 @@ mod souffle_rows;
 mod speed;
 mod stream;
 mod tables;
+mod test_pairs;
 
 use arclog::algebra::tables::OrientationTables;
 use std::process::ExitCode;
 
 /// Each subcommand, by the name the first argument gives it.
-const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 12] = [
+const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 13] = [
     ("check-diff", check_diff::run),
     ("compare", compare::run),
     ("decode", decode::run),
@@ -39,6 +40,7 @@ const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 12] = [
     ("row-parity", row_parity::run),
     ("stream", stream::run),
     ("tables", tables::run),
+    ("test-pairs", test_pairs::run),
 ];
 
 fn main() -> ExitCode {
