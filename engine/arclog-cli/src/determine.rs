@@ -20,15 +20,16 @@ use arclog::check::{CheckCache, CheckedProgram, SolverClauses};
 use arclog::eval::determinations::{det_node, relation_spelled};
 use arclog::eval::examples::{scope_of, ExampleScope};
 use arclog::eval::join::{each_row, union};
-use arclog::eval::rigid::image;
+use arclog::eval::rigid::{image, part_key_columns};
 use arclog::eval::{RelationValue, RunFault};
-use arclog::hash::StableHashMap;
+use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
 use arclog::judge::determination::{determine, CaseOutcome, DeterminedCase, Determination, Parameter};
 use arclog::eval::instance::Constructions;
 use arclog::eval::Limits;
 use arclog::task::{JudgedTask, Task};
+use arclog::program::path::{node_at, NodeRef};
 use arclog::program::{OutputOwner, ParamValue, ProgramRelation, RigidDetName};
 use arclog::registry::Registry;
 use arclog::relations::Relation;
@@ -184,6 +185,11 @@ fn fault_text(fault: &RunFault) -> String {
 /// record's, and the engine's.
 type Compared = (BTreeSet<Vec<Leaf>>, Vec<Vec<EngineLeaf>>);
 
+/// A part of an assembly, in its comparison with its record: its name, the
+/// record, and the types and the engine's rows of the columns the record
+/// holds.
+type AssemblyPart<'a> = (String, &'a ParamValue, Vec<ValueType>, Vec<Vec<TermId>>);
+
 /// The comparison of a solver's determined values with its records.
 struct Comparison<'c> {
     determined: &'c [DeterminedCase<'c>],
@@ -303,9 +309,14 @@ impl Comparison<'_> {
         };
         let parameters = self.determination.values(case.name);
         let evaluation = case.evaluation(&parameters);
-        // Each part: its name, its record, and the engine's rows with the
-        // column of the Pose at which each row stands.
-        let mut engine: Vec<(String, &ParamValue, &[ValueType], usize, Vec<Vec<TermId>>)> = Vec::new();
+        let resolved = &case.program.program;
+        let Some(NodeRef::RigidDet(rigid)) = node_at(NodeRef::Program(resolved.program.value()), resolved.form_of(node)) else {
+            unreachable!("the form of an assembly's node is a `RIGID_DET`")
+        };
+        // Each part: its name, its record, the engine's rows, the column of
+        // the Pose at which each row stands, and the columns after the Pose
+        // that hold a key column again.
+        let mut engine: Vec<(String, &ParamValue, &[ValueType], usize, Vec<usize>, Vec<Vec<TermId>>)> = Vec::new();
         for (relation, record) in parts {
             let ProgramRelation::Output(output) = relation else { unreachable!("an output of the assembly") };
             let part = relation_spelled(relation);
@@ -324,17 +335,28 @@ impl Comparison<'_> {
             let Some(pose_column) = types.iter().position(|ty| matches!(ty, ValueType::Pose(_))) else {
                 return Some(Finding::Fault(format!("{part}: the part's columns hold no Pose")));
             };
-            engine.push((part, record, types, pose_column, rows_of(&value)));
+            let copies = part_key_columns(rigid, &output.path);
+            engine.push((part, record, types, pose_column, copies, rows_of(&value)));
         }
-        // One Pose value for every part: the first that a row holds.
-        let pose = engine.iter().find_map(|(_, _, _, pose_column, rows)| rows.first().map(|row| row[*pose_column]));
-        // A part's record holds its columns without the Pose.
-        let mut sides: Vec<(String, &ParamValue, Vec<ValueType>, Vec<Vec<TermId>>)> = Vec::new();
-        for (part, record, types, pose_column, rows) in engine {
-            let kept = |column: &usize| *column != pose_column;
-            let rows = rows.into_iter().filter(|row| Some(row[pose_column]) == pose).map(|row| (0..row.len()).filter(kept).map(|column| row[column]).collect()).collect();
+        // At each key, one Pose value for every part: the first that a row
+        // of the key holds.
+        let mut poses: StableHashMap<Vec<TermId>, TermId> = StableHashMap::default();
+        for (_, _, _, pose_column, _, rows) in &engine {
+            for row in rows {
+                poses.entry(row[..*pose_column].to_vec()).or_insert(row[*pose_column]);
+            }
+        }
+        // A part's record holds its columns without the Pose, and holds each
+        // key column once.
+        let mut sides: Vec<AssemblyPart<'_>> = Vec::new();
+        for (part, record, types, pose_column, copies, rows) in engine {
+            let kept = |column: &usize| *column != pose_column && !(*column > pose_column && copies.contains(&(*column - pose_column - 1)));
+            let rows = rows.into_iter().filter(|row| poses.get(&row[..pose_column]) == Some(&row[pose_column])).map(|row| (0..row.len()).filter(kept).map(|column| row[column]).collect()).collect();
             let types = (0..types.len()).filter(kept).map(|column| types[column].clone()).collect();
             sides.push((part, record, types, rows));
+        }
+        if let Some(key) = &rigid.key {
+            return self.keyed_assembly(&name, &sides, key.columns.len(), compared);
         }
         let geometry = Geometry::get();
         for &element in geometry.domain(&ValueType::D4) {
@@ -357,6 +379,77 @@ impl Comparison<'_> {
             }
         }
         Some(Finding::Difference { parameter: name.clone(), line: format!("{name}: no one D4 element takes each part of the assembly onto its `param` record") })
+    }
+
+    /// The comparison of the parts in `sides` of an assembly under a `key`
+    /// clause of `key_width` columns with their records. Each key is an
+    /// assembly of its own, so each takes one D4 element, the same for every
+    /// part at that key, onto a key of the records. The rows at those
+    /// elements then compare under one renaming. Gives its finding, or `None`
+    /// where they agree, whose rows then join `compared`.
+    fn keyed_assembly(&self, name: &str, sides: &[AssemblyPart<'_>], key_width: usize, compared: &mut Vec<Compared>) -> Option<Finding> {
+        let mut records: Vec<StableHashMap<Vec<TermId>, StableHashSet<Vec<TermId>>>> = Vec::with_capacity(sides.len());
+        for (part, record, types, _) in sides {
+            let encoded = {
+                let mut table = self.session.intern.write().expect("an intern table that no panic poisoned");
+                arclog::terms::encode_param_value(record, types, self.registry, &mut table)
+            };
+            let encoded = match encoded {
+                Ok(encoded) => encoded,
+                Err(error) => return Some(Finding::Fault(format!("{part}: the `param` record does not read at the relation's column types: {error:?}"))),
+            };
+            let mut by_key: StableHashMap<Vec<TermId>, StableHashSet<Vec<TermId>>> = StableHashMap::default();
+            for row in encoded {
+                by_key.entry(row[..key_width].to_vec()).or_default().insert(row[key_width..].to_vec());
+            }
+            records.push(by_key);
+        }
+        let mut record_keys: Vec<&Vec<TermId>> = Vec::new();
+        for key in records.iter().flat_map(|by_key| by_key.keys()) {
+            if !record_keys.contains(&key) {
+                record_keys.push(key);
+            }
+        }
+        let mut keys: Vec<&[TermId]> = Vec::new();
+        for row in sides.iter().flat_map(|(_, _, _, rows)| rows) {
+            if !keys.contains(&&row[..key_width]) {
+                keys.push(&row[..key_width]);
+            }
+        }
+        let no_element = || Some(Finding::Difference { parameter: name.to_owned(), line: format!("{name}: no D4 element at each key takes each part of the assembly onto a key of its `param` records") });
+        if keys.len() != record_keys.len() {
+            return no_element();
+        }
+        let geometry = Geometry::get();
+        let mut moved: Vec<Vec<Vec<TermId>>> = vec![Vec::new(); sides.len()];
+        for key in keys {
+            let found = geometry.domain(&ValueType::D4).iter().find_map(|&element| {
+                let g = geometry.element(element);
+                let images: Vec<StableHashSet<Vec<TermId>>> = sides.iter().map(|(_, _, types, rows)| {
+                    rows.iter().filter(|row| &row[..key_width] == key).filter_map(|row| image(geometry, g, &row[key_width..], &types[key_width..]).map(Vec::from)).collect()
+                }).collect();
+                let at = record_keys.iter().position(|at| records.iter().zip(&images).all(|(by_key, images)| by_key.get(*at).map_or(images.is_empty(), |rows| rows == images)))?;
+                Some((at, images))
+            });
+            let Some((at, images)) = found else { return no_element() };
+            record_keys.remove(at);
+            for (rows, images) in moved.iter_mut().zip(images) {
+                rows.extend(images.into_iter().map(|row| key.iter().copied().chain(row).collect()));
+            }
+        }
+        let mut trial = compared.clone();
+        for ((part, record, types, _), rows) in sides.iter().zip(&moved) {
+            match self.leaves(types, record, rows) {
+                Ok((record, engine)) => {
+                    if let Some(what) = differs(record, engine, &mut trial) {
+                        return Some(Finding::Difference { parameter: name.to_owned(), line: format!("{part}: the determined value differs from its `param` record: {what}") });
+                    }
+                }
+                Err(fault) => return Some(Finding::Fault(format!("{part}: {fault}"))),
+            }
+        }
+        *compared = trial;
+        None
     }
 
     /// The leaves of `record` and of the engine's `rows`, at the column

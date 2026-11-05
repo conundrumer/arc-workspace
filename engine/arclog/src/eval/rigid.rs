@@ -88,6 +88,16 @@ pub fn evaluate_assembly(
     Ok(rows.map_or_else(|value| value, |rows| RelationValue::Rows(Arc::new(join::one_part(rows)))))
 }
 
+/// The index, among the part's columns in the output at `path` of the form
+/// `rigid`, of each column at a label of the `key` clause: the output holds
+/// that key column again there.
+pub fn part_key_columns(rigid: &RigidDet, path: &[OutputStep]) -> Vec<usize> {
+    let Some(key) = &rigid.key else { return Vec::new() };
+    let part = rigid.parts.iter().find(|part| form_columns::part_steps(&part.value().relation).is_some_and(|steps| steps.first() == path.first()));
+    let labels = part.map_or_else(Vec::new, |part| form_columns::part_labels(rigid, part.value()));
+    labels.iter().enumerate().filter(|(_, label)| key.columns.iter().any(|column| column.label == **label)).map(|(at, _)| at).collect()
+}
+
 /// The clause that the evaluation joins for the output `step` of the
 /// `RIGID_DET` form `rigid` at `form`, with the paths of its nodes: the key
 /// and instance bodies, and the atom of the part that `step` begins the path
