@@ -326,6 +326,10 @@ impl NameWriter for AsWritten {
                         out.byte(5);
                         out.text(&name.text());
                     }
+                    FactRelation::Stored(name) => {
+                        out.byte(6);
+                        out.text(&name.text());
+                    }
                 }
             }
             RelationRef::Lib(crate::registry::LibName(name)) => {

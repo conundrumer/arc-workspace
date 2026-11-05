@@ -429,7 +429,7 @@ impl<'g, 'a> FormGrids<'g, 'a> {
                     FactRelation::ExInput => example().map(|example| Grid { kind: GridKind::Input, example }).into_iter().collect(),
                     FactRelation::ExOutput => example().map(|example| Grid { kind: GridKind::Output, example }).into_iter().collect(),
                     FactRelation::Output => vec![Grid { kind: GridKind::Output, example: Example::Current }],
-                    FactRelation::Program(_) | FactRelation::Name(_) => Vec::new(),
+                    FactRelation::Program(_) | FactRelation::Name(_) | FactRelation::Stored(_) => Vec::new(),
                 }
             }
             DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => own(inference.relation_column_grids(node, relation, column)),

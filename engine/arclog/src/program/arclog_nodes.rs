@@ -296,6 +296,10 @@ pub enum FactRelation {
     /// The one row of a lib name constant, `(lib_name "text" (:Name *C))`,
     /// which a feature's forms alone read.
     Name(crate::terms::LibNameId),
+    /// A table given as stored rows, `(stored_table "name" ...)`, which
+    /// [`crate::registry::declare_stored_table`] declares and a session
+    /// holds. A feature's forms alone read it.
+    Stored(crate::terms::LibNameId),
 }
 
 /// The relations that hold a state's program as data. A column holds a lib
@@ -373,6 +377,17 @@ impl FactRelation {
             FactRelation::Output => "output".to_string(),
             FactRelation::Program(fact) => fact.name().to_string(),
             FactRelation::Name(name) => format!("lib_name {:?}", &*name.text()),
+            FactRelation::Stored(name) => format!("stored_table {:?}", &*name.text()),
+        }
+    }
+
+    /// Whether the relation has rows on each example, so a form per input
+    /// reads the example it runs on.
+    pub fn per_example(self) -> bool {
+        match self {
+            FactRelation::Input | FactRelation::Output => true,
+            FactRelation::Stored(name) => crate::registry::stored_table_per_input(name),
+            FactRelation::ExInput | FactRelation::ExOutput | FactRelation::Program(_) | FactRelation::Name(_) => false,
         }
     }
 }

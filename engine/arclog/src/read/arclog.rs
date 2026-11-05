@@ -706,12 +706,14 @@ impl Reader {
     /// children of `path`, with its tokens in `record`.
     fn atom(&mut self, list: &List, path: &NodePath, scope: &LabelScope, record: &mut Record) -> R<Atom> {
         let (name, place) = self.symbol(list.items.first(), "an atom's relation", list.place)?;
-        if self.feature_forms && name == sp::LIB_NAME {
+        if self.feature_forms && (name == sp::LIB_NAME || name == sp::STORED_TABLE) {
             let (text, text_place) = self.string(list.items.get(1), "a lib name's text", list.place)?;
             record.token(place);
             record.token(text_place);
             let sites = self.sites(&list.items[2..], path, scope, record, false);
-            return Ok(Atom { relation: RelationRef::Fact(FactRelation::Name(crate::terms::LibNameId::of(text))), sites });
+            let constant = crate::terms::LibNameId::of(text);
+            let fact = if name == sp::LIB_NAME { FactRelation::Name(constant) } else { FactRelation::Stored(constant) };
+            return Ok(Atom { relation: RelationRef::Fact(fact), sites });
         }
         let relation = self.relation_ref(name, place)?;
         record.token(place);

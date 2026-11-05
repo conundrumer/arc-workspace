@@ -16,7 +16,7 @@ use arclog::decode::{relation_dets, Decoder};
 use arclog::eval::examples::scope_of;
 use arclog::eval::instance::Constructions;
 use arclog::eval::join::each_row;
-use arclog::eval::{Evaluation, ModelsEnd, RelationValue};
+use arclog::eval::{Evaluation, ModelsEnd, RelationValue, TableWork};
 use arclog::judge::determination::{Assignment, End};
 use arclog::registry::Registry;
 use arclog::session::TaskSession;
@@ -65,6 +65,14 @@ pub enum Evaluated {
     Value(Value),
 }
 
+/// An expression whose forms the checker accepts, ready to run.
+pub struct Checked {
+    pub expanded: Expanded,
+    pub program: StudyProgram,
+    /// The engine's canonical hash of the expansion, down to the base tables.
+    pub identity: Option<u128>,
+}
+
 /// The value of an expression, at each assignment of the `DET`s it reads.
 #[derive(Clone, Debug)]
 pub struct Value {
@@ -92,6 +100,8 @@ pub struct Host {
     cache: RefCell<CheckCache>,
     /// Whether the session holds the rows of the program relations.
     provided: std::cell::Cell<bool>,
+    /// The bindings that one expression's evaluation may try, where a cap holds.
+    work_cap: std::cell::Cell<Option<u64>>,
 }
 
 impl Tables for Host {
@@ -150,6 +160,7 @@ impl Host {
             base,
             cache: RefCell::new(cache),
             provided: std::cell::Cell::new(false),
+            work_cap: std::cell::Cell::new(None),
         })
     }
 
@@ -202,7 +213,7 @@ impl Host {
     fn provide_program_relations(&self) {
         if !self.provided.replace(true) {
             for (fact, rows) in crate::program_relations::program_relations(self.base.checked(), Registry::get()) {
-                self.session.provide_fact(fact, rows);
+                self.session.provide_fact(fact, None, rows);
             }
         }
     }
@@ -213,16 +224,49 @@ impl Host {
         StudyProgram::from_feature_forms_cached(&text, Registry::get(), &mut self.cache.borrow_mut())
     }
 
+    /// Sets the bindings that one expression's evaluation may try.
+    pub fn set_work_cap(&self, cap: u64) {
+        self.work_cap.set(Some(cap));
+    }
+
+    /// Whether the checker accepts the forms of `rel`.
+    pub fn accepts_rel(&self, rel: &Rel, task_wide: bool) -> bool {
+        match expand_rel(rel, self, Registry::get(), task_wide) {
+            Ok(expanded) => self.checked_with(&expanded.forms).is_ok(),
+            Err(_) => false,
+        }
+    }
+
+    /// The forms of `feature`, checked, with their identity.
+    pub fn check(&self, feature: &Feature) -> Result<Checked, String> {
+        let expanded = expand(feature, self, Registry::get())?;
+        self.check_expanded(expanded)
+    }
+
+    fn check_expanded(&self, expanded: Expanded) -> Result<Checked, String> {
+        let program = self.checked_with(&expanded.forms)?;
+        let top = program.program().value().forms.len().checked_sub(2);
+        let identity = top
+            .and_then(|top| program.checked().program.query_identity(top, Registry::get()))
+            .map(|identity| identity.content.content_hash().0);
+        Ok(Checked { expanded, program, identity })
+    }
+
     /// Checks and evaluates the forms of `expanded`.
     pub fn run(&self, expanded: Expanded) -> Evaluated {
+        match self.check_expanded(expanded) {
+            Ok(checked) => self.evaluate_checked(checked),
+            Err(message) => Evaluated::Refused(message),
+        }
+    }
+
+    /// Evaluates the forms of `checked`.
+    pub fn evaluate_checked(&self, checked: Checked) -> Evaluated {
+        let Checked { expanded, program, .. } = checked;
         let registry = Registry::get();
         if expanded.forms.iter().any(|form| arclog::program::ProgramFact::ALL.iter().any(|fact| form.contains(fact.name()))) {
             self.provide_program_relations();
         }
-        let program = match self.checked_with(&expanded.forms) {
-            Ok(program) => program,
-            Err(message) => return Evaluated::Refused(message),
-        };
         let checked = program.checked();
         let Some(relation) = graph_relation(checked, &expanded.export) else {
             return Evaluated::Fault(format!("the program has no relation `{}`", expanded.export));
@@ -239,7 +283,8 @@ impl Host {
         let mut at: Vec<AtAssignment> = Vec::new();
         let mut stop = None;
         for example in decoder.examples_of(scope_of(checked, &relation)) {
-            let assigned = decoder.assigned(checked, relation.node, &dets, None, &mut |evaluation| models_at(evaluation, &relation, example));
+            let work = self.work_cap.get().map(TableWork::new);
+            let assigned = decoder.assigned(checked, relation.node, &dets, work.as_ref(), &mut |evaluation| models_at(evaluation, &relation, example));
             let assigned = match assigned {
                 Ok(assigned) => assigned,
                 Err(fault) => return Evaluated::Fault(format!("{} at {:?}", fault.message, fault.form)),

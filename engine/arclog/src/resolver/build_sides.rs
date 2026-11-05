@@ -88,6 +88,7 @@ impl Sides<'_, '_> {
         }
         match &self.builder.nodes[node].kind {
             DependencyKind::Fact(FactRelation::Input | FactRelation::Output) => Some(Side::PerInput),
+            DependencyKind::Fact(stored @ FactRelation::Stored(_)) => Some(if stored.per_example() { Side::PerInput } else { Side::TaskWide }),
             DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput | FactRelation::Program(_) | FactRelation::Name(_)) => Some(Side::TaskWide),
             _ => {
                 let form = self.builder.forms[node].first().expect("a form of each node of the case that is no fact").clone();

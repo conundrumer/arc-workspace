@@ -1725,7 +1725,7 @@ pub(crate) fn fact_frames(fact: FactRelation, columns: &[TableColumn]) -> Vec<St
     let grid = match fact {
         FactRelation::ExOutput | FactRelation::Output => OUTPUT_FRAME,
         FactRelation::Input | FactRelation::ExInput => INPUT_FRAME,
-        FactRelation::Program(_) | FactRelation::Name(_) => "",
+        FactRelation::Program(_) | FactRelation::Name(_) | FactRelation::Stored(_) => "",
     };
     columns.iter().map(|column| if column.name == "P" && has_frame(&column.ty) { grid.to_owned() } else { String::new() }).collect()
 }

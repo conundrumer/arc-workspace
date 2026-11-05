@@ -7,13 +7,20 @@
 //! - [`library`]: the reader of the feature library, and the expansion of a
 //!   call of one of its macros.
 //! - `pool`: the expansion of a `pool`.
+//! - [`enumerate`]: the feature expressions at a size.
+//! - [`encoder`]: the value of each ground expression at a size, on tables of a
+//!   state.
+//! - [`vectors`]: the vector entries, their names and their numbers.
 //! - [`run`]: the check and the evaluation of those forms, through the
 //!   engine's evaluator.
+pub mod encoder;
+pub mod enumerate;
 pub mod expand;
 pub mod expression;
 pub mod library;
-pub(crate) mod pool;
+pub mod pool;
 pub mod program_relations;
 pub mod run;
 pub mod schema;
+pub mod vectors;
 pub mod worked;

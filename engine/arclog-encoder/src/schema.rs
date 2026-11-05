@@ -33,10 +33,20 @@ pub struct TableColumn {
     pub ty: Option<ValueType>,
 }
 
+/// The relations that hold a table given as stored rows, each as an atom's head
+/// writes it: the table, and its lifted form, whose first column is `E`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredReads {
+    pub plain: String,
+    pub lifted: Option<String>,
+}
+
 /// What an expansion reads of a table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TableSchema {
     pub columns: Vec<TableColumn>,
+    /// Where the table is given as stored rows, the relations that hold them.
+    pub stored: Option<StoredReads>,
     /// Whether a task-wide form reads the table in its lifted form.
     pub per_input: bool,
     /// Whether a column holds an Example, which makes an expression over the
@@ -141,6 +151,7 @@ pub fn table_schema(program: &CheckedProgram, name: &str) -> Option<TableSchema>
     }
     Some(TableSchema {
         columns,
+        stored: None,
         per_input: resolved.side(relation.node) == Side::PerInput,
         has_example: program.types.has_example_column(&relation),
     })

@@ -314,7 +314,7 @@ fn feature_facts(program: &Node<Program>) -> Vec<FactRelation> {
     let mut facts = Vec::new();
     for (index, form) in program.value().forms.iter().enumerate() {
         for read in crate::check::reads::form_reads(form, &NodePath::top(index as u32)) {
-            if let RelationRef::Fact(fact @ (FactRelation::Output | FactRelation::Program(_) | FactRelation::Name(_))) = &read.atom.relation {
+            if let RelationRef::Fact(fact @ (FactRelation::Output | FactRelation::Program(_) | FactRelation::Name(_) | FactRelation::Stored(_))) = &read.atom.relation {
                 if !facts.contains(fact) {
                     facts.push(*fact);
                 }

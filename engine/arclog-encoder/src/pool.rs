@@ -14,20 +14,23 @@ use crate::schema::ColumnFacts;
 
 /// A pool in progress, whose hole a branch binds to one column.
 #[derive(Clone, Debug)]
-pub(crate) struct Frame {
+pub struct Frame {
     /// The hole, `?x`.
-    pub(crate) hole: String,
+    pub hole: String,
     /// The relation the pool ranges over.
-    pub(crate) over: Rel,
+    pub over: Rel,
     /// The name, in that relation, of the column that the hole holds.
-    pub(crate) column: String,
+    pub column: String,
     /// The relation that stands for `over` where the pool has no branch.
-    pub(crate) empty: Option<Rows>,
+    pub empty: Option<Rows>,
+    /// In an enumeration, where no column is bound yet: the kind's type, of a
+    /// column that the hole stands for.
+    pub open: Option<ValueType>,
 }
 
 impl Frame {
     /// The column's name under the hole: `?x` gives `X`.
-    pub(crate) fn name(&self) -> String {
+    pub fn name(&self) -> String {
         label_of(self.hole.trim_start_matches('?'))
     }
 }
@@ -85,6 +88,12 @@ impl Expander<'_> {
     pub(crate) fn under_holes(&self, rel: &Rel, mut rows: Rows) -> Rows {
         for frame in self.frames.iter().filter(|frame| frame.over == *rel) {
             let name = frame.name();
+            if let Some(ty) = &frame.open {
+                if !rows.columns.iter().any(|column| column.name == name) {
+                    rows.columns.push(Col::typed(name, Some(ty.clone())));
+                }
+                continue;
+            }
             let Some(at) = rows.columns.iter().position(|column| column.name == frame.column) else { continue };
             if rows.columns[at].name == name {
                 continue;
@@ -133,7 +142,7 @@ impl Expander<'_> {
                 continue;
             }
             let mark = self.forms.len();
-            self.frames.push(Frame { hole: hole.to_string(), over: over.clone(), column: column.name.clone(), empty: None });
+            self.frames.push(Frame { hole: hole.to_string(), over: over.clone(), column: column.name.clone(), empty: None, open: None });
             let branch = self.rel(body);
             let frame = self.frames.pop().expect("the frame of this branch");
             let accepted = match branch {
@@ -164,6 +173,7 @@ impl Expander<'_> {
         // `C`, then the body's columns.
         let mut taken = vec!["C".to_string()];
         let labels: Vec<(String, String)> = names.iter().map(|name| (name.clone(), unique(name, &mut taken))).collect();
+        let type_of = |name: &str| branches[0].0.columns.iter().find(|column| column.name == name).and_then(|column| column.ty.clone());
         let mut parts = Vec::new();
         for (index, (branch, identity)) in branches.iter().enumerate() {
             let marks: Vec<(usize, Mark)> = branch.columns.iter().enumerate().map(|(at, column)| {
@@ -173,8 +183,8 @@ impl Expander<'_> {
             let constant = if index == 0 { "*C" } else { "C" };
             parts.push(format!("({} (lib_name {identity:?} (:Name {constant})))", branch.atom(&marks)));
         }
-        let mut columns = vec!["C".to_string()];
-        columns.extend(labels.into_iter().map(|(_, label)| label));
+        let mut columns = vec![Col::typed("C", Some(ValueType::LibName))];
+        columns.extend(labels.iter().map(|(name, label)| Col::typed(label.clone(), type_of(name))));
         Ok(self.query(&[format!("(OR {})", parts.join("\n    "))], columns))
     }
 
@@ -184,18 +194,33 @@ impl Expander<'_> {
     fn empty_pool(&mut self, hole: &str, over: &Rel, kind: &Kind, body: &Rel) -> Result<Rows, String> {
         let name = label_of(hole.trim_start_matches('?'));
         let none = self.empty_relation(&value_type(kind)?, &name)?;
-        self.frames.push(Frame { hole: hole.to_string(), over: over.clone(), column: name.clone(), empty: Some(none.clone()) });
+        self.frames.push(Frame { hole: hole.to_string(), over: over.clone(), column: name.clone(), empty: Some(none.clone()), open: None });
         let branch = self.rel(body);
         self.frames.pop();
         let branch = branch?;
         let mut taken: Vec<String> = Vec::new();
         let marks: Vec<(usize, Mark)> = branch.columns.iter().enumerate().map(|(at, column)| (at, Mark::Fresh(unique(&label_of(&column.name), &mut taken)))).collect();
-        let columns: Vec<String> = marks.iter().map(|(_, mark)| match mark {
-            Mark::Fresh(label) => label.clone(),
+        let columns: Vec<Col> = marks.iter().map(|(at, mark)| match mark {
+            Mark::Fresh(label) => Col::typed(label.clone(), branch.columns[*at].ty.clone()),
             _ => unreachable!("each mark is fresh"),
         }).collect();
         let atom = branch.atom(&marks);
         Ok(self.query(&[atom, none.atom(&[])], columns))
+    }
+
+    /// The columns of a pool, with its hole open: `C`, then the body's.
+    pub(crate) fn pool_columns(&mut self, hole: &str, over: &Rel, kind: &Kind, body: &Rel) -> Result<Rows, String> {
+        let name = label_of(hole.trim_start_matches('?'));
+        self.frames.push(Frame { hole: hole.to_string(), over: over.clone(), column: name, empty: None, open: Some(value_type(kind)?) });
+        let branch = self.rel(body);
+        self.frames.pop();
+        let branch = branch?;
+        let mut taken = vec!["C".to_string()];
+        let mut columns = vec![Col::typed("C", Some(ValueType::LibName))];
+        for column in &branch.columns {
+            columns.push(Col::typed(unique(&column.name, &mut taken), column.ty.clone()));
+        }
+        Ok(self.query(&[], columns))
     }
 
     /// A relation with no rows, and one column `name` of the type `ty`.
@@ -230,7 +255,7 @@ impl Expander<'_> {
         let keyword = self.keyword();
         let relation = self.fresh();
         self.forms.push(format!("({keyword} {relation}\n  ({grid} {cell})\n  (NOT ({grid} {color}))\n  {binder})"));
-        Ok(Rows { relation, columns: vec![Col::plain(name)] })
+        Ok(Rows { relation, columns: vec![Col::typed(name, Some(ty.clone()))] })
     }
 }
 

@@ -107,6 +107,11 @@ fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, ato
         DependencyKind::Fact(fact) => Some(fact),
         _ => None,
     };
+    if let (Side::TaskWide, Some(stored @ FactRelation::Stored(_))) = (side, fact) {
+        if stored.per_example() {
+            return Some(Refused::InputFact);
+        }
+    }
     match (side, fact) {
         (Side::PerInput, Some(FactRelation::ExInput | FactRelation::ExOutput)) => Some(Refused::ExFact),
         (Side::TaskWide, Some(FactRelation::Input | FactRelation::Output)) => Some(Refused::InputFact),

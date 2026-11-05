@@ -648,6 +648,7 @@ impl Registry {
                 &held.iter().find(|(own, _)| *own == Some(program)).expect("the columns of each program relation").1
             }
             FactRelation::Name(_) => &feature_fact_columns().iter().find(|(own, _)| own.is_none()).expect("the column of a lib name constant").1,
+            FactRelation::Stored(name) => stored_tables().read().expect("a table that no panic poisoned").get(&name).expect("a stored table is declared before a form reads it").0,
             _ => self.facts.get(&fact).expect("`parse` fails on a fact relation with no `fact` form"),
         }
     }
@@ -655,6 +656,30 @@ impl Registry {
     fn type_constants(&self, ty: OrientationType) -> &TypeConstants {
         self.constants.get(&ty).expect("`parse` fails on an orientation type with no `constants` form")
     }
+}
+
+/// The declared stored tables, each with its columns and whether it has rows
+/// on each example.
+fn stored_tables() -> &'static std::sync::RwLock<std::collections::HashMap<crate::terms::LibNameId, (&'static [Column], bool)>> {
+    static TABLES: std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<crate::terms::LibNameId, (&'static [Column], bool)>>> = std::sync::OnceLock::new();
+    TABLES.get_or_init(Default::default)
+}
+
+/// Declares the stored table `name`, with `columns`. A session holds its rows
+/// on each example where `per_input` holds, and otherwise once for the task. A
+/// table declared again under one name keeps its first declaration, so a
+/// caller gives a name of its own to each set of columns.
+pub fn declare_stored_table(name: crate::terms::LibNameId, columns: &[(String, ValueType)], per_input: bool) {
+    let mut tables = stored_tables().write().expect("a table that no panic poisoned");
+    tables.entry(name).or_insert_with(|| {
+        let columns: Box<[Column]> = columns.iter().map(|(column, ty)| Column { name: ColumnName::Written(column.as_str().into()), ty: ColumnType::Fixed(ty.clone()) }).collect();
+        (Box::leak(columns), per_input)
+    });
+}
+
+/// Whether the stored table `name` has rows on each example.
+pub fn stored_table_per_input(name: crate::terms::LibNameId) -> bool {
+    stored_tables().read().expect("a table that no panic poisoned").get(&name).is_some_and(|(_, per_input)| *per_input)
 }
 
 /// The columns of each program relation, and, with no relation, the column of

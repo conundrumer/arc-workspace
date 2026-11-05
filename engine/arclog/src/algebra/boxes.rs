@@ -203,7 +203,7 @@ fn extent(p: Margins, axis: Edges) -> i32 {
 
 /// The image of `p` under the D4 element `g`: the margin at each edge goes
 /// to that edge's image.
-pub(crate) fn apply(g: super::geometry::D4Element, p: Margins) -> Margins {
+pub fn apply(g: super::geometry::D4Element, p: Margins) -> Margins {
     margins(|e| margin(p, Edge::ALL.into_iter().find(|&f| g.image(f) == e).expect("an element moves each edge to an edge")))
 }
 

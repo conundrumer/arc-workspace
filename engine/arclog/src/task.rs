@@ -248,6 +248,7 @@ impl Task {
             FactRelation::ExInput | FactRelation::ExOutput => 3,
             FactRelation::Program(program) => program.columns().len() as u16,
             FactRelation::Name(_) => 1,
+            FactRelation::Stored(_) => panic!("a session holds a stored table's rows on each example it reads"),
         });
         match (fact, example) {
             (FactRelation::Output, Some(example)) => {

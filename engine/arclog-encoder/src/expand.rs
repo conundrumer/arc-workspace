@@ -11,6 +11,7 @@
 use arclog::program::ColumnName;
 use arclog::registry::{ColumnType, Component, Column as LibColumn, InputPort, LibEntry, LibName, Macro, Port, Registry};
 use arclog::resolver::registry_columns::component;
+use arclog::types::ValueType;
 
 use crate::expression::{Binding, Column, Feature, Field, Leaf, Op, Operand, Reader, Rel, Written};
 use crate::library::{library, HoleKind, Library};
@@ -52,22 +53,29 @@ impl Mark {
 /// A column of a relation in the expansion.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Col {
-    pub(crate) name: String,
-    pub(crate) path: Vec<String>,
+    pub name: String,
+    pub path: Vec<String>,
+    /// The column's type as the expansion knows it, for the enumeration of
+    /// bindings. The checker decides what it accepts.
+    pub ty: Option<ValueType>,
 }
 
 impl Col {
     pub(crate) fn plain(name: impl Into<String>) -> Col {
+        Col::typed(name, None)
+    }
+
+    pub(crate) fn typed(name: impl Into<String>, ty: Option<ValueType>) -> Col {
         let name = name.into();
-        Col { path: vec![name.clone()], name }
+        Col { path: vec![name.clone()], name, ty }
     }
 }
 
 /// A relation that a form can read: its spelling and its columns.
 #[derive(Clone, Debug)]
 pub struct Rows {
-    pub(crate) relation: String,
-    pub(crate) columns: Vec<Col>,
+    pub relation: String,
+    pub columns: Vec<Col>,
 }
 
 impl Rows {
@@ -148,6 +156,9 @@ pub struct Expander<'a> {
     pub(crate) next: usize,
     /// The pools in progress, innermost last.
     pub(crate) frames: Vec<crate::pool::Frame>,
+    /// Whether the expansion reads only the columns of a relation, for the
+    /// enumeration of bindings: no form it writes runs.
+    pub(crate) dry: bool,
 }
 
 /// Whether an expression with these leaves is task-wide: a leaf has an Example
@@ -195,15 +206,22 @@ pub fn expand(feature: &Feature, tables: &dyn Tables, registry: &Registry) -> Re
 
 /// [`expand`], with the expression read as task-wide where `task_wide` holds.
 pub fn expand_at(feature: &Feature, tables: &dyn Tables, registry: &Registry, task_wide: bool) -> Result<Expanded, String> {
-    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: Vec::new() };
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: Vec::new(), dry: false };
     let rows = expander.feature(feature)?;
     Ok(Expanded { forms: expander.forms, export: rows.relation, columns: rows.columns.into_iter().map(|column| column.name).collect(), task_wide })
+}
+
+/// The columns of the relation `rel` with `frames` in progress, as the
+/// expansion names and types them. No form it writes runs.
+pub fn columns_of(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool, frames: &[crate::pool::Frame]) -> Result<Vec<Col>, String> {
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: frames.to_vec(), dry: true };
+    Ok(expander.rel(rel)?.columns)
 }
 
 /// The forms of the relation `rel`, to read it apart from a root.
 pub fn expand_rel(rel: &Rel, tables: &dyn Tables, registry: &Registry, task_wide: bool) -> Result<Expanded, String> {
     let task_wide = task_wide || rel_is_task_wide(rel, tables, &reader_of(registry));
-    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: Vec::new() };
+    let mut expander = Expander { registry, tables, task_wide, library: library(), forms: Vec::new(), next: 0, frames: Vec::new(), dry: false };
     let rows = expander.rel(rel)?;
     // A leaf or a table of the state gives no form, so the read of it does.
     let rows = expander.copy_of(&rows);
@@ -226,18 +244,19 @@ impl Expander<'_> {
     }
 
     /// A `QUERY` form with the body `conjuncts`, whose columns are `columns`.
-    pub(crate) fn query(&mut self, conjuncts: &[String], columns: Vec<String>) -> Rows {
+    pub(crate) fn query(&mut self, conjuncts: &[String], columns: Vec<Col>) -> Rows {
         let name = self.fresh();
         let keyword = self.keyword();
         self.forms.push(format!("({keyword} {name}\n  {})", conjuncts.join("\n  ")));
-        Rows { relation: name, columns: columns.into_iter().map(Col::plain).collect() }
+        Rows { relation: name, columns }
     }
 
     /// A relation that reads every column of `rows`, under the labels they name.
     fn copy_of(&mut self, rows: &Rows) -> Rows {
         let (marks, labels) = fresh_marks(rows);
         let atom = rows.atom(&marks);
-        self.query(&[atom], labels)
+        let columns = typed_labels(&labels, rows);
+        self.query(&[atom], columns)
     }
 
     /// The reader of a term that a macro's call writes.
@@ -271,7 +290,7 @@ impl Expander<'_> {
         let head = if labels.is_empty() { "()".to_string() } else { format!("((:m {}))", labels.join(" ")) };
         let instance = self.fresh();
         self.forms.push(format!("(INIT {instance} Cardinality\n  (member {head}\n    {}))", rows.atom(&marks)));
-        Ok(self.query(&[format!("({instance}.size (:N *N))")], vec!["N".to_string()]))
+        Ok(self.query(&[format!("({instance}.size (:N *N))")], vec![Col::typed("N", Some(ValueType::Nat))]))
     }
 
     /// The relation `rel`: the relation of its forms, with the column of each
@@ -325,6 +344,7 @@ impl Expander<'_> {
                 self.lib_join(&rows, name, &bindings)
             }
             Rel::Component(name, bindings, port) => self.component(name, bindings, port),
+            Rel::Pool { hole, over, kind, body } if self.dry => self.pool_columns(hole, over, kind, body),
             Rel::Pool { hole, over, kind, body } => self.pool(hole, over, kind, body),
             Rel::Call(name, args) => self.call_written(name, args),
         }
@@ -332,9 +352,9 @@ impl Expander<'_> {
 
     fn grid(&self, per_input: &str, lifted: &str) -> Rows {
         if self.task_wide {
-            Rows { relation: lifted.to_string(), columns: vec![Col::plain("E"), Col::plain("P"), Col::plain("Col")] }
+            ex_grid(lifted)
         } else {
-            Rows { relation: per_input.to_string(), columns: vec![Col::plain("P"), Col::plain("Col")] }
+            Rows { relation: per_input.to_string(), columns: vec![Col::typed("P", Some(ValueType::Position)), Col::typed("Col", Some(ValueType::Color))] }
         }
     }
 
@@ -342,18 +362,18 @@ impl Expander<'_> {
         match leaf {
             Leaf::Input => Ok(self.grid("input", "ex_input")),
             Leaf::Output => Ok(self.grid("output", "ex_output")),
-            Leaf::ExInput => Ok(Rows { relation: "ex_input".to_string(), columns: vec![Col::plain("E"), Col::plain("P"), Col::plain("Col")] }),
-            Leaf::ExOutput => Ok(Rows { relation: "ex_output".to_string(), columns: vec![Col::plain("E"), Col::plain("P"), Col::plain("Col")] }),
+            Leaf::ExInput => Ok(ex_grid("ex_input")),
+            Leaf::ExOutput => Ok(ex_grid("ex_output")),
             Leaf::Table(name) => self.table(name),
             Leaf::Lib(name) => {
                 let columns = self.lib_columns(name).ok_or_else(|| format!("`{name}` is no lib relation"))?;
-                Ok(Rows { relation: name.clone(), columns: columns.iter().map(|column| Col::plain(spelled(&column.name))).collect() })
+                Ok(Rows { relation: name.clone(), columns: columns.iter().map(lib_col).collect() })
             }
             Leaf::Proposer(name) => {
                 let Some(LibEntry::Proposer(proposer)) = self.registry.entry(&LibName(name.as_str().into())) else {
                     return Err(format!("`{name}` is no proposer"));
                 };
-                let columns: Vec<Col> = proposer.columns.iter().map(|column| Col::plain(spelled(&column.name))).collect();
+                let columns: Vec<Col> = proposer.columns.iter().map(lib_col).collect();
                 let relation = self.fresh();
                 // One value: every row over the whole task, or no rows.
                 let set = if columns.len() == 1 { " (SET)" } else { "" };
@@ -362,7 +382,7 @@ impl Expander<'_> {
             }
             Leaf::Program(name) => {
                 let fact = arclog::program::ProgramFact::of_name(name).ok_or_else(|| format!("`{name}` is no program relation"))?;
-                Ok(Rows { relation: name.clone(), columns: fact.columns().iter().map(|column| Col::plain(*column)).collect() })
+                Ok(Rows { relation: name.clone(), columns: fact.columns().iter().map(|column| Col::typed(*column, Some(ValueType::LibName))).collect() })
             }
         }
     }
@@ -380,7 +400,21 @@ impl Expander<'_> {
     /// under `E_2`.
     fn table(&mut self, name: &str) -> Result<Rows, String> {
         let schema = self.tables.table(name).ok_or_else(|| format!("the state has no table `{name}`"))?;
-        let mut rows = Rows { relation: name.to_string(), columns: schema.columns.iter().map(|column| Col { name: column.name.clone(), path: column.path.clone() }).collect() };
+        let mut rows = Rows { relation: name.to_string(), columns: schema.columns.iter().map(|column| Col { name: column.name.clone(), path: column.path.clone(), ty: column.ty.clone() }).collect() };
+        if let Some(stored) = &schema.stored {
+            rows.relation = stored.plain.clone();
+            if !(self.task_wide && schema.per_input) {
+                return Ok(rows);
+            }
+            let relation = stored.lifted.clone().ok_or_else(|| format!("the stored table `{name}` has no lifted form"))?;
+            let mut taken = vec!["E".to_string()];
+            let mut columns = vec![Col::typed("E", Some(ValueType::Example))];
+            for column in rows.columns {
+                let name = unique(&column.name, &mut taken);
+                columns.push(Col { path: column.path.clone(), name, ty: column.ty });
+            }
+            return Ok(Rows { relation, columns });
+        }
         if !(self.task_wide && schema.per_input) {
             return Ok(rows);
         }
@@ -390,9 +424,10 @@ impl Expander<'_> {
             let marks: Vec<(usize, Mark)> = labels.iter().cloned().enumerate().map(|(index, label)| (index, Mark::Fresh(label))).collect();
             let copy = self.fresh();
             self.forms.push(format!("(RULE {copy} {})", rows.atom(&marks)));
-            rows = Rows { relation: copy, columns: labels.into_iter().map(Col::plain).collect() };
+            let columns = typed_labels(&labels, &rows);
+            rows = Rows { relation: copy, columns };
         }
-        rows.columns.insert(0, Col::plain("E"));
+        rows.columns.insert(0, Col::typed("E", Some(ValueType::Example)));
         Ok(rows)
     }
 
@@ -407,7 +442,7 @@ impl Expander<'_> {
             }
             let label = unique(&label_of(name), &mut taken);
             marks.push((index, Mark::Fresh(label.clone())));
-            labels.push(label);
+            labels.push(Col::typed(label, rows.columns[index].ty.clone()));
         }
         let atom = rows.atom(&marks);
         Ok(self.query(&[atom], labels))
@@ -418,7 +453,7 @@ impl Expander<'_> {
         let mut taken = Vec::new();
         let labels: Vec<String> = rows.columns.iter().map(|column| unique(&label_of(&column.name), &mut taken)).collect();
         let mut marks: Vec<(usize, Mark)> = labels.iter().cloned().enumerate().map(|(index, label)| (index, Mark::Fresh(label))).collect();
-        let mut kept: Vec<String> = labels.clone();
+        let mut kept: Vec<Col> = typed_labels(&labels, rows);
         let mut conjuncts = Vec::new();
         match (op, operand) {
             // With `=`, the second column equals the first, so one label stands at both.
@@ -426,14 +461,14 @@ impl Expander<'_> {
                 let second = rows.index(other)?;
                 if second != at {
                     marks[second].1 = Mark::Join(labels[at].clone());
-                    kept.retain(|label| *label != labels[second]);
+                    kept.retain(|label| label.name != labels[second]);
                 }
                 conjuncts.push(rows.atom(&marks));
             }
             // With `=` and `0`, the column's value is known, so the site holds `0`.
             (Op::Eq, Operand::Zero) => {
                 marks[at].1 = Mark::Zero;
-                kept.retain(|label| *label != labels[at]);
+                kept.retain(|label| label.name != labels[at]);
                 conjuncts.push(rows.atom(&marks));
             }
             (op, Operand::Column(other)) => {
@@ -451,7 +486,8 @@ impl Expander<'_> {
 
     pub(crate) fn join(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Column)]) -> Result<Rows, String> {
         let mut taken = Vec::new();
-        let (left_marks, mut labels, left_labels) = left_reads(left, &mut taken);
+        let (left_marks, left_labels) = left_reads(left, &mut taken);
+        let mut labels = typed_labels(&left_labels, left);
         let mut right_marks = Vec::new();
         for (index, column) in right.columns.iter().enumerate() {
             let partners: Vec<&(Column, Column)> = pairs.iter().filter(|(_, r)| *r == column.name).collect();
@@ -459,7 +495,7 @@ impl Expander<'_> {
                 [] => {
                     let label = unique(&label_of(&column.name), &mut taken);
                     right_marks.push((index, Mark::Fresh(label.clone())));
-                    labels.push(label);
+                    labels.push(Col::typed(label, column.ty.clone()));
                 }
                 [(l, _)] => right_marks.push((index, Mark::Join(left_labels[left.index(l)?].clone()))),
                 _ => return Err(format!("the pairs of a `join` name the right column `{}` twice", column.name)),
@@ -474,18 +510,19 @@ impl Expander<'_> {
 
     pub(crate) fn antijoin(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Column)]) -> Result<Rows, String> {
         let mut taken = Vec::new();
-        let (left_marks, labels, left_labels) = left_reads(left, &mut taken);
+        let (left_marks, left_labels) = left_reads(left, &mut taken);
         let mut right_marks = Vec::new();
         for (l, r) in pairs {
             right_marks.push((right.index(r)?, Mark::Join(left_labels[left.index(l)?].clone())));
         }
         let conjuncts = [left.atom(&left_marks), format!("(NOT {})", right.atom(&right_marks))];
+        let labels = typed_labels(&left_labels, left);
         Ok(self.query(&conjuncts, labels))
     }
 
     pub(crate) fn union(&mut self, left: &Rows, right: &Rows, pairs: &[(Column, Column)]) -> Result<Rows, String> {
         let mut taken = Vec::new();
-        let (left_marks, labels, left_labels) = left_reads(left, &mut taken);
+        let (left_marks, left_labels) = left_reads(left, &mut taken);
         if pairs.len() != left.columns.len() || pairs.len() != right.columns.len() {
             return Err("the pairs of a `union` name every column of both relations".to_string());
         }
@@ -498,14 +535,25 @@ impl Expander<'_> {
             right_marks.push((index, Mark::Join(left_labels[left.index(l)?].clone())));
         }
         let body = format!("(OR ({}) ({}))", left.atom(&left_marks), right.atom(&right_marks));
+        // A label of two types has their join.
+        let mut labels = typed_labels(&left_labels, left);
+        for (l, r) in pairs {
+            let at = left.index(l)?;
+            let joined = match (&left.columns[at].ty, &right.columns[right.index(r)?].ty) {
+                (Some(a), Some(b)) => a.join(b),
+                _ => None,
+            };
+            labels[at].ty = joined;
+        }
         Ok(self.query(&[body], labels))
     }
 
     pub(crate) fn lib_join(&mut self, rows: &Rows, name: &str, bindings: &[(String, Column)]) -> Result<Rows, String> {
         let columns = self.lib_columns(name).ok_or_else(|| format!("`{name}` is no lib relation"))?.to_vec();
         let mut taken = Vec::new();
-        let (marks, mut labels, row_labels) = left_reads(rows, &mut taken);
-        let lib = Rows { relation: name.to_string(), columns: columns.iter().map(|column| Col::plain(spelled(&column.name))).collect() };
+        let (marks, row_labels) = left_reads(rows, &mut taken);
+        let mut labels = typed_labels(&row_labels, rows);
+        let lib = Rows { relation: name.to_string(), columns: columns.iter().map(lib_col).collect() };
         let mut lib_marks = Vec::new();
         for (index, column) in lib.columns.iter().enumerate() {
             let bound: Vec<&(String, Column)> = bindings.iter().filter(|(l, _)| *l == column.name).collect();
@@ -513,7 +561,7 @@ impl Expander<'_> {
                 [] => {
                     let label = unique(&label_of(&column.name), &mut taken);
                     lib_marks.push((index, Mark::Fresh(label.clone())));
-                    labels.push(label);
+                    labels.push(Col::typed(label, column.ty.clone()));
                 }
                 [(_, c)] => lib_marks.push((index, Mark::Join(row_labels[rows.index(c)?].clone()))),
                 _ => return Err(format!("`lib-join` binds the column `{}` twice", column.name)),
@@ -552,12 +600,12 @@ impl Expander<'_> {
             bound.push(BoundInput { input, rows, binding });
         }
         let instance = self.fresh();
-        let (form, parameters, key_labels) = component_form(name, component_of, &instance, &bound)?;
+        let (form, parameters, key_labels, key_types) = component_form(name, component_of, &instance, &bound)?;
         self.forms.push(form);
         // The columns of the port, under the first binding's names.
         let read = Rows {
             relation: format!("{instance}.{port}"),
-            columns: port_columns(output, &key_labels, &parameters),
+            columns: port_columns(output, &key_labels, &key_types, &parameters),
         };
         let mut taken = Vec::new();
         let mut marks = Vec::new();
@@ -565,7 +613,7 @@ impl Expander<'_> {
         for (index, column) in read.columns.iter().enumerate() {
             let label = unique(&label_of(&column.name), &mut taken);
             marks.push((index, Mark::Fresh(label.clone())));
-            labels.push(label);
+            labels.push(Col::typed(label, column.ty.clone()));
         }
         let atom = read.atom(&marks);
         Ok(self.query(&[atom], labels))
@@ -573,18 +621,36 @@ impl Expander<'_> {
 }
 
 /// The labels of a read of every column of `left`, added to `taken`: the
-/// marks, the labels that become columns, and the label of each column.
-fn left_reads(left: &Rows, taken: &mut Vec<String>) -> (Vec<(usize, Mark)>, Vec<String>, Vec<String>) {
+/// marks, and the label of each column.
+fn left_reads(left: &Rows, taken: &mut Vec<String>) -> (Vec<(usize, Mark)>, Vec<String>) {
     let labels: Vec<String> = left.columns.iter().map(|column| unique(&label_of(&column.name), taken)).collect();
     let marks = labels.iter().cloned().enumerate().map(|(index, label)| (index, Mark::Fresh(label))).collect();
-    (marks, labels.clone(), labels)
+    (marks, labels)
 }
 
 /// The marks of a read of every column of `rows`, and the labels.
 fn fresh_marks(rows: &Rows) -> (Vec<(usize, Mark)>, Vec<String>) {
     let mut taken = Vec::new();
-    let (marks, labels, _) = left_reads(rows, &mut taken);
-    (marks, labels)
+    left_reads(rows, &mut taken)
+}
+
+/// Each of `labels` as a column, with the type of the column of `rows` at its
+/// place.
+fn typed_labels(labels: &[String], rows: &Rows) -> Vec<Col> {
+    labels.iter().zip(&rows.columns).map(|(label, column)| Col::typed(label.clone(), column.ty.clone())).collect()
+}
+
+/// The relation of `name`, `ex_input` or `ex_output`, with its columns.
+fn ex_grid(name: &str) -> Rows {
+    Rows {
+        relation: name.to_string(),
+        columns: vec![Col::typed("E", Some(ValueType::Example)), Col::typed("P", Some(ValueType::Position)), Col::typed("Col", Some(ValueType::Color))],
+    }
+}
+
+/// A column that the registry declares, with its type where that is fixed.
+fn lib_col(column: &LibColumn) -> Col {
+    Col::typed(spelled(&column.name), column.ty.fixed().cloned())
 }
 
 /// An input of a component, with the relation that writes it.
@@ -602,9 +668,9 @@ fn parameter_of(column: &LibColumn) -> Option<&str> {
     spelled(&column.name).starts_with(|c: char| c.is_ascii_lowercase()).then_some(&parameter.name)
 }
 
-/// The names of the fields of each type parameter, as its first binding wrote
-/// them.
-type Parameters = Vec<(String, Vec<String>)>;
+/// The names and the types of the fields of each type parameter, as its first
+/// binding wrote them.
+type Parameters = Vec<(String, Vec<(String, Option<ValueType>)>)>;
 
 /// The fields of each column of an input other than `key`, each column by its
 /// index in the port, in the registry's order.
@@ -645,19 +711,20 @@ fn head_site(column: &LibColumn, labels: &[String], parameters: &Parameters) -> 
     if let [label] = labels {
         return Ok(Some(format!("(:{name} {label})")));
     }
-    let fields: Vec<String> = names.iter().zip(labels).map(|(field, label)| format!("(:{field} {label})")).collect();
+    let fields: Vec<String> = names.iter().zip(labels).map(|((field, _), label)| format!("(:{field} {label})")).collect();
     Ok(Some(format!("(:{name} {})", fields.join(" "))))
 }
 
 /// The `INIT` form of `bound`, the names of each type parameter's fields, and
 /// the labels of the key.
-fn component_form(name: &str, declared: &Component, instance: &str, bound: &[BoundInput<'_>]) -> Result<(String, Parameters, Vec<String>), String> {
+fn component_form(name: &str, declared: &Component, instance: &str, bound: &[BoundInput<'_>]) -> Result<(String, Parameters, Vec<String>, Vec<Option<ValueType>>), String> {
     // The first binding that has key columns names the key.
     let mut key_labels: Vec<String> = Vec::new();
+    let mut key_types: Vec<Option<ValueType>> = Vec::new();
     if let Some(first) = bound.iter().find(|b| !b.binding.key.is_empty()) {
         let mut taken = Vec::new();
         for column in &first.binding.key {
-            first.rows.index(column)?;
+            key_types.push(first.rows.columns[first.rows.index(column)?].ty.clone());
             key_labels.push(unique(&label_of(column), &mut taken));
         }
     }
@@ -711,8 +778,10 @@ fn component_form(name: &str, declared: &Component, instance: &str, bound: &[Bou
         let mut heads = Vec::new();
         for (column, fields) in input_fields(b.input, &b.binding)? {
             let mut labels = Vec::new();
+            let mut types = Vec::new();
             for field in &fields {
                 let index = b.rows.index(field)?;
+                types.push(b.rows.columns[index].ty.clone());
                 let label = match marks.iter().find(|(held, _)| *held == index) {
                     Some((_, Mark::Join(label) | Mark::Fresh(label))) => label.clone(),
                     Some(_) => unreachable!("a body's marks are fresh or joined"),
@@ -724,9 +793,9 @@ fn component_form(name: &str, declared: &Component, instance: &str, bound: &[Bou
                 };
                 labels.push(label);
             }
-            if let Some(parameter) = parameter_of(column) {
-                if !parameters.iter().any(|(held, _)| held == parameter) {
-                    parameters.push((parameter.to_string(), labels.clone()));
+            if let ColumnType::Parameter(parameter) = &column.ty {
+                if !parameters.iter().any(|(held, _)| **held == *parameter.name) {
+                    parameters.push((parameter.name.to_string(), labels.iter().cloned().zip(types).collect()));
                 }
             }
             heads.extend(head_site(column, &labels, &parameters)?);
@@ -748,7 +817,7 @@ fn component_form(name: &str, declared: &Component, instance: &str, bound: &[Bou
         form.push_str(&format!("\n  {input}"));
     }
     form.push(')');
-    Ok((form, parameters, key_labels))
+    Ok((form, parameters, key_labels, key_types))
 }
 
 /// Adds a site on `E` that makes a label local to the body, where `rows` has
@@ -765,26 +834,38 @@ fn keep_example(rows: &Rows, marks: &mut Vec<(usize, Mark)>, taken: &mut Vec<Str
 /// The columns of `output` as a `QUERY` reads them: the key's fields, then the
 /// port's other columns. A column of a type parameter takes the names its
 /// first binding wrote, and each other column keeps the registry's name.
-fn port_columns(output: &Port, key_labels: &[String], parameters: &Parameters) -> Vec<Col> {
+fn port_columns(output: &Port, key_labels: &[String], key_types: &[Option<ValueType>], parameters: &Parameters) -> Vec<Col> {
     let mut columns: Vec<Col> = Vec::new();
     let mut taken: Vec<String> = Vec::new();
     if output.columns.iter().any(is_key) {
-        for label in key_labels {
+        for (label, ty) in key_labels.iter().zip(key_types) {
             let name = unique(label, &mut taken);
-            columns.push(Col { name, path: vec!["key".to_string(), label.clone()] });
+            columns.push(Col { name, path: vec!["key".to_string(), label.clone()], ty: ty.clone() });
         }
     }
     for column in output.columns.iter().filter(|column| !is_key(column)) {
         let own = spelled(&column.name);
         match parameter_of(column) {
-            None => columns.push(Col { name: unique(&own, &mut taken), path: vec![own] }),
+            None => {
+                // A column of a bounded parameter has the type its first binding gave.
+                let ty = match &column.ty {
+                    ColumnType::Parameter(parameter) => parameters
+                        .iter()
+                        .find(|(held, _)| **held == *parameter.name)
+                        .and_then(|(_, fields)| fields.first())
+                        .and_then(|(_, ty)| ty.clone())
+                        .or_else(|| parameter.bound.clone()),
+                    other => other.fixed().cloned(),
+                };
+                columns.push(Col { name: unique(&own, &mut taken), path: vec![own], ty });
+            }
             Some(parameter) => {
                 let Some((_, fields)) = parameters.iter().find(|(held, _)| held == parameter) else { continue };
                 match &fields[..] {
-                    [one] => columns.push(Col { name: unique(one, &mut taken), path: vec![own.clone()] }),
+                    [(one, ty)] => columns.push(Col { name: unique(one, &mut taken), path: vec![own.clone()], ty: ty.clone() }),
                     fields => {
-                        for field in fields {
-                            columns.push(Col { name: unique(field, &mut taken), path: vec![own.clone(), field.clone()] });
+                        for (field, ty) in fields {
+                            columns.push(Col { name: unique(field, &mut taken), path: vec![own.clone(), field.clone()], ty: ty.clone() });
                         }
                     }
                 }
