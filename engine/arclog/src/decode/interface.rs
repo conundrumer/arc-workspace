@@ -541,10 +541,10 @@ impl<'a> Decoder<'a> {
     }
 
     /// The consistency test of `output` in `program`, at each joint
-    /// assignment of the `DET`s it reads, under the assignment cap of the
-    /// decode settings.
+    /// assignment of the `DET`s it reads, less the picks, whose models the
+    /// test judges together, under the assignment cap of the decode settings.
     fn test(&self, program: &CheckedProgram, output: &GraphRelation, train: &[PairCandidates<'_>], tested: Tested, at_cap: AtCap<'_>) -> Consistency {
-        let dets: Vec<_> = dets_read(program, output.node);
+        let dets = relation_dets(program, output.node);
         let limits = self.limits();
         let Walked { kept, end, stop, .. } = walk(self.inputs(program, &limits), &dets, output, train, self.context.settings.caps.assignments, tested, at_cap);
         match end {
