@@ -66,6 +66,7 @@ struct Arguments {
     names: Option<PathBuf>,
     wide_size: Option<usize>,
     wide_only: bool,
+    parents_only: bool,
     thin: u32,
     seconds: f64,
     program_compare: bool,
@@ -78,7 +79,7 @@ struct Arguments {
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { wide_size: None, wide_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
+    let mut parsed = Arguments { wide_size: None, wide_only: false, parents_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -88,6 +89,7 @@ fn arguments() -> Arguments {
             "--size" => parsed.size = args.next().and_then(|text| text.parse().ok()).expect("a number after --size"),
             "--wide-size" => parsed.wide_size = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --wide-size")),
             "--wide-only" => parsed.wide_only = true,
+            "--parents-only" => parsed.parents_only = true,
             "--out" => parsed.out = Some(args.next().expect("a file after --out").into()),
             "--work-cap" => parsed.work_cap = args.next().and_then(|text| text.parse().ok()).expect("a number after --work-cap"),
             "--limit" => parsed.limit = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --limit")),
@@ -402,7 +404,7 @@ fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
 /// neither its output nor its errors are printed or kept. `--names` gives a derangement per task,
 /// and then each pair reads another pair's output.
 fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> Result<(), String> {
-    use arclog_encoder::candidate_lists::lists_task;
+    use arclog_encoder::candidate_lists::{lists_task, ListsOf};
     use arclog_encoder::generate::{Generators, NameStore};
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
     let mut families = Generators::default();
@@ -456,7 +458,14 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
                         continue;
                     }
                 };
-                let result = lists_task(&text, &arguments.tasks, &families, order, d, arguments.wide_only.then(|| arguments.wide_size.unwrap_or(1)));
+                let lists_of = if arguments.parents_only {
+                    ListsOf::Parents
+                } else if arguments.wide_only {
+                    ListsOf::Wide(arguments.wide_size.unwrap_or(1))
+                } else {
+                    ListsOf::Tables
+                };
+                let result = lists_task(&text, &arguments.tasks, &families, order, d, lists_of);
                 drop(text);
                 match result {
                     Ok(found) => {

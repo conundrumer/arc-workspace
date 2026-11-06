@@ -3,7 +3,8 @@
 //! The lists hold only the names of shapes and their numbers over examples, so a test input's rows
 //! leave nothing behind. A table's stable roots stand with their value, and its other active roots
 //! with the least, the mean and the greatest of their value, so a model can read both. A wide run
-//! writes in their place each table's task-wide roots, and the numbers of the base parts.
+//! writes in their place each table's task-wide roots, and the numbers of the base parts. A parents
+//! run writes the lists of the tables that the candidates' forms read, by name.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -117,6 +118,17 @@ fn constant_values(grids: &Grids, families: &Generators) -> Written {
     Written { owner: "constant-values".into(), ids: Vec::new(), values: Vec::new(), graded }
 }
 
+/// What a run of the lists writes of a task.
+#[derive(Clone, Copy, PartialEq)]
+pub enum ListsOf {
+    /// Each table's lists, at its place among the task's tables, and the base tables'.
+    Tables,
+    /// Each table's task-wide roots at this size.
+    Wide(usize),
+    /// The lists of the tables that the `parents` of the candidates name, each under its name.
+    Parents,
+}
+
 pub struct TaskLists {
     pub task: String,
     pub bytes: Vec<u8>,
@@ -127,8 +139,7 @@ pub struct TaskLists {
 
 /// One task's lists, from the text of a tables file. `order` gives the train output each train pair
 /// reads, and with it only the shapes that read the output have a list, since no other shape reads it.
-/// `wide` gives the size of a task-wide family, and then the lists hold its roots in place of the tables' own.
-pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators, order: Option<&[usize]>, d: usize, wide: Option<usize>) -> Result<TaskLists, String> {
+pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators, order: Option<&[usize]>, d: usize, lists_of: ListsOf) -> Result<TaskLists, String> {
     let data: serde_json::Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
@@ -152,6 +163,10 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         }))
     };
     let mut prefix: BTreeMap<String, usize> = BTreeMap::new();
+    let mut read_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut note_names = |names: &serde_json::Value| {
+        read_names.extend(names.as_array().into_iter().flatten().filter_map(|name| name.as_str().map(str::to_string)));
+    };
     if let Some(tables) = data["prefix"].as_object() {
         for (name, value) in tables {
             if let Some(at) = add_table(value, &mut stored) {
@@ -168,6 +183,10 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let mut items: Vec<serde_json::Value> = Vec::new();
     let mut left_out = 0u64;
     for item in data["items"].as_array().ok_or("a file's items")? {
+        note_names(&item["parents"]);
+        for mutant in item["mutants"].as_array().into_iter().flatten() {
+            note_names(&mutant["parents"]);
+        }
         let Some(gold) = add_table(&item["gold"], &mut stored) else {
             left_out += 1;
             continue;
@@ -188,10 +207,25 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": item["gold"]["types"], "task_level": item["gold"]["task_level"], "assignments": item["gold"]["assignments"], "mutants": mutants}));
     }
     let header_rest = (data["case"].clone(), data["budget_cut"].clone(), data["left_out"].clone());
+    // The names a candidate reads and the lists have no table for: one too large, or one no item stores.
+    let too_large: Vec<&String> = read_names.iter().filter(|name| !prefix.contains_key(*name) && !data["prefix"][name.as_str()].is_null()).collect();
+    let no_table: Vec<&String> = read_names.iter().filter(|name| data["prefix"][name.as_str()].is_null()).collect();
+    let skipped = serde_json::json!({"too_large": too_large, "no_table": no_table});
+    let named: Vec<(&String, usize)> = read_names.iter().filter_map(|name| prefix.get(name).map(|at| (name, *at))).collect();
     drop(data);
 
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
-    for table in stored.iter().filter(|_| wide.is_none()) {
+    let walked: Vec<usize> = match lists_of {
+        ListsOf::Tables => (0..stored.len()).collect(),
+        ListsOf::Wide(_) => Vec::new(),
+        ListsOf::Parents => {
+            let mut places: Vec<usize> = named.iter().map(|(_, at)| *at).collect();
+            places.sort_unstable();
+            places.dedup();
+            places
+        }
+    };
+    for table in walked.iter().map(|at| &stored[*at]) {
         if !held.iter().any(|(key, _)| *key == table.key) {
             held.push((table.key.clone(), families.get(table, d)));
         }
@@ -203,22 +237,35 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let mut lists: Vec<Written> = Vec::new();
     let mut rows_at: Vec<serde_json::Value> = Vec::new();
     for (at, table) in stored.iter().enumerate() {
-        if let Some(size) = wide {
-            lists.push(wide_of(at.into(), table, &grids, families, size, only_output));
-        } else {
-            let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
-            let vector = table_vector(walker, table, &grids, examples, only_output);
-            lists.push(stable_of(at.into(), &vector));
+        match lists_of {
+            ListsOf::Wide(size) => lists.push(wide_of(at.into(), table, &grids, families, size, only_output)),
+            ListsOf::Tables => {
+                let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
+                let vector = table_vector(walker, table, &grids, examples, only_output);
+                lists.push(stable_of(at.into(), &vector));
+            }
+            ListsOf::Parents => {}
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
     let mut walks = stored.len() as u64;
-    if let (Some(size), false) = (wide, only_output) {
+    if lists_of == ListsOf::Parents {
+        walks = walked.len() as u64;
+        let mut vectors: FastMap<usize, TableVector> = FastMap::default();
+        for at in &walked {
+            let table = &stored[*at];
+            let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
+            vectors.insert(*at, table_vector(walker, table, &grids, examples, only_output));
+        }
+        for (name, at) in &named {
+            lists.push(stable_of(name.as_str().into(), &vectors[at]));
+        }
+    } else if let (ListsOf::Wide(size), false) = (lists_of, only_output) {
         lists.push(wide_of("input".into(), &Stored::of_grids(&grids.inputs), &grids, families, size, false));
         lists.push(wide_of("ex_output".into(), &Stored::of_grids(&grids.outputs), &grids, families, size, false));
         lists.push(constant_values(&grids, families));
         walks += 2;
-    } else if !only_output {
+    } else if lists_of == ListsOf::Tables && !only_output {
         let base = base_vectors(&grids, families, d);
         lists.push(stable_of("input".into(), &base.input));
         lists.push(stable_of("ex_output".into(), &base.ex_output));
@@ -234,7 +281,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     dictionary.dedup();
     let header = serde_json::json!({
         "task": task_name, "case": header_rest.0, "train": train, "test": test, "last_query": last_query, "budget_cut": header_rest.1,
-        "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at,
+        "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at, "read_names_skipped": skipped,
         "shapes": dictionary.len(),
         "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len(), "graded": list.graded.len()})).collect::<Vec<_>>(),
     }).to_string();
