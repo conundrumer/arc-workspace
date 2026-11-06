@@ -2,15 +2,17 @@
 //! taken from its `TableVector`. The statistic itself stands in `model/feature_eval/candidate.py`.
 //! The lists hold only the names of shapes and their numbers over examples, so a test input's rows
 //! leave nothing behind. A table's stable roots stand with their value, and its other active roots
-//! with the least, the mean and the greatest of their value, so a model can read both.
+//! with the least, the mean and the greatest of their value, so a model can read both. A wide run
+//! writes in their place each table's task-wide roots, and the numbers of the base parts.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::generate::{Generated, Generators, Walker, READS_INPUT, READS_OUTPUT};
+use crate::gen_constants::number_of;
+use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
 use crate::stored::Stored;
-use crate::table_vector::{base_vectors, table_vector, Grids, TableVector};
+use crate::table_vector::{base_vectors, table_vector, task_wide_vector, Grids, TableVector};
 
 /// A list as the file writes it: shapes, and the mean of each one's greatest value over its scope.
 struct Written {
@@ -73,6 +75,48 @@ fn constant_roots(grids: &Grids, families: &Generators) -> Written {
     Written { owner: "constants".into(), ids: order.iter().map(|at| ids[*at]).collect(), values: order.iter().map(|at| values[*at]).collect(), graded }
 }
 
+/// A table's task-wide roots, each with its one value. A shape with no value has NaN, since no value
+/// differs from a default.
+fn wide_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, d: usize, only_output: bool) -> Written {
+    let mut ids = Vec::new();
+    let mut values = Vec::new();
+    if let Some(wide) = task_wide_vector(table, grids, families, d, only_output) {
+        for (at, shape) in wide.shapes.iter().enumerate() {
+            let slot = &wide.slots[at];
+            ids.push(*shape);
+            values.push(if slot.state == SLOT_NO_VALUE { f32::NAN } else { slot.greatest.float() as f32 });
+        }
+    }
+    Written { owner, ids, values, graded: Vec::new() }
+}
+
+/// The number of each base part with one number column that holds one somewhere in its scope: the least,
+/// the mean and the greatest over the examples of the column's greatest number, where no rows count as 0.
+fn constant_values(grids: &Grids, families: &Generators) -> Written {
+    let parts = crate::gen_constants::constant_parts();
+    let mut graded = Vec::new();
+    for (at, part) in parts.iter().enumerate() {
+        if !part.reads_input && !part.reads_output {
+            continue;
+        }
+        let numbers: Vec<usize> = part.columns.iter().enumerate().filter(|(_, (_, ty))| is_number(ty)).map(|(place, _)| place).collect();
+        let [place] = numbers.as_slice() else { continue };
+        let held: Vec<f32> = grids.constants.iter().filter_map(|tables| tables[at].as_ref()).map(|table| table.rows().map(|row| number_of(row[*place])).max().unwrap_or(0) as f32).collect();
+        if held.iter().all(|value| *value == 0.0) {
+            continue;
+        }
+        let name = part.columns[*place].0;
+        let text = if part.columns.len() == 1 { format!("(value-set {} {name})", part.name) } else { format!("(value-set (project {} {name}) {name})", part.name) };
+        let hash = hash_words(text.bytes().map(u64::from));
+        let flags = (if part.reads_output { READS_OUTPUT } else { 0 }) | (if part.reads_input { READS_INPUT } else { 0 });
+        families.names.add_root(hash, text, flags);
+        let (least, most) = held.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(least, most), value| (least.min(*value), most.max(*value)));
+        graded.push((hash as u64, least, held.iter().sum::<f32>() / held.len() as f32, most));
+    }
+    graded.sort_unstable_by_key(|entry: &(u64, f32, f32, f32)| entry.0);
+    Written { owner: "constant-values".into(), ids: Vec::new(), values: Vec::new(), graded }
+}
+
 pub struct TaskLists {
     pub task: String,
     pub bytes: Vec<u8>,
@@ -83,7 +127,8 @@ pub struct TaskLists {
 
 /// One task's lists, from the text of a tables file. `order` gives the train output each train pair
 /// reads, and with it only the shapes that read the output have a list, since no other shape reads it.
-pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators, order: Option<&[usize]>, d: usize) -> Result<TaskLists, String> {
+/// `wide` gives the size of a task-wide family, and then the lists hold its roots in place of the tables' own.
+pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators, order: Option<&[usize]>, d: usize, wide: Option<usize>) -> Result<TaskLists, String> {
     let data: serde_json::Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
@@ -146,7 +191,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     drop(data);
 
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
-    for table in &stored {
+    for table in stored.iter().filter(|_| wide.is_none()) {
         if !held.iter().any(|(key, _)| *key == table.key) {
             held.push((table.key.clone(), families.get(table, d)));
         }
@@ -158,13 +203,22 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let mut lists: Vec<Written> = Vec::new();
     let mut rows_at: Vec<serde_json::Value> = Vec::new();
     for (at, table) in stored.iter().enumerate() {
-        let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
-        let vector = table_vector(walker, table, &grids, examples, only_output);
-        lists.push(stable_of(at.into(), &vector));
+        if let Some(size) = wide {
+            lists.push(wide_of(at.into(), table, &grids, families, size, only_output));
+        } else {
+            let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
+            let vector = table_vector(walker, table, &grids, examples, only_output);
+            lists.push(stable_of(at.into(), &vector));
+        }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
     let mut walks = stored.len() as u64;
-    if !only_output {
+    if let (Some(size), false) = (wide, only_output) {
+        lists.push(wide_of("input".into(), &Stored::of_grids(&grids.inputs), &grids, families, size, false));
+        lists.push(wide_of("ex_output".into(), &Stored::of_grids(&grids.outputs), &grids, families, size, false));
+        lists.push(constant_values(&grids, families));
+        walks += 2;
+    } else if !only_output {
         let base = base_vectors(&grids, families, d);
         lists.push(stable_of("input".into(), &base.input));
         lists.push(stable_of("ex_output".into(), &base.ex_output));

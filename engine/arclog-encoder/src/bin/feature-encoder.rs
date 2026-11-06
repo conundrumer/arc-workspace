@@ -64,6 +64,8 @@ struct Arguments {
     shard: (usize, usize),
     control: bool,
     names: Option<PathBuf>,
+    wide_size: Option<usize>,
+    wide_only: bool,
     thin: u32,
     seconds: f64,
     program_compare: bool,
@@ -76,7 +78,7 @@ struct Arguments {
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
+    let mut parsed = Arguments { wide_size: None, wide_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -84,6 +86,8 @@ fn arguments() -> Arguments {
             "--tasks" => parsed.tasks = args.next().expect("a directory after --tasks").into(),
             "--task-wide" => parsed.task_wide = true,
             "--size" => parsed.size = args.next().and_then(|text| text.parse().ok()).expect("a number after --size"),
+            "--wide-size" => parsed.wide_size = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --wide-size")),
+            "--wide-only" => parsed.wide_only = true,
             "--out" => parsed.out = Some(args.next().expect("a file after --out").into()),
             "--work-cap" => parsed.work_cap = args.next().and_then(|text| text.parse().ok()).expect("a number after --work-cap"),
             "--limit" => parsed.limit = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --limit")),
@@ -335,7 +339,7 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
         write_vector(&mut out, &serde_json::json!({"name": table, "assignment": format!("{assignment:?}")}), vector, &names)?;
     }
     for (assignment, stored) in &tables.at {
-        let Some(wide) = arclog_encoder::table_vector::task_wide_vector(stored, &grids, &families, arguments.size.max(1)) else { continue };
+        let Some(wide) = arclog_encoder::table_vector::task_wide_vector(stored, &grids, &families, arguments.wide_size.unwrap_or(arguments.size.max(1)), false) else { continue };
         let names = names_of(&families.names);
         writeln!(out, "{}", serde_json::json!({"task_wide": table, "assignment": format!("{assignment:?}"), "entries": wide.shapes.len()})).map_err(|error| error.to_string())?;
         for (at, shape) in wide.shapes.iter().enumerate() {
@@ -452,7 +456,7 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
                         continue;
                     }
                 };
-                let result = lists_task(&text, &arguments.tasks, &families, order, d);
+                let result = lists_task(&text, &arguments.tasks, &families, order, d, arguments.wide_only.then(|| arguments.wide_size.unwrap_or(1)));
                 drop(text);
                 match result {
                     Ok(found) => {

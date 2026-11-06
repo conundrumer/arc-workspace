@@ -299,7 +299,7 @@ pub struct TaskWideVector {
     pub slots: Vec<Slot>,
 }
 
-pub fn task_wide_vector(table: &Stored, grids: &Grids, families: &Generators, d: usize) -> Option<TaskWideVector> {
+pub fn task_wide_vector(table: &Stored, grids: &Grids, families: &Generators, d: usize, only_output: bool) -> Option<TaskWideVector> {
     let lifted = crate::generate::lifted_rows(&table.rows)?;
     let family = families.get_task_wide(table, d);
     let mut walker = Walker::new(&family);
@@ -313,7 +313,7 @@ pub fn task_wide_vector(table: &Stored, grids: &Grids, families: &Generators, d:
         vec![crate::native::Val::of_table(ex_input)],
         vec![crate::native::Val::None],
     ];
-    let found = walker.walk(&leaves, 1, false);
+    let found = walker.walk(&leaves, 1, only_output);
     let mut order: Vec<(u64, usize)> = found.index.iter().map(|(hash, at)| (*hash as u64, *at as usize)).collect();
     order.sort_unstable();
     Some(TaskWideVector {

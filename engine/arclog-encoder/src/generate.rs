@@ -175,7 +175,7 @@ pub struct Generated {
     over_grids: bool,
 }
 
-fn is_number(ty: &ValueType) -> bool {
+pub fn is_number(ty: &ValueType) -> bool {
     matches!(ty, ValueType::Int | ValueType::Nat)
 }
 
