@@ -92,10 +92,10 @@ class Reader:
                         self.atom(atom)
             return
         for part in form[2:]:
-            if isinstance(part, str):
-                self.bag['proposer:' + part] += 1
-            else:
+            if not isinstance(part, str):
                 self.atom(part)
+            elif not part.startswith('"'):
+                self.bag['proposer:' + part] += 1
 
 
 def relation_of(read):
