@@ -10,6 +10,9 @@ output; TIO, all three. A set is written as terms joined by `+`:
   base0, base   the features with no table content
   T, TI, TIO    the shapes up to that reading, on the true outputs
   TIO_null      those, with each shape that reads the output taken on deranged outputs
+  contingent, fresh, contingent_null, fresh_null
+                the shapes of a candidate that not every table it reads has as stable, and those
+                whose value none of them has, against the input and those tables
   ctx           the base tables' own part roots
   breaks        shapes with no output leaf that a test input breaks
 A term may end in `~WORD` to leave out the shapes whose name holds WORD, or `^WORD` to keep only those.
@@ -141,7 +144,7 @@ def build(root, out, min_tasks):
     data = {}
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'breaks', 'contingent', 'fresh', 'ctx')}
+        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'breaks', 'contingent', 'fresh', 'null_contingent', 'null_fresh', 'ctx')}
         count = 0
         started = time.time()
         for path in files:
@@ -188,7 +191,7 @@ def build(root, out, min_tasks):
                     train_rows = record.get('train_rows') or []
                     group = 'gold' if j == 0 else ('mutant empty' if any(not n for n in train_rows) else 'has rows')
                     rows.append((task, at, j, edit, group, bool(item['last']), extra, same, head['train'] != head['train']))
-                    for kind, table_columns in (('stable', columns), ('null', columns), ('contingent', columns), ('fresh', columns), ('breaks', breaks)):
+                    for kind, table_columns in (('stable', columns), ('null', columns), ('contingent', columns), ('fresh', columns), ('null_contingent', columns), ('null_fresh', columns), ('breaks', breaks)):
                         held = lists.get((table, kind))
                         if held is None:
                             mats[kind].add([])
@@ -206,8 +209,11 @@ def build(root, out, min_tasks):
     for split in data:
         data[split]['matrices']['base'] = data[split]['matrices']['base'][:, :width_base]
         data[split]['matrices']['ctx'] = data[split]['matrices']['ctx'][:, :width_ctx]
-        with (out / f'{split}.pkl').open('wb') as sink:
-            pickle.dump(data[split], sink, protocol=4)
+        with (out / f'{split}.rows.pkl').open('wb') as sink:
+            pickle.dump(data[split]['rows'], sink, protocol=4)
+        for name, matrix in data[split]['matrices'].items():
+            with (out / f'{split}.{name}.pkl').open('wb') as sink:
+                pickle.dump(matrix, sink, protocol=4)
     meta = dict(columns=columns, breaks=breaks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab)
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
@@ -318,8 +324,26 @@ def fit_one(X, rows, groups, seed=7, threads=4, fraction=0.5):
 def fit(out, sets, filters, threads, fraction):
     out = Path(out)
     meta = pickle.load((out / 'meta.pkl').open('rb'))
-    train = pickle.load((out / 'train.pkl').open('rb'))
-    dev = pickle.load((out / 'dev.pkl').open('rb'))
+    needed = {'base'}
+    for spec in sets:
+        for raw in spec.split('+'):
+            term = re.split(r'[~^]', raw)[0]
+            if term == 'TIO_null':
+                needed |= {'stable', 'null'}
+            elif term in ('T', 'TI', 'TIO'):
+                needed.add('stable')
+            elif term in ('contingent', 'fresh'):
+                needed.add(term)
+            elif term in ('contingent_null', 'fresh_null'):
+                needed |= {term.split('_')[0], 'null_' + term.split('_')[0]}
+            elif term in ('ctx', 'breaks'):
+                needed.add(term)
+
+    def loaded(split):
+        rows = pickle.load((out / f'{split}.rows.pkl').open('rb'))
+        return dict(rows=rows, matrices={name: pickle.load((out / f'{split}.{name}.pkl').open('rb')) for name in needed})
+
+    train, dev = loaded('train'), loaded('dev')
     columns = meta['columns']
     flags = np.array([meta['flags'].get(int(key), 0) for key in columns])
     names = [meta['names'].get(int(key), '') for key in columns]
@@ -363,11 +387,12 @@ def fit(out, sets, filters, threads, fraction):
                 keep = np.flatnonzero(word_mask(raw, names))
                 parts.append(split['matrices'][term][:, keep])
                 labels.extend(term + ':' + names[int(i)] for i in keep)
-            elif term == 'TIO_null':
+            elif term in ('TIO_null', 'contingent_null', 'fresh_null'):
+                first, second = ('stable', 'null') if term == 'TIO_null' else (term.split('_')[0], 'null_' + term.split('_')[0])
                 keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
                 keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
-                parts.append(split['matrices']['stable'][:, keep_true])
-                parts.append(split['matrices']['null'][:, keep_null])
+                parts.append(split['matrices'][first][:, keep_true])
+                parts.append(split['matrices'][second][:, keep_null])
                 labels.extend(names[int(i)] for i in keep_true)
                 labels.extend(names[int(i)] for i in keep_null)
             else:

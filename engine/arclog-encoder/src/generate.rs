@@ -146,10 +146,11 @@ impl Generated {
         // Size 1: over the leaves. The table's own rows give its own count. Its count as a number
         // reads no column, so it has no root, and it stands only to meet a number a grid gives.
         family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, family.terms[LEAF_TABLE as usize].columns.clone(), 0, "T".to_string(), RootKind::Rows);
-        family.push(Step::Part(Box::new(PartStep::Count { keys: Box::new([]) })), LEAF_TABLE, NO_TERM, vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }], 1, "(count T ())".to_string(), RootKind::Rows);
-        let last = family.terms.len() - 1;
-        family.terms[last].hidden = true;
-        family.terms[last - 1].hidden = false;
+        if !family.terms[LEAF_TABLE as usize].columns.is_empty() {
+            family.push(Step::Part(Box::new(PartStep::Count { keys: Box::new([]) })), LEAF_TABLE, NO_TERM, vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }], 1, "(count T ())".to_string(), RootKind::Rows);
+            let last = family.terms.len() - 1;
+            family.terms[last].hidden = true;
+        }
         family.unary_operators(LEAF_TABLE, 1);
         family.parts_of(LEAF_TABLE, 1);
         family.unary_operators(LEAF_OUTPUT, 1);
