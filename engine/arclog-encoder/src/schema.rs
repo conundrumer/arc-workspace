@@ -55,6 +55,11 @@ pub trait Tables {
 
 /// The value type that a type's name in a table's description gives.
 pub fn type_of_name(name: &str) -> Option<ValueType> {
+    // An Ident column of one source, as a tables file writes it.
+    if let Some(source) = name.strip_prefix("Ident@") {
+        let identity = u128::from_str_radix(source, 16).ok()?;
+        return Some(ValueType::Ident(arclog::types::IdentSource::Form(arclog::types::SourceId(arclog::hash::StableHash(identity)))));
+    }
     Some(match name {
         "Int" => ValueType::Int,
         "Nat" => ValueType::Nat,

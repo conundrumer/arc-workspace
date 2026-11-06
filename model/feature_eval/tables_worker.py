@@ -49,6 +49,51 @@ def keep(path, value):
     os.replace(temporary, path)
 
 
+def read_table(tb, name, prefer=None, sources=False):
+    """A table at one assignment, the preferred one where the table has it and the least otherwise, or a reason it can't be read."""
+    if name not in tb.names:
+        return None, 'no table'
+    t = tb.names.index(name)
+    by_key = {}
+    stopped = False
+    for ex, model, key, raw, stop in tb.entries(t):
+        if stop:
+            stopped = True
+            continue
+        by_key.setdefault(repr(key), {}).setdefault(ex, {}).setdefault(model, raw)
+    if not by_key:
+        return None, 'stopped' if stopped else 'no rows at any assignment'
+    chosen = prefer if prefer in by_key else min(by_key)
+    by_example = by_key[chosen]
+    types = list(tb.T['column_types'][t])
+
+    def cell(ty, v):
+        if isinstance(v, tuple) or ty in ('Position', 'Box', 'Offset'):
+            return [int(x) for x in v]
+        if ty not in ('Number', 'Nat', 'Int', 'Color', 'Example', 'Ident') and int(v) in tb.orient:
+            return tb.orient[int(v)]
+        return int(v)
+
+    out, models = {}, {}
+    large = False
+    for ex, held in by_example.items():
+        tables = list(held.values())
+        if any(len(raw) > ROW_CAP for raw in tables):
+            if not ex.startswith('test/'):
+                large = True
+            continue
+        written = [sorted(([cell(ty, v) for ty, v in zip(types, r)] for r in raw), key=repr) for raw in tables]
+        if len(written) == 1:
+            out[ex] = written[0]
+        else:
+            models[ex] = written
+    names = list(tb.T['column_names'][t]) if 'column_names' in tb.T else [f'c{i}' for i in range(len(types))]
+    if sources:
+        held = tb.T['column_ident_sources'][t]
+        types = [f'{ty}@{source}' if ty == 'Ident' and source else ty for ty, source in zip(types, held)]
+    return dict(columns=names, types=types, assignments=len(by_key), assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, rows=out, models=models), None
+
+
 def worker(root, task):
     import numpy as np
     import arclog
@@ -82,46 +127,7 @@ def worker(root, task):
                 out.setdefault((name, ex), set()).update(repr(r) for r in raw)
         return out
 
-    def read(tb, name, prefer=None):
-        """A table at one assignment, the preferred one where the table has it and the least otherwise, or a reason it can't be read."""
-        if name not in tb.names:
-            return None, 'no table'
-        t = tb.names.index(name)
-        by_key = {}
-        stopped = False
-        for ex, model, key, raw, stop in tb.entries(t):
-            if stop:
-                stopped = True
-                continue
-            by_key.setdefault(repr(key), {}).setdefault(ex, {}).setdefault(model, raw)
-        if not by_key:
-            return None, 'stopped' if stopped else 'no rows at any assignment'
-        chosen = prefer if prefer in by_key else min(by_key)
-        by_example = by_key[chosen]
-        types = list(tb.T['column_types'][t])
-
-        def cell(ty, v):
-            if isinstance(v, tuple) or ty in ('Position', 'Box', 'Offset'):
-                return [int(x) for x in v]
-            if ty not in ('Number', 'Nat', 'Int', 'Color', 'Example', 'Ident') and int(v) in tb.orient:
-                return tb.orient[int(v)]
-            return int(v)
-
-        out, models = {}, {}
-        large = False
-        for ex, held in by_example.items():
-            tables = list(held.values())
-            if any(len(raw) > ROW_CAP for raw in tables):
-                if not ex.startswith('test/'):
-                    large = True
-                continue
-            written = [sorted(([cell(ty, v) for ty, v in zip(types, r)] for r in raw), key=repr) for raw in tables]
-            if len(written) == 1:
-                out[ex] = written[0]
-            else:
-                models[ex] = written
-        names = list(tb.T['column_names'][t]) if 'column_names' in tb.T else [f'c{i}' for i in range(len(types))]
-        return dict(columns=names, types=types, assignments=len(by_key), assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, rows=out, models=models), None
+    read = read_table
 
     def train_rows(table):
         keep = lambda held: {k: v for k, v in held.items() if k == 'task' or k.startswith('train/')}

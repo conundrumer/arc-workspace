@@ -1691,6 +1691,8 @@ pub struct Walker<'a> {
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
+/// The cells that the terms one walk extends can give, counted at each instance.
+const WALK_CELLS: usize = 200_000_000;
 /// A count past this stands for "no value": a bound stopped the term.
 const NO_COUNT: u32 = u32::MAX;
 
@@ -1807,6 +1809,7 @@ impl<'a> Walker<'a> {
             ids.push(held);
         }
         let mut table = RootTable { stride: instances, ..RootTable::default() };
+        let mut walk_cells = 0usize;
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             let at = at as u32;
             let first = std::mem::take(&mut ids[term.a as usize]);
@@ -1821,7 +1824,8 @@ impl<'a> Walker<'a> {
             let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
             if extended {
                 own.reserve(instances);
-                for pair in 0..scope {
+                // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
+                for pair in 0..if walk_cells > WALK_CELLS { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (at, first[pair], b);
                     let id = match self.memo.get(&key) {
@@ -1833,6 +1837,9 @@ impl<'a> Walker<'a> {
                             id
                         }
                     };
+                    if let Val::Rows(parts) = &self.values[id as usize] {
+                        walk_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
+                    }
                     own.push(id);
                 }
                 own.resize(instances, 0);
