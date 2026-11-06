@@ -145,6 +145,9 @@ covers([Bk, Pa, Id], [O, B], P) :-
     occ.occurrence([[Bk, Pa, Id], O], B), shape([Bk, Pa, O], S), compose(B, S, P).
 
 // Some piece has no place among the gaps, so the candidate holds no exact cover.
+// This clause is not redundant with `stranded`, which holds wherever it does in
+// Souffle: in the converted program, the pick would still place such a
+// candidate's other pieces, and those models pass the model cap.
 .decl unplaced(k: FrameSet)
 unplaced(K) :- piece(K, O), !occ.occurrence([K, O], _).
 
