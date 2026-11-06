@@ -4,8 +4,8 @@
   <runtime python> -u -I -B v1_dump.py OUT ROOT [--mutants K] TASK...
 
 ROOT holds `train/mutants/`, whose files name each task's ground-truth program and its mutants. A task's file holds:
-- `pairs`: at each pair, the values of each table of the ground-truth program, at the assignment that solves the train pairs, with the features
-  across its other retained assignments.
+- `pairs`: at each pair, the values of each table of the ground-truth program, at the assignment its list reads, with the features across the
+  program's other retained assignments.
 - `base`: at each pair, what the first version says of the input grid, the output and the changed cells.
 - `columns`: each table's column tokens with their types. `tables`: each table's token with its name.
 - `coordinates`: each feature of `pairs` and `mutants`, with the metadata that `schema.coordinates` gives: what it reads, its aggregation level and
@@ -34,6 +34,34 @@ from common import read_json  # noqa: E402
 from tables_worker import keep  # noqa: E402
 
 SMALL = 300000
+
+
+def read_at_list_assignment(tb, chosen=None):
+    """A program's tables, each at the assignment its list reads: the one that `chosen` gives where the table has it, and the least otherwise. Gives
+    the tables, and each table's assignment."""
+    tables, assignments = {}, {}
+    for at, name in enumerate(tb.names):
+        if not name:
+            continue
+        types = tb.T['column_types'][at]
+        columns = list(zip(tb.T['column_names'][at], types, tb.T['column_frames'][at]))
+        entries = tb.entries(at)
+        keys = {repr(key): key for _, _, key, _, stop in entries if not stop}
+        if not keys:
+            continue
+        own = (chosen or {}).get(name)
+        own = own if own in keys else min(keys)
+        rows, counts, views = {}, {}, {}
+        for entry, (example, model, key, raw, _) in zip(tb.by_table.get(at, []), entries):
+            if repr(key) == own and model == 0:
+                if tb.counted(entry):
+                    counts[example] = int(tb.E['rows'][entry])
+                    views[example] = [(held, [[tb.value(at, types[column], value) for column, value in zip(held, row)] for row in part]) for held, part in tb.entry_views(entry, at)]
+                else:
+                    rows[example] = [[tb.value(at, ty, value) for ty, value in zip(types, row)] for row in raw]
+        tables[name] = dict(columns=columns, rows=rows, assignments=len(keys), **(dict(counts=counts, views=views) if counts else {}))
+        assignments[name] = own
+    return tables, assignments
 
 
 def coordinate_of(key, graph, describe):
@@ -67,7 +95,8 @@ def dump(out, root, task, mutants):
     for pair in task_json['test']:
         pair['output'] = pair['input']
     solver = O.Solver(task, text=source['gold'])
-    tables = solver.tables(task_json, keep_run=True)
+    solver.tables(task_json, keep_run=True)
+    tables, chosen = read_at_list_assignment(solver.last_run[0])
     small = sum(len(rows) for table in tables.values() for rows in table['rows'].values()) <= SMALL
     others = solver.other_assignments(16) if small else []
     cache = F.FeatureCache()
@@ -83,7 +112,8 @@ def dump(out, root, task, mutants):
         try:
             other_solver = O.Solver(task, text=mutant['text'])
             run = other_solver.run_engine(task_json, pin={})
-            other_tables = other_solver.read(run, next(iter(other_solver.output_keys(run)), None))
+            other_solver.read(run, next(iter(other_solver.output_keys(run)), None))
+            other_tables, _ = read_at_list_assignment(run, chosen)
             own, own_coordinates = features_of(other_solver, other_tables, task_json, None, cache)
         except Exception as error:
             kept.append(dict(query=query['name'], form=query['form'], mutant=query['mutants'].index(mutant), fault=type(error).__name__))
