@@ -5,9 +5,10 @@
 
 STATE_ROOT holds `lists/` and, for the deranged outputs, `null/`, as `candidate-lists --state-only` writes them. A row is
 a pair of a gold table T and an earlier table U of a task. Its label says whether some later gold form reads both. A
-fit on train tasks is read on dev tasks, from what the files hold so far, over the shapes that read an output, on the true
-outputs and on the deranged ones. A first number is each shape's own read: how much more often it has a value on pairs
-that a later query reads than on the others, over tasks, against the same number on the deranged outputs.
+fit on train tasks is read on dev tasks, from what the files hold so far: over every two-table shape on the true outputs, and
+over the shapes that read an output, on the true outputs and on the deranged ones. A first number is each shape's own read:
+how much more often it has a value on pairs that a later query reads than on the others, over tasks, against the same number
+on the deranged outputs.
 """
 import argparse
 import json
@@ -148,7 +149,7 @@ def main():
         for shape, tasks in rate.items():
             gaps = []
             for task, counts in tasks.items():
-                on, off = pairs[task]
+                on, off = pairs[task][:2]
                 if on and off:
                     gaps.append(counts[0] / on - counts[1] / off)
             if len(gaps) >= 10:
@@ -177,7 +178,15 @@ def main():
                     cols.append(place)
                     data.append(value)
         return sp.csr_matrix((data, (rows, cols)), shape=(len(labels), len(columns)), dtype=np.float32), np.array(labels), groups
-    for kind, held in tables.items():
+    every_shape = {}
+    for task, split, row in tables['lists']:
+        if split == 'train':
+            for shape in row[3].tolist():
+                every_shape.setdefault(shape, len(every_shape))
+    print('columns of every two-table shape', len(every_shape), flush=True)
+    output_columns = columns
+    for kind, held in [('every_shape', tables['lists'])] + list(tables.items()):
+        columns = every_shape if kind == 'every_shape' else output_columns
         train_x, train_y, _ = matrix(held, 'train')
         dev_x, dev_y, dev_groups = matrix(held, 'dev')
         if not len(dev_y) or len(set(dev_y.tolist())) < 2:

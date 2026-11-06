@@ -94,7 +94,7 @@ def worker(old_root, new_root, task):
     names = set(prefix) | {read for reads in reads_at.values() for read in reads} | {item['table'] for item in items}
     names |= {relation for relation, at in defined.items() if gold_forms[at][0] != 'INIT'}
     nodes = [dict(name=name, form=defined[name.split('.')[0]], reads=reads_at[defined[name.split('.')[0]]]) for name in sorted(names) if name.split('.')[0] in defined]
-    head = {key: stored[key] for key in ('task', 'case', 'train', 'last_query', 'budget_cut')}
+    head = {key: stored.get(key) for key in ('task', 'case', 'train', 'last_query', 'budget_cut')}
     prefix = {name: table for name, table in prefix.items() if table is not None}
     full = dict(head, test=len(task_json['test']), left_out=left_out, items=items, prefix=prefix, state=dict(nodes=nodes))
 
