@@ -83,7 +83,13 @@ pub fn evaluate_assembly(
     let assembly = Assembly::of(evaluation.program, form, rigid)?.with_recorded_parts(bodies);
     let rows = match output {
         OutputStep::Pose => assembly.poses(bodies, example, budget)?,
-        step => assembly.placements(assembly.part(step)?, bodies, example, budget)?,
+        step => {
+            let part = assembly.part(step)?;
+            match assembly.assigned_placements(part, bodies)? {
+                Some(rows) => Ok(rows),
+                None => assembly.placements(part, bodies, example, budget)?,
+            }
+        }
     };
     Ok(rows.map_or_else(|value| value, |rows| RelationValue::Rows(Arc::new(join::one_part(rows)))))
 }
@@ -558,7 +564,30 @@ impl<'e, 'p> Assembly<'e, 'p> {
     /// records hold none, or the part has no output.
     fn record_of<'b>(&self, part: &Part<'_>, bodies: &'b FormBodies<'_>) -> Option<&'b ParamValue> {
         let name = OutputName { of: OutputOwner::RigidDet(self.name.clone()), path: self.steps(part)?.into() };
-        bodies.driver.evaluation.parameters.get(&ProgramRelation::Output(name))
+        bodies.driver.evaluation.parameters.recorded(&ProgramRelation::Output(name))
+    }
+
+    /// The rows of `&marker.<part>` that a witness's `assign` of that output
+    /// gives: the rows as the output holds them, the key's columns, the pose
+    /// and the part's columns. `None` where the witness gives none. The
+    /// instances take no part in them.
+    fn assigned_placements(&self, part: usize, bodies: &FormBodies<'_>) -> Outcome<Option<RowSet>> {
+        let part = &self.parts[part];
+        let Some(steps) = self.steps(part) else { return Ok(None) };
+        let name = OutputName { of: OutputOwner::RigidDet(self.name.clone()), path: steps.into() };
+        let evaluation = bodies.driver.evaluation;
+        let Some(assigned) = evaluation.parameters.assigned(&ProgramRelation::Output(name)) else { return Ok(None) };
+        let types: Vec<ValueType> = self.key_types.iter().cloned().chain(std::iter::once(ValueType::D4)).chain(part.types.iter().cloned()).collect();
+        let rows = {
+            let mut table = evaluation.session.intern.write().expect("an intern table that no panic poisoned");
+            crate::terms::encode_param_value(assigned, &types, evaluation.registry, &mut table)
+                .map_err(|error| self.fault(format!("the `assign` of a part does not read at the key, the pose and the part's columns: {error:?}")))?
+        };
+        let mut set = RowSet::empty(types.len() as u16);
+        for row in rows {
+            set.insert(row);
+        }
+        Ok(Some(set))
     }
 
     /// The rows of `&marker.<part>`: at each key, at each D4 element, the

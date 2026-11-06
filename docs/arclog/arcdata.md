@@ -102,7 +102,7 @@
 - `<id>` is unique within the file.
 - `<plausibility>` is `ordinary`, `variant`, `borderline` or `foreign`.
 - `<verdict>` is `concept`, an alt's name, `any` or `other`. A witness that breaks an input claim holds `(relaxed <slug>)`.
-- `assign` reassigns a relation for this witness, with rows in the form a `param` form takes.
+- `assign` reassigns a relation for this witness, with rows in the form a `param` form takes. An `assign` of the output of a part of a `RIGID_DET` assembly, `&pair.footprint`, gives that output's rows, as [Semantics](./rigid.md#semantics) gives its columns: the key's columns, the pose, and the part's columns.
 - `output` gives each distinct output with the fewest names whose cases together give it; a name that fixes several alts is a list; `undefined` where those cases are undefined; several grids where the cases give one per model of a [One](./constraints.md#one) mark or a [Choose](./constraints.md#choose), as [The output set](./constraints.md#the-output-set) gives. With the verdict `other`, one `output` form with no name holds the annotator's judged grid.
 - A grid's rows stand one per line, two spaces in from the form that holds the grid.
 - A `witness` form with no body, `(witness two-openings variant $EachOpening)`, is the witness of that id given in full under an earlier alt.

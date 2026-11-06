@@ -144,6 +144,25 @@ impl ParameterValues {
         }
     }
 
+    /// The written rows of the stored `param` record of `relation`, whatever
+    /// a witness's `assign` gives it, or `None` where there is none, as at
+    /// values determined from the evidence.
+    pub fn recorded(&self, relation: &ProgramRelation) -> Option<&ParamValue> {
+        match &self.source {
+            ParameterSource::Stored { records, .. } => records.get(relation),
+            ParameterSource::Determined(_) => None,
+        }
+    }
+
+    /// The written rows that a witness's `assign` gives `relation`, or `None`
+    /// where it gives none, as at values determined from the evidence.
+    pub fn assigned(&self, relation: &ProgramRelation) -> Option<&ParamValue> {
+        match &self.source {
+            ParameterSource::Stored { assigns, .. } => assigns.get(relation),
+            ParameterSource::Determined(_) => None,
+        }
+    }
+
     /// Whether these values, determined from the evidence, give each relation
     /// of `rows` its rows there.
     pub fn holds(&self, rows: &[(ProgramRelation, Arc<Relation>)]) -> bool {
