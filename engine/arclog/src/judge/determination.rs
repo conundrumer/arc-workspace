@@ -378,13 +378,15 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
         let mut dets = Vec::new();
         let mut reads = Vec::new();
-        let read = read_by_output(case.program, output.node);
+        let read = read_by_output(case.program, output.node, false);
+        let read_to_compute = read_by_output(case.program, output.node, true);
         for det in dets_read(case.program, output.node) {
             if !order.contains(&det.relation) {
                 order.push(det.relation.clone());
             }
             reads.push(det.relation.clone());
-            if read[det.node.0 as usize] && !computed_from_dets(case.program, det.node) {
+            let stored = read_to_compute[det.node.0 as usize] && !is_by_clauses(program, det.node);
+            if stored || (read[det.node.0 as usize] && !computed_from_dets(case.program, det.node)) {
                 read_by_program.insert(det.relation.clone());
             }
             if det.open {
@@ -450,8 +452,10 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
 
 /// Each node that the `OUT` form at `output` of `program` reads, through
 /// clauses, instances and `RIGID_DET` assemblies, and through no `DET`'s
-/// body.
-fn read_by_output(program: &CheckedProgram, output: GraphNodeIndex) -> Vec<bool> {
+/// body. With `to_compute`, it also goes through the body of a `DET` whose
+/// value is computed from other `DET`s (`computed_from_dets`), since a run
+/// reads those `DET`s to compute it.
+fn read_by_output(program: &CheckedProgram, output: GraphNodeIndex, to_compute: bool) -> Vec<bool> {
     let resolved = &program.program;
     let graph = &resolved.graph;
     let mut seen = vec![false; graph.nodes.len()];
@@ -461,7 +465,7 @@ fn read_by_output(program: &CheckedProgram, output: GraphNodeIndex) -> Vec<bool>
             continue;
         }
         let kind = &graph.nodes[at.0 as usize].kind;
-        if !is_det_kind(resolved, at, kind) {
+        if !is_det_kind(resolved, at, kind) || (to_compute && computed_from_dets(program, at)) {
             stack.extend(graph.reads[at.0 as usize].iter().copied());
         }
     }
