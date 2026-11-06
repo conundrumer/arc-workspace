@@ -238,6 +238,7 @@ def main():
         if split == 'train':
             for name in row[5]:
                 baseline_columns.setdefault(name, len(baseline_columns))
+    per_task = defaultdict(dict)
     sets = [('baseline', tables['lists'], {}, True), ('every_shape', tables['lists'], every_shape, False), ('baseline+every_shape', tables['lists'], every_shape, True),
             ('baseline+output', tables['lists'], columns, True), ('baseline+output_deranged', tables['null'], columns, True), ('output', tables['lists'], columns, False), ('output_deranged', tables['null'], columns, False)]
     for kind, held, own_columns, with_baseline in sets:
@@ -256,8 +257,17 @@ def main():
             mask = groups == task
             if 0 < dev_y[mask].sum() < mask.sum():
                 by_task.append(roc_auc_score(dev_y[mask], scores[mask]))
+                per_task[kind][task] = by_task[-1]
         results[kind] = dict(pooled=float(roc_auc_score(dev_y, scores)), by_task=float(np.mean(by_task)) if by_task else None, tasks=len(by_task), pairs=int(len(dev_y)), joined=int(dev_y.sum()), train_pairs=int(len(train_y)))
         print(kind, json.dumps(results[kind]), flush=True)
+    rng = np.random.default_rng(7)
+    for one, other in (('baseline+every_shape', 'baseline'), ('baseline+output', 'baseline'), ('baseline+output', 'baseline+output_deranged'), ('output', 'output_deranged')):
+        tasks = sorted(set(per_task[one]) & set(per_task[other]))
+        if tasks:
+            gaps = np.array([per_task[one][task] - per_task[other][task] for task in tasks])
+            means = gaps[rng.integers(0, len(gaps), (2000, len(gaps)))].mean(axis=1)
+            results[f'{one} less {other}'] = dict(mean=float(gaps.mean()), low=float(np.quantile(means, 0.005)), high=float(np.quantile(means, 0.995)), tasks=len(tasks))
+            print(f'{one} less {other}', json.dumps(results[f'{one} less {other}']), flush=True)
     (out / 'fit.json').write_text(json.dumps(results, indent=1))
 
 
