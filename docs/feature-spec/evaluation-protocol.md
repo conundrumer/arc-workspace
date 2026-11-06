@@ -73,6 +73,8 @@ Whether the features of a candidate's table tell a solver's next query from a wr
 
 Trees rank Q over Q', trained on train tasks and read on dev tasks, per feature set, beside a baseline with no table content. This is the one test here that trains a model.
 
+A fit moves with its seed, by as much as many differences between sets. So a set's line is the ensemble of several seeds, with the spread of its single fits beside it, and a difference between two sets is read paired over tasks.
+
 ## Rule recognition
 
 Whether statements selected on some train pairs recognize the real output of a left-out pair.

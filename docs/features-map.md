@@ -12,7 +12,7 @@ Where each thing about features over tables is defined. Where two documents diff
     - `:min`, `:mean` and `:max` in the contract pool over assignments.
 - What a feature is, the feature query language, shapes and coverage: [Feature specification](feature-spec/feature-spec.md). It changes the contract only where its section "What in the sample contract changes" says so.
 - Column types, frames and lineage: [Arclog column types](feature-spec/arclog-types.md). The engine's code is the source of truth for it.
-- How features leave the engine: [Feature export](feature-spec/export-design.md).
+- How features leave the engine, and what a model reads of them: [Feature export](feature-spec/export-design.md).
 - How features are measured: [Evaluation protocol](feature-spec/evaluation-protocol.md), and each measure's meaning in [Measures](../work/measures.md).
 - The arclog language and lib, which features are written in: [arclog](arclog/arclog.md) and [The arclog lib](arclog/lib.md).
 

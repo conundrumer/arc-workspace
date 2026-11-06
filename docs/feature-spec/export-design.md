@@ -50,7 +50,21 @@ So a kind gives 6 numbers, and at most one more. These are the `TableVector`'s e
 
 A vector is sparse, since most entries are at their default on most tables. It is stored as compressed rows: an offset per row, then for each entry its index into `names()` and its value as `float32`. `names()` lists every entry of one schema version once. `version()` is a hash of that list.
 
-A consumer that needs dense columns, as the trees do, builds them for the columns it keeps, and a missing entry reads as the entry's default. A fit fixes its list of columns from train tasks and stores the list with the model. A kind with no value at a row is stored as NaN, since that differs from the default.
+## What a model reads
+
+A row is one candidate query at a state. A model reads a row as fixed columns, so a column means one thing on every table of every task. `model/feature_eval/gate_lists.py` builds these rows.
+
+- **Columns:** a fit fixes its list of columns from train tasks and stores the list with the model. A shape is a column where it tells a gold query's table from a mutant's on enough train tasks.
+- **Equal columns:** columns equal on every train row are one column, named by the shortest label. A fit samples columns, and a set of equal columns would otherwise count once per member.
+- **A shape's numbers:** these read a shape's greatest value over its scope, which is the train examples where the shape reads the output, and every example otherwise.
+    - `stable`: the value, where the shape has one value at every example of its scope and that value is not the default. It states an invariant of the task, which a mean does not state.
+    - `mean`, `least` and `most`: for every active shape.
+- **No entry:** a missing entry reads as its default. A shape with no value at any example has NaN, since that differs from the default.
+- **Beside the shapes:**
+    - The query's body, with no table content.
+    - What the table has against the tables its query reads and the input: its entries, its stable entries, those new to these tables, the share of its entries that each of them has, and its rows over theirs.
+    - Its count of assignments. A row reads one table at one assignment.
+    - The roots of the parts with no hole, which are the same on every row of a task.
 
 ## Cost
 
