@@ -18,6 +18,7 @@ The objects of the search over programs and the maps between them. The [Type con
     - `AssignmentVector`: one table over its assignments.
     - `QueryVector`: one query, the tables it uses and the tables it computes.
     - State features: any tables of a state.
+- **Row**: r(q, S, E, e) is what a model reads of a candidate query q at a state S and an example e of E, a train pair or a test input. It holds q's features at e, q's features over all examples, and the features of S and E, each in a column that means one thing on every row of every task. So a row keeps which feature's value goes with which at an example. At a test input, a feature that reads the output has no value.
 - **Policy**: π(q | S, E) is a distribution over the queries that can be added at S.
 
 ## Conditions

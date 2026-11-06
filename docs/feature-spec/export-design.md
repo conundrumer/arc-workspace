@@ -43,15 +43,16 @@ A vector is sparse, since most entries are at their default on most tables. It i
 
 ## What a model reads
 
-A row is one candidate query at a state. A model reads a row as fixed columns, so a column means one thing on every table of every task. `model/feature_eval/gate_lists.py` builds these rows.
+A model reads one row for each candidate query at a state and each example, as [Structure of the search](structure.md#maps) gives. A learned function has a value at each of a candidate's rows, and those values stay apart, since a rule has to hold at every example. Where something must order candidates, it reads the worst example beside the mean. The rows have fixed columns, so a column means one thing on every row of every task. The count of examples differs between tasks, so a row holds one example's values and no column stands for an example. `model/feature_eval/gate_lists.py` builds these rows.
 
 - **Columns:** a fit fixes its list of columns from train tasks and stores the list with the model. A shape is a column where it tells a gold query's table from a mutant's on enough train tasks.
 - **Equal columns:** columns equal on every train row are one column, named by the shortest label. A fit samples columns, and a set of equal columns would otherwise count once per member.
-- **A shape's numbers:** these read a shape's greatest value over its scope, which is the train examples where the shape reads the output, and every example otherwise.
-    - `stable`: the value, where the shape has one value at every example of its scope and that value is not the default. It states an invariant of the task, which a mean does not state.
-    - `mean`, `least` and `most`: for every active shape.
+- **A shape's numbers:** these read a shape's greatest value. Its scope is the train examples where it reads the output, and every example otherwise.
+    - `each`: its value at the row's example. So a row keeps which value of one shape goes with which value of another at an example. Past a shape's scope it has no entry.
+    - `stable`: its value, on each of a candidate's rows, where it has one value at every example of its scope and that value is not the default. It states an invariant of the task, which a value at one example does not state.
+    - `mean`, `least` and `most`, over its scope: a reading for a fit with one row per candidate, which loses that pairing.
 - **No entry:** a missing entry reads as its default. A shape with no value at any example has NaN, since that differs from the default.
-- **Beside the shapes:**
+- **Beside the shapes,** on each of a candidate's rows:
     - The query's body, with no table content.
     - What the table has against the tables its query reads and the input: its entries, its stable entries, those new to these tables, the share of its entries that each of them has, and its rows over theirs.
     - Its count of assignments. A row reads one table at one assignment.

@@ -229,7 +229,7 @@ A vector is sparse. A table gives the entries whose value differs from the defau
 
 - A shape gives two numbers at each example: the greatest and the sum of its ground expressions' values. The sum of a `nonempty` is the number of bindings with a row. With one binding, the two are equal. A `ratio` gives the greatest and the least, since a sum of fractions counts nothing. A fraction is exact, so two examples have one value exactly where their fractions are equal.
 - A task-wide root gives those two numbers once.
-- A per-input root gives them per example and model. Within an example it takes the mean over the models, as the contract gives. The value at an example is the feature's value. A model with fixed columns reads `:min`, `:mean` and `:max` entries, which the encoder combines outside arclog: over the train examples where the expression has an `output` leaf, and over every example otherwise. These entries are one way to read the values, and they lose which value of one entry goes with which value of another at an example.
+- A per-input root gives them per example and model. Within an example it takes the mean over the models, as the contract gives. The value at an example is the feature's value. A model reads it at each example, as [What a model reads](export-design.md#what-a-model-reads) gives. `:min`, `:mean` and `:max` entries, which the encoder combines outside arclog, are a reading for a model with one row per candidate: over the train examples where the expression has an `output` leaf, and over every example otherwise. They lose which value of one entry goes with which value of another at an example.
 - A `value-set` over one number column gives a number where the set has one member, and no value otherwise. `Order`'s `maximal` and `minimal` give such a column. Another `value-set` is no vector entry, and it is for a consumer that reads a set.
 - In a QueryVector, a hole's type can also state the column's lineage root, as [What column metadata adds to features](arclog-types.md#what-column-metadata-adds-to-features) gives.
 - A task-wide count over the rows of every example depends on how many examples there are, so a ratio pairs it with that count.
@@ -323,7 +323,7 @@ The contract holds except where this list changes it.
 - A number from arclog is an integer. A `ratio`'s value is an exact fraction, stored as two integers in lowest terms.
 - `names` and `values` become a sparse map from name to value, in place of one list of names and one float per name.
 - `types` includes the Ident source, since a shape's bindings depend on it.
-- A feature's value at an example is defined per expression, and `:min`, `:mean` and `:max` entries over the examples are added for a model with fixed columns. In the contract, a feature combines over examples as it defines. The aggregates over assignments stay as the contract gives them.
+- A feature's value at an example is defined per expression, and a model reads it at each example, as [What a model reads](export-design.md#what-a-model-reads) gives. In the contract, a feature combines over examples as it defines. The aggregates over assignments stay as the contract gives them.
 - The rule "where colors tie for the most common, the lowest color is taken" goes, since it is a free choice. Under a tie, `Order`'s `maximal` output contains every tied member.
 
 ## Computational limits
