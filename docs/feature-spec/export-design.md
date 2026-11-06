@@ -4,16 +4,9 @@ How the engine gives the model a table's features. The reader is whoever impleme
 
 ## The path
 
-The export already computes a `TableVector` in the engine: `arclog_tables::summary` calls `arclog_features::vector` on each table at each assignment, and `columns` stores the result with each row. That path stays, and what the crate computes changes.
-
-- `engine/arclog-features` holds the native catalog. It has no engine dependency, so the engine and `arclog-features-py` call one function.
-- `names()`, `version()` and `vector()` keep their roles, and `table_feature_names` and `table_features_version` keep theirs in Python.
-- A feature expression in `engine/arclog-encoder` is the definition. The catalog is an implementation of it, checked against it, as a native lib element is.
-
-## Which tables
-
-- Each parameterized table of the export, at each assignment, and each base table.
-- For the writer, the body table in progress and each successor body table, from the decoder's rows, with no stored query. The writer's candidate block reads these, and training rows and the live writer call one function, through a binding in the site wheel.
+- A feature expression in `engine/arclog-encoder` is the definition. `table_vector` walks a table's generated shapes over its rows and the base tables, and the catalog is a native implementation of named kinds, checked against the definition, as a native lib element is.
+- `feature-encoder candidate-lists` writes the vectors of a gate's tables, `vector` those of a solver's table, and `base-vectors` and `query-vectors` the rest of a state's features.
+- `arclog_tables::summary` still stores the older `arclog_features::vector` with each row of the export, so nothing in the export or a search reads the encoder's features. A search needs a call into the encoder before it can read a fit's columns.
 
 ## What the catalog takes
 
@@ -23,8 +16,6 @@ The export already computes a `TableVector` in the engine: `arclog_tables::summa
 |---|---|---|
 | `TableAt` | each column's value type, whether it is a key column, and the rows as flat cells | once per table at an example, from the export's cells |
 | `PairFacts` | what the grids of a pair give: pieces, line colors, neighborhood ids, changed cells and so on | once per pair of a task, and shared by all that pair's tables |
-
-So `Input` gains two fields: the key flags of the columns, and the task's `PairFacts`. The evaluator holds the facts for its task, since it holds the grids.
 
 A test input has no output. So a kind that reads no output runs on `GridFacts` of the input alone, and a kind that reads the output has no record there.
 
@@ -81,10 +72,5 @@ A row is one candidate query at a state. A model reads a row as fixed columns, s
 
 ## What consumers do
 
-- A new schema version compares with no earlier one, so `samples/SET/points/` is written again, and a fit reads the new names.
+- A new schema version compares with no earlier one, so a fit reads the new names.
 - `TableHash` and the rows do not change, so the tables and the `RowStore` stay. A feature change writes no tables.
-
-## Later steps
-
-- Small enumerated expressions enter as more names of the same list, from `arclog-encoder`'s one-pass family, at the size that the evaluation protocol's rule sets.
-- Program relations enter the `QueryVector`, and no table reads them.
