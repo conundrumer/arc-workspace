@@ -95,7 +95,9 @@ def baseline_of(first, second, prefix, nodes):
     out['ancestor'] = int(second in reached)
     out['t_depth'] = depth.get(first, 0)
     out['u_depth'] = depth.get(second, 0)
-    out['read_by'] = sum(second in node['reads'] for node in nodes)
+    # Only what stands at the state: a later form's reads are what the label asks about.
+    at = {node['name']: node['form'] for node in nodes}.get(first, -1)
+    out['read_by'] = sum(second in node['reads'] for node in nodes if node['form'] <= at)
     return out
 
 
