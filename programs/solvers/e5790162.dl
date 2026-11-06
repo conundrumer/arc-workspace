@@ -208,7 +208,7 @@ walk.source([H, C, B, T, X], [P, D]) :-
 walk.edge([H, C, B, T, X], [P, W], S2) :-
     impl_choice([H, C, B, T, X]), in(P, _),
     ( turned(P, W, W2, B), S2 = [P, W2]               // a marker ahead: turn in place
-    ; neighbor(P, W, Q), passable(Q, X), S2 = [Q, W]  // a passable cell ahead: step onto it
+    ; dir_elem(W), neighbor(P, W, Q), passable(Q, X), S2 = [Q, W]  // a passable cell ahead: step onto it
     ).
 
 // The cells the line visits.
