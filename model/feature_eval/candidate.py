@@ -60,16 +60,16 @@ def read_names(root):
     """Per shape, what it reads and its size."""
     flags, sizes = {}, {}
     for folder in ('lists', 'null'):
-        path = Path(root) / folder / 'names.tsv'
-        try:
-            lines = open_text(path)
-        except OSError:
-            continue
-        for line in lines:
-            parts = line.rstrip('\n').split('\t')
-            if len(parts) == 4:
-                key = int(parts[0], 16)
-                flags[key], sizes[key] = int(parts[2]), int(parts[3])
+        # A run writes a names file of its own, and a stopped run leaves its file with an unfinished end.
+        for path in sorted((Path(root) / folder).glob('names*.tsv*')):
+            try:
+                for line in open_text(path):
+                    parts = line.rstrip('\n').split('\t')
+                    if len(parts) == 4:
+                        key = int(parts[0], 16)
+                        flags[key], sizes[key] = int(parts[2]), int(parts[3])
+            except (OSError, zstandard.ZstdError):
+                continue
     return flags, sizes
 
 
