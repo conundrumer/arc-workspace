@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::gen_constants::number_of;
-use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, SLOT_NO_VALUE};
+use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
 use crate::stored::Stored;
 use crate::state_features::{graph_numbers, nodes_of, relations, Relation};
@@ -26,12 +26,17 @@ struct Written {
     /// greatest of each one's greatest value, in the order of the shapes. A shape with no value at
     /// any example has NaN for all three, since no value differs from a default.
     graded: Vec<(u64, f32, f32, f32)>,
+    /// How many examples each graded shape has a value for, and those values, shape by shape. A
+    /// default is 0, as is an example past the shape's scope, and no value is NaN.
+    pairs: usize,
+    at_pairs: Vec<f32>,
 }
 
 fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
     let mut ids = Vec::new();
     let mut values = Vec::new();
     let mut graded = Vec::new();
+    let mut at_pairs = Vec::new();
     for shape in 0..vector.shapes.len() {
         let (least, mean, most, count) = vector.over_examples(shape, false);
         if vector.stable(shape) {
@@ -39,9 +44,15 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
             values.push(mean as f32);
         } else if count == 0 || least != 0.0 || most != 0.0 {
             graded.push((vector.shapes[shape], least as f32, mean as f32, most as f32));
+            at_pairs.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| match slot.state {
+                _ if example >= vector.scope(shape) => 0.0,
+                SLOT_NO_VALUE => f32::NAN,
+                SLOT_DEFAULT => 0.0,
+                _ => slot.greatest.float() as f32,
+            }));
         }
     }
-    Written { owner, ids, values, graded }
+    Written { owner, ids, values, graded, pairs: vector.examples, at_pairs }
 }
 
 /// A part's own roots: those stable at every example of its scope, with their value, and the others
@@ -75,7 +86,7 @@ fn constant_roots(grids: &Grids, families: &Generators) -> Written {
     graded.sort_unstable_by_key(|entry: &(u64, f32, f32, f32)| entry.0);
     let mut order: Vec<usize> = (0..ids.len()).collect();
     order.sort_unstable_by_key(|at| ids[*at]);
-    Written { owner: "constants".into(), ids: order.iter().map(|at| ids[*at]).collect(), values: order.iter().map(|at| values[*at]).collect(), graded }
+    Written { owner: "constants".into(), ids: order.iter().map(|at| ids[*at]).collect(), values: order.iter().map(|at| values[*at]).collect(), graded, pairs: 0, at_pairs: Vec::new() }
 }
 
 /// A table's task-wide roots, each with its one value. A shape with no value has NaN, since no value
@@ -90,7 +101,7 @@ fn wide_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &G
             values.push(if slot.state == SLOT_NO_VALUE { f32::NAN } else { slot.greatest.float() as f32 });
         }
     }
-    Written { owner, ids, values, graded: Vec::new() }
+    Written { owner, ids, values, graded: Vec::new(), pairs: 0, at_pairs: Vec::new() }
 }
 
 /// The number of each base part with one number column that holds one somewhere in its scope: the least,
@@ -117,7 +128,7 @@ fn constant_values(grids: &Grids, families: &Generators) -> Written {
         graded.push((hash as u64, least, held.iter().sum::<f32>() / held.len() as f32, most));
     }
     graded.sort_unstable_by_key(|entry: &(u64, f32, f32, f32)| entry.0);
-    Written { owner: "constant-values".into(), ids: Vec::new(), values: Vec::new(), graded }
+    Written { owner: "constant-values".into(), ids: Vec::new(), values: Vec::new(), graded, pairs: 0, at_pairs: Vec::new() }
 }
 
 /// What a run of the lists writes of a task.
@@ -396,7 +407,8 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let seconds = started.elapsed().as_secs_f64();
 
     // The file: its header's length, its header, then the shapes, then each list as places in them
-    // and its values, then its graded shapes as places and their least, mean and greatest.
+    // and its values, then its graded shapes as places, their least, mean and greatest, and their
+    // value at each example.
     let mut dictionary: Vec<u64> = lists.iter().flat_map(|list| list.ids.iter().copied().chain(list.graded.iter().map(|entry| entry.0))).collect();
     dictionary.sort_unstable();
     dictionary.dedup();
@@ -404,7 +416,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         "task": task_name, "case": header_rest.0, "train": train, "test": test, "last_query": last_query, "budget_cut": header_rest.1,
         "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at, "read_names_skipped": skipped, "places": prefix,
         "shapes": dictionary.len(),
-        "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len(), "graded": list.graded.len()})).collect::<Vec<_>>(),
+        "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len(), "graded": list.graded.len(), "pairs": list.pairs})).collect::<Vec<_>>(),
     }).to_string();
     let total: usize = lists.iter().map(|list| list.ids.len()).sum();
     let mut bytes = Vec::with_capacity(8 + header.len() + dictionary.len() * 8 + total * 8);
@@ -436,6 +448,9 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
             for entry in &list.graded {
                 bytes.extend_from_slice(&number(entry).to_le_bytes());
             }
+        }
+        for value in &list.at_pairs {
+            bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
     Ok(TaskLists { task: task_name, bytes, walks, seconds, shapes: dictionary.len() as u64 })
