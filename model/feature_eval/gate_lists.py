@@ -2,7 +2,8 @@
 """The Gate of docs/feature-spec/evaluation-protocol.md: trees that rank a gold query above its
 mutants, trained on train tasks and read on dev tasks, read additively over what a shape reads.
 
-  gate_lists.py build ROOT OUT [--min-tasks N]   the rows and the sparse matrices
+  gate_lists.py build ROOT OUT [--min-tasks N] [--all-numbers]
+                                                 the rows and the sparse matrices; TIOr needs --all-numbers
   gate_lists.py fit OUT --sets ... --filters ... [--seeds N]
                                                  one line per set: the ensemble of N fits, with each fit's
                                                  spread, per-task values in OUT/fits.jsonl, every column's
@@ -221,7 +222,7 @@ def place(ids, table):
     return at, hit
 
 
-def build(root, out, min_tasks, each_tasks=None):
+def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     parts = split_of()
@@ -485,7 +486,9 @@ def build(root, out, min_tasks, each_tasks=None):
                     for kind, held_lists, held_others, held_read, held_read_others in (('stable', lists, others, read_true, read_true_others), ('null', null_lists, null_others, read_null, read_null_others)):
                         held = held_lists.get(table)
                         each_name = 'each' if kind == 'stable' else 'null_each'
-                        channel_of = {'least': 'least', 'mean': 'mean', 'most': 'most'} if kind == 'stable' else {'least': 'null_least', 'mean': 'null_mean', 'most': 'null_most'}
+                        channel_of = {'mean': 'mean' if kind == 'stable' else 'null_mean'}
+                        if all_numbers:
+                            channel_of.update({'least': 'least', 'most': 'most'} if kind == 'stable' else {'least': 'null_least', 'most': 'null_most'})
                         if held is None:
                             for name in channel_of.values():
                                 mats[name].add([])
@@ -1007,6 +1010,7 @@ def main():
     parser.add_argument('paths', nargs='+')
     parser.add_argument('--min-tasks', type=int, default=3)
     parser.add_argument('--each-tasks', type=int)
+    parser.add_argument('--all-numbers', action='store_true')
     parser.add_argument('--family-columns', type=int, default=1500)
     parser.add_argument('--sets', nargs='*', default=[])
     parser.add_argument('--filters', nargs='*', default=['rows', 'same'])
@@ -1016,7 +1020,7 @@ def main():
     parser.add_argument('--filter', default='rows')
     a = parser.parse_args()
     if a.command == 'build':
-        build(a.paths[0], a.paths[1], a.min_tasks, a.each_tasks)
+        build(a.paths[0], a.paths[1], a.min_tasks, a.each_tasks, a.all_numbers)
     elif a.command == 'compare':
         compare(a.paths[0], a.paths[1], a.paths[2], a.filter)
     elif a.command == 'score':
