@@ -75,7 +75,7 @@ Trees rank Q over Q', trained on train tasks and read on dev tasks, per feature 
 
 A fit moves with its seed, by as much as many differences between sets. So a set's line is the ensemble of several seeds, with the spread of its single fits beside it, and a difference between two sets is read paired over tasks.
 
-The stored candidate tables hold train rows alone, so a fit has rows at the train pairs and no row at a test input, and a shape that reads no output is read over the train pairs.
+A fit has a row at each example, a train pair or a test input. A shape that reads the output has no entry at a test input, and a shape that reads no output is read over every example.
 
 ## Rule recognition
 
