@@ -86,10 +86,12 @@ fn paint_of(table: &Stored, views: &[PairView]) -> Paint {
     let base: usize = views.iter().map(PairView::wrong_cells).sum::<usize>().max(1);
     let mut out = Paint::default();
     let mut best: Option<(i64, BTreeSet<(usize, i32, i32)>)> = None;
+    let whole = 1024.0;
     for p in &position {
         for c in &color {
-            let (mut fixed, mut broke) = (BTreeSet::new(), 0i64);
+            let (mut fixed, mut fixed_count, mut broke) = (BTreeSet::new(), 0f64, 0f64);
             for (example, view) in views.iter().enumerate() {
+                let share = 1.0 / table.rows[example].len().max(1) as f64;
                 for model in &table.rows[example] {
                     let mut cells: BTreeMap<(i32, i32), BTreeSet<u32>> = BTreeMap::new();
                     for row in model.rows() {
@@ -102,14 +104,15 @@ fn paint_of(table: &Stored, views: &[PairView]) -> Paint {
                         if value == Some(*want) {
                             if !view.right(*at) {
                                 fixed.insert((example, at.0, at.1));
+                                fixed_count += share;
                             }
                         } else if view.right(*at) {
-                            broke += 1;
+                            broke += share;
                         }
                     }
                 }
             }
-            let err = base as i64 - fixed.len() as i64 + broke;
+            let err = ((base as f64 - fixed_count + broke) * 1024.0).round() as i64;
             // The least error, and over equal errors the fixed cells of each, so no order of the
             // columns enters.
             match &mut best {
@@ -120,7 +123,7 @@ fn paint_of(table: &Stored, views: &[PairView]) -> Paint {
         }
     }
     if let Some((err, fixed)) = best {
-        out.gain = Some(1.0 - err as f64 / base as f64);
+        out.gain = Some(1.0 - err as f64 / whole / base as f64);
         out.fixed = fixed;
     }
     // A Position column with no paint color: how close one fill color comes.
@@ -129,6 +132,7 @@ fn paint_of(table: &Stored, views: &[PairView]) -> Paint {
         let (mut got, mut own) = (0f64, 0f64);
         let mut cells = BTreeSet::new();
         for (example, view) in views.iter().enumerate() {
+            let share = 1.0 / table.rows[example].len().max(1) as f64;
             for model in &table.rows[example] {
                 let held: BTreeSet<(i32, i32)> = model.rows().map(|row| {
                     let m = margins_of(row[*p]);
@@ -142,7 +146,7 @@ fn paint_of(table: &Stored, views: &[PairView]) -> Paint {
                 let most = counts.values().copied().max().unwrap_or(0);
                 // Under a tie of fill colors, the mean over them.
                 let tied: Vec<u32> = counts.iter().filter(|(_, count)| **count == most).map(|(color, _)| *color).collect();
-                let weight = 1.0 / tied.len().max(1) as f64;
+                let weight = share / tied.len().max(1) as f64;
                 for fill in &tied {
                     for at in &held {
                         let want = view.output[at];
@@ -169,33 +173,10 @@ fn paint_of(table: &Stored, views: &[PairView]) -> Paint {
     out
 }
 
-/// The cells of a table's Position columns at each example where it has rows.
-fn cell_set(table: &Stored) -> BTreeSet<(usize, i32, i32, i32, i32)> {
-    let mut out = BTreeSet::new();
-    for (example, models) in table.rows.iter().enumerate() {
-        for model in models {
-            for row in model.rows() {
-                for (at, ty) in table.types.iter().enumerate() {
-                    if *ty == arclog::types::ValueType::Position {
-                        let m = margins_of(row[at]);
-                        out.insert((example, m[0], m[1], m[2], m[3]));
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
 fn total_rows(table: &Stored) -> f64 {
     table.rows.iter().map(|models| {
         if models.is_empty() { 0.0 } else { models.iter().map(|model| model.len as f64).sum::<f64>() / models.len() as f64 }
     }).sum()
-}
-
-fn rows_at(table: &Stored, example: usize) -> Option<f64> {
-    let models = &table.rows[example];
-    (!models.is_empty()).then(|| models.iter().map(|model| model.len as f64).sum::<f64>() / models.len() as f64)
 }
 
 /// Whether two assignments agree on each `DET` that both name.
@@ -203,18 +184,52 @@ fn agrees(a: &Assignment, b: &Assignment) -> bool {
     a.iter().all(|(name, rows)| b.iter().find(|(own, _)| own == name).is_none_or(|(_, own)| own == rows))
 }
 
-fn pools(values: &BTreeMap<String, Vec<f64>>, names: &mut Vec<String>, out: &mut Vec<f64>) {
-    for (name, held) in values {
-        let seen: Vec<f64> = held.iter().copied().filter(|value| !value.is_nan()).collect();
+/// The features of a query against its used tables, in the contract's families. A list of one schema
+/// version, so each vector has these names, with no value where a feature has none.
+const RELATION_FEATURES: [&str; 10] = ["rows_over_greatest_use", "cells_subset_of_use", "cells_superset_of_use", "cells_disjoint_from_uses", "use_gain", "gain_less_use_gain", "gain_above_use_gain", "new_cells_share", "new_cells_count", "union_share_added"];
+const USE_FEATURES: [&str; 5] = ["rows_over_use", "type_share", "same_entries_share", "gain_less_use", "fixed_not_in_use"];
+
+/// Each feature at each assignment of a query: the greatest over its Names.
+#[derive(Clone, Default)]
+struct AtAssignments(BTreeMap<String, BTreeMap<&'static str, f64>>);
+
+impl AtAssignments {
+    fn put(&mut self, assignment: &str, name: &'static str, value: f64) {
+        let held = self.0.entry(assignment.to_string()).or_default().entry(name).or_insert(value);
+        *held = held.max(value);
+    }
+
+    /// The min, the mean and the max of `name` over the assignments, with no value where it has none.
+    fn pooled(&self, name: &str) -> [f64; 3] {
+        let seen: Vec<f64> = self.0.values().filter_map(|at| at.get(name).copied()).collect();
         if seen.is_empty() {
-            continue;
+            return [f64::NAN; 3];
         }
-        let (least, most) = (seen.iter().copied().fold(f64::INFINITY, f64::min), seen.iter().copied().fold(f64::NEG_INFINITY, f64::max));
-        for (suffix, value) in [("min", least), ("mean", seen.iter().sum::<f64>() / seen.len() as f64), ("max", most)] {
-            names.push(format!("{name}:{suffix}"));
-            out.push(value);
+        [seen.iter().copied().fold(f64::INFINITY, f64::min), seen.iter().sum::<f64>() / seen.len() as f64, seen.iter().copied().fold(f64::NEG_INFINITY, f64::max)]
+    }
+}
+
+fn pooled_names(features: &[&str]) -> Vec<String> {
+    features.iter().flat_map(|name| ["min", "mean", "max"].map(|suffix| format!("{name}:{suffix}"))).collect()
+}
+
+/// The mean over examples of a value's mean over the pairs of TableRows of two tables at the example,
+/// over the examples where the value has one.
+fn over_pairs(a: &Stored, b: &Stored, value: &dyn Fn(&crate::native::Table, &crate::native::Table) -> Option<f64>) -> Option<f64> {
+    let mut means = Vec::new();
+    for example in 0..a.rows.len().min(b.rows.len()) {
+        let seen: Vec<f64> = a.rows[example].iter().flat_map(|one| b.rows[example].iter().filter_map(|two| value(one, two))).collect();
+        if !seen.is_empty() {
+            means.push(seen.iter().sum::<f64>() / seen.len() as f64);
         }
     }
+    (!means.is_empty()).then(|| means.iter().sum::<f64>() / means.len() as f64)
+}
+
+/// The cells of a TableRows' Position columns.
+fn cells_of(table: &crate::native::Table, types: &[arclog::types::ValueType]) -> BTreeSet<[i32; 4]> {
+    let places: Vec<usize> = (0..types.len()).filter(|at| types[*at] == arclog::types::ValueType::Position).collect();
+    table.rows().flat_map(|row| places.iter().map(|at| margins_of(row[*at])).collect::<Vec<_>>()).collect()
 }
 
 /// The counts of a form's body, by the contract's family from the query's body.
@@ -429,19 +444,19 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
         member_order.sort();
         used.extend(member_order.into_iter().map(|held| held.2));
 
-        let mut values: BTreeMap<String, Vec<f64>> = BTreeMap::new();
-        let mut per_use_values: Vec<BTreeMap<String, Vec<f64>>> = vec![BTreeMap::new(); used.len()];
+        let mut values = AtAssignments::default();
+        let mut per_use_values: Vec<AtAssignments> = vec![AtAssignments::default(); used.len()];
         for computed in &query.computes {
             let Some(own) = tables.get(computed) else { continue };
             for (assignment, table) in &own.at {
+                let at = format!("{assignment:?}");
                 let own_paint = paint_of(table, &views);
-                let own_cells = cell_set(table);
                 let rows = total_rows(table);
                 let own_vector = (d > 0).then(|| vector_of(table));
                 let (mut greatest_rows, mut parent_gains) = (f64::NEG_INFINITY, Vec::new());
                 let mut parent_fixed: BTreeSet<(usize, i32, i32)> = BTreeSet::new();
                 let mut pair_union = f64::NEG_INFINITY;
-                let (mut subset, mut superset, mut disjoint, mut seen_cells) = (false, false, true, false);
+                let (mut subset, mut superset, mut disjoint): (Option<f64>, Option<f64>, Option<f64>) = (None, None, None);
                 let base_cells = |paint: &Paint| if paint.fixed.is_empty() { paint.cells.clone() } else { paint.fixed.clone() };
                 let own_base = base_cells(&own_paint);
                 for (place, read) in used.iter().enumerate() {
@@ -451,12 +466,8 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
                     };
                     let Some(other) = held else { continue };
                     let bucket = &mut per_use_values[place];
-                    let ratios: Vec<f64> = (0..table.rows.len()).filter_map(|example| {
-                        let (a, b) = (rows_at(table, example)?, rows_at(&other, example)?);
-                        (b > 0.0).then_some(a / b)
-                    }).collect();
-                    if !ratios.is_empty() {
-                        bucket.entry("rows_over_use".to_string()).or_default().push(ratios.iter().sum::<f64>() / ratios.len() as f64);
+                    if let Some(ratio) = over_pairs(table, &other, &|one, two| (two.len > 0).then(|| one.len as f64 / two.len as f64)) {
+                        bucket.put(&at, "rows_over_use", ratio);
                     }
                     let mut types: Vec<String> = other.types.iter().map(|ty| format!("{:?}", ty.without_source())).collect();
                     let shared = table.types.iter().filter(|ty| {
@@ -469,20 +480,20 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
                             None => false,
                         }
                     }).count();
-                    bucket.entry("type_share".to_string()).or_default().push(shared as f64 / table.types.len().max(1) as f64);
+                    bucket.put(&at, "type_share", shared as f64 / table.types.len().max(1) as f64);
                     if let Some(own_vector) = &own_vector {
                         let their = vector_of(&other);
                         let active: Vec<usize> = (0..own_vector.shapes.len()).filter(|shape| own_vector.at(*shape).iter().any(|slot| slot.state != 0)).collect();
                         let same = active.iter().filter(|shape| own_vector.same_at_each_example(**shape, &their)).count();
-                        bucket.entry("same_entries_share".to_string()).or_default().push(same as f64 / active.len().max(1) as f64);
+                        bucket.put(&at, "same_entries_share", same as f64 / active.len().max(1) as f64);
                     }
                     let paint = paint_of(&other, &views);
                     if let (Some(a), Some(b)) = (own_paint.gain, paint.gain) {
-                        bucket.entry("gain_less_use".to_string()).or_default().push(a - b);
+                        bucket.put(&at, "gain_less_use", a - b);
                     }
                     if !own_paint.fixed.is_empty() {
                         let new = own_paint.fixed.difference(&paint.fixed).count();
-                        bucket.entry("fixed_not_in_use".to_string()).or_default().push(new as f64 / own_paint.fixed.len() as f64);
+                        bucket.put(&at, "fixed_not_in_use", new as f64 / own_paint.fixed.len() as f64);
                     }
                     if facts.table_names.contains_key(read) {
                         greatest_rows = greatest_rows.max(total_rows(&other));
@@ -493,23 +504,33 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
                             let union = own_base.union(&theirs).count();
                             pair_union = pair_union.max((union as f64 - own_base.len().max(theirs.len()) as f64) / union.max(1) as f64);
                         }
-                        let theirs = cell_set(&other);
-                        if !own_cells.is_empty() && !theirs.is_empty() {
-                            seen_cells = true;
-                            subset |= own_cells.is_subset(&theirs) && own_cells.len() < theirs.len();
-                            superset |= theirs.is_subset(&own_cells) && own_cells.len() > theirs.len();
-                            disjoint &= own_cells.is_disjoint(&theirs);
-                        }
+                        // At an example where both have cells, over the pairs of TableRows there.
+                        let relation = |test: &dyn Fn(&BTreeSet<[i32; 4]>, &BTreeSet<[i32; 4]>) -> bool| over_pairs(table, &other, &|one, two| {
+                            let (a, b) = (cells_of(one, &table.types), cells_of(two, &other.types));
+                            (!a.is_empty() && !b.is_empty()).then(|| f64::from(u8::from(test(&a, &b))))
+                        });
+                        let most = |held: Option<f64>, new: Option<f64>| match (held, new) {
+                            (Some(a), Some(b)) => Some(a.max(b)),
+                            (a, b) => a.or(b),
+                        };
+                        subset = most(subset, relation(&|a, b| a.is_subset(b) && a.len() < b.len()));
+                        superset = most(superset, relation(&|a, b| b.is_subset(a) && a.len() > b.len()));
+                        // Disjoint from each used table: the least over them.
+                        let apart = relation(&|a, b| a.is_disjoint(b));
+                        disjoint = match (disjoint, apart) {
+                            (Some(a), Some(b)) => Some(a.min(b)),
+                            (a, b) => a.or(b),
+                        };
                     }
                 }
-                let mut put = |name: &str, value: f64| values.entry(name.to_string()).or_default().push(value);
+                let mut put = |name: &'static str, value: f64| values.put(&at, name, value);
                 if greatest_rows.is_finite() {
                     put("rows_over_greatest_use", (rows + 1.0) / (greatest_rows + 1.0));
                 }
-                if seen_cells {
-                    put("cells_subset_of_use", f64::from(u8::from(subset)));
-                    put("cells_superset_of_use", f64::from(u8::from(superset)));
-                    put("cells_disjoint_from_uses", f64::from(u8::from(disjoint)));
+                if let (Some(a), Some(b), Some(c)) = (subset, superset, disjoint) {
+                    put("cells_subset_of_use", a);
+                    put("cells_superset_of_use", b);
+                    put("cells_disjoint_from_uses", c);
                 }
                 if let Some(top) = parent_gains.iter().copied().reduce(f64::max) {
                     put("use_gain", top);
@@ -526,7 +547,8 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
         }
         let mut names = vec!["depth".to_string(), "used_members".to_string(), "names".to_string()];
         let mut number_values = vec![depth as f64, members.len() as f64, query.computes.len() as f64];
-        pools(&values, &mut names, &mut number_values);
+        names.extend(pooled_names(&RELATION_FEATURES));
+        number_values.extend(RELATION_FEATURES.iter().flat_map(|name| values.pooled(name)));
 
         // Column origin, from the lineage of each column.
         let empty = BTreeSet::new();
@@ -585,20 +607,9 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
         names.extend(["labels".to_string(), "labels_two_or_more_sites".to_string()]);
         number_values.extend([labels, joined]);
 
-        let mut use_names: BTreeSet<String> = BTreeSet::new();
-        for bucket in &per_use_values {
-            for name in bucket.keys() {
-                for suffix in ["min", "mean", "max"] {
-                    use_names.insert(format!("{name}:{suffix}"));
-                }
-            }
-        }
-        let use_names: Vec<String> = use_names.into_iter().collect();
+        let use_names = pooled_names(&USE_FEATURES);
         let per_use = used.iter().zip(&per_use_values).map(|(read, bucket)| {
-            let (mut held_names, mut held_values) = (Vec::new(), Vec::new());
-            pools(bucket, &mut held_names, &mut held_values);
-            let row = use_names.iter().map(|name| held_names.iter().position(|own| own == name).map_or(f64::NAN, |at| held_values[at])).collect();
-            (read.clone(), row)
+            (read.clone(), USE_FEATURES.iter().flat_map(|name| bucket.pooled(name)).collect())
         }).collect();
         out.push(QueryVector { identity: query.identity.clone(), names, values: number_values, use_names, per_use, column_origin });
     }
