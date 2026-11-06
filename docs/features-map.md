@@ -2,6 +2,11 @@
 
 Where each thing about features over tables is defined. Where two documents differ, the one higher in "Authoritative" holds, unless a line says otherwise. "First version" and "v1" name the same library.
 
+## Terms
+
+* comment: The user's words, session 12a37de8, 2026-11-06: "Always use conventional terms".
+- Reports and documents on features use conventional terms. A name from code or from the first version appears only where it names that code. [Measures](../work/measures.md) gives each measure's conventional term, with the project's word as its alias.
+
 ## Authoritative
 
 - Goal, and what counts as a result: [Goal](../work/goal.md). It is under `work/`, which git ignores.
@@ -22,7 +27,7 @@ Where each thing about features over tables is defined. Where two documents diff
 - The named parts: `engine/lib/features.arclog`.
 - The scripts that score features: `model/feature_eval`.
 - The trainer those scripts run: `engine/block-boost`.
-- The first version: `model/contracts/features`, described in [its README](../model/contracts/README.md). It is a reference line. It does not define what a feature is.
+- The first version: `model/contracts/features`, described in [its README](../model/contracts/README.md). It is a baseline, and a model's row must give what it tells a model. It does not define what a feature is.
 
 ## Run outputs
 

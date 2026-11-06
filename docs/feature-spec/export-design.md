@@ -5,7 +5,7 @@ How the engine gives the model a table's features. The reader is whoever impleme
 ## The path
 
 - A feature expression in `engine/arclog-encoder` is the definition. `table_vector` walks a table's generated shapes over its rows and the base tables, and the catalog is a native implementation of named kinds, checked against the definition, as a native lib element is.
-- `feature-encoder candidate-lists` writes the vectors of a gate's tables, `vector` those of a solver's table, and `base-vectors` and `query-vectors` the rest of a state's features.
+- `feature-encoder candidate-lists` writes the vectors of candidate queries' tables, `vector` those of a solver's table, and `base-vectors` and `query-vectors` the rest of a state's features.
 - `arclog_tables::summary` still stores the older `arclog_features::vector` with each row of the export, so nothing in the export or a search reads the encoder's features. A search needs a call into the encoder before it can read a fit's columns.
 
 ## What the catalog takes
@@ -46,30 +46,30 @@ A vector is sparse, since most entries are at their default on most tables. It i
 A model reads one row for each candidate query at a state and each example, as [Structure of the search](structure.md#maps) gives. A learned function has a value at each of a candidate's rows, and those values stay apart, since a rule has to hold at every example. Where something must order candidates, it reads the worst example beside the mean. The rows have fixed columns, so a column means one thing on every row of every task. The count of examples differs between tasks, so a row holds one example's values and no column stands for an example. `model/feature_eval/gate_lists.py` builds these rows.
 
 - **Columns:** a fit fixes its list of columns from train tasks and stores the list with the model. Every shape that a train table holds is a column, in each number its set reads.
-- **Equal columns:** columns equal on every train row are one column, named by the shortest label. A fit samples columns, and a set of equal columns would otherwise count once per member.
-- **Columns no split can read:** a column with an entry on fewer rows than a leaf's least count stands in no fit, since one side of any split of it would hold too few rows.
+- **Duplicate columns:** columns equal on every train row are one column, named by the shortest label. A fit samples columns, and a set of duplicates would otherwise count once per member.
+- **Low-support columns:** a column with an entry on fewer rows than `min_data_in_leaf` stands in no fit, since one side of any split of it would hold too few rows.
 - **A shape's numbers:** these read a shape's greatest value. Its scope is the train examples where it reads the output, and every example otherwise.
     - `each`: its value at the row's example. So a row keeps which value of one shape goes with which value of another at an example. Past a shape's scope it has no entry.
     - `stable`: its value, on each of a candidate's rows, where it has one value at every example of its scope and that value is not the default. It states an invariant of the task, which a value at one example does not state.
     - `mean`, `least` and `most`, over its scope: a reading for a fit with one row per candidate, which loses that pairing.
-- **No entry:** a missing entry reads as its default. A shape with no value at any example has NaN, since that differs from the default.
+- **Missing entries:** a missing entry takes its default. A shape with no value at any example has NaN, since that differs from the default.
 - **Beside the shapes,** on each of a candidate's rows:
     - The query's body, with no table content.
     - What the table has against the tables its query reads and the input: its entries, its stable entries, those new to these tables, the share of its entries that each of them has, and its rows over theirs.
     - Its count of assignments. A row reads one table at one assignment.
     - Its task-wide roots.
     - Its place in the state's graph, and the state's other tables against it: each shape's mean over the tables its query reads, over their ancestors and over the rest.
-- **What the task holds,** which is the same on every candidate's row at an example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a gold query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
+- **What the task holds,** which is the same on every candidate's row at an example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a ground truth query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
 
 ## How a fit stores its rows
 
-A row holds no copies. Each fact stands once, at the level where it holds, and a row points to one block of each level.
+A fit's rows are a normalized store. Each fact stands once, at the grain where it holds, and a row has a foreign key to one record of each grain.
 
-- A value at one example stands in that row's block.
-- A value that every example of a candidate has stands in the candidate's block. It is that shape's `stable` number and, at each example of its scope, its `each` number.
-- What a task holds stands in the task's block, or in the block of the task at one example.
+- A value at one example stands in that row's record.
+- A value that every example of a candidate has stands in the candidate's record. It is that shape's `stable` number and, at each example of its scope, its `each` number.
+- What a task holds stands in the task's record, or in the record of the task at one example.
 
-`model/feature_eval/gate_lists.py` writes these blocks as streamable zstd, and `engine/block-boost` trains on them, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as the number of its bin, in a file it maps. A leaf's rows add their gradients to each block, and each block's entries then add those sums to the histogram once.
+`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A leaf's rows add their gradients to each record, and each record's entries then add those sums to the histogram once.
 
 ## Cost
 

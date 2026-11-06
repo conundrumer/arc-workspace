@@ -4,7 +4,7 @@ What the encoder can do at each size, before any model. No person reviews anythi
 
 ## Common rules
 
-- **Population:** every eligible task, in the seeded order of its list, so a run that stops early reads a random sample. The eligible list is the train-split tasks with at least 3 train pairs and a near-miss module in `model/contracts/nearmiss/`, in `work/feature-spec/eval-tasks.txt`. Candidate recognition also reads the dev split, in `work/feature-spec/eval-tasks-dev.txt`. A line with no pick reads all its tasks together. A line that picks anything from results picks on one split and reads the other. Reach reads every train-split solver.
+- **Population:** every eligible task, in the seeded order of its list, so a run that stops early reads a random sample. The eligible list is the train-split tasks with at least 3 train pairs and a near-miss module in `model/contracts/nearmiss/`, in `work/feature-spec/eval-tasks.txt`. Candidate recognition also reads the dev split, in `work/feature-spec/eval-tasks-dev.txt`. A comparison that selects nothing from results covers all its tasks together. A comparison that selects anything from results selects on one split and reports on the other. Expressibility covers every train-split solver.
 - **Unit:** the task. Each statistic is a mean over tasks, with a bootstrap over tasks for its interval.
 - **Size:** each statistic is a curve over the size d, from 1 to D, the largest size the encoder finishes on at least two thirds of the tasks. A curve reads the tasks finished at D, and lists the others as left out, so its tasks stay fixed along it. Those tasks tend to have smaller grids, which limits what a result says about large ones.
 - **Roots:** a test reads a root's value at one example, since a vector entry combines over the examples and would read a left-out pair.
@@ -18,7 +18,7 @@ What the encoder can do at each size, before any model. No person reviews anythi
 - **Hard items:** the items that size 1 leaves tied. Each recognition test reports its statistic on all items and on hard items, since easy items, such as an empty table or a changed palette, hold an AUC near 1 at every size. A task with no hard items leaves that statistic.
 - **Count curve:** a statistic can rise with the number of roots alone. So each recognition test also runs on random subsets of the roots up to size D, at the counts of sizes 1 to D-1, with 20 draws at each count, and reports real minus subset. This is a description, and the rule for the size does not read it.
 - **Nulls:** each null runs 20 times with a fixed seed, and a statistic's null is the mean.
-- **Reference:** the first version of the features runs on the same items, as a reference line.
+- **Baseline:** the first version of the features runs on the same items.
 - **Negatives:** Separation and Scene recognition read random mutations alone: records of `model/contracts/corpus/` of kind `in`, with a grid that equals no train input. Base tables read all of them. Solver tables read those with `stored` equal to `same` and no error, since a record's solver tables exist only there. Variants from `search.py` are selected by the first version's claims, so they would favor it.
 - **Running:** each test writes its result per (task, d) as it ends, and a restart skips those written. So a test runs as soon as the encoder reaches size 1, and adds each larger size.
 
@@ -31,7 +31,7 @@ Each is pass or fail, and a failure is a fault to fix.
 - **Symmetric pairs:** on two row sets that a symmetry relates, no invariant feature whose leaves are the table and lib relations differs.
 - **Equal rows:** on equal rows with equal grids, no feature differs.
 
-## Reach
+## Expressibility
 
 How large a next step is. A ground expression of size d shows the model what a query of that size would compute.
 
@@ -39,7 +39,7 @@ How large a next step is. A ground expression of size d shows the model what a q
 - **Measure:** the size of the feature expression that translates the query's body, with the relations it reads as leaves. Each language form takes the operators of its relational-algebra form. A `DET` that names a proposer has size 0.
 - **Statistic:** the cumulative share of queries of size at most d, per solver and over solvers, and the size of each solver's largest query.
 - **Gap list:** the forms that the grammar does not write, counted by kind. They are reported as a share beside the statistic.
-- **Limit:** a closed root shows an aggregate of a query's rows, and not the rows. So this gives the size at which a next step is within reach, and not what a model learns from it.
+- **Limit:** a closed root shows an aggregate of a query's rows, and not the rows. So this gives the size at which a feature expression can state a next step, and not what a model learns from it.
 
 ## Separation
 
@@ -58,22 +58,22 @@ At which size a difference first shows. The specification's guarantee says that 
 Whether the features of a candidate's table tell a solver's next query from a wrong one at the same state. This stands closest to what a model must do.
 
 - **Items:** (task, query Q of the concept case, mutant Q'), with up to 5 mutants per query. A mutant is a valid one-edit mutation of Q's body from the engine, `draw_specs` with k=1 in a seeded order, whose table differs from Q's at some train example. They are stored under `results/mutants/`. A query with no such mutant leaves the test, and the share of such queries is reported.
-- **Same structure:** a run can also draw argument edits whose query has gold's features with no table content, marked apart, for the line on pairs that those features leave tied.
+- **Same structure:** a run can also draw argument edits whose query has the ground truth query's features with no table content, marked apart, for the result on pairs that those features leave tied.
 - **Roots:** closed per-input roots with an `output` leaf, whose table holes take the candidate's table, the tables that Q reads, and the base tables.
 - **Stable root:** a root with one value at every train pair, and that value is neither "no value" nor the root's default.
 - **Contingent root:** a root that `input`, or some table Q reads, does not have as stable, with the candidate's table hole bound to that table. So Q and Q' have one set of contingent roots.
 - **Score:** S(T) is the number of contingent classes that are stable on table T, over the number of contingent classes, and 0 where there are none.
 - **Primary statistic:** AUC = P(S(Q) > S(Q')) + 0.5 P(S(Q) = S(Q')) over the items of a task, with the mean over tasks. A list with no contingent class on a pair ties it, so every list reads one fixed set of pairs. It reads the queries other than the one that `OUT` reads, which is reported apart, since it equals the output at the train pairs. It reads the pairs where Q' has rows at every train pair, since an empty table needs no feature to reject, and any stable active root beats it. The statistic over every pair is reported beside it.
-- **Speaking:** a list speaks on a pair where S(Q) and S(Q') differ. A list of rare roots speaks on few pairs, so its AUC stays near its null whatever its roots are worth. So each list also reports the share of pairs it speaks on, and how often it favors Q there, on the true outputs and on the deranged ones.
-- **Graded read:** a stable root cannot show a value that varies over the pairs. So a `ratio` shape also reports the AUC with S as its greatest value over bindings, in the mean over the train pairs.
-- **Null:** the same AUC with the outputs deranged across the train pairs, and the contingent roots found again on them. So each example's table is read against another pair's output. It shows how much of the AUC comes from what the tables look like, and not from how they relate to the output. A task whose train outputs are all equal leaves the null.
+- **Ties:** a list ties a pair where S(Q) and S(Q') are equal. A list of low-support roots ties most pairs, so its AUC stays near its null whatever its roots are worth. So each list also reports the share of pairs it does not tie, and how often it favors Q there, on the true outputs and on the permuted ones.
+- **Graded score:** a stable root cannot show a value that varies over the pairs. So a `ratio` shape also reports the AUC with S as its greatest value over bindings, in the mean over the train pairs.
+- **Null:** a permuted-output control: the same AUC with the train outputs under a derangement, a permutation that leaves no output at its own pair, and the contingent roots found again on them. So each example's table is compared with another pair's output. It shows how much of the AUC comes from what the tables look like, and not from how they relate to the output. A task whose train outputs are all equal leaves the null.
 - **Known limits:** Q was fitted to every train pair, so this measures the recognition of a fitted query, which is what the search must find, and it says nothing about the test inputs. A mutant can compute something as good as Q, which lowers the AUC. S counts every class once, so many weak classes dilute a strong one, and this does not bound what a model can do with the same roots.
 
-## Gate
+## Offline ranking evaluation
 
-Trees rank Q over Q', trained on train tasks and read on dev tasks, per feature set, beside a baseline with no table content. This is the one test here that trains a model.
+Alias: gate. A feature-set comparison (ablation study): gradient-boosted trees rank Q over Q', trained on train tasks and scored on dev tasks, per feature set, beside a baseline with no table content. This is the one test here that trains a model.
 
-A fit moves with its seed, by as much as many differences between sets. So a set's line is the ensemble of several seeds, with the spread of its single fits beside it, and a difference between two sets is read paired over tasks.
+A fit moves with its seed, by as much as many differences between sets. So a set's result is the ensemble of several seeds, with the spread of its single fits beside it, and a difference between two sets is a paired difference over tasks.
 
 A fit has a row at each example, a train pair or a test input. A shape that reads the output has no entry at a test input, and a shape that reads no output is read over every example.
 
@@ -99,6 +99,20 @@ Whether statements selected on some inputs recognize a real input against random
 - **Claims, violation, statistic and null:** as in Rule recognition, over inputs, with claims from the inputs other than h.
 - **Known limit:** a mutation can keep the scene, such as moving an object in a task where any place is allowed. This label noise lowers the AUC.
 
+## Coverage of the first version
+
+Whether a model's row gives what the first version tells a model. [Purpose](feature-spec.md#purpose) requires that it does.
+
+- **Items:** each distinct feature of `model/contracts/features`, on a sample of train tasks. Features with equal values on the sample's rows are one item. `guarantees/`, `nearmiss/` and `dev/` are no model input, so they stay out.
+- **Rows:** a table of a ground truth program or of a mutant at one train pair. For what the first version states of the base tables, a row is one train pair. The first version's value and the column read a table at one assignment.
+- **Form:** a feature that names a column by its place, or another table by its identity, is compared in the form a shape has: its greatest value over the bindings of one type signature, with the other table written as how it stands to the owner. A word is compared as whether some binding gives it.
+- **Covered:** on the rows where the feature has a value, its value is a function of one column's value, and that function is monotone or changes few times along the column, so a few splits can read it.
+- **Not judged:** a feature with under 5 rows off its commonest value (low support), a feature with one value on every row (zero variance), and text that describes a column or a table, which has no number.
+- **Missing:** any other feature.
+- **Statistic:** the counts of covered and missing items, by the first version's feature metadata: what a feature reads, its aggregation level, and the other tables it reads.
+- **Limit:** a feature that only two columns together give counts as missing. Coverage shows that a model can read a value, and not that the value helps it.
+- **Running:** `model/feature_eval/v1_dump.py` writes the first version's values, and `model/feature_eval/v1_cover.py` gives the result.
+
 ## Counts
 
 A description, with no test. Per size, the number of ground expressions and of closed roots, by exact enumeration, and the number of classes of closed roots with an equal value vector over the sample's examples and variants. A size that adds no class adds no feature on this sample.
@@ -112,7 +126,7 @@ The **gain at d** of a statistic is the greatest of its means over the sizes abo
 The result is the first of these that holds:
 
 1. **Unsaturated:** for some statistic, the last step is at least 0.01, and its interval lies above 0. No size is chosen, and D should grow.
-2. **Chosen:** the size to run is the smallest d where, for each statistic, the upper bound of the gain at d is below 0.03. Reach at that d is reported beside it.
+2. **Chosen:** the size to run is the smallest d where, for each statistic, the upper bound of the gain at d is below 0.03. Expressibility at that d is reported beside it.
 3. **Noise-limited:** no size is chosen.
 
 A chosen d says nothing about sizes above D.

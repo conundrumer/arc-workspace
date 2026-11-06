@@ -173,7 +173,7 @@ The features of one parameterized table across its assignments, keyed by (`Query
 Invariants:
 
 - The vector is a function of the parameterized table's tables at its assignments. No feature uses the order of the assignments.
-- The sample build and the writer compute it with one function, so that training and serving give one value.
+- The sample build and the policy compute it with one function, so that training and serving give one value.
 - The aggregate set is part of the schema version.
 
 ## `QueryHash`
@@ -374,19 +374,19 @@ A state and its target queries. There is one sample per state.
 | `target_queries` | the target queries of the state | list of `TargetQuery` | distinct `hash`; sorted by `hash` |
 | `target_parameterized_tables` | the parameterized tables that the target queries compute | set of `ParameterizedTable` | equal to the union over `target_queries` of (`hash`, `Name`) for each `Name` that has a pair in `computes`. Each is one unit of loss and of credit |
 | `capped_target_parameterized_tables` | the count of target queries' parameterized tables left out because their walk stopped at the cap | int | a measurement; at least 0. Such a parameterized table is in no `computes` and gets no loss credit |
-| `frontier_depth` | the least depth, in the gold graph, among the graph queries that give the target queries | int | at least 0. It is computed from gold, so it serves only to group counts. No model input uses it |
-| `no_progress_queries` | the count of gold graph queries, not members of the state, whose used parameterized tables are all members' or base tables and whose computed parameterized tables all have, at each assignment, the TableHash of a member's table | int | a measurement; at least 0. These queries are not target queries |
+| `frontier_depth` | the least depth, in the ground truth graph, among the graph queries that give the target queries | int | at least 0. It is computed from the ground truth, so it serves only to group counts. No model input uses it |
+| `no_progress_queries` | the count of ground truth graph queries, not members of the state, whose used parameterized tables are all members' or base tables and whose computed parameterized tables all have, at each assignment, the TableHash of a member's table | int | a measurement; at least 0. These queries are not target queries |
 
 A target query at a state is a query that holds each of these:
 
 - It is not a member of the state.
 - Each parameterized table it uses is a member's parameterized table or a base table.
 - It makes progress: some parameterized table it computes has, at some assignment, a TableHash that no member's table has. A query whose computed tables all have hashes of members' tables is not a target query and is not a step of a state sequence. It is counted in `no_progress_queries`.
-- It comes from a gold graph query, written over the state's own members: each graph table that the graph query uses is replaced by a member's parameterized table that stands for it. A member's parameterized table stands for a graph table when the member's map {`Assignment` → `TableHash`} equals the graph table's map. Assignments are compared by their DET value hashes, so that equal DETs of two programs match. Where the two programs' DETs have equal `QueryHash`es, the (DET `QueryHash`, value hash) pairs are compared. Otherwise the compare first pairs each DET of one program with one DET of the other by equal sets of the TableHashes of their values; sorting the value hashes within a tuple would lose which DET holds which value (Sampler-worker's note). This is a measurement, not an identity.
+- It comes from a ground truth graph query, written over the state's own members: each graph table that the graph query uses is replaced by a member's parameterized table that stands for it. A member's parameterized table stands for a graph table when the member's map {`Assignment` → `TableHash`} equals the graph table's map. Assignments are compared by their DET value hashes, so that equal DETs of two programs match. Where the two programs' DETs have equal `QueryHash`es, the (DET `QueryHash`, value hash) pairs are compared. Otherwise the compare first pairs each DET of one program with one DET of the other by equal sets of the TableHashes of their values; sorting the value hashes within a tuple would lose which DET holds which value (Sampler-worker's note). This is a measurement, not an identity.
 
 Where two members' parameterized tables stand for one graph table, the graph query gives one target query for each choice of member. These are distinct `QueryHash`es whose parameterized tables have equal maps.
 
-The rule above is decided: a graph table is a map {`Assignment` → `TableHash`}; DETs with different `QueryHash`es pair by equal sets of the TableHashes of their values; reach is per assignment. The union graph merges parameterized tables by the hash that `table_key` computes over all assignments today, so it must be rebuilt with a table per (parameterized table, assignment) and its map. That rebuild waits on the engine's export change.
+The rule above is decided: a graph table is a map {`Assignment` → `TableHash`}; DETs with different `QueryHash`es pair by equal sets of the TableHashes of their values; table recall is per assignment. The union graph merges parameterized tables by the hash that `table_key` computes over all assignments today, so it must be rebuilt with a table per (parameterized table, assignment) and its map. That rebuild waits on the engine's export change.
 
 ## `StateSequence`
 
@@ -405,7 +405,7 @@ The samples do not need it: a sample is one state and its target queries. Later 
 - An evaluation that runs the model from the root state, against the sequences that reach the goal.
 - A weight for each sample in a fit: the count of sequences that hold it.
 
-On disk, the source is `walk-seqs-SET.jsonl` in the gold union folder, with each state given as its line number in `walk-states-SET.jsonl`. Those rows are keyed by (task, set of query identities), with the set of built graph tables kept as a measurement and `redundant_forms` as the count of queries that make no progress.
+On disk, the source is `walk-seqs-SET.jsonl` in the `gold-union` folder, with each state given as its line number in `walk-states-SET.jsonl`. Those rows are keyed by (task, set of query identities), with the set of built graph tables kept as a measurement and `redundant_forms` as the count of queries that make no progress.
 
 ## `Split`
 
@@ -454,7 +454,7 @@ This is a judgement about computed parameterized tables. It makes no claim about
 
 `TableHash` is a measurement only. It is never the identity of a parameterized table or of a member of a state. These uses of it are measurements:
 
-- Reach against gold: the union graph merges the parameterized tables of gold programs by their maps {`Assignment` → `TableHash`}.
+- Table recall against the ground truth: the union graph merges the parameterized tables of ground truth programs by their maps {`Assignment` → `TableHash`}.
 - Features of a member's table, for example whether its hash equals another member's TableHash in the state.
 - The prune flags of a search score: a table's hash equals another member's TableHash in the state, and a table's hash was seen before in that search. A score may use them. Nothing merges by them.
 - The replacement of a graph table by a member's parameterized table in a target query.
@@ -468,12 +468,12 @@ This is a judgement about computed parameterized tables. It makes no claim about
 - A parameterized table is written as (`QueryHash`, `Name`), and a base table by its `BaseName`. A table is the value of a parameterized table at an `Assignment` over the DETs it depends on. There are no assignment columns. So a member's parameterized tables, hashes, vectors and QueryVector are stated once per query.
 - A parameterized table maps each `Assignment` to a table: a Type and a set of TableRows, one per constraint model on each example, with equal TableRows being one. Each TableRows holds the Example column. Constraint models are inside the table, never in a `ParameterizedTable`, an `Assignment` or a `QueryHash`. The TableHash covers the column types and that set of TableRows.
 - The engine caps its walk of each parameterized table (see `Assignment`). A target parameterized table whose walk stopped at the cap is left out and counted.
-- In one gold program, no parameterized table is computed by several queries. A graph table can be computed by queries of several gold programs.
+- In one ground truth program, no parameterized table is computed by several queries. A graph table can be computed by queries of several ground truth programs.
 - A written query is accepted by the acceptance test of a written query (see "Assignments").
 - OUT queries are not target queries.
 - `*` is not in a query's identity or body. `^` is in them in a key group, where it selects the key columns. In an OUT, `^` is dropped.
 - Held-out tasks are never in a fit.
-- The target queries of a state are the gold graph queries written over its members that make progress: some parameterized table they compute has, at some assignment, a TableHash that no member's table has. A query that makes no progress is not a target query and not a step of a state sequence, and its count per state is a measurement.
+- The target queries of a state are the ground truth graph queries written over its members that make progress: some parameterized table they compute has, at some assignment, a TableHash that no member's table has. A query that makes no progress is not a target query and not a step of a state sequence, and its count per state is a measurement.
 - States come from the state sequences of type `union`, one sample for each distinct (task, set of `QueryHash`).
 - The lib's relations and components are not in the state.
 - Features computed from the query's body go in the query's `QueryVector`, not into a table's vector.
