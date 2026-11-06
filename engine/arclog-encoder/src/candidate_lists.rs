@@ -1,7 +1,8 @@
 //! What the protocol's Candidate recognition reads of a task's tables: each table's stable roots,
 //! taken from its `TableVector`. The statistic itself stands in `model/feature_eval/candidate.py`.
-//! The lists hold only the names of shapes and their means over examples, so a test input's rows
-//! leave nothing behind.
+//! The lists hold only the names of shapes and their numbers over examples, so a test input's rows
+//! leave nothing behind. A table's stable roots stand with their value, and its other active roots
+//! with the least, the mean and the greatest of their value, so a model can read both.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -16,30 +17,41 @@ struct Written {
     owner: serde_json::Value,
     ids: Vec<u64>,
     values: Vec<f32>,
+    /// The shapes active at some example of their scope and not stable: the least, the mean and the
+    /// greatest of each one's greatest value, in the order of the shapes. A shape with no value at
+    /// any example has NaN for all three, since no value differs from a default.
+    graded: Vec<(u64, f32, f32, f32)>,
 }
 
 fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
     let mut ids = Vec::new();
     let mut values = Vec::new();
+    let mut graded = Vec::new();
     for shape in 0..vector.shapes.len() {
+        let (least, mean, most, count) = vector.over_examples(shape, false);
         if vector.stable(shape) {
             ids.push(vector.shapes[shape]);
-            values.push(vector.over_examples(shape, false).1 as f32);
+            values.push(mean as f32);
+        } else if count == 0 || least != 0.0 || most != 0.0 {
+            graded.push((vector.shapes[shape], least as f32, mean as f32, most as f32));
         }
     }
-    Written { owner, ids, values }
+    Written { owner, ids, values, graded }
 }
 
-/// A part's own roots that are stable at every example of its scope.
+/// A part's own roots: those stable at every example of its scope, with their value, and the others
+/// that have rows somewhere in it, with their least, mean and greatest.
 fn constant_roots(grids: &Grids, families: &Generators) -> Written {
     let parts = crate::gen_constants::constant_parts();
     let mut ids = Vec::new();
     let mut values = Vec::new();
+    let mut graded = Vec::new();
     for (at, part) in parts.iter().enumerate() {
         let scope: Vec<&Arc<crate::native::Table>> = grids.constants.iter().filter_map(|tables| tables[at].as_ref()).collect();
         let Some(first) = scope.first() else { continue };
         let rows = first.len;
-        if rows == 0 || !scope.iter().all(|table| table.len == rows) {
+        let stable = rows != 0 && scope.iter().all(|table| table.len == rows);
+        if !stable && scope.iter().all(|table| table.len == 0) {
             continue;
         }
         let root = if part.columns.is_empty() { "nonempty" } else { "cardinality" };
@@ -47,12 +59,18 @@ fn constant_roots(grids: &Grids, families: &Generators) -> Written {
         let hash = hash_words(text.bytes().map(u64::from));
         let flags = (if part.reads_output { READS_OUTPUT } else { 0 }) | (if part.reads_input { READS_INPUT } else { 0 });
         families.names.add_root(hash, text, flags);
-        ids.push(hash as u64);
-        values.push(rows as f32);
+        if stable {
+            ids.push(hash as u64);
+            values.push(rows as f32);
+        } else {
+            let lens = || scope.iter().map(|table| table.len as f32);
+            graded.push((hash as u64, lens().fold(f32::INFINITY, f32::min), lens().sum::<f32>() / scope.len() as f32, lens().fold(f32::NEG_INFINITY, f32::max)));
+        }
     }
+    graded.sort_unstable_by_key(|entry: &(u64, f32, f32, f32)| entry.0);
     let mut order: Vec<usize> = (0..ids.len()).collect();
     order.sort_unstable_by_key(|at| ids[*at]);
-    Written { owner: "constants".into(), ids: order.iter().map(|at| ids[*at]).collect(), values: order.iter().map(|at| values[*at]).collect() }
+    Written { owner: "constants".into(), ids: order.iter().map(|at| ids[*at]).collect(), values: order.iter().map(|at| values[*at]).collect(), graded }
 }
 
 pub struct TaskLists {
@@ -116,13 +134,13 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                 whole = false;
                 break;
             };
-            mutants.push(serde_json::json!({"mutant": mutant["mutant"], "edit": mutant["edit"], "extra": mutant["extra"], "table": table, "parents": reads(&mutant["parents"]), "types": mutant["table"]["types"], "task_level": mutant["table"]["task_level"]}));
+            mutants.push(serde_json::json!({"mutant": mutant["mutant"], "edit": mutant["edit"], "extra": mutant["extra"], "table": table, "parents": reads(&mutant["parents"]), "types": mutant["table"]["types"], "task_level": mutant["table"]["task_level"], "assignments": mutant["table"]["assignments"]}));
         }
         if !whole {
             left_out += 1;
             continue;
         }
-        items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": item["gold"]["types"], "task_level": item["gold"]["task_level"], "mutants": mutants}));
+        items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": item["gold"]["types"], "task_level": item["gold"]["task_level"], "assignments": item["gold"]["assignments"], "mutants": mutants}));
     }
     let header_rest = (data["case"].clone(), data["budget_cut"].clone(), data["left_out"].clone());
     drop(data);
@@ -156,15 +174,15 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let seconds = started.elapsed().as_secs_f64();
 
     // The file: its header's length, its header, then the shapes, then each list as places in them
-    // and its values.
-    let mut dictionary: Vec<u64> = lists.iter().flat_map(|list| list.ids.iter().copied()).collect();
+    // and its values, then its graded shapes as places and their least, mean and greatest.
+    let mut dictionary: Vec<u64> = lists.iter().flat_map(|list| list.ids.iter().copied().chain(list.graded.iter().map(|entry| entry.0))).collect();
     dictionary.sort_unstable();
     dictionary.dedup();
     let header = serde_json::json!({
         "task": task_name, "case": header_rest.0, "train": train, "test": test, "last_query": last_query, "budget_cut": header_rest.1,
         "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at,
         "shapes": dictionary.len(),
-        "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len()})).collect::<Vec<_>>(),
+        "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len(), "graded": list.graded.len()})).collect::<Vec<_>>(),
     }).to_string();
     let total: usize = lists.iter().map(|list| list.ids.len()).sum();
     let mut bytes = Vec::with_capacity(8 + header.len() + dictionary.len() * 8 + total * 8);
@@ -184,6 +202,18 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         }
         for value in &list.values {
             bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let mut at = 0usize;
+        for entry in &list.graded {
+            while dictionary[at] != entry.0 {
+                at += 1;
+            }
+            bytes.extend_from_slice(&(at as u32).to_le_bytes());
+        }
+        for number in [|entry: &(u64, f32, f32, f32)| entry.1, |entry: &(u64, f32, f32, f32)| entry.2, |entry: &(u64, f32, f32, f32)| entry.3] {
+            for entry in &list.graded {
+                bytes.extend_from_slice(&number(entry).to_le_bytes());
+            }
         }
     }
     Ok(TaskLists { task: task_name, bytes, walks, seconds, shapes: dictionary.len() as u64 })
