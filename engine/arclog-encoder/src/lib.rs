@@ -9,7 +9,11 @@
 //! - [`enumerate`]: the feature expressions at a size.
 //! - [`encoder`]: the value of each ground expression at a size, on tables of a
 //!   state.
-//! - [`vectors`]: the vector entries, their names and their numbers.
+//! - [`generate`], [`gen_parts`], [`gen_constants`]: the shapes over a table up to a size, by parts,
+//!   in one pass per table.
+//! - [`table_vector`]: a table's `TableVector`, and the base tables'.
+//! - [`candidate_lists`]: the stable roots that Candidate recognition reads.
+//! - [`vectors`]: the vector entries that name no column.
 //! - [`law`]: the check of the transformation law on stored rows.
 //! - [`closed`]: the values of the closed roots on grids alone, which the
 //!   evaluation reads.
@@ -17,11 +21,7 @@
 //!   engine's evaluator.
 //! - [`native`]: the operators over materialized rows, a faster evaluation of
 //!   what those forms compute.
-//! - [`optable`]: the operators on each schema, each checked once.
-//! - [`walk`]: the bottom-up walk over classes of relations on one task.
-//! - [`tablewalk`]: a table's closed roots, keyed by shape.
-//! - [`family`]: the relational shapes that read a table and `output`, in one pass
-//!   per table.
+pub mod candidate_lists;
 pub mod catalog;
 mod catalog_boxes;
 mod catalog_cells;
@@ -36,19 +36,16 @@ pub mod enumerate;
 pub mod expand;
 pub mod expression;
 pub mod gen_constants;
-pub mod gen_lists;
 pub mod gen_parts;
 pub mod generate;
-pub mod family;
 pub mod law;
 pub mod library;
 pub mod native;
-pub mod optable;
 pub mod program_relations;
 pub mod run;
 pub mod schema;
-pub mod tablewalk;
+pub mod stored;
+pub mod table_vector;
 pub mod vectors;
-pub mod walk;
 pub mod worked;
 pub mod zio;

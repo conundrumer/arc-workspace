@@ -1,6 +1,10 @@
-//! Generated features: shapes enumerated over parts, with `all`, `ratio` and `semijoin`, and
-//! evaluated natively in one pass per table. The size of a term counts its operators and its
-//! parts, each once. Nothing here is written for one feature.
+//! Generated features: the shapes over a table up to a size, enumerated over parts, and evaluated
+//! natively in one pass per table. The size of a term counts its operators and its parts, each
+//! once. Nothing here is written for one feature.
+//!
+//! A walk gives each root's numbers at each instance of a table: an example, or a model at an
+//! example where the example has several. What the numbers are is the specification's section on
+//! vectors, and `table_vector` combines the instances into a table's vector.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -8,10 +12,10 @@ use std::sync::{Arc, Mutex};
 use arclog::types::ValueType;
 
 use crate::expression::Op;
-use crate::gen_constants::{constant_parts, constant_tables, number_bits, number_of};
+use crate::gen_constants::{constant_parts, constant_tables, number_of};
 use crate::gen_parts::{clear_views, flat, PartStep};
 use crate::native::{hash_words, Evaluator, FastMap, Step, Table, Val, WORD_COUNT, WORD_NONEMPTY, WORD_SET};
-use crate::tablewalk::{mix_word, shape_text, Entry2, ShapeMap, MAX_EXAMPLES};
+use crate::stored::{mix_word, shape_text};
 
 pub const READS_INPUT: u8 = 1;
 pub const READS_OUTPUT: u8 = 2;
@@ -39,14 +43,37 @@ struct Column {
 /// Which roots a term has.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum RootKind {
-    /// `nonempty` alone, on a relation of no columns.
+    /// `nonempty`, on a relation of no columns.
     Holds,
-    /// `nonempty` and `cardinality`.
+    /// `cardinality`.
     Rows,
-    /// Those, and the `ratio` of its rows over its first relation's.
+    /// `cardinality`, and the `ratio` of its rows over its first relation's.
     Share,
-    /// Those of `Rows`, and the one value of its one number column.
+    /// `cardinality`, and the `value-set` of its one number column.
     Number,
+    /// The `ratio` of its first relation over its second, and the other way.
+    Against,
+}
+
+/// What a root reads of a term at an instance.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RootOf {
+    Nonempty,
+    Cardinality,
+    /// The term's rows over its first relation's.
+    Share,
+    ValueSet,
+    /// The first relation's rows over the second's.
+    Over,
+    /// The second relation's rows over the first's.
+    Under,
+}
+
+impl RootOf {
+    /// Whether the root's two numbers are the greatest and the least, as a fraction's are.
+    pub fn is_ratio(self) -> bool {
+        matches!(self, RootOf::Share | RootOf::Over | RootOf::Under)
+    }
 }
 
 pub struct Term {
@@ -57,13 +84,10 @@ pub struct Term {
     flags: u8,
     size: u8,
     root: RootKind,
-    roots: Vec<u128>,
+    roots: Vec<(u128, RootOf)>,
     text: String,
-    types: u64,
     /// Whether another term reads this one.
     used: bool,
-    /// Whether the term has no root of its own, since it reads no column of the table.
-    hidden: bool,
 }
 
 /// The terms over a table of one schema.
@@ -120,16 +144,16 @@ fn pair_sets(left: &[Column], right: &[Column]) -> Vec<Vec<(u16, u16)>> {
     out
 }
 
-fn types_hash(columns: &[Column]) -> u64 {
-    hash_words(columns.iter().flat_map(|column| format!("{:?}", column.ty).into_bytes().into_iter().map(u64::from).chain([u64::from(column.source)]))) as u64
-}
-
 impl Generated {
-    /// The family over a table of the column types `types`, up to size `d` in parts. At size 3,
-    /// it extends only the terms that `extend` names: one per class of observed values.
-    pub fn of(types: &[ValueType], d: usize, names: &NameStore, extend: Option<&[u32]>) -> Generated {
+    /// The family over a table of the column types `types`, up to size `d` in parts. Two Ident
+    /// columns of one source can meet, and an Ident column whose source is open meets no other.
+    pub fn of(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
         let mut family = Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0 };
-        let table_columns: Vec<Column> = types.iter().enumerate().map(|(at, ty)| Column { name: format!("T{at}"), ty: ty.clone(), source: 100 + at as u16 }).collect();
+        let source_of = |at: usize| -> u16 {
+            let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
+            100 + first as u16
+        };
+        let table_columns: Vec<Column> = types.iter().enumerate().map(|(at, ty)| Column { name: format!("T{at}"), ty: ty.clone(), source: source_of(at) }).collect();
         let grid = |source: u16| vec![Column { name: "P".to_string(), ty: ValueType::Position, source }, Column { name: "Col".to_string(), ty: ValueType::Color, source }];
         family.push_leaf("T", table_columns, READS_TABLE, 0);
         family.push_leaf("output", grid(0), READS_OUTPUT, 0);
@@ -143,14 +167,10 @@ impl Generated {
         }
         family.first_term = family.terms.len();
         let constants: Vec<u32> = (FIRST_CONSTANT..family.first_term as u32).filter(|at| parts[(*at - FIRST_CONSTANT) as usize].meets_table).collect();
-        // Size 1: over the leaves. The table's own rows give its own count. Its count as a number
-        // reads no column, so it has no root, and it stands only to meet a number a grid gives.
-        family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, family.terms[LEAF_TABLE as usize].columns.clone(), 0, "T".to_string(), RootKind::Rows);
-        if !family.terms[LEAF_TABLE as usize].columns.is_empty() {
-            family.push(Step::Part(Box::new(PartStep::Count { keys: Box::new([]) })), LEAF_TABLE, NO_TERM, vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }], 1, "(count T ())".to_string(), RootKind::Rows);
-            let last = family.terms.len() - 1;
-            family.terms[last].hidden = true;
-        }
+        // Size 1: over the leaves. The table's own rows give its own count.
+        let own_columns = family.terms[LEAF_TABLE as usize].columns.clone();
+        family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
+        let own_rows = family.terms.len() as u32 - 1;
         family.unary_operators(LEAF_TABLE, 1);
         family.parts_of(LEAF_TABLE, 1);
         family.unary_operators(LEAF_OUTPUT, 1);
@@ -164,38 +184,15 @@ impl Generated {
         family.by_size.push(family.terms.len());
         // Size 2: over each term of size 1, the constants among them.
         if d >= 2 {
-            let below: Vec<u32> = constants.iter().copied().chain((family.first_term as u32..family.by_size[0] as u32).filter(|at| {
-                let term = &family.terms[*at as usize];
-                !term.hidden && term.size > 0
-            })).collect();
+            let below: Vec<u32> = constants.iter().copied().chain((family.first_term as u32..family.by_size[0] as u32).filter(|at| family.terms[*at as usize].size > 0)).collect();
             for at in below {
                 family.extend_term(at, 2, true);
             }
         }
-        // Size 3: over the terms of size 2 that stand for a class, and each term of size 1 of a
-        // class with each constant.
-        if d >= 3 {
-            family.by_size.push(family.terms.len());
-            let chosen = extend.unwrap_or(&[]);
-            for at in chosen {
-                if u32::try_from(family.by_size[1]).is_ok_and(|end| *at < end) && family.terms[*at as usize].size == 2 {
-                    family.extend_term(*at, 3, false);
-                }
-            }
-            for at in chosen {
-                if family.terms[*at as usize].size == 1 && (*at as usize) >= family.first_term && family.terms[*at as usize].flags & READS_TABLE != 0 {
-                    for constant in &constants {
-                        if family.terms[*constant as usize].flags & READS_OUTPUT != 0 {
-                            family.binary(*at, *constant, 3, true);
-                            family.binary(*constant, *at, 3, false);
-                        }
-                    }
-                }
-            }
-        }
         // A number of a term of size 1 over the table alone against each number a grid gives. Each
-        // has three parts by the count, and they stand here in full, since a table's count or a
-        // table's number equal to one of the output's is a rule that hand walks use.
+        // has three parts by the count, and they stand here in full, since a table's number equal
+        // to one of the output's is a rule that hand walks use. A table's counts meet a grid's
+        // through `ratio`, which is 1 where they are equal.
         if d == 2 {
             let numbers: Vec<u32> = constants.iter().copied().filter(|at| {
                 let term = &family.terms[*at as usize];
@@ -210,28 +207,47 @@ impl Generated {
                     family.number_meets(at, *number, 3);
                 }
             }
+            let bases: Vec<u32> = [LEAF_OUTPUT, LEAF_INPUT].into_iter().chain(constants.iter().copied().filter(|at| {
+                let term = &family.terms[*at as usize];
+                term.flags & (READS_INPUT | READS_OUTPUT) != 0 && !term.columns.is_empty()
+            })).collect();
+            let tops: Vec<u32> = (family.first_term as u32..family.by_size[0] as u32).filter(|at| {
+                let term = &family.terms[*at as usize];
+                *at == own_rows || (term.flags == READS_TABLE && matches!(term.step, Some(Step::Project { .. })) && term.columns.len() == 1)
+            }).collect();
+            for top in tops {
+                for base in &bases {
+                    let text = format!("{} {}", family.terms[top as usize].text, family.terms[*base as usize].text);
+                    family.push(Step::Part(Box::new(PartStep::Same)), top, *base, Vec::new(), 2, text, RootKind::Against);
+                }
+            }
         }
         family.by_size.push(family.terms.len());
         // The name of each root.
         let mut held = names.begin();
         let mut roots = 0;
+        let texts_of_first: Vec<String> = family.terms.iter().map(|term| term.text.clone()).collect();
         for term in family.terms.iter_mut().skip(family.first_term) {
-            if term.flags & READS_TABLE == 0 || term.hidden {
+            if term.flags & READS_TABLE == 0 {
                 continue;
             }
-            // A count stands for whether the relation has a row: `>0` reads a count that is not
-            // 0 at any example, and the bare root a count that is one number at every example.
-            let texts: Vec<String> = match term.root {
-                RootKind::Holds => vec![format!("(nonempty {})", term.text)],
-                RootKind::Rows => vec![format!("(cardinality {}) >0", term.text), format!("(cardinality {})", term.text)],
-                RootKind::Share => vec![format!("(cardinality {}) >0", term.text), format!("(cardinality {})", term.text), format!("(ratio {})", term.text)],
-                RootKind::Number => vec![format!("(cardinality {}) >0", term.text), format!("(cardinality {})", term.text), format!("(value {})", term.text)],
+            let number_column = term.columns.first().map_or(String::new(), |column| column.name.clone());
+            let left_text = texts_of_first[term.a as usize].clone();
+            let texts: Vec<(String, RootOf)> = match term.root {
+                RootKind::Holds => vec![(format!("(nonempty {})", term.text), RootOf::Nonempty)],
+                RootKind::Rows => vec![(format!("(cardinality {})", term.text), RootOf::Cardinality)],
+                RootKind::Share => vec![(format!("(cardinality {})", term.text), RootOf::Cardinality), (format!("(ratio {} {left_text})", term.text), RootOf::Share)],
+                RootKind::Number => vec![(format!("(cardinality {})", term.text), RootOf::Cardinality), (format!("(value-set {} {number_column})", term.text), RootOf::ValueSet)],
+                RootKind::Against => {
+                    let right_text = texts_of_first[term.b as usize].clone();
+                    vec![(format!("(ratio {left_text} {right_text})"), RootOf::Over), (format!("(ratio {right_text} {left_text})"), RootOf::Under)]
+                }
             };
-            term.roots = texts.iter().map(|text| {
-                let shape = shape_text(text, "T", types);
+            term.roots = texts.into_iter().map(|(text, of)| {
+                let shape = shape_text(&text, "T", types);
                 let hash = hash_words(shape.bytes().map(u64::from));
                 held.add(hash, shape, term.flags, term.size);
-                hash
+                (hash, of)
             }).collect();
             roots += term.roots.len();
         }
@@ -281,8 +297,7 @@ impl Generated {
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
-        let types = types_hash(&columns);
-        self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), types, used: true, hidden: false });
+        self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), used: true });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -291,19 +306,20 @@ impl Generated {
             return;
         }
         let flags = self.terms[a as usize].flags | if b == NO_TERM { 0 } else { self.terms[b as usize].flags };
-        let root = if columns.is_empty() {
+        let root = if root == RootKind::Against {
+            RootKind::Against
+        } else if columns.is_empty() {
             RootKind::Holds
         } else if root == RootKind::Rows && columns.len() == 1 && is_number(&columns[0].ty) {
             RootKind::Number
         } else {
             root
         };
-        let types = types_hash(&columns);
         self.terms[a as usize].used = true;
         if b != NO_TERM {
             self.terms[b as usize].used = true;
         }
-        self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, types, used: false, hidden: false });
+        self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, used: false });
     }
 
     /// `project` and `select` over a term.
@@ -556,6 +572,84 @@ fn ident_source(name: &str) -> u16 {
     }
 }
 
+/// A number: an integer, or a fraction in lowest terms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Number {
+    pub top: i32,
+    pub bottom: u32,
+}
+
+impl Number {
+    pub fn whole(value: i64) -> Number {
+        Number { top: value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32, bottom: 1 }
+    }
+
+    pub fn fraction(top: u64, bottom: u64) -> Number {
+        let shared = gcd(top, bottom).max(1);
+        Number { top: (top / shared).min(i32::MAX as u64) as i32, bottom: (bottom / shared).min(u64::from(u32::MAX)) as u32 }
+    }
+
+    pub fn float(self) -> f64 {
+        f64::from(self.top) / f64::from(self.bottom.max(1))
+    }
+
+    fn above(self, other: Number) -> bool {
+        i64::from(self.top) * i64::from(other.bottom.max(1)) > i64::from(other.top) * i64::from(self.bottom.max(1))
+    }
+
+    fn plus(self, other: Number) -> Number {
+        if self.bottom <= 1 && other.bottom <= 1 {
+            return Number::whole(i64::from(self.top) + i64::from(other.top));
+        }
+        let (a, b) = (u64::from(self.bottom.max(1)), u64::from(other.bottom.max(1)));
+        let top = i64::from(self.top) * b as i64 + i64::from(other.top) * a as i64;
+        if top < 0 {
+            return Number::whole(top / (a * b) as i64);
+        }
+        Number::fraction(top as u64, a * b)
+    }
+}
+
+/// A root's numbers at one instance. A root with no slot, or with `state` 0, is at its default.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Slot {
+    /// The greatest of its ground expressions' values.
+    pub greatest: Number,
+    /// Their sum, or for a ratio their least.
+    pub second: Number,
+    /// A commutative hash of the multiset of those values other than the default.
+    pub digest: u64,
+    /// 0 where every value is the default, 1 where one is not, 2 where a bound stopped one.
+    pub state: u8,
+}
+
+pub const SLOT_DEFAULT: u8 = 0;
+pub const SLOT_VALUE: u8 = 1;
+pub const SLOT_NO_VALUE: u8 = 2;
+
+/// Each root's numbers at each instance of a table.
+#[derive(Default)]
+pub struct RootTable {
+    pub index: FastMap<u128, u32>,
+    pub slots: Vec<Slot>,
+    pub stride: usize,
+    /// What each root reads, its size, and which kind of root it is.
+    pub meta: Vec<(u8, u8, RootOf)>,
+}
+
+impl RootTable {
+    fn slots_of(&mut self, hash: u128, flags: u8, size: u8, of: RootOf) -> usize {
+        let next = self.meta.len() as u32;
+        let stride = self.stride;
+        let at = *self.index.entry(hash).or_insert(next);
+        if at == next {
+            self.meta.push((flags, size, of));
+            self.slots.resize(self.slots.len() + stride, Slot::default());
+        }
+        at as usize * stride
+    }
+}
+
 /// One family's evaluation on one task.
 pub struct Walker<'a> {
     family: &'a Generated,
@@ -571,6 +665,8 @@ pub struct Walker<'a> {
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
+/// A count past this stands for "no value": a bound stopped the term.
+const NO_COUNT: u32 = u32::MAX;
 
 static NO_SHAPES: [crate::native::CompShape; 0] = [];
 static NO_INSTANCES: [crate::native::CompInstance; 0] = [];
@@ -584,8 +680,42 @@ fn rows_of(value: &Val) -> Option<u64> {
     }
 }
 
+fn count_of(value: &Val) -> u32 {
+    rows_of(value).map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32)
+}
+
 fn gcd(a: u64, b: u64) -> u64 {
     if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// The value of a root at an instance: no value, or a number and the word that hashes it.
+fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Option<(Number, u64)> {
+    let share = |top: u32, bottom: u32| -> Option<(Number, u64)> {
+        // A ratio with no rows in its second relation is left out, and stands at its default.
+        if top == NO_COUNT || bottom == NO_COUNT {
+            return None;
+        }
+        if bottom == 0 || top == 0 {
+            return Some((Number::whole(0), 0));
+        }
+        let held = Number::fraction(u64::from(top), u64::from(bottom));
+        Some((held, WORD_SET | (hash_words([u64::from(held.top as u32), u64::from(held.bottom)]) as u64 & PAYLOAD)))
+    };
+    match of {
+        RootOf::Nonempty => (rows != NO_COUNT).then(|| (Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 })),
+        RootOf::Cardinality => (rows != NO_COUNT).then(|| (Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 })),
+        RootOf::Share => share(rows, left),
+        RootOf::Over => share(rows, other),
+        RootOf::Under => share(other, rows),
+        RootOf::ValueSet => {
+            if rows == NO_COUNT {
+                return None;
+            }
+            // One member gives a number, and any other set gives no value, which here is the
+            // default of a set with no member.
+            (number > 0).then(|| (Number::whole(i64::from(number) - 1), WORD_SET | u64::from(number))).or(Some((Number::whole(0), 0)))
+        }
+    }
 }
 
 impl<'a> Walker<'a> {
@@ -637,73 +767,32 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// Adds each term's values on one table to its signature, and says which terms have a row.
-    pub fn observe(&mut self, leaves: &[Vec<Val>], salt: u128, signature: &mut [u128], some: &mut [bool]) {
-        let family = self.family;
-        let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
-        for leaf in leaves {
-            let held: Vec<u32> = leaf.iter().map(|value| self.value_id(value.clone())).collect();
-            ids.push(held);
-        }
-        let pairs = leaves[0].len();
-        for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
-            let step = term.step.as_ref().expect("a term has a step");
-            let mut own = Vec::with_capacity(pairs);
-            for pair in 0..pairs {
-                let a = ids[term.a as usize][pair];
-                let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
-                let key = (at as u32, a, b);
-                let id = match self.memo.get(&key) {
-                    Some(found) => *found,
-                    None => {
-                        let value = self.apply(step, a, b);
-                        let id = self.value_id(value);
-                        self.memo.insert(key, id);
-                        id
-                    }
-                };
-                own.push(id);
-                let hash = self.values[id as usize].hash();
-                some[at] |= id > 1;
-                signature[at] = signature[at].wrapping_add(hash_words([salt as u64, (salt >> 64) as u64, pair as u64, hash as u64, (hash >> 64) as u64, term.types]));
-            }
-            ids.push(own);
-        }
-    }
-
-    /// One table's sparse map from a root's shape to its value at each pair. Each leaf's rows
-    /// stand at each pair.
-    pub fn walk(&mut self, leaves: &[Vec<Val>], top: u8, allow: Option<&HashSet<u128>>) -> ShapeMap {
-        let _ = top;
-        self.walk_examples(leaves, leaves[0].len(), allow, false)
-    }
-
-    /// One table's sparse map at each example, where the first `train` have an output. A root
-    /// that reads the output has a value at those alone, and any other at every example. With
-    /// `only_output`, only the roots that read the output enter the map.
-    pub fn walk_examples(&mut self, leaves: &[Vec<Val>], train: usize, allow: Option<&HashSet<u128>>, only_output: bool) -> ShapeMap {
+    /// Each root's numbers at each instance of `leaves`. The first `train` instances have an
+    /// output: a root that reads the output has a value at those alone, and any other root at
+    /// every instance. With `only_output`, only the roots that read the output enter.
+    pub fn walk(&mut self, leaves: &[Vec<Val>], train: usize, only_output: bool) -> RootTable {
         self.keep_within_budget();
         let family = self.family;
-        let pairs = leaves[0].len();
+        let instances = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
         for leaf in leaves {
             let held: Vec<u32> = leaf.iter().map(|value| self.value_id(value.clone())).collect();
             ids.push(held);
         }
-        let mut map: ShapeMap = FastMap::default();
+        let mut table = RootTable { stride: instances, ..RootTable::default() };
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             let at = at as u32;
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else { std::mem::take(&mut ids[term.b as usize]) };
             let step = term.step.as_ref().expect("a term has a step");
             let reads_output = term.flags & READS_OUTPUT != 0;
-            let scope = if reads_output { train } else { pairs };
-            let wanted = term.flags & READS_TABLE != 0 && (reads_output || !only_output) && allow.is_none_or(|allow| term.roots.iter().any(|hash| allow.contains(hash)));
+            let scope = if reads_output { train.min(instances) } else { instances };
+            let wanted = term.flags & READS_TABLE != 0 && (reads_output || !only_output);
             let extended = term.used;
             let mut own = Vec::new();
             let idle = first[..scope].iter().all(|id| *id == 1) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
             if extended {
-                own.reserve(pairs);
+                own.reserve(instances);
                 for pair in 0..scope {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (at, first[pair], b);
@@ -718,70 +807,55 @@ impl<'a> Walker<'a> {
                     };
                     own.push(id);
                 }
-                own.resize(pairs, 0);
+                own.resize(instances, 0);
             }
-            if wanted && !idle {
-                let top = scope.min(MAX_EXAMPLES);
-                let mut words: [[u64; 3]; MAX_EXAMPLES] = [[0; 3]; MAX_EXAMPLES];
-                let mut heads = [0f32; 3];
-                for pair in 0..top {
+            if wanted && !idle && !term.roots.is_empty() {
+                for pair in 0..scope {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
-                    let (rows, left) = if extended {
+                    let (rows, number) = if extended {
                         let value = &self.values[own[pair] as usize];
-                        let left = rows_of(&self.values[id as usize]);
-                        (rows_of(value).map_or(u32::MAX, |n| n.min(u64::from(u32::MAX - 1)) as u32), left.map_or(u32::MAX, |n| n.min(u64::from(u32::MAX - 1)) as u32))
+                        (count_of(value), if term.root == RootKind::Number { number_word(value) } else { 0 })
                     } else {
                         let key = (at, id, b);
                         match self.counts.get(&key) {
                             Some(found) => *found,
                             None => {
                                 let value = self.apply(step, id, b);
-                                let found = (rows_of(&value).map_or(u32::MAX, |n| n.min(u64::from(u32::MAX - 1)) as u32), rows_of(&self.values[id as usize]).map_or(u32::MAX, |n| n.min(u64::from(u32::MAX - 1)) as u32));
-                                let found = if term.root == RootKind::Number { (found.0, number_word(&value)) } else { found };
+                                let found = (count_of(&value), if term.root == RootKind::Number { number_word(&value) } else { 0 });
                                 self.counts.insert(key, found);
                                 found
                             }
                         }
                     };
-                    let left = if term.root == RootKind::Number && extended { number_word(&self.values[own[pair] as usize]) } else { left };
-                    if rows == u32::MAX {
-                        continue;
-                    }
-                    if pair == 0 {
-                        heads[0] = if rows > 0 { 1.0 } else { 0.0 };
-                        heads[1] = rows as f32;
-                        heads[2] = match term.root {
-                            RootKind::Share if left != u32::MAX && left > 0 => rows as f32 / left as f32,
-                            RootKind::Number => left.saturating_sub(1) as f32,
-                            _ => 0.0,
-                        };
-                    }
-                    words[pair][0] = WORD_NONEMPTY | u64::from(rows > 0);
-                    words[pair][1] = WORD_COUNT | u64::from(rows);
-                    words[pair][2] = match term.root {
-                        RootKind::Share if left != u32::MAX && left > 0 => {
-                            let shared = gcd(u64::from(rows), u64::from(left)).max(1);
-                            WORD_SET | (hash_words([u64::from(rows) / shared, u64::from(left) / shared]) as u64 & PAYLOAD) * u64::from(rows > 0)
+                    let left = count_of(&self.values[id as usize]);
+                    let other = if term.b == NO_TERM { NO_COUNT } else { count_of(&self.values[b as usize]) };
+                    for (hash, of) in &term.roots {
+                        let value = root_value(*of, rows, left, other, number);
+                        // Nothing to add at a default value, which is a slot's own state.
+                        if matches!(value, Some((_, 0))) {
+                            continue;
                         }
-                        RootKind::Number => WORD_SET | u64::from(left),
-                        _ => 0,
-                    };
-                }
-                for (root, hash) in term.roots.iter().enumerate() {
-                    if allow.is_some_and(|allow| !allow.contains(hash)) {
-                        continue;
-                    }
-                    if !(0..top).any(|pair| words[pair][root] == 0 || words[pair][root] & PAYLOAD != 0) {
-                        continue;
-                    }
-                    let entry = map.entry(*hash).or_insert(Entry2 { sums: [0; MAX_EXAMPLES], none: 0, size: term.size, flags: term.flags, head: 0.0 });
-                    entry.head = entry.head.max(heads[root]);
-                    for pair in 0..top {
-                        let word = words[pair][root];
-                        if word == 0 {
-                            entry.none |= 1 << pair;
-                        } else if word & PAYLOAD != 0 {
-                            entry.sums[pair] = entry.sums[pair].wrapping_add(mix_word(word));
+                        let base = table.slots_of(*hash, term.flags, term.size, *of);
+                        let slot = &mut table.slots[base + pair];
+                        match value {
+                            None => slot.state = SLOT_NO_VALUE,
+                            Some((held, word)) => {
+                                if slot.state == SLOT_DEFAULT {
+                                    slot.state = SLOT_VALUE;
+                                    slot.greatest = held;
+                                    slot.second = held;
+                                } else {
+                                    if held.above(slot.greatest) {
+                                        slot.greatest = held;
+                                    }
+                                    slot.second = if of.is_ratio() {
+                                        if slot.second.above(held) { held } else { slot.second }
+                                    } else {
+                                        slot.second.plus(held)
+                                    };
+                                }
+                                slot.digest = slot.digest.wrapping_add(mix_word(word));
+                            }
                         }
                     }
                 }
@@ -792,13 +866,11 @@ impl<'a> Walker<'a> {
             }
             ids.push(own);
         }
-        map
+        table
     }
-}
 
-impl Walker<'_> {
-    /// The count of rows at each example of each term whose text holds `pattern`, leaves included,
-    /// for a check against the expression that a part stands for.
+    /// The count of rows at each instance of each term whose text holds `pattern`, leaves
+    /// included, for a check against the expression that a term stands for.
     pub fn term_counts(&mut self, leaves: &[Vec<Val>], train: usize, pattern: &str) -> Vec<(String, Vec<Option<u64>>)> {
         let family = self.family;
         let pairs = leaves[0].len();
@@ -840,47 +912,30 @@ fn number_word(value: &Val) -> u32 {
     }
 }
 
-/// The leaves of a walk: the table's rows, the grids, and the constant parts at each pair.
-pub fn leaves_of(rows: &[Option<Arc<Table>>], inputs: &[Arc<Table>], outputs: &[Arc<Table>], constants: &[Vec<Arc<Table>>]) -> Vec<Vec<Val>> {
+/// The leaves of a walk: the table's rows, the grids, and the constant parts at each instance, where
+/// `example_of` gives the example of each instance. An example with no output has no value at the
+/// leaves that read it.
+pub fn leaves_at(rows: &[Option<Arc<Table>>], example_of: &[usize], inputs: &[Arc<Table>], outputs: &[Arc<Table>], constants: &[Vec<Option<Arc<Table>>>]) -> Vec<Vec<Val>> {
+    let output_at = |example: usize| outputs.get(example);
     let mut out = vec![
         rows.iter().map(|table| table.clone().map_or(Val::None, Val::of_table)).collect::<Vec<_>>(),
-        outputs.iter().map(|table| Val::of_table(table.clone())).collect(),
-        inputs.iter().map(|table| Val::of_table(table.clone())).collect(),
-        inputs.iter().zip(outputs).map(|(input, output)| Val::of_pair(input.clone(), output.clone())).collect(),
+        example_of.iter().map(|at| output_at(*at).map_or(Val::None, |table| Val::of_table(table.clone()))).collect(),
+        example_of.iter().map(|at| Val::of_table(inputs[*at].clone())).collect(),
+        example_of.iter().map(|at| output_at(*at).map_or(Val::None, |table| Val::of_pair(inputs[*at].clone(), table.clone()))).collect(),
     ];
     let count = constants.first().map_or(0, Vec::len);
     for part in 0..count {
-        out.push(constants.iter().map(|tables| Val::of_table(tables[part].clone())).collect());
+        out.push(example_of.iter().map(|at| constants[*at][part].clone().map_or(Val::None, Val::of_table)).collect());
     }
     out
 }
 
-/// The leaves of a walk at every example of a task, train then test. `outputs` has the train
-/// examples alone, so an output and whatever reads it has no value at a test input.
-pub fn leaves_at_examples(rows: &[Option<Arc<Table>>], inputs: &[Arc<Table>], outputs: &[Arc<Table>], constants: &[Vec<Option<Arc<Table>>>]) -> Vec<Vec<Val>> {
-    let examples = rows.len();
-    let output_at = |at: usize| outputs.get(at);
-    let mut out = vec![
-        rows.iter().map(|table| table.clone().map_or(Val::None, Val::of_table)).collect::<Vec<_>>(),
-        (0..examples).map(|at| output_at(at).map_or(Val::None, |table| Val::of_table(table.clone()))).collect(),
-        inputs.iter().take(examples).map(|table| Val::of_table(table.clone())).collect(),
-        (0..examples).map(|at| output_at(at).map_or(Val::None, |table| Val::of_pair(inputs[at].clone(), table.clone()))).collect(),
-    ];
-    let count = constants.first().map_or(0, Vec::len);
-    for part in 0..count {
-        out.push(constants.iter().take(examples).map(|tables| tables[part].clone().map_or(Val::None, Val::of_table)).collect());
-    }
-    out
-}
-
-pub fn constants_of(facts: &[crate::catalog_facts::PairFacts]) -> Vec<Vec<Arc<Table>>> {
+/// Each constant part's rows at each train pair, and at each test input those that read no output.
+pub fn constants_of(facts: &[crate::catalog_facts::PairFacts], tests: &[crate::catalog_facts::GridFacts]) -> Vec<Vec<Option<Arc<Table>>>> {
     clear_views();
-    facts.iter().map(constant_tables).collect()
-}
-
-/// Keeps `number_bits` in use by callers of this module's numbers.
-pub fn encoded_number(n: i64) -> u32 {
-    number_bits(n)
+    let mut out: Vec<Vec<Option<Arc<Table>>>> = facts.iter().map(|fact| constant_tables(fact).into_iter().map(Some).collect()).collect();
+    out.extend(tests.iter().map(crate::gen_constants::input_only_tables));
+    out
 }
 
 /// Where the names of roots go: a map in memory, or a file that each name reaches once.
@@ -938,6 +993,11 @@ impl NameStore {
     pub fn get(&self, hash: &u128) -> Option<String> {
         self.names.lock().expect("no panic").get(hash).cloned()
     }
+
+    /// Each root's name that the store holds in memory.
+    pub fn all(&self) -> Vec<(u128, String)> {
+        self.names.lock().expect("no panic").iter().map(|(hash, name)| (*hash, name.clone())).collect()
+    }
 }
 
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
@@ -948,12 +1008,10 @@ const CACHED_TERMS: usize = 12_000_000;
 pub struct Generators {
     held: Mutex<(FastMap<u128, (Arc<Generated>, u64)>, u64)>,
     pub names: NameStore,
-    /// Per schema, the terms that stand for their class.
-    pub extend: std::collections::HashMap<String, Vec<u32>>,
 }
 
 impl Generators {
-    pub fn get(&self, stored: &crate::tablewalk::Stored, d: usize) -> Arc<Generated> {
+    pub fn get(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(stored.key.bytes().map(u64::from));
         {
             let mut held = self.held.lock().expect("no panic");
@@ -964,7 +1022,7 @@ impl Generators {
                 return found.0.clone();
             }
         }
-        let family = Arc::new(Generated::of(&stored.types, d, &self.names, self.extend.get(&stored.key).map(Vec::as_slice)));
+        let family = Arc::new(Generated::of(&stored.types, d, &self.names));
         let mut held = self.held.lock().expect("no panic");
         let (cache, clock) = &mut *held;
         *clock += 1;
@@ -980,516 +1038,3 @@ impl Generators {
     }
 }
 
-/// A task's Candidate result on the generated shapes: per size, the AUC and the null over every
-/// comparison and over those whose mutant has rows, each shape's tally, and the seconds of its
-/// walks.
-#[allow(clippy::too_many_arguments)]
-pub fn generate_task(path: &str, task_dir: &std::path::Path, families: &Generators, d: usize, nulls: usize, allow: Option<&HashSet<u128>>, max_table_columns: usize) -> Result<serde_json::Value, String> {
-    use crate::family::{auc_of, scores, Held, Tally};
-    use crate::tablewalk::{stored_of, StableRule, Stored};
-    let rule = StableRule::Active;
-    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-    let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-    let last_query = data["last_query"].as_str().unwrap_or("").to_string();
-    let task_path = task_dir.join(format!("{task_name}.json"));
-    let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-    let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    let grid = |fact: arclog::program::FactRelation, at: usize| {
-        let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
-        let mut cells = Vec::new();
-        arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
-        Table::new(2, cells)
-    };
-    let inputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
-    let outputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Output, at)).collect();
-    let input_table = {
-        let rows: Vec<Option<Arc<Table>>> = inputs.iter().map(|table| {
-            let mut cells = Vec::with_capacity(table.cells.len());
-            for row in table.rows() {
-                cells.push(row[1]);
-                cells.push(row[0]);
-            }
-            Some(Table::new(2, cells))
-        }).collect();
-        let types = vec![ValueType::Color, ValueType::Position];
-        Stored { key: format!("{types:?}"), types, rows }
-    };
-    struct Parsed {
-        query: String,
-        reads: Vec<Stored>,
-        gold: Stored,
-        mutants: Vec<Stored>,
-    }
-    let mut parsed: Vec<Parsed> = Vec::new();
-    let mut left_out: Vec<String> = Vec::new();
-    let usable = |stored: &Stored| stored.types.len() <= max_table_columns && stored.rows.iter().all(|rows| rows.as_ref().is_none_or(|table| table.len <= 5000));
-    for item in data["items"].as_array().ok_or("a file's items")? {
-        let query = item["query"].as_str().unwrap_or("").to_string();
-        let gold = stored_of(&item["gold"], train);
-        let reads: Option<Vec<Stored>> = item["reads"].as_object().map_or(Some(Vec::new()), |reads| reads.values().map(|table| stored_of(table, train)).collect());
-        let mutants: Option<Vec<Stored>> = item["mutants"].as_array().and_then(|mutants| mutants.iter().map(|mutant| stored_of(&mutant["table"], train)).collect());
-        match (gold, reads, mutants) {
-            (Some(gold), Some(reads), Some(mutants)) if usable(&gold) && reads.iter().all(&usable) && mutants.iter().all(&usable) => parsed.push(Parsed { query, reads, gold, mutants }),
-            _ => left_out.push(query),
-        }
-    }
-    let everywhere = |stored: &Stored| stored.rows.iter().all(|rows| rows.as_ref().is_some_and(|table| table.len > 0));
-    let mut tables: Vec<&Stored> = vec![&input_table];
-    for item in &parsed {
-        tables.extend(item.reads.iter());
-        tables.push(&item.gold);
-        tables.extend(item.mutants.iter());
-    }
-    let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
-    for table in &tables {
-        if !held.iter().any(|(key, _)| *key == table.key) {
-            held.push((table.key.clone(), families.get(table, d)));
-        }
-    }
-    let mut walkers: Vec<(String, Walker<'_>)> = held.iter().map(|(key, family)| (key.clone(), Walker::new(family))).collect();
-    let mut tallies: FastMap<u128, Tally> = FastMap::default();
-    let mut walks = 0u64;
-    let mut walk_seconds = 0f64;
-    let is_last = |at: usize| parsed[at].query == last_query;
-    let mutant_rows: Vec<Vec<bool>> = parsed.iter().map(|item| item.mutants.iter().map(&everywhere).collect()).collect();
-    type Scores = (usize, f64, Vec<f64>, usize);
-    let mut run = |order: Option<&[usize]>, null: bool, tallies: &mut FastMap<u128, Tally>| -> Vec<Vec<Scores>> {
-        let facts = crate::catalog_run::pairs_of_task(&task_json, order);
-        let constants = constants_of(&facts);
-        let moved: Vec<Arc<Table>> = (0..train).map(|at| outputs[order.map_or(at, |order| order[at])].clone()).collect();
-        let mut done: FastMap<u128, Arc<ShapeMap>> = FastMap::default();
-        let mut map_of = |stored: &Stored| -> Arc<ShapeMap> {
-            let content = hash_words(stored.key.bytes().map(u64::from).chain(stored.rows.iter().flat_map(|rows| rows.as_ref().map_or([0, 0], |table| [table.hash as u64, (table.hash >> 64) as u64]))));
-            if let Some(found) = done.get(&content) {
-                return found.clone();
-            }
-            let walker = &mut walkers.iter_mut().find(|(key, _)| *key == stored.key).expect("a schema's walker").1;
-            let started = std::time::Instant::now();
-            let leaves = leaves_of(&stored.rows, &inputs, &moved, &constants);
-            let map = Arc::new(walker.walk(&leaves, d as u8, allow));
-            walks += 1;
-            walk_seconds += started.elapsed().as_secs_f64();
-            done.insert(content, map.clone());
-            map
-        };
-        let input_map = map_of(&input_table);
-        parsed.iter().enumerate().map(|(at, item)| {
-            let reads: Vec<(Arc<ShapeMap>, bool)> = item.reads.iter().map(|table| (map_of(table), everywhere(table))).collect();
-            let gold_map = map_of(&item.gold);
-            let mutants: Vec<(Arc<ShapeMap>, bool)> = item.mutants.iter().map(|table| (map_of(table), everywhere(table))).collect();
-            let mut bases: Vec<Held<'_>> = vec![(&input_map, true)];
-            bases.extend(reads.iter().map(|(map, rows)| (map.as_ref(), *rows)));
-            let mutant_refs: Vec<Held<'_>> = mutants.iter().map(|(map, rows)| (map.as_ref(), *rows)).collect();
-            let gold = (gold_map.as_ref(), everywhere(&item.gold));
-            let last = is_last(at);
-            (1..=d).map(|size| {
-                let tally = (size == d && !last).then_some((&mut *tallies, null));
-                scores(rule, &bases, gold, &mutant_refs, train, size as u8, tally)
-            }).collect()
-        }).collect()
-    };
-    let started = std::time::Instant::now();
-    let results = run(None, false, &mut tallies);
-    let per_size = |results: &[Vec<Scores>], size: usize, rows_only: bool| -> Vec<(usize, f64, Vec<f64>)> {
-        results.iter().enumerate().filter(|(at, _)| !is_last(*at)).map(|(at, item)| {
-            let found = &item[size];
-            let kept = if rows_only { found.2.iter().zip(&mutant_rows[at]).filter(|(_, rows)| **rows).map(|(score, _)| *score).collect() } else { found.2.clone() };
-            (found.0, found.1, kept)
-        }).collect()
-    };
-    let distinct_outputs = outputs.iter().map(|table| table.hash).collect::<std::collections::BTreeSet<_>>().len() > 1;
-    let mut null_every: Vec<Vec<f64>> = vec![Vec::new(); d];
-    let mut null_rows: Vec<Vec<f64>> = vec![Vec::new(); d];
-    if distinct_outputs && train > 1 {
-        let mut state = 0x2545_f491_4f6c_dd1du64 ^ hash_words(task_name.bytes().map(u64::from)) as u64;
-        for _ in 0..nulls {
-            let mut order: Vec<usize> = (0..train).collect();
-            loop {
-                for at in (1..train).rev() {
-                    state ^= state << 13;
-                    state ^= state >> 7;
-                    state ^= state << 17;
-                    order.swap(at, (state % (at as u64 + 1)) as usize);
-                }
-                if order.iter().enumerate().all(|(at, own)| at != *own) {
-                    break;
-                }
-            }
-            let found = run(Some(&order), true, &mut tallies);
-            for size in 0..d {
-                if let Some(auc) = auc_of(&per_size(&found, size, false)) {
-                    null_every[size].push(auc);
-                }
-                if let Some(auc) = auc_of(&per_size(&found, size, true)) {
-                    null_rows[size].push(auc);
-                }
-            }
-        }
-    }
-    let mean = |values: &[f64]| (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64);
-    let sizes: Vec<serde_json::Value> = (0..d).map(|size| {
-        let every = per_size(&results, size, false);
-        let rows = per_size(&results, size, true);
-        serde_json::json!({
-            "d": size + 1,
-            "auc": auc_of(&every),
-            "null": mean(&null_every[size]),
-            "auc_rows": auc_of(&rows),
-            "null_rows": mean(&null_rows[size]),
-            "contingent": mean(&every.iter().map(|found| found.0 as f64).collect::<Vec<_>>()),
-            "items": every.iter().map(|found| found.2.len()).sum::<usize>(),
-        })
-    }).collect();
-    let terms: Vec<serde_json::Value> = held.iter().map(|(key, family)| serde_json::json!({"schema": key, "by_size": family.by_size, "roots": family.roots})).collect();
-    let mut shapes: Vec<serde_json::Value> = Vec::new();
-    for (hash, tally) in &tallies {
-        if tally.gold_only + tally.mutant_only + tally.null_gold_only + tally.null_mutant_only == 0 {
-            continue;
-        }
-        shapes.push(serde_json::json!([families.names.get(hash).unwrap_or_default(), tally.gold_only, tally.mutant_only, tally.compared, tally.null_gold_only, tally.null_mutant_only, tally.null_compared]));
-    }
-    Ok(serde_json::json!({
-        "task": task_name, "sizes": sizes, "left_out": left_out, "shapes": shapes, "terms": terms,
-        "walks": walks, "walk_seconds": walk_seconds, "seconds": started.elapsed().as_secs_f64(),
-    }))
-}
-
-/// Which written kinds the generated shapes reach, by value: a kind is reached where a generated
-/// root equals it at every sampled table and pair where the kind has a value.
-pub fn reach(files: &[String], task_dir: &std::path::Path, d: usize, per_task: usize, sink: &mut impl std::io::Write) -> Result<(), String> {
-    use crate::catalog::{pass, Kind, Record, Value};
-    use crate::catalog_run::{pairs_of_task, parse_table};
-    use crate::catalog_vector::shape_name;
-    use crate::tablewalk::stored_of;
-    let families = Generators::default();
-    // Per written shape, its sums by point, and per generated root the same.
-    let mut written: FastMap<String, Vec<(u32, u64, u64, u64)>> = FastMap::default();
-    let mut generated: FastMap<u128, Vec<(u32, u64)>> = FastMap::default();
-    let mut points = 0u32;
-    for path in files {
-        let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-        let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-        let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-        let task_path = task_dir.join(format!("{task_name}.json"));
-        let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-        let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-        let grid = |fact: arclog::program::FactRelation, at: usize| {
-            let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
-            let mut cells = Vec::new();
-            arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
-            Table::new(2, cells)
-        };
-        let inputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
-        let outputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Output, at)).collect();
-        let facts = pairs_of_task(&task_json, None);
-        let constants = constants_of(&facts);
-        let mut seen: Vec<String> = Vec::new();
-        let mut taken = 0;
-        let empty = Vec::new();
-        for item in data["items"].as_array().unwrap_or(&empty) {
-            for table in std::iter::once(&item["gold"]).chain(item["mutants"].as_array().unwrap_or(&empty).iter().take(1).map(|mutant| &mutant["table"])) {
-                let Some(stored) = stored_of(table, train) else { continue };
-                if taken >= per_task || seen.contains(&stored.key) || stored.types.len() > 8 || stored.rows.iter().any(|rows| rows.as_ref().is_none_or(|t| t.len == 0 || t.len > 2000)) {
-                    continue;
-                }
-                seen.push(stored.key.clone());
-                taken += 1;
-                let family = families.get(&stored, d);
-                let mut walker = Walker::new(&family);
-                let leaves = leaves_of(&stored.rows, &inputs, &outputs, &constants);
-                let map = walker.walk(&leaves, d as u8, None);
-                let parsed = parse_table(table, train);
-                let mut sums: FastMap<String, Vec<[u64; 3]>> = FastMap::default();
-                let mut records: Vec<Record> = Vec::with_capacity(256);
-                for (pair, fact) in facts.iter().enumerate().take(12) {
-                    let Some(Some((rows, cells))) = parsed.rows.get(pair) else { continue };
-                    records.clear();
-                    pass(&crate::catalog::TableAt { kinds: &parsed.kinds, keys: &parsed.keys, rows: *rows, cells }, fact, &mut records);
-                    for record in &records {
-                        let word = match record.value {
-                            Value::Bool(flag) => [WORD_NONEMPTY | u64::from(flag), 0, 0],
-                            Value::Num(n) => [WORD_COUNT | n.max(0) as u64, WORD_SET | (n + 1).max(0) as u64, 0],
-                            Value::Share(hits, of) if of > 0 => {
-                                let shared = gcd(u64::from(hits), u64::from(of)).max(1);
-                                [WORD_SET | (hash_words([u64::from(hits) / shared, u64::from(of) / shared]) as u64 & PAYLOAD) * u64::from(hits > 0), WORD_NONEMPTY | u64::from(hits == of), 0]
-                            }
-                            _ => continue,
-                        };
-                        let held = sums.entry(shape_name(record, &parsed.kinds)).or_insert_with(|| vec![[u64::MAX; 3]; train.min(12)]);
-                        let at = &mut held[pair];
-                        for (slot, value) in at.iter_mut().zip(word) {
-                            if *slot == u64::MAX {
-                                *slot = 0;
-                            }
-                            if value & PAYLOAD != 0 {
-                                *slot = slot.wrapping_add(mix_word(value));
-                            }
-                        }
-                    }
-                }
-                let _ = Kind::Other;
-                for pair in 0..train.min(12) {
-                    let point = points + pair as u32;
-                    for (name, held) in &sums {
-                        if held[pair][0] != u64::MAX {
-                            written.entry(name.clone()).or_default().push((point, held[pair][0], held[pair][1], held[pair][2]));
-                        }
-                    }
-                    for (hash, entry) in map.iter() {
-                        if entry.sums[pair] != 0 {
-                            generated.entry(*hash).or_default().push((point, entry.sums[pair]));
-                        }
-                    }
-                }
-                points += train.min(12) as u32;
-            }
-        }
-    }
-    // A generated root by its value at each point; a written shape's matches.
-    let lookup: Vec<(u128, FastMap<u32, u64>)> = generated.iter().map(|(hash, list)| (*hash, list.iter().copied().collect())).collect();
-    for (name, list) in &written {
-        let mut found: [Vec<String>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-        for (reading, held) in found.iter_mut().enumerate() {
-            let value_of = |item: &(u32, u64, u64, u64)| match reading {
-                0 => item.1,
-                1 => item.2,
-                _ => item.3,
-            };
-            if reading == 2 || !list.iter().any(|item| value_of(item) != 0) {
-                continue;
-            }
-            for (hash, values) in &lookup {
-                if list.iter().all(|item| values.get(&item.0).copied().unwrap_or(0) == value_of(item)) {
-                    held.push(families.names.get(hash).unwrap_or_default());
-                    if held.len() >= 200 {
-                        break;
-                    }
-                }
-            }
-            held.sort_by_key(String::len);
-            held.truncate(3);
-        }
-        let nonzero = list.iter().filter(|item| item.1 != 0).count();
-        let distinct: std::collections::BTreeSet<u64> = list.iter().map(|item| item.1).collect();
-        let line = serde_json::json!({"shape": name, "points": list.len(), "nonzero": nonzero, "values": distinct.len(), "value": found[0], "second": found[1]});
-        writeln!(sink, "{line}").map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-
-/// Per schema, one term per class of observed values among the terms up to size 2: the terms to
-/// extend. A term that is empty on every sampled table has no class, and a term equal to one
-/// that stands before it has none of its own.
-pub fn classes(files: &[String], task_dir: &std::path::Path, per_schema: usize) -> Result<std::collections::HashMap<String, Vec<u32>>, String> {
-    use crate::tablewalk::stored_of;
-    struct Held {
-        family: Arc<Generated>,
-        signature: Vec<u128>,
-        some: Vec<bool>,
-        tables: usize,
-        seen: HashSet<u128>,
-    }
-    let families = Generators::default();
-    let mut by_schema: std::collections::HashMap<String, Held> = std::collections::HashMap::new();
-    for path in files {
-        let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-        let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-        let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-        let task_path = task_dir.join(format!("{task_name}.json"));
-        let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-        let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-        let grid = |fact: arclog::program::FactRelation, at: usize| {
-            let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
-            let mut cells = Vec::new();
-            arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
-            Table::new(2, cells)
-        };
-        let inputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
-        let outputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Output, at)).collect();
-        let facts = crate::catalog_run::pairs_of_task(&task_json, None);
-        let constants = constants_of(&facts);
-        let empty = Vec::new();
-        let mut walkers: FastMap<u128, (Arc<Generated>, usize)> = FastMap::default();
-        let _ = &mut walkers;
-        for item in data["items"].as_array().unwrap_or(&empty) {
-            for table in std::iter::once(&item["gold"]).chain(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| &mutant["table"])) {
-                let Some(stored) = stored_of(table, train) else { continue };
-                if stored.types.len() > 8 || stored.rows.iter().any(|rows| rows.as_ref().is_some_and(|t| t.len > 2000)) {
-                    continue;
-                }
-                let held = by_schema.entry(stored.key.clone()).or_insert_with(|| {
-                    let family = families.get(&stored, 2);
-                    let count = family.terms.len();
-                    Held { family, signature: vec![0; count], some: vec![false; count], tables: 0, seen: HashSet::new() }
-                });
-                let content = hash_words(stored.rows.iter().flat_map(|rows| rows.as_ref().map_or([0, 0], |t| [t.hash as u64, (t.hash >> 64) as u64])));
-                if held.tables >= per_schema || !held.seen.insert(content) {
-                    continue;
-                }
-                held.tables += 1;
-                let family = held.family.clone();
-                let mut walker = Walker::new(&family);
-                let leaves = leaves_of(&stored.rows, &inputs, &outputs, &constants);
-                walker.observe(&leaves, hash_words([content as u64, (content >> 64) as u64, task_name.len() as u64]), &mut held.signature, &mut held.some);
-            }
-        }
-    }
-    let mut out = std::collections::HashMap::new();
-    for (key, held) in by_schema {
-        let family = &held.family;
-        let mut seen: HashSet<u128> = HashSet::new();
-        let mut chosen = Vec::new();
-        for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
-            if !held.some[at] {
-                continue;
-            }
-            if seen.insert(held.signature[at]) {
-                chosen.push(at as u32);
-            }
-            let _ = term;
-        }
-        out.insert(key, chosen);
-    }
-    Ok(out)
-}
-
-
-/// The hex id of a shape in a dump.
-fn shape_id(hash: u128) -> String {
-    format!("{:016x}", hash as u64)
-}
-
-/// One task's stable generated shapes per item, in the form the scoring reads, one result for
-/// each size up to `d`. A table lists the shapes it holds that are contingent on the item's
-/// base tables and that not every one of the item's tables holds, since those alone can tell
-/// two tables apart. An item with a table this path leaves out has no sides.
-pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, derangements: &std::collections::BTreeMap<String, Option<Vec<usize>>>, d: usize) -> Result<(String, Vec<serde_json::Value>, u64, f64), String> {
-    use crate::tablewalk::{active_entry, stored_of, Stored};
-    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-    let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-    let last_query = data["last_query"].as_str().unwrap_or("").to_string();
-    let task_path = task_dir.join(format!("{task_name}.json"));
-    let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-    let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    let grid = |fact: arclog::program::FactRelation, at: usize| {
-        let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
-        let mut cells = Vec::new();
-        arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
-        Table::new(2, cells)
-    };
-    let inputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
-    let outputs: Vec<Arc<Table>> = (0..train).map(|at| grid(arclog::program::FactRelation::Output, at)).collect();
-    let input_table = {
-        let rows: Vec<Option<Arc<Table>>> = inputs.iter().map(|table| {
-            let mut cells = Vec::with_capacity(table.cells.len());
-            for row in table.rows() {
-                cells.push(row[1]);
-                cells.push(row[0]);
-            }
-            Some(Table::new(2, cells))
-        }).collect();
-        let types = vec![ValueType::Color, ValueType::Position];
-        Stored { key: format!("{types:?}"), types, rows }
-    };
-    struct Parsed {
-        query: String,
-        reads: Vec<Stored>,
-        gold: Option<Stored>,
-        mutants: Vec<Stored>,
-    }
-    let good = |stored: &Stored| stored.types.len() <= 8 && stored.rows.iter().all(|rows| rows.as_ref().is_none_or(|table| table.len <= 2000));
-    let mut parsed: Vec<Parsed> = Vec::new();
-    for item in data["items"].as_array().ok_or("a file's items")? {
-        let query = item["query"].as_str().unwrap_or("").to_string();
-        let gold = stored_of(&item["gold"], train);
-        let reads: Option<Vec<Stored>> = item["reads"].as_object().map_or(Some(Vec::new()), |reads| reads.values().map(|table| stored_of(table, train)).collect());
-        let mutants: Option<Vec<Stored>> = item["mutants"].as_array().and_then(|mutants| mutants.iter().map(|mutant| stored_of(&mutant["table"], train)).collect());
-        match (gold, reads, mutants) {
-            (Some(gold), Some(reads), Some(mutants)) if good(&gold) && reads.iter().all(&good) && mutants.iter().all(&good) => parsed.push(Parsed { query, reads, gold: Some(gold), mutants }),
-            _ => parsed.push(Parsed { query, reads: Vec::new(), gold: None, mutants: Vec::new() }),
-        }
-    }
-    // The parsed file is far larger than its tables, so it leaves here.
-    drop(data);
-    let mut tables: Vec<&Stored> = vec![&input_table];
-    for item in parsed.iter().filter(|item| item.gold.is_some()) {
-        tables.extend(item.reads.iter());
-        tables.extend(item.gold.iter());
-        tables.extend(item.mutants.iter());
-    }
-    let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
-    for table in &tables {
-        if !held.iter().any(|(key, _)| *key == table.key) {
-            held.push((table.key.clone(), families.get(table, d)));
-        }
-    }
-    let mut walkers: Vec<(String, Walker<'_>)> = held.iter().map(|(key, family)| (key.clone(), Walker::new(family))).collect();
-    let mut walks = 0u64;
-    let mut walk_seconds = 0f64;
-    let mut sides = |order: Option<&[usize]>| -> Vec<Vec<serde_json::Value>> {
-        let facts = crate::catalog_run::pairs_of_task(&task_json, order);
-        let constants = constants_of(&facts);
-        let moved: Vec<Arc<Table>> = (0..train).map(|at| outputs[order.map_or(at, |order| order[at])].clone()).collect();
-        let mut done: FastMap<u128, Arc<FastMap<u128, u8>>> = FastMap::default();
-        let mut map_of = |stored: &Stored| -> Arc<FastMap<u128, u8>> {
-            let content = hash_words(stored.key.bytes().map(u64::from).chain(stored.rows.iter().flat_map(|rows| rows.as_ref().map_or([0, 0], |table| [table.hash as u64, (table.hash >> 64) as u64]))));
-            if let Some(found) = done.get(&content) {
-                return found.clone();
-            }
-            let walker = &mut walkers.iter_mut().find(|(key, _)| *key == stored.key).expect("a schema's walker").1;
-            let started = std::time::Instant::now();
-            let leaves = leaves_of(&stored.rows, &inputs, &moved, &constants);
-            let full = walker.walk(&leaves, d as u8, None);
-            let map: Arc<FastMap<u128, u8>> = Arc::new(full.iter().filter(|(_, entry)| active_entry(Some(*entry), train)).map(|(name, entry)| (*name, entry.size)).collect());
-            walks += 1;
-            walk_seconds += started.elapsed().as_secs_f64();
-            done.insert(content, map.clone());
-            map
-        };
-        let input_map = map_of(&input_table);
-        parsed.iter().map(|item| {
-            let Some(gold) = &item.gold else { return vec![serde_json::Value::Null; d] };
-            let bases: Vec<Arc<FastMap<u128, u8>>> = std::iter::once(input_map.clone()).chain(item.reads.iter().map(&mut map_of)).collect();
-            let mut own: Vec<Arc<FastMap<u128, u8>>> = vec![map_of(gold)];
-            own.extend(item.mutants.iter().map(&mut map_of));
-            (1..=d).map(|size| {
-                let holds_at = |map: &FastMap<u128, u8>, name: &u128| map.get(name).is_some_and(|held| usize::from(*held) <= size);
-                let mut lists: Vec<Vec<String>> = vec![Vec::new(); own.len()];
-                let mut seen: HashSet<u128> = HashSet::new();
-                for map in &own {
-                    for name in map.keys() {
-                        if !seen.insert(*name) || !own.iter().any(|table| holds_at(table, name)) {
-                            continue;
-                        }
-                        if bases.iter().all(|base| holds_at(base, name)) || own.iter().all(|table| holds_at(table, name)) {
-                            continue;
-                        }
-                        for (list, table) in lists.iter_mut().zip(&own) {
-                            if holds_at(table, name) {
-                                list.push(shape_id(*name));
-                            }
-                        }
-                    }
-                }
-                for list in &mut lists {
-                    list.sort_unstable();
-                }
-                serde_json::json!({"tables": lists, "contexts": [[]]})
-            }).collect()
-        }).collect()
-    };
-    let truth = sides(None);
-    let order = derangements.get(&task_name).and_then(Option::as_ref);
-    let deranged = order.map(|order| sides(Some(order)));
-    let results = (0..d).map(|size| {
-        let items: Vec<serde_json::Value> = parsed.iter().enumerate().map(|(at, item)| {
-            let null_side = deranged.as_ref().map_or(serde_json::Value::Null, |found| found[at][size].clone());
-            serde_json::json!({"query": item.query, "last": item.query == last_query, "true": truth[at][size], "null": null_side})
-        }).collect();
-        serde_json::json!({"task": task_name, "items": items})
-    }).collect();
-    Ok((task_name, results, walks, walk_seconds))
-}

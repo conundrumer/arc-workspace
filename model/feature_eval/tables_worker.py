@@ -107,24 +107,25 @@ def worker(root, task):
                 return tb.orient[int(v)]
             return int(v)
 
-        out = {}
+        out, models = {}, {}
         large = False
         for ex, held in by_example.items():
-            if len(held) > 1:
-                if ex.startswith('test/'):
-                    continue
-                return None, 'several models'
-            raw = next(iter(held.values()))
-            if len(raw) > ROW_CAP:
+            tables = list(held.values())
+            if any(len(raw) > ROW_CAP for raw in tables):
                 if not ex.startswith('test/'):
                     large = True
                 continue
-            out[ex] = sorted(([cell(ty, v) for ty, v in zip(types, r)] for r in raw), key=repr)
+            written = [sorted(([cell(ty, v) for ty, v in zip(types, r)] for r in raw), key=repr) for raw in tables]
+            if len(written) == 1:
+                out[ex] = written[0]
+            else:
+                models[ex] = written
         names = list(tb.T['column_names'][t]) if 'column_names' in tb.T else [f'c{i}' for i in range(len(types))]
-        return dict(columns=names, types=types, assignments=len(by_key), assignment=chosen, task_level='task' in out, too_large=large, rows=out), None
+        return dict(columns=names, types=types, assignments=len(by_key), assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, rows=out, models=models), None
 
     def train_rows(table):
-        return {k: v for k, v in table['rows'].items() if k == 'task' or k.startswith('train/')}
+        keep = lambda held: {k: v for k, v in held.items() if k == 'task' or k.startswith('train/')}
+        return dict(rows=keep(table['rows']), models=keep(table['models']))
 
     nodes = {tuple(n['path']): n for n in json.loads(gold.render_json())['nodes']}
 
@@ -251,7 +252,7 @@ def worker(root, task):
                     mutants.append(dict(mutant=at, edit=m['edit'], extra=m['extra'], table=t, parents=parents))
             if mutants:
                 items.append(dict(query=q['name'], form=form, table=name, gold=g, parents=with_parents(parents_of(gold_forms, form, q['names'])), mutants=mutants))
-                strip = lambda t: {**t, 'rows': train_rows(t)}
+                strip = lambda t: {**t, **train_rows(t)}
                 kept_items.append(dict(query=q['name'], form=form, table=name, gold=strip(g), mutants=[{**m, 'table': strip(m['table'])} for m in mutants]))
     last = [q['name'] for q in state.values()][-1] if state else None
     head = dict(task=task, case=c.case, train=train, last_query=last, budget_cut=cut, left_out=left_out)

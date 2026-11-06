@@ -1,0 +1,218 @@
+//! `TableVector`: the features of one table at one assignment, and the base tables', as the
+//! contract and the specification's section on vectors give them. A shape gives two numbers at each
+//! example: the greatest and the sum of its ground expressions' values, or for a `ratio` the
+//! greatest and the least. Within an example it takes the mean over the example's TableRows.
+//!
+//! A vector is a function of the table's rows and of the grids it is given, so two tables with one
+//! `TableHash` have one vector. A caller that reads a table against other outputs gives other grids.
+
+use std::path::Path;
+use std::sync::Arc;
+
+use arclog::task::Task;
+
+use crate::catalog_facts::GridFacts;
+use crate::generate::{constants_of, leaves_at, Generated, Generators, Number, RootOf, RootTable, Slot, Walker, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE, SLOT_VALUE};
+use crate::native::Table;
+use crate::stored::Stored;
+
+/// A task's grids and what the parts read of them, at each example: the train pairs, then the test
+/// inputs. The outputs are data, so a reader can give a pair another pair's output.
+pub struct Grids {
+    pub train: usize,
+    pub inputs: Vec<Arc<Table>>,
+    pub outputs: Vec<Arc<Table>>,
+    pub constants: Vec<Vec<Option<Arc<Table>>>>,
+}
+
+impl Grids {
+    /// The grids of a task. `order` gives the train pair whose output each train pair reads.
+    pub fn of(task: &Task, task_json: &serde_json::Value, order: Option<&[usize]>) -> Grids {
+        let train = task.train.len();
+        let total = train + task.test.len();
+        let grid = |fact: arclog::program::FactRelation, at: usize| {
+            let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
+            let mut cells = Vec::new();
+            arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
+            Table::new(2, cells)
+        };
+        let inputs = (0..total).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
+        let outputs = (0..train).map(|at| grid(arclog::program::FactRelation::Output, order.map_or(at, |order| order[at]))).collect();
+        let facts = crate::catalog_run::pairs_of_task(task_json, order);
+        let empty = Vec::new();
+        let tests: Vec<GridFacts> = task_json["test"].as_array().unwrap_or(&empty).iter().map(|pair| crate::catalog_run::grid_of(&pair["input"])).collect();
+        Grids { train, inputs, outputs, constants: constants_of(&facts, &tests) }
+    }
+
+    /// The grids of the task stored at `task_dir` under `name`.
+    pub fn of_file(task_dir: &Path, name: &str, order: Option<&[usize]>) -> Result<(Task, Grids), String> {
+        let path = task_dir.join(format!("{name}.json"));
+        let task = arclog::task::read_task(&path).map_err(|error| format!("the task does not read: {error:?}"))?;
+        let json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&path)?).map_err(|error| error.to_string())?;
+        let grids = Grids::of(&task, &json, order);
+        Ok((task, grids))
+    }
+}
+
+/// A table's vector: each shape that is not at its default at some example, sorted by name, with
+/// its numbers at each example.
+pub struct TableVector {
+    pub train: usize,
+    pub examples: usize,
+    pub shapes: Vec<u64>,
+    /// What each shape reads, its size, and which kind of root it is.
+    pub meta: Vec<(u8, u8, RootOf)>,
+    /// `examples` slots per shape.
+    pub slots: Vec<Slot>,
+    /// The mean and the greatest over the examples of the count of an example's TableRows.
+    pub table_rows: (f64, u32),
+}
+
+impl TableVector {
+    pub fn at(&self, shape: usize) -> &[Slot] {
+        &self.slots[shape * self.examples..(shape + 1) * self.examples]
+    }
+
+    /// The examples that a shape combines over: the train examples where it reads the output, and
+    /// every example otherwise.
+    pub fn scope(&self, shape: usize) -> usize {
+        if self.meta[shape].0 & READS_OUTPUT != 0 { self.train } else { self.examples }
+    }
+
+    /// Whether a shape has one value at every example of its scope that is not its default: the
+    /// protocol's stable root, which a reader of Candidate recognition takes.
+    pub fn stable(&self, shape: usize) -> bool {
+        let at = self.at(shape);
+        let scope = &at[..self.scope(shape)];
+        scope.first().is_some_and(|first| first.state == SLOT_VALUE && scope.iter().all(|slot| slot.state == SLOT_VALUE && slot.digest == first.digest))
+    }
+
+    /// `:min`, `:mean` and `:max` of one of a shape's two numbers over its scope, and how many
+    /// examples have a value there. A default counts as its value, and a stopped example counts
+    /// for nothing.
+    pub fn over_examples(&self, shape: usize, second: bool) -> (f64, f64, f64, usize) {
+        let at = self.at(shape);
+        let (mut least, mut most, mut sum, mut count) = (f64::INFINITY, f64::NEG_INFINITY, 0.0, 0usize);
+        for slot in &at[..self.scope(shape)] {
+            if slot.state == SLOT_NO_VALUE {
+                continue;
+            }
+            let value = match slot.state {
+                SLOT_DEFAULT => 0.0,
+                _ => if second { slot.second.float() } else { slot.greatest.float() },
+            };
+            least = least.min(value);
+            most = most.max(value);
+            sum += value;
+            count += 1;
+        }
+        if count == 0 {
+            return (f64::NAN, f64::NAN, f64::NAN, 0);
+        }
+        (least, sum / count as f64, most, count)
+    }
+
+    /// Whether a shape's value at each example of its scope equals its value on `other`.
+    pub fn same_at_each_example(&self, shape: usize, other: &TableVector) -> bool {
+        let Ok(place) = other.shapes.binary_search(&self.shapes[shape]) else { return false };
+        let (own, theirs) = (self.at(shape), other.at(place));
+        (0..self.scope(shape)).all(|example| own[example].state == theirs[example].state && own[example].digest == theirs[example].digest)
+    }
+}
+
+fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usize) -> TableVector {
+    let instances = example_of.len();
+    let mut order: Vec<(u64, usize)> = table.index.iter().map(|(hash, at)| (*hash as u64, *at as usize)).collect();
+    order.sort_unstable();
+    let single = instances == examples;
+    let mut slots = Vec::with_capacity(order.len() * examples);
+    let mut shapes = Vec::with_capacity(order.len());
+    let mut meta = Vec::with_capacity(order.len());
+    for (shape, at) in order {
+        shapes.push(shape);
+        meta.push(table.meta[at]);
+        let own = &table.slots[at * instances..(at + 1) * instances];
+        if single {
+            slots.extend_from_slice(own);
+            continue;
+        }
+        for example in 0..examples {
+            let held: Vec<&Slot> = own.iter().zip(example_of).filter(|(_, of)| **of == example).map(|(slot, _)| slot).collect();
+            slots.push(mean_over_models(&held));
+        }
+    }
+    let mut per_example = vec![0u32; examples];
+    for example in example_of {
+        per_example[*example] += 1;
+    }
+    let total: u32 = per_example.iter().sum();
+    let table_rows = (f64::from(total) / examples.max(1) as f64, per_example.iter().copied().max().unwrap_or(0));
+    TableVector { train, examples, shapes, meta, slots, table_rows }
+}
+
+/// A root's numbers at an example: the mean over its TableRows, where a default counts as 0.
+fn mean_over_models(held: &[&Slot]) -> Slot {
+    let Some(first) = held.first() else { return Slot::default() };
+    if held.len() == 1 {
+        return **first;
+    }
+    if held.iter().any(|slot| slot.state == SLOT_NO_VALUE) {
+        return Slot { state: SLOT_NO_VALUE, ..Slot::default() };
+    }
+    if held.iter().all(|slot| slot.state == SLOT_DEFAULT) {
+        return Slot::default();
+    }
+    let total = |read: &dyn Fn(&Slot) -> Number| -> Number {
+        let (mut top, bottom) = (0i64, held.len() as i64);
+        let mut denominator = 1i64;
+        for slot in held {
+            let value = read(slot);
+            let down = i64::from(value.bottom.max(1));
+            top = top * down + i64::from(value.top) * denominator;
+            denominator *= down;
+        }
+        if top < 0 {
+            return Number::whole(top / (denominator * bottom));
+        }
+        Number::fraction(top as u64, (denominator * bottom) as u64)
+    };
+    let digest = held.iter().fold(0u64, |sum, slot| sum.wrapping_add(slot.digest));
+    Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SLOT_VALUE }
+}
+
+/// The vector of `table` over the first `examples` examples of `grids`.
+pub fn table_vector(walker: &mut Walker<'_>, table: &Stored, grids: &Grids, examples: usize, only_output: bool) -> TableVector {
+    let mut example_of = Vec::with_capacity(examples);
+    let mut rows = Vec::with_capacity(examples);
+    for (example, models) in table.rows.iter().take(examples).enumerate() {
+        if models.is_empty() {
+            example_of.push(example);
+            rows.push(None);
+        }
+        for model in models {
+            example_of.push(example);
+            rows.push(Some(model.clone()));
+        }
+    }
+    let train = example_of.iter().filter(|example| **example < grids.train).count();
+    let leaves = leaves_at(&rows, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+    let found = walker.walk(&leaves, train, only_output);
+    combined(found, &example_of, examples, grids.train.min(examples))
+}
+
+/// The base tables' vectors, as the contract keys them: `input`, at every example, and `ex_output`,
+/// read at each train example.
+pub struct BaseVectors {
+    pub input: TableVector,
+    pub ex_output: TableVector,
+}
+
+pub fn base_vectors(grids: &Grids, families: &Generators, d: usize) -> BaseVectors {
+    let input = Stored::of_grids(&grids.inputs);
+    let output = Stored::of_grids(&grids.outputs);
+    let family: Arc<Generated> = families.get(&input, d);
+    let mut walker = Walker::new(&family);
+    let input_vector = table_vector(&mut walker, &input, grids, grids.inputs.len(), false);
+    let output_vector = table_vector(&mut walker, &output, grids, grids.train, false);
+    BaseVectors { input: input_vector, ex_output: output_vector }
+}

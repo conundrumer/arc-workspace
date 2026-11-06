@@ -145,13 +145,13 @@ pub fn constant_parts() -> Vec<ConstantPart> {
         out.push(ConstantPart { name: format!("{kind}-changed"), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())], reads_output: true, reads_input: true, meets_table: false });
     }
     let mut lib = |name: &str, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name: name.to_string(), columns, reads_output: false, reads_input: false, meets_table: true });
-    lib("dir-values", vec![("D", ValueType::Dir)]);
-    lib("diag-dir-values", vec![("D", ValueType::DiagDir)]);
-    lib("axis-values", vec![("A", ValueType::Axis)]);
-    lib("d4-values", vec![("D", ValueType::D4)]);
-    lib("d4-identity", vec![("D", ValueType::D4)]);
-    lib("axis-of", vec![("D", ValueType::Dir), ("A", ValueType::Axis)]);
-    lib("opposite", vec![("D", ValueType::Dir), ("D_2", ValueType::Dir)]);
+    lib("dir_elem", vec![("D", ValueType::Dir)]);
+    lib("diag_dir_elem", vec![("D", ValueType::DiagDir)]);
+    lib("axis_elem", vec![("A", ValueType::Axis)]);
+    lib("d4_elem", vec![("D", ValueType::D4)]);
+    lib("d4_identity", vec![("D", ValueType::D4)]);
+    lib("axis_of", vec![("D", ValueType::Dir), ("A", ValueType::Axis)]);
+    lib("opposite", vec![("D", ValueType::Dir), ("Opp", ValueType::Dir)]);
     out
 }
 

@@ -5,16 +5,13 @@
 //!   feature-encoder worked [--corpus DIR] [--tasks DIR]
 //!   feature-encoder encode SOLVER TABLE... [--size D] [--out FILE] [--work-cap N] [--limit N] [--max-inputs N] [--program-relations]
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
-//!   feature-encoder vector SOLVER TABLE [--size D] [--names FILE] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
+//!   feature-encoder vector SOLVER TABLE [--size D] --out FILE
+//!   feature-encoder base-vectors SOLVER [--size D] --out FILE
+//!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N]
+//!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder grid-values GRIDS_JSON (--scene | --rule) [--size D] [--max-inputs N] [--work-cap N] --out FILE
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
-//!   feature-encoder walk MANIFEST (--scene | --rule) [--size D] [--threads N] [--seconds S] [--passes P] [--shard I/N] [--max-columns K]
-//!   feature-encoder walk-check GRIDS_JSON (--scene | --rule) [--size D] [--rate R]
-//!   feature-encoder candidate OUT_DIR FILE... [--size D] [--rate R] [--passes NULLS] [--threads N] [--max-columns K] [--relational] [--rule]
-//!   feature-encoder family OUT_DIR FILE... [--size D] [--passes NULLS] [--threads N] [--rule] [--names SHAPES_FILE]
 //!   feature-encoder stored-eval REQUESTS_JSONL --out FILE
-//!   feature-encoder generate-lists OUT_DIR (TASK | TABLES_FILE)... --size D --names DERANGEMENTS [--threads N]
-//!   feature-encoder generate-terms PATTERN TABLES_FILE [--size D]
 //!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--program-compare] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
@@ -40,7 +37,7 @@ use std::time::Instant;
 
 use arclog_encoder::encoder::{encode, json_string, value_json, Counts, Law, Options, Outcome};
 use arclog_encoder::run::{cell_text, concept_program, Evaluated, Host, ModelValue, Value};
-use arclog_encoder::vectors::{entries, vectors, TABLE_HOLE};
+use arclog_encoder::vectors::{entries, TABLE_HOLE};
 
 struct Arguments {
     positional: Vec<String>,
@@ -197,36 +194,6 @@ fn run_names(arguments: &Arguments) -> Result<(), String> {
     Ok(())
 }
 
-fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), String> {
-    let holes = vec![TABLE_HOLE.to_string()];
-    let host = host(arguments, solver)?;
-    host.set_work_cap(arguments.work_cap);
-    let found = match &arguments.names {
-        Some(path) => {
-            let text = arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?;
-            let mut found = Vec::new();
-            for line in text.lines().filter(|line| !line.trim().is_empty()) {
-                let feature = host.with_reader(|reader| reader.feature_text(line))?;
-                found.extend(arclog_encoder::vectors::entry_of(feature));
-            }
-            found
-        }
-        None => entries(&holes, arguments.size, arguments.program_relations, arguments.max_inputs, arguments.limit.map(|limit| limit as usize)),
-    };
-    let vectors = vectors(&host, &found, &[(TABLE_HOLE.to_string(), table.to_string())]);
-    let mut out: Box<dyn Write> = match &arguments.out {
-        Some(path) => arclog_encoder::zio::writer(path, false)?,
-        None => Box::new(std::io::BufWriter::new(std::io::stdout())),
-    };
-    for (at, vector) in vectors.iter().enumerate() {
-        for (name, number) in &vector.numbers {
-            let _ = writeln!(out, "{at}\t{number}\t{name}");
-        }
-    }
-    eprintln!("{} assignments, {} numbers each", vectors.len(), vectors.first().map_or(0, |vector| vector.numbers.len()));
-    Ok(())
-}
-
 fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
     use arclog_encoder::closed::{closed_values, task_of_inputs, task_of_pairs, ClosedCounts, ClosedRun, OutputLeaf};
     let text = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string())?;
@@ -297,176 +264,104 @@ fn scratch_host() -> Result<Host, String> {
     Host::of_task("(OUT (input ^P ^Col))", task)
 }
 
-/// Writes a walk's words, sizes and counts under `prefix`, each file whole.
-fn write_walk(prefix: &str, size: usize, result: &arclog_encoder::walk::WalkResult) -> Result<(), String> {
-    let put = |suffix: &str, bytes: &[u8]| -> Result<(), String> {
-        arclog_encoder::zio::write_bytes(format!("{prefix}.d{size}.{suffix}.zst"), bytes)
-    };
-    let mut bytes = Vec::with_capacity(result.words.len() * 8);
-    for word in &result.words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
-    put("words", &bytes)?;
-    put("sizes", &result.sizes)?;
-    let mut order = Vec::with_capacity(result.order.len() * 4);
-    for at in &result.order {
-        order.extend_from_slice(&at.to_le_bytes());
-    }
-    put("order", &order)?;
-    let mut by_name: std::collections::BTreeMap<&str, (u64, f64)> = Default::default();
-    for (name, runs, seconds) in &result.shape_time {
-        let held = by_name.entry(name.as_str()).or_default();
-        held.0 += runs;
-        held.1 += seconds;
-    }
-    let meta = serde_json::json!({
-        "grids": result.grids, "roots": result.sizes.len(), "classes_by_size": result.classes_by_size, "edges": result.edges,
-        "evaluations": result.evaluations, "component_runs": result.component_runs, "seconds": result.seconds, "timed_out": result.timed_out,
-        "top_edges": result.top_edges, "top_done": result.top_done, "tier_edges": result.tier_edges,
-        "lower_seconds": result.lower_seconds, "counted": result.counted, "built": result.built,
-        "tiers": arclog_encoder::optable::TIER_NAMES, "component_seconds": by_name.iter().map(|(name, (runs, seconds))| (name.to_string(), serde_json::json!([runs, seconds]))).collect::<serde_json::Map<String, serde_json::Value>>(),
-    });
-    put("json", meta.to_string().as_bytes())
+/// The catalog's values on each requested table, with the time of its pass.
+fn run_catalog_values(arguments: &Arguments, requests: &str) -> Result<(), String> {
+    let path = arguments.out.clone().ok_or("`catalog-values` writes to --out")?;
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
+    let (passes, spent) = arclog_encoder::catalog_run::values_of(requests, &arguments.tasks, &mut out)?;
+    out.flush().map_err(|error| error.to_string())?;
+    eprintln!("{passes} passes, {:.2} us per table at a pair", spent.as_secs_f64() * 1e6 / passes.max(1) as f64);
+    Ok(())
 }
 
-/// What an earlier slice of a walk wrote under `prefix`.
-fn read_slice(prefix: &str, size: usize) -> arclog_encoder::walk::Resume {
-    let mut resume = arclog_encoder::walk::Resume::default();
-    let Ok(meta) = arclog_encoder::zio::read_text(format!("{prefix}.d{size}.json")) else { return resume };
-    let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta) else { return resume };
-    let (Ok(words), Ok(sizes)) = (arclog_encoder::zio::read_bytes(format!("{prefix}.d{size}.words")), arclog_encoder::zio::read_bytes(format!("{prefix}.d{size}.sizes"))) else { return resume };
-    resume.words = words.chunks_exact(8).map(|chunk| u64::from_le_bytes(chunk.try_into().expect("eight bytes"))).collect();
-    resume.sizes = sizes;
-    resume.order = arclog_encoder::zio::read_bytes(format!("{prefix}.d{size}.order")).unwrap_or_default().chunks_exact(4).map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four bytes"))).collect();
-    resume.top_done = meta["top_done"].as_u64().unwrap_or(0);
-    resume
-}
-
-/// Whether an earlier slice of a walk reached its end.
-fn slice_ended(prefix: &str, size: usize) -> bool {
-    arclog_encoder::zio::read_text(format!("{prefix}.d{size}.json")).ok().and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok()).is_some_and(|meta| meta["top_edges"].as_u64().is_some() && meta["top_done"] == meta["top_edges"])
-}
-
-fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
-    use arclog_encoder::optable::{build, Mode};
-    use arclog_encoder::walk::walk;
-    let size = arguments.size;
-    let rule = arguments.rule;
-    let all: Vec<(String, String, String)> = arclog_encoder::zio::read_text(manifest)
-        .map_err(|error| error.to_string())?
-        .lines()
-        .filter_map(|line| {
-            let mut parts = line.split('\t');
-            Some((parts.next()?.to_string(), parts.next()?.to_string(), parts.next()?.to_string()))
-        })
-        .collect();
-    let start = Instant::now();
-    let host = scratch_host()?;
-    let table = build(&host, if rule { Mode::Rule } else { Mode::Scene }, size, false, arguments.max_columns)?;
-    drop(host);
-    eprintln!("op table: {} entries, {} schemas, {} shapes, {} instances, {} refused, {} with no native form, {:.1}s", table.entries.len(), table.schemas.len(), table.shapes.len(), table.instances.len(), table.refused, table.no_native.len(), start.elapsed().as_secs_f64());
-    for line in table.no_native.iter().take(20) {
-        eprintln!("no native form: {}", line.chars().take(300).collect::<String>());
+/// The value of relation terms on a stored table, through the engine. Each request
+/// is a line with `task`, `types`, `rows` by `train/i`, and `terms`, whose table is
+/// `&t`, with columns `T0`, `T1`. Each result line gives a term's size, why the
+/// checker refuses it, and at each example its count of rows and its first cell.
+/// A shape's numbers at each example, as a vector's file writes them: `[greatest, second]`, where a
+/// fraction is `[top, bottom]`, null where a bound stopped it, and 0 at its default.
+fn slot_json(slot: &arclog_encoder::generate::Slot) -> serde_json::Value {
+    use arclog_encoder::generate::{Number, SLOT_DEFAULT, SLOT_NO_VALUE};
+    let number = |value: Number| if value.bottom <= 1 { serde_json::json!(value.top) } else { serde_json::json!([value.top, value.bottom]) };
+    match slot.state {
+        SLOT_DEFAULT => serde_json::json!(0),
+        SLOT_NO_VALUE => serde_json::Value::Null,
+        _ => serde_json::json!([number(slot.greatest), number(slot.second)]),
     }
-    let threads = arguments.threads.max(1);
-    let seconds = arguments.seconds;
-    let (shard, shards) = arguments.shard;
-    // Each pass gives every task a slice, and the next pass adds to each one that
-    // has not ended.
-    for pass in 0..arguments.passes {
-        let lines: Vec<&(String, String, String)> = all.iter().enumerate().filter(|(at, _)| at % shards == shard).map(|(_, line)| line).filter(|(_, _, prefix)| !slice_ended(prefix, size)).collect();
-        eprintln!("pass {pass}: {} tasks to walk", lines.len());
-        if lines.is_empty() {
-            break;
-        }
-        let next = std::sync::atomic::AtomicUsize::new(0);
-        let finished = std::sync::atomic::AtomicUsize::new(0);
-        let begun = Instant::now();
-        std::thread::scope(|scope| {
-            for _ in 0..threads {
-                scope.spawn(|| loop {
-                    let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let Some((task, grids, prefix)) = lines.get(at).copied() else { break };
-                    let outcome = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string()).and_then(|text| grids_task(&text, rule));
-                    let task_value = match outcome {
-                        Ok(task_value) => task_value,
-                        Err(message) => {
-                            eprintln!("{task}: {message}");
-                            continue;
-                        }
-                    };
-                    let slice = (seconds > 0.0).then_some(seconds);
-                    let (result, _) = walk(&table, &task_value, size, slice, None, read_slice(prefix, size));
-                    if let Err(message) = write_walk(prefix, size, &result) {
-                        eprintln!("{task}: {message}");
-                    }
-                    let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                    let rate = done as f64 / begun.elapsed().as_secs_f64();
-                    eprintln!("pass {pass} {done}/{} {task}: {} grids, {} root classes, relation classes {:?}, top operators {}/{}, {} counted, {} built, {} component runs, {:.1}s below the top, {:.1}s; ETA {:.0}s", lines.len(), result.grids, result.sizes.len(), result.classes_by_size, result.top_done, result.top_edges, result.counted, result.built, result.component_runs, result.lower_seconds, result.seconds, (lines.len() - done) as f64 / rate);
-                });
-            }
-        });
+}
+
+/// Writes a vector's entries, one line per shape.
+fn write_vector(out: &mut dyn Write, key: &serde_json::Value, vector: &arclog_encoder::table_vector::TableVector, names: &std::collections::HashMap<u64, String>) -> Result<(), String> {
+    writeln!(out, "{}", serde_json::json!({"table": key, "entries": vector.shapes.len(), "examples": vector.examples, "train": vector.train, "table_rows_mean": vector.table_rows.0, "table_rows_max": vector.table_rows.1})).map_err(|error| error.to_string())?;
+    for shape in 0..vector.shapes.len() {
+        let at: Vec<serde_json::Value> = vector.at(shape).iter().map(slot_json).collect();
+        writeln!(out, "{}", serde_json::json!({"shape": names.get(&vector.shapes[shape]), "reads": vector.meta[shape].0, "size": vector.meta[shape].1, "at": at})).map_err(|error| error.to_string())?;
     }
     Ok(())
 }
 
-/// Each task's stable generated shapes, one folder per size, under `OUT-d1`, `OUT-d2`; each new
-/// shape's text goes to `OUT-names.tsv` beside them.
-/// Each table's generated lists, one file per task, with a task's tables read from a command that
+fn names_of(store: &arclog_encoder::generate::NameStore) -> std::collections::HashMap<u64, String> {
+    store.all().into_iter().map(|(hash, name)| (hash as u64, name)).collect()
+}
+
+/// A table's vector at each of its assignments, to a file, since the values at a test input read
+/// that input.
+fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{Generators, Walker};
+    use arclog_encoder::table_vector::{table_vector, Grids};
+    let path = arguments.out.clone().ok_or("`vector` writes to --out")?;
+    let host = host(arguments, solver)?;
+    let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
+    let tables = arclog_encoder::run::stored_tables(&host, table)?;
+    let families = Generators::default();
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
+    let examples = grids.inputs.len();
+    for (assignment, stored) in &tables {
+        let family = families.get(stored, arguments.size.max(1));
+        let mut walker = Walker::new(&family);
+        let vector = table_vector(&mut walker, stored, &grids, examples, false);
+        write_vector(&mut out, &serde_json::json!({"name": table, "assignment": assignment}), &vector, &names_of(&families.names))?;
+    }
+    out.flush().map_err(|error| error.to_string())?;
+    eprintln!("{} assignments", tables.len());
+    Ok(())
+}
+
+/// The base tables' vectors, to a file.
+fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
+    use arclog_encoder::generate::Generators;
+    use arclog_encoder::table_vector::{base_vectors, Grids};
+    let path = arguments.out.clone().ok_or("`base-vectors` writes to --out")?;
+    let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
+    let families = Generators::default();
+    let base = base_vectors(&grids, &families, arguments.size.max(1));
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
+    let names = names_of(&families.names);
+    write_vector(&mut out, &serde_json::json!({"base": "input"}), &base.input, &names)?;
+    write_vector(&mut out, &serde_json::json!({"base": "ex_output"}), &base.ex_output, &names)?;
+    out.flush().map_err(|error| error.to_string())
+}
+
+/// Each table's stable roots, one file per task, with a task's tables read from a command that
 /// prints them or from a file. `GENERATE_TABLES_CMD` holds that command, to which the task's name
 /// is added. What it prints holds test rows, so it reaches this process by a pipe alone, and
-/// neither its output nor its errors are printed or kept.
-/// The rows at each train pair of each generated term whose text holds a pattern, on each gold
-/// table of a kept tables file and on a table of no rows for the parts of the base tables.
-fn run_generate_terms(arguments: &Arguments, pattern: &str, file: &str) -> Result<(), String> {
-    use arclog_encoder::generate::{constants_of, leaves_of, Generators, Walker};
-    use arclog_encoder::tablewalk::stored_of;
-    let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
-    let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-    let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-    let task_path = arguments.tasks.join(format!("{task_name}.json"));
-    let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-    let task_json: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(&task_path)?).map_err(|error| error.to_string())?;
-    let grid = |fact: arclog::program::FactRelation, at: usize| {
-        let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
-        let mut cells = Vec::new();
-        arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
-        arclog_encoder::native::Table::new(2, cells)
-    };
-    let inputs: Vec<_> = (0..train).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
-    let outputs: Vec<_> = (0..train).map(|at| grid(arclog::program::FactRelation::Output, at)).collect();
-    let facts = arclog_encoder::catalog_run::pairs_of_task(&task_json, None);
-    let constants = constants_of(&facts);
-    let families = Generators::default();
-    let empty = Vec::new();
-    for item in data["items"].as_array().unwrap_or(&empty) {
-        let Some(stored) = stored_of(&item["gold"], train) else { continue };
-        if stored.types.len() > 8 {
-            continue;
-        }
-        let family = families.get(&stored, arguments.size.max(1));
-        let mut walker = Walker::new(&family);
-        let leaves = leaves_of(&stored.rows, &inputs, &outputs, &constants);
-        for (text, counts) in walker.term_counts(&leaves, train, pattern) {
-            println!("{}\t{}\t{}\t{}", item["table"].as_str().unwrap_or(""), serde_json::json!(item["gold"]["types"]), text, serde_json::json!(counts));
-        }
-    }
-    Ok(())
-}
-
-fn run_generate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> Result<(), String> {
-    use arclog_encoder::gen_lists::lists_task;
+/// neither its output nor its errors are printed or kept. `--names` gives a derangement per task,
+/// and then each pair reads another pair's output.
+fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> Result<(), String> {
+    use arclog_encoder::candidate_lists::lists_task;
     use arclog_encoder::generate::{Generators, NameStore};
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
     let mut families = Generators::default();
     families.names = NameStore::to_file(&format!("{out}/names.tsv.zst"))?;
-    let path = arguments.names.clone().ok_or("`generate-lists` reads the derangements from --names")?;
-    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let derangements: Option<std::collections::BTreeMap<String, Option<Vec<usize>>>> = match &arguments.names {
+        Some(path) => Some(serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?),
+        None => None,
+    };
     let command: Option<Vec<String>> = std::env::var("GENERATE_TABLES_CMD").ok().map(|text| text.split_whitespace().map(str::to_string).collect());
     let d = arguments.size.max(1);
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
-    let totals = std::sync::Mutex::new((0u64, 0f64, 0u64));
+    let totals = std::sync::Mutex::new((0u64, 0f64));
     let begun = Instant::now();
     std::thread::scope(|scope| {
         for _ in 0..arguments.threads.max(1) {
@@ -478,6 +373,14 @@ fn run_generate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> R
                 if std::path::Path::new(&target).exists() {
                     continue;
                 }
+                let order: Option<&[usize]> = match &derangements {
+                    None => None,
+                    Some(held) => match held.get(&stem).and_then(Option::as_ref) {
+                        Some(order) => Some(order.as_slice()),
+                        // A task whose train outputs are all equal leaves the null.
+                        None => continue,
+                    },
+                };
                 let text = match &command {
                     Some(parts) => {
                         let run = std::process::Command::new(&parts[0]).args(&parts[1..]).arg(&stem).stderr(std::process::Stdio::null()).output();
@@ -496,7 +399,6 @@ fn run_generate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> R
                         continue;
                     }
                 };
-                let order = derangements.get(&stem).and_then(Option::as_ref).map(Vec::as_slice);
                 let result = lists_task(&text, &arguments.tasks, &families, order, d);
                 drop(text);
                 match result {
@@ -508,7 +410,6 @@ fn run_generate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> R
                         let mut held = totals.lock().expect("no panic");
                         held.0 += found.walks;
                         held.1 += found.seconds;
-                        held.2 += found.shapes;
                         let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                         let rate = done as f64 / begun.elapsed().as_secs_f64();
                         eprintln!("{done}/{} {}: {} walks, {:.0} ms per walk so far, {} shapes; ETA {:.0}s", sources.len(), found.task, found.walks, held.1 * 1e3 / held.0.max(1) as f64, found.shapes, (sources.len() - done) as f64 / rate);
@@ -522,168 +423,40 @@ fn run_generate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> R
     Ok(())
 }
 
-fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::generate::{dump_task, Generators};
-    let mut families = Generators::default();
-    families.names = arclog_encoder::generate::NameStore::to_file(&format!("{out}-names-all.tsv.zst"))?;
-    let path = arguments.names.clone().ok_or("`generate-dump` reads the derangements from --names")?;
-    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    let d = arguments.size.max(1);
-    for size in 1..=d {
-        std::fs::create_dir_all(format!("{out}-d{size}")).map_err(|error| error.to_string())?;
+/// The rows at each train pair of each generated term whose text holds a pattern, on each gold
+/// table of a kept tables file, for a check against the expression a term stands for.
+fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{leaves_at, Generators, Walker};
+    use arclog_encoder::stored::Stored;
+    use arclog_encoder::table_vector::Grids;
+    let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
+    let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
+    let train = data["train"].as_u64().ok_or("a file's train")? as usize;
+    let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
+    let families = Generators::default();
+    let empty = Vec::new();
+    for item in data["items"].as_array().unwrap_or(&empty) {
+        let Some(stored) = Stored::of_json(&item["gold"], train, 0, usize::MAX) else { continue };
+        if stored.types.len() > 8 {
+            continue;
+        }
+        let family = families.get(&stored, arguments.size.max(1));
+        let mut walker = Walker::new(&family);
+        let example_of: Vec<usize> = (0..train).collect();
+        let rows: Vec<_> = stored.rows.iter().map(|models| models.first().cloned()).collect();
+        let leaves = leaves_at(&rows, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+        for (text, counts) in walker.term_counts(&leaves, train, pattern) {
+            println!("{}\t{}\t{}\t{}", item["table"].as_str().unwrap_or(""), serde_json::json!(item["gold"]["types"]), text, serde_json::json!(counts));
+        }
     }
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let finished = std::sync::atomic::AtomicUsize::new(0);
-    let totals = std::sync::Mutex::new((0u64, 0f64));
-    let begun = Instant::now();
-    std::thread::scope(|scope| {
-        for _ in 0..arguments.threads.max(1) {
-            scope.spawn(|| loop {
-                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let Some(file) = files.get(at) else { break };
-                let stem = arclog_encoder::zio::stem(file);
-                if std::path::Path::new(&format!("{out}-d{d}/{stem}.json.zst")).exists() {
-                    continue;
-                }
-                match dump_task(file, &arguments.tasks, &families, &derangements, d) {
-                    Ok((name, results, walks, seconds)) => {
-                        for (size, result) in results.iter().enumerate() {
-                            let target = format!("{out}-d{}/{name}.json.zst", size + 1);
-                            if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
-                                eprintln!("{stem}: the result does not write");
-                            }
-                        }
-                        families.names.flush();
-                        let mut held = totals.lock().expect("no panic");
-                        held.0 += walks;
-                        held.1 += seconds;
-                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        let rate = done as f64 / begun.elapsed().as_secs_f64();
-                        eprintln!("{done}/{} {stem}: {:.0} ms per walk so far; ETA {:.0}s", files.len(), held.1 * 1e3 / held.0.max(1) as f64, (files.len() - done) as f64 / rate);
-                    }
-                    Err(message) => eprintln!("{stem}: {message}"),
-                }
-            });
-        }
-    });
     Ok(())
 }
 
-/// Which written kinds the generated shapes reach, by value.
-fn run_generate_reach(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    let mut sink = arclog_encoder::zio::writer(out, false)?;
-    arclog_encoder::generate::reach(files, &arguments.tasks, arguments.size, arguments.passes.max(1), &mut sink)?;
-    sink.flush().map_err(|error| error.to_string())
-}
-
-/// Candidate's line on the generated shapes, one result per file, and the seconds per walk.
-fn run_generate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::generate::{generate_task, Generators};
-    use arclog_encoder::native::hash_words;
-    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
-    let mut families = Generators::default();
-    if let Ok(path) = std::env::var("GENERATE_CLASSES") {
-        families.extend = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    }
-    let allow: Option<HashSet<u128>> = match &arguments.names {
-        Some(path) => Some(arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
-        None => None,
-    };
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let finished = std::sync::atomic::AtomicUsize::new(0);
-    let totals = std::sync::Mutex::new((0u64, 0f64));
-    let begun = Instant::now();
-    std::thread::scope(|scope| {
-        for _ in 0..arguments.threads.max(1) {
-            scope.spawn(|| loop {
-                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let Some(file) = files.get(at) else { break };
-                let stem = arclog_encoder::zio::stem(file);
-                let target = format!("{out}/{stem}.d{}.json.zst", arguments.size);
-                if std::path::Path::new(&target).exists() {
-                    continue;
-                }
-                match generate_task(file, &arguments.tasks, &families, arguments.size, arguments.passes, allow.as_ref(), 8) {
-                    Ok(result) => {
-                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
-                            eprintln!("{stem}: the result does not write");
-                        }
-                        let mut held = totals.lock().expect("no panic");
-                        held.0 += result["walks"].as_u64().unwrap_or(0);
-                        held.1 += result["walk_seconds"].as_f64().unwrap_or(0.0);
-                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        let rate = done as f64 / begun.elapsed().as_secs_f64();
-                        eprintln!("{done}/{} {stem}: {:.0} ms per walk so far; ETA {:.0}s", files.len(), held.1 * 1e3 / held.0.max(1) as f64, (files.len() - done) as f64 / rate);
-                    }
-                    Err(message) => eprintln!("{stem}: {message}"),
-                }
-            });
-        }
-    });
-    Ok(())
-}
-
-/// The catalog's values on each requested table, with the time of its pass.
-fn run_catalog_values(arguments: &Arguments, requests: &str) -> Result<(), String> {
-    let path = arguments.out.clone().ok_or("`catalog-values` writes to --out")?;
-    let mut out = arclog_encoder::zio::writer(&path, false)?;
-    let (passes, spent) = arclog_encoder::catalog_run::values_of(requests, &arguments.tasks, &mut out)?;
-    out.flush().map_err(|error| error.to_string())?;
-    eprintln!("{passes} passes, {:.2} us per table at a pair", spent.as_secs_f64() * 1e6 / passes.max(1) as f64);
-    Ok(())
-}
-
-/// Candidate's stable templates per task, on the catalog's values.
-fn run_catalog_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::catalog_run::{dump_task, Form};
-    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
-    let form = if arguments.rule { Form::All } else { Form::Ratio };
-    let path = arguments.names.clone().ok_or("`catalog-dump` reads the derangements from --names")?;
-    let orders: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let finished = std::sync::atomic::AtomicUsize::new(0);
-    let totals = std::sync::Mutex::new((0u64, 0f64, 0f64));
-    let begun = Instant::now();
-    std::thread::scope(|scope| {
-        for _ in 0..arguments.threads.max(1) {
-            scope.spawn(|| loop {
-                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let Some(file) = files.get(at) else { break };
-                let stem = arclog_encoder::zio::stem(file);
-                let target = format!("{out}/{stem}.json.zst");
-                if std::path::Path::new(&target).exists() {
-                    continue;
-                }
-                match dump_task(file, &arguments.tasks, &orders, form) {
-                    Ok((result, spent, facts)) => {
-                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
-                            eprintln!("{stem}: the result does not write");
-                        }
-                        let mut held = totals.lock().expect("no panic");
-                        held.0 += spent.0;
-                        held.1 += spent.1.as_secs_f64();
-                        held.2 += facts.as_secs_f64();
-                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        let rate = done as f64 / begun.elapsed().as_secs_f64();
-                        eprintln!("{done}/{} {stem}: {:.1} us per table at a pair so far; ETA {:.0}s", files.len(), held.1 * 1e6 / held.0.max(1) as f64, (files.len() - done) as f64 / rate);
-                    }
-                    Err(message) => eprintln!("{stem}: {message}"),
-                }
-            });
-        }
-    });
-    Ok(())
-}
-
-/// The value of relation terms on a stored table, through the engine. Each request
-/// is a line with `task`, `types`, `rows` by `train/i`, and `terms`, whose table is
-/// `&t`, with columns `T0`, `T1`. Each result line gives a term's size, why the
-/// checker refuses it, and at each example its count of rows and its first cell.
 fn run_stored_eval(arguments: &Arguments, requests: &str) -> Result<(), String> {
     use arclog_encoder::expression::Reader;
     use arclog_encoder::run::StoredRows;
     use arclog_encoder::schema::{type_of_name, TableColumn};
-    use arclog_encoder::tablewalk::cell_bits;
+    use arclog_encoder::stored::cell_bits;
     let path = arguments.out.clone().ok_or("`stored-eval` writes to --out")?;
     let mut out = arclog_encoder::zio::writer(&path, false)?;
     let registry = arclog::registry::Registry::get();
@@ -747,115 +520,6 @@ fn run_stored_eval(arguments: &Arguments, requests: &str) -> Result<(), String> 
             writeln!(out, "{record}").map_err(|error| error.to_string())?;
         }
         out.flush().map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-/// Candidate recognition on the relational shapes: one result per file, as each ends,
-/// and a restart skips those written. `--names` limits it to the shapes a file lists,
-/// one per line.
-fn run_family(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::family::{family_task, Families};
-    use arclog_encoder::native::hash_words;
-    use arclog_encoder::tablewalk::StableRule;
-    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
-    let families = Families::default();
-    let rule = if arguments.rule { StableRule::NonVacuous } else { StableRule::Active };
-    let allow: Option<HashSet<u128>> = match &arguments.names {
-        Some(path) => Some(arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
-        None => None,
-    };
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let finished = std::sync::atomic::AtomicUsize::new(0);
-    let begun = Instant::now();
-    std::thread::scope(|scope| {
-        for _ in 0..arguments.threads.max(1) {
-            scope.spawn(|| loop {
-                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let Some(file) = files.get(at) else { break };
-                let stem = arclog_encoder::zio::stem(file);
-                let target = format!("{out}/{stem}.d{}.json.zst", arguments.size);
-                if std::path::Path::new(&target).exists() {
-                    continue;
-                }
-                match family_task(file, &arguments.tasks, &families, arguments.size, arguments.passes, rule, allow.as_ref(), 8) {
-                    Ok(result) => {
-                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
-                            eprintln!("{stem}: the result does not write");
-                        }
-                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        let rate = done as f64 / begun.elapsed().as_secs_f64();
-                        eprintln!("{done}/{} {stem}: {}; {} walks, {:.3}s per walk; ETA {:.0}s", files.len(), result["sizes"].to_string().chars().take(220).collect::<String>(), result["walks"], result["walk_seconds"].as_f64().unwrap_or(0.0) / result["walks"].as_f64().unwrap_or(1.0).max(1.0), (files.len() - done) as f64 / rate);
-                    }
-                    Err(message) => eprintln!("{stem}: {message}"),
-                }
-            });
-        }
-    });
-    Ok(())
-}
-
-/// Candidate recognition on shapes: one result per file, as each ends, and a restart
-/// skips those written. `--passes` gives the null's draws, `--rate` the sample of
-/// size 2's shapes per million.
-fn run_candidate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::tablewalk::{candidate_task, OpsCache, StableRule};
-    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
-    let cache = OpsCache::new(arguments.size, arguments.max_columns, !arguments.relational);
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let finished = std::sync::atomic::AtomicUsize::new(0);
-    let begun = Instant::now();
-    let rate = u64::from(arguments.rate);
-    // `--rule` chooses the rule of the non-vacuous claims; otherwise the active ones.
-    let rule = if arguments.rule { StableRule::NonVacuous } else { StableRule::Active };
-    std::thread::scope(|scope| {
-        for _ in 0..arguments.threads.max(1) {
-            scope.spawn(|| loop {
-                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let Some(file) = files.get(at) else { break };
-                let stem = arclog_encoder::zio::stem(file);
-                let target = format!("{out}/{stem}{}.d{}.r{rate}.json", if arguments.relational { ".relational" } else { "" }, arguments.size);
-                if std::path::Path::new(&target).exists() {
-                    continue;
-                }
-                match candidate_task(file, &arguments.tasks, &cache, rate, arguments.passes, 12, rule) {
-                    Ok(result) => {
-                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
-                            eprintln!("{stem}: the result does not write");
-                        }
-                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                        eprintln!("{done}/{} {stem}: {}; {:.0}s so far", files.len(), result["sizes"].to_string().chars().take(300).collect::<String>(), begun.elapsed().as_secs_f64());
-                    }
-                    Err(message) => eprintln!("{stem}: {message}"),
-                }
-            });
-        }
-    });
-    Ok(())
-}
-
-fn run_walk_check(arguments: &Arguments, grids: &str) -> Result<(), String> {
-    use arclog_encoder::optable::{build, Mode};
-    use arclog_encoder::walk::{walk, Checker};
-    let text = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string())?;
-    let task = grids_task(&text, arguments.rule)?;
-    let start = Instant::now();
-    let scratch = scratch_host()?;
-    let table = build(&scratch, if arguments.rule { Mode::Rule } else { Mode::Scene }, arguments.size, arguments.rate > 0, arguments.max_columns)?;
-    eprintln!("op table: {} entries, {} schemas, {} refused, {} with no native form, {:.1}s", table.entries.len(), table.schemas.len(), table.refused, table.no_native.len(), start.elapsed().as_secs_f64());
-    for line in table.no_native.iter().take(20) {
-        eprintln!("no native form: {}", line.chars().take(300).collect::<String>());
-    }
-    let host = Host::of_task("(OUT (input ^P ^Col))", task.clone())?;
-    host.set_work_cap(arguments.work_cap);
-    let checker = Checker { host: &host, rate_per_million: u64::from(arguments.rate), tally: Default::default(), by_kind: Default::default() };
-    let (result, tally) = walk(&table, &task, arguments.size, None, Some(checker), Default::default());
-    eprintln!("walk: {} grids, {} root classes, relation classes {:?}, {} edges, {} evaluations, {:.1}s", result.grids, result.sizes.len(), result.classes_by_size, result.edges, result.evaluations, result.seconds);
-    if let Some(tally) = tally {
-        println!("compared {} equal {} different {} stopped on one side {} large {} refused {} column faults {}", tally.compared, tally.equal, tally.different, tally.stopped_either, tally.skipped_large, tally.refused, tally.fault);
-        for example in &tally.examples {
-            println!("{}", example.chars().take(700).collect::<String>());
-        }
     }
     Ok(())
 }
@@ -1074,27 +738,14 @@ fn main() {
         ("encode", [solver, tables @ ..]) if !tables.is_empty() => run_encode(&arguments, solver, tables),
         ("names", []) => run_names(&arguments),
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
+        ("base-vectors", [solver]) => run_base_vectors(&arguments, solver),
+        ("candidate-lists", [out, sources @ ..]) if !sources.is_empty() => run_candidate_lists(&arguments, out, sources),
+        ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
         ("law", [tasks_file]) => run_law(&arguments, tasks_file),
-        ("walk", [manifest]) => run_walk(&arguments, manifest),
-        ("walk-check", [grids]) => run_walk_check(&arguments, grids),
-        ("candidate", [out, files @ ..]) if !files.is_empty() => run_candidate(&arguments, out, files),
-        ("family", [out, files @ ..]) if !files.is_empty() => run_family(&arguments, out, files),
         ("stored-eval", [requests]) => run_stored_eval(&arguments, requests),
         ("catalog-values", [requests]) => run_catalog_values(&arguments, requests),
-        ("generate", [out, files @ ..]) if !files.is_empty() => run_generate(&arguments, out, files),
-        ("generate-reach", [out, files @ ..]) if !files.is_empty() => run_generate_reach(&arguments, out, files),
-        ("generate-dump", [out, files @ ..]) if !files.is_empty() => run_generate_dump(&arguments, out, files),
-        ("generate-lists", [out, sources @ ..]) if !sources.is_empty() => run_generate_lists(&arguments, out, sources),
-        ("generate-terms", [pattern, file]) => run_generate_terms(&arguments, pattern, file),
-        ("generate-classes", [out, files @ ..]) if !files.is_empty() => {
-            arclog_encoder::generate::classes(files, &arguments.tasks, arguments.passes.max(1)).and_then(|found| {
-                let text = serde_json::to_string(&found).map_err(|error| error.to_string())?;
-                arclog_encoder::zio::write_text(out, &text)
-            })
-        }
-        ("catalog-dump", [out, files @ ..]) if !files.is_empty() => run_catalog_dump(&arguments, out, files),
         _ => Err("usage: feature-encoder eval|rows|worked|encode|names|vector ...; the file's first lines give each form".to_string()),
     };
     if let Err(message) = result {

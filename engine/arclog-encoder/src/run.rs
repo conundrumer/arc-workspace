@@ -659,3 +659,30 @@ pub fn cell_text(id: TermId, ty: &ValueType) -> String {
         Term::Ident(_) => format!("#{}", id.encoding()),
     }
 }
+
+/// The table `name` of a state at each of its assignments, with the assignment's text: its rows at
+/// each example and model. A table read once for the task stands at each example, and an example
+/// that a bound stopped, or where the table is undefined, has no rows.
+pub fn stored_tables(host: &Host, name: &str) -> Result<Vec<(String, crate::stored::Stored)>, String> {
+    let value = match host.relation(name, false) {
+        Evaluated::Value(value) => value,
+        Evaluated::Refused(message) | Evaluated::Fault(message) => return Err(message),
+    };
+    let examples = host.task.examples().count();
+    let mut out = Vec::with_capacity(value.at.len());
+    for at in &value.at {
+        let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); examples];
+        for (example, models) in &at.examples {
+            let held: Vec<Vec<Vec<u32>>> = models.iter().filter_map(|model| match model {
+                ModelValue::Rows(rows) => Some(rows.iter().map(|row| row.iter().map(|cell| cell.encoding()).collect()).collect()),
+                _ => None,
+            }).collect();
+            match example {
+                Some(example) => rows[usize::from(example.index())] = held,
+                None => rows = vec![held; examples],
+            }
+        }
+        out.push((format!("{:?}", at.assignment), crate::stored::Stored::of_rows(&value.types, rows)));
+    }
+    Ok(out)
+}

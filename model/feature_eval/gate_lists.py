@@ -1,27 +1,25 @@
 #!/usr/bin/env python
-"""The gate on per-table lists: trees that rank a gold query above its mutants, trained on train
-tasks and read on dev tasks, read additively over what a shape reads.
+"""The Gate of docs/feature-spec/evaluation-protocol.md: trees that rank a gold query above its
+mutants, trained on train tasks and read on dev tasks, read additively over what a shape reads.
 
   gate_lists.py build ROOT OUT [--min-tasks N]   the rows and the sparse matrices
   gate_lists.py fit OUT --sets ... --filters ... one line per fit, with per-task values in OUT/fits.jsonl
 
+ROOT is what `candidate-lists` writes: `lists/` on the true outputs and `null/` on deranged ones.
 A shape's reading is one of: T, the table alone; TI, the table and the input; TO, the table and the
 output; TIO, all three. A set is written as terms joined by `+`:
   base0, base   the features with no table content
   T, TI, TIO    the shapes up to that reading, on the true outputs
   TIO_null      those, with each shape that reads the output taken on deranged outputs
-  contingent, fresh, contingent_null, fresh_null
-                the shapes of a candidate that not every table it reads has as stable, and those
-                whose value none of them has, against the input and those tables
+  contingent, contingent_null
+                the shapes of a candidate that not every table it reads has as stable
   ctx           the base tables' own part roots
-  breaks        shapes with no output leaf that a test input breaks
 A term may end in `~WORD` to leave out the shapes whose name holds WORD, or `^WORD` to keep only those.
 """
 import argparse
 import json
 import pickle
 import re
-import struct
 import sys
 import time
 from array import array
@@ -30,33 +28,14 @@ from pathlib import Path
 
 import numpy as np
 import scipy.sparse as sp
-import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from candidate import read_lists  # noqa: E402
 from common import open_text, read_json  # noqa: E402
 from query_structure import LABEL_STRUCTURE, base_features, parse_forms  # noqa: E402
 
 ROOT_REPO = Path('/Users/davidlu/code/arc-workspace')
 READS = {4: 'T', 5: 'TI', 6: 'TO', 7: 'TIO'}
-
-
-def read_lists(path):
-    raw = zstandard.ZstdDecompressor().stream_reader(open(path, 'rb')).read()
-    n = struct.unpack('<Q', raw[:8])[0]
-    head = json.loads(raw[8:8 + n])
-    at = 8 + n
-    dictionary = np.frombuffer(raw, dtype='<u8', count=head['shapes'], offset=at)
-    at += 8 * head['shapes']
-    lists = {}
-    for held in head['lists']:
-        values = None
-        ids = np.frombuffer(raw, dtype='<u4', count=held['count'], offset=at)
-        at += 4 * held['count']
-        if held.get('values'):
-            values = np.frombuffer(raw, dtype='<f4', count=held['count'], offset=at)
-            at += 4 * held['count']
-        lists[(held['owner'], held['kind'])] = (dictionary[ids], values)
-    return head, lists
 
 
 def split_of():
@@ -93,7 +72,7 @@ def build(root, out, min_tasks):
     files = sorted((root / 'lists').glob('*.lists.zst'))
     print(len(files), 'task files', flush=True)
     # Which shapes tell gold from a mutant on three train tasks or more, on the true and on the null lists.
-    told = {'stable': [], 'null': [], 'breaks': []}
+    told = {'stable': [], 'null': []}
     started = time.time()
     done = 0
     for path in files:
@@ -101,14 +80,16 @@ def build(root, out, min_tasks):
         if parts.get(task) != 'train':
             continue
         head, lists = read_lists(path)
+        null_path = root / 'null' / path.name
+        null_lists = read_lists(null_path)[1] if null_path.exists() else {}
         seen = {kind: [] for kind in told}
         for item in head['items']:
             if item['last']:
                 continue
             gold = item['gold']
             for mutant in item['mutants']:
-                for kind in told:
-                    a, b = lists.get((gold, kind)), lists.get((mutant['table'], kind))
+                for kind, held in (('stable', lists), ('null', null_lists)):
+                    a, b = held.get(gold), held.get(mutant['table'])
                     if a is not None and b is not None:
                         seen[kind].append(np.setxor1d(a[0], b[0], assume_unique=True))
         for kind, held in seen.items():
@@ -126,11 +107,9 @@ def build(root, out, min_tasks):
         chosen[kind] = ids[counts >= min_tasks]
         print(kind, 'told apart on some task', len(ids), f'on {min_tasks}+ tasks', len(chosen[kind]), flush=True)
     columns = np.union1d(chosen['stable'], chosen['null'])
-    breaks = chosen['breaks']
-    context_names = {}
     # The names of the columns.
     names, flags, sizes = {}, {}, {}
-    wanted = set(columns.tolist()) | set(breaks.tolist())
+    wanted = set(columns.tolist())
     for line in open_text(root / 'lists/names.tsv.zst'):
         parts_line = line.rstrip('\n').split('\t')
         if len(parts_line) != 4:
@@ -144,7 +123,7 @@ def build(root, out, min_tasks):
     data = {}
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'breaks', 'contingent', 'fresh', 'null_contingent', 'null_fresh', 'ctx')}
+        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx')}
         count = 0
         started = time.time()
         for path in files:
@@ -152,6 +131,8 @@ def build(root, out, min_tasks):
             if parts.get(task) != split:
                 continue
             head, lists = read_lists(path)
+            null_path = root / 'null' / path.name
+            null_lists = read_lists(null_path)[1] if null_path.exists() else {}
             mutants = read_json(root / split / 'mutants' / f'{task}.json')
             gold_forms = parse_forms(mutants['gold'])
             by_form = {q['form']: q for q in mutants['queries']}
@@ -161,24 +142,23 @@ def build(root, out, min_tasks):
                 at[at == len(table)] = 0
                 hit = table[at] == ids if len(table) else np.zeros(len(ids), dtype=bool)
                 return at, hit
-            own_ctx = lists.get(('constants', 'stable'), (np.zeros(0, dtype=np.uint64), None))[0].tolist()
+            own_ctx = lists.get('constants', (np.zeros(0, dtype=np.uint64), None))[0].tolist()
             for key in own_ctx:
                 if split == 'train':
                     context_vocab.setdefault(key, len(context_vocab))
             ctx_row = sorted(context_vocab[key] for key in own_ctx if key in context_vocab)
             for at, item in enumerate(head['items']):
                 query = by_form[item['form']]
-                members = [(item['gold'], 'gold', False, gold_forms)]
+                members = [(item['gold'], 'gold', False, gold_forms, item['types'], item.get('task_level'), item['parents'])]
                 for mutant in item['mutants']:
                     record = query['mutants'][mutant['mutant']]
                     key = (item['form'], mutant['mutant'])
                     if key not in parsed:
                         parsed[key] = parse_forms(record['text'])
-                    members.append((mutant['table'], mutant['edit'], bool(mutant.get('extra')), parsed[key]))
+                    members.append((mutant['table'], mutant['edit'], bool(mutant.get('extra')), parsed[key], mutant['types'], mutant.get('task_level'), mutant['parents']))
                 gold_key = None
-                for j, (table, edit, extra, forms) in enumerate(members):
-                    record = head['tables'][table]
-                    features = base_features(forms, item['form'], gold_forms, record['types'], record.get('task_level'))
+                for j, (table, edit, extra, forms, types, task_level, parents) in enumerate(members):
+                    features = base_features(forms, item['form'], gold_forms, types, task_level)
                     if split == 'train':
                         pairs = [(base_vocab.setdefault(k, len(base_vocab)), float(v)) for k, v in features.items() if v]
                     else:
@@ -188,22 +168,33 @@ def build(root, out, min_tasks):
                     if j == 0:
                         gold_key = pairs
                     same = j > 0 and pairs == gold_key
-                    train_rows = record.get('train_rows') or []
+                    train_rows = head['train_rows'][table]
                     group = 'gold' if j == 0 else ('mutant empty' if any(not n for n in train_rows) else 'has rows')
-                    rows.append((task, at, j, edit, group, bool(item['last']), extra, same, head['train'] != head['train']))
-                    for kind, table_columns in (('stable', columns), ('null', columns), ('contingent', columns), ('fresh', columns), ('null_contingent', columns), ('null_fresh', columns), ('breaks', breaks)):
-                        held = lists.get((table, kind))
+                    rows.append((task, at, j, edit, group, bool(item['last']), extra, same, False))
+                    for kind, held_lists in (('stable', lists), ('null', null_lists)):
+                        held = held_lists.get(table)
                         if held is None:
                             mats[kind].add([])
+                            if kind == 'stable':
+                                mats['contingent'].add([])
+                            else:
+                                mats['null_contingent'].add([])
                             continue
-                        spots, hit = place(held[0], table_columns)
-                        values = held[1][hit] if held[1] is not None else None
-                        mats[kind].add(spots[hit], values)
+                        spots, hit = place(held[0], columns)
+                        mats[kind].add(spots[hit], held[1][hit])
+                        # What not every table the query reads has as stable, nor the input.
+                        bases = [held_lists.get('input')] + [held_lists.get(parent) for parent in parents]
+                        common = held[0]
+                        for base in bases:
+                            common = np.intersect1d(common, base[0], assume_unique=True) if base is not None else np.zeros(0, dtype=np.uint64)
+                        fresh = np.setdiff1d(held[0], common, assume_unique=True)
+                        spots, hit = place(fresh, columns)
+                        mats['contingent' if kind == 'stable' else 'null_contingent'].add(spots[hit])
                     mats['ctx'].add(ctx_row)
             count += 1
             if count % 50 == 0:
                 print(f'{split} {count} {count / (time.time() - started):.1f}/s rows {len(rows)} nnz {mats["stable"].count}', flush=True)
-        data[split] = dict(rows=rows, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192, 'breaks': len(breaks)}.get(name, len(columns))) for name in mats})
+        data[split] = dict(rows=rows, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192}.get(name, len(columns))) for name in mats})
         print(split, 'rows', len(rows), 'nnz', {name: mats[name].count for name in mats}, flush=True)
     width_base, width_ctx = len(base_vocab), len(context_vocab)
     for split in data:
@@ -214,7 +205,7 @@ def build(root, out, min_tasks):
         for name, matrix in data[split]['matrices'].items():
             with (out / f'{split}.{name}.pkl').open('wb') as sink:
                 pickle.dump(matrix, sink, protocol=4)
-    meta = dict(columns=columns, breaks=breaks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab)
+    meta = dict(columns=columns, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab)
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     print('built', flush=True)
@@ -332,11 +323,11 @@ def fit(out, sets, filters, threads, fraction):
                 needed |= {'stable', 'null'}
             elif term in ('T', 'TI', 'TIO'):
                 needed.add('stable')
-            elif term in ('contingent', 'fresh'):
+            elif term == 'contingent':
                 needed.add(term)
-            elif term in ('contingent_null', 'fresh_null'):
-                needed |= {term.split('_')[0], 'null_' + term.split('_')[0]}
-            elif term in ('ctx', 'breaks'):
+            elif term == 'contingent_null':
+                needed |= {'contingent', 'null_contingent'}
+            elif term == 'ctx':
                 needed.add(term)
 
     def loaded(split):
@@ -347,7 +338,6 @@ def fit(out, sets, filters, threads, fraction):
     columns = meta['columns']
     flags = np.array([meta['flags'].get(int(key), 0) for key in columns])
     names = [meta['names'].get(int(key), '') for key in columns]
-    breaks_names = [meta['names'].get(int(key), '') for key in meta['breaks']]
     base_names = {index: key for key, index in meta['base'].items()}
     ctx_names = {index: str(key) for key, index in meta['ctx'].items()}
     print('rows', len(train['rows']), len(dev['rows']), 'columns', len(columns), 'by reading', Counter(READS.get(int(f), '?') for f in flags), flush=True)
@@ -376,19 +366,16 @@ def fit(out, sets, filters, threads, fraction):
             elif term == 'ctx':
                 parts.append(split['matrices']['ctx'])
                 labels.extend(ctx_names[i] for i in range(len(ctx_names)))
-            elif term == 'breaks':
-                parts.append(split['matrices']['breaks'])
-                labels.extend('breaks:' + n for n in breaks_names)
             elif term in ('T', 'TI', 'TIO'):
                 keep = np.flatnonzero(masks[term] & word_mask(raw, names))
                 parts.append(split['matrices']['stable'][:, keep])
                 labels.extend(names[int(i)] for i in keep)
-            elif term in ('contingent', 'fresh'):
+            elif term == 'contingent':
                 keep = np.flatnonzero(word_mask(raw, names))
                 parts.append(split['matrices'][term][:, keep])
                 labels.extend(term + ':' + names[int(i)] for i in keep)
-            elif term in ('TIO_null', 'contingent_null', 'fresh_null'):
-                first, second = ('stable', 'null') if term == 'TIO_null' else (term.split('_')[0], 'null_' + term.split('_')[0])
+            elif term in ('TIO_null', 'contingent_null'):
+                first, second = ('stable', 'null') if term == 'TIO_null' else ('contingent', 'null_contingent')
                 keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
                 keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
                 parts.append(split['matrices'][first][:, keep_true])
