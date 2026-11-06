@@ -798,7 +798,7 @@ fn kept_labels(conjuncts: &[String]) -> Result<Vec<String>, String> {
     Ok(kept)
 }
 
-fn keep(expr: &SExpr, kept: &mut Vec<String>) {
+pub(crate) fn keep(expr: &SExpr, kept: &mut Vec<String>) {
     match expr {
         SExpr::Symbol { text, .. } => {
             if let Some(label) = text.strip_prefix('*') {

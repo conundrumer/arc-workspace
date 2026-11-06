@@ -71,32 +71,40 @@
     (when ((A Position) (B Offset)) (C Position))
     (when ((A Offset) (B Position)) (C Position))
     (when ((A Offset) (B Offset)) (C Offset))))
+(refines compose (key A B) (each (A B) 1))
 ;;; X_rel is X less Base, margin by margin. For two cells in one frame, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.
 (relation relative (columns (Base Box) (X Box) (X_rel Box)) (modes (Base X)) (frames (X_rel (new (of Base) (size X))))
   (types
     (when ((Base Offset) (X Offset)) (X_rel Offset))
     (when ((Base Offset) (X Position)) (X_rel Position))
     (when ((Base Position) (X Position) (same-frame Base X)) (X_rel Offset))))
+(refines relative (key Base X) (each (Base X) 1))
 ;;; The grid with K lines cut from edge D.
 (relation edge_inset (columns (D Dir) (K Int) (B Box)) (modes (K)))
 ;;; K cells lie between B and edge D.
 (relation margin (columns (B Box) (D Dir) (K Int)) (modes (B)))
+(refines margin (key B D) (each (B) 4))
 ;;; P_out is P's image when the whole grid undergoes D.
 (relation apply (columns (D D4) (P Box) (P_out Box)) (modes (P)) (frames (P_out (new (size P (by D)))))
   (types
     (when ((P Offset)) (P_out Offset))))
+(refines apply (key D P) (each (D P) 1) (each (P) 8))
 ;;; The sum of P's margins on the two edges of corner Diag.
 (relation corner_dist (columns (P Box) (Diag DiagDir) (K Int)) (modes (P)))
+(refines corner_dist (key P Diag) (each (P) 4))
 ;;; The grid has N cells along axis A.
 (relation frame_extent (columns (P Position) (A Axis) (N Int)) (modes (P)))
+(refines frame_extent (key P A) (each (P) 2) (at-least N 1))
 ;;; V is one step toward D.
 (relation step_offset (columns (D Dir8) (V Offset)))
 ;;; Each K from 1 to one less than the grid's extent along A.
 (relation sub_extent (columns (P Position) (A Axis) (K Nat)) (modes (P)))
 ;;; Q is ahead of P toward D, on P's line, with K cells strictly between them.
 (relation gap (columns (D Dir8) (P Position) (Q Position) (K Nat)) (modes (P Q)))
+(refines gap (key D P Q))
 ;;; Along a row of parts of Side cells with Gap cells between each two, the cell T cells from the start is in part Part, Remainder cells into it. Part and Remainder count from 0. A cell in a gap gives no row. T is not tested against an end.
 (relation divide (columns (T Nat) (Side Nat) (Gap Int) (Part Nat) (Remainder Nat)) (modes (T Side Gap)))
+(refines divide (key T Side Gap))
 ;;; @rare
 ;;; N tiles of K cells, with G cells between each two, fill Ext cells exactly: K is Ext less the N - 1 gaps, divided by N. A row stands only where that difference is positive and N divides it evenly.
 (relation tile_size (columns (Ext Nat) (N Nat) (G Int) (K Nat)) (modes (Ext N G) (K N G)))
@@ -148,12 +156,14 @@
     (domain (key Key) from-key))
   (outputs (size (key Key) (N Nat)
     (copies (either (member) (domain))))))
+(refines Cardinality.size (key key) (each-key) (covered member (at-least N 1)) (single member (at-most N 1)))
 ;;; For each key, how many more members the plus set has than the minus set, where that is more than 0.
 (component Excess construction (type-parameters Key Member)
   (inputs (plus (key Key) (m Member))
     (minus (key Key) (m Member)))
   (outputs (excess (key Key) (N Nat)
     (copies (plus)))))
+(refines Excess.excess (key key) (at-least N 1))
 ;;; The one value of each key's members.
 ;;; - `value`: the value, where every member has it.
 ;;; - `plural`: the members have more than one value.
@@ -163,6 +173,8 @@
       (copies (member (v v))))
     (plural (key Key)
       (copies (member)))))
+(refines Singleton.value (key key) (single member (same-as member)))
+(refines Singleton.plural (key key) (single member empty))
 ;;; Each observed set against each pattern set, by their members.
 ;;; - `superset`: the observed set holds every member of the pattern.
 ;;; - `equal`: the two sets have the same members.
@@ -181,6 +193,7 @@
     (edge (a T) (b T)))
   (outputs (class (a T) (Id Ident)
     (copies (either (equivalent (a a)) (equivalent (b a)) (edge (a a)) (edge (b a)))))))
+(refines Quotient.class (key a))
 ;;; Each member's rank, from a strict order or from a score.
 ;;; - `before`: a comes before b, for every such pair and not only neighbors, and never a before a.
 ;;; - `score`: a number per member. A lower score comes first, and equal scores tie.
@@ -212,6 +225,10 @@
       (copies (member (t a)) (member (t b))))
     (cyclic_successor (key Key) (a T) (b T)
       (copies (member (t a)) (member (t b))))))
+(refines Order.rank (key key t))
+(refines Order.dual_rank (key key t))
+(refines Order.minimal (unbound (before score secondary_score) (same-as member)) (single member (same-as member)) (tied score S (same-as member)))
+(refines Order.maximal (unbound (before score secondary_score) (same-as member)) (single member (same-as member)) (tied score S (same-as member)))
 ;;; The member a count of steps along a successor relation reaches.
 ;;; - `walk`: N steps from p0 reach p, for every N from 0 to the greatest N of `steps`. A walk starts only at a member that has a successor, and a walk that runs out of successors has no row past its end.
 (component Walk construction (type-parameters Key T)
@@ -269,6 +286,7 @@
   (inputs (cell (key Key) (P Position)))
   (outputs (enclosed (key Key) (P Position) (Id Ident)
     (copies (cell (P P))))))
+(refines Enclosure.enclosed (key key P))
 ;;; The cells of a set that face out of it.
 ;;; - `exposed`: no cell of the set lies one step from P toward D. Off the grid counts as no cell.
 ;;; - `boundary`: P is exposed toward some direction.
@@ -284,6 +302,7 @@
   (inputs (cell (key Key) (P Point) from-key))
   (outputs (box (key Key) (B Box)
     (copies (cell)))))
+(refines BoundingBox.box (key key) (each-row cell key))
 ;;; Two valued cell sets compared under D4 transforms.
 ;;; - `mismatch`: D is in `transform`, and for some source cell P, the cell `apply` of D to P gives is not a target cell of P's value: no target cell is there, or one of another value.
 ;;; - `conflict`: for some source cell, its image is a target cell of another value. A missing target cell is no conflict.
@@ -346,6 +365,9 @@
       (copies (cell)))
     (approximate_period (key Key) (A Axis) (K Nat)
       (copies (cell)))))
+(refines Periods.period (at-least K 1))
+(refines Periods.fundamental_period (key key A) (at-least K 1))
+(refines Periods.approximate_period (at-least K 1))
 ;;; @rare
 ;;; The equal divisions a frame's extent admits.
 ;;; - `division`: along A, N parts of K cells with G cells between each two fill the extent exactly. N is 2 or more and K is 1 or more. G can be less than 0, down to 1 less K: then two neighboring parts share that many lines.
@@ -415,6 +437,7 @@
       (copies (either (node (P P)) (source (P P)))))
     (predecessor (key Key) (Q Position) (P Position)
       (copies (node (P Q)) (node (P P))))))
+(refines CellDistance.distance (key key P))
 ;;; The connected pieces of a cell set.
 ;;; - `step`: as in `Flood`. To join cells that touch at a corner too, the clause gives all eight steps.
 (component Connectivity construction (type-parameters Key)
@@ -427,6 +450,7 @@
       (copies (node (P P))))
     (adjacent (key Key) (P Position) (Q Position)
       (copies (node (P P)) (node (P Q))))))
+(refines Connectivity.component (key key P) (each-row node key P))
 ;;; The straight path from a source toward a direction.
 ;;; - `source`: where each path starts. A source on the grid and outside `node` gives only its own row at K = 0.
 ;;; - `node`: the cells a path may step onto. A path stops before its first step off them.
@@ -468,10 +492,13 @@
 ;; Facts: docs/arclog/arclog.md#program.
 ;;; Each cell of the input and its color.
 (fact input (columns (P Position) (Col Color)))
+(refines input (key P))
 ;;; Each cell of each example's input, train and test. DET only.
 (fact ex_input (columns (E Example) (P Position) (Col Color)))
+(refines ex_input (key E P))
 ;;; Each cell of each train output. DET only.
 (fact ex_output (columns (E Example) (P Position) (Col Color)))
+(refines ex_output (key E P))
 
 ;; Macros, in the names of the lib.
 ;;; A lies in B, its sides included.
@@ -569,6 +596,7 @@
   (axis_elem *A)
   (relative (:Base *B) (:X *P) (:X_rel *R))
   (frame_extent (:P R) A *N))
+(refines box_extent (key B P A))
 ;;; The grid with K1 lines cut from edge D and K2 from the opposite edge.
 (macro axis_inset (columns (D D Dir) (K1 K1 Int) (K2 K2 Int) (B B Box)) (modes (K1 K2))
   (opposite *D (:Opp *O))
@@ -615,10 +643,12 @@
 (macro jump (columns (P P Box) (D D Dir8) (K K Int) (Q Q Box)) (modes (P K))
   (jump_offset *D *K *V)
   (compose (:A *P) (:B V) (:C *Q)))
+(refines jump (key P D K))
 ;;; V is K steps toward D.
 (macro jump_offset (columns (D D Dir8) (K K Int) (V V Offset)) (modes (K))
   (OR ((dir_elem *D) (opposite D (:Opp *O)) (edge_inset (:D O) *K (:B *I)) (edge_outset D K (:B *U)) (compose (:A I) (:B U) (:C *V)))
     ((diag_dir_elem D) (diag_opposite D (:Opp O)) (corner_inset (:Diag O) K (:B I)) (corner_outset (:Diag D) K (:B U)) (compose (:A I) (:B U) (:C V)))))
+(refines jump_offset (key D K))
 ;;; @rare
 ;;; V is K steps along A, for each K that `sub_extent` gives. Each K has two rows, one toward each edge of A.
 (macro frame_offset (columns (P P Position) (A A Axis) (K K Nat) (V V Offset)) (modes (P))
@@ -629,6 +659,7 @@
 (macro neighbor (columns (P P Box) (D D Dir8) (Q Q Box)) (modes (P))
   (step_offset *D *V)
   (compose (:A *P) (:B V) (:C *Q)))
+(refines neighbor (key P D) (each (P) 8))
 ;;; Along has P's margins on axis A and 0 on the other axis, so for A = AXIS_V it is P's whole row, and for A = AXIS_H P's whole column. Across is P less Along.
 (macro split (columns (P P Box) (A A Axis) (Along Along Box) (Across Across Box)) (modes (P))
   (frames (Across (new (of P) (size P))))
@@ -641,6 +672,7 @@
   (margin (:B P) (:D O) (:K *K2))
   (axis_inset D K1 K2 (:B *Along))
   (relative (:Base Along) (:X P) (:X_rel *Across)))
+(refines split (key P A) (each (P) 2))
 ;;; D2 is an edge on the other axis from D.
 (macro perp_dir (columns (D D Dir) (D2 D2 Dir))
   (axis_of *D *A)

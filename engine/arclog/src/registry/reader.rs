@@ -20,6 +20,8 @@ pub(super) struct FileReader {
     /// The names of the `C4` form, and its place.
     pub(super) c4: Option<(Box<[Box<str>]>, SourcePlace)>,
     pub(super) facts: StableHashMap<FactRelation, Box<[Column]>>,
+    /// The items of each `refines` form, by the element it names.
+    pub(super) refines: StableHashMap<Box<str>, Box<[SExpr]>>,
     /// The type names that a `type` form declares.
     pub(super) types: StableHashSet<TypeName>,
     pub(super) relation_macros: Vec<WrittenRelation>,
@@ -148,6 +150,7 @@ impl FileReader {
             constants: self.constants,
             c4: ConstantSet { constants: c4 },
             facts: self.facts,
+            refines: self.refines,
         })
     }
 }

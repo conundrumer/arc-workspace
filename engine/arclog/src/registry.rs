@@ -21,6 +21,12 @@
 //!
 //! Each top-level form declares one lib element, by its head:
 //!
+//! - `(refines <element> <item> ...)`: what a relation's type holds of its values at a lib element, a
+//!   relation, a fact or `<component>.<output>`, for the feature encoder. A `<item>` is `(key <column> ...)`,
+//!   `(at-least <column> <number>)`, `(each (<column> ...) <rows>)`, `(each-key)`, `(each-row <input>
+//!   <column> ...)`, or a claim under a condition on the instance's inputs: `(covered <input> <claim>)`,
+//!   `(single <input> <claim>)`, `(unbound (<input> ...) <claim>)`, `(tied <input> <column> <claim>)`. A
+//!   `<claim>` is `(at-least <column> <number>)`, `(at-most <column> <number>)`, `(same-as <input>)` or `empty`.
 //! - `(relation <name> (columns (<Column> <type>) ...) (modes (<Column> ...) ...) [<frames>] [<types>])`:
 //!   an algebra relation, the group relations and `pose_difference`
 //!   included. Each mode lists the columns, other than an orientation
@@ -542,6 +548,7 @@ pub struct Registry {
     constants: StableHashMap<OrientationType, TypeConstants>,
     c4: ConstantSet,
     facts: StableHashMap<crate::program::FactRelation, Box<[Column]>>,
+    refines: StableHashMap<Box<str>, Box<[crate::read::SExpr]>>,
 }
 
 /// The constants of one orientation type: the name of each, at the index
@@ -597,6 +604,13 @@ impl Registry {
     /// content.
     pub fn names(&self) -> impl Iterator<Item = &LibName> + '_ {
         self.entries.keys()
+    }
+
+    /// The items of the `refines` form of a lib element: a relation, a fact, or `Component.output`.
+    /// What the items say is the feature encoder's to read, as
+    /// `docs/feature-spec/feature-spec.md#size-and-the-encoder` gives.
+    pub fn refines(&self, name: &str) -> &[crate::read::SExpr] {
+        self.refines.get(name).map_or(&[], |items| &items[..])
     }
 
     /// What `name` declares, or `None` where the lib has no such name.

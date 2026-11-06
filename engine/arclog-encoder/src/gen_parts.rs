@@ -90,6 +90,85 @@ pub enum PartStep {
     Same,
 }
 
+impl PartStep {
+    /// Whether the part's second relation is a relation hole, and no grid.
+    pub fn reads_second_relation(&self) -> bool {
+        matches!(self, PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. })
+    }
+
+    /// The columns of its first relation that its holes name.
+    pub fn hole_columns(&self) -> Vec<u16> {
+        let with = |keys: &[u16], rest: &[u16]| keys.iter().chain(rest).copied().collect::<Vec<u16>>();
+        match self {
+            PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } => vec![*p],
+            PartStep::Inside { b } | PartStep::BoxMargin { b } | PartStep::BoxExtent { b } | PartStep::BoxRead { b, .. } => vec![*b],
+            PartStep::NumberExtreme { n, .. } => vec![*n],
+            PartStep::SharedLine { a, .. } => vec![*a],
+            PartStep::Displacement { a, b } => vec![*a, *b],
+            PartStep::BoxFrameRead { b, x, .. } | PartStep::BoxCellRead { b, x, .. } => vec![*b, *x],
+            PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
+            PartStep::Count { keys } | PartStep::ClassOf { keys } => keys.to_vec(),
+            PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
+            PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
+            PartStep::MostFrequentRows { keys, v } => with(keys, &[*v]),
+            PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
+            PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
+            PartStep::Same => Vec::new(),
+        }
+    }
+
+    /// The part's call over a relation `&r` of the columns `C0..`, with `grid` the grid hole and `second`
+    /// the name of a column of a second relation `&s`.
+    pub fn call_text(&self, grid: &str, second: &dyn Fn(u16) -> String) -> Option<String> {
+        let c = |at: &u16| format!("C{at}");
+        let list = |keys: &[u16]| format!("({})", keys.iter().map(|at| format!("C{at}")).collect::<Vec<_>>().join(" "));
+        Some(match self {
+            PartStep::Same => return None,
+            PartStep::CellsOn { p } => format!("(cells-on &r {} {grid})", c(p)),
+            PartStep::ColorsUnder { p } => format!("(colors-under &r {} {grid})", c(p)),
+            PartStep::Around { p } => format!("(around &r {})", c(p)),
+            PartStep::Neighbors { p } => format!("(neighbors &r {})", c(p)),
+            PartStep::Split { p } => format!("(split &r {})", c(p)),
+            PartStep::Margin { p } => format!("(margin &r {})", c(p)),
+            PartStep::CornerDist { p } => format!("(corner-dist &r {})", c(p)),
+            PartStep::Parity { p } => format!("(parity &r {})", c(p)),
+            PartStep::BorderDistance { p } => format!("(border-distance &r {})", c(p)),
+            PartStep::Pieces { keys, p, four } => format!("({} &r {} {})", if *four { "pieces4" } else { "pieces" }, list(keys), c(p)),
+            PartStep::BoxOf { keys, p } => format!("(box-of &r {} {})", list(keys), c(p)),
+            PartStep::RelBox { keys, p } => format!("(cells-in-box &r {} {})", list(keys), c(p)),
+            PartStep::Count { keys } => format!("(count &r {})", list(keys)),
+            PartStep::OneValue { keys, f } => format!("(one-value &r {} {})", list(keys), c(f)),
+            PartStep::Several { keys, f } => format!("(several &r {} {})", list(keys), c(f)),
+            PartStep::Determines { keys, f } => format!("(determines &r {} {})", list(keys), c(f)),
+            PartStep::Extreme { keys, t, score, greatest } => format!("({} &r {} {} {})", if *greatest { "greatest-by" } else { "least-by" }, list(keys), c(t), c(score)),
+            PartStep::NumberExtreme { n, greatest } => format!("({} &r {})", if *greatest { "greatest" } else { "least" }, c(n)),
+            PartStep::ClassOf { keys } => format!("(class-of &r {})", list(keys)),
+            PartStep::NeighborhoodClass { p } => format!("(neighborhood-class &r {} {grid})", c(p)),
+            PartStep::NeighborColorClass { p } => format!("(neighbor-color-class &r {} {grid})", c(p)),
+            PartStep::SameColorNeighbors { p } => format!("(same-color-neighbors &r {} {grid})", c(p)),
+            PartStep::MostFrequentRows { keys, v } => format!("(most-frequent-rows &r {} {})", list(keys), c(v)),
+            PartStep::DeterminesFlag { keys, a, b } => format!("(determines-flag &r &s {} {} {})", list(keys), c(a), second(*b)),
+            PartStep::ShapeClass { keys, p, turned } => format!("({} &r {} {})", if *turned { "shape-class-d4" } else { "shape-class" }, list(keys), c(p)),
+            PartStep::Holes { keys, p } => format!("(holes &r {} {})", list(keys), c(p)),
+            PartStep::Symmetry { keys, p } => format!("(symmetry &r {} {})", list(keys), c(p)),
+            PartStep::TouchesEdge { keys, p } => format!("(touches-edge &r {} {})", list(keys), c(p)),
+            PartStep::FillsBox { keys, p } => format!("(fills-box &r {} {})", list(keys), c(p)),
+            PartStep::Inside { b } => format!("(inside &r {} {grid})", c(b)),
+            PartStep::Occurs { keys, p, v, turned } => format!("({} &r {} {} {} {grid})", if *turned { "occurs-d4" } else { "occurs" }, list(keys), c(p), c(v)),
+            PartStep::SharedLine { a, b } => format!("(shared-line &r &s {} {})", c(a), second(*b)),
+            PartStep::Distance { p } => format!("(distance &r {} {grid})", c(p)),
+            PartStep::BoxMargin { b } => format!("(box-margin &r {})", c(b)),
+            PartStep::BoxExtent { b } => format!("(box-extent &r {} {grid})", c(b)),
+            PartStep::Displacement { a, b } => format!("(displacement &r {} {})", c(a), c(b)),
+            PartStep::FrameExtent { p } => format!("(frame-extent &r {})", c(p)),
+            PartStep::FullLines { keys, p } => format!("(full-lines &r {} {})", list(keys), c(p)),
+            PartStep::BoxRead { b, kept } => format!("({} &r {})", if *kept { "box-kept" } else { "box-changed" }, c(b)),
+            PartStep::BoxFrameRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-frame-kept" } else { "box-frame-changed" }, c(b), c(x)),
+            PartStep::BoxCellRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-cell-kept" } else { "box-cell-changed" }, c(b), c(x)),
+        })
+    }
+}
+
 /// A value's rows in the order of its columns.
 pub fn flat(value: &Val) -> Option<Arc<Table>> {
     let Val::Rows(parts) = value else { return Some(Table::new(1, Vec::new())) };

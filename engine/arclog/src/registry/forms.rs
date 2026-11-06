@@ -32,6 +32,13 @@ impl FileReader {
             Some(TYPE) => self.type_form(rest, place),
             Some(FACT) => self.fact(rest, place),
             Some(MACRO) => self.macro_form(rest, place),
+            Some(REFINES) => match rest.first() {
+                Some(SExpr::Symbol { text, .. }) => {
+                    self.refines.insert(text.to_string().into_boxed_str(), rest[1..].to_vec().into_boxed_slice());
+                    Some(())
+                }
+                _ => self.refuse("a `refines` form names a lib element", place),
+            },
             _ => self.refuse("the form's head is no kind of form of the registry file", place),
         };
     }

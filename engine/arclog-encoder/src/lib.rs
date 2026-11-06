@@ -44,6 +44,8 @@ pub mod library;
 pub mod native;
 pub mod program_relations;
 pub mod query_vector;
+pub mod refine;
+pub mod refine_parts;
 pub mod run;
 pub mod schema;
 pub mod stored;

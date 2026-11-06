@@ -15,6 +15,8 @@ use crate::expression::Op;
 use crate::gen_constants::{constant_parts, constant_tables, number_of};
 use crate::gen_parts::{clear_views, flat, PartStep};
 use crate::native::{hash_words, Evaluator, FastMap, Step, Table, Val, WORD_COUNT, WORD_NONEMPTY, WORD_SET};
+use crate::refine::{self, bit, Claim, Refined, Rejected, Within};
+use crate::refine_parts::{self, PartPlan, RelationInput};
 use crate::stored::{mix_word, shape_text};
 
 pub const READS_INPUT: u8 = 1;
@@ -88,7 +90,64 @@ pub struct Term {
     text: String,
     /// Whether another term reads this one.
     used: bool,
+    /// What its fragment gives, for a part.
+    plan: Option<Arc<PartPlan>>,
 }
+
+/// What a term's text stands in for, where a normal form leaves out one of two orders.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum FormKind {
+    #[default]
+    Base,
+    Project,
+    Filter,
+    Extension,
+}
+
+/// How a term is built, for the normal forms. It holds names, since a filter that drops a column moves places.
+#[derive(Clone, Debug, Default)]
+struct Form {
+    kind: FormKind,
+    /// The order of the last filter over its base.
+    last_filter: u64,
+    /// The columns the filters read.
+    filter_reads: Vec<String>,
+    /// Each `semijoin` among the filters.
+    semijoins: Vec<u64>,
+    /// Each pair of columns, or a column and `0`, that a `select` compares.
+    selects: Vec<(String, String)>,
+    /// For an extension: its relation's columns, those it reads, and whether every row of its relation stands in it.
+    own: Vec<String>,
+    reads: Vec<String>,
+    total: bool,
+    /// The order of an extension among those over one relation.
+    order: u64,
+}
+
+/// A term that no derivation reaches, kept for the check of its rule.
+pub struct RejectedTerm {
+    pub rule: &'static str,
+    pub claim: Claim,
+    pub step: Step,
+    pub a: u32,
+    pub b: u32,
+    pub text: String,
+    pub columns: Vec<String>,
+    /// The term it is, where it is one of the family's.
+    pub other: Option<String>,
+}
+
+/// Where a rejected term's text says what it stands for.
+enum Partner {
+    None,
+    /// The same operator over the term's first relation's first relation.
+    OverBase,
+    /// The two operators in the other order.
+    Swap,
+    Text(String),
+}
+
+const MARK: &str = "\u{1}";
 
 /// The terms over a table of one schema.
 pub struct Generated {
@@ -96,6 +155,14 @@ pub struct Generated {
     pub first_term: usize,
     pub by_size: Vec<usize>,
     pub roots: usize,
+    refined: Vec<Refined>,
+    forms: Vec<Form>,
+    /// The terms each rule rejected.
+    pub rejected_by_rule: std::collections::BTreeMap<&'static str, u64>,
+    pub rejected: Vec<RejectedTerm>,
+    keep_text: bool,
+    /// Where the family is built with no rule, for a count of what the rules remove.
+    no_rules: bool,
 }
 
 fn is_number(ty: &ValueType) -> bool {
@@ -155,7 +222,7 @@ impl Generated {
     /// As [`Generated::of`], with the columns under the names a program gives them, so a term's text
     /// reads that program's table. A shape's name reads the names of [`Generated::of`].
     pub fn with_column_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore) -> Generated {
-        let mut family = Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0 };
+        let mut family = Generated::empty();
         let source_of = |at: usize| -> u16 {
             let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
             100 + first as u16
@@ -173,6 +240,7 @@ impl Generated {
             family.push_leaf(&part.name, columns, flags, 1);
         }
         family.first_term = family.terms.len();
+        family.leaf_refinements(types, &parts);
         let constants: Vec<u32> = (FIRST_CONSTANT..family.first_term as u32).filter(|at| parts[(*at - FIRST_CONSTANT) as usize].meets_table).collect();
         // Size 1: over the leaves. The table's own rows give its own count.
         let own_columns = family.terms[LEAF_TABLE as usize].columns.clone();
@@ -214,9 +282,10 @@ impl Generated {
                     family.number_meets(at, *number, 3);
                 }
             }
+            // A ratio with a relation of at most one row follows from the other relation's count.
             let bases: Vec<u32> = [LEAF_OUTPUT, LEAF_INPUT].into_iter().chain(constants.iter().copied().filter(|at| {
                 let term = &family.terms[*at as usize];
-                term.flags & (READS_INPUT | READS_OUTPUT) != 0 && !term.columns.is_empty()
+                term.flags & (READS_INPUT | READS_OUTPUT) != 0 && !term.columns.is_empty() && (family.no_rules || !family.refined[*at as usize].one_row())
             })).collect();
             let tops: Vec<u32> = (family.first_term as u32..family.by_size[0] as u32).filter(|at| {
                 let term = &family.terms[*at as usize];
@@ -234,16 +303,23 @@ impl Generated {
         let mut held = names.begin();
         let mut roots = 0;
         let texts_of_first: Vec<String> = family.terms.iter().map(|term| term.text.clone()).collect();
-        for term in family.terms.iter_mut().skip(family.first_term) {
+        let first_term = family.first_term;
+        let follows: Vec<bool> = family.refined.iter().map(|refined| refined.count_follows).collect();
+        for (at, term) in family.terms.iter_mut().enumerate().skip(first_term) {
             if term.flags & READS_TABLE == 0 {
                 continue;
             }
+            let count_follows = follows[at];
             let number_column = term.columns.first().map_or(String::new(), |column| column.name.clone());
             let left_text = texts_of_first[term.a as usize].clone();
             let texts: Vec<(String, RootOf)> = match term.root {
                 RootKind::Holds => vec![(format!("(nonempty {})", term.text), RootOf::Nonempty)],
+                // A count that follows from a smaller term's has no root.
+                RootKind::Rows if count_follows => Vec::new(),
                 RootKind::Rows => vec![(format!("(cardinality {})", term.text), RootOf::Cardinality)],
+                RootKind::Share if count_follows => Vec::new(),
                 RootKind::Share => vec![(format!("(cardinality {})", term.text), RootOf::Cardinality), (format!("(ratio {} {left_text})", term.text), RootOf::Share)],
+                RootKind::Number if count_follows => vec![(format!("(value-set {} {number_column})", term.text), RootOf::ValueSet)],
                 RootKind::Number => vec![(format!("(cardinality {})", term.text), RootOf::Cardinality), (format!("(value-set {} {number_column})", term.text), RootOf::ValueSet)],
                 RootKind::Against => {
                     let right_text = texts_of_first[term.b as usize].clone();
@@ -259,12 +335,14 @@ impl Generated {
             roots += term.roots.len();
         }
         family.roots = roots;
-        // A walk reads the steps and the roots.
-        if std::env::var_os("GENERATE_KEEP_TEXT").is_none() {
+        // A walk reads the steps and the roots, and the leaves' refinements.
+        if !family.keep_text {
             for term in &mut family.terms {
                 term.text = String::new();
                 term.columns = Vec::new();
             }
+            family.refined.truncate(family.first_term);
+            family.forms = Vec::new();
         }
         family
     }
@@ -303,8 +381,324 @@ impl Generated {
         }
     }
 
+    fn empty() -> Generated {
+        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some() }
+    }
+
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
-        self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), used: true });
+        self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), used: true, plan: None });
+    }
+
+    /// What each leaf's type holds: the table by its column types, the grids and the parts by the
+    /// declarations of the lib and their fragments.
+    fn leaf_refinements(&mut self, types: &[ValueType], parts: &[crate::gen_constants::ConstantPart]) {
+        let mut table = Refined::with_arity(types.len());
+        table.add_key(table.all_columns());
+        for (at, ty) in types.iter().enumerate() {
+            if *ty == ValueType::Nat {
+                table.low[at] = Some(0);
+            }
+        }
+        table.within.push(Within { columns: (0..types.len() as u16).collect(), of: LEAF_TABLE, at: (0..types.len() as u16).collect() });
+        self.refined.push(table);
+        for grid in ["output", "input"] {
+            self.refined.push(refine_parts::grid_refined(grid));
+        }
+        self.refined.push(Refined::with_arity(0));
+        self.forms = vec![Form::default(); self.first_term];
+        for (place, part) in parts.iter().enumerate() {
+            self.refined.push(base_refinements(place, part));
+        }
+    }
+
+    /// Whether a term's column stands under each of the right columns' types, for a complete relation.
+    fn is_complete(&self, a: u32, b: u32, left: &[u16], right: &[u16]) -> bool {
+        let ([one], [other]) = (left, right) else { return false };
+        if self.refined[b as usize].complete & bit(*other) == 0 {
+            return false;
+        }
+        let (own, target) = (&self.terms[a as usize].columns[usize::from(*one)], &self.terms[b as usize].columns[usize::from(*other)]);
+        own.ty.is_below(&target.ty)
+    }
+
+    fn names_of(&self, at: u32, places: &[u16]) -> Vec<String> {
+        places.iter().map(|place| self.terms[at as usize].columns[usize::from(*place)].name.clone()).collect()
+    }
+
+    /// The call of a native part over a relation of the columns `C0..`, with the relation's own name for each.
+    fn part_plan(&self, part: &PartStep, a: u32, b: u32, columns: &[Column]) -> Option<Arc<PartPlan>> {
+        let left = &self.terms[a as usize].columns;
+        let right: Option<&Term> = (b != NO_TERM).then(|| &self.terms[b as usize]);
+        let s_columns: Vec<String> = if part.reads_second_relation() { right.map_or_else(Vec::new, |term| term.columns.iter().map(|column| crate::expand::label_of(&column.name)).collect()) } else { Vec::new() };
+        let grid = right.and_then(|term| matches!(term.text.as_str(), "input" | "output").then(|| term.text.clone())).unwrap_or_default();
+        let call = part.call_text(&grid, &|place| s_columns.get(usize::from(place)).cloned().unwrap_or_default())?;
+        let native: Vec<(String, String)> = columns.iter().map(|column| {
+            let own = left.iter().position(|held| crate::expand::label_of(&held.name) == column.name);
+            let literal = match column.name.rfind('_') {
+                Some(at) if column.name[at + 1..].parse::<u32>().is_ok() => column.name[..at].to_string(),
+                _ => column.name.clone(),
+            };
+            (own.map_or_else(|| literal.clone(), |at| format!("C{at}")), literal)
+        }).collect();
+        refine_parts::plan(&call, left.len(), &s_columns, &native)
+    }
+
+    /// Whether an application has a derivation, and its output's type where it has one.
+    fn judge(&self, step: &Step, a: u32, b: u32, columns: &[Column]) -> Result<(Refined, Form, Option<Arc<PartPlan>>), (Rejected, Partner)> {
+        let first = &self.refined[a as usize];
+        let form = &self.forms[a as usize];
+        let no_partner = |rejected: Rejected| (rejected, Partner::None);
+        let other = |rule: &'static str, partner: Partner| (Rejected { rule, claim: Claim::Other }, partner);
+        match step {
+            Step::Project { columns: places } => {
+                let kept = self.names_of(a, places);
+                let holds_all = |names: &[String]| names.iter().all(|name| kept.contains(name));
+                match form.kind {
+                    FormKind::Project => return Err(other("project-over-project", Partner::OverBase)),
+                    FormKind::Filter if holds_all(&form.filter_reads) => return Err(other("project-over-filter", Partner::Swap)),
+                    FormKind::Extension => {
+                        let added: Vec<String> = self.terms[a as usize].columns.iter().map(|column| column.name.clone()).filter(|name| !form.own.contains(name)).collect();
+                        if holds_all(&form.reads) && holds_all(&added) {
+                            return Err(other("project-over-extension", Partner::Swap));
+                        }
+                        if kept.iter().all(|name| form.own.contains(name)) && form.total {
+                            return Err(other("project-below-extension", Partner::OverBase));
+                        }
+                    }
+                    _ => {}
+                }
+                let refined = refine::project(first, places).map_err(no_partner)?;
+                Ok((refined, Form { kind: FormKind::Project, ..Form::default() }, None))
+            }
+            Step::Select { at, op, other: second, drop } => {
+                let name = self.terms[a as usize].columns[usize::from(*at)].name.clone();
+                let pair = (name.clone(), second.map_or_else(|| "0".to_string(), |second| self.terms[a as usize].columns[usize::from(second)].name.clone()));
+                if form.selects.contains(&pair) {
+                    return Err((Rejected { rule: "select-twice", claim: Claim::Follows }, Partner::None));
+                }
+                let mut reads = vec![name];
+                if second.is_some() {
+                    reads.push(pair.1.clone());
+                }
+                let dropped = drop.map(|place| self.terms[a as usize].columns[usize::from(place)].name.clone());
+                let order = hash_words(format!("0 {} {} {}", pair.0, op.text(), pair.1).bytes().map(u64::from)) as u64 >> 2;
+                self.commutes(a, order, &reads, dropped.as_deref())?;
+                let refined = match second {
+                    None => {
+                        let has_order = is_number(&self.terms[a as usize].columns[usize::from(*at)].ty);
+                        refine::select_zero(first, *at, *op, drop.is_some(), has_order).map_err(|rejected| {
+                            let partner = if rejected.claim == Claim::Other {
+                                refine::canonical_zero_op(first, *at, *op).map_or(Partner::None, |canonical| Partner::Text(format!("(select {} {} {} 0)", self.terms[a as usize].text, pair.0, canonical.text())))
+                            } else {
+                                Partner::None
+                            };
+                            (rejected, partner)
+                        })?
+                    }
+                    Some(second) => refine::select_pair(first, *at, *second, *op, *drop).map_err(no_partner)?,
+                };
+                let mut next = self.filter_form(a, order, &reads);
+                next.selects.push(pair);
+                Ok((refined, next, None))
+            }
+            Step::Semijoin { left, right } | Step::Antijoin { left, right } => {
+                let is_semi = matches!(step, Step::Semijoin { .. });
+                let reads = self.names_of(a, left);
+                let key = self.semijoin_key(a, b, left, right);
+                let order = hash_words([u64::from(is_semi), key]) as u64 >> 2 | 1 << 62;
+                self.commutes(a, order, &reads, None)?;
+                let complete = self.is_complete(a, b, left, right);
+                let second = &self.refined[b as usize];
+                let refined = if is_semi { refine::semijoin(&self.refined, first, second, b, left, right, complete) } else { refine::antijoin(&self.refined, first, b, left, right, complete) }.map_err(no_partner)?;
+                let mut next = self.filter_form(a, order, &reads);
+                if is_semi {
+                    next.semijoins.push(key);
+                }
+                Ok((refined, next, None))
+            }
+            Step::Join { left, right, kept, .. } => {
+                let key = self.semijoin_key(a, b, left, right);
+                if form.kind == FormKind::Filter && form.semijoins.contains(&key) {
+                    return Err(other("join-over-its-semijoin", Partner::OverBase));
+                }
+                let second = &self.refined[b as usize];
+                let refined = refine::join(&self.refined, first, second, b, left, right, kept).map_err(|rejected| {
+                    (rejected, if rejected.claim == Claim::Other { Partner::Text(format!("(semijoin {} {} {})", self.terms[a as usize].text, self.terms[b as usize].text, self.pair_text(a, b, left, right))) } else { Partner::None })
+                })?;
+                let own = self.terms[a as usize].columns.iter().map(|column| column.name.clone()).collect();
+                let order = hash_words(format!("join {b} {key}").bytes().map(u64::from)) as u64;
+                Ok((refined, Form { kind: FormKind::Extension, own, reads: self.names_of(a, left), total: false, order, ..Form::default() }, None))
+            }
+            Step::All { left, right, outer } => {
+                let complete = self.is_complete(a, b, left, right);
+                let refined = refine::all(&self.refined, first, b, left, right, outer, complete).map_err(no_partner)?;
+                Ok((refined, Form::default(), None))
+            }
+            Step::Part(part) => self.judge_part(part, a, b, columns),
+            _ => {
+                let mut refined = Refined::with_arity(columns.len());
+                refined.add_key(refined.all_columns());
+                Ok((refined, Form::default(), None))
+            }
+        }
+    }
+
+    fn pair_text(&self, a: u32, b: u32, left: &[u16], right: &[u16]) -> String {
+        let (l, r) = (self.names_of(a, left), self.names_of(b, right));
+        l.iter().zip(&r).map(|(one, two)| format!("({one} {two})")).collect::<Vec<_>>().join(" ")
+    }
+
+    fn semijoin_key(&self, a: u32, b: u32, left: &[u16], right: &[u16]) -> u64 {
+        let names = self.names_of(a, left);
+        let mut words: Vec<u64> = vec![u64::from(b)];
+        for (name, place) in names.iter().zip(right) {
+            words.extend(name.bytes().map(u64::from));
+            words.push(1000 + u64::from(*place));
+        }
+        hash_words(words) as u64
+    }
+
+    /// The form of a filter over `a`.
+    fn filter_form(&self, a: u32, order: u64, reads: &[String]) -> Form {
+        let form = &self.forms[a as usize];
+        let mut next = if form.kind == FormKind::Filter { form.clone() } else { Form { kind: FormKind::Filter, ..Form::default() } };
+        next.last_filter = order;
+        next.filter_reads.extend(reads.iter().cloned());
+        next
+    }
+
+    /// Whether a filter over `a` that reads `reads` stands in its normal form: filters in one order,
+    /// and each below an extension over its columns. Dropping a column the filter below reads leaves
+    /// no other order.
+    fn commutes(&self, a: u32, order: u64, reads: &[String], dropped: Option<&str>) -> Result<(), (Rejected, Partner)> {
+        let form = &self.forms[a as usize];
+        match form.kind {
+            FormKind::Filter if order < form.last_filter && dropped.is_none_or(|name| !form.filter_reads.iter().any(|read| read == name)) => {
+                Err((Rejected { rule: "filter-order", claim: Claim::Other }, Partner::Swap))
+            }
+            FormKind::Extension if reads.iter().all(|read| form.own.contains(read)) && dropped.is_none_or(|name| !form.reads.iter().any(|read| read == name)) => {
+                Err((Rejected { rule: "filter-below-extension", claim: Claim::Other }, Partner::Swap))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn relation_input(refined: &Refined, of: Option<u32>) -> RelationInput {
+        let columns: Vec<String> = (0..refined.arity()).map(|at| format!("C{at}")).collect();
+        let mut within = Vec::new();
+        if of.is_some() {
+            for held in &refined.within {
+                let source = match held.of {
+                    LEAF_INPUT => "input",
+                    LEAF_OUTPUT => "output",
+                    _ => continue,
+                };
+                for (own, target) in held.columns.iter().zip(held.at.iter()) {
+                    within.push((columns[usize::from(*own)].clone(), source.to_string(), if *target == 0 { "P".to_string() } else { "Col".to_string() }));
+                }
+            }
+        }
+        RelationInput { columns, keys: refined.keys.clone(), low: refined.low.clone(), high: refined.high.clone(), within }
+    }
+
+    fn judge_part(&self, part: &PartStep, a: u32, b: u32, columns: &[Column]) -> Result<(Refined, Form, Option<Arc<PartPlan>>), (Rejected, Partner)> {
+        let first = &self.refined[a as usize];
+        if matches!(part, PartStep::Same) {
+            return Ok((first.clone(), Form::default(), None));
+        }
+        let form = &self.forms[a as usize];
+        // A flag over a key has one row at each group, and one with no other side's rows is constant.
+        if let PartStep::DeterminesFlag { keys, a: left, b: right } = part {
+            if first.is_key(refine::mask_of(keys)) {
+                return Err((Rejected { rule: "flag-over-key", claim: Claim::Follows }, Partner::None));
+            }
+            if refine::is_within(&self.refined, first, &[*left], b, &[*right], 2) || refine::is_outside(first, &[*left], b, &[*right]) || self.is_complete(a, b, &[*left], &[*right]) {
+                return Err((Rejected { rule: "flag-within", claim: Claim::Follows }, Partner::None));
+            }
+        }
+        let Some(plan) = self.part_plan(part, a, b, columns) else {
+            let mut refined = Refined::with_arity(columns.len());
+            refined.add_key(refined.all_columns());
+            for (at, column) in columns.iter().enumerate() {
+                if column.ty == ValueType::Nat {
+                    refined.low[at] = Some(0);
+                }
+            }
+            return Ok((refined, Form::default(), None));
+        };
+        let holes = part.hole_columns();
+        let hole_names = self.names_of(a, &holes);
+        if plan.reads_only_holes {
+            if form.kind == FormKind::Project {
+                return Err((Rejected { rule: "part-over-project", claim: Claim::Other }, Partner::OverBase));
+            }
+            if form.kind == FormKind::Extension && form.total && hole_names.iter().all(|name| form.own.contains(name)) {
+                return Err((Rejected { rule: "part-below-extension", claim: Claim::Other }, Partner::OverBase));
+            }
+        }
+        let second = (b != NO_TERM && part.reads_second_relation()).then(|| Self::relation_input(&self.refined[b as usize], None));
+        let result = plan.result(&Self::relation_input(first, Some(a)), second.as_ref());
+        if let Some(rejected) = result.verdict {
+            return Err((rejected, Partner::None));
+        }
+        let mut refined = result.refined.clone();
+        for (held, source, at) in &result.within {
+            let of = match source.as_str() {
+                "input" => LEAF_INPUT,
+                "output" => LEAF_OUTPUT,
+                "&r" => a,
+                "&s" if b != NO_TERM => b,
+                _ => continue,
+            };
+            let places: Option<Vec<u16>> = at.iter().map(|name| {
+                if let Some(place) = name.strip_prefix('C').and_then(|place| place.parse::<u16>().ok()) {
+                    if source == "&r" {
+                        return Some(place);
+                    }
+                }
+                self.terms[of as usize].columns.iter().position(|column| crate::expand::label_of(&column.name) == *name).map(|place| place as u16)
+            }).collect();
+            if let Some(places) = places {
+                refined.within.push(Within { columns: held.clone().into_boxed_slice(), of, at: places.into_boxed_slice() });
+            }
+        }
+        // A part's own order among the extensions and the filters over one relation.
+        let text = format!("{part:?} {b}");
+        let order = hash_words(text.bytes().map(u64::from)) as u64;
+        let next = if result.row_wise && !result.adds_columns {
+            let row_order = order >> 2 | 2 << 62;
+            self.commutes(a, row_order, &hole_names, None)?;
+            self.filter_form(a, row_order, &hole_names)
+        } else if result.row_wise {
+            if form.kind == FormKind::Extension && hole_names.iter().all(|name| form.own.contains(name)) && order < form.order {
+                return Err((Rejected { rule: "extension-order", claim: Claim::Other }, Partner::Swap));
+            }
+            let own = self.terms[a as usize].columns.iter().map(|column| column.name.clone()).collect();
+            Form { kind: FormKind::Extension, own, reads: hole_names, total: result.total, order, ..Form::default() }
+        } else {
+            Form::default()
+        };
+        Ok((refined, next, Some(plan)))
+    }
+
+    fn partner_text(&self, a: u32, text: &str, partner: &Partner) -> Option<String> {
+        let parent = &self.terms[a as usize];
+        match partner {
+            Partner::None => None,
+            Partner::Text(held) => Some(held.clone()),
+            Partner::OverBase | Partner::Swap => {
+                if parent.a == NO_TERM {
+                    return None;
+                }
+                let base = self.terms[parent.a as usize].text.as_str();
+                let outer = text.replacen(parent.text.as_str(), MARK, 1);
+                if matches!(partner, Partner::OverBase) {
+                    return Some(outer.replace(MARK, base));
+                }
+                let inner = parent.text.replacen(base, MARK, 1);
+                Some(inner.replace(MARK, &outer.replace(MARK, base)))
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -318,6 +712,19 @@ impl Generated {
                 column.name = crate::expand::label_of(&column.name);
             }
         }
+        let is_pair = root == RootKind::Against;
+        let judged = if is_pair { Ok((Refined::with_arity(0), Form::default(), None)) } else if self.no_rules { let mut refined = Refined::with_arity(columns.len()); refined.add_key(refined.all_columns()); Ok((refined, Form::default(), None)) } else { self.judge(&step, a, b, &columns) };
+        let (refined, form, plan) = match judged {
+            Ok(held) => held,
+            Err((rejected, partner)) => {
+                *self.rejected_by_rule.entry(rejected.rule).or_insert(0) += 1;
+                if self.keep_text {
+                    let other = self.partner_text(a, &text, &partner);
+                    self.rejected.push(RejectedTerm { rule: rejected.rule, claim: rejected.claim, step, a, b, text, columns: columns.iter().map(|column| column.name.clone()).collect(), other });
+                }
+                return;
+            }
+        };
         let flags = self.terms[a as usize].flags | if b == NO_TERM { 0 } else { self.terms[b as usize].flags };
         let root = if root == RootKind::Against {
             RootKind::Against
@@ -332,7 +739,9 @@ impl Generated {
         if b != NO_TERM {
             self.terms[b as usize].used = true;
         }
-        self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, used: false });
+        self.refined.push(refined);
+        self.forms.push(form);
+        self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, used: false, plan });
     }
 
     /// `project` and `select` over a term.
@@ -591,6 +1000,43 @@ impl Generated {
             }
         }
     }
+}
+
+/// What a part of the base tables' type holds: a lib relation's by its declaration, and a fragment's by its body.
+fn base_refinements(place: usize, part: &crate::gen_constants::ConstantPart) -> Refined {
+    static HELD: std::sync::OnceLock<Mutex<FastMap<usize, Refined>>> = std::sync::OnceLock::new();
+    let held = HELD.get_or_init(Default::default);
+    if let Some(found) = held.lock().expect("no panic").get(&place) {
+        return found.clone();
+    }
+    let names: Vec<String> = part.columns.iter().map(|(name, _)| (*name).to_string()).collect();
+    let call = crate::gen_constants::part_call(&part.name);
+    let found = if call.starts_with('(') {
+        let native: Vec<(String, String)> = names.iter().map(|name| (name.clone(), name.clone())).collect();
+        refine_parts::base_part(&call, &native).map(|result| {
+            let mut refined = result.refined;
+            for (columns, source, at) in &result.within {
+                let of = match source.as_str() {
+                    "input" => LEAF_INPUT,
+                    "output" => LEAF_OUTPUT,
+                    _ => continue,
+                };
+                let places: Vec<u16> = at.iter().map(|name| u16::from(name != "P")).collect();
+                refined.within.push(Within { columns: columns.clone().into_boxed_slice(), of, at: places.into_boxed_slice() });
+            }
+            refined.count_follows = false;
+            refined
+        })
+    } else {
+        refine_parts::lib_leaf(&call, &names)
+    };
+    let found = found.unwrap_or_else(|| {
+        let mut refined = Refined::with_arity(names.len());
+        refined.add_key(refined.all_columns());
+        refined
+    });
+    held.lock().expect("no panic").insert(place, found.clone());
+    found
 }
 
 /// The source of an Ident column of a constant part: a grid's components share one.
@@ -939,6 +1385,19 @@ impl Generated {
     /// The count of terms, and of the leaves that stand before them.
     pub fn counts(&self) -> (usize, usize) {
         (self.terms.len(), self.first_term)
+    }
+
+    /// A term's type, where the family keeps it.
+    pub fn term_refined(&self, at: usize) -> Option<&Refined> {
+        self.refined.get(at)
+    }
+
+    /// The values of a rejected term over the values of its relations.
+    pub fn rejected_value(walker: &mut Walker<'_>, term: &RejectedTerm, first: &Val, second: Option<&Val>) -> Val {
+        match second {
+            Some(second) => walker.eval.apply(&term.step, &[first, second]),
+            None => walker.eval.apply(&term.step, &[first]),
+        }
     }
 
     /// The count of a term's roots.
