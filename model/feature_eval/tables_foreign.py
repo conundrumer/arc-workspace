@@ -12,7 +12,8 @@ tables_worker.py gives, with each candidate's `edit` saying whether its column t
 NEW_ROOT/draws. It prints the tables with their test rows, which go nowhere else. On a fault it prints only the fault's type.
 
 With FOREIGN_READS=gold in the environment, a draw is harder to tell from gold without table content: a form must read a table
-of the state, and a read goes to a table that gold's query reads wherever one has the columns or the port.
+of the state, a read goes to a table that gold's query reads wherever one has the columns or the port, and a table has an Example
+column only where a table of gold's query has one.
 """
 import importlib.util
 import json
@@ -185,8 +186,9 @@ def worker(old_root, pool_dir, new_root, task):
         state_keys = {rows_key(known[name]) for name in members}
         lines = [written(form) for form in gold_forms[:form_at]]
         drawn_rng = random.Random(f'{SEED}.{task}.{form_at}')
-        counts = dict(form=form_at, drawn=0, no_place=0, refused=0, no_table=0, no_rows=0, in_state=0, in_gold=0, kept=0)
+        counts = dict(form=form_at, drawn=0, no_place=0, refused=0, no_table=0, no_rows=0, in_state=0, in_gold=0, example_column=0, kept=0)
         gold_parents = parents_of(gold_forms, form_at, defined)
+        gold_has_example = any('Example' in known[name]['types'] for name in ports)
         candidates = []
         begun = time.time()
         programs = 0
@@ -219,6 +221,8 @@ def worker(old_root, pool_dir, new_root, task):
                 counts['in_state'] += 1
             elif rows_key(table) in all_gold:
                 counts['in_gold'] += 1
+            elif READS_LIKE_GOLD and 'Example' in table['types'] and not gold_has_example:
+                counts['example_column'] += 1
             else:
                 counts['kept'] += 1
                 reads = sorted({read for read in parents_of(parse_forms(whole), form_at, defined) if read in known})
