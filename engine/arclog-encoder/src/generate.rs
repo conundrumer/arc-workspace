@@ -2156,12 +2156,13 @@ const CACHED_TERMS: usize = 3_000_000;
 pub struct Generators {
     held: Mutex<(FastMap<u128, (Arc<Generated>, u64)>, u64)>,
     pub names: NameStore,
+    /// The terms that the cache holds at most, where it is not 0, in place of [`CACHED_TERMS`].
+    pub term_limit: usize,
 }
 
 impl Generators {
-    /// The task-wide family of a table's schema.
-    pub fn get_task_wide(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
-        let hash = hash_words(format!("task-wide {d} {}", stored.key).bytes().map(u64::from));
+    /// The family under `hash`, built where the cache does not hold it. Past the bound, the oldest families leave.
+    fn family_of(&self, hash: u128, build: impl FnOnce() -> Generated) -> Arc<Generated> {
         {
             let mut held = self.held.lock().expect("no panic");
             let (cache, clock) = &mut *held;
@@ -2171,74 +2172,44 @@ impl Generators {
                 return found.0.clone();
             }
         }
-        let family = Arc::new(Generated::task_wide(&stored.types, d, &self.names));
+        let family = Arc::new(build());
+        let limit = if self.term_limit == 0 { CACHED_TERMS } else { self.term_limit };
         let mut held = self.held.lock().expect("no panic");
         let (cache, clock) = &mut *held;
         *clock += 1;
         cache.insert(hash, (family.clone(), *clock));
+        let mut total: usize = cache.values().map(|found| found.0.terms.len()).sum();
+        while total > limit && cache.len() > 1 {
+            let Some(oldest) = cache.iter().filter(|(key, _)| **key != hash).min_by_key(|(_, found)| found.1).map(|(key, _)| *key) else { break };
+            if let Some(gone) = cache.remove(&oldest) {
+                total -= gone.0.terms.len();
+            }
+        }
         family
+    }
+
+    /// The task-wide family of a table's schema.
+    pub fn get_task_wide(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
+        let hash = hash_words(format!("task-wide {d} {}", stored.key).bytes().map(u64::from));
+        self.family_of(hash, || Generated::task_wide(&stored.types, d, &self.names))
     }
 
     /// The family of two tables of a state.
     pub fn get_two_tables(&self, t: &crate::stored::Stored, u: &crate::stored::Stored) -> Arc<Generated> {
         let all: Vec<ValueType> = t.types.iter().chain(&u.types).cloned().collect();
         let hash = hash_words(format!("two {} {}", t.types.len(), crate::stored::schema_key(&all)).bytes().map(u64::from));
-        if let Some(found) = self.held.lock().expect("no panic").0.get(&hash) {
-            return found.0.clone();
-        }
-        let family = Arc::new(Generated::of_two_tables(&t.types, &u.types, &self.names));
-        let mut held = self.held.lock().expect("no panic");
-        let (cache, clock) = &mut *held;
-        *clock += 1;
-        cache.insert(hash, (family.clone(), *clock));
-        let mut total: usize = cache.values().map(|found| found.0.terms.len()).sum();
-        while total > CACHED_TERMS && cache.len() > 1 {
-            let Some(oldest) = cache.iter().filter(|(key, _)| **key != hash).min_by_key(|(_, found)| found.1).map(|(key, _)| *key) else { break };
-            if let Some(gone) = cache.remove(&oldest) {
-                total -= gone.0.terms.len();
-            }
-        }
-        family
+        self.family_of(hash, || Generated::of_two_tables(&t.types, &u.types, &self.names))
     }
 
     /// The family of a pair's own numbers.
     pub fn get_grids(&self, d: usize) -> Arc<Generated> {
         let hash = hash_words(format!("grids {d}").bytes().map(u64::from));
-        if let Some(found) = self.held.lock().expect("no panic").0.get(&hash) {
-            return found.0.clone();
-        }
-        let family = Arc::new(Generated::of_grids(d, &self.names));
-        let mut held = self.held.lock().expect("no panic");
-        let (cache, clock) = &mut *held;
-        *clock += 1;
-        cache.insert(hash, (family.clone(), *clock));
-        family
+        self.family_of(hash, || Generated::of_grids(d, &self.names))
     }
 
     pub fn get(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(stored.key.bytes().map(u64::from));
-        {
-            let mut held = self.held.lock().expect("no panic");
-            let (cache, clock) = &mut *held;
-            *clock += 1;
-            if let Some(found) = cache.get_mut(&hash) {
-                found.1 = *clock;
-                return found.0.clone();
-            }
-        }
-        let family = Arc::new(Generated::of(&stored.types, d, &self.names));
-        let mut held = self.held.lock().expect("no panic");
-        let (cache, clock) = &mut *held;
-        *clock += 1;
-        cache.insert(hash, (family.clone(), *clock));
-        let mut total: usize = cache.values().map(|found| found.0.terms.len()).sum();
-        while total > CACHED_TERMS && cache.len() > 1 {
-            let Some(oldest) = cache.iter().filter(|(key, _)| **key != hash).min_by_key(|(_, found)| found.1).map(|(key, _)| *key) else { break };
-            if let Some(gone) = cache.remove(&oldest) {
-                total -= gone.0.terms.len();
-            }
-        }
-        family
+        self.family_of(hash, || Generated::of(&stored.types, d, &self.names))
     }
 }
 

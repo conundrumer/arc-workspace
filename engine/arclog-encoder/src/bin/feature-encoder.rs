@@ -606,17 +606,18 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
     let d = arguments.size.max(1);
     let wide = arguments.wide_size.unwrap_or(1);
     // One family cache per kind. A run writes a names file of its own, since a stopped run leaves its file with an unfinished end.
-    let families_of = |folder: &str| -> Result<Generators, String> {
+    let families_of = |folder: &str, term_limit: usize| -> Result<Generators, String> {
         for kind in ["lists", "null"] {
             std::fs::create_dir_all(format!("{root}/{folder}/{kind}")).map_err(|error| error.to_string())?;
         }
         let mut families = Generators::default();
+        families.term_limit = term_limit;
         let names_file = format!("{root}/{folder}/lists/names.tsv.zst");
         let names_file = if std::path::Path::new(&names_file).exists() { format!("{root}/{folder}/lists/names-{}.tsv.zst", std::process::id()) } else { names_file };
         families.names = NameStore::to_file(&names_file)?;
         Ok(families)
     };
-    let kinds: [(&str, ListsOf, Generators); 3] = [("state", ListsOf::State, families_of("state")?), ("wide", ListsOf::Wide(wide), families_of("wide")?), ("on", ListsOf::Tables, families_of("on")?)];
+    let kinds: [(&str, ListsOf, Generators); 3] = [("state", ListsOf::State, families_of("state", 500_000)?), ("wide", ListsOf::Wide(wide), families_of("wide", 500_000)?), ("on", ListsOf::Tables, families_of("on", 2_500_000)?)];
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let begun = Instant::now();

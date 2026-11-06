@@ -1351,7 +1351,12 @@ impl PartPlan {
         }
         let facts = read_forms(&self.forms, &self.export, r, s, &self.s_columns);
         let result = Arc::new(self.judge(&facts));
-        self.results.lock().expect("no panic").insert(key, result.clone());
+        let mut held = self.results.lock().expect("no panic");
+        // A long run meets many relations, and this is a cache.
+        if held.len() >= 256 {
+            held.clear();
+        }
+        held.insert(key, result.clone());
         result
     }
 
