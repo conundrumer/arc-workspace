@@ -114,8 +114,11 @@ pub enum Parameter {
     /// assignments, an error.
     Underdetermined(Vec<Arc<Relation>>),
     /// Several values are left, and no input of the evidence, a train input
-    /// or a test input, separates the assignments that hold them.
-    Unseparated(Vec<Arc<Relation>>),
+    /// or a test input, separates the assignments that hold them. `record`
+    /// is the value that the solver's `param` record gives, where one of them
+    /// is that value and the End check has found it; a run at determined
+    /// values takes it.
+    Unseparated { values: Vec<Arc<Relation>>, record: Option<Arc<Relation>> },
     /// A `DET` whose body ends in `ONE` marks and names no proposer, which
     /// the models of the constraint module solve, left to Every case.
     Pick,
@@ -160,6 +163,16 @@ pub struct Determination {
 }
 
 impl Determination {
+    /// Gives each parameter of `records` that several values are left of
+    /// the value its `param` record gives.
+    pub fn set_records(&mut self, records: Vec<(ProgramRelation, Arc<Relation>)>) {
+        for (relation, value) in records {
+            if let Some((_, Parameter::Unseparated { record, .. })) = self.parameters.iter_mut().find(|(name, _)| *name == relation) {
+                *record = Some(value);
+            }
+        }
+    }
+
     /// What the determination gives `relation`, or `None` where no case
     /// reads it, or no case that reads it keeps an assignment.
     pub fn parameter(&self, relation: &ProgramRelation) -> Option<&Parameter> {
@@ -178,7 +191,8 @@ impl Determination {
         let values = reads.iter().filter_map(|relation| match self.parameter(relation)? {
             Parameter::Determined(rows) => Some((relation.clone(), rows.clone())),
             Parameter::Open(values) => Some((relation.clone(), union(values.clone()))),
-            Parameter::Underdetermined(_) | Parameter::Unseparated(_) | Parameter::Pick => None,
+            Parameter::Unseparated { record: Some(rows), .. } => Some((relation.clone(), rows.clone())),
+            Parameter::Underdetermined(_) | Parameter::Unseparated { record: None, .. } | Parameter::Pick => None,
         });
         ParameterValues::determined(values)
     }
@@ -206,7 +220,8 @@ impl Determination {
                 Parameter::Determined(rows) => values.push((relation.clone(), rows.clone())),
                 Parameter::Open(rows) => values.push((relation.clone(), union(rows.clone()))),
                 Parameter::Underdetermined(_) => return Err(format!("the parameter {} is underdetermined", relation_spelled(relation))),
-                Parameter::Unseparated(_) => return Err(format!("the parameter {} has several values left, and one run takes one value", relation_spelled(relation))),
+                Parameter::Unseparated { record: Some(rows), .. } => values.push((relation.clone(), rows.clone())),
+                Parameter::Unseparated { record: None, .. } => return Err(format!("the parameter {} has several values left, and none is its record", relation_spelled(relation))),
                 Parameter::Pick => {}
             }
         }
@@ -424,7 +439,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
                 (false, 1) => Parameter::Determined(values.pop().expect("one value")),
                 (false, _) if !read_by_program.contains(&relation) => continue,
                 (false, _) if separated(&relation) => Parameter::Underdetermined(values),
-                (false, _) => Parameter::Unseparated(values),
+                (false, _) => Parameter::Unseparated { values, record: None },
             }
         };
         parameters.push((relation, parameter));

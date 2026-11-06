@@ -103,7 +103,7 @@ impl Finding {
 fn determine_solver(corpus: &Path, tasks: &Path, solver: &CorpusSolver, differing: &Mutex<BTreeSet<String>>, unseparated: &Mutex<BTreeSet<String>>) -> SolverResult {
     let setup = solver_determination(corpus, tasks, &solver.task_id);
     let several: Vec<String> = setup.iter().flat_map(|setup| &setup.determination.parameters).filter_map(|(relation, parameter)| match parameter {
-        Parameter::Unseparated(values) => Some(format!("{}: {}: {} values are left, and no input of the task separates them", solver.task_id, relation_spelled(relation), values.len())),
+        Parameter::Unseparated { values, .. } => Some(format!("{}: {}: {} values are left, and no input of the task separates them", solver.task_id, relation_spelled(relation), values.len())),
         _ => None,
     }).collect();
     for line in &several {
@@ -163,16 +163,18 @@ pub(crate) fn solver_determination(corpus: &Path, tasks: &Path, id: &str) -> Res
     let limits = corpus_limits();
     let constructions = constructions()?;
     let bases = solver.base_case_names(Exclusion::WithoutExcluded);
-    let (determination, findings) = {
+    let (mut determination, findings, records) = {
         let determined = determined_cases(&programs, &concept, &task, &session, constructions, &limits);
         let base_cases: Vec<DeterminedCase<'_>> = determined.iter().filter(|case| bases.contains(case.name)).copied().collect();
         let determination = determine(&base_cases, &judged, World::Closed);
         let mut findings: Vec<Finding> = determination.cases.iter().filter_map(|(name, outcome, _)| case_fault(name, outcome)).collect();
         let records: Vec<(&ProgramRelation, &ParamValue)> = solver.arcdata.value().params.iter().map(|param| (&param.value().name, &param.value().value)).collect();
         let comparison = Comparison { determined: &base_cases, determination: &determination, records: &records, session: &session, registry, numbers: RefCell::default() };
-        findings.extend(comparison.findings());
-        (determination, findings)
+        let (found, records) = comparison.findings();
+        findings.extend(found);
+        (determination, findings, records)
     };
+    determination.set_records(records);
     Ok(SolverDetermination { task, judged, concept, solver, programs, session, limits, constructions, determination, findings })
 }
 
@@ -223,9 +225,11 @@ impl Comparison<'_> {
     /// determination gives a value or an error, in its order, then each
     /// `RIGID_DET` assembly whose parts the records give, in the order of
     /// the records. The Idents of every relation compared share one
-    /// renaming.
-    fn findings(&self) -> Vec<Finding> {
+    /// renaming. Also gives, for each parameter that several values are left
+    /// of, the one its record gives.
+    fn findings(&self) -> (Vec<Finding>, Vec<(ProgramRelation, Arc<Relation>)>) {
         let mut findings = Vec::new();
+        let mut records = Vec::new();
         let mut compared: Vec<Compared> = Vec::new();
         for (relation, parameter) in &self.determination.parameters {
             if self.determination.reads_demonstrated(relation) {
@@ -240,7 +244,7 @@ impl Comparison<'_> {
                 }
                 Parameter::Determined(value) => vec![value.clone()],
                 Parameter::Open(values) => vec![union(values.clone())],
-                Parameter::Unseparated(values) => values.clone(),
+                Parameter::Unseparated { values, .. } => values.clone(),
             };
             let Some(record) = self.record(relation) else {
                 if !self.in_compared_assembly(relation) && self.determination.read_by_program.contains(relation) {
@@ -251,8 +255,7 @@ impl Comparison<'_> {
             let Some((program, node)) = self.det(relation) else {
                 unreachable!("a parameter that the determination gives is a `DET` of a case it runs")
             };
-            let relation = GraphRelation { node, output: None };
-            let Some(types) = program.types.columns(&relation) else {
+            let Some(types) = program.types.columns(&GraphRelation { node, output: None }) else {
                 findings.push(Finding::Fault(format!("{name}: the relation's columns have no types")));
                 continue;
             };
@@ -263,6 +266,9 @@ impl Comparison<'_> {
                     Ok((record, engine)) => match differs(record, engine, &mut compared) {
                         Some(what) => difference = difference.or(Some(what)),
                         None => {
+                            if values.len() > 1 {
+                                records.push((relation.clone(), value.clone()));
+                            }
                             difference = None;
                             break;
                         }
@@ -297,7 +303,7 @@ impl Comparison<'_> {
                 findings.push(finding);
             }
         }
-        findings
+        (findings, records)
     }
 
     /// The record of `relation`, or `None` where the solver holds none.
