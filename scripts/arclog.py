@@ -57,7 +57,7 @@ def outer(argv):
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument('--runtime', type=Path)
     a, _ = ap.parse_known_args(argv)
-    runtime = a.runtime or main_worktree() / 'work/lm/data-study/ast/run/runtime-0b30c6662'
+    runtime = a.runtime or main_worktree() / 'work/lm/data-study/ast/run/runtime-04c66f982'
     python = runtime / 'venv/bin/python'
     if not (runtime / 'ready.json').exists() or not python.exists():
         sys.exit('no built runtime at %s' % runtime)
