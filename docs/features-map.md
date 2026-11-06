@@ -5,6 +5,7 @@ Where each thing about features over tables is defined. Where two documents diff
 ## Authoritative
 
 - Goal, and what counts as a result: [Goal](../work/goal.md). It is under `work/`, which git ignores.
+- The objects of the search and the maps between them: [Structure of the search](feature-spec/structure.md).
 - The vectors and their keys, `TableVector`, `AssignmentVector`, `QueryVector`, `State` and `Sample`: [Type contract](sample-build/contract.md).
     - A `TableVector` reads one table at one assignment and the base tables.
     - A comparison with a table the query uses is a `QueryVector` entry.
