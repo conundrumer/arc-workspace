@@ -1,0 +1,21 @@
+[package]
+name = "arclog-encoder"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The reader, the checker and the evaluator that a feature's forms run through.
+arclog = { path = "../arclog" }
+# The table of the lib's constructions, which an evaluation reads.
+arclog-constructions = { path = "../arclog-constructions" }
+# The sources of each column of a table, which a pool's kind reads.
+arclog-tables = { path = "../arclog-tables" }
+# The grids of an evaluation are read from JSON.
+serde_json = "1"
+# Generated data is written and read as streamable zstd.
+zstd = "0.13"
+
+[[bin]]
+name = "feature-encoder"
+path = "src/bin/feature-encoder.rs"

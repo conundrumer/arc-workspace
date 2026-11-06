@@ -1,0 +1,31 @@
+;; The feature library: compositions of the expander's primitives, which
+;; `engine/arclog-encoder` reads. A `fragment` gives a relation with one label
+;; per column, which its `gives` names. A `feature` ends in `EXPORT`.
+
+;; A ratio is two numbers, each from its own atom.
+
+(feature (cardinality-ratio (?A relation) (?B relation))
+  "The ratio of two relations' counts of rows, as those two counts."
+  (INIT &a Cardinality
+    (member ((:m (others ?A)))
+      (?A (*others ?A))))
+  (INIT &b Cardinality
+    (member ((:m (others ?B)))
+      (?B (*others ?B))))
+  (EXPORT (&a.size ^N) (&b.size (:N ^N_2))))
+
+(fragment (join-label (?R relation) (?p column ?R) (?grid grid))
+  "A relation's rows with a grid's color at a column of cells."
+  (QUERY &q
+    (?R (?p *) (*others ?R ?p))
+    (?grid (:P ?p) (:Col (*new Col ?R))))
+  (gives &q))
+
+(fragment (group-sizes (?R relation) (?x column ?R))
+  "The rows per value of a column."
+  (INIT &c Cardinality
+    (key ((?R (?x ^)))
+      (member ((:m (others ?R ?x)))
+        (?R ?x (*others ?R ?x)))))
+  (QUERY &sizes (&c.size (:key (?x *)) (:N (*new N ?R))))
+  (gives &sizes))

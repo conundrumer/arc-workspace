@@ -28,6 +28,13 @@ pub const FACT_RELATIONS: &[(FactRelation, &str)] = &[
     (FactRelation::ExOutput, "ex_output"),
 ];
 
+/// The head of an atom that reads a lib name constant, in a feature's forms.
+pub(crate) const LIB_NAME: &str = "lib_name";
+/// The head of an atom that reads a table given as stored rows, in a feature's
+/// forms.
+pub(crate) const STORED_TABLE: &str = "stored_table";
+/// The name of the train output of the current example, in a feature's forms.
+pub(crate) const OUTPUT_FACT: &str = "output";
 pub(crate) const INIT: &str = "INIT";
 pub(crate) const CHOOSE: &str = "CHOOSE";
 pub(crate) const OUT: &str = "OUT";

@@ -143,6 +143,7 @@ fn registry_export_uncached(registry: &Registry) -> Result<Value, String> {
             FactRelation::Input => "input",
             FactRelation::ExInput => "ex_input",
             FactRelation::ExOutput => "ex_output",
+            FactRelation::Output | FactRelation::Program(_) | FactRelation::Name(_) | FactRelation::Stored(_) => unreachable!("the loop names the facts of a program"),
         };
         let definition = forms
             .get(key)

@@ -309,7 +309,7 @@ struct Named {
 fn names(evaluation: &Evaluation<'_>, node: GraphNodeIndex, kind: &DependencyKind) -> Result<Vec<Named>, String> {
     let declared = |declared: ProgramRelation| Ok(vec![Named { name: relation_spelled(&declared), output: None, declared: Some(declared) }]);
     match kind {
-        DependencyKind::Fact(fact) => Ok(vec![Named { name: match fact { FactRelation::Input => "input", FactRelation::ExInput => "ex_input", FactRelation::ExOutput => "ex_output" }.to_owned(), output: None, declared: None }]),
+        DependencyKind::Fact(fact) => Ok(vec![Named { name: fact.spelled(), output: None, declared: None }]),
         DependencyKind::Clause(name) | DependencyKind::Parameter(name) => declared(name.clone()),
         DependencyKind::Chosen(name) | DependencyKind::Demonstrated(name) => declared(ProgramRelation::Declared(name.clone())),
         DependencyKind::InstanceInput { instance, input: port } | DependencyKind::InstanceOutput { instance, output: port } => declared(ProgramRelation::Output(OutputName { of: OutputOwner::Instance(instance.clone()), path: Arc::from([OutputStep::Port(port.clone())]) })),

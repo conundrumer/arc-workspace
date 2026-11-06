@@ -121,6 +121,7 @@ pub fn decode(type_name: &str, packed: i64, registry: &Registry) -> Result<Value
             json!({"kind":"example","value":e.index(),"pretty":format!("example {}",e.index())})
         }
         Term::Constant(Constant::Unit) => json!({"kind":"unit","pretty":"unit"}),
+        Term::Constant(Constant::LibName(name)) => json!({"kind":"lib_name","name":&*name.text(),"pretty":&*name.text()}),
         Term::Constant(Constant::Orientation(c)) => {
             json!({"kind":"orientation","name":registry.constant_name(c),"pretty":registry.constant_name(c)})
         }

@@ -44,6 +44,8 @@ pub enum ValueType {
     /// name written, or, in a decoded program, the slot. The engine has no
     /// record values, so each field takes a column of its own.
     Record(Box<[(crate::program::ColumnName, ValueType)]>),
+    /// A lib name: equality alone, and every element of the group fixes it.
+    LibName,
 }
 
 impl std::fmt::Debug for ValueType {
@@ -56,6 +58,7 @@ impl std::fmt::Debug for ValueType {
             ValueType::Color => "Color",
             ValueType::Example => "Example",
             ValueType::Unit => "Unit",
+            ValueType::LibName => "LibName",
             ValueType::Box => "Box",
             ValueType::Position => "Position",
             ValueType::Offset => "Offset",
@@ -196,6 +199,7 @@ impl ValueType {
             | ValueType::Color
             | ValueType::Example
             | ValueType::Unit
+            | ValueType::LibName
             | ValueType::Box
             | ValueType::Position
             | ValueType::Offset

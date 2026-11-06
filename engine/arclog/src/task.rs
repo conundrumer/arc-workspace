@@ -244,10 +244,25 @@ impl Task {
     pub fn fact_rows(&self, fact: FactRelation, example: Option<Example>) -> Relation {
         let encode = |term: Term| term.encode().expect("a cell's margins lie within a byte");
         let mut rows = RowSet::empty(match fact {
-            FactRelation::Input => 2,
+            FactRelation::Input | FactRelation::Output => 2,
             FactRelation::ExInput | FactRelation::ExOutput => 3,
+            FactRelation::Program(program) => program.columns().len() as u16,
+            FactRelation::Name(_) => 1,
+            FactRelation::Stored(_) => panic!("a session holds a stored table's rows on each example it reads"),
         });
         match (fact, example) {
+            (FactRelation::Output, Some(example)) => {
+                if let Some(pair) = self.train.get(usize::from(example.index())) {
+                    for (position, color) in pair.output.cells() {
+                        rows.insert(Box::new([encode(Term::Box(position)), encode(Term::Constant(Constant::Color(color)))]));
+                    }
+                }
+            }
+            // A session holds the rows of a state's program, which a task has none of.
+            (FactRelation::Program(_), None) => {}
+            (FactRelation::Name(name), None) => {
+                rows.insert(Box::new([encode(Term::Constant(Constant::LibName(name)))]));
+            }
             (FactRelation::Input, Some(example)) => {
                 for (position, color) in self.input(example).cells() {
                     rows.insert(Box::new([encode(Term::Box(position)), encode(Term::Constant(Constant::Color(color)))]));
@@ -266,7 +281,7 @@ impl Task {
                     }
                 }
             }
-            _ => panic!("`input` on an example, and `ex_input` and `ex_output` task-wide"),
+            _ => panic!("`input` and `output` on an example, and each other fact relation task-wide"),
         }
         crate::eval::join::one_part(rows)
     }

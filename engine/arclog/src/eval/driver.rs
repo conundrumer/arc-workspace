@@ -574,7 +574,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                 IrNode::Atom(atom) => {
                     let relation = match &atom.source {
                         AtomSource::Fact(fact) => {
-                            let on = (*fact == crate::program::FactRelation::Input).then_some(example).flatten();
+                            let on = fact.per_example().then_some(example).flatten();
                             self.evaluation.session.fact_relation(&self.evaluation.task, *fact, on)
                         }
                         AtomSource::Undefined(_) => return Ok(Err(RelationValue::Undefined)),

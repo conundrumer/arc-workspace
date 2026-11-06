@@ -87,8 +87,9 @@ impl Sides<'_, '_> {
             return Some(self.builder.sides[node]);
         }
         match &self.builder.nodes[node].kind {
-            DependencyKind::Fact(FactRelation::Input) => Some(Side::PerInput),
-            DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput) => Some(Side::TaskWide),
+            DependencyKind::Fact(FactRelation::Input | FactRelation::Output) => Some(Side::PerInput),
+            DependencyKind::Fact(stored @ FactRelation::Stored(_)) => Some(if stored.per_example() { Side::PerInput } else { Side::TaskWide }),
+            DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput | FactRelation::Program(_) | FactRelation::Name(_)) => Some(Side::TaskWide),
             _ => {
                 let form = self.builder.forms[node].first().expect("a form of each node of the case that is no fact").clone();
                 self.form(&form)
@@ -143,6 +144,10 @@ impl Sides<'_, '_> {
             let Resolution::Node(read_node) = builder.resolutions[&read.path] else { continue };
             let node = read_node.0 as usize;
             if builder.forms[node].contains(path) {
+                continue;
+            }
+            // A relation of the program or a constant holds for every example.
+            if matches!(builder.nodes[node].kind, DependencyKind::Fact(FactRelation::Program(_) | FactRelation::Name(_))) {
                 continue;
             }
             let fact = builder.is_fact(read_node);

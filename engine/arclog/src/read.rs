@@ -160,6 +160,19 @@ pub fn read_arclog(text: &str, file: SourceFile) -> Result<WithDiagnostics<(Node
     Ok(WithDiagnostics { value: (program, reader.layout(file, comments)), diagnostics })
 }
 
+/// [`read_arclog`], of a program that holds a feature's forms: these read
+/// `output`, the program relations and a lib name constant, which no other
+/// program reads.
+pub fn read_feature_forms(text: &str) -> Result<WithDiagnostics<(Node<Program>, Layout)>, Vec<Diagnostic>> {
+    let file = SourceFile::Arclog;
+    let (exprs, comments) = read_sexprs(text, file)?;
+    let mut reader = Reader::new(&exprs);
+    reader.feature_forms = true;
+    let program = reader.program(&exprs, end_place(text, file));
+    let diagnostics = std::mem::take(&mut reader.diagnostics);
+    Ok(WithDiagnostics { value: (program, reader.layout(file, comments)), diagnostics })
+}
+
 /// The forms of an arcdata file, with the layout of the arclog file it
 /// stands beside extended by its own. `program` is that arclog file's
 /// program, and `representative` the program of the solver its

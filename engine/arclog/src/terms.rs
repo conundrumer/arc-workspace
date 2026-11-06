@@ -31,7 +31,7 @@ impl TermId {
     }
 
     /// The term id whose 32 bits are `bits`.
-    pub(crate) fn from_encoding(bits: u32) -> Self {
+    pub fn from_encoding(bits: u32) -> Self {
         TermId(bits)
     }
 }
@@ -163,6 +163,48 @@ pub enum Constant {
     Example(Example),
     Orientation(OrientationConstant),
     Unit,
+    LibName(LibNameId),
+}
+
+/// A lib name: a constant with equality alone, such as a name of the lib or
+/// the engine's identity of a table or a column. The group fixes it.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LibNameId(u32);
+
+/// The texts of the lib names of the process. An id depends on the order of
+/// interning, so a lib name has no order and a writer writes its text.
+#[derive(Default)]
+struct LibNames {
+    ids: std::collections::HashMap<std::sync::Arc<str>, u32>,
+    texts: Vec<std::sync::Arc<str>>,
+}
+
+fn lib_names() -> &'static std::sync::RwLock<LibNames> {
+    static NAMES: std::sync::OnceLock<std::sync::RwLock<LibNames>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(Default::default)
+}
+
+impl LibNameId {
+    /// The lib name whose text is `text`.
+    pub fn of(text: &str) -> LibNameId {
+        if let Some(id) = lib_names().read().expect("a table that no panic poisoned").ids.get(text) {
+            return LibNameId(*id);
+        }
+        let mut names = lib_names().write().expect("a table that no panic poisoned");
+        if let Some(id) = names.ids.get(text) {
+            return LibNameId(*id);
+        }
+        let id = u32::try_from(names.texts.len()).expect("fewer than 2^32 lib names");
+        let held: std::sync::Arc<str> = text.into();
+        names.texts.push(held.clone());
+        names.ids.insert(held, id);
+        LibNameId(id)
+    }
+
+    /// The name's text.
+    pub fn text(self) -> std::sync::Arc<str> {
+        lib_names().read().expect("a table that no panic poisoned").texts[self.0 as usize].clone()
+    }
 }
 
 /// A Box: its four margins (t, b, l, r), packed as four signed bytes in one
@@ -234,6 +276,7 @@ impl Term {
             Term::Constant(Constant::Example(example)) => u32::from(example.0),
             Term::Constant(Constant::Orientation(constant)) => constant.encoding(),
             Term::Constant(Constant::Unit) => 0,
+            Term::Constant(Constant::LibName(name)) => name.0,
             Term::Box(margins) => margins.pack()?,
             Term::Ident(Ident(index)) => index,
         };
@@ -260,6 +303,7 @@ impl Term {
             ValueType::Color => Term::Constant(Constant::Color(Color(bits as u8))),
             ValueType::Example => Term::Constant(Constant::Example(Example(bits as u16))),
             ValueType::Unit => Term::Constant(Constant::Unit),
+            ValueType::LibName => Term::Constant(Constant::LibName(LibNameId(bits))),
             ty if ty.is_box() => Term::Box(Term::decode_box(id)),
             ValueType::Ident(_) => Term::Ident(Ident(bits)),
             ValueType::Pose(_) => Term::decode(id, &ValueType::D4),

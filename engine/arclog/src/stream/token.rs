@@ -112,7 +112,7 @@ impl fmt::Display for Token {
         match self {
             Token::Control(control) => f.write_str(control.text()),
             Token::Lib(LibName(name)) | Token::Proposer(LibName(name)) => write!(f, "{name}"),
-            Token::Fact(fact) => f.write_str(spelling(sp::FACT_RELATIONS, fact)),
+            Token::Fact(fact) => f.write_str(&fact.spelled()),
             Token::Relation(slot) => write!(f, "&r{slot}"),
             Token::Column(position) => write!(f, ":{position}"),
             Token::Label(slot) => write!(f, "L{slot}"),

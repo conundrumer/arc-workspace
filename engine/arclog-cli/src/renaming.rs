@@ -122,6 +122,7 @@ pub(crate) fn term_leaves(term: Term, registry: &Registry, orientation: &dyn Fn(
         Term::Constant(Constant::Color(color)) => vec![number(color.digit().into())],
         Term::Constant(Constant::Example(example)) => vec![number(example.index().into())],
         Term::Constant(Constant::Unit) => vec![],
+        Term::Constant(Constant::LibName(_)) => return Err("a record holds no lib name".to_owned()),
         Term::Constant(Constant::Orientation(constant)) => vec![EngineLeaf::Written(orientation(registry.constant_name(constant))?)],
     })
 }

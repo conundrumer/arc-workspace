@@ -107,9 +107,14 @@ fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, ato
         DependencyKind::Fact(fact) => Some(fact),
         _ => None,
     };
+    if let (Side::TaskWide, Some(stored @ FactRelation::Stored(_))) = (side, fact) {
+        if stored.per_example() {
+            return Some(Refused::InputFact);
+        }
+    }
     match (side, fact) {
         (Side::PerInput, Some(FactRelation::ExInput | FactRelation::ExOutput)) => Some(Refused::ExFact),
-        (Side::TaskWide, Some(FactRelation::Input)) => Some(Refused::InputFact),
+        (Side::TaskWide, Some(FactRelation::Input | FactRelation::Output)) => Some(Refused::InputFact),
         (Side::PerInput, None) if reads_example(program.example_columns(node, crate::resolver::output_of(&atom.relation)), atom) => {
             Some(Refused::ExampleColumn)
         }
@@ -179,7 +184,7 @@ fn example_site(program: &ResolvedProgram, node: GraphNodeIndex, atom: &Atom) ->
 /// One read of a form: the atom, its path relative to the form the check
 /// reads, and the path in the program of the innermost form that holds it,
 /// a form of a `DEMO_RULE` included, whose side the read takes.
-pub(crate) struct FormRead<'a> {
+pub struct FormRead<'a> {
     pub atom: &'a Atom,
     pub at: NodePath,
     pub form: NodePath,
@@ -198,7 +203,7 @@ impl FormRead<'_> {
 
 /// Each read of `form`, the form at `path` in the program, and of each form
 /// it holds, in the order of the forms' paths.
-pub(crate) fn form_reads<'a>(form: &'a Form, path: &NodePath) -> Vec<FormRead<'a>> {
+pub fn form_reads<'a>(form: &'a Form, path: &NodePath) -> Vec<FormRead<'a>> {
     fn walk<'a>(node: NodeRef<'a>, at: NodePath, form: &NodePath, out: &mut Vec<FormRead<'a>>) {
         if let Some(atom) = node.atom() {
             return out.push(FormRead { atom, at, form: form.clone() });

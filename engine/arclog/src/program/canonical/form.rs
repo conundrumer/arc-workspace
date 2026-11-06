@@ -313,7 +313,24 @@ impl NameWriter for AsWritten {
         match relation {
             RelationRef::Fact(fact) => {
                 out.tag(Tag::Fact);
-                out.byte(*fact as u8);
+                match fact {
+                    FactRelation::Input => out.byte(0),
+                    FactRelation::ExInput => out.byte(1),
+                    FactRelation::ExOutput => out.byte(2),
+                    FactRelation::Output => out.byte(3),
+                    FactRelation::Program(program) => {
+                        out.byte(4);
+                        out.text(program.name());
+                    }
+                    FactRelation::Name(name) => {
+                        out.byte(5);
+                        out.text(&name.text());
+                    }
+                    FactRelation::Stored(name) => {
+                        out.byte(6);
+                        out.text(&name.text());
+                    }
+                }
             }
             RelationRef::Lib(crate::registry::LibName(name)) => {
                 out.tag(Tag::Lib);

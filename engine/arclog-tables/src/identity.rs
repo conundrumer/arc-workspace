@@ -143,6 +143,22 @@ pub fn identify(checked: &CheckedProgram, registry: &Registry, relations: &[Prog
     out
 }
 
+/// The contents of the table of `relation` with no rows, whose form stands at
+/// `form` and whose name is `name`: its columns and their flows.
+pub fn relation_contents(checked: &CheckedProgram, registry: &Registry, relation: &arclog::types::GraphRelation, form: &NodePath, name: &str) -> arclog::eval::Outcome<Contents> {
+    let contents = crate::tables::relation_metadata(registry, checked, form, relation, 0, &[], Vec::new())?;
+    Ok(Contents { name: name.to_string(), ..contents })
+}
+
+/// The identity of the table of `relation`, whose form stands at `form`, and of
+/// each of its columns, in row order: those that [`identify`] gives that table.
+pub fn relation_identity(checked: &CheckedProgram, registry: &Registry, relation: &arclog::types::GraphRelation, form: &NodePath, name: &str) -> Option<(String, Vec<String>)> {
+    let contents = relation_contents(checked, registry, relation, form, name).ok()?;
+    let table = Table { form: form.clone(), point: Point::Relation, contents: Ok(contents) };
+    let mut forms = Forms { checked, registry, held: StableHashMap::default() };
+    Some(table_identity(&mut forms, &table))
+}
+
 /// The identity of the form of the atom at `atom` and the atom's canonical
 /// path in it, both empty for the empty path.
 pub(crate) fn atom_identity(forms: &mut Forms, atom: &NodePath) -> (String, String) {
