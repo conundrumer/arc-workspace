@@ -17,13 +17,13 @@ import numpy as np
 from common import (RESULTS, read_json, write_json_atomic)
 
 # The words of an aggregate on no rows, in the value files of the slower path.
-DEFAULT_WORDS = np.array([1 << 61, 1 << 62], dtype=np.uint64)
+DEFAULT_WORDS = np.array([1 << 61, 1 << 62, 1], dtype=np.uint64)
 
 
 def per_task(test, suffix, d):
     out = {}
-    for path in sorted((RESULTS / test).glob(f'*{suffix}.d{d}.json')):
-        if not re.match(r'[0-9a-f]{8}\.', path.name):
+    for path in sorted((RESULTS / test).glob(f'*{suffix}.d{d}.json*')):
+        if not re.fullmatch(r'[0-9a-f]{8}' + re.escape(suffix) + rf'\.d{d}\.json(\.zst)?', path.name):
             continue
         record = read_json(path)
         out[record['task']] = record
@@ -98,10 +98,15 @@ def null_auc(test, suffix, tasks, d, draws, seed=11):
     return float(np.mean(per_draw))
 
 
+def limit_of(suffix):
+    held = re.match(r'\.n(\d+)', suffix)
+    return int(held.group(1)) if held else None
+
+
 def inputs_of(test, task, suffix, count):
     if test.startswith('scene'):
         import scene
-        limit = int(suffix[2:]) if suffix.startswith('.n') else None
+        limit = limit_of(suffix)
         _, places, _ = scene.items_of(task, limit)
         return places
     return list(range(count))
@@ -110,7 +115,7 @@ def inputs_of(test, task, suffix, count):
 def places_for(test, task, suffix, count):
     if test.startswith('scene'):
         import scene
-        limit = int(suffix[2:]) if suffix.startswith('.n') else None
+        limit = limit_of(suffix)
         _, places, negatives = scene.items_of(task, limit)
         return list(zip(places, negatives))
     import rule
