@@ -13,6 +13,8 @@
 //!   feature-encoder candidate OUT_DIR FILE... [--size D] [--rate R] [--passes NULLS] [--threads N] [--max-columns K] [--relational] [--rule]
 //!   feature-encoder family OUT_DIR FILE... [--size D] [--passes NULLS] [--threads N] [--rule] [--names SHAPES_FILE]
 //!   feature-encoder stored-eval REQUESTS_JSONL --out FILE
+//!   feature-encoder generate-lists OUT_DIR (TASK | TABLES_FILE)... --size D --names DERANGEMENTS [--threads N]
+//!   feature-encoder generate-terms PATTERN TABLES_FILE [--size D]
 //!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--program-compare] [--out FILE]
 //!
 //! `eval` prints the forms and the value of a feature expression on the
@@ -410,6 +412,116 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
 
 /// Each task's stable generated shapes, one folder per size, under `OUT-d1`, `OUT-d2`; each new
 /// shape's text goes to `OUT-names.tsv` beside them.
+/// Each table's generated lists, one file per task, with a task's tables read from a command that
+/// prints them or from a file. `GENERATE_TABLES_CMD` holds that command, to which the task's name
+/// is added. What it prints holds test rows, so it reaches this process by a pipe alone, and
+/// neither its output nor its errors are printed or kept.
+/// The rows at each train pair of each generated term whose text holds a pattern, on each gold
+/// table of a kept tables file and on a table of no rows for the parts of the base tables.
+fn run_generate_terms(arguments: &Arguments, pattern: &str, file: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{constants_of, leaves_of, Generators, Walker};
+    use arclog_encoder::tablewalk::stored_of;
+    let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
+    let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
+    let train = data["train"].as_u64().ok_or("a file's train")? as usize;
+    let task_path = arguments.tasks.join(format!("{task_name}.json"));
+    let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
+    let task_json: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(&task_path)?).map_err(|error| error.to_string())?;
+    let grid = |fact: arclog::program::FactRelation, at: usize| {
+        let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
+        let mut cells = Vec::new();
+        arclog::eval::join::each_row(&relation, &mut |row| cells.extend(row.iter().map(|cell| cell.encoding())));
+        arclog_encoder::native::Table::new(2, cells)
+    };
+    let inputs: Vec<_> = (0..train).map(|at| grid(arclog::program::FactRelation::Input, at)).collect();
+    let outputs: Vec<_> = (0..train).map(|at| grid(arclog::program::FactRelation::Output, at)).collect();
+    let facts = arclog_encoder::catalog_run::pairs_of_task(&task_json, None);
+    let constants = constants_of(&facts);
+    let families = Generators::default();
+    let empty = Vec::new();
+    for item in data["items"].as_array().unwrap_or(&empty) {
+        let Some(stored) = stored_of(&item["gold"], train) else { continue };
+        if stored.types.len() > 8 {
+            continue;
+        }
+        let family = families.get(&stored, arguments.size.max(1));
+        let mut walker = Walker::new(&family);
+        let leaves = leaves_of(&stored.rows, &inputs, &outputs, &constants);
+        for (text, counts) in walker.term_counts(&leaves, train, pattern) {
+            println!("{}\t{}\t{}\t{}", item["table"].as_str().unwrap_or(""), serde_json::json!(item["gold"]["types"]), text, serde_json::json!(counts));
+        }
+    }
+    Ok(())
+}
+
+fn run_generate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> Result<(), String> {
+    use arclog_encoder::gen_lists::lists_task;
+    use arclog_encoder::generate::{Generators, NameStore};
+    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
+    let mut families = Generators::default();
+    families.names = NameStore::to_file(&format!("{out}/names.tsv.zst"))?;
+    let path = arguments.names.clone().ok_or("`generate-lists` reads the derangements from --names")?;
+    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let command: Option<Vec<String>> = std::env::var("GENERATE_TABLES_CMD").ok().map(|text| text.split_whitespace().map(str::to_string).collect());
+    let d = arguments.size.max(1);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let totals = std::sync::Mutex::new((0u64, 0f64, 0u64));
+    let begun = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..arguments.threads.max(1) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(source) = sources.get(at) else { break };
+                let stem = arclog_encoder::zio::stem(source);
+                let target = format!("{out}/{stem}.lists.zst");
+                if std::path::Path::new(&target).exists() {
+                    continue;
+                }
+                let text = match &command {
+                    Some(parts) => {
+                        let run = std::process::Command::new(&parts[0]).args(&parts[1..]).arg(&stem).stderr(std::process::Stdio::null()).output();
+                        match run {
+                            Ok(run) if run.status.success() => String::from_utf8(run.stdout).map_err(|error| error.to_string()),
+                            Ok(run) => Err(format!("the tables command ended with {}", run.status)),
+                            Err(error) => Err(error.to_string()),
+                        }
+                    }
+                    None => arclog_encoder::zio::read_text(source),
+                };
+                let text = match text {
+                    Ok(text) => text,
+                    Err(message) => {
+                        eprintln!("{stem}: {message}");
+                        continue;
+                    }
+                };
+                let order = derangements.get(&stem).and_then(Option::as_ref).map(Vec::as_slice);
+                let result = lists_task(&text, &arguments.tasks, &families, order, d);
+                drop(text);
+                match result {
+                    Ok(found) => {
+                        if arclog_encoder::zio::write_bytes(&target, &found.bytes).is_err() {
+                            eprintln!("{stem}: the lists do not write");
+                        }
+                        families.names.flush();
+                        let mut held = totals.lock().expect("no panic");
+                        held.0 += found.walks;
+                        held.1 += found.seconds;
+                        held.2 += found.shapes;
+                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        let rate = done as f64 / begun.elapsed().as_secs_f64();
+                        eprintln!("{done}/{} {}: {} walks, {:.0} ms per walk so far, {} shapes; ETA {:.0}s", sources.len(), found.task, found.walks, held.1 * 1e3 / held.0.max(1) as f64, found.shapes, (sources.len() - done) as f64 / rate);
+                    }
+                    Err(message) => eprintln!("{stem}: {message}"),
+                }
+            });
+        }
+    });
+    families.names.flush();
+    Ok(())
+}
+
 fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
     use arclog_encoder::generate::{dump_task, Generators};
     let mut families = Generators::default();
@@ -974,6 +1086,8 @@ fn main() {
         ("generate", [out, files @ ..]) if !files.is_empty() => run_generate(&arguments, out, files),
         ("generate-reach", [out, files @ ..]) if !files.is_empty() => run_generate_reach(&arguments, out, files),
         ("generate-dump", [out, files @ ..]) if !files.is_empty() => run_generate_dump(&arguments, out, files),
+        ("generate-lists", [out, sources @ ..]) if !sources.is_empty() => run_generate_lists(&arguments, out, sources),
+        ("generate-terms", [pattern, file]) => run_generate_terms(&arguments, pattern, file),
         ("generate-classes", [out, files @ ..]) if !files.is_empty() => {
             arclog_encoder::generate::classes(files, &arguments.tasks, arguments.passes.max(1)).and_then(|found| {
                 let text = serde_json::to_string(&found).map_err(|error| error.to_string())?;

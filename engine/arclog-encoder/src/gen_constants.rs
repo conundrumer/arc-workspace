@@ -73,6 +73,8 @@ pub struct ConstantPart {
     pub columns: Vec<(&'static str, ValueType)>,
     pub reads_output: bool,
     pub reads_input: bool,
+    /// Whether a table meets the part. A part with no such meeting is a feature of the base tables alone.
+    pub meets_table: bool,
 }
 
 const CELL_ROLE_NAMES: [&str; CELL_ROLES] = ["boundary", "box-corner", "box-center", "tip", "single-cell", "full-line", "grid-edge", "grid-corner", "next-to-foreground", "enclosed-by-foreground", "crossing", "between-foreground", "breaks-period"];
@@ -88,7 +90,7 @@ pub fn constant_parts() -> Vec<ConstantPart> {
     let mut out = Vec::new();
     let (p, col, n, b) = (ValueType::Position, ValueType::Color, ValueType::Nat, ValueType::Box);
     for (grid, is_output) in [("input", false), ("output", true)] {
-        let mut part = |name: String, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name, columns, reads_output: is_output, reads_input: !is_output });
+        let mut part = |name: String, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name, columns, reads_output: is_output, reads_input: !is_output, meets_table: true });
         part(format!("{grid}-color-counts"), vec![("Col", col.clone()), ("N", n.clone())]);
         part(format!("{grid}-background"), vec![("Col", col.clone())]);
         part(format!("{grid}-most-colors"), vec![("Col", col.clone())]);
@@ -109,17 +111,155 @@ pub fn constant_parts() -> Vec<ConstantPart> {
         for role in COLOR_ROLE_NAMES {
             part(format!("{grid}-colors-{role}"), vec![("Col", col.clone())]);
         }
+        part(format!("{grid}-foreground-count"), vec![("N", n.clone())]);
+        part(format!("{grid}-foreground-component-count"), vec![("N", n.clone())]);
+        part(format!("{grid}-component-count"), vec![("N", n.clone())]);
+        part(format!("{grid}-foreground-box"), vec![("B", b.clone())]);
+        part(format!("{grid}-foreground-box-margins"), vec![("D", ValueType::Dir), ("K", n.clone())]);
+        part(format!("{grid}-foreground-box-extents"), vec![("A", ValueType::Axis), ("N", n.clone())]);
+        part(format!("{grid}-symmetries"), vec![("D", ValueType::D4)]);
     }
-    let mut pair = |name: &str, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name: name.to_string(), columns, reads_output: true, reads_input: true });
+    let mut pair = |name: &str, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name: name.to_string(), columns, reads_output: true, reads_input: true, meets_table: true });
     pair("changed", vec![("P", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())]);
     pair("kept", vec![("P", p.clone()), ("Col", col.clone())]);
     pair("changed-components", vec![("P", p.clone()), ("Id", id_of(3))]);
     pair("colors-added", vec![("Col", col.clone())]);
     pair("colors-dropped", vec![("Col", col.clone())]);
     pair("colors-changed-from", vec![("Col", col.clone())]);
-    pair("colors-changed-to", vec![("Col", col)]);
+    pair("colors-changed-to", vec![("Col", col.clone())]);
+    pair("changed-box", vec![("B", b.clone())]);
+    pair("changed-box-margins", vec![("D", ValueType::Dir), ("K", n.clone())]);
+    pair("changed-box-extents", vec![("A", ValueType::Axis), ("N", n.clone())]);
+    pair("changed-component-boxes", vec![("Id", id_of(3)), ("B", b.clone())]);
+    pair("changed-count", vec![("N", n.clone())]);
+    pair("changed-component-count", vec![("N", n.clone())]);
+    pair("kept-count", vec![("N", n.clone())]);
+    pair("input-output-images", vec![("D", ValueType::D4)]);
+    pair("output-in-input", vec![("B", b.clone())]);
+    pair("input-in-output", vec![("B", b.clone())]);
+    pair("output-in-input-d4", vec![("D", ValueType::D4), ("B", b.clone())]);
+    pair("input-in-output-d4", vec![("D", ValueType::D4), ("B", b.clone())]);
+    for kind in ["scale-up", "tile", "scale-down"] {
+        out.push(ConstantPart { name: kind.to_string(), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())], reads_output: true, reads_input: true, meets_table: false });
+        out.push(ConstantPart { name: format!("{kind}-kept"), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone())], reads_output: true, reads_input: true, meets_table: false });
+        out.push(ConstantPart { name: format!("{kind}-changed"), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())], reads_output: true, reads_input: true, meets_table: false });
+    }
+    let mut lib = |name: &str, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name: name.to_string(), columns, reads_output: false, reads_input: false, meets_table: true });
+    lib("dir-values", vec![("D", ValueType::Dir)]);
+    lib("diag-dir-values", vec![("D", ValueType::DiagDir)]);
+    lib("axis-values", vec![("A", ValueType::Axis)]);
+    lib("d4-values", vec![("D", ValueType::D4)]);
+    lib("d4-identity", vec![("D", ValueType::D4)]);
+    lib("axis-of", vec![("D", ValueType::Dir), ("A", ValueType::Axis)]);
+    lib("opposite", vec![("D", ValueType::Dir), ("D_2", ValueType::Dir)]);
     out
 }
+
+/// The D4 image of a cell of a frame of `h` by `w`, in the order ID, LR, TB, HT, CW, CC, DG, AD.
+pub fn image_cell(which: usize, r: usize, c: usize, h: usize, w: usize) -> (usize, usize) {
+    match which {
+        0 => (r, c),
+        1 => (r, w - 1 - c),
+        2 => (h - 1 - r, c),
+        3 => (h - 1 - r, w - 1 - c),
+        4 => (c, h - 1 - r),
+        5 => (w - 1 - c, r),
+        6 => (c, r),
+        _ => (w - 1 - c, h - 1 - r),
+    }
+}
+
+/// Where a shape's D4 image equals a grid at every cell of the image: the box of each place,
+/// in the grid's frame. A D4 image that a symmetry of the shape repeats gives each of its elements.
+fn occurrences(shape: &GridFacts, grid: &GridFacts, which: usize) -> Vec<Cell> {
+    let (h, w) = if which >= 4 { (shape.w, shape.h) } else { (shape.h, shape.w) };
+    let mut out = Vec::new();
+    if h > grid.h || w > grid.w {
+        return out;
+    }
+    let mut image = vec![0u8; h * w];
+    for r in 0..shape.h {
+        for c in 0..shape.w {
+            let (y, z) = image_cell(which, r, c, shape.h, shape.w);
+            image[y * w + z] = shape.color[r * shape.w + c];
+        }
+    }
+    for dr in 0..=grid.h - h {
+        for dc in 0..=grid.w - w {
+            if (0..h).all(|y| (0..w).all(|z| grid.color[(y + dr) * grid.w + z + dc] == image[y * w + z])) {
+                out.push(box_bits(dr as i32, (grid.h - h - dr) as i32, dc as i32, (grid.w - w - dc) as i32));
+            }
+        }
+    }
+    out
+}
+
+/// A cell list as three parts: every pair with both colors, those with one color, and those with two.
+fn read_tables(pairs: &[(usize, usize)], input: &GridFacts, output: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
+    let (mut all, mut kept, mut changed) = (Vec::with_capacity(pairs.len() * 4), Vec::new(), Vec::new());
+    for (at_in, at_out) in pairs {
+        let (from, to) = (input.color[*at_in], output.color[*at_out]);
+        let (p_in, p_out) = (cell_bits(input.h, input.w, *at_in), cell_bits(output.h, output.w, *at_out));
+        all.extend_from_slice(&[p_in, p_out, e.colors[from as usize], e.colors[to as usize]]);
+        if from == to {
+            kept.extend_from_slice(&[p_in, p_out, e.colors[from as usize]]);
+        } else {
+            changed.extend_from_slice(&[p_in, p_out, e.colors[from as usize], e.colors[to as usize]]);
+        }
+    }
+    out.push(Table::new(4, all));
+    out.push(Table::new(3, kept));
+    out.push(Table::new(4, changed));
+}
+
+/// The output's cells, each with the input cell its block, its copy or its place gives.
+/// `Division`: where the parts do not fill an extent, no cell has a row.
+fn scale_up_pairs(input: &GridFacts, output: &GridFacts) -> Vec<(usize, usize)> {
+    if output.h % input.h != 0 || output.w % input.w != 0 {
+        return Vec::new();
+    }
+    let (k, m) = (output.h / input.h, output.w / input.w);
+    (0..output.h * output.w).map(|at| {
+        let (r, c) = (at / output.w, at % output.w);
+        ((r / k) * input.w + c / m, at)
+    }).collect()
+}
+
+fn tile_pairs(input: &GridFacts, output: &GridFacts) -> Vec<(usize, usize)> {
+    if output.h % input.h != 0 || output.w % input.w != 0 {
+        return Vec::new();
+    }
+    (0..output.h * output.w).map(|at| {
+        let (r, c) = (at / output.w, at % output.w);
+        ((r % input.h) * input.w + c % input.w, at)
+    }).collect()
+}
+
+fn scale_down_pairs(input: &GridFacts, output: &GridFacts) -> Vec<(usize, usize)> {
+    if input.h % output.h != 0 || input.w % output.w != 0 {
+        return Vec::new();
+    }
+    let (k, m) = (input.h / output.h, input.w / output.w);
+    (0..input.h * input.w).map(|at| {
+        let (r, c) = (at / input.w, at % input.w);
+        (at, (r / k) * output.w + c / m)
+    }).collect()
+}
+
+fn margin_rows(span: [u8; 4], h: usize, w: usize, e: &Encoding) -> Vec<Cell> {
+    let margins = [i64::from(span[0]), h as i64 - 1 - i64::from(span[1]), i64::from(span[2]), w as i64 - 1 - i64::from(span[3])];
+    let mut out = Vec::with_capacity(8);
+    for at in 0..4 {
+        out.push(e.dirs[at]);
+        out.push(number_bits(margins[at]));
+    }
+    out
+}
+
+fn extent_rows(span: [u8; 4], e: &Encoding) -> Vec<Cell> {
+    vec![e.axes[0], number_bits(i64::from(span[1]) - i64::from(span[0]) + 1), e.axes[1], number_bits(i64::from(span[3]) - i64::from(span[2]) + 1)]
+}
+
 
 fn color_rows(mask: u16, e: &Encoding) -> Vec<Cell> {
     (0..10).filter(|col| mask >> col & 1 == 1).map(|col| e.colors[col]).collect()
@@ -198,6 +338,15 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
     for mask in &g.color_roles {
         out.push(Table::new(1, color_rows(*mask, e)));
     }
+    let fg = g.foreground.as_ref();
+    out.push(Table::new(1, fg.map_or_else(Vec::new, |cells| vec![number_bits(i64::from(cells.count()))])));
+    out.push(Table::new(1, fg.map_or_else(Vec::new, |_| vec![number_bits(g.foreground_parts.len() as i64)])));
+    out.push(Table::new(1, vec![number_bits(g.pieces.len() as i64)]));
+    let span = fg.and_then(|cells| span_of(cells, w));
+    out.push(Table::new(1, span.map_or_else(Vec::new, |held| vec![span_bits(h, w, held)])));
+    out.push(Table::new(2, span.map_or_else(Vec::new, |held| margin_rows(held, h, w, e))));
+    out.push(Table::new(2, span.map_or_else(Vec::new, |held| extent_rows(held, e))));
+    out.push(Table::new(1, (0..8).filter(|which| crate::catalog_facts::image_is(g, g, *which)).map(|which| e.d4[which]).collect()));
 }
 
 /// Each constant part's rows at one pair, in the order of `constant_parts`.
@@ -235,5 +384,72 @@ pub fn constant_tables(f: &PairFacts) -> Vec<Arc<Table>> {
     out.push(Table::new(1, color_rows(f.input.colors & !f.output.colors, e)));
     out.push(Table::new(1, color_rows(f.changed_from, e)));
     out.push(Table::new(1, color_rows(f.changed_to, e)));
+    let span = f.changed_span;
+    out.push(Table::new(1, span.map_or_else(Vec::new, |held| vec![span_bits(h, w, held)])));
+    out.push(Table::new(2, span.map_or_else(Vec::new, |held| margin_rows(held, h, w, e))));
+    out.push(Table::new(2, span.map_or_else(Vec::new, |held| extent_rows(held, e))));
+    let mut boxes = Vec::new();
+    if !f.changed.is_empty() {
+        for (id, part) in crate::catalog_facts::parts(&f.changed, h, w).iter().enumerate() {
+            if let Some(held) = span_of(part, w) {
+                boxes.push(id as u32);
+                boxes.push(span_bits(h, w, held));
+            }
+        }
+    }
+    out.push(Table::new(2, boxes));
+    let changed_count = i64::from(f.changed.count());
+    out.push(Table::new(1, if f.same && changed_count > 0 { vec![number_bits(changed_count)] } else { Vec::new() }));
+    out.push(Table::new(1, if f.same && changed_count > 0 { vec![number_bits(i64::from(f.changed_parts))] } else { Vec::new() }));
+    let kept_count = (h * w) as i64 - changed_count;
+    out.push(Table::new(1, if f.same && kept_count > 0 { vec![number_bits(kept_count)] } else { Vec::new() }));
+    out.push(Table::new(1, (0..8).filter(|which| f.maps[*which]).map(|which| e.d4[which]).collect()));
+    out.push(Table::new(1, occurrences(&f.output, &f.input, 0)));
+    out.push(Table::new(1, occurrences(&f.input, &f.output, 0)));
+    let turned = |shape: &GridFacts, grid: &GridFacts| -> Vec<Cell> {
+        let mut rows = Vec::new();
+        for which in 0..8 {
+            for held in occurrences(shape, grid, which) {
+                rows.push(e.d4[which]);
+                rows.push(held);
+            }
+        }
+        rows
+    };
+    out.push(Table::new(2, turned(&f.output, &f.input)));
+    out.push(Table::new(2, turned(&f.input, &f.output)));
+    read_tables(&scale_up_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
+    read_tables(&tile_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
+    read_tables(&scale_down_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
+    lib_tables(e, &mut out);
     out
+}
+
+/// The parts that no grid gives.
+fn lib_tables(e: &Encoding, out: &mut Vec<Arc<Table>>) {
+    out.push(Table::new(1, e.dirs[..4].to_vec()));
+    out.push(Table::new(1, e.dirs[4..].to_vec()));
+    out.push(Table::new(1, e.axes.to_vec()));
+    out.push(Table::new(1, e.d4.to_vec()));
+    out.push(Table::new(1, vec![e.d4[0]]));
+    out.push(Table::new(2, vec![e.dirs[0], e.axes[0], e.dirs[1], e.axes[0], e.dirs[2], e.axes[1], e.dirs[3], e.axes[1]]));
+    out.push(Table::new(2, vec![e.dirs[0], e.dirs[1], e.dirs[1], e.dirs[0], e.dirs[2], e.dirs[3], e.dirs[3], e.dirs[2]]));
+}
+
+/// Each constant part's rows at an example with no output: those of its input and those that no
+/// grid gives, in the order of `constant_parts`, and no value for the others.
+pub fn input_only_tables(g: &GridFacts) -> Vec<Option<Arc<Table>>> {
+    let e = encoding();
+    let parts = constant_parts();
+    let mut own = Vec::with_capacity(64);
+    grid_tables(g, e, &mut own);
+    let mut lib = Vec::with_capacity(8);
+    lib_tables(e, &mut lib);
+    let mut own = own.into_iter();
+    let mut lib = lib.into_iter();
+    parts.iter().map(|part| match (part.reads_input, part.reads_output) {
+        (true, false) => own.next(),
+        (false, false) => lib.next(),
+        _ => None,
+    }).collect()
 }

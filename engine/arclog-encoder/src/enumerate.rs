@@ -96,6 +96,12 @@ fn subsets<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
     (0u32..1 << count).map(|mask| (0..count).filter(|at| mask & (1 << at) != 0).map(|at| items[at].clone()).collect()).collect()
 }
 
+/// Whether a term is a product of two relations: a `join` with no pair of columns. Its count is the
+/// product of theirs, so it stands only under a `select` that relates its two sides.
+fn is_product(rel: &Rel) -> bool {
+    matches!(rel, Rel::Join(_, _, pairs) if pairs.is_empty())
+}
+
 impl Space<'_> {
     /// `rel` with its columns, where the expansion can write it.
     pub fn typed(&self, rel: Rel) -> Option<Typed> {
@@ -165,8 +171,19 @@ impl Space<'_> {
 
     /// Each root over `typed`.
     pub fn roots(&self, typed: &Typed, visit: &mut dyn FnMut(Feature) -> ControlFlow<()>) -> ControlFlow<()> {
-        visit(Feature::Nonempty(typed.rel.clone()))?;
-        visit(Feature::Cardinality(typed.rel.clone()))?;
+        if is_product(&typed.rel) {
+            return ControlFlow::Continue(());
+        }
+        // A relation's count gives whether it has a row, so `nonempty` stands only over a relation
+        // of no columns, whose count says nothing else.
+        if typed.columns.is_empty() && !matches!(typed.rel, Rel::Leaf(Leaf::Table(_))) {
+            visit(Feature::Nonempty(typed.rel.clone()))?;
+        } else {
+            visit(Feature::Cardinality(typed.rel.clone()))?;
+        }
+        if let Rel::Semijoin(left, _, _) = &typed.rel {
+            visit(Feature::Ratio(typed.rel.clone(), (**left).clone()))?;
+        }
         let names: Vec<String> = typed.columns.iter().map(|column| self.reference(column)).collect();
         for columns in subsets(&names) {
             if !columns.is_empty() {
@@ -217,6 +234,9 @@ impl Space<'_> {
 
     /// The terms of `project`, `select` and `lib-join` over `typed`.
     pub fn unary_of(&self, typed: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        if is_product(&typed.rel) {
+            return self.selects(typed, visit);
+        }
         let names: Vec<String> = typed.columns.iter().map(|column| self.reference(column)).collect();
         // A `project` of every column gives the relation itself.
         let places: Vec<usize> = (0..names.len()).collect();
@@ -231,10 +251,18 @@ impl Space<'_> {
     }
 
     fn selects(&self, typed: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        // Over a product, a `select` relates the two sides or it leaves a product's count.
+        let left_columns = match &typed.rel {
+            Rel::Join(left, _, pairs) if pairs.is_empty() => self.typed((**left).clone()).map(|left| left.columns.len()),
+            _ => None,
+        };
         for (at, column) in typed.columns.iter().enumerate() {
             let name = self.reference(column);
             for (other_at, other) in typed.columns.iter().enumerate() {
                 if at == other_at || !meets(&column.ty, &other.ty) {
+                    continue;
+                }
+                if left_columns.is_some_and(|left| (at < left) == (other_at < left)) {
                     continue;
                 }
                 // Two comparisons of one pair of columns in either order have one
@@ -250,7 +278,7 @@ impl Space<'_> {
                     }
                 }
             }
-            if has_zero(&column.ty) {
+            if has_zero(&column.ty) && left_columns.is_none() {
                 for op in Op::ALL {
                     if matches!(op, Op::Eq | Op::Ne) || is_number(&column.ty) {
                         let dropped = (op == Op::Eq).then_some(at);
@@ -284,6 +312,10 @@ impl Space<'_> {
                 bindings = next;
             }
             for binding in bindings {
+                // A lib-join with no bound column relates nothing to the relation.
+                if binding.is_empty() {
+                    continue;
+                }
                 let bound_mode = modes.is_empty() || modes.iter().any(|mode| mode.bound.iter().all(|column| binding.iter().any(|(lib, _)| *lib == written(column))));
                 if bound_mode {
                     let fresh: Vec<Option<ValueType>> = columns.iter().filter(|lib| !binding.iter().any(|(own, _)| *own == written(&lib.name))).map(|lib| lib.ty.fixed().cloned()).collect();
@@ -294,7 +326,7 @@ impl Space<'_> {
         ControlFlow::Continue(())
     }
 
-    /// The terms of `join`, `antijoin` and `union`.
+    /// The terms of `join`, `semijoin`, `antijoin`, `all` and `union`.
     fn binary(&self, lower: &[Vec<Typed>], size: usize, visit: &mut Visit<'_>) -> ControlFlow<()> {
         for left_size in 0..size {
             let right_size = size - 1 - left_size;
@@ -308,15 +340,28 @@ impl Space<'_> {
         ControlFlow::Continue(())
     }
 
-    /// The terms of `join`, `antijoin` and `union` with `left` on the left. The
+    /// The terms of `join`, `semijoin`, `antijoin`, `all` and `union` with `left` on the left. The
     /// enumeration takes the two relations in both orders, so the set of names
-    /// does not depend on text order.
+    /// does not depend on text order. Only `join` has a term with no pair of columns, a product,
+    /// and only a `select` reads it, since the count of any other such term follows from its parts'.
     pub fn binary_of(&self, left: &Typed, right: &Typed, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        if is_product(&left.rel) || is_product(&right.rel) {
+            return ControlFlow::Continue(());
+        }
         let left_types = || left.columns.iter().map(|column| column.ty.clone());
         for pairs in self.pair_sets(left, right) {
             let kept: Vec<Option<ValueType>> = right.columns.iter().filter(|column| !pairs.iter().any(|(_, r)| *r == self.reference(column))).map(|column| column.ty.clone()).collect();
             self.emit_typed(Rel::Join(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs.clone()), || left_types().chain(kept).collect(), visit)?;
-            self.emit_typed(Rel::Antijoin(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs), || left_types().collect(), visit)?;
+            if pairs.is_empty() {
+                continue;
+            }
+            self.emit_typed(Rel::Semijoin(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs.clone()), || left_types().collect(), visit)?;
+            self.emit_typed(Rel::Antijoin(Box::new(left.rel.clone()), Box::new(right.rel.clone()), pairs.clone()), || left_types().collect(), visit)?;
+            let open: Vec<usize> = (0..left.columns.len()).filter(|at| !pairs.iter().any(|(l, _)| *l == self.reference(&left.columns[*at]))).collect();
+            for outer in subsets(&open) {
+                let names = outer.iter().map(|at| self.reference(&left.columns[*at])).collect();
+                self.emit_typed(Rel::All(Box::new(left.rel.clone()), Box::new(right.rel.clone()), names, pairs.clone()), || outer.iter().map(|at| left.columns[*at].ty.clone()).collect(), visit)?;
+            }
         }
         if !left.columns.is_empty() && left.columns.len() >= right.columns.len() {
             for pairs in self.matchings(left, right) {
@@ -501,6 +546,9 @@ impl Space<'_> {
     /// Each binding of `input` from `relation` that agrees with `state`: its
     /// key columns, its fields, the key's types and each parameter's.
     fn input_bindings(&self, input: &InputPort, relation: &Typed, state: &Bindings) -> Vec<(Binding, Vec<Option<ValueType>>, Vec<(String, Vec<Option<ValueType>>)>)> {
+        if is_product(&relation.rel) {
+            return Vec::new();
+        }
         let has_key = input.port.columns.iter().any(is_key);
         let columns: Vec<&LibColumn> = input.port.columns.iter().filter(|column| !is_key(column)).collect();
         let all: Vec<&Col> = relation.columns.iter().collect();
@@ -572,6 +620,11 @@ impl Space<'_> {
         let mut out = Vec::new();
         for key in &keys {
             for (fields, parameters) in &field_sets {
+                // A binding that reads no column of its relation reads its row count alone, which
+                // the relation's own `cardinality` gives.
+                if key.is_empty() && !fields.iter().any(|field| field.as_ref().is_some_and(|list| !list.is_empty())) {
+                    continue;
+                }
                 let binding = Binding {
                     input: input.port.name.0.to_string(),
                     relation: relation.rel.clone(),

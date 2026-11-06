@@ -150,10 +150,17 @@ pub fn table_ops(host: &Host, table: &str, types: &[ValueType], d: usize, max_co
 /// its values other than the default, and which pairs hold no value.
 #[derive(Clone, Debug)]
 pub struct Entry2 {
-    pub sums: [u64; 12],
+    pub sums: [u64; MAX_EXAMPLES],
     pub none: u16,
     pub size: u8,
+    /// What the root reads: a mask of the generator's leaves, or 0.
+    pub flags: u8,
+    /// The greatest value over its bindings at the first example.
+    pub head: f32,
 }
+
+/// The examples of a task that an entry holds.
+pub const MAX_EXAMPLES: usize = 16;
 
 pub type ShapeMap = FastMap<u128, Entry2>;
 
@@ -260,7 +267,7 @@ impl<'a> TableEval<'a> {
                 continue;
             }
             let key = (u128::from(shape) << 16) | root as u128;
-            let entry = map.entry(key).or_insert(Entry2 { sums: [0; 12], none: 0, size });
+            let entry = map.entry(key).or_insert(Entry2 { sums: [0; MAX_EXAMPLES], none: 0, size, flags: 0, head: 0.0 });
             for (pair, offset) in offsets.iter().enumerate().take(12) {
                 let word = self.arena[*offset as usize + root];
                 if word == 0 {
@@ -577,6 +584,44 @@ pub fn stored_of(value: &serde_json::Value, train: usize) -> Option<Stored> {
             }
         }
         rows.push(Some(if order.is_empty() { Table::unit(!held.is_empty()) } else { Table::distinct(order.len(), cells) }));
+    }
+    Some(Stored { key: format!("{sorted:?}"), types: sorted, rows })
+}
+
+/// A table's rows at each example of a task, train then test, from a file that may hold test rows.
+/// A task-wide table has one set of rows, which stand at each example. An example with no rows in
+/// the file, or past `cap` rows, has no value.
+pub fn stored_at_examples(value: &serde_json::Value, train: usize, test: usize, cap: usize) -> Option<Stored> {
+    let names = value["types"].as_array()?;
+    let types: Vec<ValueType> = names.iter().map(|name| crate::schema::type_of_name(name.as_str()?)).collect::<Option<_>>()?;
+    let mut order: Vec<usize> = (0..types.len()).collect();
+    order.sort_by_key(|at| format!("{:?}", types[*at]));
+    let sorted: Vec<ValueType> = order.iter().map(|at| types[*at].clone()).collect();
+    let read = |held: &serde_json::Value| -> Option<Option<Arc<Table>>> {
+        let Some(list) = held.as_array() else { return Some(None) };
+        if list.len() > cap {
+            return Some(None);
+        }
+        let mut cells = Vec::with_capacity(list.len() * order.len());
+        for row in list {
+            let row = row.as_array()?;
+            for at in &order {
+                cells.push(cell_bits(row.get(*at)?, &types[*at])?);
+            }
+        }
+        Some(Some(if order.is_empty() { Table::unit(!list.is_empty()) } else { Table::distinct(order.len(), cells) }))
+    };
+    let mut rows = Vec::with_capacity(train + test);
+    if let Some(task_rows) = value["rows"].get("task") {
+        let held = read(task_rows)?;
+        rows.resize(train + test, held);
+    } else {
+        for pair in 0..train {
+            rows.push(read(value["rows"].get(format!("train/{pair}")).unwrap_or(&serde_json::Value::Null))?);
+        }
+        for pair in 0..test {
+            rows.push(read(value["rows"].get(format!("test/{pair}")).unwrap_or(&serde_json::Value::Null))?);
+        }
     }
     Some(Stored { key: format!("{sorted:?}"), types: sorted, rows })
 }

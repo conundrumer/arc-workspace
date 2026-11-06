@@ -27,8 +27,8 @@ pub enum PartStep {
     /// Each row with a class of its cell's place: R, K.
     Parity { p: u16 },
     BorderDistance { p: u16 },
-    /// The 8-connected pieces of a key's cells: keys, p, Id.
-    Pieces { keys: Box<[u16]>, p: u16 },
+    /// The 8-connected pieces of a key's cells, or the 4-connected ones: keys, p, Id.
+    Pieces { keys: Box<[u16]>, p: u16, four: bool },
     BoxOf { keys: Box<[u16]>, p: u16 },
     /// A key's cells relative to its box: keys, X_rel.
     RelBox { keys: Box<[u16]>, p: u16 },
@@ -68,6 +68,26 @@ pub enum PartStep {
     SharedLine { a: u16, b: u16 },
     /// The fewest eight-neighbor steps from a relation's cells over a grid: P, K.
     Distance { p: u16 },
+    /// Each row with a box's or an offset's margin on each edge: R, D, K.
+    BoxMargin { b: u16 },
+    /// Each row with a box's extent on each axis, by a grid's extents: R, A, N.
+    BoxExtent { b: u16 },
+    /// Each row with the move from one cell to another of its frame: R, V.
+    Displacement { a: u16, b: u16 },
+    /// The extents of the frames of a column's cells: A, N.
+    FrameExtent { p: u16 },
+    /// A key's whole rows and columns, by the frame of its cells: keys, A, Along.
+    FullLines { keys: Box<[u16]>, p: u16 },
+    /// A column of boxes read against the two grids. An input cell of a box of the output's
+    /// extents stands for the output cell at its place in the box: B, P, X_rel, Col, and Col_2
+    /// where the two colors differ.
+    BoxRead { b: u16, kept: bool },
+    /// As `BoxRead`, on a column of cells of a box's frame: B, X, P, Col, and Col_2.
+    BoxFrameRead { b: u16, x: u16, kept: bool },
+    /// As `BoxRead`, on a column of input cells: B, X, X_rel, Col, and Col_2.
+    BoxCellRead { b: u16, x: u16, kept: bool },
+    /// The relation itself: a table's own rows as a term, for the roots of the table.
+    Same,
 }
 
 /// A value's rows in the order of its columns.
@@ -218,6 +238,23 @@ fn grid_of(value: &Val) -> Option<Arc<GridView>> {
     Some(view_of(&one.table))
 }
 
+/// The input and the output of the leaf that holds both grids.
+fn grids_of(value: &Val) -> Option<(Arc<GridView>, Arc<GridView>)> {
+    let Val::Rows(parts) = value else { return None };
+    let [input, output] = parts.as_slice() else { return None };
+    Some((view_of(&input.table), view_of(&output.table)))
+}
+
+#[inline]
+fn add_cell(a: [i32; 4], b: [i32; 4]) -> Cell {
+    box_bits(a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3])
+}
+
+#[inline]
+fn less_cell(a: [i32; 4], b: [i32; 4]) -> Cell {
+    box_bits(a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3])
+}
+
 const STEPS: [(i32, i32); 8] = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)];
 
 #[inline]
@@ -364,6 +401,7 @@ impl PartStep {
     fn run(&self, t: &Arc<Table>, children: &[&Val]) -> Option<Val> {
         let e = encoding();
         Some(match self {
+            PartStep::Same => children[0].clone(),
             PartStep::CellsOn { p } => {
                 let grid = grid_of(children[1])?;
                 let mut out: Vec<Cell> = t.rows().map(|row| row[usize::from(*p)]).filter(|cell| grid.at.contains_key(cell)).collect();
@@ -442,7 +480,7 @@ impl PartStep {
                 out.extend_from_slice(row);
                 out.push(number_bits(i64::from(m[0].min(m[1]).min(m[2]).min(m[3]))));
             }),
-            PartStep::Pieces { keys, p } => {
+            PartStep::Pieces { keys, p, four } => {
                 let (ids, first) = key_ids(t, keys);
                 let mut cells: Vec<Vec<Cell>> = vec![Vec::new(); first.len()];
                 for (row, id) in t.rows().zip(&ids) {
@@ -466,8 +504,8 @@ impl PartStep {
                             out.push(held[at]);
                             out.push(label);
                             let m = margins_of(held[at]);
-                            for (dr, dc) in STEPS {
-                                if let Some(next) = moved(m, dr, dc) {
+                            for (dr, dc) in &STEPS[..if *four { 4 } else { 8 }] {
+                                if let Some(next) = moved(m, *dr, *dc) {
                                     if let Ok(place) = held.binary_search(&next) {
                                         if !seen[place] {
                                             seen[place] = true;
@@ -839,6 +877,144 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::new(2, out))
+            }
+            PartStep::BoxMargin { b } => rows_with(t, 2, |row, out| {
+                let m = margins_of(row[usize::from(*b)]);
+                for at in 0..4 {
+                    out.extend_from_slice(row);
+                    out.push(e.dirs[at]);
+                    out.push(number_bits(i64::from(m[at])));
+                }
+            }),
+            PartStep::BoxExtent { b } => {
+                let grid = grid_of(children[1])?;
+                rows_with(t, 2, |row, out| {
+                    let m = margins_of(row[usize::from(*b)]);
+                    let (along, across) = (grid.h - m[0] - m[1], grid.w - m[2] - m[3]);
+                    if along > 0 && across > 0 {
+                        out.extend_from_slice(row);
+                        out.push(e.axes[0]);
+                        out.push(number_bits(i64::from(along)));
+                        out.extend_from_slice(row);
+                        out.push(e.axes[1]);
+                        out.push(number_bits(i64::from(across)));
+                    }
+                })
+            }
+            PartStep::Displacement { a, b } => rows_with(t, 1, |row, out| {
+                let (from, to) = (margins_of(row[usize::from(*a)]), margins_of(row[usize::from(*b)]));
+                if from[0] + from[1] == to[0] + to[1] && from[2] + from[3] == to[2] + to[3] {
+                    out.extend_from_slice(row);
+                    out.push(less_cell(to, from));
+                }
+            }),
+            PartStep::FrameExtent { p } => {
+                let mut along: Vec<i32> = Vec::new();
+                let mut across: Vec<i32> = Vec::new();
+                for row in t.rows() {
+                    let m = margins_of(row[usize::from(*p)]);
+                    along.push(m[0] + m[1] + 1);
+                    across.push(m[2] + m[3] + 1);
+                }
+                along.sort_unstable();
+                along.dedup();
+                across.sort_unstable();
+                across.dedup();
+                let mut out = Vec::with_capacity((along.len() + across.len()) * 2);
+                for value in along {
+                    out.push(e.axes[0]);
+                    out.push(number_bits(i64::from(value)));
+                }
+                for value in across {
+                    out.push(e.axes[1]);
+                    out.push(number_bits(i64::from(value)));
+                }
+                Val::of_table(Table::new(2, out))
+            }
+            PartStep::FullLines { keys, p } => {
+                let (ids, first) = key_ids(t, keys);
+                let mut lines: FastMap<(u32, bool, i32, i32), u32> = FastMap::default();
+                let mut wide: Vec<(i32, i32)> = vec![(0, 0); first.len()];
+                let mut seen: std::collections::HashSet<(u32, Cell)> = std::collections::HashSet::new();
+                for (row, id) in t.rows().zip(&ids) {
+                    let cell = row[usize::from(*p)];
+                    let m = margins_of(cell);
+                    if !is_cell(&m) || !seen.insert((*id, cell)) {
+                        continue;
+                    }
+                    wide[*id as usize] = (m[0] + m[1] + 1, m[2] + m[3] + 1);
+                    *lines.entry((*id, true, m[0], m[1])).or_insert(0) += 1;
+                    *lines.entry((*id, false, m[2], m[3])).or_insert(0) += 1;
+                }
+                let mut out = Vec::new();
+                for ((id, is_row, a, b), count) in &lines {
+                    let (rows_long, columns_long) = wide[*id as usize];
+                    let full = if *is_row { *count as i32 == columns_long } else { *count as i32 == rows_long };
+                    if full {
+                        push_key(&mut out, first[*id as usize], keys);
+                        out.push(e.axes[usize::from(!*is_row)]);
+                        out.push(if *is_row { box_bits(*a, *b, 0, 0) } else { box_bits(0, 0, *a, *b) });
+                    }
+                }
+                Val::of_table(Table::distinct(keys.len() + 2, out))
+            }
+            PartStep::BoxRead { b, kept } => {
+                let (input, output) = grids_of(children[1])?;
+                let mut boxes: Vec<Cell> = t.rows().map(|row| row[usize::from(*b)]).collect();
+                boxes.sort_unstable();
+                boxes.dedup();
+                boxes.retain(|held| {
+                    let m = margins_of(*held);
+                    input.h - m[0] - m[1] == output.h && input.w - m[2] - m[3] == output.w
+                });
+                if boxes.len() > 64 {
+                    return None;
+                }
+                let mut out = Vec::new();
+                for held in boxes {
+                    let m = margins_of(held);
+                    for r in 0..output.h {
+                        for c in 0..output.w {
+                            let (y, z) = (r + m[0], c + m[2]);
+                            if y < 0 || z < 0 || y >= input.h || z >= input.w {
+                                continue;
+                            }
+                            let (from, to) = (input.colors[(y * input.w + z) as usize], output.colors[(r * output.w + c) as usize]);
+                            if (from == to) == *kept {
+                                out.extend_from_slice(&[held, box_bits(y, input.h - 1 - y, z, input.w - 1 - z), box_bits(r, output.h - 1 - r, c, output.w - 1 - c), from]);
+                                if !*kept {
+                                    out.push(to);
+                                }
+                            }
+                        }
+                    }
+                }
+                Val::of_table(Table::new(if *kept { 4 } else { 5 }, out))
+            }
+            PartStep::BoxFrameRead { b, x, kept } | PartStep::BoxCellRead { b, x, kept } => {
+                let (input, output) = grids_of(children[1])?;
+                let in_frame = matches!(self, PartStep::BoxCellRead { .. });
+                let mut out = Vec::new();
+                for row in t.rows() {
+                    let (held, cell) = (row[usize::from(*b)], row[usize::from(*x)]);
+                    let (m, n) = (margins_of(held), margins_of(cell));
+                    // The cell's two places: in the input's frame, and in the output's.
+                    let (at_in, at_out, other) = if in_frame {
+                        let other = less_cell(n, m);
+                        (cell, other, other)
+                    } else {
+                        let other = add_cell(n, m);
+                        (other, cell, other)
+                    };
+                    let (Some(from), Some(to)) = (input.at.get(&at_in), output.at.get(&at_out)) else { continue };
+                    if (from == to) == *kept {
+                        out.extend_from_slice(&[held, cell, other, *from]);
+                        if !*kept {
+                            out.push(*to);
+                        }
+                    }
+                }
+                Val::of_table(Table::distinct(if *kept { 4 } else { 5 }, out))
             }
         })
     }

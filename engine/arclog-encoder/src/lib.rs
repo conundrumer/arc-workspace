@@ -36,6 +36,7 @@ pub mod enumerate;
 pub mod expand;
 pub mod expression;
 pub mod gen_constants;
+pub mod gen_lists;
 pub mod gen_parts;
 pub mod generate;
 pub mod family;

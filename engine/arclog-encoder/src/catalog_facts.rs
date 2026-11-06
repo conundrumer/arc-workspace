@@ -686,7 +686,7 @@ pub struct PairFacts {
 }
 
 /// Whether the image of a grid under an element of D4 is another grid.
-fn image_is(from: &GridFacts, to: &GridFacts, which: usize) -> bool {
+pub fn image_is(from: &GridFacts, to: &GridFacts, which: usize) -> bool {
     let (h, w) = (from.h, from.w);
     let swaps = which >= 4;
     if (if swaps { (w, h) } else { (h, w) }) != (to.h, to.w) {

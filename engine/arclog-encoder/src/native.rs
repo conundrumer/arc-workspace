@@ -209,6 +209,13 @@ impl Val {
         Val::of_parts(vec![Part { table, columns }])
     }
 
+    /// The product of two tables, unbuilt, with the first's columns before the second's.
+    pub fn of_pair(first: Arc<Table>, second: Arc<Table>) -> Val {
+        let split = first.arity as u16;
+        let (before, after): (Box<[u16]>, Box<[u16]>) = ((0..split).collect(), (split..split + second.arity as u16).collect());
+        Val::of_parts(vec![Part { table: first, columns: before }, Part { table: second, columns: after }])
+    }
+
     /// A hash of what the value holds, where each factor counts.
     pub fn hash(&self) -> u128 {
         match self {

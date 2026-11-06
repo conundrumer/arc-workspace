@@ -426,7 +426,7 @@ impl<'a> Eval<'a> {
             if !words.clone().any(|word| word == 0 || word & PAYLOAD != 0) {
                 continue;
             }
-            let entry = map.entry(*hash).or_insert(Entry2 { sums: [0; 12], none: 0, size: term.size });
+            let entry = map.entry(*hash).or_insert(Entry2 { flags: 0, head: 0.0, sums: [0; crate::tablewalk::MAX_EXAMPLES], none: 0, size: term.size });
             for (pair, word) in words.enumerate().take(12) {
                 if word == 0 {
                     entry.none |= 1 << pair;

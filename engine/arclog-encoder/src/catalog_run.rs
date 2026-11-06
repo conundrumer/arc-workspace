@@ -55,7 +55,7 @@ pub fn parse_table(table: &serde_json::Value, train: usize) -> ParsedTable {
     ParsedTable { kinds, keys, rows }
 }
 
-fn grid_of(value: &serde_json::Value) -> GridFacts {
+pub fn grid_of(value: &serde_json::Value) -> GridFacts {
     let empty = Vec::new();
     let rows = value.as_array().unwrap_or(&empty);
     let h = rows.len();

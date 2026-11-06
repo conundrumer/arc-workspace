@@ -11,12 +11,11 @@ use crate::expression::Op;
 use crate::gen_constants::{constant_parts, constant_tables, number_bits, number_of};
 use crate::gen_parts::{clear_views, flat, PartStep};
 use crate::native::{hash_words, Evaluator, FastMap, Step, Table, Val, WORD_COUNT, WORD_NONEMPTY, WORD_SET};
-use crate::tablewalk::{mix_word, shape_text, Entry2, ShapeMap};
+use crate::tablewalk::{mix_word, shape_text, Entry2, ShapeMap, MAX_EXAMPLES};
 
-const READS_INPUT: u8 = 1;
-const READS_OUTPUT: u8 = 2;
-const READS_TABLE: u8 = 4;
-const REQUIRED: u8 = READS_TABLE | READS_OUTPUT;
+pub const READS_INPUT: u8 = 1;
+pub const READS_OUTPUT: u8 = 2;
+pub const READS_TABLE: u8 = 4;
 const NO_TERM: u32 = u32::MAX;
 const MAX_PROJECTED: usize = 3;
 const MAX_COLUMNS: usize = 8;
@@ -25,6 +24,9 @@ const PAYLOAD: u64 = (1 << 62) - 1;
 const LEAF_TABLE: u32 = 0;
 const LEAF_OUTPUT: u32 = 1;
 const LEAF_INPUT: u32 = 2;
+/// A leaf of the two grids of an example, for the parts that read both.
+const LEAF_GRIDS: u32 = 3;
+const FIRST_CONSTANT: u32 = 4;
 
 /// A column of a term: its name, its type, and for an Ident the source it joins within.
 #[derive(Clone, Debug)]
@@ -60,6 +62,8 @@ pub struct Term {
     types: u64,
     /// Whether another term reads this one.
     used: bool,
+    /// Whether the term has no root of its own, since it reads no column of the table.
+    hidden: bool,
 }
 
 /// The terms over a table of one schema.
@@ -130,6 +134,7 @@ impl Generated {
         family.push_leaf("T", table_columns, READS_TABLE, 0);
         family.push_leaf("output", grid(0), READS_OUTPUT, 0);
         family.push_leaf("input", grid(0), READS_INPUT, 0);
+        family.push_leaf("grids", Vec::new(), READS_INPUT | READS_OUTPUT, 0);
         let parts = constant_parts();
         for part in &parts {
             let columns = part.columns.iter().map(|(name, ty)| Column { name: (*name).to_string(), ty: ty.clone(), source: ident_source(&part.name) }).collect();
@@ -137,8 +142,14 @@ impl Generated {
             family.push_leaf(&part.name, columns, flags, 1);
         }
         family.first_term = family.terms.len();
-        let constants: Vec<u32> = (3..family.first_term as u32).collect();
-        // Size 1: over the leaves.
+        let constants: Vec<u32> = (FIRST_CONSTANT..family.first_term as u32).filter(|at| parts[(*at - FIRST_CONSTANT) as usize].meets_table).collect();
+        // Size 1: over the leaves. The table's own rows give its own count. Its count as a number
+        // reads no column, so it has no root, and it stands only to meet a number a grid gives.
+        family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, family.terms[LEAF_TABLE as usize].columns.clone(), 0, "T".to_string(), RootKind::Rows);
+        family.push(Step::Part(Box::new(PartStep::Count { keys: Box::new([]) })), LEAF_TABLE, NO_TERM, vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }], 1, "(count T ())".to_string(), RootKind::Rows);
+        let last = family.terms.len() - 1;
+        family.terms[last].hidden = true;
+        family.terms[last - 1].hidden = false;
         family.unary_operators(LEAF_TABLE, 1);
         family.parts_of(LEAF_TABLE, 1);
         family.unary_operators(LEAF_OUTPUT, 1);
@@ -152,7 +163,10 @@ impl Generated {
         family.by_size.push(family.terms.len());
         // Size 2: over each term of size 1, the constants among them.
         if d >= 2 {
-            let below: Vec<u32> = constants.iter().copied().chain(family.first_term as u32..family.by_size[0] as u32).collect();
+            let below: Vec<u32> = constants.iter().copied().chain((family.first_term as u32..family.by_size[0] as u32).filter(|at| {
+                let term = &family.terms[*at as usize];
+                !term.hidden && term.size > 0
+            })).collect();
             for at in below {
                 family.extend_term(at, 2, true);
             }
@@ -178,33 +192,55 @@ impl Generated {
                 }
             }
         }
+        // A number of a term of size 1 over the table alone against each number a grid gives. Each
+        // has three parts by the count, and they stand here in full, since a table's count or a
+        // table's number equal to one of the output's is a rule that hand walks use.
+        if d == 2 {
+            let numbers: Vec<u32> = constants.iter().copied().filter(|at| {
+                let term = &family.terms[*at as usize];
+                term.flags & (READS_INPUT | READS_OUTPUT) != 0 && term.columns.iter().any(|column| is_number(&column.ty))
+            }).collect();
+            let terms: Vec<u32> = (family.first_term as u32..family.by_size[0] as u32).filter(|at| {
+                let term = &family.terms[*at as usize];
+                term.flags == READS_TABLE && term.size > 0 && term.columns.len() <= MAX_PROJECTED && term.columns.iter().any(|column| is_number(&column.ty))
+            }).collect();
+            for at in terms {
+                for number in &numbers {
+                    family.number_meets(at, *number, 3);
+                }
+            }
+        }
         family.by_size.push(family.terms.len());
         // The name of each root.
         let mut held = names.begin();
         let mut roots = 0;
         for term in family.terms.iter_mut().skip(family.first_term) {
-            if term.flags & REQUIRED != REQUIRED {
+            if term.flags & READS_TABLE == 0 || term.hidden {
                 continue;
             }
+            // A count stands for whether the relation has a row: `>0` reads a count that is not
+            // 0 at any example, and the bare root a count that is one number at every example.
             let texts: Vec<String> = match term.root {
                 RootKind::Holds => vec![format!("(nonempty {})", term.text)],
-                RootKind::Rows => vec![format!("(nonempty {})", term.text), format!("(cardinality {})", term.text)],
-                RootKind::Share => vec![format!("(nonempty {})", term.text), format!("(cardinality {})", term.text), format!("(ratio {})", term.text)],
-                RootKind::Number => vec![format!("(nonempty {})", term.text), format!("(cardinality {})", term.text), format!("(value {})", term.text)],
+                RootKind::Rows => vec![format!("(cardinality {}) >0", term.text), format!("(cardinality {})", term.text)],
+                RootKind::Share => vec![format!("(cardinality {}) >0", term.text), format!("(cardinality {})", term.text), format!("(ratio {})", term.text)],
+                RootKind::Number => vec![format!("(cardinality {}) >0", term.text), format!("(cardinality {})", term.text), format!("(value {})", term.text)],
             };
             term.roots = texts.iter().map(|text| {
                 let shape = shape_text(text, "T", types);
                 let hash = hash_words(shape.bytes().map(u64::from));
-                held.add(hash, shape);
+                held.add(hash, shape, term.flags, term.size);
                 hash
             }).collect();
             roots += term.roots.len();
         }
         family.roots = roots;
         // A walk reads the steps and the roots.
-        for term in &mut family.terms {
-            term.text = String::new();
-            term.columns = Vec::new();
+        if std::env::var_os("GENERATE_KEEP_TEXT").is_none() {
+            for term in &mut family.terms {
+                term.text = String::new();
+                term.columns = Vec::new();
+            }
         }
         family
     }
@@ -212,27 +248,40 @@ impl Generated {
     /// Each operator and part over a term, with what stays within the size.
     fn extend_term(&mut self, at: u32, size: u8, with_grids_alone: bool) {
         let flags = self.terms[at as usize].flags;
-        let table_reader = flags & READS_TABLE != 0;
-        let output_reader = flags & READS_OUTPUT != 0;
         let _ = with_grids_alone;
-        if table_reader {
+        if flags & READS_TABLE != 0 {
             self.unary_operators(at, size);
             self.parts_of(at, size);
             self.binary(at, LEAF_OUTPUT, size, true);
             self.binary(LEAF_OUTPUT, at, size, false);
-            if output_reader {
-                self.binary(at, LEAF_INPUT, size, true);
-                self.binary(LEAF_INPUT, at, size, false);
-            }
-        } else if output_reader {
+            self.binary(at, LEAF_INPUT, size, true);
+            self.binary(LEAF_INPUT, at, size, false);
+        } else {
             self.binary(LEAF_TABLE, at, size, true);
             self.binary(at, LEAF_TABLE, size, false);
         }
     }
 
+    /// `semijoin` and `all` of a term on one number column of it and one of a part.
+    fn number_meets(&mut self, l: u32, r: u32, size: u8) {
+        let (left, right) = (self.terms[l as usize].columns.clone(), self.terms[r as usize].columns.clone());
+        let (left_text, right_text) = (self.terms[l as usize].text.clone(), self.terms[r as usize].text.clone());
+        for (a, x) in left.iter().enumerate() {
+            for (b, y) in right.iter().enumerate() {
+                if !is_number(&x.ty) || !is_number(&y.ty) {
+                    continue;
+                }
+                let pair_text = format!("({} {})", x.name, y.name);
+                let (left_at, right_at): (Box<[u16]>, Box<[u16]>) = (vec![a as u16].into_boxed_slice(), vec![b as u16].into_boxed_slice());
+                self.push(Step::Semijoin { left: left_at.clone(), right: right_at.clone() }, l, r, left.clone(), size, format!("(semijoin {left_text} {right_text} {pair_text})"), RootKind::Share);
+                self.push(Step::All { left: left_at, right: right_at, outer: Box::new([]) }, l, r, Vec::new(), size, format!("(all {left_text} {right_text} () {pair_text})"), RootKind::Holds);
+            }
+        }
+    }
+
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
         let types = types_hash(&columns);
-        self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), types, used: true });
+        self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), types, used: true, hidden: false });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -253,7 +302,7 @@ impl Generated {
         if b != NO_TERM {
             self.terms[b as usize].used = true;
         }
-        self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, types, used: false });
+        self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, types, used: false, hidden: false });
     }
 
     /// `project` and `select` over a term.
@@ -347,6 +396,12 @@ impl Generated {
                     add(PartStep::SameColorNeighbors { p }, grid, vec![column.clone(), one("Col", ValueType::Color, 0), one("N", ValueType::Nat, 0)], format!("(same-color-neighbors {text} {name} {label})"), RootKind::Rows);
                     add(PartStep::Distance { p }, grid, vec![one("P", ValueType::Position, 0), one("K", ValueType::Nat, 0)], format!("(distance {text} {name} {label})"), RootKind::Rows);
                 }
+                add(PartStep::FrameExtent { p }, NO_TERM, vec![one("A", ValueType::Axis, 0), one("N", ValueType::Nat, 0)], format!("(frame-extent {text} {name})"), RootKind::Rows);
+                for (other, second) in columns.iter().enumerate() {
+                    if other != place && second.ty == ValueType::Position {
+                        add(PartStep::Displacement { a: p, b: other as u16 }, NO_TERM, with(&[("V", ValueType::Offset, 0)]), format!("(displacement {text} {name} {})", second.name), RootKind::Rows);
+                    }
+                }
                 add(PartStep::Around { p }, NO_TERM, vec![one("Q", ValueType::Position, 0)], format!("(around {text} {name})"), RootKind::Rows);
                 add(PartStep::Neighbors { p }, NO_TERM, with(&[("D", ValueType::Dir8, 0), ("Q", ValueType::Position, 0)]), format!("(neighbors {text} {name})"), RootKind::Rows);
                 add(PartStep::Split { p }, NO_TERM, with(&[("A", ValueType::Axis, 0), ("Along", ValueType::Box, 0)]), format!("(split {text} {name})"), RootKind::Rows);
@@ -357,7 +412,9 @@ impl Generated {
                 for (keys, key_text) in Self::key_options(&columns, &[place]) {
                     let heads = key_columns(&keys);
                     let extended = |extra: Vec<Column>| -> Vec<Column> { heads.iter().cloned().chain(extra).collect() };
-                    add(PartStep::Pieces { keys: keys.clone(), p }, NO_TERM, extended(vec![column.clone(), one("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::Pieces { keys: keys.clone(), p, four: false }, NO_TERM, extended(vec![column.clone(), one("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::Pieces { keys: keys.clone(), p, four: true }, NO_TERM, extended(vec![column.clone(), one("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces4 {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::FullLines { keys: keys.clone(), p }, NO_TERM, extended(vec![one("A", ValueType::Axis, 0), one("Along", ValueType::Box, 0)]), format!("(full-lines {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::BoxOf { keys: keys.clone(), p }, NO_TERM, extended(vec![one("B", ValueType::Box, 0)]), format!("(box-of {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::RelBox { keys: keys.clone(), p }, NO_TERM, extended(vec![one("X_rel", ValueType::Offset, 0)]), format!("(cells-in-box {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::ShapeClass { keys: keys.clone(), p, turned: false }, NO_TERM, extended(vec![one("Id", ValueType::OPEN_IDENT, 900)]), format!("(shape-class {text} {key_text} {name})"), RootKind::Rows);
@@ -378,7 +435,25 @@ impl Generated {
             if column.ty == ValueType::Box {
                 for (grid, label) in [(LEAF_OUTPUT, "output"), (LEAF_INPUT, "input")] {
                     add(PartStep::Inside { b: p }, grid, with(&[("P", ValueType::Position, 0), ("Col", ValueType::Color, 0)]), format!("(inside {text} {name} {label})"), RootKind::Rows);
+                    add(PartStep::BoxExtent { b: p }, grid, with(&[("A", ValueType::Axis, 0), ("N", ValueType::Nat, 0)]), format!("(box-extent {text} {name} {label})"), RootKind::Rows);
                 }
+                let place_of = |label: &str| one(label, ValueType::Position, 0);
+                let colors = |two: bool| -> Vec<Column> { if two { vec![one("Col", ValueType::Color, 0), one("Col_2", ValueType::Color, 0)] } else { vec![one("Col", ValueType::Color, 0)] } };
+                for (kept, label) in [(true, "kept"), (false, "changed")] {
+                    let columns_read: Vec<Column> = [column.clone(), place_of("P"), place_of("X_rel")].into_iter().chain(colors(!kept)).collect();
+                    add(PartStep::BoxRead { b: p, kept }, LEAF_GRIDS, columns_read, format!("(box-{label} {text} {name})"), RootKind::Rows);
+                    for (x, cell) in columns.iter().enumerate() {
+                        if cell.ty == ValueType::Position {
+                            let read: Vec<Column> = [column.clone(), cell.clone(), place_of("P")].into_iter().chain(colors(!kept)).collect();
+                            add(PartStep::BoxFrameRead { b: p, x: x as u16, kept }, LEAF_GRIDS, read, format!("(box-frame-{label} {text} {name} {})", cell.name), RootKind::Rows);
+                            let read: Vec<Column> = [column.clone(), cell.clone(), place_of("X_rel")].into_iter().chain(colors(!kept)).collect();
+                            add(PartStep::BoxCellRead { b: p, x: x as u16, kept }, LEAF_GRIDS, read, format!("(box-cell-{label} {text} {name} {})", cell.name), RootKind::Rows);
+                        }
+                    }
+                }
+            }
+            if matches!(column.ty, ValueType::Box | ValueType::Offset) {
+                add(PartStep::BoxMargin { b: p }, NO_TERM, with(&[("D", ValueType::Dir, 0), ("K", ValueType::Int, 0)]), format!("(box-margin {text} {name})"), RootKind::Rows);
             }
             if is_number(&column.ty) {
                 for (greatest, label) in [(true, "greatest"), (false, "least")] {
@@ -399,7 +474,9 @@ impl Generated {
         for (keys, key_text) in Self::key_options(&columns, &[]) {
             let heads = key_columns(&keys);
             let with_n: Vec<Column> = heads.iter().cloned().chain([one("N", ValueType::Nat, 0)]).collect();
-            add(PartStep::Count { keys: keys.clone() }, NO_TERM, with_n, format!("(count {text} {key_text})"), RootKind::Rows);
+            if !keys.is_empty() {
+                add(PartStep::Count { keys: keys.clone() }, NO_TERM, with_n, format!("(count {text} {key_text})"), RootKind::Rows);
+            }
             if !keys.is_empty() && keys.len() < columns.len() {
                 let with_id: Vec<Column> = heads.iter().cloned().chain([one("Id", ValueType::OPEN_IDENT, 902)]).collect();
                 add(PartStep::ClassOf { keys: keys.clone() }, NO_TERM, with_id, format!("(class-of {text} {key_text})"), RootKind::Rows);
@@ -473,7 +550,7 @@ fn ident_source(name: &str) -> u16 {
         "output-components" | "output-component-boxes" => 2,
         "input-foreground-components" => 3,
         "output-foreground-components" => 4,
-        "changed-components" => 5,
+        "changed-components" | "changed-component-boxes" => 5,
         _ => 0,
     }
 }
@@ -524,6 +601,8 @@ impl<'a> Walker<'a> {
             self.memo = FastMap::default();
             self.counts = FastMap::default();
             self.held_cells = 0;
+            // The tables those values held are gone, so an address they had can hold another.
+            clear_views();
         }
     }
 
@@ -594,6 +673,14 @@ impl<'a> Walker<'a> {
     /// One table's sparse map from a root's shape to its value at each pair. Each leaf's rows
     /// stand at each pair.
     pub fn walk(&mut self, leaves: &[Vec<Val>], top: u8, allow: Option<&HashSet<u128>>) -> ShapeMap {
+        let _ = top;
+        self.walk_examples(leaves, leaves[0].len(), allow, false)
+    }
+
+    /// One table's sparse map at each example, where the first `train` have an output. A root
+    /// that reads the output has a value at those alone, and any other at every example. With
+    /// `only_output`, only the roots that read the output enter the map.
+    pub fn walk_examples(&mut self, leaves: &[Vec<Val>], train: usize, allow: Option<&HashSet<u128>>, only_output: bool) -> ShapeMap {
         self.keep_within_budget();
         let family = self.family;
         let pairs = leaves[0].len();
@@ -603,22 +690,20 @@ impl<'a> Walker<'a> {
             ids.push(held);
         }
         let mut map: ShapeMap = FastMap::default();
-        let empty = vec![1u32; pairs];
-        let none = vec![0u32; pairs];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             let at = at as u32;
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else { std::mem::take(&mut ids[term.b as usize]) };
             let step = term.step.as_ref().expect("a term has a step");
-            let required = term.flags & REQUIRED == REQUIRED;
-            let wanted = required && allow.is_none_or(|allow| term.roots.iter().any(|hash| allow.contains(hash)));
+            let reads_output = term.flags & READS_OUTPUT != 0;
+            let scope = if reads_output { train } else { pairs };
+            let wanted = term.flags & READS_TABLE != 0 && (reads_output || !only_output) && allow.is_none_or(|allow| term.roots.iter().any(|hash| allow.contains(hash)));
             let extended = term.used;
-            let _ = top;
             let mut own = Vec::new();
-            let idle = first == empty || first == none || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second == empty);
+            let idle = first[..scope].iter().all(|id| *id == 1) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
             if extended {
                 own.reserve(pairs);
-                for pair in 0..pairs {
+                for pair in 0..scope {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (at, first[pair], b);
                     let id = match self.memo.get(&key) {
@@ -632,10 +717,13 @@ impl<'a> Walker<'a> {
                     };
                     own.push(id);
                 }
+                own.resize(pairs, 0);
             }
             if wanted && !idle {
-                let mut words: [[u64; 3]; 12] = [[0; 3]; 12];
-                for pair in 0..pairs.min(12) {
+                let top = scope.min(MAX_EXAMPLES);
+                let mut words: [[u64; 3]; MAX_EXAMPLES] = [[0; 3]; MAX_EXAMPLES];
+                let mut heads = [0f32; 3];
+                for pair in 0..top {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
                     let (rows, left) = if extended {
                         let value = &self.values[own[pair] as usize];
@@ -658,6 +746,15 @@ impl<'a> Walker<'a> {
                     if rows == u32::MAX {
                         continue;
                     }
+                    if pair == 0 {
+                        heads[0] = if rows > 0 { 1.0 } else { 0.0 };
+                        heads[1] = rows as f32;
+                        heads[2] = match term.root {
+                            RootKind::Share if left != u32::MAX && left > 0 => rows as f32 / left as f32,
+                            RootKind::Number => left.saturating_sub(1) as f32,
+                            _ => 0.0,
+                        };
+                    }
                     words[pair][0] = WORD_NONEMPTY | u64::from(rows > 0);
                     words[pair][1] = WORD_COUNT | u64::from(rows);
                     words[pair][2] = match term.root {
@@ -673,11 +770,12 @@ impl<'a> Walker<'a> {
                     if allow.is_some_and(|allow| !allow.contains(hash)) {
                         continue;
                     }
-                    if !(0..pairs.min(12)).any(|pair| words[pair][root] == 0 || words[pair][root] & PAYLOAD != 0) {
+                    if !(0..top).any(|pair| words[pair][root] == 0 || words[pair][root] & PAYLOAD != 0) {
                         continue;
                     }
-                    let entry = map.entry(*hash).or_insert(Entry2 { sums: [0; 12], none: 0, size: term.size });
-                    for pair in 0..pairs.min(12) {
+                    let entry = map.entry(*hash).or_insert(Entry2 { sums: [0; MAX_EXAMPLES], none: 0, size: term.size, flags: term.flags, head: 0.0 });
+                    entry.head = entry.head.max(heads[root]);
+                    for pair in 0..top {
                         let word = words[pair][root];
                         if word == 0 {
                             entry.none |= 1 << pair;
@@ -697,6 +795,40 @@ impl<'a> Walker<'a> {
     }
 }
 
+impl Walker<'_> {
+    /// The count of rows at each example of each term whose text holds `pattern`, leaves included,
+    /// for a check against the expression that a part stands for.
+    pub fn term_counts(&mut self, leaves: &[Vec<Val>], train: usize, pattern: &str) -> Vec<(String, Vec<Option<u64>>)> {
+        let family = self.family;
+        let pairs = leaves[0].len();
+        let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
+        for leaf in leaves {
+            let held: Vec<u32> = leaf.iter().map(|value| self.value_id(value.clone())).collect();
+            ids.push(held);
+        }
+        let mut out = Vec::new();
+        for (at, term) in family.terms.iter().enumerate() {
+            if at >= family.first_term {
+                let step = term.step.as_ref().expect("a term has a step");
+                let scope = if term.flags & READS_OUTPUT != 0 { train } else { pairs };
+                let mut own = Vec::with_capacity(pairs);
+                for pair in 0..scope {
+                    let a = ids[term.a as usize][pair];
+                    let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
+                    let value = if term.text.contains(pattern) || term.used { self.apply(step, a, b) } else { Val::None };
+                    own.push(self.value_id(value));
+                }
+                own.resize(pairs, 0);
+                ids.push(own);
+            }
+            if term.text.contains(pattern) {
+                out.push((term.text.clone(), ids[at].iter().map(|id| rows_of(&self.values[*id as usize])).collect()));
+            }
+        }
+        out
+    }
+}
+
 /// The word of a relation's one number, where it has one row.
 fn number_word(value: &Val) -> u32 {
     let Some(table) = flat(value) else { return 0 };
@@ -713,10 +845,29 @@ pub fn leaves_of(rows: &[Option<Arc<Table>>], inputs: &[Arc<Table>], outputs: &[
         rows.iter().map(|table| table.clone().map_or(Val::None, Val::of_table)).collect::<Vec<_>>(),
         outputs.iter().map(|table| Val::of_table(table.clone())).collect(),
         inputs.iter().map(|table| Val::of_table(table.clone())).collect(),
+        inputs.iter().zip(outputs).map(|(input, output)| Val::of_pair(input.clone(), output.clone())).collect(),
     ];
     let count = constants.first().map_or(0, Vec::len);
     for part in 0..count {
         out.push(constants.iter().map(|tables| Val::of_table(tables[part].clone())).collect());
+    }
+    out
+}
+
+/// The leaves of a walk at every example of a task, train then test. `outputs` has the train
+/// examples alone, so an output and whatever reads it has no value at a test input.
+pub fn leaves_at_examples(rows: &[Option<Arc<Table>>], inputs: &[Arc<Table>], outputs: &[Arc<Table>], constants: &[Vec<Option<Arc<Table>>>]) -> Vec<Vec<Val>> {
+    let examples = rows.len();
+    let output_at = |at: usize| outputs.get(at);
+    let mut out = vec![
+        rows.iter().map(|table| table.clone().map_or(Val::None, Val::of_table)).collect::<Vec<_>>(),
+        (0..examples).map(|at| output_at(at).map_or(Val::None, |table| Val::of_table(table.clone()))).collect(),
+        inputs.iter().take(examples).map(|table| Val::of_table(table.clone())).collect(),
+        (0..examples).map(|at| output_at(at).map_or(Val::None, |table| Val::of_pair(inputs[at].clone(), table.clone()))).collect(),
+    ];
+    let count = constants.first().map_or(0, Vec::len);
+    for part in 0..count {
+        out.push(constants.iter().take(examples).map(|tables| tables[part].clone().map_or(Val::None, Val::of_table)).collect());
     }
     out
 }
@@ -744,7 +895,7 @@ pub enum NameWriter<'a> {
 }
 
 impl NameWriter<'_> {
-    fn add(&mut self, hash: u128, shape: String) {
+    fn add(&mut self, hash: u128, shape: String, flags: u8, size: u8) {
         match self {
             NameWriter::Map(map) => {
                 map.entry(hash).or_insert(shape);
@@ -752,7 +903,7 @@ impl NameWriter<'_> {
             NameWriter::File(file) => {
                 let held = &mut **file;
                 if held.0.insert(hash as u64) {
-                    let _ = std::io::Write::write_all(&mut held.1, format!("{:016x}\t{shape}\n", hash as u64).as_bytes());
+                    let _ = std::io::Write::write_all(&mut held.1, format!("{:016x}\t{shape}\t{flags}\t{size}\n", hash as u64).as_bytes());
                 }
             }
         }
@@ -763,6 +914,11 @@ impl NameStore {
     pub fn to_file(path: &str) -> Result<NameStore, String> {
         let file = crate::zio::writer(path, true)?;
         Ok(NameStore { names: Mutex::default(), file: Some(Mutex::new((HashSet::new(), file))) })
+    }
+
+    /// Writes the name of a root that no family holds.
+    pub fn add_root(&self, hash: u128, shape: String, flags: u8) {
+        self.begin().add(hash, shape, flags, 1);
     }
 
     fn begin(&self) -> NameWriter<'_> {
@@ -784,7 +940,7 @@ impl NameStore {
 }
 
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
-const CACHED_TERMS: usize = 6_000_000;
+const CACHED_TERMS: usize = 12_000_000;
 
 /// The families of each schema, kept in a bounded cache, and the name of each root.
 #[derive(Default)]
@@ -796,7 +952,7 @@ pub struct Generators {
 }
 
 impl Generators {
-    fn get(&self, stored: &crate::tablewalk::Stored, d: usize) -> Arc<Generated> {
+    pub fn get(&self, stored: &crate::tablewalk::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(stored.key.bytes().map(u64::from));
         {
             let mut held = self.held.lock().expect("no panic");
