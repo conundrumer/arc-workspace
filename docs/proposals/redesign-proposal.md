@@ -1,5 +1,7 @@
 # Redesign: what is measured, and what is open
 
+On this page, "the 37" and "the ramp" are older sampler lists, and no part of the split. See [Held-out test set](../../work/measures.md#held-out-test-set).
+
 Status: in build. Each statement under "Measured" cites its source. Each item under "Open" is a choice the measurements do not settle.
 
 ## Measured

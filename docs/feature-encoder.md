@@ -1,5 +1,7 @@
 # Feature encoder
 
+Status: record of a neural encoder beside a language model, a route the project left. [Features map](features-map.md) gives the current sources.
+
 An encoder turns the tables the engine computes during a decode into feature tokens that the program language model reads. It rests on one hypothesis: learned heuristics that read intermediate computations make program search efficient.
 
 ## Role

@@ -1,5 +1,7 @@
 # Sample data build: spec
 
+On this page, "the 37" and "the ramp" are older sampler lists, and "held out" means left out of the sampler's fits. None of these is a part of the split. See [Held-out test set](../../work/measures.md#held-out-test-set).
+
 Status: record. Nothing here is built or run. This spec serves the item "The sample data build" of the [redesign proposal](../proposals/redesign-proposal.md) ("Code changes in build"), with the [sample schema](schema.md) and the [per-table feature inventory](inventory.md) as its inputs. The schema's sections "Settled" and "The canonical text" are fixed here.
 
 The spec proposes the code that the job needs. It moves code out of record folders into a study package where that makes the build simpler, and it changes `gold_union_walks.py` and the map mode of the kit-union-read worker.

@@ -1,5 +1,7 @@
 # Large tables in the feature encoder
 
+Status: record, for the neural encoder of [feature-encoder.md](feature-encoder.md). [Features map](features-map.md) gives the current sources.
+
 A question of [feature-encoder.md](feature-encoder.md): what the encoder does with a table whose rows
 are more than its attention can afford. The question is settled ([Decision](#decision)). This document
 gives the question, the constraints on an answer, the data in hand, what was to be measured on the full

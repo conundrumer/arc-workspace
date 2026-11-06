@@ -1,5 +1,7 @@
 # Search kit: inputs beyond one table
 
+Status: record of the features of one past kit. [Features map](../features-map.md) gives the current sources.
+
 Each feature, pick input and search counter in round 1's kit (`kits/search-refit-r1-kit-0729e4943`, bundle and refit arms) whose input is more of the state than one table's own table and the task's pairs. `policy/` is the kit's policy folder; `sampler/` is `model/study/sampler/` of the kit.
 
 The dependence column:

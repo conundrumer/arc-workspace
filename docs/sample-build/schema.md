@@ -1,6 +1,8 @@
 # Training sample schema
 
-Status: record. Nothing here is built. The schema serves the section "Settled with the user" of `work/redesign-proposal.md`. The model is a generator: it writes a query body given the state, under the grammar, the types and the state's mask.
+On this page, "the 37" and "the ramp" are older sampler lists, and "held out" means left out of the sampler's fits. None of these is a part of the split. See [Held-out test set](../../work/measures.md#held-out-test-set).
+
+Status: record. Nothing here is built. The schema serves the section "Settled with the user" of [the redesign proposal](../proposals/redesign-proposal.md). The model is a generator: it writes a query body given the state, under the grammar, the types and the state's mask.
 
 Paths in this record are short where they repeat:
 

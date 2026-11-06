@@ -9,6 +9,10 @@
 - Before you run the tests, the type check, a solver, or `scripts/materialize.py`, read [Project commands](prompts/agents/notes/project-commands.md#project-commands).
 - Before you run a command that may use much memory or that starts several processes at once, read [Commands that use much memory](prompts/agents/notes/project-commands.md#commands-that-use-much-memory).
 
+## Features
+* comment: The user's words, session 12a37de8, 2026-11-06: "clean up the project documents so that it's clear what is the authoritative source or what's derived from what".
+- Before you read or change anything about features over tables, read [Features map](docs/features-map.md).
+
 ## Handbook
 - The handbook is what a solver session reads.
 

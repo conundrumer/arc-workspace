@@ -1,5 +1,9 @@
 # Per-table feature inventory
 
+Status: record of the features of past kits. [Features map](../features-map.md) gives the current sources.
+
+On this page, "the 37" and "the ramp" are older sampler lists, and "held out" means left out of the sampler's fits. None of these is a part of the split. See [Held-out test set](../../work/measures.md#held-out-test-set).
+
 Every per-table feature that the sampler kit and the features-worker fits compute today. This record comes from reading the code: each fact cites file:line.
 
 ## Paths

@@ -1,4 +1,4 @@
-//! The program relations of `work/feature-spec/feature-spec.md#program-relations`:
+//! The program relations of `docs/feature-spec/feature-spec.md#program-relations`:
 //! the state's program as data, for the QueryVector and the candidate block. A
 //! value is a lib name: a name of the lib, or the engine's identity of a query,
 //! a table or a column, free of the names of the program's author.

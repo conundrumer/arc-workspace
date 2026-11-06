@@ -1,5 +1,7 @@
 # Search kit: hand-set decisions
 
+On this page, "the 37" and "the ramp" are older sampler lists, and "held out" means left out of the sampler's fits. None of these is a part of the split. See [Held-out test set](../../work/measures.md#held-out-test-set).
+
 Each hand-set decision of the pool search, as round 1's kit runs it (`kits/search-refit-r1-kit-0729e4943`, bundle arm; `policy/policy.py` as in `sampler-pool-m2-48211b300`). File and line refer to `model/study/sampler/` of that kit unless named. "Measured" cites the record that compared the decision with its absence or a flat choice; "never measured" means no such record exists. The proposer is `Sampler.search` (`live.py`, `search.py`): it sees the scope's query texts, the visit's kind and the task's session, and nothing else of the search's state.
 
 The proposer sees the grids only as tables. A query uses them through the base tables `input`, `ex_input` and `ex_output` (`sample2_col.py` 325), and `ex_output` holds the train outputs. While it draws, the proposer evaluates its partial query's table on the task's examples (`live.py` 872 to 878, `sample2_col.py` body_table 1334 and `arclog.step_tables`). It redraws an atom whose prefix table is empty on every train example and the test input (EMPTY_ATOM, `sample2_col.py` 39 to 40, 282). It sees no grid as an image or a raw array.

@@ -1,6 +1,6 @@
 # Sample data: type contract
 
-Status: record. Nothing here is built. This contract gives the types of the sample data and the invariants that every implementation of the build must hold. It makes no claim about the language of a field. It says where the `TableVector` is computed (see `TableVector`).
+Status: record. The [feature specification](../feature-spec/feature-spec.md#what-in-the-sample-contract-changes) lists what it changes here. Nothing here is built. This contract gives the types of the sample data and the invariants that every implementation of the build must hold. It makes no claim about the language of a field. It says where the `TableVector` is computed (see `TableVector`).
 
 ## Terms
 

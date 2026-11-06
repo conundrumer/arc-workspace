@@ -1,5 +1,7 @@
 # Training rows for the trees
 
+Status: record of a planned writer. [Features map](../features-map.md) gives the current sources.
+
 The rows that the gradient-boosted trees fit on. The trees score the admitted ids at each writing point of the query writer. The rows come from the writer's own feature code, so that training and serving compute features in one way.
 
 - **Source.** The samples of the sample build: each sample is a state and its target queries, in `samples/SET/skeleton/<task>.jsonl`. The scope of a sample is the union of its members' programs (`query.program`, without each query's own last line where it is a closure).

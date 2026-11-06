@@ -1,5 +1,7 @@
 # Table rows and the information they carry
 
+Status: record of table sizes, measured for the neural encoder. [Features map](features-map.md) gives the current sources.
+
 What the rows of the feature encoder's tables are, how many a table holds at each cut the encoder and the engine have taken, and how much information a row carries. The reader is a session that works on table size: in the encoder, in the lib, or in a solver. [encoder-large-tables.md](encoder-large-tables.md) gives the table cap this work serves and why it exists; [feature-encoder.md](feature-encoder.md) gives the encoder.
 
 ## Basis
