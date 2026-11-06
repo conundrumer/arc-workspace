@@ -122,5 +122,39 @@
         [4,4,4,4]
       ]
     }]
+  }, {
+    "id": "fill-columns-differ",
+    "separates": "the fill grid's columns differ (1 and 5): the concept fills the tile columns 1,5 from the left, and the separate-corner model gives that grid and the grid that fills them 5,1",
+    "input": [
+      [8,8,6,6],
+      [8,8,6,6],
+      [1,5,4,0],
+      [1,5,0,4]
+    ],
+    "output": [{
+      "cases": ["$SharedAnchor"],
+      "grid": [
+        [4,1,4,5],
+        [1,4,5,4],
+        [4,1,4,5],
+        [1,4,5,4]
+      ]
+    }, {
+      "cases": ["$SeparateFillAnchor"],
+      "grid": [
+        [
+          [4,1,4,5],
+          [1,4,5,4],
+          [4,1,4,5],
+          [1,4,5,4]
+        ],
+        [
+          [4,5,4,1],
+          [5,4,1,4],
+          [4,5,4,1],
+          [5,4,1,4]
+        ]
+      ]
+    }]
   }]
 }

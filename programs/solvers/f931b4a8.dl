@@ -41,11 +41,15 @@
     //  stored apart from `anchor`
     // @witness fill-read-from-other-corner: borderline $SeparateFillAnchor
     //     @reassigned fill_anchor
+    // @witness fill-columns-differ: ordinary concept
   | SeparateFillAnchor {}
 
 .type Choice = [t: Tile, f: FillPast, c: FillCorner]
 
-.decl out(p: Position, col: Color, ch: Choice)
+.type FillAnchorValue = [d: DiagDir]
+.type OpenValue = [fill_anchor: FillAnchorValue]
+
+.decl out(p: Position, col: Color, ch: Choice, ov: OpenValue)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -61,7 +65,10 @@
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
 
     // --- $SeparateFillAnchor ---
-    .decl fill_anchor(d: DiagDir) fill_anchor(DIAG_TL).
+    // the corner the fill grid is read from: its rows count from the top, and its columns from
+    // the left or from the right
+    // @open
+    .decl fill_anchor(d: DiagDir) fill_anchor(DIAG_TL). fill_anchor(DIAG_TR).
 }
 
 .init params = Params
@@ -116,21 +123,22 @@ tile_place(T, P, A, N, K) :-
 // @ignore: head-repeat — under $Direct the line is the tile index itself; $FillIndexWrap changes it
 .decl fill_index(f: FillPast, t: Tile, a: Axis, n: number, m: number)
 
-// The corner the fill grid's cells are counted from.
-.decl fill_corner(c: FillCorner, d: DiagDir)
+// The corner the fill grid's cells are counted from, and its open value.
+// @ignore: head-repeat — under $SeparateFillAnchor the open value is the corner; under $SharedAnchor it is nil
+.decl fill_corner(c: FillCorner, d: DiagDir, ov: OpenValue)
 
 // The fill color M1 lines from the corner's edge on axis A and M2 across.
-.decl fill_cell(c: FillCorner, a: Axis, m1: number, m2: number, col: Color)
-fill_cell(R, A, M1, M2, Col) :-
-    fill_corner(R, D), params.fill_quad(Q), parse.quad_cell($U(), Q, P, Col), diag_dist(P, D, A, M1, M2).
+.decl fill_cell(c: FillCorner, ov: OpenValue, a: Axis, m1: number, m2: number, col: Color)
+fill_cell(R, Ov, A, M1, M2, Col) :-
+    fill_corner(R, D, Ov), params.fill_quad(Q), parse.quad_cell($U(), Q, P, Col), diag_dist(P, D, A, M1, M2).
 
-out(P, Col, [T, F, R]) :-
+out(P, Col, [T, F, R], Ov) :-
     impl_choice([T, F, R]),
     tile_place(T, P, A, N1, K1), perp(A, A2), tile_place(T, P, A2, N2, K2),
     params.anchor(D), tile_cell(T, Q, C), diag_dist(Q, D, A, K1, K2),   // the tile cell there
-    ( !params.bg(C), Col = C                                            // pattern color kept
+    ( !params.bg(C), Col = C, Ov = [nil]                                // pattern color kept
     ; params.bg(C), fill_index(F, T, A, N1, M1), fill_index(F, T, A2, N2, M2),
-      fill_cell(R, A, M1, M2, Col)                                      // hole filled
+      fill_cell(R, Ov, A, M1, M2, Col)                                  // hole filled
     ).
 
 // --- $Quadrant ---
@@ -154,10 +162,10 @@ fill_index($FillIndexWrap(), T, A, N, M) :-
     stride(N, W, 0, _, M).
 
 // --- $SharedAnchor ---
-fill_corner($SharedAnchor(), D) :- params.anchor(D).
+fill_corner($SharedAnchor(), D, [nil]) :- params.anchor(D).
 
 // --- $SeparateFillAnchor ---
-fill_corner($SeparateFillAnchor(), D) :- params.fill_anchor(D).
+fill_corner($SeparateFillAnchor(), D, [[D]]) :- params.fill_anchor(D).
 
 .comp Determine {
     .init ex = Parse<Example>
