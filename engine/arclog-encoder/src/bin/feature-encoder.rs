@@ -11,6 +11,7 @@
 //!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
+//!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder grid-values GRIDS_JSON (--scene | --rule) [--size D] [--max-inputs N] [--work-cap N] --out FILE
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
 //!   feature-encoder stored-eval REQUESTS_JSONL --out FILE
@@ -488,7 +489,7 @@ fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(
 
 /// A generated term's text as an expression over the stored table `&t`: a list hole writes its
 /// columns, and a part of the base tables its call.
-fn term_expression(text: &str) -> String {
+fn term_expression(text: &str, table: &str) -> String {
     let mut out = String::with_capacity(text.len() + 16);
     let mut token = String::new();
     let flush = |token: &mut String, out: &mut String| {
@@ -496,7 +497,7 @@ fn term_expression(text: &str) -> String {
             return;
         }
         if token == "T" {
-            out.push_str("&t");
+            out.push_str(table);
         } else if let Some(list) = token.strip_prefix("T*:") {
             out.push_str(&list.replace(',', " "));
         } else if arclog_encoder::gen_constants::is_part_name(token) {
@@ -518,17 +519,160 @@ fn term_expression(text: &str) -> String {
     out
 }
 
-/// A native term's rows at each train pair against its expression through the engine, on a sample
-/// of the terms of each gold table of a tables file. It compares the count of rows, and the rows
-/// over the columns that both name, other than Idents, whose labels are their own in each. It
-/// prints a line for each term that differs, and a tally by the term's head.
+/// Rows with each Ident replaced by a label of the rows it stands in, so two sets of rows compare
+/// with their Idents as partitions.
+fn canonical_rows(rows: &[Vec<u32>], is_ident: &[bool]) -> Vec<Vec<u128>> {
+    use std::collections::BTreeMap;
+    let mut held: Vec<Vec<u128>> = rows.iter().map(|row| row.iter().zip(is_ident).map(|(cell, ident)| if *ident { 0 } else { u128::from(*cell) }).collect()).collect();
+    if is_ident.iter().any(|flag| *flag) {
+        for _ in 0..3 {
+            let mut next = held.clone();
+            for (column, _) in is_ident.iter().enumerate().filter(|(_, flag)| **flag) {
+                let mut sums: BTreeMap<u32, u128> = BTreeMap::new();
+                for (row, words) in rows.iter().zip(&held) {
+                    let word = arclog_encoder::native::hash_words(words.iter().enumerate().filter(|(at, _)| *at != column).flat_map(|(_, word)| [*word as u64, (*word >> 64) as u64]));
+                    let sum = sums.entry(row[column]).or_insert(0);
+                    *sum = sum.wrapping_add(word);
+                }
+                for (row, out) in rows.iter().zip(&mut next) {
+                    out[column] = sums[&row[column]];
+                }
+            }
+            held = next;
+        }
+    }
+    held.sort_unstable();
+    held.dedup();
+    held
+}
+
+/// What the engine gives an expression: its column names and types, and its rows at each example.
+struct EngineRows {
+    names: Vec<String>,
+    types: Vec<arclog::types::ValueType>,
+    examples: Vec<Option<Vec<Vec<u32>>>>,
+}
+
+/// What a run of the check has found, by head: agree, differ, refused, no value, types differ.
+struct CheckTally {
+    counts: std::collections::BTreeMap<String, [u64; 5]>,
+    shown: std::collections::BTreeMap<String, u32>,
+    started: std::time::Instant,
+    budget: f64,
+}
+
+impl CheckTally {
+    fn new() -> CheckTally {
+        let budget = std::env::var("GENERATE_CHECK_SECONDS").ok().and_then(|text| text.parse().ok()).unwrap_or(60.0);
+        CheckTally { counts: Default::default(), shown: Default::default(), started: std::time::Instant::now(), budget }
+    }
+
+    fn out_of_time(&self) -> bool {
+        self.started.elapsed().as_secs_f64() > self.budget
+    }
+
+    fn print(&self) {
+        for (head, counts) in &self.counts {
+            println!("{head}\tagree {}\tdiffer {}\trefused {}\tno value {}\ttypes {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
+        }
+    }
+}
+
+/// A native term's rows at each train pair against its expression through the engine, on a sample of
+/// a family's terms. It compares the column names and types and the rows, with each Ident as a
+/// partition. A term with no native value stands as "no value". It prints a line for each of the
+/// first terms of a head that differ or that the engine refuses.
+#[allow(clippy::too_many_arguments)]
+fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arclog_encoder::native::Val>], train: usize, every: usize, check_leaves: bool, table_text: &str, engine: &dyn Fn(&str) -> Result<EngineRows, String>, tally: &mut CheckTally) -> Result<(), String> {
+    use arclog_encoder::generate::Walker;
+    use std::collections::BTreeSet;
+    let (_, first) = family.counts();
+    let mut walker = Walker::new(family);
+    let chosen = |at: usize| (at < first && check_leaves) || (at >= first && !family.is_pair_term(at) && (at - first) % every.max(1) == 0);
+    for (at, values) in walker.term_values(leaves, train, &chosen) {
+        if tally.out_of_time() {
+            break;
+        }
+        let (text, columns, _) = family.term_info(at);
+        if text.is_empty() {
+            return Err("set GENERATE_KEEP_TEXT, so a family keeps its terms' text".to_string());
+        }
+        let expression = term_expression(text, table_text);
+        let head: String = if at < first { format!("base:{}", expression.trim_start_matches('(').split(' ').next().unwrap_or("").trim_end_matches(')')) } else { text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string() };
+        let (shown, counts) = (&mut tally.shown, tally.counts.entry(head.clone()).or_default());
+        let mut show = |kind: &str, detail: String| {
+            let held = shown.entry(format!("{kind} {head}")).or_insert(0);
+            *held += 1;
+            if *held <= 3 {
+                println!("{kind} {expression}: {detail}");
+            }
+        };
+        let found = match engine(&expression) {
+            Ok(found) => found,
+            Err(message) => {
+                counts[2] += 1;
+                show("refused", message.chars().take(200).collect());
+                continue;
+            }
+        };
+        let native_names: BTreeSet<&str> = columns.iter().map(|(name, _)| name.as_str()).collect();
+        let engine_names: BTreeSet<&str> = found.names.iter().map(String::as_str).collect();
+        if native_names != engine_names {
+            counts[1] += 1;
+            show("differ", format!("columns: native {native_names:?}, engine {engine_names:?}"));
+            continue;
+        }
+        let places: Vec<usize> = columns.iter().filter_map(|(name, _)| found.names.iter().position(|own| own == name)).collect();
+        let plain = |ty: &arclog::types::ValueType| format!("{:?}", ty.without_source());
+        // The engine can narrow a column's type where a label meets a narrower one.
+        let unlike: Vec<String> = columns.iter().zip(&places).filter(|((_, ty), place)| found.types.get(**place).is_some_and(|other| plain(ty) != plain(other) && !other.without_source().is_below(&ty.without_source()) && !ty.without_source().is_below(&other.without_source()))).map(|((name, ty), place)| format!("{name}: native {}, engine {}", plain(ty), plain(&found.types[*place]))).collect();
+        if !unlike.is_empty() {
+            counts[4] += 1;
+            show("types", unlike.join(", "));
+        }
+        let is_ident: Vec<bool> = columns.iter().map(|(_, ty)| matches!(ty, arclog::types::ValueType::Ident(_))).collect();
+        let mut outcome = 0;
+        let mut detail = String::new();
+        for pair in 0..train {
+            let native = &values[pair];
+            let Some(rows) = &found.examples[pair] else {
+                outcome = 3;
+                break;
+            };
+            if matches!(native, arclog_encoder::native::Val::None) {
+                outcome = 3;
+                break;
+            }
+            let engine_rows: Vec<Vec<u32>> = rows.iter().map(|row| places.iter().map(|place| row[*place]).collect()).collect();
+            let native_rows: Vec<Vec<u32>> = match arclog_encoder::gen_parts::flat(native) {
+                Some(table) if table.arity == 0 => if table.len > 0 { vec![Vec::new()] } else { Vec::new() },
+                Some(table) => table.rows().map(<[u32]>::to_vec).collect(),
+                None => Vec::new(),
+            };
+            let (a, b) = (canonical_rows(&native_rows, &is_ident), canonical_rows(&engine_rows, &is_ident));
+            if a != b {
+                outcome = 1;
+                detail = format!("pair {pair}: native {} rows, engine {} rows; columns {:?}", a.len(), b.len(), columns.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>());
+                break;
+            }
+        }
+        counts[outcome] += 1;
+        if outcome == 1 {
+            show("differ", detail);
+        }
+    }
+    Ok(())
+}
+
+/// The check on each table of a tables file, each under the columns `T0..`, and each part of the
+/// base tables at the file's first table.
 fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result<(), String> {
-    use arclog_encoder::generate::{leaves_at, Generators, Walker};
+    use arclog_encoder::generate::{leaves_at, Generators};
     use arclog_encoder::run::StoredRows;
     use arclog_encoder::schema::TableColumn;
     use arclog_encoder::stored::Stored;
     use arclog_encoder::table_vector::Grids;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
     let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
@@ -537,12 +681,20 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
     let registry = arclog::registry::Registry::get();
     let reader = arclog_encoder::expression::Reader { registry, library: arclog_encoder::library::library(), program_relations: &arclog_encoder::program_relations::is_program_relation };
     let empty = Vec::new();
-    let mut tally: BTreeMap<String, [u64; 4]> = BTreeMap::new();
-    let mut shown = 0;
+    let mut tally = CheckTally::new();
     let mut seen: BTreeSet<u128> = BTreeSet::new();
-    for item in data["items"].as_array().unwrap_or(&empty) {
-        let Some(stored) = Stored::of_json(&item["gold"], train, 0, 2000) else { continue };
-        if stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+    let mut leaves_done = false;
+    let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
+        let mut out = vec![item["gold"].clone()];
+        out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
+        out
+    }).collect();
+    for item in &items {
+        if tally.out_of_time() {
+            break;
+        }
+        let Some(stored) = Stored::of_json(item, train, 0, 2000) else { continue };
+        if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
         let task = arclog::task::read_task(&arguments.tasks.join(format!("{task_name}.json"))).map_err(|error| format!("{error:?}"))?;
@@ -559,85 +711,126 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
         let table = StoredRows { table: "&t".to_string(), stored_name: format!("generate-check/{task_name}/{}", seen.len()), columns, types: stored.types.clone(), per_input: true, has_example: false, rows };
         let host = Host::stored(task, &table)?;
         let family = families.get(&stored, arguments.size.max(1));
-        let (count, first) = family.counts();
-        let mut walker = Walker::new(&family);
         let example_of: Vec<usize> = (0..train).collect();
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
         let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-        let chosen = |at: usize| at >= first && (at - first) % every.max(1) == 0;
-        for (at, values) in walker.term_values(&leaves, train, &chosen) {
-            let (text, columns, _) = family.term_info(at);
-            if text.is_empty() {
-                return Err("set GENERATE_KEEP_TEXT, so a family keeps its terms' text".to_string());
+        let check_leaves = !leaves_done;
+        leaves_done = true;
+        let engine = |expression: &str| -> Result<EngineRows, String> {
+            let rel = reader.rel_text(expression)?;
+            let found = host.evaluate_terms(&[&rel], false).pop().expect("one term")?;
+            let mut examples = Vec::with_capacity(found.examples.len());
+            for rows in &found.examples {
+                examples.push(rows.as_ref().map(|rows| {
+                    let mut out: Vec<Vec<u32>> = Vec::new();
+                    arclog::eval::join::each_row(rows, &mut |row| out.push(row.iter().map(|cell| cell.encoding()).collect()));
+                    out
+                }));
             }
-            let head: String = text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string();
-            let counts = tally.entry(head).or_default();
-            let expression = term_expression(text);
-            let outcome = reader.rel_text(&expression).and_then(|rel| host.evaluate_terms(&[&rel], false).pop().expect("one term"));
-            let found = match outcome {
-                Ok(found) => found,
-                Err(message) => {
-                    counts[2] += 1;
-                    if shown < 12 && std::env::var_os("GENERATE_CHECK_REFUSED").is_some() {
-                        shown += 1;
-                        println!("refused {expression}: {}", message.chars().take(200).collect::<String>());
-                    }
-                    continue;
-                }
-            };
-            let mut same = true;
-            let mut detail = String::new();
-            for pair in 0..train {
-                let native = &values[pair];
-                let engine = &found.examples[pair];
-                let Some(engine) = engine else {
-                    counts[3] += u64::from(pair == 0);
-                    same = true;
-                    break;
-                };
-                if matches!(native, arclog_encoder::native::Val::None) {
-                    counts[3] += u64::from(pair == 0);
-                    break;
-                }
-                let places: Vec<(usize, usize)> = columns.iter().enumerate().filter(|(_, (_, ty))| !matches!(ty, arclog::types::ValueType::Ident(_))).filter_map(|(at, (name, _))| found.row_names.iter().position(|own| own == name).map(|other| (at, other))).collect();
-                let mut engine_rows: Vec<Vec<u32>> = Vec::new();
-                arclog::eval::join::each_row(engine, &mut |row| engine_rows.push(places.iter().map(|(_, other)| row[*other].encoding()).collect()));
-                let native_rows: Vec<Vec<u32>> = match arclog_encoder::gen_parts::flat(native) {
-                    Some(table) => {
-                        if table.arity == 0 {
-                            if table.len > 0 { vec![Vec::new()] } else { Vec::new() }
-                        } else {
-                            table.rows().map(|row| places.iter().map(|(own, _)| row[*own]).collect()).collect()
-                        }
-                    }
-                    None => Vec::new(),
-                };
-                let (engine_count, native_count) = (engine_rows.len(), native_rows.len());
-                engine_rows.sort_unstable();
-                engine_rows.dedup();
-                let mut native_sorted = native_rows;
-                native_sorted.sort_unstable();
-                native_sorted.dedup();
-                if engine_count != native_count || engine_rows != native_sorted {
-                    same = false;
-                    detail = format!("pair {pair}: native {native_count} rows, engine {engine_count} rows; columns native {:?} engine {:?}", columns.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), found.row_names);
-                    break;
-                }
-            }
-            if same {
-                counts[0] += 1;
-            } else {
-                counts[1] += 1;
-                if shown < 40 {
-                    shown += 1;
-                    println!("differ {expression}: {detail}");
-                }
+            Ok(EngineRows { names: found.row_names, types: found.types, examples })
+        };
+        check_family(&family, &leaves, train, every, check_leaves, "&t", &engine, &mut tally)?;
+    }
+    tally.print();
+    Ok(())
+}
+
+/// The check on each table of a solver with one assignment and one model at each train pair, under the
+/// names that its program gives the table and its columns.
+fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{leaves_at, Generated, NameStore};
+    use arclog_encoder::stored::{column_order, Stored};
+    use arclog_encoder::table_vector::Grids;
+    let host = host(arguments, solver)?;
+    let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
+    let train = grids.train;
+    let store = NameStore::default();
+    let mut tally = CheckTally::new();
+    let engine = |expression: &str| -> Result<EngineRows, String> {
+        let value = match host.relation(expression, false) {
+            Evaluated::Value(value) => value,
+            Evaluated::Refused(message) | Evaluated::Fault(message) => return Err(message),
+        };
+        let [at] = value.at.as_slice() else { return Err(format!("{} assignments", value.at.len())) };
+        let mut examples: Vec<Option<Vec<Vec<u32>>>> = vec![None; train];
+        for (example, models) in &at.examples {
+            let [ModelValue::Rows(rows)] = models.as_slice() else { continue };
+            let held: Vec<Vec<u32>> = rows.iter().map(|row| row.iter().map(|cell| cell.encoding()).collect()).collect();
+            match example {
+                Some(example) if usize::from(example.index()) < train => examples[usize::from(example.index())] = Some(held),
+                Some(_) => {}
+                None => examples = vec![Some(held); train],
             }
         }
-        let _ = count;
+        Ok(EngineRows { names: value.row_names.clone(), types: value.types.clone(), examples })
+    };
+    for (place, name) in host.table_names().iter().enumerate() {
+        if tally.out_of_time() {
+            break;
+        }
+        let Evaluated::Value(value) = host.relation(name, false) else { continue };
+        let [at] = value.at.as_slice() else { continue };
+        if value.types.is_empty() || value.types.len() > 8 || value.types.iter().any(|ty| *ty == arclog::types::ValueType::Example) || value.row_names.iter().any(|column| column == "T") {
+            continue;
+        }
+        let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); train];
+        for (example, models) in &at.examples {
+            let held: Vec<Vec<Vec<u32>>> = models.iter().filter_map(|model| match model {
+                ModelValue::Rows(rows) => Some(rows.iter().map(|row| row.iter().map(|cell| cell.encoding()).collect()).collect()),
+                _ => None,
+            }).collect();
+            match example {
+                Some(example) if usize::from(example.index()) < train => rows[usize::from(example.index())] = held,
+                Some(_) => {}
+                None => rows = vec![held; train],
+            }
+        }
+        if rows.iter().any(|models| models.len() != 1) {
+            continue;
+        }
+        let stored = Stored::of_rows(&value.types, rows);
+        // An expression addresses a column by the schema's name, and a relation's rows name its labels.
+        let schema = arclog_encoder::schema::Tables::table(&host, name).ok_or("a table of the state has a schema")?;
+        let names: Vec<String> = column_order(&value.types).iter().map(|at| {
+            let label = &value.row_names[*at];
+            schema.columns.iter().find(|column| column.name == *label || arclog_encoder::schema::label_name(&column.name) == *label).map_or_else(|| label.clone(), |column| column.name.clone())
+        }).collect();
+        let family = Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store);
+        let example_of: Vec<usize> = (0..train).collect();
+        let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
+        let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+        check_family(&family, &leaves, train, every, place == 0, name, &engine, &mut tally)?;
     }
-    for (head, counts) in &tally {
-        println!("{head}\tagree {}\tdiffer {}\trefused {}\tno value {}", counts[0], counts[1], counts[2], counts[3]);
+    tally.print();
+    Ok(())
+}
+
+/// A family's terms and roots at the column types `types`, by the heads of a term and of its first relation.
+fn run_term_stats(arguments: &Arguments, types: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{Generated, NameStore};
+    use std::collections::BTreeMap;
+    let types: Vec<arclog::types::ValueType> = types.split(',').map(|name| arclog_encoder::schema::type_of_name(name).ok_or_else(|| format!("no type {name}"))).collect::<Result<_, _>>()?;
+    let family = Generated::of(&types, arguments.size.max(1), &NameStore::default());
+    let (count, first) = family.counts();
+    println!("terms {} leaves {} roots {} by size {:?}", count - first, first, family.roots, family.by_size);
+    let mut by: BTreeMap<(String, String), (u64, u64)> = BTreeMap::new();
+    for at in first..count {
+        let (text, _, _) = family.term_info(at);
+        if text.is_empty() {
+            return Err("set GENERATE_KEEP_TEXT".to_string());
+        }
+        let mut words = text.split(' ');
+        let head = words.next().unwrap_or("").trim_start_matches('(').to_string();
+        let inner = words.next().unwrap_or("").trim_start_matches('(').trim_end_matches(')').to_string();
+        let inner = if arclog_encoder::gen_constants::is_part_name(&inner) { "part".to_string() } else { inner };
+        let entry = by.entry((head, inner)).or_default();
+        entry.0 += 1;
+        entry.1 += family.term_roots(at) as u64;
+    }
+    let mut rows: Vec<_> = by.into_iter().collect();
+    rows.sort_by_key(|(_, (terms, _))| std::cmp::Reverse(*terms));
+    for ((head, inner), (terms, roots)) in rows.iter().take(60) {
+        println!("{terms}\t{roots}\t{head}\t{inner}");
     }
     Ok(())
 }
@@ -933,6 +1126,8 @@ fn main() {
         ("candidate-lists", [out, sources @ ..]) if !sources.is_empty() => run_candidate_lists(&arguments, out, sources),
         ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("generate-check", [file]) => run_generate_check(&arguments, arguments.tables_per_task.max(1), file),
+        ("term-stats", [types]) => run_term_stats(&arguments, types),
+        ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
         ("law", [tasks_file]) => run_law(&arguments, tasks_file),

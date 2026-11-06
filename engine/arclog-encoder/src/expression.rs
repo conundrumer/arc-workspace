@@ -170,8 +170,8 @@ pub enum Feature {
 }
 
 impl Rel {
-    /// Calls `visit` on each leaf of the term.
-    pub fn each_leaf<'r>(&'r self, visit: &mut dyn FnMut(&'r Leaf)) {
+    /// Calls `visit` on each leaf of the term, those that a call of a macro reads included.
+    pub fn each_leaf(&self, visit: &mut dyn FnMut(&Leaf)) {
         match self {
             Rel::Leaf(leaf) => visit(leaf),
             Rel::Project(rel, _) | Rel::Select(rel, ..) | Rel::LibJoin(rel, ..) => rel.each_leaf(visit),
@@ -184,7 +184,11 @@ impl Rel {
                     binding.relation.each_leaf(visit);
                 }
             }
-            Rel::Call(..) => {}
+            Rel::Call(name, args) => {
+                for leaf in crate::library::call_leaves(name, args) {
+                    visit(&leaf);
+                }
+            }
         }
     }
 

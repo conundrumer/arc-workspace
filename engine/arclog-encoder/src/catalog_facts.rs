@@ -425,6 +425,14 @@ impl GridFacts {
     fn cell_roles(&mut self) {
         let (h, w) = (self.h, self.w);
         let mut roles = [Bits::EMPTY; CELL_ROLES];
+        // Under a tie, every most common color is background.
+        let most = self.counts.iter().copied().max().unwrap_or(0);
+        let mut foreground = Bits::EMPTY;
+        for at in 0..h * w {
+            if self.counts[self.color[at] as usize] != most {
+                foreground.set(at);
+            }
+        }
         let full_rows: Vec<bool> = self.line_colors[0].iter().map(|mask| mask.count_ones() == 1).collect();
         let full_cols: Vec<bool> = self.line_colors[1].iter().map(|mask| mask.count_ones() == 1).collect();
         for r in 0..h {
@@ -458,20 +466,19 @@ impl GridFacts {
                 if (r == 0 || r == h - 1) && (c == 0 || c == w - 1) {
                     roles[ROLE_GRID_CORNER].set(at);
                 }
-                if let Some(cells) = &self.foreground {
-                    if !cells.get(at) {
-                        let near = (r.saturating_sub(1)..(r + 2).min(h)).any(|nr| (c.saturating_sub(1)..(c + 2).min(w)).any(|nc| cells.get(nr * w + nc)));
-                        if near {
-                            roles[ROLE_NEXT].set(at);
-                        }
+                if !foreground.get(at) {
+                    let near = (r.saturating_sub(1)..(r + 2).min(h)).any(|nr| (c.saturating_sub(1)..(c + 2).min(w)).any(|nc| foreground.get(nr * w + nc)));
+                    if near {
+                        roles[ROLE_NEXT].set(at);
                     }
                 }
             }
         }
-        if let Some(cells) = self.foreground {
+        {
+            let cells = foreground;
             roles[ROLE_ENCLOSED] = walk_in(&self.all.minus(&cells), h, w);
-            let rows: Vec<usize> = (0..h).filter(|r| 4 * (0..w).filter(|c| cells.get(r * w + c)).count() >= 3 * w).collect();
-            let cols: Vec<usize> = (0..w).filter(|c| 4 * (0..h).filter(|r| cells.get(r * w + c)).count() >= 3 * h).collect();
+            let rows: Vec<usize> = (0..h).filter(|r| (0..w).all(|c| cells.get(r * w + c))).collect();
+            let cols: Vec<usize> = (0..w).filter(|c| (0..h).all(|r| cells.get(r * w + c))).collect();
             for r in &rows {
                 for c in &cols {
                     roles[ROLE_CROSSING].set(r * w + c);
@@ -502,14 +509,15 @@ impl GridFacts {
         self.roles = roles;
     }
 
-    /// The least move along the rows, or along the columns, at most half their number, that
-    /// keeps at least nine tenths of the cells it compares.
+    /// The least approximate period along the rows, or along the columns: the line pairs the move
+    /// breaks do not outnumber those it keeps, as `Periods` gives. 0 where the extent has none.
     fn least_move(&self, along_rows: bool) -> usize {
         let (n, m) = if along_rows { (self.h, self.w) } else { (self.w, self.h) };
         let cell = |line: usize, place: usize| if along_rows { self.color[line * self.w + place] } else { self.color[place * self.w + line] };
-        for p in 1..=n / 2 {
-            let same = (0..n - p).map(|a| (0..m).filter(|place| cell(a, *place) == cell(a + p, *place)).count()).sum::<usize>();
-            if same as f64 >= 0.9 * ((n - p) * m) as f64 {
+        for p in 1..n {
+            let lines = n - p;
+            let broken = (0..lines).filter(|a| (0..m).any(|place| cell(*a, place) != cell(*a + p, place))).count();
+            if broken <= lines - broken {
                 return p;
             }
         }
@@ -528,21 +536,7 @@ impl GridFacts {
                 counts[class(r, c)][self.color[r * w + c] as usize] += 1;
             }
         }
-        let mut tops = 0u16;
-        for held in &counts {
-            let most = held.iter().copied().max().unwrap_or(0);
-            if most > 0 {
-                for (col, q) in held.iter().enumerate() {
-                    if *q == most {
-                        tops |= 1 << col;
-                    }
-                }
-            }
-        }
         let mut out = Bits::EMPTY;
-        if tops.count_ones() < 2 {
-            return out;
-        }
         for r in 0..h {
             for c in 0..w {
                 let held = &counts[class(r, c)];
@@ -559,7 +553,9 @@ impl GridFacts {
         let mut out = [0u16; COLOR_ROLES];
         let per_pieces: Vec<u32> = (0..10).map(|col| self.pieces.iter().filter(|piece| piece.color == col as u8).count() as u32).collect();
         let most_pieces = per_pieces.iter().copied().max().unwrap_or(0);
-        let foreground_largest = self.pieces.iter().filter(|piece| Some(piece.color) != self.background).map(|piece| piece.size).max();
+        // Under a tie, every most common color is background.
+        let most_cells = self.counts.iter().copied().max().unwrap_or(0);
+        let foreground_largest = self.pieces.iter().filter(|piece| self.counts[piece.color as usize] != most_cells).map(|piece| piece.size).max();
         let full_rows: Vec<bool> = self.line_colors[0].iter().map(|mask| mask.count_ones() == 1).collect();
         let full_cols: Vec<bool> = self.line_colors[1].iter().map(|mask| mask.count_ones() == 1).collect();
         let inside: Vec<Option<Bits>> = (0..10).map(|col| (self.counts[col] > 0).then(|| walk_in(&self.all.minus(&self.by_color[col]), h, w))).collect();
@@ -598,7 +594,7 @@ impl GridFacts {
             if own.iter().all(|piece| piece.size as usize == (piece.span[1] - piece.span[0] + 1) as usize * (piece.span[3] - piece.span[2] + 1) as usize) {
                 out[COLOR_FILLS_BOXES] |= bit;
             }
-            if Some(col as u8) != self.background && foreground_largest.is_some_and(|size| own.iter().any(|piece| piece.size == size)) {
+            if self.counts[col] != most_cells && foreground_largest.is_some_and(|size| own.iter().any(|piece| piece.size == size)) {
                 out[COLOR_LARGEST] |= bit;
             }
             if per_pieces[col] == most_pieces {

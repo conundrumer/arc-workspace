@@ -434,7 +434,8 @@
       (score ((:t Col) (:S N))
         (&class_counts.size (:key Id *Col) *N))))
   (QUERY &top (&class_order.maximal (:key *Id) (:t *Col)))
-  (QUERY &q (&in_class *P *Id *Col) (NOT (&top Id Col)))
+  (QUERY &off (&in_class *P *Id *Col) (NOT (&top Id Col)))
+  (QUERY &q (&off *P))
   (gives &q))
 
 (fragment (colors-whole-lines (?G grid))

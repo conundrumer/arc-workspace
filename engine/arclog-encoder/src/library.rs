@@ -5,7 +5,7 @@
 //! A macro is a function from s-expressions to forms: each hole takes what
 //! its kind declares, and each name the macro declares is fresh at each call.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use arclog::layout::SourceFile;
@@ -142,35 +142,55 @@ pub fn library() -> &'static Library {
     LIBRARY.get_or_init(|| Library::parse(LIBRARY_TEXT).unwrap_or_else(|fault| panic!("the feature library does not read: {fault}")))
 }
 
-/// The size of a call: the operators of its expansion. Each `INIT` form is one
-/// `component`, and each `QUERY` that reads no instance of the macro is one
-/// operator, since a `QUERY` over an instance's output only labels its columns.
-/// Each relation hole adds the size of what it takes.
+/// The size of a call: 1, whatever its expansion's size, and the size of what each relation hole takes.
 pub fn call_size(name: &str, args: &[Written]) -> usize {
     let Some(found) = library().get(name) else { return 0 };
-    let mut size = 0;
-    for form in &found.forms {
-        let Ok(list) = items_of(form) else { continue };
-        match list.first().and_then(|head| symbol_of(head).ok()) {
-            Some("INIT") => size += 1,
-            Some("QUERY") => {
-                let reads_instance = list[2..].iter().any(|atom| match items_of(atom).ok().and_then(|atom| atom.first()) {
-                    Some(SExpr::Symbol { text, .. }) => text.starts_with('&') && text.contains('.'),
-                    _ => false,
-                });
-                size += usize::from(!reads_instance);
-            }
-            _ => {}
-        }
-    }
     let registry = arclog::registry::Registry::get();
     let reader = crate::expression::Reader { registry, library: library(), program_relations: &crate::program_relations::is_program_relation };
+    let mut size = 1;
     for (hole, arg) in found.holes.iter().zip(args) {
         if matches!(hole.kind, HoleKind::Relation) {
             size += reader.rel_text(&arg.to_string()).map_or(0, |rel| rel.size());
         }
     }
     size
+}
+
+/// The leaves that a call reads: those its forms write, and those of what its relation and grid holes take.
+pub fn call_leaves(name: &str, args: &[Written]) -> Vec<crate::expression::Leaf> {
+    let Some(found) = library().get(name) else { return Vec::new() };
+    let mut out = Vec::new();
+    for form in &found.forms {
+        written_leaves(form, &mut out);
+    }
+    let registry = arclog::registry::Registry::get();
+    let reader = crate::expression::Reader { registry, library: library(), program_relations: &crate::program_relations::is_program_relation };
+    for (hole, arg) in found.holes.iter().zip(args) {
+        if matches!(hole.kind, HoleKind::Relation | HoleKind::Grid) {
+            if let Ok(rel) = reader.rel_text(&arg.to_string()) {
+                rel.each_leaf(&mut |leaf| out.push(leaf.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// The grids that a macro's form reads by name.
+fn written_leaves(form: &SExpr, out: &mut Vec<crate::expression::Leaf>) {
+    use crate::expression::Leaf;
+    let SExpr::List { items, .. } = form else { return };
+    if let Some(SExpr::Symbol { text, .. }) = items.first() {
+        match &**text {
+            "input" => out.push(Leaf::Input),
+            "output" => out.push(Leaf::Output),
+            "ex_input" => out.push(Leaf::ExInput),
+            "ex_output" => out.push(Leaf::ExOutput),
+            _ => {}
+        }
+    }
+    for item in items {
+        written_leaves(item, out);
+    }
 }
 
 /// What a hole holds at a call.
@@ -194,9 +214,69 @@ struct Call {
     taken: Vec<String>,
     /// Whether the atoms in progress stand in an `INIT` form.
     in_instance: bool,
+    /// The labels that a column hole or a splice writes at this call. A label that the macro writes
+    /// under one of these names takes another name, outside the form that gives its columns.
+    reserved: HashSet<String>,
+    /// The name each such label takes.
+    renames: HashMap<String, String>,
+    /// Whether the form in progress gives the macro's columns, which keep their names.
+    in_final: bool,
+}
+
+/// A literal token: its mark, and the name after it.
+fn split_mark(text: &str) -> (&str, &str) {
+    match text.as_bytes().first() {
+        Some(b'*') => ("*", &text[1..]),
+        Some(b'^') => ("^", &text[1..]),
+        _ => ("", text),
+    }
 }
 
 impl Call {
+    /// The name that the macro's label `name` has in its forms before the last.
+    fn held_name(&mut self, name: &str) -> String {
+        if !self.reserved.contains(name) {
+            return name.to_string();
+        }
+        if let Some(held) = self.renames.get(name) {
+            return held.clone();
+        }
+        let mut suffix = 2;
+        let mut fresh = format!("{name}_{suffix}");
+        while self.reserved.contains(&fresh) || self.renames.values().any(|held| *held == fresh) {
+            suffix += 1;
+            fresh = format!("{name}_{suffix}");
+        }
+        self.renames.insert(name.to_string(), fresh.clone());
+        fresh
+    }
+
+    /// The label that the macro's label `name` writes in the form in progress.
+    fn literal(&mut self, name: &str) -> String {
+        if self.in_final { name.to_string() } else { self.held_name(name) }
+    }
+
+    /// A token at a site whose column the registry names: the column keeps the name that the macro
+    /// writes, whatever the label's name.
+    fn fixed_site(&mut self, text: &str) -> String {
+        let (mark, name) = split_mark(text);
+        let label = self.literal(name);
+        if label == name { text.to_string() } else { format!("(:{name} {mark}{label})") }
+    }
+
+    /// A token at a site of a relation of the macro, whose column has the name of the label that made it.
+    fn own_site(&mut self, text: &str) -> String {
+        let (mark, name) = split_mark(text);
+        let (column, label) = (self.held_name(name), self.literal(name));
+        if column == label { format!("{mark}{label}") } else { format!("(:{column} {mark}{label})") }
+    }
+
+    /// A token where a label stands alone.
+    fn bare_label(&mut self, text: &str) -> String {
+        let (mark, name) = split_mark(text);
+        format!("{mark}{}", self.literal(name))
+    }
+
     fn new_form(&mut self, in_instance: bool) {
         self.labels.clear();
         self.taken.clear();
@@ -325,7 +405,9 @@ impl Expander<'_> {
                 rows.index(&name)?;
             }
         }
-        let mut call = Call { holes, declared: HashMap::new(), labels: HashMap::new(), taken: Vec::new(), in_instance: false };
+        let reserved = reserved_labels(found, &holes);
+        let mut call = Call { holes, declared: HashMap::new(), labels: HashMap::new(), taken: Vec::new(), in_instance: false, reserved, renames: HashMap::new(), in_final: false };
+        let last_query = found.forms.iter().rposition(|form| matches!(items_of(form).ok().and_then(|list| list.first()).map(symbol_of), Some(Ok("QUERY" | "EXPORT"))));
         // Each name the macro declares is fresh at this call.
         for form in &found.forms {
             let list = items_of(form)?;
@@ -337,8 +419,9 @@ impl Expander<'_> {
             }
         }
         let mut given = None;
-        for form in &found.forms {
+        for (at, form) in found.forms.iter().enumerate() {
             let list = items_of(form)?;
+            call.in_final = Some(at) == last_query;
             match list.first().map(symbol_of).transpose()? {
                 Some("QUERY") => {
                     let name = call.renamed(symbol_of(list.get(1).ok_or("a `QUERY` holds its name")?)?)?;
@@ -416,22 +499,33 @@ impl Expander<'_> {
             }
             hole if hole.starts_with('?') => self.hole_atom(hole, &list[1..], call),
             name if name.starts_with('&') => {
+                // An instance's output has the registry's columns, and a `QUERY` has its labels.
+                let own = !name.contains('.');
                 let name = call.renamed(name)?;
                 let mut sites = Vec::new();
                 for site in &list[1..] {
-                    sites.extend(self.literal_site(site, call)?);
+                    sites.extend(self.atom_site(site, own, call)?);
                 }
                 Ok(if sites.is_empty() { format!("({name})") } else { format!("({name} {})", sites.join(" ")) })
             }
-            // A constraint, or a lib relation: its sites are literal.
-            other => {
+            // A constraint: its sites are labels.
+            "=" | "!=" | "<" | "<=" | ">" | ">=" => {
                 let mut sites = Vec::new();
                 for site in &list[1..] {
                     match site {
                         SExpr::Symbol { text, .. } if text.starts_with('?') => sites.push(self.column_label(text, call)?),
-                        SExpr::Symbol { text, .. } => sites.push(text.to_string()),
+                        SExpr::Symbol { text, .. } if &**text == "0" => sites.push(text.to_string()),
+                        SExpr::Symbol { text, .. } => sites.push(call.bare_label(text)),
                         _ => sites.extend(self.literal_site(site, call)?),
                     }
+                }
+                Ok(format!("({head} {})", sites.join(" ")))
+            }
+            // A lib relation or a fact: the registry names its columns.
+            other => {
+                let mut sites = Vec::new();
+                for site in &list[1..] {
+                    sites.extend(self.atom_site(site, false, call)?);
                 }
                 Ok(format!("({other} {})", sites.join(" ")))
             }
@@ -443,6 +537,29 @@ impl Expander<'_> {
         match call.holes.get(name).cloned() {
             Some(Bound::Column { of, name }) => Ok(call.label(&of, &name)),
             _ => Err(format!("`{name}` holds no column")),
+        }
+    }
+
+    /// A site of an atom whose relation is no hole. `own` holds where a label of the macro named the column.
+    fn atom_site(&mut self, site: &SExpr, own: bool, call: &mut Call) -> Result<Option<String>, String> {
+        match site {
+            SExpr::Symbol { text, .. } if text.starts_with('?') => Ok(Some(self.column_label(text, call)?)),
+            SExpr::Symbol { text, .. } if &**text == "0" => Ok(Some(text.to_string())),
+            SExpr::Symbol { text, .. } => Ok(Some(if own { call.own_site(text) } else { call.fixed_site(text) })),
+            SExpr::List { items, .. } => {
+                let head = symbol_of(items.first().ok_or("a site holds its head")?)?;
+                if let (true, Some(column)) = (own, head.strip_prefix(':')) {
+                    // A column of a relation of the macro.
+                    let column = call.held_name(column);
+                    let mut args = Vec::new();
+                    for item in &items[1..] {
+                        args.extend(self.site_argument(item, call)?);
+                    }
+                    return Ok((!args.is_empty()).then(|| format!("(:{column} {})", args.join(" "))));
+                }
+                self.literal_site(site, call)
+            }
+            SExpr::String { .. } => Err("a quoted string stands at no site".to_string()),
         }
     }
 
@@ -515,12 +632,10 @@ impl Expander<'_> {
         match value {
             SExpr::Symbol { text, .. } if text.starts_with('?') => Ok(Mark::Join(self.column_label(text, call)?)),
             SExpr::Symbol { text, .. } if &**text == "0" => Ok(Mark::Zero),
-            SExpr::Symbol { text, .. } => Ok(match text.strip_prefix('*') {
-                Some(name) => Mark::Fresh(name.to_string()),
-                None => match text.strip_prefix('^') {
-                    Some(name) => Mark::Key(name.to_string()),
-                    None => Mark::Join(text.to_string()),
-                },
+            SExpr::Symbol { text, .. } => Ok(match split_mark(text) {
+                ("*", name) => Mark::Fresh(call.literal(name)),
+                ("^", name) => Mark::Key(call.literal(name)),
+                (_, name) => Mark::Join(call.literal(name)),
             }),
             SExpr::List { items, .. } if items.first().is_some_and(|head| matches!(head, SExpr::Symbol { text, .. } if &**text == "*new")) => {
                 let name = symbol_of(items.get(1).ok_or("`*new` holds a name")?)?;
@@ -535,7 +650,9 @@ impl Expander<'_> {
     fn literal_site(&mut self, site: &SExpr, call: &mut Call) -> Result<Option<String>, String> {
         match site {
             SExpr::Symbol { text, .. } if text.starts_with('?') => Ok(Some(self.column_label(text, call)?)),
-            SExpr::Symbol { text, .. } => Ok(Some(text.to_string())),
+            // In an input's head, the registry names the column.
+            SExpr::Symbol { text, .. } if &**text == "0" => Ok(Some(text.to_string())),
+            SExpr::Symbol { text, .. } => Ok(Some(call.fixed_site(text))),
             SExpr::String { .. } => Err("a quoted string stands at no site".to_string()),
             SExpr::List { items, .. } => {
                 let head = symbol_of(items.first().ok_or("a site holds its head")?)?;
@@ -562,7 +679,8 @@ impl Expander<'_> {
                 Some(Bound::Columns { of, names }) => Ok(names.iter().map(|name| call.label(&of, name)).collect()),
                 _ => Err(format!("`{text}` holds no column")),
             },
-            SExpr::Symbol { text, .. } => Ok(vec![text.to_string()]),
+            SExpr::Symbol { text, .. } if &**text == "0" => Ok(vec![text.to_string()]),
+            SExpr::Symbol { text, .. } => Ok(vec![call.bare_label(text)]),
             SExpr::String { .. } => Err("a quoted string stands at no site".to_string()),
             SExpr::List { items, .. } => {
                 let head = symbol_of(items.first().ok_or("a site holds its head")?)?;
@@ -590,6 +708,41 @@ impl Expander<'_> {
             }
         }
     }
+}
+
+/// The labels that a column hole or a splice writes at a call.
+fn reserved_labels(found: &Macro, holes: &HashMap<String, Bound>) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for bound in holes.values() {
+        match bound {
+            Bound::Column { name, .. } => {
+                out.insert(label_of(name));
+            }
+            Bound::Columns { names, .. } => out.extend(names.iter().map(|name| label_of(name))),
+            Bound::Relation(_) => {}
+        }
+    }
+    fn splices(form: &SExpr, found: &mut Vec<String>) {
+        let SExpr::List { items, .. } = form else { return };
+        if let (Some(SExpr::Symbol { text, .. }), Some(SExpr::Symbol { text: of, .. })) = (items.first(), items.get(1)) {
+            if matches!(&**text, "others" | "*others") {
+                found.push(of.to_string());
+            }
+        }
+        for item in items {
+            splices(item, found);
+        }
+    }
+    let mut spliced = Vec::new();
+    for form in &found.forms {
+        splices(form, &mut spliced);
+    }
+    for of in spliced {
+        if let Some(Bound::Relation(rows)) = holes.get(&of) {
+            out.extend(rows.columns.iter().map(|column| label_of(&column.name)));
+        }
+    }
+    out
 }
 
 fn written_symbol(written: &Written) -> Result<&str, String> {

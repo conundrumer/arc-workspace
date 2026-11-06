@@ -24,7 +24,7 @@ pub enum PartStep {
     Margin { p: u16 },
     /// Each row with the sum of its cell's margins on each corner: R, Diag, K.
     CornerDist { p: u16 },
-    /// Each row with a class of its cell's place: R, K.
+    /// Each row with the remainder of its cell's distance from each corner, over the count of axes: R, Diag, K.
     Parity { p: u16 },
     BorderDistance { p: u16 },
     /// The 8-connected pieces of a key's cells, or the 4-connected ones: keys, p, Id.
@@ -53,7 +53,7 @@ pub enum PartStep {
     /// A relation's rows whose value is the one most frequent of their key, in a key of two rows or more.
     MostFrequentRows { keys: Box<[u16]>, v: u16 },
     /// No columns: each key's rows all have a match in the second relation, or none do.
-    DeterminesFlag { keys: Box<[u16]>, left: Box<[u16]>, right: Box<[u16]> },
+    DeterminesFlag { keys: Box<[u16]>, a: u16, b: u16 },
     /// Group properties: keys, Id or N; or the keys that hold.
     ShapeClass { keys: Box<[u16]>, p: u16, turned: bool },
     Holes { keys: Box<[u16]>, p: u16 },
@@ -295,6 +295,17 @@ fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> (Vec<Vec<(u8, u8)>>, Vec
     (cells, heads)
 }
 
+/// Whether each cell of a column stands on one frame. The parts that read a cell as a row and a
+/// column have no native value on any other column.
+fn on_one_frame(table: &Table, p: u16) -> bool {
+    let mut frame = None;
+    table.rows().all(|row| {
+        let m = margins_of(row[usize::from(p)]);
+        let own = (m[0] + m[1], m[2] + m[3]);
+        is_cell(&m) && *frame.get_or_insert(own) == own
+    })
+}
+
 fn hash_cells(cells: &[(u8, u8)]) -> u32 {
     hash_words(cells.iter().map(|cell| u64::from(cell.0) << 8 | u64::from(cell.1))) as u32
 }
@@ -486,10 +497,13 @@ impl PartStep {
                     out.push(number_bits(i64::from(m[*a] + m[*b])));
                 }
             }),
-            PartStep::Parity { p } => rows_with(t, 1, |row, out| {
+            PartStep::Parity { p } => rows_with(t, 2, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
-                out.extend_from_slice(row);
-                out.push(number_bits(i64::from((m[0] + m[2]).rem_euclid(2))));
+                for (at, (a, b)) in [(0, 2), (0, 3), (1, 2), (1, 3)].iter().enumerate() {
+                    out.extend_from_slice(row);
+                    out.push(e.dirs[4 + at]);
+                    out.push(number_bits(i64::from((m[*a] + m[*b]).rem_euclid(2))));
+                }
             }),
             PartStep::BorderDistance { p } => rows_with(t, 1, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
@@ -503,7 +517,6 @@ impl PartStep {
                     cells[*id as usize].push(row[usize::from(*p)]);
                 }
                 let mut out = Vec::new();
-                let mut label = 0u32;
                 for (held, head) in cells.iter_mut().zip(&first) {
                     held.sort_unstable();
                     held.dedup();
@@ -512,13 +525,11 @@ impl PartStep {
                         if seen[start] {
                             continue;
                         }
-                        label += 1;
                         seen[start] = true;
                         let mut stack = vec![start];
+                        let mut piece = Vec::new();
                         while let Some(at) = stack.pop() {
-                            push_key(&mut out, head, keys);
-                            out.push(held[at]);
-                            out.push(label);
+                            piece.push(held[at]);
                             let m = margins_of(held[at]);
                             for (dr, dc) in &STEPS[..if *four { 4 } else { 8 }] {
                                 if let Some(next) = moved(m, *dr, *dc) {
@@ -530,6 +541,14 @@ impl PartStep {
                                     }
                                 }
                             }
+                        }
+                        // An Ident labels the set of its members, as `Connectivity` interns it.
+                        piece.sort_unstable();
+                        let label = hash_words(piece.iter().map(|cell| u64::from(*cell))) as u32;
+                        for cell in &piece {
+                            push_key(&mut out, head, keys);
+                            out.push(*cell);
+                            out.push(label);
                         }
                     }
                 }
@@ -597,7 +616,8 @@ impl PartStep {
                     }
                 }
                 match self {
-                    PartStep::Determines { .. } => Val::of_table(Table::unit(!many.iter().any(|flag| *flag))),
+                    // On no rows it is false, as an `ALL` form's empty domain is.
+                    PartStep::Determines { .. } => Val::of_table(Table::unit(!first.is_empty() && !many.iter().any(|flag| *flag))),
                     PartStep::Several { .. } => {
                         let mut out = Vec::new();
                         for (flag, head) in many.iter().zip(&first) {
@@ -713,33 +733,42 @@ impl PartStep {
                 }
                 Val::of_table(Table::new(t.arity, out))
             }
-            PartStep::DeterminesFlag { keys, left, right } => {
+            PartStep::DeterminesFlag { keys, a, b } => {
                 let other = flat(children[1])?;
-                let mut held: Vec<u128> = other.rows().map(|row| hash_words(right.iter().map(|at| u64::from(row[usize::from(*at)])))).collect();
+                let mut held: Vec<Cell> = other.rows().map(|row| row[usize::from(*b)]).collect();
                 held.sort_unstable();
                 held.dedup();
                 let (ids, first) = key_ids(t, keys);
                 let mut flag: Vec<Option<bool>> = vec![None; first.len()];
                 let mut holds = true;
                 for (row, id) in t.rows().zip(&ids) {
-                    let found = held.binary_search(&hash_words(left.iter().map(|at| u64::from(row[usize::from(*at)])))).is_ok();
+                    let found = held.binary_search(&row[usize::from(*a)]).is_ok();
                     match flag[*id as usize] {
                         None => flag[*id as usize] = Some(found),
                         Some(own) if own != found => holds = false,
                         _ => {}
                     }
                 }
-                Val::of_table(Table::unit(holds))
+                Val::of_table(Table::unit(holds && !first.is_empty()))
             }
             PartStep::ShapeClass { keys, p, turned } => {
+                if !on_one_frame(t, *p) {
+                    return None;
+                }
                 let (cells, heads) = cells_by_key(t, keys, *p);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![hash_cells(&if *turned { canon(held) } else { normalized(held) })])), keys.len() + 1)
             }
             PartStep::Holes { keys, p } => {
+                if !on_one_frame(t, *p) {
+                    return None;
+                }
                 let (cells, heads) = cells_by_key(t, keys, *p);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(enclosed_regions(held))])), keys.len() + 1)
             }
             PartStep::Symmetry { keys, p } => {
+                if !on_one_frame(t, *p) {
+                    return None;
+                }
                 let (cells, heads) = cells_by_key(t, keys, *p);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(symmetry_count(held)))])), keys.len() + 1)
             }
@@ -753,6 +782,9 @@ impl PartStep {
                 keys_only(&heads, touching.into_iter(), keys.len())
             }
             PartStep::FillsBox { keys, p } => {
+                if !on_one_frame(t, *p) {
+                    return None;
+                }
                 let (cells, heads) = cells_by_key(t, keys, *p);
                 keys_only(&heads, cells.iter().map(|held| {
                     let (rmin, rmax) = (held.iter().map(|x| x.0).min().unwrap_or(0), held.iter().map(|x| x.0).max().unwrap_or(0));
@@ -808,21 +840,22 @@ impl PartStep {
             }
             PartStep::SharedLine { a, b } => {
                 let other = flat(children[1])?;
-                let mut rows: Vec<(i32, i32)> = Vec::new();
-                let mut cols: Vec<(i32, i32)> = Vec::new();
+                // `same_line`: the two cells have one margin on an edge of the other axis.
+                let mut margins: [Vec<i32>; 4] = Default::default();
                 for row in other.rows() {
                     let m = margins_of(row[usize::from(*b)]);
-                    rows.push((m[0], m[1]));
-                    cols.push((m[2], m[3]));
+                    for at in 0..4 {
+                        margins[at].push(m[at]);
+                    }
                 }
-                rows.sort_unstable();
-                rows.dedup();
-                cols.sort_unstable();
-                cols.dedup();
+                for held in &mut margins {
+                    held.sort_unstable();
+                    held.dedup();
+                }
                 let mut out = Vec::new();
                 for row in t.rows() {
                     let m = margins_of(row[usize::from(*a)]);
-                    if rows.binary_search(&(m[0], m[1])).is_ok() || cols.binary_search(&(m[2], m[3])).is_ok() {
+                    if (0..4).any(|at| margins[at].binary_search(&m[at]).is_ok()) {
                         out.extend_from_slice(row);
                     }
                 }
@@ -926,6 +959,9 @@ impl PartStep {
                 Val::of_table(Table::new(2, out))
             }
             PartStep::FullLines { keys, p } => {
+                if !on_one_frame(t, *p) {
+                    return None;
+                }
                 let (ids, first) = key_ids(t, keys);
                 let mut lines: FastMap<(u32, bool, i32, i32), u32> = FastMap::default();
                 let mut wide: Vec<(i32, i32)> = vec![(0, 0); first.len()];

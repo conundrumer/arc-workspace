@@ -159,3 +159,8 @@ pub fn table_schema(program: &CheckedProgram, name: &str) -> Option<TableSchema>
         has_example: program.types.has_example_column(&relation),
     })
 }
+
+/// The label that a site on a column writes: its name, with its first letter in upper case.
+pub fn label_name(name: &str) -> String {
+    crate::expand::label_of(name)
+}

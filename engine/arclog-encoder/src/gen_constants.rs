@@ -100,8 +100,11 @@ pub fn constant_parts() -> Vec<ConstantPart> {
         part(format!("{grid}-foreground-components"), vec![("P", p.clone()), ("Id", id_of(2))]);
         part(format!("{grid}-component-boxes"), vec![("Col", col.clone()), ("Id", id_of(1)), ("B", b.clone())]);
         part(format!("{grid}-full-lines"), vec![("A", ValueType::Axis), ("Along", b.clone()), ("Col", col.clone())]);
-        part(format!("{grid}-extents"), vec![("A", ValueType::Axis), ("N", n.clone())]);
-        for side in ["longer-side", "shorter-side", "area", "color-count"] {
+        part(format!("{grid}-extents"), vec![("A", ValueType::Axis), ("N", ValueType::Int)]);
+        for side in ["longer-side", "shorter-side"] {
+            part(format!("{grid}-{side}"), vec![("N", ValueType::Int)]);
+        }
+        for side in ["area", "color-count"] {
             part(format!("{grid}-{side}"), vec![("N", n.clone())]);
         }
         for role in CELL_ROLE_NAMES {
@@ -114,8 +117,8 @@ pub fn constant_parts() -> Vec<ConstantPart> {
         part(format!("{grid}-foreground-component-count"), vec![("N", n.clone())]);
         part(format!("{grid}-component-count"), vec![("N", n.clone())]);
         part(format!("{grid}-foreground-box"), vec![("B", b.clone())]);
-        part(format!("{grid}-foreground-box-margins"), vec![("D", ValueType::Dir), ("K", n.clone())]);
-        part(format!("{grid}-foreground-box-extents"), vec![("A", ValueType::Axis), ("N", n.clone())]);
+        part(format!("{grid}-foreground-box-margins"), vec![("D", ValueType::Dir), ("K", ValueType::Int)]);
+        part(format!("{grid}-foreground-box-extents"), vec![("A", ValueType::Axis), ("N", ValueType::Int)]);
         part(format!("{grid}-symmetries"), vec![("D", ValueType::D4)]);
     }
     let mut pair = |name: &str, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name: name.to_string(), columns, reads_output: true, reads_input: true, meets_table: true });
@@ -127,8 +130,8 @@ pub fn constant_parts() -> Vec<ConstantPart> {
     pair("colors-changed-from", vec![("Col", col.clone())]);
     pair("colors-changed-to", vec![("Col", col.clone())]);
     pair("changed-box", vec![("B", b.clone())]);
-    pair("changed-box-margins", vec![("D", ValueType::Dir), ("K", n.clone())]);
-    pair("changed-box-extents", vec![("A", ValueType::Axis), ("N", n.clone())]);
+    pair("changed-box-margins", vec![("D", ValueType::Dir), ("K", ValueType::Int)]);
+    pair("changed-box-extents", vec![("A", ValueType::Axis), ("N", ValueType::Int)]);
     pair("changed-component-boxes", vec![("Id", id_of(3)), ("B", b.clone())]);
     pair("changed-count", vec![("N", n.clone())]);
     pair("changed-component-count", vec![("N", n.clone())]);
@@ -148,7 +151,7 @@ pub fn constant_parts() -> Vec<ConstantPart> {
     lib("diag_dir_elem", vec![("D", ValueType::DiagDir)]);
     lib("axis_elem", vec![("A", ValueType::Axis)]);
     lib("d4_elem", vec![("D", ValueType::D4)]);
-    lib("d4_identity", vec![("D", ValueType::D4)]);
+    lib("d4-identity", vec![("D", ValueType::D4)]);
     lib("axis_of", vec![("D", ValueType::Dir), ("A", ValueType::Axis)]);
     lib("opposite", vec![("D", ValueType::Dir), ("Opp", ValueType::Dir)]);
     out
@@ -464,7 +467,7 @@ pub fn is_part_name(name: &str) -> bool {
 
 /// The call of a part of the base tables, in the feature library or as a lib relation.
 pub fn part_call(name: &str) -> String {
-    const LIB: [&str; 7] = ["dir_elem", "diag_dir_elem", "axis_elem", "d4_elem", "d4_identity", "axis_of", "opposite"];
+    const LIB: [&str; 6] = ["dir_elem", "diag_dir_elem", "axis_elem", "d4_elem", "axis_of", "opposite"];
     if LIB.contains(&name) {
         return name.to_string();
     }
