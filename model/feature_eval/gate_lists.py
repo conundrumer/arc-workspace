@@ -359,6 +359,7 @@ def build(root, out, min_tasks, each_tasks=None):
     parents_root = root.parent / 'parents'
     # A row per example holds only what enough tasks tell apart, since it repeats each entry once per example.
     each_keep = column_tasks >= each_tasks
+    reads_output = np.array([bool(flags.get(int(key), 0) & 2) for key in columns.tolist()], dtype=bool)
     print('example rows read shapes told apart on', each_tasks, 'tasks or more:', int(each_keep.sum()), flush=True)
     for split in ('train', 'dev'):
         rows = []
@@ -385,13 +386,14 @@ def build(root, out, min_tasks, each_tasks=None):
             pair_spots, pair_hit = place(pair_numbers[0], pair_columns)
             state, state_others, state_item = state_lists(state_root / 'lists', path.name)
             first_example.append(examples_so_far)
-            examples_so_far += head['train']
+            example_count = head['train'] + head.get('test', 0)
+            examples_so_far += example_count
             for family, owner in FAMILIES.items():
                 held, other = (state, state_others) if family == 'pairs' else (lists, others)
                 if owner not in held:
                     task_rows[family]['stable'].add([])
                     task_rows[family]['mean'].add([])
-                    for _ in range(head['train']):
+                    for _ in range(example_count):
                         task_examples[family].add([])
                     continue
                 entries = other[owner]
@@ -402,10 +404,11 @@ def build(root, out, min_tasks, each_tasks=None):
                 spots, hit = place(ids, family_columns[family])
                 task_rows[family]['mean'].add(spots[hit], numbers['mean'][hit])
                 graded_at, graded_hit = place(entries[0], family_columns[family])
-                for pair in range(head['train']):
-                    values = entries[4][:, pair][graded_hit] if entries[4].shape[1] else np.zeros(0, dtype=np.float32)
+                for pair in range(example_count):
+                    held_here = entries[4].shape[1] > pair
+                    values = entries[4][:, pair][graded_hit] if held_here else np.zeros(0, dtype=np.float32)
                     active = values != 0
-                    at_all = np.concatenate((stable_at, graded_at[graded_hit][active] if entries[4].shape[1] else np.zeros(0, dtype=np.int64)))
+                    at_all = np.concatenate((stable_at, graded_at[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64)))
                     order = np.argsort(at_all)
                     task_examples[family].add(at_all[order], np.concatenate((stable_values, values[active]))[order])
             read_true, read_true_others = parent_lists(parents_root / 'lists', path.name)
@@ -456,8 +459,8 @@ def build(root, out, min_tasks, each_tasks=None):
                             mats[name_].add(spots[hit], entries[1][hit])
                     for at_number, name_ in ((1, 'pair_least'), (2, 'pair_mean'), (3, 'pair_most')):
                         mats[name_].add(pair_spots[pair_hit], pair_numbers[at_number][pair_hit])
-                    example_of.extend([len(rows) - 1] * head['train'])
-                    example_pair.extend(range(head['train']))
+                    example_of.extend([len(rows) - 1] * example_count)
+                    example_pair.extend(range(example_count))
                     row_task.append(len(first_example) - 1)
                     state_at = state_item.get(item['form'])
                     graph = state.get(f'{state_at}/{j}/graph')
@@ -485,7 +488,7 @@ def build(root, out, min_tasks, each_tasks=None):
                             for name in channel_of.values():
                                 mats[name].add([])
                             mats[kind].add([])
-                            for _ in range(head['train']):
+                            for _ in range(example_count):
                                 mats[each_name].add([])
                             if kind == 'stable':
                                 mats['qv'].add([])
@@ -505,13 +508,16 @@ def build(root, out, min_tasks, each_tasks=None):
                         graded_ids, *_, at_pairs = held_others[table]
                         graded_spots, graded_hit = place(graded_ids, columns)
                         graded_hit = graded_hit & each_keep[graded_spots]
-                        for pair in range(head['train']):
-                            values = at_pairs[:, pair][graded_hit] if at_pairs.shape[1] else np.zeros(0, dtype=np.float32)
+                        for pair in range(example_count):
+                            held_here = at_pairs.shape[1] > pair
+                            values = at_pairs[:, pair][graded_hit] if held_here else np.zeros(0, dtype=np.float32)
                             active = values != 0
-                            place_at = graded_spots[graded_hit][active] if at_pairs.shape[1] else np.zeros(0, dtype=np.int64)
-                            at_all = np.concatenate((stable_spots[stable_hit], place_at))
+                            place_at = graded_spots[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64)
+                            # At a test input, a shape that reads the output has no value.
+                            stable_here = stable_hit if pair < head['train'] else stable_hit & ~reads_output[stable_spots]
+                            at_all = np.concatenate((stable_spots[stable_here], place_at))
                             order = np.argsort(at_all)
-                            mats[each_name].add(at_all[order], np.concatenate((held[1][stable_hit], values[active]))[order])
+                            mats[each_name].add(at_all[order], np.concatenate((held[1][stable_here], values[active]))[order])
                         # What not every table the query reads has as stable, nor the input.
                         read_tables = [found for found in (named(name, held_lists, held_others, held_read, held_read_others, place_of) for name in reads) if found is not None]
                         base = held_lists.get('input')
@@ -625,9 +631,11 @@ def score_items(rows, groups, scores):
 def group_auc(preds, data):
     total = count = 0.0
     at = 0
+    labels = data.get_label()
     for size in data.get_group():
         size = int(size)
-        gold, rest = preds[at], preds[at + 1:at + size]
+        here, marks = preds[at:at + size], labels[at:at + size]
+        gold, rest = here[marks > 0][:, None], here[marks == 0]
         total += float(((gold > rest) + 0.5 * (gold == rest)).mean())
         count += 1
         at += size
@@ -703,6 +711,7 @@ def vector_entries(path):
     """A vector file's first table as a fit reads it: per shape, its value where stable, its least, mean and
     greatest, and its value at each pair, over the train pairs, since the fit's tables hold train rows alone."""
     entries, train, block = {}, 0, 0
+    # Past a shape's scope it has no entry: a shape that reads the output has a train pair's scope.
     for line in open_text(path):
         record = json.loads(line)
         if 'at' not in record:
@@ -712,13 +721,13 @@ def vector_entries(path):
             continue
         if block != 1:
             break
-        slots = record['at'][:train]
+        slots = record['at'][:train] if record['reads'] & 2 else record['at']
         values = [0.0 if slot == 0 else (slot[0][0] / slot[0][1] if isinstance(slot[0], list) else float(slot[0])) for slot in slots if slot is not None]
         if not values:
-            entries[record['shape']] = (0.0, float('nan'), float('nan'), float('nan'), [float('nan')] * len(slots))
+            entries[record['shape']] = (0.0, float('nan'), float('nan'), float('nan'), [float('nan')] * len(slots) + [0.0] * (len(record['at']) - len(slots)))
         elif any(values):
             stable = values[0] if all(slot not in (0, None) and slot == slots[0] for slot in slots) else 0.0
-            at = [float('nan') if slot is None else 0.0 if slot == 0 else (slot[0][0] / slot[0][1] if isinstance(slot[0], list) else float(slot[0])) for slot in slots]
+            at = [float('nan') if slot is None else 0.0 if slot == 0 else (slot[0][0] / slot[0][1] if isinstance(slot[0], list) else float(slot[0])) for slot in slots] + [0.0] * (len(record['at']) - len(slots))
             entries[record['shape']] = (stable, stable, stable, stable, at) if stable else (0.0, min(values), sum(values) / len(values), max(values), at)
     return entries
 
