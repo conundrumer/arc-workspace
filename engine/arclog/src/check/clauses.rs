@@ -90,7 +90,8 @@ impl SolverClauses {
     /// Each clause of `relation` in the program's name scope that the case
     /// program of `held` holds, in the order of [`Self::of_relation`].
     pub fn of_relation_in<'c>(&'c self, relation: &ProgramRelation, held: &'c HeldClauses) -> impl Iterator<Item = &'c ClauseEntry> {
-        self.of_relation(&FileScope::Program, relation).iter().filter(|entry| held.0.contains(&entry.signature))
+        let signatures = held.0.get(relation);
+        self.of_relation(&FileScope::Program, relation).iter().filter(move |entry| signatures.is_some_and(|signatures| signatures.contains(&entry.signature)))
     }
 
     /// Each clause of `relation` in the name scope `scope`.
@@ -123,13 +124,19 @@ impl SolverClauses {
 /// The signatures of the top-level clauses of one case program, by which a
 /// read of [`SolverClauses`] keeps only the clauses that program holds.
 #[derive(Debug, Default)]
-pub struct HeldClauses(crate::hash::StableHashSet<Signature>);
+pub struct HeldClauses(crate::hash::StableHashMap<ProgramRelation, crate::hash::StableHashSet<Signature>>);
 
 impl HeldClauses {
-    /// The signatures of the top-level clauses of `program`.
+    /// The signatures of the top-level clauses of `program`, by the relation
+    /// each derives, since two relations can hold clauses of one content.
     pub fn of(program: &ResolvedProgram) -> Self {
-        let clauses = top_level_forms(program).filter(|(_, form)| matches!(form, Form::Clause(_)));
-        HeldClauses(clauses.map(|(path, _)| clause_signature(program, &path)).collect())
+        let mut held: crate::hash::StableHashMap<ProgramRelation, crate::hash::StableHashSet<Signature>> = Default::default();
+        for (path, form) in top_level_forms(program) {
+            if let Form::Clause(clause) = form {
+                held.entry(clause.value().derives.clone()).or_default().insert(clause_signature(program, &path));
+            }
+        }
+        HeldClauses(held)
     }
 }
 
