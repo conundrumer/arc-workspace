@@ -241,8 +241,8 @@
       "contract_markdown": "X_rel is X less Base, margin by margin. For two cells in one frame, X_rel is the offset that moves Base onto X. For a box Base, X_rel is X as a cell of Base's own frame.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 74,
-        "end_line": 74
+        "start_line": 75,
+        "end_line": 75
       },
       "section": "Relations"
     },
@@ -252,8 +252,8 @@
       "contract_markdown": "The grid with K lines cut from edge D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 80,
-        "end_line": 80
+        "start_line": 82,
+        "end_line": 82
       },
       "section": "Relations"
     },
@@ -263,8 +263,8 @@
       "contract_markdown": "K cells lie between B and edge D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 82,
-        "end_line": 82
+        "start_line": 84,
+        "end_line": 84
       },
       "section": "Relations"
     },
@@ -274,8 +274,8 @@
       "contract_markdown": "P_out is P's image when the whole grid undergoes D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 84,
-        "end_line": 84
+        "start_line": 87,
+        "end_line": 87
       },
       "section": "Relations"
     },
@@ -285,8 +285,8 @@
       "contract_markdown": "The sum of P's margins on the two edges of corner Diag.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 88,
-        "end_line": 88
+        "start_line": 92,
+        "end_line": 92
       },
       "section": "Relations"
     },
@@ -296,8 +296,8 @@
       "contract_markdown": "The grid has N cells along axis A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 90,
-        "end_line": 90
+        "start_line": 95,
+        "end_line": 95
       },
       "section": "Relations"
     },
@@ -307,8 +307,8 @@
       "contract_markdown": "V is one step toward D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 92,
-        "end_line": 92
+        "start_line": 98,
+        "end_line": 98
       },
       "section": "Relations"
     },
@@ -318,8 +318,8 @@
       "contract_markdown": "Each K from 1 to one less than the grid's extent along A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 94,
-        "end_line": 94
+        "start_line": 100,
+        "end_line": 100
       },
       "section": "Relations"
     },
@@ -329,8 +329,8 @@
       "contract_markdown": "Q is ahead of P toward D, on P's line, with K cells strictly between them.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 96,
-        "end_line": 96
+        "start_line": 102,
+        "end_line": 102
       },
       "section": "Relations"
     },
@@ -340,8 +340,8 @@
       "contract_markdown": "Along a row of parts of Side cells with Gap cells between each two, the cell T cells from the start is in part Part, Remainder cells into it. Part and Remainder count from 0. A cell in a gap gives no row. T is not tested against an end.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 98,
-        "end_line": 98
+        "start_line": 105,
+        "end_line": 105
       },
       "section": "Relations"
     },
@@ -351,8 +351,8 @@
       "contract_markdown": "N tiles of K cells, with G cells between each two, fill Ext cells exactly: K is Ext less the N - 1 gaps, divided by N. A row stands only where that difference is positive and N divides it evenly.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 101,
-        "end_line": 101
+        "start_line": 109,
+        "end_line": 109
       },
       "section": "Relations"
     },
@@ -488,8 +488,8 @@
       "contract_markdown": "Corner C's edge on axis A is D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 118,
-        "end_line": 118
+        "start_line": 126,
+        "end_line": 126
       },
       "section": "Relations"
     },
@@ -544,8 +544,8 @@
       "contract_markdown": "A quarter turn in sense S takes D to D2.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 125,
-        "end_line": 125
+        "start_line": 133,
+        "end_line": 133
       },
       "section": "Relations"
     },
@@ -555,8 +555,8 @@
       "contract_markdown": "T is the quarter turn in sense S.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 127,
-        "end_line": 127
+        "start_line": 135,
+        "end_line": 135
       },
       "section": "Relations"
     },
@@ -566,8 +566,8 @@
       "contract_markdown": "T is the reflection across the line along A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 129,
-        "end_line": 129
+        "start_line": 137,
+        "end_line": 137
       },
       "section": "Relations"
     },
@@ -577,8 +577,8 @@
       "contract_markdown": "T is the reflection that swaps the two directions on A and keeps the other two.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 131,
-        "end_line": 131
+        "start_line": 139,
+        "end_line": 139
       },
       "section": "Relations"
     },
@@ -588,8 +588,8 @@
       "contract_markdown": "C is B, then A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 133,
-        "end_line": 133
+        "start_line": 141,
+        "end_line": 141
       },
       "section": "Relations"
     },
@@ -617,8 +617,8 @@
       "contract_markdown": "A and B are poses of one `RIGID_DET` assembly, each a placement of it. D takes the placement at pose A onto the placement at pose B.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 140,
-        "end_line": 140
+        "start_line": 148,
+        "end_line": 148
       },
       "section": "Relations"
     },
@@ -628,8 +628,8 @@
       "contract_markdown": "The count of each key's members.\n- `domain`: the keys to count. A key with no member counts 0.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 144,
-        "end_line": 145
+        "start_line": 152,
+        "end_line": 153
       },
       "section": "Components"
     },
@@ -639,8 +639,8 @@
       "contract_markdown": "For each key, how many more members the plus set has than the minus set, where that is more than 0.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 151,
-        "end_line": 151
+        "start_line": 160,
+        "end_line": 160
       },
       "section": "Components"
     },
@@ -650,8 +650,8 @@
       "contract_markdown": "The one value of each key's members.\n- `value`: the value, where every member has it.\n- `plural`: the members have more than one value.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 157,
-        "end_line": 159
+        "start_line": 167,
+        "end_line": 169
       },
       "section": "Components"
     },
@@ -661,8 +661,8 @@
       "contract_markdown": "Each observed set against each pattern set, by their members.\n- `superset`: the observed set holds every member of the pattern.\n- `equal`: the two sets have the same members.\n- A pair of sets that share no member has no row.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 166,
-        "end_line": 169
+        "start_line": 178,
+        "end_line": 181
       },
       "section": "Components"
     },
@@ -672,8 +672,8 @@
       "contract_markdown": "One label per class of an equivalence. A row of `equivalent` or `edge` puts a and b in one class, and the classes are closed over chains of rows.\n- `class`: a's class. An element in neither input has no class; `equivalent(a, a)` gives it a class of its own.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 177,
-        "end_line": 178
+        "start_line": 189,
+        "end_line": 190
       },
       "section": "Components"
     },
@@ -683,8 +683,8 @@
       "contract_markdown": "Each member's rank, from a strict order or from a score.\n- `before`: a comes before b, for every such pair and not only neighbors, and never a before a.\n- `score`: a number per member. A lower score comes first, and equal scores tie.\n- `secondary_score`: a number that orders the members within each tie of `score`. A member with a `score` and no `secondary_score` comes before the members of its tie that have one.\n- Give `before`, or `score` with `secondary_score`, not both. A key with both, or with two `score` rows or two `secondary_score` rows for one member, has no output.\n- A member with no `score` row is related to no member: it has rank 0 and dual rank 0, and it is minimal and maximal.\n- `probe`: an element ranked against the members, and not counted among them. It takes its place from its own `score` or `before` rows.\n- `rank`: R members come before t, so the first has rank 0. Ties share a rank, and the next rank counts every tied member: scores 1, 1, 2 give ranks 0, 0, 2.\n- `dual_rank`: R members come after t.\n- `minimal`: the members nothing comes before. Under a tie, every tied member.\n- `maximal`: the members nothing comes after. Under a tie, every tied member.\n- `successor`: b comes next after a. Under ties, each member of one score level is followed by each member of the next, and tied members don't follow each other.\n- `cyclic_successor`: `successor`, with the first after the last.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 184,
-        "end_line": 196
+        "start_line": 197,
+        "end_line": 209
       },
       "section": "Components"
     },
@@ -694,8 +694,8 @@
       "contract_markdown": "The member a count of steps along a successor relation reaches.\n- `walk`: N steps from p0 reach p, for every N from 0 to the greatest N of `steps`. A walk starts only at a member that has a successor, and a walk that runs out of successors has no row past its end.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 215,
-        "end_line": 216
+        "start_line": 232,
+        "end_line": 233
       },
       "section": "Components"
     },
@@ -705,8 +705,8 @@
       "contract_markdown": "The items taken and left at each state of a walk over states.\n- `conflict`: when item is taken, item2 leaves the untaken items without being taken.\n- `score`: with a score, the item taken at a state is the untaken item of least score.\n- `step`: a step from t to t2 takes one item.\n- `skip`: a step from t to t2 takes none.\n- The input `take` is the item taken at t. The output `take` has a row where `score` gives it.\n- With `score`, a tie forks the walk. An item taken on one branch and left on another is in both `taken` and `untaken` at a state both branches reach.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 223,
-        "end_line": 229
+        "start_line": 240,
+        "end_line": 246
       },
       "section": "Components"
     },
@@ -716,8 +716,8 @@
       "contract_markdown": "The nodes reached by forward chaining.\n- `source`: the nodes reached at the start.\n- `edge`: b is reached once a is.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 243,
-        "end_line": 245
+        "start_line": 260,
+        "end_line": 262
       },
       "section": "Components"
     },
@@ -727,8 +727,8 @@
       "contract_markdown": "The least cost from a source to each node of a graph.\n- `edge`: a step from a to b, of cost 1.\n- `weight`: a step from a to b, of cost W.\n- `source`: a node at cost 0.\n- `source_distance`: a node at start cost K.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 252,
-        "end_line": 256
+        "start_line": 269,
+        "end_line": 273
       },
       "section": "Components"
     },
@@ -738,8 +738,8 @@
       "contract_markdown": "The parts of a cell set that no walk through the set reaches from the grid's edge. The walk starts at the set's cells on the grid's edge and takes the four cardinal steps.\n- `enclosed`: each enclosed part under its own label.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 266,
-        "end_line": 267
+        "start_line": 283,
+        "end_line": 284
       },
       "section": "Components"
     },
@@ -749,8 +749,8 @@
       "contract_markdown": "The cells of a set that face out of it.\n- `exposed`: no cell of the set lies one step from P toward D. Off the grid counts as no cell.\n- `boundary`: P is exposed toward some direction.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 272,
-        "end_line": 274
+        "start_line": 290,
+        "end_line": 292
       },
       "section": "Components"
     },
@@ -760,8 +760,8 @@
       "contract_markdown": "The least box that holds a set.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 282,
-        "end_line": 282
+        "start_line": 300,
+        "end_line": 300
       },
       "section": "Components"
     },
@@ -771,8 +771,8 @@
       "contract_markdown": "Two valued cell sets compared under D4 transforms.\n- `mismatch`: D is in `transform`, and for some source cell P, the cell `apply` of D to P gives is not a target cell of P's value: no target cell is there, or one of another value.\n- `conflict`: for some source cell, its image is a target cell of another value. A missing target cell is no conflict.\n- A D in `transform` with no `mismatch` row takes the source into the target. Target cells that are no source cell's image are not tested.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 287,
-        "end_line": 290
+        "start_line": 306,
+        "end_line": 309
       },
       "section": "Components"
     },
@@ -782,19 +782,19 @@
       "contract_markdown": "A frame built from copies of an inner frame at outer positions.\n- `outer`: the frame of copies.\n- `inner`: the frame of one copy.\n- `gap`: G cells between each two copies along A. An axis with no row has gap 0.\n- `cell`: P is the cell P_inner of the copy at P_outer.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 299,
-        "end_line": 303
+        "start_line": 318,
+        "end_line": 322
       },
       "section": "Components"
     },
     "lib:Frame": {
       "status": "authored_contract",
       "summary": "The cells of a frame of given extents.",
-      "contract_markdown": "The cells of a frame of given extents.\n- `extent`: N cells along A. An axis with no row has extent 1.",
+      "contract_markdown": "The cells of a frame of given extents.\n- `extent`: N cells along A. An axis with no row has extent 1 where the other axis has a row. A key with no row on either axis has no cell.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 311,
-        "end_line": 312
+        "start_line": 330,
+        "end_line": 331
       },
       "section": "Components"
     },
@@ -804,8 +804,8 @@
       "contract_markdown": "The rectangles drawn in a cell set.\n- `box`: every cell of B's outline is in the set. B is at least two cells long on each axis, and its interior may hold any cells.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 317,
-        "end_line": 318
+        "start_line": 336,
+        "end_line": 337
       },
       "section": "Components"
     },
@@ -815,8 +815,8 @@
       "contract_markdown": "Where a shape appears among valued cells.\n- `candidate`: P is an offset, and D is in `transform`. For at least one shape cell S of value v, the cell that `apply` of D to S, then `compose` with P, gives is a `cell` row of value v. Every occurrence is a candidate.\n- `occurrence`: as `candidate`, for every shape cell S of value v. P moves the D-image of the shape onto the cells.\n- Only the cells `cell` holds count.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 323,
-        "end_line": 326
+        "start_line": 342,
+        "end_line": 345
       },
       "section": "Components"
     },
@@ -826,8 +826,8 @@
       "contract_markdown": "The translations along an axis that leave valued cells unchanged.\n- `period`: a move of K along A takes every cell onto a cell of the same value, wherever both cells exist. K runs from 1 to one less than the extent. A K with no pair of cells to compare is a period.\n- `fundamental_period`: the least period along A that compares at least one pair of cells.\n- `approximate_period`: a period read through damage: the line pairs the move breaks do not outnumber those it keeps.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 337,
-        "end_line": 340
+        "start_line": 356,
+        "end_line": 359
       },
       "section": "Components"
     },
@@ -837,8 +837,8 @@
       "contract_markdown": "The equal divisions a frame's extent admits.\n- `division`: along A, N parts of K cells with G cells between each two fill the extent exactly. N is 2 or more and K is 1 or more. G can be less than 0, down to 1 less K: then two neighboring parts share that many lines.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 350,
-        "end_line": 351
+        "start_line": 372,
+        "end_line": 373
       },
       "section": "Components"
     },
@@ -848,8 +848,8 @@
       "contract_markdown": "The symmetries of a periodic valued pattern.\n- `transform`: the D4 elements to test. It has no default.\n- `cell`: the pattern's cells.\n- `grid`: the frame's cells.\n- `period`: the pattern's period along A, at most one per axis, more than 0. An axis with no row has none. A key with two periods on an axis, or a period of 0, has no output.\n- `symmetry`: D, then the shift Delta, takes some cell onto another cell and no cell onto a cell of another value. Cells outside `grid` are ignored. One D has a row for each shift that differs by a multiple of the period and lands in the frame. Delta is 0 on an axis with no period. So the identity has a row only where a period exists.\n- `action`: a symmetry or a period move takes the frame cell P onto the frame cell Q.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 357,
-        "end_line": 363
+        "start_line": 379,
+        "end_line": 385
       },
       "section": "Components"
     },
@@ -859,8 +859,8 @@
       "contract_markdown": "The rules a demonstrated pair confirms. An input of a nested task holds pairs that demonstrate a rule, and an object that the same rule completes.\n- `value`: object o holds v at index i.\n- `prediction`: rule c predicts that the object paired with o holds v at i.\n- `demonstration`: a demonstrated pair, o and its partner o2.\n- `counterexample`: c's prediction for o is not o2.\n- `consistent`: c's prediction for o is o2.\n- A prediction holds every index of the object it predicts. An index it leaves out counts as one that object lacks.\n- `unconfirmed`: c fails some demonstrated pair.\n- `confirmed`: c predicts every demonstrated pair.\n- A rule that predicts nothing for any object is in neither.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 374,
-        "end_line": 383
+        "start_line": 396,
+        "end_line": 405
       },
       "section": "Components"
     },
@@ -870,8 +870,8 @@
       "contract_markdown": "The cells a walk through the set reaches from a source.\n- `step`: the steps that join two cells. The default is the four cardinal steps.\n- A source outside `node` reaches nothing.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 392,
-        "end_line": 394
+        "start_line": 414,
+        "end_line": 416
       },
       "section": "Components"
     },
@@ -881,8 +881,8 @@
       "contract_markdown": "The fewest steps through the set from a source to each cell.\n- `step`: as in `Flood`.\n- `distance`: K steps from the nearest source reach P. A source is at 0. A source outside `node` is at 0 and reaches nothing.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 404,
-        "end_line": 406
+        "start_line": 426,
+        "end_line": 428
       },
       "section": "Components"
     },
@@ -892,8 +892,8 @@
       "contract_markdown": "The connected pieces of a cell set.\n- `step`: as in `Flood`. To join cells that touch at a corner too, the clause gives all eight steps.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 418,
-        "end_line": 419
+        "start_line": 441,
+        "end_line": 442
       },
       "section": "Components"
     },
@@ -903,8 +903,8 @@
       "contract_markdown": "The straight path from a source toward a direction.\n- `source`: where each path starts. A source on the grid and outside `node` gives only its own row at K = 0.\n- `node`: the cells a path may step onto. A path stops before its first step off them.\n- `ray`: P is K steps from Origin toward D. Each source is on its own path at K = 0.\n- `end`: the path's last cell.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 430,
-        "end_line": 434
+        "start_line": 454,
+        "end_line": 458
       },
       "section": "Components"
     },
@@ -914,8 +914,8 @@
       "contract_markdown": "The frame cut into equal parts on each axis.\n- `parts`: N parts along A.\n- `side`: parts of K cells along A, in place of `parts`. An axis with neither is one part.\n- `gap`: G cells between each two parts along A. An axis with no row has gap 0.\n- `tile`: P is the cell P_inner of the part at P_outer. P_outer is a cell of the frame of parts.\n- A cell in a gap, or in a leftover shorter than a part, has no row. Where the parts and gaps don't fill an extent exactly, no cell has a row.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 443,
-        "end_line": 448
+        "start_line": 467,
+        "end_line": 472
       },
       "section": "Components"
     },
@@ -925,8 +925,8 @@
       "contract_markdown": "Each cell of the input and its color.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 469,
-        "end_line": 469
+        "start_line": 493,
+        "end_line": 493
       },
       "section": "Facts"
     },
@@ -936,8 +936,8 @@
       "contract_markdown": "Each cell of each example's input, train and test. DET only.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 471,
-        "end_line": 471
+        "start_line": 496,
+        "end_line": 496
       },
       "section": "Facts"
     },
@@ -947,8 +947,8 @@
       "contract_markdown": "Each cell of each train output. DET only.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 473,
-        "end_line": 473
+        "start_line": 499,
+        "end_line": 499
       },
       "section": "Facts"
     },
@@ -958,8 +958,8 @@
       "contract_markdown": "A lies in B, its sides included.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 477,
-        "end_line": 477
+        "start_line": 504,
+        "end_line": 504
       },
       "section": "Relations"
     },
@@ -969,8 +969,8 @@
       "contract_markdown": "A lies in B and touches none of B's sides.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 493,
-        "end_line": 493
+        "start_line": 520,
+        "end_line": 520
       },
       "section": "Relations"
     },
@@ -980,8 +980,8 @@
       "contract_markdown": "P1 and P2 have the same margin on edge D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 509,
-        "end_line": 509
+        "start_line": 536,
+        "end_line": 536
       },
       "section": "Relations"
     },
@@ -991,8 +991,8 @@
       "contract_markdown": "P and Q are on one line along A: a column, a row, or a diagonal.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 513,
-        "end_line": 513
+        "start_line": 540,
+        "end_line": 540
       },
       "section": "Relations"
     },
@@ -1002,8 +1002,8 @@
       "contract_markdown": "P1 and P2 have the same margins on both edges of corner D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 516,
-        "end_line": 516
+        "start_line": 543,
+        "end_line": 543
       },
       "section": "Relations"
     },
@@ -1013,8 +1013,8 @@
       "contract_markdown": "P1 and P2 have the same margin on edge D, and the same two margins on the other axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 526,
-        "end_line": 526
+        "start_line": 553,
+        "end_line": 553
       },
       "section": "Relations"
     },
@@ -1024,8 +1024,8 @@
       "contract_markdown": "P is strictly nearer edge D than Q is. For a corner, the distances compared are `corner_dist`.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 538,
-        "end_line": 538
+        "start_line": 565,
+        "end_line": 565
       },
       "section": "Relations"
     },
@@ -1035,8 +1035,8 @@
       "contract_markdown": "P's two margins on each axis are equal. On an axis of even extent, no cell is centered.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 541,
-        "end_line": 541
+        "start_line": 568,
+        "end_line": 568
       },
       "section": "Relations"
     },
@@ -1046,8 +1046,8 @@
       "contract_markdown": "P's margins on edge D (K) and on the opposite edge (K2).",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 552,
-        "end_line": 552
+        "start_line": 579,
+        "end_line": 579
       },
       "section": "Relations"
     },
@@ -1057,8 +1057,8 @@
       "contract_markdown": "P's margin K1 on the edge of corner Diag that lies on axis A, and K2 on the corner's other edge.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 557,
-        "end_line": 557
+        "start_line": 584,
+        "end_line": 584
       },
       "section": "Relations"
     },
@@ -1068,8 +1068,8 @@
       "contract_markdown": "The grid's extent along A (N1) and along the other axis (N2).",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 562,
-        "end_line": 562
+        "start_line": 589,
+        "end_line": 589
       },
       "section": "Relations"
     },
@@ -1079,8 +1079,8 @@
       "contract_markdown": "B is N cells long along A. P is any cell of the grid, and gives only the grid's extent.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 567,
-        "end_line": 567
+        "start_line": 594,
+        "end_line": 594
       },
       "section": "Relations"
     },
@@ -1090,8 +1090,8 @@
       "contract_markdown": "The grid with K1 lines cut from edge D and K2 from the opposite edge.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 572,
-        "end_line": 572
+        "start_line": 600,
+        "end_line": 600
       },
       "section": "Relations"
     },
@@ -1101,8 +1101,8 @@
       "contract_markdown": "The grid with K lines cut from every edge.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 578,
-        "end_line": 578
+        "start_line": 606,
+        "end_line": 606
       },
       "section": "Relations"
     },
@@ -1112,8 +1112,8 @@
       "contract_markdown": "The grid with K lines cut from each edge of corner Diag.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 587,
-        "end_line": 587
+        "start_line": 615,
+        "end_line": 615
       },
       "section": "Relations"
     },
@@ -1123,8 +1123,8 @@
       "contract_markdown": "The grid with K lines added past edge D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 596,
-        "end_line": 596
+        "start_line": 624,
+        "end_line": 624
       },
       "section": "Relations"
     },
@@ -1134,8 +1134,8 @@
       "contract_markdown": "The grid with K lines added past each edge of corner Diag.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 601,
-        "end_line": 601
+        "start_line": 629,
+        "end_line": 629
       },
       "section": "Relations"
     },
@@ -1145,8 +1145,8 @@
       "contract_markdown": "The grid with K1 lines added past edge D and K2 past the opposite edge.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 606,
-        "end_line": 606
+        "start_line": 634,
+        "end_line": 634
       },
       "section": "Relations"
     },
@@ -1156,8 +1156,8 @@
       "contract_markdown": "The grid with K lines added past every edge.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 610,
-        "end_line": 610
+        "start_line": 638,
+        "end_line": 638
       },
       "section": "Relations"
     },
@@ -1167,8 +1167,8 @@
       "contract_markdown": "Q is K steps from P toward D. Q can lie off the grid.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 614,
-        "end_line": 614
+        "start_line": 642,
+        "end_line": 642
       },
       "section": "Relations"
     },
@@ -1178,8 +1178,8 @@
       "contract_markdown": "V is K steps toward D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 618,
-        "end_line": 618
+        "start_line": 647,
+        "end_line": 647
       },
       "section": "Relations"
     },
@@ -1189,8 +1189,8 @@
       "contract_markdown": "V is K steps along A, for each K that `sub_extent` gives. Each K has two rows, one toward each edge of A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 623,
-        "end_line": 623
+        "start_line": 653,
+        "end_line": 653
       },
       "section": "Relations"
     },
@@ -1200,8 +1200,8 @@
       "contract_markdown": "Q is one step from P toward D. Q can lie off the grid.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 628,
-        "end_line": 628
+        "start_line": 658,
+        "end_line": 658
       },
       "section": "Relations"
     },
@@ -1211,8 +1211,8 @@
       "contract_markdown": "Along has P's margins on axis A and 0 on the other axis, so for A = AXIS_V it is P's whole row, and for A = AXIS_H P's whole column. Across is P less Along.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 632,
-        "end_line": 632
+        "start_line": 663,
+        "end_line": 663
       },
       "section": "Relations"
     },
@@ -1222,8 +1222,8 @@
       "contract_markdown": "D2 is an edge on the other axis from D.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 644,
-        "end_line": 644
+        "start_line": 676,
+        "end_line": 676
       },
       "section": "Relations"
     },
@@ -1233,8 +1233,8 @@
       "contract_markdown": "Corner D's edge on axis A is D1, and its edge on the other axis is D2.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 649,
-        "end_line": 649
+        "start_line": 681,
+        "end_line": 681
       },
       "section": "Relations"
     },
@@ -1379,8 +1379,8 @@
       "contract_markdown": "A color in every input.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 693,
-        "end_line": 693
+        "start_line": 725,
+        "end_line": 725
       },
       "section": "Proposers"
     },
@@ -1390,8 +1390,8 @@
       "contract_markdown": "A color with the most cells in every input.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 695,
-        "end_line": 695
+        "start_line": 727,
+        "end_line": 727
       },
       "section": "Proposers"
     },
@@ -1401,8 +1401,8 @@
       "contract_markdown": "A color with the fewest cells in every input.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 697,
-        "end_line": 697
+        "start_line": 729,
+        "end_line": 729
       },
       "section": "Proposers"
     },
@@ -1412,8 +1412,8 @@
       "contract_markdown": "A color in every train output and no input.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 700,
-        "end_line": 700
+        "start_line": 732,
+        "end_line": 732
       },
       "section": "Proposers"
     },
@@ -1423,8 +1423,8 @@
       "contract_markdown": "A color in some train output and no input.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 702,
-        "end_line": 702
+        "start_line": 734,
+        "end_line": 734
       },
       "section": "Proposers"
     },
@@ -1434,8 +1434,8 @@
       "contract_markdown": "A color in every input and no train output.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 704,
-        "end_line": 704
+        "start_line": 736,
+        "end_line": 736
       },
       "section": "Proposers"
     },
@@ -1445,8 +1445,8 @@
       "contract_markdown": "A color that every one of its cells loses in the output, each input cell compared with the output cell at the same place. Where a pair's input and output differ in size, a cell outside the smaller grid keeps no color.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 706,
-        "end_line": 706
+        "start_line": 738,
+        "end_line": 738
       },
       "section": "Proposers"
     },
@@ -1456,8 +1456,8 @@
       "contract_markdown": "A color that every one of its cells keeps in the output, the cells compared as `ChangedColor` compares them.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 708,
-        "end_line": 708
+        "start_line": 740,
+        "end_line": 740
       },
       "section": "Proposers"
     },
@@ -1467,8 +1467,8 @@
       "contract_markdown": "A color map: each cell that changes gives its input color and its output color.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 711,
-        "end_line": 711
+        "start_line": 743,
+        "end_line": 743
       },
       "section": "Proposers"
     },
@@ -1478,8 +1478,8 @@
       "contract_markdown": "A color map read off whole examples: each input color an output lacks, with each output color its input lacks.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 714,
-        "end_line": 714
+        "start_line": 746,
+        "end_line": 746
       },
       "section": "Proposers"
     },
@@ -1489,8 +1489,8 @@
       "contract_markdown": "Along some axis, each output extent is K times its input extent. K can be 1.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 716,
-        "end_line": 716
+        "start_line": 748,
+        "end_line": 748
       },
       "section": "Proposers"
     },
@@ -1500,8 +1500,8 @@
       "contract_markdown": "As `ScaleRatio`, with its axis A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 719,
-        "end_line": 719
+        "start_line": 751,
+        "end_line": 751
       },
       "section": "Proposers"
     },
@@ -1511,8 +1511,8 @@
       "contract_markdown": "Along some axis, each input extent is K times its output extent.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 721,
-        "end_line": 721
+        "start_line": 753,
+        "end_line": 753
       },
       "section": "Proposers"
     },
@@ -1522,8 +1522,8 @@
       "contract_markdown": "As `DivisorRatio`, with its axis A.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 724,
-        "end_line": 724
+        "start_line": 756,
+        "end_line": 756
       },
       "section": "Proposers"
     },
@@ -1533,8 +1533,8 @@
       "contract_markdown": "Along some axis, each output extent differs from its input extent by D, more or less.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 727,
-        "end_line": 727
+        "start_line": 759,
+        "end_line": 759
       },
       "section": "Proposers"
     },
@@ -1544,8 +1544,8 @@
       "contract_markdown": "An extent of every input.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 729,
-        "end_line": 729
+        "start_line": 761,
+        "end_line": 761
       },
       "section": "Proposers"
     },
@@ -1555,8 +1555,8 @@
       "contract_markdown": "An extent of every input, with its axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 732,
-        "end_line": 732
+        "start_line": 764,
+        "end_line": 764
       },
       "section": "Proposers"
     },
@@ -1566,8 +1566,8 @@
       "contract_markdown": "An extent of every train output.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 734,
-        "end_line": 734
+        "start_line": 766,
+        "end_line": 766
       },
       "section": "Proposers"
     },
@@ -1577,8 +1577,8 @@
       "contract_markdown": "An extent of every train output, with its axis.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 736,
-        "end_line": 736
+        "start_line": 768,
+        "end_line": 768
       },
       "section": "Proposers"
     },
@@ -1588,8 +1588,8 @@
       "contract_markdown": "N tiles, with a gap of 0 to 3 between each two, fill an axis of every input. N is 2 to 8. `TileDim` is found apart, so an N and a D need not come from one tiling.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 738,
-        "end_line": 738
+        "start_line": 770,
+        "end_line": 770
       },
       "section": "Proposers"
     },
@@ -1599,8 +1599,8 @@
       "contract_markdown": "Tiles of D cells, with a gap of 0 to 3 between each two, fill an axis of every input. There are 2 to 8 tiles.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 740,
-        "end_line": 740
+        "start_line": 772,
+        "end_line": 772
       },
       "section": "Proposers"
     },
@@ -1610,8 +1610,8 @@
       "contract_markdown": "On each axis, the least move under which every input repeats. An axis with no common period gives none.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 743,
-        "end_line": 743
+        "start_line": 775,
+        "end_line": 775
       },
       "section": "Proposers"
     },
@@ -1621,8 +1621,8 @@
       "contract_markdown": "Along some axis, N parts fill the axis, with G lines between each two. Each line in a gap holds one color, the same in every input. N is 2 to 8, and G is 1 to 3. The lines are rows along AXIS_V, columns along AXIS_H.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 745,
-        "end_line": 745
+        "start_line": 777,
+        "end_line": 777
       },
       "section": "Proposers"
     },
@@ -1632,8 +1632,8 @@
       "contract_markdown": "`SepTileCount`'s N with its axis A, and also the other axis with N = 1 where no input has such a tiling on it.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 747,
-        "end_line": 747
+        "start_line": 779,
+        "end_line": 779
       },
       "section": "Proposers"
     },
@@ -1643,8 +1643,8 @@
       "contract_markdown": "As `SepTileCount`, with parts of D cells in place of N parts.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 750,
-        "end_line": 750
+        "start_line": 782,
+        "end_line": 782
       },
       "section": "Proposers"
     },
@@ -1654,8 +1654,8 @@
       "contract_markdown": "The G of `SepTileCount`: the number of lines between each two parts.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 752,
-        "end_line": 752
+        "start_line": 784,
+        "end_line": 784
       },
       "section": "Proposers"
     },
@@ -1665,8 +1665,8 @@
       "contract_markdown": "The colors of the inputs ranked by cell count: R colors have fewer cells than C. Ties share a rank, and a row is kept only where every input gives it.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 755,
-        "end_line": 755
+        "start_line": 787,
+        "end_line": 787
       },
       "section": "Proposers"
     },
@@ -1676,8 +1676,8 @@
       "contract_markdown": "As `CountRankAsc`, with R the number of colors that have more cells than C.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 758,
-        "end_line": 758
+        "start_line": 790,
+        "end_line": 790
       },
       "section": "Proposers"
     },
@@ -1687,8 +1687,8 @@
       "contract_markdown": "In every pair, the output is a whole number of input-sized copies along each axis, and is not the input's size. Pt is a copy's place in the frame of copies, and the copy at Pt is the input under T. A T that swaps the axes is tried only for a square input. A Pt has several rows where the input is symmetric.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 760,
-        "end_line": 760
+        "start_line": 792,
+        "end_line": 792
       },
       "section": "Proposers"
     },
@@ -1698,8 +1698,8 @@
       "contract_markdown": "The input is two panels of the output's size along one axis, with any number of separator lines between. Each output cell has the cell at the same place in each panel. An entry Id has two rows, one per panel, that share C_out: P is the panel's place as a cell of the frame of two parts along that axis, C is the color of that panel's cell, and C_out is the output cell's color. There is one entry per combination of the two panel colors and the output color in the train pairs.",
       "source": {
         "document": "engine/lib/registry.sexpr",
-        "start_line": 762,
-        "end_line": 762
+        "start_line": 794,
+        "end_line": 794
       },
       "section": "Proposers"
     }
