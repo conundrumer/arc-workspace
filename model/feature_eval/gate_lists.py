@@ -9,6 +9,9 @@ mutants, trained on train tasks and read on dev tasks, read additively over what
                                                  summed gain in OUT/importance/, and the fits and their
                                                  columns in OUT/models/
   gate_lists.py compare OUT A B [--filter F]     the paired difference of two sets over dev tasks
+  gate_lists.py score OUT SET VECTOR... [--filter F]
+                                                 the score of a fit on each table a `feature-encoder vector`
+                                                 file holds, at the assignment it holds first
 
 ROOT is what `candidate-lists` writes: `lists/` on the true outputs and `null/` on deranged ones.
 A shape's reading is one of: T, the table alone; TI, the table and the input; TO, the table and the
@@ -510,6 +513,51 @@ def compare(out, first, second, name):
     print(f'{name}: {first} less {second}: {np.mean(differences):+.3f} ({low:+.3f}, {high:+.3f}) over {len(tasks)} tasks; better {sum(d > 0 for d in differences)}, worse {sum(d < 0 for d in differences)}', flush=True)
 
 
+def vector_entries(path):
+    """A vector file's first table as a fit reads it: per shape, its value where stable, and its least, mean and
+    greatest, over the train pairs, since the fit's tables hold train rows alone."""
+    entries, train, block = {}, 0, 0
+    for line in open_text(path):
+        record = json.loads(line)
+        if 'at' not in record:
+            if 'train' in record:
+                block += 1
+                train = record['train']
+            continue
+        if block != 1:
+            break
+        slots = record['at'][:train]
+        values = [0.0 if slot == 0 else (slot[0][0] / slot[0][1] if isinstance(slot[0], list) else float(slot[0])) for slot in slots if slot is not None]
+        if not values:
+            entries[record['shape']] = (0.0, float('nan'), float('nan'), float('nan'))
+        elif any(values):
+            stable = values[0] if all(slot not in (0, None) and slot == slots[0] for slot in slots) else 0.0
+            entries[record['shape']] = (stable, 0.0 if stable else min(values), stable if stable else sum(values) / len(values), 0.0 if stable else max(values))
+            if stable:
+                entries[record['shape']] = (stable, stable, stable, stable)
+    return entries
+
+
+def column_value(label, entries):
+    """A column's value on one table, from its label: `shape:channel`, or a shape alone for its stable value."""
+    shape, _, channel = label.rpartition(':') if label.rsplit(':', 1)[-1] in ('stable', 'mean', 'least', 'most') else (label, '', 'stable')
+    held = entries.get(shape)
+    if held is None:
+        return 0.0
+    return held[('stable', 'least', 'mean', 'most').index(channel)]
+
+
+def score(out, spec, name, vectors):
+    import lightgbm as lgb
+    models = Path(out) / 'models'
+    columns = (models / f'{name}.{spec}.columns.txt').read_text().splitlines()
+    fits = [lgb.Booster(model_file=str(path)) for path in sorted(models.glob(f'{name}.{spec}.[0-9]*.txt'))]
+    for vector in vectors:
+        entries = vector_entries(vector)
+        row = np.array([[column_value(label, entries) for label in columns]])
+        print(f'{float(np.mean([fit.predict(row)[0] for fit in fits])):+.4f} {sum(1 for v in row[0] if v != 0)} of {len(columns)} columns hold an entry\t{vector}', flush=True)
+
+
 def fit(out, sets, filters, threads, fraction, seeds=5):
     out = Path(out)
     meta = pickle.load((out / 'meta.pkl').open('rb'))
@@ -665,7 +713,7 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['build', 'fit', 'compare'])
+    parser.add_argument('command', choices=['build', 'fit', 'compare', 'score'])
     parser.add_argument('paths', nargs='+')
     parser.add_argument('--min-tasks', type=int, default=3)
     parser.add_argument('--sets', nargs='*', default=[])
@@ -679,6 +727,8 @@ def main():
         build(a.paths[0], a.paths[1], a.min_tasks)
     elif a.command == 'compare':
         compare(a.paths[0], a.paths[1], a.paths[2], a.filter)
+    elif a.command == 'score':
+        score(a.paths[0], a.paths[1], a.filter, a.paths[2:])
     else:
         fit(a.paths[0], a.sets, a.filters, a.threads, a.fraction, a.seeds)
 
