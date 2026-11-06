@@ -10,8 +10,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::catalog_lists::named_shapes;
 use crate::gen_constants::number_of;
-use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE};
+use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, READS_TABLE, SLOT_DEFAULT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
 use crate::stored::Stored;
 use crate::state_features::{graph_numbers, nodes_of, pool, relations, Relation};
@@ -53,6 +54,42 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
         }
     }
     Written { owner, ids, values, graded, pairs: vector.examples, at_pairs }
+}
+
+/// A table's list of named shapes. A shape's scope is the train pairs, and past them it is 0.
+fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, examples: usize) -> Written {
+    let mut stable: Vec<(u64, f32)> = Vec::new();
+    let mut others: Vec<((u64, f32, f32, f32), Vec<f32>)> = Vec::new();
+    for shape in named_shapes(table, &grids.facts) {
+        let values: Vec<f64> = shape.at.iter().flatten().copied().collect();
+        if values.iter().all(|value| *value == 0.0) {
+            continue;
+        }
+        let text = format!("(named {})", shape.name);
+        let hash = hash_words(text.bytes().map(u64::from));
+        let input = if shape.name.contains("input") || shape.name.contains("change") { READS_INPUT } else { 0 };
+        families.names.add_root(hash, text, READS_TABLE | READS_OUTPUT | input);
+        if values.len() == shape.at.len() && values.iter().all(|value| *value == values[0]) {
+            stable.push((hash as u64, values[0] as f32));
+        } else {
+            let least = values.iter().copied().fold(f64::INFINITY, f64::min) as f32;
+            let most = values.iter().copied().fold(f64::NEG_INFINITY, f64::max) as f32;
+            let mean = (values.iter().sum::<f64>() / values.len() as f64) as f32;
+            let mut at: Vec<f32> = shape.at.iter().map(|value| value.map_or(f32::NAN, |value| value as f32)).collect();
+            at.resize(examples, 0.0);
+            others.push(((hash as u64, least, mean, most), at));
+        }
+    }
+    stable.sort_unstable_by_key(|entry| entry.0);
+    others.sort_unstable_by_key(|entry| entry.0.0);
+    let mut at_pairs = Vec::with_capacity(others.len() * examples);
+    let mut graded = Vec::with_capacity(others.len());
+    for (entry, at) in others {
+        graded.push(entry);
+        at_pairs.extend(at);
+    }
+    let (ids, values) = stable.into_iter().unzip();
+    Written { owner, ids, values, graded, pairs: examples, at_pairs }
 }
 
 /// A part's own roots: those stable at every example of its scope, with their value, and the others
@@ -142,6 +179,8 @@ pub enum ListsOf {
     Parents,
     /// Each candidate's State features, and the numbers of the pair.
     State,
+    /// Each table's named shapes, at its place among the task's tables.
+    Named,
 }
 
 /// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples,
@@ -259,7 +298,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
     let walked: Vec<usize> = match lists_of {
         ListsOf::Tables => (0..stored.len()).collect(),
-        ListsOf::Wide(_) | ListsOf::State => Vec::new(),
+        ListsOf::Wide(_) | ListsOf::State | ListsOf::Named => Vec::new(),
         ListsOf::Parents => {
             let mut places: Vec<usize> = named.iter().map(|(_, at)| *at).collect();
             places.sort_unstable();
@@ -286,6 +325,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                 let vector = table_vector(walker, table, &grids, examples, only_output);
                 lists.push(stable_of(at.into(), &vector));
             }
+            ListsOf::Named => lists.push(named_of(at.into(), table, &grids, families, examples)),
             ListsOf::Parents | ListsOf::State => {}
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));

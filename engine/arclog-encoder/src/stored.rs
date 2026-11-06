@@ -84,6 +84,8 @@ pub fn shape_text(text: &str, table: &str, types: &[ValueType]) -> String {
 pub struct Stored {
     pub key: String,
     pub types: Vec<ValueType>,
+    /// Whether each column is a key column, which a stored table's column names give.
+    pub keys: Vec<bool>,
     pub rows: Vec<Vec<Arc<Table>>>,
 }
 
@@ -143,7 +145,8 @@ impl Stored {
             held.dedup_by_key(|table| table.hash);
             held
         }).collect();
-        Stored { key: schema_key(&sorted), types: sorted, rows: tables }
+        let keys = vec![false; sorted.len()];
+        Stored { key: schema_key(&sorted), types: sorted, keys, rows: tables }
     }
 
     /// The table of a tables file's `value`: `rows` holds one TableRows per example under
@@ -199,7 +202,11 @@ impl Stored {
                 rows.push(read_at(&format!("test/{pair}"))?);
             }
         }
-        Some(Stored::of_rows(&types, rows))
+        let mut stored = Stored::of_rows(&types, rows);
+        if let Some(columns) = value["columns"].as_array() {
+            stored.keys = column_order(&types).into_iter().map(|at| columns.get(at).and_then(serde_json::Value::as_str).is_some_and(|name| name.starts_with("key."))).collect();
+        }
+        Some(stored)
     }
 
     /// The rows of a grid's table as a table of `Col` and `P`, whose columns stand in type order.
@@ -213,7 +220,7 @@ impl Stored {
             vec![Table::new(2, cells)]
         }).collect();
         let types = vec![ValueType::Color, ValueType::Position];
-        Stored { key: schema_key(&types), types, rows }
+        Stored { key: schema_key(&types), keys: vec![false; types.len()], types, rows }
     }
 }
 

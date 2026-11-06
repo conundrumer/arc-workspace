@@ -1,0 +1,112 @@
+//! The catalog's kinds as a table's entries: each kind's shape, with its greatest value at each train
+//! pair. Every kind reads the output, so a shape's scope is the train pairs.
+
+use std::collections::HashMap;
+
+use arclog::registry::Registry;
+use arclog::terms::{Constant, Term, TermId};
+use arclog::types::ValueType;
+
+use crate::catalog::{orientation, pass, Cell, Kind, Record, TableAt, Value};
+use crate::catalog_facts::PairFacts;
+use crate::catalog_vector::shape_name;
+use crate::gen_constants::{margins_of, number_of};
+use crate::stored::Stored;
+
+fn kind_of(ty: &ValueType) -> Kind {
+    match ty {
+        ValueType::Position => Kind::Position,
+        ValueType::Box => Kind::Box,
+        ValueType::Offset => Kind::Offset,
+        ValueType::Color => Kind::Color,
+        ValueType::Nat => Kind::Nat,
+        ValueType::Int => Kind::Int,
+        ValueType::Ident(_) => Kind::Ident,
+        ValueType::Dir => Kind::Dir,
+        ValueType::DiagDir => Kind::DiagDir,
+        ValueType::Dir8 => Kind::Dir8,
+        ValueType::Axis => Kind::Axis,
+        ValueType::DiagAxis => Kind::DiagAxis,
+        ValueType::Axis4 => Kind::Axis4,
+        ValueType::D4 => Kind::D4,
+        ValueType::C4 => Kind::C4,
+        ValueType::Sym => Kind::Sym,
+        ValueType::Sense => Kind::Sense,
+        _ => Kind::Other,
+    }
+}
+
+fn cell_of(bits: u32, ty: &ValueType, kind: Kind) -> Cell {
+    match kind {
+        Kind::Position | Kind::Box | Kind::Offset => margins_of(bits),
+        Kind::Nat | Kind::Int => [number_of(bits) as i32, 0, 0, 0],
+        Kind::Dir | Kind::DiagDir | Kind::Dir8 | Kind::Axis | Kind::DiagAxis | Kind::Axis4 | Kind::D4 | Kind::C4 => match Term::decode(TermId::from_encoding(bits), ty) {
+            Term::Constant(Constant::Orientation(constant)) => [orientation(Registry::get().constant_name(constant)), 0, 0, 0],
+            _ => [bits as i32, 0, 0, 0],
+        },
+        _ => [bits as i32, 0, 0, 0],
+    }
+}
+
+/// A record's number, and the column a word gives beside the kind's name.
+fn number(value: Value) -> Option<f64> {
+    match value {
+        Value::Null | Value::Word(_) => None,
+        Value::Bool(flag) => Some(f64::from(u8::from(flag))),
+        Value::Num(number) => Some(number as f64),
+        Value::Share(hits, of) => (of > 0).then(|| f64::from(hits) / f64::from(of)),
+    }
+}
+
+fn greatest_of(records: &[Record], kinds: &[Kind], per: &mut HashMap<String, f64>) {
+    for record in records {
+        let name = shape_name(record, kinds);
+        if let Value::Word(word) = record.value {
+            let held = per.entry(format!("{name} :{word}")).or_insert(0.0);
+            *held = 1.0;
+        } else if let Some(value) = number(record.value) {
+            let held = per.entry(name).or_insert(f64::NEG_INFINITY);
+            *held = held.max(value);
+        }
+    }
+}
+
+/// A named shape of a table: its name, whether its name reads the input, and its value at each train pair, or None where it has no value.
+pub struct NamedShape {
+    pub name: String,
+    pub at: Vec<Option<f64>>,
+}
+
+/// The shapes of a table over the train pairs. Over a pair's TableRows, a shape takes the mean of its value where it has one.
+pub fn named_shapes(table: &Stored, facts: &[PairFacts]) -> Vec<NamedShape> {
+    let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
+    let pairs = facts.len();
+    let mut shapes: HashMap<String, Vec<Option<f64>>> = HashMap::new();
+    let mut records = Vec::with_capacity(256);
+    let mut cells: Vec<Cell> = Vec::new();
+    for (pair, fact) in facts.iter().enumerate() {
+        let models = &table.rows[pair];
+        let mut sums: HashMap<String, (f64, usize)> = HashMap::new();
+        for model in models {
+            cells.clear();
+            for row in model.rows() {
+                cells.extend(row.iter().zip(&table.types).zip(&kinds).map(|((bits, ty), kind)| cell_of(*bits, ty, *kind)));
+            }
+            records.clear();
+            pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, fact, &mut records);
+            let mut per = HashMap::new();
+            greatest_of(&records, &kinds, &mut per);
+            for (name, value) in per {
+                let held = sums.entry(name).or_insert((0.0, 0));
+                held.0 += value;
+                held.1 += 1;
+            }
+        }
+        for (name, (sum, count)) in sums {
+            shapes.entry(name).or_insert_with(|| vec![None; pairs])[pair] = Some(sum / count as f64);
+        }
+    }
+    let mut out: Vec<NamedShape> = shapes.into_iter().map(|(name, at)| NamedShape { name, at }).collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}

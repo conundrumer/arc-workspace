@@ -68,6 +68,7 @@ struct Arguments {
     control: bool,
     names: Option<PathBuf>,
     wide_size: Option<usize>,
+    kinds: Option<Vec<String>>,
     wide_only: bool,
     parents_only: bool,
     state_only: bool,
@@ -83,7 +84,7 @@ struct Arguments {
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
+    let mut parsed = Arguments { kinds: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -92,6 +93,7 @@ fn arguments() -> Arguments {
             "--task-wide" => parsed.task_wide = true,
             "--size" => parsed.size = args.next().and_then(|text| text.parse().ok()).expect("a number after --size"),
             "--wide-size" => parsed.wide_size = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --wide-size")),
+            "--kinds" => parsed.kinds = Some(args.next().expect("kinds after --kinds").split(',').map(str::to_string).collect()),
             "--wide-only" => parsed.wide_only = true,
             "--parents-only" => parsed.parents_only = true,
             "--state-only" => parsed.state_only = true,
@@ -617,7 +619,13 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
         families.names = NameStore::to_file(&names_file)?;
         Ok(families)
     };
-    let kinds: [(&str, ListsOf, Generators); 3] = [("state", ListsOf::State, families_of("state", 500_000)?), ("wide", ListsOf::Wide(wide), families_of("wide", 500_000)?), ("on", ListsOf::Tables, families_of("on", 2_500_000)?)];
+    let chosen = |folder: &str| arguments.kinds.as_ref().is_none_or(|kinds| kinds.iter().any(|kind| kind == folder));
+    let mut kinds: Vec<(&str, ListsOf, Generators)> = Vec::new();
+    for (folder, lists_of, term_limit) in [("state", ListsOf::State, 500_000), ("wide", ListsOf::Wide(wide), 500_000), ("on", ListsOf::Tables, 2_500_000), ("named", ListsOf::Named, 0)] {
+        if chosen(folder) {
+            kinds.push((folder, lists_of, families_of(folder, term_limit)?));
+        }
+    }
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let begun = Instant::now();

@@ -23,6 +23,8 @@ pub struct Grids {
     pub inputs: Vec<Arc<Table>>,
     pub outputs: Vec<Arc<Table>>,
     pub constants: Vec<Vec<Option<Arc<Table>>>>,
+    /// What the catalog reads of each train pair.
+    pub facts: Vec<crate::catalog_facts::PairFacts>,
 }
 
 impl Grids {
@@ -41,7 +43,8 @@ impl Grids {
         let facts = crate::catalog_run::pairs_of_task(task_json, order);
         let empty = Vec::new();
         let tests: Vec<GridFacts> = task_json["test"].as_array().unwrap_or(&empty).iter().map(|pair| crate::catalog_run::grid_of(&pair["input"])).collect();
-        Grids { train, inputs, outputs, constants: constants_of(&facts, &tests) }
+        let constants = constants_of(&facts, &tests);
+        Grids { train, inputs, outputs, constants, facts }
     }
 
     /// The grids of the task stored at `task_dir` under `name`.
@@ -221,7 +224,7 @@ pub fn base_vectors(grids: &Grids, families: &Generators, d: usize) -> BaseVecto
 pub fn pair_vector(grids: &Grids, families: &Generators, d: usize, only_output: bool) -> TableVector {
     let family: Arc<Generated> = families.get_grids(d);
     let mut walker = Walker::new(&family);
-    let no_table = Stored { key: String::new(), types: Vec::new(), rows: vec![Vec::new(); grids.inputs.len()] };
+    let no_table = Stored { key: String::new(), types: Vec::new(), keys: Vec::new(), rows: vec![Vec::new(); grids.inputs.len()] };
     table_vector(&mut walker, &no_table, grids, grids.inputs.len(), only_output)
 }
 
