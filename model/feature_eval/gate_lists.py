@@ -22,6 +22,10 @@ output; TIO, all three. A set is written as terms joined by `+`:
   TIOg, TIOr    TIO's shapes with more of their numbers: g adds the mean over examples of every active
                 shape, and r adds the least and the greatest too; `_null` as for TIO_null
   TIg, TIr      the same for the shapes that read no output
+  TIOe          one row per candidate and example: a shape's value at that example beside its stable value, so a
+                row keeps which value goes with which at an example. A set's line reads the mean over a
+                candidate's rows, and `worst` reads its worst row. `_null` as for TIO_null. Every other term of
+                its set repeats on each of a candidate's rows
   contingent, contingent_null
                 the shapes of a candidate that not every table it reads has as stable
   ctx           the base tables' own part roots
@@ -55,7 +59,7 @@ import zstandard
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from candidate import read_lists  # noqa: E402
 from common import open_text, read_json  # noqa: E402
-from query_structure import LABEL_STRUCTURE, base_features, parse_forms  # noqa: E402
+from query_structure import LABEL_STRUCTURE, Reader, base_features, parse_forms  # noqa: E402
 
 ROOT_REPO = Path('/Users/davidlu/code/arc-workspace')
 READS = {4: 'T', 5: 'TI', 6: 'TO', 7: 'TIO'}
@@ -131,6 +135,36 @@ def own_numbers(values):
     return values[0], {'mean': values[1]}
 
 
+def read_names(forms, at):
+    """The relations a form reads."""
+    if at >= len(forms):
+        return []
+    reader = Reader()
+    reader.form(forms[at])
+    return sorted(set(reader.reads))
+
+
+def parent_lists(folder, name):
+    path = folder / name
+    return read_lists(path, graded=True)[1:] if path.exists() else ({}, {})
+
+
+def named(name, lists, others, parents, parent_others, place_of):
+    """A read table's list and its other entries, from the parents' file, or from the table's own place."""
+    if name in parents:
+        return parents[name], parent_others[name]
+    place = place_of.get(name)
+    if place is not None and place in lists:
+        return lists[place], others[place]
+    return None
+
+
+def rows_of(entry, key):
+    """A table's mean row count, from its entry for the table's own count."""
+    at = np.searchsorted(entry[0], key)
+    return float(entry[1]['mean'][at]) if at < len(entry[0]) and entry[0][at] == key else 0.0
+
+
 QV_NAMES = ('active', 'stable', 'stable_share', 'new_stable', 'new_stable_share', 'new_active', 'new_active_share', 'uses', 'assignments',
             'same_entries_share:max', 'same_entries_share:min', 'rows_over_use:max', 'rows_over_use:min')
 
@@ -147,19 +181,17 @@ def share_same(own, use):
     return float(same.sum()) / len(own[0])
 
 
-def relation_numbers(own, stable_count, new_stable, uses, parents, train_rows, table, assignments):
-    """QV_NAMES's values for one candidate. `uses` holds the entries of each table its query reads, and of the input."""
+def relation_numbers(own, stable_count, new_stable, uses, read_tables, rows_key, assignments):
+    """QV_NAMES's values for one candidate. `uses` holds the entries of the input and of each table its query reads,
+    and `read_tables` those of the tables alone."""
     active = len(own[0])
     seen = np.unique(np.concatenate([use[0] for use in uses])) if uses else np.zeros(0, dtype=np.uint64)
     new_active = len(np.setdiff1d(own[0], seen, assume_unique=True))
     shares = [share_same(own, use) for use in uses]
-    ratios = []
-    for parent in parents:
-        pairs = [(a, b) for a, b in zip(train_rows[table], train_rows[parent]) if a is not None and b]
-        if pairs:
-            ratios.append(float(np.mean([a / b for a, b in pairs])))
+    own_rows = rows_of(own, rows_key)
+    ratios = [own_rows / rows for rows in (rows_of(table, rows_key) for table in read_tables) if rows]
     return (active, stable_count, stable_count / active if active else 0.0, new_stable, new_stable / stable_count if stable_count else 0.0, new_active, new_active / active if active else 0.0,
-            len(parents), assignments or 0, max(shares, default=0.0), min(shares, default=0.0), max(ratios, default=0.0), min(ratios, default=0.0))
+            len(read_tables), assignments or 0, max(shares, default=0.0), min(shares, default=0.0), max(ratios, default=0.0), min(ratios, default=0.0))
 
 
 def place(ids, table):
@@ -169,7 +201,7 @@ def place(ids, table):
     return at, hit
 
 
-def build(root, out, min_tasks):
+def build(root, out, min_tasks, each_tasks=None):
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     parts = split_of()
@@ -246,6 +278,7 @@ def build(root, out, min_tasks):
     print('task-wide columns', len(wide_columns), 'pair columns', len(pair_columns), flush=True)
     # The names of the columns.
     names, flags, sizes = {}, {}, {}
+    rows_key = 0
     wanted = set(columns.tolist())
     for line in name_lines(root / 'lists'):
         parts_line = line.rstrip('\n').split('\t')
@@ -254,6 +287,8 @@ def build(root, out, min_tasks):
         key = int(parts_line[0], 16)
         if key in wanted:
             names[key], flags[key], sizes[key] = parts_line[1], int(parts_line[2]), int(parts_line[3])
+        if parts_line[1] == '(cardinality T)':
+            rows_key = key
     print('names found', len(names), 'of', len(wanted), flush=True)
     wanted_wide = set(wide_columns.tolist()) | set(pair_columns.tolist())
     wide_names, wide_flags = {}, {}
@@ -265,9 +300,16 @@ def build(root, out, min_tasks):
     base_vocab = {}
     context_vocab = {}
     data = {}
+    parents_root = root.parent / 'parents'
+    # A row per example holds only what enough tasks tell apart, since it repeats each entry once per example.
+    train_files = sum(1 for path in files if parts.get(path.name.split('.')[0]) == 'train')
+    each_tasks = max(min_tasks, train_files // 10) if each_tasks is None else each_tasks
+    each_keep = column_tasks >= each_tasks
+    print('example rows read shapes told apart on', each_tasks, 'tasks or more:', int(each_keep.sum()), flush=True)
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most')}
+        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each')}
+        example_of = []
         count = 0
         started = time.time()
         for path in files:
@@ -281,6 +323,9 @@ def build(root, out, min_tasks):
             wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
             pair_numbers = wide_others.get('constant-values', (np.zeros(0, dtype=np.uint64),) + (np.zeros(0, dtype=np.float32),) * 3)
             pair_spots, pair_hit = place(pair_numbers[0], pair_columns)
+            read_true, read_true_others = parent_lists(parents_root / 'lists', path.name)
+            read_null, read_null_others = parent_lists(parents_root / 'null', path.name)
+            place_of = {listed['table']: listed['gold'] for listed in head['items']}
             mutants = read_json(root / split / 'mutants' / f'{task}.json')
             gold_forms = parse_forms(mutants['gold'])
             by_form = {q['form']: q for q in mutants['queries']}
@@ -294,15 +339,16 @@ def build(root, out, min_tasks):
             ctx_row = sorted((context_vocab[key], float(value)) for key, value in zip(constants[0].tolist(), constants[1].tolist()) if key in context_vocab)
             for at, item in enumerate(head['items']):
                 query = by_form[item['form']]
-                members = [(item['gold'], 'gold', False, gold_forms, item['types'], item.get('task_level'), item['parents'], item.get('assignments'))]
+                members = [(item['gold'], 'gold', False, gold_forms, item['types'], item.get('task_level'), item.get('assignments'))]
                 for mutant in item['mutants']:
                     record = query['mutants'][mutant['mutant']]
                     key = (item['form'], mutant['mutant'])
                     if key not in parsed:
                         parsed[key] = parse_forms(record['text'])
-                    members.append((mutant['table'], mutant['edit'], bool(mutant.get('extra')), parsed[key], mutant['types'], mutant.get('task_level'), mutant['parents'], mutant.get('assignments')))
+                    members.append((mutant['table'], mutant['edit'], bool(mutant.get('extra')), parsed[key], mutant['types'], mutant.get('task_level'), mutant.get('assignments')))
                 gold_key = None
-                for j, (table, edit, extra, forms, types, task_level, parents, assignments) in enumerate(members):
+                for j, (table, edit, extra, forms, types, task_level, assignments) in enumerate(members):
+                    reads = read_names(forms, item['form'])
                     features = base_features(forms, item['form'], gold_forms, types, task_level)
                     if split == 'train':
                         pairs = [(base_vocab.setdefault(k, len(base_vocab)), float(v)) for k, v in features.items() if v]
@@ -325,13 +371,17 @@ def build(root, out, min_tasks):
                             mats[name_].add(spots[hit], entries[1][hit])
                     for at_number, name_ in ((1, 'pair_least'), (2, 'pair_mean'), (3, 'pair_most')):
                         mats[name_].add(pair_spots[pair_hit], pair_numbers[at_number][pair_hit])
-                    for kind, held_lists, held_others in (('stable', lists, others), ('null', null_lists, null_others)):
+                    example_of.extend([len(rows) - 1] * head['train'])
+                    for kind, held_lists, held_others, held_read, held_read_others in (('stable', lists, others, read_true, read_true_others), ('null', null_lists, null_others, read_null, read_null_others)):
                         held = held_lists.get(table)
+                        each_name = 'each' if kind == 'stable' else 'null_each'
                         channel_of = {'least': 'least', 'mean': 'mean', 'most': 'most'} if kind == 'stable' else {'least': 'null_least', 'mean': 'null_mean', 'most': 'null_most'}
                         if held is None:
                             for name in channel_of.values():
                                 mats[name].add([])
                             mats[kind].add([])
+                            for _ in range(head['train']):
+                                mats[each_name].add([])
                             if kind == 'stable':
                                 mats['qv'].add([])
                             if kind == 'stable':
@@ -345,15 +395,29 @@ def build(root, out, min_tasks):
                         spots, hit = place(ids, columns)
                         for channel, name in channel_of.items():
                             mats[name].add(spots[hit], numbers[channel][hit])
+                        stable_spots, stable_hit = place(held[0], columns)
+                        stable_hit = stable_hit & each_keep[stable_spots]
+                        graded_ids, *_, at_pairs = held_others[table]
+                        graded_spots, graded_hit = place(graded_ids, columns)
+                        graded_hit = graded_hit & each_keep[graded_spots]
+                        for pair in range(head['train']):
+                            values = at_pairs[:, pair][graded_hit] if at_pairs.shape[1] else np.zeros(0, dtype=np.float32)
+                            active = values != 0
+                            place_at = graded_spots[graded_hit][active] if at_pairs.shape[1] else np.zeros(0, dtype=np.int64)
+                            at_all = np.concatenate((stable_spots[stable_hit], place_at))
+                            order = np.argsort(at_all)
+                            mats[each_name].add(at_all[order], np.concatenate((held[1][stable_hit], values[active]))[order])
                         # What not every table the query reads has as stable, nor the input.
-                        bases = [held_lists.get('input')] + [held_lists.get(parent) for parent in parents]
-                        common = held[0]
-                        for base in bases:
-                            common = np.intersect1d(common, base[0], assume_unique=True) if base is not None else np.zeros(0, dtype=np.uint64)
+                        read_tables = [found for found in (named(name, held_lists, held_others, held_read, held_read_others, place_of) for name in reads) if found is not None]
+                        base = held_lists.get('input')
+                        common = np.intersect1d(held[0], base[0], assume_unique=True) if base is not None else np.zeros(0, dtype=np.uint64)
+                        for read_table, _ in read_tables:
+                            common = np.intersect1d(common, read_table[0], assume_unique=True)
                         fresh = np.setdiff1d(held[0], common, assume_unique=True)
                         if kind == 'stable':
-                            uses = [every_entry(held_lists[use], held_others[use]) for use in ['input'] + list(parents) if use in held_lists]
-                            numbers_of = relation_numbers((ids, numbers), len(held[0]), len(fresh), uses, parents, head['train_rows'], table, assignments)
+                            read_entries = [every_entry(read_table, read_other) for read_table, read_other in read_tables]
+                            uses = ([every_entry(held_lists['input'], held_others['input'])] if 'input' in held_lists else []) + read_entries
+                            numbers_of = relation_numbers((ids, numbers), len(held[0]), len(fresh), uses, read_entries, rows_key, assignments)
                             mats['qv'].add(np.arange(len(QV_NAMES)), np.array(numbers_of, dtype=np.float32))
                         spots, hit = place(fresh, columns)
                         mats['contingent' if kind == 'stable' else 'null_contingent'].add(spots[hit])
@@ -361,7 +425,7 @@ def build(root, out, min_tasks):
             count += 1
             if count % 50 == 0:
                 print(f'{split} {count} {count / (time.time() - started):.1f}/s rows {len(rows)} nnz {mats["stable"].count}', flush=True)
-        data[split] = dict(rows=rows, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192, 'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns)}.get(name, len(columns))) for name in mats})
+        data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192, 'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns)}.get(name, len(columns))) for name in mats})
         print(split, 'rows', len(rows), 'nnz', {name: mats[name].count for name in mats}, flush=True)
     width_base, width_ctx = len(base_vocab), len(context_vocab)
     for split in data:
@@ -369,6 +433,8 @@ def build(root, out, min_tasks):
         data[split]['matrices']['ctx'] = data[split]['matrices']['ctx'][:, :width_ctx]
         with (out / f'{split}.rows.pkl').open('wb') as sink:
             pickle.dump(data[split]['rows'], sink, protocol=4)
+        with (out / f'{split}.example_of.pkl').open('wb') as sink:
+            pickle.dump(data[split]['example_of'], sink, protocol=4)
         for name, matrix in data[split]['matrices'].items():
             with (out / f'{split}.{name}.pkl').open('wb') as sink:
                 pickle.dump(matrix, sink, protocol=4)
@@ -376,7 +442,7 @@ def build(root, out, min_tasks):
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
-    (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, min_tasks=min_tasks, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
+    (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, min_tasks=min_tasks, each_tasks=each_tasks, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
     print('built', flush=True)
 
 
@@ -481,6 +547,10 @@ def fit_one(X, rows, groups, seed=7, threads=4, fraction=0.5):
     return final, rounds
 
 
+def per_pair(spec):
+    return any(raw.split('~')[0].split('^')[0] in ('TIOe', 'TIOe_null') for raw in spec.split('+'))
+
+
 def channel_null(channel):
     return 'null' if channel == 'stable' else f'null_{channel}'
 
@@ -521,8 +591,8 @@ def compare(out, first, second, name):
 
 
 def vector_entries(path):
-    """A vector file's first table as a fit reads it: per shape, its value where stable, and its least, mean and
-    greatest, over the train pairs, since the fit's tables hold train rows alone."""
+    """A vector file's first table as a fit reads it: per shape, its value where stable, its least, mean and
+    greatest, and its value at each pair, over the train pairs, since the fit's tables hold train rows alone."""
     entries, train, block = {}, 0, 0
     for line in open_text(path):
         record = json.loads(line)
@@ -536,22 +606,21 @@ def vector_entries(path):
         slots = record['at'][:train]
         values = [0.0 if slot == 0 else (slot[0][0] / slot[0][1] if isinstance(slot[0], list) else float(slot[0])) for slot in slots if slot is not None]
         if not values:
-            entries[record['shape']] = (0.0, float('nan'), float('nan'), float('nan'))
+            entries[record['shape']] = (0.0, float('nan'), float('nan'), float('nan'), [float('nan')] * len(slots))
         elif any(values):
             stable = values[0] if all(slot not in (0, None) and slot == slots[0] for slot in slots) else 0.0
-            entries[record['shape']] = (stable, 0.0 if stable else min(values), stable if stable else sum(values) / len(values), 0.0 if stable else max(values))
-            if stable:
-                entries[record['shape']] = (stable, stable, stable, stable)
+            at = [float('nan') if slot is None else 0.0 if slot == 0 else (slot[0][0] / slot[0][1] if isinstance(slot[0], list) else float(slot[0])) for slot in slots]
+            entries[record['shape']] = (stable, stable, stable, stable, at) if stable else (0.0, min(values), sum(values) / len(values), max(values), at)
     return entries
 
 
-def column_value(label, entries):
-    """A column's value on one table, from its label: `shape:channel`, or a shape alone for its stable value."""
-    shape, _, channel = label.rpartition(':') if label.rsplit(':', 1)[-1] in ('stable', 'mean', 'least', 'most') else (label, '', 'stable')
+def column_value(label, entries, pair=0):
+    """A column's value on one table at one pair, from its label: `shape:channel`, or a shape alone for its stable value."""
+    shape, _, channel = label.rpartition(':') if label.rsplit(':', 1)[-1] in ('stable', 'mean', 'least', 'most', 'each') else (label, '', 'stable')
     held = entries.get(shape)
     if held is None:
         return 0.0
-    return held[('stable', 'least', 'mean', 'most').index(channel)]
+    return held[4][pair] if channel == 'each' else held[('stable', 'least', 'mean', 'most').index(channel)]
 
 
 def score(out, spec, name, vectors):
@@ -561,8 +630,10 @@ def score(out, spec, name, vectors):
     fits = [lgb.Booster(model_file=str(path)) for path in sorted(models.glob(f'{name}.{spec}.[0-9]*.txt'))]
     for vector in vectors:
         entries = vector_entries(vector)
-        row = np.array([[column_value(label, entries) for label in columns]])
-        print(f'{float(np.mean([fit.predict(row)[0] for fit in fits])):+.4f} {sum(1 for v in row[0] if v != 0)} of {len(columns)} columns hold an entry\t{vector}', flush=True)
+        pairs = max((len(held[4]) for held in entries.values()), default=1) if per_pair(spec.split('@')[0]) else 1
+        row = np.array([[column_value(label, entries, pair) for label in columns] for pair in range(pairs)])
+        at = np.mean([fit.predict(row) for fit in fits], axis=0)
+        print('|'.join(f'{value:+.3f}' for value in at) + f' {sum(1 for v in row[0] if v != 0)} of {len(columns)} columns hold an entry\t{vector}', flush=True)
 
 
 def fit(out, sets, filters, threads, fraction, seeds=5):
@@ -584,6 +655,10 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 needed.add(term)
             elif term == 'wide_null':
                 needed |= {'wide', 'null_wide'}
+            elif term == 'TIOe':
+                needed |= {'each', 'stable'}
+            elif term == 'TIOe_null':
+                needed |= {'each', 'stable', 'null_each', 'null'}
             elif term == 'pair':
                 needed |= {'pair_least', 'pair_mean', 'pair_most'}
             elif term in CHANNELS:
@@ -593,7 +668,8 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
 
     def loaded(split):
         rows = pickle.load((out / f'{split}.rows.pkl').open('rb'))
-        return dict(rows=rows, matrices={name: pickle.load((out / f'{split}.{name}.pkl').open('rb')) for name in needed})
+        example_of = pickle.load((out / f'{split}.example_of.pkl').open('rb')) if (out / f'{split}.example_of.pkl').exists() else None
+        return dict(rows=rows, example_of=example_of, matrices={name: pickle.load((out / f'{split}.{name}.pkl').open('rb')) for name in needed})
 
     train, dev = loaded('train'), loaded('dev')
     columns = meta['columns']
@@ -657,6 +733,20 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 keep = np.flatnonzero(word_mask(raw, names))
                 parts.append(split['matrices'][term][:, keep])
                 labels.extend(term + ':' + names[int(i)] for i in keep)
+            elif term == 'TIOe':
+                keep = np.flatnonzero((flags > 0) & word_mask(raw, names))
+                parts.append(split['matrices']['each'][:, keep])
+                labels.extend(f'{names[int(i)]}:each' for i in keep)
+                parts.append(split['matrices']['stable'][:, keep])
+                labels.extend(f'{names[int(i)]}:stable' for i in keep)
+            elif term == 'TIOe_null':
+                keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
+                keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
+                for channel, null_channel, suffix in (('each', 'null_each', 'each'), ('stable', 'null', 'stable')):
+                    parts.append(split['matrices'][channel][:, keep_true])
+                    parts.append(split['matrices'][null_channel][:, keep_null])
+                    labels.extend(f'{names[int(i)]}:{suffix}' for i in keep_true)
+                    labels.extend(f'{names[int(i)]}:{suffix}' for i in keep_null)
             elif term in CHANNELS:
                 keep = np.flatnonzero((flags > 0) & (flags < 6 if term.startswith('TI') and not term.startswith('TIO') else True) & word_mask(raw, names))
                 for channel in CHANNELS[term]:
@@ -680,7 +770,31 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 labels.extend(names[int(i)] for i in keep_null)
             else:
                 raise ValueError(term)
+        if per_pair(spec):
+            # A candidate's own terms repeat on each of its pair rows.
+            parts = [part.tocsr()[split['example_of']] if part.shape[0] == len(split['rows']) else part for part in parts]
         return (sp.hstack(parts, format='csr') if len(parts) > 1 else parts[0].tocsr()), labels
+
+    def per_candidate(split, values, spec):
+        """Each candidate's value: the mean over its example rows, where a set reads them."""
+        if not per_pair(spec):
+            return values
+        of = split['example_of']
+        return np.bincount(of, weights=values, minlength=len(split['rows'])) / np.maximum(np.bincount(of, minlength=len(split['rows'])), 1)
+
+    def worst_of(split, values):
+        """Each candidate's value at its worst example."""
+        out = np.full(len(split['rows']), np.inf)
+        np.minimum.at(out, split['example_of'], values)
+        return out
+
+    def pair_rows(split, groups):
+        """The rows and the groups of a fit on pair rows: each candidate's rows stand for it in its group."""
+        at = defaultdict(list)
+        for row, candidate in enumerate(split['example_of'].tolist()):
+            at[candidate].append(row)
+        rows = [split['rows'][candidate] for candidate in split['example_of'].tolist()]
+        return rows, [[row for member in group for row in at[member]] for group in groups]
 
     sink = (out / 'fits.jsonl').open('a')
     for name in filters:
@@ -697,7 +811,8 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
             written = X_train.shape[1]
             kept, members = distinct_columns(X_train, labels)
             X_train, X_dev = X_train[:, kept], X_dev[:, kept]
-            runs = [fit_one(X_train, train['rows'], train_groups, seed=7 + at, threads=threads, fraction=fraction) for at in range(seeds)]
+            fit_rows, fit_groups = pair_rows(train, train_groups) if per_pair(written_spec) else (train['rows'], train_groups)
+            runs = [fit_one(X_train, fit_rows, fit_groups, seed=7 + at, threads=threads, fraction=fraction) for at in range(seeds)]
             gain = sum(model.feature_importance(importance_type='gain') for model, _ in runs)
             splits = sum(model.feature_importance(importance_type='split') for model, _ in runs)
             write_importance(out / 'importance' / f'{name}.{spec}.tsv.zst', gain, splits, labels, members)
@@ -707,18 +822,20 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 (out / 'models' / f'{name}.{spec}.{at}.txt').write_text(model.model_to_string())
             (out / 'models' / f'{name}.{spec}.columns.txt').write_text('\n'.join(kept_labels) + '\n')
             labels = kept_labels
-            each = [model.predict(X_dev) for model, _ in runs]
+            raw = [model.predict(X_dev) for model, _ in runs]
+            each = [per_candidate(dev, values, written_spec) for values in raw]
             each_auc = [float(np.mean(list(score_items(dev['rows'], dev_groups, values)[0].values()))) for values in each]
             rounds = int(np.median([held for _, held in runs]))
             scores = np.mean(each, axis=0)
             auc, mrr, first, edits = score_items(dev['rows'], dev_groups, scores)
+            worst = float(np.mean(list(score_items(dev['rows'], dev_groups, worst_of(dev, np.mean(raw, axis=0)))[0].values()))) if per_pair(written_spec) else None
             values = list(auc.values())
             low, high = boot(values)
             pairs = sum(len(g) - 1 for g in dev_groups)
             top = np.argsort(-gain)[:15]
-            train_auc = np.mean(list(score_items(train['rows'], train_groups, np.mean([model.predict(X_train) for model, _ in runs], axis=0))[0].values()))
-            print(f"{name:6} {spec:26} AUC {np.mean(values):.3f} ({low:.3f}, {high:.3f}) seeds {np.mean(each_auc):.3f}+-{np.std(each_auc):.3f} first {np.mean(list(first.values())):.3f} rr {np.mean(list(mrr.values())):.3f} tasks {len(values)} pairs {pairs} | train {train_auc:.3f} rounds {rounds} cols {written} distinct {X_train.shape[1]} used {int((gain > 0).sum())} {time.time() - started:.0f}s | " + ' '.join(f'{e} {np.mean(list(h.values())):.3f}' for e, h in sorted(edits.items())), flush=True)
-            sink.write(json.dumps(dict(filter=name, spec=spec, auc=auc, mrr=mrr, first=first, edits={e: h for e, h in edits.items()}, rounds=rounds, seeds=each_auc, columns=written, distinct=X_train.shape[1], used=int((gain > 0).sum()), top=[(labels[int(i)], float(gain[i])) for i in top if gain[i] > 0])) + '\n')
+            train_auc = np.mean(list(score_items(train['rows'], train_groups, per_candidate(train, np.mean([model.predict(X_train) for model, _ in runs], axis=0), written_spec))[0].values()))
+            print(f"{name:6} {spec:26} AUC {np.mean(values):.3f} ({low:.3f}, {high:.3f}) worst {worst if worst is None else round(worst, 3)} seeds {np.mean(each_auc):.3f}+-{np.std(each_auc):.3f} first {np.mean(list(first.values())):.3f} rr {np.mean(list(mrr.values())):.3f} tasks {len(values)} pairs {pairs} | train {train_auc:.3f} rounds {rounds} cols {written} distinct {X_train.shape[1]} used {int((gain > 0).sum())} {time.time() - started:.0f}s | " + ' '.join(f'{e} {np.mean(list(h.values())):.3f}' for e, h in sorted(edits.items())), flush=True)
+            sink.write(json.dumps(dict(filter=name, spec=spec, auc=auc, mrr=mrr, first=first, edits={e: h for e, h in edits.items()}, rounds=rounds, worst=worst, seeds=each_auc, columns=written, distinct=X_train.shape[1], used=int((gain > 0).sum()), top=[(labels[int(i)], float(gain[i])) for i in top if gain[i] > 0])) + '\n')
             sink.flush()
     sink.close()
 
@@ -728,6 +845,7 @@ def main():
     parser.add_argument('command', choices=['build', 'fit', 'compare', 'score'])
     parser.add_argument('paths', nargs='+')
     parser.add_argument('--min-tasks', type=int, default=3)
+    parser.add_argument('--each-tasks', type=int)
     parser.add_argument('--sets', nargs='*', default=[])
     parser.add_argument('--filters', nargs='*', default=['rows', 'same'])
     parser.add_argument('--threads', type=int, default=4)
@@ -736,7 +854,7 @@ def main():
     parser.add_argument('--filter', default='rows')
     a = parser.parse_args()
     if a.command == 'build':
-        build(a.paths[0], a.paths[1], a.min_tasks)
+        build(a.paths[0], a.paths[1], a.min_tasks, a.each_tasks)
     elif a.command == 'compare':
         compare(a.paths[0], a.paths[1], a.paths[2], a.filter)
     elif a.command == 'score':

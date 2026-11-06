@@ -29,7 +29,7 @@ READS_OUTPUT = 2
 
 def read_lists(path, graded=False):
     """A task's lists: per table, its stable shapes and their values. With `graded`, also its other active
-    shapes and each one's least, mean and greatest."""
+    shapes and each one's least, mean and greatest, and its value at each train pair where the file holds them."""
     raw = zstandard.ZstdDecompressor().stream_reader(open(path, 'rb')).read()
     size = struct.unpack('<Q', raw[:8])[0]
     head = json.loads(raw[8:8 + size])
@@ -49,7 +49,10 @@ def read_lists(path, graded=False):
         at += 4 * count
         numbers = np.frombuffer(raw, dtype='<f4', count=3 * count, offset=at).reshape(3, count)
         at += 12 * count
-        others[held['owner']] = (dictionary[places], numbers[0], numbers[1], numbers[2])
+        pairs = held.get('pairs', 0)
+        at_pairs = np.frombuffer(raw, dtype='<f4', count=count * pairs, offset=at).reshape(count, pairs)
+        at += 4 * count * pairs
+        others[held['owner']] = (dictionary[places], numbers[0], numbers[1], numbers[2], at_pairs)
     return (head, lists, others) if graded else (head, lists)
 
 
