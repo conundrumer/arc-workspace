@@ -5,10 +5,12 @@
 //!   feature-encoder worked [--corpus DIR] [--tasks DIR]
 //!   feature-encoder encode SOLVER TABLE... [--size D] [--out FILE] [--work-cap N] [--limit N] [--max-inputs N] [--program-relations]
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
-//!   feature-encoder vector SOLVER TABLE [--size D] --out FILE
+//!   feature-encoder vector SOLVER TABLE [--size D] [--wide-size D] --out FILE
 //!   feature-encoder base-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder query-vectors SOLVER [--size D] --out FILE
-//!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N]
+//!   feature-encoder state-vectors SOLVER [--size D] --out FILE
+//!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-only [--wide-size D] | --parents-only | --state-only]
+//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-size D]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
