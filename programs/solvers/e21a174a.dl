@@ -146,7 +146,14 @@ line_color(A, L, Col) :- ink(P, Col), axis_elem(A), split(P, A, L, _).
 .init runs = Components<LineKey>
 runs.node([A, Col], L) :- line_color(A, L, Col).
 
-layer($RowRuns(), A, Id, P) :- ink(P, Col), split(P, A, L, _), runs.label([A, Col], L, Id).
+// runs of two colors never share a layer's id
+.type RunKey = [a: Axis, c: Color, id: Ident]
+// @claim color-layers
+.init run_ids = IdentOf<RunKey>
+run_ids.value([A, Col, Id]) :- runs.label([A, Col], _, Id).
+
+layer($RowRuns(), A, Id2, P) :-
+    ink(P, Col), split(P, A, L, _), runs.label([A, Col], L, Id), run_ids.id([A, Col, Id], Id2).
 unstacked($RowRuns(), A) :- line_color(A, L, Col1), line_color(A, L, Col2), Col1 != Col2.   // a line of two colors
 
 // --- $SpanMirror ---
