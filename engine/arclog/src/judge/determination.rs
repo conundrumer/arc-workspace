@@ -186,9 +186,8 @@ impl Determination {
     /// The values that the case `case` runs at, or why none stand. A case
     /// of the determination takes its own values, as [`Self::values`]
     /// gives them, and is refused where it is not solved. Another case
-    /// takes the values of the parameters it runs, except those that a
-    /// case with a `DEMONSTRATED` form reads, and is refused where one of
-    /// them is underdetermined.
+    /// takes the values of the parameters it runs, and is refused where one
+    /// of them is underdetermined.
     pub fn case_values(&self, case: &DeterminedCase<'_>) -> Result<ParameterValues, String> {
         if let Some((_, outcome, _)) = self.cases.iter().find(|(name, ..)| name == case.name) {
             return match outcome {
@@ -200,7 +199,7 @@ impl Determination {
         }
         let mut values = Vec::new();
         for (relation, parameter) in &self.parameters {
-            if det_node(case.program, relation).is_none() || self.reads_demonstrated(relation) {
+            if det_node(case.program, relation).is_none() {
                 continue;
             }
             match parameter {

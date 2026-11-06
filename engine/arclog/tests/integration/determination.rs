@@ -9,7 +9,7 @@ use arclog::eval::instance::Constructions;
 use arclog::eval::determinations::Domain;
 use arclog::eval::{relation_of, Cancellation, Caps, Evaluation, Limits, Outcome, ParameterValues};
 use arclog::judge::candidates::World;
-use arclog::judge::determination::{determine, DeterminedCase, Determination, Parameter};
+use arclog::judge::determination::{determine, DeterminedCase, Determination};
 use arclog::program::{DeclaredName, ProgramRelation, RelationName};
 use arclog::read::read_solver;
 use arclog::registry::Registry;

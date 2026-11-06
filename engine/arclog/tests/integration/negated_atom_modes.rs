@@ -2,13 +2,7 @@
 //! holds, once the atom closes.
 
 use arclog::check::prefix::{check_prefix, prefixes};
-use arclog::check::{check_program, CheckCache, CheckId, PrefixResult, SolverClauses};
-use arclog::decode::Decoder;
-use arclog::eval::instance::Constructions;
-use arclog::eval::values::Caps;
-use arclog::session::{SessionBound, TaskSession};
-use arclog::stream::{token_stream, DecodeSettings, Emitter, Vocabulary};
-use arclog::task::Task;
+use arclog::check::{CheckId, PrefixResult, SolverClauses};
 use arclog::program::path::{NodePath, PathStep};
 use arclog::program::{Node, Program};
 use arclog::read::read_solver;
