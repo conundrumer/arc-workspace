@@ -52,10 +52,12 @@ A fit reads one column for each set of columns equal on all its train rows, name
 import argparse
 import hashlib
 import json
+import os
 import pickle
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from array import array
 from collections import Counter, defaultdict
@@ -98,22 +100,70 @@ def name_lines(folder):
 
 
 class Matrix:
+    """A sparse matrix built one row at a time. Its entries go to two files as they come, so a build holds none of
+    them, and the matrix maps those files."""
+
+    folder = None
+
     def __init__(self):
         self.indptr = array('q', [0])
-        self.indices = []
-        self.data = []
         self.count = 0
+        handle, self.path = tempfile.mkstemp(dir=Matrix.folder)
+        os.close(handle)
+        self.indices = open(self.path + '.i', 'wb')
+        self.data = open(self.path + '.d', 'wb')
 
     def add(self, indices, data=None):
-        self.indices.append(np.asarray(indices, dtype=np.int32))
-        self.data.append(np.ones(len(indices), dtype=np.float32) if data is None else np.asarray(data, dtype=np.float32))
+        self.indices.write(np.asarray(indices, dtype=np.int32).tobytes())
+        self.data.write((np.ones(len(indices), dtype=np.float32) if data is None else np.asarray(data, dtype=np.float32)).tobytes())
         self.count += len(indices)
         self.indptr.append(self.count)
 
     def csr(self, width):
-        indices = np.concatenate(self.indices) if self.indices else np.zeros(0, dtype=np.int32)
-        data = np.concatenate(self.data) if self.data else np.zeros(0, dtype=np.float32)
-        return sp.csr_matrix((data, indices, np.frombuffer(self.indptr, dtype=np.int64)), shape=(len(self.indptr) - 1, width))
+        self.indices.close()
+        self.data.close()
+        indices = np.asarray(np.memmap(self.path + '.i', dtype=np.int32, mode='r', shape=(self.count,))) if self.count else np.zeros(0, dtype=np.int32)
+        data = np.asarray(np.memmap(self.path + '.d', dtype=np.float32, mode='r', shape=(self.count,))) if self.count else np.zeros(0, dtype=np.float32)
+        return sp.csr_matrix((data, indices, np.frombuffer(self.indptr, dtype=np.int64)), shape=(len(self.indptr) - 1, width), copy=False)
+
+    def write(self, width, path):
+        """Pickles the matrix as a csr matrix, reading its entries from their files in order."""
+        matrix = self.csr(width)
+        with open(path, 'wb') as sink:
+            pickle.dump(matrix, sink, protocol=4)
+        del matrix
+        for suffix in ('', '.i', '.d'):
+            os.unlink(self.path + suffix)
+
+
+class Tally:
+    """How many of the arrays given hold each id, with a bound on what stands unmerged."""
+
+    def __init__(self):
+        self.ids = np.zeros(0, dtype=np.uint64)
+        self.counts = np.zeros(0, dtype=np.int64)
+        self.held = []
+        self.size = 0
+        self.seen = False
+
+    def add(self, ids):
+        self.held.append(ids)
+        self.size += len(ids)
+        self.seen = True
+        if self.size > 20_000_000:
+            self.merge()
+
+    def merge(self):
+        if self.held:
+            ids = np.concatenate([self.ids] + self.held)
+            counts = np.concatenate([self.counts, np.ones(self.size, dtype=np.int64)])
+            self.ids, inverse = np.unique(ids, return_inverse=True)
+            self.counts = np.bincount(inverse.reshape(-1), weights=counts, minlength=len(self.ids)).astype(np.int64)
+            self.held, self.size = [], 0
+
+    def result(self):
+        self.merge()
+        return self.ids, self.counts
 
 
 def every_entry(held, other):
@@ -225,11 +275,12 @@ def place(ids, table):
 def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
+    Matrix.folder = out
     parts = split_of()
     files = sorted((root / 'lists').glob('*.lists.zst'))
     print(len(files), 'task files', flush=True)
     # Which shapes tell gold from a mutant on three train tasks or more, on the true and on the null lists.
-    told = {'stable': [], 'null': [], 'graded': [], 'null_graded': []}
+    told = {kind: Tally() for kind in ('stable', 'null', 'graded', 'null_graded')}
     wide_root = root.parent / 'wide'
     state_root = root.parent / 'state'
     told_wide = []
@@ -260,7 +311,7 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
                             seen['graded' if kind == 'stable' else 'null_graded'].append(told_apart(every_entry(a, other[gold]), every_entry(b, other[mutant['table']])))
         for kind, held in seen.items():
             if held:
-                told[kind].append(np.unique(np.concatenate(held)))
+                told[kind].add(np.unique(np.concatenate(held)))
         wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
         wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
         apart = []
@@ -292,10 +343,10 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
             print(f'scan {done} {done / (time.time() - started):.1f}/s', flush=True)
     chosen = {}
     for kind, held in told.items():
-        if not held:
+        if not held.seen:
             chosen[kind] = np.zeros(0, dtype=np.uint64)
             continue
-        ids, counts = np.unique(np.concatenate(held), return_counts=True)
+        ids, counts = held.result()
         chosen[kind] = ids[counts >= min_tasks]
         print(kind, 'told apart on some task', len(ids), f'on {min_tasks}+ tasks', len(chosen[kind]), flush=True)
     columns = np.unique(np.concatenate(list(chosen.values())))
@@ -317,10 +368,11 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
     print('family columns', {family: len(held) for family, held in family_columns.items()}, 'graph', len(graph_columns), 'relations', len(relation_columns), flush=True)
     column_tasks = np.zeros(len(columns), dtype=np.int32)
     for held in told.values():
-        if held:
-            ids, counts = np.unique(np.concatenate(held), return_counts=True)
+        if held.seen:
+            ids, counts = held.result()
             spots, hit = place(ids, columns)
             np.maximum.at(column_tasks, spots[hit], counts[hit])
+    del told
     print('task-wide columns', len(wide_columns), 'pair columns', len(pair_columns), flush=True)
     # The names of the columns.
     names, flags, sizes = {}, {}, {}
@@ -541,8 +593,14 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
             count += 1
             if count % 50 == 0:
                 print(f'{split} {count} {count / (time.time() - started):.1f}/s rows {len(rows)} nnz {mats["stable"].count}', flush=True)
-        data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64)), family={family: dict(stable=task_rows[family]['stable'].csr(len(family_columns[family])), mean=task_rows[family]['mean'].csr(len(family_columns[family])), each=task_examples[family].csr(len(family_columns[family]))) for family in FAMILIES}, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192, 'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns), 'graph': len(graph_columns), 'relations': len(RELATIONS) * len(relation_columns)}.get(name, len(columns))) for name in mats})
-        print(split, 'rows', len(rows), 'nnz', {name: mats[name].count for name in mats}, flush=True)
+        widths = {'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns), 'graph': len(graph_columns), 'relations': len(RELATIONS) * len(relation_columns)}
+        # Each matrix leaves memory as soon as its split ends. A vocabulary's width is known only at the end of the train split, so those two stay.
+        nnz = {name: mats[name].count for name in mats}
+        for name in mats:
+            if name not in ('base', 'ctx'):
+                mats[name].write(widths.get(name, len(columns)), out / f'{split}.{name}.pkl')
+        data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64)), family={family: dict(stable=task_rows[family]['stable'].csr(len(family_columns[family])), mean=task_rows[family]['mean'].csr(len(family_columns[family])), each=task_examples[family].csr(len(family_columns[family]))) for family in FAMILIES}, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192}[name]) for name in ('base', 'ctx')})
+        print(split, 'rows', len(rows), 'nnz', nnz, flush=True)
     width_base, width_ctx = len(base_vocab), len(context_vocab)
     for split in data:
         data[split]['matrices']['base'] = data[split]['matrices']['base'][:, :width_base]
@@ -563,6 +621,9 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
     (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, min_tasks=min_tasks, each_tasks=each_tasks, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
+    del data
+    for path in out.glob('tmp*'):
+        path.unlink()
     print('built', flush=True)
 
 
