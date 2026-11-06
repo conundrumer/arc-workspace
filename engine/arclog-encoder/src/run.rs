@@ -660,16 +660,24 @@ pub fn cell_text(id: TermId, ty: &ValueType) -> String {
     }
 }
 
-/// The table `name` of a state at each of its assignments, with the assignment's text: its rows at
-/// each example and model. A table read once for the task stands at each example, and an example
-/// that a bound stopped, or where the table is undefined, has no rows.
-pub fn stored_tables(host: &Host, name: &str) -> Result<Vec<(String, crate::stored::Stored)>, String> {
+/// The table of a state at each of its assignments.
+pub struct StoredTable {
+    /// Each assignment, sorted by relation, and the table there.
+    pub at: Vec<(Vec<(String, Vec<Vec<u32>>)>, crate::stored::Stored)>,
+    /// Whether the walk of the table's assignments stopped at its cap.
+    pub capped: bool,
+}
+
+/// The table `name` of a state: its rows at each example and model, at each of its assignments. A
+/// table read once for the task stands at each example, and an example that a bound stopped, or
+/// where the table is undefined, has no rows.
+pub fn stored_tables(host: &Host, name: &str) -> Result<StoredTable, String> {
     let value = match host.relation(name, false) {
         Evaluated::Value(value) => value,
         Evaluated::Refused(message) | Evaluated::Fault(message) => return Err(message),
     };
     let examples = host.task.examples().count();
-    let mut out = Vec::with_capacity(value.at.len());
+    let mut at_all = Vec::with_capacity(value.at.len());
     for at in &value.at {
         let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); examples];
         for (example, models) in &at.examples {
@@ -682,7 +690,19 @@ pub fn stored_tables(host: &Host, name: &str) -> Result<Vec<(String, crate::stor
                 None => rows = vec![held; examples],
             }
         }
-        out.push((format!("{:?}", at.assignment), crate::stored::Stored::of_rows(&value.types, rows)));
+        at_all.push((at.assignment.clone(), crate::stored::Stored::of_rows(&value.types, rows)));
     }
-    Ok(out)
+    Ok(StoredTable { at: at_all, capped: value.stop.is_some() })
+}
+
+impl Host {
+    /// The program of the state as data, as the program relations hold it.
+    pub fn program_facts(&self) -> crate::program_relations::ProgramFacts {
+        crate::program_relations::program_facts(self.base.checked(), Registry::get())
+    }
+
+    /// The state's forms as they stand in its text.
+    pub fn state_text(&self) -> &str {
+        &self.before
+    }
 }

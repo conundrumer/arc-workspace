@@ -216,3 +216,69 @@ pub fn base_vectors(grids: &Grids, families: &Generators, d: usize) -> BaseVecto
     let output_vector = table_vector(&mut walker, &output, grids, grids.train, false);
     BaseVectors { input: input_vector, ex_output: output_vector }
 }
+
+/// `AssignmentVector`: one parameterized table across its assignments, as the contract gives it.
+pub struct AssignmentVector {
+    pub count: usize,
+    pub capped: bool,
+    /// The count of distinct `TableHash`es over the assignments, divided by `count`.
+    pub distinct: f64,
+    /// Whether its tables differ at two assignments.
+    pub differ: bool,
+    pub examples: usize,
+    pub shapes: Vec<u64>,
+    pub meta: Vec<(u8, u8, RootOf)>,
+    /// Per shape and example, `:min`, `:mean` and `:max` over the assignments of each of its two
+    /// numbers. An assignment where the shape has no entry counts its default, and one where a
+    /// bound stopped it counts for nothing.
+    pub pools: Vec<[f64; 6]>,
+}
+
+/// The vector of a table over its assignments, from its vector and its hash at each.
+pub fn assignment_vector(tables: &[(u128, &TableVector)], capped: bool) -> AssignmentVector {
+    let count = tables.len();
+    let hashes: std::collections::BTreeSet<u128> = tables.iter().map(|(hash, _)| *hash).collect();
+    let examples = tables.first().map_or(0, |(_, vector)| vector.examples);
+    let mut all: Vec<(u64, (u8, u8, RootOf))> = tables.iter().flat_map(|(_, vector)| vector.shapes.iter().copied().zip(vector.meta.iter().copied())).collect();
+    all.sort_unstable_by_key(|held| held.0);
+    all.dedup_by_key(|held| held.0);
+    let mut pools = Vec::with_capacity(all.len() * examples);
+    for (shape, _) in &all {
+        for example in 0..examples {
+            let mut seen = Vec::with_capacity(count);
+            for (_, vector) in tables {
+                match vector.shapes.binary_search(shape) {
+                    Ok(place) => {
+                        let slot = &vector.at(place)[example];
+                        match slot.state {
+                            SLOT_NO_VALUE => {}
+                            SLOT_DEFAULT => seen.push((0.0, 0.0)),
+                            _ => seen.push((slot.greatest.float(), slot.second.float())),
+                        }
+                    }
+                    Err(_) => seen.push((0.0, 0.0)),
+                }
+            }
+            let pool = |read: &dyn Fn(&(f64, f64)) -> f64| -> (f64, f64, f64) {
+                if seen.is_empty() {
+                    return (f64::NAN, f64::NAN, f64::NAN);
+                }
+                let values: Vec<f64> = seen.iter().map(read).collect();
+                (values.iter().copied().fold(f64::INFINITY, f64::min), values.iter().sum::<f64>() / values.len() as f64, values.iter().copied().fold(f64::NEG_INFINITY, f64::max))
+            };
+            let (a, b, c) = pool(&|held| held.0);
+            let (d, e, f) = pool(&|held| held.1);
+            pools.push([a, b, c, d, e, f]);
+        }
+    }
+    AssignmentVector {
+        count,
+        capped,
+        distinct: hashes.len() as f64 / count.max(1) as f64,
+        differ: hashes.len() >= 2,
+        examples,
+        shapes: all.iter().map(|held| held.0).collect(),
+        meta: all.iter().map(|held| held.1).collect(),
+        pools,
+    }
+}

@@ -109,8 +109,73 @@ fn type_text(ty: &ValueType) -> String {
     format!("{:?}", ty.without_source())
 }
 
+/// A query of a program, with what the program relations hold of it.
+#[derive(Clone, Debug)]
+pub struct QueryFacts {
+    /// Its place among the program's forms.
+    pub form: usize,
+    pub identity: String,
+    pub kind: String,
+    /// Each table it computes, by identity.
+    pub computes: Vec<String>,
+    /// Each table it reads, by identity or by a base table's name.
+    pub reads: Vec<String>,
+}
+
+/// A program as the program relations give it, with each table's name in the program, which a
+/// reader of its rows needs and no feature reads.
+#[derive(Clone, Debug, Default)]
+pub struct ProgramFacts {
+    pub queries: Vec<QueryFacts>,
+    /// A table's identity to its name in the program.
+    pub table_names: BTreeMap<String, String>,
+    /// Each row of `column_type`, `column_lineage` and the others, by the relation's name.
+    pub rows: BTreeMap<&'static str, BTreeSet<Vec<String>>>,
+}
+
+/// The program as data: the rows of the program relations, and its queries.
+pub fn program_facts(program: &CheckedProgram, registry: &Registry) -> ProgramFacts {
+    let rows = program_rows(program, registry);
+    let resolved = &program.program;
+    let mut table_names = BTreeMap::new();
+    for node in 0..resolved.graph.nodes.len() as u32 {
+        if let Some(table) = table_of(program, registry, GraphNodeIndex(node)) {
+            table_names.insert(table.identity, table.spelled);
+        }
+    }
+    let empty = BTreeSet::new();
+    let of_fact = |fact: ProgramFact| rows.0.get(fact.name()).unwrap_or(&empty);
+    let mut queries = Vec::new();
+    for (top, form) in resolved.program.value().forms.iter().enumerate() {
+        if matches!(form, Form::Out(_) | Form::Claim(_) | Form::Alts(_)) {
+            continue;
+        }
+        let Some(identity) = resolved.query_identity(top, registry) else { continue };
+        let identity = hex(identity.content.content_hash());
+        let kind = of_fact(ProgramFact::QueryKind).iter().find(|row| row[0] == identity).map_or(String::new(), |row| row[1].clone());
+        let computes = of_fact(ProgramFact::QueryComputes).iter().filter(|row| row[0] == identity).map(|row| row[1].clone()).collect();
+        let reads = of_fact(ProgramFact::QueryReads).iter().filter(|row| row[0] == identity && (table_names.contains_key(&row[1]) || matches!(row[1].as_str(), "input" | "ex_input" | "ex_output"))).map(|row| row[1].clone()).collect();
+        queries.push(QueryFacts { form: top, identity, kind, computes, reads });
+    }
+    ProgramFacts { queries, table_names, rows: rows.0 }
+}
+
 /// The rows of each program relation of `program`, as relations.
 pub fn program_relations(program: &CheckedProgram, registry: &Registry) -> Vec<(FactRelation, Relation)> {
+    let rows = program_rows(program, registry);
+    ProgramFact::ALL
+        .into_iter()
+        .map(|fact| {
+            let mut set = RowSet::empty(fact.columns().len() as u16);
+            for row in rows.0.get(fact.name()).into_iter().flatten() {
+                set.insert(row.iter().map(|cell| term(cell)).collect());
+            }
+            (FactRelation::Program(fact), one_part(set))
+        })
+        .collect()
+}
+
+fn program_rows(program: &CheckedProgram, registry: &Registry) -> Rows {
     let mut rows = Rows::default();
     let resolved = &program.program;
     // Each table of the program, by its node.
@@ -235,14 +300,5 @@ pub fn program_relations(program: &CheckedProgram, registry: &Registry) -> Vec<(
             }
         }
     }
-    ProgramFact::ALL
-        .into_iter()
-        .map(|fact| {
-            let mut set = RowSet::empty(fact.columns().len() as u16);
-            for row in rows.0.get(fact.name()).into_iter().flatten() {
-                set.insert(row.iter().map(|cell| term(cell)).collect());
-            }
-            (FactRelation::Program(fact), one_part(set))
-        })
-        .collect()
+    rows
 }

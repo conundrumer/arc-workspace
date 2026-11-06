@@ -7,6 +7,7 @@
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder vector SOLVER TABLE [--size D] --out FILE
 //!   feature-encoder base-vectors SOLVER [--size D] --out FILE
+//!   feature-encoder query-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder grid-values GRIDS_JSON (--scene | --rule) [--size D] [--max-inputs N] [--work-cap N] --out FILE
@@ -304,11 +305,11 @@ fn names_of(store: &arclog_encoder::generate::NameStore) -> std::collections::Ha
     store.all().into_iter().map(|(hash, name)| (hash as u64, name)).collect()
 }
 
-/// A table's vector at each of its assignments, to a file, since the values at a test input read
-/// that input.
+/// A table's vector at each of its assignments, and its `AssignmentVector`, to a file, since the
+/// values at a test input read that input.
 fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), String> {
     use arclog_encoder::generate::{Generators, Walker};
-    use arclog_encoder::table_vector::{table_vector, Grids};
+    use arclog_encoder::table_vector::{assignment_vector, table_vector, Grids};
     let path = arguments.out.clone().ok_or("`vector` writes to --out")?;
     let host = host(arguments, solver)?;
     let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
@@ -316,14 +317,46 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     let families = Generators::default();
     let mut out = arclog_encoder::zio::writer(&path, false)?;
     let examples = grids.inputs.len();
-    for (assignment, stored) in &tables {
+    let mut vectors = Vec::with_capacity(tables.at.len());
+    for (_, stored) in &tables.at {
         let family = families.get(stored, arguments.size.max(1));
         let mut walker = Walker::new(&family);
-        let vector = table_vector(&mut walker, stored, &grids, examples, false);
-        write_vector(&mut out, &serde_json::json!({"name": table, "assignment": assignment}), &vector, &names_of(&families.names))?;
+        vectors.push((stored.content(), table_vector(&mut walker, stored, &grids, examples, false)));
+    }
+    let names = names_of(&families.names);
+    for ((assignment, _), (_, vector)) in tables.at.iter().zip(&vectors) {
+        write_vector(&mut out, &serde_json::json!({"name": table, "assignment": format!("{assignment:?}")}), vector, &names)?;
+    }
+    let refs: Vec<(u128, &arclog_encoder::table_vector::TableVector)> = vectors.iter().map(|(hash, vector)| (*hash, vector)).collect();
+    let pooled = assignment_vector(&refs, tables.capped);
+    writeln!(out, "{}", serde_json::json!({"assignment_vector": table, "count": pooled.count, "capped": pooled.capped, "distinct": pooled.distinct, "differ": pooled.differ, "entries": pooled.shapes.len()})).map_err(|error| error.to_string())?;
+    if pooled.count > 1 {
+        for (at, shape) in pooled.shapes.iter().enumerate() {
+            let held = &pooled.pools[at * pooled.examples..(at + 1) * pooled.examples];
+            writeln!(out, "{}", serde_json::json!({"shape": names.get(shape), "pools": held})).map_err(|error| error.to_string())?;
+        }
     }
     out.flush().map_err(|error| error.to_string())?;
-    eprintln!("{} assignments", tables.len());
+    eprintln!("{} assignments, {} shapes over them", pooled.count, pooled.shapes.len());
+    Ok(())
+}
+
+/// Each query's `QueryVector`, one JSON line per query, to a file.
+fn run_query_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
+    use arclog_encoder::generate::Generators;
+    use arclog_encoder::table_vector::Grids;
+    let path = arguments.out.clone().ok_or("`query-vectors` writes to --out")?;
+    let host = host(arguments, solver)?;
+    let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
+    let families = Generators::default();
+    let vectors = arclog_encoder::query_vector::query_vectors(&host, &grids, &families, arguments.size)?;
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
+    for vector in &vectors {
+        let line = serde_json::json!({"query": vector.identity, "names": vector.names, "values": vector.values, "use_names": vector.use_names, "per_use": vector.per_use, "column_origin": vector.column_origin});
+        writeln!(out, "{line}").map_err(|error| error.to_string())?;
+    }
+    out.flush().map_err(|error| error.to_string())?;
+    eprintln!("{} queries", vectors.len());
     Ok(())
 }
 
@@ -739,6 +772,7 @@ fn main() {
         ("names", []) => run_names(&arguments),
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
         ("base-vectors", [solver]) => run_base_vectors(&arguments, solver),
+        ("query-vectors", [solver]) => run_query_vectors(&arguments, solver),
         ("candidate-lists", [out, sources @ ..]) if !sources.is_empty() => run_candidate_lists(&arguments, out, sources),
         ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),

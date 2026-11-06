@@ -12,6 +12,7 @@
 //! - [`generate`], [`gen_parts`], [`gen_constants`]: the shapes over a table up to a size, by parts,
 //!   in one pass per table.
 //! - [`table_vector`]: a table's `TableVector`, and the base tables'.
+//! - [`query_vector`]: a query's `QueryVector`.
 //! - [`candidate_lists`]: the stable roots that Candidate recognition reads.
 //! - [`vectors`]: the vector entries that name no column.
 //! - [`law`]: the check of the transformation law on stored rows.
@@ -42,6 +43,7 @@ pub mod law;
 pub mod library;
 pub mod native;
 pub mod program_relations;
+pub mod query_vector;
 pub mod run;
 pub mod schema;
 pub mod stored;
