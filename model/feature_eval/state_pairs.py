@@ -5,15 +5,16 @@
 
 STATE_ROOT holds `lists/` and, for the deranged outputs, `null/`, as `candidate-lists --state-only` writes them. A row is
 a pair of a gold table T and an earlier table U of a task. Its label says whether some later gold form reads both. A
-fit on train tasks is read on dev tasks, from what the files hold so far: over every two-table shape on the true outputs, and
-over the shapes that read an output, on the true outputs and on the deranged ones. A first number is each shape's own read:
+fit on train tasks is read on dev tasks, from what the files hold so far: over a baseline of the two tables' column types and
+their places in the graph, over every two-table shape on the true outputs, beside and without that baseline, and over the
+shapes that read an output, on the true outputs and on the deranged ones. A first number is each shape's own read:
 how much more often it has a value on pairs that a later query reads than on the others, over tasks, against the same number
 on the deranged outputs.
 """
 import argparse
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import lightgbm as lgb
@@ -23,8 +24,8 @@ from scipy.stats import rankdata
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from candidate import read_lists  # noqa: E402
-from common import open_text  # noqa: E402
-from state_tables import tables_file  # noqa: E402
+from common import open_text, read_json  # noqa: E402
+from state_tables import ROOT as TABLES_ROOT, tables_file  # noqa: E402
 
 READS_OUTPUT = 2
 SPLITS = 'work/lm/data-study/samples/split.tsv'
@@ -61,9 +62,45 @@ def name_flags(root):
     return names, flags
 
 
-def joined_pairs(task):
+def task_tables(task):
+    """A task's tables with their state: those with Ident sources where a rebuild has written them."""
+    for split in ('train', 'dev'):
+        path = TABLES_ROOT.parent / 'all-rows' / split / 'candidate-tables' / f'{task}.json.zst'
+        if path.exists():
+            return read_json(path)
+    return tables_file(task)
+
+
+def baseline_of(first, second, prefix, nodes):
+    """What a pair's column types and its places in the graph give, with no table content."""
+    reads = {node['name']: node['reads'] for node in nodes}
+    depth = {}
+    for node in sorted(nodes, key=lambda node: node['form']):
+        depth[node['name']] = max((depth[read] + 1 for read in node['reads'] if read in depth), default=0)
+    reached, stack = set(), list(reads.get(first, []))
+    while stack:
+        at = stack.pop()
+        if at not in reached:
+            reached.add(at)
+            stack.extend(reads.get(at, []))
+    out = Counter()
+    own = [ty.split('@')[0] for ty in prefix[first]['types']] if first in prefix else []
+    theirs = [ty.split('@')[0] for ty in prefix[second]['types']] if second in prefix else []
+    for ty in own:
+        out['t:' + ty] += 1
+    for ty in theirs:
+        out['u:' + ty] += 1
+    out['shared'] = sum((Counter(own) & Counter(theirs)).values())
+    out['parent'] = int(second in reads.get(first, []))
+    out['ancestor'] = int(second in reached)
+    out['t_depth'] = depth.get(first, 0)
+    out['u_depth'] = depth.get(second, 0)
+    out['read_by'] = sum(second in node['reads'] for node in nodes)
+    return out
+
+
+def joined_pairs(nodes):
     """The pairs of names that some form reads together, each with the latest such form."""
-    nodes = tables_file(task)['state']['nodes']
     reads_at = {node['form']: node['reads'] for node in nodes}
     latest = {}
     for form, reads in reads_at.items():
@@ -80,7 +117,9 @@ def pair_rows(path, task):
     names_of = defaultdict(list)
     for name, place in head['places'].items():
         names_of[place].append(name)
-    latest = joined_pairs(task)
+    data = task_tables(task)
+    nodes, prefix = data['state']['nodes'], data['prefix']
+    latest = joined_pairs(nodes)
     form_of = {}
     for item in head['items']:
         form_of.setdefault(item['gold'], item['form'])
@@ -92,7 +131,7 @@ def pair_rows(path, task):
         t, u = int(t), int(u)
         form = form_of.get(t, -1)
         joined = any(latest.get((a, b), -1) > form for a in names_of[t] for b in names_of[u])
-        rows.append((t, u, joined, ids, values))
+        rows.append((t, u, joined, ids, values, baseline_of(names_of[t][0], names_of[u][0], prefix, nodes) if names_of[t] and names_of[u] else Counter()))
     return rows
 
 
@@ -163,7 +202,7 @@ def main():
     for shape in order[:15]:
         print(f'{true_read[shape][0]:+.3f} {null_read.get(shape, (0, 0))[0]:+.3f} tasks {true_read[shape][1]} {names.get(shape, "")[:110]}', flush=True)
     # A fit on train tasks, read on dev tasks.
-    def matrix(held, split):
+    def matrix(held, split, columns, with_baseline):
         data, rows, cols, labels, groups = [], [], [], [], []
         for task, own, row in held:
             if own != split or task not in both:
@@ -177,18 +216,31 @@ def main():
                     rows.append(at)
                     cols.append(place)
                     data.append(value)
-        return sp.csr_matrix((data, (rows, cols)), shape=(len(labels), len(columns)), dtype=np.float32), np.array(labels), groups
+            if with_baseline:
+                for name, value in row[5].items():
+                    place = baseline_columns.get(name)
+                    if place is not None:
+                        rows.append(at)
+                        cols.append(len(columns) + place)
+                        data.append(value)
+        width = len(columns) + (len(baseline_columns) if with_baseline else 0)
+        return sp.csr_matrix((data, (rows, cols)), shape=(len(labels), width), dtype=np.float32), np.array(labels), groups
     every_shape = {}
     for task, split, row in tables['lists']:
         if split == 'train':
             for shape in row[3].tolist():
                 every_shape.setdefault(shape, len(every_shape))
     print('columns of every two-table shape', len(every_shape), flush=True)
-    output_columns = columns
-    for kind, held in [('every_shape', tables['lists'])] + list(tables.items()):
-        columns = every_shape if kind == 'every_shape' else output_columns
-        train_x, train_y, _ = matrix(held, 'train')
-        dev_x, dev_y, dev_groups = matrix(held, 'dev')
+    baseline_columns = {}
+    for task, split, row in tables['lists']:
+        if split == 'train':
+            for name in row[5]:
+                baseline_columns.setdefault(name, len(baseline_columns))
+    sets = [('baseline', tables['lists'], {}, True), ('every_shape', tables['lists'], every_shape, False), ('baseline+every_shape', tables['lists'], every_shape, True),
+            ('baseline+output', tables['lists'], columns, True), ('baseline+output_deranged', tables['null'], columns, True), ('output', tables['lists'], columns, False), ('output_deranged', tables['null'], columns, False)]
+    for kind, held, own_columns, with_baseline in sets:
+        train_x, train_y, _ = matrix(held, 'train', own_columns, with_baseline)
+        dev_x, dev_y, dev_groups = matrix(held, 'dev', own_columns, with_baseline)
         if not len(dev_y) or len(set(dev_y.tolist())) < 2:
             print(kind, 'no dev pairs of both labels yet', flush=True)
             continue
