@@ -1,5 +1,4 @@
-//! A check that tracks this crate while it is in progress: each worked
-//! expansion of `work/feature-spec/feature-spec.md#worked-expansions` gives its
+//! A check that tracks this crate while it is in progress: each case gives its
 //! stated value through the expander. It prints each case that fails.
 
 use std::path::Path;

@@ -962,11 +962,11 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
                         // What holds over no column follows from whether its relation has rows, and a
                         // term of its relation's columns is a `project` of it.
                         let shared: Vec<String> = term.columns.iter().filter(|name| a_columns.contains(name)).cloned().collect();
-                        if term.columns.is_empty() {
-                            (!own_rows.is_empty()) == (!a_rows.is_empty())
-                        } else if term.rule == "select-twice" {
+                        if term.rule == "select-twice" {
                             // One comparison of a pair, or none: its rows are its relation's, or a part of them.
                             own_rows.len() <= a_rows.len()
+                        } else if term.columns.is_empty() {
+                            (!own_rows.is_empty()) == (!a_rows.is_empty())
                         } else if term.rule == "all-outer-key" {
                             true
                         } else {

@@ -1,6 +1,6 @@
 //! The encoder at a size: the value of every ground expression of at most that
 //! many operators, for tables of a state, at every binding the checker accepts
-//! (`work/feature-spec/feature-spec.md#size-and-the-encoder`). Small sizes come
+//! (`docs/feature-spec/feature-spec.md#size-and-the-encoder`). Small sizes come
 //! first, and a record is written as soon as it exists.
 
 use std::collections::HashMap;

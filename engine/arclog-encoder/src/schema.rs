@@ -4,7 +4,7 @@
 //! A column of a declared relation has its label's name. An instance's output
 //! has the fields of its key and of its records as columns, and a read writes
 //! them in the `:key` site and in the site of the record's column
-//! (`work/feature-spec/feature-spec.md#column-names`).
+//! (`docs/feature-spec/feature-spec.md#column-names`).
 
 use std::sync::Arc;
 

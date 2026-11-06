@@ -1,5 +1,5 @@
 //! The feature library: the encoder from a state's tables to features that
-//! `work/feature-spec/feature-spec.md` defines.
+//! `docs/feature-spec/feature-spec.md` defines.
 //!
 //! - [`expression`]: a feature expression as a term of the grammar.
 //! - [`schema`]: the columns of a table of a checked program.

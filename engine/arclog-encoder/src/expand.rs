@@ -1,5 +1,5 @@
 //! The expansion of a ground expression into arclog forms, by the rules of
-//! `work/feature-spec/feature-spec.md#how-an-expression-expands`. Each
+//! `docs/feature-spec/feature-spec.md#how-an-expression-expands`. Each
 //! operator of the grammar is a primitive of this expander, and a macro of the
 //! library names a composition of primitives.
 //!

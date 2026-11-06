@@ -1,5 +1,5 @@
 //! The enumeration of feature expressions: every term of the grammar of
-//! `work/feature-spec/feature-spec.md#the-generating-set` at a size, at every
+//! `docs/feature-spec/feature-spec.md#the-generating-set` at a size, at every
 //! binding whose types can meet. The checker decides which of them are
 //! features, so what this leaves out is only what it would refuse.
 //!

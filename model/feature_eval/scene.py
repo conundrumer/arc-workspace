@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Scene recognition on the base table `input`, of work/feature-spec/evaluation-protocol.md.
+"""Scene recognition on the base table `input`, of docs/feature-spec/evaluation-protocol.md.
 
   uv run python model/feature_eval/scene.py ENCODER --size D [--first N] [--shard I/N]
 

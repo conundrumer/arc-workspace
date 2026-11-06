@@ -3,8 +3,8 @@
 //! its inputs' refinements to its output's. An application that the refinements prove changes nothing,
 //! gives no rows, or whose value follows from a smaller term has no derivation.
 //!
-//! A term's refinements are its derived postcondition. A table's measured postcondition enters as the
-//! refinements of its leaf, and the transformers then say which terms that table's rows already give.
+//! A term's refinements are its derived postcondition: they come from column types, the lib's
+//! declarations and fragments' bodies, and no rule reads a table's rows.
 
 use crate::expression::Op;
 
@@ -458,45 +458,4 @@ pub fn all(terms: &[Refined], a: &Refined, b_id: u32, left: &[u16], right: &[u16
         }
     }
     Ok(out)
-}
-
-/// A table's rows at its instances, as refinements: its keys among the columns taken one and two at a
-/// time and all together, and its numbers' bounds. They hold of that table, and read no other.
-pub fn measure(tables: &[&crate::native::Table], is_number: &[bool]) -> Refined {
-    let arity = is_number.len();
-    let mut out = Refined::with_arity(arity);
-    let mut candidates: Vec<Mask> = vec![0];
-    for one in 0..arity as u16 {
-        candidates.push(bit(one));
-        for two in one + 1..arity as u16 {
-            candidates.push(bit(one) | bit(two));
-        }
-    }
-    for candidate in candidates {
-        let holds = tables.iter().all(|table| {
-            let mut seen: Vec<u128> = table.rows().map(|row| crate::native::hash_words((0..arity).filter(|at| candidate & bit(*at as u16) != 0).map(|at| u64::from(row[at])))).collect();
-            seen.sort_unstable();
-            seen.windows(2).all(|pair| pair[0] != pair[1])
-        });
-        if holds {
-            out.add_key(candidate);
-        }
-    }
-    out.add_key(out.all_columns());
-    for (at, number) in is_number.iter().enumerate() {
-        if *number {
-            let mut values = tables.iter().flat_map(|table| table.rows().map(move |row| crate::gen_constants::number_of(row[at]) as i32)).peekable();
-            if values.peek().is_some() {
-                let (mut low, mut high) = (i32::MAX, i32::MIN);
-                for value in values {
-                    low = low.min(value);
-                    high = high.max(value);
-                }
-                out.low[at] = Some(low);
-                out.high[at] = Some(high);
-            }
-        }
-    }
-    out.keys.sort_unstable();
-    out
 }

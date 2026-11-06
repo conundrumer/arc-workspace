@@ -1,4 +1,4 @@
-"""What the tests of work/feature-spec/evaluation-protocol.md share: the tasks, the
+"""What the tests of docs/feature-spec/evaluation-protocol.md share: the tasks, the
 encoder's values on grids, and the statistics over claims."""
 import ast
 import glob

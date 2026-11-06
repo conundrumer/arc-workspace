@@ -1,5 +1,5 @@
 //! A feature expression as a term of the grammar of
-//! `work/feature-spec/feature-spec.md#the-generating-set`, its reader from an
+//! `docs/feature-spec/feature-spec.md#the-generating-set`, its reader from an
 //! s-expression, and its text, which is the name of a vector entry.
 //!
 //! A column is written by its name. A ground expression has every table and every

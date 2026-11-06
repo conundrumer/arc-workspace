@@ -1,6 +1,6 @@
 //! The reader of the feature library, `engine/lib/features.arclog`, and the
 //! expansion of a call of one of its macros, by the rules of
-//! `work/feature-spec/feature-spec.md#how-an-expression-expands`.
+//! `docs/feature-spec/feature-spec.md#how-an-expression-expands`.
 //!
 //! A macro is a function from s-expressions to forms: each hole takes what
 //! its kind declares, and each name the macro declares is fresh at each call.

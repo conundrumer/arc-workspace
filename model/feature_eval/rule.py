@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Rule recognition on the base tables, of work/feature-spec/evaluation-protocol.md.
+"""Rule recognition on the base tables, of docs/feature-spec/evaluation-protocol.md.
 
   uv run python model/feature_eval/rule.py ENCODER --size D [--first N] [--shard I/N]
 

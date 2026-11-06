@@ -502,6 +502,7 @@ impl Generated {
                 Ok((refined, next, None))
             }
             Step::Semijoin { left, right } | Step::Antijoin { left, right } => {
+                self.second_relation_form(b, right)?;
                 let is_semi = matches!(step, Step::Semijoin { .. });
                 let reads = self.names_of(a, left);
                 let key = self.semijoin_key(a, b, left, right);
@@ -530,6 +531,18 @@ impl Generated {
                 Ok((refined, Form { kind: FormKind::Extension, own, reads: self.names_of(a, left), total: false, order, ..Form::default() }, None))
             }
             Step::All { left, right, outer } => {
+                self.second_relation_form(b, right)?;
+                // The rows of a domain over the columns that the form reads are all it reads of them.
+                if form.kind == FormKind::Project {
+                    return Err(other("all-over-project", Partner::OverBase));
+                }
+                if form.kind == FormKind::Extension && form.total {
+                    let names = self.names_of(a, left);
+                    let kept = self.names_of(a, outer);
+                    if names.iter().chain(&kept).all(|name| form.own.contains(name)) {
+                        return Err(other("all-below-extension", Partner::OverBase));
+                    }
+                }
                 let complete = self.is_complete(a, b, left, right);
                 let refined = refine::all(&self.refined, first, b, left, right, outer, complete).map_err(no_partner)?;
                 Ok((refined, Form::default(), None))
@@ -540,6 +553,18 @@ impl Generated {
                 refined.add_key(refined.all_columns());
                 Ok((refined, Form::default(), None))
             }
+        }
+    }
+
+    /// Whether the second relation of an operator that reads only whether a row has a match stands in
+    /// its normal form: a `project` of a relation, over the columns the pairs read, has its matches.
+    fn second_relation_form(&self, b: u32, right: &[u16]) -> Result<(), (Rejected, Partner)> {
+        let form = &self.forms[b as usize];
+        let rejected = |rule: &'static str| Err((Rejected { rule, claim: Claim::Other }, Partner::None));
+        match form.kind {
+            FormKind::Project => rejected("match-in-project"),
+            FormKind::Extension if form.total && self.names_of(b, right).iter().all(|name| form.own.contains(name)) => rejected("match-in-extension"),
+            _ => Ok(()),
         }
     }
 
@@ -969,9 +994,12 @@ impl Generated {
             if joins {
                 let kept: Box<[u16]> = (0..right.len() as u16).filter(|at| !right_at.contains(at)).collect();
                 let mut columns = narrowed.clone();
+                for column in &mut columns {
+                    column.name = crate::expand::label_of(&column.name);
+                }
                 for at in kept.iter() {
                     let column = &right[usize::from(*at)];
-                    let name = unique(&column.name, &columns);
+                    let name = unique(&crate::expand::label_of(&column.name), &columns);
                     columns.push(Column { name, ty: column.ty.clone(), source: column.source });
                 }
                 self.push(Step::Join { left: left_at.clone(), right: right_at.clone(), kept, left_arity: left.len() as u16 }, l, r, columns, size, format!("(join {left_text} {right_text} {pair_text})"), RootKind::Rows);

@@ -1,5 +1,5 @@
 //! The values of the closed roots on grids alone, for the evaluation of
-//! `work/feature-spec/evaluation-protocol.md`: each per-input root whose leaves
+//! `docs/feature-spec/evaluation-protocol.md`: each per-input root whose leaves
 //! are the grids and lib relations, at each example of a task that holds the
 //! grids to compare. So each grid is one example, and a root's value at it reads
 //! that grid alone.
