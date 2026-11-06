@@ -21,7 +21,7 @@ sys.path.insert(0, str(HERE))
 from common import read_json  # noqa: E402
 from query_structure import DEFINING, parse_forms  # noqa: E402
 from state_tables import parents_of  # noqa: E402
-from tables_worker import CORPUS, REPO, TASKS, keep, read_table, split_of  # noqa: E402
+from tables_worker import REPO, TASKS, keep, read_table, split_of  # noqa: E402
 
 
 def worker(old_root, new_root, task):
@@ -37,11 +37,8 @@ def worker(old_root, new_root, task):
     old = Path(old_root) / split
     stored = read_json(old / 'candidate-tables' / f'{task}.json')
     mutants = read_json(old / 'mutants' / f'{task}.json')
-    data = CORPUS / (task + '.arcdata')
-    cases = arclog.case_files(task, (CORPUS / (task + '.arclog')).read_text(), data.read_text() if data.exists() else '', str(CORPUS))
-    case = next(held for held in cases if held.case == mutants['case'])
     settings = arclog.DecodeSettings()
-    gold = arclog.StudyProgram.from_sexp(case.arclog, settings)
+    gold = arclog.StudyProgram.from_sexp(mutants['gold'], settings)
     task_json = json.loads((TASKS / (task + '.json')).read_text())
     evaluator = arclog.StudyTaskEvaluator(task, str(TASKS), settings)
 
@@ -50,7 +47,7 @@ def worker(old_root, new_root, task):
         return script.Tables(arclog, np, program, tables, task_json)
 
     gold_tables = tables_of(gold)
-    gold_forms = parse_forms(case.arclog)
+    gold_forms = parse_forms(mutants['gold'])
     defined = {}
     for at, form in enumerate(gold_forms):
         if form and form[0] in DEFINING and len(form) > 1:
