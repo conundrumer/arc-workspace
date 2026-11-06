@@ -527,6 +527,93 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
     Ok(())
 }
 
+/// Every kind of list of each task, from one read of its tables: state, wide and per-input, on the true
+/// outputs and, by the derangements `--names` gives, on the deranged ones. `GENERATE_TABLES_CMD` holds the
+/// command that prints the tables, as for `candidate-lists`. A task's file of each kind is written as it ends, a
+/// restart skips the files that exist, and the command runs only for a task that lacks one.
+fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Result<(), String> {
+    use arclog_encoder::candidate_lists::{lists_task, ListsOf};
+    use arclog_encoder::generate::{Generators, NameStore};
+    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = match &arguments.names {
+        Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?,
+        None => Default::default(),
+    };
+    let command: Vec<String> = std::env::var("GENERATE_TABLES_CMD").map_err(|_| "`all-lists` reads GENERATE_TABLES_CMD".to_string())?.split_whitespace().map(str::to_string).collect();
+    let d = arguments.size.max(1);
+    let wide = arguments.wide_size.unwrap_or(1);
+    // One family cache per kind. A run writes a names file of its own, since a stopped run leaves its file with an unfinished end.
+    let families_of = |folder: &str| -> Result<Generators, String> {
+        for kind in ["lists", "null"] {
+            std::fs::create_dir_all(format!("{root}/{folder}/{kind}")).map_err(|error| error.to_string())?;
+        }
+        let mut families = Generators::default();
+        let names_file = format!("{root}/{folder}/lists/names.tsv.zst");
+        let names_file = if std::path::Path::new(&names_file).exists() { format!("{root}/{folder}/lists/names-{}.tsv.zst", std::process::id()) } else { names_file };
+        families.names = NameStore::to_file(&names_file)?;
+        Ok(families)
+    };
+    let kinds: [(&str, ListsOf, Generators); 3] = [("state", ListsOf::State, families_of("state")?), ("wide", ListsOf::Wide(wide), families_of("wide")?), ("on", ListsOf::Tables, families_of("on")?)];
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let begun = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..arguments.threads.max(1) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(source) = sources.get(at) else { break };
+                let stem = arclog_encoder::zio::stem(source);
+                let order: Option<&[usize]> = derangements.get(&stem).and_then(Option::as_ref).map(Vec::as_slice);
+                let target = |folder: &str, kind: &str| format!("{root}/{folder}/{kind}/{stem}.lists.zst");
+                let wanted = |folder: &str, kind: &str| !std::path::Path::new(&target(folder, kind)).exists();
+                let lacking = kinds.iter().any(|(folder, _, _)| wanted(folder, "lists") || (order.is_some() && wanted(folder, "null")));
+                if !lacking {
+                    continue;
+                }
+                let started = Instant::now();
+                let run = std::process::Command::new(&command[0]).args(&command[1..]).arg(&stem).stderr(std::process::Stdio::null()).output();
+                let text = match run {
+                    Ok(run) if run.status.success() => String::from_utf8(run.stdout).map_err(|error| error.to_string()),
+                    Ok(run) => Err(format!("the tables command ended with {}", run.status)),
+                    Err(error) => Err(error.to_string()),
+                };
+                let text = match text {
+                    Ok(text) => text,
+                    Err(message) => {
+                        eprintln!("{stem}: {message}");
+                        continue;
+                    }
+                };
+                let tables_seconds = started.elapsed().as_secs_f64();
+                let mut walks = 0;
+                for (folder, lists_of, families) in &kinds {
+                    for (kind, own_order) in [("lists", None), ("null", order)] {
+                        if !wanted(folder, kind) || (kind == "null" && own_order.is_none()) {
+                            continue;
+                        }
+                        match lists_task(&text, &arguments.tasks, families, own_order, d, *lists_of) {
+                            Ok(found) => {
+                                walks += found.walks;
+                                if arclog_encoder::zio::write_bytes(&target(folder, kind), &found.bytes).is_err() {
+                                    eprintln!("{stem}: the {folder} {kind} lists do not write");
+                                }
+                                families.names.flush();
+                            }
+                            Err(message) => eprintln!("{stem}: {folder} {kind}: {message}"),
+                        }
+                    }
+                }
+                let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let rate = done as f64 / begun.elapsed().as_secs_f64();
+                eprintln!("{done}/{} {stem}: {tables_seconds:.1} s of tables, {walks} walks, {:.0} s; ETA {:.0}s", sources.len(), started.elapsed().as_secs_f64(), (sources.len() - done) as f64 / rate);
+            });
+        }
+    });
+    for (_, _, families) in &kinds {
+        families.names.flush();
+    }
+    Ok(())
+}
+
 /// The rows at each train pair of each generated term whose text holds a pattern, on each gold
 /// table of a kept tables file, for a check against the expression a term stands for.
 fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(), String> {
@@ -1509,6 +1596,7 @@ fn main() {
         ("query-vectors", [solver]) => run_query_vectors(&arguments, solver),
         ("state-vectors", [solver]) => run_state_vectors(&arguments, solver),
         ("candidate-lists", [out, sources @ ..]) if !sources.is_empty() => run_candidate_lists(&arguments, out, sources),
+        ("all-lists", [root, sources @ ..]) if !sources.is_empty() => run_all_lists(&arguments, root, sources),
         ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("generate-check", [file]) => run_generate_check(&arguments, arguments.tables_per_task.max(1), file),
         ("term-stats", [types]) => run_term_stats(&arguments, types),
