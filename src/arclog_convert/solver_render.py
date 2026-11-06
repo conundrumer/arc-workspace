@@ -314,8 +314,10 @@ class RenderMixin:
         text that differs from the form of that name in the deepest blocks
         the case sees: the nested ALT states each such form as the case
         derives it. This holds also where no two of the case's alts rederive
-        one relation. The cases tried are the pairs of alts, and a larger
-        combination only where one of its pairs got a block."""
+        one relation. The cases tried are the pairs of alts and the
+        combinations of two choices, where an alt that nests under another
+        alt of the case is one choice with it, and a larger combination only
+        where one of its pairs got a block."""
         from arclog_convert.lint import form_reads
         from arclog_convert.lint_alts import alt_points, is_case, placements, unstated_combinations
         from arclog_convert.lint_read import L as LintL, Sym as LintSym, flat, read as lint_read
@@ -349,9 +351,15 @@ class RenderMixin:
         combined = sorted((c for c in cases if len(chosen(c)) > 1), key=lambda c: (len(c), sorted(c)))
         written: set[frozenset] = set()
 
+        def choices(case: frozenset) -> frozenset:
+            """The alts of the case that no other alt of it nests under: a nested alt stands for its ancestors."""
+            return chosen(case) - set().union(*(ancestors_of(a) for a in case))
+
         def probed_case(case: frozenset) -> bool:
-            """Whether the case chooses a pair of alts, or a larger combination one of whose pairs got a block."""
-            return len(chosen(case)) == 2 or any(len(chosen(w)) == 2 and chosen(w) <= chosen(case) for w in written)
+            """Whether the case makes a pair of choices, or a larger combination one of whose pairs got a block."""
+            def pair(c: frozenset) -> bool:
+                return len(chosen(c)) == 2 or len(choices(c)) == 2
+            return pair(case) or any(pair(w) and chosen(w) <= chosen(case) for w in written)
         probed: dict[frozenset, tuple[list[Form], list[str], Counter[str], dict, set[str]]] = {}
 
         def case_forms(case: frozenset) -> tuple[list[Form], list[str]]:
