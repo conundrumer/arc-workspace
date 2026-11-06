@@ -56,7 +56,9 @@ A model reads one row for each candidate query at a state and each example, as [
     - The query's body, with no table content.
     - What the table has against the tables its query reads and the input: its entries, its stable entries, those new to these tables, the share of its entries that each of them has, and its rows over theirs.
     - Its count of assignments. A row reads one table at one assignment.
-    - The roots of the parts with no hole, which are the same on every row of a task.
+    - Its task-wide roots.
+    - Its place in the state's graph, and the state's other tables against it: each shape's mean over the tables its query reads, over their ancestors and over the rest.
+- **What the task holds,** which is the same on every candidate's row at an example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a gold query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
 
 ## Cost
 
