@@ -169,6 +169,8 @@ pub struct Generated {
     task_wide: bool,
     /// Whether the next term stands whatever a rule says of it: a named feature, whose parts read more than a count.
     force_next: bool,
+    /// The terms that a part of the base tables names.
+    diff_terms: Vec<u32>,
 }
 
 fn is_number(ty: &ValueType) -> bool {
@@ -263,9 +265,10 @@ impl Generated {
         family.binary(LEAF_OUTPUT, LEAF_INPUT, 1, true);
         family.binary(LEAF_INPUT, LEAF_OUTPUT, 1, false);
         family.by_size.push(family.terms.len());
+        family.diff_is_named();
         // Size 2: over each term of size 1, the constants among them.
         if d >= 2 {
-            let below: Vec<u32> = constants.iter().copied().chain((family.first_term as u32..family.by_size[0] as u32).filter(|at| family.terms[*at as usize].size > 0)).collect();
+            let below: Vec<u32> = constants.iter().copied().chain((family.first_term as u32..family.by_size[0] as u32).filter(|at| family.terms[*at as usize].size > 0 && !family.diff_terms.contains(at))).collect();
             for at in below {
                 family.extend_term(at, 2, true);
             }
@@ -653,11 +656,21 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false }
+        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new() }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
         self.terms.push(Term { step: None, a: NO_TERM, b: NO_TERM, columns, flags, size, root: RootKind::Rows, roots: Vec::new(), text: text.to_string(), used: true, plan: None });
+    }
+
+    /// The `antijoin` of the two grids on all their columns has a part's name, so no term stands over it.
+    fn diff_is_named(&mut self) {
+        for at in self.first_term..self.terms.len() {
+            let text = &self.terms[at].text;
+            if text == "(antijoin output input (P P) (Col Col))" || text == "(antijoin input output (P P) (Col Col))" {
+                self.diff_terms.push(at as u32);
+            }
+        }
     }
 
     /// What each leaf's type holds: the table by its column types, the grids and the parts by the
@@ -1145,6 +1158,12 @@ impl Generated {
                     add(PartStep::SameColorNeighbors { p }, grid, vec![column.clone(), fresh("Col", ValueType::Color, 0), fresh("N", ValueType::Nat, 0)], format!("(same-color-neighbors {text} {name} {label})"), RootKind::Rows);
                     add(PartStep::Distance { p }, grid, vec![one("P", ValueType::Position, 0), one("K", ValueType::Nat, 0)], format!("(distance {text} {name} {label})"), RootKind::Rows);
                 }
+                for (output, grid_name) in [(true, "output"), (false, "input")] {
+                    for (on, word) in [(true, "on"), (false, "off")] {
+                        add(PartStep::DiffRows { p, output, on }, LEAF_GRIDS, columns.clone(), format!("({word}-{grid_name}-diff {text} {name})"), RootKind::Share);
+                        add(PartStep::DiffCells { p, output, on }, LEAF_GRIDS, vec![one("P", ValueType::Position, 0), one("Col", ValueType::Color, 0)], format!("({grid_name}-diff-{word} {text} {name})"), RootKind::Rows);
+                    }
+                }
                 add(PartStep::FrameExtent { p }, NO_TERM, vec![one("A", ValueType::Axis, 0), one("N", ValueType::Int, 0)], format!("(frame-extent {text} {name})"), RootKind::Rows);
                 for (other, second) in columns.iter().enumerate() {
                     if other != place && second.ty == ValueType::Position {
@@ -1170,6 +1189,11 @@ impl Generated {
                     add(PartStep::ShapeClass { keys: keys.clone(), p, turned: true }, NO_TERM, extended(vec![fresh("Id", ValueType::OPEN_IDENT, 901)]), format!("(shape-class-d4 {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::Holes { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(holes {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::Symmetry { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(symmetry {text} {key_text} {name})"), RootKind::Rows);
+                    if !keys.is_empty() {
+                        for (output, grid_name) in [(true, "output"), (false, "input")] {
+                            add(PartStep::DiffGroupsOff { keys: keys.clone(), p, output }, LEAF_GRIDS, heads.clone(), format!("(groups-off-{grid_name}-diff {text} {key_text} {name})"), RootKind::Rows);
+                        }
+                    }
                     add(PartStep::TouchesEdge { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(touches-edge {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::FillsBox { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(fills-box {text} {key_text} {name})"), RootKind::Rows);
                     for (v, value) in columns.iter().enumerate() {
@@ -1280,8 +1304,12 @@ impl Generated {
                 }
                 self.push(Step::Join { left: left_at.clone(), right: right_at.clone(), kept, left_arity: left.len() as u16 }, l, r, columns, size, format!("(join {left_text} {right_text} {pair_text})"), RootKind::Rows);
             }
-            self.push(Step::Semijoin { left: left_at.clone(), right: right_at.clone() }, l, r, narrowed.clone(), size, format!("(semijoin {left_text} {right_text} {pair_text})"), RootKind::Share);
-            self.push(Step::Antijoin { left: left_at.clone(), right: right_at.clone() }, l, r, left.clone(), size, format!("(antijoin {left_text} {right_text} {pair_text})"), RootKind::Rows);
+            // A `semijoin` or an `antijoin` with a grid's diff on one cell is a part's call, which is smaller.
+            let named = pairs.len() == 1 && (matches!(left_text.as_str(), "output-diff" | "input-diff") || matches!(right_text.as_str(), "output-diff" | "input-diff"));
+            if !named {
+                self.push(Step::Semijoin { left: left_at.clone(), right: right_at.clone() }, l, r, narrowed.clone(), size, format!("(semijoin {left_text} {right_text} {pair_text})"), RootKind::Share);
+                self.push(Step::Antijoin { left: left_at.clone(), right: right_at.clone() }, l, r, left.clone(), size, format!("(antijoin {left_text} {right_text} {pair_text})"), RootKind::Rows);
+            }
             self.push(Step::All { left: left_at.clone(), right: right_at.clone(), outer: Box::new([]) }, l, r, Vec::new(), size, format!("(all {left_text} {right_text} () {pair_text})"), RootKind::Holds);
             for (at, column) in left.iter().enumerate() {
                 if !left_at.contains(&(at as u16)) {
@@ -1576,7 +1604,8 @@ impl<'a> Walker<'a> {
             let wanted = term.flags & READS_TABLE != 0 && (reads_output || !only_output);
             let extended = term.used;
             let mut own = Vec::new();
-            let idle = first[..scope].iter().all(|id| *id == 1) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
+            let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
+            let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
             if extended {
                 own.reserve(instances);
                 for pair in 0..scope {

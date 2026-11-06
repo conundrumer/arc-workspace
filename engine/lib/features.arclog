@@ -1865,3 +1865,91 @@
     (&read ?b ?x (:Place (*new X_rel ?R)) *Col *Col_2)
     (!= Col Col_2))
   (gives &q))
+
+;; A pair's diff: the cells of one grid that the other does not hold with their color.
+
+(fragment (output-diff)
+  "The output's cells that the input does not hold with their color."
+  (QUERY &q (output (:P *P) (:Col *Col)) (NOT (input (:P P) (:Col Col))))
+  (gives &q))
+
+(fragment (on-output-diff (?R relation) (?p column ?R))
+  "A relation's rows whose cell is in the output's diff."
+  (QUERY &diff (output (:P *P) (:Col *Col)) (NOT (input (:P P) (:Col Col))))
+  (QUERY &q (?R (*others ?R)) (&diff (:P ?p)))
+  (gives &q))
+
+(fragment (off-output-diff (?R relation) (?p column ?R))
+  "A relation's rows whose cell is not in the output's diff."
+  (QUERY &diff (output (:P *P) (:Col *Col)) (NOT (input (:P P) (:Col Col))))
+  (QUERY &q (?R (*others ?R)) (NOT (&diff (:P ?p))))
+  (gives &q))
+
+(fragment (output-diff-on (?R relation) (?p column ?R))
+  "The cells of the output's diff at a relation's cells."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &diff (output (:P *P) (:Col *Col)) (NOT (input (:P P) (:Col Col))))
+  (QUERY &q (&diff *P *Col) (&have.minimal (:t P)))
+  (gives &q))
+
+(fragment (output-diff-off (?R relation) (?p column ?R))
+  "The cells of the output's diff off a relation's cells."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &diff (output (:P *P) (:Col *Col)) (NOT (input (:P P) (:Col Col))))
+  (QUERY &q (&diff *P *Col) (NOT (&have.minimal (:t P))))
+  (gives &q))
+
+(fragment (input-diff)
+  "The input's cells that the output does not hold with their color."
+  (QUERY &q (input (:P *P) (:Col *Col)) (NOT (output (:P P) (:Col Col))))
+  (gives &q))
+
+(fragment (on-input-diff (?R relation) (?p column ?R))
+  "A relation's rows whose cell is in the input's diff."
+  (QUERY &diff (input (:P *P) (:Col *Col)) (NOT (output (:P P) (:Col Col))))
+  (QUERY &q (?R (*others ?R)) (&diff (:P ?p)))
+  (gives &q))
+
+(fragment (off-input-diff (?R relation) (?p column ?R))
+  "A relation's rows whose cell is not in the input's diff."
+  (QUERY &diff (input (:P *P) (:Col *Col)) (NOT (output (:P P) (:Col Col))))
+  (QUERY &q (?R (*others ?R)) (NOT (&diff (:P ?p))))
+  (gives &q))
+
+(fragment (input-diff-on (?R relation) (?p column ?R))
+  "The cells of the input's diff at a relation's cells."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &diff (input (:P *P) (:Col *Col)) (NOT (output (:P P) (:Col Col))))
+  (QUERY &q (&diff *P *Col) (&have.minimal (:t P)))
+  (gives &q))
+
+(fragment (input-diff-off (?R relation) (?p column ?R))
+  "The cells of the input's diff off a relation's cells."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &diff (input (:P *P) (:Col *Col)) (NOT (output (:P P) (:Col Col))))
+  (QUERY &q (&diff *P *Col) (NOT (&have.minimal (:t P))))
+  (gives &q))
+
+(fragment (groups-off-output-diff (?R relation) (?keys columns ?R) (?p column ?R))
+  "The keys of a relation with no cell in the output's diff."
+  (QUERY &diff (output (:P *P) (:Col *Col)) (NOT (input (:P P) (:Col Col))))
+  (INIT &touching Cardinality
+    (key ((?R (?keys ^) (?p *)) (&diff (:P ?p)))))
+  (QUERY &q (?R (?keys *)) (NOT (&touching.size (:key ?keys))))
+  (gives &q))
+
+(fragment (groups-off-input-diff (?R relation) (?keys columns ?R) (?p column ?R))
+  "The keys of a relation with no cell in the input's diff."
+  (QUERY &diff (input (:P *P) (:Col *Col)) (NOT (output (:P P) (:Col Col))))
+  (INIT &touching Cardinality
+    (key ((?R (?keys ^) (?p *)) (&diff (:P ?p)))))
+  (QUERY &q (?R (?keys *)) (NOT (&touching.size (:key ?keys))))
+  (gives &q))

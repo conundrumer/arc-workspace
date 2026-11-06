@@ -141,6 +141,8 @@ pub fn constant_parts() -> Vec<ConstantPart> {
     pair("input-in-output", vec![("B", b.clone())]);
     pair("output-in-input-d4", vec![("D", ValueType::D4), ("B", b.clone())]);
     pair("input-in-output-d4", vec![("D", ValueType::D4), ("B", b.clone())]);
+    pair("output-diff", vec![("P", p.clone()), ("Col", col.clone())]);
+    pair("input-diff", vec![("P", p.clone()), ("Col", col.clone())]);
     for kind in ["scale-up", "tile", "scale-down"] {
         out.push(ConstantPart { name: kind.to_string(), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())], reads_output: true, reads_input: true, meets_table: false });
         out.push(ConstantPart { name: format!("{kind}-kept"), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone())], reads_output: true, reads_input: true, meets_table: false });
@@ -423,6 +425,18 @@ pub fn constant_tables(f: &PairFacts) -> Vec<Arc<Table>> {
     };
     out.push(Table::new(2, turned(&f.output, &f.input)));
     out.push(Table::new(2, turned(&f.input, &f.output)));
+    // A grid's cells that the other does not hold with their color. Two frames of other extents share no cell.
+    let diff = |one: &GridFacts, other: &GridFacts| -> Vec<Cell> {
+        let mut rows = Vec::new();
+        for at in 0..one.h * one.w {
+            if !f.same || one.color[at] != other.color[at] {
+                rows.extend_from_slice(&[cell_bits(one.h, one.w, at), e.colors[one.color[at] as usize]]);
+            }
+        }
+        rows
+    };
+    out.push(Table::new(2, diff(&f.output, &f.input)));
+    out.push(Table::new(2, diff(&f.input, &f.output)));
     read_tables(&scale_up_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
     read_tables(&tile_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
     read_tables(&scale_down_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
@@ -476,7 +490,7 @@ pub fn part_call(name: &str) -> String {
     }
     for grid in ["input", "output"] {
         if let Some(rest) = name.strip_prefix(grid).and_then(|rest| rest.strip_prefix('-')) {
-            if !matches!(name, "input-in-output" | "output-in-input" | "input-in-output-d4" | "output-in-input-d4" | "input-output-images") {
+            if !matches!(name, "input-in-output" | "output-in-input" | "input-in-output-d4" | "output-in-input-d4" | "input-output-images" | "output-diff" | "input-diff") {
                 return format!("({rest} {grid})");
             }
         }

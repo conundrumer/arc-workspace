@@ -86,6 +86,12 @@ pub enum PartStep {
     BoxFrameRead { b: u16, x: u16, kept: bool },
     /// As `BoxRead`, on a column of input cells: B, X, X_rel, Col, and Col_2.
     BoxCellRead { b: u16, x: u16, kept: bool },
+    /// A relation's rows whose cell is, or is not, in a grid's diff: R.
+    DiffRows { p: u16, output: bool, on: bool },
+    /// The cells of a grid's diff at, or off, a relation's cells: P, Col.
+    DiffCells { p: u16, output: bool, on: bool },
+    /// The keys of a relation with no cell in a grid's diff: keys.
+    DiffGroupsOff { keys: Box<[u16]>, p: u16, output: bool },
     /// The relation itself: a table's own rows as a term, for the roots of the table.
     Same,
     /// The values of a column at every example of a grid's Example column: (n).
@@ -95,6 +101,11 @@ pub enum PartStep {
 }
 
 impl PartStep {
+    /// Whether the part has rows where its first relation has none.
+    pub fn gives_rows_on_no_rows(&self) -> bool {
+        matches!(self, PartStep::DiffCells { on: false, .. })
+    }
+
     /// Whether the part's second relation is a relation hole, and no grid.
     pub fn reads_second_relation(&self) -> bool {
         matches!(self, PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. })
@@ -117,6 +128,8 @@ impl PartStep {
             PartStep::MostFrequentRows { keys, v } => with(keys, &[*v]),
             PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
             PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
+            PartStep::DiffRows { p, .. } | PartStep::DiffCells { p, .. } => vec![*p],
+            PartStep::DiffGroupsOff { keys, p, .. } => with(keys, &[*p]),
             PartStep::Same => Vec::new(),
             PartStep::CommonValues { e, n } => vec![*e, *n],
             PartStep::ExampleClasses { e } => vec![*e],
@@ -130,6 +143,9 @@ impl PartStep {
         let list = |keys: &[u16]| format!("({})", keys.iter().map(|at| format!("C{at}")).collect::<Vec<_>>().join(" "));
         Some(match self {
             PartStep::Same | PartStep::CommonValues { .. } | PartStep::ExampleClasses { .. } => return None,
+            PartStep::DiffRows { p, output, on } => format!("({}-{}-diff &r {})", if *on { "on" } else { "off" }, if *output { "output" } else { "input" }, c(p)),
+            PartStep::DiffCells { p, output, on } => format!("({}-diff-{} &r {})", if *output { "output" } else { "input" }, if *on { "on" } else { "off" }, c(p)),
+            PartStep::DiffGroupsOff { keys, p, output } => format!("(groups-off-{}-diff &r {} {})", if *output { "output" } else { "input" }, list(keys), c(p)),
             PartStep::CellsOn { p } => format!("(cells-on &r {} {grid})", c(p)),
             PartStep::ColorsUnder { p } => format!("(colors-under &r {} {grid})", c(p)),
             PartStep::Around { p } => format!("(around &r {})", c(p)),
@@ -505,7 +521,7 @@ impl PartStep {
     /// Whether the part is empty where its first relation is.
     pub fn apply(&self, children: &[&Val]) -> Val {
         let Some(first) = flat(children[0]) else { return Val::None };
-        if matches!(children[0], Val::Empty) {
+        if matches!(children[0], Val::Empty) && !self.gives_rows_on_no_rows() {
             return Val::Empty;
         }
         self.run(&first, children).unwrap_or(Val::None)
@@ -514,6 +530,43 @@ impl PartStep {
     fn run(&self, t: &Arc<Table>, children: &[&Val]) -> Option<Val> {
         let e = encoding();
         Some(match self {
+            PartStep::DiffRows { p, output, on } => {
+                let (input, other) = grids_of(children[1])?;
+                let (one, two) = if *output { (&other, &input) } else { (&input, &other) };
+                let mut out = Vec::new();
+                for row in t.rows() {
+                    let cell = row[usize::from(*p)];
+                    let in_diff = one.at.get(&cell).is_some_and(|color| two.at.get(&cell) != Some(color));
+                    if in_diff == *on {
+                        out.extend_from_slice(row);
+                    }
+                }
+                Val::of_table(Table::new(t.arity, out))
+            }
+            PartStep::DiffGroupsOff { keys, p, output } => {
+                let (input, other) = grids_of(children[1])?;
+                let (one, two) = if *output { (&other, &input) } else { (&input, &other) };
+                let (ids, first) = key_ids(t, keys);
+                let mut touching = vec![false; first.len()];
+                for (row, id) in t.rows().zip(&ids) {
+                    let cell = row[usize::from(*p)];
+                    touching[*id as usize] |= one.at.get(&cell).is_some_and(|color| two.at.get(&cell) != Some(color));
+                }
+                let heads: Vec<Vec<Cell>> = first.iter().map(|row| keys.iter().map(|at| row[usize::from(*at)]).collect()).collect();
+                keys_only(&heads, touching.into_iter().map(|held| !held), keys.len())
+            }
+            PartStep::DiffCells { p, output, on } => {
+                let (input, other) = grids_of(children[1])?;
+                let (one, two) = if *output { (&other, &input) } else { (&input, &other) };
+                let held: std::collections::HashSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
+                let mut out = Vec::new();
+                for (cell, color) in one.at.iter() {
+                    if two.at.get(cell) != Some(color) && held.contains(cell) == *on {
+                        out.extend_from_slice(&[*cell, *color]);
+                    }
+                }
+                Val::of_table(Table::distinct(2, out))
+            }
             PartStep::Same => children[0].clone(),
             PartStep::CommonValues { e, n } => {
                 let examples = flat(children[1])?;
