@@ -257,6 +257,7 @@ class InstancesMixin:
             pass
         f.branches = tuple(sorted(branches))
         f.head_branches = tuple(sorted(head_branches))
+        f.pins = {k: frozenset(v) for k, v in w.pins.items()}
         f.comments = [*(";; " + t for t in self.plain_comments(f.line)), *todos]
         p = None if u.head.relation.instances else c.one_marks.get((u.scope.components, u.head.relation.name))
         if p is not None and u.span and u.span.first == min(

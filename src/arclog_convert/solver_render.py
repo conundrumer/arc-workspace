@@ -124,6 +124,7 @@ class RenderMixin:
         branch_forms = [f for f in forms if set(f.branches) - concept]
         main, branch_forms = self.sink(main, branch_forms, claims, concept)
         main, branch_forms = self.drop_repeats(main, branch_forms, concept)
+        main, branch_forms = self.pinned_copies(main, branch_forms, concept)
         # a concept clause that reads a relation only alts derive holds in no
         # concept model
         derived = {f.name for f in main}
@@ -666,6 +667,84 @@ class RenderMixin:
                                                                  branches=tuple(sorted(set(g.branches) | at_concept)))
                 branch_forms.extend(dc_replace(g, branches=tuple(sorted(set(g.branches) | b)))
                                     for b in sorted(each, key=sorted))
+        return main, branch_forms
+
+    def pinned_copies(self, main: list[Form], branch_forms: list[Form], concept):
+        """A clause of an alt's block that reads a relation at the concept's
+        constructor of a point, with the constructor in no column of its head,
+        reads that constructor's rows in every case, where Souffle keys the
+        relation by the choice. The arclog relation has no such column, so in a
+        case that takes another constructor of the point, the relation holds
+        what the alts of the point rederive. The clause reads a copy of the
+        relation under a name of its own, made of the forms that the clause's
+        own case holds without those alts, and so does each relation of the
+        copy that an alt of the point rederives or that reads one, in the
+        clause's block. A relation that a `DET` or a `RULE_OR_DET` line derives
+        is left as it is."""
+        points = self.c.point_fields()
+        field_of = {k.name: f_ for f_, adt in points for k in adt.constructors}
+        siblings = {k.name: {x.name for x in adt.constructors} for _, adt in points for k in adt.constructors}
+        taken = {f.name for f in main + branch_forms}
+        for f in list(branch_forms):
+            pinned = [(name, k) for name, ks in sorted(f.pins.items()) for k in sorted(ks)
+                      if k in concept and k not in f.head_branches]
+            if not pinned:
+                continue
+            at = {field_of[b]: b for b in f.branches if b not in concept}
+            held = [g for g in branch_forms if holds_at(g, at, concept, field_of)]
+
+            def forms_of(x: str) -> list[Form]:
+                return [g for g in held if g.name == x] or \
+                    [g.concept_form or g for g in main if g.name == x and not g.concept_dead]
+            copy: dict[str, str] = {}
+            for name, k in pinned:
+                alts = siblings[k] - concept
+                rederived = {g.name for g in branch_forms if set(g.branches) & alts}
+                reached, todo = set(), [name]
+                while todo:
+                    if (x := todo.pop()) not in reached:
+                        reached.add(x)
+                        todo.extend(r for g in forms_of(x) for r in g.reads)
+                tainted = reached & rederived
+                grew = True
+                while grew:
+                    grew = False
+                    for x in reached - tainted:
+                        if any(r in tainted for g in forms_of(x) for r in g.reads):
+                            tainted.add(x)
+                            grew = True
+                if name not in tainted or any(g.side == "DET" or or_line(g) for x in tainted for g in forms_of(x)):
+                    continue
+                for x in sorted(tainted):
+                    if x not in copy:
+                        n = 2
+                        while f"{x}{n}" in taken:
+                            n += 1
+                        copy[x] = f"{x}{n}"
+                        taken.add(copy[x])
+            if not copy:
+                continue
+
+            def renamed(lines: list[str], names: dict[str, str]) -> list[str]:
+                return [re.sub(r"&\w+", lambda m: names.get(m.group(0), m.group(0)), l) for l in lines]
+
+            def reads_of(reads, names: dict[str, str]):
+                return {names.get(r, r) for r in reads}
+            made = []
+            for x, new in sorted(copy.items()):
+                for g in forms_of(x):
+                    made.append(dc_replace(
+                        g, name=new, lines=renamed(g.lines, copy), reads=reads_of(g.reads, copy),
+                        top_pos=reads_of(g.top_pos, copy), top_neg=reads_of(g.top_neg, copy),
+                        nested=reads_of(g.nested, copy), comments=[], claim_slugs=[], branches=f.branches,
+                        head_branches=(), src=None, src_inst=None, concept_form=None, concept_dead=False,
+                        dead_reads=frozenset(), pins={}))
+            reading = {name: copy[name] for name, _ in pinned if name in copy}
+            g = dc_replace(f, lines=renamed(f.lines, reading), reads=reads_of(f.reads, reading),
+                           top_pos=reads_of(f.top_pos, reading), top_neg=reads_of(f.top_neg, reading),
+                           nested=reads_of(f.nested, reading))
+            branch_forms[branch_forms.index(f)] = g
+            branch_forms.extend(made)
         return main, branch_forms
 
     def drop_concept_repeats(self, main: list[Form]) -> None:

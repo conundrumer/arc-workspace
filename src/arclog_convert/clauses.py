@@ -138,6 +138,7 @@ class ClauseWriter:
         self.rename = rename
         self.reads: set[str] = set()
         self.branches: set[str] = set()
+        self.pins: dict[str, set[str]] = defaultdict(set)   # a relation read -> the constructors its reads name at case columns
         self.own_inst = own_inst
         self.depth = 0
         self.top_pos: set[str] = set()
@@ -259,6 +260,8 @@ class ClauseWriter:
         for i, ((col, leaves), arg) in order:
             terms = self.split(arg, leaves)
             self.branches.update(case_ctors(leaves, terms))
+            if kind in ("derived", "param", "inst") and (ctors := case_ctors(leaves, terms)):
+                self.pins[name.split(".")[0]] |= ctors
             live = [(leaf, t) for leaf, t in zip(leaves, terms) if kept_leaf(leaf)]
             kept = [(site, t) for site, (_, t) in zip(placed[i], live)]
             if not kept:

@@ -269,6 +269,7 @@ class Form:
     with_domain: list[str] | None = None   # a Cardinality's lines with its `domain` clause written, see `zero_domains`
     demo_rule: str = ""               # the demonstrated rule a clause's head names
     head_branches: tuple[str, ...] = ()   # the constructors its head fixes, among `branches`
+    pins: dict = field(default_factory=dict)   # a relation it reads -> the constructors that the read names at case columns
 
     def __setattr__(self, key, value):
         # `&output` is the tail's: no claim holds it
