@@ -88,6 +88,10 @@ pub enum PartStep {
     BoxCellRead { b: u16, x: u16, kept: bool },
     /// The relation itself: a table's own rows as a term, for the roots of the table.
     Same,
+    /// The values of a column at every example of a grid's Example column: (n).
+    CommonValues { e: u16, n: u16 },
+    /// Each example with a class per set of its rows over the other columns: E, Id.
+    ExampleClasses { e: u16 },
 }
 
 impl PartStep {
@@ -114,6 +118,8 @@ impl PartStep {
             PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
             PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
             PartStep::Same => Vec::new(),
+            PartStep::CommonValues { e, n } => vec![*e, *n],
+            PartStep::ExampleClasses { e } => vec![*e],
         }
     }
 
@@ -123,7 +129,7 @@ impl PartStep {
         let c = |at: &u16| format!("C{at}");
         let list = |keys: &[u16]| format!("({})", keys.iter().map(|at| format!("C{at}")).collect::<Vec<_>>().join(" "));
         Some(match self {
-            PartStep::Same => return None,
+            PartStep::Same | PartStep::CommonValues { .. } | PartStep::ExampleClasses { .. } => return None,
             PartStep::CellsOn { p } => format!("(cells-on &r {} {grid})", c(p)),
             PartStep::ColorsUnder { p } => format!("(colors-under &r {} {grid})", c(p)),
             PartStep::Around { p } => format!("(around &r {})", c(p)),
@@ -374,14 +380,15 @@ fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> (Vec<Vec<(u8, u8)>>, Vec
     (cells, heads)
 }
 
-/// Whether each cell of a column stands on one frame. The parts that read a cell as a row and a
-/// column have no native value on any other column.
-fn on_one_frame(table: &Table, p: u16) -> bool {
-    let mut frame = None;
-    table.rows().all(|row| {
+/// Whether each key's cells at a column stand on one frame. The parts that read a cell as a row and
+/// a column have no native value on any other column.
+fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
+    let (ids, first) = key_ids(table, keys);
+    let mut frames: Vec<Option<(i32, i32)>> = vec![None; first.len()];
+    table.rows().zip(&ids).all(|(row, id)| {
         let m = margins_of(row[usize::from(p)]);
         let own = (m[0] + m[1], m[2] + m[3]);
-        is_cell(&m) && *frame.get_or_insert(own) == own
+        is_cell(&m) && *frames[*id as usize].get_or_insert(own) == own
     })
 }
 
@@ -508,6 +515,44 @@ impl PartStep {
         let e = encoding();
         Some(match self {
             PartStep::Same => children[0].clone(),
+            PartStep::CommonValues { e, n } => {
+                let examples = flat(children[1])?;
+                let mut every: Vec<Cell> = examples.rows().map(|row| row[0]).collect();
+                every.sort_unstable();
+                every.dedup();
+                let mut seen: FastMap<Cell, Vec<Cell>> = FastMap::default();
+                for row in t.rows() {
+                    seen.entry(row[usize::from(*n)]).or_default().push(row[usize::from(*e)]);
+                }
+                let mut out = Vec::new();
+                for (value, mut held) in seen {
+                    held.sort_unstable();
+                    held.dedup();
+                    if held == every {
+                        out.push(value);
+                    }
+                }
+                out.sort_unstable();
+                Val::of_table(Table::new(1, out))
+            }
+            PartStep::ExampleClasses { e } => {
+                let column = usize::from(*e);
+                let mut sums: FastMap<Cell, u128> = FastMap::default();
+                for row in t.rows() {
+                    let word = hash_words(row.iter().enumerate().filter(|(at, _)| *at != column).map(|(_, cell)| u64::from(*cell)));
+                    let held = sums.entry(row[column]).or_insert(0);
+                    *held = held.wrapping_add(word);
+                }
+                let mut held: Vec<(Cell, u128)> = sums.into_iter().collect();
+                held.sort_unstable();
+                let mut out = Vec::with_capacity(held.len() * 2);
+                for (example, sum) in held {
+                    out.push(example);
+                    // A class's label holds nothing but which rows it stands for.
+                    out.push(sum as u32);
+                }
+                Val::of_table(Table::new(2, out))
+            }
             PartStep::CellsOn { p } => {
                 let grid = grid_of(children[1])?;
                 let mut out: Vec<Cell> = t.rows().map(|row| row[usize::from(*p)]).filter(|cell| grid.at.contains_key(cell)).collect();
@@ -831,21 +876,21 @@ impl PartStep {
                 Val::of_table(Table::unit(holds && !first.is_empty()))
             }
             PartStep::ShapeClass { keys, p, turned } => {
-                if !on_one_frame(t, *p) {
+                if !on_one_frame(t, keys, *p) {
                     return None;
                 }
                 let (cells, heads) = cells_by_key(t, keys, *p);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![hash_cells(&if *turned { canon(held) } else { normalized(held) })])), keys.len() + 1)
             }
             PartStep::Holes { keys, p } => {
-                if !on_one_frame(t, *p) {
+                if !on_one_frame(t, keys, *p) {
                     return None;
                 }
                 let (cells, heads) = cells_by_key(t, keys, *p);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(enclosed_regions(held))])), keys.len() + 1)
             }
             PartStep::Symmetry { keys, p } => {
-                if !on_one_frame(t, *p) {
+                if !on_one_frame(t, keys, *p) {
                     return None;
                 }
                 let (cells, heads) = cells_by_key(t, keys, *p);
@@ -861,7 +906,7 @@ impl PartStep {
                 keys_only(&heads, touching.into_iter(), keys.len())
             }
             PartStep::FillsBox { keys, p } => {
-                if !on_one_frame(t, *p) {
+                if !on_one_frame(t, keys, *p) {
                     return None;
                 }
                 let (cells, heads) = cells_by_key(t, keys, *p);
@@ -1038,7 +1083,7 @@ impl PartStep {
                 Val::of_table(Table::new(2, out))
             }
             PartStep::FullLines { keys, p } => {
-                if !on_one_frame(t, *p) {
+                if !on_one_frame(t, keys, *p) {
                     return None;
                 }
                 let (ids, first) = key_ids(t, keys);

@@ -69,12 +69,14 @@ pub enum RootOf {
     Over,
     /// The second relation's rows over the first's.
     Under,
+    /// The term's rows over the count of examples.
+    OverExamples,
 }
 
 impl RootOf {
     /// Whether the root's two numbers are the greatest and the least, as a fraction's are.
     pub fn is_ratio(self) -> bool {
-        matches!(self, RootOf::Share | RootOf::Over | RootOf::Under)
+        matches!(self, RootOf::Share | RootOf::Over | RootOf::Under | RootOf::OverExamples)
     }
 }
 
@@ -163,6 +165,10 @@ pub struct Generated {
     keep_text: bool,
     /// Where the family is built with no rule, for a count of what the rules remove.
     no_rules: bool,
+    /// Whether its terms read a table in its lifted form.
+    task_wide: bool,
+    /// Whether the next term stands whatever a rule says of it: a named feature, whose parts read more than a count.
+    force_next: bool,
 }
 
 fn is_number(ty: &ValueType) -> bool {
@@ -299,7 +305,14 @@ impl Generated {
             }
         }
         family.by_size.push(family.terms.len());
-        // The name of each root.
+        family.name_roots(types, names);
+        family
+    }
+
+    /// The name of each root, and what a walk does not read dropped from the terms.
+    fn name_roots(&mut self, types: &[ValueType], names: &NameStore) {
+        let family = self;
+        let task_wide = family.task_wide;
         let mut held = names.begin();
         let mut roots = 0;
         let texts_of_first: Vec<String> = family.terms.iter().map(|term| term.text.clone()).collect();
@@ -312,7 +325,7 @@ impl Generated {
             let count_follows = follows[at];
             let number_column = term.columns.first().map_or(String::new(), |column| column.name.clone());
             let left_text = texts_of_first[term.a as usize].clone();
-            let texts: Vec<(String, RootOf)> = match term.root {
+            let mut texts: Vec<(String, RootOf)> = match term.root {
                 RootKind::Holds => vec![(format!("(nonempty {})", term.text), RootOf::Nonempty)],
                 // A count that follows from a smaller term's has no root.
                 RootKind::Rows if count_follows => Vec::new(),
@@ -326,8 +339,13 @@ impl Generated {
                     vec![(format!("(ratio {left_text} {right_text})"), RootOf::Over), (format!("(ratio {right_text} {left_text})"), RootOf::Under)]
                 }
             };
+            // A task-wide count over the rows of every example depends on how many examples there are.
+            if task_wide && !count_follows && matches!(term.root, RootKind::Rows | RootKind::Share | RootKind::Number) && term.columns.iter().any(|column| column.ty == ValueType::Example) {
+                texts.push((format!("(ratio {} (project ex_input E))", term.text), RootOf::OverExamples));
+            }
             term.roots = texts.into_iter().map(|(text, of)| {
                 let shape = shape_text(&text, "T", types);
+                let shape = if task_wide { format!("task {shape}") } else { shape };
                 let hash = hash_words(shape.bytes().map(u64::from));
                 held.add(hash, shape, term.flags, term.size);
                 (hash, of)
@@ -344,7 +362,260 @@ impl Generated {
             family.refined.truncate(family.first_term);
             family.forms = Vec::new();
         }
+    }
+
+    /// The family of a table's task-wide terms, as the specification's section on them gives: the
+    /// table in its lifted form, with `E` as a column like any other, and the grids with theirs. A
+    /// pair of operators reads `E` only where its pairs list it, so one example meets another.
+    pub fn task_wide(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
+        let mut family = Generated::empty();
+        family.task_wide = true;
+        let source_of = |at: usize| -> u16 {
+            let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
+            100 + first as u16
+        };
+        let example = || Column { name: "E".to_string(), ty: ValueType::Example, source: 0 };
+        let table_columns: Vec<Column> = std::iter::once(example()).chain(types.iter().enumerate().map(|(at, ty)| Column { name: format!("T{at}"), ty: ty.clone(), source: source_of(at) })).collect();
+        let grid = || vec![example(), Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }, Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }];
+        family.push_leaf("T", table_columns, READS_TABLE, 0);
+        family.push_leaf("ex_output", grid(), READS_OUTPUT, 0);
+        family.push_leaf("ex_input", grid(), READS_INPUT, 0);
+        family.push_leaf("grids", Vec::new(), READS_INPUT | READS_OUTPUT, 0);
+        family.first_term = family.terms.len();
+        let lifted: Vec<ValueType> = std::iter::once(ValueType::Example).chain(types.iter().cloned()).collect();
+        family.lifted_refinements(&lifted);
+        let own_columns = family.terms[LEAF_TABLE as usize].columns.clone();
+        family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
+        let own_rows = family.terms.len() as u32 - 1;
+        family.unary_operators(LEAF_TABLE, 1);
+        family.lifted_parts(LEAF_TABLE, 1);
+        family.binary(LEAF_TABLE, LEAF_OUTPUT, 1, true);
+        family.binary(LEAF_OUTPUT, LEAF_TABLE, 1, false);
+        family.binary(LEAF_TABLE, LEAF_INPUT, 1, true);
+        family.binary(LEAF_INPUT, LEAF_TABLE, 1, false);
+        family.across_examples(LEAF_TABLE, 1);
+        family.by_size.push(family.terms.len());
+        if d >= 2 {
+            let below: Vec<u32> = (family.first_term as u32..family.by_size[0] as u32).filter(|at| family.terms[*at as usize].size > 0).collect();
+            for at in below {
+                family.unary_operators(at, 2);
+                family.lifted_parts(at, 2);
+                family.binary(at, LEAF_OUTPUT, 2, true);
+                family.binary(LEAF_OUTPUT, at, 2, false);
+                family.binary(at, LEAF_INPUT, 2, true);
+                family.binary(LEAF_INPUT, at, 2, false);
+            }
+        }
+        family.common_values(own_rows);
+        family.groupings(own_rows);
+        family.by_size.push(family.terms.len());
+        family.name_roots(types, names);
         family
+    }
+
+    /// What each leaf of a task-wide family holds.
+    fn lifted_refinements(&mut self, types: &[ValueType]) {
+        let mut table = Refined::with_arity(types.len());
+        table.add_key(table.all_columns());
+        for (at, ty) in types.iter().enumerate() {
+            if *ty == ValueType::Nat {
+                table.low[at] = Some(0);
+            }
+        }
+        self.refined.push(table);
+        for _ in 0..2 {
+            let mut grid = Refined::with_arity(3);
+            grid.add_key(bit(0) | bit(1));
+            self.refined.push(grid);
+        }
+        self.refined.push(Refined::with_arity(0));
+        self.forms = vec![Form::default(); self.first_term];
+    }
+
+    /// One example against another: each value of a column at two examples.
+    fn across_examples(&mut self, at: u32, size: u8) {
+        let columns = self.terms[at as usize].columns.clone();
+        let text = self.terms[at as usize].text.clone();
+        for (place, column) in columns.iter().enumerate() {
+            if column.ty == ValueType::Example || columns.iter().filter(|other| other.ty != ValueType::Example).count() == 0 {
+                continue;
+            }
+            let kept: Box<[u16]> = (0..columns.len() as u16).filter(|other| usize::from(*other) != place).collect();
+            let mut out = columns.clone();
+            for other in kept.iter() {
+                let held = &columns[usize::from(*other)];
+                let name = unique(&held.name, &out);
+                out.push(Column { name, ty: held.ty.clone(), source: held.source });
+            }
+            let pair = [place as u16];
+            self.push(Step::Join { left: pair.into(), right: pair.into(), kept, left_arity: columns.len() as u16 }, at, at, out, size, format!("(join {text} {text} ({0} {0}))", column.name), RootKind::Rows);
+        }
+    }
+
+    /// The parts with keys over a term of a task-wide family.
+    fn lifted_parts(&mut self, at: u32, size: u8) {
+        let columns = self.terms[at as usize].columns.clone();
+        let text = self.terms[at as usize].text.clone();
+        let Some(e) = columns.iter().position(|column| column.ty == ValueType::Example).map(|place| place as u16) else { return };
+        let fresh = |name: &str, ty: ValueType, source: u16| Column { name: unique(name, &columns), ty, source };
+        let id_source = 1000 + (self.terms.len() % 60000) as u16;
+        let group: Vec<u16> = columns.iter().enumerate().filter(|(place, column)| *place != usize::from(e) && matches!(column.ty, ValueType::Color | ValueType::Ident(_))).map(|(place, _)| place as u16).collect();
+        let e_name = columns[usize::from(e)].name.clone();
+        let mut keyed: Vec<(Box<[u16]>, String)> = vec![(vec![e].into_boxed_slice(), format!("({e_name})"))];
+        for (place, column) in columns.iter().enumerate() {
+            if place != usize::from(e) {
+                keyed.push((vec![place as u16].into_boxed_slice(), format!("({})", column.name)));
+                keyed.push((vec![e, place as u16].into_boxed_slice(), format!("({e_name} {})", column.name)));
+            }
+        }
+        if group.len() >= 2 {
+            let names: Vec<&str> = group.iter().map(|place| columns[usize::from(*place)].name.as_str()).collect();
+            keyed.push((group.clone().into_boxed_slice(), format!("(T*:{})", names.join(","))));
+            let with_e: Vec<u16> = std::iter::once(e).chain(group.iter().copied()).collect();
+            keyed.push((with_e.into_boxed_slice(), format!("({e_name} T*:{})", names.join(","))));
+        }
+        let mut pushes: Vec<(PartStep, Vec<Column>, String, RootKind)> = Vec::new();
+        for (keys, key_text) in &keyed {
+            let heads: Vec<Column> = keys.iter().map(|key| columns[usize::from(*key)].clone()).collect();
+            let with = |extra: Vec<Column>| -> Vec<Column> { heads.iter().cloned().chain(extra).collect() };
+            pushes.push((PartStep::Count { keys: keys.clone() }, with(vec![fresh("N", ValueType::Nat, 0)]), format!("(count {text} {key_text})"), RootKind::Rows));
+            if keys.len() < columns.len() {
+                pushes.push((PartStep::ClassOf { keys: keys.clone() }, with(vec![fresh("Id", ValueType::OPEN_IDENT, 902)]), format!("(class-of {text} {key_text})"), RootKind::Rows));
+            }
+            for (f, field) in columns.iter().enumerate() {
+                if keys.contains(&(f as u16)) || f == usize::from(e) {
+                    continue;
+                }
+                pushes.push((PartStep::OneValue { keys: keys.clone(), f: f as u16 }, with(vec![field.clone()]), format!("(one-value {text} {key_text} {})", field.name), RootKind::Rows));
+                pushes.push((PartStep::Several { keys: keys.clone(), f: f as u16 }, heads.clone(), format!("(several {text} {key_text} {})", field.name), RootKind::Rows));
+                pushes.push((PartStep::Determines { keys: keys.clone(), f: f as u16 }, Vec::new(), format!("(determines {text} {key_text} {})", field.name), RootKind::Holds));
+            }
+            // A part that reads a cell's place reads the cells of one example.
+            if !keys.contains(&e) {
+                continue;
+            }
+            for (place, column) in columns.iter().enumerate() {
+                if column.ty != ValueType::Position || keys.contains(&(place as u16)) {
+                    continue;
+                }
+                let p = place as u16;
+                let name = &column.name;
+                pushes.push((PartStep::Pieces { keys: keys.clone(), p, four: false }, with(vec![column.clone(), fresh("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces {text} {key_text} {name})"), RootKind::Rows));
+                pushes.push((PartStep::BoxOf { keys: keys.clone(), p }, with(vec![fresh("B", ValueType::Box, 0)]), format!("(box-of {text} {key_text} {name})"), RootKind::Rows));
+                pushes.push((PartStep::RelBox { keys: keys.clone(), p }, with(vec![fresh("X_rel", ValueType::Box, 0)]), format!("(cells-in-box {text} {key_text} {name})"), RootKind::Rows));
+                pushes.push((PartStep::ShapeClass { keys: keys.clone(), p, turned: false }, with(vec![fresh("Id", ValueType::OPEN_IDENT, 900)]), format!("(shape-class {text} {key_text} {name})"), RootKind::Rows));
+                pushes.push((PartStep::ShapeClass { keys: keys.clone(), p, turned: true }, with(vec![fresh("Id", ValueType::OPEN_IDENT, 901)]), format!("(shape-class-d4 {text} {key_text} {name})"), RootKind::Rows));
+                pushes.push((PartStep::Holes { keys: keys.clone(), p }, with(vec![fresh("N", ValueType::Nat, 0)]), format!("(holes {text} {key_text} {name})"), RootKind::Rows));
+                pushes.push((PartStep::Symmetry { keys: keys.clone(), p }, with(vec![fresh("N", ValueType::Nat, 0)]), format!("(symmetry {text} {key_text} {name})"), RootKind::Rows));
+            }
+        }
+        for (part, kept, line, root) in pushes {
+            self.push(Step::Part(Box::new(part)), at, NO_TERM, kept, size, line, root);
+        }
+    }
+
+    /// Each column's values at every example, and their share of its values, as a named feature.
+    fn common_values(&mut self, table: u32) {
+        let columns = self.terms[table as usize].columns.clone();
+        let text = self.terms[table as usize].text.clone();
+        let Some(e) = columns.iter().position(|column| column.ty == ValueType::Example) else { return };
+        for (n, column) in columns.iter().enumerate() {
+            if n == e || matches!(column.ty, ValueType::Ident(_)) {
+                continue;
+            }
+            let values_text = format!("(project {text} {})", column.name);
+            let values = self.terms.iter().rposition(|term| term.text == values_text).map(|at| at as u32);
+            for (grid, label) in [(LEAF_INPUT, "ex_input"), (LEAF_OUTPUT, "ex_output")] {
+                let line = format!("(all (join (project {text} {0}) (project {label} E)) {text} ({0}) ({0} {0}) (E E))", column.name);
+                let before = self.terms.len();
+                self.push(Step::Part(Box::new(PartStep::CommonValues { e: e as u16, n: n as u16 })), table, grid, vec![column.clone()], 3, line.clone(), RootKind::Rows);
+                if let (Some(values), true) = (values, self.terms.len() > before) {
+                    let common = before as u32;
+                    self.push(Step::Part(Box::new(PartStep::Same)), common, values, Vec::new(), 3, format!("{line} {values_text}"), RootKind::Against);
+                }
+            }
+        }
+    }
+
+    /// The share of the classes of examples by a table's rows that one value of the outputs meets at
+    /// each example, and the other way: 1 both ways where the table's rows group the pairs as the value does.
+    fn groupings(&mut self, table: u32) {
+        let id = |name: &str, source: u16| Column { name: name.to_string(), ty: ValueType::OPEN_IDENT, source };
+        let e = || Column { name: "E".to_string(), ty: ValueType::Example, source: 0 };
+        // What a table gives at each example.
+        let has_ident = |term: &Term| term.columns.iter().any(|column| matches!(column.ty, ValueType::Ident(_)));
+        let mut own: Vec<u32> = Vec::new();
+        for at in self.first_term as u32..self.terms.len() as u32 {
+            let term = &self.terms[at as usize];
+            let lifted = term.columns.first().is_some_and(|column| column.ty == ValueType::Example) && term.columns.len() >= 2;
+            if !lifted || has_ident(term) || term.a != LEAF_TABLE {
+                continue;
+            }
+            if at == table || matches!(term.step, Some(Step::Project { .. })) || term.text == format!("(count {} (E))", self.terms[table as usize].text) {
+                own.push(at);
+            }
+        }
+        // What the outputs give at each example, whatever a rule says of its count.
+        let output = self.terms[LEAF_OUTPUT as usize].text.clone();
+        let input = self.terms[LEAF_INPUT as usize].text.clone();
+        let (p, col, n) = (|| Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }, |name: &str| Column { name: name.to_string(), ty: ValueType::Color, source: 0 }, Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 });
+        let mut values: Vec<u32> = vec![LEAF_OUTPUT];
+        let mut add = |family: &mut Generated, step: Step, a: u32, b: u32, columns: Vec<Column>, text: String| -> u32 {
+            family.force_next = true;
+            family.push(step, a, b, columns, 1, text, RootKind::Rows);
+            let at = family.terms.len() as u32 - 1;
+            values.push(at);
+            at
+        };
+        add(self, Step::Project { columns: Box::new([0, 2]) }, LEAF_OUTPUT, NO_TERM, vec![e(), col("Col")], format!("(project {output} E Col)"));
+        add(self, Step::Project { columns: Box::new([0, 1]) }, LEAF_OUTPUT, NO_TERM, vec![e(), p()], format!("(project {output} E P)"));
+        add(self, Step::Part(Box::new(PartStep::Count { keys: Box::new([0]) })), LEAF_OUTPUT, NO_TERM, vec![e(), n.clone()], format!("(count {output} (E))"));
+        let by_color = add(self, Step::Part(Box::new(PartStep::Count { keys: Box::new([0, 2]) })), LEAF_OUTPUT, NO_TERM, vec![e(), col("Col"), n.clone()], format!("(count {output} (E Col))"));
+        add(self, Step::Part(Box::new(PartStep::Extreme { keys: Box::new([0]), t: 1, score: 2, greatest: true })), by_color, NO_TERM, vec![e(), col("Col")], format!("(greatest-by (count {output} (E Col)) (E) Col N)"));
+        let new_cells = add(self, Step::Antijoin { left: Box::new([0, 2]), right: Box::new([0, 2]) }, LEAF_OUTPUT, LEAF_INPUT, vec![e(), p(), col("Col")], format!("(antijoin {output} {input} (E E) (Col Col))"));
+        add(self, Step::Project { columns: Box::new([0, 2]) }, new_cells, NO_TERM, vec![e(), col("Col")], format!("(project (antijoin {output} {input} (E E) (Col Col)) E Col)"));
+        let both_text = format!("(join {input} {output} (E E) (P P))");
+        let both = add(self, Step::Join { left: Box::new([0, 1]), right: Box::new([0, 1]), kept: Box::new([2]), left_arity: 3 }, LEAF_INPUT, LEAF_OUTPUT, vec![e(), p(), col("Col"), col("Col_2")], both_text.clone());
+        let changed_text = format!("(select {both_text} Col != Col_2)");
+        let changed = add(self, Step::Select { at: 2, op: Op::Ne, other: Some(3), drop: None }, both, NO_TERM, vec![e(), p(), col("Col"), col("Col_2")], changed_text.clone());
+        add(self, Step::Project { columns: Box::new([0, 2, 3]) }, changed, NO_TERM, vec![e(), col("Col"), col("Col_2")], format!("(project {changed_text} E Col Col_2)"));
+        add(self, Step::Project { columns: Box::new([0, 3]) }, changed, NO_TERM, vec![e(), col("Col_2")], format!("(project {changed_text} E Col_2)"));
+        add(self, Step::Project { columns: Box::new([0, 1]) }, changed, NO_TERM, vec![e(), p()], format!("(project {changed_text} E P)"));
+        // The class of each example under each of those.
+        let classes_text = |text: &str, columns: &[Column]| -> String {
+            let fields: Vec<&str> = columns.iter().skip(1).map(|column| column.name.as_str()).collect();
+            let fields = if let [one] = fields[..] { one.to_string() } else { format!("({})", fields.join(" ")) };
+            format!("(component Quotient (equivalent (component Inclusion (pattern {text} () (E {fields})) (observed {text} () (E {fields})) equal) () (E E_2)) class)")
+        };
+        let class_of = |family: &mut Generated, at: u32, source: u16| -> u32 {
+            let (text, columns) = (family.terms[at as usize].text.clone(), family.terms[at as usize].columns.clone());
+            family.force_next = true;
+            family.push(Step::Part(Box::new(PartStep::ExampleClasses { e: 0 })), at, NO_TERM, vec![e(), id("Id", source)], 1, classes_text(&text, &columns), RootKind::Rows);
+            family.terms.len() as u32 - 1
+        };
+        let value_classes: Vec<u32> = values.iter().map(|at| class_of(self, *at, 3000)).collect();
+        for at in own {
+            let mine = class_of(self, at, 3000);
+            for theirs in &value_classes {
+                let (one, two) = (self.terms[mine as usize].text.clone(), self.terms[*theirs as usize].text.clone());
+                let joined_text = format!("(join {one} {two} (E E))");
+                self.force_next = true;
+                self.push(Step::Join { left: Box::new([0]), right: Box::new([0]), kept: Box::new([1]), left_arity: 2 }, mine, *theirs, vec![e(), id("Id", 3000), id("Id_2", 3000)], 3, joined_text.clone(), RootKind::Rows);
+                let joined = self.terms.len() as u32 - 1;
+                for (from, to, from_name, to_name) in [(1u16, 2u16, "Id", "Id_2"), (2, 1, "Id_2", "Id")] {
+                    let classes = format!("(project {joined_text} {from_name})");
+                    self.force_next = true;
+                    self.push(Step::Project { columns: Box::new([from]) }, joined, NO_TERM, vec![id(from_name, 3000)], 3, classes.clone(), RootKind::Rows);
+                    let domain = self.terms.len() as u32 - 1;
+                    let one_text = format!("(one-value {joined_text} ({from_name}) {to_name})");
+                    self.force_next = true;
+                    self.push(Step::Part(Box::new(PartStep::OneValue { keys: Box::new([from]), f: to })), joined, NO_TERM, vec![id(from_name, 3000), id(to_name, 3000)], 3, one_text.clone(), RootKind::Rows);
+                    let single = self.terms.len() as u32 - 1;
+                    self.force_next = true;
+                    self.push(Step::Semijoin { left: Box::new([0]), right: Box::new([0]) }, domain, single, vec![id(from_name, 3000)], 3, format!("(semijoin {classes} {one_text} ({from_name} {from_name}))"), RootKind::Share);
+                }
+            }
+        }
     }
 
     /// Each operator and part over a term, with what stays within the size.
@@ -382,7 +653,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some() }
+        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -738,7 +1009,12 @@ impl Generated {
             }
         }
         let is_pair = root == RootKind::Against;
-        let judged = if is_pair { Ok((Refined::with_arity(0), Form::default(), None)) } else if self.no_rules { let mut refined = Refined::with_arity(columns.len()); refined.add_key(refined.all_columns()); Ok((refined, Form::default(), None)) } else { self.judge(&step, a, b, &columns) };
+        let force = std::mem::take(&mut self.force_next);
+        let judged = if force {
+            let mut refined = Refined::with_arity(columns.len());
+            refined.add_key(refined.all_columns());
+            Ok((refined, Form::default(), None))
+        } else if is_pair { Ok((Refined::with_arity(0), Form::default(), None)) } else if self.no_rules { let mut refined = Refined::with_arity(columns.len()); refined.add_key(refined.all_columns()); Ok((refined, Form::default(), None)) } else { self.judge(&step, a, b, &columns) };
         let (refined, form, plan) = match judged {
             Ok(held) => held,
             Err((rejected, partner)) => {
@@ -1167,6 +1443,8 @@ pub struct Walker<'a> {
     counts: FastMap<(u32, u32, u32), (u32, u32)>,
     /// The cells that `values` holds.
     held_cells: usize,
+    /// The count of examples of a task-wide walk.
+    pub examples: u32,
 }
 
 /// What a walker holds at most between walks.
@@ -1214,6 +1492,7 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
         RootOf::Share => share(rows, left),
         RootOf::Over => share(rows, other),
         RootOf::Under => share(other, rows),
+        RootOf::OverExamples => share(rows, other),
         RootOf::ValueSet => {
             if rows == NO_COUNT {
                 return None;
@@ -1227,7 +1506,7 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), held_cells: 0 }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), held_cells: 0, examples: 0 }
     }
 
     /// Drops the values and the memos where they pass the budget. A later walk computes again
@@ -1290,7 +1569,7 @@ impl<'a> Walker<'a> {
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             let at = at as u32;
             let first = std::mem::take(&mut ids[term.a as usize]);
-            let second = if term.b == NO_TERM { Vec::new() } else { std::mem::take(&mut ids[term.b as usize]) };
+            let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
             let step = term.step.as_ref().expect("a term has a step");
             let reads_output = term.flags & READS_OUTPUT != 0;
             let scope = if reads_output { train.min(instances) } else { instances };
@@ -1337,7 +1616,7 @@ impl<'a> Walker<'a> {
                     let left = count_of(&self.values[id as usize]);
                     let other = if term.b == NO_TERM { NO_COUNT } else { count_of(&self.values[b as usize]) };
                     for (hash, of) in &term.roots {
-                        let value = root_value(*of, rows, left, other, number);
+                        let value = root_value(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other }, number);
                         // Nothing to add at a default value, which is a slot's own state.
                         if matches!(value, Some((_, 0))) {
                             continue;
@@ -1587,6 +1866,37 @@ impl NameStore {
     }
 }
 
+/// The rows of a table with an Example column first: at each example, its rows with that example's
+/// cell. A table with several TableRows at an example has no task-wide value.
+pub fn lifted_rows(tables: &[Vec<Arc<Table>>]) -> Option<Arc<Table>> {
+    let arity = tables.iter().find_map(|models| models.first()).map(|table| table.arity)?;
+    let mut cells = Vec::new();
+    for (example, models) in tables.iter().enumerate() {
+        let one = match models.as_slice() {
+            [one] => one,
+            [] => continue,
+            _ => return None,
+        };
+        let bits = example_bits(example);
+        if one.arity == 0 {
+            if one.len > 0 {
+                cells.push(bits);
+            }
+            continue;
+        }
+        for row in one.rows() {
+            cells.push(bits);
+            cells.extend_from_slice(row);
+        }
+    }
+    Some(Table::distinct(arity + 1, cells))
+}
+
+/// An example's cell.
+pub fn example_bits(example: usize) -> u32 {
+    arclog::terms::Term::Constant(arclog::terms::Constant::Example(arclog::terms::Example::at(example as u16))).encode().expect("an example has bits").encoding()
+}
+
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
 const CACHED_TERMS: usize = 12_000_000;
 
@@ -1598,6 +1908,26 @@ pub struct Generators {
 }
 
 impl Generators {
+    /// The task-wide family of a table's schema.
+    pub fn get_task_wide(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
+        let hash = hash_words(format!("task-wide {d} {}", stored.key).bytes().map(u64::from));
+        {
+            let mut held = self.held.lock().expect("no panic");
+            let (cache, clock) = &mut *held;
+            *clock += 1;
+            if let Some(found) = cache.get_mut(&hash) {
+                found.1 = *clock;
+                return found.0.clone();
+            }
+        }
+        let family = Arc::new(Generated::task_wide(&stored.types, d, &self.names));
+        let mut held = self.held.lock().expect("no panic");
+        let (cache, clock) = &mut *held;
+        *clock += 1;
+        cache.insert(hash, (family.clone(), *clock));
+        family
+    }
+
     pub fn get(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(stored.key.bytes().map(u64::from));
         {

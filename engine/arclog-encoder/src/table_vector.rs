@@ -282,3 +282,35 @@ pub fn assignment_vector(tables: &[(u128, &TableVector)], capped: bool) -> Assig
         pools,
     }
 }
+
+/// A table's task-wide entries: each root with its two numbers once, as the specification gives,
+/// from the table in its lifted form. A table with several models at an example has none.
+pub struct TaskWideVector {
+    pub shapes: Vec<u64>,
+    pub meta: Vec<(u8, u8, RootOf)>,
+    pub slots: Vec<Slot>,
+}
+
+pub fn task_wide_vector(table: &Stored, grids: &Grids, families: &Generators, d: usize) -> Option<TaskWideVector> {
+    let lifted = crate::generate::lifted_rows(&table.rows)?;
+    let family = families.get_task_wide(table, d);
+    let mut walker = Walker::new(&family);
+    walker.examples = grids.inputs.len() as u32;
+    let grid = |tables: &[Arc<Table>]| -> Vec<Vec<Arc<Table>>> { tables.iter().map(|table| vec![table.clone()]).collect() };
+    let ex_output = crate::generate::lifted_rows(&grid(&grids.outputs))?;
+    let ex_input = crate::generate::lifted_rows(&grid(&grids.inputs))?;
+    let leaves = vec![
+        vec![crate::native::Val::of_table(lifted)],
+        vec![crate::native::Val::of_table(ex_output)],
+        vec![crate::native::Val::of_table(ex_input)],
+        vec![crate::native::Val::None],
+    ];
+    let found = walker.walk(&leaves, 1, false);
+    let mut order: Vec<(u64, usize)> = found.index.iter().map(|(hash, at)| (*hash as u64, *at as usize)).collect();
+    order.sort_unstable();
+    Some(TaskWideVector {
+        shapes: order.iter().map(|held| held.0).collect(),
+        meta: order.iter().map(|held| found.meta[held.1]).collect(),
+        slots: order.iter().map(|held| found.slots[held.1]).collect(),
+    })
+}

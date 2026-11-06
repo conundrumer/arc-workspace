@@ -334,6 +334,14 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     for ((assignment, _), (_, vector)) in tables.at.iter().zip(&vectors) {
         write_vector(&mut out, &serde_json::json!({"name": table, "assignment": format!("{assignment:?}")}), vector, &names)?;
     }
+    for (assignment, stored) in &tables.at {
+        let Some(wide) = arclog_encoder::table_vector::task_wide_vector(stored, &grids, &families, arguments.size.max(1)) else { continue };
+        let names = names_of(&families.names);
+        writeln!(out, "{}", serde_json::json!({"task_wide": table, "assignment": format!("{assignment:?}"), "entries": wide.shapes.len()})).map_err(|error| error.to_string())?;
+        for (at, shape) in wide.shapes.iter().enumerate() {
+            writeln!(out, "{}", serde_json::json!({"shape": names.get(shape), "reads": wide.meta[at].0, "value": slot_json(&wide.slots[at])})).map_err(|error| error.to_string())?;
+        }
+    }
     let refs: Vec<(u128, &arclog_encoder::table_vector::TableVector)> = vectors.iter().map(|(hash, vector)| (*hash, vector)).collect();
     let pooled = assignment_vector(&refs, tables.capped);
     writeln!(out, "{}", serde_json::json!({"assignment_vector": table, "count": pooled.count, "capped": pooled.capped, "distinct": pooled.distinct, "differ": pooled.differ, "entries": pooled.shapes.len()})).map_err(|error| error.to_string())?;
@@ -588,7 +596,7 @@ impl CheckTally {
 /// partition. A term with no native value stands as "no value". It prints a line for each of the
 /// first terms of a head that differ or that the engine refuses.
 #[allow(clippy::too_many_arguments)]
-fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arclog_encoder::native::Val>], train: usize, every: usize, check_leaves: bool, table_text: &str, engine: &dyn Fn(&str) -> Result<EngineRows, String>, tally: &mut CheckTally) -> Result<(), String> {
+fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arclog_encoder::native::Val>], train: usize, every: usize, check_leaves: bool, table_text: &str, engine: &dyn Fn(&str) -> Result<EngineRows, String>, tally: &mut CheckTally, quiet: bool) -> Result<(), String> {
     use arclog_encoder::generate::Walker;
     use std::collections::BTreeSet;
     let (_, first) = family.counts();
@@ -657,7 +665,8 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
             let (a, b) = (canonical_rows(&native_rows, &is_ident), canonical_rows(&engine_rows, &is_ident));
             if a != b {
                 outcome = 1;
-                detail = format!("pair {pair}: native {} rows, engine {} rows; columns {:?}", a.len(), b.len(), columns.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>());
+                // A task-wide term can read a test input, whose counts no log holds.
+                detail = if quiet { "rows differ".to_string() } else { format!("pair {pair}: native {} rows, engine {} rows; columns {:?}", a.len(), b.len(), columns.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>()) };
                 break;
             }
         }
@@ -734,7 +743,33 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
             }
             Ok(EngineRows { names: found.row_names, types: found.types, examples })
         };
-        check_family(&family, &leaves, train, every, check_leaves, "&t", &engine, &mut tally)?;
+        let wide_only = std::env::var_os("GENERATE_CHECK_TASK_WIDE").is_some();
+        if !wide_only {
+            check_family(&family, &leaves, train, every, check_leaves, "&t", &engine, &mut tally, false)?;
+        }
+        if wide_only {
+            use arclog_encoder::generate::lifted_rows;
+            use arclog_encoder::native::Val;
+            let family = families.get_task_wide(&stored, arguments.size.max(1));
+            let total = grids.inputs.len();
+            let mut rows_all: Vec<Vec<std::sync::Arc<arclog_encoder::native::Table>>> = stored.rows.iter().take(train).cloned().collect();
+            rows_all.resize(total, Vec::new());
+            let grid = |tables: &[std::sync::Arc<arclog_encoder::native::Table>]| -> Vec<Vec<std::sync::Arc<arclog_encoder::native::Table>>> { tables.iter().map(|table| vec![table.clone()]).collect() };
+            let lift = |tables: &[Vec<std::sync::Arc<arclog_encoder::native::Table>>]| lifted_rows(tables).map_or(Val::None, Val::of_table);
+            let wide_leaves = vec![vec![lift(&rows_all)], vec![lift(&grid(&grids.outputs))], vec![lift(&grid(&grids.inputs))], vec![Val::None]];
+            let wide = |expression: &str| -> Result<EngineRows, String> {
+                let value = match host.relation(expression, true) {
+                    Evaluated::Value(value) => value,
+                    Evaluated::Refused(message) | Evaluated::Fault(message) => return Err(message),
+                };
+                let rows = value.at.first().and_then(|at| at.examples.first()).and_then(|(_, models)| match models.as_slice() {
+                    [ModelValue::Rows(rows)] => Some(rows.iter().map(|row| row.iter().map(|cell| cell.encoding()).collect()).collect()),
+                    _ => None,
+                });
+                Ok(EngineRows { names: value.row_names.clone(), types: value.types.clone(), examples: vec![rows] })
+            };
+            check_family(&family, &wide_leaves, 1, every, false, "&t", &wide, &mut tally, true)?;
+        }
     }
     tally.print();
     Ok(())
@@ -804,7 +839,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         let example_of: Vec<usize> = (0..train).collect();
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
         let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-        check_family(&family, &leaves, train, every, place == 0, name, &engine, &mut tally)?;
+        check_family(&family, &leaves, train, every, place == 0, name, &engine, &mut tally, false)?;
     }
     tally.print();
     Ok(())
