@@ -22,6 +22,7 @@ use crate::stored::{mix_word, shape_text};
 pub const READS_INPUT: u8 = 1;
 pub const READS_OUTPUT: u8 = 2;
 pub const READS_TABLE: u8 = 4;
+pub const READS_SECOND: u8 = 8;
 const NO_TERM: u32 = u32::MAX;
 const MAX_PROJECTED: usize = 3;
 const MAX_COLUMNS: usize = 8;
@@ -173,6 +174,8 @@ pub struct Generated {
     diff_terms: Vec<u32>,
     /// Whether the family's roots read the base tables and no other table.
     over_grids: bool,
+    /// Whether each of the family's roots reads two tables.
+    two_tables: bool,
 }
 
 pub fn is_number(ty: &ValueType) -> bool {
@@ -314,6 +317,173 @@ impl Generated {
         family
     }
 
+    /// The family of two tables of a state, T and U: how the rows, values and cells of one stand to the
+    /// other's, and what the two say together of the output.
+    pub fn of_two_tables(t_types: &[ValueType], u_types: &[ValueType], names: &NameStore) -> Generated {
+        let t_names: Vec<String> = (0..t_types.len()).map(|at| format!("T{at}")).collect();
+        let u_names: Vec<String> = (0..u_types.len()).map(|at| format!("T{}", t_types.len() + at)).collect();
+        Generated::two_tables_with_names(t_types, &t_names, u_types, &u_names, "U", names)
+    }
+
+    /// As [`Generated::of_two_tables`], with the columns under the names a program gives them, and U's text.
+    pub fn two_tables_with_names(t_types: &[ValueType], t_names: &[String], u_types: &[ValueType], u_names: &[String], u_text: &str, names: &NameStore) -> Generated {
+        let mut family = Generated::empty();
+        family.two_tables = true;
+        let all: Vec<ValueType> = t_types.iter().chain(u_types).cloned().collect();
+        let source_of = |at: usize| -> u16 {
+            let first = all.iter().position(|other| *other == all[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
+            100 + first as u16
+        };
+        let t_columns: Vec<Column> = t_types.iter().enumerate().map(|(at, ty)| Column { name: t_names[at].clone(), ty: ty.clone(), source: source_of(at) }).collect();
+        let u_columns: Vec<Column> = u_types.iter().enumerate().map(|(at, ty)| Column { name: u_names[at].clone(), ty: ty.clone(), source: source_of(t_types.len() + at) }).collect();
+        let grid = || vec![Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }, Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }];
+        family.push_leaf("T", t_columns.clone(), READS_TABLE, 0);
+        family.push_leaf("output", grid(), READS_OUTPUT, 0);
+        family.push_leaf("input", grid(), READS_INPUT, 0);
+        family.push_leaf("grids", Vec::new(), READS_INPUT | READS_OUTPUT, 0);
+        let parts = constant_parts();
+        for part in &parts {
+            let columns = part.columns.iter().map(|(name, ty)| Column { name: (*name).to_string(), ty: ty.clone(), source: ident_source(&part.name) }).collect();
+            let flags = (if part.reads_output { READS_OUTPUT } else { 0 }) | (if part.reads_input { READS_INPUT } else { 0 });
+            family.push_leaf(&part.name, columns, flags, 1);
+        }
+        let u_leaf = family.terms.len() as u32;
+        family.push_leaf(u_text, u_columns.clone(), READS_SECOND, 0);
+        family.first_term = family.terms.len();
+        family.leaf_refinements(t_types, &parts);
+        let mut second = Refined::with_arity(u_types.len());
+        second.add_key(second.all_columns());
+        for (at, ty) in u_types.iter().enumerate() {
+            if *ty == ValueType::Nat {
+                second.low[at] = Some(0);
+            }
+        }
+        second.within.push(Within { columns: (0..u_types.len() as u16).collect(), of: u_leaf, at: (0..u_types.len() as u16).collect() });
+        family.refined.push(second);
+        // The rows of each kept by the other.
+        family.binary(LEAF_TABLE, u_leaf, 1, true);
+        family.binary(u_leaf, LEAF_TABLE, 1, false);
+        family.by_size.push(family.terms.len());
+        let places = |columns: &[Column], kinds: &[ValueType]| -> Vec<u16> { (0..columns.len() as u16).filter(|at| kinds.contains(&columns[usize::from(*at)].ty)).collect() };
+        // The value sets of a column of each.
+        let mut own_projects: FastMap<(u32, u16), u32> = FastMap::default();
+        for (a, x) in t_columns.iter().enumerate() {
+            for (b, y) in u_columns.iter().enumerate() {
+                if !meets(x, y) {
+                    continue;
+                }
+                let (a, b) = (a as u16, b as u16);
+                family.push(Step::Part(Box::new(PartStep::SameValues { a, b })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(same-values T {u_text} {} {})", x.name, y.name), RootKind::Holds);
+                let mut project_of = |family: &mut Generated, leaf: u32, place: u16| -> u32 {
+                    if family.terms[leaf as usize].columns.len() == 1 {
+                        return leaf;
+                    }
+                    *own_projects.entry((leaf, place)).or_insert_with(|| {
+                        let column = family.terms[leaf as usize].columns[usize::from(place)].clone();
+                        let text = format!("(project {} {})", family.terms[leaf as usize].text, column.name);
+                        family.force_next = true;
+                        family.push(Step::Project { columns: vec![place].into_boxed_slice() }, leaf, NO_TERM, vec![column], 1, text, RootKind::Rows);
+                        family.terms.len() as u32 - 1
+                    })
+                };
+                let (t_values, u_values) = (project_of(&mut family, LEAF_TABLE, a), project_of(&mut family, u_leaf, b));
+                if t_values != LEAF_TABLE || u_values != u_leaf {
+                    let (t_text, u_values_text) = (family.terms[t_values as usize].text.clone(), family.terms[u_values as usize].text.clone());
+                    let (a_at, b_at) = (if t_values == LEAF_TABLE { a } else { 0 }, if u_values == u_leaf { b } else { 0 });
+                    let (left, right): (Box<[u16]>, Box<[u16]>) = (vec![a_at].into_boxed_slice(), vec![b_at].into_boxed_slice());
+                    let t_own = family.terms[t_values as usize].columns.clone();
+                    let u_own = family.terms[u_values as usize].columns.clone();
+                    let pair = format!("({} {})", x.name, y.name);
+                    let back = format!("({} {})", y.name, x.name);
+                    family.push(Step::Semijoin { left: left.clone(), right: right.clone() }, t_values, u_values, t_own, 2, format!("(semijoin {t_text} {u_values_text} {pair})"), RootKind::Share);
+                    family.push(Step::Semijoin { left: right.clone(), right: left.clone() }, u_values, t_values, u_own, 2, format!("(semijoin {u_values_text} {t_text} {back})"), RootKind::Share);
+                    family.push(Step::All { left: left.clone(), right: right.clone(), outer: Box::new([]) }, t_values, u_values, Vec::new(), 2, format!("(all {t_text} {u_values_text} () {pair})"), RootKind::Holds);
+                    family.push(Step::All { left: right, right: left, outer: Box::new([]) }, u_values, t_values, Vec::new(), 2, format!("(all {u_values_text} {t_text} () {back})"), RootKind::Holds);
+                }
+            }
+        }
+        let cells = [ValueType::Position];
+        let boxes = [ValueType::Box];
+        // A table's cells inside the other's boxes, and the boxes that hold them.
+        for (cell_leaf, box_leaf) in [(LEAF_TABLE, u_leaf), (u_leaf, LEAF_TABLE)] {
+            let (cell_columns, box_columns) = (family.terms[cell_leaf as usize].columns.clone(), family.terms[box_leaf as usize].columns.clone());
+            let (cell_text, box_text) = (family.terms[cell_leaf as usize].text.clone(), family.terms[box_leaf as usize].text.clone());
+            for a in places(&cell_columns, &cells) {
+                for b in places(&box_columns, &boxes) {
+                    let (cell_name, box_name) = (&cell_columns[usize::from(a)].name, &box_columns[usize::from(b)].name);
+                    family.push(Step::Part(Box::new(PartStep::InsideBoxes { a, b })), cell_leaf, box_leaf, cell_columns.clone(), 1, format!("(inside-boxes {cell_text} {box_text} {cell_name} {box_name})"), RootKind::Share);
+                    family.push(Step::Part(Box::new(PartStep::BoxesHolding { a: b, b: a })), box_leaf, cell_leaf, box_columns.clone(), 1, format!("(boxes-holding {box_text} {cell_text} {box_name} {cell_name})"), RootKind::Share);
+                }
+            }
+        }
+        // The cells of each key of one that are those of a key of the other.
+        for (first, other) in [(LEAF_TABLE, u_leaf), (u_leaf, LEAF_TABLE)] {
+            let (own, theirs) = (family.terms[first as usize].columns.clone(), family.terms[other as usize].columns.clone());
+            let (own_text, their_text) = (family.terms[first as usize].text.clone(), family.terms[other as usize].text.clone());
+            for a in places(&own, &cells) {
+                for b in places(&theirs, &cells) {
+                    for (keys, key_text) in Self::key_options(&own, &[usize::from(a)]) {
+                        for (others, other_text) in Self::key_options(&theirs, &[usize::from(b)]) {
+                            let heads: Vec<Column> = keys.iter().map(|at| own[usize::from(*at)].clone()).collect();
+                            let (a_name, b_name) = (&own[usize::from(a)].name, &theirs[usize::from(b)].name);
+                            for (turned, word) in [(false, "same-shape"), (true, "same-shape-d4")] {
+                                family.push(Step::Part(Box::new(PartStep::SameShape { keys: keys.clone(), a, others: others.clone(), b, turned })), first, other, heads.clone(), 1, format!("({word} {own_text} {their_text} {key_text} {a_name} {other_text} {b_name})"), RootKind::Rows);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // What the two say together of the output color.
+        for a in places(&t_columns, &cells) {
+            for b in places(&u_columns, &cells) {
+                let join_text = format!("(join T {u_text} ({} {}))", t_columns[usize::from(a)].name, u_columns[usize::from(b)].name);
+                let Some(join) = family.terms.iter().position(|term| term.text == join_text) else { continue };
+                let columns = family.terms[join].columns.clone();
+                let free = |column: &Column| !matches!(column.ty, ValueType::Position | ValueType::Box | ValueType::Offset);
+                for v in (0..t_columns.len()).filter(|at| *at != usize::from(a) && free(&columns[*at])) {
+                    for w in (t_columns.len()..columns.len()).filter(|at| free(&columns[*at])) {
+                        let text = format!("(determines-jointly {join_text} {} {} {})", columns[usize::from(a)].name, columns[v].name, columns[w].name);
+                        family.push(Step::Part(Box::new(PartStep::DeterminesJointly { p: a, v: v as u16, w: w as u16 })), join as u32, LEAF_GRIDS, Vec::new(), 2, text, RootKind::Holds);
+                    }
+                }
+            }
+        }
+        // The output's cells and the changed cells that T holds, with or without U.
+        let changed = FIRST_CONSTANT + parts.iter().position(|part| part.name == "output-diff").expect("the part of the output's changed cells") as u32;
+        let colors = [ValueType::Color];
+        for covered in [LEAF_OUTPUT, changed] {
+            let (covered_columns, covered_text) = (family.terms[covered as usize].columns.clone(), family.terms[covered as usize].text.clone());
+            for a in places(&t_columns, &cells) {
+                let mut own_sets: Vec<(Vec<u16>, Vec<u16>)> = vec![(vec![0], vec![a])];
+                own_sets.extend(places(&t_columns, &colors).into_iter().map(|c| (vec![0, 1], vec![a, c])));
+                for (left, right) in own_sets {
+                    let pairs: Vec<String> = left.iter().zip(&right).map(|(l, r)| format!("({} {})", covered_columns[usize::from(*l)].name, t_columns[usize::from(*r)].name)).collect();
+                    let before = family.terms.len();
+                    let t_text = format!("(semijoin {covered_text} T {})", pairs.join(" "));
+                    family.push(Step::Semijoin { left: left.clone().into_boxed_slice(), right: right.into_boxed_slice() }, covered, LEAF_TABLE, covered_columns.clone(), 2, t_text.clone(), RootKind::Share);
+                    if family.terms.len() == before {
+                        continue;
+                    }
+                    let held = before as u32;
+                    for b in places(&u_columns, &cells) {
+                        let mut their_sets: Vec<(Vec<u16>, Vec<u16>)> = vec![(vec![0], vec![b])];
+                        their_sets.extend(places(&u_columns, &colors).into_iter().map(|c| (vec![0, 1], vec![b, c])));
+                        for (l, r) in their_sets {
+                            let pairs: Vec<String> = l.iter().zip(&r).map(|(l, r)| format!("({} {})", covered_columns[usize::from(*l)].name, u_columns[usize::from(*r)].name)).collect();
+                            let pairs = pairs.join(" ");
+                            family.push(Step::Semijoin { left: l.clone().into_boxed_slice(), right: r.clone().into_boxed_slice() }, held, u_leaf, covered_columns.clone(), 3, format!("(semijoin {t_text} {u_text} {pairs})"), RootKind::Share);
+                            family.push(Step::Antijoin { left: l.into_boxed_slice(), right: r.into_boxed_slice() }, held, u_leaf, covered_columns.clone(), 3, format!("(antijoin {t_text} {u_text} {pairs})"), RootKind::Share);
+                        }
+                    }
+                }
+            }
+        }
+        family.by_size.push(family.terms.len());
+        family.name_roots(&all, names);
+        family
+    }
+
     /// The family of a pair's own numbers: each part that reads a grid, and what stands over it, with no table.
     pub fn of_grids(d: usize, names: &NameStore) -> Generated {
         let mut family = Generated::empty();
@@ -358,13 +528,14 @@ impl Generated {
         let family = self;
         let task_wide = family.task_wide;
         let over_grids = family.over_grids;
+        let two_tables = family.two_tables;
         let mut held = names.begin();
         let mut roots = 0;
         let texts_of_first: Vec<String> = family.terms.iter().map(|term| term.text.clone()).collect();
         let first_term = family.first_term;
         let follows: Vec<bool> = family.refined.iter().map(|refined| refined.count_follows).collect();
         for (at, term) in family.terms.iter_mut().enumerate().skip(first_term) {
-            if term.flags & READS_TABLE == 0 && !over_grids {
+            if (term.flags & READS_TABLE == 0 && !over_grids) || (two_tables && term.flags & READS_SECOND == 0) {
                 continue;
             }
             let count_follows = follows[at];
@@ -698,7 +869,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false }
+        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1996,6 +2167,28 @@ impl Generators {
         let (cache, clock) = &mut *held;
         *clock += 1;
         cache.insert(hash, (family.clone(), *clock));
+        family
+    }
+
+    /// The family of two tables of a state.
+    pub fn get_two_tables(&self, t: &crate::stored::Stored, u: &crate::stored::Stored) -> Arc<Generated> {
+        let all: Vec<ValueType> = t.types.iter().chain(&u.types).cloned().collect();
+        let hash = hash_words(format!("two {} {}", t.types.len(), crate::stored::schema_key(&all)).bytes().map(u64::from));
+        if let Some(found) = self.held.lock().expect("no panic").0.get(&hash) {
+            return found.0.clone();
+        }
+        let family = Arc::new(Generated::of_two_tables(&t.types, &u.types, &self.names));
+        let mut held = self.held.lock().expect("no panic");
+        let (cache, clock) = &mut *held;
+        *clock += 1;
+        cache.insert(hash, (family.clone(), *clock));
+        let mut total: usize = cache.values().map(|found| found.0.terms.len()).sum();
+        while total > CACHED_TERMS && cache.len() > 1 {
+            let Some(oldest) = cache.iter().filter(|(key, _)| **key != hash).min_by_key(|(_, found)| found.1).map(|(key, _)| *key) else { break };
+            if let Some(gone) = cache.remove(&oldest) {
+                total -= gone.0.terms.len();
+            }
+        }
         family
     }
 

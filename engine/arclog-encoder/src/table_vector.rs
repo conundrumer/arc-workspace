@@ -218,11 +218,39 @@ pub fn base_vectors(grids: &Grids, families: &Generators, d: usize) -> BaseVecto
 }
 
 /// A pair's own numbers, which read the base tables and no other table, at every example.
-pub fn pair_vector(grids: &Grids, families: &Generators, d: usize) -> TableVector {
+pub fn pair_vector(grids: &Grids, families: &Generators, d: usize, only_output: bool) -> TableVector {
     let family: Arc<Generated> = families.get_grids(d);
     let mut walker = Walker::new(&family);
     let no_table = Stored { key: String::new(), types: Vec::new(), rows: vec![Vec::new(); grids.inputs.len()] };
-    table_vector(&mut walker, &no_table, grids, grids.inputs.len(), false)
+    table_vector(&mut walker, &no_table, grids, grids.inputs.len(), only_output)
+}
+
+/// The vector of two tables of a state, over one instance per model of each at each example.
+pub fn two_tables_vector(walker: &mut Walker<'_>, t: &Stored, u: &Stored, grids: &Grids, examples: usize, only_output: bool) -> TableVector {
+    let mut example_of = Vec::with_capacity(examples);
+    let mut t_rows = Vec::with_capacity(examples);
+    let mut u_rows: Vec<Option<Arc<Table>>> = Vec::with_capacity(examples);
+    for example in 0..examples {
+        let (own, theirs) = (t.rows.get(example).map_or(&[][..], Vec::as_slice), u.rows.get(example).map_or(&[][..], Vec::as_slice));
+        if own.is_empty() || theirs.is_empty() {
+            example_of.push(example);
+            t_rows.push(None);
+            u_rows.push(None);
+            continue;
+        }
+        for first in own {
+            for second in theirs {
+                example_of.push(example);
+                t_rows.push(Some(first.clone()));
+                u_rows.push(Some(second.clone()));
+            }
+        }
+    }
+    let train = example_of.iter().filter(|example| **example < grids.train).count();
+    let mut leaves = leaves_at(&t_rows, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+    leaves.push(u_rows.iter().map(|table| table.clone().map_or(crate::native::Val::None, crate::native::Val::of_table)).collect());
+    let found = walker.walk(&leaves, train, only_output);
+    combined(found, &example_of, examples, grids.train.min(examples))
 }
 
 /// `AssignmentVector`: one parameterized table across its assignments, as the contract gives it.

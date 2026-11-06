@@ -4,7 +4,8 @@
 //! leave nothing behind. A table's stable roots stand with their value, and its other active roots
 //! with the least, the mean and the greatest of their value, so a model can read both. A wide run
 //! writes in their place each table's task-wide roots, and the numbers of the base parts. A parents
-//! run writes the lists of the tables that the candidates' forms read, by name.
+//! run writes the lists of the tables that the candidates' forms read, by name. A state run writes each
+//! candidate's State features.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -13,7 +14,8 @@ use crate::gen_constants::number_of;
 use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
 use crate::stored::Stored;
-use crate::table_vector::{base_vectors, table_vector, task_wide_vector, Grids, TableVector};
+use crate::state_features::{graph_numbers, nodes_of, relations, Relation};
+use crate::table_vector::{base_vectors, pair_vector, table_vector, task_wide_vector, two_tables_vector, Grids, TableVector};
 
 /// A list as the file writes it: shapes, and the mean of each one's greatest value over its scope.
 struct Written {
@@ -127,6 +129,48 @@ pub enum ListsOf {
     Wide(usize),
     /// The lists of the tables that the `parents` of the candidates name, each under its name.
     Parents,
+    /// Each candidate's State features, and the numbers of the pair.
+    State,
+}
+
+/// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples,
+/// where a table with no value of the shape counts as 0.
+fn pooled(owner: String, vectors: &[&TableVector]) -> Written {
+    let mut held: FastMap<u64, (f32, f32, f32, usize)> = FastMap::default();
+    for vector in vectors {
+        for shape in 0..vector.shapes.len() {
+            let (_, mean, _, count) = vector.over_examples(shape, false);
+            if count == 0 {
+                continue;
+            }
+            let mean = mean as f32;
+            let entry = held.entry(vector.shapes[shape]).or_insert((f32::INFINITY, 0.0, f32::NEG_INFINITY, 0));
+            entry.0 = entry.0.min(mean);
+            entry.1 += mean;
+            entry.2 = entry.2.max(mean);
+            entry.3 += 1;
+        }
+    }
+    let total = vectors.len();
+    let mut graded: Vec<(u64, f32, f32, f32)> = held.into_iter().map(|(shape, (least, sum, most, seen))| {
+        let least = if seen < total { least.min(0.0) } else { least };
+        let most = if seen < total { most.max(0.0) } else { most };
+        (shape, least, sum / total as f32, most)
+    }).collect();
+    graded.sort_unstable_by_key(|entry| entry.0);
+    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded }
+}
+
+/// A table's two-table values with another table of the state, each the mean over the examples.
+fn edge_of(owner: String, vector: &TableVector) -> Written {
+    let mut ids = Vec::with_capacity(vector.shapes.len());
+    let mut values = Vec::with_capacity(vector.shapes.len());
+    for shape in 0..vector.shapes.len() {
+        let (_, mean, _, _) = vector.over_examples(shape, false);
+        ids.push(vector.shapes[shape]);
+        values.push(mean as f32);
+    }
+    Written { owner: owner.into(), ids, values, graded: Vec::new() }
 }
 
 pub struct TaskLists {
@@ -182,6 +226,10 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     };
     let mut items: Vec<serde_json::Value> = Vec::new();
     let mut left_out = 0u64;
+    let nodes = nodes_of(&data["state"]);
+    let strings = |names: &serde_json::Value| -> Vec<String> { names.as_array().into_iter().flatten().filter_map(|name| name.as_str().map(str::to_string)).collect() };
+    // Per item: its form, and for its gold table and each mutant, the table's place and the names its form reads.
+    let mut candidates: Vec<(u64, Vec<(usize, Vec<String>)>)> = Vec::new();
     for item in data["items"].as_array().ok_or("a file's items")? {
         note_names(&item["parents"]);
         for mutant in item["mutants"].as_array().into_iter().flatten() {
@@ -193,17 +241,20 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         };
         let mut mutants = Vec::new();
         let mut whole = true;
+        let mut own_candidates = vec![(gold, strings(&item["parents"]))];
         for mutant in item["mutants"].as_array().ok_or("an item's mutants")? {
             let Some(table) = add_table(&mutant["table"], &mut stored) else {
                 whole = false;
                 break;
             };
+            own_candidates.push((table, strings(&mutant["parents"])));
             mutants.push(serde_json::json!({"mutant": mutant["mutant"], "edit": mutant["edit"], "extra": mutant["extra"], "table": table, "parents": reads(&mutant["parents"]), "types": mutant["table"]["types"], "task_level": mutant["table"]["task_level"], "assignments": mutant["table"]["assignments"]}));
         }
         if !whole {
             left_out += 1;
             continue;
         }
+        candidates.push((item["form"].as_u64().unwrap_or(0), own_candidates));
         items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": item["gold"]["types"], "task_level": item["gold"]["task_level"], "assignments": item["gold"]["assignments"], "mutants": mutants}));
     }
     let header_rest = (data["case"].clone(), data["budget_cut"].clone(), data["left_out"].clone());
@@ -217,7 +268,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
     let walked: Vec<usize> = match lists_of {
         ListsOf::Tables => (0..stored.len()).collect(),
-        ListsOf::Wide(_) => Vec::new(),
+        ListsOf::Wide(_) | ListsOf::State => Vec::new(),
         ListsOf::Parents => {
             let mut places: Vec<usize> = named.iter().map(|(_, at)| *at).collect();
             places.sort_unstable();
@@ -244,12 +295,82 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                 let vector = table_vector(walker, table, &grids, examples, only_output);
                 lists.push(stable_of(at.into(), &vector));
             }
-            ListsOf::Parents => {}
+            ListsOf::Parents | ListsOf::State => {}
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
     let mut walks = stored.len() as u64;
-    if lists_of == ListsOf::Parents {
+    if lists_of == ListsOf::State {
+        // Each pair of a candidate's table and a table of its state, once.
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        for (form, members) in &candidates {
+            for (table, _) in members {
+                for node in nodes.iter().filter(|node| node.form < *form) {
+                    if let Some(other) = prefix.get(&node.name) {
+                        if other != table {
+                            pairs.push((*table, *other));
+                        }
+                    }
+                }
+            }
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        let families_of: Vec<Arc<Generated>> = pairs.iter().map(|(t, u)| families.get_two_tables(&stored[*t], &stored[*u])).collect();
+        let mut walker_of: FastMap<*const Generated, usize> = FastMap::default();
+        let mut two_families: Vec<&Arc<Generated>> = Vec::new();
+        for family in &families_of {
+            walker_of.entry(Arc::as_ptr(family)).or_insert_with(|| {
+                two_families.push(family);
+                two_families.len() - 1
+            });
+        }
+        let mut two_walkers: Vec<Walker<'_>> = two_families.iter().map(|family| Walker::new(family)).collect();
+        let mut vectors: FastMap<(usize, usize), TableVector> = FastMap::default();
+        for ((t, u), family) in pairs.iter().zip(&families_of) {
+            let walker = &mut two_walkers[walker_of[&Arc::as_ptr(family)]];
+            vectors.insert((*t, *u), two_tables_vector(walker, &stored[*t], &stored[*u], &grids, examples, only_output));
+        }
+        walks = pairs.len() as u64;
+        // A candidate's numbers, and its values pooled by each table's relation to it.
+        let mut edges: BTreeMap<(usize, usize), ()> = BTreeMap::new();
+        for (at, (form, members)) in candidates.iter().enumerate() {
+            for (member, (table, parents)) in members.iter().enumerate() {
+                let related = relations(&nodes, *form, parents);
+                for relation in Relation::ALL {
+                    let others: Vec<&TableVector> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter(|other| *other != table).filter_map(|other| vectors.get(&(*table, *other))).collect();
+                    if !others.is_empty() {
+                        lists.push(pooled(format!("{at}/{member}/{}", relation.word()), &others));
+                    }
+                }
+                let mut numbers = graph_numbers(&nodes, *form, parents);
+                numbers.push(("same-table", related.iter().filter(|(node, _)| prefix.get(&node.name) == Some(table)).count() as f32));
+                let mut written: Vec<(u64, f32)> = numbers.into_iter().map(|(name, value)| {
+                    let text = format!("(state {name})");
+                    let hash = hash_words(text.bytes().map(u64::from));
+                    families.names.add_root(hash, text, 0);
+                    (hash as u64, value)
+                }).collect();
+                written.sort_unstable_by_key(|entry| entry.0);
+                lists.push(Written { owner: format!("{at}/{member}/graph").into(), ids: written.iter().map(|entry| entry.0).collect(), values: written.iter().map(|entry| entry.1).collect(), graded: Vec::new() });
+                // A later gold query joins two gold tables, so the edges of gold tables are the ones to read.
+                if member == 0 {
+                    for (node, _) in &related {
+                        if let Some(other) = prefix.get(&node.name) {
+                            if other != table {
+                                edges.insert((*table, *other), ());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (t, u) in edges.keys() {
+            lists.push(edge_of(format!("edge/{t}/{u}"), &vectors[&(*t, *u)]));
+        }
+        let pair = pair_vector(&grids, families, d, only_output);
+        lists.push(stable_of("pair".into(), &pair));
+    } else if lists_of == ListsOf::Parents {
         walks = walked.len() as u64;
         let mut vectors: FastMap<usize, TableVector> = FastMap::default();
         for at in &walked {
@@ -281,7 +402,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     dictionary.dedup();
     let header = serde_json::json!({
         "task": task_name, "case": header_rest.0, "train": train, "test": test, "last_query": last_query, "budget_cut": header_rest.1,
-        "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at, "read_names_skipped": skipped,
+        "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at, "read_names_skipped": skipped, "places": prefix,
         "shapes": dictionary.len(),
         "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len(), "graded": list.graded.len()})).collect::<Vec<_>>(),
     }).to_string();

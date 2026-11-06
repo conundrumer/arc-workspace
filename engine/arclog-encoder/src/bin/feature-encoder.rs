@@ -67,6 +67,7 @@ struct Arguments {
     wide_size: Option<usize>,
     wide_only: bool,
     parents_only: bool,
+    state_only: bool,
     thin: u32,
     seconds: f64,
     program_compare: bool,
@@ -79,7 +80,7 @@ struct Arguments {
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { wide_size: None, wide_only: false, parents_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
+    let mut parsed = Arguments { wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -90,6 +91,7 @@ fn arguments() -> Arguments {
             "--wide-size" => parsed.wide_size = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --wide-size")),
             "--wide-only" => parsed.wide_only = true,
             "--parents-only" => parsed.parents_only = true,
+            "--state-only" => parsed.state_only = true,
             "--out" => parsed.out = Some(args.next().expect("a file after --out").into()),
             "--work-cap" => parsed.work_cap = args.next().and_then(|text| text.parse().ok()).expect("a number after --work-cap"),
             "--limit" => parsed.limit = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --limit")),
@@ -389,7 +391,7 @@ fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
     let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
     let families = Generators::default();
     let base = base_vectors(&grids, &families, arguments.size.max(1));
-    let pair = pair_vector(&grids, &families, arguments.size.max(1));
+    let pair = pair_vector(&grids, &families, arguments.size.max(1), false);
     let mut out = arclog_encoder::zio::writer(&path, false)?;
     let names = names_of(&families.names);
     write_vector(&mut out, &serde_json::json!({"base": "input"}), &base.input, &names)?;
@@ -458,7 +460,9 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
                         continue;
                     }
                 };
-                let lists_of = if arguments.parents_only {
+                let lists_of = if arguments.state_only {
+                    ListsOf::State
+                } else if arguments.parents_only {
                     ListsOf::Parents
                 } else if arguments.wide_only {
                     ListsOf::Wide(arguments.wide_size.unwrap_or(1))
@@ -600,6 +604,10 @@ impl CheckTally {
 
     fn out_of_time(&self) -> bool {
         self.started.elapsed().as_secs_f64() > self.budget
+    }
+
+    fn restart_clock(&mut self) {
+        self.started = std::time::Instant::now();
     }
 
     fn print(&self) {
@@ -825,6 +833,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         }
         Ok(EngineRows { names: value.row_names.clone(), types: value.types.clone(), examples })
     };
+    let mut checked_tables: Vec<(String, Stored, Vec<String>)> = Vec::new();
     for (place, name) in host.table_names().iter().enumerate() {
         if tally.out_of_time() {
             break;
@@ -861,6 +870,24 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
         let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
         check_family(&family, &leaves, train, every, place == 0, name, &engine, &mut tally, false)?;
+        checked_tables.push((name.clone(), stored, names));
+    }
+    // Two tables of the state, each pair once, the later table first.
+    if std::env::var_os("GENERATE_CHECK_TWO_TABLES").is_some() {
+        tally.restart_clock();
+        'pairs: for (at, (name, stored, names)) in checked_tables.iter().enumerate() {
+            for (other_name, other, other_names) in &checked_tables[..at] {
+                if tally.out_of_time() {
+                    break 'pairs;
+                }
+                let family = Generated::two_tables_with_names(&stored.types, names, &other.types, other_names, other_name, &store);
+                let example_of: Vec<usize> = (0..train).collect();
+                let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
+                let mut leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+                leaves.push(other.rows.iter().take(train).map(|models| models.first().cloned().map_or(arclog_encoder::native::Val::None, arclog_encoder::native::Val::of_table)).collect());
+                check_family(&family, &leaves, train, every, false, name, &engine, &mut tally, false)?;
+            }
+        }
     }
     tally.print();
     Ok(())

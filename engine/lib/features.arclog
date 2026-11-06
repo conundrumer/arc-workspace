@@ -2088,3 +2088,154 @@
       (output (:P *P) (:Col *Col))))
   (QUERY &q (&in.fundamental_period *K) (&out.fundamental_period K))
   (gives &q))
+
+;; How two tables of a state stand to each other.
+
+(fragment (same-values (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "Whether a column of each of two relations holds the same values."
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (INIT &in_first Order
+    (member ((:t ?a))
+      (?L (?a *))))
+  (QUERY &q
+    (ALL ((?L (?a *)))
+      ((&in_second.minimal (:t ?a))))
+    (ALL ((?S (?b *)))
+      ((&in_first.minimal (:t ?b)))))
+  (gives &q))
+
+(fragment (inside-boxes (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "The first relation's rows with a cell inside a box of the second."
+  (QUERY &met
+    (?L (?a *))
+    (?S (?b *))
+    (inside (:A ?a) (:B ?b)))
+  (QUERY &q (?L (*others ?L)) (&met ?a))
+  (gives &q))
+
+(fragment (boxes-holding (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "The first relation's rows whose box holds a cell of the second."
+  (QUERY &met
+    (?L (?a *))
+    (?S (?b *))
+    (inside (:A ?b) (:B ?a)))
+  (QUERY &q (?L (*others ?L)) (&met ?a))
+  (gives &q))
+
+(fragment (same-shape (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "The keys of a relation whose cells are, up to a move, the cells of some key of a second relation."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &left_cells Order
+    (member ((:t ?keys (:Cell ?a)))
+      (?L (?keys *) (?a *))))
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &left_box BoundingBox
+    (key ((?L (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&left_cells.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &left_placed
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (&left_box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?a) *X_rel))
+  (INIT &right_cells Order
+    (member ((:t ?others (:Cell ?b)))
+      (?S (?others *) (?b *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (INIT &right_box BoundingBox
+    (key ((?S (?others ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&right_cells.minimal (:t ?others (:Cell *Cell))))))
+  (QUERY &right_placed
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (&right_box.box (:key ?others) (:B *Box))
+    (relative (:Base Box) (:X ?b) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&right_placed *Key *X_rel))
+    (observed ((:observed Key) (:m X_rel))
+      (&left_placed *Key *X_rel)))
+  (INIT &matched Cardinality
+    (key ((?L (?keys ^)) (&whole ^Whole) (&left_ids.class (:a ?keys) (:Id *Key)) (&same_set.equal (:observed Key)))))
+  (QUERY &q (?L (?keys *)) (&matched.size (:key ?keys)))
+  (gives &q))
+
+(fragment (same-shape-d4 (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "The keys of a relation whose cells are, up to a move, a rotation or a reflection, the cells of some key of a second relation."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &left_cells Order
+    (member ((:t ?keys (:Cell ?a)))
+      (?L (?keys *) (?a *))))
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &left_box BoundingBox
+    (key ((?L (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&left_cells.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &left_placed
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (&left_box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?a) *X_rel))
+  (INIT &right_cells Order
+    (member ((:t ?others (:Cell ?b)))
+      (?S (?others *) (?b *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (INIT &right_box BoundingBox
+    (key ((?S (?others ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&right_cells.minimal (:t ?others (:Cell *Cell))))))
+  (QUERY &right_placed
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (&right_box.box (:key ?others) (:B *Box))
+    (relative (:Base Box) (:X ?b) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&right_placed *Key *X_rel))
+    (observed ((:observed Key D) (:m Image))
+      (&left_placed *Key *X_rel)
+      (d4_elem *D)
+      (apply D (:P X_rel) (:P_out *Image))))
+  (INIT &matched Cardinality
+    (key ((?L (?keys ^)) (&whole ^Whole) (&left_ids.class (:a ?keys) (:Id *Key)) (&same_set.equal (:observed Key)))))
+  (QUERY &q (?L (?keys *)) (&matched.size (:key ?keys)))
+  (gives &q))
+
+(fragment (determines-jointly (?R relation) (?p column ?R) (?v column ?R) (?w column ?R))
+  "Whether two columns together give the output color at a relation's cells, where neither does alone."
+  (QUERY &cells
+    (?R (?p *) (?v *) (?w *))
+    (output (:P ?p) (:Col *Out)))
+  (INIT &both Singleton
+    (key ((?R (?v ^) (?w ^)))
+      (member ((:v Out))
+        (&cells ?v ?w *Out))))
+  (INIT &first Singleton
+    (key ((?R (?v ^)))
+      (member ((:v Out))
+        (&cells ?v *Out))))
+  (INIT &second Singleton
+    (key ((?R (?w ^)))
+      (member ((:v Out))
+        (&cells ?w *Out))))
+  (QUERY &some_both (&both.plural))
+  (QUERY &q
+    (&first.plural)
+    (&second.plural)
+    (NOT (&some_both)))
+  (gives &q))

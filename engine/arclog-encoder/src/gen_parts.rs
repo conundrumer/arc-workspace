@@ -92,6 +92,16 @@ pub enum PartStep {
     DiffCells { p: u16, output: bool, on: bool },
     /// The keys of a relation with no cell in a grid's diff: keys.
     DiffGroupsOff { keys: Box<[u16]>, p: u16, output: bool },
+    /// Whether a column of each of two relations holds the same values.
+    SameValues { a: u16, b: u16 },
+    /// The first relation's rows with a cell inside a box of the second.
+    InsideBoxes { a: u16, b: u16 },
+    /// The first relation's rows whose box holds a cell of the second.
+    BoxesHolding { a: u16, b: u16 },
+    /// The keys of a relation whose cells are, up to a move, and a D4 element where `turned`, those of a key of the second.
+    SameShape { keys: Box<[u16]>, a: u16, others: Box<[u16]>, b: u16, turned: bool },
+    /// Whether two columns together give the output color at a relation's cells, where neither does alone.
+    DeterminesJointly { p: u16, v: u16, w: u16 },
     /// The relation itself: a table's own rows as a term, for the roots of the table.
     Same,
     /// The values of a column at every example of a grid's Example column: (n).
@@ -108,7 +118,7 @@ impl PartStep {
 
     /// Whether the part's second relation is a relation hole, and no grid.
     pub fn reads_second_relation(&self) -> bool {
-        matches!(self, PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. })
+        matches!(self, PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. } | PartStep::SameValues { .. } | PartStep::InsideBoxes { .. } | PartStep::BoxesHolding { .. } | PartStep::SameShape { .. })
     }
 
     /// The columns of its first relation that its holes name.
@@ -118,7 +128,9 @@ impl PartStep {
             PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } => vec![*p],
             PartStep::Inside { b } | PartStep::BoxMargin { b } | PartStep::BoxExtent { b } | PartStep::BoxRead { b, .. } => vec![*b],
             PartStep::NumberExtreme { n, .. } => vec![*n],
-            PartStep::SharedLine { a, .. } => vec![*a],
+            PartStep::SharedLine { a, .. } | PartStep::SameValues { a, .. } | PartStep::InsideBoxes { a, .. } | PartStep::BoxesHolding { a, .. } => vec![*a],
+            PartStep::SameShape { keys, a, .. } => with(keys, &[*a]),
+            PartStep::DeterminesJointly { p, v, w } => vec![*p, *v, *w],
             PartStep::Displacement { a, b } => vec![*a, *b],
             PartStep::BoxFrameRead { b, x, .. } | PartStep::BoxCellRead { b, x, .. } => vec![*b, *x],
             PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
@@ -178,6 +190,11 @@ impl PartStep {
             PartStep::Inside { b } => format!("(inside &r {} {grid})", c(b)),
             PartStep::Occurs { keys, p, v, turned } => format!("({} &r {} {} {} {grid})", if *turned { "occurs-d4" } else { "occurs" }, list(keys), c(p), c(v)),
             PartStep::SharedLine { a, b } => format!("(shared-line &r &s {} {})", c(a), second(*b)),
+            PartStep::SameValues { a, b } => format!("(same-values &r &s {} {})", c(a), second(*b)),
+            PartStep::InsideBoxes { a, b } => format!("(inside-boxes &r &s {} {})", c(a), second(*b)),
+            PartStep::BoxesHolding { a, b } => format!("(boxes-holding &r &s {} {})", c(a), second(*b)),
+            PartStep::SameShape { keys, a, others, b, turned } => format!("({} &r &s {} {} ({}) {})", if *turned { "same-shape-d4" } else { "same-shape" }, list(keys), c(a), others.iter().map(|at| second(*at)).collect::<Vec<_>>().join(" "), second(*b)),
+            PartStep::DeterminesJointly { p, v, w } => format!("(determines-jointly &r {} {} {})", c(p), c(v), c(w)),
             PartStep::Distance { p } => format!("(distance &r {} {grid})", c(p)),
             PartStep::BoxMargin { b } => format!("(box-margin &r {})", c(b)),
             PartStep::BoxExtent { b } => format!("(box-extent &r {} {grid})", c(b)),
@@ -1014,6 +1031,63 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::distinct(keys.len() + 1, out))
+            }
+            PartStep::SameValues { a, b } => {
+                let other = flat(children[1])?;
+                let values = |table: &Table, at: u16| -> Vec<Cell> {
+                    let mut held: Vec<Cell> = table.rows().map(|row| row[usize::from(at)]).collect();
+                    held.sort_unstable();
+                    held.dedup();
+                    held
+                };
+                Val::of_table(Table::unit(t.len > 0 && values(t, *a) == values(&other, *b)))
+            }
+            PartStep::InsideBoxes { a, b } | PartStep::BoxesHolding { a, b } => {
+                let other = flat(children[1])?;
+                let mut others: Vec<[i32; 4]> = other.rows().map(|row| margins_of(row[usize::from(*b)])).collect();
+                others.sort_unstable();
+                others.dedup();
+                if others.len() * t.len > 4_000_000 {
+                    return None;
+                }
+                let inside = matches!(self, PartStep::InsideBoxes { .. });
+                let mut out = Vec::new();
+                for row in t.rows() {
+                    let own = margins_of(row[usize::from(*a)]);
+                    let met = others.iter().any(|held| (0..4).all(|at| if inside { own[at] >= held[at] } else { held[at] >= own[at] }));
+                    if met {
+                        out.extend_from_slice(row);
+                    }
+                }
+                Val::of_table(Table::new(t.arity, out))
+            }
+            PartStep::SameShape { keys, a, others, b, turned } => {
+                let other = flat(children[1])?;
+                if !on_one_frame(t, keys, *a) || !on_one_frame(&other, others, *b) {
+                    return None;
+                }
+                let shape = |held: &Vec<(u8, u8)>| hash_cells(&if *turned { canon(held) } else { normalized(held) });
+                let (cells, heads) = cells_by_key(t, keys, *a);
+                let (other_cells, _) = cells_by_key(&other, others, *b);
+                let seen: std::collections::HashSet<u32> = other_cells.iter().filter(|held| !held.is_empty()).map(shape).collect();
+                keys_only(&heads, cells.iter().map(|held| !held.is_empty() && seen.contains(&shape(held))), keys.len())
+            }
+            PartStep::DeterminesJointly { p, v, w } => {
+                let (_, output) = grids_of(children[1])?;
+                let mut both: FastMap<(Cell, Cell), (Cell, bool)> = FastMap::default();
+                let mut first: FastMap<Cell, (Cell, bool)> = FastMap::default();
+                let mut second: FastMap<Cell, (Cell, bool)> = FastMap::default();
+                for row in t.rows() {
+                    let Some(color) = output.at.get(&row[usize::from(*p)]) else { continue };
+                    let (one, other) = (row[usize::from(*v)], row[usize::from(*w)]);
+                    let held = both.entry((one, other)).or_insert((*color, false));
+                    held.1 |= held.0 != *color;
+                    let held = first.entry(one).or_insert((*color, false));
+                    held.1 |= held.0 != *color;
+                    let held = second.entry(other).or_insert((*color, false));
+                    held.1 |= held.0 != *color;
+                }
+                Val::of_table(Table::unit(first.values().any(|held| held.1) && second.values().any(|held| held.1) && !both.values().any(|held| held.1)))
             }
             PartStep::SharedLine { a, b } => {
                 let other = flat(children[1])?;
