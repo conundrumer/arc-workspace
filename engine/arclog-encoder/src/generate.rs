@@ -171,6 +171,8 @@ pub struct Generated {
     force_next: bool,
     /// The terms that a part of the base tables names.
     diff_terms: Vec<u32>,
+    /// Whether the family's roots read the base tables and no other table.
+    over_grids: bool,
 }
 
 fn is_number(ty: &ValueType) -> bool {
@@ -312,17 +314,57 @@ impl Generated {
         family
     }
 
+    /// The family of a pair's own numbers: each part that reads a grid, and what stands over it, with no table.
+    pub fn of_grids(d: usize, names: &NameStore) -> Generated {
+        let mut family = Generated::empty();
+        family.over_grids = true;
+        let grid = || vec![Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }, Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }];
+        family.push_leaf("T", Vec::new(), READS_TABLE, 0);
+        family.push_leaf("output", grid(), READS_OUTPUT, 0);
+        family.push_leaf("input", grid(), READS_INPUT, 0);
+        family.push_leaf("grids", Vec::new(), READS_INPUT | READS_OUTPUT, 0);
+        let parts = constant_parts();
+        for part in &parts {
+            let columns = part.columns.iter().map(|(name, ty)| Column { name: (*name).to_string(), ty: ty.clone(), source: ident_source(&part.name) }).collect();
+            let flags = (if part.reads_output { READS_OUTPUT } else { 0 }) | (if part.reads_input { READS_INPUT } else { 0 });
+            family.push_leaf(&part.name, columns, flags, 1);
+        }
+        family.first_term = family.terms.len();
+        family.leaf_refinements(&[], &parts);
+        let reading: Vec<u32> = (FIRST_CONSTANT..family.first_term as u32).filter(|at| family.terms[*at as usize].flags != 0 && !family.terms[*at as usize].columns.is_empty()).collect();
+        for at in &reading {
+            let (columns, text) = (family.terms[*at as usize].columns.clone(), family.terms[*at as usize].text.clone());
+            family.force_next = true;
+            family.push(Step::Part(Box::new(PartStep::Same)), *at, NO_TERM, columns, 1, text, RootKind::Rows);
+            // The count of a relation of at most one row follows from its value.
+            let mut refined = family.refined[*at as usize].clone();
+            refined.count_follows = refined.one_row() && family.terms[*at as usize].columns.len() == 1 && is_number(&family.terms[*at as usize].columns[0].ty);
+            *family.refined.last_mut().expect("the term just pushed") = refined;
+        }
+        family.by_size.push(family.terms.len());
+        if d >= 2 {
+            for at in &reading {
+                family.unary_operators(*at, 2);
+                family.parts_of(*at, 2);
+            }
+        }
+        family.by_size.push(family.terms.len());
+        family.name_roots(&[], names);
+        family
+    }
+
     /// The name of each root, and what a walk does not read dropped from the terms.
     fn name_roots(&mut self, types: &[ValueType], names: &NameStore) {
         let family = self;
         let task_wide = family.task_wide;
+        let over_grids = family.over_grids;
         let mut held = names.begin();
         let mut roots = 0;
         let texts_of_first: Vec<String> = family.terms.iter().map(|term| term.text.clone()).collect();
         let first_term = family.first_term;
         let follows: Vec<bool> = family.refined.iter().map(|refined| refined.count_follows).collect();
         for (at, term) in family.terms.iter_mut().enumerate().skip(first_term) {
-            if term.flags & READS_TABLE == 0 {
+            if term.flags & READS_TABLE == 0 && !over_grids {
                 continue;
             }
             let count_follows = follows[at];
@@ -656,7 +698,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new() }
+        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1601,7 +1643,7 @@ impl<'a> Walker<'a> {
             let step = term.step.as_ref().expect("a term has a step");
             let reads_output = term.flags & READS_OUTPUT != 0;
             let scope = if reads_output { train.min(instances) } else { instances };
-            let wanted = term.flags & READS_TABLE != 0 && (reads_output || !only_output);
+            let wanted = (term.flags & READS_TABLE != 0 || family.over_grids) && (reads_output || !only_output);
             let extended = term.used;
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
@@ -1950,6 +1992,20 @@ impl Generators {
             }
         }
         let family = Arc::new(Generated::task_wide(&stored.types, d, &self.names));
+        let mut held = self.held.lock().expect("no panic");
+        let (cache, clock) = &mut *held;
+        *clock += 1;
+        cache.insert(hash, (family.clone(), *clock));
+        family
+    }
+
+    /// The family of a pair's own numbers.
+    pub fn get_grids(&self, d: usize) -> Arc<Generated> {
+        let hash = hash_words(format!("grids {d}").bytes().map(u64::from));
+        if let Some(found) = self.held.lock().expect("no panic").0.get(&hash) {
+            return found.0.clone();
+        }
+        let family = Arc::new(Generated::of_grids(d, &self.names));
         let mut held = self.held.lock().expect("no panic");
         let (cache, clock) = &mut *held;
         *clock += 1;

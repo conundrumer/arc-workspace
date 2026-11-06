@@ -217,6 +217,14 @@ pub fn base_vectors(grids: &Grids, families: &Generators, d: usize) -> BaseVecto
     BaseVectors { input: input_vector, ex_output: output_vector }
 }
 
+/// A pair's own numbers, which read the base tables and no other table, at every example.
+pub fn pair_vector(grids: &Grids, families: &Generators, d: usize) -> TableVector {
+    let family: Arc<Generated> = families.get_grids(d);
+    let mut walker = Walker::new(&family);
+    let no_table = Stored { key: String::new(), types: Vec::new(), rows: vec![Vec::new(); grids.inputs.len()] };
+    table_vector(&mut walker, &no_table, grids, grids.inputs.len(), false)
+}
+
 /// `AssignmentVector`: one parameterized table across its assignments, as the contract gives it.
 pub struct AssignmentVector {
     pub count: usize,

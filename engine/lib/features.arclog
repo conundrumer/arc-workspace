@@ -1953,3 +1953,138 @@
     (key ((?R (?keys ^) (?p *)) (&diff (:P ?p)))))
   (QUERY &q (?R (?keys *)) (NOT (&touching.size (:key ?keys))))
   (gives &q))
+
+;; On grids of one extent, how the changed cells of the input stand to those of the output, and the periods of a grid.
+
+(fragment (diff-moves)
+  "Each move with the count of the input's changed cells that it lands on changed output cells of their color."
+  (QUERY &from (input (:P *P) (:Col *Col)) (output (:P P) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &to (output (:P *Q) (:Col *Col)) (input (:P Q) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &moved (&from *P *Col) (&to *Q Col) (relative (:Base P) (:X Q) *X_rel))
+  (INIT &counts Cardinality
+    (key ((&moved (:X_rel ^V)))
+      (member ((:m P))
+        (&moved *P (:X_rel V)))))
+  (QUERY &q (&counts.size (:key *V) *N))
+  (gives &q))
+
+(fragment (best-moves)
+  "The moves that land the most of the input's changed cells. Under a tie, every tied move."
+  (QUERY &from (input (:P *P) (:Col *Col)) (output (:P P) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &to (output (:P *Q) (:Col *Col)) (input (:P Q) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &moved (&from *P *Col) (&to *Q Col) (relative (:Base P) (:X Q) *X_rel))
+  (INIT &counts Cardinality
+    (key ((&moved (:X_rel ^V)))
+      (member ((:m P))
+        (&moved *P (:X_rel V)))))
+  (INIT &order Order
+    (member ((:t V))
+      (&counts.size (:key *V)))
+    (score ((:t V) (:S N))
+      (&counts.size (:key *V) *N)))
+  (QUERY &q (&order.maximal (:t *V)))
+  (gives &q))
+
+(fragment (best-move-landed)
+  "The count of changed cells that a best move lands."
+  (QUERY &from (input (:P *P) (:Col *Col)) (output (:P P) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &to (output (:P *Q) (:Col *Col)) (input (:P Q) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &moved (&from *P *Col) (&to *Q Col) (relative (:Base P) (:X Q) *X_rel))
+  (INIT &counts Cardinality
+    (key ((&moved (:X_rel ^V)))
+      (member ((:m P))
+        (&moved *P (:X_rel V)))))
+  (QUERY &landed (&counts.size *N))
+  (INIT &most Order
+    (member ((:t N))
+      (&landed *N))
+    (score ((:t N) (:S N))
+      (&landed *N)))
+  (QUERY &q (&most.maximal (:t *N)))
+  (gives &q))
+
+(fragment (best-move-size)
+  "How far a best move goes: the greatest count of steps along an axis."
+  (QUERY &from (input (:P *P) (:Col *Col)) (output (:P P) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &to (output (:P *Q) (:Col *Col)) (input (:P Q) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &moved (&from *P *Col) (&to *Q Col) (relative (:Base P) (:X Q) *X_rel))
+  (INIT &counts Cardinality
+    (key ((&moved (:X_rel ^V)))
+      (member ((:m P))
+        (&moved *P (:X_rel V)))))
+  (INIT &order Order
+    (member ((:t V))
+      (&counts.size (:key *V)))
+    (score ((:t V) (:S N))
+      (&counts.size (:key *V) *N)))
+  (QUERY &steps (&order.maximal (:t *V)) (margin (:B V) *K))
+  (INIT &most Order
+    (member ((:t K))
+      (&steps *K))
+    (score ((:t K) (:S K))
+      (&steps *K)))
+  (QUERY &q (&most.maximal (:t *K)))
+  (gives &q))
+
+(fragment (best-move-cells)
+  "The input's changed cells that a best move lands, with the move."
+  (QUERY &from (input (:P *P) (:Col *Col)) (output (:P P) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &to (output (:P *Q) (:Col *Col)) (input (:P Q) (:Col *Col_2)) (!= Col Col_2))
+  (QUERY &moved (&from *P *Col) (&to *Q Col) (relative (:Base P) (:X Q) *X_rel))
+  (INIT &counts Cardinality
+    (key ((&moved (:X_rel ^V)))
+      (member ((:m P))
+        (&moved *P (:X_rel V)))))
+  (INIT &order Order
+    (member ((:t V))
+      (&counts.size (:key *V)))
+    (score ((:t V) (:S N))
+      (&counts.size (:key *V) *N)))
+  (QUERY &q (&moved *P *Col (:X_rel *V)) (&order.maximal (:t V)))
+  (gives &q))
+
+(fragment (periods (?G grid))
+  "The moves along an axis that take the grid onto itself, wherever both cells exist."
+  (INIT &periods Periods
+    (cell (P (:v Col))
+      (?G (:P *P) (:Col *Col))))
+  (QUERY &q (&periods.period *A *K))
+  (gives &q))
+
+(fragment (fundamental-periods (?G grid))
+  "The least period along each axis."
+  (INIT &periods Periods
+    (cell (P (:v Col))
+      (?G (:P *P) (:Col *Col))))
+  (QUERY &q (&periods.fundamental_period *A *K))
+  (gives &q))
+
+(fragment (approximate-periods (?G grid))
+  "The moves along an axis that break no more line pairs than they keep."
+  (INIT &periods Periods
+    (cell (P (:v Col))
+      (?G (:P *P) (:Col *Col))))
+  (QUERY &q (&periods.approximate_period *A *K))
+  (gives &q))
+
+(fragment (shared-periods)
+  "The periods that the two grids share along an axis."
+  (INIT &in Periods
+    (cell (P (:v Col))
+      (input (:P *P) (:Col *Col))))
+  (INIT &out Periods
+    (cell (P (:v Col))
+      (output (:P *P) (:Col *Col))))
+  (QUERY &q (&in.period *A *K) (&out.period A K))
+  (gives &q))
+
+(fragment (shared-fundamental-periods)
+  "The lengths that are a least period of each grid, along any axis of it."
+  (INIT &in Periods
+    (cell (P (:v Col))
+      (input (:P *P) (:Col *Col))))
+  (INIT &out Periods
+    (cell (P (:v Col))
+      (output (:P *P) (:Col *Col))))
+  (QUERY &q (&in.fundamental_period *K) (&out.fundamental_period K))
+  (gives &q))

@@ -10,7 +10,7 @@ use arclog::terms::{Color, Constant, Margins, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::catalog_facts::*;
-use crate::native::{Cell, Table};
+use crate::native::{Cell, FastMap, Table};
 
 /// How cells are written: the bits of each color and orientation.
 pub struct Encoding {
@@ -120,6 +120,9 @@ pub fn constant_parts() -> Vec<ConstantPart> {
         part(format!("{grid}-foreground-box-margins"), vec![("D", ValueType::Dir), ("K", ValueType::Int)]);
         part(format!("{grid}-foreground-box-extents"), vec![("A", ValueType::Axis), ("N", ValueType::Int)]);
         part(format!("{grid}-symmetries"), vec![("D", ValueType::D4)]);
+        part(format!("{grid}-periods"), vec![("A", ValueType::Axis), ("K", n.clone())]);
+        part(format!("{grid}-fundamental-periods"), vec![("A", ValueType::Axis), ("K", n.clone())]);
+        part(format!("{grid}-approximate-periods"), vec![("A", ValueType::Axis), ("K", n.clone())]);
     }
     let mut pair = |name: &str, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name: name.to_string(), columns, reads_output: true, reads_input: true, meets_table: true });
     pair("changed", vec![("P", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())]);
@@ -143,6 +146,13 @@ pub fn constant_parts() -> Vec<ConstantPart> {
     pair("input-in-output-d4", vec![("D", ValueType::D4), ("B", b.clone())]);
     pair("output-diff", vec![("P", p.clone()), ("Col", col.clone())]);
     pair("input-diff", vec![("P", p.clone()), ("Col", col.clone())]);
+    pair("diff-moves", vec![("V", ValueType::Offset), ("N", n.clone())]);
+    pair("best-moves", vec![("V", ValueType::Offset)]);
+    pair("best-move-landed", vec![("N", n.clone())]);
+    pair("best-move-size", vec![("K", ValueType::Int)]);
+    pair("best-move-cells", vec![("P", p.clone()), ("Col", col.clone()), ("V", ValueType::Offset)]);
+    pair("shared-periods", vec![("A", ValueType::Axis), ("K", n.clone())]);
+    pair("shared-fundamental-periods", vec![("K", n.clone())]);
     for kind in ["scale-up", "tile", "scale-down"] {
         out.push(ConstantPart { name: kind.to_string(), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone()), ("Col_2", col.clone())], reads_output: true, reads_input: true, meets_table: false });
         out.push(ConstantPart { name: format!("{kind}-kept"), columns: vec![("P_in", p.clone()), ("P_out", p.clone()), ("Col", col.clone())], reads_output: true, reads_input: true, meets_table: false });
@@ -354,6 +364,62 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
     out.push(Table::new(2, span.map_or_else(Vec::new, |held| margin_rows(held, h, w, e))));
     out.push(Table::new(2, span.map_or_else(Vec::new, |held| extent_rows(held, e))));
     out.push(Table::new(1, (0..8).filter(|which| crate::catalog_facts::image_is(g, g, *which)).map(|which| e.d4[which]).collect()));
+    let periods = periods_of(g);
+    let rows_of = |lists: [Vec<usize>; 2]| -> Vec<Cell> {
+        let mut rows = Vec::new();
+        for (axis, list) in lists.iter().enumerate() {
+            for k in list {
+                rows.extend_from_slice(&[e.axes[axis], number_bits(*k as i64)]);
+            }
+        }
+        rows
+    };
+    let fundamental = [periods.exact[0].first().copied().into_iter().collect(), periods.exact[1].first().copied().into_iter().collect()];
+    out.push(Table::new(2, rows_of(periods.exact.clone())));
+    out.push(Table::new(2, rows_of(fundamental)));
+    out.push(Table::new(2, rows_of(periods.approximate)));
+}
+
+/// A grid's periods along each axis, the rows first, and those read through damage.
+struct Periods {
+    exact: [Vec<usize>; 2],
+    approximate: [Vec<usize>; 2],
+}
+
+fn periods_of(g: &GridFacts) -> Periods {
+    let mut out = Periods { exact: [Vec::new(), Vec::new()], approximate: [Vec::new(), Vec::new()] };
+    for axis in 0..2 {
+        let (n, m) = if axis == 0 { (g.h, g.w) } else { (g.w, g.h) };
+        let cell = |line: usize, place: usize| if axis == 0 { g.color[line * g.w + place] } else { g.color[place * g.w + line] };
+        for k in 1..n {
+            let lines = n - k;
+            let broken = (0..lines).filter(|a| (0..m).any(|place| cell(*a, place) != cell(*a + k, place))).count();
+            if broken == 0 {
+                out.exact[axis].push(k);
+            }
+            if broken <= lines - broken {
+                out.approximate[axis].push(k);
+            }
+        }
+    }
+    out
+}
+
+/// How the input's diff stands to the output's: each move, with the input's diff cells that it lands on
+/// output diff cells of their color.
+fn moves_between(from: &[(usize, Cell, [i32; 4])], to: &[(usize, Cell, [i32; 4])]) -> FastMap<Cell, Vec<usize>> {
+    let mut by_color: FastMap<Cell, Vec<[i32; 4]>> = FastMap::default();
+    for (_, color, margins) in to {
+        by_color.entry(*color).or_default().push(*margins);
+    }
+    let mut out: FastMap<Cell, Vec<usize>> = FastMap::default();
+    for (at, color, margins) in from {
+        for held in by_color.get(color).into_iter().flatten() {
+            let v = box_bits(held[0] - margins[0], held[1] - margins[1], held[2] - margins[2], held[3] - margins[3]);
+            out.entry(v).or_default().push(*at);
+        }
+    }
+    out
 }
 
 /// Each constant part's rows at one pair, in the order of `constant_parts`.
@@ -437,6 +503,51 @@ pub fn constant_tables(f: &PairFacts) -> Vec<Arc<Table>> {
     };
     out.push(Table::new(2, diff(&f.output, &f.input)));
     out.push(Table::new(2, diff(&f.input, &f.output)));
+    // Grids of other extents have no move between them, and the crop, tile and scale parts stand there.
+    let side = |one: &GridFacts, other: &GridFacts| -> Vec<(usize, Cell, [i32; 4])> {
+        if !f.same {
+            return Vec::new();
+        }
+        (0..one.h * one.w).filter(|at| one.color[*at] != other.color[*at]).map(|at| (at, e.colors[one.color[at] as usize], margins_of(cell_bits(one.h, one.w, at)))).collect()
+    };
+    let moves = moves_between(&side(&f.input, &f.output), &side(&f.output, &f.input));
+    let most = moves.values().map(Vec::len).max().unwrap_or(0);
+    let mut move_rows = Vec::with_capacity(moves.len() * 2);
+    let mut best_rows = Vec::new();
+    let mut best_cells = Vec::new();
+    let mut farthest = None;
+    for (v, cells) in &moves {
+        move_rows.extend_from_slice(&[*v, number_bits(cells.len() as i64)]);
+        if cells.len() == most {
+            best_rows.push(*v);
+            let steps = margins_of(*v).into_iter().max().unwrap_or(0);
+            farthest = farthest.max(Some(steps));
+            for at in cells {
+                best_cells.extend_from_slice(&[cell_bits(f.input.h, f.input.w, *at), e.colors[f.input.color[*at] as usize], *v]);
+            }
+        }
+    }
+    out.push(Table::new(2, move_rows));
+    out.push(Table::new(1, best_rows));
+    out.push(Table::new(1, if most > 0 { vec![number_bits(most as i64)] } else { Vec::new() }));
+    out.push(Table::new(1, farthest.map(|steps| number_bits(i64::from(steps))).into_iter().collect()));
+    out.push(Table::distinct(3, best_cells));
+    let (in_periods, out_periods) = (periods_of(&f.input), periods_of(&f.output));
+    let mut shared = Vec::new();
+    for axis in 0..2 {
+        for k in &in_periods.exact[axis] {
+            if out_periods.exact[axis].contains(k) {
+                shared.extend_from_slice(&[e.axes[axis], number_bits(*k as i64)]);
+            }
+        }
+    }
+    out.push(Table::new(2, shared));
+    let least = |held: &Periods| -> Vec<usize> { held.exact.iter().filter_map(|list| list.first().copied()).collect() };
+    let (one, two) = (least(&in_periods), least(&out_periods));
+    let mut both: Vec<Cell> = one.iter().filter(|k| two.contains(k)).map(|k| number_bits(*k as i64)).collect();
+    both.sort_unstable();
+    both.dedup();
+    out.push(Table::new(1, both));
     read_tables(&scale_up_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
     read_tables(&tile_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);
     read_tables(&scale_down_pairs(&f.input, &f.output), &f.input, &f.output, e, &mut out);

@@ -378,15 +378,17 @@ fn run_query_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> 
 /// The base tables' vectors, to a file.
 fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
     use arclog_encoder::generate::Generators;
-    use arclog_encoder::table_vector::{base_vectors, Grids};
+    use arclog_encoder::table_vector::{base_vectors, pair_vector, Grids};
     let path = arguments.out.clone().ok_or("`base-vectors` writes to --out")?;
     let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
     let families = Generators::default();
     let base = base_vectors(&grids, &families, arguments.size.max(1));
+    let pair = pair_vector(&grids, &families, arguments.size.max(1));
     let mut out = arclog_encoder::zio::writer(&path, false)?;
     let names = names_of(&families.names);
     write_vector(&mut out, &serde_json::json!({"base": "input"}), &base.input, &names)?;
     write_vector(&mut out, &serde_json::json!({"base": "ex_output"}), &base.ex_output, &names)?;
+    write_vector(&mut out, &serde_json::json!({"base": "pair"}), &pair, &names)?;
     out.flush().map_err(|error| error.to_string())
 }
 
@@ -749,6 +751,9 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
         let wide_only = std::env::var_os("GENERATE_CHECK_TASK_WIDE").is_some();
         if !wide_only {
             check_family(&family, &leaves, train, every, check_leaves, "&t", &engine, &mut tally, false)?;
+            if check_leaves {
+                check_family(&families.get_grids(arguments.size.max(1)), &leaves, train, every, false, "&t", &engine, &mut tally, false)?;
+            }
         }
         if wide_only {
             use arclog_encoder::generate::lifted_rows;
@@ -1098,9 +1103,9 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
 /// The name of each root of a family at the column types `types`.
 fn run_family_names(arguments: &Arguments, types: &str) -> Result<(), String> {
     use arclog_encoder::generate::{Generated, NameStore};
-    let types: Vec<arclog::types::ValueType> = types.split(',').map(|name| arclog_encoder::schema::type_of_name(name).ok_or_else(|| format!("no type {name}"))).collect::<Result<_, _>>()?;
+    let types: Vec<arclog::types::ValueType> = types.split(',').filter(|name| *name != "grids").map(|name| arclog_encoder::schema::type_of_name(name).ok_or_else(|| format!("no type {name}"))).collect::<Result<_, _>>()?;
     let store = NameStore::default();
-    let _family = Generated::of(&types, arguments.size.max(1), &store);
+    let _family = if types.is_empty() { Generated::of_grids(arguments.size.max(1), &store) } else { Generated::of(&types, arguments.size.max(1), &store) };
     for (_, name) in store.all() {
         println!("{name}");
     }
