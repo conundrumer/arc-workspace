@@ -33,6 +33,7 @@ output; TIO, all three. A set is written as terms joined by `+`:
                 that each one has, its rows over theirs, its entries new to them. It reads the shapes
                 that read the output, so a set that compares true and deranged outputs leaves it out
 A term may end in `~WORD` to leave out the shapes whose name holds WORD, or `^WORD` to keep only those.
+A set may end in `@K` to read only the shapes that tell gold from a mutant on K train tasks or more.
 A fit reads one column for each set of columns equal on all its train rows, named by its shortest label.
 """
 import argparse
@@ -236,6 +237,12 @@ def build(root, out, min_tasks):
         ids, counts = np.unique(np.concatenate(held), return_counts=True)
         return ids[counts >= min_tasks]
     wide_columns, pair_columns = common(told_wide), common(pair_seen)
+    column_tasks = np.zeros(len(columns), dtype=np.int32)
+    for held in told.values():
+        if held:
+            ids, counts = np.unique(np.concatenate(held), return_counts=True)
+            spots, hit = place(ids, columns)
+            np.maximum.at(column_tasks, spots[hit], counts[hit])
     print('task-wide columns', len(wide_columns), 'pair columns', len(pair_columns), flush=True)
     # The names of the columns.
     names, flags, sizes = {}, {}, {}
@@ -365,7 +372,7 @@ def build(root, out, min_tasks):
         for name, matrix in data[split]['matrices'].items():
             with (out / f'{split}.{name}.pkl').open('wb') as sink:
                 pickle.dump(matrix, sink, protocol=4)
-    meta = dict(columns=columns, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags)
+    meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags)
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
@@ -563,7 +570,7 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
     meta = pickle.load((out / 'meta.pkl').open('rb'))
     needed = {'base'}
     for spec in sets:
-        for raw in spec.split('+'):
+        for raw in spec.split('@')[0].split('+'):
             term = re.split(r'[~^]', raw)[0]
             if term == 'TIO_null':
                 needed |= {'stable', 'null'}
@@ -603,9 +610,12 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
     wide_reads = np.array([meta['wide_flags'].get(int(key), 0) for key in meta.get('wide_columns', [])])
     masks = {'T': flags == 4, 'TI': (flags == 4) | (flags == 5), 'TIO': flags > 0, 'O': flags >= 6}
 
+    column_tasks = meta.get('column_tasks', np.zeros(len(columns), dtype=np.int32))
+    told_on = {'tasks': 0}
+
     def word_mask(term, labels):
-        """A term's name filter: `~WORD` leaves out, `^WORD` keeps."""
-        keep = np.ones(len(labels), dtype=bool)
+        """A term's name filter: `~WORD` leaves out, `^WORD` keeps. It also keeps a set's `@K`."""
+        keep = column_tasks >= told_on['tasks']
         for sign, word in re.findall(r'([~^])([^~^]+)', term):
             holds = np.array([word in label for label in labels])
             keep &= ~holds if sign == '~' else holds
@@ -680,8 +690,10 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
         dev_groups = selected(dev['rows'], **args)
         for spec in sets:
             started = time.time()
-            X_train, labels = matrix(train, spec)
-            X_dev, _ = matrix(dev, spec)
+            written_spec, _, told = spec.partition('@')
+            told_on['tasks'] = int(told or 0)
+            X_train, labels = matrix(train, written_spec)
+            X_dev, _ = matrix(dev, written_spec)
             written = X_train.shape[1]
             kept, members = distinct_columns(X_train, labels)
             X_train, X_dev = X_train[:, kept], X_dev[:, kept]
