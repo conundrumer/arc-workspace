@@ -103,7 +103,7 @@ pub fn judged_run(evaluation: &Evaluation<'_>, relation: &GraphRelation, judged:
 
 /// The output set of the `OUT` form's `relation` on `example`, to the last
 /// model. It reads no pair's output.
-pub(crate) fn full_output_set(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Example) -> Outcome<OutputSet> {
+pub fn full_output_set(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Example) -> Outcome<OutputSet> {
     Ok(output_sets(evaluation, relation, example, &[GridColumns::OUT], &[Comparison::Full], AtCap::Stop)?.pop().expect("one set"))
 }
 

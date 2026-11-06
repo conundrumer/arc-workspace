@@ -4,17 +4,20 @@
 //! each case's set of grids on each pair, or `undefined`, with the snapshot's
 //! record of the case, in any order, the case's solves outcome with the
 //! record's, and the run's time per solver, over the determination and every
-//! case, with Souffle's time there. The snapshot keys a case by its alts, as
-//! `case_name` of `src/parity/__init__.py` gives them.
+//! case, with Souffle's time there. It also runs each case on each witness
+//! input of the arcdata file, at the `param` records and the witness's `assign`
+//! forms, and compares its set of grids, or `undefined`, with the record's on
+//! that witness. The snapshot keys a case by its alts, as `case_name` of
+//! `src/parity/__init__.py` gives them.
 //!
 //! It prints, for each solver, first each difference of a determined value
 //! from the solver's `param` records and each fault that keeps a case from
 //! its determination, then each mismatch by case and pair, naming each
 //! parameter with such a difference that the case reads, with the first
 //! relation whose rows differ from those of Souffle's reruns of the pairs up
-//! to that pair where the case gives at most one grid on the pair, each case
-//! that only the engine or only the snapshot holds, and each solver that
-//! runs slower.
+//! to that pair where the case gives at most one grid on the pair, each
+//! mismatch by case and witness, each case that only the engine or only the
+//! snapshot holds, and each solver that runs slower.
 //!
 //! Its arguments: the snapshot's directory, the corpus directory, the
 //! directory of the task files, then the task ids of the solvers to run,
@@ -28,14 +31,17 @@ use std::time::Instant;
 use std::process::ExitCode;
 
 use arclog::eval::determinations::{det_node, relation_spelled};
-use arclog::eval::{output_relation, Evaluation};
+use arclog::decode::corpus::corpus_session;
+use arclog::eval::{output_relation, Evaluation, ParameterValues};
+use arclog::judge::determination::DeterminedCase;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
-use arclog::judge::run::{judged_run, Depth, JudgedRun};
+use arclog::judge::run::{full_output_set, judged_run, Depth, JudgedRun};
 use arclog::judge::solves::OutputSet;
-use arclog::program::AltsName;
-use arclog::task::Grid;
-use arclog::terms::Example;
+use arclog::program::{AltRecord, AltsName, Arcdata, DataValue, ParamValue, ProgramRelation, Witness, WitnessRecord};
+use arclog::session::TaskSession;
+use arclog::task::{Grid, Task};
+use arclog::terms::{Color, Example};
 use serde_json::Value;
 
 use crate::arguments::Arguments;
@@ -138,6 +144,15 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
         Finding::Fault(_) => None,
     }).collect();
     let mut keys: BTreeSet<&str> = BTreeSet::new();
+    let witnesses = witness_inputs(setup.solver.arcdata.value());
+    let first_witness = setup.task.train.len() + setup.task.test.len();
+    let witness_task = Task {
+        train: setup.task.train.clone(),
+        test: setup.task.test.iter().cloned().chain(witnesses.iter().filter_map(|witness| witness.input.clone())).collect(),
+    };
+    let witness_session = corpus_session();
+    let records: Vec<(ProgramRelation, ParamValue)> = setup.solver.arcdata.value().params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
+    let stored = ParameterValues::stored(setup.solver.arcdata.value());
     for case in setup.cases() {
         let spelled = case_spelled(case.name);
         let Some((key, case_record)) = case_record(&record, &setup.solver.departures(case.name)) else {
@@ -145,6 +160,7 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
             continue;
         };
         keys.insert(key);
+        lines.extend(compare_witnesses(key, case, case_record, &witnesses, first_witness, &witness_task, &witness_session, &stored, &records));
         let values = match setup.determination.case_values(&case) {
             Ok(values) => values,
             Err(fault) => {
@@ -176,6 +192,89 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
     }
     lines.extend(crate::speed::slower(start.elapsed().as_secs_f64(), &record).ok().flatten());
     Ok(lines)
+}
+
+/// A witness of a solver: its id, its input where each cell holds a color, and
+/// the values its `assign` forms give.
+struct WitnessInput<'a> {
+    id: &'a str,
+    input: Option<Grid>,
+    assigns: &'a [(ProgramRelation, ParamValue)],
+}
+
+/// Each witness of `arcdata` with a body, each id once.
+fn witness_inputs(arcdata: &Arcdata) -> Vec<WitnessInput<'_>> {
+    fn alt<'a>(record: &'a AltRecord, found: &mut Vec<&'a Witness>) {
+        found.extend(record.witnesses.iter());
+        for nested in record.nested.iter() {
+            alt(nested, found);
+        }
+    }
+    let mut found: Vec<&Witness> = Vec::new();
+    for record in arcdata.witness_records.iter() {
+        match record {
+            WitnessRecord::Alts { alts, .. } => alts.iter().for_each(|record| alt(record, &mut found)),
+            WitnessRecord::Approximated { witnesses, .. } => found.extend(witnesses.iter()),
+        }
+    }
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    found
+        .into_iter()
+        .filter(|witness| witness.body.is_some() && seen.insert(&witness.id))
+        .map(|witness| {
+            let body = witness.body.as_ref().expect("a witness with a body");
+            WitnessInput { id: &witness.id, input: grid_of(&body.input), assigns: &body.assigns }
+        })
+        .collect()
+}
+
+/// The task grid of an arcdata grid, where each cell holds a color.
+fn grid_of(grid: &arclog::program::Grid) -> Option<Grid> {
+    let cell = |value: &Option<DataValue>| match value {
+        Some(DataValue::Integer(digit)) => u8::try_from(*digit).ok().and_then(Color::from_digit),
+        _ => None,
+    };
+    let rows: Option<Vec<Box<[Color]>>> = grid.rows.iter().map(|row| row.iter().map(cell).collect::<Option<Vec<Color>>>().map(Vec::into_boxed_slice)).collect();
+    Grid::from_rows(rows?.into_boxed_slice())
+}
+
+/// Each line of the comparison of `case` on `witnesses`, at the stored values
+/// with each witness's `assign` forms, with its snapshot record `case_record`
+/// under the key `key`. `task` holds the witness inputs after its other
+/// examples, from the example at the index `first`.
+#[allow(clippy::too_many_arguments)]
+fn compare_witnesses(key: &str, case: DeterminedCase<'_>, case_record: &Value, witnesses: &[WitnessInput<'_>], first: usize, task: &Task, session: &TaskSession, stored: &ParameterValues, records: &[(ProgramRelation, ParamValue)]) -> Vec<String> {
+    let case = DeterminedCase { task, session, ..case };
+    // A witness runs at the records, as Souffle's does at its facts: a `DET` by
+    // its clauses would read the witness input as evidence. A relation the case
+    // derives is no `DET` of the case, and keeps its clauses.
+    let held: Vec<(ProgramRelation, ParamValue)> = records.iter().filter(|(relation, _)| det_node(case.program, relation).is_some()).cloned().collect();
+    let stored = stored.with_assigns(&held);
+    let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
+    let recorded = case_record.get("witnesses").and_then(Value::as_array);
+    let mut lines = Vec::new();
+    let mut at = first;
+    for witness in witnesses {
+        let Some(expected) = recorded.and_then(|all| all.iter().find(|entry| entry.get("id").and_then(Value::as_str) == Some(witness.id))).and_then(|entry| entry.get("outcome")) else {
+            lines.push(format!("{key}, witness {}: the snapshot has no outcome", witness.id));
+            at += usize::from(witness.input.is_some());
+            continue;
+        };
+        if witness.input.is_none() {
+            lines.push(format!("{key}, witness {}: not run: its input is no grid of colors", witness.id));
+            continue;
+        }
+        let values = stored.with_assigns(witness.assigns);
+        let evaluation = case.evaluation(&values);
+        let example = Example::at(u16::try_from(at).expect("fewer than 2^16 examples in a task"));
+        at += 1;
+        match full_output_set(&evaluation, &output, example) {
+            Ok(set) if agrees(&set, Some(expected)) => {}
+            Ok(set) => lines.push(format!("{key}, witness {}: the engine gives {}, Souffle {expected}", witness.id, describe(&set))),
+            Err(fault) => lines.push(format!("{key}, witness {}: a fault of the run at {:?}: {}", witness.id, fault.form, fault.message)),
+        }
+    }
+    lines
 }
 
 /// Each line of the comparison of the judged run `run` of a case, in
