@@ -659,7 +659,8 @@ impl Reader<'_> {
                 let mut keeps_each_row = false;
                 let mut other_fan_out = None;
                 if !has_zero {
-                    if labeled.is_empty() && other.nonempty {
+                    // A relation of one row that binds only labels of its own.
+                    if other.nonempty && (labeled.is_empty() || (other.is_key(0) && labeled.iter().all(|(_, label)| !bound.contains(*label)))) {
                         keeps_each_row = true;
                         other_fan_out = Some(1);
                     }
@@ -833,7 +834,8 @@ impl Reader<'_> {
         }
         deps.extend(nested_deps);
         out.like = like;
-        out.alias = plain && out.like.is_some();
+        // A clause with a column that an instance computes from other columns reads those too.
+        out.alias = plain && out.like.is_some() && positive.iter().all(|(facts, _)| facts.alias || facts.reads.is_empty());
         out.empty = empty;
         out.nonempty = positive.iter().all(|(facts, sites)| facts.nonempty && sites.iter().all(|(_, value)| matches!(value, Value::Label(_)))) && plain && !positive.is_empty();
         out.holds_on_domain = holds_on_domain;
@@ -1471,4 +1473,52 @@ pub fn grid_refined(name: &str) -> Refined {
     let mut out = Refined::with_arity(2);
     out.keys = facts.keys;
     out
+}
+
+/// What the reader finds of a call over a relation of `arity` columns with one key, as text, for a reader of a rule.
+pub fn explain(call: &str, arity: usize, key: Mask) -> String {
+    let Some((forms, export, columns)) = plan_of_text(call, arity, &[]) else { return format!("no expansion of {call}") };
+    let r = RelationInput { columns: (0..arity).map(|at| format!("C{at}")).collect(), keys: vec![key], low: vec![None; arity], high: vec![None; arity], within: Vec::new() };
+    let mut relations = BTreeMap::new();
+    relations.insert("&r".to_string(), r);
+    let mut reader = Reader { registry: Registry::get(), relations, rules: HashMap::new(), instances: HashMap::new(), _marker: std::marker::PhantomData };
+    let mut out = String::new();
+    for form in &forms {
+        out.push_str(&format!("{}\n", form_text(form)));
+        let Some(list) = items(form) else { continue };
+        match list.first().and_then(symbol) {
+            Some("RULE" | "DET") => {
+                let Some(name) = list.get(1).and_then(symbol) else { continue };
+                let mut kept = Vec::new();
+                for atom in &list[2..] {
+                    crate::library::keep(atom, &mut kept);
+                }
+                let held: Vec<(String, String)> = kept.into_iter().map(|label| (label.clone(), label)).collect();
+                let facts = finite_clause(&list[2..], &held, reader.registry).unwrap_or_else(|| reader.body(&list[2..], &held));
+                out.push_str(&format!("  = {facts:?}\n"));
+                reader.rules.insert(name.to_string(), facts);
+            }
+            Some("INIT") => {
+                let (Some(name), Some(component)) = (list.get(1).and_then(symbol), list.get(2).and_then(symbol)) else { continue };
+                reader.instance(name, component, &list[3..]);
+                if let Some(instance) = reader.instances.get(name) {
+                    out.push_str(&format!("  key {:?}\n", instance.key));
+                    for (input, facts) in &instance.inputs {
+                        out.push_str(&format!("  input {input} {facts:?}\n"));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out.push_str(&format!("gives {export} {columns:?}\n"));
+    out
+}
+
+fn form_text(form: &SExpr) -> String {
+    match form {
+        SExpr::Symbol { text, .. } => text.to_string(),
+        SExpr::String { text, .. } => format!("{text:?}"),
+        SExpr::List { items, .. } => format!("({})", items.iter().map(form_text).collect::<Vec<_>>().join(" ")),
+    }
 }

@@ -14,6 +14,8 @@
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
+//!   feature-encoder family-names TYPE,TYPE,... [--size D]
+//!   feature-encoder refine-explain CALL ARITY KEY_BITS
 //!   feature-encoder shape-count TABLES_FILE... [--size D]
 //!   feature-encoder grid-values GRIDS_JSON (--scene | --rule) [--size D] [--max-inputs N] [--work-cap N] --out FILE
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
@@ -949,7 +951,11 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
                 let holds = match term.claim {
                     Claim::Empty => own_rows.is_empty(),
                     Claim::SameCount => own_rows.len() == a_rows.len(),
-                    Claim::SameRows => rows_over(&own_rows, &term.columns, &term.columns) == rows_over(&a_rows, &a_columns, &term.columns),
+                    Claim::SameRows => {
+                        // A column it adds holds one value, so its rows are its relation's over the columns of both.
+                        let shared: Vec<String> = term.columns.iter().filter(|name| a_columns.contains(name)).cloned().collect();
+                        own_rows.len() == a_rows.len() && rows_over(&own_rows, &term.columns, &shared) == rows_over(&a_rows, &a_columns, &shared)
+                    }
                     Claim::Other => {
                         let Some(partner) = other else { continue };
                         let Some(partner_rows) = values.get(&partner).and_then(|held| held.get(pair)).and_then(value_rows) else { continue };
@@ -1047,6 +1053,18 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
             }
         }
         println!("{task_name}\ttables {tables}\tschemas {}\troots over the schemas {roots}\tentries {entries}\tvalues {values}\tdistinct active shapes {}", schemas.len(), shapes.len());
+    }
+    Ok(())
+}
+
+/// The name of each root of a family at the column types `types`.
+fn run_family_names(arguments: &Arguments, types: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{Generated, NameStore};
+    let types: Vec<arclog::types::ValueType> = types.split(',').map(|name| arclog_encoder::schema::type_of_name(name).ok_or_else(|| format!("no type {name}"))).collect::<Result<_, _>>()?;
+    let store = NameStore::default();
+    let _family = Generated::of(&types, arguments.size.max(1), &store);
+    for (_, name) in store.all() {
+        println!("{name}");
     }
     Ok(())
 }
@@ -1376,6 +1394,11 @@ fn main() {
         ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("generate-check", [file]) => run_generate_check(&arguments, arguments.tables_per_task.max(1), file),
         ("term-stats", [types]) => run_term_stats(&arguments, types),
+        ("family-names", [types]) => run_family_names(&arguments, types),
+        ("refine-explain", [call, arity, key]) => {
+            println!("{}", arclog_encoder::refine_parts::explain(call, arity.parse().unwrap_or(1), u32::from_str_radix(key, 2).unwrap_or(0)));
+            Ok(())
+        }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("refine-check", [file]) => run_refine_check(&arguments, file),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
