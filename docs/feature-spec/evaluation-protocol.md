@@ -59,7 +59,7 @@ Whether the features of a candidate's table tell a solver's next query from a wr
 
 - **Items:** (task, query Q of the concept case, mutant Q'), with up to 5 mutants per query. A mutant is a valid one-edit mutation of Q's body from the engine, `draw_specs` with k=1 in a seeded order, whose table differs from Q's at some train example. They are stored under `results/mutants/`. A query with no such mutant leaves the test, and the share of such queries is reported.
 - **Same structure:** a run can also draw argument edits whose query has gold's features with no table content, marked apart, for the line on pairs that those features leave tied.
-- **Roots:** closed per-input roots with an `output` leaf, whose table holes take the candidate's table, the tables that Q reads, and the base tables. These are the roots of the candidate block.
+- **Roots:** closed per-input roots with an `output` leaf, whose table holes take the candidate's table, the tables that Q reads, and the base tables.
 - **Stable root:** a root with one value at every train pair, and that value is neither "no value" nor the root's default.
 - **Contingent root:** a root that `input`, or some table Q reads, does not have as stable, with the candidate's table hole bound to that table. So Q and Q' have one set of contingent roots.
 - **Score:** S(T) is the number of contingent classes that are stable on table T, over the number of contingent classes, and 0 where there are none.
@@ -116,7 +116,6 @@ A chosen d says nothing about sizes above D.
 ## Left out
 
 - **Wrong assignments:** the cache holds no tables for them, 347 of 665 tasks have one assignment, and no stored record shows that a non-first assignment fails the train pairs. An output-reading feature is circular on them.
-- **Novelty and relevance judgments:** they are functions of the first version's features.
 - **Program relations:** they read no row, so no test here scores them. A model can.
 - **Task-wide roots and combined vector entries:** the tests read values at one example, under the left-out rule, so these enter no test. A model can test them.
 - **The search's own candidates:** Candidate recognition draws random mutants. When the state search can draw candidates, the same test runs on its draws.

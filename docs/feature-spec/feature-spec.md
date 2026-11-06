@@ -1,6 +1,6 @@
-# Feature specification (draft)
+# Feature specification
 
-The rules for the handwritten encoder from tables to features. The reader is whoever decides this design, and then whoever implements it. [Arclog column types](arclog-types.md) gives what the engine knows about a column, which the features read.
+The rules for the encoder from tables to features. [Arclog column types](arclog-types.md) gives what the engine knows about a column, which the features read.
 
 ## The objects
 
@@ -11,13 +11,12 @@ The rules for the handwritten encoder from tables to features. The reader is who
 | **Ground expression** | A feature expression with its holes bound. Its value is what the encoder computes. |
 | **Shape** | A ground expression with its table and that table's columns written as typed holes. It names one entry of a vector for every table. |
 | **Generating set** | The primitives that feature expressions are made of. |
-| **Feature library** | The written arclog source of the named compositions: one new file, `engine/lib/features.arclog`. |
+| **Feature library** | The written arclog source of the named compositions: `engine/lib/features.arclog`. |
 | **Encoder** | The function that the library defines at a size: from a state's tables to the values of the features that the library names and of every ground expression up to that size. |
-| **Feature specification** | This document. It stands to the feature library as the lib specification stands to the lib. |
 
 ## Purpose
 
-Features support the program search and do not replace it. A feature expression has the form of a query, so a ground expression of size d shows the model what a query of that size would compute. An encoder run at a size large enough to reach the output would be the search itself, done by brute force. The size to run is set later, from data.
+Features support the program search and do not replace it. A feature expression has the form of a query, so a ground expression of size d shows the model what a query of that size would compute. An encoder run at a size large enough to reach the output would be the search itself, done by brute force.
 
 ## Definition
 
@@ -28,35 +27,16 @@ Features support the program search and do not replace it. A feature expression 
 
 ## What the language gives by construction
 
-Each of these follows from the arclog rules, so no feature code and no check repeats it. A row marked "ran" was also tested on the engine.
+Each of these follows from the arclog rules, so no feature code and no check repeats it.
 
 | Property | Source |
 |---|---|
 | Independent of the order of rows, columns and atoms | A relation is a set of rows. A column has no order. |
 | No test output is read | `output` and `ex_output` contain train outputs alone. `ex_input` contains the test inputs too. |
-| A color and a number never join | The checker (ran). |
-| Order tests apply to numbers alone | The checker (ran). |
-| No literal of a task type, and no number but `0` | The grammar (ran). |
-| An Ident joins only within its source | The checker (ran). |
-| Two Positions of different extents are never equal | A Position's margins on each axis sum to the extent less one. In grids of equal extents, Positions can be equal, which is a correspondence between the two grids. A Box's value does not determine its frame, as [Frames](arclog-types.md#frames) gives. |
-| No free choice in the lib | The lib's obligations in the equivariance document. |
-| Equivariance under D4 and the color permutations | The equivariance document: each query is joins, projections, unions and negations, order tests apply to numbers alone, and `0` is the one constant. |
-
-## Transformation law
-
-The program is equivariant, and the group acts on a row column by column. So the type of each exported column gives the feature's transformation law under the group, and the checker can compute it.
-
-| Exported column | Under the group | Law |
-|---|---|---|
-| none, a number, `Unit`, `Example`, a lib name | fixed | invariant |
-| `Color`, `Ident`, an orientation type, `Position`, `Box`, `Offset` | moved by the type's action | equivariant |
-| `Pose` | not observable | refused, by a check to add |
-
-Both invariant and equivariant values are features. A consumer that needs invariant values reads the invariant ones.
-
-A reorder of the examples is separate from the group. It moves a per-input value with its example, and it moves an `Example` column. A task-wide value with no `Example` column keeps its value.
-
-The group also moves the assignment, so a value at an assignment corresponds to the value at that assignment's image. A parameterized table's walk over its assignments stops at a cap, and which assignments it reaches depends on an order of encodings. So a pool over a capped walk has no value, and the AssignmentVector's `capped` entry states this.
+| A color and a number never join | The checker. |
+| Order tests apply to numbers alone | The checker. |
+| No literal of a task type, and no number but `0` | The grammar. |
+| An Ident joins only within its source | The checker. |
 
 ## The generating set
 
@@ -89,7 +69,7 @@ Operand      ::= Column | 0
 - `LibRelation`, `LibColumn`: a `relation` or `macro` form of the registry, other than `pose_difference`, which takes Pose values, and one of its columns.
 - `Component`, `Input`, `Port`: a component of the registry, one of its inputs, and one of its outputs.
 - A proposer: a `proposer` form of the registry with no `domain` mark, read as the whole set of rows it gives. So it stands for no choice of a parameter. A domain belongs to determinations. The values of an orientation type come from a lib relation such as `dir_elem`, and the colors of a grid from a `project` of it.
-- `output`: the train output of the current example, with the columns `P` and `Col`. It has no rows on a test input. So a per-input feature can compare a table with the output of its own example, at each model.
+- `output`: the train output of the current example, with the columns `P` and `Col`. It has no rows on a test input. So a per-input feature can compare a table with the output of its own example, at each model. It stands where `input` stands in the rule that gives an instance's level, in the check of what a form reads, and in the frames, where its `P` stands in the current example's output.
 
 ### Aggregates
 
@@ -128,14 +108,13 @@ Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` wit
 A term is **entailed** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so an entailed term has no derivation and is never constructed. The typing rules are the preconditions and postconditions of [Structure of the search](structure.md#conditions), held in a relation's type.
 
 - **Refinements:** a relation's type holds, beside its column types and frames, what is known of its values: the keys of its columns, each number's range, the relations a column is a subset of, the columns that are complete over an orientation type, and its row count where that is known.
-- **Sources:** a base relation and a lib relation declare their refinements, and so does each component output, in the registry. A part's refinements follow from its fragment's body. A table's refinements are measured from its rows, so they hold of that table and read no other table.
+- **Sources:** a base relation and a lib relation declare their refinements, and so does each component output, in the registry. A part's refinements follow from its fragment's body. A table's measured rows give no refinement, since a fact of its rows is contingent.
 - **Rules:** each operator gives its output's refinements, its postcondition, from its inputs' refinements, its precondition, as an abstract transformer.
 - **Ill-typed terms:** an operator application has no derivation where its refinements prove that it changes nothing, that its output is empty, or that its value is constant or follows from its input's row count. For example:
     - `(select T x >= 0)` over a `Nat` changes nothing.
     - A `semijoin` with a relation that `x` is a subset of changes nothing, and an `antijoin` with it is empty.
     - A `project` that keeps a key leaves the row count as it was.
     - A group count over a key of `T` is 1 at each group.
-    - On a table of one row, a term keyed by its column holds one group.
 - **Normal forms:** where two orders of operators are equal by their rules, as a `select` and a `semijoin` over columns it does not change are, one order is generated.
 - **Soundness:** a rule's claim is tested against evaluation on train tables, and a counterexample is a fault in the rule. No rule is taken from a corpus.
 
@@ -224,7 +203,7 @@ A native proposer takes these forms as a proposer written in arclog does. The ot
 
 `EXPORT` has the form of `OUT`: one atom or several, each selecting columns with `^`. An aggregate expands to it.
 
-- No selected column: whether the relation has a row (ran).
+- No selected column: whether the relation has a row.
 - Several atoms: the product of their projections, as a two-atom `OUT` gives. A `ratio` exports its two counts, each from its own atom, so arclog divides nothing. The encoder reduces the two to lowest terms outside arclog, which gives the exact fraction.
 - No feature compares a number with a literal. It exports the number.
 
@@ -238,7 +217,6 @@ The sample contract defines the vectors. This section gives their holes and how 
 |---|---|
 | TableVector | one table at one assignment, and the base tables |
 | QueryVector | the tables a query uses and the tables it computes, and the program relations, which ground the table features in the query's text |
-| Candidate block of a token | the successor body's table and the current body's table, paired by assignment and input, and the program relations of the partial query |
 | State features | any tables of a state |
 
 A table's **upstream tables** are the tables its query reads, and the tables those read in turn, down to the base tables, at the same assignment. An upstream table has one of two hole kinds: a **parent**, which the query reads, or an **ancestor**, which it reads through other queries. A shape with such a hole is a QueryVector entry. A TableVector is a function of its table's rows and the base tables, so two tables of one task with one `TableHash` have one vector.
@@ -259,7 +237,7 @@ A vector is sparse. A table gives the entries whose value differs from the defau
 
 ## Program relations
 
-The program itself is data. Base relations reflect it, for the QueryVector and the candidate block. The TableVector reads none of them, since it is a function of its table's rows and the base tables.
+The program itself is data. Base relations reflect it, for the QueryVector. The TableVector reads none of them, since it is a function of its table's rows and the base tables.
 
 | Relation | Contents |
 |---|---|
@@ -285,19 +263,19 @@ A feature that reads the program text is an arclog query over these relations, i
 
 Two databases are compared under one schema: column names, types, sources and frames. A different schema shows in which expressions the checker accepts.
 
-A **symmetry** is an element of the group, with a bijection of Idents per source and a bijection of poses per assembly. At the level of the task, it also has a reorder of the train pairs and a reorder of the test inputs. Where a ground expression of that level can remake a maker's output from the leaves, an Ident in that output's rows on the database moves by the bijection that the symmetry induces on contents, since the feature can join the table's Idents and read what they label. Any other Ident moves by any bijection onto the Idents outside those rows.
+A **symmetry** is an element of D4 and a color permutation, with a bijection of Idents per source and a bijection of poses per assembly. At the level of the task, it also has a reorder of the train pairs and a reorder of the test inputs. Where a ground expression of that level can remake a maker's output from the leaves, an Ident in that output's rows on the database moves by the bijection that the symmetry induces on contents, since the feature can join the table's Idents and read what they label. Any other Ident moves by any bijection onto the Idents outside those rows.
 
-Under a symmetry, an invariant feature keeps its value, and an equivariant feature moves by the group's action. So full coverage means that every difference other than a symmetry is seen by an invariant feature.
+Under a symmetry, a feature that exports numbers alone keeps its value. So full coverage means that every difference other than a symmetry is seen by such a feature.
 
 **The guarantee.** Take, at either level, the ground expressions that export numbers alone, whose leaves are the table, the grids, lib relations and proposers. A program relation is left out, since two programs can compute one database. At unbounded size, these features are a complete invariant of a database: two databases have equal values on all of them exactly where a symmetry relates them.
 
 This needs:
 
 - Ident sources on, and no `Open` Ident column.
-- Every lib element meeting its equivariance obligation.
+- Every lib element being equivariant.
 - Numbers read as exact integers, with no cap that stops a computation.
 
-If a symmetry relates two databases, their values are equal. The program is equivariant under the group with the induced bijection, and a feature reads any other Ident, and any pose, by equality alone. The proof of the other direction follows.
+If a symmetry relates two databases, their values are equal. The program is equivariant under the symmetry, and a feature reads any other Ident, and any pose, by equality alone. The proof of the other direction follows.
 
 **The structure of a database** is a finite many-sorted relational structure over the values that occur. A sort is a value type with the types under it, and each Ident source and each pose assembly has its own sort. Its relations are:
 
@@ -336,459 +314,6 @@ If a symmetry relates two databases, their values are equal. The program is equi
 - The proof reads `join`, `lib-join`, `select`, `project`, `union`, `Cardinality` and `value-set`. So every other operator adds nothing at unbounded size. Connectivity, Flood, `semijoin`, `antijoin` and `all` lower the size at which a difference appears, and a feature expression's size does not measure pattern size for them. A `ratio` is a function of two `cardinality` values.
 - The guarantee needs patterns as large as the data. At a fixed size, different databases can stay unseen, and a separation check is how they are found.
 - Seeing a difference is not usefulness. A digest of the whole table would have full coverage and teach a model nothing. Coverage is necessary and not sufficient.
-- It does not limit what a feature exports.
-
-## Additions to arclog
-
-Each is ours to add. These need a new reader for the library's file and changes in the checker. The registry's `macro` form defines lib relations and its `proposer` form gives bodies, and neither takes these forms.
-
-- `fragment`, `feature`, `QUERY` and `EXPORT`, with holes, the splices and `gives`.
-- The leaf `output`, for feature forms alone. `output` stands where `input` stands in the rule that gives an instance's level, in the check of what a form reads, and in the frames, where its `P` stands in the current example's output.
-- The program relations as base relations, and the lib name type, whose constants are lib names.
-- A check that refuses a `Pose` at an exported column. The pose rule lets a derived column take one, and a frame change moves it.
-
-## Worked expansions
-
-Each ran with no change to the language, with sources on, at the end of solver 25d487eb or of the solver it names, through `scripts/arclog.py rows`, with a plain `RULE` or `DET` in place of `EXPORT`. A list of counts is in the order of the train examples, then the test input.
-
-**`(cardinality (project &ink Col))`.** It gives 2 at each input.
-
-```lisp
-(RULE &p (&ink *Col))
-(INIT &f1 Cardinality
-  (member ((:m Col))
-    (&p *Col)))
-(RULE &v (&f1.size *N))
-```
-
-**`(cardinality &ink)`, over whole rows.** It gives 9, 16, 9, 16.
-
-```lisp
-(INIT &s Cardinality
-  (member ((:m P Col))
-    (&ink *P *Col)))
-(RULE &v (&s.size *N))
-```
-
-**`(join &mark input (P P))`, which `(join-label &mark P input)` writes.** It gives 1 row at each input.
-
-```lisp
-(RULE &q
-  (&mark *P *Col)
-  (input P (:Col *Col_2)))
-```
-
-**`(join (join &ink input (P P)) input (P P))`, which two calls of `join-label` write.** It gives 9, 16, 9, 16 rows, with `Col`, `Col_2` and `Col_3`.
-
-```lisp
-(RULE &q1
-  (&ink *P *Col)
-  (input P (:Col *Col_2)))
-(RULE &q2
-  (&q1 *P *Col *Col_2)
-  (input P (:Col *Col_3)))
-```
-
-**`(join &rays.ray input (Origin P))`, which `(join-label &rays.ray Origin input)` writes.** It gives 12, 9, 13, 15 rows.
-
-```lisp
-(RULE &q
-  (&rays.ray *Origin *P *D *K)
-  (input (:P Origin) *Col))
-```
-
-**`(join (component Cardinality (member &ink (P) (Col)) size) input (P P))`, which `(join-label (group-sizes &ink P) P input)` writes.** It gives 9, 16, 9, 16 rows, with `P`, `N` and `Col`.
-
-```lisp
-(INIT &c Cardinality
-  (key ((&ink ^P))
-    (member ((:m Col))
-      (&ink P *Col))))
-(RULE &sizes (&c.size (:key *P) *N))
-(RULE &q
-  (&sizes *P *N)
-  (input P *Col))
-```
-
-**`(lib-join &mark margin (B P))`.** It gives 4 rows at each input, one per direction.
-
-```lisp
-(RULE &q
-  (&mark *P *Col)
-  (margin (:B P) *D *K))
-```
-
-**`select`, over `(lib-join (project &ink P) dist_pair (P P))`.** `(select &d K = K2)` gives 0, 0, 0, 6 rows, and `(select &d K > K2)` gives 18, 32, 18, 29. `(select &rays.ray K = 0)` gives 1 row at each input. Each `Op` ran with a column and with `0`. The same `=` written as `(= K K2)` or `(= K 0)` beside the read is refused: "a site of the list makes the label, so the site names its partner".
-
-```lisp
-(RULE &p (&ink *P))
-(RULE &d
-  (&p *P)
-  (dist_pair P *D *K *K2))
-(RULE &equal (&d *P *D *K (:K2 K)))
-(RULE &greater
-  (&d *P *D *K *K2)
-  (> K K2))
-(RULE &start (&rays.ray *P *D (:K 0) *Origin))
-```
-
-**`(cardinality (component Singleton (member &ink (P) (Col)) plural))`.** It gives 0 at each input, so `P` determines `Col`.
-
-```lisp
-(INIT &f2 Singleton
-  (key ((&ink ^P))
-    (member ((:v Col))
-      (&ink P *Col))))
-(RULE &o (&f2.plural (:key *P)))
-(INIT &n Cardinality
-  (member ((:m P))
-    (&o *P)))
-(RULE &v (&n.size *N))
-```
-
-**`(component Singleton (member (join &mark input (P P)) (Col) (P Col_2)) value)`, a type parameter of two columns.** The port's columns are `Col`, `P` and `Col_2`. It gives 1 row at each input.
-
-```lisp
-(RULE &q
-  (&mark *P *Col)
-  (input P (:Col *Col_2)))
-(INIT &f3 Singleton
-  (key ((&q ^Col))
-    (member ((:v P Col_2))
-      (&q Col *P *Col_2))))
-(RULE &o (&f3.value (:key *Col) (:v *P *Col_2)))
-```
-
-**The histogram and the greatest of group sizes.** `(component Cardinality (member &ink (Col) (P)) size)` gives `&sizes`. `(component Cardinality (member &sizes (N) (Col)) size)` gives the histogram, with its count at `N_2`: (1, 1), (8, 1) at the first input. Two calls of `group-sizes` write these. `(component Order (member (project &sizes N) () (N)) (score (project &sizes N) () (N N)) maximal)` gives 8 at the first input.
-
-```lisp
-(INIT &c1 Cardinality
-  (key ((&ink ^Col))
-    (member ((:m P))
-      (&ink Col *P))))
-(RULE &sizes (&c1.size (:key *Col) *N))
-(INIT &c2 Cardinality
-  (key ((&sizes ^N))
-    (member ((:m Col))
-      (&sizes N *Col))))
-(RULE &histogram (&c2.size (:key *N) (:N *N_2)))
-(RULE &ns (&sizes *N))
-(INIT &o Order
-  (member ((:t N)) (&ns *N))
-  (score ((:t N) (:S N)) (&ns *N)))
-(RULE &greatest (&o.maximal (:t *N)))
-```
-
-**`(component Cardinality (member (project &ink Col) (Col) ()) size)`, a binding with no column.** It gives 1 for each color. The head `((:m))` is refused: "a site holds a label or a field site".
-
-```lisp
-(RULE &p (&ink *Col))
-(INIT &c Cardinality
-  (key ((&p ^Col))
-    (member ()
-      (&p Col))))
-(RULE &sizes (&c.size (:key *Col) *N))
-```
-
-**`(component Cardinality (member &body_count.size (N) (Col)) size)`, a table with a key.** It gives (1, 1), (8, 1) at the first input.
-
-```lisp
-(INIT &c Cardinality
-  (key ((&body_count.size ^N))
-    (member ((:m Col))
-      (&body_count.size (:key *Col) N))))
-(RULE &sizes (&c.size (:key *N) (:N *N_2)))
-```
-
-**`(component Cardinality (member &mark (Col) (P)) (domain &ink (Col)) size)`, two bindings with key columns.** A key that `&ink` alone has counts 0. It gives (1, 1), (0, 2) at the first input, and with a key clause over `&mark` alone it gives (1, 1).
-
-```lisp
-(INIT &c Cardinality
-  (key ((OR ((&mark ^Col)) ((&ink Col))))
-    (member ((:m P))
-      (&mark Col *P))
-    (domain ()
-      (&ink Col))))
-(RULE &sizes (&c.size (:key *Col) *N))
-```
-
-**`(component Excess (plus &ink () (P Col)) (minus &marks () (Origin Col)) excess)`, two bindings of a record.** It gives 8, 15, 8, 15. The head `((:m Origin Col))` gives a fault when it runs.
-
-```lisp
-(RULE &origins (&rays.ray *Origin))
-(RULE &marks
-  (&origins *Origin)
-  (input (:P Origin) *Col))
-(INIT &e Excess
-  (plus ((:m P Col))
-    (&ink *P *Col))
-  (minus ((:m (:P Origin) Col))
-    (&marks *Origin *Col)))
-(RULE &o (&e.excess *N))
-```
-
-**`(ratio &mark &ink)`.** The two counts are (1, 9), (1, 16), (1, 9), (1, 16), so the values are 1/9, 1/16, 1/9, 1/16.
-
-```lisp
-(INIT &a Cardinality
-  (member ((:m P Col))
-    (&mark *P *Col)))
-(INIT &b Cardinality
-  (member ((:m P Col))
-    (&ink *P *Col)))
-(RULE &v (&a.size *N) (&b.size (:N *N_2)))
-```
-
-**`(ratio (component Singleton (member &ink (P) (Col)) value) (project &ink P))`.** The two counts are (9, 9), (16, 16), (9, 9), (16, 16), so the value is 1 at each input, and `P` determines `Col`.
-
-```lisp
-(INIT &f Singleton
-  (key ((&ink ^P))
-    (member ((:v Col))
-      (&ink P *Col))))
-(RULE &one (&f.value (:key *P)))
-(RULE &cells (&ink *P))
-(INIT &a Cardinality
-  (member ((:m P))
-    (&one *P)))
-(INIT &b Cardinality
-  (member ((:m P))
-    (&cells *P)))
-(RULE &v (&a.size *N) (&b.size (:N *N_2)))
-```
-
-**`(semijoin &ink &mark (P P))`.** It gives 1 row at each input.
-
-```lisp
-(RULE &q
-  (&ink *P *Col)
-  (&mark P))
-```
-
-**`(nonempty (all &ink input () (P P) (Col Col)))`.** It is true at each input. `(nonempty (all &ink &mark () (P P)))` is false at each input.
-
-```lisp
-(RULE &v
-  (ALL ((&ink *P *Col)) ((input P Col))))
-```
-
-**`(nonempty (all &none input () (P P)))`, over a domain with no rows.** It is false at each input.
-
-```lisp
-(RULE &none
-  (&ink *P *Col)
-  (margin (:B P) *D *K)
-  (< K 0))
-(RULE &v
-  (ALL ((&none *P)) ((input P))))
-```
-
-**`(all &ink &mark (Col) (P P))`, with an outer column.** It gives the colors 1, 3, 2, 8, one at each input. `(antijoin (project &ink Col) (project (antijoin &ink &mark (P P)) Col) (Col Col))` gives the same rows at size 4.
-
-```lisp
-(RULE &colors (&ink *Col))
-(RULE &v
-  (&colors *Col)
-  (ALL ((&ink *P Col)) ((&mark P))))
-```
-
-**`(component Connectivity (node &ink (Col) (P)) (step step_offset () (V)) component)`, with the eight steps.** It gives 9, 16, 9, 16 rows, with `Col`, `P` and `Id`.
-
-```lisp
-(INIT &c8 Connectivity
-  (key ((&ink ^Col))
-    (node (P)
-      (&ink Col *P)))
-  (step ((:Delta V))
-    (step_offset *V)))
-(RULE &o (&c8.component (:key *Col) *P *Id))
-```
-
-**The D4 orbits of the cells of a frame, as `(cardinality (project (component Quotient (equivalent &pairs () (P P_out)) class) Id))`.** `&pairs` is a `join` of a `lib-join` of a `join`. On solver 25d487eb it gives 40, 21, 48, 48. On solver 0d3d703e, whose grids are 3x3, it gives 3 at each input: the center, the corners and the edge middles.
-
-```lisp
-(RULE &cells (input *P))
-(RULE &moved
-  (&cells *P)
-  (d4_elem *D))
-(RULE &images
-  (&moved *P *D)
-  (apply D P *P_out))
-(RULE &pairs
-  (&images *P *D *P_out)
-  (&cells (:P P_out)))
-(INIT &place Quotient
-  (equivalent ((:a P) (:b P_out))
-    (&pairs *P *P_out)))
-(RULE &class (&place.class (:a *P) *Id))
-(RULE &ids (&class *Id))
-(INIT &classes Cardinality
-  (member ((:m Id))
-    (&ids *Id)))
-(RULE &v (&classes.size *N))
-```
-
-**The translation classes of components.** Each step is one operator, and the last is `(cardinality (project &class Id_2))`. It gives 2 at each input.
-
-```lisp
-(INIT &comp Connectivity
-  (key ((&ink ^Col))
-    (node (P)
-      (&ink Col *P))))
-(RULE &cells (&comp.component (:key *Col) *P *Id))
-(INIT &box BoundingBox
-  (key ((&cells ^Id))
-    (cell (P)
-      (&cells Id *P))))
-(RULE &boxes (&box.box (:key *Id) *B))
-(RULE &joined
-  (&cells *Col *P *Id)
-  (&boxes Id *B))
-(RULE &rel
-  (&joined *Col *P *Id *B)
-  (relative (:Base B) (:X P) *X_rel))
-(INIT &same Inclusion
-  (pattern ((:pattern Id) (:m X_rel))
-    (&rel *Id *X_rel))
-  (observed ((:observed Id) (:m X_rel))
-    (&rel *Id *X_rel)))
-(RULE &equal (&same.equal (:observed *Id) (:pattern *Id_2)))
-(INIT &shape Quotient
-  (equivalent ((:a Id) (:b Id_2))
-    (&equal *Id *Id_2)))
-(RULE &class (&shape.class (:a *Id) (:Id *Id_2)))
-(RULE &ids (&class *Id_2))
-(INIT &n Cardinality
-  (member ((:m Id_2))
-    (&ids *Id_2)))
-(RULE &v (&n.size *N))
-```
-
-**`(select (join &beam ex_output (E E) (P P)) Col != Col_2)`.** A `DET` reads the lifted form. `&j` gives 9, 5, 10 rows at the train examples and none at the test input. `&v` has no rows. `output` is not in the language, so the comparison with `output` ran in this form.
-
-```lisp
-(DET &j
-  (&beam *E *P *Col)
-  (ex_output E P (:Col *Col_2)))
-(DET &v
-  (&j *E *P *Col *Col_2)
-  (!= Col Col_2))
-```
-
-**`(cardinality (join &beam output (P P)))`, through `ex_output`.** It gives (0, 9), (1, 5), (2, 10), (3, 0), by `E`.
-
-```lisp
-(INIT &c Cardinality
-  (key ((ex_input ^E))
-    (member ((:m P))
-      (&beam E *P)
-      (ex_output E P))))
-(DET &v (&c.size (:key *E) *N))
-```
-
-**`(join ex_input ex_output (P P))` and `(join ex_input ex_output (E E) (P P))`, on solver 0d3d703e.** Its 5 inputs and 4 train outputs have one size. The first gives 180 rows, with `E` and `E_2`. The second gives 36.
-
-```lisp
-(DET &across
-  (ex_input *E *P *Col)
-  (ex_output (:E *E_2) P (:Col *Col_2)))
-(DET &within
-  (ex_input *E *P *Col)
-  (ex_output E P (:Col *Col_2)))
-```
-
-**`(join-label &output P ex_output)`, on solver 0d3d703e.** It joins `E` and gives 36 rows. With no site on `E` at `ex_output`, it gives 165.
-
-```lisp
-(DET &q
-  (&output *E *P *Col)
-  (ex_output E P (:Col *Col_2)))
-```
-
-**`(antijoin &beam ex_output (E E) (P P) (Col Col))`.** It gives 11 rows, all at the test input.
-
-```lisp
-(DET &v
-  (&beam *E *P *Col)
-  (NOT (ex_output E P Col)))
-```
-
-**`(component Cardinality (member &ink (E) (P Col)) size)` and `(component Cardinality (member &ink () (Col)) size)`, in a task-wide expression.** The first gives (0, 9), (1, 16), (2, 9), (3, 16), by `E`. The second, with its site on `E`, gives 5 for the task. With no site on `E`, its instance is per input, and a `DET` over it gives 2.
-
-```lisp
-(INIT &by_example Cardinality
-  (key ((&ink ^E))
-    (member ((:m P Col))
-      (&ink E *P *Col))))
-(DET &sizes (&by_example.size (:key *E) *N))
-(INIT &pooled Cardinality
-  (member ((:m Col))
-    (&ink *E *Col)))
-(DET &colors (&pooled.size *N))
-(INIT &per_input Cardinality
-  (member ((:m Col))
-    (&ink *Col)))
-(DET &colors2 (&per_input.size *N))
-```
-
-**A table with its own column `E`.** A lifted read of `&x` gives `E` the type `Example`, and `&x`'s colors can't be read. `&y` reads the copy, with `E` an `Example` and `E_2` a `Color`, and gives 50 rows.
-
-```lisp
-(RULE &x (&ink *P (:Col *E)))
-(RULE &copy (&x *P (:E *E_2)))
-(DET &y (&copy *E *P *E_2))
-```
-
-**A table with several models, on solver a6953f00.** `&corner` has 2 models at each assignment and input, and the read `(RULE &q (&corner *D))` gives 1 row at each model. This `DET` gives a fault when it runs.
-
-```lisp
-(DET &q (&corner *E *D))
-```
-
-**The shape `(cardinality (project T ?1))`, with `?1` typed `Color`, on `&output`.** `&output` has two `Color` columns, so the shape has two ground expressions, one for each. Each gives 3 at each input, so the shape's value is the multiset {3, 3}, with greatest 3 and sum 6.
-
-```lisp
-(RULE &p1 (&output (:Col_in *X)))
-(INIT &i1 Cardinality
-  (member ((:m X))
-    (&p1 *X)))
-(RULE &b1 (&i1.size *N))
-(RULE &p2 (&output (:Col *X)))
-(INIT &i2 Cardinality
-  (member ((:m X))
-    (&p2 *X)))
-(RULE &b2 (&i2.size *N))
-```
-
-**`(cardinality SharedColor)`, on solver 009d5c81.** `&p` gives 0, 1, 8 as one value, and `&v` gives 3.
-
-```lisp
-(DET &p SharedColor (SET))
-(INIT &c Cardinality
-  (member ((:m C))
-    (&p *C)))
-(DET &v (&c.size *N))
-```
-
-**`SharedColor` in the other forms, on solver 009d5c81.** `(DET &p SharedColor)` gives 3 assignments, with 0, 1 and 8. On solver 25d487eb, `(DET &p SharedColor (SET))` gives 0, and `(RULE &p SharedColor)` gives 0, 1, 2 at the first input. A native proposer takes the same forms: `(DET &p RarestColor (SET))`, on solver 070dd51e, gives 3, 8 as one value.
-
-**`(DET &p VanishedColor)` and `(DET &p VanishedColor (SET))`, where the proposer has no row.** With the second form, this read gives 2 rows at each input. With the first, it gives no rows.
-
-```lisp
-(DET &p VanishedColor (SET))
-(RULE &q
-  (&ink *Col)
-  (NOT (&p (:C Col))))
-```
-
-**`(join &ink ChangedPairs (Col C_to))`, a proposer of two columns.** `&p` gives (0, 1), (0, 2), (0, 3) as one value, and `&j` gives 19 rows. `(DET &p ChangedPairs (SET))` is refused: "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body".
-
-```lisp
-(DET &p ChangedPairs)
-(DET &j
-  (&ink *E *P *Col)
-  (&p (:C_to Col) *C_from))
-```
 
 ## What in the sample contract changes
 
