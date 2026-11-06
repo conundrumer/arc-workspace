@@ -617,8 +617,11 @@ class CasesMixin:
             return "\n".join([head, "  (grid", *("    " + r for r in rows)]) + "))"
         if "Position" in ts and v and all(isinstance(r, list) and not any(isinstance(x, list) for x in r) for r in v) \
                 and not all(len(r) == len(ts) for r in v):
-            # a picture of the relation's frame
-            return "\n".join([head, "  (grid", *("    " + arg(r) for r in v)]) + "))"
+            # a picture of the relation's frame: a relation with no column after its position marks its cells `1`,
+            # and a `0` of the picture, as of a mask, gives no row
+            mask = ts[-1] == "Position"
+            return "\n".join([head, "  (grid", *("    (" + " ".join("_" if mask and x == 0 else arg(x) for x in r) + ")"
+                                                 for r in v)]) + "))"
         order = self.type_order.get(amp)
         if order is not None:
             v = [[r[i] for i in order] if isinstance(r, list) and len(r) == len(order) else r for r in v]
