@@ -50,7 +50,7 @@ A set may end in `@K` to read only the shapes that tell gold from a mutant on K 
 A fit reads one column for each set of columns equal on all its train rows, named by its shortest label.
 """
 import argparse
-import hashlib
+import gc
 import json
 import os
 import pickle
@@ -708,26 +708,32 @@ def group_auc(preds, data):
     return 'group_auc', total / max(count, 1.0), True
 
 
-def fit_one(X, rows, groups, seed=7, threads=4, fraction=0.5):
+def fit_runs(X, rows, groups, seeds, threads=4, fraction=0.5):
+    """One fit per seed. Each seed's held-out tasks stop its boosting, and the fit it keeps reads every group. They share
+    one binned dataset, so X's rows must stand in the order of the groups."""
     import lightgbm as lgb
-    params = dict(objective='lambdarank', metric='None', label_gain=[0, 1], lambdarank_truncation_level=40, learning_rate=0.05, num_leaves=31, min_data_in_leaf=20, feature_fraction=fraction, feature_pre_filter=True, max_bin=31, num_threads=threads, verbosity=-1, seed=seed)
+    params = dict(objective='lambdarank', metric='None', label_gain=[0, 1], lambdarank_truncation_level=40, learning_rate=0.05, num_leaves=31, min_data_in_leaf=20, feature_fraction=fraction, feature_pre_filter=True, max_bin=31, num_threads=threads, verbosity=-1, data_random_seed=7)
+    order = [m for g in groups for m in g]
+    assert order == list(range(X.shape[0])), 'rows out of the order of the groups'
+    labels = np.array([1 if rows[m][2] == 0 else 0 for m in order])
+    whole = lgb.Dataset(X, label=labels, group=[len(g) for g in groups], free_raw_data=True, params=params).construct()
     tasks = sorted({rows[g[0]][0] for g in groups})
-    rng = np.random.default_rng(seed)
-    held = set(rng.choice(tasks, size=max(1, len(tasks) * 15 // 100), replace=False).tolist())
-
-    def dataset(chosen, reference=None):
-        order = [m for g in chosen for m in g]
-        labels = np.array([1 if rows[m][2] == 0 else 0 for m in order])
-        return lgb.Dataset(X[order], label=labels, group=[len(g) for g in chosen], reference=reference, free_raw_data=True)
-
-    inner = [g for g in groups if rows[g[0]][0] not in held]
-    outer = [g for g in groups if rows[g[0]][0] in held]
-    train_set = dataset(inner)
-    valid_set = dataset(outer, train_set)
-    booster = lgb.train(params, train_set, num_boost_round=1500, valid_sets=[valid_set], feval=group_auc, callbacks=[lgb.early_stopping(100, verbose=False)])
-    rounds = max(booster.best_iteration, 10)
-    final = lgb.train(params, dataset(groups), num_boost_round=rounds)
-    return final, rounds
+    runs = []
+    for at in range(seeds):
+        seed = 7 + at
+        rng = np.random.default_rng(seed)
+        held = set(rng.choice(tasks, size=max(1, len(tasks) * 15 // 100), replace=False).tolist())
+        inner = [m for g in groups if rows[g[0]][0] not in held for m in g]
+        outer = [m for g in groups if rows[g[0]][0] in held for m in g]
+        seeded = dict(params, feature_fraction_seed=seed, objective_seed=seed)
+        train_set, valid_set = whole.subset(inner), whole.subset(outer)
+        booster = lgb.train(seeded, train_set, num_boost_round=1500, valid_sets=[valid_set], feval=group_auc, callbacks=[lgb.early_stopping(100, verbose=False)])
+        rounds = max(booster.best_iteration, 10)
+        del booster, train_set, valid_set
+        final = lgb.train(seeded, whole, num_boost_round=rounds)
+        final.free_dataset()
+        runs.append((final, rounds))
+    return runs
 
 
 def per_pair(spec):
@@ -741,13 +747,21 @@ def channel_null(channel):
 def distinct_columns(X, labels):
     """One column for each set of columns equal on every row of X, and none for a column with no entry.
     Gives the columns kept and, for each, every column it stands for, its own first."""
-    columns = X.tocsc()
-    columns.sort_indices()
+    rng = np.random.default_rng(11)
+    width = X.shape[1]
+    weights = rng.random((2, X.shape[0]))
+    sums = np.zeros((2, width))
+    counts = np.zeros(width, dtype=np.int64)
+    for start in range(0, X.shape[0], 20000):
+        chunk = X[start:start + 20000]
+        row = np.repeat(np.arange(start, start + chunk.shape[0]), np.diff(chunk.indptr))
+        values = np.nan_to_num(chunk.data.astype(np.float64), nan=7.77)
+        for at in range(2):
+            sums[at] += np.bincount(chunk.indices, weights=values * weights[at][row], minlength=width)
+        counts += np.bincount(chunk.indices, minlength=width)
     groups = defaultdict(list)
-    for j in range(columns.shape[1]):
-        start, end = columns.indptr[j], columns.indptr[j + 1]
-        if start < end:
-            groups[hashlib.blake2b(columns.indices[start:end].tobytes() + columns.data[start:end].tobytes(), digest_size=16).digest()].append(j)
+    for j in np.flatnonzero(counts).tolist():
+        groups[(sums[0, j], sums[1, j], counts[j])].append(j)
     members = sorted(sorted(group, key=lambda j: (len(labels[j]), labels[j])) for group in groups.values())
     return [group[0] for group in members], members
 
@@ -873,14 +887,16 @@ def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
         family = pickle.load((out / f'{split}.family.pkl').open('rb')) if families_needed else None
         return dict(rows=rows, example_of=example_of, index=index, family=family, matrices={name: pickle.load((out / f'{split}.{name}.pkl').open('rb')) for name in needed})
 
-    train, dev = loaded('train'), loaded('dev')
+    single = len(sets) == 1 and len(filters) == 1
+    train = loaded('train')
+    dev = None if single else loaded('dev')
     family_keep = {family: most_varied(train['family'][family]['mean'], family_columns) for family in FAMILIES} if families_needed else {}
     columns = meta['columns']
     flags = np.array([meta['flags'].get(int(key), 0) for key in columns])
     names = [meta['names'].get(int(key), '') for key in columns]
     base_names = {index: key for key, index in meta['base'].items()}
     ctx_names = {index: str(key) for key, index in meta['ctx'].items()}
-    print('rows', len(train['rows']), len(dev['rows']), 'columns', len(columns), 'by reading', Counter(READS.get(int(f), '?') for f in flags), flush=True)
+    print('train rows', len(train['rows']), 'columns', len(columns), 'by reading', Counter(READS.get(int(f), '?') for f in flags), flush=True)
     base_columns = {
         'base0': np.array([i for i in range(len(base_names)) if base_names[i] not in LABEL_STRUCTURE]),
         'base': np.arange(len(base_names)),
@@ -900,7 +916,15 @@ def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
             keep &= ~holds if sign == '~' else holds
         return keep
 
-    def matrix(split, spec):
+    def grab(split, name):
+        """A matrix to read once. A process with one set to fit drops it, since nothing reads it again."""
+        return split['matrices'].pop(name) if single else split['matrices'][name]
+
+    def matrix(split, spec, groups):
+        """A set's matrix over the rows of `groups` alone, in their order, the candidate of each row, and its labels."""
+        of_all = split['example_of'] if per_pair(spec) else np.arange(len(split['rows']))
+        wanted = np.isin(of_all, np.array(sorted({m for g in groups for m in g}), dtype=np.int64))
+        of = of_all[wanted]
         parts = []
         labels = []
         for raw in spec.split('+'):
@@ -921,9 +945,9 @@ def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
                 index = split['index']
                 if per_pair(spec):
                     tasks = index['row_task'][split['example_of']]
-                    parts.append(held['each'][:, kept][index['first_example'][tasks] + index['example_pair']])
+                    parts.append(held['each'][:, kept][(index['first_example'][tasks] + index['example_pair'])[wanted]])
                     labels.extend(f'{label}:each' for label in labels_of)
-                    parts.append(held['stable'][:, kept][tasks])
+                    parts.append(held['stable'][:, kept][tasks[wanted]])
                     labels.extend(f'{label}:stable' for label in labels_of)
                 else:
                     parts.append(held['stable'][:, kept][index['row_task']])
@@ -960,16 +984,16 @@ def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
                 labels.extend(term + ':' + names[int(i)] for i in keep)
             elif term == 'TIOe':
                 keep = np.flatnonzero((flags > 0) & word_mask(raw, names))
-                parts.append(split['matrices']['each'][:, keep])
+                parts.append(grab(split, 'each')[:, keep][wanted])
                 labels.extend(f'{names[int(i)]}:each' for i in keep)
-                parts.append(split['matrices']['stable'][:, keep])
+                parts.append(grab(split, 'stable')[:, keep])
                 labels.extend(f'{names[int(i)]}:stable' for i in keep)
             elif term == 'TIOe_null':
                 keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
                 keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
                 for channel, null_channel, suffix in (('each', 'null_each', 'each'), ('stable', 'null', 'stable')):
-                    parts.append(split['matrices'][channel][:, keep_true])
-                    parts.append(split['matrices'][null_channel][:, keep_null])
+                    parts.append(grab(split, channel)[:, keep_true][wanted] if channel == 'each' else grab(split, channel)[:, keep_true])
+                    parts.append(grab(split, null_channel)[:, keep_null][wanted] if channel == 'each' else grab(split, null_channel)[:, keep_null])
                     labels.extend(f'{names[int(i)]}:{suffix}' for i in keep_true)
                     labels.extend(f'{names[int(i)]}:{suffix}' for i in keep_null)
             elif term in CHANNELS:
@@ -995,49 +1019,48 @@ def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
                 labels.extend(names[int(i)] for i in keep_null)
             else:
                 raise ValueError(term)
-        if per_pair(spec):
-            # A candidate's own terms repeat on each of its pair rows.
-            parts = [part.tocsr()[split['example_of']] if part.shape[0] == len(split['rows']) else part for part in parts]
-        return (sp.hstack(parts, format='csr') if len(parts) > 1 else parts[0].tocsr()), labels
+        # A candidate's own terms repeat on each of its rows.
+        parts = [part.tocsr()[of] if part.shape[0] == len(split['rows']) else part for part in parts]
+        gc.collect()
+        whole = sp.hstack(parts, format='csr') if len(parts) > 1 else parts[0].tocsr()
+        del parts
+        gc.collect()
+        return whole, labels, of
 
-    def per_candidate(split, values, spec):
-        """Each candidate's value: the mean over its example rows, where a set reads them."""
-        if not per_pair(spec):
-            return values
-        of = split['example_of']
-        return np.bincount(of, weights=values, minlength=len(split['rows'])) / np.maximum(np.bincount(of, minlength=len(split['rows'])), 1)
+    def per_candidate(of, values, count):
+        """Each candidate's mean over its rows."""
+        return np.bincount(of, weights=values, minlength=count) / np.maximum(np.bincount(of, minlength=count), 1)
 
-    def worst_of(split, values):
-        """Each candidate's value at its worst example."""
-        out = np.full(len(split['rows']), np.inf)
-        np.minimum.at(out, split['example_of'], values)
-        return out
+    def worst_of(of, values, count):
+        """Each candidate's value at its worst row."""
+        held = np.full(count, np.inf)
+        np.minimum.at(held, of, values)
+        return held
 
-    def pair_rows(split, groups):
-        """The rows and the groups of a fit on pair rows: each candidate's rows stand for it in its group."""
+    def fit_rows_of(split, of, groups):
+        """The rows of a fit and its groups, as places among them."""
         at = defaultdict(list)
-        for row, candidate in enumerate(split['example_of'].tolist()):
+        for row, candidate in enumerate(of.tolist()):
             at[candidate].append(row)
-        rows = [split['rows'][candidate] for candidate in split['example_of'].tolist()]
-        return rows, [[row for member in group for row in at[member]] for group in groups]
+        return [split['rows'][candidate] for candidate in of.tolist()], [[row for member in group for row in at[member]] for group in groups]
 
     sink = (out / 'fits.jsonl').open('a')
     for name in filters:
         chosen = FILTERS[name]
         args = {k: v for k, v in chosen.items() if k != 'label'}
         train_groups = selected(train['rows'], **args)
-        dev_groups = selected(dev['rows'], **args)
         for spec in sets:
             started = time.time()
             written_spec, _, told = spec.partition('@')
             told_on['tasks'] = int(told or 0)
-            X_train, labels = matrix(train, written_spec)
-            X_dev, _ = matrix(dev, written_spec)
+            X_train, labels, of_train = matrix(train, written_spec, train_groups)
             written = X_train.shape[1]
             kept, members = distinct_columns(X_train, labels)
-            X_train, X_dev = X_train[:, kept], X_dev[:, kept]
-            fit_rows, fit_groups = pair_rows(train, train_groups) if per_pair(written_spec) else (train['rows'], train_groups)
-            runs = [fit_one(X_train, fit_rows, fit_groups, seed=7 + at, threads=threads, fraction=fraction) for at in range(seeds)]
+            X_train = X_train[:, kept]
+            distinct = X_train.shape[1]
+            gc.collect()
+            fit_rows, fit_groups = fit_rows_of(train, of_train, train_groups)
+            runs = fit_runs(X_train, fit_rows, fit_groups, seeds, threads=threads, fraction=fraction)
             gain = sum(model.feature_importance(importance_type='gain') for model, _ in runs)
             splits = sum(model.feature_importance(importance_type='split') for model, _ in runs)
             write_importance(out / 'importance' / f'{name}.{spec}.tsv.zst', gain, splits, labels, members)
@@ -1047,20 +1070,27 @@ def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
                 (out / 'models' / f'{name}.{spec}.{at}.txt').write_text(model.model_to_string())
             (out / 'models' / f'{name}.{spec}.columns.txt').write_text('\n'.join(kept_labels) + '\n')
             labels = kept_labels
+            train_auc = np.mean(list(score_items(train['rows'], train_groups, per_candidate(of_train, np.mean([model.predict(X_train) for model, _ in runs], axis=0), len(train['rows'])))[0].values()))
+            del X_train
+            gc.collect()
+            if dev is None:
+                dev = loaded('dev')
+            dev_groups = selected(dev['rows'], **args)
+            X_dev, _, of_dev = matrix(dev, written_spec, dev_groups)
+            X_dev = X_dev[:, kept]
             raw = [model.predict(X_dev) for model, _ in runs]
-            each = [per_candidate(dev, values, written_spec) for values in raw]
+            each = [per_candidate(of_dev, values, len(dev['rows'])) for values in raw]
             each_auc = [float(np.mean(list(score_items(dev['rows'], dev_groups, values)[0].values()))) for values in each]
             rounds = int(np.median([held for _, held in runs]))
             scores = np.mean(each, axis=0)
             auc, mrr, first, edits = score_items(dev['rows'], dev_groups, scores)
-            worst = float(np.mean(list(score_items(dev['rows'], dev_groups, worst_of(dev, np.mean(raw, axis=0)))[0].values()))) if per_pair(written_spec) else None
+            worst = float(np.mean(list(score_items(dev['rows'], dev_groups, worst_of(of_dev, np.mean(raw, axis=0), len(dev['rows'])))[0].values()))) if per_pair(written_spec) else None
             values = list(auc.values())
             low, high = boot(values)
             pairs = sum(len(g) - 1 for g in dev_groups)
             top = np.argsort(-gain)[:15]
-            train_auc = np.mean(list(score_items(train['rows'], train_groups, per_candidate(train, np.mean([model.predict(X_train) for model, _ in runs], axis=0), written_spec))[0].values()))
-            print(f"{name:6} {spec:26} AUC {np.mean(values):.3f} ({low:.3f}, {high:.3f}) worst {worst if worst is None else round(worst, 3)} seeds {np.mean(each_auc):.3f}+-{np.std(each_auc):.3f} first {np.mean(list(first.values())):.3f} rr {np.mean(list(mrr.values())):.3f} tasks {len(values)} pairs {pairs} | train {train_auc:.3f} rounds {rounds} cols {written} distinct {X_train.shape[1]} used {int((gain > 0).sum())} {time.time() - started:.0f}s | " + ' '.join(f'{e} {np.mean(list(h.values())):.3f}' for e, h in sorted(edits.items())), flush=True)
-            sink.write(json.dumps(dict(filter=name, spec=spec, auc=auc, mrr=mrr, first=first, edits={e: h for e, h in edits.items()}, rounds=rounds, worst=worst, seeds=each_auc, columns=written, distinct=X_train.shape[1], used=int((gain > 0).sum()), top=[(labels[int(i)], float(gain[i])) for i in top if gain[i] > 0])) + '\n')
+            print(f"{name:6} {spec:26} AUC {np.mean(values):.3f} ({low:.3f}, {high:.3f}) worst {worst if worst is None else round(worst, 3)} seeds {np.mean(each_auc):.3f}+-{np.std(each_auc):.3f} first {np.mean(list(first.values())):.3f} rr {np.mean(list(mrr.values())):.3f} tasks {len(values)} pairs {pairs} | train {train_auc:.3f} rounds {rounds} cols {written} distinct {distinct} used {int((gain > 0).sum())} {time.time() - started:.0f}s | " + ' '.join(f'{e} {np.mean(list(h.values())):.3f}' for e, h in sorted(edits.items())), flush=True)
+            sink.write(json.dumps(dict(filter=name, spec=spec, auc=auc, mrr=mrr, first=first, edits={e: h for e, h in edits.items()}, rounds=rounds, worst=worst, seeds=each_auc, columns=written, distinct=distinct, used=int((gain > 0).sum()), top=[(labels[int(i)], float(gain[i])) for i in top if gain[i] > 0])) + '\n')
             sink.flush()
     sink.close()
 
