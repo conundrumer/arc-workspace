@@ -15,8 +15,9 @@ items may stay unused, and a relation that gates its models adds aparts
 (`gated_aparts`). Where the pick is the item relation's
 only reader, the item relation's clauses become the picked relation's
 (`fold`). A head term `$Ctor(V..)` of type `TiebreakResolution` with no
-`TiebreakResolutions` instance is a pick of one row of the atoms that bind
-`V..`.
+`TiebreakResolutions` instance, or a record `[V..]` of that type, is a pick of
+one row of the atoms that bind `V..`, over the case columns of the head's
+relation; a head term the converter makes no pick of is listed in `unpicked`.
 """
 
 from dataclasses import dataclass, field, fields as dc_fields, is_dataclass, replace as dc_replace
@@ -47,6 +48,7 @@ from engine.program import (
 
 COMPS = {"CoverForcing", "PlacementPruning", "TiebreakResolutions"}
 RES = "TiebreakResolution"
+CASE_TYPES = ("Choice", "OpenValue")
 
 
 class Generator(NamedTuple):
@@ -97,6 +99,15 @@ def tsubst(x, m: dict):
             if isinstance(v, (tuple, Variable)) or (is_dataclass(v) and not isinstance(v, type)):
                 changes[f.name] = tsubst(v, m)
         return dc_replace(x, **changes) if changes else x
+    return x
+
+
+def unlined(x):
+    """`x` with the line of each atom and comparison in it set to 0."""
+    if isinstance(x, tuple):
+        return tuple(unlined(y) for y in x)
+    if is_dataclass(x) and not isinstance(x, type):
+        return dc_replace(x, **{f.name: 0 if f.name == "line" else unlined(getattr(x, f.name)) for f in dc_fields(x)})
     return x
 
 
@@ -241,6 +252,7 @@ class Rewriter:
         self.picks: dict[str, Pick] = {}
         self.dropped: dict[tuple[tuple[str, ...], str], tuple[int, ...]] = {}   # each relation's dropped resolution columns, by index
         self.fresh_n = 0
+        self.unpicked: dict[tuple[str, int], str] = {}   # a head term of type `TiebreakResolution` that no pick replaces, by its relation and line
 
     def fresh(self, base: str) -> Variable:
         self.fresh_n += 1
@@ -286,7 +298,7 @@ class Rewriter:
         if not insts:
             units, rels = self.ctor_picks(units, rels)
             if not self.picks:
-                return prog, {}, {}
+                return prog, {}, {}, self.unpicked
         for inst in insts:
             sc = inst.scope.components
             mine = [u for u in units if u.head.relation.instances == (inst.name,)
@@ -316,7 +328,7 @@ class Rewriter:
         types = tuple(t for t in prog.types if t.name != RES)
         prog = dc_replace(prog, relations=tuple(rels), units=tuple(units), types=types,
                           instances=tuple(i for i in prog.instances if i not in insts))
-        return prog, self.picks, self.dropped
+        return prog, self.picks, self.dropped, self.unpicked
 
     # ---- ONE
 
@@ -410,48 +422,144 @@ class Rewriter:
         return units, rels
 
     def ctor_picks(self, units, rels):
-        """A head `$Ctor(V..)` of type `TiebreakResolution`: the atoms that
-        bind V.. become a picked relation of one row."""
+        """A head term of type `TiebreakResolution` that holds variables,
+        `$Ctor(V..)` or a record `[V..]`: the atoms of the clause's body that
+        bind V.. become a picked relation of one row. The pick has the case
+        columns of the head's relation (the columns of type `Choice` and
+        `OpenValue`) before V.., and a clause with the same term shares it."""
         adt = self.types.get(((), RES))
         if isinstance(adt, RecordType):
-            return self.record_picks(units, rels, adt)
-        if not isinstance(adt, AdtType):
+            units, rels = self.record_picks(units, rels, adt)
+        elif not isinstance(adt, AdtType):
             return units, rels
-        ctors = {c.name: c for c in adt.constructors}
-        idx = {r.name: [i for i, c in enumerate(r.columns) if c.type.name == RES]
-               for r in rels if r.scope.components == ()}
+        ctors = {c.name: c for c in adt.constructors} if isinstance(adt, AdtType) else {}
+        decls = {r.name: r for r in rels if r.scope.components == () and r.name not in self.picks}
         out = []
+        made: dict[tuple[str, str], tuple[str, list[Column]]] = {}   # (relation, constructor) -> the pick's relation and columns
+        items: dict[tuple[str, str], str] = {}   # the pick's item relation
+        seen: set[tuple] = set()
         for u in units:
-            ii = idx.get(u.head.relation.name) if not u.head.relation.instances and not u.scope.components else None
-            t = u.head.args[ii[0]] if ii and len(ii) == 1 and u.body else None
-            if not (isinstance(t, ConstructorTerm) and t.name in ctors and t.args
-                    and all(isinstance(a, Variable) for a in t.args)):
+            r = decls.get(u.head.relation.name) if not u.head.relation.instances and not u.scope.components else None
+            ii = [i for i, c in enumerate(r.columns) if c.type.name == RES] if r is not None else []
+            t = u.head.args[ii[0]] if len(ii) == 1 and u.body else None
+            if isinstance(adt, AdtType):
+                shape = (t.name, list(zip(t.args, ctors[t.name].fields))) \
+                    if isinstance(t, ConstructorTerm) and t.name in ctors and t.args else None
+            else:
+                shape = ("", list(zip(t.args, adt.fields))) \
+                    if isinstance(t, RecordTerm) and len(t.args) == len(adt.fields) else None
+            if shape is None:
                 out.append(u)
                 continue
-            assert ii is not None and u.body is not None
-            vs = [a.name for a in t.args if isinstance(a, Variable)]
-            bind = [l for l in u.body if isinstance(l, AtomLiteral) and not l.negated
-                    and term_vars(l.atom.args, set()) <= set(vs)]
-            if term_vars(tuple(l.atom.args for l in bind), set()) != set(vs):
+            assert r is not None and u.body is not None
+            ctor, fields = shape
+            vs = [a.name for a, _ in fields if isinstance(a, Variable)]
+            case_cols = [i for i, c in enumerate(r.columns) if c.type.name in CASE_TYPES]
+            case_terms = tuple(u.head.args[i] for i in case_cols)
+            sel = self.pick_body(u.body, vs, case_terms) if len(vs) == len(fields) == len(set(vs)) else None
+            if sel is None:
+                self.unpicked[(u.head.relation.name, u.span.first if u.span else 0)] = \
+                    f"a {'`$' + ctor + '`' if ctor else 'record'} resolution of `{u.head.relation.name}` has no pick"
                 out.append(u)
                 continue
-            name = t.name[:1].lower() + t.name[1:]
-            taken = {x.name for x in rels}
-            while name in taken:
-                name += "2"
-            cols = [Column(v, f.type) for v, f in zip(vs, ctors[t.name].fields)]
-            rels.append(self.decl(name, cols))
-            self.next_unit += 1
-            head = Atom(RelationName((), name), tuple(Variable(v) for v in vs), 0)
-            out.append(dc_replace(u, id=UnitId(self.next_unit), head=head, body=tuple(bind)))
-            first = u.body.index(bind[0])
-            body = [l for l in u.body if l not in bind]
-            body.insert(first, AtomLiteral(head, False))
+            body, moved = sel
+            key = (u.head.relation.name, ctor)
+            if key not in made:
+                name = ctor[:1].lower() + ctor[1:] if ctor else "resolution"
+                taken = {x.name for x in rels}
+                while name in taken:
+                    name += "2"
+                names = [c.name for c in (r.columns[i] for i in case_cols)]
+                cols = [r.columns[i] for i in case_cols]
+                for v, (_, f) in zip(vs, fields):
+                    while v in names:
+                        v += "_"
+                    names.append(v)
+                    cols.append(Column(v, f.type))
+                rels.append(self.decl(name, cols))
+                made[key] = (name, cols)
+                atom = Atom(RelationName((), name), case_terms + tuple(Variable(v) for v in vs), 0)
+                self.picks[name] = Pick(name, "Resolution", u.span.first if u.span else 0, atom, [], [], vs,
+                                        cvars=vs, ones=[[]], fold=[None] * len(case_cols) + vs)
+            name, cols = made[key]
+            head = Atom(RelationName((), name), case_terms + tuple(Variable(v) for v in vs), 0)
+            if term_vars(tuple(body), set()) <= set(vs) | term_vars(case_terms, set()):
+                pbody = tuple(body)
+            else:
+                # the atoms hold other variables, which would be columns of a relation with a `ONE` mark: the pick reads their projection
+                item = name + "_item"
+                if key not in items:
+                    while item in {x.name for x in rels}:
+                        item += "2"
+                    rels.append(self.decl(item, cols))
+                    items[key] = item
+                ihead = dc_replace(head, relation=RelationName((), items[key]))
+                if unlined((ihead, tuple(body))) not in seen:
+                    seen.add(unlined((ihead, tuple(body))))
+                    self.next_unit += 1
+                    out.append(dc_replace(u, id=UnitId(self.next_unit), head=ihead, body=tuple(body)))
+                pbody = (AtomLiteral(ihead, False),)
+            if unlined((head, pbody)) not in seen:
+                seen.add(unlined((head, pbody)))
+                self.next_unit += 1
+                out.append(dc_replace(u, id=UnitId(self.next_unit), head=head, body=pbody))
+            rest, placed = [], False
+            for l in u.body:
+                if not placed and l in body:
+                    rest.append(AtomLiteral(head, False))
+                    placed = True
+                if l not in moved:
+                    rest.append(l)
             hargs = tuple(Variable("Res__") if i == ii[0] else a for i, a in enumerate(u.head.args))
-            out.append(dc_replace(u, head=dc_replace(u.head, args=hargs), body=tuple(body)))
-            self.picks[name] = Pick(name, "Resolution", u.span.first if u.span else 0, head, [], [], vs,
-                                    cvars=vs, ones=[[]], fold=vs)
+            out.append(dc_replace(u, head=dc_replace(u.head, args=hargs), body=tuple(rest)))
         return out, rels
+
+    @staticmethod
+    def pick_body(body, vs: list[str], case_terms) -> tuple[list, list] | None:
+        """The literals of a clause's `body` that state the values of `vs`,
+        and those of them that its pick replaces, or None where no atoms bind
+        `vs`. Where the positive atoms whose variables are `vs` or in the
+        head's case terms bind all of `vs`, they and the negations and
+        comparisons over those variables are the literals. Otherwise they
+        are the atoms that hold a variable of `vs`, each atom that shares
+        another variable with them, and the negations and comparisons over
+        their variables. An atom of `impl_choice` joins them where it binds a
+        case variable that they leave unbound. The replaced literals are
+        those that hold no variable outside `vs` and the case terms."""
+        V = set(vs)
+        K = V | term_vars(case_terms, set())
+        lits = list(body)
+        pos = [l for l in lits if isinstance(l, AtomLiteral) and not l.negated]
+
+        def vars_(l) -> set[str]:
+            return term_vars(l, set())
+
+        def bound(ls) -> set[str]:
+            return set().union(set(), *(term_vars(l.atom.args, set()) for l in ls))
+        sel = [l for l in pos if vars_(l) <= K and vars_(l) & V]
+        if not V <= bound(sel):
+            sel = [l for l in pos if vars_(l) & V]
+            if not V <= bound(sel):
+                return None
+            while True:
+                free = bound(sel) - K
+                more = [l for l in pos if l not in sel and (vars_(l) - K) & free]
+                if not more:
+                    break
+                sel += more
+        W = K | bound(sel)
+        sel += [l for l in lits if l not in sel and (isinstance(l, Comparison) or isinstance(l, AtomLiteral) and l.negated)
+                and vars_(l) <= W]
+        missing = K - bound(sel)
+        for l in sorted((l for l in pos if l not in sel and vars_(l) <= K), key=lambda l: l.atom.relation.name != "impl_choice"):
+            if missing & vars_(l):
+                sel.append(l)
+                missing -= vars_(l)
+        if missing:
+            return None
+        sel = [l for l in lits if l in sel]
+        moved = [l for l in sel if vars_(l) <= K and not (isinstance(l, AtomLiteral) and l.atom.relation.name == "impl_choice")]
+        return sel, moved
 
     def record_picks(self, units, rels, rec: RecordType):
         """A relation whose one column has the record type `TiebreakResolution`,
@@ -1018,6 +1126,7 @@ def reads_of(lits) -> set[RelationName]:
 
 def rewrite(prog):
     """The program with its constraint components rewritten, its picks by
-    name, and the index of each `TiebreakResolution` column dropped from a
-    relation, by the relation's scope and name."""
+    name, the index of each `TiebreakResolution` column dropped from a
+    relation, by the relation's scope and name, and the head terms of that
+    type that no pick replaces, by their relation and line."""
     return Rewriter(prog).run()

@@ -276,6 +276,8 @@ class InstancesMixin:
 
     def one_lines(self, u: Unit, col_names: list[list[str]]) -> list[str]:
         """The ONE marks of a clause of a folded pick, over its column labels."""
+        if note := self.c.unpicked.get((u.head.relation.name, u.span.first if u.span else 0)):
+            self.todo.add("pick", note)
         p = None if u.head.relation.instances else self.c.one_marks.get((u.scope.components, u.head.relation.name))
         if p is None:
             return []

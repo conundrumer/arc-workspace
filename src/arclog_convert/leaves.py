@@ -262,7 +262,7 @@ class Converter:
         prog, self.checks = with_checks(prog, checks, lib)
         prog = inlined(prog, inline, lib)
         prog, self.tile_frames = tile_frames_split(prog)
-        prog, self.picks, self.dropped = rewrite_picks(prog)
+        prog, self.picks, self.dropped, self.unpicked = rewrite_picks(prog)
         prog, self.lib_judgment = libmap_box.typed(prog, lib)
         # the rewrite in its ground form, whose clauses the Souffle engine can run, which
         # `parity_text` reads; it runs first, as `instances.GROUNDED` holds the latest run's inputs
