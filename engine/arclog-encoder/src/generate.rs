@@ -574,6 +574,7 @@ impl Generated {
             for term in &mut family.terms {
                 term.text = String::new();
                 term.columns = Vec::new();
+                term.plan = None;
             }
             family.refined.truncate(family.first_term);
             family.forms = Vec::new();

@@ -1257,7 +1257,12 @@ pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String,
         }
         Arc::new(plan)
     });
-    held.lock().expect("no panic").insert(key, built.clone());
+    let mut plans = held.lock().expect("no panic");
+    // A long run meets many schemas, and this is a cache.
+    if plans.len() >= 20_000 {
+        plans.clear();
+    }
+    plans.insert(key, built.clone());
     built
 }
 
