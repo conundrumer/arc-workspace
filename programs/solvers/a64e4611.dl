@@ -154,14 +154,55 @@ line_rule_choice($ClearLine()). line_rule_choice($SideEmpty()).
 .decl edge_rule_choice(eg: EdgeRule)
 edge_rule_choice($OpenEdge()). edge_rule_choice($BandEdgeMargin()).
 
-.decl blank(p: Position)
-blank(P) :- in(P, Col), params.background(Col).
+.comp Parse<Key> {
+    .type Base = [k: Key, d: Dir, p: Position]
+    .type Rect = [k: Key, b: Box]
 
-// The runs of blank cells.
-// @claim band channel-fill
-.init open_run = Slide<Unit>
-open_run.node($U(), P) :- blank(P).
-open_run.dir($U(), D) :- blank(_), dir_elem(D).
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl blank(k: Key, p: Position)
+    blank(K, P) :- cell(K, P, Col), params.background(Col).
+
+    // The runs of blank cells.
+    // @claim band channel-fill
+    .init open_run = Slide<Key>
+    open_run.node(K, P) :- blank(K, P).
+    open_run.dir(K, D) :- blank(K, _), dir_elem(D).
+
+    // The blank run from P toward D ends N cells from edge D.
+    .decl reach(k: Key, d: Dir, p: Position, n: number)
+    reach(K, D, P, N) :- open_run.rest(K, P, D, E), dir_elem(D), dist(E, D, N).
+
+    // The empty rectangle on P's line across D that reaches as far toward D as
+    // P's run: the cells of the line whose runs reach at least that far, joined
+    // to P along the line.
+    // @claim band
+    .init base = Reach<Base>
+    base.node([K, D, P], Q) :- reach(K, D, P, N), same_dist(D, P, Q), reach(K, D, Q, N2), N2 <= N.
+    base.seed([K, D, P], P) :- reach(K, D, P, _).
+
+    // The rectangle's box: its base run and the end of P's run.
+    // @claim band
+    .init hull = Bbox<Base>
+    hull.cell(B, Q) :- base.reach(B, Q).
+    hull.cell([K, D, P], E) :- open_run.rest(K, P, D, E), dir_elem(D).
+
+    // @claim band
+    .init area = Tally<Rect, Position>
+    area.item([K, B], P) :- hull.box([K, _, _], B), blank(K, P), inside(P, B).
+
+    // @claim band
+    .init by_area = ArgExtremes<Key, Box>
+    by_area.cand(K, B, N) :- area.tally([K, B], N).
+
+    // --- $WidestBand, $EveryRegion ---
+    // @claim band
+    .init short_side = Extremes<Rect>
+    short_side.cand([K, B], N) :- hull.box([K, _, P], B), box_extent(B, P, _, N).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
 // Some ink cell lies within the margin of P on both axes.
 .decl crowded(p: Position)
@@ -170,62 +211,26 @@ crowded(P) :-
     params.margin(M), uniform_outset(M, O), compose(P, O, B), inside(Q, B).
 
 // ---------------------------------------------------------------------------
-// Empty rectangles
-
-// The blank run from P toward D ends K cells from edge D.
-.decl reach(d: Dir, p: Position, k: number)
-reach(D, P, K) :- open_run.rest(_, P, D, E), dir_elem(D), dist(E, D, K).
-
-.type Base = [d: Dir, p: Position]
-
-// The empty rectangle on P's line across D that reaches as far toward D as
-// P's run: the cells of the line whose runs reach at least that far, joined
-// to P along the line.
-// @claim band
-.init base = Reach<Base>
-base.node([D, P], Q) :- reach(D, P, K), same_dist(D, P, Q), reach(D, Q, K2), K2 <= K.
-base.seed([D, P], P) :- reach(D, P, _).
-
-// The rectangle's box: its base run and the end of P's run.
-// @claim band
-.init hull = Bbox<Base>
-hull.cell(B, Q) :- base.reach(B, Q).
-hull.cell([D, P], E) :- open_run.rest(_, P, D, E), dir_elem(D).
-
-// @claim band
-.init area = Tally<Box, Position>
-area.item(B, P) :- hull.box(_, B), blank(P), inside(P, B).
-
-// ---------------------------------------------------------------------------
 // Bands
 
 // The band each branch finds, if any.
 .decl band_box(bd: Band, b: Box)
 
-// @claim band
-.init by_area = ArgExtremes<Unit, Box>
-by_area.cand($U(), B, N) :- area.tally(B, N).
-
 // LargestArea: the one rectangle of the largest area.
 .decl area_tie()
-area_tie() :- by_area.high(_, B1, _), by_area.high(_, B2, _), B1 != B2.
+area_tie() :- parse.by_area.high(_, B1, _), parse.by_area.high(_, B2, _), B1 != B2.
 
-band_box($LargestArea(), B) :- by_area.high(_, B, _), !area_tie().
-
-// --- $WidestBand, $EveryRegion ---
-// @claim band
-.init short_side = Extremes<Box>
-short_side.cand(B, N) :- hull.box([_, P], B), box_extent(B, P, _, N).
+band_box($LargestArea(), B) :- parse.by_area.high(_, B, _), !area_tie().
 
 // --- $WidestBand ---
 // WidestBand: the rectangle with the longest short side.
 // @claim band
 .init by_side = ArgExtremes<Unit, Box>
-by_side.cand($U(), B, N) :- short_side.low(B, N).
+by_side.cand($U(), B, N) :- parse.short_side.low([_, B], N).
 
 // @claim band
 .init side_area = ArgExtremes<Unit, Box>
-side_area.cand($U(), B, N) :- by_side.high(_, B, _), area.tally(B, N).
+side_area.cand($U(), B, N) :- by_side.high(_, B, _), parse.area.tally([_, B], N).
 
 .decl side_tie()
 side_tie() :- side_area.high(_, B1, _), side_area.high(_, B2, _), B1 != B2.
@@ -234,17 +239,17 @@ band_box($WidestBand(), B) :- side_area.high(_, B, _), !side_tie().
 
 // --- $TiedBands ---
 // TiedBands: every rectangle of the largest area.
-band_box($TiedBands(), B) :- by_area.high(_, B, _).
+band_box($TiedBands(), B) :- parse.by_area.high(_, B, _).
 
 // --- $EveryRegion ---
 // EveryRegion: every wide rectangle that overlaps no larger wide rectangle.
 .decl wide(b: Box)
-wide(B) :- short_side.low(B, N), params.region_side(K), N >= K.
+wide(B) :- parse.short_side.low([_, B], N), params.region_side(K), N >= K.
 
 .decl outgrown(b: Box)
 outgrown(B) :-
-    wide(B), wide(B2), area.item(B, P), area.item(B2, P),
-    area.tally(B, N), area.tally(B2, N2), N < N2.
+    wide(B), wide(B2), parse.area.item([_, B], P), parse.area.item([_, B2], P),
+    parse.area.tally([_, B], N), parse.area.tally([_, B2], N2), N < N2.
 
 band_box($EveryRegion(), B) :- wide(B), !outgrown(B).
 
@@ -267,21 +272,21 @@ across($PerpendicularChannels(), B, D) :- long_axis(B, A), perp(A, A2), axis_of(
 // Band fill
 
 // A side of the band that keeps the margin.
-.decl kept_side(eg: EdgeRule, b: Box, d: Dir)
-kept_side(Eg, B, D) :- edge_rule_choice(Eg), band_box(_, B), dir_elem(D), !dist(B, D, 0).
+.decl kept_side(bd: Band, eg: EdgeRule, b: Box, d: Dir)
+kept_side(Bd, Eg, B, D) :- edge_rule_choice(Eg), band_box(Bd, B), dir_elem(D), !dist(B, D, 0).
 // --- $BandEdgeMargin ---
-kept_side($BandEdgeMargin(), B, D) :-
-    band_box(_, B), long_axis(B, A), perp(A, A2), axis_of(D, A2).
+kept_side(Bd, $BandEdgeMargin(), B, D) :-
+    band_box(Bd, B), long_axis(B, A), perp(A, A2), axis_of(D, A2).
 
 // @claim band-fill
-.decl band_rim(eg: EdgeRule, b: Box, p: Position)
-band_rim(Eg, B, P) :-
-    kept_side(Eg, B, D), in(P, _),
+.decl band_rim(bd: Band, eg: EdgeRule, b: Box, p: Position)
+band_rim(Bd, Eg, B, P) :-
+    kept_side(Bd, Eg, B, D), in(P, _),
     crop(P, B, P_rel), dist(P_rel, D, K), params.margin(M), K < M.  // within the margin of side D
 
 .decl band_green(bd: Band, eg: EdgeRule, b: Box, p: Position)
 band_green(Bd, Eg, B, P) :-
-    edge_rule_choice(Eg), band_box(Bd, B), in(P, _), inside(P, B), !band_rim(Eg, B, P).
+    edge_rule_choice(Eg), band_box(Bd, B), in(P, _), inside(P, B), !band_rim(Bd, Eg, B, P).
 
 // ---------------------------------------------------------------------------
 // --- $ClearLine ---
@@ -364,7 +369,7 @@ cross([K, D, Id], Q) :-
 // The far end F of the blank run from a cross-section cell, N from the edge.
 .decl cross_end(c: Channel, f: Position, n: number)
 cross_end([K, D, Id], F, N) :-
-    cross([K, D, Id], Q), opposite(D, D2), open_run.rest(_, Q, D2, F), dist(F, D, N).
+    cross([K, D, Id], Q), opposite(D, D2), parse.open_run.rest(_, Q, D2, F), dist(F, D, N).
 
 // How far from the edge every line of the cross-section stays blank.
 // @claim channel-fill
@@ -395,8 +400,8 @@ edge_cell(D, E) :- in(E, _), dir_elem(D), dist(E, D, 0).
 .decl open_line(d: Dir, k: number, e: Position)
 open_line(D, K, E) :-
     edge_cell(D, E), opposite(D, D2),
-    ( open_run.run(_, E, D2, P), dist(P, D, K)          // a blank cell past E
-    ; open_run.rest(_, E, D2, F), neighbor(F, D2, N),
+    ( parse.open_run.run(_, E, D2, P), dist(P, D, K)          // a blank cell past E
+    ; parse.open_run.rest(_, E, D2, F), neighbor(F, D2, N),
       in(N, _), dist(N, D, K)                                 // the first ink cell
     ).
 
@@ -436,7 +441,7 @@ arm_span.cell(G, E) :- arm_line(G, E).
 // The far end F of the blank run on a line of the group, N from the edge.
 .decl line_end(g: Group, f: Position, n: number)
 line_end([D, K, Id], F, N) :-
-    arm_group.label([D, K], E, Id), opposite(D, D2), open_run.rest(_, E, D2, F), dist(F, D, N).
+    arm_group.label([D, K], E, Id), opposite(D, D2), parse.open_run.rest(_, E, D2, F), dist(F, D, N).
 
 // How far from the edge every line of the group stays blank.
 // @claim channel-fill
@@ -476,9 +481,9 @@ arm.edge([[D, K, Id], N], D_s, N_s) :-
     ( D_s = D ; perp_dir(D, D_s) ), dist(B_s, D_s, N_s).
 arm.edge([[D, K, Id], N], D2, N) :- arm_reach([D, K, Id], N), opposite(D, D2).
 
-// The boxes a piece may have: the bands, and the boxes of arms.
+// The boxes a piece may have: the empty rectangles, and the boxes of arms.
 .decl shape(b: Box)
-shape(B) :- band_box(_, B).
+shape(B) :- parse.hull.box(_, B).
 // --- $SideEmpty ---
 shape(B) :- arm.box(_, B).
 
@@ -501,19 +506,19 @@ arm_far(Hd, $ChannelRect(), B, G, N) :- arm_off(Hd, B, G), rect_far(G, N).
 
 // --- $SideEmpty & $ChannelChain ---
 // A band some case leaves through arms off arms.
-.decl track(hd: Heading, ex: Extent, b: Box)
-track(Hd, Ex, B) :-
+.decl track(bd: Band, hd: Heading, ex: Extent, b: Box)
+track(Bd, Hd, Ex, B) :-
     impl_choice([Bd, $ChannelChain(), Ex, Hd, $SideEmpty(), _]), band_box(Bd, B).
 
 // A band, and the arm rule of a case that leaves it through arms off arms.
-.type Arms = [hd: Heading, ex: Extent, b0: Box]
+.type Arms = [bd: Band, hd: Heading, ex: Extent, b0: Box]
 
 // The boxes reached from the band, each box sending off its arm.
 // @claim channel-fill
 .init chain = Propagation<Arms, Box>
-chain.source([Hd, Ex, B0], B0) :- track(Hd, Ex, B0).
-chain.edge([Hd, Ex, B0], B, B_arm) :-
-    track(Hd, Ex, B0), arm_far(Hd, Ex, B, G, N), arm.box([G, N], B_arm).
+chain.source([Bd, Hd, Ex, B0], B0) :- track(Bd, Hd, Ex, B0).
+chain.edge([Bd, Hd, Ex, B0], B, B_arm) :-
+    track(Bd, Hd, Ex, B0), arm_far(Hd, Ex, B, G, N), arm.box([G, N], B_arm).
 
 // --- $SideEmpty ---
 // The boxes that channels and arms leave: the bands, and under ChannelChain
@@ -523,8 +528,7 @@ piece(Bd, Hd, An, Ex, B) :-
     band_box(Bd, B), heading_choice(Hd), anchor_choice(An), extent_choice(Ex).
 // --- $SideEmpty & $ChannelChain ---
 piece(Bd, Hd, $ChannelChain(), Ex, B) :-
-    band_box(Bd, B0), track(Hd, Ex, B0),
-    chain.reached([Hd, Ex, B0], B).            // a box reached through arms off arms
+    track(Bd, Hd, Ex, B0), chain.reached([Bd, Hd, Ex, B0], B).  // a box reached through arms off arms
 
 .decl arm_cell(bd: Band, hd: Heading, an: Anchor, ex: Extent, p: Position)
 arm_cell(Bd, Hd, An, Ex, P) :-
@@ -569,3 +573,18 @@ out(P, Col, [Bd, An, Ex, Hd, Ln, Eg]) :-
     ( green([Bd, An, Ex, Hd, Ln, Eg], P), params.fill(Col)
     ; !green([Bd, An, Ex, Hd, Ln, Eg], P), Col = Col_in
     ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // --- $EveryRegion ---
+    // The short side of each input's largest empty rectangle, over the train
+    // and the test inputs.
+    .init band_side = Extremes<Unit>
+    band_side.cand($U(), N) :- parse.by_area.high(E, B, _), parse.short_side.low([E, B], N).
+
+    // A rectangle is wide enough when it is as wide as the narrowest of those.
+    .decl region_side(k: number)
+    region_side(K) :- band_side.low($U(), K).
+}
