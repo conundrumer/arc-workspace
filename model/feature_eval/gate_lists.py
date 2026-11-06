@@ -2,8 +2,8 @@
 """The Gate of docs/feature-spec/evaluation-protocol.md: trees that rank a gold query above its
 mutants, trained on train tasks and read on dev tasks, read additively over what a shape reads.
 
-  gate_lists.py build ROOT OUT [--min-tasks N] [--all-numbers]
-                                                 the rows and the sparse matrices; TIOr needs --all-numbers
+  gate_lists.py build ROOT OUT                   every shape, with each fact stored once at the level where
+                                                 it holds, for a fit by engine/block-boost
   gate_lists.py fit OUT --sets ... --filters ... [--seeds N]
                                                  one line per set: the ensemble of N fits, with each fit's
                                                  spread, per-task values in OUT/fits.jsonl, every column's
@@ -272,15 +272,24 @@ def place(ids, table):
     return at, hit
 
 
-def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
+def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False):
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     Matrix.folder = out
+    maker = Matrix
+    if blocks:
+        from block_fit import BlockMatrix
+        (out / 'blocks').mkdir(exist_ok=True)
+        BlockMatrix.folder = out / 'blocks'
+        maker = BlockMatrix
+        all_numbers = True
+        min_tasks = each_tasks = 1
     parts = split_of()
     files = sorted((root / 'lists').glob('*.lists.zst'))
     print(len(files), 'task files', flush=True)
     # Which shapes tell gold from a mutant on three train tasks or more, on the true and on the null lists.
     told = {kind: Tally() for kind in ('stable', 'null', 'graded', 'null_graded')}
+    every_shape = Tally()
     wide_root = root.parent / 'wide'
     state_root = root.parent / 'state'
     told_wide = []
@@ -312,10 +321,14 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
         for kind, held in seen.items():
             if held:
                 told[kind].add(np.unique(np.concatenate(held)))
+        if blocks:
+            shapes = [entries[0] for tables in (lists, others, null_lists, null_others) for entries in tables.values()]
+            if shapes:
+                every_shape.add(np.unique(np.concatenate(shapes)))
         wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
         wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
-        apart = []
-        for item in head['items']:
+        apart = [entries[0] for held in (wide, wide_null) for entries in held.values()] if blocks else []
+        for item in head['items'] if not blocks else ():
             if item['last']:
                 continue
             for mutant in item['mutants']:
@@ -349,7 +362,7 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
         ids, counts = held.result()
         chosen[kind] = ids[counts >= min_tasks]
         print(kind, 'told apart on some task', len(ids), f'on {min_tasks}+ tasks', len(chosen[kind]), flush=True)
-    columns = np.unique(np.concatenate(list(chosen.values())))
+    columns = np.unique(np.concatenate(list(chosen.values()) + ([every_shape.result()[0]] if blocks else [])))
     def common(held):
         if not held:
             return np.zeros(0, dtype=np.uint64)
@@ -389,17 +402,19 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
             rows_key = key
     print('names found', len(names), 'of', len(wanted), flush=True)
     wanted_family = set(family_columns['input'].tolist()) | set(family_columns['output'].tolist())
-    family_names = {}
+    family_names, family_flags = {}, {}
     for line in name_lines(root / 'lists'):
         parts_line = line.rstrip('\n').split('\t')
         if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_family:
             family_names[int(parts_line[0], 16)] = parts_line[1]
+            family_flags[int(parts_line[0], 16)] = int(parts_line[2])
     wanted_state = set(family_columns['pairs'].tolist()) | set(graph_columns.tolist()) | set(relation_columns.tolist())
     if state_root.exists():
         for line in name_lines(state_root / 'lists'):
             parts_line = line.rstrip('\n').split('\t')
             if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_state:
                 family_names[int(parts_line[0], 16)] = parts_line[1]
+                family_flags[int(parts_line[0], 16)] = int(parts_line[2])
     wanted_wide = set(wide_columns.tolist()) | set(pair_columns.tolist())
     wide_names, wide_flags = {}, {}
     if wide_root.exists():
@@ -417,13 +432,14 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
     print('example rows read shapes told apart on', each_tasks, 'tasks or more:', int(each_keep.sum()), flush=True)
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'relations')}
+        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'relations')}
         example_of = []
         example_pair = []
         row_task = []
         first_example = []
-        task_rows = {family: {channel: Matrix() for channel in ('stable', 'mean')} for family in FAMILIES}
-        task_examples = {family: Matrix() for family in FAMILIES}
+        task_rows = {family: {channel: maker() for channel in ('stable', 'mean')} for family in FAMILIES}
+        task_examples = {family: maker() for family in FAMILIES}
+        task_train = []
         examples_so_far = 0
         count = 0
         started = time.time()
@@ -440,6 +456,7 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
             pair_spots, pair_hit = place(pair_numbers[0], pair_columns)
             state, state_others, state_item = state_lists(state_root / 'lists', path.name)
             first_example.append(examples_so_far)
+            task_train.append(head['train'])
             example_count = head['train'] + head.get('test', 0)
             examples_so_far += example_count
             for family, owner in FAMILIES.items():
@@ -462,6 +479,9 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
                     held_here = entries[4].shape[1] > pair
                     values = entries[4][:, pair][graded_hit] if held_here else np.zeros(0, dtype=np.float32)
                     active = values != 0
+                    if blocks:
+                        task_examples[family].add(graded_at[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64), values[active])
+                        continue
                     at_all = np.concatenate((stable_at, graded_at[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64)))
                     order = np.argsort(at_all)
                     task_examples[family].add(at_all[order], np.concatenate((stable_values, values[active]))[order])
@@ -570,6 +590,9 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
                             values = at_pairs[:, pair][graded_hit] if held_here else np.zeros(0, dtype=np.float32)
                             active = values != 0
                             place_at = graded_spots[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64)
+                            if blocks:
+                                mats[each_name].add(place_at, values[active])
+                                continue
                             # At a test input, a shape that reads the output has no value.
                             stable_here = stable_hit if pair < head['train'] else stable_hit & ~reads_output[stable_spots]
                             at_all = np.concatenate((stable_spots[stable_here], place_at))
@@ -596,6 +619,16 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
         widths = {'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns), 'graph': len(graph_columns), 'relations': len(RELATIONS) * len(relation_columns)}
         # Each matrix leaves memory as soon as its split ends. A vocabulary's width is known only at the end of the train split, so those two stay.
         nnz = {name: mats[name].count for name in mats}
+        if blocks:
+            for name in mats:
+                mats[name].write(out / 'blocks' / f'{split}.{name}.zst')
+            for family in FAMILIES:
+                task_rows[family]['stable'].write(out / 'blocks' / f'{split}.family.{family}.stable.zst')
+                task_rows[family]['mean'].write(out / 'blocks' / f'{split}.family.{family}.mean.zst')
+                task_examples[family].write(out / 'blocks' / f'{split}.family.{family}.each.zst')
+            data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64), task_train=np.array(task_train, dtype=np.int64), examples=examples_so_far))
+            print(split, 'rows', len(rows), 'nnz', nnz, flush=True)
+            continue
         for name in mats:
             if name not in ('base', 'ctx'):
                 mats[name].write(widths.get(name, len(columns)), out / f'{split}.{name}.pkl')
@@ -603,20 +636,26 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False):
         print(split, 'rows', len(rows), 'nnz', nnz, flush=True)
     width_base, width_ctx = len(base_vocab), len(context_vocab)
     for split in data:
-        data[split]['matrices']['base'] = data[split]['matrices']['base'][:, :width_base]
-        data[split]['matrices']['ctx'] = data[split]['matrices']['ctx'][:, :width_ctx]
+        if not blocks:
+            data[split]['matrices']['base'] = data[split]['matrices']['base'][:, :width_base]
+            data[split]['matrices']['ctx'] = data[split]['matrices']['ctx'][:, :width_ctx]
         with (out / f'{split}.rows.pkl').open('wb') as sink:
             pickle.dump(data[split]['rows'], sink, protocol=4)
         with (out / f'{split}.example_of.pkl').open('wb') as sink:
             pickle.dump(data[split]['example_of'], sink, protocol=4)
         with (out / f'{split}.index.pkl').open('wb') as sink:
             pickle.dump(data[split]['index'], sink, protocol=4)
+        if blocks:
+            continue
         with (out / f'{split}.family.pkl').open('wb') as sink:
             pickle.dump(data[split]['family'], sink, protocol=4)
         for name, matrix in data[split]['matrices'].items():
             with (out / f'{split}.{name}.pkl').open('wb') as sink:
                 pickle.dump(matrix, sink, protocol=4)
-    meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, graph_columns=graph_columns, relation_columns=relation_columns)
+    meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, family_flags=family_flags, graph_columns=graph_columns, relation_columns=relation_columns)
+    if blocks:
+        meta['blocks'] = True
+        meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), graph=len(graph_columns), relations=len(RELATIONS) * len(relation_columns))
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
@@ -824,6 +863,9 @@ def column_value(label, entries, pair=0):
 def score(out, spec, name, vectors):
     import lightgbm as lgb
     models = Path(out) / 'models'
+    if (models / f'{name}.{spec}.0.jsonl').exists():
+        import block_fit
+        return block_fit.score(models, spec, name, vectors)
     columns = (models / f'{name}.{spec}.columns.txt').read_text().splitlines()
     fits = [lgb.Booster(model_file=str(path)) for path in sorted(models.glob(f'{name}.{spec}.[0-9]*.txt'))]
     for vector in vectors:
@@ -850,6 +892,9 @@ def most_varied(held, count):
 def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
     out = Path(out)
     meta = pickle.load((out / 'meta.pkl').open('rb'))
+    if meta.get('blocks'):
+        import block_fit
+        return block_fit.fit(out, meta, sets, filters, threads, fraction, seeds)
     needed = {'base'}
     families_needed = False
     for spec in sets:
@@ -1102,6 +1147,7 @@ def main():
     parser.add_argument('--min-tasks', type=int, default=3)
     parser.add_argument('--each-tasks', type=int)
     parser.add_argument('--all-numbers', action='store_true')
+    parser.add_argument('--flat', action='store_true', help='rows as whole matrices, for a fit by LightGBM; reads --min-tasks, --each-tasks, --all-numbers and --family-columns')
     parser.add_argument('--family-columns', type=int, default=1500)
     parser.add_argument('--sets', nargs='*', default=[])
     parser.add_argument('--filters', nargs='*', default=['rows', 'same'])
@@ -1111,7 +1157,7 @@ def main():
     parser.add_argument('--filter', default='rows')
     a = parser.parse_args()
     if a.command == 'build':
-        build(a.paths[0], a.paths[1], a.min_tasks, a.each_tasks, a.all_numbers)
+        build(a.paths[0], a.paths[1], a.min_tasks, a.each_tasks, a.all_numbers, not a.flat)
     elif a.command == 'compare':
         compare(a.paths[0], a.paths[1], a.paths[2], a.filter)
     elif a.command == 'score':

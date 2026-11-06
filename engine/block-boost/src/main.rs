@@ -1,0 +1,1387 @@
+//! A gradient-boosted ranker over rows that share their entries.
+//!
+//! A row is a candidate at an example. What holds of a whole candidate or a whole task stands once, in a block that each of
+//! its rows points to, so a fit's memory follows the facts and not how many rows repeat them. A row's value at a column is
+//! the entry of one of its blocks, and a column with no entry there is at its default, 0.
+//!
+//!     block-boost scan DIR      each column's hash, rows and entries, from DIR/plan.json
+//!     block-boost compile DIR   each entry as the number of its bin, for the columns DIR/keep.i32 keeps
+//!     block-boost fit FILE      one model per seed, from the JSON in FILE
+//!
+//! The objective and the tree growth are those of LightGBM's lambdarank, with the same parameters. A histogram entry holds
+//! the sums of a bin, and a leaf's rows add their sums to the blocks first, so one block's entries are read once for a leaf.
+
+use rayon::prelude::*;
+use serde_json::{Value, json};
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::ops::Deref;
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+const NONE: u32 = u32::MAX;
+const EPSILON: f64 = 1e-15;
+const ZERO: f64 = 1e-35;
+const MIN_DATA_IN_BIN: f64 = 3.0;
+
+fn bytes_of<T: Copy>(values: &[T]) -> &[u8] {
+    unsafe { std::slice::from_raw_parts(values.as_ptr() as *const u8, std::mem::size_of_val(values)) }
+}
+
+fn bytes_of_mut<T: Copy>(values: &mut [T]) -> &mut [u8] {
+    unsafe { std::slice::from_raw_parts_mut(values.as_mut_ptr() as *mut u8, std::mem::size_of_val(values)) }
+}
+
+fn read_all<T: Copy + Default>(path: &Path) -> Vec<T> {
+    let bytes = fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let mut out = vec![T::default(); bytes.len() / std::mem::size_of::<T>()];
+    bytes_of_mut(&mut out).copy_from_slice(&bytes);
+    out
+}
+
+fn write_all<T: Copy>(path: &Path, values: &[T]) {
+    let working = path.with_extension("working");
+    fs::write(&working, bytes_of(values)).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    fs::rename(&working, path).unwrap();
+}
+
+/// An array read from a file's pages, which the system can drop and read again, and which processes share.
+struct Mapped<T> {
+    at: *const T,
+    len: usize,
+}
+
+unsafe impl<T> Send for Mapped<T> {}
+unsafe impl<T> Sync for Mapped<T> {}
+
+impl<T> Mapped<T> {
+    fn open(path: &Path) -> Self {
+        let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let size = file.metadata().unwrap().len() as usize;
+        if size == 0 {
+            return Mapped { at: std::ptr::NonNull::dangling().as_ptr(), len: 0 };
+        }
+        let at = unsafe { libc::mmap(std::ptr::null_mut(), size, libc::PROT_READ, libc::MAP_SHARED, file.as_raw_fd(), 0) };
+        assert!(at != libc::MAP_FAILED, "{}: no mapping", path.display());
+        Mapped { at: at as *const T, len: size / std::mem::size_of::<T>() }
+    }
+}
+
+impl<T> Deref for Mapped<T> {
+    type Target = [T];
+    #[inline]
+    fn deref(&self) -> &[T] {
+        unsafe { std::slice::from_raw_parts(self.at, self.len) }
+    }
+}
+
+impl<T> Drop for Mapped<T> {
+    fn drop(&mut self) {
+        if self.len > 0 {
+            unsafe { libc::munmap(self.at as *mut libc::c_void, self.len * std::mem::size_of::<T>()) };
+        }
+    }
+}
+
+fn mix(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+    x ^ (x >> 31)
+}
+
+struct Random(u64);
+
+impl Random {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e3779b97f4a7c15);
+        mix(self.0)
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+    fn unit(&mut self) -> f64 {
+        (self.next() >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// A build's stream of rows: frames of a row count, an entry count, each row's length, each entry's column as its difference
+/// from the entry before, and each entry's value.
+struct Records {
+    input: zstd::stream::read::Decoder<'static, BufReader<File>>,
+    lengths: Vec<u32>,
+    columns: Vec<i32>,
+    values: Vec<f32>,
+}
+
+impl Records {
+    fn open(path: &Path) -> Self {
+        let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        Records { input: zstd::stream::read::Decoder::new(file).unwrap(), lengths: vec![], columns: vec![], values: vec![] }
+    }
+
+    fn next(&mut self) -> bool {
+        let mut head = [0u8; 12];
+        let mut got = 0;
+        while got < head.len() {
+            let n = self.input.read(&mut head[got..]).unwrap();
+            if n == 0 {
+                assert!(got == 0, "a stream ends inside a frame");
+                return false;
+            }
+            got += n;
+        }
+        let rows = u32::from_le_bytes(head[..4].try_into().unwrap()) as usize;
+        let entries = u64::from_le_bytes(head[4..].try_into().unwrap()) as usize;
+        self.lengths.resize(rows, 0);
+        self.columns.resize(entries, 0);
+        self.values.resize(entries, 0.0);
+        self.input.read_exact(bytes_of_mut(&mut self.lengths)).unwrap();
+        self.input.read_exact(bytes_of_mut(&mut self.columns)).unwrap();
+        self.input.read_exact(bytes_of_mut(&mut self.values)).unwrap();
+        let mut at = 0i32;
+        for column in &mut self.columns {
+            at = at.wrapping_add(*column);
+            *column = at;
+        }
+        true
+    }
+
+    /// Calls `each` with every row's place and its columns and values.
+    fn for_each_row(&mut self, mut each: impl FnMut(usize, &[i32], &[f32])) -> usize {
+        let mut row = 0;
+        while self.next() {
+            let mut at = 0;
+            for &length in &self.lengths {
+                let end = at + length as usize;
+                each(row, &self.columns[at..end], &self.values[at..end]);
+                at = end;
+                row += 1;
+            }
+        }
+        row
+    }
+}
+
+struct PlanMap {
+    file: PathBuf,
+    domain: usize,
+}
+
+struct PlanUse {
+    file: PathBuf,
+    map: usize,
+    col_map: PathBuf,
+}
+
+struct Plan {
+    rows: usize,
+    columns: usize,
+    max_bin: usize,
+    sample_cap: u64,
+    threads: usize,
+    reference: Option<PathBuf>,
+    maps: Vec<PlanMap>,
+    uses: Vec<PlanUse>,
+}
+
+fn read_json(path: &Path) -> Value {
+    serde_json::from_str(&fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))).unwrap()
+}
+
+impl Plan {
+    fn read(dir: &Path) -> Plan {
+        let v = read_json(&dir.join("plan.json"));
+        let path = |x: &Value| {
+            let p = PathBuf::from(x.as_str().unwrap());
+            if p.is_absolute() { p } else { dir.join(p) }
+        };
+        Plan {
+            rows: v["rows"].as_u64().unwrap() as usize,
+            columns: v["columns"].as_u64().unwrap() as usize,
+            max_bin: v["max_bin"].as_u64().unwrap() as usize,
+            sample_cap: v["sample_cap"].as_u64().unwrap(),
+            threads: v["threads"].as_u64().unwrap() as usize,
+            reference: v["reference"].as_str().map(PathBuf::from),
+            maps: v["maps"].as_array().unwrap().iter().map(|m| PlanMap { file: path(&m["file"]), domain: m["domain"].as_u64().unwrap() as usize }).collect(),
+            uses: v["uses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|u| PlanUse { file: path(&u["file"]), map: u["map"].as_u64().unwrap() as usize, col_map: path(&u["col_map"]) })
+                .collect(),
+        }
+    }
+}
+
+fn threads(count: usize) {
+    rayon::ThreadPoolBuilder::new().num_threads(count).build_global().unwrap();
+}
+
+/// Each column's two hashes, which are sums over its rows, so equal columns have equal hashes whatever blocks hold them.
+fn scan(dir: &Path) {
+    let plan = Plan::read(dir);
+    threads(plan.threads);
+    let started = Instant::now();
+    let weight = |seed: u64, row: usize| mix(seed ^ mix(row as u64));
+    let blocks: Vec<(Vec<u64>, Vec<u64>, Vec<u32>)> = plan
+        .maps
+        .iter()
+        .map(|m| {
+            let of: Vec<u32> = read_all(&m.file);
+            assert_eq!(of.len(), plan.rows, "{}", m.file.display());
+            let (mut w0, mut w1, mut rows) = (vec![0u64; m.domain], vec![0u64; m.domain], vec![0u32; m.domain]);
+            for (row, &block) in of.iter().enumerate() {
+                if block != NONE {
+                    let b = block as usize;
+                    w0[b] = w0[b].wrapping_add(weight(11, row));
+                    w1[b] = w1[b].wrapping_add(weight(13, row));
+                    rows[b] += 1;
+                }
+            }
+            (w0, w1, rows)
+        })
+        .collect();
+    type Sums = (Vec<u64>, Vec<u64>, Vec<u64>, Vec<u64>, Vec<u64>);
+    let empty = || -> Sums {
+        let c = plan.columns;
+        (vec![0; c], vec![0; c], vec![0; c], vec![0; c], vec![0; c])
+    };
+    let sums = plan
+        .uses
+        .par_iter()
+        .map(|u| {
+            let col_map: Vec<i32> = read_all(&u.col_map);
+            let (w0, w1, rows) = &blocks[u.map];
+            let mut out = empty();
+            let read = Records::open(&u.file).for_each_row(|block, columns, values| {
+                if rows[block] == 0 {
+                    return;
+                }
+                for (&column, &value) in columns.iter().zip(values) {
+                    let c = col_map[column as usize];
+                    if c < 0 || value == 0.0 {
+                        continue;
+                    }
+                    let c = c as usize;
+                    let bits = if value.is_nan() { u64::MAX } else { value.to_bits() as u64 };
+                    let hashed = mix(bits);
+                    out.0[c] = out.0[c].wrapping_add(hashed.wrapping_mul(w0[block]));
+                    out.1[c] = out.1[c].wrapping_add(hashed.wrapping_mul(w1[block]));
+                    out.2[c] += rows[block] as u64;
+                    out.3[c] += 1;
+                    if value.is_nan() {
+                        out.4[c] += 1;
+                    }
+                }
+            });
+            assert_eq!(read, plan.maps[u.map].domain, "{}", u.file.display());
+            println!("scan {} {:.0}s", u.file.display(), started.elapsed().as_secs_f64());
+            out
+        })
+        .reduce(empty, |mut a, b| {
+            for c in 0..plan.columns {
+                a.0[c] = a.0[c].wrapping_add(b.0[c]);
+                a.1[c] = a.1[c].wrapping_add(b.1[c]);
+                a.2[c] += b.2[c];
+                a.3[c] += b.3[c];
+                a.4[c] += b.4[c];
+            }
+            a
+        });
+    write_all(&dir.join("hash0.u64"), &sums.0);
+    write_all(&dir.join("hash1.u64"), &sums.1);
+    write_all(&dir.join("count.u64"), &sums.2);
+    write_all(&dir.join("entries.u64"), &sums.3);
+    write_all(&dir.join("nans.u64"), &sums.4);
+}
+
+/// The upper bounds of at most `max_bin` bins over ascending values, as LightGBM's greedy search finds them.
+fn greedy_bounds(values: &[f64], counts: &[f64], max_bin: usize, total: f64) -> Vec<f64> {
+    let n = values.len();
+    let mut bounds = Vec::new();
+    if n == 0 || max_bin <= 1 {
+        bounds.push(f64::INFINITY);
+        return bounds;
+    }
+    if n <= max_bin {
+        let mut current = 0.0;
+        for i in 0..n - 1 {
+            current += counts[i];
+            if current >= MIN_DATA_IN_BIN {
+                bounds.push((values[i] + values[i + 1]) / 2.0);
+                current = 0.0;
+            }
+        }
+        bounds.push(f64::INFINITY);
+        return bounds;
+    }
+    let max_bin = (((total / MIN_DATA_IN_BIN) as usize).min(max_bin)).max(1);
+    if max_bin == 1 {
+        bounds.push(f64::INFINITY);
+        return bounds;
+    }
+    let mut mean = total / max_bin as f64;
+    let mut rest_bins = max_bin as i64;
+    let mut rest = total;
+    let large: Vec<bool> = counts.iter().map(|&c| c >= mean).collect();
+    for i in 0..n {
+        if large[i] {
+            rest_bins -= 1;
+            rest -= counts[i];
+        }
+    }
+    mean = rest / rest_bins.max(1) as f64;
+    let (mut upper, mut lower) = (Vec::new(), vec![values[0]]);
+    let mut current = 0.0;
+    for i in 0..n - 1 {
+        if !large[i] {
+            rest -= counts[i];
+        }
+        current += counts[i];
+        if large[i] || current >= mean || (large[i + 1] && current >= (mean * 0.5).max(1.0)) {
+            upper.push(values[i]);
+            lower.push(values[i + 1]);
+            if upper.len() >= max_bin - 1 {
+                break;
+            }
+            current = 0.0;
+            if !large[i] {
+                rest_bins -= 1;
+                mean = rest / rest_bins.max(1) as f64;
+            }
+        }
+    }
+    for i in 0..upper.len() {
+        bounds.push((upper[i] + lower[i + 1]) / 2.0);
+    }
+    bounds.push(f64::INFINITY);
+    bounds
+}
+
+/// A column's upper bounds with its default bin among them, and that bin's place.
+fn column_bounds(values: &[f64], counts: &[f64], max_bin: usize, has_nan: bool) -> (Vec<f64>, u32) {
+    let negative = values.partition_point(|&v| v < 0.0);
+    let left_total: f64 = counts[..negative].iter().sum();
+    let right_total: f64 = counts[negative..].iter().sum();
+    let room = max_bin.saturating_sub(1 + has_nan as usize).max(1);
+    let mut bounds = Vec::new();
+    if negative > 0 {
+        let share = left_total / (left_total + right_total);
+        let left_bins = ((share * room as f64) as usize).max(1);
+        bounds = greedy_bounds(&values[..negative], &counts[..negative], left_bins, left_total);
+        *bounds.last_mut().unwrap() = -ZERO;
+    }
+    let zero = bounds.len() as u32;
+    if negative < values.len() {
+        bounds.push(ZERO);
+        let right_bins = room.saturating_sub(zero as usize).max(1);
+        bounds.extend(greedy_bounds(&values[negative..], &counts[negative..], right_bins, right_total));
+    } else {
+        bounds.push(f64::INFINITY);
+    }
+    (bounds, zero)
+}
+
+#[derive(Clone, Copy)]
+struct Sample {
+    column: u32,
+    value: f32,
+    weight: u32,
+}
+
+/// Bins from a sample of each column's values, at most `sample_cap` of them, so a rare column keeps every value it has.
+fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
+    let started = Instant::now();
+    let entries: Vec<u64> = read_all(&dir.join("entries.u64"));
+    let nans: Vec<u64> = read_all(&dir.join("nans.u64"));
+    let rows_of: Vec<Vec<u32>> = plan
+        .maps
+        .iter()
+        .map(|m| {
+            let of: Vec<u32> = read_all(&m.file);
+            let mut rows = vec![0u32; m.domain];
+            for &block in &of {
+                if block != NONE {
+                    rows[block as usize] += 1;
+                }
+            }
+            rows
+        })
+        .collect();
+    let mut samples: Vec<Sample> = plan
+        .uses
+        .par_iter()
+        .enumerate()
+        .map(|(place, u)| {
+            let col_map: Vec<i32> = read_all(&u.col_map);
+            let rows = &rows_of[u.map];
+            let mut random = Random(mix(place as u64 + 1));
+            let mut out = Vec::new();
+            Records::open(&u.file).for_each_row(|block, columns, values| {
+                if rows[block] == 0 {
+                    return;
+                }
+                for (&column, &value) in columns.iter().zip(values) {
+                    let logical = col_map[column as usize];
+                    if logical < 0 || value == 0.0 || value.is_nan() {
+                        continue;
+                    }
+                    let k = keep[logical as usize];
+                    if k < 0 {
+                        continue;
+                    }
+                    let held = entries[logical as usize];
+                    if held <= plan.sample_cap || random.unit() < plan.sample_cap as f64 / held as f64 {
+                        out.push(Sample { column: k as u32, value, weight: rows[block] });
+                    }
+                }
+            });
+            out
+        })
+        .reduce(Vec::new, |mut a, mut b| {
+            if a.len() < b.len() {
+                std::mem::swap(&mut a, &mut b);
+            }
+            a.extend(b);
+            a
+        });
+    println!("samples {} {:.0}s", samples.len(), started.elapsed().as_secs_f64());
+    samples.par_sort_unstable_by(|a, b| a.column.cmp(&b.column).then(a.value.total_cmp(&b.value)));
+    let mut starts = vec![0usize; kept + 1];
+    for sample in &samples {
+        starts[sample.column as usize + 1] += 1;
+    }
+    for k in 0..kept {
+        starts[k + 1] += starts[k];
+    }
+    let mut has_nan = vec![0u8; kept];
+    for (logical, &k) in keep.iter().enumerate() {
+        if k >= 0 && nans[logical] > 0 {
+            has_nan[k as usize] = 1;
+        }
+    }
+    let found: Vec<(Vec<f64>, u32)> = (0..kept)
+        .into_par_iter()
+        .map(|k| {
+            let here = &samples[starts[k]..starts[k + 1]];
+            let (mut values, mut counts): (Vec<f64>, Vec<f64>) = (Vec::new(), Vec::new());
+            for sample in here {
+                let value = sample.value as f64;
+                if values.last() == Some(&value) {
+                    *counts.last_mut().unwrap() += sample.weight as f64;
+                } else {
+                    values.push(value);
+                    counts.push(sample.weight as f64);
+                }
+            }
+            column_bounds(&values, &counts, plan.max_bin, has_nan[k] != 0)
+        })
+        .collect();
+    let (mut bound_start, mut col_start, mut zero_pos) = (vec![0u32; kept + 1], vec![0u32; kept + 1], vec![0u32; kept]);
+    let mut bounds = Vec::new();
+    for (k, (here, zero)) in found.iter().enumerate() {
+        bounds.extend_from_slice(here);
+        bound_start[k + 1] = bounds.len() as u32;
+        zero_pos[k] = *zero;
+        col_start[k + 1] = col_start[k] + (here.len() - 1) as u32 + has_nan[k] as u32;
+    }
+    write_all(&dir.join("bounds.f64"), &bounds);
+    write_all(&dir.join("bound_start.u32"), &bound_start);
+    write_all(&dir.join("col_start.u32"), &col_start);
+    write_all(&dir.join("zero_pos.u32"), &zero_pos);
+    write_all(&dir.join("has_nan.u8"), &has_nan);
+    println!("bins {} over {kept} columns {:.0}s", col_start[kept], started.elapsed().as_secs_f64());
+}
+
+/// Writes each block's entries as their bins' numbers, ascending, and each row's block in each map.
+fn compile(dir: &Path) {
+    let plan = Plan::read(dir);
+    threads(plan.threads);
+    let started = Instant::now();
+    let keep: Vec<i32> = read_all(&dir.join("keep.i32"));
+    let kept = keep.iter().map(|&k| k + 1).max().unwrap_or(0) as usize;
+    let source = match &plan.reference {
+        Some(train) => train.clone(),
+        None => {
+            find_bins(dir, &plan, &keep, kept);
+            dir.to_path_buf()
+        }
+    };
+    let bounds: Vec<f64> = read_all(&source.join("bounds.f64"));
+    let bound_start: Vec<u32> = read_all(&source.join("bound_start.u32"));
+    let col_start: Vec<u32> = read_all(&source.join("col_start.u32"));
+    let zero_pos: Vec<u32> = read_all(&source.join("zero_pos.u32"));
+    let has_nan: Vec<u8> = read_all(&source.join("has_nan.u8"));
+    if plan.reference.is_some() {
+        write_all(&dir.join("col_start.u32"), &col_start);
+        write_all(&dir.join("zero_pos.u32"), &zero_pos);
+        write_all(&dir.join("has_nan.u8"), &has_nan);
+    }
+    // Each map's blocks are numbered by the rows that point to them, in their order in the source.
+    let compact: Vec<Vec<u32>> = plan
+        .maps
+        .iter()
+        .enumerate()
+        .map(|(m, map)| {
+            let of: Vec<u32> = read_all(&map.file);
+            let mut used = vec![false; map.domain];
+            for &block in &of {
+                if block != NONE {
+                    used[block as usize] = true;
+                }
+            }
+            let mut count = 0u32;
+            let numbers: Vec<u32> = used
+                .iter()
+                .map(|&here| {
+                    if here {
+                        count += 1;
+                        count - 1
+                    } else {
+                        NONE
+                    }
+                })
+                .collect();
+            let numbered: Vec<u32> = of.iter().map(|&block| if block == NONE { NONE } else { numbers[block as usize] }).collect();
+            write_all(&dir.join(format!("map{m}.blocks.u32")), &numbered);
+            numbers
+        })
+        .collect();
+    let per_use: Vec<(Vec<bool>, Vec<u32>, u32, u32)> = plan
+        .uses
+        .par_iter()
+        .enumerate()
+        .map(|(place, u)| {
+            let col_map: Vec<i32> = read_all(&u.col_map);
+            let numbers = &compact[u.map];
+            let working = dir.join(format!("use{place}.bid.working"));
+            let mut sink = BufWriter::with_capacity(1 << 22, File::create(&working).unwrap());
+            let mut ptr: Vec<u64> = vec![0];
+            let mut written = 0u64;
+            let mut has_column = vec![false; kept];
+            let mut count = vec![0u32; kept];
+            let mut held: Vec<u32> = Vec::new();
+            let (mut least, mut most) = (u32::MAX, 0u32);
+            Records::open(&u.file).for_each_row(|block, columns, values| {
+                if numbers[block] == NONE {
+                    return;
+                }
+                held.clear();
+                for (&column, &value) in columns.iter().zip(values) {
+                    let logical = col_map[column as usize];
+                    if logical < 0 || value == 0.0 {
+                        continue;
+                    }
+                    let k = keep[logical as usize];
+                    if k < 0 {
+                        continue;
+                    }
+                    let k = k as usize;
+                    let bid = if value.is_nan() {
+                        if has_nan[k] == 0 {
+                            continue;
+                        }
+                        col_start[k + 1] - 1
+                    } else {
+                        let here = &bounds[bound_start[k] as usize..bound_start[k + 1] as usize];
+                        let x = value as f64;
+                        let place = here.partition_point(|&bound| bound < x) as u32;
+                        let zero = zero_pos[k];
+                        if place == zero {
+                            continue;
+                        }
+                        col_start[k] + if place < zero { place } else { place - 1 }
+                    };
+                    held.push(bid);
+                    has_column[k] = true;
+                    count[k] += 1;
+                }
+                held.sort_unstable();
+                if let (Some(&first), Some(&last)) = (held.first(), held.last()) {
+                    least = least.min(first);
+                    most = most.max(last);
+                }
+                sink.write_all(bytes_of(&held)).unwrap();
+                written += held.len() as u64;
+                ptr.push(written);
+            });
+            sink.flush().unwrap();
+            drop(sink);
+            fs::rename(&working, dir.join(format!("use{place}.bid.u32"))).unwrap();
+            write_all(&dir.join(format!("use{place}.ptr.u64")), &ptr);
+            println!("compile {} blocks {} entries {written} {:.0}s", u.file.display(), ptr.len() - 1, started.elapsed().as_secs_f64());
+            (has_column, count, least, most)
+        })
+        .collect();
+    let (mut col_uses, mut col_entries) = (vec![0u64; kept], vec![0u64; kept]);
+    assert!(plan.uses.len() <= 64, "a column's uses are a mask of 64");
+    for (place, (has_column, count, _, _)) in per_use.iter().enumerate() {
+        for k in 0..kept {
+            if has_column[k] {
+                col_uses[k] |= 1u64 << place;
+            }
+            col_entries[k] += count[k] as u64;
+        }
+    }
+    write_all(&dir.join("col_uses.u64"), &col_uses);
+    write_all(&dir.join("col_entries.u64"), &col_entries);
+    let meta = json!({
+        "rows": plan.rows,
+        "kept": kept,
+        "bins": col_start[kept],
+        "maps": plan.maps.len(),
+        "uses": plan.uses.iter().enumerate().map(|(place, u)| json!({"map": u.map, "least": per_use[place].2, "most": per_use[place].3})).collect::<Vec<_>>(),
+    });
+    fs::write(dir.join("compiled.json"), meta.to_string()).unwrap();
+    println!("compiled {} entries {:.0}s", col_entries.iter().sum::<u64>(), started.elapsed().as_secs_f64());
+}
+
+struct UseData {
+    map: usize,
+    ptr: Mapped<u64>,
+    bid: Mapped<u32>,
+    least: u32,
+    most: u32,
+}
+
+struct Store {
+    rows: usize,
+    kept: usize,
+    bins: usize,
+    col_start: Vec<u32>,
+    zero_pos: Vec<u32>,
+    has_nan: Vec<u8>,
+    col_uses: Vec<u64>,
+    col_entries: Vec<u64>,
+    maps: Vec<Mapped<u32>>,
+    uses: Vec<UseData>,
+}
+
+impl Store {
+    fn open(dir: &Path) -> Store {
+        let meta = read_json(&dir.join("compiled.json"));
+        Store {
+            rows: meta["rows"].as_u64().unwrap() as usize,
+            kept: meta["kept"].as_u64().unwrap() as usize,
+            bins: meta["bins"].as_u64().unwrap() as usize,
+            col_start: read_all(&dir.join("col_start.u32")),
+            zero_pos: read_all(&dir.join("zero_pos.u32")),
+            has_nan: read_all(&dir.join("has_nan.u8")),
+            col_uses: read_all(&dir.join("col_uses.u64")),
+            col_entries: read_all(&dir.join("col_entries.u64")),
+            maps: (0..meta["maps"].as_u64().unwrap()).map(|m| Mapped::open(&dir.join(format!("map{m}.blocks.u32")))).collect(),
+            uses: meta["uses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(place, u)| UseData {
+                    map: u["map"].as_u64().unwrap() as usize,
+                    ptr: Mapped::open(&dir.join(format!("use{place}.ptr.u64"))),
+                    bid: Mapped::open(&dir.join(format!("use{place}.bid.u32"))),
+                    least: u["least"].as_u64().unwrap() as u32,
+                    most: u["most"].as_u64().unwrap() as u32,
+                })
+                .collect(),
+        }
+    }
+
+    /// Whether a row goes left at a split: its value's place among the column's bins is at or before `pos`.
+    #[inline]
+    fn left(&self, row: u32, column: u32, pos: u32, default_left: bool) -> bool {
+        let k = column as usize;
+        let (start, end) = (self.col_start[k], self.col_start[k + 1]);
+        let zero = self.zero_pos[k];
+        let mut mask = self.col_uses[k];
+        while mask != 0 {
+            let place = mask.trailing_zeros() as usize;
+            mask &= mask - 1;
+            let data = &self.uses[place];
+            let block = self.maps[data.map][row as usize];
+            if block == NONE {
+                continue;
+            }
+            let b = block as usize;
+            let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
+            let at = entries.partition_point(|&x| x < start);
+            if at < entries.len() && entries[at] < end {
+                let bid = entries[at];
+                if self.has_nan[k] != 0 && bid == end - 1 {
+                    return default_left;
+                }
+                let index = bid - start;
+                let place = if index < zero { index } else { index + 1 };
+                return place <= pos;
+            }
+        }
+        zero <= pos
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+struct Bin {
+    g: f64,
+    h: f64,
+}
+
+#[derive(Clone, Copy)]
+struct Split {
+    column: u32,
+    pos: u32,
+    default_left: bool,
+    gain: f64,
+    left_g: f64,
+    left_h: f64,
+}
+
+struct Config {
+    learning_rate: f64,
+    num_leaves: usize,
+    min_data_in_leaf: f64,
+    min_sum_hessian: f64,
+    fraction: f64,
+    truncation: usize,
+    max_rounds: usize,
+    patience: usize,
+}
+
+#[derive(Default)]
+struct Tree {
+    column: Vec<u32>,
+    pos: Vec<u32>,
+    default_left: Vec<bool>,
+    left: Vec<i32>,
+    right: Vec<i32>,
+    gain: Vec<f64>,
+    value: Vec<f64>,
+}
+
+impl Tree {
+    fn leaf_of(&self, store: &Store, row: u32) -> usize {
+        if self.column.is_empty() {
+            return 0;
+        }
+        let mut node = 0i32;
+        loop {
+            let n = node as usize;
+            node = if store.left(row, self.column[n], self.pos[n], self.default_left[n]) { self.left[n] } else { self.right[n] };
+            if node < 0 {
+                return !node as usize;
+            }
+        }
+    }
+}
+
+/// A leaf's rows' sums per block of one map.
+struct Sums {
+    g: Vec<f64>,
+    h: Vec<f64>,
+    seen: Vec<bool>,
+    touched: Vec<u32>,
+}
+
+struct Work {
+    sums: Vec<Sums>,
+    pool: Vec<Vec<Bin>>,
+    indices: Vec<u32>,
+    scratch: Vec<u32>,
+    flags: Vec<bool>,
+    ranges: Vec<(u32, u32)>,
+}
+
+impl Work {
+    fn new(store: &Store, threads: usize) -> Work {
+        let sums = store
+            .maps
+            .iter()
+            .map(|map| {
+                let blocks = map.iter().filter(|&&b| b != NONE).map(|&b| b as usize + 1).max().unwrap_or(0);
+                Sums { g: vec![0.0; blocks], h: vec![0.0; blocks], seen: vec![false; blocks], touched: Vec::new() }
+            })
+            .collect();
+        // Each range of bins holds about one share of the entries, and one thread at a time works on it.
+        let total: u64 = store.col_entries.iter().sum();
+        let shares = (threads * 2).max(1) as u64;
+        let mut ranges = Vec::new();
+        let (mut low, mut held) = (0u32, 0u64);
+        for k in 0..store.kept {
+            held += store.col_entries[k];
+            if held >= total / shares + 1 {
+                ranges.push((low, store.col_start[k + 1]));
+                low = store.col_start[k + 1];
+                held = 0;
+            }
+        }
+        if (low as usize) < store.bins {
+            ranges.push((low, store.bins as u32));
+        }
+        Work { sums, pool: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), ranges }
+    }
+
+    fn take(&mut self, store: &Store) -> Vec<Bin> {
+        let mut hist = self.pool.pop().unwrap_or_else(|| vec![Bin::default(); store.bins]);
+        hist.par_chunks_mut(1 << 16).for_each(|chunk| chunk.fill(Bin::default()));
+        hist
+    }
+}
+
+fn add_blocks(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad: &[f32], hess: &[f32]) {
+    let here = &work.indices[rows];
+    for (m, map) in store.maps.iter().enumerate() {
+        let sums = &mut work.sums[m];
+        for &row in here {
+            let block = map[row as usize];
+            if block == NONE {
+                continue;
+            }
+            let b = block as usize;
+            if !sums.seen[b] {
+                sums.seen[b] = true;
+                sums.touched.push(block);
+            }
+            sums.g[b] += grad[row as usize] as f64;
+            sums.h[b] += hess[row as usize] as f64;
+        }
+    }
+}
+
+fn clear_blocks(work: &mut Work) {
+    for sums in &mut work.sums {
+        for &block in &sums.touched {
+            let b = block as usize;
+            sums.g[b] = 0.0;
+            sums.h[b] = 0.0;
+            sums.seen[b] = false;
+        }
+        sums.touched.clear();
+    }
+}
+
+/// Adds each touched block's sums to the bins of its entries.
+fn fill_histogram(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad: &[f32], hess: &[f32], hist: &mut [Bin]) {
+    add_blocks(work, store, rows, grad, hess);
+    let mut slices: Vec<(u32, u32, &mut [Bin])> = Vec::with_capacity(work.ranges.len());
+    let mut rest = hist;
+    let mut at = 0u32;
+    for &(low, high) in &work.ranges {
+        assert_eq!(low, at);
+        let (here, after) = rest.split_at_mut((high - low) as usize);
+        slices.push((low, high, here));
+        rest = after;
+        at = high;
+    }
+    let sums = &work.sums;
+    slices.par_iter_mut().for_each(|(low, high, slice)| {
+        let (low, high) = (*low, *high);
+        for data in &store.uses {
+            if data.most < low || data.least >= high {
+                continue;
+            }
+            let held = &sums[data.map];
+            for &block in &held.touched {
+                let b = block as usize;
+                let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
+                let start = if low == 0 { 0 } else { entries.partition_point(|&x| x < low) };
+                let (g, h) = (held.g[b], held.h[b]);
+                for &bid in &entries[start..] {
+                    if bid >= high {
+                        break;
+                    }
+                    // A bid in this range lies inside this slice.
+                    let bin = unsafe { slice.get_unchecked_mut((bid - low) as usize) };
+                    bin.g += g;
+                    bin.h += h;
+                }
+            }
+        }
+    });
+    clear_blocks(work);
+}
+
+/// The best split of a column, by the leaf's sums: the column's default bin holds what its other bins do not.
+fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64), config: &Config, parent: f64) -> Option<Split> {
+    let (g, h, n) = total;
+    let start = store.col_start[k] as usize;
+    let bins = &hist[start..store.col_start[k + 1] as usize];
+    if bins.is_empty() {
+        return None;
+    }
+    let (mut other_g, mut other_h) = (0.0, 0.0);
+    for bin in bins {
+        other_g += bin.g;
+        other_h += bin.h;
+    }
+    let factor = n / h;
+    if other_h * factor < config.min_data_in_leaf - 0.5 {
+        return None;
+    }
+    let has_nan = store.has_nan[k] != 0;
+    let numeric = bins.len() - has_nan as usize;
+    let zero = store.zero_pos[k] as usize;
+    let default = Bin { g: g - other_g, h: (h - other_h).max(0.0) };
+    let nan = if has_nan { bins[numeric] } else { Bin::default() };
+    let mut best: Option<Split> = None;
+    let mut scan = |nan_left: bool| {
+        let (mut left_g, mut left_h) = if nan_left { (nan.g, nan.h) } else { (0.0, 0.0) };
+        let mut left_n = if nan_left { (nan.h * factor).round() } else { 0.0 };
+        // Places 0..=numeric: the default bin stands at `zero`.
+        for place in 0..=numeric {
+            let bin = if place == zero {
+                default
+            } else if place < zero {
+                bins[place]
+            } else {
+                bins[place - 1]
+            };
+            left_g += bin.g;
+            left_h += bin.h;
+            left_n += (bin.h * factor).round();
+            if place == numeric && (nan_left || !has_nan) {
+                break;
+            }
+            let right_h = h - left_h;
+            let right_n = n - left_n;
+            if left_n < config.min_data_in_leaf || left_h < config.min_sum_hessian || right_n < config.min_data_in_leaf || right_h < config.min_sum_hessian {
+                continue;
+            }
+            let right_g = g - left_g;
+            let gain = left_g * left_g / (left_h + EPSILON) + right_g * right_g / (right_h + EPSILON);
+            if gain > parent && best.is_none_or(|b| gain - parent > b.gain) {
+                best = Some(Split { column: k as u32, pos: place as u32, default_left: nan_left, gain: gain - parent, left_g, left_h });
+            }
+        }
+    };
+    scan(false);
+    if has_nan && nan.h > 0.0 {
+        scan(true);
+    }
+    best
+}
+
+fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64), config: &Config) -> Option<Split> {
+    let (g, h, n) = total;
+    if n < 2.0 * config.min_data_in_leaf || h < 2.0 * config.min_sum_hessian {
+        return None;
+    }
+    let parent = g * g / (h + EPSILON);
+    used.par_chunks(4096)
+        .map(|chunk| {
+            let mut best: Option<Split> = None;
+            for &k in chunk {
+                if let Some(found) = best_in_column(store, k as usize, hist, total, config, parent) {
+                    if best.is_none_or(|b| found.gain > b.gain) {
+                        best = Some(found);
+                    }
+                }
+            }
+            best
+        })
+        .reduce(
+            || None,
+            |a, b| match (a, b) {
+                (Some(x), Some(y)) => Some(if y.gain > x.gain || (y.gain == x.gain && y.column < x.column) { y } else { x }),
+                (x, None) => x,
+                (None, y) => y,
+            },
+        )
+}
+
+struct Leaf {
+    start: usize,
+    len: usize,
+    g: f64,
+    h: f64,
+    hist: Option<Vec<Bin>>,
+    best: Option<Split>,
+    parent: i32,
+    is_left: bool,
+}
+
+/// One tree over the rows in `active`, best leaf first. It leaves each leaf's rows in `work.indices` and gives each leaf's
+/// place in that array.
+fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &[f32], hess: &[f32], used: &[u32]) -> (Tree, Vec<(usize, usize)>) {
+    work.indices.clear();
+    work.indices.extend_from_slice(active);
+    let (mut g, mut h) = (0.0f64, EPSILON);
+    for &row in active {
+        g += grad[row as usize] as f64;
+        h += hess[row as usize] as f64;
+    }
+    let mut hist = work.take(store);
+    fill_histogram(work, store, 0..active.len(), grad, hess, &mut hist);
+    let best = best_split(store, used, &hist, (g, h, active.len() as f64), config);
+    let mut leaves = vec![Leaf { start: 0, len: active.len(), g, h, hist: Some(hist), best, parent: -1, is_left: false }];
+    let mut tree = Tree::default();
+    while leaves.len() < config.num_leaves {
+        let mut chosen = None;
+        let mut most = 0.0;
+        for (at, leaf) in leaves.iter().enumerate() {
+            if let Some(split) = leaf.best {
+                if split.gain > most {
+                    most = split.gain;
+                    chosen = Some(at);
+                }
+            }
+        }
+        let Some(at) = chosen else { break };
+        let split = leaves[at].best.take().unwrap();
+        let (start, len) = (leaves[at].start, leaves[at].len);
+        // A stable partition of the leaf's rows.
+        work.flags.resize(len, false);
+        {
+            let rows = &work.indices[start..start + len];
+            work.flags.par_iter_mut().zip(rows.par_iter()).with_min_len(1024).for_each(|(flag, &row)| {
+                *flag = store.left(row, split.column, split.pos, split.default_left);
+            });
+        }
+        work.scratch.clear();
+        let mut left_len = 0;
+        for i in 0..len {
+            let row = work.indices[start + i];
+            if work.flags[i] {
+                work.indices[start + left_len] = row;
+                left_len += 1;
+            } else {
+                work.scratch.push(row);
+            }
+        }
+        work.indices[start + left_len..start + len].copy_from_slice(&work.scratch);
+        let node = tree.column.len() as i32;
+        tree.column.push(split.column);
+        tree.pos.push(split.pos);
+        tree.default_left.push(split.default_left);
+        tree.gain.push(split.gain);
+        let right_leaf = leaves.len();
+        tree.left.push(!(at as i32));
+        tree.right.push(!(right_leaf as i32));
+        let (parent, is_left) = (leaves[at].parent, leaves[at].is_left);
+        if parent >= 0 {
+            if is_left {
+                tree.left[parent as usize] = node;
+            } else {
+                tree.right[parent as usize] = node;
+            }
+        }
+        let (total_g, total_h) = (leaves[at].g, leaves[at].h);
+        let (left_g, left_h) = (split.left_g, split.left_h + EPSILON);
+        let (right_g, right_h) = (total_g - split.left_g, (total_h - split.left_h).max(EPSILON));
+        let right_len = len - left_len;
+        // The smaller child's histogram is read from its rows, and the larger's is what remains of its parent's.
+        let mut larger = leaves[at].hist.take().unwrap();
+        let mut smaller = work.take(store);
+        let small_rows = if left_len <= right_len { start..start + left_len } else { start + left_len..start + len };
+        fill_histogram(work, store, small_rows, grad, hess, &mut smaller);
+        larger.par_chunks_mut(1 << 16).zip(smaller.par_chunks(1 << 16)).for_each(|(a, b)| {
+            for (x, y) in a.iter_mut().zip(b) {
+                x.g -= y.g;
+                x.h -= y.h;
+            }
+        });
+        let (left_hist, right_hist) = if left_len <= right_len { (smaller, larger) } else { (larger, smaller) };
+        let left_best = best_split(store, used, &left_hist, (left_g, left_h, left_len as f64), config);
+        let right_best = best_split(store, used, &right_hist, (right_g, right_h, right_len as f64), config);
+        leaves[at] = Leaf { start, len: left_len, g: left_g, h: left_h, hist: None, best: left_best, parent: node, is_left: true };
+        if left_best.is_some() {
+            leaves[at].hist = Some(left_hist);
+        } else {
+            work.pool.push(left_hist);
+        }
+        let mut right = Leaf { start: start + left_len, len: right_len, g: right_g, h: right_h, hist: None, best: right_best, parent: node, is_left: false };
+        if right_best.is_some() {
+            right.hist = Some(right_hist);
+        } else {
+            work.pool.push(right_hist);
+        }
+        leaves.push(right);
+    }
+    let mut places = Vec::with_capacity(leaves.len());
+    tree.value = vec![0.0; leaves.len()];
+    for (at, leaf) in leaves.iter_mut().enumerate() {
+        if let Some(hist) = leaf.hist.take() {
+            work.pool.push(hist);
+        }
+        places.push((leaf.start, leaf.len));
+        tree.value[at] = if tree.column.is_empty() { 0.0 } else { -leaf.g / leaf.h * config.learning_rate };
+    }
+    (tree, places)
+}
+
+/// The rows of each group stand together, and its gold rows have label 1.
+struct Groups {
+    start: Vec<u32>,
+    label: Vec<u8>,
+    inverse_max_dcg: Vec<f64>,
+    discount: Vec<f64>,
+}
+
+impl Groups {
+    fn new(start: Vec<u32>, label: Vec<u8>, truncation: usize) -> Groups {
+        let longest = start.windows(2).map(|w| (w[1] - w[0]) as usize).max().unwrap_or(0);
+        let discount: Vec<f64> = (0..longest + 1).map(|i| 1.0 / ((i + 2) as f64).log2()).collect();
+        let inverse_max_dcg = start
+            .windows(2)
+            .map(|w| {
+                let gold = label[w[0] as usize..w[1] as usize].iter().filter(|&&x| x > 0).count();
+                let best: f64 = discount[..gold.min(truncation)].iter().sum();
+                if best > 0.0 { 1.0 / best } else { 0.0 }
+            })
+            .collect();
+        Groups { start, label, inverse_max_dcg, discount }
+    }
+
+    fn count(&self) -> usize {
+        self.start.len() - 1
+    }
+}
+
+/// LightGBM's lambdarank gradients of one group.
+fn group_gradients(score: &[f64], label: &[u8], inverse_max_dcg: f64, discount: &[f64], truncation: usize, grad: &mut [f32], hess: &mut [f32]) {
+    let n = score.len();
+    grad.fill(0.0);
+    hess.fill(0.0);
+    let mut sorted: Vec<u32> = (0..n as u32).collect();
+    sorted.sort_by(|&a, &b| score[b as usize].total_cmp(&score[a as usize]));
+    let best = score[sorted[0] as usize];
+    let worst = score[sorted[n - 1] as usize];
+    let mut sum_lambdas = 0.0;
+    for i in 0..(n - 1).min(truncation) {
+        for j in i + 1..n {
+            let (a, b) = (sorted[i] as usize, sorted[j] as usize);
+            if label[a] == label[b] {
+                continue;
+            }
+            let (high_rank, low_rank, high, low) = if label[a] > label[b] { (i, j, a, b) } else { (j, i, b, a) };
+            let delta = score[high] - score[low];
+            let gain_gap = (label[high] as f64) - (label[low] as f64);
+            let paired = (discount[high_rank] - discount[low_rank]).abs();
+            let mut delta_ndcg = gain_gap * paired * inverse_max_dcg;
+            if best != worst {
+                delta_ndcg /= 0.01 + delta.abs();
+            }
+            let sigmoid = 1.0 / (1.0 + delta.exp());
+            let p_hessian = sigmoid * (1.0 - sigmoid) * delta_ndcg;
+            let p_lambda = -sigmoid * delta_ndcg;
+            grad[low] -= p_lambda as f32;
+            hess[low] += p_hessian as f32;
+            grad[high] += p_lambda as f32;
+            hess[high] += p_hessian as f32;
+            sum_lambdas -= 2.0 * p_lambda;
+        }
+    }
+    if sum_lambdas > 0.0 {
+        let factor = (1.0 + sum_lambdas).log2() / sum_lambdas;
+        for i in 0..n {
+            grad[i] = (grad[i] as f64 * factor) as f32;
+            hess[i] = (hess[i] as f64 * factor) as f32;
+        }
+    }
+}
+
+fn gradients(groups: &Groups, active: &[bool], score: &[f64], truncation: usize, grad: &mut [f32], hess: &mut [f32]) {
+    let mut slices = Vec::with_capacity(groups.count());
+    let (mut rest_g, mut rest_h) = (grad, hess);
+    for g in 0..groups.count() {
+        let length = (groups.start[g + 1] - groups.start[g]) as usize;
+        let (here_g, after_g) = rest_g.split_at_mut(length);
+        let (here_h, after_h) = rest_h.split_at_mut(length);
+        rest_g = after_g;
+        rest_h = after_h;
+        if active[g] {
+            slices.push((g, here_g, here_h));
+        }
+    }
+    slices.into_par_iter().for_each(|(g, here_g, here_h)| {
+        let (a, b) = (groups.start[g] as usize, groups.start[g + 1] as usize);
+        group_gradients(&score[a..b], &groups.label[a..b], groups.inverse_max_dcg[g], &groups.discount, truncation, here_g, here_h);
+    });
+}
+
+/// The mean over the held groups of how often a gold row stands above a mutant's row.
+fn group_auc(groups: &Groups, held: &[bool], score: &[f64]) -> f64 {
+    let (mut total, mut count) = (0.0, 0.0);
+    for g in 0..groups.count() {
+        if !held[g] {
+            continue;
+        }
+        let (a, b) = (groups.start[g] as usize, groups.start[g + 1] as usize);
+        let (mut wins, mut pairs) = (0.0, 0.0);
+        for i in a..b {
+            if groups.label[i] == 0 {
+                continue;
+            }
+            for j in a..b {
+                if groups.label[j] != 0 {
+                    continue;
+                }
+                pairs += 1.0;
+                if score[i] > score[j] {
+                    wins += 1.0;
+                } else if score[i] == score[j] {
+                    wins += 0.5;
+                }
+            }
+        }
+        if pairs > 0.0 {
+            total += wins / pairs;
+        }
+        count += 1.0;
+    }
+    total / f64::max(count, 1.0)
+}
+
+/// Boosts over the active groups. With held groups, it stops once they have not improved for `patience` rounds.
+fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>, config: &Config, seed: u64, rounds: usize, threads: usize, name: &str) -> (Vec<Tree>, usize, Vec<f64>) {
+    let mut work = Work::new(store, threads);
+    let mut score = vec![0.0f64; store.rows];
+    let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
+    let mut random = Random(mix(seed));
+    let mut columns: Vec<u32> = (0..store.kept as u32).collect();
+    let sampled = ((config.fraction * store.kept as f64).round() as usize).clamp(1, store.kept.max(1));
+    let rows_of = |flags: &[bool]| -> Vec<u32> {
+        let mut rows = Vec::new();
+        for g in 0..groups.count() {
+            if flags[g] {
+                rows.extend(groups.start[g]..groups.start[g + 1]);
+            }
+        }
+        rows
+    };
+    let active_rows = rows_of(active);
+    let held_rows = held.map(rows_of).unwrap_or_default();
+    let mut trees = Vec::new();
+    let (mut best_auc, mut best_round) = (f64::NEG_INFINITY, 0usize);
+    let started = Instant::now();
+    for round in 1..=rounds {
+        gradients(groups, active, &score, config.truncation, &mut grad, &mut hess);
+        for i in 0..sampled {
+            let j = i + random.below(store.kept - i);
+            columns.swap(i, j);
+        }
+        let mut used = columns[..sampled].to_vec();
+        used.sort_unstable();
+        let (tree, places) = grow(&mut work, store, config, &active_rows, &grad, &hess, &used);
+        let empty = tree.column.is_empty();
+        for (leaf, &(start, len)) in places.iter().enumerate() {
+            for &row in &work.indices[start..start + len] {
+                score[row as usize] += tree.value[leaf];
+            }
+        }
+        if let Some(flags) = held {
+            let moves: Vec<f64> = held_rows.par_iter().with_min_len(64).map(|&row| tree.value[tree.leaf_of(store, row)]).collect();
+            for (&row, step) in held_rows.iter().zip(moves) {
+                score[row as usize] += step;
+            }
+            let auc = group_auc(groups, flags, &score);
+            if auc > best_auc {
+                best_auc = auc;
+                best_round = round;
+            }
+        }
+        trees.push(tree);
+        if round % 25 == 0 || empty {
+            let rate = round as f64 / started.elapsed().as_secs_f64();
+            println!("{name} round {round} held auc {best_auc:.4} at {best_round} {rate:.2} rounds/s rss {:.2} GiB", resident_gib());
+        }
+        if empty || (held.is_some() && round >= best_round + config.patience) {
+            break;
+        }
+    }
+    (trees, best_round, score)
+}
+
+fn resident_gib() -> f64 {
+    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+    usage.ru_maxrss as f64 / (1u64 << 30) as f64
+}
+
+fn tree_json(tree: &Tree, bounds: &[f64], bound_start: &[u32]) -> Value {
+    let threshold: Vec<f64> = tree.column.iter().zip(&tree.pos).map(|(&k, &pos)| bounds[bound_start[k as usize] as usize + pos as usize]).collect();
+    // A threshold of no finite bound sends every number left.
+    let threshold: Vec<Value> = threshold.iter().map(|&x| if x.is_finite() { json!(x) } else { Value::Null }).collect();
+    json!({"column": tree.column, "threshold": threshold, "default_left": tree.default_left, "left": tree.left, "right": tree.right, "value": tree.value})
+}
+
+fn fit(file: &Path) {
+    let v = read_json(file);
+    let count = v["threads"].as_u64().unwrap() as usize;
+    threads(count);
+    let config = Config {
+        learning_rate: v["learning_rate"].as_f64().unwrap(),
+        num_leaves: v["num_leaves"].as_u64().unwrap() as usize,
+        min_data_in_leaf: v["min_data_in_leaf"].as_f64().unwrap(),
+        min_sum_hessian: v["min_sum_hessian"].as_f64().unwrap(),
+        fraction: v["fraction"].as_f64().unwrap(),
+        truncation: v["truncation"].as_u64().unwrap() as usize,
+        max_rounds: v["max_rounds"].as_u64().unwrap() as usize,
+        patience: v["patience"].as_u64().unwrap() as usize,
+    };
+    let train_dir = PathBuf::from(v["train"].as_str().unwrap());
+    let store = Store::open(&train_dir);
+    let out = PathBuf::from(v["out"].as_str().unwrap());
+    fs::create_dir_all(&out).unwrap();
+    let groups = Groups::new(read_all(Path::new(v["groups"].as_str().unwrap())), read_all(Path::new(v["labels"].as_str().unwrap())), config.truncation);
+    assert_eq!(groups.label.len(), store.rows);
+    let bounds: Vec<f64> = read_all(&train_dir.join("bounds.f64"));
+    let bound_start: Vec<u32> = read_all(&train_dir.join("bound_start.u32"));
+    println!("rows {} columns {} bins {} entries {} groups {}", store.rows, store.kept, store.bins, store.col_entries.iter().sum::<u64>(), groups.count());
+    let dev_store = v["dev"].as_str().map(|d| Store::open(Path::new(d)));
+    for seeded in v["seeds"].as_array().unwrap() {
+        let seed = seeded["seed"].as_u64().unwrap();
+        let done = out.join(format!("done.{seed}.json"));
+        if done.exists() {
+            println!("seed {seed} is done");
+            continue;
+        }
+        let held: Vec<u8> = read_all(Path::new(seeded["held"].as_str().unwrap()));
+        let held: Vec<bool> = held.iter().map(|&x| x != 0).collect();
+        let inner: Vec<bool> = held.iter().map(|&x| !x).collect();
+        let (trees, best_round, _) = boost(&store, &groups, &inner, Some(&held), &config, seed, config.max_rounds, count, &format!("seed {seed} inner"));
+        drop(trees);
+        let rounds = best_round.max(10);
+        let every = vec![true; groups.count()];
+        let (trees, _, score) = boost(&store, &groups, &every, None, &config, seed, rounds, count, &format!("seed {seed} final"));
+        let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
+        let mut model = BufWriter::new(File::create(out.join(format!("model.{seed}.jsonl"))).unwrap());
+        for tree in &trees {
+            for (&k, &g) in tree.column.iter().zip(&tree.gain) {
+                gain[k as usize] += g;
+                splits[k as usize] += 1;
+            }
+            writeln!(model, "{}", tree_json(tree, &bounds, &bound_start)).unwrap();
+        }
+        model.flush().unwrap();
+        write_all(&out.join(format!("gain.{seed}.f64")), &gain);
+        write_all(&out.join(format!("splits.{seed}.u32")), &splits);
+        write_all(&out.join(format!("train.{seed}.f64")), &score);
+        if let Some(dev) = &dev_store {
+            let rows: Vec<u32> = (0..dev.rows as u32).collect();
+            let mut scores = vec![0.0f64; dev.rows];
+            for tree in &trees {
+                let moves: Vec<f64> = rows.par_iter().with_min_len(64).map(|&row| tree.value[tree.leaf_of(dev, row)]).collect();
+                for (held, step) in scores.iter_mut().zip(moves) {
+                    *held += step;
+                }
+            }
+            write_all(&out.join(format!("dev.{seed}.f64")), &scores);
+        }
+        fs::write(&done, json!({"seed": seed, "rounds": rounds, "trees": trees.len()}).to_string()).unwrap();
+        println!("seed {seed} rounds {rounds} rss {:.2} GiB", resident_gib());
+    }
+}
+
+fn main() {
+    let arguments: Vec<String> = std::env::args().collect();
+    let usage = "block-boost scan DIR | compile DIR | fit FILE";
+    let command = arguments.get(1).expect(usage).as_str();
+    let path = PathBuf::from(arguments.get(2).expect(usage));
+    match command {
+        "scan" => scan(&path),
+        "compile" => compile(&path),
+        "fit" => fit(&path),
+        _ => panic!("{usage}"),
+    }
+}
