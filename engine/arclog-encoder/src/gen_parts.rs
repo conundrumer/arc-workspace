@@ -175,11 +175,11 @@ pub struct GridView {
 }
 
 thread_local! {
-    static VIEWS: std::cell::RefCell<HashMap<*const Table, Arc<GridView>>> = std::cell::RefCell::new(HashMap::new());
+    static VIEWS: std::cell::RefCell<HashMap<u128, Arc<GridView>>> = std::cell::RefCell::new(HashMap::new());
 }
 
 thread_local! {
-    static RIGHT_KEYS: std::cell::RefCell<HashMap<(*const Table, Box<[u16]>), Arc<Vec<u128>>>> = std::cell::RefCell::new(HashMap::new());
+    static RIGHT_KEYS: std::cell::RefCell<HashMap<(u128, Box<[u16]>), Arc<Vec<u128>>>> = std::cell::RefCell::new(HashMap::new());
 }
 
 pub fn clear_views() {
@@ -198,7 +198,7 @@ pub fn keys_of(value: &Val, at: &[u16]) -> Option<Arc<Vec<u128>>> {
     if let Val::Rows(parts) = value {
         if let [one] = parts.as_slice() {
             if one.table.len >= 16 && one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
-                let key = (Arc::as_ptr(&one.table), at.to_vec().into_boxed_slice());
+                let key = (one.table.hash, at.to_vec().into_boxed_slice());
                 return Some(RIGHT_KEYS.with(|keys| keys.borrow_mut().entry(key).or_insert_with(|| compute(&one.table)).clone()));
             }
         }
@@ -208,7 +208,7 @@ pub fn keys_of(value: &Val, at: &[u16]) -> Option<Arc<Vec<u128>>> {
 }
 
 fn view_of(table: &Arc<Table>) -> Arc<GridView> {
-    let key = Arc::as_ptr(table);
+    let key = table.hash;
     VIEWS.with(|views| {
         views.borrow_mut().entry(key).or_insert_with(|| {
             let mut at = FastMap::default();
@@ -367,21 +367,37 @@ fn keys_only(heads: &[Vec<Cell>], holds: impl Iterator<Item = bool>, width: usiz
     Val::of_table(Table::distinct(width, out))
 }
 
-/// The translations of a colored pattern into a grid.
-fn moves_of(pattern: &[(i32, i32, Cell)], grid: &GridView) -> Vec<(i32, i32)> {
-    let Some(anchor) = pattern.first() else { return Vec::new() };
+/// A cell's margins under an element of D4, in the order ID, LR, TB, HT, CW, CC, DG, AD.
+fn image_margins(which: usize, m: [i32; 4]) -> [i32; 4] {
+    let [t, b, l, r] = m;
+    match which {
+        0 => [t, b, l, r],
+        1 => [t, b, r, l],
+        2 => [b, t, l, r],
+        3 => [b, t, r, l],
+        4 => [l, r, b, t],
+        5 => [r, l, t, b],
+        6 => [l, r, t, b],
+        _ => [r, l, b, t],
+    }
+}
+
+/// The offsets that move a colored pattern onto a grid's cells: each `P` where `compose` of a pattern
+/// cell and `P` is a grid cell of the cell's color, for every cell of the pattern.
+fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView) -> Vec<Cell> {
+    let Some((anchor, color)) = pattern.first() else { return Vec::new() };
     let mut out = Vec::new();
     for r in 0..grid.h {
         for c in 0..grid.w {
-            if grid.colors[(r * grid.w + c) as usize] != anchor.2 {
+            if grid.colors[(r * grid.w + c) as usize] != *color {
                 continue;
             }
-            let (dr, dc) = (r - anchor.0, c - anchor.1);
-            if pattern.iter().all(|cell| {
-                let (y, z) = (cell.0 + dr, cell.1 + dc);
-                y >= 0 && z >= 0 && y < grid.h && z < grid.w && grid.colors[(y * grid.w + z) as usize] == cell.2
+            let delta = [r - anchor[0], grid.h - 1 - r - anchor[1], c - anchor[2], grid.w - 1 - c - anchor[3]];
+            if pattern.iter().all(|(m, held)| {
+                let (y, b, z, e) = (m[0] + delta[0], m[1] + delta[1], m[2] + delta[2], m[3] + delta[3]);
+                y >= 0 && z >= 0 && b >= 0 && e >= 0 && y < grid.h && z < grid.w && y + b == grid.h - 1 && z + e == grid.w - 1 && grid.colors[(y * grid.w + z) as usize] == *held
             }) {
-                out.push((dr, dc));
+                out.push(box_bits(delta[0], delta[1], delta[2], delta[3]));
             }
         }
     }
@@ -685,19 +701,13 @@ impl PartStep {
                 for (row, id) in t.rows().zip(&ids) {
                     *counts.entry((*id, row[usize::from(*v)])).or_insert(0) += 1;
                 }
-                let mut best = vec![(0u32, u32::MAX, false); first.len()];
-                for ((id, value), count) in &counts {
-                    let held = &mut best[*id as usize];
-                    if *count > held.0 {
-                        *held = (*count, *value, false);
-                    } else if *count == held.0 {
-                        held.2 = true;
-                    }
+                let mut best = vec![0u32; first.len()];
+                for ((id, _), count) in &counts {
+                    best[*id as usize] = best[*id as usize].max(*count);
                 }
                 let mut out = Vec::new();
                 for (row, id) in t.rows().zip(&ids) {
-                    let held = best[*id as usize];
-                    if held.0 > 1 && !held.2 && row[usize::from(*v)] == held.1 {
+                    if counts[&(*id, row[usize::from(*v)])] == best[*id as usize] {
                         out.extend_from_slice(row);
                     }
                 }
@@ -775,10 +785,9 @@ impl PartStep {
                 if first.len() > 60 {
                     return None;
                 }
-                let mut patterns: Vec<Vec<(i32, i32, Cell)>> = vec![Vec::new(); first.len()];
+                let mut patterns: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); first.len()];
                 for (row, id) in t.rows().zip(&ids) {
-                    let m = margins_of(row[usize::from(*p)]);
-                    patterns[*id as usize].push((m[0], m[2], row[usize::from(*v)]));
+                    patterns[*id as usize].push((margins_of(row[usize::from(*p)]), row[usize::from(*v)]));
                 }
                 let mut out = Vec::new();
                 for (pattern, head) in patterns.iter_mut().zip(&first) {
@@ -787,26 +796,11 @@ impl PartStep {
                     if pattern.len() > 900 {
                         return None;
                     }
-                    let (r1, c1) = (pattern.iter().map(|x| x.0).max().unwrap_or(0), pattern.iter().map(|x| x.1).max().unwrap_or(0));
-                    let images = if *turned { 8 } else { 1 };
-                    for which in 0..images {
-                        let image: Vec<(i32, i32, Cell)> = pattern.iter().map(|cell| {
-                            let (r, c) = (cell.0, cell.1);
-                            let (y, z) = match which {
-                                0 => (r, c),
-                                1 => (r, c1 - c),
-                                2 => (r1 - r, c),
-                                3 => (r1 - r, c1 - c),
-                                4 => (c, r1 - r),
-                                5 => (c1 - c, r),
-                                6 => (c, r),
-                                _ => (c1 - c, r1 - r),
-                            };
-                            (y, z, cell.2)
-                        }).collect();
-                        for (dr, dc) in moves_of(&image, &grid) {
+                    for which in 0..if *turned { 8 } else { 1 } {
+                        let image: Vec<([i32; 4], Cell)> = pattern.iter().map(|(m, color)| (image_margins(which, *m), *color)).collect();
+                        for moved in moves_of(&image, &grid) {
                             push_key(&mut out, head, keys);
-                            out.push(box_bits(dr, -dr, dc, -dc));
+                            out.push(moved);
                         }
                     }
                 }

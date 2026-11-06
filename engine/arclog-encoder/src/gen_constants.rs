@@ -92,7 +92,6 @@ pub fn constant_parts() -> Vec<ConstantPart> {
     for (grid, is_output) in [("input", false), ("output", true)] {
         let mut part = |name: String, columns: Vec<(&'static str, ValueType)>| out.push(ConstantPart { name, columns, reads_output: is_output, reads_input: !is_output, meets_table: true });
         part(format!("{grid}-color-counts"), vec![("Col", col.clone()), ("N", n.clone())]);
-        part(format!("{grid}-background"), vec![("Col", col.clone())]);
         part(format!("{grid}-most-colors"), vec![("Col", col.clone())]);
         part(format!("{grid}-least-colors"), vec![("Col", col.clone())]);
         part(format!("{grid}-foreground"), vec![("P", p.clone()), ("Col", col.clone())]);
@@ -274,19 +273,22 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
         counts.push(number_bits(i64::from(g.counts[*col])));
     }
     out.push(Table::new(2, counts));
-    out.push(Table::new(1, g.background.map_or_else(Vec::new, |col| vec![e.colors[col as usize]])));
     let most = present.iter().map(|col| g.counts[*col]).max().unwrap_or(0);
     let least = present.iter().map(|col| g.counts[*col]).min().unwrap_or(0);
     out.push(Table::new(1, present.iter().filter(|col| g.counts[**col] == most).map(|col| e.colors[*col]).collect()));
     out.push(Table::new(1, present.iter().filter(|col| g.counts[**col] == least).map(|col| e.colors[*col]).collect()));
+    // Under a tie, every most common color is background, as `Order`'s `maximal` gives.
+    let is_background = |color: u8| g.counts[color as usize] == most;
     let mut foreground = Vec::new();
     let mut background = Vec::new();
+    let mut foreground_cells = Bits::EMPTY;
     for at in 0..h * w {
         let row = [cell_bits(h, w, at), e.colors[g.color[at] as usize]];
-        if g.foreground.as_ref().is_some_and(|cells| cells.get(at)) {
-            foreground.extend_from_slice(&row);
-        } else if g.background == Some(g.color[at]) {
+        if is_background(g.color[at]) {
             background.extend_from_slice(&row);
+        } else {
+            foreground.extend_from_slice(&row);
+            foreground_cells.set(at);
         }
     }
     out.push(Table::new(2, foreground));
@@ -305,7 +307,8 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
     }
     out.push(Table::new(3, components));
     let mut parts = Vec::new();
-    for (id, part) in g.foreground_parts.iter().enumerate() {
+    let foreground_parts = crate::catalog_facts::parts(&foreground_cells, h, w);
+    for (id, part) in foreground_parts.iter().enumerate() {
         part.each(|at| {
             parts.push(cell_bits(h, w, at));
             parts.push(id as u32);
@@ -338,11 +341,10 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
     for mask in &g.color_roles {
         out.push(Table::new(1, color_rows(*mask, e)));
     }
-    let fg = g.foreground.as_ref();
-    out.push(Table::new(1, fg.map_or_else(Vec::new, |cells| vec![number_bits(i64::from(cells.count()))])));
-    out.push(Table::new(1, fg.map_or_else(Vec::new, |_| vec![number_bits(g.foreground_parts.len() as i64)])));
+    out.push(Table::new(1, vec![number_bits(i64::from(foreground_cells.count()))]));
+    out.push(Table::new(1, vec![number_bits(foreground_parts.len() as i64)]));
     out.push(Table::new(1, vec![number_bits(g.pieces.len() as i64)]));
-    let span = fg.and_then(|cells| span_of(cells, w));
+    let span = span_of(&foreground_cells, w);
     out.push(Table::new(1, span.map_or_else(Vec::new, |held| vec![span_bits(h, w, held)])));
     out.push(Table::new(2, span.map_or_else(Vec::new, |held| margin_rows(held, h, w, e))));
     out.push(Table::new(2, span.map_or_else(Vec::new, |held| extent_rows(held, e))));
