@@ -453,3 +453,28 @@ pub fn input_only_tables(g: &GridFacts) -> Vec<Option<Arc<Table>>> {
         _ => None,
     }).collect()
 }
+
+/// Whether a term's token names a part of the base tables.
+pub fn is_part_name(name: &str) -> bool {
+    static NAMES: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| constant_parts().into_iter().map(|part| part.name).collect()).contains(name)
+}
+
+/// The call of a part of the base tables, in the feature library or as a lib relation.
+pub fn part_call(name: &str) -> String {
+    const LIB: [&str; 7] = ["dir_elem", "diag_dir_elem", "axis_elem", "d4_elem", "d4_identity", "axis_of", "opposite"];
+    if LIB.contains(&name) {
+        return name.to_string();
+    }
+    if name == "input-full-lines" || name == "output-full-lines" {
+        return format!("(full-lines-of {})", &name[..name.find('-').unwrap_or(0)]);
+    }
+    for grid in ["input", "output"] {
+        if let Some(rest) = name.strip_prefix(grid).and_then(|rest| rest.strip_prefix('-')) {
+            if !matches!(name, "input-in-output" | "output-in-input" | "input-in-output-d4" | "output-in-input-d4" | "input-output-images") {
+                return format!("({rest} {grid})");
+            }
+        }
+    }
+    format!("({name})")
+}

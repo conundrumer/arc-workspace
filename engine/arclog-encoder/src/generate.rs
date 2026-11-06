@@ -376,7 +376,8 @@ impl Generated {
         }
         let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && matches!(column.ty, ValueType::Color | ValueType::Ident(_))).map(|(at, _)| at as u16).collect();
         if group.len() >= 2 {
-            out.push((group.into_boxed_slice(), "(T*)".to_string()));
+            let names: Vec<&str> = group.iter().map(|at| columns[usize::from(*at)].name.as_str()).collect();
+            out.push((group.into_boxed_slice(), format!("(T*:{})", names.join(","))));
         }
         out
     }
@@ -897,6 +898,58 @@ impl<'a> Walker<'a> {
             if term.text.contains(pattern) {
                 out.push((term.text.clone(), ids[at].iter().map(|id| rows_of(&self.values[*id as usize])).collect()));
             }
+        }
+        out
+    }
+}
+
+impl Generated {
+    /// The count of terms, and of the leaves that stand before them.
+    pub fn counts(&self) -> (usize, usize) {
+        (self.terms.len(), self.first_term)
+    }
+
+    /// A term's text, the names of its columns and types, what it reads, and whether it has roots,
+    /// where the family keeps them.
+    pub fn term_info(&self, at: usize) -> (&str, Vec<(String, ValueType)>, u8) {
+        let term = &self.terms[at];
+        (&term.text, term.columns.iter().map(|column| (column.name.clone(), column.ty.clone())).collect(), term.flags)
+    }
+}
+
+impl Walker<'_> {
+    /// The rows at each instance of each term that `chosen` picks, with what they read computed on
+    /// the way, for a check against the expression a term stands for.
+    pub fn term_values(&mut self, leaves: &[Vec<Val>], train: usize, chosen: &dyn Fn(usize) -> bool) -> Vec<(usize, Vec<Val>)> {
+        let family = self.family;
+        let pairs = leaves[0].len();
+        let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
+        for leaf in leaves {
+            let held: Vec<u32> = leaf.iter().map(|value| self.value_id(value.clone())).collect();
+            ids.push(held);
+        }
+        let mut out = Vec::new();
+        for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
+            let picked = chosen(at);
+            let step = term.step.as_ref().expect("a term has a step");
+            let scope = if term.flags & READS_OUTPUT != 0 { train } else { pairs };
+            let mut own = Vec::with_capacity(pairs);
+            for pair in 0..scope {
+                let id = if picked || term.used {
+                    let a = ids[term.a as usize][pair];
+                    let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
+                    let value = self.apply(step, a, b);
+                    self.value_id(value)
+                } else {
+                    0
+                };
+                own.push(id);
+            }
+            own.resize(pairs, 0);
+            if picked {
+                out.push((at, own.iter().map(|id| self.values[*id as usize].clone()).collect()));
+            }
+            ids.push(own);
         }
         out
     }

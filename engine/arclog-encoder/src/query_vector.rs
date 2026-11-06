@@ -389,7 +389,18 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
     };
     let views: Vec<PairView> = (0..grids.train).map(|at| PairView::of(&grids.inputs[at], &grids.outputs[at])).collect();
     let forms = read_sexprs(host.state_text(), SourceFile::Arclog).map(|(forms, _)| forms).unwrap_or_default();
-    let texts: Vec<&SExpr> = forms.iter().filter(|form| matches!(form, SExpr::List { items, .. } if matches!(items.first(), Some(SExpr::Symbol { text, .. }) if !matches!(&**text, "OUT" | "INPUT" | "OUTPUT" | "ALTS")))).collect();
+    // A query's form, by the name it defines.
+    let mut texts: BTreeMap<String, &SExpr> = BTreeMap::new();
+    for form in &forms {
+        let SExpr::List { items, .. } = form else { continue };
+        let (Some(SExpr::Symbol { text: head, .. }), Some(SExpr::Symbol { text: name, .. })) = (items.first(), items.get(1)) else { continue };
+        if matches!(&**head, "OUT" | "INPUT" | "OUTPUT" | "ALTS") {
+            continue;
+        }
+        if texts.insert(name.to_string(), form).is_some() {
+            return Err(format!("two forms define {name}"));
+        }
+    }
     let mut walkers: BTreeMap<String, (Arc<Generated>, BTreeMap<u128, Arc<TableVector>>)> = BTreeMap::new();
     let mut vector_of = |table: &Stored| -> Arc<TableVector> {
         let entry = walkers.entry(table.key.clone()).or_insert_with(|| (families.get(table, d.max(1)), BTreeMap::new()));
@@ -558,19 +569,21 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
         // The query's body.
         names.push(format!("kind:{}", query.kind));
         number_values.push(1.0);
-        let at_form = facts.queries.iter().position(|other| other.identity == query.identity).and_then(|at| texts.get(at));
-        if let Some(form) = at_form {
-            let mut body = Body::default();
-            body.form(form);
-            let labels = body.labels.len() as f64;
-            let joined = body.labels.values().filter(|count| **count >= 2).count() as f64;
-            for (name, count) in &body.counts {
-                names.push(name.clone());
-                number_values.push(*count);
-            }
-            names.extend(["labels".to_string(), "labels_two_or_more_sites".to_string()]);
-            number_values.extend([labels, joined]);
+        let defined: BTreeSet<&str> = query.computes.iter().filter_map(|computed| facts.table_names.get(computed)).map(|spelled| spelled.split('.').next().unwrap_or("")).collect();
+        let [name] = defined.iter().copied().collect::<Vec<_>>()[..] else {
+            return Err(format!("the query {} defines {} names", query.identity, defined.len()));
+        };
+        let form = texts.get(name).ok_or_else(|| format!("no form of the state's text defines {name}"))?;
+        let mut body = Body::default();
+        body.form(form);
+        let labels = body.labels.len() as f64;
+        let joined = body.labels.values().filter(|count| **count >= 2).count() as f64;
+        for (name, count) in &body.counts {
+            names.push(name.clone());
+            number_values.push(*count);
         }
+        names.extend(["labels".to_string(), "labels_two_or_more_sites".to_string()]);
+        number_values.extend([labels, joined]);
 
         let mut use_names: BTreeSet<String> = BTreeSet::new();
         for bucket in &per_use_values {

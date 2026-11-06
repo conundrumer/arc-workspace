@@ -45,6 +45,8 @@ pub fn shape_text(text: &str, table: &str, types: &[ValueType]) -> String {
         }
         if token == table {
             out.push('T');
+        } else if token.starts_with("T*:") {
+            out.push_str("T*");
         } else if let Symbol::Hole { column, reading } = symbol_of(token) {
             let number = match numbers.iter().position(|held| *held == column) {
                 Some(at) => at + 1,
