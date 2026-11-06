@@ -168,6 +168,8 @@ pub struct TaskLists {
     pub walks: u64,
     pub seconds: f64,
     pub shapes: u64,
+    /// The items with no list, since a table of theirs can't be stored.
+    pub left_out: u64,
 }
 
 /// One task's lists, from the text of a tables file. `order` gives the train output each train pair
@@ -431,5 +433,5 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
             bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
-    Ok(TaskLists { task: task_name, bytes, walks, seconds, shapes: dictionary.len() as u64 })
+    Ok(TaskLists { task: task_name, bytes, walks, seconds, shapes: dictionary.len() as u64, left_out })
 }

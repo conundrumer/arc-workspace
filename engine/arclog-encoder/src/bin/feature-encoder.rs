@@ -621,6 +621,12 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let begun = Instant::now();
+    let lacks = |stem: &str| -> bool {
+        let wanted = |folder: &str, kind: &str| !std::path::Path::new(&format!("{root}/{folder}/{kind}/{stem}.lists.zst")).exists();
+        let deranged = derangements.get(stem).and_then(Option::as_ref).is_some();
+        kinds.iter().any(|(folder, _, _)| wanted(folder, "lists") || (deranged && wanted(folder, "null")))
+    };
+    let to_write = sources.iter().filter(|source| lacks(&arclog_encoder::zio::stem(source))).count();
     std::thread::scope(|scope| {
         for _ in 0..arguments.threads.max(1) {
             scope.spawn(|| loop {
@@ -630,8 +636,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                 let order: Option<&[usize]> = derangements.get(&stem).and_then(Option::as_ref).map(Vec::as_slice);
                 let target = |folder: &str, kind: &str| format!("{root}/{folder}/{kind}/{stem}.lists.zst");
                 let wanted = |folder: &str, kind: &str| !std::path::Path::new(&target(folder, kind)).exists();
-                let lacking = kinds.iter().any(|(folder, _, _)| wanted(folder, "lists") || (order.is_some() && wanted(folder, "null")));
-                if !lacking {
+                if !lacks(&stem) {
                     continue;
                 }
                 let started = Instant::now();
@@ -650,6 +655,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                 };
                 let tables_seconds = started.elapsed().as_secs_f64();
                 let mut walks = 0;
+                let mut left_out = 0;
                 for (folder, lists_of, families) in &kinds {
                     for (kind, own_order) in [("lists", None), ("null", order)] {
                         if !wanted(folder, kind) || (kind == "null" && own_order.is_none()) {
@@ -658,6 +664,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                         match lists_task(&text, &arguments.tasks, families, own_order, d, *lists_of) {
                             Ok(found) => {
                                 walks += found.walks;
+                                left_out = left_out.max(found.left_out);
                                 if arclog_encoder::zio::write_bytes(&target(folder, kind), &found.bytes).is_err() {
                                     eprintln!("{stem}: the {folder} {kind} lists do not write");
                                 }
@@ -669,7 +676,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                 }
                 let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 let rate = done as f64 / begun.elapsed().as_secs_f64();
-                eprintln!("{done}/{} {stem}: {tables_seconds:.1} s of tables, {walks} walks, {:.0} s; ETA {:.0}s", sources.len(), started.elapsed().as_secs_f64(), (sources.len() - done) as f64 / rate);
+                eprintln!("{done}/{to_write} {stem}: {tables_seconds:.1} s of tables, {walks} walks, {left_out} items left out, {:.0} s; ETA {:.0}s", started.elapsed().as_secs_f64(), to_write.saturating_sub(done) as f64 / rate);
             });
         }
     });
