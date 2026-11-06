@@ -6,14 +6,16 @@
 //! them in the `:key` site and in the site of the record's column
 //! (`docs/feature-spec/feature-spec.md#column-names`).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use arclog::check::CheckedProgram;
 use arclog::eval::relation_of;
-use arclog::program::path::{node_at, NodeRef};
+use arclog::program::path::{node_at, NodePath, NodeRef};
+use arclog::program::LabelId;
 use arclog::program::{ColumnName, DeclaredName, InstanceName, OutputName, OutputOwner, OutputStep, PortName, ProgramRelation, RelationName};
-use arclog::resolver::{DependencyKind, Side};
-use arclog::types::{GraphRelation, ValueType};
+use arclog::resolver::{output_of, DependencyKind, Resolution, ResolvedProgram, Side};
+use arclog::types::{each_site_label, use_label, GraphRelation, ValueType};
 
 /// A column of a table.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,8 +121,34 @@ fn det_labels(program: &CheckedProgram, relation: &GraphRelation) -> Option<Vec<
     let root = NodeRef::Program(resolved.program.value());
     let form = resolved.form_of(relation.node);
     let Some(NodeRef::Clause(clause)) = node_at(root, form) else { return None };
-    let names: Option<Vec<String>> = clause.columns.iter().map(|column| written(&column.name).map(str::to_string)).collect();
+    let mut examples = HashSet::new();
+    example_labels(NodeRef::Clause(clause), form.clone(), resolved, &mut examples);
+    let names: Option<Vec<String>> = clause.columns.iter().filter(|column| !examples.contains(&column.label)).map(|column| written(&column.name).map(str::to_string)).collect();
     names.filter(|names| !names.is_empty())
+}
+
+/// The labels under `node` that a read holds at a column of an Example. A read of the relation at such a label would
+/// make it a column, and a per-input read of it is refused, so a table's schema has it only where a read of the state names it.
+fn example_labels(node: NodeRef<'_>, at: NodePath, resolved: &ResolvedProgram, out: &mut HashSet<LabelId>) {
+    if let Some(atom) = node.atom() {
+        if let Some(Resolution::Node(read)) = resolved.resolution(&at) {
+            let columns = resolved.example_columns(*read, output_of(&atom.relation));
+            // A clause reads a per-input relation in its lifted form, and `ex_input` and `ex_output` have one too, with `E` first.
+            let lifted = resolved.side(*read) == Side::PerInput || matches!(resolved.graph.nodes[read.0 as usize].kind, DependencyKind::Fact(_));
+            for site in atom.sites.iter() {
+                each_site_label(site, &mut Vec::new(), &mut |use_, path| {
+                    let at_lifted = lifted && path.first().and_then(written) == Some("E");
+                    if at_lifted || columns.iter().any(|column| path.starts_with(column)) {
+                        out.extend(use_label(use_));
+                    }
+                });
+            }
+        }
+        return;
+    }
+    for (child, index) in node.children().into_iter().zip(0u32..) {
+        example_labels(child, at.child(index), resolved, out);
+    }
 }
 
 /// The schema of the table `name` of `program`, or `None` where it has no such
