@@ -22,6 +22,10 @@ output; TIO, all three. A set is written as terms joined by `+`:
   contingent, contingent_null
                 the shapes of a candidate that not every table it reads has as stable
   ctx           the base tables' own part roots
+  wide, wide_null
+                a table's task-wide roots, from ROOT/../wide; `_null` as for TIO_null
+  pair          a pair's own numbers, as the least, the mean and the greatest over examples, the same on
+                every row of a task. They read the output, so a set that compares outputs leaves them out
   qv            what a candidate's table has against the tables its query reads: a share of its entries
                 that each one has, its rows over theirs, its entries new to them. It reads the shapes
                 that read the output, so a set that compares true and deranged outputs leaves it out
@@ -107,6 +111,22 @@ def told_apart(gold, mutant):
     return np.concatenate((np.setxor1d(gold[0], mutant[0], assume_unique=True), gold[0][in_gold[differs]]))
 
 
+def wide_lists(folder, name, items):
+    """A task's lists of task-wide roots, where its file exists and its tables stand at the places of the per-input file."""
+    path = folder / name
+    if not path.exists():
+        return {}, {}
+    head, lists, others = read_lists(path, graded=True)
+    if [item['gold'] for item in head['items']] != [item['gold'] for item in items]:
+        print('wide file out of step', name, flush=True)
+        return {}, {}
+    return lists, others
+
+
+def own_numbers(values):
+    return values[0], {'mean': values[1]}
+
+
 QV_NAMES = ('active', 'stable', 'stable_share', 'new_stable', 'new_stable_share', 'new_active', 'new_active_share', 'uses', 'assignments',
             'same_entries_share:max', 'same_entries_share:min', 'rows_over_use:max', 'rows_over_use:min')
 
@@ -138,6 +158,13 @@ def relation_numbers(own, stable_count, new_stable, uses, parents, train_rows, t
             len(parents), assignments or 0, max(shares, default=0.0), min(shares, default=0.0), max(ratios, default=0.0), min(ratios, default=0.0))
 
 
+def place(ids, table):
+    at = np.searchsorted(table, ids)
+    at[at == len(table)] = 0
+    hit = table[at] == ids if len(table) else np.zeros(len(ids), dtype=bool)
+    return at, hit
+
+
 def build(root, out, min_tasks):
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -146,6 +173,9 @@ def build(root, out, min_tasks):
     print(len(files), 'task files', flush=True)
     # Which shapes tell gold from a mutant on three train tasks or more, on the true and on the null lists.
     told = {'stable': [], 'null': [], 'graded': [], 'null_graded': []}
+    wide_root = root.parent / 'wide'
+    told_wide = []
+    pair_seen = []
     started = time.time()
     done = 0
     for path in files:
@@ -170,6 +200,21 @@ def build(root, out, min_tasks):
         for kind, held in seen.items():
             if held:
                 told[kind].append(np.unique(np.concatenate(held)))
+        wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
+        wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
+        apart = []
+        for item in head['items']:
+            if item['last']:
+                continue
+            for mutant in item['mutants']:
+                for held in (wide, wide_null):
+                    a, b = held.get(item['gold']), held.get(mutant['table'])
+                    if a is not None and b is not None:
+                        apart.append(told_apart(own_numbers(a), own_numbers(b)))
+        if apart:
+            told_wide.append(np.unique(np.concatenate(apart)))
+        if 'constant-values' in wide_others:
+            pair_seen.append(wide_others['constant-values'][0])
         done += 1
         if done % 100 == 0:
             print(f'scan {done} {done / (time.time() - started):.1f}/s', flush=True)
@@ -182,6 +227,13 @@ def build(root, out, min_tasks):
         chosen[kind] = ids[counts >= min_tasks]
         print(kind, 'told apart on some task', len(ids), f'on {min_tasks}+ tasks', len(chosen[kind]), flush=True)
     columns = np.unique(np.concatenate(list(chosen.values())))
+    def common(held):
+        if not held:
+            return np.zeros(0, dtype=np.uint64)
+        ids, counts = np.unique(np.concatenate(held), return_counts=True)
+        return ids[counts >= min_tasks]
+    wide_columns, pair_columns = common(told_wide), common(pair_seen)
+    print('task-wide columns', len(wide_columns), 'pair columns', len(pair_columns), flush=True)
     # The names of the columns.
     names, flags, sizes = {}, {}, {}
     wanted = set(columns.tolist())
@@ -193,12 +245,19 @@ def build(root, out, min_tasks):
         if key in wanted:
             names[key], flags[key], sizes[key] = parts_line[1], int(parts_line[2]), int(parts_line[3])
     print('names found', len(names), 'of', len(wanted), flush=True)
+    wanted_wide = set(wide_columns.tolist()) | set(pair_columns.tolist())
+    wide_names, wide_flags = {}, {}
+    if wide_root.exists():
+        for line in name_lines(wide_root / 'lists'):
+            parts_line = line.rstrip('\n').split('\t')
+            if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_wide:
+                wide_names[int(parts_line[0], 16)], wide_flags[int(parts_line[0], 16)] = parts_line[1], int(parts_line[2])
     base_vocab = {}
     context_vocab = {}
     data = {}
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most')}
+        mats = {name: Matrix() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most')}
         count = 0
         started = time.time()
         for path in files:
@@ -208,15 +267,14 @@ def build(root, out, min_tasks):
             head, lists, others = read_lists(path, graded=True)
             null_path = root / 'null' / path.name
             null_lists, null_others = read_lists(null_path, graded=True)[1:] if null_path.exists() else ({}, {})
+            wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
+            wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
+            pair_numbers = wide_others.get('constant-values', (np.zeros(0, dtype=np.uint64),) + (np.zeros(0, dtype=np.float32),) * 3)
+            pair_spots, pair_hit = place(pair_numbers[0], pair_columns)
             mutants = read_json(root / split / 'mutants' / f'{task}.json')
             gold_forms = parse_forms(mutants['gold'])
             by_form = {q['form']: q for q in mutants['queries']}
             parsed = {}
-            def place(ids, table):
-                at = np.searchsorted(table, ids)
-                at[at == len(table)] = 0
-                hit = table[at] == ids if len(table) else np.zeros(len(ids), dtype=bool)
-                return at, hit
             constants = lists.get('constants', (np.zeros(0, dtype=np.uint64), np.zeros(0, dtype=np.float32)))
             if 'constants' in others:
                 constants = (np.concatenate((constants[0], others['constants'][0])), np.concatenate((constants[1], others['constants'][2])))
@@ -248,6 +306,15 @@ def build(root, out, min_tasks):
                     train_rows = head['train_rows'][table]
                     group = 'gold' if j == 0 else ('mutant empty' if any(not n for n in train_rows) else 'has rows')
                     rows.append((task, at, j, edit, group, bool(item['last']), extra, same, False))
+                    for name_, held_wide in (('wide', wide), ('null_wide', wide_null)):
+                        entries = held_wide.get(table)
+                        if entries is None:
+                            mats[name_].add([])
+                        else:
+                            spots, hit = place(entries[0], wide_columns)
+                            mats[name_].add(spots[hit], entries[1][hit])
+                    for at_number, name_ in ((1, 'pair_least'), (2, 'pair_mean'), (3, 'pair_most')):
+                        mats[name_].add(pair_spots[pair_hit], pair_numbers[at_number][pair_hit])
                     for kind, held_lists, held_others in (('stable', lists, others), ('null', null_lists, null_others)):
                         held = held_lists.get(table)
                         channel_of = {'least': 'least', 'mean': 'mean', 'most': 'most'} if kind == 'stable' else {'least': 'null_least', 'mean': 'null_mean', 'most': 'null_most'}
@@ -284,7 +351,7 @@ def build(root, out, min_tasks):
             count += 1
             if count % 50 == 0:
                 print(f'{split} {count} {count / (time.time() - started):.1f}/s rows {len(rows)} nnz {mats["stable"].count}', flush=True)
-        data[split] = dict(rows=rows, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192, 'qv': len(QV_NAMES)}.get(name, len(columns))) for name in mats})
+        data[split] = dict(rows=rows, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192, 'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns)}.get(name, len(columns))) for name in mats})
         print(split, 'rows', len(rows), 'nnz', {name: mats[name].count for name in mats}, flush=True)
     width_base, width_ctx = len(base_vocab), len(context_vocab)
     for split in data:
@@ -295,7 +362,7 @@ def build(root, out, min_tasks):
         for name, matrix in data[split]['matrices'].items():
             with (out / f'{split}.{name}.pkl').open('wb') as sink:
                 pickle.dump(matrix, sink, protocol=4)
-    meta = dict(columns=columns, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab)
+    meta = dict(columns=columns, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags)
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
@@ -458,8 +525,12 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 needed.add(term)
             elif term == 'contingent_null':
                 needed |= {'contingent', 'null_contingent'}
-            elif term in ('ctx', 'qv'):
+            elif term in ('ctx', 'qv', 'wide'):
                 needed.add(term)
+            elif term == 'wide_null':
+                needed |= {'wide', 'null_wide'}
+            elif term == 'pair':
+                needed |= {'pair_least', 'pair_mean', 'pair_most'}
             elif term in CHANNELS:
                 needed |= set(CHANNELS[term])
             elif term.endswith('_null') and term[:-5] in CHANNELS:
@@ -480,6 +551,8 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
         'base0': np.array([i for i in range(len(base_names)) if base_names[i] not in LABEL_STRUCTURE]),
         'base': np.arange(len(base_names)),
     }
+    wide_labels = [meta['wide_names'].get(int(key), '') for key in meta.get('wide_columns', [])]
+    wide_reads = np.array([meta['wide_flags'].get(int(key), 0) for key in meta.get('wide_columns', [])])
     masks = {'T': flags == 4, 'TI': (flags == 4) | (flags == 5), 'TIO': flags > 0, 'O': flags >= 6}
 
     def word_mask(term, labels):
@@ -504,6 +577,20 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
             elif term == 'qv':
                 parts.append(split['matrices']['qv'])
                 labels.extend(f'qv:{name}' for name in QV_NAMES)
+            elif term == 'wide':
+                parts.append(split['matrices']['wide'])
+                labels.extend(wide_labels)
+            elif term == 'wide_null':
+                keep_true = np.flatnonzero(wide_reads < 6)
+                keep_null = np.flatnonzero(wide_reads >= 6)
+                parts.append(split['matrices']['wide'][:, keep_true])
+                parts.append(split['matrices']['null_wide'][:, keep_null])
+                labels.extend(wide_labels[int(i)] for i in keep_true)
+                labels.extend(wide_labels[int(i)] for i in keep_null)
+            elif term == 'pair':
+                for channel in ('least', 'mean', 'most'):
+                    parts.append(split['matrices'][f'pair_{channel}'])
+                    labels.extend(f"{meta['wide_names'].get(int(key), '')}:{channel}" for key in meta['pair_columns'])
             elif term in ('T', 'TI', 'TIO'):
                 keep = np.flatnonzero(masks[term] & word_mask(raw, names))
                 parts.append(split['matrices']['stable'][:, keep])
