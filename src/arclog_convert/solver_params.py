@@ -317,6 +317,28 @@ class ParamsMixin:
         if orders[0] != list(range(len(r.columns))):
             self.param_order[amp] = orders[0]
 
+    def set_stored_order(self, amp: str, r, forms: list[Form]) -> None:
+        """Record the order of the columns of the `@store` relation `r`, as
+        `set_param_order` does for a parameter: its stored rows are the rows of
+        the `DET` of its first clause, whose columns the body orders. A relation
+        with no clause that gives its labels keeps the relation's order."""
+        for f in forms:
+            if f.name == amp and f.side == "RULE" and f.col_labels:
+                try:
+                    order = self.column_order(r, f)
+                except ValueError:
+                    continue
+                if order != list(range(len(r.columns))):
+                    self.type_order[amp] = self.kept_order(r, order)
+                return
+
+    def kept_order(self, r, order: list[int]) -> list[int]:
+        """The columns of `order`, the indices of `r`'s columns in the order of its record, numbered among the
+        columns that a row keeps: those of no case type and no open type."""
+        kept = [i for i, col in enumerate(r.columns)
+                if col.type.name not in self.c.case_types and col.type.name not in self.c.open_types]
+        return [kept.index(i) for i in order if i in kept]
+
     @staticmethod
     def column_order(r, f: Form) -> list[int]:
         """The indices of `r`'s columns in the order the body of `f` makes

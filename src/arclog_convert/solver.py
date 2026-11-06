@@ -836,9 +836,7 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                   if col.type.name not in c.case_types and col.type.name not in c.open_types]
             self.param_types[m.group(1)] = ts
             if m.group(1) in self.param_order:
-                kept = [i for i, col in enumerate(r.columns)
-                        if col.type.name not in c.case_types and col.type.name not in c.open_types]
-                self.type_order[m.group(1)] = [kept.index(i) for i in self.param_order[m.group(1)] if i in kept]
+                self.type_order[m.group(1)] = self.kept_order(r, self.param_order[m.group(1)])
             types = ts[0] if len(ts) == 1 else "(" + " ".join(ts) + ")"
             arcdata_params[i] = grid_param(text[:m.end()] + " " + types, ts, text[m.end():]) or \
                 wrap_param(text[:m.end()] + " " + types, text[m.end():])
@@ -971,6 +969,9 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     self.store_points.append((amp, [":" + more], "Stored", wid))
                     forms.append(Form([f"(RULE_OR_DET {amp}{or_gloss(gloss)})"],
                                       amp.split(".")[0] if inst else amp, set(), line=line))
+                    if inst is None:
+                        self.set_stored_order(amp, next(x for x in prog.relations if x.name == rname
+                                                        and x.scope.components == rscope), forms)
                 elif d == "ignore" and re.match(r"\w*\s*:?\s*(store|derive)\b", rest):
                     m = re.match(r"(?:(\w+)\s*:)?\s*(.*)", rest)
                     sub_rel, more = m.groups()
