@@ -1767,9 +1767,6 @@ e2092e0c	&least_mark.maximal	uncompared	-
 e2092e0c	&least_mark.member	uncompared	-
 e2092e0c	&least_mark.minimal	uncompared	-
 e2092e0c	&occ.candidate	uncompared	-
-e21a174a	&bands.box	differ	-
-e21a174a	&mirrored	differ	-
-e21a174a	&off_band	differ	-
 e21a174a	&resolution	uncompared	-
 e21d9049	&shortest.maximal	uncompared	-
 e26a3af2	&fewest.maximal	uncompared	-
@@ -1805,9 +1802,7 @@ e5062a87	&occ.candidate	uncompared	-
 e5790162	&nearest.maximal	uncompared	-
 e5790162	&plain.plural	uncompared	-
 e5790162	&sight.ray	uncompared	-
-e5790162	&trail.edge	differ	-
 e5790162	&trail.predecessor	uncompared	-
-e5790162	&walk.edge	differ	-
 e633a9e5	&check_lines_before_domain	differ	-
 e66aafb8	&shared.plural	uncompared	-
 e6721834	&defect	differ	-
