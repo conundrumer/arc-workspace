@@ -414,6 +414,7 @@ def build(root, out, min_tasks, each_tasks=None):
             read_true, read_true_others = parent_lists(parents_root / 'lists', path.name)
             read_null, read_null_others = parent_lists(parents_root / 'null', path.name)
             place_of = {listed['table']: listed['gold'] for listed in head['items']}
+            place_of.update(head.get('places', {}))
             mutants = read_json(root / split / 'mutants' / f'{task}.json')
             gold_forms = parse_forms(mutants['gold'])
             by_form = {q['form']: q for q in mutants['queries']}
