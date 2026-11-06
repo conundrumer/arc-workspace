@@ -29,3 +29,1838 @@
         (?R ?x (*others ?R ?x)))))
   (QUERY &sizes (&c.size (:key (?x *)) (:N (*new N ?R))))
   (gives &sizes))
+
+;; Parts of one grid, which a call gives as a hole: `(color-counts input)`.
+
+(fragment (color-counts (?G grid))
+  "Each color of a grid with its count of cells."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (QUERY &q (&counts.size (:key *Col) *N))
+  (gives &q))
+
+(fragment (most-colors (?G grid))
+  "The colors with the most cells. Under a tie, every tied color."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &q (&order.maximal (:t *Col)))
+  (gives &q))
+
+(fragment (least-colors (?G grid))
+  "The colors with the fewest cells. Under a tie, every tied color."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &q (&order.minimal (:t *Col)))
+  (gives &q))
+
+(fragment (background-cells (?G grid))
+  "The cells of the colors with the most cells."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &q (?G (:P *P) (:Col *Col)) (&background Col))
+  (gives &q))
+
+(fragment (foreground (?G grid))
+  "The cells off the colors with the most cells."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (QUERY &q (&foreground *P *Col))
+  (gives &q))
+
+(fragment (components (?G grid))
+  "The 8-connected pieces of each color."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (QUERY &q (&pieces *P *Col *Id))
+  (gives &q))
+
+(fragment (foreground-components (?G grid))
+  "The 8-connected pieces of the foreground, across colors."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (INIT &parts Connectivity
+    (node (P)
+      (&foreground *P))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &q (&parts.component *P *Id))
+  (gives &q))
+
+(fragment (component-boxes (?G grid))
+  "The box of each piece of each color."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &boxes BoundingBox
+    (key ((&pieces (:Id ^Id)))
+      (cell (P)
+        (&pieces *P Id))))
+  (QUERY &q (&pieces *Col *Id) (&boxes.box (:key Id) *B))
+  (gives &q))
+
+(fragment (full-lines-of (?G grid))
+  "The rows and columns of one color."
+  (INIT &line_colors Singleton
+    (key ((?G (:P *P)) (split P ^A ^Along))
+      (member ((:v Col))
+        (?G (:P *P) (:Col *Col))
+        (split P A Along))))
+  (QUERY &q (&line_colors.value (:key *A *Along) (:v *Col)))
+  (gives &q))
+
+(fragment (extents (?G grid))
+  "The grid's extent along each axis."
+  (QUERY &per_cell (?G (:P *P)) (frame_extent P *A *N))
+  (QUERY &q (&per_cell *A *N))
+  (gives &q))
+
+(fragment (area (?G grid))
+  "The grid's count of cells."
+  (INIT &c Cardinality
+    (member ((:m P))
+      (?G (:P *P))))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (color-count (?G grid))
+  "The grid's count of colors."
+  (INIT &c Cardinality
+    (member ((:m Col))
+      (?G (:Col *Col))))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (longer-side (?G grid))
+  "The greatest of the grid's extents."
+  (QUERY &per_cell (?G (:P *P)) (frame_extent P *A *N))
+  (QUERY &ns (&per_cell *N))
+  (INIT &most Order
+    (member ((:t N))
+      (&ns *N))
+    (score ((:t N) (:S N))
+      (&ns *N)))
+  (QUERY &q (&most.maximal (:t *N)))
+  (gives &q))
+
+(fragment (shorter-side (?G grid))
+  "The least of the grid's extents."
+  (QUERY &per_cell (?G (:P *P)) (frame_extent P *A *N))
+  (QUERY &ns (&per_cell *N))
+  (INIT &most Order
+    (member ((:t N))
+      (&ns *N))
+    (score ((:t N) (:S N))
+      (&ns *N)))
+  (QUERY &q (&most.minimal (:t *N)))
+  (gives &q))
+
+(fragment (cells-boundary (?G grid))
+  "The cells with a cardinal neighbor off their color, or off the grid."
+  (INIT &b Boundary
+    (key ((?G (:Col ^Col)))
+      (cell (P)
+        (?G (:Col Col) (:P *P)))))
+  (QUERY &q (&b.boundary *P))
+  (gives &q))
+
+(fragment (cells-box-corner (?G grid))
+  "The cells of a piece at a corner of the piece's box."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &boxes BoundingBox
+    (key ((&pieces (:Id ^Id)))
+      (cell (P)
+        (&pieces *P Id))))
+  (QUERY &placed
+    (&pieces *P *Id)
+    (&boxes.box (:key Id) *B))
+  (QUERY &corner (&placed *P *B) (same_corner *D (:P1 P) (:P2 B)))
+  (QUERY &q (&corner *P))
+  (gives &q))
+
+(fragment (cells-box-center (?G grid))
+  "The cells of a piece at the center of the piece's box."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &boxes BoundingBox
+    (key ((&pieces (:Id ^Id)))
+      (cell (P)
+        (&pieces *P Id))))
+  (QUERY &placed
+    (&pieces *P *Id)
+    (&boxes.box (:key Id) *B))
+  (QUERY &center (&placed *P *B) (relative (:Base B) (:X P) *X_rel) (centered (:P X_rel)))
+  (QUERY &q (&center *P))
+  (gives &q))
+
+(fragment (cells-tip (?G grid))
+  "The cells with exactly one neighbor of their color."
+  (QUERY &same
+    (?G (:P *P) (:Col *Col))
+    (neighbor P *D *Q)
+    (?G (:P Q) (:Col Col)))
+  (INIT &one Singleton
+    (key ((&same ^P))
+      (member ((:v D))
+        (&same P *D))))
+  (QUERY &q (&one.value (:key *P)))
+  (gives &q))
+
+(fragment (cells-single-cell (?G grid))
+  "The cells with no neighbor of their color."
+  (QUERY &same
+    (?G (:P *P) (:Col *Col))
+    (neighbor P *D *Q)
+    (?G (:P Q) (:Col Col)))
+  (QUERY &q (?G (:P *P)) (NOT (&same P)))
+  (gives &q))
+
+(fragment (cells-full-line (?G grid))
+  "The cells on a row or a column of one color."
+  (INIT &line_colors Singleton
+    (key ((?G (:P *P)) (split P ^A ^Along))
+      (member ((:v Col))
+        (?G (:P *P) (:Col *Col))
+        (split P A Along))))
+  (QUERY &full (&line_colors.value (:key *A *Along)))
+  (QUERY &on_line
+    (?G (:P *P))
+    (split P *A *Along)
+    (&full A Along))
+  (QUERY &q (&on_line *P))
+  (gives &q))
+
+(fragment (cells-grid-edge (?G grid))
+  "The cells on an edge of the grid."
+  (QUERY &at_edge
+    (?G (:P *P) (:Col *Col))
+    (margin (:B P) *D (:K 0)))
+  (QUERY &q (&at_edge *P))
+  (gives &q))
+
+(fragment (cells-grid-corner (?G grid))
+  "The cells at a corner of the grid."
+  (QUERY &at_corner (?G (:P *P)) (corner_dist P *Diag (:K 0)))
+  (QUERY &q (&at_corner *P))
+  (gives &q))
+
+(fragment (cells-next-to-foreground (?G grid))
+  "The cells off the foreground with a foreground neighbor."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (QUERY &near
+    (?G (:P *P))
+    (NOT (&foreground P))
+    (neighbor P *D *Q)
+    (&foreground (:P Q)))
+  (QUERY &q (&near *P))
+  (gives &q))
+
+(fragment (cells-enclosed-by-foreground (?G grid))
+  "The cells off the foreground that no cardinal walk off the foreground reaches from the grid's edge."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (QUERY &free (?G (:P *P)) (NOT (&foreground P)))
+  (INIT &e Enclosure
+    (cell (P)
+      (&free *P)))
+  (QUERY &q (&e.enclosed *P))
+  (gives &q))
+
+(fragment (cells-between-foreground (?G grid))
+  "The cells off the foreground with foreground on two opposite sides, on their row or column."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (QUERY &seen
+    (?G (:P *P))
+    (NOT (&foreground P))
+    (dir_elem *D)
+    (&foreground (:P *Q))
+    (gap D P Q *K))
+  (QUERY &sides (&seen *P *D))
+  (QUERY &both (&sides *P *D) (opposite D *Opp) (&sides P (:D Opp)))
+  (QUERY &q (&both *P))
+  (gives &q))
+
+(fragment (cells-crossing (?G grid))
+  "The cells whose row and column are both wholly foreground."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (QUERY &whole
+    (?G (:P *P))
+    (axis_elem *A)
+    (ALL ((?G (:P *Q)) (same_line A P Q))
+      ((&foreground (:P Q)))))
+  (QUERY &cross (&whole *P *A) (perp A *A2) (&whole P (:A A2)))
+  (QUERY &q (&cross *P))
+  (gives &q))
+
+(fragment (cells-breaks-period (?G grid))
+  "The cells off the most frequent color of their class, where a class is the cells that the least approximate period on each axis takes onto each other. Under a tie, every tied color stays."
+  (INIT &periods Periods
+    (cell (P (:v Col))
+      (?G (:P *P) (:Col *Col))))
+  (QUERY &found (&periods.approximate_period *A *K))
+  (INIT &least Order
+    (key ((&found ^A))
+      (member ((:t K))
+        (&found A *K))
+      (score ((:t K) (:S K))
+        (&found A *K))))
+  (QUERY &moves (&least.minimal (:key *A) (:t *K)) (axis_of *D A) (jump_offset D K *V))
+  (INIT &classes Connectivity
+    (node (P)
+      (?G (:P *P)))
+    (step ((:Delta V))
+      (&moves *V)))
+  (QUERY &in_class (&classes.component *P *Id) (?G (:P P) (:Col *Col)))
+  (INIT &class_counts Cardinality
+    (key ((&in_class ^Id ^Col))
+      (member ((:m P))
+        (&in_class *P Id Col))))
+  (INIT &class_order Order
+    (key ((&in_class ^Id))
+      (member ((:t Col))
+        (&in_class Id *Col))
+      (score ((:t Col) (:S N))
+        (&class_counts.size (:key Id *Col) *N))))
+  (QUERY &top (&class_order.maximal (:key *Id) (:t *Col)))
+  (QUERY &q (&in_class *P *Id *Col) (NOT (&top Id Col)))
+  (gives &q))
+
+(fragment (colors-whole-lines (?G grid))
+  "The colors whose every cell lies on a row or a column of one color."
+  (INIT &line_colors Singleton
+    (key ((?G (:P *P)) (split P ^A ^Along))
+      (member ((:v Col))
+        (?G (:P *P) (:Col *Col))
+        (split P A Along))))
+  (QUERY &full (&line_colors.value (:key *A *Along)))
+  (QUERY &on_line
+    (?G (:P *P))
+    (split P *A *Along)
+    (&full A Along))
+  (QUERY &q (?G (:Col *Col)) (ALL ((?G (:P *P) (:Col Col))) ((&on_line P))))
+  (gives &q))
+
+(fragment (colors-single-cells (?G grid))
+  "The colors whose every piece is one cell."
+  (QUERY &same
+    (?G (:P *P) (:Col *Col))
+    (neighbor P *D *Q)
+    (?G (:P Q) (:Col Col)))
+  (QUERY &q (?G (:Col *Col)) (NOT (&same Col)))
+  (gives &q))
+
+(fragment (colors-one-component (?G grid))
+  "The colors of one piece."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &one Singleton
+    (key ((&pieces ^Col))
+      (member ((:v Id))
+        (&pieces Col *Id))))
+  (QUERY &q (&one.value (:key *Col)))
+  (gives &q))
+
+(fragment (colors-every-edge (?G grid))
+  "The colors with a cell on every edge."
+  (QUERY &at_edge
+    (?G (:P *P) (:Col *Col))
+    (margin (:B P) *D (:K 0)))
+  (QUERY &q (?G (:Col *Col)) (ALL ((dir_elem *D)) ((&at_edge Col D))))
+  (gives &q))
+
+(fragment (colors-no-edge (?G grid))
+  "The colors with no cell on an edge."
+  (QUERY &at_edge
+    (?G (:P *P) (:Col *Col))
+    (margin (:B P) *D (:K 0)))
+  (QUERY &q (?G (:Col *Col)) (NOT (&at_edge Col)))
+  (gives &q))
+
+(fragment (colors-encloses (?G grid))
+  "The colors that enclose a cell."
+  (INIT &enclosure Enclosure
+    (key ((?G (:Col ^Col)))
+      (cell (P)
+        (?G (:P *P) (:Col *Other))
+        (!= Other Col))))
+  (QUERY &q (&enclosure.enclosed (:key *Col)))
+  (gives &q))
+
+(fragment (colors-enclosed (?G grid))
+  "The colors whose every cell another color encloses."
+  (INIT &enclosure Enclosure
+    (key ((?G (:Col ^Col)))
+      (cell (P)
+        (?G (:P *P) (:Col *Other))
+        (!= Other Col))))
+  (QUERY &within
+    (?G (:Col *Col))
+    (&enclosure.enclosed (:key (:Col *Other)))
+    (!= Other Col)
+    (ALL ((?G (:P *P) (:Col Col)))
+      ((&enclosure.enclosed (:key (:Col Other)) P))))
+  (QUERY &q (&within *Col))
+  (gives &q))
+
+(fragment (colors-fills-boxes (?G grid))
+  "The colors whose every piece fills its box."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &boxes BoundingBox
+    (key ((&pieces (:Id ^Id)))
+      (cell (P)
+        (&pieces *P Id))))
+  (QUERY &unfilled
+    (&boxes.box (:key *Id) *B)
+    (?G (:P *Q))
+    (inside (:A Q) B)
+    (NOT (&pieces (:P Q) Id)))
+  (QUERY &q (?G (:Col *Col)) (ALL ((&pieces Col *Id)) ((NOT (&unfilled Id)))))
+  (gives &q))
+
+(fragment (colors-largest-component (?G grid))
+  "The foreground colors with a piece of the most cells among foreground pieces. Under a tie, every tied color."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &sizes Cardinality
+    (key ((&pieces ^Id))
+      (member ((:m P))
+        (&pieces *P Id))))
+  (QUERY &foreground_sizes
+    (&pieces *Col *Id)
+    (NOT (&background Col))
+    (&sizes.size (:key Id) *N))
+  (QUERY &ns (&foreground_sizes *N))
+  (INIT &most Order
+    (member ((:t N))
+      (&ns *N))
+    (score ((:t N) (:S N))
+      (&ns *N)))
+  (QUERY &top (&most.maximal (:t *N)))
+  (QUERY &with (&foreground_sizes *Col *N) (&top N))
+  (QUERY &q (&with *Col))
+  (gives &q))
+
+(fragment (colors-most-components (?G grid))
+  "The colors with the most pieces. Under a tie, every tied color."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &per_color Cardinality
+    (key ((&pieces ^Col))
+      (member ((:m Id))
+        (&pieces Col *Id))))
+  (INIT &o Order
+    (member ((:t Col))
+      (&per_color.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&per_color.size (:key *Col) *N)))
+  (QUERY &q (&o.maximal (:t *Col)))
+  (gives &q))
+
+(fragment (colors-symmetric (?G grid))
+  "The colors whose cell set a symmetry other than the identity maps onto itself, up to a move."
+  (INIT &color_box BoundingBox
+    (key ((?G (:Col ^Col)))
+      (cell (P)
+        (?G (:Col Col) (:P *P)))))
+  (QUERY &rel
+    (?G (:P *P) (:Col *Col))
+    (&color_box.box (:key Col) *B)
+    (relative (:Base B) (:X P) *X_rel))
+  (INIT &agree Agreement
+    (key ((&rel ^Col))
+      (source ((:P X_rel) (:v Col))
+        (&rel Col *X_rel))
+      (target ((:P X_rel) (:v Col))
+        (&rel Col *X_rel))))
+  (QUERY &keeps
+    (&rel *Col)
+    (d4_elem *D)
+    (NOT (&agree.mismatch (:key Col) D))
+    (d4_compose (:A D) (:B D) *C)
+    (!= C D))
+  (QUERY &q (&keeps *Col))
+  (gives &q))
+
+(fragment (foreground-count (?G grid))
+  "The count of foreground cells."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (INIT &c Cardinality
+    (member ((:m P))
+      (&foreground *P)))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (foreground-component-count (?G grid))
+  "The count of foreground pieces."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (INIT &parts Connectivity
+    (node (P)
+      (&foreground *P))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (INIT &c Cardinality
+    (member ((:m Id))
+      (&parts.component *Id)))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (component-count (?G grid))
+  "The count of pieces of each color together."
+  (INIT &pieces_of Connectivity
+    (key ((?G (:Col ^Col)))
+      (node (P)
+        (?G (:Col Col) (:P *P))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &pieces (&pieces_of.component *P (:key *Col) *Id))
+  (INIT &c Cardinality
+    (member ((:m Id))
+      (&pieces *Id)))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (foreground-box (?G grid))
+  "The box of the foreground."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (INIT &b BoundingBox
+    (cell (P)
+      (&foreground *P)))
+  (QUERY &q (&b.box *B))
+  (gives &q))
+
+(fragment (foreground-box-margins (?G grid))
+  "The margins of the foreground's box."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (INIT &b BoundingBox
+    (cell (P)
+      (&foreground *P)))
+  (QUERY &m (&b.box *B) (margin (:B B) *D *K))
+  (QUERY &q (&m *D *K))
+  (gives &q))
+
+(fragment (foreground-box-extents (?G grid))
+  "The extents of the foreground's box."
+  (INIT &counts Cardinality
+    (key ((?G (:Col ^Col)))
+      (member ((:m P))
+        (?G (:Col Col) (:P *P)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &background (&order.maximal (:t *Col)))
+  (QUERY &foreground
+    (?G (:P *P) (:Col *Col))
+    (NOT (&background Col)))
+  (INIT &b BoundingBox
+    (cell (P)
+      (&foreground *P)))
+  (QUERY &e (&b.box *B) (?G (:P *P)) (box_extent B P *A *N))
+  (QUERY &q (&e *A *N))
+  (gives &q))
+
+(fragment (symmetries (?G grid))
+  "The elements of D4 that take the grid onto itself."
+  (INIT &agree Agreement
+    (source ((:P P) (:v Col))
+      (?G (:P *P) (:Col *Col)))
+    (target ((:P P) (:v Col))
+      (?G (:P *P) (:Col *Col))))
+  (QUERY &q (d4_elem *D) (NOT (&agree.mismatch D)))
+  (gives &q))
+
+;; Parts of a pair, which read both of its grids: `(changed)`.
+
+(fragment (changed)
+  "The cells whose color differs between a pair's grids, with both colors."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (QUERY &q (&changed *P *Col *Col_2))
+  (gives &q))
+
+(fragment (kept)
+  "The cells whose color is the same in a pair's grids."
+  (QUERY &kept
+    (input *P *Col)
+    (output P Col))
+  (QUERY &q (&kept *P *Col))
+  (gives &q))
+
+(fragment (changed-components)
+  "The 8-connected pieces of the changed cells."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &parts Connectivity
+    (node (P)
+      (&changed *P))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &q (&parts.component *P *Id))
+  (gives &q))
+
+(fragment (colors-added)
+  "The colors of the output and not of the input."
+  (QUERY &q (output *Col) (NOT (input Col)))
+  (gives &q))
+
+(fragment (colors-dropped)
+  "The colors of the input and not of the output."
+  (QUERY &q (input *Col) (NOT (output Col)))
+  (gives &q))
+
+(fragment (colors-changed-from)
+  "The colors that a changed cell has in the input."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (QUERY &q (&changed *Col))
+  (gives &q))
+
+(fragment (colors-changed-to)
+  "The colors that a changed cell has in the output."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (QUERY &q (&changed (:Col_2 *Col)))
+  (gives &q))
+
+(fragment (changed-box)
+  "The box of the changed cells."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &box BoundingBox
+    (cell (P)
+      (&changed *P)))
+  (QUERY &q (&box.box *B))
+  (gives &q))
+
+(fragment (changed-box-margins)
+  "The margins of the changed cells' box."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &box BoundingBox
+    (cell (P)
+      (&changed *P)))
+  (QUERY &m (&box.box *B) (margin (:B B) *D *K))
+  (QUERY &q (&m *D *K))
+  (gives &q))
+
+(fragment (changed-box-extents)
+  "The extents of the changed cells' box."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &box BoundingBox
+    (cell (P)
+      (&changed *P)))
+  (QUERY &e (&box.box *B) (input *P) (box_extent B P *A *N))
+  (QUERY &q (&e *A *N))
+  (gives &q))
+
+(fragment (changed-component-boxes)
+  "The box of each piece of the changed cells."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &parts Connectivity
+    (node (P)
+      (&changed *P))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &cells (&parts.component *P *Id))
+  (INIT &boxes BoundingBox
+    (key ((&cells ^Id))
+      (cell (P)
+        (&cells *P Id))))
+  (QUERY &q (&boxes.box (:key *Id) *B))
+  (gives &q))
+
+(fragment (changed-count)
+  "The count of changed cells, where a cell changed."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &c Cardinality
+    (key ((&changed)))
+    (member ((:m P))
+      (&changed *P)))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (changed-component-count)
+  "The count of pieces of the changed cells, where a cell changed."
+  (QUERY &changed
+    (input *P *Col)
+    (output P (:Col *Col_2))
+    (!= Col Col_2))
+  (INIT &parts Connectivity
+    (node (P)
+      (&changed *P))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (INIT &c Cardinality
+    (key ((&changed)))
+    (member ((:m Id))
+      (&parts.component *Id)))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (kept-count)
+  "The count of kept cells, where a cell is kept."
+  (QUERY &kept
+    (input *P *Col)
+    (output P Col))
+  (INIT &c Cardinality
+    (key ((&kept)))
+    (member ((:m P))
+      (&kept *P)))
+  (QUERY &q (&c.size *N))
+  (gives &q))
+
+(fragment (input-output-images)
+  "The elements of D4 that take the input onto the output."
+  (INIT &agree Agreement
+    (source ((:P P) (:v Col))
+      (input *P *Col))
+    (target ((:P P) (:v Col))
+      (output *P *Col)))
+  (QUERY &q (d4_elem *D) (NOT (&agree.mismatch D)))
+  (gives &q))
+
+(fragment (output-in-input)
+  "Each place where the output occurs in the input."
+  (INIT &o Occurrences
+    (cell (P (:v Col))
+      (input *P *Col))
+    (shape (P (:v Col))
+      (output *P *Col)))
+  (QUERY &q (&o.occurrence (:P *B)))
+  (gives &q))
+
+(fragment (input-in-output)
+  "Each place where the input occurs in the output."
+  (INIT &o Occurrences
+    (cell (P (:v Col))
+      (output *P *Col))
+    (shape (P (:v Col))
+      (input *P *Col)))
+  (QUERY &q (&o.occurrence (:P *B)))
+  (gives &q))
+
+(fragment (output-in-input-d4)
+  "Each place and element of D4 where the output's image occurs in the input."
+  (INIT &o Occurrences
+    (cell (P (:v Col))
+      (input *P *Col))
+    (shape (P (:v Col))
+      (output *P *Col))
+    (transform (D)
+      (d4_elem *D)))
+  (QUERY &q (&o.occurrence *D (:P *B)))
+  (gives &q))
+
+(fragment (input-in-output-d4)
+  "Each place and element of D4 where the input's image occurs in the output."
+  (INIT &o Occurrences
+    (cell (P (:v Col))
+      (output *P *Col))
+    (shape (P (:v Col))
+      (input *P *Col))
+    (transform (D)
+      (d4_elem *D)))
+  (QUERY &q (&o.occurrence *D (:P *B)))
+  (gives &q))
+
+(fragment (scale-up)
+  "Each output cell with the input cell whose block holds it, with both colors."
+  (QUERY &per_cell (input *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (output *P))
+    (parts (A N)
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P_outer *P_in) (:P *P_out)))
+  (QUERY &q (&cells *P_in *P_out) (input (:P P_in) *Col) (output (:P P_out) (:Col *Col_2)))
+  (gives &q))
+
+(fragment (scale-up-kept)
+  "The cells of `scale-up` whose two colors are the same."
+  (QUERY &per_cell (input *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (output *P))
+    (parts (A N)
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P_outer *P_in) (:P *P_out)))
+  (QUERY &q (&cells *P_in *P_out) (input (:P P_in) *Col) (output (:P P_out) Col))
+  (gives &q))
+
+(fragment (scale-up-changed)
+  "The cells of `scale-up` whose two colors differ."
+  (QUERY &per_cell (input *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (output *P))
+    (parts (A N)
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P_outer *P_in) (:P *P_out)))
+  (QUERY &q
+    (&cells *P_in *P_out)
+    (input (:P P_in) *Col)
+    (output (:P P_out) (:Col *Col_2))
+    (!= Col Col_2))
+  (gives &q))
+
+(fragment (tile)
+  "Each output cell with the input cell at its place in a copy of the input, with both colors."
+  (QUERY &per_cell (input *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (output *P))
+    (side (A (:K N))
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P_inner *P_in) (:P *P_out)))
+  (QUERY &q (&cells *P_in *P_out) (input (:P P_in) *Col) (output (:P P_out) (:Col *Col_2)))
+  (gives &q))
+
+(fragment (tile-kept)
+  "The cells of `tile` whose two colors are the same."
+  (QUERY &per_cell (input *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (output *P))
+    (side (A (:K N))
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P_inner *P_in) (:P *P_out)))
+  (QUERY &q (&cells *P_in *P_out) (input (:P P_in) *Col) (output (:P P_out) Col))
+  (gives &q))
+
+(fragment (tile-changed)
+  "The cells of `tile` whose two colors differ."
+  (QUERY &per_cell (input *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (output *P))
+    (side (A (:K N))
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P_inner *P_in) (:P *P_out)))
+  (QUERY &q
+    (&cells *P_in *P_out)
+    (input (:P P_in) *Col)
+    (output (:P P_out) (:Col *Col_2))
+    (!= Col Col_2))
+  (gives &q))
+
+(fragment (scale-down)
+  "Each input cell with the output cell whose block holds it, with both colors."
+  (QUERY &per_cell (output *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (input *P))
+    (parts (A N)
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P *P_in) (:P_outer *P_out)))
+  (QUERY &q (&cells *P_in *P_out) (input (:P P_in) *Col) (output (:P P_out) (:Col *Col_2)))
+  (gives &q))
+
+(fragment (scale-down-kept)
+  "The cells of `scale-down` whose two colors are the same."
+  (QUERY &per_cell (output *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (input *P))
+    (parts (A N)
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P *P_in) (:P_outer *P_out)))
+  (QUERY &q (&cells *P_in *P_out) (input (:P P_in) *Col) (output (:P P_out) Col))
+  (gives &q))
+
+(fragment (scale-down-changed)
+  "The cells of `scale-down` whose two colors differ."
+  (QUERY &per_cell (output *P) (frame_extent P *A *N))
+  (QUERY &extents (&per_cell *A *N))
+  (INIT &d Division
+    (cell (P)
+      (input *P))
+    (parts (A N)
+      (&extents *A *N)))
+  (QUERY &cells (&d.tile (:P *P_in) (:P_outer *P_out)))
+  (QUERY &q
+    (&cells *P_in *P_out)
+    (input (:P P_in) *Col)
+    (output (:P P_out) (:Col *Col_2))
+    (!= Col Col_2))
+  (gives &q))
+
+(fragment (d4-identity)
+  "The element of D4 that composes with itself to give itself."
+  (QUERY &q (d4_elem *D) (d4_compose (:A D) (:B D) (:C D)))
+  (gives &q))
+
+;; Parts with holes over a relation. A list of key columns can be empty.
+
+(fragment (cells-on (?R relation) (?p column ?R) (?G grid))
+  "A relation's cells at a column that lie on a grid."
+  (QUERY &q (?R (?p *)) (?G (:P ?p)))
+  (gives &q))
+
+(fragment (colors-under (?R relation) (?p column ?R) (?G grid))
+  "A grid's colors under a relation's cells."
+  (QUERY &under (?R (?p *)) (?G (:P ?p) (:Col *Col)))
+  (QUERY &q (&under *Col))
+  (gives &q))
+
+(fragment (around (?R relation) (?p column ?R))
+  "The cells next to a relation's cells and not among them, on the frame."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &next
+    (?R (?p *))
+    (neighbor (:P ?p) (:D *Toward) (:Q *Cell))
+    (ALL ((margin (:B Cell) (:D *Edge) (:K *Away)))
+      ((>= Away 0))))
+  (QUERY &free (&next *Cell) (NOT (&have.minimal (:t Cell))))
+  (QUERY &q (&free (:Cell (*new Q ?R))))
+  (gives &q))
+
+(fragment (neighbors (?R relation) (?p column ?R))
+  "Each row with each neighbor of its cell on the frame."
+  (QUERY &next
+    (?R (?p *))
+    (neighbor (:P ?p) (:D *Toward) (:Q *Cell))
+    (ALL ((margin (:B Cell) (:D *Edge) (:K *Away)))
+      ((>= Away 0))))
+  (QUERY &q (?R (*others ?R)) (&next ?p (:Toward (*new D ?R)) (:Cell (*new Q ?R))))
+  (gives &q))
+
+(fragment (split (?R relation) (?p column ?R))
+  "Each row with the row and the column of its cell."
+  (QUERY &q (?R (*others ?R)) (split (:P ?p) (:A (*new A ?R)) (:Along (*new Along ?R))))
+  (gives &q))
+
+(fragment (margin (?R relation) (?p column ?R))
+  "Each row with its cell's margin on each edge."
+  (QUERY &q (?R (*others ?R)) (margin (:B ?p) (:D (*new D ?R)) (:K (*new K ?R))))
+  (gives &q))
+
+(fragment (corner-dist (?R relation) (?p column ?R))
+  "Each row with the sum of its cell's margins at each corner."
+  (QUERY &q (?R (*others ?R)) (corner_dist (:P ?p) (:Diag (*new Diag ?R)) (:K (*new K ?R))))
+  (gives &q))
+
+(fragment (parity (?R relation) (?p column ?R))
+  "Each row with the remainder of its cell's distance from each corner, over the count of axes."
+  (INIT &axes Cardinality
+    (member ((:m A))
+      (axis_elem *A)))
+  (QUERY &remainders
+    (?R (?p *))
+    (corner_dist (:P ?p) (:Diag *Corner) (:K *Away))
+    (&axes.size (:N *Side))
+    (divide (:T Away) (:Side Side) (:Gap 0) (:Remainder *Left)))
+  (QUERY &q (?R (*others ?R)) (&remainders ?p (:Corner (*new Diag ?R)) (:Left (*new K ?R))))
+  (gives &q))
+
+(fragment (border-distance (?R relation) (?p column ?R))
+  "Each row with the least margin of its cell."
+  (INIT &least Order
+    (key ((?R (?p ^)))
+      (member ((:t Away))
+        (margin (:B ?p) (:K *Away)))
+      (score ((:t Away) (:S Away))
+        (margin (:B ?p) (:K *Away)))))
+  (QUERY &q (?R (*others ?R)) (&least.minimal (:key ?p) (:t (*new K ?R))))
+  (gives &q))
+
+(fragment (pieces (?R relation) (?keys columns ?R) (?p column ?R))
+  "The 8-connected pieces of each key's cells."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &pieces Connectivity
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (node ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &q (?R (?keys *) (?p *)) (&pieces.component (:key ?keys) (:P ?p) (:Id (*new Id ?R))))
+  (gives &q))
+
+(fragment (pieces4 (?R relation) (?keys columns ?R) (?p column ?R))
+  "The 4-connected pieces of each key's cells."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &pieces Connectivity
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (node ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &q (?R (?keys *) (?p *)) (&pieces.component (:key ?keys) (:P ?p) (:Id (*new Id ?R))))
+  (gives &q))
+
+(fragment (box-of (?R relation) (?keys columns ?R) (?p column ?R))
+  "The box of each key's cells."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &q (?R (?keys *)) (&box.box (:key ?keys) (:B (*new B ?R))))
+  (gives &q))
+
+(fragment (cells-in-box (?R relation) (?keys columns ?R) (?p column ?R))
+  "Each key's cells relative to its box."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (INIT &rel Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t Rel))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (&box.box (:key ?keys) (:B *Box))
+        (relative (:Base Box) (:X Cell) (:X_rel *Rel)))))
+  (QUERY &q (?R (?keys *)) (&rel.minimal (:key ?keys) (:t (*new X_rel ?R))))
+  (gives &q))
+
+(fragment (count (?R relation) (?keys columns ?R))
+  "The rows per value of the key columns."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &c Cardinality
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:m (others ?R ?keys)))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))))
+  (QUERY &q (?R (?keys *)) (&c.size (:key ?keys) (:N (*new N ?R))))
+  (gives &q))
+
+(fragment (one-value (?R relation) (?keys columns ?R) (?f column ?R))
+  "The keys with one value of a column, with that value."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &s Singleton
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:v ?f))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))))
+  (QUERY &q (?R (?keys *) (?f *)) (&s.value (:key ?keys) (:v ?f)))
+  (gives &q))
+
+(fragment (several (?R relation) (?keys columns ?R) (?f column ?R))
+  "The keys with more than one value of a column."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &s Singleton
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:v ?f))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))))
+  (QUERY &q (?R (?keys *)) (&s.plural (:key ?keys)))
+  (gives &q))
+
+(fragment (determines (?R relation) (?keys columns ?R) (?f column ?R))
+  "Whether each key has one value of a column."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &s Singleton
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:v ?f))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))))
+  (QUERY &q (ALL ((?R (?keys *))) ((&s.value (:key ?keys)))))
+  (gives &q))
+
+(fragment (greatest (?R relation) (?n column ?R))
+  "The greatest value of a number column."
+  (INIT &o Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (QUERY &q (?R (?n *)) (&o.maximal (:t ?n)))
+  (gives &q))
+
+(fragment (least (?R relation) (?n column ?R))
+  "The least value of a number column."
+  (INIT &o Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (QUERY &q (?R (?n *)) (&o.minimal (:t ?n)))
+  (gives &q))
+
+(fragment (greatest-by (?R relation) (?keys columns ?R) (?v column ?R) (?n column ?R))
+  "Each key's values of a column at the greatest of a number column. Under a tie, every tied value."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &scores Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t ?n))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))
+      (score ((:t ?n) (:S ?n))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))))
+  (INIT &values Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t ?v))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys)))
+        (&scores.maximal (:key ?keys) (:t ?n)))))
+  (QUERY &q (?R (?keys *) (?v *)) (&values.minimal (:key ?keys) (:t ?v)))
+  (gives &q))
+
+(fragment (least-by (?R relation) (?keys columns ?R) (?v column ?R) (?n column ?R))
+  "Each key's values of a column at the least of a number column. Under a tie, every tied value."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &scores Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t ?n))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))
+      (score ((:t ?n) (:S ?n))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys))))))
+  (INIT &values Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t ?v))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys)))
+        (&scores.minimal (:key ?keys) (:t ?n)))))
+  (QUERY &q (?R (?keys *) (?v *)) (&values.minimal (:key ?keys) (:t ?v)))
+  (gives &q))
+
+(fragment (class-of (?R relation) (?keys columns ?R))
+  "A class per set of a key's other columns."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &key_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?R (?keys *))))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m (others ?R ?keys)))
+      (?R (?keys *) (*others ?R ?keys))
+      (&key_ids.class (:a ?keys) (:Id *Key)))
+    (observed ((:observed Key) (:m (others ?R ?keys)))
+      (?R (?keys *) (*others ?R ?keys))
+      (&key_ids.class (:a ?keys) (:Id *Key))))
+  (QUERY &equal (&same_set.equal (:observed *Key) (:pattern *Key_2)))
+  (INIT &class Quotient
+    (equivalent ((:a Key) (:b Key_2))
+      (&equal *Key *Key_2)))
+  (INIT &class_of Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t Class))
+        (&whole Whole)
+        (&key_ids.class (:a ?keys) (:Id *Key))
+        (&class.class (:a Key) (:Id *Class)))))
+  (QUERY &q (?R (?keys *)) (&class_of.minimal (:key ?keys) (:t (*new Id ?R))))
+  (gives &q))
+
+(fragment (neighborhood-class (?R relation) (?p column ?R) (?G grid))
+  "A class per cell's color with the color of its neighbor at each direction."
+  (INIT &cell_names Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &named_around
+    (?G (:P *Cell) (:Col *Own))
+    (&cell_names.minimal (:t Cell))
+    (neighbor (:P Cell) *D *Q)
+    (?G (:P Q) (:Col *Near)))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Cell) (:m Own D Near))
+      (&named_around *Cell *Own *D *Near))
+    (observed ((:observed Cell) (:m Own D Near))
+      (&named_around *Cell *Own *D *Near)))
+  (QUERY &equal (&same_set.equal (:observed *Cell) (:pattern *Cell_2)))
+  (INIT &class Quotient
+    (equivalent ((:a Cell) (:b Cell_2))
+      (&equal *Cell *Cell_2)))
+  (QUERY &q (?R (?p *)) (&class.class (:a ?p) (:Id (*new Id ?R))))
+  (gives &q))
+
+(fragment (neighbor-color-class (?R relation) (?p column ?R) (?G grid))
+  "A class per multiset of a cell's neighbors' colors."
+  (INIT &cell_names Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (QUERY &named_around
+    (?G (:P *Cell) (:Col *Own))
+    (&cell_names.minimal (:t Cell))
+    (neighbor (:P Cell) *D *Q)
+    (?G (:P Q) (:Col *Near)))
+  (INIT &near_counts Cardinality
+    (key ((&named_around ^Cell ^Near))
+      (member ((:m D))
+        (&named_around Cell *D Near))))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Cell) (:m Near N))
+      (&near_counts.size (:key *Cell *Near) *N))
+    (observed ((:observed Cell) (:m Near N))
+      (&near_counts.size (:key *Cell *Near) *N)))
+  (QUERY &equal (&same_set.equal (:observed *Cell) (:pattern *Cell_2)))
+  (INIT &class Quotient
+    (equivalent ((:a Cell) (:b Cell_2))
+      (&equal *Cell *Cell_2)))
+  (QUERY &q (?R (?p *)) (&class.class (:a ?p) (:Id (*new Id ?R))))
+  (gives &q))
+
+(fragment (same-color-neighbors (?R relation) (?p column ?R) (?G grid))
+  "A cell's color on a grid, and how many neighbors share it."
+  (INIT &same Cardinality
+    (key ((?R (?p ^)) (?G (:P ?p)))
+      (member ((:m D))
+        (?G (:P ?p) (:Col *Own))
+        (neighbor (:P ?p) *D *Q)
+        (?G (:P Q) (:Col Own)))))
+  (QUERY &q (?R (?p *)) (?G (:P ?p) (:Col (*new Col ?R))) (&same.size (:key ?p) (:N (*new N ?R))))
+  (gives &q))
+
+(fragment (most-frequent-rows (?R relation) (?keys columns ?R) (?f column ?R))
+  "The rows whose value of a column has the most rows of their key. Under a tie, every tied value."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &per_value Cardinality
+    (key ((?R (?keys ^) (?f ^)))
+      (member ((:m (others ?R ?keys ?f)))
+        (&rows.minimal (:t ?keys ?f (*others ?R ?keys ?f))))))
+  (INIT &top Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t ?f))
+        (&whole Whole)
+        (&per_value.size (:key ?keys (?f *))))
+      (score ((:t ?f) (:S Rows))
+        (&whole Whole)
+        (&per_value.size (:key ?keys (?f *)) (:N *Rows)))))
+  (QUERY &q (?R (*others ?R)) (&top.maximal (:key ?keys) (:t ?f)))
+  (gives &q))
+
+(fragment (determines-flag (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?b column ?S))
+  "Whether each key's rows all have a match in a second relation, or none do."
+  (INIT &others_have Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (INIT &matched Cardinality
+    (key ((?L (?keys ^) (?a *)) (&others_have.minimal (:t ?a)))))
+  (INIT &unmatched Cardinality
+    (key ((?L (?keys ^) (?a *)) (NOT (&others_have.minimal (:t ?a))))))
+  (QUERY &q
+    (ALL ((?L (?keys *)))
+      ((OR ((NOT (&matched.size (:key ?keys))))
+           ((NOT (&unmatched.size (:key ?keys))))))))
+  (gives &q))
+
+(fragment (shape-class (?R relation) (?keys columns ?R) (?p column ?R))
+  "A class per set of a key's cells, up to a move."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &key_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?R (?keys *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &placed
+    (?R (?keys *) (?p *))
+    (&key_ids.class (:a ?keys) (:Id *Key))
+    (&box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?p) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&placed *Key *X_rel))
+    (observed ((:observed Key) (:m Image))
+      (&placed *Key (:X_rel *Image))))
+  (QUERY &equal (&same_set.equal (:observed *Key) (:pattern *Key_2)))
+  (INIT &class Quotient
+    (equivalent ((:a Key) (:b Key_2))
+      (&equal *Key *Key_2)))
+  (INIT &class_of Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t Class))
+        (&whole Whole)
+        (&key_ids.class (:a ?keys) (:Id *Key))
+        (&class.class (:a Key) (:Id *Class)))))
+  (QUERY &q (?R (?keys *)) (&class_of.minimal (:key ?keys) (:t (*new Id ?R))))
+  (gives &q))
+
+(fragment (shape-class-d4 (?R relation) (?keys columns ?R) (?p column ?R))
+  "A class per set of a key's cells, up to a move, a rotation or a reflection."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &key_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?R (?keys *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &placed
+    (?R (?keys *) (?p *))
+    (&key_ids.class (:a ?keys) (:Id *Key))
+    (&box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?p) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&placed *Key *X_rel))
+    (observed ((:observed Key D) (:m Image))
+      (&placed *Key *X_rel)
+        (d4_elem *D)
+        (apply D (:P X_rel) (:P_out *Image))))
+  (QUERY &equal (&same_set.equal (:observed *Key) (:pattern *Key_2)))
+  (INIT &class Quotient
+    (equivalent ((:a Key) (:b Key_2))
+      (&equal *Key *Key_2)))
+  (INIT &class_of Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t Class))
+        (&whole Whole)
+        (&key_ids.class (:a ?keys) (:Id *Key))
+        (&class.class (:a Key) (:Id *Class)))))
+  (QUERY &q (?R (?keys *)) (&class_of.minimal (:key ?keys) (:t (*new Id ?R))))
+  (gives &q))
+
+(fragment (holes (?R relation) (?keys columns ?R) (?p column ?R))
+  "The count of parts of each key's frame that the key's cells enclose."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &frame Frame
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (extent (A N)
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (frame_extent (:P Cell) *A *N))))
+  (INIT &enclosed Enclosure
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Free))
+        (&whole Whole)
+        (&frame.cell (:key ?keys) (:P *Free))
+        (NOT (&cells_of.minimal (:t ?keys (:Cell Free)))))))
+  (INIT &n Cardinality
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:m Part))
+        (&whole Whole)
+        (&enclosed.enclosed (:key ?keys) (:Id *Part)))))
+  (QUERY &q (?R (?keys *)) (&n.size (:key ?keys) (:N (*new N ?R))))
+  (gives &q))
+
+(fragment (symmetry (?R relation) (?keys columns ?R) (?p column ?R))
+  "The count of elements of D4 that map a key's cells onto themselves, up to a move."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (INIT &agree Agreement
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (source ((:P Rel) (:v Box))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (&box.box (:key ?keys) (:B *Box))
+        (relative (:Base Box) (:X Cell) (:X_rel *Rel)))
+      (target ((:P Rel) (:v Box))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (&box.box (:key ?keys) (:B *Box))
+        (relative (:Base Box) (:X Cell) (:X_rel *Rel)))))
+  (INIT &n Cardinality
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:m D))
+        (&whole Whole)
+        (d4_elem *D)
+        (NOT (&agree.mismatch (:key ?keys) D)))))
+  (QUERY &q (?R (?keys *)) (&n.size (:key ?keys) (:N (*new N ?R))))
+  (gives &q))
+
+(fragment (touches-edge (?R relation) (?keys columns ?R) (?p column ?R))
+  "The keys with a cell on an edge."
+  (INIT &keys_on Cardinality
+    (key ((?R (?keys ^) (?p *)) (margin (:B ?p) (:K 0)))))
+  (QUERY &q (?R (?keys *)) (&keys_on.size (:key ?keys)))
+  (gives &q))
+
+(fragment (fills-box (?R relation) (?keys columns ?R) (?p column ?R))
+  "The keys whose cells fill their box."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (INIT &frame Frame
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (extent (A N)
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (frame_extent (:P Cell) *A *N))))
+  (INIT &unfilled Cardinality
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:m Free))
+        (&whole Whole)
+        (&frame.cell (:key ?keys) (:P *Free))
+        (&box.box (:key ?keys) (:B *Box))
+        (inside (:A Free) (:B Box))
+        (NOT (&cells_of.minimal (:t ?keys (:Cell Free)))))))
+  (QUERY &q (?R (?keys *)) (&unfilled.size (:key ?keys) (:N 0)))
+  (gives &q))
+
+(fragment (inside (?R relation) (?b column ?R) (?G grid))
+  "Each row with a grid's cells inside its box."
+  (QUERY &in
+    (?R (?b *))
+    (?G (:P *Cell) (:Col *Color))
+    (inside (:A Cell) (:B ?b)))
+  (QUERY &q (?R (*others ?R)) (&in ?b (:Cell (*new P ?R)) (:Color (*new Col ?R))))
+  (gives &q))
+
+(fragment (box-extent (?R relation) (?b column ?R) (?G grid))
+  "Each row with its box's extent on each axis, by a grid's extents."
+  (QUERY &e
+    (?R (?b *))
+    (?G (:P *Cell))
+    (box_extent (:B ?b) (:P Cell) (:A *Axis) (:N *Long))
+    (ALL ((box_extent (:B ?b) (:P Cell) (:A *Other) (:N *Length)))
+      ((> Length 0))))
+  (QUERY &q (?R (*others ?R)) (&e ?b (:Axis (*new A ?R)) (:Long (*new N ?R))))
+  (gives &q))
+
+(fragment (box-margin (?R relation) (?b column ?R))
+  "Each row with its box's margin on each edge."
+  (QUERY &q (?R (*others ?R)) (margin (:B ?b) (:D (*new D ?R)) (:K (*new K ?R))))
+  (gives &q))
+
+(fragment (frame-extent (?R relation) (?p column ?R))
+  "The extents of the frames of a column's cells."
+  (QUERY &e (?R (?p *)) (frame_extent (:P ?p) *A *N))
+  (QUERY &q (&e *A *N))
+  (gives &q))
+
+(fragment (displacement (?R relation) (?p column ?R) (?x column ?R))
+  "Each row with the move from one cell to another of its frame."
+  (QUERY &q
+    (?R (*others ?R))
+    (relative (:Base ?p) (:X ?x) (:X_rel (*new V ?R)))
+    (ALL ((frame_extent (:P ?p) (:A *Axis) (:N *Long)))
+      ((frame_extent (:P ?x) (:A Axis) (:N Long)))))
+  (gives &q))
+
+(fragment (full-lines (?R relation) (?keys columns ?R) (?p column ?R))
+  "A key's whole rows and columns, by the frame of its cells."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &on_line Cardinality
+    (key ((?R (?keys ^) (?p *)) (split (:P ?p) (:A ^Axis) (:Along ^Line)))
+      (member ((:m Cell))
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (split (:P Cell) (:A Axis) (:Along Line)))))
+  (INIT &whole Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t (:Axis Axis) (:Line Line)))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (split (:P Cell) (:A *Axis) (:Along *Line))
+        (perp (:A Axis) (:A2 *Across))
+        (frame_extent (:P Cell) (:A Across) (:N *Long))
+        (&on_line.size (:key ?keys Axis Line) (:N Long)))))
+  (QUERY &q (?R (?keys *)) (&whole.minimal (:key ?keys) (:t (:Axis (*new A ?R)) (:Line (*new Along ?R)))))
+  (gives &q))
+
+(fragment (occurs (?R relation) (?keys columns ?R) (?p column ?R) (?v column ?R) (?G grid))
+  "The moves that take a key's colored cells into a grid."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &o Occurrences
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (shape ((:P ?p) (:v ?v))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys)))))
+    (cell (P (:v Col))
+      (?G (:P *P) (:Col *Col))))
+  (QUERY &q (?R (?keys *)) (&o.occurrence (:key ?keys) (:P (*new V ?R))))
+  (gives &q))
+
+(fragment (occurs-d4 (?R relation) (?keys columns ?R) (?p column ?R) (?v column ?R) (?G grid))
+  "The moves that take an image of a key's colored cells into a grid."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &o Occurrences
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (shape ((:P ?p) (:v ?v))
+        (&whole Whole)
+        (&rows.minimal (:t ?keys (*others ?R ?keys)))))
+    (cell (P (:v Col))
+      (?G (:P *P) (:Col *Col)))
+    (transform (D)
+      (d4_elem *D)))
+  (INIT &moves Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t Move))
+        (&whole Whole)
+        (&o.occurrence (:key ?keys) (:P *Move)))))
+  (QUERY &q (?R (?keys *)) (&moves.minimal (:key ?keys) (:t (*new V ?R))))
+  (gives &q))
+
+(fragment (shared-line (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "The first relation's rows with a cell of the second on a row or a column."
+  (QUERY &met
+    (?L (?a *))
+    (?S (?b *))
+    (axis_elem (:A *Axis))
+    (same_line (:A Axis) (:P ?a) (:Q ?b)))
+  (QUERY &q (?L (*others ?L)) (&met ?a))
+  (gives &q))
+
+(fragment (distance (?R relation) (?p column ?R) (?G grid))
+  "The fewest eight-neighbor steps from a relation's cells over a grid."
+  (INIT &d CellDistance
+    (node (P)
+      (?G (:P *P)))
+    (source ((:P ?p))
+      (?R (?p *))
+      (?G (:P ?p)))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (QUERY &q (&d.distance *P *K))
+  (gives &q))
+
+(fragment (box-kept (?R relation) (?b column ?R))
+  "A column of boxes read against the two grids: each input cell of a box whose color stands at its place in the output."
+  (QUERY &read
+    (?R (?b *))
+    (input (:P *Cell) (:Col *Col))
+    (inside (:A Cell) (:B ?b))
+    (relative (:Base ?b) (:X Cell) (:X_rel *Place))
+    (output (:P Place) (:Col *Col_2)))
+  (QUERY &q
+    (?R (?b *))
+    (&read ?b (:Cell (*new P ?R)) (:Place (*new X_rel ?R)) *Col (:Col_2 Col)))
+  (gives &q))
+
+(fragment (box-changed (?R relation) (?b column ?R))
+  "A column of boxes read against the two grids: each input cell of a box whose color differs at its place in the output."
+  (QUERY &read
+    (?R (?b *))
+    (input (:P *Cell) (:Col *Col))
+    (inside (:A Cell) (:B ?b))
+    (relative (:Base ?b) (:X Cell) (:X_rel *Place))
+    (output (:P Place) (:Col *Col_2)))
+  (QUERY &q
+    (?R (?b *))
+    (&read ?b (:Cell (*new P ?R)) (:Place (*new X_rel ?R)) *Col *Col_2)
+    (!= Col Col_2))
+  (gives &q))
+
+(fragment (box-frame-kept (?R relation) (?b column ?R) (?x column ?R))
+  "As `box-kept`, on a column of cells of a box's frame."
+  (QUERY &read
+    (?R (?b *) (?x *))
+    (output (:P ?x) (:Col *Col_2))
+    (compose (:A ?x) (:B ?b) (:C *Place))
+    (input (:P Place) (:Col *Col)))
+  (QUERY &q
+    (?R (?b *) (?x *))
+    (&read ?b ?x (:Place (*new P ?R)) *Col (:Col_2 Col)))
+  (gives &q))
+
+(fragment (box-frame-changed (?R relation) (?b column ?R) (?x column ?R))
+  "As `box-changed`, on a column of cells of a box's frame."
+  (QUERY &read
+    (?R (?b *) (?x *))
+    (output (:P ?x) (:Col *Col_2))
+    (compose (:A ?x) (:B ?b) (:C *Place))
+    (input (:P Place) (:Col *Col)))
+  (QUERY &q
+    (?R (?b *) (?x *))
+    (&read ?b ?x (:Place (*new P ?R)) *Col *Col_2)
+    (!= Col Col_2))
+  (gives &q))
+
+(fragment (box-cell-kept (?R relation) (?b column ?R) (?x column ?R))
+  "As `box-kept`, on a column of input cells."
+  (QUERY &read
+    (?R (?b *) (?x *))
+    (input (:P ?x) (:Col *Col))
+    (relative (:Base ?b) (:X ?x) (:X_rel *Place))
+    (output (:P Place) (:Col *Col_2)))
+  (QUERY &q
+    (?R (?b *) (?x *))
+    (&read ?b ?x (:Place (*new X_rel ?R)) *Col (:Col_2 Col)))
+  (gives &q))
+
+(fragment (box-cell-changed (?R relation) (?b column ?R) (?x column ?R))
+  "As `box-changed`, on a column of input cells."
+  (QUERY &read
+    (?R (?b *) (?x *))
+    (input (:P ?x) (:Col *Col))
+    (relative (:Base ?b) (:X ?x) (:X_rel *Place))
+    (output (:P Place) (:Col *Col_2)))
+  (QUERY &q
+    (?R (?b *) (?x *))
+    (&read ?b ?x (:Place (*new X_rel ?R)) *Col *Col_2)
+    (!= Col Col_2))
+  (gives &q))
