@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::ops::ControlFlow;
 
 use crate::check::CheckedProgram;
-use crate::eval::determinations::{det_node, det_relation, determinations, relation_spelled};
+use crate::eval::determinations::{det_node, det_relation, determinations, is_by_clauses, relation_spelled};
 use crate::eval::instance::Constructions;
 use crate::eval::join::{each_row, one_part, union};
 use crate::eval::{output_relation, Domain, Evaluation, ModelsEnd, RelationValue, Limits, ParameterValues, ReachedBound, RunFault, Stop};
@@ -147,9 +147,10 @@ pub struct Determination {
     /// `docs/engine/cases.md#every-case` gives.
     pub demonstrated: Vec<ProgramRelation>,
     /// Each `DET` that the `OUT` form of some case reads, as
-    /// [`read_by_output`] gives. Such a `DET` is a parameter, which the
-    /// program reads as stored facts. Each other `DET` is part of the
-    /// determination, so its value may differ across cases.
+    /// [`read_by_output`] gives, less those [`computed_from_dets`] gives.
+    /// Such a `DET` is a parameter, which the program reads as stored facts.
+    /// Each other `DET` is part of the determination, so its value may differ
+    /// across cases.
     pub read_by_program: StableHashSet<ProgramRelation>,
 }
 
@@ -363,7 +364,7 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
                 order.push(det.relation.clone());
             }
             reads.push(det.relation.clone());
-            if read[det.node.0 as usize] {
+            if read[det.node.0 as usize] && !computed_from_dets(case.program, det.node) {
                 read_by_program.insert(det.relation.clone());
             }
             if det.open {
@@ -434,12 +435,42 @@ fn read_by_output(program: &CheckedProgram, output: GraphNodeIndex) -> Vec<bool>
             continue;
         }
         let kind = &graph.nodes[at.0 as usize].kind;
-        let det = matches!(kind, DependencyKind::Parameter(_)) || (matches!(kind, DependencyKind::Chosen(_)) && resolved.side(at) == Side::TaskWide);
-        if !det {
+        if !is_det_kind(resolved, at, kind) {
             stack.extend(graph.reads[at.0 as usize].iter().copied());
         }
     }
     seen
+}
+
+/// Whether the `DET` at `node` of `program` is one by its clauses that reads
+/// no fact of the task, other than through a `DET` it reads, so that its
+/// value is computed from those `DET`s.
+fn computed_from_dets(program: &CheckedProgram, node: GraphNodeIndex) -> bool {
+    let resolved = &program.program;
+    if !is_by_clauses(resolved, node) {
+        return false;
+    }
+    let graph = &resolved.graph;
+    let mut seen = vec![false; graph.nodes.len()];
+    let mut stack: Vec<GraphNodeIndex> = graph.reads[node.0 as usize].to_vec();
+    while let Some(at) = stack.pop() {
+        if std::mem::replace(&mut seen[at.0 as usize], true) {
+            continue;
+        }
+        let kind = &graph.nodes[at.0 as usize].kind;
+        if matches!(kind, DependencyKind::Fact(_)) {
+            return false;
+        }
+        if !is_det_kind(resolved, at, kind) {
+            stack.extend(graph.reads[at.0 as usize].iter().copied());
+        }
+    }
+    true
+}
+
+/// Whether the node `at`, of kind `kind`, is a `DET`'s.
+fn is_det_kind(resolved: &crate::resolver::ResolvedProgram, at: GraphNodeIndex, kind: &DependencyKind) -> bool {
+    matches!(kind, DependencyKind::Parameter(_)) || (matches!(kind, DependencyKind::Chosen(_)) && resolved.side(at) == Side::TaskWide)
 }
 
 /// A value for a `DET`.

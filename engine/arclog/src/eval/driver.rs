@@ -12,7 +12,7 @@ use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, CompiledBody, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
-use super::determinations::Domain;
+use super::determinations::{self, Domain};
 use super::{cache, init_form, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
@@ -199,16 +199,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// forms is a `DET` clause with a body, no proposer and no `ONE` mark, so
     /// that its rows are its clause's, as [`Evaluation::domain`] gives them.
     fn is_by_clauses(&self, relation: &GraphRelation) -> bool {
-        let root = NodeRef::Program(self.program().program.value());
-        let forms = self.program().forms_of(relation.node);
-        !forms.is_empty()
-            && forms.iter().all(|at| {
-                let Some(NodeRef::Clause(clause)) = node_at(root, at) else { return false };
-                clause.keyword == ClauseKeyword::Det
-                    && !clause.body.value().conjuncts.is_empty()
-                    && clause.proposers.is_empty()
-                    && clause.ones.is_empty()
-            })
+        determinations::is_by_clauses(self.program(), relation.node)
     }
 
     /// The one value in the domain of the `DET` relation `relation`, for a

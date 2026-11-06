@@ -54,7 +54,7 @@ The step of the [build order](overview.md#build-order) that builds it ends when 
 ## End check
 
 - `arclog-cli determine <corpus-dir> <tasks-dir> [<task_id> ...]` determines the parameters of each solver given, or of every solver of the corpus, from its task's evidence, and compares each determined value with the solver's `param` rows. It prints each difference by solver and parameter.
-- A `DET` that a case's `OUT` form reads, through clauses, instances and `RIGID_DET` assemblies and through no `DET`'s body, is a parameter, and a parameter with no `param` row is a fault. Each other `DET` is part of the determination, and needs no row.
+- A `DET` that a case's `OUT` form reads, through clauses, instances and `RIGID_DET` assemblies and through no `DET`'s body, is a parameter, and a parameter with no `param` row is a fault. A `DET` by its clauses that reads no fact of the task, other than through a `DET` it reads, is computed from those `DET`s, and it isn't a parameter. Each `DET` that isn't a parameter is part of the determination, and needs no row.
 - Idents compare up to one renaming, as [Parallelism and determinism](evaluator.md#parallelism-and-determinism) gives, and the parts of a `RIGID_DET` assembly as [`RIGID_DET`](#rigid_det) gives. A `DET` with no body and no proposer, and each other fault of a solver or of the conversion that this doc names, is reported as that fault, and is not a difference. A parameter that no `param` record gives is reported as a fault, other than a part `DET` of a `RIGID_DET` assembly whose parts the records give.
 
 ## How each decision can fail

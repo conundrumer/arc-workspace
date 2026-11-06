@@ -79,6 +79,21 @@ fn is_det(program: &crate::resolver::ResolvedProgram, node: GraphNodeIndex) -> b
     }
 }
 
+/// Whether `node` is a `DET` by its clauses: each of its forms is a `DET`
+/// clause with a body, no proposer and no `ONE` mark.
+pub(crate) fn is_by_clauses(program: &crate::resolver::ResolvedProgram, node: GraphNodeIndex) -> bool {
+    let root = NodeRef::Program(program.program.value());
+    let forms = program.forms_of(node);
+    !forms.is_empty()
+        && forms.iter().all(|at| {
+            let Some(NodeRef::Clause(clause)) = node_at(root, at) else { return false };
+            clause.keyword == ClauseKeyword::Det
+                && !clause.body.value().conjuncts.is_empty()
+                && clause.proposers.is_empty()
+                && clause.ones.is_empty()
+        })
+}
+
 /// The relation of a `DET` node of kind `kind`, and whether it ends in
 /// `(ONE)`, or `None` for a node of another kind.
 pub fn det_relation(kind: &DependencyKind) -> Option<(ProgramRelation, bool)> {
