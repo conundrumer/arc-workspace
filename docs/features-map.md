@@ -21,6 +21,7 @@ Where each thing about features over tables is defined. Where two documents diff
 - The encoder and the generated shapes: `engine/arclog-encoder`.
 - The named parts: `engine/lib/features.arclog`.
 - The scripts that score features: `model/feature_eval`.
+- The trainer those scripts run: `engine/block-boost`.
 - The first version: `model/contracts/features`, described in [its README](../model/contracts/README.md). It is a reference line. It does not define what a feature is.
 
 ## Run outputs
