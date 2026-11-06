@@ -1692,7 +1692,7 @@ pub struct Walker<'a> {
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
 /// The cells that the terms one walk extends can give, counted at each instance.
-const WALK_CELLS: usize = 200_000_000;
+const WALK_CELLS: usize = 100_000_000;
 /// A count past this stands for "no value": a bound stopped the term.
 const NO_COUNT: u32 = u32::MAX;
 
@@ -1901,6 +1901,8 @@ impl<'a> Walker<'a> {
             }
             ids.push(own);
         }
+        // A task keeps a walker per schema, so one large walk leaves nothing behind.
+        self.keep_within_budget();
         table
     }
 
@@ -2147,7 +2149,7 @@ pub fn example_bits(example: usize) -> u32 {
 }
 
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
-const CACHED_TERMS: usize = 12_000_000;
+const CACHED_TERMS: usize = 3_000_000;
 
 /// The families of each schema, kept in a bounded cache, and the name of each root.
 #[derive(Default)]
