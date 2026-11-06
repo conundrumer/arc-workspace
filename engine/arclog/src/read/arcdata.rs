@@ -285,6 +285,7 @@ impl Reader {
         for item in list.items {
             let (name, place) = self.symbol(Some(item), "an alt's name", list.place)?;
             record.token(place);
+            self.declared_case_name(name, place)?;
             combination.push(AltsName(name.into()));
         }
         record.token(list.close);
@@ -476,6 +477,9 @@ impl Reader {
         let mut rest = items;
         while let Some(expr) = rest.first().filter(|e| !is_output_value(e)) {
             let group = self.name_group(expr, record)?;
+            for (text, place) in group.iter().filter(|(text, _)| *text != sp::CONCEPT) {
+                self.declared_case_name(text, *place)?;
+            }
             names.push(group.into_iter().map(|(text, _)| case_ref(text)).collect());
             rest = &rest[1..];
         }

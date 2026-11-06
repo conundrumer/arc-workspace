@@ -31,6 +31,9 @@ pub(super) type R<T> = Result<T, Refused>;
 pub(super) struct Owners {
     instances: BTreeSet<Box<str>>,
     rigid: BTreeSet<Box<str>>,
+    /// Each alt and each reading of a line that the programs of `of_programs`
+    /// declare, the names an arcdata file gives its cases by.
+    case_names: BTreeSet<Box<str>>,
 }
 
 impl Owners {
@@ -73,16 +76,27 @@ impl Owners {
                     }
                 }
                 Form::Alts(alts) => {
+                    self.case_names.insert(alts.value().concept.0.clone());
                     for alt in alts.value().alts.iter() {
                         self.alt(alt.value());
                     }
                 }
-                Form::Clause(_) | Form::Choose(_) | Form::Out(_) => {}
+                Form::Clause(clause) => {
+                    self.case_names.extend(crate::solver::line_reading_names(clause.value()).into_iter().map(|name| name.0));
+                }
+                Form::Choose(_) | Form::Out(_) => {}
             }
         }
     }
 
+    /// Whether a form of the programs of `of_programs` declares `name` as an
+    /// alt or as a reading of a line.
+    pub(super) fn declares_case_name(&self, name: &str) -> bool {
+        self.case_names.contains(name)
+    }
+
     fn alt(&mut self, alt: &Alt) {
+        self.case_names.insert(alt.name.0.clone());
         for item in alt.items.iter() {
             match item {
                 AltItem::Form(form) => self.forms(std::slice::from_ref(form)),
@@ -197,6 +211,16 @@ impl Reader {
     /// The layout of the nodes read, as nodes of `file`.
     pub(super) fn layout(self, file: SourceFile, comments: Vec<crate::layout::Comment>) -> Layout {
         Layout { nodes: self.nodes.into_iter().map(|(path, node)| ((file, path), node)).collect(), comments: comments.into() }
+    }
+
+    /// Refuses `name`, a case's name in an `exclude` or `output` form, where
+    /// no form of the arclog file declares it as an alt or as a reading of a
+    /// line, since it would select no case and nothing would report it.
+    pub(super) fn declared_case_name(&mut self, name: &str, place: SourcePlace) -> R<()> {
+        if self.owners.declares_case_name(name) {
+            return Ok(());
+        }
+        self.refuse(format!("`{name}` is no alt and no reading of a line of the arclog file"), place)
     }
 
     pub(super) fn refuse<T>(&mut self, message: impl Into<Box<str>>, place: SourcePlace) -> R<T> {
