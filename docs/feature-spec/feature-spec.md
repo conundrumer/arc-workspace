@@ -125,6 +125,16 @@ A feature expression's **size** is its count of distinct operators, without leav
 
 Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` with no column pair between its sides, since its count follows from its parts' counts. A product stands only under a `select` or a `lib-join` that relates its two sides. It leaves out a term that reads no column of its table, since its value follows from the row count, which the table's own `cardinality` gives. `nonempty` stands only over a relation with no columns.
 
+A term is **forced** where its value follows from smaller terms on every table of its schema. Enumeration generates no term that these laws prove forced. A law is sound and need not be complete, since equivalence over negation and aggregates is undecidable, so a term that no law covers stays. A rule that reads a corpus is no law.
+
+- **Types:** a `Nat` is never below `0`. So `>= 0` holds of every row, and `> 0` is `!= 0`.
+- **Sets and keys:** a relation's rows are a set, and `P` is a key of a grid. So a `project` that keeps a key leaves the count unchanged.
+- **Algebra:** a `semijoin` or `antijoin` applied twice with one relation and one column pair is the first one, and a `join` over a `semijoin` on the same columns is the `join`.
+- **Complete domains:** every value of an orientation type is in that type's `*_elem` relation. So a `semijoin` with it keeps every row, and an `antijoin` with it keeps none.
+- **Contracts:** each component output and each part declares its keys, the ranges of its numbers and the relations it is a subset of, and the laws above read these declarations.
+
+Two terms with equal values are not forced by that alone. Where the table's rows could have given a different value, the equality is a claim about the task, and both terms stay.
+
 **The encoder at size d** gives, for each table, the value of every feature that the library names, at any size, and of every ground expression of at most size d that reads that table, at every binding the checker accepts. An expression that reads no table has one value on every table, and a base table is a table here, so it has an encoding of its own. So a version of the library and the registry, and a size, fix an exact and finite set of features. Enumeration takes the two relations of a binary operator or of a `ratio` in both orders, so the set of names does not depend on text order.
 
 ## How an expression expands
