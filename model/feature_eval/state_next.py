@@ -7,12 +7,13 @@ STATE_ROOT holds `lists/` and `null/`, as `candidate-lists --state-only` writes 
 the least, the mean and the greatest of each shape of the `pair` list. Each label says whether the gold program uses one lib
 relation, component or proposer. Each label is fit on train tasks and read on dev tasks, over the tasks in the files so far:
 the shapes that read only the input, and the shapes that read an output, on the true outputs and on the deranged ones. The
-true and deranged sets are compared by a bootstrap over dev tasks, on the mean AUC over labels. Each label's line is written
-as it ends.
+true and deranged sets are compared by a bootstrap over dev tasks, on the mean AUC over labels. Each label's line and scores
+are written as it ends, and a restart skips the labels that have them.
 """
 import argparse
 import json
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -69,6 +70,19 @@ def matrix(rows, columns):
     return sp.csr_matrix((data, (at_row, at_column)), shape=(len(rows), 3 * len(columns)), dtype=np.float32)
 
 
+def distinct_columns(train, dev):
+    """The columns that differ on the train rows: of the columns equal there, the first."""
+    by_column = train.tocsc()
+    seen, kept = set(), []
+    for at in range(by_column.shape[1]):
+        start, end = by_column.indptr[at], by_column.indptr[at + 1]
+        key = (by_column.indices[start:end].tobytes(), by_column.data[start:end].tobytes())
+        if end > start and key not in seen:
+            seen.add(key)
+            kept.append(at)
+    return train[:, kept], dev[:, kept]
+
+
 def mean_auc(scores, truth, rows):
     """The mean AUC over labels of the rows given, over the labels that have both classes among them."""
     held = []
@@ -109,25 +123,40 @@ def main():
     reads_output = {shape: at for at, shape in enumerate(shape for shape in frequent if flags.get(shape, 0) & READS_OUTPUT)}
     print('shapes that read only the input', len(input_only), 'that read an output', len(reads_output), flush=True)
     sets = {'input': ('lists', input_only), 'output': ('lists', reads_output), 'output_deranged': ('null', reads_output)}
-    built = {name: (matrix([entries[kind][task] for task in train], columns), matrix([entries[kind][task] for task in dev], columns)) for name, (kind, columns) in sets.items()}
+    built = {name: distinct_columns(matrix([entries[kind][task] for task in train], columns), matrix([entries[kind][task] for task in dev], columns)) for name, (kind, columns) in sets.items()}
+    print('distinct columns', {name: held[0].shape[1] for name, held in built.items()}, flush=True)
+    held_scores = out / 'scores'
+    held_scores.mkdir(exist_ok=True)
+    started = time.time()
     truth = np.array([[label in labels[task] for label in wanted] for task in dev], dtype=int)
     scores = {name: np.zeros((len(dev), len(wanted))) for name in sets}
     per_seed = {name: np.zeros(args.seeds) for name in sets}
-    with open(out / 'labels.tsv', 'w') as file:
+    with open(out / 'labels.tsv', 'a') as file:
         for at, label in enumerate(wanted):
             y_train = np.array([label in labels[task] for task in train], dtype=int)
             y_dev = truth[:, at]
             line = []
+            place = held_scores / f"{label.replace(':', '_')}.npz"
+            if place.exists():
+                with np.load(place) as found:
+                    for name in sets:
+                        scores[name][:, at] = found[name]
+                        per_seed[name] += found[name + '_seeds']
+                continue
+            own_seeds = {name: np.zeros(args.seeds) for name in sets}
             for name, (x_train, x_dev) in built.items():
                 for seed in range(args.seeds):
                     parameters = dict(objective='binary', learning_rate=0.05, num_leaves=7, feature_fraction=0.3, min_data_in_leaf=5, seed=seed, num_threads=2, verbose=-1)
                     predicted = lgb.train(parameters, lgb.Dataset(x_train, label=y_train), 100).predict(x_dev)
                     scores[name][:, at] += predicted
-                    per_seed[name][seed] += roc_auc_score(y_dev, predicted)
+                    own_seeds[name][seed] = roc_auc_score(y_dev, predicted)
+                per_seed[name] += own_seeds[name]
                 line.append(f'{roc_auc_score(y_dev, scores[name][:, at]):.3f}')
+            np.savez(place, **{name: scores[name][:, at] for name in sets}, **{name + '_seeds': own_seeds[name] for name in sets})
             file.write('\t'.join([label, str(int(y_train.sum())), str(int(y_dev.sum())), *line]) + '\n')
             file.flush()
-            print(label, int(y_train.sum()), int(y_dev.sum()), *line, flush=True)
+            rate = (at + 1) / (time.time() - started)
+            print(label, int(y_train.sum()), int(y_dev.sum()), *line, f'ETA {(len(wanted) - at - 1) / rate:.0f}s', flush=True)
     rows = np.arange(len(dev))
     summary = {name: dict(ensemble=mean_auc(scores[name], truth, rows), seeds_least=float((per_seed[name] / len(wanted)).min()), seeds_most=float((per_seed[name] / len(wanted)).max())) for name in sets}
     rng = np.random.default_rng(7)
