@@ -71,10 +71,13 @@
 .decl out(p: Position, col: Color, ch: Choice, ov: OpenValue, tr: TiebreakResolution)
 
 .comp Params {
-    // the symmetry group about the center that the restoration reads: the
-    // mirrors across both midlines, or the whole of D4
+    // Each group that `Determine.symmetry` keeps is an open value. No fact of
+    // the evidence separates these, so this relation stores them all.
+
+    // the symmetry group about the center that the restoration reads
     // @open
-    .decl symmetry(s: Sym) symmetry(SYM_BOX). symmetry(SYM_D4).
+    .decl symmetry(s: Sym)
+    symmetry(SYM_HT). symmetry(SYM_BOX). symmetry(SYM_X). symmetry(SYM_C4). symmetry(SYM_D4).
 
     // --- $StoredColor ---
     // @derive RarestColor: variant mask_color=RarestColor
@@ -223,4 +226,29 @@ out(P_inner, Col, [M, $ModeImage(), C], [[S]], $About(B)) :-
 
     .decl mask_color(c: Color)
     mask_color(Col) :- in_color(_, Col), !missing_color(Col), !ex_out(_, _, Col).
+
+    // The visible cells of each input, under each D4 element.
+    .init inv = D4Map<Example, Color>
+    inv.src(E, P, Col) :- ex_in(E, P, Col), !mask_color(Col).
+    inv.dst(E, P, Col) :- inv.src(E, P, Col).
+
+    // A group under which some input's visible cells disagree.
+    .decl sym_clash(s: Sym)
+    sym_clash(S) :- sym_member(S, D), inv.conflict(_, D).
+
+    // A masked cell with an image under a group that the mask leaves visible.
+    .decl recovered(e: Example, s: Sym, p: Position)
+    recovered(E, S, P) :-
+        ex_in(E, P, Col), mask_color(Col), sym_member(S, D), apply(D, P, P2),
+        ex_in(E, P2, Col2), !mask_color(Col2).
+
+    // A group that leaves some input's masked cell with no visible image.
+    .decl sym_blind(s: Sym)
+    sym_blind(S) :- ex_in(E, P, Col), mask_color(Col), sym_elem(S), !recovered(E, S, P).
+
+    // The groups at which `symmetric-pattern` and `mask-recoverable` hold on
+    // every input.
+    // @ignore: determine prediction — the tests read the outputs only through the determined mask_color, which picks the masked cells
+    .decl symmetry(s: Sym)
+    symmetry(S) :- sym_elem(S), !sym_clash(S), !sym_blind(S).
 }
