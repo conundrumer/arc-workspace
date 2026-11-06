@@ -67,8 +67,8 @@ def statistics(matrix, sizes, d, input_places, negatives):
     return per_input
 
 
-def run_task(task, encoder, size, limit, stats_only=False):
-    suffix = f'.n{limit}' if limit else ''
+def run_task(task, encoder, size, limit, stats_only=False, native=False):
+    suffix = (f'.n{limit}' if limit else '') + ('.native' if native else '')
     values_dir = OUT / 'values'
     values_dir.mkdir(parents=True, exist_ok=True)
     done = [OUT / f'{task}{suffix}.d{d}.json' for d in range(1, size + 1)]
@@ -83,7 +83,7 @@ def run_task(task, encoder, size, limit, stats_only=False):
         if not data_exists(values_path):
             return None
     else:
-        grids_values(grids_path, values_path, encoder, False, size, log=values_dir / f'{task}.log')
+        grids_values(grids_path, values_path, encoder, False, size, log=values_dir / f'{task}.log', native=native)
     names, sizes, matrix = read_values(values_path, size)
     summary = None
     for d in range(1, size + 1):
@@ -105,12 +105,13 @@ def main():
     parser.add_argument('--shard', default='0/1')
     parser.add_argument('--negatives', type=int, default=None, help='the first N negatives of each input')
     parser.add_argument('--stats-only', action='store_true', help='recompute the statistics from the value files')
+    parser.add_argument('--native', action='store_true', help='read the generated shapes over the base tables, under the suffix .native')
     a = parser.parse_args()
     at, of = map(int, a.shard.split('/'))
     tasks = [task for index, task in enumerate(eval_tasks(a.first)) if index % of == at]
     started = time.time()
     for count, task in enumerate(tasks):
-        summary = run_task(task, a.encoder, a.size, a.negatives, a.stats_only)
+        summary = run_task(task, a.encoder, a.size, a.negatives, a.stats_only, a.native)
         rate = (count + 1) / (time.time() - started)
         if summary:
             flush_print(f"{count + 1}/{len(tasks)} {task} roots {summary['roots']} classes {summary['classes']} grids {summary['grids']} auc {summary['auc']} {summary['seconds']:.0f}s; ETA {(len(tasks) - count - 1) / rate:.0f}s")

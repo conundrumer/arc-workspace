@@ -60,22 +60,23 @@ def statistics(matrix, sizes, d, count, near):
     return per_pair
 
 
-def run_task(task, encoder, size, stats_only=False):
+def run_task(task, encoder, size, stats_only=False, native=False):
+    suffix = '.native' if native else ''
     values_dir = OUT / 'values'
     values_dir.mkdir(parents=True, exist_ok=True)
-    done = [OUT / f'{task}.d{d}.json' for d in range(1, size + 1)]
+    done = [OUT / f'{task}{suffix}.d{d}.json' for d in range(1, size + 1)]
     if not stats_only and all(data_exists(path) for path in done):
         return None
     start = time.time()
     pairs, count, near = items_of(task)
-    pairs_path = values_dir / f'{task}.pairs.json.zst'
+    pairs_path = values_dir / f'{task}{suffix}.pairs.json.zst'
     write_json_atomic(pairs_path, pairs)
-    values_path = values_dir / f'{task}.values.tsv.zst'
+    values_path = values_dir / f'{task}{suffix}.values.tsv.zst'
     if stats_only:
         if not data_exists(values_path):
             return None
     else:
-        grids_values(pairs_path, values_path, encoder, True, size, log=values_dir / f'{task}.log')
+        grids_values(pairs_path, values_path, encoder, True, size, log=values_dir / f'{task}.log', native=native)
     names, sizes, matrix = read_values(values_path, size)
     summary = None
     for d in range(1, size + 1):
@@ -85,7 +86,7 @@ def run_task(task, encoder, size, stats_only=False):
         roots = [item['auc_root'] for item in per_pair if item['auc_root'] is not None]
         summary = {'task': task, 'd': d, 'pairs': len(pairs), 'roots': int(keep.sum()), 'classes': classes(matrix[keep]),
                    'auc': float(np.mean(aucs)) if aucs else None, 'auc_root': float(np.mean(roots)) if roots else None, 'per_pair': per_pair, 'seconds': time.time() - start}
-        write_json_atomic(OUT / f'{task}.d{d}.json', summary)
+        write_json_atomic(OUT / f'{task}{suffix}.d{d}.json', summary)
     return summary
 
 
@@ -96,12 +97,13 @@ def main():
     parser.add_argument('--first', type=int, default=60)
     parser.add_argument('--shard', default='0/1')
     parser.add_argument('--stats-only', action='store_true', help='recompute the statistics from the value files')
+    parser.add_argument('--native', action='store_true', help='read the generated shapes over the base tables, under the suffix .native')
     a = parser.parse_args()
     at, of = map(int, a.shard.split('/'))
     tasks = [task for index, task in enumerate(eval_tasks(a.first)) if index % of == at]
     started = time.time()
     for count, task in enumerate(tasks):
-        summary = run_task(task, a.encoder, a.size, a.stats_only)
+        summary = run_task(task, a.encoder, a.size, a.stats_only, a.native)
         rate = (count + 1) / (time.time() - started)
         if summary:
             flush_print(f"{count + 1}/{len(tasks)} {task} roots {summary['roots']} classes {summary['classes']} pairs {summary['pairs']} auc {summary['auc']} {summary['seconds']:.0f}s; ETA {(len(tasks) - count - 1) / rate:.0f}s")

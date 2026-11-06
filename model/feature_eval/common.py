@@ -101,9 +101,10 @@ def mutator():
     return space['mutate']
 
 
-def grids_values(grids_path, out_path, encoder, rule, size, log=None, work_cap=1 << 20, cpus=1):
-    """Runs the encoder on a file of grids; a restart skips the roots the file holds."""
-    command = [str(ROOT / 'scripts/run_heavy.py'), '--cpus', str(cpus), '--need', 'soon', str(encoder), 'grid-values', str(grids_path),
+def grids_values(grids_path, out_path, encoder, rule, size, log=None, work_cap=1 << 20, cpus=1, native=False):
+    """Runs the encoder on a file of grids; a restart skips the roots the file holds. With `native`, the
+    roots are the generated shapes over the base tables."""
+    command = [str(ROOT / 'scripts/run_heavy.py'), '--cpus', str(cpus), '--need', 'soon', str(encoder), 'grid-vectors' if native else 'grid-values', str(grids_path),
                '--rule' if rule else '--scene', '--size', str(size), '--work-cap', str(work_cap), '--out', str(out_path)]
     with open(log or os.devnull, 'a') as stderr:
         subprocess.run(command, check=True, stderr=stderr, stdout=stderr)
@@ -133,7 +134,8 @@ def claims_of(matrix, others):
     if len(others) == 0 or matrix.shape[0] == 0:
         return np.zeros(matrix.shape[0], dtype=bool), np.zeros(matrix.shape[0], dtype=np.uint64)
     first = matrix[:, others[0]]
-    same = np.all(matrix[:, others] == first[:, None], axis=1)
+    # A generated shape's default has the word 1, and a claim of it is no active claim.
+    same = np.all(matrix[:, others] == first[:, None], axis=1) & (first != 1)
     return same, first
 
 

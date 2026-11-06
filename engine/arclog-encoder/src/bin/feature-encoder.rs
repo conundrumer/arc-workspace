@@ -20,6 +20,7 @@
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
 //!   feature-encoder shape-count TABLES_FILE... [--size D]
 //!   feature-encoder grid-values GRIDS_JSON (--scene | --rule) [--size D] [--max-inputs N] [--work-cap N] --out FILE
+//!   feature-encoder grid-vectors GRIDS_JSON (--scene | --rule) [--size D] --out FILE
 //!   feature-encoder count SOLVER TABLE... [--size D] [--max-inputs N] [--program-relations]
 //!   feature-encoder stored-eval REQUESTS_JSONL --out FILE
 //!   feature-encoder law TASKS_FILE [--size D] [--rate R] [--max-inputs N] [--tables K] [--thin R] [--seconds S] [--tasks-count N] [--shard I/N] [--control] [--program-compare] [--out FILE]
@@ -243,6 +244,67 @@ fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
     });
     let _ = out.flush();
     eprintln!("done in {:.1}s: {counts:?}", start.elapsed().as_secs_f64());
+    Ok(())
+}
+
+/// Each generated shape over the base tables at each grid of a file, as `grid-values` writes its roots, with
+/// the table each reads before its name: a word for a value, `1` for a default, and `-` for no value. A shape with one
+/// word at every grid is left out.
+fn run_grid_vectors(arguments: &Arguments, grids: &str) -> Result<(), String> {
+    use arclog_encoder::closed::{task_of_inputs, task_of_pairs};
+    use arclog_encoder::generate::{Generators, Walker, READS_OUTPUT, SLOT_NO_VALUE, SLOT_VALUE};
+    use arclog_encoder::stored::Stored;
+    use arclog_encoder::table_vector::{pair_vector, table_vector, Grids, TableVector};
+    let text = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string())?;
+    let path = arguments.out.clone().ok_or("`grid-vectors` writes to --out")?;
+    let (task, json) = if arguments.rule {
+        let pairs: Vec<(Vec<Vec<u8>>, Vec<Vec<u8>>)> = parse_grids(&text, true)?.into_iter().map(|pair| (pair.0, pair.1.expect("a pair"))).collect();
+        let train: Vec<serde_json::Value> = pairs.iter().map(|(input, output)| serde_json::json!({"input": input, "output": output})).collect();
+        (task_of_pairs(&pairs)?, serde_json::json!({"train": train, "test": []}))
+    } else {
+        let inputs: Vec<Vec<Vec<u8>>> = parse_grids(&text, false)?.into_iter().map(|pair| pair.0).collect();
+        let test: Vec<serde_json::Value> = inputs.iter().map(|input| serde_json::json!({"input": input})).collect();
+        (task_of_inputs(&inputs)?, serde_json::json!({"train": [], "test": test}))
+    };
+    let grids = Grids::of(&task, &json, None);
+    let (d, examples) = (arguments.size.max(1), grids.inputs.len());
+    let families = Generators::default();
+    let input = Stored::of_grids(&grids.inputs);
+    let family = families.get(&input, d);
+    let mut walker = Walker::new(&family);
+    let mut vectors: Vec<(&str, TableVector)> = Vec::new();
+    if arguments.rule {
+        let output = Stored::of_grids(&grids.outputs);
+        vectors.push(("input", table_vector(&mut walker, &input, &grids, examples, true)));
+        vectors.push(("output", table_vector(&mut walker, &output, &grids, examples, false)));
+        vectors.push(("pair", pair_vector(&grids, &families, d, true)));
+    } else {
+        vectors.push(("input", table_vector(&mut walker, &input, &grids, examples, false)));
+        vectors.push(("pair", pair_vector(&grids, &families, d, false)));
+    }
+    let names = names_of(&families.names);
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
+    let mut written = 0u64;
+    for (table, vector) in &vectors {
+        for shape in 0..vector.shapes.len() {
+            if !arguments.rule && vector.meta[shape].0 & READS_OUTPUT != 0 {
+                continue;
+            }
+            let words: Vec<String> = vector.at(shape).iter().map(|slot| match slot.state {
+                SLOT_NO_VALUE => "-".to_string(),
+                SLOT_VALUE => format!("{:016x}", slot.digest | 2),
+                _ => format!("{:016x}", 1),
+            }).collect();
+            if words.windows(2).all(|two| two[0] == two[1]) {
+                continue;
+            }
+            let name = names.get(&vector.shapes[shape]).map_or("", String::as_str);
+            writeln!(out, "{table} {name}\t{}\t{}", vector.meta[shape].1, words.join(" ")).map_err(|error| error.to_string())?;
+            written += 1;
+        }
+    }
+    out.flush().map_err(|error| error.to_string())?;
+    eprintln!("{written} roots over {examples} grids");
     Ok(())
 }
 
@@ -1627,6 +1689,7 @@ fn main() {
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
+        ("grid-vectors", [grids]) => run_grid_vectors(&arguments, grids),
         ("law", [tasks_file]) => run_law(&arguments, tasks_file),
         ("stored-eval", [requests]) => run_stored_eval(&arguments, requests),
         ("catalog-values", [requests]) => run_catalog_values(&arguments, requests),
