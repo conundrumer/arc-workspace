@@ -139,7 +139,10 @@ impl<'e, 'a> Driver<'e, 'a> {
         let value = match evaluation.parameters.source() {
             ParameterSource::Stored { .. } => match self.stored_value(relation, name) {
                 Some(value) => value,
-                None => return self.one_value(relation),
+                None => {
+                    self.refuse_assigned_port(relation)?;
+                    return self.one_value(relation);
+                }
             },
             ParameterSource::Determined(assigned) => {
                 return match assigned.get(name) {
@@ -169,6 +172,39 @@ impl<'e, 'a> Driver<'e, 'a> {
             set.insert(row);
         }
         Ok(RelationValue::Rows(Arc::new(join::one_part(set))))
+    }
+
+    /// The fault of a `DET` that reads an output of an instance that a
+    /// witness's `assign` gives rows, where the `DET` has no `assign` of its own:
+    /// it is the stored reading of that port, which takes an `assign` of its
+    /// own name alone, so nothing in the case reads the assigned rows.
+    fn refuse_assigned_port(&self, relation: &GraphRelation) -> Result<(), RunFault> {
+        fn reads<'n>(node: NodeRef<'n>, found: &mut Vec<&'n crate::program::OutputName>) {
+            if let Some(RelationRef::Output(output)) = node.atom().map(|atom| &atom.relation) {
+                found.push(output);
+            }
+            for child in node.children() {
+                reads(child, found);
+            }
+        }
+        if !matches!(self.evaluation.parameters.source(), ParameterSource::Stored { assigns, .. } if !assigns.is_empty()) {
+            return Ok(());
+        }
+        let program = self.program();
+        let root = NodeRef::Program(program.program.value());
+        for path in program.forms_of(relation.node) {
+            let Some(node) = node_at(root, path) else { continue };
+            let mut found = Vec::new();
+            reads(node, &mut found);
+            for output in found.into_iter().filter(|output| matches!(output.of, crate::program::OutputOwner::Instance(_))) {
+                if self.evaluation.parameters.assigned(&ProgramRelation::Output(output.clone())).is_none() {
+                    continue;
+                }
+                let text = crate::write::relation_ref(&RelationRef::Output(output.clone()), crate::write::declared);
+                return Err(RunFault { message: format!("the `assign` of `{text}` takes no effect: the stored reading of the port takes an `assign` of its own `DET` alone").into(), form: path.clone() });
+            }
+        }
+        Ok(())
     }
 
     /// The written rows that the stored records give the `DET` relation
