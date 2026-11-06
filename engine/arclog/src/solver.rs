@@ -336,7 +336,20 @@ impl Solver {
             let mut used = self.declared_names();
             let read_columns = self.columns_read_in_any_block();
             for (index, line, port) in stored {
-                let original = walk.placed[index].clone();
+                let mut original = walk.placed[index].clone();
+                // A deeper block's `RULE` of the relation is the derivation
+                // that the stored reading takes, as the line's own body
+                // would be, and the reading stands in that block.
+                let rederiving = if line.body.value().conjuncts.is_empty() { None } else { rederiving_rule(&walk.placed, &placed, index) };
+                let rederived_line;
+                let line = match &rederiving {
+                    Some(rederiving) => {
+                        original = walk.placed[rederiving.at[0]].clone();
+                        rederived_line = Clause { body: rederiving.clause.body.clone(), columns: rederiving.clause.columns.clone(), ..line.clone() };
+                        &rederived_line
+                    }
+                    None => line,
+                };
                 // The instance's `INIT` form as it stood before `without_input`.
                 let instance = port.and_then(|port| match &walk.placed[port.instance].form {
                     Form::Instance(instance) => Some(instance.value()),
@@ -361,16 +374,26 @@ impl Solver {
                     read_as_mapped(&mut placed, &|atom| rename.of(atom));
                 }
                 if let Some(helper) = reading.helper {
-                    // A deeper block's form of the relation takes the place
-                    // of the `DET`, and a lifted read reads that form.
+                    // A deeper block's other form of the relation takes the
+                    // place of the `DET`, and a lifted read reads that form.
                     let key = derives(&original.form);
-                    if !walk.placed.iter().any(|p| p.depth() > original.depth() && derives(&p.form) == key) {
+                    if rederiving.is_some() || !walk.placed.iter().any(|p| p.depth() > original.depth() && derives(&p.form) == key) {
                         read_as_mapped(&mut placed, &|atom| if lifted(atom) { helper.of(atom) } else { None });
                     }
                     helpers.push(helper);
                 }
                 port_determinations.extend(reading.port_determination);
-                placed[index] = reading.forms.into_iter().map(|form| Placed { form, made: true, ..original.clone() }).collect();
+                let forms = reading.forms.into_iter().map(|form| Placed { form, made: true, ..original.clone() }).collect();
+                match &rederiving {
+                    Some(rederiving) => {
+                        placed[index] = Vec::new();
+                        for &at in &rederiving.at {
+                            placed[at] = Vec::new();
+                        }
+                        placed[rederiving.at[0]] = forms;
+                    }
+                    None => placed[index] = forms,
+                }
             }
         }
         let placed: Vec<Placed> = placed.into_iter().flatten().collect();
@@ -1072,6 +1095,30 @@ fn single_label(site: &Site) -> Option<(&SiteArg, LabelId)> {
         [arg @ (SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Join(id)) | SiteArg::NamedLabel { label: LabelUse::Fresh(id) | LabelUse::Join(id), .. })] => Some((arg, *id)),
         _ => None,
     }
+}
+
+/// The form that the deepest block of a case, deeper than the line at `index`
+/// of `walked`, derives the line's relation with, where it is a `RULE` with a
+/// body, and each form of that block that derives the relation is equal to it;
+/// `placed` holds the forms of the case, by the index of `walked`.
+struct RederivingRule {
+    /// The indices of the forms, the first of them the one that the reading takes.
+    at: Vec<usize>,
+    clause: Clause,
+}
+
+fn rederiving_rule(walked: &[Placed], placed: &[Vec<Placed>], index: usize) -> Option<RederivingRule> {
+    let key = derives(&walked[index].form);
+    let deeper: Vec<usize> = (0..walked.len()).filter(|at| walked[*at].depth() > walked[index].depth() && derives(&walked[*at].form) == key).collect();
+    let deepest = deeper.iter().map(|at| walked[*at].depth()).max()?;
+    let at: Vec<usize> = deeper.into_iter().filter(|at| walked[*at].depth() == deepest).collect();
+    let forms: Vec<&Form> = at.iter().map(|at| placed[*at].first().map(|p| &p.form)).collect::<Option<_>>()?;
+    let Form::Clause(clause) = forms[0] else { return None };
+    let clause = clause.value();
+    if clause.keyword != ClauseKeyword::Rule || clause.body.value().conjuncts.is_empty() || !forms.iter().all(|form| equal_forms(forms[0], form)) {
+        return None;
+    }
+    Some(RederivingRule { clause: clause.clone(), at })
 }
 
 /// The stored reading of the `RULE_OR_DET` line `line`, which stands on

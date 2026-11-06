@@ -173,7 +173,8 @@
     - On a `DET_OR_RULE` line the body is the stored reading's determination.
     - On a `RULE_OR_DET` line the body is the derived reading, the concept case's.
 - The stored reading is a `DET` of the relation whose rows are the rows that the body's derivation gives at every train example, over the columns that a read of the relation names in any case, the Example column left out, as the column rule of a `DET` gives in [Sites](#sites).
-- A `DET` of the concept program that reads the relation reads the body's derivation, and so does each other read of the relation with a site on `E`, unless a block of the case derives the relation anew.
+- A `DET` of the concept program that reads the relation reads the body's derivation, and so does each other read of the relation with a site on `E`; where a block of the case derives the relation anew, they read that derivation in place of the body's.
+- In the stored reading of a `RULE_OR_DET` line with a body, where a block of the case derives the relation anew with a `RULE`, the `DET` holds the rows that the `RULE` gives at every train example, and stands in that block.
 - A `DET_OR_RULE` or `RULE_OR_DET` line on a port of an instance, an input or an output, names the port as the program reads it, and holds no body.
     - In the derived reading the instance derives the port, and the line is no clause.
     - In the stored reading of a `RULE_OR_DET` line, the `DET` holds the rows that the port's derivation gives at every train example.
