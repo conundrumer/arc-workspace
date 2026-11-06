@@ -17,6 +17,7 @@ output; TIO, all three. A set is written as terms joined by `+`:
   TIO_null      those, with each shape that reads the output taken on deranged outputs
   TIOg, TIOr    TIO's shapes with more of their numbers: g adds the mean over examples of every active
                 shape, and r adds the least and the greatest too; `_null` as for TIO_null
+  TIg, TIr      the same for the shapes that read no output
   contingent, contingent_null
                 the shapes of a candidate that not every table it reads has as stable
   ctx           the base tables' own part roots
@@ -49,7 +50,7 @@ from query_structure import LABEL_STRUCTURE, base_features, parse_forms  # noqa:
 ROOT_REPO = Path('/Users/davidlu/code/arc-workspace')
 READS = {4: 'T', 5: 'TI', 6: 'TO', 7: 'TIO'}
 # The numbers of a shape that each graded term reads.
-CHANNELS = {'TIOg': ('stable', 'mean'), 'TIOr': ('stable', 'mean', 'least', 'most')}
+CHANNELS = {'TIOg': ('stable', 'mean'), 'TIOr': ('stable', 'mean', 'least', 'most'), 'TIg': ('stable', 'mean'), 'TIr': ('stable', 'mean', 'least', 'most')}
 
 
 def split_of():
@@ -508,7 +509,7 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 parts.append(split['matrices'][term][:, keep])
                 labels.extend(term + ':' + names[int(i)] for i in keep)
             elif term in CHANNELS:
-                keep = np.flatnonzero((flags > 0) & word_mask(raw, names))
+                keep = np.flatnonzero((flags > 0) & (flags < 6 if term.startswith('TI') and not term.startswith('TIO') else True) & word_mask(raw, names))
                 for channel in CHANNELS[term]:
                     parts.append(split['matrices'][channel][:, keep])
                     labels.extend(f'{names[int(i)]}:{channel}' for i in keep)
