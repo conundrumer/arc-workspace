@@ -383,6 +383,40 @@ fn run_query_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> 
     Ok(())
 }
 
+/// Each member's State features, to a file, since the values at a test input read that input.
+fn run_state_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
+    use arclog_encoder::generate::Generators;
+    use arclog_encoder::table_vector::Grids;
+    let path = arguments.out.clone().ok_or("`state-vectors` writes to --out")?;
+    let host = host(arguments, solver)?;
+    let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
+    let families = Generators::default();
+    let members = arclog_encoder::state_features::state_vectors(&host, &grids, &families, arguments.size.max(1))?;
+    let names = names_of(&families.names);
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
+    let pool_lines = |out: &mut dyn Write, key: serde_json::Value, held: &[(u64, f32, f32, f32)]| -> Result<(), String> {
+        writeln!(out, "{}", serde_json::json!({"pool": key, "entries": held.len()})).map_err(|error| error.to_string())?;
+        for (shape, least, mean, most) in held {
+            writeln!(out, "{}", serde_json::json!({"shape": names.get(shape), "least": least, "mean": mean, "most": most})).map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    };
+    for member in &members {
+        let numbers: serde_json::Map<String, serde_json::Value> = member.numbers.iter().map(|(name, value)| ((*name).to_string(), serde_json::json!(value))).collect();
+        writeln!(out, "{}", serde_json::json!({"member": member.name, "assignment": member.assignment, "numbers": numbers})).map_err(|error| error.to_string())?;
+        for (other, relation, vector) in &member.edges {
+            write_vector(&mut out, &serde_json::json!({"member": member.name, "other": other, "relation": relation}), vector, &names)?;
+        }
+        for (relation, held) in &member.pools {
+            pool_lines(&mut out, serde_json::json!({"member": member.name, "relation": relation}), held)?;
+        }
+        pool_lines(&mut out, serde_json::json!({"member": member.name, "used_by": true}), &member.used_by)?;
+    }
+    out.flush().map_err(|error| error.to_string())?;
+    eprintln!("{} members", members.len());
+    Ok(())
+}
+
 /// The base tables' vectors, to a file.
 fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
     use arclog_encoder::generate::Generators;
@@ -1473,6 +1507,7 @@ fn main() {
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
         ("base-vectors", [solver]) => run_base_vectors(&arguments, solver),
         ("query-vectors", [solver]) => run_query_vectors(&arguments, solver),
+        ("state-vectors", [solver]) => run_state_vectors(&arguments, solver),
         ("candidate-lists", [out, sources @ ..]) if !sources.is_empty() => run_candidate_lists(&arguments, out, sources),
         ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("generate-check", [file]) => run_generate_check(&arguments, arguments.tables_per_task.max(1), file),

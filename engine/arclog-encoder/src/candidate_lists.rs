@@ -14,7 +14,7 @@ use crate::gen_constants::number_of;
 use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
 use crate::stored::Stored;
-use crate::state_features::{graph_numbers, nodes_of, relations, Relation};
+use crate::state_features::{graph_numbers, nodes_of, pool, relations, Relation};
 use crate::table_vector::{base_vectors, pair_vector, table_vector, task_wide_vector, two_tables_vector, Grids, TableVector};
 
 /// A list as the file writes it: shapes, and the mean of each one's greatest value over its scope.
@@ -147,29 +147,7 @@ pub enum ListsOf {
 /// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples,
 /// where a table with no value of the shape counts as 0.
 fn pooled(owner: String, vectors: &[&TableVector]) -> Written {
-    let mut held: FastMap<u64, (f32, f32, f32, usize)> = FastMap::default();
-    for vector in vectors {
-        for shape in 0..vector.shapes.len() {
-            let (_, mean, _, count) = vector.over_examples(shape, false);
-            if count == 0 {
-                continue;
-            }
-            let mean = mean as f32;
-            let entry = held.entry(vector.shapes[shape]).or_insert((f32::INFINITY, 0.0, f32::NEG_INFINITY, 0));
-            entry.0 = entry.0.min(mean);
-            entry.1 += mean;
-            entry.2 = entry.2.max(mean);
-            entry.3 += 1;
-        }
-    }
-    let total = vectors.len();
-    let mut graded: Vec<(u64, f32, f32, f32)> = held.into_iter().map(|(shape, (least, sum, most, seen))| {
-        let least = if seen < total { least.min(0.0) } else { least };
-        let most = if seen < total { most.max(0.0) } else { most };
-        (shape, least, sum / total as f32, most)
-    }).collect();
-    graded.sort_unstable_by_key(|entry| entry.0);
-    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded, pairs: 0, at_pairs: Vec::new() }
+    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool(vectors), pairs: 0, at_pairs: Vec::new() }
 }
 
 /// A table's two-table values with another table of the state, each the mean over the examples.

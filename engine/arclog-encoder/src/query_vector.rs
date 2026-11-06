@@ -180,7 +180,7 @@ fn total_rows(table: &Stored) -> f64 {
 }
 
 /// Whether two assignments agree on each `DET` that both name.
-fn agrees(a: &Assignment, b: &Assignment) -> bool {
+pub(crate) fn agrees(a: &Assignment, b: &Assignment) -> bool {
     a.iter().all(|(name, rows)| b.iter().find(|(own, _)| own == name).is_none_or(|(_, own)| own == rows))
 }
 

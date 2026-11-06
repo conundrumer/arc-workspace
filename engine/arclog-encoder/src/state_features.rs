@@ -1,8 +1,14 @@
-//! What a state says of a candidate query over it: the numbers of the state's graph, and each table's
-//! relation to the candidate. The contract's `State` holds these as functions of the state, and none of them
-//! depends on the order in which a program writes its queries.
+//! What a state says of its tables and of a candidate query over it: the numbers of the state's graph, each
+//! table's relation to another, and the values of two tables. The contract's `State` holds these as functions of the
+//! state, and none of them depends on the order in which a program writes its queries.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
+
+use crate::generate::{Generated, Generators, Walker};
+use crate::query_vector::agrees;
+use crate::run::{stored_tables, Host};
+use crate::table_vector::{table_vector, two_tables_vector, Grids, TableVector};
 
 /// A table or relation of a program, with its form and the names its form reads.
 #[derive(Debug, Clone)]
@@ -108,4 +114,173 @@ pub fn graph_numbers(nodes: &[Node], form: u64, parents: &[String]) -> Vec<(&'st
         ("read-gap-least", gaps.iter().copied().min().unwrap_or(0) as f32),
         ("read-gap-greatest", gaps.iter().copied().max().unwrap_or(0) as f32),
     ]
+}
+
+/// A shape over several vectors: the least, the mean and the greatest of its mean over the examples, where a
+/// vector with no value of the shape counts as 0.
+pub fn pool(vectors: &[&TableVector]) -> Vec<(u64, f32, f32, f32)> {
+    let mut held: HashMap<u64, (f32, f32, f32, usize)> = HashMap::new();
+    for vector in vectors {
+        for shape in 0..vector.shapes.len() {
+            let (_, mean, _, count) = vector.over_examples(shape, false);
+            if count == 0 {
+                continue;
+            }
+            let mean = mean as f32;
+            let entry = held.entry(vector.shapes[shape]).or_insert((f32::INFINITY, 0.0, f32::NEG_INFINITY, 0));
+            entry.0 = entry.0.min(mean);
+            entry.1 += mean;
+            entry.2 = entry.2.max(mean);
+            entry.3 += 1;
+        }
+    }
+    let total = vectors.len();
+    let mut out: Vec<(u64, f32, f32, f32)> = held.into_iter().map(|(shape, (least, sum, most, seen))| {
+        let least = if seen < total { least.min(0.0) } else { least };
+        let most = if seen < total { most.max(0.0) } else { most };
+        (shape, least, sum / total as f32, most)
+    }).collect();
+    out.sort_unstable_by_key(|entry| entry.0);
+    out
+}
+
+/// What a whole state says of each of its nodes: how deep it stands, and how many nodes it reads and read it.
+pub fn member_numbers(nodes: &[Node]) -> BTreeMap<String, Vec<(&'static str, f32)>> {
+    fn depth_of<'n>(name: &'n str, by_name: &HashMap<&'n str, &'n Node>, memo: &mut HashMap<&'n str, i32>) -> i32 {
+        if let Some(found) = memo.get(name) {
+            return *found;
+        }
+        let own = by_name.get(name).map_or(0, |node| node.reads.iter().filter(|read| by_name.contains_key(read.as_str())).map(|read| 1 + depth_of(read.as_str(), by_name, memo)).max().unwrap_or(0));
+        memo.insert(name, own);
+        own
+    }
+    let by_name: HashMap<&str, &Node> = nodes.iter().map(|node| (node.name.as_str(), node)).collect();
+    let mut memo = HashMap::new();
+    let depths: Vec<i32> = nodes.iter().map(|node| depth_of(node.name.as_str(), &by_name, &mut memo)).collect();
+    let deepest = depths.iter().copied().max().unwrap_or(0);
+    let mut out = BTreeMap::new();
+    for (node, depth) in nodes.iter().zip(&depths) {
+        let (ancestors, descendants) = closures(nodes, &node.name);
+        let uses = nodes.iter().filter(|other| other.reads.contains(&node.name)).count();
+        let reads = node.reads.iter().filter(|read| by_name.contains_key(read.as_str())).count();
+        out.insert(node.name.clone(), vec![
+            ("members", nodes.len() as f32),
+            ("depth", *depth as f32),
+            ("depth-below-deepest", (deepest - depth) as f32),
+            ("deepest", f32::from(*depth == deepest)),
+            ("leaf", f32::from(uses == 0)),
+            ("root", f32::from(reads == 0)),
+            ("uses", uses as f32),
+            ("reads", reads as f32),
+            ("ancestors", ancestors.len() as f32),
+            ("descendants", descendants.len() as f32),
+        ]);
+    }
+    out
+}
+
+/// The nodes that a node reads through any chain, and those that read it through any chain.
+fn closures(nodes: &[Node], name: &str) -> (BTreeSet<String>, BTreeSet<String>) {
+    let by_name: HashMap<&str, &Node> = nodes.iter().map(|node| (node.name.as_str(), node)).collect();
+    let mut ancestors = BTreeSet::new();
+    let mut stack = vec![name.to_string()];
+    while let Some(at) = stack.pop() {
+        if let Some(node) = by_name.get(at.as_str()) {
+            for read in node.reads.iter().filter(|read| by_name.contains_key(read.as_str())) {
+                if ancestors.insert(read.clone()) {
+                    stack.push(read.clone());
+                }
+            }
+        }
+    }
+    let mut descendants = BTreeSet::new();
+    let mut stack = vec![name.to_string()];
+    while let Some(at) = stack.pop() {
+        for node in nodes.iter().filter(|node| node.reads.contains(&at)) {
+            if descendants.insert(node.name.clone()) {
+                stack.push(node.name.clone());
+            }
+        }
+    }
+    (ancestors, descendants)
+}
+
+/// One member of a state at one assignment: its numbers, its values with each other table, and those values
+/// pooled by the other table's relation to it. `used_by` pools the vectors of the tables that read it.
+pub struct MemberVector {
+    pub name: String,
+    pub assignment: String,
+    pub numbers: Vec<(&'static str, f32)>,
+    pub edges: Vec<(String, &'static str, TableVector)>,
+    pub pools: Vec<(&'static str, Vec<(u64, f32, f32, f32)>)>,
+    pub used_by: Vec<(u64, f32, f32, f32)>,
+}
+
+/// Each member of a state at each assignment of its table. `d` is the size of the vectors that `used_by` pools.
+pub fn state_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize) -> Result<Vec<MemberVector>, String> {
+    let facts = host.program_facts();
+    let mut tables = BTreeMap::new();
+    for (identity, spelled) in &facts.table_names {
+        if let Ok(table) = stored_tables(host, spelled) {
+            tables.insert(identity.clone(), table);
+        }
+    }
+    let mut nodes: Vec<Node> = Vec::new();
+    for (form, query) in facts.queries.iter().enumerate() {
+        for computed in &query.computes {
+            nodes.push(Node { name: computed.clone(), form: form as u64, reads: query.reads.iter().filter(|read| facts.table_names.contains_key(*read)).cloned().collect() });
+        }
+    }
+    let numbers = member_numbers(&nodes);
+    let examples = grids.inputs.len();
+    let mut out = Vec::new();
+    for (identity, own) in &tables {
+        let (ancestors, descendants) = closures(&nodes, identity);
+        let parents: BTreeSet<&String> = nodes.iter().filter(|node| node.name == *identity).flat_map(|node| node.reads.iter()).collect();
+        let users: BTreeSet<&String> = nodes.iter().filter(|node| node.reads.contains(identity)).map(|node| &node.name).collect();
+        let word_of = |other: &String| -> &'static str {
+            if parents.contains(other) {
+                "parent"
+            } else if ancestors.contains(other) {
+                "ancestor"
+            } else if users.contains(other) {
+                "child"
+            } else if descendants.contains(other) {
+                "descendant"
+            } else {
+                "other"
+            }
+        };
+        for (assignment, table) in &own.at {
+            let mut edges = Vec::new();
+            let mut user_vectors = Vec::new();
+            let mut same = 0.0;
+            for (other, theirs) in &tables {
+                if other == identity {
+                    continue;
+                }
+                let Some((_, stored)) = theirs.at.iter().find(|(held, _)| agrees(held, assignment)) else { continue };
+                if stored.content() == table.content() {
+                    same += 1.0;
+                }
+                let family: Arc<Generated> = families.get_two_tables(table, stored);
+                let mut walker = Walker::new(&family);
+                edges.push((facts.table_names[other].clone(), word_of(other), two_tables_vector(&mut walker, table, stored, grids, examples, false)));
+                if users.contains(other) {
+                    let family: Arc<Generated> = families.get(stored, d.max(1));
+                    let mut walker = Walker::new(&family);
+                    user_vectors.push(table_vector(&mut walker, stored, grids, examples, false));
+                }
+            }
+            let pools = ["parent", "ancestor", "child", "descendant", "other"].into_iter().filter_map(|word| {
+                let held: Vec<&TableVector> = edges.iter().filter(|edge| edge.1 == word).map(|edge| &edge.2).collect();
+                (!held.is_empty()).then(|| (word, pool(&held)))
+            }).collect();
+            let mut own_numbers = numbers.get(identity).cloned().unwrap_or_default();
+            own_numbers.push(("same-table", same));
+            let users_held: Vec<&TableVector> = user_vectors.iter().collect();
+            out.push(MemberVector { name: facts.table_names[identity].clone(), assignment: format!("{assignment:?}"), numbers: own_numbers, edges, pools, used_by: pool(&users_held) });
+        }
+    }
+    Ok(out)
 }
