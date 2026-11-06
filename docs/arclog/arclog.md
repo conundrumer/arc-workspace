@@ -166,7 +166,7 @@
 - The cases are the product of the `ALTS` forms, restricted by the nesting of the blocks.
 
 ## Stored readings
-- A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form on its relation, whose readings are `&background=$Stored` and `&background=$Derived`, the concept case's reading first, and the other reading is its alt. A quoted gloss, where the solver states one, stands after the relation's name and before its proposers, and the claim text of the derived reading is the proposer's. The cases are the product of the `ALTS` forms, with a line counting as one.
+- A `DET_OR_RULE` or `RULE_OR_DET` line is an `ALTS` form on its relation, whose readings are `&background=$Stored` and `&background=$Derived`, the concept case's reading first, and the other reading is its alt. A quoted gloss, where the solver states one, stands after the relation's name and before its proposers, and the claim text of the derived reading is the proposer's. The cases are the product of the `ALTS` forms, with a line counting as one in each base whose `OUT` form reads its relation, as [Cases](../engine/cases.md#cases) gives.
 - A line with several proposers, as `(DET_OR_RULE &tile_size ConstInDim SepTileDim)`, has a derived reading per proposer, each an alt of its own: `&tile_size=$Stored`, then `&tile_size=ConstInDim` and `&tile_size=SepTileDim`.
 - A line with no body has its first proposer's columns, in every reading, and each other proposer's columns map onto them by position. A `DET` that names one proposer, with no stored reading, has that proposer's columns: `(DET &bg ChangedColor)` is read as `(&bg (:C *C))`.
 - Where one reading has clauses of its own, the line holds their body after its proposers, and the line is the relation's one clause.

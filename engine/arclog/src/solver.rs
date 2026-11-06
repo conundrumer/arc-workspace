@@ -206,9 +206,10 @@ impl Solver {
     /// The names of the solver's cases
     /// (`docs/arclog/arclog.md#the-alts-form`), less the `exclude` forms of
     /// the arcdata file where `exclusion` is [`Exclusion::WithoutExcluded`].
-    /// A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases that read
-    /// its relation, and a line on an input of an instance, `&canvas.extent`,
-    /// is read by that instance's `INIT` form.
+    /// A `DET_OR_RULE` or `RULE_OR_DET` line splits only the bases whose `OUT`
+    /// form reads its relation (`docs/engine/cases.md#cases`), and a line on
+    /// an input of an instance, `&canvas.extent`, is read by that instance's
+    /// `INIT` form.
     ///
     /// Where the arcdata file has a `representative` line, the names are as
     /// `docs/arclog/arcdata.md#header` gives.
@@ -249,7 +250,7 @@ impl Solver {
         let mut names = Vec::new();
         for base in alts_product(&self.program.value().forms) {
             let walk = self.walk(&base);
-            let lines: Vec<&Placed> = walk.placed.iter().filter(|p| line_of(&p.form).is_some_and(|line| walk.read_elsewhere(p, line))).collect();
+            let lines: Vec<&Placed> = walk.placed.iter().filter(|p| line_of(&p.form).is_some_and(|line| walk.output_reads(p, line))).collect();
             let mut picks: Vec<Vec<(usize, AltsName)>> = vec![walk.points.iter().map(|point| (point.step, point.alt.clone())).collect()];
             for line in lines {
                 let clause = line_of(&line.form).expect("a line");
@@ -708,20 +709,22 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Whether a form of the case other than `line` reads its relation: an
-    /// atom that names it, or, for an input of an instance, the instance's
-    /// `INIT` form, which holds that input. A form that a deeper block
-    /// derives again (`rederived`) is not a form of the case, and a form
-    /// that no read leads from to the `OUT` form (`reaching_output`) reads
-    /// nothing the case needs.
-    fn read_elsewhere(&self, line: &Placed, clause: &Clause) -> bool {
-        if port_of(clause, &self.placed).is_some_and(|port| port.input) {
-            return true;
+    /// Whether the case's `OUT` form reads `line`'s relation: a form it
+    /// reaches (`reached_by_output`) other than `line`, and no determination,
+    /// holds an atom that names the relation; or, for an input of an instance,
+    /// it reaches the instance's `INIT` form, which holds that input. A form
+    /// that a deeper block derives again (`rederived`) is not a form of the
+    /// case.
+    fn output_reads(&self, line: &Placed, clause: &Clause) -> bool {
+        let kept: Vec<&Placed> = rederived(&self.placed).into_iter().map(|taken| taken.placed).collect();
+        let reached = reached_by_output(&kept);
+        let mut reached_forms = kept.iter().zip(reached).filter(|(_, reached)| *reached).map(|(p, _)| *p);
+        if let Some(port) = port_of(clause, &self.placed).filter(|port| port.input) {
+            let instance = derives(&self.placed[port.instance].form);
+            return reached_forms.any(|p| derives(&p.form) == instance);
         }
         let relation = relation_of(&clause.derives);
-        let kept: Vec<&Placed> = rederived(&self.placed).into_iter().map(|taken| taken.placed).collect();
-        let reaching = reaching_output(&kept);
-        kept.iter().zip(reaching).filter(|(p, reaches)| *reaches && !std::ptr::eq(**p, line)).any(|(p, _)| {
+        reached_forms.filter(|p| !std::ptr::eq(*p, line) && !is_determination(&p.form)).any(|p| {
             let mut reads = false;
             each_read(NodeRef::from(&p.form), &mut |read| reads |= *read == relation);
             reads
@@ -729,36 +732,52 @@ impl<'a> Walk<'a> {
     }
 }
 
-/// For each of `forms`, whether the thing it derives reaches the `OUT` form:
-/// it is the `OUT` form, or an instance or a rigid determination, or a form
-/// that reaches the `OUT` form reads it.
-fn reaching_output(forms: &[&Placed]) -> Vec<bool> {
-    let derived: Vec<Option<RelationRef>> = forms
-        .iter()
-        .map(|p| match derives(&p.form) {
-            Some(Derives::Relation(relation)) => Some(relation_of(&relation)),
-            _ => None,
-        })
-        .collect();
-    let mut reaching: Vec<bool> = derived.iter().map(Option::is_none).collect();
-    loop {
-        let mut changed = false;
-        for reader in 0..forms.len() {
-            if !reaching[reader] {
-                continue;
-            }
-            each_read(NodeRef::from(&forms[reader].form), &mut |read| {
-                for (index, relation) in derived.iter().enumerate() {
-                    if !reaching[index] && relation.as_ref() == Some(read) {
-                        reaching[index] = true;
-                        changed = true;
-                    }
+/// For each of `forms`, whether the `OUT` form reaches what it derives: it is
+/// an `OUT` form, or a form so reached, and no determination, holds an atom
+/// that reads what it derives. So the walk follows clauses, instances and
+/// rigid determinations, and goes through no determination's body.
+fn reached_by_output(forms: &[&Placed]) -> Vec<bool> {
+    let mut reached: Vec<bool> = forms.iter().map(|p| matches!(p.form, Form::Out(_))).collect();
+    let mut stack: Vec<usize> = (0..forms.len()).filter(|index| reached[*index]).collect();
+    while let Some(reader) = stack.pop() {
+        if is_determination(&forms[reader].form) {
+            continue;
+        }
+        each_read(NodeRef::from(&forms[reader].form), &mut |read| {
+            for (index, form) in forms.iter().enumerate() {
+                if !reached[index] && derives_read(&form.form, read) {
+                    reached[index] = true;
+                    stack.push(index);
                 }
-            });
-        }
-        if !changed {
-            return reaching;
-        }
+            }
+        });
+    }
+    reached
+}
+
+/// Whether `form` derives what an atom that names `read` reads: the relation,
+/// or the instance or rigid determination whose output it names.
+fn derives_read(form: &Form, read: &RelationRef) -> bool {
+    match (derives(form), read) {
+        (Some(Derives::Relation(relation)), _) => relation_of(&relation) == *read,
+        (Some(Derives::Instance(name)), RelationRef::Output(output)) => output.of == OutputOwner::Instance(name),
+        (Some(Derives::RigidDet(name)), RelationRef::Output(output)) => output.of == OutputOwner::RigidDet(name),
+        _ => false,
+    }
+}
+
+/// Whether `form` is a determination at the first reading of a line: a `DET`,
+/// or a `DET_OR_RULE` line, whose body is the stored reading's.
+fn is_determination(form: &Form) -> bool {
+    matches!(form, Form::Clause(clause) if matches!(clause.value().keyword, ClauseKeyword::Det | ClauseKeyword::DetOrRule))
+}
+
+/// The name of each reading of `clause` where it is a `DET_OR_RULE` or
+/// `RULE_OR_DET` line, and none otherwise.
+pub(crate) fn line_reading_names(clause: &Clause) -> Vec<AltsName> {
+    match clause.keyword {
+        ClauseKeyword::DetOrRule | ClauseKeyword::RuleOrDet => readings(clause).into_iter().map(|(name, _)| name).collect(),
+        _ => Vec::new(),
     }
 }
 
