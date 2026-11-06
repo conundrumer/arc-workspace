@@ -35,8 +35,9 @@ output; TIO, all three. A set is written as terms joined by `+`:
                 every row of a task. They read the output, so a set that compares outputs leaves them out
   input, output, pairs
                 what a task holds, the same on every candidate of an example: the base tables' vectors, and
-                the pair family from ROOT/../state. Each reads the shapes that enough tasks have. They read
-                true outputs, so a set that compares outputs leaves out output and pairs
+                the pair family from ROOT/../state. These repeat on every row, so each reads only the shapes
+                that take the most values over the train tasks, up to --family-columns. They read true
+                outputs, so a set that compares outputs leaves out output and pairs
   graph         a candidate's place in its state's graph, from ROOT/../state
   relations     the state's other tables against the candidate's: each shape's mean over the tables that the
                 query reads, over their ancestors and over the rest, from ROOT/../state
@@ -755,7 +756,20 @@ def score(out, spec, name, vectors):
         print('|'.join(f'{value:+.3f}' for value in at) + f' {sum(1 for v in row[0] if v != 0)} of {len(columns)} columns hold an entry\t{vector}', flush=True)
 
 
-def fit(out, sets, filters, threads, fraction, seeds=5):
+def most_varied(held, count):
+    """The columns of a matrix with one row per task that take the most distinct values, in order of place."""
+    columns = held.tocsc()
+    tasks = columns.shape[0]
+    distinct = np.zeros(columns.shape[1], dtype=np.int64)
+    for j in range(columns.shape[1]):
+        start, end = columns.indptr[j], columns.indptr[j + 1]
+        distinct[j] = len(np.unique(columns.data[start:end])) + (end - start < tasks)
+    # A column equal on every task says nothing, and the place breaks ties, which the shape's hash fixes.
+    order = np.argsort(-distinct, kind='stable')[:count]
+    return np.sort(order[distinct[order] > 1])
+
+
+def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
     out = Path(out)
     meta = pickle.load((out / 'meta.pkl').open('rb'))
     needed = {'base'}
@@ -796,6 +810,7 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
         return dict(rows=rows, example_of=example_of, index=index, family=family, matrices={name: pickle.load((out / f'{split}.{name}.pkl').open('rb')) for name in needed})
 
     train, dev = loaded('train'), loaded('dev')
+    family_keep = {family: most_varied(train['family'][family]['mean'], family_columns) for family in FAMILIES} if families_needed else {}
     columns = meta['columns']
     flags = np.array([meta['flags'].get(int(key), 0) for key in columns])
     names = [meta['names'].get(int(key), '') for key in columns]
@@ -837,18 +852,19 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
                 labels.extend(f'qv:{name}' for name in QV_NAMES)
             elif term in FAMILIES:
                 held = split['family'][term]
-                labels_of = [f"{term}:{meta['family_names'].get(int(key), '')}" for key in meta['family_columns'][term]]
+                kept = family_keep[term]
+                labels_of = [f"{term}:{meta['family_names'].get(int(meta['family_columns'][term][at]), '')}" for at in kept]
                 index = split['index']
                 if per_pair(spec):
                     tasks = index['row_task'][split['example_of']]
-                    parts.append(held['each'][index['first_example'][tasks] + index['example_pair']])
+                    parts.append(held['each'][:, kept][index['first_example'][tasks] + index['example_pair']])
                     labels.extend(f'{label}:each' for label in labels_of)
-                    parts.append(held['stable'][tasks])
+                    parts.append(held['stable'][:, kept][tasks])
                     labels.extend(f'{label}:stable' for label in labels_of)
                 else:
-                    parts.append(held['stable'][index['row_task']])
+                    parts.append(held['stable'][:, kept][index['row_task']])
                     labels.extend(f'{label}:stable' for label in labels_of)
-                    parts.append(held['mean'][index['row_task']])
+                    parts.append(held['mean'][:, kept][index['row_task']])
                     labels.extend(f'{label}:mean' for label in labels_of)
             elif term == 'graph':
                 parts.append(split['matrices']['graph'])
@@ -991,6 +1007,7 @@ def main():
     parser.add_argument('paths', nargs='+')
     parser.add_argument('--min-tasks', type=int, default=3)
     parser.add_argument('--each-tasks', type=int)
+    parser.add_argument('--family-columns', type=int, default=1500)
     parser.add_argument('--sets', nargs='*', default=[])
     parser.add_argument('--filters', nargs='*', default=['rows', 'same'])
     parser.add_argument('--threads', type=int, default=4)
@@ -1005,7 +1022,7 @@ def main():
     elif a.command == 'score':
         score(a.paths[0], a.paths[1], a.filter, a.paths[2:])
     else:
-        fit(a.paths[0], a.sets, a.filters, a.threads, a.fraction, a.seeds)
+        fit(a.paths[0], a.sets, a.filters, a.threads, a.fraction, a.seeds, a.family_columns)
 
 
 if __name__ == '__main__':

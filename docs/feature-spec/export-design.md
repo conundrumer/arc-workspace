@@ -58,7 +58,7 @@ A model reads one row for each candidate query at a state and each example, as [
     - Its count of assignments. A row reads one table at one assignment.
     - Its task-wide roots.
     - Its place in the state's graph, and the state's other tables against it: each shape's mean over the tables its query reads, over their ancestors and over the rest.
-- **What the task holds,** which is the same on every candidate's row at an example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a gold query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
+- **What the task holds,** which is the same on every candidate's row at an example: the base tables' vectors, the roots of the parts with no hole, and the pair family. These repeat on every row, so a fit reads only the shapes that take the most values over its train tasks. A ranking of a gold query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
 
 ## Cost
 
