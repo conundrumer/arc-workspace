@@ -129,7 +129,7 @@ A term is **forced** where its value follows from smaller terms on every table o
 
 - **Types:** a `Nat` is never below `0`. So `>= 0` holds of every row, and `> 0` is `!= 0`.
 - **Sets and keys:** a relation's rows are a set, and `P` is a key of a grid. So a `project` that keeps a key leaves the count unchanged.
-- **Algebra:** a `semijoin` or `antijoin` applied twice with one relation and one column pair is the first one, and a `join` over a `semijoin` on the same columns is the `join`.
+- **Algebra:** a `semijoin` or `antijoin` applied twice with one relation and one column pair is the first one, and a `join` over a `semijoin` on the same columns is the `join`. A `select` commutes with a `semijoin` or `antijoin` over columns it does not change, so one order is generated.
 - **Complete domains:** every value of an orientation type is in that type's `*_elem` relation. So a `semijoin` with it keeps every row, and an `antijoin` with it keeps none.
 - **Contracts:** each component output and each part declares its keys, the ranges of its numbers and the relations it is a subset of, and the laws above read these declarations.
 
