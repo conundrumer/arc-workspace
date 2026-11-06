@@ -25,7 +25,7 @@ The objects of the search over programs and the maps between them. The [Type con
 - Each operator has a **precondition** on what it reads and a **postcondition** on what it gives. The postcondition is what follows from the precondition, whatever the rows are.
 - **Derived postcondition** of a table: what must hold of its rows, from how its query builds it.
 - **Measured postcondition** of a table: what holds of its rows on this task.
-- **Signal** is the gap between them: what holds of the rows and is not forced by how they were built. A table is a hypothesis about the task through this gap.
+- A fact is **entailed** where the derived postcondition gives it, and **contingent** where it holds of the rows and the derived postcondition does not give it. A table is a hypothesis about the task through its contingent facts. A contingent fact need not be relevant.
 - A term whose value the conditions already give has no derivation, so it is never constructed. The [Feature specification](feature-spec.md) gives the rules.
 
 ## The loop

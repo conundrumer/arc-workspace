@@ -125,7 +125,7 @@ A feature expression's **size** is its count of distinct operators, without leav
 
 Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` with no column pair between its sides, since its count follows from its parts' counts. A product stands only under a `select` or a `lib-join` that relates its two sides. It leaves out a term that reads no column of its table, since its value follows from the row count, which the table's own `cardinality` gives. `nonempty` stands only over a relation with no columns.
 
-A term is **forced** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so a forced term has no derivation and is never constructed. The typing rules are the preconditions and postconditions of [Structure of the search](structure.md#conditions), held in a relation's type.
+A term is **entailed** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so an entailed term has no derivation and is never constructed. The typing rules are the preconditions and postconditions of [Structure of the search](structure.md#conditions), held in a relation's type.
 
 - **Refinements:** a relation's type holds, beside its column types and frames, what is known of its values: the keys of its columns, each number's range, the relations a column is a subset of, the columns that are complete over an orientation type, and its row count where that is known.
 - **Sources:** a base relation and a lib relation declare their refinements, and so does each component output, in the registry. A part's refinements follow from its fragment's body. A table's refinements are measured from its rows, so they hold of that table and read no other table.
@@ -141,7 +141,7 @@ A term is **forced** where its value follows from smaller terms on every table i
 
 A rule need not be complete, since equivalence over negation and aggregates is undecidable, so a term that no rule rejects stays.
 
-Two terms with equal values are not forced by that alone. Where the table's rows could have given a different value, the equality is a claim about the task, and both terms stay.
+Two terms with equal values are not entailed by that alone. Where the table's rows could have given a different value, the equality is contingent, and both terms stay.
 
 **The encoder at size d** gives, for each table, the value of every feature that the library names, at any size, and of every ground expression of at most size d that reads that table, at every binding the checker accepts. An expression that reads no table has one value on every table, and a base table is a table here, so it has an encoding of its own. So a version of the library and the registry, and a size, fix an exact and finite set of features. Enumeration takes the two relations of a binary operator or of a `ratio` in both orders, so the set of names does not depend on text order.
 
