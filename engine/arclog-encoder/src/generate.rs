@@ -123,7 +123,7 @@ fn types_hash(columns: &[Column]) -> u64 {
 impl Generated {
     /// The family over a table of the column types `types`, up to size `d` in parts. At size 3,
     /// it extends only the terms that `extend` names: one per class of observed values.
-    pub fn of(types: &[ValueType], d: usize, names: &Mutex<FastMap<u128, String>>, extend: Option<&[u32]>) -> Generated {
+    pub fn of(types: &[ValueType], d: usize, names: &NameStore, extend: Option<&[u32]>) -> Generated {
         let mut family = Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0 };
         let table_columns: Vec<Column> = types.iter().enumerate().map(|(at, ty)| Column { name: format!("T{at}"), ty: ty.clone(), source: 100 + at as u16 }).collect();
         let grid = |source: u16| vec![Column { name: "P".to_string(), ty: ValueType::Position, source }, Column { name: "Col".to_string(), ty: ValueType::Color, source }];
@@ -180,7 +180,7 @@ impl Generated {
         }
         family.by_size.push(family.terms.len());
         // The name of each root.
-        let mut held = names.lock().expect("no panic");
+        let mut held = names.begin();
         let mut roots = 0;
         for term in family.terms.iter_mut().skip(family.first_term) {
             if term.flags & REQUIRED != REQUIRED {
@@ -195,7 +195,7 @@ impl Generated {
             term.roots = texts.iter().map(|text| {
                 let shape = shape_text(text, "T", types);
                 let hash = hash_words(shape.bytes().map(u64::from));
-                held.entry(hash).or_insert(shape);
+                held.add(hash, shape);
                 hash
             }).collect();
             roots += term.roots.len();
@@ -486,7 +486,13 @@ pub struct Walker<'a> {
     value_index: FastMap<u128, u32>,
     memo: FastMap<(u32, u32, u32), u32>,
     counts: FastMap<(u32, u32, u32), (u32, u32)>,
+    /// The cells that `values` holds.
+    held_cells: usize,
 }
+
+/// What a walker holds at most between walks.
+const HELD_CELLS: usize = 3_000_000;
+const HELD_MEMO: usize = 250_000;
 
 static NO_SHAPES: [crate::native::CompShape; 0] = [];
 static NO_INSTANCES: [crate::native::CompInstance; 0] = [];
@@ -506,7 +512,19 @@ fn gcd(a: u64, b: u64) -> u64 {
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default() }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), held_cells: 0 }
+    }
+
+    /// Drops the values and the memos where they pass the budget. A later walk computes again
+    /// what it needs.
+    fn keep_within_budget(&mut self) {
+        if self.held_cells > HELD_CELLS || self.memo.len() + self.counts.len() > HELD_MEMO {
+            self.values = vec![Val::None, Val::Empty];
+            self.value_index = FastMap::default();
+            self.memo = FastMap::default();
+            self.counts = FastMap::default();
+            self.held_cells = 0;
+        }
     }
 
     fn value_id(&mut self, value: Val) -> u32 {
@@ -519,6 +537,9 @@ impl<'a> Walker<'a> {
                     return *found;
                 }
                 let at = self.values.len() as u32;
+                if let Val::Rows(parts) = &value {
+                    self.held_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
+                }
                 self.values.push(value);
                 self.value_index.insert(hash, at);
                 at
@@ -573,6 +594,7 @@ impl<'a> Walker<'a> {
     /// One table's sparse map from a root's shape to its value at each pair. Each leaf's rows
     /// stand at each pair.
     pub fn walk(&mut self, leaves: &[Vec<Val>], top: u8, allow: Option<&HashSet<u128>>) -> ShapeMap {
+        self.keep_within_budget();
         let family = self.family;
         let pairs = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
@@ -709,11 +731,66 @@ pub fn encoded_number(n: i64) -> u32 {
     number_bits(n)
 }
 
-/// The families of each schema, built once, and the name of each root.
+/// Where the names of roots go: a map in memory, or a file that each name reaches once.
+#[derive(Default)]
+pub struct NameStore {
+    names: Mutex<FastMap<u128, String>>,
+    file: Option<Mutex<(HashSet<u64>, std::io::BufWriter<std::fs::File>)>>,
+}
+
+pub enum NameWriter<'a> {
+    Map(std::sync::MutexGuard<'a, FastMap<u128, String>>),
+    File(std::sync::MutexGuard<'a, (HashSet<u64>, std::io::BufWriter<std::fs::File>)>),
+}
+
+impl NameWriter<'_> {
+    fn add(&mut self, hash: u128, shape: String) {
+        match self {
+            NameWriter::Map(map) => {
+                map.entry(hash).or_insert(shape);
+            }
+            NameWriter::File(file) => {
+                let held = &mut **file;
+                if held.0.insert(hash as u64) {
+                    let _ = std::io::Write::write_all(&mut held.1, format!("{:016x}\t{shape}\n", hash as u64).as_bytes());
+                }
+            }
+        }
+    }
+}
+
+impl NameStore {
+    pub fn to_file(path: &str) -> Result<NameStore, String> {
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|error| error.to_string())?;
+        Ok(NameStore { names: Mutex::default(), file: Some(Mutex::new((HashSet::new(), std::io::BufWriter::new(file)))) })
+    }
+
+    fn begin(&self) -> NameWriter<'_> {
+        match &self.file {
+            Some(file) => NameWriter::File(file.lock().expect("no panic")),
+            None => NameWriter::Map(self.names.lock().expect("no panic")),
+        }
+    }
+
+    pub fn flush(&self) {
+        if let Some(file) = &self.file {
+            let _ = std::io::Write::flush(&mut file.lock().expect("no panic").1);
+        }
+    }
+
+    pub fn get(&self, hash: &u128) -> Option<String> {
+        self.names.lock().expect("no panic").get(hash).cloned()
+    }
+}
+
+/// The terms that the cache of families holds at most; past it, the oldest families leave.
+const CACHED_TERMS: usize = 6_000_000;
+
+/// The families of each schema, kept in a bounded cache, and the name of each root.
 #[derive(Default)]
 pub struct Generators {
-    held: Mutex<FastMap<u128, Arc<Generated>>>,
-    pub names: Mutex<FastMap<u128, String>>,
+    held: Mutex<(FastMap<u128, (Arc<Generated>, u64)>, u64)>,
+    pub names: NameStore,
     /// Per schema, the terms that stand for their class.
     pub extend: std::collections::HashMap<String, Vec<u32>>,
 }
@@ -721,11 +798,27 @@ pub struct Generators {
 impl Generators {
     fn get(&self, stored: &crate::tablewalk::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(stored.key.bytes().map(u64::from));
-        if let Some(found) = self.held.lock().expect("no panic").get(&hash) {
-            return found.clone();
+        {
+            let mut held = self.held.lock().expect("no panic");
+            let (cache, clock) = &mut *held;
+            *clock += 1;
+            if let Some(found) = cache.get_mut(&hash) {
+                found.1 = *clock;
+                return found.0.clone();
+            }
         }
         let family = Arc::new(Generated::of(&stored.types, d, &self.names, self.extend.get(&stored.key).map(Vec::as_slice)));
-        self.held.lock().expect("no panic").insert(hash, family.clone());
+        let mut held = self.held.lock().expect("no panic");
+        let (cache, clock) = &mut *held;
+        *clock += 1;
+        cache.insert(hash, (family.clone(), *clock));
+        let mut total: usize = cache.values().map(|found| found.0.terms.len()).sum();
+        while total > CACHED_TERMS && cache.len() > 1 {
+            let Some(oldest) = cache.iter().filter(|(key, _)| **key != hash).min_by_key(|(_, found)| found.1).map(|(key, _)| *key) else { break };
+            if let Some(gone) = cache.remove(&oldest) {
+                total -= gone.0.terms.len();
+            }
+        }
         family
     }
 }
@@ -892,13 +985,12 @@ pub fn generate_task(path: &str, task_dir: &std::path::Path, families: &Generato
         })
     }).collect();
     let terms: Vec<serde_json::Value> = held.iter().map(|(key, family)| serde_json::json!({"schema": key, "by_size": family.by_size, "roots": family.roots})).collect();
-    let names = families.names.lock().expect("no panic");
     let mut shapes: Vec<serde_json::Value> = Vec::new();
     for (hash, tally) in &tallies {
         if tally.gold_only + tally.mutant_only + tally.null_gold_only + tally.null_mutant_only == 0 {
             continue;
         }
-        shapes.push(serde_json::json!([names.get(hash).map_or("", String::as_str), tally.gold_only, tally.mutant_only, tally.compared, tally.null_gold_only, tally.null_mutant_only, tally.null_compared]));
+        shapes.push(serde_json::json!([families.names.get(hash).unwrap_or_default(), tally.gold_only, tally.mutant_only, tally.compared, tally.null_gold_only, tally.null_mutant_only, tally.null_compared]));
     }
     Ok(serde_json::json!({
         "task": task_name, "sizes": sizes, "left_out": left_out, "shapes": shapes, "terms": terms,
@@ -997,7 +1089,6 @@ pub fn reach(files: &[String], task_dir: &std::path::Path, d: usize, per_task: u
             }
         }
     }
-    let names = families.names.lock().expect("no panic");
     // A generated root by its value at each point; a written shape's matches.
     let lookup: Vec<(u128, FastMap<u32, u64>)> = generated.iter().map(|(hash, list)| (*hash, list.iter().copied().collect())).collect();
     for (name, list) in &written {
@@ -1013,7 +1104,7 @@ pub fn reach(files: &[String], task_dir: &std::path::Path, d: usize, per_task: u
             }
             for (hash, values) in &lookup {
                 if list.iter().all(|item| values.get(&item.0).copied().unwrap_or(0) == value_of(item)) {
-                    held.push(names.get(hash).cloned().unwrap_or_default());
+                    held.push(families.names.get(hash).unwrap_or_default());
                     if held.len() >= 200 {
                         break;
                     }
@@ -1117,7 +1208,7 @@ fn shape_id(hash: u128) -> String {
 /// each size up to `d`. A table lists the shapes it holds that are contingent on the item's
 /// base tables and that not every one of the item's tables holds, since those alone can tell
 /// two tables apart. An item with a table this path leaves out has no sides.
-pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, derangements: &std::collections::BTreeMap<String, Option<Vec<usize>>>, d: usize, used: &Mutex<HashSet<u128>>) -> Result<(String, Vec<serde_json::Value>, u64, f64), String> {
+pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, derangements: &std::collections::BTreeMap<String, Option<Vec<usize>>>, d: usize) -> Result<(String, Vec<serde_json::Value>, u64, f64), String> {
     use crate::tablewalk::{active_entry, stored_of, Stored};
     let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
@@ -1152,7 +1243,7 @@ pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, 
         gold: Option<Stored>,
         mutants: Vec<Stored>,
     }
-    let good = |stored: &Stored| stored.types.len() <= 8 && stored.rows.iter().all(|rows| rows.as_ref().is_none_or(|table| table.len <= 5000));
+    let good = |stored: &Stored| stored.types.len() <= 8 && stored.rows.iter().all(|rows| rows.as_ref().is_none_or(|table| table.len <= 2000));
     let mut parsed: Vec<Parsed> = Vec::new();
     for item in data["items"].as_array().ok_or("a file's items")? {
         let query = item["query"].as_str().unwrap_or("").to_string();
@@ -1164,6 +1255,8 @@ pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, 
             _ => parsed.push(Parsed { query, reads: Vec::new(), gold: None, mutants: Vec::new() }),
         }
     }
+    // The parsed file is far larger than its tables, so it leaves here.
+    drop(data);
     let mut tables: Vec<&Stored> = vec![&input_table];
     for item in parsed.iter().filter(|item| item.gold.is_some()) {
         tables.extend(item.reads.iter());
@@ -1183,8 +1276,8 @@ pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, 
         let facts = crate::catalog_run::pairs_of_task(&task_json, order);
         let constants = constants_of(&facts);
         let moved: Vec<Arc<Table>> = (0..train).map(|at| outputs[order.map_or(at, |order| order[at])].clone()).collect();
-        let mut done: FastMap<u128, Arc<ShapeMap>> = FastMap::default();
-        let mut map_of = |stored: &Stored| -> Arc<ShapeMap> {
+        let mut done: FastMap<u128, Arc<FastMap<u128, u8>>> = FastMap::default();
+        let mut map_of = |stored: &Stored| -> Arc<FastMap<u128, u8>> {
             let content = hash_words(stored.key.bytes().map(u64::from).chain(stored.rows.iter().flat_map(|rows| rows.as_ref().map_or([0, 0], |table| [table.hash as u64, (table.hash >> 64) as u64]))));
             if let Some(found) = done.get(&content) {
                 return found.clone();
@@ -1192,7 +1285,8 @@ pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, 
             let walker = &mut walkers.iter_mut().find(|(key, _)| *key == stored.key).expect("a schema's walker").1;
             let started = std::time::Instant::now();
             let leaves = leaves_of(&stored.rows, &inputs, &moved, &constants);
-            let map = Arc::new(walker.walk(&leaves, d as u8, None));
+            let full = walker.walk(&leaves, d as u8, None);
+            let map: Arc<FastMap<u128, u8>> = Arc::new(full.iter().filter(|(_, entry)| active_entry(Some(*entry), train)).map(|(name, entry)| (*name, entry.size)).collect());
             walks += 1;
             walk_seconds += started.elapsed().as_secs_f64();
             done.insert(content, map.clone());
@@ -1201,11 +1295,11 @@ pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, 
         let input_map = map_of(&input_table);
         parsed.iter().map(|item| {
             let Some(gold) = &item.gold else { return vec![serde_json::Value::Null; d] };
-            let bases: Vec<Arc<ShapeMap>> = std::iter::once(input_map.clone()).chain(item.reads.iter().map(&mut map_of)).collect();
-            let mut own: Vec<Arc<ShapeMap>> = vec![map_of(gold)];
+            let bases: Vec<Arc<FastMap<u128, u8>>> = std::iter::once(input_map.clone()).chain(item.reads.iter().map(&mut map_of)).collect();
+            let mut own: Vec<Arc<FastMap<u128, u8>>> = vec![map_of(gold)];
             own.extend(item.mutants.iter().map(&mut map_of));
             (1..=d).map(|size| {
-                let holds_at = |map: &ShapeMap, name: &u128| active_entry(map.get(name), train) && map.get(name).is_some_and(|entry| usize::from(entry.size) <= size);
+                let holds_at = |map: &FastMap<u128, u8>, name: &u128| map.get(name).is_some_and(|held| usize::from(*held) <= size);
                 let mut lists: Vec<Vec<String>> = vec![Vec::new(); own.len()];
                 let mut seen: HashSet<u128> = HashSet::new();
                 for map in &own {
@@ -1221,7 +1315,6 @@ pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, 
                                 list.push(shape_id(*name));
                             }
                         }
-                        used.lock().expect("no panic").insert(*name);
                     }
                 }
                 for list in &mut lists {

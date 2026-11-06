@@ -415,15 +415,14 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
 /// shape's text goes to `OUT-names.tsv` beside them.
 fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
     use arclog_encoder::generate::{dump_task, Generators};
-    let families = Generators::default();
+    let mut families = Generators::default();
+    families.names = arclog_encoder::generate::NameStore::to_file(&format!("{out}-names-all.tsv"))?;
     let path = arguments.names.clone().ok_or("`generate-dump` reads the derangements from --names")?;
     let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let d = arguments.size.max(1);
     for size in 1..=d {
         std::fs::create_dir_all(format!("{out}-d{size}")).map_err(|error| error.to_string())?;
     }
-    let used = std::sync::Mutex::new(HashSet::new());
-    let written = std::sync::Mutex::new((HashSet::<u128>::new(), std::fs::OpenOptions::new().create(true).append(true).open(format!("{out}-names.tsv")).map_err(|error| error.to_string())?));
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let totals = std::sync::Mutex::new((0u64, 0f64));
@@ -437,7 +436,7 @@ fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Resu
                 if std::path::Path::new(&format!("{out}-d{d}/{stem}.json")).exists() {
                     continue;
                 }
-                match dump_task(file, &arguments.tasks, &families, &derangements, d, &used) {
+                match dump_task(file, &arguments.tasks, &families, &derangements, d) {
                     Ok((name, results, walks, seconds)) => {
                         for (size, result) in results.iter().enumerate() {
                             let target = format!("{out}-d{}/{name}.json", size + 1);
@@ -446,16 +445,7 @@ fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Resu
                                 eprintln!("{stem}: the result does not write");
                             }
                         }
-                        {
-                            let names = families.names.lock().expect("no panic");
-                            let mut fresh = used.lock().expect("no panic");
-                            let mut sink = written.lock().expect("no panic");
-                            for hash in fresh.drain() {
-                                if sink.0.insert(hash) {
-                                    let _ = writeln!(sink.1, "{:016x}\t{}", hash as u64, names.get(&hash).map_or("", String::as_str));
-                                }
-                            }
-                        }
+                        families.names.flush();
                         let mut held = totals.lock().expect("no panic");
                         held.0 += walks;
                         held.1 += seconds;
