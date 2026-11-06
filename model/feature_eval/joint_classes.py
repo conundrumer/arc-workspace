@@ -9,7 +9,7 @@ import json
 
 import numpy as np
 
-from common import RESULTS, eval_tasks, read_values
+from common import (RESULTS, data_exists, eval_tasks, read_values)
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
     blocks = []
     for task in eval_tasks(60):
         result = RESULTS / a.test / f'{task}{a.suffix}.d{a.d}.json'
-        if not result.exists():
+        if not data_exists(result):
             continue
         names, _, matrix = read_values(RESULTS / a.test / 'values' / f'{task}{a.suffix}.values.tsv', a.d)
         tasks.append(task)

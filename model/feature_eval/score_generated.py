@@ -1,12 +1,45 @@
+import sys
 src=open('/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/12a37de8-ac57-40d8-8718-66c6d6d45701/scratchpad/eval2/all_read.py').read()
 head=src[:src.index("def speak(name, tasks, keep):")]
 exec(head)
 import glob
+sys.path.insert(0, os.path.dirname(os.path.abspath(sys.argv[0])))
+from common import data_exists, glob_data, open_text, read_json
+
+
+def pair_groups(split, task):
+    """Each item's pair groups, cached as zstd."""
+    cache = f'{ALL}{split}/pair-groups/{task}.json'
+    if data_exists(cache):
+        return read_json(cache)
+    t = read_json(f'{ALL}{split}/candidate-tables/{task}.json')
+    out = [dict(groups=[group(it['gold'], m['table']) for m in it['mutants']]) for it in t['items']]
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    with open_text(cache + '.zst', 'w') as sink:
+        sink.write(json.dumps(out))
+    return out
+
+
+def load_split(split, rule):
+    tasks = {}
+    rank = Counter()
+    for f in glob_data(f'{ALL}{split}/{rule}/*.json'):
+        d = read_json(f)
+        g = pair_groups(split, d['task'])
+        items = []
+        for it, gs in zip(d['items'], g):
+            if it['last']:
+                continue
+            items.append((prep(it['true'], rank, 1), prep(it['null'], rank, -1), gs['groups'], None))
+        tasks[d['task']] = items
+    return tasks
+
+
 names={}
 for split in ('train','dev'):
     path=f'{ALL}{split}/candidate-dump-generated-names.tsv'
-    if os.path.exists(path):
-        for line in open(path):
+    if data_exists(path):
+        for line in open_text(path):
             k,_,t=line.rstrip('\n').partition('\t')
             names[k]=t
 print(len(names),'named shapes',flush=True)

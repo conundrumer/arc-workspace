@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common import RESULTS, ROOT, write_json_atomic
+from common import (RESULTS, ROOT, glob_data, read_json, write_json_atomic)
 
 
 def root_vector(counts, outputs):
@@ -85,11 +85,11 @@ def auc_items(scores):
 def main():
     per_task = {}
     rng = random.Random(23)
-    for path in sorted(glob.glob(str(RESULTS / 'candidate-tables/????????.json'))):
-        data = json.load(open(path))
+    for path in sorted(glob_data(str(RESULTS / 'candidate-tables/????????.json'))):
+        data = read_json(path)
         if not data['items']:
             continue
-        task = json.load(open(ROOT / f"data/tasks/{data['task']}.json"))
+        task = read_json(ROOT / f"data/tasks/{data['task']}.json")
         train = data['train']
         inputs = [sum(len(row) for row in task['train'][i]['input']) for i in range(train)]
         outputs = [sum(len(row) for row in task['train'][i]['output']) for i in range(train)]

@@ -620,7 +620,7 @@ pub(crate) fn scores(rule: StableRule, bases: &[Held<'_>], gold: Held<'_>, mutan
 /// seconds per table of its one pass over the family.
 #[allow(clippy::too_many_arguments)]
 pub fn family_task(path: &str, task_dir: &std::path::Path, families: &Families, d: usize, nulls: usize, rule: StableRule, allow: Option<&HashSet<u128>>, max_table_columns: usize) -> Result<serde_json::Value, String> {
-    let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
     let last_query = data["last_query"].as_str().unwrap_or("").to_string();

@@ -735,12 +735,12 @@ pub fn encoded_number(n: i64) -> u32 {
 #[derive(Default)]
 pub struct NameStore {
     names: Mutex<FastMap<u128, String>>,
-    file: Option<Mutex<(HashSet<u64>, std::io::BufWriter<std::fs::File>)>>,
+    file: Option<Mutex<(HashSet<u64>, Box<dyn std::io::Write + Send>)>>,
 }
 
 pub enum NameWriter<'a> {
     Map(std::sync::MutexGuard<'a, FastMap<u128, String>>),
-    File(std::sync::MutexGuard<'a, (HashSet<u64>, std::io::BufWriter<std::fs::File>)>),
+    File(std::sync::MutexGuard<'a, (HashSet<u64>, Box<dyn std::io::Write + Send>)>),
 }
 
 impl NameWriter<'_> {
@@ -761,8 +761,8 @@ impl NameWriter<'_> {
 
 impl NameStore {
     pub fn to_file(path: &str) -> Result<NameStore, String> {
-        let file = std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|error| error.to_string())?;
-        Ok(NameStore { names: Mutex::default(), file: Some(Mutex::new((HashSet::new(), std::io::BufWriter::new(file)))) })
+        let file = crate::zio::writer(path, true)?;
+        Ok(NameStore { names: Mutex::default(), file: Some(Mutex::new((HashSet::new(), file))) })
     }
 
     fn begin(&self) -> NameWriter<'_> {
@@ -831,13 +831,13 @@ pub fn generate_task(path: &str, task_dir: &std::path::Path, families: &Generato
     use crate::family::{auc_of, scores, Held, Tally};
     use crate::tablewalk::{stored_of, StableRule, Stored};
     let rule = StableRule::Active;
-    let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
     let last_query = data["last_query"].as_str().unwrap_or("").to_string();
     let task_path = task_dir.join(format!("{task_name}.json"));
     let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-    let task_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let grid = |fact: arclog::program::FactRelation, at: usize| {
         let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
         let mut cells = Vec::new();
@@ -1011,12 +1011,12 @@ pub fn reach(files: &[String], task_dir: &std::path::Path, d: usize, per_task: u
     let mut generated: FastMap<u128, Vec<(u32, u64)>> = FastMap::default();
     let mut points = 0u32;
     for path in files {
-        let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+        let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
         let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
         let train = data["train"].as_u64().ok_or("a file's train")? as usize;
         let task_path = task_dir.join(format!("{task_name}.json"));
         let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-        let task_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+        let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
         let grid = |fact: arclog::program::FactRelation, at: usize| {
             let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
             let mut cells = Vec::new();
@@ -1137,12 +1137,12 @@ pub fn classes(files: &[String], task_dir: &std::path::Path, per_schema: usize) 
     let families = Generators::default();
     let mut by_schema: std::collections::HashMap<String, Held> = std::collections::HashMap::new();
     for path in files {
-        let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+        let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
         let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
         let train = data["train"].as_u64().ok_or("a file's train")? as usize;
         let task_path = task_dir.join(format!("{task_name}.json"));
         let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-        let task_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+        let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
         let grid = |fact: arclog::program::FactRelation, at: usize| {
             let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
             let mut cells = Vec::new();
@@ -1210,13 +1210,13 @@ fn shape_id(hash: u128) -> String {
 /// two tables apart. An item with a table this path leaves out has no sides.
 pub fn dump_task(path: &str, task_dir: &std::path::Path, families: &Generators, derangements: &std::collections::BTreeMap<String, Option<Vec<usize>>>, d: usize) -> Result<(String, Vec<serde_json::Value>, u64, f64), String> {
     use crate::tablewalk::{active_entry, stored_of, Stored};
-    let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
     let last_query = data["last_query"].as_str().unwrap_or("").to_string();
     let task_path = task_dir.join(format!("{task_name}.json"));
     let task = arclog::task::read_task(&task_path).map_err(|error| format!("the task does not read: {error:?}"))?;
-    let task_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let task_json: serde_json::Value = serde_json::from_str(&crate::zio::read_text(&task_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let grid = |fact: arclog::program::FactRelation, at: usize| {
         let relation = task.fact_rows(fact, Some(arclog::terms::Example::at(at as u16)));
         let mut cells = Vec::new();

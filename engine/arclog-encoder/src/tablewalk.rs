@@ -739,7 +739,7 @@ fn auc_of(scores: &[(usize, f64, Vec<f64>)]) -> Option<f64> {
 
 /// A file's result: per size, each item's scores, and the null's AUC per draw.
 pub fn candidate_task(path: &str, task_dir: &std::path::Path, cache: &OpsCache, rate: u64, nulls: usize, max_table_columns: usize, rule: StableRule) -> Result<serde_json::Value, String> {
-    let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
     let last_query = data["last_query"].as_str().unwrap_or("").to_string();

@@ -6,7 +6,7 @@
 Each entry in ENTRIES takes a template of results/candidate-rank.tsv and gives its terms, and
 how the terms' counts give the first version's value. The script samples Candidate tables,
 evaluates each term through the engine, and compares the two values at each train pair.
-It writes results/template-shapes.tsv, one line per template in rank order.
+It writes results/template-shapes.tsv.zst, one line per template in rank order.
 """
 import argparse
 import json
@@ -17,6 +17,9 @@ import sys
 import tempfile
 from collections import Counter, OrderedDict, defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import data_exists, open_text, read_json  # noqa: E402
 
 ROOT = Path('/Users/davidlu/code/arc-workspace')
 RESULTS = ROOT / 'work/feature-spec/results'
@@ -1583,7 +1586,7 @@ def main():
     parser.add_argument('--kinds', default=None, help='a regular expression over the template texts')
     parser.add_argument('--per-schema', type=int, default=0, help='the tables to keep per set of column types, over every item')
     parser.add_argument('--processes', type=int, default=1)
-    parser.add_argument('--out', default=str(RESULTS / 'template-shapes.tsv'))
+    parser.add_argument('--out', default=str(RESULTS / 'template-shapes.tsv.zst'))
     a = parser.parse_args()
     os.environ['CONTRACTS_OUT'] = str(C / 'dev/out-expand')
     sys.path[:0] = [str(C / 'dev/out-expand'), str(C / 'dev'), str(C / 'features')]
@@ -1591,16 +1594,16 @@ def main():
     import analyze as A
 
     ranks = {}
-    for line in open(RESULTS / 'candidate-rank.tsv'):
+    for line in open_text(RESULTS / 'candidate-rank.tsv'):
         fields_ = line.rstrip('\n').split('\t')
         kind = TOKEN.sub(lambda m: m.group(0).split('⟦')[0] + 'C', fields_[3])
         ranks.setdefault(kind, len(ranks) + 1)
     wanted = {k for k in ENTRIES if not a.kinds or re.search(a.kinds, k)}
 
-    tasks = [t for t in (ROOT / 'work/feature-spec/eval-tasks.txt').read_text().split() if (RESULTS / f'candidate-tables/{t}.json').exists()][:a.tasks]
+    tasks = [t for t in (ROOT / 'work/feature-spec/eval-tasks.txt').read_text().split() if data_exists(RESULTS / f'candidate-tables/{t}.json')][:a.tasks]
     requests, records, seen_schema = [], [], Counter()
     for task in tasks:
-        data = json.loads((RESULTS / f'candidate-tables/{task}.json').read_text())
+        data = read_json(RESULTS / f'candidate-tables/{task}.json')
         pairs = json.loads((ROOT / f'data/tasks/{task}.json').read_text())['train']
         tables = []
         for item in data['items'][:a.items] if not a.per_schema else data['items']:
@@ -1647,19 +1650,20 @@ def main():
         runs = []
         places = {}
         for at, chunk in enumerate(chunks):
-            path, out = Path(folder) / f'requests{at}.jsonl', Path(folder) / f'values{at}.jsonl'
+            path, out = Path(folder) / f'requests{at}.jsonl.zst', Path(folder) / f'values{at}.jsonl.zst'
             lines = []
             for own, request in enumerate(chunk):
                 places[(at, own)] = requests.index(request)
                 lines.append(json.dumps(request))
-            path.write_text('\n'.join(lines) + '\n')
+            with open_text(path, 'w') as sink:
+                sink.write('\n'.join(lines) + '\n')
             runs.append((at, out, subprocess.Popen([a.encoder, 'stored-eval', str(path), '--out', str(out)], cwd=ROOT, stderr=subprocess.PIPE, text=True)))
         results = {}
         for at, out, run in runs:
             _, stderr = run.communicate()
             if run.returncode:
                 print(stderr[-2000:], flush=True)
-            for line in out.read_text().splitlines():
+            for line in open_text(out):
                 found = json.loads(line)
                 results[(places[(at, found['line'])], found['term'])] = found
     tally = defaultdict(Counter)
@@ -1695,7 +1699,7 @@ def main():
             tally[kind]['differ'] += 1
             if len(differences[kind]) < 3:
                 differences[kind].append((requests[at]['task'], holes, pair, value, mine, counts))
-    with open(a.out, 'w') as sink:
+    with open_text(a.out, 'w') as sink:
         sink.write('rank\ttemplate\tform\tsize by operators\tsize distinct\tsize with leaves\tagree\tdiffer\trefused\tall size\tall agree\tall differ\tnote\texpression\n')
         for kind in sorted(ENTRIES, key=lambda k: ranks.get(k, 10 ** 6)):
             t = tally[kind]

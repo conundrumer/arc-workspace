@@ -163,9 +163,9 @@ fn side(item: &serde_json::Value, input: &ParsedTable, facts: &[PairFacts], trai
 
 /// One task's stable templates, on the true outputs and on the deranged ones.
 pub fn dump_task(path: &str, tasks: &std::path::Path, orders: &BTreeMap<String, Option<Vec<usize>>>, form: Form) -> Result<(serde_json::Value, (u64, std::time::Duration), std::time::Duration), String> {
-    let data: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let data: serde_json::Value = serde_json::from_str(&crate::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let name = data["task"].as_str().ok_or("a file's task")?.to_string();
-    let task: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(tasks.join(format!("{name}.json"))).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let task: serde_json::Value = serde_json::from_str(&crate::zio::read_text(tasks.join(format!("{name}.json"))).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let train = task["train"].as_array().map_or(0, Vec::len);
     let started = std::time::Instant::now();
     let facts = pairs_of_task(&task, None);
@@ -187,14 +187,14 @@ pub fn dump_task(path: &str, tasks: &std::path::Path, orders: &BTreeMap<String, 
 
 /// The value of every kind on each requested table, for the check against the first version.
 pub fn values_of(requests: &str, tasks: &std::path::Path, out: &mut impl std::io::Write) -> Result<(u64, std::time::Duration), String> {
-    let text = std::fs::read_to_string(requests).map_err(|error| error.to_string())?;
+    let text = crate::zio::read_text(requests).map_err(|error| error.to_string())?;
     let mut spent = (0u64, std::time::Duration::ZERO);
     let mut held: HashMap<String, Vec<PairFacts>> = HashMap::new();
     for (at, line) in text.lines().enumerate() {
         let request: serde_json::Value = serde_json::from_str(line).map_err(|error| error.to_string())?;
         let name = request["task"].as_str().ok_or("a request's task")?.to_string();
         if !held.contains_key(&name) {
-            let task: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(tasks.join(format!("{name}.json"))).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+            let task: serde_json::Value = serde_json::from_str(&crate::zio::read_text(tasks.join(format!("{name}.json"))).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
             held.insert(name.clone(), pairs_of_task(&task, None));
         }
         let facts = &held[&name];

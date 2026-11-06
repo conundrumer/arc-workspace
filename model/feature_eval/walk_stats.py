@@ -20,7 +20,7 @@ import time
 
 import numpy as np
 
-from common import RESULTS, auc_of, eval_tasks, write_json_atomic
+from common import (RESULTS, auc_of, data_exists, data_path, eval_tasks, glob_data, read_bytes, read_json, write_json_atomic)
 import rule as rule_test
 import scene as scene_test
 
@@ -112,10 +112,10 @@ def null_auc(words, inverse, sizes, d, items, extras):
 
 
 def read_walk(prefix, size):
-    meta = json.load(open(f'{prefix}.d{size}.json'))
-    sizes = np.fromfile(f'{prefix}.d{size}.sizes', dtype=np.uint8)
-    words = np.fromfile(f'{prefix}.d{size}.words', dtype=np.uint64).reshape(len(sizes), meta['grids'])
-    order = np.fromfile(f'{prefix}.d{size}.order', dtype=np.uint32)
+    meta = read_json(f'{prefix}.d{size}.json')
+    sizes = np.frombuffer(read_bytes(f'{prefix}.d{size}.sizes'), dtype=np.uint8)
+    words = np.frombuffer(read_bytes(f'{prefix}.d{size}.words'), dtype=np.uint64).reshape(len(sizes), meta['grids'])
+    order = np.frombuffer(read_bytes(f'{prefix}.d{size}.order'), dtype=np.uint32)
     return meta, sizes, words, order
 
 
@@ -180,7 +180,7 @@ def task_stats(test, task, prefix, top, limit):
     extras = {}
     extras_path = f'{prefix}.extras.json'
     if os.path.exists(extras_path):
-        extras = json.load(open(extras_path))
+        extras = read_json(extras_path)
     own = len(grids)
     words, first_at, inverse = np.unique(every[:, :own], axis=0, return_index=True, return_inverse=True)
     inverse = inverse.reshape(-1)
@@ -244,9 +244,9 @@ def bootstrap(values, seed=7, draws=2000):
 
 def reference_of(test):
     out = {}
-    folder = 'reference-active' if glob.glob(str(RESULTS / 'reference-active/????????.json')) else 'reference-class'
-    for path in glob.glob(str(RESULTS / f'{folder}/????????.json')):
-        record = json.load(open(path))
+    folder = 'reference-active' if glob_data(str(RESULTS / 'reference-active/????????.json')) else 'reference-class'
+    for path in glob_data(str(RESULTS / f'{folder}/????????.json')):
+        record = read_json(path)
         values = [item['auc_class'] for item in record[test] if item.get('auc_class') is not None]
         if values:
             out[record['task']] = float(np.mean(values))
@@ -324,7 +324,7 @@ def read_task(test, task, top, limit, suffix):
     """The statistics of `task`, where its walk ended, and each result written."""
     folder = directory(test)
     prefix = folder / f'{task}{suffix}'
-    if not (folder / f'{task}{suffix}.d{top}.json').exists():
+    if not data_exists(folder / f'{task}{suffix}.d{top}.json'):
         return None
     out = task_stats(test, task, prefix, top, limit)
     for d, record in out.items():
@@ -354,7 +354,7 @@ def watch(test, top, limit, seconds):
         fresh = False
         for task in eval_tasks(60):
             path = folder / f'{task}{suffix}.d{top}.json'
-            if not path.exists() or seen.get(task) == path.stat().st_mtime:
+            if not data_exists(path) or seen.get(task) == data_path(path).stat().st_mtime:
                 continue
             seen[task] = path.stat().st_mtime
             out = read_task(test, task, top, limit, suffix)

@@ -14,7 +14,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from common import RESULTS, write_json_atomic
+from common import (RESULTS, read_json, write_json_atomic)
 
 # The words of an aggregate on no rows, in the value files of the slower path.
 DEFAULT_WORDS = np.array([1 << 61, 1 << 62], dtype=np.uint64)
@@ -25,7 +25,7 @@ def per_task(test, suffix, d):
     for path in sorted((RESULTS / test).glob(f'*{suffix}.d{d}.json')):
         if not re.match(r'[0-9a-f]{8}\.', path.name):
             continue
-        record = json.load(open(path))
+        record = read_json(path)
         out[record['task']] = record
     return out
 

@@ -10,7 +10,7 @@ import json
 
 import numpy as np
 
-from common import RESULTS, eval_tasks, write_json_atomic
+from common import (RESULTS, data_exists, eval_tasks, open_text, write_json_atomic)
 
 MARK_NONEMPTY = 1 << 61
 MARK_SET = 1 << 62
@@ -18,7 +18,7 @@ MARK_SET = 1 << 62
 
 def read_words(path, d):
     names, rows = [], []
-    with open(path) as lines:
+    with open_text(path) as lines:
         for line in lines:
             parts = line.rstrip('\n').split('\t')
             if len(parts) != 3 or int(parts[1]) > d:
@@ -37,7 +37,7 @@ def main():
     per_task = {}
     for task in eval_tasks(60):
         path = RESULTS / a.test / 'values' / f'{task}{a.suffix}.values.tsv'
-        if not (RESULTS / a.test / f'{task}{a.suffix}.d{a.d}.json').exists():
+        if not data_exists(RESULTS / a.test / f'{task}{a.suffix}.d{a.d}.json'):
             continue
         names, matrix = read_words(path, a.d)
         # A nonempty root at false, or a count of 0, has only its kind's bits; an empty set too.

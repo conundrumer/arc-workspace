@@ -15,6 +15,9 @@ import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import data_exists, open_text, read_json  # noqa: E402
+
 ROOT = Path('/Users/davidlu/code/arc-workspace')
 RESULTS = ROOT / 'work/feature-spec/results'
 C = ROOT / 'model/contracts'
@@ -36,13 +39,13 @@ def main():
     import analyze as A
 
     ranks = {}
-    for line in open(RESULTS / 'candidate-rank.tsv'):
+    for line in open_text(RESULTS / 'candidate-rank.tsv'):
         kind = TOKEN.sub('C', line.rstrip('\n').split('\t')[3])
         ranks.setdefault(kind, len(ranks) + 1)
-    tasks = [t for t in (ROOT / 'work/feature-spec/eval-tasks.txt').read_text().split() if (RESULTS / f'candidate-tables/{t}.json').exists()][:a.tasks]
+    tasks = [t for t in (ROOT / 'work/feature-spec/eval-tasks.txt').read_text().split() if data_exists(RESULTS / f'candidate-tables/{t}.json')][:a.tasks]
     requests, first, seen = [], {}, Counter()
     for task in tasks:
-        data = json.loads((RESULTS / f'candidate-tables/{task}.json').read_text())
+        data = read_json(RESULTS / f'candidate-tables/{task}.json')
         pairs = json.loads((ROOT / f'data/tasks/{task}.json').read_text())['train']
         for item in data['items']:
             for table in [item['gold']] + [m['table'] for m in item['mutants'][:1]]:
@@ -69,12 +72,13 @@ def main():
                         first[(at, i, kind, holes)] = value
     print(f'{len(requests)} tables, {len(first)} first-version values', flush=True)
     with tempfile.TemporaryDirectory() as folder:
-        path, out = Path(folder) / 'requests.jsonl', Path(folder) / 'values.jsonl'
-        path.write_text('\n'.join(json.dumps(r) for r in requests) + '\n')
+        path, out = Path(folder) / 'requests.jsonl.zst', Path(folder) / 'values.jsonl.zst'
+        with open_text(path, 'w') as sink:
+            sink.write('\n'.join(json.dumps(r) for r in requests) + '\n')
         run = subprocess.run([a.encoder, 'catalog-values', str(path), '--out', str(out)], cwd=ROOT, capture_output=True, text=True)
         print(run.stderr[-600:].strip(), flush=True)
         native = {}
-        for line in out.read_text().splitlines():
+        for line in open_text(out):
             found = json.loads(line)
             native[(found['line'], found['pair'], found['kind'], tuple(found['holes']))] = found['value']
     written = {key[2] for key in native}

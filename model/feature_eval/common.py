@@ -1,6 +1,8 @@
 """What the tests of work/feature-spec/evaluation-protocol.md share: the tasks, the
 encoder's values on grids, and the statistics over claims."""
 import ast
+import glob
+import io
 import json
 import os
 import random
@@ -14,6 +16,55 @@ import zstandard
 ROOT = Path(os.environ.get('ARC_MAIN', '/Users/davidlu/code/arc-workspace'))
 SPEC = ROOT / 'work/feature-spec'
 RESULTS = SPEC / 'results'
+
+
+def data_path(path):
+    """The file that stands for a path: the path itself, or the path with `.zst`."""
+    path = Path(path)
+    if path.exists():
+        return path
+    packed = Path(str(path) + '.zst')
+    return packed if packed.exists() else path
+
+
+def data_exists(path):
+    return data_path(path).exists()
+
+
+def open_text(path, mode='r'):
+    """A text stream over a file, as zstd where its path says so. A reader takes a path with or
+    without `.zst`, and reads each frame of a file that runs appended to."""
+    if 'r' in mode:
+        path = data_path(path)
+        if str(path).endswith('.zst'):
+            return io.TextIOWrapper(zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True, closefd=True), encoding='utf-8')
+        return open(path, encoding='utf-8')
+    if str(path).endswith('.zst'):
+        raw = open(path, 'ab' if 'a' in mode else 'wb')
+        return io.TextIOWrapper(zstandard.ZstdCompressor(level=3).stream_writer(raw, closefd=True), encoding='utf-8')
+    return open(path, mode, encoding='utf-8')
+
+
+def read_bytes(path):
+    path = data_path(path)
+    if str(path).endswith('.zst'):
+        with zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True, closefd=True) as reader:
+            return reader.read()
+    return Path(path).read_bytes()
+
+
+def read_json(path):
+    with open_text(path) as lines:
+        return json.load(lines)
+
+
+def glob_data(pattern):
+    """The files of a pattern, plain or as zstd, each once."""
+    held = {}
+    for found in glob.glob(str(pattern) + '.zst') + glob.glob(str(pattern)):
+        held.setdefault(found[:-4] if found.endswith('.zst') else found, found)
+    return sorted(held.values())
+
 NO_VALUE = '-'
 
 
@@ -28,7 +79,6 @@ def task_json(task):
 def corpus_records(task):
     path = ROOT / f'model/contracts/corpus/{task}.jsonl.zst'
     with open(path, 'rb') as raw:
-        import io
         reader = zstandard.ZstdDecompressor().stream_reader(raw)
         return [json.loads(line) for line in io.TextIOWrapper(reader)]
 
@@ -63,7 +113,7 @@ def read_values(path, max_size):
     """The roots of a values file up to `max_size`: their names, their sizes, and a matrix
     with a row per root and a column per grid, of words, with 0 for no value."""
     names, sizes, rows = [], [], []
-    with open(path) as lines:
+    with open_text(path) as lines:
         for line in lines:
             parts = line.rstrip('\n').split('\t')
             if len(parts) != 3:
@@ -126,10 +176,12 @@ def item_statistics(held, unique, others, true_place, places):
 
 
 def write_json_atomic(path, value):
-    path = Path(path)
+    """Writes a whole value as zstd, under the path with `.zst`."""
+    path = Path(str(path) if str(path).endswith('.zst') else str(path) + '.zst')
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + '.tmp')
-    temporary.write_text(json.dumps(value))
+    temporary = Path(str(path)[:-4] + '.tmp.zst')
+    with open_text(temporary, 'w') as sink:
+        sink.write(json.dumps(value))
     temporary.replace(path)
 
 

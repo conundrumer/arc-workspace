@@ -12,7 +12,7 @@ import re
 
 import numpy as np
 
-from common import RESULTS, write_json_atomic
+from common import (RESULTS, glob_data, read_json, write_json_atomic)
 
 
 def bootstrap(values):
@@ -25,8 +25,8 @@ def bootstrap(values):
 def reference(base):
     """The first version's AUC and null per task, on the active rule, each a mean over its items."""
     out = {}
-    for path in glob.glob(str(base / 'candidate-reference-active/????????.json')):
-        record = json.load(open(path))
+    for path in glob_data(str(base / 'candidate-reference-active/????????.json')):
+        record = read_json(path)
         task = record.get('task')
         if record.get('auc') is not None:
             out[task] = record
@@ -39,11 +39,11 @@ def main():
     a = parser.parse_args()
     base = RESULTS / 'dev' if a.dev else RESULTS
     found = {}
-    for path in glob.glob(str(base / 'candidate/walk*/*.json')):
+    for path in glob_data(str(base / 'candidate/walk*/*.json')):
         match = re.search(r'\.d(\d+)\.r(\d+)\.json$', path)
         if not match:
             continue
-        record = json.load(open(path))
+        record = read_json(path)
         for row in record['sizes']:
             found.setdefault((record.get('rule', 'Active'), record.get('top_components', True), row['d'], int(match.group(2)), int(match.group(1))), []).append((record, row))
     first = reference(base)

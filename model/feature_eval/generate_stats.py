@@ -12,6 +12,7 @@ import json
 import random
 import statistics as st
 from collections import Counter
+from common import glob_data, read_json
 
 
 def boot(values):
@@ -28,7 +29,7 @@ def main():
     a = parser.parse_args()
     votes = Counter()
     for folder in a.folders:
-        records = [json.load(open(f)) for f in sorted(glob.glob(folder + '/*.json'))]
+        records = [read_json(f) for f in sorted(glob_data(folder + '/*.json'))]
         if not records:
             continue
         sizes = len(records[0]['sizes'])

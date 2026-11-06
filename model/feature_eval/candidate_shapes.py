@@ -17,7 +17,7 @@ from collections import Counter
 
 import numpy as np
 
-from common import RESULTS, ROOT, write_json_atomic
+from common import (RESULTS, ROOT, glob_data, read_json, write_json_atomic)
 
 ZERO_TYPES = {'Position', 'Box', 'Offset', 'Int', 'Nat'}
 INVARIANT = {'Int', 'Nat'}
@@ -276,11 +276,11 @@ def main():
     net = {}
     rng = random.Random(23)
     per_task = {}
-    for path in sorted(glob.glob(str(RESULTS / 'candidate-tables/????????.json')))[:a.first]:
-        data = json.load(open(path))
+    for path in sorted(glob_data(str(RESULTS / 'candidate-tables/????????.json')))[:a.first]:
+        data = read_json(path)
         if not data['items']:
             continue
-        task = json.load(open(ROOT / f"data/tasks/{data['task']}.json"))
+        task = read_json(ROOT / f"data/tasks/{data['task']}.json")
         train = data['train']
         outputs = [grid_rows(task['train'][i]['output']) for i in range(train)]
         table_of_input = input_table(task, train)

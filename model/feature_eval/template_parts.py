@@ -2,7 +2,7 @@
 """The written templates' sizes when each named part counts 1, what enumeration over the parts
 reaches at each size, and how many shapes that enumeration has.
 
-  python model/feature_eval/template_parts.py results/template-shapes.tsv
+  python model/feature_eval/template_parts.py results/template-shapes.tsv.zst
 
 A part is a pattern over a term. It counts 1, with the relations that fill its holes counted
 as usual, and a subexpression that appears twice counts once. A root of `ratio` over two
@@ -14,6 +14,7 @@ import csv
 import sys
 from itertools import combinations
 
+from common import open_text
 from template_shapes import (BACKGROUND, CHANGED, COMPONENTS, COMPONENT_BOX, FOREGROUND, FOREGROUND_PARTS, FULL_LINES, INPUT_BACKGROUND, INPUT_FOREGROUND, INPUT_BOX, CHANGED_BOX, FOREGROUND_BOX, LINES,
                              LEAST_COLOR, MEASURES, MOST_COLOR, ON_FULL_LINE, PER_COLOR, ROLE_TEXTS, SAME_COLOR_NEIGHBOR, DROPPED, ADDED, COLOR_BOX, OUTPUT_EXTENTS, CHANGED_COMPONENTS, FOREGROUND_COMPONENTS, node_text, operator_children, parse)
 
@@ -291,7 +292,7 @@ def count_shapes(schema, largest, keep_lib=True, max_columns=7):
 
 
 def main():
-    rows = list(csv.DictReader(open(sys.argv[1]), delimiter='\t'))
+    rows = list(csv.DictReader(open_text(sys.argv[1]), delimiter='\t'))
     if len(sys.argv) > 2:
         out = {}
         for row in rows:

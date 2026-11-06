@@ -50,3 +50,4 @@ pub mod tablewalk;
 pub mod vectors;
 pub mod walk;
 pub mod worked;
+pub mod zio;

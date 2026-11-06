@@ -131,7 +131,7 @@ fn run_encode(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<
     let options = Options { size: arguments.size, tables: tables.to_vec(), program_relations: arguments.program_relations, work_cap: arguments.work_cap, max_inputs: arguments.max_inputs };
     let skip = arguments.out.as_ref().map(finished).unwrap_or_default();
     let mut out: Box<dyn Write> = match &arguments.out {
-        Some(path) => Box::new(std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|error| error.to_string())?)),
+        Some(path) => arclog_encoder::zio::writer(path, true)?,
         None => Box::new(std::io::BufWriter::new(std::io::stdout())),
     };
     let start = Instant::now();
@@ -185,7 +185,7 @@ fn json_list(items: &[String]) -> String {
 fn run_names(arguments: &Arguments) -> Result<(), String> {
     let found = entries(&[TABLE_HOLE.to_string()], arguments.size, arguments.program_relations, arguments.max_inputs, arguments.limit.map(|limit| limit as usize));
     let mut out: Box<dyn Write> = match &arguments.out {
-        Some(path) => Box::new(std::io::BufWriter::new(std::fs::File::create(path).map_err(|error| error.to_string())?)),
+        Some(path) => arclog_encoder::zio::writer(path, false)?,
         None => Box::new(std::io::BufWriter::new(std::io::stdout())),
     };
     for entry in &found {
@@ -201,7 +201,7 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     host.set_work_cap(arguments.work_cap);
     let found = match &arguments.names {
         Some(path) => {
-            let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+            let text = arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?;
             let mut found = Vec::new();
             for line in text.lines().filter(|line| !line.trim().is_empty()) {
                 let feature = host.with_reader(|reader| reader.feature_text(line))?;
@@ -213,7 +213,7 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     };
     let vectors = vectors(&host, &found, &[(TABLE_HOLE.to_string(), table.to_string())]);
     let mut out: Box<dyn Write> = match &arguments.out {
-        Some(path) => Box::new(std::io::BufWriter::new(std::fs::File::create(path).map_err(|error| error.to_string())?)),
+        Some(path) => arclog_encoder::zio::writer(path, false)?,
         None => Box::new(std::io::BufWriter::new(std::io::stdout())),
     };
     for (at, vector) in vectors.iter().enumerate() {
@@ -227,7 +227,7 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
 
 fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
     use arclog_encoder::closed::{closed_values, task_of_inputs, task_of_pairs, ClosedCounts, ClosedRun, OutputLeaf};
-    let text = std::fs::read_to_string(grids).map_err(|error| error.to_string())?;
+    let text = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string())?;
     let (task, output_leaf) = if arguments.rule {
         let pairs: Vec<(Vec<Vec<u8>>, Vec<Vec<u8>>)> = parse_grids(&text, true)?.into_iter().map(|pair| (pair.0, pair.1.expect("a pair"))).collect();
         (task_of_pairs(&pairs)?, OutputLeaf::Required)
@@ -238,8 +238,8 @@ fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
     let host = Host::of_task("(OUT (input ^P ^Col))", task)?;
     let run = ClosedRun { size: arguments.size, max_inputs: arguments.max_inputs, output_leaf, work_cap: arguments.work_cap };
     let path = arguments.out.clone().ok_or("`grid-values` writes to --out")?;
-    let done: HashSet<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter_map(|line| line.split('\t').next().map(str::to_string)).collect();
-    let mut out = std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|error| error.to_string())?);
+    let done: HashSet<String> = arclog_encoder::zio::read_text(&path).unwrap_or_default().lines().filter_map(|line| line.split('\t').next().map(str::to_string)).collect();
+    let mut out = arclog_encoder::zio::writer(&path, true)?;
     let mut counts = ClosedCounts::default();
     let start = Instant::now();
     let mut last = Instant::now();
@@ -298,10 +298,7 @@ fn scratch_host() -> Result<Host, String> {
 /// Writes a walk's words, sizes and counts under `prefix`, each file whole.
 fn write_walk(prefix: &str, size: usize, result: &arclog_encoder::walk::WalkResult) -> Result<(), String> {
     let put = |suffix: &str, bytes: &[u8]| -> Result<(), String> {
-        let path = format!("{prefix}.d{size}.{suffix}");
-        let temporary = format!("{path}.tmp");
-        std::fs::write(&temporary, bytes).map_err(|error| error.to_string())?;
-        std::fs::rename(&temporary, &path).map_err(|error| error.to_string())
+        arclog_encoder::zio::write_bytes(format!("{prefix}.d{size}.{suffix}.zst"), bytes)
     };
     let mut bytes = Vec::with_capacity(result.words.len() * 8);
     for word in &result.words {
@@ -333,19 +330,19 @@ fn write_walk(prefix: &str, size: usize, result: &arclog_encoder::walk::WalkResu
 /// What an earlier slice of a walk wrote under `prefix`.
 fn read_slice(prefix: &str, size: usize) -> arclog_encoder::walk::Resume {
     let mut resume = arclog_encoder::walk::Resume::default();
-    let Ok(meta) = std::fs::read_to_string(format!("{prefix}.d{size}.json")) else { return resume };
+    let Ok(meta) = arclog_encoder::zio::read_text(format!("{prefix}.d{size}.json")) else { return resume };
     let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta) else { return resume };
-    let (Ok(words), Ok(sizes)) = (std::fs::read(format!("{prefix}.d{size}.words")), std::fs::read(format!("{prefix}.d{size}.sizes"))) else { return resume };
+    let (Ok(words), Ok(sizes)) = (arclog_encoder::zio::read_bytes(format!("{prefix}.d{size}.words")), arclog_encoder::zio::read_bytes(format!("{prefix}.d{size}.sizes"))) else { return resume };
     resume.words = words.chunks_exact(8).map(|chunk| u64::from_le_bytes(chunk.try_into().expect("eight bytes"))).collect();
     resume.sizes = sizes;
-    resume.order = std::fs::read(format!("{prefix}.d{size}.order")).unwrap_or_default().chunks_exact(4).map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four bytes"))).collect();
+    resume.order = arclog_encoder::zio::read_bytes(format!("{prefix}.d{size}.order")).unwrap_or_default().chunks_exact(4).map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four bytes"))).collect();
     resume.top_done = meta["top_done"].as_u64().unwrap_or(0);
     resume
 }
 
 /// Whether an earlier slice of a walk reached its end.
 fn slice_ended(prefix: &str, size: usize) -> bool {
-    std::fs::read_to_string(format!("{prefix}.d{size}.json")).ok().and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok()).is_some_and(|meta| meta["top_edges"].as_u64().is_some() && meta["top_done"] == meta["top_edges"])
+    arclog_encoder::zio::read_text(format!("{prefix}.d{size}.json")).ok().and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok()).is_some_and(|meta| meta["top_edges"].as_u64().is_some() && meta["top_done"] == meta["top_edges"])
 }
 
 fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
@@ -353,7 +350,7 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
     use arclog_encoder::walk::walk;
     let size = arguments.size;
     let rule = arguments.rule;
-    let all: Vec<(String, String, String)> = std::fs::read_to_string(manifest)
+    let all: Vec<(String, String, String)> = arclog_encoder::zio::read_text(manifest)
         .map_err(|error| error.to_string())?
         .lines()
         .filter_map(|line| {
@@ -388,7 +385,7 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
                 scope.spawn(|| loop {
                     let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let Some((task, grids, prefix)) = lines.get(at).copied() else { break };
-                    let outcome = std::fs::read_to_string(grids).map_err(|error| error.to_string()).and_then(|text| grids_task(&text, rule));
+                    let outcome = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string()).and_then(|text| grids_task(&text, rule));
                     let task_value = match outcome {
                         Ok(task_value) => task_value,
                         Err(message) => {
@@ -416,9 +413,9 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
 fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
     use arclog_encoder::generate::{dump_task, Generators};
     let mut families = Generators::default();
-    families.names = arclog_encoder::generate::NameStore::to_file(&format!("{out}-names-all.tsv"))?;
+    families.names = arclog_encoder::generate::NameStore::to_file(&format!("{out}-names-all.tsv.zst"))?;
     let path = arguments.names.clone().ok_or("`generate-dump` reads the derangements from --names")?;
-    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let d = arguments.size.max(1);
     for size in 1..=d {
         std::fs::create_dir_all(format!("{out}-d{size}")).map_err(|error| error.to_string())?;
@@ -432,16 +429,15 @@ fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Resu
             scope.spawn(|| loop {
                 let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(file) = files.get(at) else { break };
-                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
-                if std::path::Path::new(&format!("{out}-d{d}/{stem}.json")).exists() {
+                let stem = arclog_encoder::zio::stem(file);
+                if std::path::Path::new(&format!("{out}-d{d}/{stem}.json.zst")).exists() {
                     continue;
                 }
                 match dump_task(file, &arguments.tasks, &families, &derangements, d) {
                     Ok((name, results, walks, seconds)) => {
                         for (size, result) in results.iter().enumerate() {
-                            let target = format!("{out}-d{}/{name}.json", size + 1);
-                            let temporary = format!("{target}.tmp");
-                            if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                            let target = format!("{out}-d{}/{name}.json.zst", size + 1);
+                            if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
                                 eprintln!("{stem}: the result does not write");
                             }
                         }
@@ -463,7 +459,7 @@ fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Resu
 
 /// Which written kinds the generated shapes reach, by value.
 fn run_generate_reach(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
-    let mut sink = std::io::BufWriter::new(std::fs::File::create(out).map_err(|error| error.to_string())?);
+    let mut sink = arclog_encoder::zio::writer(out, false)?;
     arclog_encoder::generate::reach(files, &arguments.tasks, arguments.size, arguments.passes.max(1), &mut sink)?;
     sink.flush().map_err(|error| error.to_string())
 }
@@ -475,10 +471,10 @@ fn run_generate(arguments: &Arguments, out: &str, files: &[String]) -> Result<()
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
     let mut families = Generators::default();
     if let Ok(path) = std::env::var("GENERATE_CLASSES") {
-        families.extend = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+        families.extend = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     }
     let allow: Option<HashSet<u128>> = match &arguments.names {
-        Some(path) => Some(std::fs::read_to_string(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
+        Some(path) => Some(arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
         None => None,
     };
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -490,15 +486,14 @@ fn run_generate(arguments: &Arguments, out: &str, files: &[String]) -> Result<()
             scope.spawn(|| loop {
                 let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(file) = files.get(at) else { break };
-                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
-                let target = format!("{out}/{stem}.d{}.json", arguments.size);
+                let stem = arclog_encoder::zio::stem(file);
+                let target = format!("{out}/{stem}.d{}.json.zst", arguments.size);
                 if std::path::Path::new(&target).exists() {
                     continue;
                 }
                 match generate_task(file, &arguments.tasks, &families, arguments.size, arguments.passes, allow.as_ref(), 8) {
                     Ok(result) => {
-                        let temporary = format!("{target}.tmp");
-                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
                             eprintln!("{stem}: the result does not write");
                         }
                         let mut held = totals.lock().expect("no panic");
@@ -519,7 +514,7 @@ fn run_generate(arguments: &Arguments, out: &str, files: &[String]) -> Result<()
 /// The catalog's values on each requested table, with the time of its pass.
 fn run_catalog_values(arguments: &Arguments, requests: &str) -> Result<(), String> {
     let path = arguments.out.clone().ok_or("`catalog-values` writes to --out")?;
-    let mut out = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|error| error.to_string())?);
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
     let (passes, spent) = arclog_encoder::catalog_run::values_of(requests, &arguments.tasks, &mut out)?;
     out.flush().map_err(|error| error.to_string())?;
     eprintln!("{passes} passes, {:.2} us per table at a pair", spent.as_secs_f64() * 1e6 / passes.max(1) as f64);
@@ -532,7 +527,7 @@ fn run_catalog_dump(arguments: &Arguments, out: &str, files: &[String]) -> Resul
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
     let form = if arguments.rule { Form::All } else { Form::Ratio };
     let path = arguments.names.clone().ok_or("`catalog-dump` reads the derangements from --names")?;
-    let orders: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let orders: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let next = std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let totals = std::sync::Mutex::new((0u64, 0f64, 0f64));
@@ -542,15 +537,14 @@ fn run_catalog_dump(arguments: &Arguments, out: &str, files: &[String]) -> Resul
             scope.spawn(|| loop {
                 let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(file) = files.get(at) else { break };
-                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
-                let target = format!("{out}/{stem}.json");
+                let stem = arclog_encoder::zio::stem(file);
+                let target = format!("{out}/{stem}.json.zst");
                 if std::path::Path::new(&target).exists() {
                     continue;
                 }
                 match dump_task(file, &arguments.tasks, &orders, form) {
                     Ok((result, spent, facts)) => {
-                        let temporary = format!("{target}.tmp");
-                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
                             eprintln!("{stem}: the result does not write");
                         }
                         let mut held = totals.lock().expect("no panic");
@@ -579,10 +573,10 @@ fn run_stored_eval(arguments: &Arguments, requests: &str) -> Result<(), String> 
     use arclog_encoder::schema::{type_of_name, TableColumn};
     use arclog_encoder::tablewalk::cell_bits;
     let path = arguments.out.clone().ok_or("`stored-eval` writes to --out")?;
-    let mut out = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|error| error.to_string())?);
+    let mut out = arclog_encoder::zio::writer(&path, false)?;
     let registry = arclog::registry::Registry::get();
     let reader = Reader { registry, library: arclog_encoder::library::library(), program_relations: &arclog_encoder::program_relations::is_program_relation };
-    let text = std::fs::read_to_string(requests).map_err(|error| error.to_string())?;
+    let text = arclog_encoder::zio::read_text(requests).map_err(|error| error.to_string())?;
     for (at, line) in text.lines().enumerate() {
         let request: serde_json::Value = serde_json::from_str(line).map_err(|error| error.to_string())?;
         let task_name = request["task"].as_str().ok_or("a request's task")?;
@@ -656,7 +650,7 @@ fn run_family(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), 
     let families = Families::default();
     let rule = if arguments.rule { StableRule::NonVacuous } else { StableRule::Active };
     let allow: Option<HashSet<u128>> = match &arguments.names {
-        Some(path) => Some(std::fs::read_to_string(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
+        Some(path) => Some(arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
         None => None,
     };
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -667,15 +661,14 @@ fn run_family(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), 
             scope.spawn(|| loop {
                 let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(file) = files.get(at) else { break };
-                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
-                let target = format!("{out}/{stem}.d{}.json", arguments.size);
+                let stem = arclog_encoder::zio::stem(file);
+                let target = format!("{out}/{stem}.d{}.json.zst", arguments.size);
                 if std::path::Path::new(&target).exists() {
                     continue;
                 }
                 match family_task(file, &arguments.tasks, &families, arguments.size, arguments.passes, rule, allow.as_ref(), 8) {
                     Ok(result) => {
-                        let temporary = format!("{target}.tmp");
-                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
                             eprintln!("{stem}: the result does not write");
                         }
                         let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -708,15 +701,14 @@ fn run_candidate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(
             scope.spawn(|| loop {
                 let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(file) = files.get(at) else { break };
-                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+                let stem = arclog_encoder::zio::stem(file);
                 let target = format!("{out}/{stem}{}.d{}.r{rate}.json", if arguments.relational { ".relational" } else { "" }, arguments.size);
                 if std::path::Path::new(&target).exists() {
                     continue;
                 }
                 match candidate_task(file, &arguments.tasks, &cache, rate, arguments.passes, 12, rule) {
                     Ok(result) => {
-                        let temporary = format!("{target}.tmp");
-                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                        if arclog_encoder::zio::write_text(&target, &result.to_string()).is_err() {
                             eprintln!("{stem}: the result does not write");
                         }
                         let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -733,7 +725,7 @@ fn run_candidate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(
 fn run_walk_check(arguments: &Arguments, grids: &str) -> Result<(), String> {
     use arclog_encoder::optable::{build, Mode};
     use arclog_encoder::walk::{walk, Checker};
-    let text = std::fs::read_to_string(grids).map_err(|error| error.to_string())?;
+    let text = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string())?;
     let task = grids_task(&text, arguments.rule)?;
     let start = Instant::now();
     let scratch = scratch_host()?;
@@ -800,7 +792,7 @@ fn run_count(arguments: &Arguments, solver: &str, tables: &[String]) -> Result<(
 
 /// The train tasks of `path` that the law check samples, by a hash of each id.
 fn sampled_tasks(path: &str, count: usize) -> Result<Vec<String>, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let text = arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?;
     let mut tasks: Vec<(String, String)> = text.split_whitespace().filter(|task| *task != "981571dc").map(|task| (arclog::hash::digest_text(&format!("law-sample/{task}")), task.to_string())).collect();
     tasks.sort();
     Ok(tasks.into_iter().take(count).map(|(_, task)| task).collect())
@@ -827,12 +819,12 @@ fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
     use arclog_encoder::law::{compare_table, compare_with_program, Sample, Tally};
     let tasks = sampled_tasks(tasks_file, arguments.tasks_count)?;
     let path = arguments.out.clone().ok_or("`law` writes to --out")?;
-    let done: HashSet<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().filter_map(|line| {
+    let done: HashSet<String> = arclog_encoder::zio::read_text(&path).unwrap_or_default().lines().filter_map(|line| {
         let start = line.find("\"key\":\"")? + 7;
         let end = line[start..].find('"')? + start;
         Some(line[start..end].to_string())
     }).collect();
-    let mut out = std::io::BufWriter::new(std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|error| error.to_string())?);
+    let mut out = arclog_encoder::zio::writer(&path, true)?;
     let control = arguments.control.then(|| arclog_encoder::law::Element::new("D4_TB", [1, 0, 2, 3, 4, 5, 6, 7, 8, 9]));
     let sample = Sample { size: arguments.size, rate_per_million: arguments.rate, thin_per_million: arguments.thin, seconds: arguments.seconds, max_inputs: arguments.max_inputs, work_cap: arguments.work_cap, control };
     let start = Instant::now();
@@ -985,7 +977,7 @@ fn main() {
         ("generate-classes", [out, files @ ..]) if !files.is_empty() => {
             arclog_encoder::generate::classes(files, &arguments.tasks, arguments.passes.max(1)).and_then(|found| {
                 let text = serde_json::to_string(&found).map_err(|error| error.to_string())?;
-                std::fs::write(out, text).map_err(|error| error.to_string())
+                arclog_encoder::zio::write_text(out, &text)
             })
         }
         ("catalog-dump", [out, files @ ..]) if !files.is_empty() => run_catalog_dump(&arguments, out, files),

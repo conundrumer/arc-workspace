@@ -12,8 +12,7 @@ import time
 
 import numpy as np
 
-from common import (RESULTS, auc_of, classes, eval_tasks, flush_print, grids_values, item_statistics, read_values, task_json,
-                    write_json_atomic)
+from common import (RESULTS, auc_of, classes, data_exists, eval_tasks, flush_print, grids_values, item_statistics, read_json, read_values, task_json, write_json_atomic)
 
 OUT = RESULTS / 'rule-base'
 
@@ -22,7 +21,7 @@ def items_of(task):
     """The pairs to compare: each train pair, then each near miss with its pair's input; each
     pair's near misses by their places, with whether each survives the first version's claims."""
     data = task_json(task)
-    items = json.load(open(RESULTS / f'items/{task}.json'))
+    items = read_json(RESULTS / f'items/{task}.json')
     pairs = [[pair['input'], pair['output']] for pair in data['train']]
     count = len(pairs)
     near = [[] for _ in range(count)]
@@ -65,15 +64,15 @@ def run_task(task, encoder, size, stats_only=False):
     values_dir = OUT / 'values'
     values_dir.mkdir(parents=True, exist_ok=True)
     done = [OUT / f'{task}.d{d}.json' for d in range(1, size + 1)]
-    if not stats_only and all(path.exists() for path in done):
+    if not stats_only and all(data_exists(path) for path in done):
         return None
     start = time.time()
     pairs, count, near = items_of(task)
-    pairs_path = values_dir / f'{task}.pairs.json'
-    pairs_path.write_text(json.dumps(pairs))
-    values_path = values_dir / f'{task}.values.tsv'
+    pairs_path = values_dir / f'{task}.pairs.json.zst'
+    write_json_atomic(pairs_path, pairs)
+    values_path = values_dir / f'{task}.values.tsv.zst'
     if stats_only:
-        if not values_path.exists():
+        if not data_exists(values_path):
             return None
     else:
         grids_values(pairs_path, values_path, encoder, True, size, log=values_dir / f'{task}.log')

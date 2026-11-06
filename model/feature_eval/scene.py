@@ -12,8 +12,7 @@ import time
 
 import numpy as np
 
-from common import (RESULTS, classes, eval_tasks, flush_print, grids_values, item_statistics, read_values, task_json,
-                    write_json_atomic)
+from common import (RESULTS, classes, data_exists, eval_tasks, flush_print, grids_values, item_statistics, read_json, read_values, task_json, write_json_atomic)
 
 OUT = RESULTS / 'scene-input'
 
@@ -22,7 +21,7 @@ def items_of(task, limit=None):
     """The grids to compare: each input, then its mutations; and each input's place and its
     mutations' places among the grids. `limit` keeps the first N negatives of an input."""
     data = task_json(task)
-    items = json.load(open(RESULTS / f'items/{task}.json'))
+    items = read_json(RESULTS / f'items/{task}.json')
     train = [pair['input'] for pair in data['train']]
     test = [pair['input'] for pair in data['test']]
     inputs = train + test
@@ -73,15 +72,15 @@ def run_task(task, encoder, size, limit, stats_only=False):
     values_dir = OUT / 'values'
     values_dir.mkdir(parents=True, exist_ok=True)
     done = [OUT / f'{task}{suffix}.d{d}.json' for d in range(1, size + 1)]
-    if not stats_only and all(path.exists() for path in done):
+    if not stats_only and all(data_exists(path) for path in done):
         return None
     start = time.time()
     grids, input_places, negatives = items_of(task, limit)
-    grids_path = values_dir / f'{task}{suffix}.grids.json'
-    grids_path.write_text(json.dumps(grids))
-    values_path = values_dir / f'{task}{suffix}.values.tsv'
+    grids_path = values_dir / f'{task}{suffix}.grids.json.zst'
+    write_json_atomic(grids_path, grids)
+    values_path = values_dir / f'{task}{suffix}.values.tsv.zst'
     if stats_only:
-        if not values_path.exists():
+        if not data_exists(values_path):
             return None
     else:
         grids_values(grids_path, values_path, encoder, False, size, log=values_dir / f'{task}.log')

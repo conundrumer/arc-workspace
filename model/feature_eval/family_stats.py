@@ -14,7 +14,7 @@ import json
 
 import numpy as np
 
-from common import RESULTS, write_json_atomic
+from common import (RESULTS, glob_data, read_json, write_json_atomic)
 
 
 def bootstrap(values):
@@ -25,7 +25,7 @@ def bootstrap(values):
 
 
 def read(base, folder):
-    return [json.load(open(path)) for path in sorted(glob.glob(str(base / 'candidate' / folder / '*.d*.json')))]
+    return [read_json(path) for path in sorted(glob_data(str(base / 'candidate' / folder / '*.d*.json')))]
 
 
 def family_line(records, d):
