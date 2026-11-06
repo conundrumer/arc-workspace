@@ -235,6 +235,23 @@ A vector is sparse. A table gives the entries whose value differs from the defau
 - A task-wide count over the rows of every example depends on how many examples there are, so a ratio pairs it with that count.
 - Pools over assignments stay as the contract gives them: symmetric functions of the vectors, outside arclog. Assignments are not columns.
 
+### State features
+
+A state shape reads two tables of a state, T and U, with each table and each of its columns written as a hole, numbered by first appearance over both. Two columns can meet where their types can, and two Ident columns where they have one source. Its ground expressions come from a named family:
+
+- The rows of each table that the other keeps: `join`, `semijoin`, `antijoin` and `all`, in both directions.
+- The value sets of a column of each: `same-values`, and `semijoin` and `all` over each table's `project`.
+- The cells of one table inside the boxes of the other: `inside-boxes` and `boxes-holding`.
+- The keys of one table whose cells are those of a key of the other, up to a move or also a D4 element: `same-shape` and `same-shape-d4`.
+- Two columns that give the output color at a shared cell, where neither does alone: `determines-jointly`.
+- The output's cells and the changed cells that T holds, with and without U.
+
+A value stands two ways: at the pair (T, U), and pooled into T over each U by U's relation to T, as the least, the mean and the greatest of its value. At a member of a state, the relations are parent, ancestor, child, descendant and other. At a candidate query over a state, they are parent, ancestor and other.
+
+The state's graph gives its own numbers, each of which counts members, so none depends on the order of a program's forms: a table's depth and its depth below the deepest member, whether it is a root or a leaf, how many tables it reads and how many read it, its ancestors and its descendants, and how many other tables have its rows.
+
+A shape over the base parts that reads no other table stands in a vector of the task's own, at each example. That vector is the same for every candidate of a task, so a comparison of candidates reads it only through what it says together with theirs.
+
 ## Program relations
 
 The program itself is data. Base relations reflect it, for the QueryVector. The TableVector reads none of them, since it is a function of its table's rows and the base tables.
