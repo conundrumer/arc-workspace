@@ -226,6 +226,7 @@ pub fn cell_bits(value: &serde_json::Value, ty: &ValueType) -> Option<u32> {
             Term::Box(Margins { top: margin(0)?, bottom: margin(1)?, left: margin(2)?, right: margin(3)? })
         }
         ValueType::Color => Term::Constant(Constant::Color(Color::from_digit(value.as_u64()? as u8)?)),
+        ValueType::Example => Term::Constant(Constant::Example(arclog::terms::Example::at(u16::try_from(value.as_u64()?).ok()?))),
         ValueType::Int | ValueType::Nat => return Some(Term::encode_number(value.as_i64()? as i32).encoding()),
         ValueType::Ident(_) => {
             let bits = match value {
