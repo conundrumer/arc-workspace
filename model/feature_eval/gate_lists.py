@@ -5,8 +5,9 @@ mutants, trained on train tasks and read on dev tasks, read additively over what
   gate_lists.py build ROOT OUT [--min-tasks N]   the rows and the sparse matrices
   gate_lists.py fit OUT --sets ... --filters ... [--seeds N]
                                                  one line per set: the ensemble of N fits, with each fit's
-                                                 spread, per-task values in OUT/fits.jsonl and every
-                                                 column's summed gain in OUT/importance/
+                                                 spread, per-task values in OUT/fits.jsonl, every column's
+                                                 summed gain in OUT/importance/, and the fits and their
+                                                 columns in OUT/models/
   gate_lists.py compare OUT A B [--filter F]     the paired difference of two sets over dev tasks
 
 ROOT is what `candidate-lists` writes: `lists/` on the true outputs and `null/` on deranged ones.
@@ -32,6 +33,7 @@ import hashlib
 import json
 import pickle
 import re
+import subprocess
 import sys
 import time
 from array import array
@@ -296,6 +298,8 @@ def build(root, out, min_tasks):
     meta = dict(columns=columns, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab)
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
+    code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
+    (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, min_tasks=min_tasks, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
     print('built', flush=True)
 
 
@@ -550,7 +554,12 @@ def fit(out, sets, filters, threads, fraction, seeds=5):
             gain = sum(model.feature_importance(importance_type='gain') for model, _ in runs)
             splits = sum(model.feature_importance(importance_type='split') for model, _ in runs)
             write_importance(out / 'importance' / f'{name}.{spec}.tsv.zst', gain, splits, labels, members)
-            labels = [labels[j] for j in kept]
+            kept_labels = [labels[j] for j in kept]
+            for at, (model, _) in enumerate(runs):
+                (out / 'models').mkdir(exist_ok=True)
+                (out / 'models' / f'{name}.{spec}.{at}.txt').write_text(model.model_to_string())
+            (out / 'models' / f'{name}.{spec}.columns.txt').write_text('\n'.join(kept_labels) + '\n')
+            labels = kept_labels
             each = [model.predict(X_dev) for model, _ in runs]
             each_auc = [float(np.mean(list(score_items(dev['rows'], dev_groups, values)[0].values()))) for values in each]
             rounds = int(np.median([held for _, held in runs]))
