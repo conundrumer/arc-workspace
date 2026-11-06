@@ -12,7 +12,10 @@ A pick whose every apart says that one candidate stands in two slots gets
 joined columns of each such apart. A `TiebreakResolutions` pick gets no
 `ones` where an apart joins on a column that is not the slot's, as its
 items may stay unused, and a relation that gates its models adds aparts
-(`gated_aparts`). Where the pick is the item relation's
+(`gated_aparts`). A `TiebreakResolutions` pick of a key that no case fixes
+reads an item relation of one key: its generator's clauses derive a pool of the
+candidates at every key, and a relation of one key of the pool has a `ONE` mark
+(`key_pick`). Where the pick is the item relation's
 only reader, the item relation's clauses become the picked relation's
 (`fold`). A head term `$Ctor(V..)` of type `TiebreakResolution` with no
 `TiebreakResolutions` instance, or a record `[V..]` of that type, is a pick of
@@ -84,6 +87,7 @@ class Pick:
     ones: list[list[str]] | None = None   # the ONE keys; None for a CHOOSE
     spread: dict = field(default_factory=dict)   # per column variable, the term of its item atom: a variable or a record of variables
     fold: list[str | None] | None = None  # per column of the folded relation, its cvar
+    pool: Atom | None = None   # the candidates of every key, where the item atom holds those of the picked key
 
 
 def tsubst(x, m: dict):
@@ -677,9 +681,11 @@ class Rewriter:
         cols = [Column(v, TypeName((), vtypes.get(v, "number"))) for v in cvars]
 
         # the item relation: one existing atom, or a relation of its own
-        item_atom = None
+        item_atom = pool_atom = None
         new_rels, new_units = [], []
-        if len(gens) == 1 and not generic and len(gens[0].body) == 1 and \
+        # a keyed pick of a key that no case fixes also picks one key
+        one_key = comp == "TiebreakResolutions" and keyed and not self.case_only(ktype) and bool(gens)
+        if not one_key and len(gens) == 1 and not generic and len(gens[0].body) == 1 and \
                 isinstance(gens[0].body[0], AtomLiteral) and not gens[0].body[0].negated:
             a = gens[0].body[0].atom
             avs = [x.name for x in a.args if isinstance(x, Variable)]
@@ -689,6 +695,9 @@ class Rewriter:
         if item_atom is None:
             iname = inst.name + "_item"
             new_rels.append(self.decl(iname, cols, sc))
+            pool = inst.name + "_pool" if one_key else iname
+            if one_key:
+                new_rels.append(self.decl(pool, cols, sc))
             for u in gens:
                 if generic:
                     args = parts(u)[0 if keyed else 1:]
@@ -696,9 +705,12 @@ class Rewriter:
                     # the head's distinct variables, in the order the pattern's are
                     m = dict(zip(cvars, [Variable(v) for v in ordered_vars(parts(u)[0 if keyed else 1:])]))
                     args = tuple(m[v] for v in cvars)
-                new_units.append(dc_replace(u, head=dc_replace(u.head, relation=RelationName((), iname),
+                new_units.append(dc_replace(u, head=dc_replace(u.head, relation=RelationName((), pool),
                                                                  args=tuple(args))))
             item_atom = Atom(RelationName((), iname), tuple(Variable(v) for v in cvars), 0)
+            if one_key:
+                pool_atom = Atom(RelationName((), pool), item_atom.args, 0)
+                self.key_pick(inst, gens[0], pool_atom, item_atom, ordered_vars(key_p), cvars, cols, new_rels, new_units)
         new_rels.append(self.decl(inst.name, cols, sc))
 
         # field variables for the record columns
@@ -714,6 +726,7 @@ class Rewriter:
         pick = Pick(inst.name, comp, inst.span.first if inst.span else 0, sp(item_atom),
                     sorted(term_vars(key_s, set())), sorted(slot_vars), sorted(item_vars - slot_vars),
                     notes=notes)
+        pick.pool = sp(pool_atom) if pool_atom is not None else None
         pat_s = (key_s, slot_s, item_s)
 
         def at(m):
@@ -767,6 +780,42 @@ class Rewriter:
             return at(fill(m1, pat_s)), at(fill(m2, pat_s)), s_
         reads = (comp, keyed, pat_s, cvars, spread, item_at)
         return new_rels, new_units, pick, reads
+
+    def case_only(self, tname: str) -> bool:
+        """Whether a value of type `tname` is fixed by a case: `Choice`, a
+        type of a field of it that has constructors, or a record of such."""
+        choice = self.types.get(((), "Choice"))
+        cases = {"Choice"}
+        todo = [f.type.name for f in choice.fields] if isinstance(choice, RecordType) else []
+        if isinstance(choice, AdtType):
+            todo += [f.type.name for k in choice.constructors for f in k.fields]
+        while todo:
+            t = todo.pop()
+            decl = self.types.get(((), t))
+            if t not in cases and isinstance(decl, AdtType):
+                cases.add(t)
+                todo += [f.type.name for k in decl.constructors for f in k.fields]
+        rec = self.record(tname)
+        return tname in cases or rec is not None and all(self.case_only(f.type.name) for f in rec.fields)
+
+    def key_pick(self, inst, gen: Unit, pool: Atom, item: Atom, kvars: list[str], cvars: list[str],
+                 cols: list[Column], new_rels: list, new_units: list) -> None:
+        """A relation of one key of the candidates in `pool`, with a `ONE`
+        mark, and the item relation `item` as the candidates at that key. The
+        resolutions of each key are the models of the pick at that key, so a
+        model reads the candidates of one key and one grid shows one key."""
+        sc = inst.scope.components
+        kname = inst.name + "_key"
+        kcols = [cols[cvars.index(v)] for v in kvars]
+        new_rels.append(self.decl(kname, kcols, sc))
+        pooled = AtomLiteral(pool, False)
+        keys = AtomLiteral(dc_replace(pool, args=tuple(Variable(v) if v in kvars else Wildcard() for v in cvars)), False)
+        katom = Atom(RelationName((), kname), tuple(Variable(v) for v in kvars), 0)
+        for head, body in ((katom, (keys,)), (item, (pooled, AtomLiteral(katom, False)))):
+            self.next_unit += 1
+            new_units.append(dc_replace(gen, id=UnitId(self.next_unit), head=head, body=body))
+        self.picks[kname] = Pick(kname, "Resolution", inst.span.first if inst.span else 0, katom, [], [], kvars,
+                                 scope=sc, cvars=kvars, ones=[[]], fold=kvars)
 
     def defect_aparts(self, inst, pick: Pick, reads, units, rels):
         """A relation over one resolution that two assignments of it derive,
@@ -1009,7 +1058,7 @@ class Rewriter:
             return m
 
         def generated(k, s, x):
-            return AtomLiteral(tsubst(pick.item, fill(bind(k, s, x), pat_s)), False)
+            return AtomLiteral(tsubst(pick.pool or pick.item, fill(bind(k, s, x), pat_s)), False)
 
         def picked(k, s, x):
             m = bind(k, s, x)
