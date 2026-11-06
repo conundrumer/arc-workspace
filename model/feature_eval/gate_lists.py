@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import scipy.sparse as sp
+import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from candidate import read_lists  # noqa: E402
@@ -44,6 +45,16 @@ def split_of():
         task, part, _ = line.split('\t')
         out[task] = part
     return out
+
+
+def name_lines(folder):
+    """Each line of a folder's names files: a run writes one of its own, and a run still going or
+    stopped leaves its file with an unfinished end."""
+    for path in sorted(folder.glob('names*.tsv.zst')):
+        try:
+            yield from open_text(path)
+        except zstandard.ZstdError:
+            continue
 
 
 class Matrix:
@@ -110,7 +121,7 @@ def build(root, out, min_tasks):
     # The names of the columns.
     names, flags, sizes = {}, {}, {}
     wanted = set(columns.tolist())
-    for line in open_text(root / 'lists/names.tsv.zst'):
+    for line in name_lines(root / 'lists'):
         parts_line = line.rstrip('\n').split('\t')
         if len(parts_line) != 4:
             continue

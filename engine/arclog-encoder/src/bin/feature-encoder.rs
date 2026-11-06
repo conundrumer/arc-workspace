@@ -400,7 +400,10 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
     use arclog_encoder::generate::{Generators, NameStore};
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
     let mut families = Generators::default();
-    families.names = NameStore::to_file(&format!("{out}/names.tsv.zst"))?;
+    // A run writes a names file of its own, since a stopped run leaves its file with an unfinished end.
+    let names_file = format!("{out}/names.tsv.zst");
+    let names_file = if std::path::Path::new(&names_file).exists() { format!("{out}/names-{}.tsv.zst", std::process::id()) } else { names_file };
+    families.names = NameStore::to_file(&names_file)?;
     let derangements: Option<std::collections::BTreeMap<String, Option<Vec<usize>>>> = match &arguments.names {
         Some(path) => Some(serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?),
         None => None,
