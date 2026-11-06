@@ -46,7 +46,7 @@ from arclog_convert.forms import (
 )
 from arclog_convert.leaves import Written
 from arclog_convert.lib import KeyedTable, PROPOSER_COLS, keyed_row, pascal, takes_set_mark, require_exact_set
-from arclog_convert.terms import name_of
+from arclog_convert.terms import MOVED_RELS, name_of
 
 
 def atom(relation: str, sites: list[str]) -> str:
@@ -492,7 +492,7 @@ class ParamsMixin:
         why = quote(params_to_amp(reason))
         if cat == "store":
             names = [name_of(n, self.many) for n in re.split(r"\s*&\s*", name)] if name else []
-            return [f"(exclude ({' '.join([*names, f'&{rel}=$Stored'])}) {why})"] if under else []
+            return [f"(exclude ({' '.join([*names, f'&{MOVED_RELS.get(rel, rel)}=$Stored'])}) {why})"] if under else []
         props = self.derive_props.get(rel, [])
         if name in props or name in PROPOSER_COLS:
             sides, names = [name] if name in props else [], []

@@ -964,6 +964,8 @@ class Solver(ParamsMixin, InstancesMixin, RenderMixin, CasesMixin):
                     else:
                         amp = c.rel_name(rscope, rname)
                         wid = rname
+                        if amp[1:] != rname:
+                            MOVED_RELS[rname] = amp[1:]   # the witness names spell it by its Souffle name
                     if inst is not None and inst.component != "Parse":
                         c.wrote(amp, Written(inst.scope.components, wid, False))
                     self.store_points.append((amp, [":" + more], "Stored", wid))
