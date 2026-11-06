@@ -381,7 +381,11 @@ class ClauseWriter:
                 self.c.todo.add("rigid-d4", f"{souffle_term(l.atom)}: only a positive read of a part that holds the "
                                 "stored pose and the part's key has a form")
             if l.negated:
+                branches = set(self.branches)
                 name, s = self.sites(l.atom, None)
+                # A concept's constructor in a negated atom selects the rows the
+                # clause reads, and is no branch the clause stands in.
+                self.branches = branches | (self.branches - set(self.c.concept_of().values()))
                 self.note(name, True)
                 if name.split(".")[0] in self.drop_neg:
                     return []
