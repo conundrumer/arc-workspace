@@ -27,7 +27,9 @@ from common import ROOT as REPO, open_text  # noqa: E402
 READS_OUTPUT = 2
 
 
-def read_lists(path):
+def read_lists(path, graded=False):
+    """A task's lists: per table, its stable shapes and their values. With `graded`, also its other active
+    shapes and each one's least, mean and greatest."""
     raw = zstandard.ZstdDecompressor().stream_reader(open(path, 'rb')).read()
     size = struct.unpack('<Q', raw[:8])[0]
     head = json.loads(raw[8:8 + size])
@@ -35,13 +37,20 @@ def read_lists(path):
     dictionary = np.frombuffer(raw, dtype='<u8', count=head['shapes'], offset=at)
     at += 8 * head['shapes']
     lists = {}
+    others = {}
     for held in head['lists']:
         places = np.frombuffer(raw, dtype='<u4', count=held['count'], offset=at)
         at += 4 * held['count']
         values = np.frombuffer(raw, dtype='<f4', count=held['count'], offset=at)
         at += 4 * held['count']
         lists[held['owner']] = (dictionary[places], values)
-    return head, lists
+        count = held.get('graded', 0)
+        places = np.frombuffer(raw, dtype='<u4', count=count, offset=at)
+        at += 4 * count
+        numbers = np.frombuffer(raw, dtype='<f4', count=3 * count, offset=at).reshape(3, count)
+        at += 12 * count
+        others[held['owner']] = (dictionary[places], numbers[0], numbers[1], numbers[2])
+    return (head, lists, others) if graded else (head, lists)
 
 
 def read_names(root):
