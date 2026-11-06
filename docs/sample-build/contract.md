@@ -298,6 +298,7 @@ Computed from the table together with the base tables, against the used paramete
 | the greatest share of cells added by the union with one member's parameterized table it uses | exists: hand `link_pair_union` |
 | its paint gain less that used parameterized table's paint gain (`per_use`) | new |
 | share of its fixed cells that that used parameterized table does not fix (`per_use`) | new |
+| the share of its active `TableVector` entries whose value at each example that used parameterized table's vector also has (`per_use`) | new |
 
 Computed from the query's body (optional):
 

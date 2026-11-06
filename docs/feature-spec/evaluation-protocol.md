@@ -1,6 +1,6 @@
 # Evaluation of the features: protocol
 
-What the encoder can do at each size, before any model. No model is trained, and no person reviews anything. The results set the size to run. No feature is dropped because of a result.
+What the encoder can do at each size, before any model. No person reviews anything. The results set the size to run. No feature is dropped because of a result.
 
 ## Common rules
 
@@ -58,6 +58,7 @@ At which size a difference first shows. The specification's guarantee says that 
 Whether the features of a candidate's table tell a solver's next query from a wrong one at the same state. This stands closest to what a model must do.
 
 - **Items:** (task, query Q of the concept case, mutant Q'), with up to 5 mutants per query. A mutant is a valid one-edit mutation of Q's body from the engine, `draw_specs` with k=1 in a seeded order, whose table differs from Q's at some train example. They are stored under `results/mutants/`. A query with no such mutant leaves the test, and the share of such queries is reported.
+- **Same structure:** a run can also draw argument edits whose query has gold's features with no table content, marked apart, for the line on pairs that those features leave tied.
 - **Roots:** closed per-input roots with an `output` leaf, whose table holes take the candidate's table, the tables that Q reads, and the base tables. These are the roots of the candidate block.
 - **Stable root:** a root with one value at every train pair, and that value is neither "no value" nor the root's default.
 - **Contingent root:** a root that `input`, or some table Q reads, does not have as stable, with the candidate's table hole bound to that table. So Q and Q' have one set of contingent roots.
@@ -67,6 +68,10 @@ Whether the features of a candidate's table tell a solver's next query from a wr
 - **Graded read:** a stable root cannot show a value that varies over the pairs. So a `ratio` shape also reports the AUC with S as its greatest value over bindings, in the mean over the train pairs.
 - **Null:** the same AUC with the outputs deranged across the train pairs, and the contingent roots found again on them. So each example's table is read against another pair's output. It shows how much of the AUC comes from what the tables look like, and not from how they relate to the output. A task whose train outputs are all equal leaves the null.
 - **Known limits:** Q was fitted to every train pair, so this measures the recognition of a fitted query, which is what the search must find, and it says nothing about the test inputs. A mutant can compute something as good as Q, which lowers the AUC. S counts every class once, so many weak classes dilute a strong one, and this does not bound what a model can do with the same roots.
+
+## Gate
+
+Trees rank Q over Q', trained on train tasks and read on dev tasks, per feature set, beside a baseline with no table content. This is the one test here that trains a model.
 
 ## Rule recognition
 
