@@ -1000,11 +1000,17 @@ class RenderMixin:
             # clause once it is written again without the relations `gone`
             return {f.name for f in branch_forms if holds(f) and self.without_reads(f, gone) is not None}
         rowless = self.rowless_sets(at)
-        # a combination that an `exclude` leaves out is no case, so what it would leave empty stands for the cases
-        # that take the alts with another constructor at each other point
+        # a combination that an `exclude` leaves out is no case, so a relation it alone would leave empty can hold in
+        # the cases that take the alts with another constructor at each other point. A relation each of whose clauses,
+        # in the concept program or in a block, fixes another constructor at a point the alts fix is empty there too
         chosen = {"$" + k for k in at.values()} | {"$" + k for k in concept if field_of.get(k) not in at}
         no_case = any(x <= chosen for x in self.excluded_sets())
-        empty = rowless if no_case else (fixed_only - derived_without(rowless)) | rowless
+
+        def ruled_out(name: str) -> bool:
+            return all(any(field_of[b] in at and at[field_of[b]] != b for b in f.branches)
+                       for f in [*clauses, *branch_forms] if f.name == name)
+        may_be_empty = {name for name in fixed_only if ruled_out(name)} if no_case else fixed_only
+        empty = (may_be_empty - derived_without(rowless)) | rowless
         # a concept clause that holds in the case holds beside the case's own
         # clauses of its relation
         reps = getattr(self, "concept_repeats", {})
