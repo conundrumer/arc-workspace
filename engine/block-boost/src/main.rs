@@ -6,7 +6,8 @@
 //!
 //!     block-boost scan DIR      each column's hash, rows and entries, from DIR/plan.json
 //!     block-boost compile DIR   each entry as the number of its bin, for the columns DIR/keep.i32 keeps
-//!     block-boost fit FILE      one model per seed, from the JSON in FILE
+//!     block-boost fit FILE      one lambdarank model per seed, from the JSON in FILE
+//!     block-boost softmax FILE  a model of the writer's softmax over the ids of each writing point, from the JSON in FILE
 //!
 //! The objective and the tree growth are those of LightGBM's lambdarank, with the same parameters. A histogram entry holds
 //! the sums of a bin, and a leaf's rows add their sums to the blocks first, so one block's entries are read once for a leaf.
@@ -1373,15 +1374,170 @@ fn fit(file: &Path) {
     }
 }
 
+/// The softmax over one group's ids and over its positive ids: the gradient p - q, the Hessian p(1 - p) with a floor, and the loss.
+fn softmax_group(score: &[f64], label: &[u8], grad: &mut [f32], hess: &mut [f32]) -> f64 {
+    let most = score.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let (mut all, mut positive) = (0.0, 0.0);
+    for (&s, &l) in score.iter().zip(label) {
+        let e = (s - most).exp();
+        all += e;
+        if l > 0 {
+            positive += e;
+        }
+    }
+    for i in 0..score.len() {
+        let e = (score[i] - most).exp();
+        let p = e / all;
+        let q = if label[i] > 0 { e / positive } else { 0.0 };
+        grad[i] = (p - q) as f32;
+        hess[i] = (p * (1.0 - p)).max(1e-6) as f32;
+    }
+    -(positive / all).ln()
+}
+
+/// The mean loss over the groups, and how often a group's best id is positive.
+fn softmax_read(start: &[u32], label: &[u8], score: &[f64]) -> (f64, f64) {
+    let groups = start.len() - 1;
+    let (mut loss, mut top) = (0.0, 0.0);
+    for g in 0..groups {
+        let (a, b) = (start[g] as usize, start[g + 1] as usize);
+        let most = score[a..b].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let (mut all, mut positive) = (0.0, 0.0);
+        let mut best = a;
+        for i in a..b {
+            let e = (score[i] - most).exp();
+            all += e;
+            if label[i] > 0 {
+                positive += e;
+            }
+            if score[i] > score[best] {
+                best = i;
+            }
+        }
+        loss += -(positive / all).ln();
+        if label[best] > 0 {
+            top += 1.0;
+        }
+    }
+    (loss / groups.max(1) as f64, top / groups.max(1) as f64)
+}
+
+/// Fits on the train groups and stops on the dev groups, as `fit_trees.py` does with LightGBM.
+fn softmax(file: &Path) {
+    let v = read_json(file);
+    let count = v["threads"].as_u64().unwrap() as usize;
+    threads(count);
+    let config = Config {
+        learning_rate: v["learning_rate"].as_f64().unwrap(),
+        num_leaves: v["num_leaves"].as_u64().unwrap() as usize,
+        min_data_in_leaf: v["min_data_in_leaf"].as_f64().unwrap(),
+        min_sum_hessian: v["min_sum_hessian"].as_f64().unwrap(),
+        fraction: v["fraction"].as_f64().unwrap(),
+        truncation: 0,
+        max_rounds: v["max_rounds"].as_u64().unwrap() as usize,
+        patience: v["patience"].as_u64().unwrap() as usize,
+    };
+    let path = |name: &str| PathBuf::from(v[name].as_str().unwrap());
+    let (store, dev) = (Store::open(&path("train")), Store::open(&path("dev")));
+    let out = path("out");
+    fs::create_dir_all(&out).unwrap();
+    let (start, label): (Vec<u32>, Vec<u8>) = (read_all(&path("groups")), read_all(&path("labels")));
+    let (dev_start, dev_label): (Vec<u32>, Vec<u8>) = (read_all(&path("dev_groups")), read_all(&path("dev_labels")));
+    assert_eq!(label.len(), store.rows);
+    assert_eq!(dev_label.len(), dev.rows);
+    println!("rows {} dev rows {} columns {} bins {} entries {} groups {} dev groups {}", store.rows, dev.rows, store.kept, store.bins, store.col_entries.iter().sum::<u64>(), start.len() - 1, dev_start.len() - 1);
+    let bounds: Vec<f64> = read_all(&path("train").join("bounds.f64"));
+    let bound_start: Vec<u32> = read_all(&path("train").join("bound_start.u32"));
+    let mut work = Work::new(&store, count);
+    let (mut score, mut dev_score) = (vec![0.0f64; store.rows], vec![0.0f64; dev.rows]);
+    let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
+    let mut random = Random(mix(v["seed"].as_u64().unwrap_or(0)));
+    let mut columns: Vec<u32> = (0..store.kept as u32).collect();
+    let sampled = ((config.fraction * store.kept as f64).round() as usize).clamp(1, store.kept.max(1));
+    let active: Vec<u32> = (0..store.rows as u32).collect();
+    let dev_rows: Vec<u32> = (0..dev.rows as u32).collect();
+    let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
+    let mut model = BufWriter::new(File::create(out.join("model.jsonl")).unwrap());
+    let (mut best_loss, mut best_round, mut best_top) = (f64::INFINITY, 0usize, 0.0);
+    let (first_loss, first_top) = softmax_read(&dev_start, &dev_label, &dev_score);
+    println!("uniform dev loss {first_loss:.4} top {first_top:.4}");
+    let started = Instant::now();
+    for round in 1..=config.max_rounds {
+        let mut train_loss = 0.0;
+        {
+            let (mut rest_g, mut rest_h) = (&mut grad[..], &mut hess[..]);
+            let mut slices = Vec::with_capacity(start.len() - 1);
+            for g in 0..start.len() - 1 {
+                let length = (start[g + 1] - start[g]) as usize;
+                let (here_g, after_g) = rest_g.split_at_mut(length);
+                let (here_h, after_h) = rest_h.split_at_mut(length);
+                rest_g = after_g;
+                rest_h = after_h;
+                slices.push((g, here_g, here_h));
+            }
+            let total: f64 = slices
+                .into_par_iter()
+                .map(|(g, here_g, here_h)| {
+                    let (a, b) = (start[g] as usize, start[g + 1] as usize);
+                    softmax_group(&score[a..b], &label[a..b], here_g, here_h)
+                })
+                .sum();
+            train_loss += total / (start.len() - 1).max(1) as f64;
+        }
+        for i in 0..sampled {
+            let j = i + random.below(store.kept - i);
+            columns.swap(i, j);
+        }
+        let mut used = columns[..sampled].to_vec();
+        used.sort_unstable();
+        let (tree, places) = grow(&mut work, &store, &config, &active, &grad, &hess, &used);
+        let empty = tree.column.is_empty();
+        for (leaf, &(start_at, len)) in places.iter().enumerate() {
+            for &row in &work.indices[start_at..start_at + len] {
+                score[row as usize] += tree.value[leaf];
+            }
+        }
+        let moves: Vec<f64> = dev_rows.par_iter().with_min_len(256).map(|&row| tree.value[tree.leaf_of(&dev, row)]).collect();
+        for (held, step) in dev_score.iter_mut().zip(moves) {
+            *held += step;
+        }
+        let (loss, top) = softmax_read(&dev_start, &dev_label, &dev_score);
+        if loss < best_loss {
+            best_loss = loss;
+            best_round = round;
+            best_top = top;
+            write_all(&out.join("dev_best.f64"), &dev_score);
+        }
+        for (&k, &g) in tree.column.iter().zip(&tree.gain) {
+            gain[k as usize] += g;
+            splits[k as usize] += 1;
+        }
+        writeln!(model, "{}", tree_json(&tree, &bounds, &bound_start)).unwrap();
+        if round % 25 == 0 || empty {
+            println!("round {round} train loss {train_loss:.4} dev loss {loss:.4} top {top:.4} best {best_loss:.4} at {best_round} {:.2} rounds/s rss {:.2} GiB", round as f64 / started.elapsed().as_secs_f64(), resident_gib());
+        }
+        if empty || round >= best_round + config.patience {
+            break;
+        }
+    }
+    model.flush().unwrap();
+    write_all(&out.join("gain.f64"), &gain);
+    write_all(&out.join("splits.u32"), &splits);
+    let result = json!({"best_round": best_round, "dev_loss": best_loss, "dev_top": best_top, "uniform_loss": first_loss, "uniform_top": first_top, "seconds": started.elapsed().as_secs_f64(), "rss_gib": resident_gib()});
+    fs::write(out.join("result.json"), result.to_string()).unwrap();
+    println!("done {result}");
+}
+
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
-    let usage = "block-boost scan DIR | compile DIR | fit FILE";
+    let usage = "block-boost scan DIR | compile DIR | fit FILE | softmax FILE";
     let command = arguments.get(1).expect(usage).as_str();
     let path = PathBuf::from(arguments.get(2).expect(usage));
     match command {
         "scan" => scan(&path),
         "compile" => compile(&path),
         "fit" => fit(&path),
+        "softmax" => softmax(&path),
         _ => panic!("{usage}"),
     }
 }
