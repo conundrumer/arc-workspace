@@ -147,9 +147,14 @@ def clipped(p):
     return f'(project {O(p)} {p})'
 
 
+ROLE_TEXTS = []
+
+
 def role_share(role):
+    ROLE_TEXTS.append(role)
+
     def make(t, p):
-        return [f'(project (join &t {role} ({p} P)) {p})', clipped(p)], share
+        return [f'(semijoin {clipped(p)} {role} ({p} P))', clipped(p)], share
     return make
 
 
@@ -500,12 +505,16 @@ def colors_of(x):
 
 
 def color_role(holding):
+    ROLE_TEXTS.append(holding)
+
     def make(t, x):
-        return [f'(project (join &t {holding} ({x} Col)) {x})', colors_of(x)], share
+        return [f'(semijoin {colors_of(x)} {holding} ({x} Col))', colors_of(x)], share
     return make
 
 
 def color_not_role(failing):
+    ROLE_TEXTS.append(failing)
+
     def make(t, x):
         return [f'(antijoin {colors_of(x)} {failing} ({x} Col))', colors_of(x)], share
     return make

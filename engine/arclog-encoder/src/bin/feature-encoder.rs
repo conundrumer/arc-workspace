@@ -411,6 +411,121 @@ fn run_walk(arguments: &Arguments, manifest: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Each task's stable generated shapes, one folder per size, under `OUT-d1`, `OUT-d2`; each new
+/// shape's text goes to `OUT-names.tsv` beside them.
+fn run_generate_dump(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
+    use arclog_encoder::generate::{dump_task, Generators};
+    let families = Generators::default();
+    let path = arguments.names.clone().ok_or("`generate-dump` reads the derangements from --names")?;
+    let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let d = arguments.size.max(1);
+    for size in 1..=d {
+        std::fs::create_dir_all(format!("{out}-d{size}")).map_err(|error| error.to_string())?;
+    }
+    let used = std::sync::Mutex::new(HashSet::new());
+    let written = std::sync::Mutex::new((HashSet::<u128>::new(), std::fs::OpenOptions::new().create(true).append(true).open(format!("{out}-names.tsv")).map_err(|error| error.to_string())?));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let totals = std::sync::Mutex::new((0u64, 0f64));
+    let begun = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..arguments.threads.max(1) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(file) = files.get(at) else { break };
+                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+                if std::path::Path::new(&format!("{out}-d{d}/{stem}.json")).exists() {
+                    continue;
+                }
+                match dump_task(file, &arguments.tasks, &families, &derangements, d, &used) {
+                    Ok((name, results, walks, seconds)) => {
+                        for (size, result) in results.iter().enumerate() {
+                            let target = format!("{out}-d{}/{name}.json", size + 1);
+                            let temporary = format!("{target}.tmp");
+                            if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                                eprintln!("{stem}: the result does not write");
+                            }
+                        }
+                        {
+                            let names = families.names.lock().expect("no panic");
+                            let mut fresh = used.lock().expect("no panic");
+                            let mut sink = written.lock().expect("no panic");
+                            for hash in fresh.drain() {
+                                if sink.0.insert(hash) {
+                                    let _ = writeln!(sink.1, "{:016x}\t{}", hash as u64, names.get(&hash).map_or("", String::as_str));
+                                }
+                            }
+                        }
+                        let mut held = totals.lock().expect("no panic");
+                        held.0 += walks;
+                        held.1 += seconds;
+                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        let rate = done as f64 / begun.elapsed().as_secs_f64();
+                        eprintln!("{done}/{} {stem}: {:.0} ms per walk so far; ETA {:.0}s", files.len(), held.1 * 1e3 / held.0.max(1) as f64, (files.len() - done) as f64 / rate);
+                    }
+                    Err(message) => eprintln!("{stem}: {message}"),
+                }
+            });
+        }
+    });
+    Ok(())
+}
+
+/// Which written kinds the generated shapes reach, by value.
+fn run_generate_reach(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
+    let mut sink = std::io::BufWriter::new(std::fs::File::create(out).map_err(|error| error.to_string())?);
+    arclog_encoder::generate::reach(files, &arguments.tasks, arguments.size, arguments.passes.max(1), &mut sink)?;
+    sink.flush().map_err(|error| error.to_string())
+}
+
+/// Candidate's line on the generated shapes, one result per file, and the seconds per walk.
+fn run_generate(arguments: &Arguments, out: &str, files: &[String]) -> Result<(), String> {
+    use arclog_encoder::generate::{generate_task, Generators};
+    use arclog_encoder::native::hash_words;
+    std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
+    let mut families = Generators::default();
+    if let Ok(path) = std::env::var("GENERATE_CLASSES") {
+        families.extend = serde_json::from_str(&std::fs::read_to_string(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    }
+    let allow: Option<HashSet<u128>> = match &arguments.names {
+        Some(path) => Some(std::fs::read_to_string(path).map_err(|error| error.to_string())?.lines().map(|line| hash_words(line.bytes().map(u64::from))).collect()),
+        None => None,
+    };
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let totals = std::sync::Mutex::new((0u64, 0f64));
+    let begun = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..arguments.threads.max(1) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(file) = files.get(at) else { break };
+                let stem = std::path::Path::new(file).file_stem().map(|stem| stem.to_string_lossy().to_string()).unwrap_or_default();
+                let target = format!("{out}/{stem}.d{}.json", arguments.size);
+                if std::path::Path::new(&target).exists() {
+                    continue;
+                }
+                match generate_task(file, &arguments.tasks, &families, arguments.size, arguments.passes, allow.as_ref(), 8) {
+                    Ok(result) => {
+                        let temporary = format!("{target}.tmp");
+                        if std::fs::write(&temporary, result.to_string()).and_then(|()| std::fs::rename(&temporary, &target)).is_err() {
+                            eprintln!("{stem}: the result does not write");
+                        }
+                        let mut held = totals.lock().expect("no panic");
+                        held.0 += result["walks"].as_u64().unwrap_or(0);
+                        held.1 += result["walk_seconds"].as_f64().unwrap_or(0.0);
+                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        let rate = done as f64 / begun.elapsed().as_secs_f64();
+                        eprintln!("{done}/{} {stem}: {:.0} ms per walk so far; ETA {:.0}s", files.len(), held.1 * 1e3 / held.0.max(1) as f64, (files.len() - done) as f64 / rate);
+                    }
+                    Err(message) => eprintln!("{stem}: {message}"),
+                }
+            });
+        }
+    });
+    Ok(())
+}
+
 /// The catalog's values on each requested table, with the time of its pass.
 fn run_catalog_values(arguments: &Arguments, requests: &str) -> Result<(), String> {
     let path = arguments.out.clone().ok_or("`catalog-values` writes to --out")?;
@@ -874,6 +989,15 @@ fn main() {
         ("family", [out, files @ ..]) if !files.is_empty() => run_family(&arguments, out, files),
         ("stored-eval", [requests]) => run_stored_eval(&arguments, requests),
         ("catalog-values", [requests]) => run_catalog_values(&arguments, requests),
+        ("generate", [out, files @ ..]) if !files.is_empty() => run_generate(&arguments, out, files),
+        ("generate-reach", [out, files @ ..]) if !files.is_empty() => run_generate_reach(&arguments, out, files),
+        ("generate-dump", [out, files @ ..]) if !files.is_empty() => run_generate_dump(&arguments, out, files),
+        ("generate-classes", [out, files @ ..]) if !files.is_empty() => {
+            arclog_encoder::generate::classes(files, &arguments.tasks, arguments.passes.max(1)).and_then(|found| {
+                let text = serde_json::to_string(&found).map_err(|error| error.to_string())?;
+                std::fs::write(out, text).map_err(|error| error.to_string())
+            })
+        }
         ("catalog-dump", [out, files @ ..]) if !files.is_empty() => run_catalog_dump(&arguments, out, files),
         _ => Err("usage: feature-encoder eval|rows|worked|encode|names|vector ...; the file's first lines give each form".to_string()),
     };

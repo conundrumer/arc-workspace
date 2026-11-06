@@ -265,6 +265,11 @@ pub enum Step {
     Select { at: u16, op: Op, other: Option<u16>, drop: Option<u16> },
     Join { left: Box<[u16]>, right: Box<[u16]>, kept: Box<[u16]>, left_arity: u16 },
     Antijoin { left: Box<[u16]>, right: Box<[u16]> },
+    Semijoin { left: Box<[u16]>, right: Box<[u16]> },
+    /// The outer columns' values at which the first relation has a row, and each of its rows
+    /// there has a match in the second. With no outer column, a relation of no columns.
+    All { left: Box<[u16]>, right: Box<[u16]>, outer: Box<[u16]> },
+    Part(Box<crate::gen_parts::PartStep>),
     Union { map: Box<[Option<u16>]> },
     LibJoin { relation: u32, bound: Box<[Option<u16>]>, left_arity: u16 },
     Component { instance: u32, port: u16 },
@@ -273,7 +278,7 @@ pub enum Step {
 impl Step {
     /// Whether the value is empty where its one or first child is empty.
     pub fn empty_on_empty(&self) -> bool {
-        matches!(self, Step::Project { .. } | Step::Select { .. } | Step::Join { .. } | Step::Antijoin { .. } | Step::LibJoin { .. })
+        matches!(self, Step::Project { .. } | Step::Select { .. } | Step::Join { .. } | Step::Antijoin { .. } | Step::LibJoin { .. } | Step::Semijoin { .. } | Step::All { .. } | Step::Part(_))
     }
 }
 
@@ -392,6 +397,9 @@ impl<'a> Evaluator<'a> {
             Step::Select { at, op, other, drop } => select(children[0], *at, *op, *other, *drop).unwrap_or(Val::None),
             Step::Join { left, right, kept, left_arity } => join(children[0], children[1], left, right, kept, *left_arity).unwrap_or(Val::None),
             Step::Antijoin { left, right } => antijoin(children[0], children[1], left, right).unwrap_or(Val::None),
+            Step::Semijoin { left, right } => semijoin(children[0], children[1], left, right).unwrap_or(Val::None),
+            Step::All { left, right, outer } => all(children[0], children[1], left, right, outer).unwrap_or(Val::None),
+            Step::Part(part) => part.apply(children),
             Step::Union { map } => union(children[0], children[1], map).unwrap_or(Val::None),
             Step::LibJoin { relation, bound, left_arity } => self.lib_join(children[0], *relation, bound, *left_arity),
             Step::Component { instance, port } => {
@@ -1366,6 +1374,52 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
     }
     out.push(Part { table: Table::new(width, cells), columns: columns.into_boxed_slice() });
     Some(Val::of_parts(out))
+}
+
+#[inline]
+fn row_key(row: &[Cell], at: &[u16]) -> u128 {
+    hash_words(at.iter().map(|column| u64::from(row[usize::from(*column)])))
+}
+
+fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {
+    if matches!(left, Val::Empty) || matches!(right, Val::Empty) {
+        return Some(Val::Empty);
+    }
+    let table = crate::gen_parts::flat(left)?;
+    let keys = crate::gen_parts::keys_of(right, right_at)?;
+    let mut cells = Vec::with_capacity(table.cells.len());
+    let mut all_kept = true;
+    for row in table.rows() {
+        if keys.binary_search(&row_key(row, left_at)).is_ok() {
+            cells.extend_from_slice(row);
+        } else {
+            all_kept = false;
+        }
+    }
+    if all_kept {
+        return Some(left.clone());
+    }
+    Some(Val::of_table(Table::new(table.arity, cells)))
+}
+
+fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], outer: &[u16]) -> Option<Val> {
+    if matches!(domain, Val::Empty) {
+        return Some(Val::Empty);
+    }
+    let table = crate::gen_parts::flat(domain)?;
+    let keys = if matches!(body, Val::Empty) { Arc::new(Vec::new()) } else { crate::gen_parts::keys_of(body, right_at)? };
+    let fails = |row: &[Cell]| keys.binary_search(&row_key(row, left_at)).is_err();
+    if outer.is_empty() {
+        return Some(if table.rows().any(fails) { Val::Empty } else { Val::of_table(Table::unit(true)) });
+    }
+    let at = usize::from(outer[0]);
+    let mut failing: Vec<Cell> = table.rows().filter(|row| fails(row)).map(|row| row[at]).collect();
+    failing.sort_unstable();
+    failing.dedup();
+    let mut out: Vec<Cell> = table.rows().map(|row| row[at]).filter(|cell| failing.binary_search(cell).is_err()).collect();
+    out.sort_unstable();
+    out.dedup();
+    Some(Val::of_table(Table::new(1, out)))
 }
 
 fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {

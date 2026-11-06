@@ -98,7 +98,7 @@ fn step_kind(step: &Step) -> u8 {
         Step::Project { .. } => 0,
         Step::Select { .. } => 1,
         Step::Join { .. } => 2,
-        Step::Antijoin { .. } => 3,
+        Step::Antijoin { .. } | Step::Semijoin { .. } | Step::All { .. } | Step::Part(_) => 3,
         Step::Union { .. } => 4,
         Step::LibJoin { .. } => 5,
         Step::Component { .. } => 6,

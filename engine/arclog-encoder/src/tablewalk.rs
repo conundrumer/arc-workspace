@@ -424,6 +424,7 @@ fn step_code(table: &OpTable, step: &Step) -> u64 {
         Step::Select { op, other, .. } => 13 + 2 * (*op as u64) + 64 * u64::from(other.is_none()),
         Step::Join { .. } => 17,
         Step::Antijoin { .. } => 19,
+        Step::Semijoin { .. } | Step::All { .. } | Step::Part(_) => 19,
         Step::Union { map } => hash_words(map.iter().map(|at| u64::from(at.is_none()))) as u64 ^ 23,
         Step::LibJoin { relation, bound, .. } => table.libs[*relation as usize].code ^ hash_words(bound.iter().map(|at| u64::from(at.is_some()))) as u64,
         Step::Component { instance, port } => {

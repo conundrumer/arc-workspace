@@ -93,10 +93,6 @@ pub fn value_json(value: Value) -> serde_json::Value {
     }
 }
 
-fn gcd(a: u32, b: u32) -> u32 {
-    if b == 0 { a } else { gcd(b, a % b) }
-}
-
 /// How a root reads a value.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Form {
@@ -106,67 +102,21 @@ pub enum Form {
     All,
 }
 
-/// A value as a text that is equal exactly where two values are one, and whether it is at its
-/// aggregate's default.
-fn reading(value: Value, form: Form) -> (String, bool) {
-    match value {
-        Value::Null => ("null".to_string(), true),
-        Value::Bool(flag) => (flag.to_string(), !flag),
-        Value::Num(number) => (number.to_string(), number == 0),
-        Value::Share(hits, of) => match form {
-            Form::All => ((hits == of && of > 0).to_string(), !(hits == of && of > 0)),
-            Form::Ratio => {
-                let shared = gcd(hits, of).max(1);
-                (format!("{}/{}", hits / shared, of / shared), hits == 0)
-            }
-        },
-        Value::Word(word) => (word.to_string(), false),
-    }
-}
-
-/// A kind's name with each leading hole written by its column's type.
-fn shape_name(record: &Record, kinds: &[Kind]) -> String {
-    let mut holes = record.holes.iter().filter(|hole| **hole != NONE).map(|hole| format!("?{}", kinds[*hole as usize].name()));
-    let words: Vec<String> = record.kind.split(' ').map(|word| {
-        if word.split(',').all(|part| part == "C") {
-            word.split(',').map(|_| holes.next().unwrap_or_default()).collect::<Vec<_>>().join(",")
-        } else {
-            word.to_string()
-        }
-    }).collect();
-    words.join(" ")
-}
-
-/// The templates that a table holds stably under the active rule: at every train pair one
-/// multiset of its bindings' values, not all at the default.
+/// The templates that a table holds stably under the active rule, read from its sparse vector:
+/// one value at every train pair, and not the default. Under `Form::All` a share counts only
+/// where it is 1 at every pair.
 pub fn stable_templates(table: &ParsedTable, facts: &[PairFacts], form: Form, spent: &mut (u64, std::time::Duration)) -> BTreeSet<String> {
-    let mut per: HashMap<String, Vec<Vec<(String, bool)>>> = HashMap::new();
-    let mut records = Vec::with_capacity(256);
-    for (pair, fact) in facts.iter().enumerate() {
-        let Some(Some((rows, cells))) = table.rows.get(pair) else { continue };
-        records.clear();
-        let at = TableAt { kinds: &table.kinds, keys: &table.keys, rows: *rows, cells };
-        let started = std::time::Instant::now();
-        pass(&at, fact, &mut records);
-        spent.1 += started.elapsed();
-        spent.0 += 1;
-        for record in &records {
-            let name = shape_name(record, &table.kinds);
-            per.entry(name).or_insert_with(|| vec![Vec::new(); facts.len()])[pair].push(reading(record.value, form));
-        }
-    }
+    let started = std::time::Instant::now();
+    let entries = crate::catalog_vector::table_vector(&table.kinds, &table.keys, &table.rows, facts);
+    spent.1 += started.elapsed();
+    spent.0 += table.rows.iter().filter(|rows| rows.is_some()).count() as u64;
+    let one = crate::catalog_vector::Fraction::of(1, 1);
     let mut out = BTreeSet::new();
-    for (name, mut by_pair) in per {
-        for held in &mut by_pair {
-            held.sort();
-        }
-        if by_pair.iter().any(Vec::is_empty) {
+    for entry in &entries {
+        if !entry.stable(facts.len()) || (form == Form::All && entry.ratio && (entry.greatest.max != one || entry.second.min != one)) {
             continue;
         }
-        let first = &by_pair[0];
-        if by_pair.iter().all(|held| held == first) && !first.iter().all(|value| value.1) {
-            out.insert(name);
-        }
+        out.insert(entry.name.clone());
     }
     out
 }

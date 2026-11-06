@@ -534,7 +534,7 @@ impl Families {
     }
 }
 
-fn auc_of(scores: &[(usize, f64, Vec<f64>)]) -> Option<f64> {
+pub(crate) fn auc_of(scores: &[(usize, f64, Vec<f64>)]) -> Option<f64> {
     let mut sum = 0.0;
     let mut count = 0usize;
     for (_, gold, mutants) in scores {
@@ -560,11 +560,11 @@ fn holds(rule: StableRule, map: &ShapeMap, rows_everywhere: bool, name: &u128, p
     }
 }
 
-type Held<'m> = (&'m ShapeMap, bool);
+pub(crate) type Held<'m> = (&'m ShapeMap, bool);
 
 /// An item's scores at size `d`, with each comparison added to `tallies` where given.
 #[allow(clippy::too_many_arguments)]
-fn scores(rule: StableRule, bases: &[Held<'_>], gold: Held<'_>, mutants: &[Held<'_>], pairs: usize, d: u8, tallies: Option<(&mut FastMap<u128, Tally>, bool)>) -> (usize, f64, Vec<f64>, usize) {
+pub(crate) fn scores(rule: StableRule, bases: &[Held<'_>], gold: Held<'_>, mutants: &[Held<'_>], pairs: usize, d: u8, tallies: Option<(&mut FastMap<u128, Tally>, bool)>) -> (usize, f64, Vec<f64>, usize) {
     let every: Vec<Held<'_>> = bases.iter().copied().chain(std::iter::once(gold)).chain(mutants.iter().copied()).collect();
     let mut names: FastMap<u128, ()> = FastMap::default();
     for (map, _) in &every {
