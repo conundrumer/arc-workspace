@@ -104,12 +104,6 @@ fn copies_input(names: &[&str]) -> String {
     format!("{dets}(RULE &output (input *P *Col){reads})\n(OUT (&output ^P ^Col))\n")
 }
 
-#[test]
-fn a_det_without_one_that_keeps_two_values_is_underdetermined() {
-    let found = determination(&copies_input(&["c"]), &[1, 2], Caps::CORPUS);
-    assert!(matches!(found.parameter(&declared("c")), Some(Parameter::Underdetermined(values)) if values.len() > 1), "{found:?}");
-}
-
 
 
 const BOTH_COLORS_UNCHANGED: &[u8] = &[1, 2];

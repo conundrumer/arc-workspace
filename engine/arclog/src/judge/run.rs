@@ -101,6 +101,12 @@ pub fn judged_run(evaluation: &Evaluation<'_>, relation: &GraphRelation, judged:
     Ok(JudgedRun { pairs })
 }
 
+/// The output set of the `OUT` form's `relation` on `example`, to the last
+/// model. It reads no pair's output.
+pub(crate) fn full_output_set(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Example) -> Outcome<OutputSet> {
+    Ok(output_sets(evaluation, relation, example, &[GridColumns::OUT], &[Comparison::Full], AtCap::Stop)?.pop().expect("one set"))
+}
+
 /// What a test of a relation against the train pairs searches for: nothing,
 /// for the `OUT` form's relation, whose grid columns are its own, or the pair
 /// of one Position column and one Color column of the relation of a `RULE`
@@ -325,7 +331,7 @@ fn grid(value: &RelationValue, columns: GridColumns) -> GridValue {
 
 /// Whether two full output sets hold the same grids, in any order, or are
 /// both `undefined`.
-fn same_set(a: &OutputSet, b: &OutputSet) -> bool {
+pub(crate) fn same_set(a: &OutputSet, b: &OutputSet) -> bool {
     match (a, b) {
         (OutputSet::Grids(a), OutputSet::Grids(b)) => a.len() == b.len() && a.iter().all(|grid| b.contains(grid)),
         (OutputSet::Undefined, OutputSet::Undefined) => true,

@@ -60,7 +60,8 @@ pub fn run(args: &[String]) -> ExitCode {
     let (corpus, tasks) = (PathBuf::from(corpus), PathBuf::from(tasks));
     let selected = selected(task_ids, &[], Path::new("")).expect("a selection by task id alone reads no file");
     let differing: Mutex<BTreeSet<String>> = Mutex::default();
-    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| determine_solver(&corpus, &tasks, solver, &differing), print_ended);
+    let unseparated: Mutex<BTreeSet<String>> = Mutex::default();
+    let report = run_over_corpus(&corpus, selected.as_ref(), |solver| determine_solver(&corpus, &tasks, solver, &differing, &unseparated), print_ended);
     let report = match report {
         Ok(report) => report,
         Err(error) => {
@@ -72,6 +73,8 @@ pub fn run(args: &[String]) -> ExitCode {
     let determined = report.checked;
     let faulted = report.failures.len() - differing;
     println!("{differing} of {determined} solvers differ from their `param` records, and {faulted} others give a fault that keeps a case or a parameter from its comparison");
+    let unseparated = unseparated.into_inner().expect("a set that no panic poisoned").len();
+    println!("{unseparated} solvers pass with a parameter whose values left no input of the task separates");
     if report.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
@@ -94,9 +97,22 @@ impl Finding {
 }
 
 /// The report on `solver`, which goes into `differing` where a determined
-/// value differs from its record.
-fn determine_solver(corpus: &Path, tasks: &Path, solver: &CorpusSolver, differing: &Mutex<BTreeSet<String>>) -> SolverResult {
-    let findings = solver_determination(corpus, tasks, &solver.task_id).map_or_else(|fault| vec![Finding::Fault(fault)], |setup| setup.findings);
+/// value differs from its record, and into `unseparated` where it passes
+/// with a parameter whose values left no input of the task separates. It
+/// prints a line on each such parameter.
+fn determine_solver(corpus: &Path, tasks: &Path, solver: &CorpusSolver, differing: &Mutex<BTreeSet<String>>, unseparated: &Mutex<BTreeSet<String>>) -> SolverResult {
+    let setup = solver_determination(corpus, tasks, &solver.task_id);
+    let several: Vec<String> = setup.iter().flat_map(|setup| &setup.determination.parameters).filter_map(|(relation, parameter)| match parameter {
+        Parameter::Unseparated(values) => Some(format!("{}: {}: {} values are left, and no input of the task separates them", solver.task_id, relation_spelled(relation), values.len())),
+        _ => None,
+    }).collect();
+    for line in &several {
+        println!("{line}");
+    }
+    let findings = setup.map_or_else(|fault| vec![Finding::Fault(fault)], |setup| setup.findings);
+    if findings.is_empty() && !several.is_empty() {
+        unseparated.lock().expect("a set that no panic poisoned").insert(solver.task_id.clone());
+    }
     if findings.iter().any(|finding| matches!(finding, Finding::Difference { .. })) {
         differing.lock().expect("a set that no panic poisoned").insert(solver.task_id.clone());
     }
@@ -216,14 +232,15 @@ impl Comparison<'_> {
                 continue;
             }
             let name = relation_spelled(relation);
-            let value = match parameter {
+            let values = match parameter {
                 Parameter::Pick => continue,
                 Parameter::Underdetermined(values) => {
                     findings.push(Finding::Fault(format!("{name}: underdetermined: {} values are left after the restriction across cases", values.len())));
                     continue;
                 }
-                Parameter::Determined(value) => value.clone(),
-                Parameter::Open(values) => union(values.clone()),
+                Parameter::Determined(value) => vec![value.clone()],
+                Parameter::Open(values) => vec![union(values.clone())],
+                Parameter::Unseparated(values) => values.clone(),
             };
             let Some(record) = self.record(relation) else {
                 if !self.in_compared_assembly(relation) && self.determination.read_by_program.contains(relation) {
@@ -239,13 +256,31 @@ impl Comparison<'_> {
                 findings.push(Finding::Fault(format!("{name}: the relation's columns have no types")));
                 continue;
             };
-            match self.leaves(types, record, &rows_of(&value)) {
-                Ok((record, engine)) => {
-                    if let Some(what) = differs(record, engine, &mut compared) {
-                        findings.push(Finding::Difference { parameter: name.clone(), line: format!("{name}: the determined value differs from its `param` record: {what}") });
+            // The record is one of the values, each of them compared in turn.
+            let mut difference = None;
+            for value in &values {
+                match self.leaves(types, record, &rows_of(value)) {
+                    Ok((record, engine)) => match differs(record, engine, &mut compared) {
+                        Some(what) => difference = difference.or(Some(what)),
+                        None => {
+                            difference = None;
+                            break;
+                        }
+                    },
+                    Err(fault) => {
+                        findings.push(Finding::Fault(format!("{name}: {fault}")));
+                        difference = None;
+                        break;
                     }
                 }
-                Err(fault) => findings.push(Finding::Fault(format!("{name}: {fault}"))),
+            }
+            if let Some(what) = difference {
+                let line = if values.len() > 1 {
+                    format!("{name}: the `param` record is none of the {} values left", values.len())
+                } else {
+                    format!("{name}: the determined value differs from its `param` record: {what}")
+                };
+                findings.push(Finding::Difference { parameter: name.clone(), line });
             }
         }
         let mut assemblies: Vec<&RigidDetName> = Vec::new();

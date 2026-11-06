@@ -29,7 +29,8 @@ use crate::task::{JudgedTask, Task};
 use crate::types::GraphRelation;
 
 use super::candidates::{PairCandidates, Section, World};
-use super::run::{AtCap, Found, Observed, Tested};
+use super::run::{full_output_set, same_set, AtCap, Found, Observed, Tested};
+use super::solves::OutputSet;
 
 /// A case that the determination runs: its name, its checked program, the
 /// checked concept program, in which the `DET` forms the case takes from
@@ -109,8 +110,12 @@ pub enum Parameter {
     /// each, in the order of the assignments.
     Open(Vec<Arc<Relation>>),
     /// The values of a `DET` without `(ONE)` that differ across the
-    /// assignments left, an error.
+    /// assignments left, where some input of the evidence separates those
+    /// assignments, an error.
     Underdetermined(Vec<Arc<Relation>>),
+    /// Several values are left, and no input of the evidence, a train input
+    /// or a test input, separates the assignments that hold them.
+    Unseparated(Vec<Arc<Relation>>),
     /// A `DET` whose body ends in `ONE` marks and names no proposer, which
     /// the models of the constraint module solve, left to Every case.
     Pick,
@@ -173,7 +178,7 @@ impl Determination {
         let values = reads.iter().filter_map(|relation| match self.parameter(relation)? {
             Parameter::Determined(rows) => Some((relation.clone(), rows.clone())),
             Parameter::Open(values) => Some((relation.clone(), union(values.clone()))),
-            Parameter::Underdetermined(_) | Parameter::Pick => None,
+            Parameter::Underdetermined(_) | Parameter::Unseparated(_) | Parameter::Pick => None,
         });
         ParameterValues::determined(values)
     }
@@ -202,6 +207,7 @@ impl Determination {
                 Parameter::Determined(rows) => values.push((relation.clone(), rows.clone())),
                 Parameter::Open(rows) => values.push((relation.clone(), union(rows.clone()))),
                 Parameter::Underdetermined(_) => return Err(format!("the parameter {} is underdetermined", relation_spelled(relation))),
+                Parameter::Unseparated(_) => return Err(format!("the parameter {} has several values left, and one run takes one value", relation_spelled(relation))),
                 Parameter::Pick => {}
             }
         }
@@ -402,6 +408,11 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
         }
     }
     let demonstrated: Vec<ProgramRelation> = order.iter().filter(|relation| demonstrated.contains(*relation)).cloned().collect();
+    let separating: std::cell::OnceCell<Vec<bool>> = std::cell::OnceCell::new();
+    let separated = |relation: &ProgramRelation| {
+        let separating = separating.get_or_init(|| cases.iter().zip(&walked).map(|(case, (_, _, kept))| kept.len() > 1 && separates(case, kept)).collect());
+        walked.iter().zip(separating).any(|((_, reads, _), separates)| *separates && reads.contains(relation))
+    };
     let mut parameters = Vec::new();
     for relation in order {
         let parameter = if picks.contains(&relation) {
@@ -413,7 +424,8 @@ pub fn determine(cases: &[DeterminedCase<'_>], judged: &JudgedTask, world: World
                 (true, _) => Parameter::Open(values),
                 (false, 1) => Parameter::Determined(values.pop().expect("one value")),
                 (false, _) if !read_by_program.contains(&relation) => continue,
-                (false, _) => Parameter::Underdetermined(values),
+                (false, _) if separated(&relation) => Parameter::Underdetermined(values),
+                (false, _) => Parameter::Unseparated(values),
             }
         };
         parameters.push((relation, parameter));
@@ -440,6 +452,31 @@ fn read_by_output(program: &CheckedProgram, output: GraphNodeIndex) -> Vec<bool>
         }
     }
     seen
+}
+
+/// Whether some input of the evidence, a train input or a test input,
+/// separates `kept`, the assignments left of `case`: the case's output on it
+/// differs at two of them, or a stop or a fault gives one of them no output.
+/// No pair's output is read.
+fn separates(case: &DeterminedCase<'_>, kept: &[Kept]) -> bool {
+    let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
+    let inputs = case.inputs();
+    case.task.examples().any(|example| {
+        let mut first: Option<OutputSet> = None;
+        kept.iter().any(|assignment| {
+            let parameters = ParameterValues::determined(assignment.values.clone());
+            match full_output_set(&inputs.at(&parameters), &output, example) {
+                Ok(OutputSet::Stopped(_)) | Err(_) => true,
+                Ok(set) => match &first {
+                    Some(first) => !same_set(first, &set),
+                    None => {
+                        first = Some(set);
+                        false
+                    }
+                },
+            }
+        })
+    })
 }
 
 /// Whether the `DET` at `node` of `program` is one by its clauses that reads
