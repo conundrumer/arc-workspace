@@ -500,7 +500,7 @@ fn separates(case: &DeterminedCase<'_>, kept: &[Kept]) -> bool {
 /// Whether the `DET` at `node` of `program` is one by its clauses that reads
 /// no fact of the task, other than through a `DET` it reads, so that its
 /// value is computed from those `DET`s.
-fn computed_from_dets(program: &CheckedProgram, node: GraphNodeIndex) -> bool {
+pub fn computed_from_dets(program: &CheckedProgram, node: GraphNodeIndex) -> bool {
     let resolved = &program.program;
     if !is_by_clauses(resolved, node) {
         return false;

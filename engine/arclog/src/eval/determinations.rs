@@ -140,6 +140,27 @@ impl super::ParameterValues {
 }
 
 impl Evaluation<'_> {
+    /// The rows of each `DET` of the program that no record gives at these
+    /// values and that has one value here: a `DET` by its clauses, and a `DET`
+    /// with no record. A `DET` that ends in `(ONE)`, or whose domain faults,
+    /// stops or has no one value, has none.
+    pub fn determination_rows(&self) -> Vec<(ProgramRelation, Arc<Relation>)> {
+        let program = &self.program.program;
+        let mut rows = Vec::new();
+        for node in determinations(self.program) {
+            let Some((relation, false)) = det_relation(&program.graph.nodes[node.0 as usize].kind) else { continue };
+            if self.parameters.get(&relation).is_some() && !is_by_clauses(program, node) {
+                continue;
+            }
+            if let Ok(Domain::Rows(values)) = self.domain(node) {
+                if let [value] = &values[..] {
+                    rows.push((relation, value.clone()));
+                }
+            }
+        }
+        rows
+    }
+
     /// The domain of the `DET` node `node`, task-wide, at the values
     /// these parameter values give the `DET`s its forms read. A `DET` that
     /// the case program takes from the concept program is evaluated there.

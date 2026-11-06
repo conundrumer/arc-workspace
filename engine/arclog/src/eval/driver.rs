@@ -137,6 +137,9 @@ impl<'e, 'a> Driver<'e, 'a> {
         let form = self.program().form_of(relation.node);
         let fault = |message: String| RunFault { message: message.into(), form: form.clone() };
         let value = match evaluation.parameters.source() {
+            ParameterSource::Stored { assigns, held, .. } if !assigns.contains_key(name) && held.contains_key(name) => {
+                return Ok(RelationValue::Rows(held[name].clone()));
+            }
             ParameterSource::Stored { .. } => match self.stored_value(relation, name) {
                 Some(value) => value,
                 None => {
@@ -212,7 +215,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// ([`Driver::is_by_clauses`]) does not read. `None` where neither gives
     /// it, and at values determined from the evidence.
     fn stored_value(&self, relation: &GraphRelation, name: &ProgramRelation) -> Option<&'a ParamValue> {
-        let ParameterSource::Stored { records, assigns } = self.evaluation.parameters.source() else { return None };
+        let ParameterSource::Stored { records, assigns, .. } = self.evaluation.parameters.source() else { return None };
         let record = if self.is_by_clauses(relation) { None } else { records.get(name) };
         assigns.get(name).or(record)
     }
@@ -228,7 +231,8 @@ impl<'e, 'a> Driver<'e, 'a> {
         let nodes = &self.program().graph.nodes;
         let Some(node) = nodes.iter().position(|node| matches!(&node.kind, DependencyKind::Parameter(found) if *found == name)) else { return false };
         let relation = GraphRelation { node: GraphNodeIndex(node as u32), output: None };
-        !self.is_by_clauses(&relation) && self.stored_value(&relation, &name).is_none()
+        let held = matches!(self.evaluation.parameters.source(), ParameterSource::Stored { held, .. } if held.contains_key(&name));
+        !held && !self.is_by_clauses(&relation) && self.stored_value(&relation, &name).is_none()
     }
 
     /// Whether the node of `relation` is a `DET` by its clauses: each of its

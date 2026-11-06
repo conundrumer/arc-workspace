@@ -839,7 +839,7 @@ impl TaskSession {
     /// it holds for every task. [`TaskSession::fact_relation`] keeps one
     /// relation for each fact and example, so an evaluation over a task other
     /// than the session's uses a session from this method.
-    pub(crate) fn with_own_facts(&self) -> Self {
+    pub fn with_own_facts(&self) -> Self {
         TaskSession { facts: Arc::default(), ..self.clone() }
     }
 

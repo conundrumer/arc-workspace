@@ -6,8 +6,9 @@
 //! record's, and the run's time per solver, over the determination and every
 //! case, with Souffle's time there. It also runs each case on each witness
 //! input of the arcdata file, at the `param` records and the witness's `assign`
-//! forms, and compares its set of grids, or `undefined`, with the record's on
-//! that witness. The snapshot keys a case by its alts, as `case_name` of
+//! forms, with each other `DET` at its rows on the task, and compares its set of
+//! grids, or `undefined`, with the record's on that witness. The snapshot keys a
+//! case by its alts, as `case_name` of
 //! `src/parity/__init__.py` gives them.
 //!
 //! It prints, for each solver, first each difference of a determined value
@@ -31,9 +32,8 @@ use std::time::Instant;
 use std::process::ExitCode;
 
 use arclog::eval::determinations::{det_node, relation_spelled};
-use arclog::decode::corpus::corpus_session;
 use arclog::eval::{output_relation, Evaluation, ParameterValues};
-use arclog::judge::determination::DeterminedCase;
+use arclog::judge::determination::{computed_from_dets, DeterminedCase};
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, CorpusSolver, SolverResult};
 use arclog::judge::candidates::World;
 use arclog::judge::run::{full_output_set, judged_run, Depth, JudgedRun};
@@ -145,22 +145,24 @@ fn compared(arguments: &Arguments, corpus: &CorpusSolver) -> Result<Vec<String>,
     }).collect();
     let mut keys: BTreeSet<&str> = BTreeSet::new();
     let witnesses = witness_inputs(setup.solver.arcdata.value());
-    let first_witness = setup.task.train.len() + setup.task.test.len();
     let witness_task = Task {
         train: setup.task.train.clone(),
         test: setup.task.test.iter().cloned().chain(witnesses.iter().filter_map(|witness| witness.input.clone())).collect(),
     };
-    let witness_session = corpus_session();
-    let records: Vec<(ProgramRelation, ParamValue)> = setup.solver.arcdata.value().params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
     let stored = ParameterValues::stored(setup.solver.arcdata.value());
-    for case in setup.cases() {
+    let records: Vec<(ProgramRelation, ParamValue)> = setup.solver.arcdata.value().params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
+    let cases = setup.cases();
+    let witness_session = cases.first().map(|case| case.session.with_own_facts());
+    for case in cases {
         let spelled = case_spelled(case.name);
         let Some((key, case_record)) = case_record(&record, &setup.solver.departures(case.name)) else {
             lines.push(format!("{spelled}: the engine has the case, and the snapshot has no record of it"));
             continue;
         };
         keys.insert(key);
-        lines.extend(compare_witnesses(key, case, case_record, &witnesses, first_witness, &witness_task, &witness_session, &stored, &records));
+        if let Some(session) = &witness_session {
+            lines.extend(compare_witnesses(key, case, case_record, &witnesses, &witness_task, session, &stored, &records));
+        }
         let values = match setup.determination.case_values(&case) {
             Ok(values) => values,
             Err(fault) => {
@@ -240,20 +242,35 @@ fn grid_of(grid: &arclog::program::Grid) -> Option<Grid> {
 
 /// Each line of the comparison of `case` on `witnesses`, at the stored values
 /// with each witness's `assign` forms, with its snapshot record `case_record`
-/// under the key `key`. `task` holds the witness inputs after its other
-/// examples, from the example at the index `first`.
+/// under the key `key`. Each `DET` stands at its rows on the task, as Souffle's
+/// stored values stand at their facts, so neither a witness input nor an `assign`
+/// of another relation changes it. A `DET` computed from other `DET`s follows an
+/// `assign` of one of them, as a rule of Souffle's parameters does, unless it is a
+/// line's stored reading.
+/// `task` is the case's task with the witness
+/// inputs as further test inputs, each at an example of its own, since a session
+/// takes one example for one input, and `session` reads its facts.
 #[allow(clippy::too_many_arguments)]
-fn compare_witnesses(key: &str, case: DeterminedCase<'_>, case_record: &Value, witnesses: &[WitnessInput<'_>], first: usize, task: &Task, session: &TaskSession, stored: &ParameterValues, records: &[(ProgramRelation, ParamValue)]) -> Vec<String> {
+fn compare_witnesses(key: &str, case: DeterminedCase<'_>, case_record: &Value, witnesses: &[WitnessInput<'_>], task: &Task, session: &TaskSession, stored: &ParameterValues, records: &[(ProgramRelation, ParamValue)]) -> Vec<String> {
+    if witnesses.is_empty() {
+        return Vec::new();
+    }
+    let readings: Vec<String> = case.name.0.iter().filter_map(|alt| alt.0.strip_suffix("=$Stored").map(str::to_owned)).collect();
+    let rows = case.evaluation(stored).determination_rows();
+    // Whether the `DET` of `relation` follows the `assign` of one of `assigns`.
+    let follows = |relation: &ProgramRelation, assigns: &[(ProgramRelation, ParamValue)]| {
+        let Some(node) = det_node(case.program, relation) else { return false };
+        if readings.contains(&relation_spelled(relation)) || !computed_from_dets(case.program, node) {
+            return false;
+        }
+        let reached = case.program.program.graph.reached(node);
+        assigns.iter().any(|(assigned, _)| det_node(case.program, assigned).is_some_and(|at| reached[at.0 as usize]))
+    };
+    let mut at = case.task.train.len() + case.task.test.len();
     let case = DeterminedCase { task, session, ..case };
-    // A witness runs at the records, as Souffle's does at its facts: a `DET` by
-    // its clauses would read the witness input as evidence. A relation the case
-    // derives is no `DET` of the case, and keeps its clauses.
-    let held: Vec<(ProgramRelation, ParamValue)> = records.iter().filter(|(relation, _)| det_node(case.program, relation).is_some()).cloned().collect();
-    let stored = stored.with_assigns(&held);
     let output = output_relation(case.program).expect("a checked case program holds an `OUT` form");
     let recorded = case_record.get("witnesses").and_then(Value::as_array);
     let mut lines = Vec::new();
-    let mut at = first;
     for witness in witnesses {
         let Some(expected) = recorded.and_then(|all| all.iter().find(|entry| entry.get("id").and_then(Value::as_str) == Some(witness.id))).and_then(|entry| entry.get("outcome")) else {
             lines.push(format!("{key}, witness {}: the snapshot has no outcome", witness.id));
@@ -264,7 +281,15 @@ fn compare_witnesses(key: &str, case: DeterminedCase<'_>, case_record: &Value, w
             lines.push(format!("{key}, witness {}: not run: its input is no grid of colors", witness.id));
             continue;
         }
-        let values = stored.with_assigns(witness.assigns);
+        let held = rows.iter().filter(|(relation, _)| !follows(relation, witness.assigns)).cloned().collect();
+        let values = if witness.assigns.is_empty() {
+            stored.with_held(held)
+        } else {
+            // An `assign` numbers Idents as the records do, not as the run does,
+            // so each `DET` with a record reads it in the place of its clauses.
+            let recorded: Vec<(ProgramRelation, ParamValue)> = records.iter().filter(|(relation, _)| det_node(case.program, relation).is_some()).cloned().collect();
+            stored.with_held(held).with_assigns(&recorded).with_assigns(witness.assigns)
+        };
         let evaluation = case.evaluation(&values);
         let example = Example::at(u16::try_from(at).expect("fewer than 2^16 examples in a task"));
         at += 1;

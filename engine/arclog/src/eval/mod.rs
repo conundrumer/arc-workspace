@@ -93,15 +93,20 @@ pub(super) enum ParameterSource {
     /// The rows of each parameter as an arcdata file writes them, typed only
     /// when a clause reads them, by [`crate::terms::encode_param_value`]:
     /// the `param` records, and the relations a witness's `assign` gives in
-    /// their place.
-    Stored { records: StableHashMap<ProgramRelation, ParamValue>, assigns: StableHashMap<ProgramRelation, ParamValue> },
+    /// their place. `held` gives a `DET` that an `assign` does not give the
+    /// rows it had on the task ([`ParameterValues::with_held`]).
+    Stored {
+        records: StableHashMap<ProgramRelation, ParamValue>,
+        assigns: StableHashMap<ProgramRelation, ParamValue>,
+        held: StableHashMap<ProgramRelation, Arc<Relation>>,
+    },
     /// The assignment that [`ParameterValues::determined`] takes.
     Determined(StableHashMap<ProgramRelation, Arc<Relation>>),
 }
 
 impl Default for ParameterValues {
     fn default() -> Self {
-        ParameterValues { source: ParameterSource::Stored { records: StableHashMap::default(), assigns: StableHashMap::default() } }
+        ParameterValues { source: ParameterSource::Stored { records: StableHashMap::default(), assigns: StableHashMap::default(), held: StableHashMap::default() } }
     }
 }
 
@@ -112,7 +117,7 @@ impl ParameterValues {
     /// the value it takes at determined values that leave it out.
     pub fn stored(arcdata: &crate::program::Arcdata) -> Self {
         let records = arcdata.params.iter().map(|param| (param.value().name.clone(), param.value().value.clone())).collect();
-        ParameterValues { source: ParameterSource::Stored { records, assigns: StableHashMap::default() } }
+        ParameterValues { source: ParameterSource::Stored { records, assigns: StableHashMap::default(), held: StableHashMap::default() } }
     }
 
     /// The values determined from the evidence at the assignment `rows`: the
@@ -128,10 +133,22 @@ impl ParameterValues {
     /// clause's rows. Values determined from the evidence take no `assign`, so
     /// this panics on them.
     pub fn with_assigns(&self, assigns: &[(ProgramRelation, ParamValue)]) -> Self {
-        let ParameterSource::Stored { records, assigns: held } = &self.source else { panic!("an `assign` over stored values") };
+        let ParameterSource::Stored { records, assigns: own, held } = &self.source else { panic!("an `assign` over stored values") };
+        let mut own = own.clone();
+        own.extend(assigns.iter().cloned());
+        ParameterValues { source: ParameterSource::Stored { records: records.clone(), assigns: own, held: held.clone() } }
+    }
+
+    /// These stored values, with each `DET` of `rows` held at its rows there:
+    /// a run on an input beyond the task reads them in the place of its
+    /// clauses, as a stored value does not follow another relation's `assign`
+    /// or a new input. An `assign` of the `DET` itself comes first. Values
+    /// determined from the evidence hold none, so this panics on them.
+    pub fn with_held(&self, rows: Vec<(ProgramRelation, Arc<Relation>)>) -> Self {
+        let ParameterSource::Stored { records, assigns, held } = &self.source else { panic!("rows held over stored values") };
         let mut held = held.clone();
-        held.extend(assigns.iter().cloned());
-        ParameterValues { source: ParameterSource::Stored { records: records.clone(), assigns: held } }
+        held.extend(rows);
+        ParameterValues { source: ParameterSource::Stored { records: records.clone(), assigns: assigns.clone(), held } }
     }
 
     /// The written rows of `relation`: its `assign` where one gives it, and
@@ -139,7 +156,7 @@ impl ParameterValues {
     /// values determined from the evidence.
     pub fn get(&self, relation: &ProgramRelation) -> Option<&ParamValue> {
         match &self.source {
-            ParameterSource::Stored { records, assigns } => assigns.get(relation).or_else(|| records.get(relation)),
+            ParameterSource::Stored { records, assigns, .. } => assigns.get(relation).or_else(|| records.get(relation)),
             ParameterSource::Determined(_) => None,
         }
     }
