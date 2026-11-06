@@ -119,7 +119,6 @@ span($Backed(), K) :- arm(K), !orphan($Backed(), K).
 
 place($Packed(), K, C) :- backed(K, C).
 
-// The placements every exact cover of the marks holds, arm by arm.
 .init packing = CoverForcing<number, Position>
 packing.covers(K, C, M) :- place($Packed(), K, C), mark_distance(C, M, J), J <= K.
 
