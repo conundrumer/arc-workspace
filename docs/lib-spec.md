@@ -286,7 +286,7 @@ A nested order of any depth is a composition over Order: the outer Order's rank 
 | Division | `cell`, `parts`, `side`, `gap` | `tile` | equal parts per axis, by count or by side, with a gap; an axis given neither passes through; an axis with no `gap` row has gap 0; the cell instance, per axis, of `divide` |
 | `divide(t, side, gap, part, remainder)` | | | division of a count with remainder, the remainders past the side dropped by the gap; an inline relation, in `stride`'s place |
 | Tiling | `outer`, `inner`, `gap` | `cell` | the frame tiled by the inner frame at the outer positions, one cell per pair, with a gap per axis |
-| Frame | `extent` | `cell` | the cells of a frame from its per-axis extents; an axis with no `extent` row has extent 1; `AxisFrame` is its internal part |
+| Frame | `extent` | `cell` | the cells of a frame from its per-axis extents; an axis with no `extent` row has extent 1 where the other axis has a row, and a key with no `extent` row on either axis has no cell; `AxisFrame` is its internal part |
 
 ## Detectors
 

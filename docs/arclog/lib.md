@@ -167,7 +167,7 @@
     - in `gap(key: Key, A: Axis, G: Int)`: G cells between each two copies along A. An axis with no row has gap 0.
     - out `cell(key: Key, P_outer: Position, P_inner: Position, P: Position)`: P is the cell P_inner of the copy at P_outer.
 - **Frame**<Key> (construction): The cells of a frame of given extents.
-    - in `extent(key: Key, A: Axis, N: Int)`, from the key: N cells along A. An axis with no row has extent 1.
+    - in `extent(key: Key, A: Axis, N: Int)`, from the key: N cells along A. An axis with no row has extent 1 where the other axis has a row. A key with no row on either axis has no cell.
     - out `cell(key: Key, P: Position)`
 - **Outlines**<Key>: The rectangles drawn in a cell set.
     - in `node(key: Key, P: Position)`

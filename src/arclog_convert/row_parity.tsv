@@ -1662,7 +1662,6 @@ db615bd4	&stack.maximal	uncompared	-
 db615bd4	&stack.successor	uncompared	-
 db615bd4	&stack_line	uncompared	-
 db615bd4	souffle:impl_choice	uncompared	-
-db7260a4	&edge_spread_frame.cell	differ	-
 db93a21d	&side.minimal	uncompared	-
 dbff022c	&nearest.maximal	uncompared	-
 dbff022c	&object_color.value	uncompared	-
@@ -1781,8 +1780,6 @@ e40b9e2f	&most.minimal	uncompared	-
 e40b9e2f	&self.conflict	uncompared	-
 e45ef808	&far_from_peak.minimal	uncompared	-
 e45ef808	&far_from_valley.minimal	uncompared	-
-e45ef808	&from_peak_frame.cell	differ	-
-e45ef808	&from_valley_frame.cell	differ	-
 e45ef808	&ground_top.minimal	uncompared	-
 e45ef808	&layout_ground.plural	uncompared	-
 e45ef808	&layout_sky.plural	uncompared	-

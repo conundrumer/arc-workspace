@@ -309,7 +309,7 @@
     (copies (outer (P P_outer)) (inner (P P_inner)))
     (frames (P new)))))
 ;;; The cells of a frame of given extents.
-;;; - `extent`: N cells along A. An axis with no row has extent 1.
+;;; - `extent`: N cells along A. An axis with no row has extent 1 where the other axis has a row. A key with no row on either axis has no cell.
 (component Frame construction (type-parameters Key)
   (inputs (extent (key Key) (A Axis) (N Int) from-key))
   (outputs (cell (key Key) (P Position)

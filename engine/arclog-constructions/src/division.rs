@@ -156,7 +156,7 @@ impl Construction for Tiling {
 
 /// The cells of a frame from its extent on each axis.
 ///
-/// - in `extent(key, A, N)`, from the key: N cells along A. An axis with no row has extent 1.
+/// - in `extent(key, A, N)`, from the key: N cells along A. An axis with no row has extent 1 where the other axis has a row. A key with no row on either axis has no cell.
 /// - out `cell(key, P)`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Frame;
@@ -172,9 +172,12 @@ impl Construction for Frame {
         context: &mut ConstructionContext<'_, '_>,
     ) -> Result<GroupOutputs, ReachedBound> {
         let [extent] = group.inputs else { panic!("Frame's one input") };
+        if extent.is_empty() {
+            return Ok(GroupOutputs { outputs: Box::new([RowSet::empty(1)]) });
+        }
         let [first, second] = Axis::pair().map(|axis| {
             let extents = axis.numbers(extent);
-            // An axis with no `extent` row has extent 1.
+            // An axis with no `extent` row has extent 1, where the other axis has a row.
             let extents = if extents.is_empty() { vec![1] } else { extents };
             extents.into_iter().flat_map(move |n| axis.frame(n)).collect::<Vec<_>>()
         });
