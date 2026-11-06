@@ -144,10 +144,14 @@ occ.cell([K, O], P, $U()) :- occ.shape([K, O], _, _), gap(K, P).
 covers([Bk, Pa, Id], [O, B], P) :-
     occ.occurrence([[Bk, Pa, Id], O], B), shape([Bk, Pa, O], S), compose(B, S, P).
 
+// Some piece has no place among the gaps, so the candidate holds no exact cover.
+.decl unplaced(k: FrameSet)
+unplaced(K) :- piece(K, O), !occ.occurrence([K, O], _).
+
 // The placements some exact cover may hold.
 // @claim exact-fit
 .init pruning = PlacementPruning<FrameSet, Placement, Ident>
-pruning.cand(K, [O, B], O) :- occ.occurrence([K, O], B).
+pruning.cand(K, [O, B], O) :- occ.occurrence([K, O], B), !unplaced(K).
 pruning.conflict(K, Pl, Pl2) :- covers(K, Pl, P), covers(K, Pl2, P).
 
 // Some piece has no placement left.
