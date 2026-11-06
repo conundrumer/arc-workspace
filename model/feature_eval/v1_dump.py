@@ -3,12 +3,13 @@
 
   <runtime python> -u -I -B v1_dump.py OUT ROOT [--mutants K] TASK...
 
-ROOT holds `train/mutants/`, whose files name each task's gold program and its mutants. A task's file holds:
-- `pairs`: at each pair, each gold table's values, at the assignment that solves the train pairs, with the features across its other retained
-  assignments.
+ROOT holds `train/mutants/`, whose files name each task's ground-truth program and its mutants. A task's file holds:
+- `pairs`: at each pair, the values of each table of the ground-truth program, at the assignment that solves the train pairs, with the features
+  across its other retained assignments.
 - `base`: at each pair, what the first version says of the input grid, the output and the changed cells.
 - `columns`: each table's column tokens with their types. `tables`: each table's token with its name.
-- `coordinates`: each feature of `pairs` and `mutants`, with what it reads, its aggregation level and what else it reads.
+- `coordinates`: each feature of `pairs` and `mutants`, with the metadata that `schema.coordinates` gives: what it reads, its aggregation level and
+  what else it reads.
 - `mutants`, with `--mutants K`: up to K mutants, each with its query, its number there, and the values of its query's tables at each pair.
 
 It skips the tasks done, and it prints a rate and an ETA.
