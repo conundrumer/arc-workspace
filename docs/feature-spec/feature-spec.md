@@ -125,13 +125,21 @@ A feature expression's **size** is its count of distinct operators, without leav
 
 Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` with no column pair between its sides, since its count follows from its parts' counts. A product stands only under a `select` or a `lib-join` that relates its two sides. It leaves out a term that reads no column of its table, since its value follows from the row count, which the table's own `cardinality` gives. `nonempty` stands only over a relation with no columns.
 
-A term is **forced** where its value follows from smaller terms on every table of its schema. Enumeration generates no term that these laws prove forced. A law is sound and need not be complete, since equivalence over negation and aggregates is undecidable, so a term that no law covers stays. A rule that reads a corpus is no law.
+A term is **forced** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so a forced term has no derivation and is never constructed.
 
-- **Types:** a `Nat` is never below `0`. So `>= 0` holds of every row, and `> 0` is `!= 0`.
-- **Sets and keys:** a relation's rows are a set, and `P` is a key of a grid. So a `project` that keeps a key leaves the count unchanged.
-- **Algebra:** a `semijoin` or `antijoin` applied twice with one relation and one column pair is the first one, and a `join` over a `semijoin` on the same columns is the `join`. A `select` commutes with a `semijoin` or `antijoin` over columns it does not change, so one order is generated.
-- **Complete domains:** every value of an orientation type is in that type's `*_elem` relation. So a `semijoin` with it keeps every row, and an `antijoin` with it keeps none.
-- **Contracts:** each component output and each part declares its keys, the ranges of its numbers and the relations it is a subset of, and the laws above read these declarations.
+- **Refinements:** a relation's type holds, beside its column types and frames, what is known of its values: the keys of its columns, each number's range, the relations a column is a subset of, the columns that are complete over an orientation type, and its row count where that is known.
+- **Sources:** a base relation and a lib relation declare their refinements, and so does each component output, in the registry. A part's refinements follow from its fragment's body. A table's refinements are measured from its rows, so they hold of that table and read no other table.
+- **Rules:** each operator gives its output's refinements from its inputs', as an abstract transformer.
+- **Ill-typed terms:** an operator application has no derivation where its refinements prove that it changes nothing, that its output is empty, or that its value is constant or follows from its input's row count. For example:
+    - `(select T x >= 0)` over a `Nat` changes nothing.
+    - A `semijoin` with a relation that `x` is a subset of changes nothing, and an `antijoin` with it is empty.
+    - A `project` that keeps a key leaves the row count as it was.
+    - A group count over a key of `T` is 1 at each group.
+    - On a table of one row, a term keyed by its column holds one group.
+- **Normal forms:** where two orders of operators are equal by their rules, as a `select` and a `semijoin` over columns it does not change are, one order is generated.
+- **Soundness:** a rule's claim is tested against evaluation on train tables, and a counterexample is a fault in the rule. No rule is taken from a corpus.
+
+A rule need not be complete, since equivalence over negation and aggregates is undecidable, so a term that no rule rejects stays.
 
 Two terms with equal values are not forced by that alone. Where the table's rows could have given a different value, the equality is a claim about the task, and both terms stay.
 
