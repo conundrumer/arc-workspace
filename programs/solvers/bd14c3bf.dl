@@ -97,7 +97,7 @@
     // The group of transforms under which two reduced shapes count as the
     // same: the rotations, or the rotations and reflections.
     // @open
-    .decl match_group(s: Sym) match_group(SYM_C4). match_group(SYM_D4).
+    .decl match_group(s: Sym) match_group(SYM_X). match_group(SYM_C4). match_group(SYM_D4).
 
     // --- $AnyColor, $CornerReference ---
     // @derive DominantColor: foreign $AnyColor
