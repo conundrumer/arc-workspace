@@ -125,11 +125,11 @@ A feature expression's **size** is its count of distinct operators, without leav
 
 Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` with no column pair between its sides, since its count follows from its parts' counts. A product stands only under a `select` or a `lib-join` that relates its two sides. It leaves out a term that reads no column of its table, since its value follows from the row count, which the table's own `cardinality` gives. `nonempty` stands only over a relation with no columns.
 
-A term is **forced** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so a forced term has no derivation and is never constructed.
+A term is **forced** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so a forced term has no derivation and is never constructed. The typing rules are the preconditions and postconditions of [Structure of the search](structure.md#conditions), held in a relation's type.
 
 - **Refinements:** a relation's type holds, beside its column types and frames, what is known of its values: the keys of its columns, each number's range, the relations a column is a subset of, the columns that are complete over an orientation type, and its row count where that is known.
 - **Sources:** a base relation and a lib relation declare their refinements, and so does each component output, in the registry. A part's refinements follow from its fragment's body. A table's refinements are measured from its rows, so they hold of that table and read no other table.
-- **Rules:** each operator gives its output's refinements from its inputs', as an abstract transformer.
+- **Rules:** each operator gives its output's refinements, its postcondition, from its inputs' refinements, its precondition, as an abstract transformer.
 - **Ill-typed terms:** an operator application has no derivation where its refinements prove that it changes nothing, that its output is empty, or that its value is constant or follows from its input's row count. For example:
     - `(select T x >= 0)` over a `Nat` changes nothing.
     - A `semijoin` with a relation that `x` is a subset of changes nothing, and an `antijoin` with it is empty.
