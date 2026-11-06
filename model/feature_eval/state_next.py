@@ -120,9 +120,8 @@ def main():
             line = []
             for name, (x_train, x_dev) in built.items():
                 for seed in range(args.seeds):
-                    model = lgb.LGBMClassifier(n_estimators=100, learning_rate=0.05, num_leaves=7, feature_fraction=0.3, min_child_samples=5, seed=seed, n_jobs=2, verbose=-1)
-                    model.fit(x_train, y_train)
-                    predicted = model.predict_proba(x_dev)[:, 1]
+                    parameters = dict(objective='binary', learning_rate=0.05, num_leaves=7, feature_fraction=0.3, min_data_in_leaf=5, seed=seed, num_threads=2, verbose=-1)
+                    predicted = lgb.train(parameters, lgb.Dataset(x_train, label=y_train), 100).predict(x_dev)
                     scores[name][:, at] += predicted
                     per_seed[name][seed] += roc_auc_score(y_dev, predicted)
                 line.append(f'{roc_auc_score(y_dev, scores[name][:, at]):.3f}')

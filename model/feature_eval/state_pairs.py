@@ -185,9 +185,8 @@ def main():
             continue
         scores = np.zeros(len(dev_y))
         for seed in range(args.seeds):
-            model = lgb.LGBMClassifier(n_estimators=200, learning_rate=0.05, num_leaves=15, feature_fraction=0.5, min_child_samples=10, seed=seed, n_jobs=2, verbose=-1)
-            model.fit(train_x, train_y)
-            scores += model.predict_proba(dev_x)[:, 1]
+            parameters = dict(objective='binary', learning_rate=0.05, num_leaves=15, feature_fraction=0.5, min_data_in_leaf=10, seed=seed, num_threads=2, verbose=-1)
+            scores += lgb.train(parameters, lgb.Dataset(train_x, label=train_y), 200).predict(dev_x)
         by_task = []
         groups = np.array(dev_groups)
         for task in sorted(set(dev_groups)):
