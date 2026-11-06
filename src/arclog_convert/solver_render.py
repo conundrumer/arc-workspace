@@ -627,14 +627,16 @@ class RenderMixin:
     def drop_repeats(self, main: list[Form], branch_forms: list[Form], concept):
         """A concept relation whose head repeats a column that an alt's
         clause varies leaves the repeat out: the concept's readers read the
-        column it repeats, and the alt rederives them with its own columns."""
+        column it repeats, and each alt that rederives the relation rederives
+        them with its own columns, in the alt's own block."""
         for f in list(main):
             if not f.head_repeat or f.side != "RULE" or sum(g.name == f.name for g in main) != 1:
                 continue
             alts = [g for g in branch_forms if g.name == f.name]
             if not alts:
                 continue
-            bs = set().union(*(set(g.branches) - concept for g in alts))
+            each = {frozenset(g.branches) - concept for g in alts}
+            bs = set().union(*each)
             drop = dict(f.head_repeat)   # the dropped column -> the column it repeats
             new = without_repeats(f, drop)
             main[main.index(f)] = new
@@ -645,7 +647,8 @@ class RenderMixin:
                 if lines is None or lines == g.lines:
                     continue
                 main[main.index(g)] = dc_replace(g, lines=lines)
-                branch_forms.append(dc_replace(g, branches=tuple(sorted(set(g.branches) | bs))))
+                branch_forms.extend(dc_replace(g, branches=tuple(sorted(set(g.branches) | b)))
+                                    for b in sorted(each, key=sorted))
             # an alt's reader that the rederiving alts leave alone reads the
             # concept's columns, and their combination rederives it
             for g in list(branch_forms):
@@ -661,7 +664,8 @@ class RenderMixin:
                               if any(k.name in bs for k in adt.constructors)} & concept
                 branch_forms[branch_forms.index(g)] = dc_replace(g, lines=lines,
                                                                  branches=tuple(sorted(set(g.branches) | at_concept)))
-                branch_forms.append(dc_replace(g, branches=tuple(sorted(set(g.branches) | bs))))
+                branch_forms.extend(dc_replace(g, branches=tuple(sorted(set(g.branches) | b)))
+                                    for b in sorted(each, key=sorted))
         return main, branch_forms
 
     def drop_concept_repeats(self, main: list[Form]) -> None:
