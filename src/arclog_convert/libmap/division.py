@@ -28,6 +28,10 @@ The hoist of a site:
 - The atoms that ground a position or a key column take the clause's
   further top-level atoms over their variables, its tests among them, so
   that the instance holds only the positions and keys the clause reads.
+- A `Division` position input also takes the atoms of the other inputs that
+  hold a key column its own atoms hold, with what grounds those atoms. They
+  leave the clause, and a key with cells and no `parts` row is one part, so
+  the instance would otherwise hold keys the clause does not read.
 - A `Tiling` position input also takes a projection of each further stored
   or derived top-level atom that shares a variable, other than a position
   or an output, with its atoms or the key. A Tiling gives a row for each
@@ -770,9 +774,24 @@ class Hoist:
             return [j for j, lit in self.lits() if isinstance(lit, AtomLiteral) and self.table(lit.atom)
                     and j not in pos_lits and j not in nc and set(_vars(lit)) & vs]
 
+        def key_limits(g: list[int]) -> list[int]:
+            """The literals of the other inputs that a `Division`'s position
+            input g takes besides its own: those that hold a key column g's
+            literals hold, with the literals that hold their other variables."""
+            if form.comp != "Division":
+                return []
+            columns = set(_vars(tuple(self.body[j] for j in g))) & set(order)
+            found = [j for j in nc if set(_vars(self.body[j])) & columns and j not in g]
+            while True:
+                held = set(_vars(tuple(self.body[j] for j in found))) - columns - out_vars - pos_vars
+                more = [j for j in nc if j not in found and j not in g and set(_vars(self.body[j])) & held]
+                if not more:
+                    return found
+                found += more
+
         for inp, t, g in positions:
             keep = set(_vars(t))
-            body = keyed(sorted(set(g) | set(bounds(g))), keep, [])
+            body = keyed(sorted(set(g) | set(bounds(g)) | set(key_limits(g))), keep, [])
             for j in g:
                 if project(self.body[j], keep | set(order) | needed(g)) == self.body[j]:
                     exact.setdefault(j, inp)
