@@ -25,8 +25,18 @@ The objects of the search over programs and the maps between them. The [Type con
 - Each operator has a **precondition** on what it reads and a **postcondition** on what it gives. The postcondition is what follows from the precondition, whatever the rows are.
 - **Derived postcondition** of a table: what must hold of its rows, from how its query builds it.
 - **Measured postcondition** of a table: what holds of its rows on this task.
-- A fact is **entailed** where the derived postcondition gives it, and **contingent** where it holds of the rows and the derived postcondition does not give it. A table is a hypothesis about the task through its contingent facts. A contingent fact need not be relevant.
+- A claim is **entailed** where the derived postcondition gives it, and **contingent** where it does not, so that it could have failed.
 - A term whose value the conditions already give has no derivation, so it is never constructed. The [Feature specification](feature-spec.md) gives the rules.
+
+## The judgments
+
+A query's result is judged in this order, as a search meets each one.
+
+- **Contingency**, at generation time, before the query runs: the query's claim is not entailed by its derived postcondition.
+- **Confirmation**, at execution time, once the query has run: the measured postcondition holds the claim on the evidence. A result with no confirmation is degenerate, such as an empty table or a copy of a table that exists.
+- **Novelty:** the result says something that the tables before it do not say.
+- **Relevance:** the result's claims about the train output single out that output among the outputs of plausible wrong readings of the rule.
+- **Value:** a path from the result can still reach a state in the goal set. Only a search shows it.
 
 ## The loop
 
