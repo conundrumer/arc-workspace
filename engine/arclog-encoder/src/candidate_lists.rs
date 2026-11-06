@@ -169,7 +169,7 @@ fn pooled(owner: String, vectors: &[&TableVector]) -> Written {
         (shape, least, sum / total as f32, most)
     }).collect();
     graded.sort_unstable_by_key(|entry| entry.0);
-    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded }
+    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded, pairs: 0, at_pairs: Vec::new() }
 }
 
 /// A table's two-table values with another table of the state, each the mean over the examples.
@@ -181,7 +181,7 @@ fn edge_of(owner: String, vector: &TableVector) -> Written {
         ids.push(vector.shapes[shape]);
         values.push(mean as f32);
     }
-    Written { owner: owner.into(), ids, values, graded: Vec::new() }
+    Written { owner: owner.into(), ids, values, graded: Vec::new(), pairs: 0, at_pairs: Vec::new() }
 }
 
 pub struct TaskLists {
@@ -363,7 +363,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                     (hash as u64, value)
                 }).collect();
                 written.sort_unstable_by_key(|entry| entry.0);
-                lists.push(Written { owner: format!("{at}/{member}/graph").into(), ids: written.iter().map(|entry| entry.0).collect(), values: written.iter().map(|entry| entry.1).collect(), graded: Vec::new() });
+                lists.push(Written { owner: format!("{at}/{member}/graph").into(), ids: written.iter().map(|entry| entry.0).collect(), values: written.iter().map(|entry| entry.1).collect(), graded: Vec::new(), pairs: 0, at_pairs: Vec::new() });
                 // A later gold query joins two gold tables, so the edges of gold tables are the ones to read.
                 if member == 0 {
                     for (node, _) in &related {
