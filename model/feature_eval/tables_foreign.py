@@ -10,6 +10,9 @@ up to PER_STATE that hold all of these: the program type-checks, the table has r
 state has its rows, and no gold query of the task has them. It keeps each kept program under NEW_ROOT as `mutants`, in the form
 tables_worker.py gives, with each candidate's `edit` saying whether its column types are gold's, and what the draw met under
 NEW_ROOT/draws. It prints the tables with their test rows, which go nowhere else. On a fault it prints only the fault's type.
+
+With FOREIGN_READS=gold in the environment, a draw is harder to tell from gold without table content: a form must read a table
+of the state, and a read goes to a table that gold's query reads wherever one has the columns or the port.
 """
 import importlib.util
 import json
@@ -34,6 +37,7 @@ DRAWS = 300
 PROGRAMS = 60
 SECONDS = 40
 OWN = '&foreign'
+READS_LIKE_GOLD = os.environ.get('FOREIGN_READS') == 'gold'
 NO_OUT = ['OUT', ['input', '^P', '^Col']]
 
 
@@ -85,8 +89,9 @@ def renamed(node, names):
     return [renamed(part, names) for part in node]
 
 
-def placed(form, members, rng):
-    """The form with its name made fresh and each table it reads a table of the state, or None where one has no place."""
+def placed(form, members, rng, parents=()):
+    """The form with its name made fresh and each table it reads a table of the state, or None where one has no place. A
+    read goes to one of `parents` where one fits."""
     own = form[1]
     names = {own: OWN}
     needs = {}
@@ -103,7 +108,7 @@ def placed(form, members, rng):
             options = [name for name, held in members.items() if relation_of(name) == name and columns <= held]
         if not options:
             return None
-        names[token] = rng.choice(options)
+        names[token] = rng.choice([name for name in options if name in parents] or options)
     return renamed(form, names)
 
 
@@ -181,6 +186,7 @@ def worker(old_root, pool_dir, new_root, task):
         lines = [written(form) for form in gold_forms[:form_at]]
         drawn_rng = random.Random(f'{SEED}.{task}.{form_at}')
         counts = dict(form=form_at, drawn=0, no_place=0, refused=0, no_table=0, no_rows=0, in_state=0, in_gold=0, kept=0)
+        gold_parents = parents_of(gold_forms, form_at, defined)
         candidates = []
         begun = time.time()
         programs = 0
@@ -188,8 +194,8 @@ def worker(old_root, pool_dir, new_root, task):
             if len(candidates) >= PER_STATE or programs >= PROGRAMS or time.time() - begun > SECONDS:
                 break
             counts['drawn'] += 1
-            form = placed(parse_forms(held['text'])[0], members, drawn_rng)
-            if form is None:
+            form = placed(parse_forms(held['text'])[0], members, drawn_rng, gold_parents if READS_LIKE_GOLD else ())
+            if form is None or (READS_LIKE_GOLD and gold_parents and not set(gold_parents) & set(atom[0] for atom in atoms_of(form))):
                 counts['no_place'] += 1
                 continue
             programs += 1
