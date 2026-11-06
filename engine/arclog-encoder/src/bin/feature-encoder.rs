@@ -1064,6 +1064,9 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
         out
     }).collect();
     let mut families: HashMap<String, Generated> = HashMap::new();
+    // With GENERATE_CHECK_TWO_TABLES, each table with the table before it, over the family of the two.
+    let two_tables = std::env::var_os("GENERATE_CHECK_TWO_TABLES").is_some();
+    let mut previous: Option<Stored> = None;
     for item in &items {
         if tally_budget.out_of_time() {
             break;
@@ -1072,12 +1075,24 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
         if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
-        let family = families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store));
+        let other = if two_tables {
+            let Some(other) = previous.replace(stored.clone()) else { continue };
+            Some(other)
+        } else {
+            None
+        };
+        let family = match &other {
+            Some(other) => families.entry(format!("{} | {}", stored.key, other.key)).or_insert_with(|| Generated::of_two_tables(&stored.types, &other.types, &store)),
+            None => families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store)),
+        };
         let (count, first) = family.counts();
         let mut walker = Walker::new(family);
         let example_of: Vec<usize> = (0..train).collect();
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
-        let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+        let mut leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+        if let Some(other) = &other {
+            leaves.push(other.rows.iter().take(train).map(|models| models.first().cloned().map_or(arclog_encoder::native::Val::None, arclog_encoder::native::Val::of_table)).collect());
+        }
         let chosen = |at: usize| at >= first && !family.is_pair_term(at);
         let mut values: HashMap<usize, Vec<arclog_encoder::native::Val>> = HashMap::new();
         for (at, leaf) in leaves.iter().enumerate() {
