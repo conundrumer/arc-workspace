@@ -516,7 +516,11 @@ impl Walk<'_> {
         let conjuncts: Vec<&Conjunct> = reading.list.iter().map(|(_, conjunct)| *conjunct).collect();
         let mut found = Vec::new();
         self.ordered(&reading.list, &given, &reading.outside, &mut found);
-        let bound = bound_labels(&conjuncts, &given, &reading.outside, &|atom| atom_modes(self.registry, atom), self.types);
+        // The labels the whole list binds, from the memo where each of its
+        // conjuncts is the state's, as in a body of the form that the
+        // candidate leaves as it was.
+        let sets: Vec<StableHashSet<LabelId>> = conjuncts.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
+        let bound = self.bind_before(&mut Prefixes::new(&reading.list, &sets), &conjuncts, conjuncts.len(), &given, &reading.outside);
         let mut check_use = |at: &[PathStep], use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
                 found.push(Found { label: Some(label), fault: Fault::Unbound { body: reading.at.clone() }, at: at.into() });
