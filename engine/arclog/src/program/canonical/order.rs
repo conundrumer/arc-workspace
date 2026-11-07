@@ -23,6 +23,8 @@ pub struct CanonicalOrder {
     /// For each label scope, by the source path of its form, the other
     /// labelings that its search found whose form is the canonical form.
     symmetries: StableHashMap<NodePath, Box<[Box<[(LabelId, u32)]>]>>,
+    /// Whether a list of the form holds a member that repeats an earlier one.
+    repeats: bool,
 }
 
 /// The write of `form` under [`AsWritten`] that its node keeps, made on the
@@ -41,7 +43,7 @@ fn write_order(form: &Form, names: &dyn NameWriter, feature_sites: bool) -> (Can
     let mut out = CanonicalWriter::default();
     form_root(&mut cx, &mut out, form);
     let recorded = cx.order.take().expect("the order is recorded");
-    (CanonicalOrder { lists: recorded.lists, labels: recorded.labels, symmetries: recorded.symmetries }, out.finish(), own.reached)
+    (CanonicalOrder { lists: recorded.lists, labels: recorded.labels, symmetries: recorded.symmetries, repeats: recorded.repeats }, out.finish(), own.reached)
 }
 
 /// The orders a write records for [`CanonicalOrder`]: each sorted list's,
@@ -50,11 +52,20 @@ fn write_order(form: &Form, names: &dyn NameWriter, feature_sites: bool) -> (Can
 #[derive(Default)]
 pub(super) struct Recorded {
     pub(super) lists: StableHashMap<NodePath, Box<[u32]>>,
+    /// Whether a list holds a member that repeats an earlier one, which the canonical form does not write.
+    pub(super) repeats: bool,
     pub(super) labels: StableHashMap<NodePath, Box<[(LabelId, u32)]>>,
     pub(super) symmetries: StableHashMap<NodePath, Box<[Box<[(LabelId, u32)]>]>>,
 }
 
 impl CanonicalOrder {
+    /// Whether a list of the form holds a member that repeats an earlier one.
+    /// The canonical form does not write such a member, so it stands for forms
+    /// with other counts of it, whose lists differ in length.
+    pub fn repeats(&self) -> bool {
+        self.repeats
+    }
+
     /// The canonical order of `form`, which the node of `form` keeps.
     pub fn of<'f>(form: &'f Form, search: &mut SearchBudget) -> &'f Self {
         Self::with_form(form, search).0

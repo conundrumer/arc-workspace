@@ -377,9 +377,12 @@ pub struct KeyInput<'a> {
 
 impl KeyInput<'_> {
     /// The base key of `check` on the form: the form's canonical form and
-    /// [`KeyInput::signatures`].
+    /// [`KeyInput::signatures`]. A result holds a refusal's path by places in the
+    /// form's lists, so where a list repeats a member, whose canonical form stands
+    /// for lists of other lengths, the key holds the written order of the lists too.
     pub fn base(&self, check: CheckId) -> CheckCacheKey {
-        CheckCacheKey { check, canonical_form: self.canonical.clone(), signatures: self.signatures.into() }
+        let canonical_form = if self.order.repeats() { CanonicalOrder::with_written_lists(self.form) } else { self.canonical.clone() };
+        CheckCacheKey { check, canonical_form, signatures: self.signatures.into() }
     }
 }
 

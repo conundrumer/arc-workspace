@@ -951,6 +951,7 @@ impl<'a> ScopeSink<'a> for Context<'_> {
             let children = parent.children().len();
             assert!(members.len() <= children, "{CHILD_FAULT}");
             order.lists.insert(NodePath(self.path.clone().into()), forms.iter().map(|(_,_, index)| *index).chain(members.len() as u32..children as u32).collect());
+            order.repeats |= !repeats.is_empty();
         }
         let written = || forms.iter().filter(|(_, _, index)| !repeats.contains(&(*index as usize)));
         self.out.len(written().count());
