@@ -13,6 +13,13 @@
     // the transforms the clean cells never contradict
   | Derived {}
 
+// A line of the restored grids: its axis and its place along that axis.
+.type Line = [a: Axis, l: Position]
+
+// A cell of a line in one restored grid: the grid, the cell's place across
+// the line, and its color.
+.type LineCell = [e: Example, x: Position, col: Color]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -33,20 +40,20 @@ clean(P, Col) :- in(P, Col), !params.noise(Col).
 // The transforms each case applies.
 .decl transform(d: D4, ch: Choice)
 
-// Symmetric counterpart: a cell's image under one of the case's transforms.
+// A corrupted cell's symmetric counterparts: its images under the case's
+// transforms.
 .decl counterpart(p: Position, q: Position, ch: Choice)
 counterpart(P, Q, Ch) :-
-    params.center(V), in(P, _), relative(V, P, P_inner),          // a cell seen from the center
+    in(P, N), params.noise(N),                                    // corrupted cell
+    params.center(V), relative(V, P, P_inner),                    // seen from the center
     transform(D, Ch), apply(D, P_inner, Q_inner),                 // its image under a case transform
-    compose(V, Q_inner, Q), in(Q, _).                             // that image, back in the grid
+    compose(V, Q_inner, Q).                                       // that image, in the grid's frame
 
 .decl impl_choice(ch: Choice)
 impl_choice($Stored()). impl_choice($Derived()).
 
 out(P, Col, Ch) :- clean(P, Col), impl_choice(Ch).
-out(P, Col, Ch) :-
-    in(P, N), params.noise(N),                     // corrupted cell
-    counterpart(P, Q, Ch), clean(Q, Col).
+out(P, Col, Ch) :- counterpart(P, Q, Ch), clean(Q, Col).
 
 // --- $Stored ---
 
@@ -69,28 +76,36 @@ transform(D, $Derived()) :- inv.compatible($U(), D).
         axis_of(D, A), dist(P, D, K),   // each axis, each distance, the center line at 0
         jump_offset(D, K, V).
 
+    // Each cell of the restored grids on the line of each axis it lies on,
+    // at its place across that line.
+    .decl line_cell(a: Axis, l: Position, e: Example, x: Position, col: Color)
+    line_cell(A, L, E, X, Col) :- ex_out(E, P, Col), axis_elem(A), split(P, A, L, X).
+
+    // Lines whose cells hold the same colors, at the same places, in every
+    // restored grid.
+    .init lines = KeyedSetCompare<Line, Line, LineCell>
+    lines.pattern_member([A, L], [E, X, Col]) :- line_cell(A, L, E, X, Col).
+    lines.observed_member([A, L], [E, X, Col]) :- line_cell(A, L, E, X, Col).
+
     // Where a candidate's mirror carries each line of the axis, onto a line
     // of the frame: the grid-center flip of the axis, then twice the
     // candidate's offset.
-    .decl mirrored(e: Example, a: Axis, v: Offset, l: Position, l2: Position)
-    mirrored(E, A, V, L, L2) :-
-        ex_out(E, P, _), cand(A, V), split(P, A, L, _),    // a line of the axis
+    .decl mirrored(a: Axis, v: Offset, l: Position, l2: Position)
+    mirrored(A, V, L, L2) :-
+        cand(A, V), line_cell(A, L, _, _, _),              // a line of the axis
         flip_of(A, D), apply(D, L, L1),
         compose(V, V, V_twice), compose(L1, V_twice, L2),
         inside(L2, ZERO).                                  // its image, in the frame
 
-    // A candidate whose mirror carries some cell onto a different color.
+    // A candidate whose mirror carries some line onto a line of other colors.
     .decl mirror_mismatch(a: Axis, v: Offset)
-    mirror_mismatch(A, V) :-
-        mirrored(E, A, V, L, L2),
-        ex_out(E, P, Col), split(P, A, L, X),              // a cell of the line
-        compose(L2, X, Q), ex_out(E, Q, C2), C2 != Col.    // its image, across at the same place
+    mirror_mismatch(A, V) :- mirrored(A, V, L, L2), !lines.equals([A, L2], [A, L]).
 
     // The axis's mirror line: unbroken, and mirroring some line onto a line
     // of the frame — an offset past the frame pairs nothing and would pass
     // unbroken.
     .decl axis_center(a: Axis, v: Offset)
-    axis_center(A, V) :- mirrored(_, A, V, _, _), !mirror_mismatch(A, V).
+    axis_center(A, V) :- mirrored(A, V, _, _), !mirror_mismatch(A, V).
 
     // The symmetry center: the mirror line of each axis, crossed.
     .decl center(v: Offset)
@@ -98,10 +113,18 @@ transform(D, $Derived()) :- inv.compatible($U(), D).
         perp(A1, A2),
         axis_center(A1, V1), axis_center(A2, V2), compose(V1, V2, V).
 
-    // Self-symmetry of each restored grid, read in the center frame.
+    // Each restored grid's cells, read in the center frame.
+    .decl framed(e: Example, p: Position, col: Color)
+    framed(E, P_inner, Col) :- center(V), ex_out(E, P, Col), relative(V, P, P_inner).
+
+    // Self-symmetry of each restored grid.
     .init inv = D4Map<Example, Color>
-    inv.src(E, P_inner, Col) :- center(V), ex_out(E, P, Col), relative(V, P, P_inner).
-    inv.dst(E, P_inner, Col) :- inv.src(E, P_inner, Col).
+    // @workaround: each grid's framed cells, read with no ex_out atom; the
+    //  arclog program converted from this solver takes that atom as the key
+    //  of inv, and without it takes a whole input body as the key, whose rows
+    //  each input body then joins, past the arclog engine's caps
+    inv.src(E, P, Col) :- ex_out(E, _, _), framed(E, P, Col).
+    inv.dst(E, P, Col) :- ex_out(E, _, _), framed(E, P, Col).
 
     // The transforms no example contradicts, named as a subgroup.
     .init named = KeyedSetCompare<Unit, Sym, D4>
