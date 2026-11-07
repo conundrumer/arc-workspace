@@ -190,9 +190,6 @@ pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
             view.put("C some box is the box of the changed cells", &[b], Value::Bool(real.contains(&whole)));
         }
     }
-    if t.rows > 2000 {
-        return;
-    }
     let box_colors = |span: &Span| -> u16 { cut(span).map_or(0, |s| output.colors_in(s[0], s[1], s[2], s[3])) };
     let row_colors: Vec<u16> = by_row.iter().map(box_colors).collect();
     for other in 0..t.kinds.len() {
