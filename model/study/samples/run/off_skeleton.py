@@ -66,8 +66,7 @@ def main():
         targets = {t for s in samples for t in s['target_queries']}
         closure = {h: set(q['closure']) for h, q in queries.items()}
         states = {}
-        for line in open(draws):
-            d = json.loads(line)
+        for d in draw_file.draws(job):
             if 'steps' not in d or len(d['steps']) < 2:
                 continue
             steps = d['steps'][:-1]
