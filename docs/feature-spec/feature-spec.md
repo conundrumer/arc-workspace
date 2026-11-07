@@ -83,7 +83,7 @@ The root is one aggregate over a relation.
 | `nonempty` | whether the relation has a row | false |
 | `cardinality` | its count of rows, over all its columns | 0 |
 | `value-set` | the set of the values of its columns | the empty set |
-| `ratio` | the first relation's count of rows over the second's, as an exact fraction | 0 where the first has no rows, and no value where the second has none |
+| `ratio` | the first relation's count of rows over the second's, as an exact fraction | no value where the second has no rows, and otherwise 0 where the first has none |
 
 Everything else is an operator under one of these. The number of distinct values of `x` is `(cardinality (project R x))`. The share of `R`'s rows that `S` matches is `(ratio (semijoin R S ...) R)`. Whether `x` determines `y` is whether `(ratio (component Singleton (member R (x) (y)) value) (project R x))` is 1. Whether one count is above, at or below another is whether their ratio is above, at or below 1. The greatest group size is a `value-set` over `Order`'s `maximal`.
 
@@ -210,7 +210,7 @@ A native proposer takes these forms as a proposer written in arclog does. The ot
 - Several atoms: the product of their projections, as a two-atom `OUT` gives. A `ratio` exports its two counts, each from its own atom, so arclog divides nothing. The encoder reduces the two to lowest terms outside arclog, which gives the exact fraction.
 - No feature compares a number with a literal. It exports the number.
 
-So `0` and "no value" differ. `cardinality` gives `0` on no rows. A ground expression has no value where its binding was refused, which means it does not exist, where a bound stopped it, where it is task-wide over a parameterized table with several constraint models, or, for a `ratio`, where the second relation has no rows.
+So `0` and "no value" differ. `cardinality` gives `0` on no rows. A ground expression has no value where its binding was refused, which means it does not exist, where a bound stopped it, where a relation it reads has no value, where it is task-wide over a parameterized table with several constraint models, or, for a `ratio`, where the second relation has no rows.
 
 ## Vectors
 
@@ -226,9 +226,9 @@ A parameterized table's **upstream tables** are the parameterized tables its que
 
 A vector entry is a **shape**: a ground expression that reads a table, with that table, any upstream table and each of their columns written as a hole. A column's hole is typed by the column's value type. Holes are numbered by first appearance, so the order of a table's columns does not enter. Each ground expression on a table has one shape. One shape has one ground expression for each binding of its holes to that table's columns that the checker accepts. The shape's name is its expression. So a shape has no cost beyond its ground expressions' size, and a version of the library and the registry, and a size, define one set of names for every table. A **list hole** stands for every column of the table that is a key column or has a type of a named set, as over a group's columns, so it has one binding on a table.
 
-A shape's value at an ARC example is the multiset of its ground expressions' values there. With no binding, the shape is at its default.
+A shape's value at an ARC example is the multiset of its ground expressions' values there. With no binding, the shape is at its default. A ground expression that its aggregate leaves with no value, a `ratio` whose second relation has no rows or a `value-set` without exactly one member, is left out of the multiset, and where none is left, the shape has no value. A ground expression that a bound stopped, or that reads a relation with no value, gives the shape no value at that ARC example, since its value could change the shape's.
 
-A vector is sparse. A table gives the entries whose value differs from the default, keyed by name, and the set of names needs no enumeration. An entry's default is its aggregate's value on no rows: `0`, false or the empty set. An entry with no value, such as one that a bound stopped, is stored as that, since it differs from the default. A `ratio` is the exception: one with no rows in its second relation is left out, since that relation's `nonempty` states it. A `ratio` of 0 is at its default, and where the second relation has rows, the `antijoin` in place of the `semijoin` gives 1 less the value, so a share of 0 shows as a share of 1 there.
+A vector is sparse. A table gives the entries whose value differs from the default, keyed by name, and the set of names needs no enumeration. An entry's default is its aggregate's value on no rows: `0` or false. An entry with no value, such as one that a bound stopped, a `ratio` whose second relation has no rows or a `value-set` without exactly one member, is stored as that, since it differs from the default. A `ratio` of 0 is at its default, and where the second relation has rows, the `antijoin` in place of the `semijoin` gives 1 less the value, so a share of 0 shows as a share of 1 there.
 
 - A shape gives two numbers at each ARC example: the greatest and the sum of its ground expressions' values. The sum of a `nonempty` is the number of bindings with a row. With one binding, the two are equal. A `ratio` gives the greatest and the least, since a sum of fractions counts nothing. A fraction is exact, so two ARC examples have one value exactly where their fractions are equal.
 - A task-wide root gives those two numbers once.
