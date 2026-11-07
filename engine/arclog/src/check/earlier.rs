@@ -27,6 +27,7 @@ use crate::hash::StableHashMap;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Form, OutputName, OutputOwner, RelationRef};
 use crate::resolver::Signature;
+use crate::types::FormTypes;
 
 /// The forms before the last of the programs of one set of finished forms,
 /// by their index.
@@ -69,6 +70,10 @@ pub(super) struct Kept {
     pub(super) labels: Arc<[LabelInScope]>,
     /// The diagnostics of the form's checks, in the order of the checks.
     pub(super) refused: Vec<Diagnostic>,
+    /// The types of the form's label scopes as the program's types hold them,
+    /// each at the scope's path in the program, made on the first ask for a
+    /// program with no `RIGID_DET` form, whose own Idents they would hold.
+    pub(in crate::check) scopes: OnceLock<Vec<(NodePath, Arc<FormTypes>)>>,
 }
 
 impl EarlierForm {

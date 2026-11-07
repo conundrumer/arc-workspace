@@ -15,6 +15,17 @@ use crate::resolver::form_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, ResolvedProgram};
 use crate::types::{FormTypes, GraphRelation, KeyRow, ProgramTypes, ValueType};
 use super::SolverClauses;
+use crate::check::earlier::Kept;
+
+/// A top-level form of a program for [`program_types`]: its path, the types
+/// of each of its label scopes, its canonical order, and what the check of
+/// the finished forms kept of it.
+pub(in crate::check) struct FormScopes<'p> {
+    pub(in crate::check) path: NodePath,
+    pub(in crate::check) scopes: Arc<ScopeTypes>,
+    pub(in crate::check) order: &'p CanonicalOrder,
+    pub(in crate::check) kept: Option<Arc<Kept>>,
+}
 
 /// The [`ProgramTypes`] of `program`: for each form of `forms`, at its path,
 /// the types of each label scope of the form, at the scope's source path
@@ -35,25 +46,44 @@ use super::SolverClauses;
 /// relation a column of which no form types gets no column types. The types
 /// of a `RIGID_DET` form hold the labels at its parts' sites and key columns that are
 /// the assembly's own Idents, as `own_idents` gives them.
-pub fn program_types(
+pub(in crate::check) fn program_types(
     program: &ResolvedProgram,
     registry: &Registry,
     _clauses: &SolverClauses,
-    forms: &[(NodePath, Arc<ScopeTypes>, &CanonicalOrder)],
+    forms: &[FormScopes<'_>],
 ) -> ProgramTypes {
     let _timed = crate::stats::span(crate::stats::Phase::CheckProgramTypes);
     crate::stats::units(crate::stats::Phase::CheckProgramTypes, program.graph.nodes.len());
     let mut types = ProgramTypes::default();
     let own_idents = own_idents(program, registry);
     let mut fixed: StableHashMap<(NodePath, Arc<[OutputStep]>), &[ValueType]> = StableHashMap::default();
-    for (path, scopes, order) in forms {
-        for (canonical, form_types) in scopes.iter() {
-            let source = order.source_path(canonical);
-            let own = |position: LabelId| order.source_label(&source, position.0);
-            let labels = form_types.labels().map(|(label, ty)| (own(label), map_labels(ty, &own)));
-            let at = path.join(&source);
-            let own = own_idents.get(&at).into_iter().flatten().copied();
-            types.insert_form(at, Arc::new(FormTypes::new(labels, []).with_own_idents(own)));
+    for FormScopes { path, scopes, order, kept } in forms {
+        let entries = || -> Vec<(NodePath, Arc<FormTypes>)> {
+            scopes
+                .iter()
+                .map(|(canonical, form_types)| {
+                    let source = order.source_path(canonical);
+                    let own = |position: LabelId| order.source_label(&source, position.0);
+                    let labels = form_types.labels().map(|(label, ty)| (own(label), map_labels(ty, &own)));
+                    let at = path.join(&source);
+                    let own = own_idents.get(&at).into_iter().flatten().copied();
+                    (at, Arc::new(FormTypes::new(labels, []).with_own_idents(own)))
+                })
+                .collect()
+        };
+        // With no own Ident in the program, the types of a form's scopes read the form's own types alone, which the form keeps.
+        let held;
+        let entries = match kept.as_ref().filter(|_| own_idents.is_empty()) {
+            Some(kept) => kept.scopes.get_or_init(entries),
+            None => {
+                held = entries();
+                &held
+            }
+        };
+        for (at, form_types) in entries {
+            types.insert_form(at.clone(), Arc::clone(form_types));
+        }
+        for (_, form_types) in scopes.iter() {
             for (relation, columns) in form_types.relations() {
                 fixed.insert((path.join(&order.source_path(&relation.form)), relation.output.clone()), columns);
             }

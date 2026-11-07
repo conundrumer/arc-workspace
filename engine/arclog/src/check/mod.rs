@@ -731,6 +731,7 @@ fn check_program_with_open(
         .collect();
     stats::units(Phase::CheckProgram, forms.len());
     let mut refused_by_form = vec![Vec::new(); forms.len()];
+    let mut kept_forms: Vec<Option<Arc<Kept>>> = vec![None; forms.len()];
     let form_types: Vec<Arc<types::ScopeTypes>> = {
         let cases = inference::CaseInferences::new(clauses, registry);
         let inference = inference::Inference::new(&program, &cases);
@@ -787,11 +788,22 @@ fn check_program_with_open(
                 at.report(refused, check.id(), &result);
             }
         }
-        for (((at, types), labels), refused) in forms.iter().zip(&form_types).zip(&labels).zip(&refused_by_form) {
-            if let (Some(earlier), None) = (&at.earlier, &at.kept) {
-                let kept = Kept { signatures: at.signatures.clone(), zero: at.zero.clone(), types: Arc::clone(types), labels: Arc::clone(labels), refused: refused.clone() };
-                earlier.keep(Arc::new(kept));
-            }
+        for (((at, types), labels), (refused, kept)) in forms.iter().zip(&form_types).zip(&labels).zip(refused_by_form.iter().zip(&mut kept_forms)) {
+            *kept = match (&at.earlier, &at.kept) {
+                (Some(earlier), None) => {
+                    let kept = Arc::new(Kept {
+                        signatures: at.signatures.clone(),
+                        zero: at.zero.clone(),
+                        types: Arc::clone(types),
+                        labels: Arc::clone(labels),
+                        refused: refused.clone(),
+                        scopes: Default::default(),
+                    });
+                    earlier.keep(Arc::clone(&kept));
+                    Some(kept)
+                }
+                (_, kept) => kept.clone(),
+            };
         }
         form_types
     };
@@ -805,7 +817,12 @@ fn check_program_with_open(
             }
         }
     }
-    let form_types: Vec<(NodePath, Arc<types::ScopeTypes>, &CanonicalOrder)> = forms.into_iter().zip(form_types).map(|(at, types)| (at.path, types, at.order)).collect();
+    let form_types: Vec<types::FormScopes<'_>> = forms
+        .into_iter()
+        .zip(form_types)
+        .zip(kept_forms)
+        .map(|((at, types), kept)| types::FormScopes { path: at.path, scopes: types, order: at.order, kept })
+        .collect();
     if !refused.is_empty() {
         return Err(refused);
     }
