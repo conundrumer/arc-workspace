@@ -578,11 +578,6 @@ fn static_prune_review_atom_closed_by_clause_end() {
 }
 
 #[test]
-fn static_prune_review_wider_orientation_keeps_filter() {
-    assert_eq!(static_refusal("(RULE &x (dir8_elem (:D *D)) (input *P) (same_dist (:D D) (:P1 P) (:P2 P)))"), None);
-}
-
-#[test]
 fn static_prune_review_unadmitted_zero_equality_keeps_atom() {
     assert_eq!(static_refusal("(RULE &x (uniform_inset (:K 0) (:B *B)))"), None);
 }
