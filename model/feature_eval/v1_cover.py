@@ -39,6 +39,8 @@ A store's `relations`, `relations_least`, `relations_most`, `graph`, `query`, `b
 varies across a candidate's examples at each row. A missing feature is also judged on one row per candidate, where its value is its mean over the candidate's rows and its
 columns are these: `on candidates` gives that status.
 
+A store's `contingent` holds about as many entries as its lists, and one group of two features reads it, so it stands only under `--contingent`.
+
 `--why PATTERN` judges nothing. For each feature whose name the pattern finds, it prints its nearest single column, the feature's values at each of that column's values, and the first table rows where the two part, by task, item, candidate, ARC example and table.
 
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
@@ -190,6 +192,7 @@ def main():
     parser.add_argument('--pairs', action='store_true')
     parser.add_argument('--only')
     parser.add_argument('--why')
+    parser.add_argument('--contingent', action='store_true')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
     args = parser.parse_args()
@@ -204,7 +207,8 @@ def main():
     extra['graph'] = {place: 'graph:' + meta['family_names'].get(int(key), '') for place, key in enumerate(meta['graph_columns'])}
     extra['relations'] = {place: relation + ':' + meta['family_names'].get(int(key), '') for place, (relation, key) in enumerate((r, k) for r in g.RELATIONS for k in meta['relation_columns'])}
     extra['wide'] = {place: 'wide:' + meta['wide_names'].get(int(key), '') for place, key in enumerate(meta['wide_columns'])}
-    extra['contingent'] = {place: 'contingent:' + meta['names'].get(int(key), '') for place, key in enumerate(meta['columns'])}
+    # Its place stands either way, so a column's number does not change with the option.
+    extra['contingent'] = {place: 'contingent:' + meta['names'].get(int(key), '') for place, key in enumerate(meta['columns'])} if args.contingent else {}
     for pool in ('relations_least', 'relations_most'):
         if (blocks / 'blocks' / f'train.{pool}.zst').exists():
             extra[pool] = {place: pool + ':' + name.split(':', 1)[0] + ':' + name.split(':', 1)[1] for place, name in extra['relations'].items()}
@@ -218,7 +222,7 @@ def main():
     paths = [path for path in paths if path.name.split('.')[0] in in_store and any((Path(folder) / (path.name.split('.')[0] + '.lists.zst')).exists() for folder in args.lists)]
     paths = paths[:args.tasks] if args.tasks else paths
     tasks = {path.name.split('.')[0] for path in paths}
-    extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra if source != 'relations_each'}
+    extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra if source != 'relations_each' and (source != 'contingent' or args.contingent)}
     # A candidate's rows of `relations_each` stand together, one per example.
     each_rows, first_each = {}, None
     if 'relations_each' in extra and not args.base:
@@ -349,10 +353,13 @@ def main():
                         own_types = dict(types_of)
                         own_types.update({key: {token: ty for token, ty in columns} for key, columns in held['columns'].items()})
                         add_rows([by_table(pair) for pair in held['pairs']], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query')
+    del extras, each_rows
     row = np.concatenate(row_of)
+    del row_of
     ids = np.concatenate(shape_of)
+    del shape_of
     val = np.concatenate(value_of)
-    del row_of, shape_of, value_of
+    del value_of
     val = np.nan_to_num(val, nan=-7.77e7)
     keep = val != 0
     row, ids, val = row[keep], ids[keep], val[keep]
@@ -383,7 +390,8 @@ def main():
     order = np.lexsort((row, val, shape))
     row, shape, val = row[order], shape[order], val[order]
     new_group = np.concatenate(([True], (shape[1:] != shape[:-1]) | (val[1:] != val[:-1])))
-    rank = np.cumsum(new_group) - 1
+    rank = (np.cumsum(new_group) - 1).astype(np.int32)
+    del order
     starts = np.flatnonzero(np.concatenate(([True], shape[1:] != shape[:-1])))
     ends = np.concatenate((starts[1:], [len(shape)]))
     signature = set()
@@ -611,6 +619,24 @@ def main():
             _, share, _, _, one_name = by_pairs(feature, at)[:5]
             key = by_name.get(one_name)
             print(f'\n{feature}: rows {len(at)}, nearest column {one_name}')
+            # The columns that equal the feature on the most table rows, with a table row of no entry at 0.
+            numbers = {here: float(value) for here, value in at.items() if isinstance(value, (bool, int, float))}
+            if numbers:
+                here_rows = np.fromiter(numbers, dtype=np.int64, count=len(numbers))
+                here_rows.sort()
+                wanted_value = np.zeros(rows, dtype=np.float64)
+                wanted_value[here_rows] = [numbers[here] for here in here_rows.tolist()]
+                on_rows = np.zeros(rows, dtype=bool)
+                on_rows[here_rows] = True
+                entries = np.flatnonzero(on_rows[row])
+                equal = np.abs(val[entries] - wanted_value[row[entries]]) < 1e-3
+                zero_rows = int((wanted_value[here_rows] == 0).sum())
+                on_zero = wanted_value[row[entries]] == 0
+                agree = np.bincount(shape[entries], weights=equal.astype(np.float64), minlength=len(unique_ids)) + zero_rows - np.bincount(shape[entries], weights=on_zero.astype(np.float64), minlength=len(unique_ids))
+                best = np.argsort(-agree)[:6]
+                print('  equal on the most table rows:', [(round(float(agree[place]) / len(numbers), 3), name_of.get(int(unique_ids[place]), '?')[:90]) for place in best])
+                # A value by mean, by rows with no entry.
+                print('  feature: rows at 0', zero_rows, 'distinct values', len(set(numbers.values())))
             if key is None:
                 continue
             place = np.searchsorted(unique_ids, key)
