@@ -25,7 +25,8 @@ sys.path = [p for p in sys.path if Path(p or ".").resolve() != Path(__file__).re
 
 import arclog  # noqa: E402
 
-VOLATILE = {"tables_ref", "cached", "form_cache", "native_columns_seconds", "timings", "snapshot_ref"}
+# largest_counts gives the work that ran, which a walk taken from the form cache does not do.
+VOLATILE = {"tables_ref", "cached", "form_cache", "native_columns_seconds", "timings", "snapshot_ref", "largest_counts"}
 
 
 def stable(value):
