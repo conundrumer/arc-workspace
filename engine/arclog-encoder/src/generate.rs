@@ -2542,10 +2542,15 @@ impl<'a> Walker<'a> {
         written
     }
 
+    /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes `CELL_CAP` cells written out: a bound cuts it off.
+    fn cut_by_cap(&self, step: &Step, id: u32) -> bool {
+        let held = &self.values[id as usize];
+        held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits()
+    }
+
     /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
     fn has_no_value(&self, step: &Step, id: u32) -> bool {
-        let held = &self.values[id as usize];
-        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits())
+        matches!(self.values[id as usize], Val::None) || self.cut_by_cap(step, id)
     }
 
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
@@ -2682,9 +2687,14 @@ impl<'a> Walker<'a> {
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
             // A term whose first relation has no value, or the rows of `inside` that `step` cannot write, has no value at any instance.
-            let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| self.has_no_value(step, *id)) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
+            let first_empty = !on_no_rows && first[..scope].iter().all(|id| *id == 1);
+            let first_cut = first[..scope].iter().all(|id| self.has_no_value(step, *id));
+            let second_empty = matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1);
+            let idle = first_empty || first_cut || second_empty;
+            // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it. An empty second relation of a join gives the empty rows, whatever the first relation is.
+            let cut_by_bound = first_cut && !second_empty && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
             let past_bound = extended && walk_cells + self.written_cells > WALK_CELLS;
-            let is_stopped = past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
+            let is_stopped = past_bound || cut_by_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
             if extended {
                 own.reserve(instances);
                 if past_bound {
