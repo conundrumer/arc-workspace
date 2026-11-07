@@ -91,16 +91,172 @@ pub enum Side {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct GraphNodeIndex(pub u32);
 
+/// The entries of one list per node of a resolution, by the node's index, in
+/// layers: the entries of the nodes of an earlier resolution, which this list
+/// shares with that resolution's list and does not copy, and then the entries
+/// of the nodes after them. A lookup of an entry of an earlier node falls
+/// through to the earlier list, so the list reads as one list of every node
+/// and holds the entries of the nodes after those of the earlier list alone.
+#[derive(Debug)]
+pub struct NodeList<T> {
+    /// The list of the nodes before the first of `own`.
+    earlier: Option<Arc<NodeList<T>>>,
+    /// The count of the nodes of `earlier`, which is the index of the first
+    /// node of `own`.
+    first: usize,
+    /// The entries of the nodes from index `first` on.
+    own: Box<[T]>,
+}
+
+impl<T> Default for NodeList<T> {
+    fn default() -> Self {
+        NodeList { earlier: None, first: 0, own: Box::default() }
+    }
+}
+
+impl<T: Clone> Clone for NodeList<T> {
+    fn clone(&self) -> Self {
+        NodeList { earlier: self.earlier.clone(), first: self.first, own: self.own.clone() }
+    }
+}
+
+impl<T> NodeList<T> {
+    /// The list of the entries `own`, the first node's first.
+    pub fn new(own: impl Into<Box<[T]>>) -> Self {
+        NodeList { earlier: None, first: 0, own: own.into() }
+    }
+
+    /// The list of every entry of `earlier`, shared, and then `own`.
+    pub fn over(earlier: Arc<NodeList<T>>, own: impl Into<Box<[T]>>) -> Self {
+        let first = earlier.len();
+        NodeList { earlier: Some(earlier), first, own: own.into() }
+    }
+
+    /// The count of the entries, those of the earlier list included.
+    pub fn len(&self) -> usize {
+        self.first + self.own.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The index of the first entry that this list holds itself.
+    pub fn first(&self) -> usize {
+        self.first
+    }
+
+    /// The entries that this list holds itself, those of the nodes from
+    /// [`NodeList::first`] on.
+    pub fn own(&self) -> &[T] {
+        &self.own
+    }
+
+    /// The entry of the node at `index`.
+    pub fn get(&self, index: usize) -> Option<&T> {
+        match index.checked_sub(self.first) {
+            Some(own) => self.own.get(own),
+            None => self.earlier.as_ref()?.get(index),
+        }
+    }
+
+    /// Every entry, those of the earlier list first.
+    pub fn iter(&self) -> NodeListIter<'_, T> {
+        NodeListIter { list: self, front: 0, back: self.len() }
+    }
+}
+
+impl<T: Clone> NodeList<T> {
+    /// Replaces the entry at `index`, which this list holds itself.
+    fn set_own(&mut self, index: usize, entry: T) {
+        let own = index.checked_sub(self.first).expect("an entry that this list holds itself");
+        self.own[own] = entry;
+    }
+}
+
+impl<T> std::ops::Index<usize> for NodeList<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &T {
+        match self.get(index) {
+            Some(entry) => entry,
+            None => panic!("the node {index} is out of the {} nodes of the list", self.len()),
+        }
+    }
+}
+
+impl<'l, T> IntoIterator for &'l NodeList<T> {
+    type Item = &'l T;
+    type IntoIter = NodeListIter<'l, T>;
+
+    fn into_iter(self) -> NodeListIter<'l, T> {
+        self.iter()
+    }
+}
+
+/// The entries of a [`NodeList`], in the order of the nodes' indices.
+pub struct NodeListIter<'l, T> {
+    list: &'l NodeList<T>,
+    front: usize,
+    back: usize,
+}
+
+impl<'l, T> Iterator for NodeListIter<'l, T> {
+    type Item = &'l T;
+
+    fn next(&mut self) -> Option<&'l T> {
+        if self.front == self.back {
+            return None;
+        }
+        self.front += 1;
+        self.list.get(self.front - 1)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.back - self.front, Some(self.back - self.front))
+    }
+}
+
+impl<T> DoubleEndedIterator for NodeListIter<'_, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.front == self.back {
+            return None;
+        }
+        self.back -= 1;
+        self.list.get(self.back)
+    }
+}
+
+impl<T> ExactSizeIterator for NodeListIter<'_, T> {}
+
 /// The dependency graph of a case program: each read is an edge from the
-/// node read to the node that reads it.
+/// node read to the node that reads it. The graph of [`resolve_last`] holds
+/// the nodes and reads of the forms before the last by sharing those of the
+/// earlier resolution's graph, so it holds the entries of the last form's
+/// nodes alone ([`NodeList`]); each lookup reads as one list of every node.
 #[derive(Clone, Debug, Default)]
 pub struct DependencyGraph {
-    pub nodes: Box<[DependencyNode]>,
+    pub nodes: Arc<NodeList<DependencyNode>>,
     /// For each node, the nodes it reads.
-    pub reads: Box<[Box<[GraphNodeIndex]>]>,
+    pub reads: Arc<NodeList<Box<[GraphNodeIndex]>>>,
 }
 
 impl DependencyGraph {
+    /// The graph of every node of `earlier`, shared, and then `nodes`, whose
+    /// reads are `reads`.
+    pub(crate) fn over(earlier: &DependencyGraph, nodes: Vec<DependencyNode>, reads: Vec<Box<[GraphNodeIndex]>>) -> Self {
+        DependencyGraph {
+            nodes: Arc::new(NodeList::over(Arc::clone(&earlier.nodes), nodes)),
+            reads: Arc::new(NodeList::over(Arc::clone(&earlier.reads), reads)),
+        }
+    }
+
+    /// Sets the nodes `node` reads, where the graph holds the entry of `node`
+    /// itself, as a node of the last form of a layered graph.
+    pub(crate) fn set_reads(&mut self, node: GraphNodeIndex, reads: Box<[GraphNodeIndex]>) {
+        Arc::make_mut(&mut self.reads).set_own(node.0 as usize, reads);
+    }
+
     /// Whether each node of the graph is read by `root`, at any depth, or is
     /// `root`.
     pub fn reached(&self, root: GraphNodeIndex) -> Vec<bool> {
@@ -226,26 +382,44 @@ impl ResolvedContent {
     }
 }
 
-/// A case program after name resolution. From [`resolve_last`] it holds the
-/// entries of the program's last form alone, and the resolution of the
-/// forms before it, which each lookup falls through to for a path or a node
-/// of those forms. The graph holds every node.
+/// A case program after name resolution.
+///
+/// From [`resolve_last`] it is a layered resolution: the layer of the
+/// program's last form over the layer of the forms before it, which is the
+/// `earlier` resolution that `resolve_last` took. Each lookup that names a
+/// path or a node of the forms before the last falls through to `earlier`.
+/// The layers hold:
+/// - `earlier`: every entry of its forms, and nothing of the last form. A
+///   resolution that no `resolve_last` made holds every entry of its program
+///   and is the lowest layer.
+/// - the layered resolution itself: the entries of the last form alone, that
+///   is, those keyed by a path in the last form or by a node that the last
+///   form gives, and, in the graph, a reference to the graph of `earlier`.
+///   Its size and its build cost follow the last form, not the program.
+///
+/// The graph is the one list of every node of the program, as
+/// [`DependencyGraph`] says, whichever layer holds a node.
 #[derive(Clone, Debug)]
 pub struct ResolvedProgram {
     pub program: Node<Program>,
+    /// The nodes and the reads of every node of the program. A layered
+    /// resolution holds those of the last form's nodes, and shares the rest
+    /// with `earlier`.
     pub graph: DependencyGraph,
-    /// The paths of the forms of each node of the graph, by its index.
+    /// The paths of the forms of each node that this layer holds, by the
+    /// node's index after those of `earlier`.
     forms: Box<[Box<[NodePath]>]>,
-    /// The nodes of the graph that each form gives, by the form's path, in
-    /// the order of their indices.
+    /// The nodes that this layer holds and that each form gives, by the
+    /// form's path, in the order of their indices.
     form_nodes: crate::hash::StableHashMap<NodePath, Box<[GraphNodeIndex]>>,
-    /// The side of each node of the graph, by its index.
+    /// The side of each node that this layer holds, by the node's index after
+    /// those of `earlier`.
     sides: Box<[Side]>,
     /// The side of each form whose reads the resolver resolves, by the
     /// form's path.
     form_sides: crate::hash::StableHashMap<NodePath, Side>,
-    /// The columns of each node of the graph that hold an Example, by its
-    /// index.
+    /// The columns of each node that this layer holds that hold an Example, by
+    /// the node's index after those of `earlier`.
     examples: Box<[std::sync::Arc<[ExamplePath]>]>,
     /// The columns that hold an Example of each relation of a node whose
     /// forms give it several, by the node and the relation's path after
@@ -263,21 +437,26 @@ pub struct ResolvedProgram {
     /// label that a positive `ex_output` atom binds, which reads the train
     /// examples alone (`docs/arclog/arclog.md#program`).
     train_lifted: crate::hash::StableHashSet<NodePath>,
-    /// For each node of the graph this resolution gives, the column names
+    /// For each node that this layer holds, by the node's index after those of
+    /// `earlier`, the column names
     /// that the sites of the reads of its relation name, with the columns
     /// that its marks name, for a `DET` node that an atom reads, as [`build`]
     /// gives them.
     read_columns: Box<[Option<Vec<ColumnName>>]>,
-    /// The resolutions of this program with more columns of some `DET`
-    /// parameters kept, by the relation and the columns that its reads
-    /// name, which [`resolve_last`] builds on when the last form reads a
-    /// column that no earlier form's read names.
+    /// The resolutions of this program, each over the whole program, with more
+    /// columns of some `DET` parameters kept, by the relation and the columns
+    /// that its reads name, which [`resolve_last`] builds on when the last
+    /// form reads a column that no earlier form's read names. A layered
+    /// resolution is never built on, so it holds none.
     widened: Widened,
     names: names::Names,
     concept: Option<ConceptForms>,
-    /// The depth of each node of the graph, by its index, made on the first
-    /// ask ([`ResolvedProgram::depth`]).
+    /// The depth of each node of the whole graph, by its index, made on the
+    /// first ask ([`ResolvedProgram::depth`]).
     depths: std::sync::OnceLock<Box<[u32]>>,
+    /// The index of each node that this layer's graph holds itself, by the
+    /// node, made on the first ask ([`ResolvedProgram::find_node`]).
+    node_index: std::sync::OnceLock<crate::hash::StableHashMap<DependencyNode, GraphNodeIndex>>,
 }
 
 type Widened = Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<(ProgramRelation, Vec<ColumnName>)>, Arc<ResolvedProgram>>>>;
@@ -323,7 +502,10 @@ impl ResolvedProgram {
     }
 
     /// This program resolved with the read columns of `widening` in place
-    /// of those its atoms name, made once for each `widening`.
+    /// of those its atoms name, made once for each `widening`. It is a
+    /// resolution of the whole program ([`resolve`]), so a call that finds no
+    /// resolution held costs as much as the program. A layered resolution
+    /// builds on a result of this call, which then holds each form.
     fn widened(&self, widening: Vec<(ProgramRelation, Vec<ColumnName>)>, registry: &Registry) -> Arc<ResolvedProgram> {
         let mut held = self.widened.lock().expect("no thread panics while it holds the cache");
         if let Some(found) = held.get(&widening) {
@@ -360,6 +542,22 @@ impl ResolvedProgram {
     /// their nodes.
     fn earlier_node(&self, node: GraphNodeIndex) -> Option<&ResolvedProgram> {
         self.names.earlier.as_deref().filter(|earlier| (node.0 as usize) < earlier.graph.nodes.len())
+    }
+
+    /// The index of the node `key` of this resolution's graph, and of the
+    /// resolutions this one layers over, where the graph holds it. The index
+    /// of the nodes that this layer holds is made on the first call.
+    pub(crate) fn find_node(&self, key: &DependencyNode) -> Option<GraphNodeIndex> {
+        if let Some(earlier) = self.names.earlier.as_deref() {
+            if let Some(found) = earlier.find_node(key) {
+                return Some(found);
+            }
+        }
+        let index = self.node_index.get_or_init(|| {
+            let first = self.graph.nodes.first();
+            self.graph.nodes.own().iter().enumerate().map(|(slot, node)| (node.clone(), GraphNodeIndex((first + slot) as u32))).collect()
+        });
+        index.get(key).copied()
     }
 
     /// The index in this resolution's own per-node entries of `node`, which
@@ -868,11 +1066,14 @@ pub fn rigid_read_name(program: &Node<Program>, read: &str, registry: &Registry)
 
 /// The resolution of `program`, whose forms before its last are the forms of
 /// `earlier`'s program, by the passes of [`resolve`] over the last form
-/// alone: the result holds the entries of the last form and `earlier`, and
-/// no operation walks or copies the entries of the earlier forms. A last
-/// form that reads a column of a `DET` parameter that no earlier read names
-/// is resolved over `earlier` resolved again with that column kept, once for
-/// each such set of columns. Where the last form is no clause, `INIT`,
+/// alone: the result holds the entries of the last form and a reference to
+/// `earlier`, and no operation walks or copies the entries of the earlier
+/// forms, as [`ResolvedProgram`] says of its layers. Its build time and its
+/// size follow the last form. A last form that reads a column of a `DET`
+/// parameter that no earlier read names is resolved over `earlier` resolved
+/// again with that column kept, once for each such set of columns
+/// ([`ResolvedProgram::widened`]), and that resolution of the whole program
+/// is the one step whose time follows the program. Where the last form is no clause, `INIT`,
 /// `CHOOSE` or `RIGID_DET` form that declares a relation no earlier form
 /// declares, or `earlier` is itself a layered resolution or was resolved with a
 /// concept program, the result is [`resolve`]'s on `program`.

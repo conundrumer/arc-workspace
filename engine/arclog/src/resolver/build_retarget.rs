@@ -92,7 +92,7 @@ impl ResolvedProgram {
                         reads.sort_by_key(|read| read.0);
                     }
                 }
-                self.graph.reads[reader.0 as usize] = reads.into();
+                self.graph.set_reads(reader, reads.into());
             }
         }
         if matches!(old, Target::Lib(_)) && !shared {

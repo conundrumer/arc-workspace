@@ -77,12 +77,22 @@ struct Builder<'a> {
     /// The column names that the reads of each relation name across the
     /// solver's cases.
     solver_reads: &'a StableHashMap<ProgramRelation, Vec<ColumnName>>,
+    /// The nodes this build gives, in the order of their indices. Each
+    /// per-node list below holds the entries of these nodes alone, in the same
+    /// order: the entry of the node at index `node` is at `node - offset`.
+    /// The nodes of `earlier`, whose indices come first, have no entry in
+    /// them; a lookup of such a node falls through to `earlier`.
     nodes: Vec<DependencyNode>,
+    /// The index of each of `nodes`.
     index: StableHashMap<DependencyNode, GraphNodeIndex>,
+    /// The count of the nodes of `earlier`, none for a build with no
+    /// `earlier`.
+    offset: usize,
     /// The paths of the forms of each node.
     forms: Vec<Vec<NodePath>>,
     /// The relations that the forms of each node give it.
     relations: Vec<Vec<FormRelation>>,
+    /// The nodes that each node reads.
     reads: Vec<BTreeSet<u32>>,
     /// The node of each form that gives one node.
     form_node: StableHashMap<NodePath, GraphNodeIndex>,
@@ -103,9 +113,9 @@ struct Builder<'a> {
     /// name, for a read-named node that an atom reads
     /// ([`Builder::read_named`]); `None` for every other node.
     read_columns: Vec<Option<Vec<ColumnName>>>,
-    /// The side of each node, by its index.
+    /// The side of each node.
     sides: Vec<Side>,
-    /// The columns of each node that hold an Example, by its index.
+    /// The columns of each node that hold an Example.
     examples: Vec<Arc<[ExamplePath]>>,
     /// The columns that hold an Example of each relation of a node whose
     /// forms give it several, by the node and the relation's output path,
@@ -130,9 +140,7 @@ struct Builder<'a> {
     train_lifted: StableHashSet<NodePath>,
     diagnostics: Vec<Diagnostic>,
     /// For a layered resolution, the resolution of the forms before the
-    /// last, whose nodes come first in every per-node list below, with
-    /// empty entries but for `nodes`, `sides` and `examples`, which hold
-    /// theirs.
+    /// last, whose nodes come first in the indices of the nodes.
     earlier: Option<Arc<ResolvedProgram>>,
     /// Whether the last form of a layered resolution gave a node that an
     /// earlier form gives, which this resolution does not handle.
@@ -157,6 +165,7 @@ impl<'a> Builder<'a> {
             solver_reads: &scope.read_columns,
             nodes: Vec::new(),
             index: StableHashMap::default(),
+            offset: 0,
             forms: Vec::new(),
             relations: Vec::new(),
             reads: Vec::new(),
@@ -189,14 +198,7 @@ impl<'a> Builder<'a> {
             canonical_kept: false,
         };
         if let Some(earlier) = earlier {
-            let count = earlier.graph.nodes.len();
-            builder.nodes = earlier.graph.nodes.to_vec();
-            builder.forms = vec![Vec::new(); count];
-            builder.relations = (0..count).map(|_| Vec::new()).collect();
-            builder.reads = vec![BTreeSet::new(); count];
-            builder.read_columns = vec![None; count];
-            builder.sides = (0..count).map(|node| earlier.side(GraphNodeIndex(node as u32))).collect();
-            builder.examples = (0..count).map(|node| earlier.example_columns_shared(GraphNodeIndex(node as u32), None).clone()).collect();
+            builder.offset = earlier.graph.nodes.len();
             builder.names.earlier = Some(Arc::clone(earlier));
             builder.earlier = Some(Arc::clone(earlier));
         }
@@ -205,7 +207,43 @@ impl<'a> Builder<'a> {
 
     /// The count of the nodes of the earlier forms' resolution.
     fn offset(&self) -> usize {
-        self.names.first_node()
+        self.offset
+    }
+
+    /// The count of the nodes of the program so far, those of the earlier
+    /// forms' resolution included.
+    fn node_count(&self) -> usize {
+        self.offset + self.nodes.len()
+    }
+
+    /// The position of `node` in this build's per-node lists, or `None` for a
+    /// node of the earlier forms' resolution.
+    fn slot(&self, node: usize) -> Option<usize> {
+        node.checked_sub(self.offset)
+    }
+
+    /// The kind and the scope of `node`, a node of this build or of the earlier
+    /// forms' resolution.
+    fn node_def(&self, node: usize) -> &DependencyNode {
+        match self.slot(node) {
+            Some(slot) => &self.nodes[slot],
+            None => &self.earlier.as_ref().expect("an earlier resolution holds the nodes before the offset").graph.nodes[node],
+        }
+    }
+
+    /// The paths of the forms of `node` that this build reads: those of a
+    /// node of this build, and none for a node of the earlier forms'
+    /// resolution, whose forms are all before the last.
+    fn forms_at(&self, node: usize) -> &[NodePath] {
+        self.slot(node).map_or(&[], |slot| &self.forms[slot])
+    }
+
+    /// The side of `node`, once [`Builder::sides`] has decided it.
+    fn side_of(&self, node: usize) -> Side {
+        match self.slot(node) {
+            Some(slot) => self.sides[slot],
+            None => self.earlier.as_ref().expect("an earlier resolution holds the nodes before the offset").side(GraphNodeIndex(node as u32)),
+        }
     }
 }
 
@@ -213,6 +251,13 @@ impl<'a> Builder<'a> {
 /// of `earlier`, by the passes of [`resolve`] over the last form alone, or
 /// `None` where the last form is one this resolution does not handle. A
 /// `DEMONSTRATED` last form is handled where `demonstrated` is true.
+///
+/// The builder holds the entries of the last form's nodes alone, and finds
+/// a node, a side or an Example column of `earlier` by a lookup there; the
+/// result shares the graph of `earlier` ([`ResolvedProgram`] says what each
+/// layer holds). A read of the last form that names a column of a `DET`
+/// parameter that `earlier` does not keep is the one case that builds on
+/// `earlier.widened`, a resolution of the whole program.
 fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool, signed: bool, proposers: bool) -> Option<ResolvedProgram> {
     let scope = SolverScope::default();
     let (last, complete) = program.value().forms.split_last()?;
@@ -319,11 +364,11 @@ pub(super) fn reads_example_column(program: &Node<Program>, read: &NodePath, reg
     let root = crate::program::path::NodeRef::Program(program.value());
     let Some(form_path) = crate::stream::write::read_form(root, read) else { return false };
     if crate::stream::write::takes_example_column(root, &form_path) {
-        !builder.is_fact(*node) && !builder.forms[node.0 as usize].contains(&form_path)
-            && builder.sides[node.0 as usize] == super::Side::PerInput
+        !builder.is_fact(*node) && !builder.forms_at(node.0 as usize).contains(&form_path)
+            && builder.side_of(node.0 as usize) == super::Side::PerInput
     } else {
         let Some(atom) = builder.atoms.iter().find(|atom| atom.path == *read) else { return false };
-        sides::lifted(builder.is_fact(*node), builder.form_sides[&atom.form], builder.sides[node.0 as usize])
+        sides::lifted(builder.is_fact(*node), builder.form_sides[&atom.form], builder.side_of(node.0 as usize))
     }
 }
 
@@ -397,7 +442,7 @@ pub(super) fn resolve_with(
 
 impl<'a> Builder<'a> {
     fn is_fact(&self, node: GraphNodeIndex) -> bool {
-        matches!(self.nodes[node.0 as usize].kind, DependencyKind::Fact(_))
+        matches!(self.node_def(node.0 as usize).kind, DependencyKind::Fact(_))
     }
 
 }

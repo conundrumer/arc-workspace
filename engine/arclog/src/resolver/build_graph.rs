@@ -35,15 +35,15 @@ impl<'a> Builder<'a> {
     /// form at `form` among its forms.
     pub(super) fn node(&mut self, kind: DependencyKind, scope: &NameScope, form: Option<&NodePath>) -> GraphNodeIndex {
         let key = DependencyNode { kind, scope: scope.clone() };
-        let in_earlier = self.earlier.as_ref().and_then(|earlier| earlier.graph.nodes.iter().position(|node| *node == key));
+        let in_earlier = self.earlier.as_ref().and_then(|earlier| earlier.find_node(&key));
         if let Some(node) = in_earlier {
             self.shared_node = true;
-            return GraphNodeIndex(node as u32);
+            return node;
         }
         let node = match self.index.get(&key) {
             Some(node) => *node,
             None => {
-                let node = GraphNodeIndex(self.nodes.len() as u32);
+                let node = GraphNodeIndex(self.node_count() as u32);
                 self.index.insert(key.clone(), node);
                 self.nodes.push(key);
                 self.forms.push(Vec::new());
@@ -53,7 +53,7 @@ impl<'a> Builder<'a> {
             }
         };
         if let Some(form) = form {
-            self.forms[node.0 as usize].push(form.clone());
+            self.forms[node.0 as usize - self.offset].push(form.clone());
         }
         node
     }
@@ -61,7 +61,10 @@ impl<'a> Builder<'a> {
     /// Records that the form at `form` gives `node` the relation of
     /// `listing`, at `output` where the form gives several relations.
     pub(super) fn relate(&mut self, node: GraphNodeIndex, form: &NodePath, output: Option<Arc<[OutputStep]>>, listing: column_sources::Listing) {
-        self.relations[node.0 as usize].push(FormRelation { form: form.clone(), output, listing });
+        // A node of the earlier forms here has set `shared_node`, so the layered build gives no result and keeps no entry of it.
+        if let Some(slot) = self.slot(node.0 as usize) {
+            self.relations[slot].push(FormRelation { form: form.clone(), output, listing });
+        }
     }
 
     pub(super) fn target(&mut self, scope: &NameScope, relation: RelationRef, target: Target) {
@@ -72,7 +75,10 @@ impl<'a> Builder<'a> {
     }
 
     pub(super) fn read(&mut self, reader: GraphNodeIndex, read: GraphNodeIndex) {
-        self.reads[reader.0 as usize].insert(read.0);
+        // A reader of the earlier forms here has set `shared_node`, so the layered build gives no result and keeps no entry of it.
+        if let Some(slot) = self.slot(reader.0 as usize) {
+            self.reads[slot].insert(read.0);
+        }
     }
 
     pub(super) fn unresolved(&mut self, path: &NodePath, name: &str) -> Resolution {
@@ -386,7 +392,7 @@ impl<'a> Builder<'a> {
         let (OutputOwner::Instance(name), [OutputStep::Port(port)]) = (&output.of, &output.path[..]) else { return };
         let Some(nodes) = self.instances.get(&(scope.clone(), name.clone())) else { return };
         let on_input = nodes.component.inputs.iter().any(|input| input.port.name == *port);
-        let stored = matches!(self.nodes[node.0 as usize].kind, DependencyKind::Parameter(_));
+        let stored = matches!(self.node_def(node.0 as usize).kind, DependencyKind::Parameter(_));
         let edges: Vec<(GraphNodeIndex, GraphNodeIndex)> = match (on_input, stored) {
             (true, true) => {
                 let input = self.instance_input(scope, name, port).expect("the instance's input");
@@ -445,7 +451,7 @@ impl<'a> Builder<'a> {
         let resolution = self.resolve_name(scope, &atom.relation, &path);
         if let Resolution::Node(read) = resolution {
             for &reader in readers {
-                let recursive = matches!(self.nodes[reader.0 as usize].kind, DependencyKind::RecursiveInstance(_));
+                let recursive = matches!(self.node_def(reader.0 as usize).kind, DependencyKind::RecursiveInstance(_));
                 if !(recursive && reader == read) {
                     self.read(reader, read);
                 }

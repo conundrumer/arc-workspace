@@ -25,21 +25,21 @@ impl Builder<'_> {
     /// it, and it gives the bytes that writing it here would.
     pub(super) fn contents(&mut self) {
         let offset = self.offset();
+        let count = self.nodes.len();
         let unread = self.unread_nodes();
-        self.names.contents = vec![None; self.nodes.len() - offset];
-        self.names.node_columns = vec![None; self.nodes.len() - offset];
-        self.names.node_orders = vec![ColumnOrders::default(); self.nodes.len() - offset];
-        self.names.unwritten = (offset..self.nodes.len()).map(|node| unread[node].then(std::sync::OnceLock::new)).collect();
-        let mut visited = vec![false; self.nodes.len()];
-        visited[..offset].fill(true);
-        for node in offset..self.nodes.len() {
-            self.content_of(node, &mut visited, &unread);
+        self.names.contents = vec![None; count];
+        self.names.node_columns = vec![None; count];
+        self.names.node_orders = vec![ColumnOrders::default(); count];
+        self.names.unwritten = unread.iter().map(|unread| unread.then(std::sync::OnceLock::new)).collect();
+        let mut visited = vec![false; count];
+        for slot in 0..count {
+            self.content_of(offset + slot, &mut visited, &unread);
         }
     }
 
-    /// Whether no read of the last form resolves to each node, for a node
-    /// of a layered resolution of one form, and `false` for every node of
-    /// another resolution. A node that only another node reads in the
+    /// Whether no read of the last form resolves to each node of this build, in
+    /// the order of its nodes, for a node of a layered resolution of one form,
+    /// and `false` for every node of another resolution. A node that only another node reads in the
     /// dependency graph counts as unread, as a write of a content reads no
     /// other node's content, apart from that of a `DEMONSTRATED` form,
     /// which reads the content of each node its rules declare
@@ -48,14 +48,16 @@ impl Builder<'_> {
         let mut unread = vec![self.earlier.is_some(); self.nodes.len()];
         for resolution in self.resolutions.values() {
             if let Resolution::Node(node) = resolution {
-                unread[node.0 as usize] = false;
+                if let Some(slot) = self.slot(node.0 as usize) {
+                    unread[slot] = false;
+                }
             }
         }
-        for (node, forms) in self.forms.iter().enumerate() {
-            unread[node] &= forms.len() == 1;
+        for (slot, forms) in self.forms.iter().enumerate() {
+            unread[slot] &= forms.len() == 1;
         }
-        for (node, unread) in unread.iter_mut().enumerate() {
-            *unread &= !matches!(self.nodes[node].scope, NameScope::DemoRule(_));
+        for (slot, unread) in unread.iter_mut().enumerate() {
+            *unread &= !matches!(self.nodes[slot].scope, NameScope::DemoRule(_));
         }
         unread
     }
@@ -65,25 +67,31 @@ impl Builder<'_> {
     /// content writes each of them by its content, whether or not a node
     /// reads it.
     fn rule_nodes(&self, node: usize) -> Vec<u32> {
-        let DependencyNode { kind: crate::resolver::DependencyKind::Demonstrated(_), .. } = &self.nodes[node] else { return Vec::new() };
-        let forms = &self.forms[node];
+        let local = node - self.offset;
+        let DependencyNode { kind: crate::resolver::DependencyKind::Demonstrated(_), .. } = &self.nodes[local] else { return Vec::new() };
+        let forms = &self.forms[local];
         let in_form = |scope: &NameScope| matches!(scope, NameScope::DemoRule(rule) if forms.iter().any(|form| rule.0.starts_with(&form.0)));
-        (0..self.nodes.len()).filter(|&other| in_form(&self.nodes[other].scope)).map(|other| other as u32).collect()
+        // The rules of a form stand in the form's path, so no node of an earlier form's resolution is one of them.
+        (0..self.nodes.len()).filter(|&other| in_form(&self.nodes[other].scope)).map(|other| (self.offset + other) as u32).collect()
     }
 
+    /// Writes the content and the columns of `node`, a node of this build,
+    /// after those of the nodes it reads; `visited` holds, by the position of
+    /// each node of this build, whether it was reached. A node of the earlier
+    /// forms' resolution holds its content already.
     fn content_of(&mut self, node: usize, visited: &mut Vec<bool>, unread: &[bool]) {
-        if std::mem::replace(&mut visited[node], true) {
+        let Some(local) = self.slot(node) else { return };
+        if std::mem::replace(&mut visited[local], true) {
             return;
         }
-        let mut reads: Vec<u32> = self.reads[node].iter().copied().collect();
+        let mut reads: Vec<u32> = self.reads[local].iter().copied().collect();
         reads.extend(self.rule_nodes(node));
         for read in reads {
             self.content_of(read as usize, visited, unread);
         }
         self.record_kept(node);
         self.rank_keys(node);
-        let local = node - self.offset();
-        let (content, columns) = if unread[node] {
+        let (content, columns) = if unread[local] {
             (None, self.node_columns(node))
         } else {
             let (content, columns) = self.node_content(node);
@@ -106,9 +114,9 @@ impl Builder<'_> {
     /// names, so a form whose inputs read its own outputs needs no content
     /// of its own.
     fn rank_keys(&mut self, node: usize) {
-        let scope = self.nodes[node].scope.clone();
+        let scope = self.nodes[node - self.offset].scope.clone();
         let mut ranked = Vec::new();
-        for path in &self.forms[node] {
+        for path in &self.forms[node - self.offset] {
             let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.case.value()), path) else { continue };
             let Some(key) = &instance.key else { continue };
             if self.names.key_ranks.get(&scope).is_some_and(|ranks| ranks.contains_key(&instance.name)) {
@@ -140,7 +148,7 @@ impl Builder<'_> {
     /// column's label: each column takes the position of the node's column
     /// of its name.
     fn label_positions(&mut self, node: usize, columns: &Columns) {
-        for path in &self.forms[node] {
+        for path in &self.forms[node - self.offset] {
             let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
             for column in form_columns(form) {
                 if let Some(Place::Column(position)) = columns.place(std::slice::from_ref(&column.name)) {
@@ -156,9 +164,9 @@ impl Builder<'_> {
     /// columns, those of its form of least content, where its columns
     /// come from its form, with their orders where the node has one form.
     fn node_content(&self, node: usize) -> (crate::program::canonical::CanonicalForm, Option<(Columns, ColumnOrders)>) {
-        let DependencyNode { kind, scope } = &self.nodes[node];
+        let DependencyNode { kind, scope } = &self.nodes[node - self.offset];
         let mut parts: Vec<(Arc<[u8]>, Option<(Columns, ColumnOrders)>)> = Vec::new();
-        for path in &self.forms[node] {
+        for path in &self.forms[node - self.offset] {
             parts.push((form_bytes(&self.names, self.case.value(), scope, path), self.form_columns(node, path)));
         }
         parts.sort_by(|a, b| a.0.cmp(&b.0));
@@ -173,13 +181,13 @@ impl Builder<'_> {
     /// The columns of `node`, a node of one form, as [`Builder::node_content`]
     /// gives them.
     fn node_columns(&self, node: usize) -> Option<(Columns, ColumnOrders)> {
-        self.form_columns(node, &self.forms[node][0])
+        self.form_columns(node, &self.forms[node - self.offset][0])
     }
 
     /// The columns of the relation the form of `node` at `path` gives, with
     /// their orders under which the form's content is the same.
     fn form_columns(&self, node: usize, path: &NodePath) -> Option<(Columns, ColumnOrders)> {
-        let scope = &self.nodes[node].scope;
+        let scope = &self.nodes[node - self.offset].scope;
         let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
         let own = Own::of(form);
         let writer = Writer { names: &self.names, scope, own: own.as_ref() };
@@ -201,8 +209,8 @@ impl Builder<'_> {
     /// not resolve in the concept program.
     fn record_kept(&mut self, node: usize) {
         let mut kept = Vec::new();
-        let scope = &self.nodes[node].scope;
-        for path in &self.forms[node] {
+        let scope = &self.nodes[node - self.offset].scope;
+        for path in &self.forms[node - self.offset] {
             if self.concept_columns.contains_key(path) {
                 continue;
             }
@@ -229,7 +237,7 @@ impl Builder<'_> {
     /// a site of a read of the relation names, in the order the clause
     /// gives them, as [`Builder::keeps`] gives them.
     fn kept_columns(&self, node: usize, clause: &Clause) -> Option<Columns> {
-        if clause.columns.is_empty() || self.read_columns[node].is_none() {
+        if clause.columns.is_empty() || self.read_columns[node - self.offset].is_none() {
             return None;
         }
         let kept = clause.columns.iter().filter(|column| self.keeps(node, &column.name));

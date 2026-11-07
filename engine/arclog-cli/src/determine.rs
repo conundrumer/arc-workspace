@@ -326,7 +326,7 @@ impl Comparison<'_> {
                 return false;
             };
             let graph = &case.program.program.graph;
-            graph.nodes.iter().zip(&graph.reads).any(|(assembly, reads)| {
+            graph.nodes.iter().zip(graph.reads.iter()).any(|(assembly, reads)| {
                 matches!(&assembly.kind, DependencyKind::RigidAssembly(name) if reads.contains(&node) && self.records.iter().any(|(record, _)| is_part(record, name)))
             })
         })

@@ -14,8 +14,8 @@ use crate::resolver::DependencyKind;
 use crate::types::{each_site_label, use_label};
 
 impl Builder<'_> {
-    /// The side of each node and of each form whose reads the case
-    /// resolves.
+    /// The side and the Example columns of each node of this build, and the
+    /// side of each form whose reads the case resolves.
     pub(super) fn sides(&mut self) {
         let mut reads: StableHashMap<NodePath, Vec<usize>> = StableHashMap::default();
         for (index, read) in self.atoms.iter().enumerate() {
@@ -28,10 +28,12 @@ impl Builder<'_> {
         for form in &forms {
             sides.form(form).expect(decided);
         }
-        let node_sides: Vec<Side> = (0..self.nodes.len()).map(|node| sides.node(node).expect(decided)).collect();
-        let examples = (0..self.nodes.len()).map(|node| sides.examples(node, None)).collect();
+        let offset = self.offset();
+        let node_sides: Vec<Side> = (offset..self.node_count()).map(|node| sides.node(node).expect(decided)).collect();
+        let examples = (offset..self.node_count()).map(|node| sides.examples(node, None)).collect();
         let mut output_examples = StableHashMap::default();
-        for (node, relations) in self.relations.iter().enumerate() {
+        for (slot, relations) in self.relations.iter().enumerate() {
+            let node = offset + slot;
             for output in relations.iter().filter_map(|relation| relation.output.clone()) {
                 let paths = sides.examples(node, Some(&output));
                 output_examples.insert((GraphNodeIndex(node as u32), output), paths);
@@ -84,14 +86,14 @@ struct Sides<'b, 'a> {
 impl Sides<'_, '_> {
     fn node(&mut self, node: usize) -> Option<Side> {
         if node < self.builder.offset() {
-            return Some(self.builder.sides[node]);
+            return Some(self.builder.side_of(node));
         }
-        match &self.builder.nodes[node].kind {
+        match &self.builder.node_def(node).kind {
             DependencyKind::Fact(FactRelation::Input | FactRelation::Output) => Some(Side::PerInput),
             DependencyKind::Fact(stored @ FactRelation::Stored(_)) => Some(if stored.per_example() { Side::PerInput } else { Side::TaskWide }),
             DependencyKind::Fact(FactRelation::ExInput | FactRelation::ExOutput | FactRelation::Program(_) | FactRelation::Name(_)) => Some(Side::TaskWide),
             _ => {
-                let form = self.builder.forms[node].first().expect("a form of each node of the case that is no fact").clone();
+                let form = self.builder.forms_at(node).first().expect("a form of each node of the case that is no fact").clone();
                 self.form(&form)
             }
         }
@@ -143,11 +145,11 @@ impl Sides<'_, '_> {
             let read = &builder.atoms[index];
             let Resolution::Node(read_node) = builder.resolutions[&read.path] else { continue };
             let node = read_node.0 as usize;
-            if builder.forms[node].contains(path) {
+            if builder.forms_at(node).contains(path) {
                 continue;
             }
             // A relation of the program or a constant holds for every example.
-            if matches!(builder.nodes[node].kind, DependencyKind::Fact(FactRelation::Program(_) | FactRelation::Name(_))) {
+            if matches!(builder.node_def(node).kind, DependencyKind::Fact(FactRelation::Program(_) | FactRelation::Name(_))) {
                 continue;
             }
             let fact = builder.is_fact(read_node);
@@ -187,7 +189,7 @@ impl Sides<'_, '_> {
         let builder = self.builder;
         let mut found: Vec<ExamplePath> = Vec::new();
         let mut bound: StableHashMap<NodePath, Vec<LabelId>> = StableHashMap::default();
-        for relation in &builder.relations[node] {
+        for relation in &builder.relations[node - builder.offset()] {
             if output.zip(relation.output.as_deref()).is_some_and(|(read, given)| read != given) {
                 continue;
             }

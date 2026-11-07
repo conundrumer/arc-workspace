@@ -15,7 +15,8 @@ use crate::program::{Atom, Body, ColumnName, Conjunct, FactRelation, LabelUse, P
 use crate::program::path::NodeRef;
 use crate::resolver::columns;
 use super::super::names::Names;
-use crate::resolver::{ConceptForms, DependencyGraph, GraphNodeIndex, ResolvedProgram, Resolution, Signature};
+use crate::resolver::{ConceptForms, DependencyGraph, GraphNodeIndex, NodeList, ResolvedProgram, Resolution, Signature};
+use std::sync::Arc;
 
 impl Builder<'_> {
     /// The position and the group of each site of each atom read, and
@@ -50,7 +51,7 @@ impl Builder<'_> {
     /// to `resolution` reads.
     fn lifts(&self, form: &NodePath, resolution: &Resolution) -> bool {
         let Resolution::Node(read) = resolution else { return false };
-        lifted(self.is_fact(*read), self.form_sides[form], self.sides[read.0 as usize])
+        lifted(self.is_fact(*read), self.form_sides[form], self.side_of(read.0 as usize))
     }
     /// The stored parameter's column that each column of each proposer
     /// of each clause stands for, by position: the clause's columns in
@@ -72,15 +73,18 @@ impl Builder<'_> {
         }
     }
 
+    /// The resolved program of this build. A layered build gives a graph that
+    /// shares the graph of `earlier`, and the entries of its own nodes alone.
     pub(super) fn finish(mut self, concept: Option<ConceptForms>) -> WithDiagnostics<ResolvedProgram> {
         let offset = self.offset();
-        let earlier_reads = self.names.earlier.iter().flat_map(|earlier| earlier.graph.reads.iter().cloned());
-        let own_reads = self.reads.drain(offset..).map(|reads| reads.into_iter().map(GraphNodeIndex).collect());
-        let graph = DependencyGraph { nodes: self.nodes.into(), reads: earlier_reads.chain(own_reads).collect() };
-        let sides = self.sides.split_off(offset);
-        let examples = self.examples.split_off(offset);
-        let read_columns = self.read_columns.split_off(offset);
-        self.forms.drain(..offset);
+        let reads: Vec<Box<[GraphNodeIndex]>> = self.reads.drain(..).map(|reads| reads.into_iter().map(GraphNodeIndex).collect()).collect();
+        let graph = match &self.earlier {
+            Some(earlier) => DependencyGraph::over(&earlier.graph, self.nodes, reads),
+            None => DependencyGraph { nodes: Arc::new(NodeList::new(self.nodes)), reads: Arc::new(NodeList::new(reads)) },
+        };
+        let sides = self.sides;
+        let examples = self.examples;
+        let read_columns = self.read_columns;
         let mut form_nodes: StableHashMap<NodePath, Vec<GraphNodeIndex>> = StableHashMap::default();
         for (node, forms) in self.forms.iter().enumerate() {
             for form in forms {
@@ -112,6 +116,7 @@ impl Builder<'_> {
                 names: self.names,
                 concept,
                 depths: Default::default(),
+                node_index: Default::default(),
             },
             diagnostics: self.diagnostics,
         }
