@@ -189,6 +189,29 @@ impl Recorded {
         }
     }
 
+    /// Calls `each` on each relation this event holds, once for each place
+    /// it holds one.
+    pub(crate) fn each_relation(&self, each: &mut impl FnMut(&Arc<Relation>)) {
+        let value = |value: &CachedValue, each: &mut dyn FnMut(&Arc<Relation>)| {
+            if let RelationValue::Rows(relation) = value {
+                each(relation);
+            }
+        };
+        match self {
+            Recorded::Lookup { key, found } => {
+                key.relations().for_each(&mut *each);
+                if let Some(found) = found {
+                    value(found, each);
+                }
+            }
+            Recorded::Id { relation } => each(relation),
+            Recorded::Store { key, value: stored } => {
+                key.relations().for_each(&mut *each);
+                value(stored, each);
+            }
+        }
+    }
+
     /// The bytes of the relations this event holds, an estimate.
     pub fn bytes(&self) -> usize {
         let value = |value: &CachedValue| match value {

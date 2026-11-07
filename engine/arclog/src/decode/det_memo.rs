@@ -23,6 +23,19 @@
 //! makes them and counts that work, so its cache and its count stand as
 //! the computation would leave them. Otherwise it computes the domain.
 //!
+//! The memo holds its domains in two tiers, each with at most half of the
+//! share of the byte bound that [`KEPT_SHARE`] gives, counting each relation
+//! of a tier once, by its rows, however many events and values hold it. A
+//! domain is kept in the young tier. Where the young tier has no room for
+//! it, the young tier becomes the old one, and the old one is dropped. A walk
+//! that asks for a key that the old tier holds moves its domains into the
+//! young tier, so a domain that walks ask for at least once between two
+//! such turns stays, and the domains that one walk keeps and none asks for
+//! again, such as those of a form that the decode does not write, leave
+//! with the turns. A walk that takes a kept domain makes the lookups, ids
+//! and stores, and counts the work, that its computation would, so the
+//! domains that stay change the time of a walk and no verdict.
+//!
 //! The shared intern table counts toward the byte bound of each walk's
 //! session, and a value kept from another walk can hold its rows apart from
 //! a value that a computation would build on them, so a walk's session
@@ -56,8 +69,16 @@ use crate::types::ValueType;
 use crate::types::GraphRelation;
 
 /// The fraction of the session's byte bound that the kept domains may hold,
-/// by [`Recorded::bytes`]; past it, the walks keep none of those kept so far.
+/// by [`Tier::bytes_of`]: the bytes of the relations of both tiers, and the
+/// bytes of the events.
 const KEPT_SHARE: usize = 16;
+
+/// The count of tiers of the kept domains, each of which may hold an equal
+/// share of [`KEPT_SHARE`].
+const TIERS: usize = 2;
+
+/// The bytes that the memo counts for an event, beside its relations.
+const EVENT_BYTES: usize = 256;
 
 /// The fraction of the session's byte bound that the shared intern table may
 /// hold; past it, the next walk starts a new intern table, and no domain kept
@@ -148,11 +169,23 @@ struct Kept {
     generation: u64,
     /// A session that holds the shared intern table and fact relations.
     terms: TaskSession,
+    /// The domains kept since the last turn of the memo, and those it
+    /// kept before that turn that a walk asked for since.
+    young: Tier,
+    /// The domains kept before the last turn that no walk has asked for
+    /// since. The next turn drops them.
+    old: Tier,
+}
+
+/// The kept domains of one span of the memo's life, with one relation for
+/// each rows and columns of parts that they hold, so that the relations a
+/// later walk compares share their storage, and the bytes they hold.
+#[derive(Default)]
+struct Tier {
     domains: StableHashMap<Key, Vec<Arc<Computed>>>,
-    /// One relation for each rows and columns of parts that the kept
-    /// domains hold, so that the relations a later walk compares share
-    /// their storage.
     relations: StableHashMap<StableHash, Vec<Arc<Relation>>>,
+    /// The bytes of the computations kept, by [`Tier::fresh_bytes`] at the
+    /// time each was kept.
     bytes: usize,
 }
 
@@ -178,7 +211,7 @@ impl ProbeMemo {
     /// The memo of the walks of `session` under `scope`, with nothing kept.
     pub(crate) fn new(scope: Scope, session: &TaskSession) -> Self {
         let terms = TaskSession::new(session.bound, session.caps);
-        let kept = Kept { generation: 0, terms, domains: StableHashMap::default(), relations: StableHashMap::default(), bytes: 0 };
+        let kept = Kept { generation: 0, terms, young: Tier::default(), old: Tier::default() };
         let bytes = session.bound.bytes;
         ProbeMemo { scope, kept_bytes: bytes / KEPT_SHARE, term_bytes: bytes / TERM_SHARE, kept: Mutex::new(kept), parts: Mutex::default() }
     }
@@ -187,9 +220,9 @@ impl ProbeMemo {
     /// indexes, and the bytes of the shared intern table.
     pub(crate) fn stats(&self) -> (usize, usize, usize, usize) {
         let kept = self.kept.lock().expect("the kept domains are not poisoned");
-        let relations = kept.relations.values().flatten();
+        let relations = || kept.young.relations.values().chain(kept.old.relations.values()).flatten();
         let intern = kept.terms.intern.read().expect("an intern table that no panic poisoned").bytes();
-        (kept.bytes, kept.relations.values().map(Vec::len).sum(), relations.map(|relation| relation.index_bytes().1).sum(), intern)
+        (kept.young.bytes + kept.old.bytes, relations().count(), relations().map(|relation| relation.index_bytes().1).sum(), intern)
     }
 
     /// What the walk of `key` gave under `scope`, where the memo keeps it.
@@ -226,48 +259,126 @@ impl ProbeMemo {
         Some(Probe { memo: self, generation: kept.generation, session: kept.terms.sharing_terms() })
     }
 
+    /// The computations kept under `key`, those of the old tier moved into
+    /// the young one where it holds their bytes within its share.
     fn computed(&self, generation: u64, key: &Key) -> Vec<Arc<Computed>> {
-        let kept = self.kept.lock().expect("the kept domains are not poisoned");
+        let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
         if kept.generation != generation {
             return Vec::new();
         }
-        kept.domains.get(key).cloned().unwrap_or_default()
+        let kept = &mut *kept;
+        let mut found = kept.young.domains.get(key).cloned().unwrap_or_default();
+        let Some((held, aged)) = kept.old.domains.remove_entry(key) else { return found };
+        let fresh = kept.young.fresh_bytes(&key.values, aged.iter().map(|computed| &**computed));
+        if kept.young.bytes + fresh <= self.kept_bytes / TIERS {
+            let mut one = |relation: &Arc<Relation>| kept_relation(&mut kept.young.relations, relation);
+            let moved = aged.iter().map(|computed| Arc::new(computed.with_relations(&mut one))).collect::<Vec<_>>();
+            let held = Key { shape: held.shape, values: held.values.iter().map(|value| value.as_ref().map(&mut one)).collect() };
+            let room = PER_KEY.saturating_sub(found.len());
+            kept.young.domains.entry(held).or_default().extend(moved.iter().take(room).cloned());
+            kept.young.bytes += fresh;
+            found.extend(moved.into_iter().take(room));
+        } else {
+            found.extend(aged.iter().cloned());
+            kept.old.domains.insert(held, aged);
+        }
+        found
     }
 
     /// Keeps `computed` under `key`, each relation it holds replaced by the
     /// kept relation of the same rows and columns of parts, where one is
     /// kept, and gives its domain so replaced. `None` where it keeps none.
+    ///
+    /// The young tier holds at most its share of the bytes. Where `computed`
+    /// does not fit, the young tier becomes the old one, which drops the old
+    /// tier it replaces.
     fn keep(&self, generation: u64, key: Key, computed: Computed) -> Option<Domain> {
-        let bytes = computed.events.iter().map(Recorded::bytes).sum::<usize>() + 1024;
         let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
-        if kept.generation != generation || bytes > self.kept_bytes {
+        if kept.generation != generation {
             return None;
-        }
-        if kept.bytes + bytes > self.kept_bytes {
-            kept.clear();
         }
         let kept = &mut *kept;
-        if kept.domains.get(&key).is_some_and(|computations| computations.len() >= PER_KEY) {
+        if kept.young.domains.get(&key).is_some_and(|computations| computations.len() >= PER_KEY) {
             return None;
         }
-        let mut one = |relation: &Arc<Relation>| kept_relation(&mut kept.relations, relation);
+        let share = self.kept_bytes / TIERS;
+        let (alone, mut fresh) = kept.young.alone_and_fresh_bytes(&key.values, &computed);
+        if alone > share {
+            return None;
+        }
+        if kept.young.bytes + fresh > share {
+            kept.old = std::mem::take(&mut kept.young);
+            fresh = alone;
+        }
+        let young = &mut kept.young;
+        let mut one = |relation: &Arc<Relation>| kept_relation(&mut young.relations, relation);
         let key = Key { values: key.values.iter().map(|value| value.as_ref().map(&mut one)).collect(), shape: key.shape };
-        let events = computed.events.iter().map(|event| event.with_relations(&mut one)).collect();
-        let domain = match &computed.domain {
-            Domain::Rows(values) => Domain::Rows(values.iter().map(&mut one).collect()),
-            other => other.clone(),
-        };
-        kept.domains.entry(key).or_default().push(Arc::new(Computed { events, charged: computed.charged, domain: domain.clone(), found: None }));
-        kept.bytes += bytes;
+        let kept_computed = computed.with_relations(&mut one);
+        let domain = kept_computed.domain.clone();
+        young.domains.entry(key).or_default().push(Arc::new(kept_computed));
+        young.bytes += fresh;
         Some(domain)
     }
 }
 
 impl Kept {
     fn clear(&mut self) {
-        self.domains.clear();
-        self.relations.clear();
-        self.bytes = 0;
+        self.young = Tier::default();
+        self.old = Tier::default();
+    }
+}
+
+impl Tier {
+    /// The bytes that keeping `computed`, a computation of the domain at
+    /// the key values `values`, adds to this tier: its events' bytes less
+    /// those of each relation that the tier holds already, each count of a
+    /// relation once, by its rows' hash. Also the bytes it adds to an empty
+    /// tier.
+    fn alone_and_fresh_bytes(&self, values: &[Option<Arc<Relation>>], computed: &Computed) -> (usize, usize) {
+        self.bytes_of(values, std::iter::once(computed))
+    }
+
+    fn fresh_bytes<'c>(&self, values: &[Option<Arc<Relation>>], computed: impl Iterator<Item = &'c Computed>) -> usize {
+        self.bytes_of(values, computed).1
+    }
+
+    fn bytes_of<'c>(&self, values: &[Option<Arc<Relation>>], computed: impl Iterator<Item = &'c Computed>) -> (usize, usize) {
+        let mut seen = crate::hash::StableHashSet::default();
+        let mut sizes = (0, 0);
+        let mut count = |relation: &Arc<Relation>| {
+            let hash = relation.rows_hash();
+            if !seen.insert(hash) {
+                return;
+            }
+            let bytes = relation_estimate(relation);
+            sizes.0 += bytes;
+            let held = self.relations.get(&hash).is_some_and(|alike| alike.iter().any(|held| held.arity() == relation.arity() && held.len() == relation.len()));
+            if !held {
+                sizes.1 += bytes;
+            }
+        };
+        let mut events = 0;
+        values.iter().flatten().for_each(&mut count);
+        for computed in computed {
+            events += computed.events.len();
+            computed.events.iter().for_each(|event| event.each_relation(&mut count));
+            if let Domain::Rows(rows) = &computed.domain {
+                rows.iter().for_each(&mut count);
+            }
+        }
+        let overhead = 1024 + EVENT_BYTES * events;
+        (sizes.0 + overhead, sizes.1 + overhead)
+    }
+}
+
+impl Computed {
+    /// This computation with each relation it holds replaced by `one` of it.
+    fn with_relations(&self, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> Computed {
+        let domain = match &self.domain {
+            Domain::Rows(values) => Domain::Rows(values.iter().map(&mut *one).collect()),
+            other => other.clone(),
+        };
+        Computed { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), charged: self.charged, domain, found: None }
     }
 }
 
