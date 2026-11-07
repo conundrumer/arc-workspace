@@ -13,7 +13,7 @@ use std::sync::Arc;
 use arclog::task::Task;
 
 use crate::catalog_facts::GridFacts;
-use crate::generate::{constants_of, leaves_at, Generated, Generators, Number, RootOf, RootTable, Slot, Walker, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE, SLOT_VALUE};
+use crate::generate::{constants_of, leaves_at, Generated, Generators, Number, RootOf, RootTable, ShapeMask, Slot, Walker, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE, SLOT_VALUE};
 use crate::native::Table;
 use crate::stored::Stored;
 
@@ -75,6 +75,8 @@ pub struct TableVector {
     pub slots: Vec<Slot>,
     /// The mean and the greatest over the ARC examples of the count of an ARC example's tables.
     pub table_rows: (f64, u32),
+    /// Whether the walk passed its bound on the cells of values, so that the terms after that point have no value.
+    pub over_budget: bool,
 }
 
 impl TableVector {
@@ -129,7 +131,7 @@ impl TableVector {
     }
 }
 
-fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usize) -> TableVector {
+fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usize, over_budget: bool) -> TableVector {
     let instances = example_of.len();
     let mut order: Vec<(u64, usize)> = table.index.iter().map(|(hash, at)| (*hash as u64, *at as usize)).collect();
     order.sort_unstable();
@@ -156,7 +158,7 @@ fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usiz
     }
     let total: u32 = per_example.iter().sum();
     let table_rows = (f64::from(total) / examples.max(1) as f64, per_example.iter().copied().max().unwrap_or(0));
-    TableVector { train, examples, shapes, meta, slots, table_rows }
+    TableVector { train, examples, shapes, meta, slots, table_rows, over_budget }
 }
 
 /// A root's numbers at an ARC example: the mean over its tables, where a default counts as 0.
@@ -216,6 +218,19 @@ fn mean_over_models(held: &[&Slot]) -> Slot {
 
 /// The vector of `table` over the first `examples` examples of `grids`.
 pub fn table_vector(walker: &mut Walker<'_>, table: &Stored, grids: &Grids, examples: usize, only_output: bool) -> TableVector {
+    table_vector_of(walker, table, grids, examples, only_output, None)
+}
+
+/// The vector of `table` over the first `examples` examples of `grids`, for the shapes of `mask` alone: the walk
+/// covers the terms that those shapes need and no other, and the vector holds the listed shapes that a full
+/// walk's vector holds, with its values. `mask` is made for the walker's family, by [`Generated::shape_mask`].
+/// The walk adds up the cells of the terms it walks alone, so a table that passes the walk's bound in a full walk
+/// may stay within it here, and the vector's `over_budget` says whether this walk passed it.
+pub fn table_vector_of_shapes(walker: &mut Walker<'_>, table: &Stored, grids: &Grids, examples: usize, only_output: bool, mask: &ShapeMask) -> TableVector {
+    table_vector_of(walker, table, grids, examples, only_output, Some(mask))
+}
+
+fn table_vector_of(walker: &mut Walker<'_>, table: &Stored, grids: &Grids, examples: usize, only_output: bool, mask: Option<&ShapeMask>) -> TableVector {
     let mut example_of = Vec::with_capacity(examples);
     let mut rows = Vec::with_capacity(examples);
     for (example, models) in table.rows.iter().take(examples).enumerate() {
@@ -230,8 +245,11 @@ pub fn table_vector(walker: &mut Walker<'_>, table: &Stored, grids: &Grids, exam
     }
     let train = example_of.iter().filter(|example| **example < grids.train).count();
     let leaves = leaves_at(&rows, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-    let found = walker.walk(&leaves, train, only_output);
-    combined(found, &example_of, examples, grids.train.min(examples))
+    let found = match mask {
+        Some(mask) => walker.walk_shapes(&leaves, train, only_output, mask),
+        None => walker.walk(&leaves, train, only_output),
+    };
+    combined(found, &example_of, examples, grids.train.min(examples), walker.over_budget)
 }
 
 /// The base tables' vectors, as the contract keys them: `input`, at every example, and `ex_output`,
@@ -284,7 +302,7 @@ pub fn two_tables_vector(walker: &mut Walker<'_>, t: &Stored, u: &Stored, grids:
     let mut leaves = leaves_at(&t_rows, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
     leaves.push(u_rows.iter().map(|table| table.clone().map_or(crate::native::Val::None, crate::native::Val::of_table)).collect());
     let found = walker.walk(&leaves, train, only_output);
-    combined(found, &example_of, examples, grids.train.min(examples))
+    combined(found, &example_of, examples, grids.train.min(examples), walker.over_budget)
 }
 
 /// `AssignmentVector`: one parameterized table across its assignments, as the contract gives it.
