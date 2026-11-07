@@ -2570,6 +2570,10 @@ pub fn example_bits(example: usize) -> u32 {
 fn build_id() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ID.get_or_init(|| {
+        // A run whose code builds the same families may name another build's folder of them.
+        if let Ok(named) = std::env::var("GENERATE_FAMILIES_BUILD") {
+            return named;
+        }
         let program = std::env::current_exe().and_then(std::fs::read).expect("this program's file");
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(&program, &mut hasher);

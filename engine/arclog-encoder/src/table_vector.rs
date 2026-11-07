@@ -176,23 +176,38 @@ fn mean_over_models(held: &[&Slot]) -> Slot {
             }
             a.abs().max(1)
         }
-        let (mut top, mut denominator) = (0i128, 1i128);
-        for slot in held {
-            let value = read(slot);
-            let down = i128::from(value.bottom.max(1));
-            let common = shared(denominator, down);
-            top = top * (down / common) + i128::from(value.top) * (denominator / common);
-            denominator = denominator / common * down;
-            let common = shared(top, denominator);
-            top /= common;
-            denominator /= common;
+        let exact = || -> Option<(i128, i128)> {
+            let (mut top, mut denominator) = (0i128, 1i128);
+            for slot in held {
+                let value = read(slot);
+                let down = i128::from(value.bottom.max(1));
+                let common = shared(denominator, down);
+                top = top.checked_mul(down / common)?.checked_add(i128::from(value.top).checked_mul(denominator / common)?)?;
+                denominator = (denominator / common).checked_mul(down)?;
+                let common = shared(top, denominator);
+                top /= common;
+                denominator /= common;
+            }
+            let bottom = denominator.checked_mul(held.len() as i128)?;
+            let common = shared(top, bottom);
+            Some((top / common, bottom / common))
+        };
+        // A Number holds 31 bits over 32 bits. A fraction past them keeps its value and loses its last digits, since a fraction clamped part by part would read as another number.
+        match exact() {
+            Some((top, bottom)) if top < 0 => Number::whole((top / bottom) as i64),
+            Some((top, bottom)) => {
+                let excess = (128 - top.leading_zeros()).saturating_sub(31).max((128 - bottom.leading_zeros()).saturating_sub(32));
+                Number::fraction((top >> excess) as u64, ((bottom >> excess) as u64).max(1))
+            }
+            None => {
+                let mean = held.iter().map(|slot| read(slot).float()).sum::<f64>() / held.len() as f64;
+                if mean < 0.0 {
+                    return Number::whole(mean as i64);
+                }
+                let scale = (f64::from(i32::MAX) / mean.max(1.0)).floor();
+                Number::fraction((mean * scale) as u64, scale as u64)
+            }
         }
-        let bottom = denominator * held.len() as i128;
-        if top < 0 {
-            return Number::whole((top / bottom) as i64);
-        }
-        let shift = (128 - bottom.leading_zeros()).saturating_sub(64);
-        Number::fraction((top >> shift) as u64, (bottom >> shift) as u64)
     };
     let digest = held.iter().fold(0u64, |sum, slot| sum.wrapping_add(slot.digest));
     Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SLOT_VALUE }
