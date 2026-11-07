@@ -115,8 +115,8 @@ impl PyStudyTaskEvaluator {
 #[pymethods]
 impl PyStudyTaskEvaluator {
     #[new]
-    #[pyo3(signature=(task,tasks,settings,session_bytes=None,compact=true,observation_start=0,form_cache=true))]
-    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:Option<usize>,compact:bool,observation_start:u64,form_cache:bool)->PyResult<Self> {
+    #[pyo3(signature=(task,tasks,settings,session_bytes=None,compact=true,observation_start=0,form_cache=true,form_cache_bytes=None))]
+    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:Option<usize>,compact:bool,observation_start:u64,form_cache:bool,form_cache_bytes:Option<usize>)->PyResult<Self> {
         let settings=settings.engine()?;
         let session_bytes=session_bytes.unwrap_or(STUDY_SESSION_BYTES);
         let (read,judged)=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?;
@@ -124,6 +124,7 @@ impl PyStudyTaskEvaluator {
         let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
         cache.set_observation_start(observation_start);
         cache.set_form_cache(form_cache);
+        if let Some(bytes)=form_cache_bytes {cache.set_form_cache_bytes(bytes);}
         Ok(Self {task_name:task.into(),ident_namespace:study_pair::table_transport_ref(),task:read,judged,session:std::sync::Arc::new(TaskSession::new(SessionBound {bytes:session_bytes},settings.caps)),settings,evidence,cache:std::sync::Mutex::new(cache)})
     }
 

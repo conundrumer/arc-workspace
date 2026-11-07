@@ -1,6 +1,6 @@
 """Check that `StudyTaskEvaluator.gold_tables` gives the same tables with and without the form cache, and time both.
 
-    python -I scripts/check_gold_form_cache.py TASK PROGRAM_FILE [PROGRAM_FILE ...] [--tasks DIR] [--work-cap N] [--order forward|reverse]
+    python -I scripts/check_gold_form_cache.py TASK PROGRAM_FILE [PROGRAM_FILE ...] [--tasks DIR] [--work-cap N] [--order forward|reverse] [--form-cache-bytes N]
 
 Each PROGRAM_FILE holds one program as an S-expression. For each program, in the order given, the check calls
 `gold_tables` in two evaluators of the task, one made with `form_cache=False` and one with `form_cache=True`, each
@@ -20,7 +20,10 @@ import sys
 import time
 from pathlib import Path
 
-import arclog
+# scripts/arclog.py would shadow the engine package, so the directory of this file stays off the module path.
+sys.path = [p for p in sys.path if Path(p or ".").resolve() != Path(__file__).resolve().parent]
+
+import arclog  # noqa: E402
 
 VOLATILE = {"tables_ref", "cached", "form_cache", "native_columns_seconds", "timings", "snapshot_ref"}
 
@@ -51,8 +54,9 @@ def digest_columns(tables):
     return digest.hexdigest()[:16]
 
 
-def run(task, tasks, settings, programs, form_cache):
-    evaluator = arclog.StudyTaskEvaluator(task, tasks, settings, form_cache=form_cache)
+def run(task, tasks, settings, programs, form_cache, form_cache_bytes=None):
+    extra = {} if form_cache_bytes is None else {"form_cache_bytes": form_cache_bytes}
+    evaluator = arclog.StudyTaskEvaluator(task, tasks, settings, form_cache=form_cache, **extra)
     rows = []
     for text in programs:
         program = arclog.StudyProgram.from_sexp(text, settings)
@@ -78,6 +82,7 @@ def main():
     parser.add_argument("programs", nargs="+")
     parser.add_argument("--tasks", default="data/tasks")
     parser.add_argument("--work-cap", type=int, default=None)
+    parser.add_argument("--form-cache-bytes", type=int, default=None)
     parser.add_argument("--order", choices=["forward", "reverse"], default="forward")
     args = parser.parse_args()
     paths = list(args.programs)
@@ -87,7 +92,7 @@ def main():
     settings = arclog.DecodeSettings() if args.work_cap is None else arclog.DecodeSettings(table_work_cap=args.work_cap)
     tasks = str(Path(args.tasks).resolve())
     off = run(args.task, tasks, settings, programs, False)
-    on = run(args.task, tasks, settings, programs, True)
+    on = run(args.task, tasks, settings, programs, True, args.form_cache_bytes)
     differs = 0
     for i, (a, b) in enumerate(zip(off, on)):
         same = a["status"] == b["status"] and a["tables"] == b["tables"] and a["report"] == b["report"]

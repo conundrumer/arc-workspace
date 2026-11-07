@@ -221,9 +221,13 @@ impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
     pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
     pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
-        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,forms:form_memo::FormMemo::new(bytes/8),source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
+        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,forms:form_memo::FormMemo::new(bytes/4),source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
     }
     pub fn set_observation_start(&mut self,sequence:u64) {self.sequence=sequence;}
+    /// The bytes that the native prefix and the packed prefix may hold: the admission budget less the walks of tables that the form cache holds.
+    fn pair_room(&self)->usize {self.cache_bytes.saturating_sub(self.forms.bytes())}
+    /// Change the most bytes that the form cache holds, which is a quarter of the session bound by default.
+    pub fn set_form_cache_bytes(&mut self,bytes:usize) {self.forms.set_bound(bytes);}
     /// Whether the walks of tables are kept from one program to the next.
     pub fn set_form_cache(&mut self,on:bool) {self.forms.set_on(on);}
     /// Release the kept walks of tables.
@@ -233,7 +237,7 @@ impl PairCache {
     pub fn set_request_work(&mut self,work:Option<TableWork>) {self.forms.set_request_work(work);}
     pub fn form_cache_stats(&self)->Value {
         let stats=self.forms.stats();
-        json!({"entries":stats.entries,"bytes":stats.bytes,"bound_bytes":self.forms.bound(),"hits":stats.hits,"kept":stats.kept,"bypassed":stats.bypassed,"declined":stats.declined,"evicted":stats.evicted})
+        json!({"entries":stats.entries,"bytes":stats.bytes,"bound_bytes":self.forms.bound(),"hits":stats.hits,"kept":stats.kept,"bypassed":stats.bypassed,"skipped":stats.skipped,"cheap":stats.cheap,"overflow":stats.overflow,"declined":stats.declined,"evicted":stats.evicted,"lost":stats.lost,"mismatch":stats.mismatch,"refused":stats.refused,"walk_seconds":stats.walk_seconds,"replay_seconds":stats.replay_seconds,"saved_seconds":stats.saved_seconds,"keep_seconds":stats.keep_seconds})
     }
     /// End a case even when ingestion or a pair faults. Release allocations,
     /// including hash-map capacities, rather than leaving them at task high-water.
@@ -267,7 +271,7 @@ impl PairCache {
         for (_,table) in &tables {if let Ok(c)=&table.contents {for ex in &c.examples {if let Ok(a)=&ex.rows {for (_,models) in &a.at {for model in models {if let RelationValue::Rows(r)=model {
             bytes=bytes.saturating_add(usize::try_from(r.len()).unwrap_or(usize::MAX).saturating_mul(usize::from(r.arity()).saturating_mul(8)+16));
         }}}}}}}
-        if bytes<=self.cache_bytes {
+        if bytes<=self.pair_room() {
             self.prefix=Some(PrefixMemo {key,tables,row_bytes:bytes});
         }
     }
@@ -1315,7 +1319,7 @@ pub fn pair_side_columns_cached(materializer:&arclog::eval::join::Materializer<'
     // The packed fold includes nested string/vector capacities and its
     // run-interning metadata, not just the values buffer.
     let native_prefix_bytes=cache.prefix.as_ref().map_or(0,|memo|memo.row_bytes);
-    if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
+    if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.pair_room() {
         let columns=prefix.finish(materializer,&tables[split..],train);
         if let Some(columns)=columns {
             cache.columns=Some((key.clone(),prefix));columns

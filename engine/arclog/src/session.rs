@@ -117,6 +117,12 @@ struct Captured {
     /// For each open capture, the outermost first, the largest counts that
     /// [`TaskSession::record_counts`] was given since it began.
     counts: Vec<Counts>,
+    /// The most events that the outermost capture keeps, where it is limited
+    /// ([`ResultCache::begin_capture_limited`]).
+    limit: Option<usize>,
+    /// Whether the events passed `limit`: the capture then keeps none, and
+    /// stops recording.
+    overflowed: bool,
 }
 
 /// An open capture of a result cache's events and counts
@@ -409,7 +415,24 @@ impl ResultCache {
     /// ([`ResultCache::end_capture`]). A capture may begin while another is
     /// open, and ends before it.
     pub fn begin_capture(&self) -> Capture {
+        self.begin(None)
+    }
+
+    /// [`ResultCache::begin_capture`], where the capture keeps at most `limit`
+    /// events: past them it keeps none and records nothing more, which
+    /// [`ResultCache::end_capture_limited`] gives as `None`. A capture that
+    /// begins while another is open is not limited, since the other keeps
+    /// its events.
+    pub fn begin_capture_limited(&self, limit: usize) -> Capture {
+        self.begin(Some(limit))
+    }
+
+    fn begin(&self, limit: Option<usize>) -> Capture {
         let mut captured = self.recorded.lock().expect(UNPOISONED);
+        if captured.counts.is_empty() {
+            captured.limit = limit;
+            captured.overflowed = false;
+        }
         captured.counts.push(Counts::default());
         self.recording.store(true, Ordering::Relaxed);
         Capture { mark: captured.events.len(), depth: captured.counts.len() }
@@ -420,16 +443,32 @@ impl ResultCache {
     /// was open when this one began keeps them too, and the cache keeps
     /// none once no capture is open.
     pub fn end_capture(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts) {
+        let (events, counts, _) = self.end(capture);
+        (events, counts)
+    }
+
+    /// [`ResultCache::end_capture`] of a capture that
+    /// [`ResultCache::begin_capture_limited`] began: `None` where its events
+    /// passed the limit.
+    pub fn end_capture_limited(&self, capture: Capture) -> Option<(Vec<crate::eval::cache::Recorded>, Counts)> {
+        let (events, counts, overflowed) = self.end(capture);
+        (!overflowed).then_some((events, counts))
+    }
+
+    fn end(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts, bool) {
         let mut captured = self.recorded.lock().expect(UNPOISONED);
         assert_eq!(captured.counts.len(), capture.depth, "a capture ends before the one that was open when it began");
         let counts = captured.counts.pop().expect("an open capture");
+        let mut overflowed = false;
         let events = if captured.counts.is_empty() {
             self.recording.store(false, Ordering::Relaxed);
+            overflowed = std::mem::take(&mut captured.overflowed);
+            captured.limit = None;
             std::mem::take(&mut captured.events)
         } else {
             captured.events[capture.mark..].to_vec()
         };
-        (events, counts)
+        (events, counts, overflowed)
     }
 
     /// Keeps `counts`, as the count of one evaluation that ended with no
@@ -467,7 +506,14 @@ impl ResultCache {
             });
         }
         if recording {
-            self.recorded.lock().expect(UNPOISONED).events.push(event);
+            let mut captured = self.recorded.lock().expect(UNPOISONED);
+            if captured.limit.is_some_and(|limit| captured.events.len() >= limit) {
+                captured.overflowed = true;
+                captured.events = Vec::new();
+                self.recording.store(false, Ordering::Relaxed);
+            } else {
+                captured.events.push(event);
+            }
         }
     }
 
