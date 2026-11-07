@@ -22,8 +22,8 @@
 - `uv run python scripts/run_dl.py <stem>`
     - Run one.
 - Souffle binary required for `.dl` solvers (`brew install souffle`).
-- `scripts/engine_build.sh SHA NAME [wheel] [encoder] [cli] [tests]`, through `scripts/run_heavy.py`
-    - Build an engine build from a commit, in the one shared build checkout and target folder, so only the crates a commit changes recompile. Its header names the folders.
+- `scripts/engine_build.sh SHA NAME [PART...]`, through `scripts/run_heavy.py`
+    - Build an engine build from a commit, in the one shared build checkout and target folder, so only the crates a commit changes recompile. Its header names the parts and the folders.
 
 ## Large data
 * comment: The user's words, session 12a37de8, 2026-11-06: "All large data from all agents must be in compressed stream format always".
