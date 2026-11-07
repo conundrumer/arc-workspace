@@ -1,6 +1,6 @@
 """Publish the gold of a converted corpus and stream each published task through the union stages of its split, in GOLD_UNION_DIR.
 
-  python3 regen_run.py CORPUS ROUND [P]
+  .venv/bin/python regen_run.py CORPUS ROUND [P]    (a Python with zstandard: the stages' files may be zstd streams)
 
 CORPUS is the gen folder of a conversion (it holds <task>.arclog, <task>.arcdata and cases/). ROUND is the new gold round folder, as work/lm/data-study/gold/gen-r63. P (default 6) is the number of publish processes.
 
@@ -21,6 +21,7 @@ U = R + 'model/study/gold/reads/union/'
 E = R + 'model/study/gold/cover_forms/gold_union_env.sh'
 sys.path.insert(0, U)
 from gold_union_fits import set_of  # noqa: E402
+import study_zst as Z  # noqa: E402  on the path since gold_union_fits is imported
 
 corpus, round_dir = sys.argv[1].rstrip('/'), sys.argv[2].rstrip('/')
 P = int(sys.argv[3]) if len(sys.argv) > 3 else 6
@@ -85,7 +86,7 @@ def batch(b, split, tasks):
     tag = '%s-%d' % (split, b)
     say(tag, 'cases', len(tasks), 'tasks')
     sh(tag + '-cases', [E, U + 'gold_union_cases.py', split])
-    reuse = ','.join(sorted(glob.glob(G + 'fits-*.jsonl')))
+    reuse = ','.join(Z.glob(G + 'fits-*.jsonl'))
     groups = [tasks[i:i + 10] for i in range(0, len(tasks), 10)]
     say(tag, 'fits', len(groups), 'processes')
     threads = [threading.Thread(target=fits_slot, args=('%s-fits-%d' % (tag, i), fits_py([split, str(b * 100 + i), '1'], dict(FITS_TASKS=' '.join(g), FITS_REUSE=reuse, FITS_CAP=os.environ.get('FITS_CAP', '300')))))
@@ -106,16 +107,15 @@ def batch(b, split, tasks):
         say(tag, 'graph')
         sh(tag + '-graph', [E, U + 'gold_union_graph.py', split, str(b), '1000'], dict(UNION_TASKS=names))
         for f in ('tables', 'prods', 'tasks'):
-            parts = sorted(glob.glob(G + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=lambda p: int(p.rsplit('-', 1)[1].split('.')[0]))
+            parts = sorted(Z.glob(G + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=lambda p: int(p.rsplit('-', 1)[1].split('.')[0]))
             last = {}
             for p in parts:  # a later batch's line for a task replaces an earlier one
-                for l in open(p):
+                for l in Z.open_text(p):
                     last.setdefault(json.loads(l)['task'], {})[p] = None
             keep = {t: list(ps)[-1] for t, ps in last.items()}
-            with open(G + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
+            with Z.open_text(G + 'graph-%s-%s.jsonl' % (f, split), 'w', atomic=True) as out:
                 for p in parts:
-                    out.writelines(l for l in open(p) if keep[json.loads(l)['task']] == p)
-            os.replace(G + 'graph-%s-%s.jsonl.part' % (f, split), G + 'graph-%s-%s.jsonl' % (f, split))
+                    out.writelines(l for l in Z.open_text(p) if keep[json.loads(l)['task']] == p)
             subprocess.run(['python3', U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
         say(tag, 'done')
 
@@ -133,8 +133,8 @@ def main():
         pubs.append(subprocess.Popen(cmd, cwd=R, stdout=open(round_dir + '/publish-%d.log' % k, 'a'), stderr=subprocess.STDOUT, start_new_session=True))
     seen, b, running = set(), 0, []
     for split in ('train', 'dev', 'held-out'):  # a restart takes up where the batches of an earlier run stopped
-        for p in glob.glob(G + 'union-keys-%s-[0-9]*.jsonl' % split):
-            seen |= {json.loads(l)['task'] for l in open(p) if l.endswith('\n')}
+        for p in Z.glob(G + 'union-keys-%s-[0-9]*.jsonl' % split):
+            seen |= {json.loads(l)['task'] for l in Z.open_text(p) if l.endswith('\n')}
             b = max(b, int(p.rsplit('-', 1)[1].split('.')[0]) + 1)
     say('resumed', len(seen), 'tasks from earlier batches; next batch', b)
     while True:
@@ -166,8 +166,8 @@ def main():
     for th in running:
         th.join()
     for split in ('train', 'dev', 'held-out'):
-        if os.path.exists(G + 'graph-tasks-%s.jsonl' % split):
-            sh('walks-' + split, ['python3', U + 'gold_union_walks.py', split])
+        if Z.exists(G + 'graph-tasks-%s.jsonl' % split):
+            sh('walks-' + split, [R + '.venv/bin/python', U + 'gold_union_walks.py', split])
             say(split, 'walks')
     say('done')
 

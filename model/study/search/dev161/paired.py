@@ -6,13 +6,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 import reach as R
+import study_zst as Z
 
-U = R.DATA / 'gold/gold-union-exp46'
+U = R.UNION
 SKIP = {json.loads(l)['task'] for l in open(R.OUT_OF_SCOPE)}
 KINDS = '--kinds' in sys.argv
 DEPTH = collections.defaultdict(dict)
 KIND = {}
-for r in map(json.loads, open(U / 'graph-tables-dev.jsonl')):
+for r in map(json.loads, Z.open_text(U / 'graph-tables-dev.jsonl')):
     if r['table'].startswith('t') and r.get('kind') != 'DEMONSTRATED':
         DEPTH[r['task']][r['table']] = r['depth']
         KIND[(r['task'], r['table'])] = 'DET' if r.get('kind') in ('DET', 'RIGID_DET') else 'non-DET'

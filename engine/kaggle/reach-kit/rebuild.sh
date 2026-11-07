@@ -9,11 +9,11 @@ SET=$1; shift; RESUME=0; [ "${1:-}" = --resume ] && { RESUME=1; shift; }; JOBS=$
 R=/Users/davidlu/code/arc-workspace
 PY=$R/work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python
 cd "$H"
-[ $RESUME = 1 ] || { rm -f "records-$SET.jsonl"; : > "maps-$SET.jsonl.part"; }  # maps-SET.jsonl stays until build_map.py renames the new one over it
-python3 "$S/build.py" --code
+[ $RESUME = 1 ] || { rm -f "records-$SET.jsonl" "records-$SET.jsonl.zst"; : > "maps-$SET.jsonl.part"; }  # maps-SET.jsonl stays until build_map.py renames the new one over it
+$PY "$S/build.py" --code  # the study runtime reads .zst files
 SAMPLER_CODE=$H/kit-union-read-79af0a4f2/model/study/sampler PYTHONPATH=$R/model/study/gold/cover_forms:$R/work/synth-kaggle/macsite13 \
   $R/scripts/run_heavy.py --cpus "$JOBS" --need soon $PY "$S/build_merged.py" --jobs "$JOBS" "$SET"
-$R/scripts/run_heavy.py --cpus "$JOBS" --need soon python3 "$S/build_map.py" "$SET" "$JOBS"
-SETS=$(ls records-*.jsonl | sed 's/records-\(.*\)\.jsonl/\1/' | grep -v '\.' | grep -vx training | tr '\n' ' ')  # training's records serve maps-training.jsonl, not the kit's gold
-python3 "$S/build.py" $SETS
+$R/scripts/run_heavy.py --cpus "$JOBS" --need soon $PY "$S/build_map.py" "$SET" "$JOBS"
+SETS=$(ls records-*.jsonl* | sed 's/\.zst$//' | sort -u | sed 's/records-\(.*\)\.jsonl/\1/' | grep -v '\.' | grep -vx training | tr '\n' ' ')  # training's records serve maps-training.jsonl, not the kit's gold
+$PY "$S/build.py" $SETS
 python3 "$S/kit_sha.py"

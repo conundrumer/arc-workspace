@@ -12,6 +12,8 @@
 import collections, hashlib, json, os, statistics, sys
 
 R = '/Users/davidlu/code/arc-workspace/'
+sys.path.append(R + 'model/study')
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 D = R + 'work/lm/data-study/'
 HERE = os.path.dirname(os.path.abspath(__file__))
 FLAT = D + 'gold/gold-export/flat/'
@@ -35,13 +37,13 @@ def union():
     U = D + 'gold/gold-union/'
     got = {}
     for name in ('ramp', '37', 'training', '62'):
-        if os.path.exists(U + 'graph-tables-%s.jsonl' % name):
+        if Z.exists(U + 'graph-tables-%s.jsonl' % name):
             depths = collections.defaultdict(list)
-            for r in map(json.loads, open(U + 'graph-tables-%s.jsonl' % name)):
+            for r in map(json.loads, Z.open_text(U + 'graph-tables-%s.jsonl' % name)):
                 depths[r['task']].append(r['depth'])
             level = 'merged'
         else:
-            depths = {r['task']: [x['depth'] for x in r['tables']] for r in map(json.loads, open(U + 'union-identity-%s.jsonl' % name))}
+            depths = {r['task']: [x['depth'] for x in r['tables']] for r in map(json.loads, Z.open_text(U + 'union-identity-%s.jsonl' % name))}
             level = 'text'
         for t, ds in depths.items():
             made = [d for d in ds if d is not None]

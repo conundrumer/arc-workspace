@@ -10,6 +10,8 @@ import glob, json, os, resource, statistics, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 R = '/Users/davidlu/code/arc-workspace/'
+sys.path.append(R + 'model/study')
+import study_zst as Z  # the graph files are zstd streams or plain files, whichever is on disk
 U = R + 'work/lm/data-study/gold/gold-union/'
 H = R + 'work/lm/data-study/sampler/sampler-worker/held/'
 LIMIT = 3 * 1024 ** 3
@@ -56,7 +58,7 @@ def main():
     held = {name: set(open(H + f).read().split()) for name, f in (('r22', 'ramp-fold.txt'), ('h37', 'tasks.txt'), ('h99', 'leave_out.txt'))}
     graph = {}
     for s in ('training', 'ramp', '37'):
-        for l in open(U + 'graph-tasks-%s.jsonl' % s):
+        for l in Z.open_text(U + 'graph-tasks-%s.jsonl' % s):
             r = json.loads(l)
             if 'error' in r:
                 graph[r['task']] = dict(gset=s, g_error=r['error'].split(':')[0])
@@ -64,7 +66,7 @@ def main():
             graph[r['task']] = dict(gset=s, g_tables=r['tables'], g_productions=r['productions'], g_goal_options=len(r['goals']),
                                     goal_depth=r['goal_depth'], goal_depth_cases=r['goal_depth_cases'], goals=r['goals'])
         prods = {}
-        for l in open(U + 'graph-prods-%s.jsonl' % s):
+        for l in Z.open_text(U + 'graph-prods-%s.jsonl' % s):
             r = json.loads(l)
             prods.setdefault(r['task'], {})[r['ident']] = dict(heads=r['heads'], reads=r['reads'])
             mem_check()

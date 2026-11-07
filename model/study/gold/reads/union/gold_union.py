@@ -1,5 +1,7 @@
 """Union gold: the one-case programs of each task's solver and the pinned program, with the union of their tables. design.md in this folder gives the definitions. Rows in union-SET-K.jsonl.
 
+The union stages write their large files as zstd streams, `union-SET-K.jsonl.zst`, and read them through model/study/study_zst.py, which reads a plain `union-SET-K.jsonl` and a `union-SET-K.jsonl.zst` alike. Names in this file are the logical names, without `.zst`. A frame is flushed as each row is written, so a reader can read a file that is still being written.
+
 A program is kept when its text has a row in fits-SET.jsonl (gold_union_fits.py, on the current engine) with fit and test_ok true: some assignment of its DETs gives every train output, and the fitting assignments give, on each test example, at most two distinct grids and one is the expected output. Queries of equal QueryHash make one union table (query_hash.py, on the engine of gold_union_env.sh; the row keeps `query_hash_version`). A query that the engine refuses keeps its own union table and is listed in the row's `unhashed`. gold_union_graph.py joins union tables by equal maps.
 
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py run [K N [SET]]    SET is train, dev or held-out; the rows go to union-SET-K.jsonl
@@ -8,7 +10,10 @@ A program is kept when its text has a row in fits-SET.jsonl (gold_union_fits.py,
   model/study/gold/cover_forms/gold_union_env.sh gold_union.py search    writes search-programs.jsonl from the search outputs in SEARCH
 """
 import glob, hashlib, json, os, re, sys, time
+from pathlib import Path
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-v3-combined-cut/dedup-final')
+sys.path.append(str(Path(__file__).resolve().parents[3]))  # model/study
+import study_zst as Z  # the large files of OUT are zstd streams or plain files, whichever is on disk
 SAMPLES = '/Users/davidlu/code/arc-workspace/model/study/samples'  # query_hash.py
 import gold_case_counts as G
 import gold_final_dedup as F
@@ -43,8 +48,8 @@ def union_rows(name):
     """The rows of union-NAME.jsonl, then of union-NAME-addendum.jsonl where it exists, a later row for a task in place of an earlier one, in task order."""
     got = {}
     for p in (OUT + 'union-%s.jsonl' % name, OUT + 'union-%s-addendum.jsonl' % name):
-        if os.path.exists(p):
-            for l in open(p):
+        if Z.exists(p):
+            for l in Z.open_text(p):
                 r = json.loads(l)
                 got[r['task']] = r
     return [got[t] for t in sorted(got)]
@@ -73,7 +78,7 @@ def fits_of(set_name):
     """{task: {text_sha: program}} of fits-SET.jsonl (gold_union_fits.py), or of its shard files where it is missing. Read once for each set."""
     if set_name not in _FITS:
         path = OUT + 'fits-%s.jsonl' % set_name
-        files = [path] if os.path.exists(path) else shard_files(set_name)
+        files = [path] if Z.exists(path) else shard_files(set_name)
         got = {}
         for p in files:
             for r in rows_of(p):
@@ -251,12 +256,12 @@ def run(args=()):
     """`run K N SET` takes the tasks of the set at positions K, K + N, ... of the order and writes union-SET-K.jsonl. With UNION_TASKS set (tasks separated by spaces), it takes those tasks instead, less the done ones."""
     k, n = (int(args[0]), int(args[1])) if args else (0, 1)
     sets = args[2] if len(args) > 2 else None
-    done = {json.loads(l)['task'] for p in shards() for l in open(p) if l.endswith('\n')}
+    done = {json.loads(l)['task'] for p in shards() for l in Z.open_text(p) if l.endswith('\n')}
     left = [t for i, t in enumerate(x for x in order() if sets in (None, set_of(x))) if i % n == k and t not in done]
     if os.environ.get('UNION_TASKS'):
         left = [t for t in os.environ['UNION_TASKS'].split() if t not in done]
     print(len(left), 'tasks', flush=True)
-    with open(OUT + 'union-%s-%d.jsonl' % (slug(sets), k), 'a', buffering=1) as f:
+    with Z.open_text(OUT + 'union-%s-%d.jsonl' % (slug(sets), k), 'a', line_buffering=True) as f:
         out = Rows(f)
         while left:
             part, left = left[:C.PER_CHILD], left[C.PER_CHILD:]
@@ -268,7 +273,7 @@ def run(args=()):
 def shards(name=None):
     """The shard files of `run`, of one set or of all: union-<set>-<K>.jsonl, and not the union-identity files of gold_union_identity.py."""
     pat = re.compile(r'union-(%s)-\d+\.jsonl$' % (re.escape(name) if name else 'train|dev|held-out|all'))
-    return sorted(p for p in glob.glob(OUT + 'union-*.jsonl') if pat.search(p))
+    return sorted(p for p in Z.glob(OUT + 'union-*.jsonl') if pat.search(p))
 
 
 def slug(sets):
@@ -279,7 +284,7 @@ def merge(args=()):
     name = 'union-' + slug(args[0]) if args else 'union'
     got = {}
     for p in shards(slug(args[0]) if args else None):
-        for l in open(p):
+        for l in Z.open_text(p):
             if l.endswith('\n'):
                 r = json.loads(l)
                 got[r['task']] = l
@@ -287,7 +292,8 @@ def merge(args=()):
         if t in got:
             got[t] = json.dumps(dict(task=t, set=json.loads(got[t]).get('set'), error=why, set_aside=why)) + '\n'
     text = ''.join(got[t] for t in sorted(got))
-    open(OUT + name + '.jsonl', 'w').write(text)
+    with Z.open_text(OUT + name + '.jsonl', 'w', atomic=True) as f:
+        f.write(text)
     open(OUT + name + '.jsonl.sha256', 'w').write(hashlib.sha256(text.encode()).hexdigest() + '\n')
     manifest = OUT + name + '.manifest.json'
     info = json.load(open(manifest)) if os.path.exists(manifest) else dict(file=name + '.jsonl')

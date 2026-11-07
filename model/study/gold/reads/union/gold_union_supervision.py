@@ -1,6 +1,6 @@
 """Counts of what a set's union graph gives as supervised examples. Prints them and writes supervision-SET.json in work/lm/data-study/gold/gold-union.
 
-  python3 gold_union_supervision.py SET
+  .venv/bin/python gold_union_supervision.py SET
 
 - Productions: the lines of graph-prods-SET.jsonl, in all and per form kind.
 - Patterns: distinct (kind, read kinds), where a read kind is the kind of a graph table the production reads (an INIT table with its component output, from its `members`). Base relations such as `input` are not graph tables, so they are not among the read kinds.
@@ -10,6 +10,9 @@
 - Per task: the productions on the cheapest path, and the goal depth, from graph-tasks-SET.jsonl. A task without a path, and a task whose goal depth is infinite (no goal option has all its tables made), are counted apart.
 """
 import collections, json, statistics, sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 
 
@@ -28,9 +31,9 @@ def dist(xs):
 
 def main():
     s = sys.argv[1]
-    tables = {(t['task'], t['table']): t for t in map(json.loads, open(OUT + 'graph-tables-%s.jsonl' % s))}
-    prods = [json.loads(l) for l in open(OUT + 'graph-prods-%s.jsonl' % s)]
-    tasks = [json.loads(l) for l in open(OUT + 'graph-tasks-%s.jsonl' % s)]
+    tables = {(t['task'], t['table']): t for t in map(json.loads, Z.open_text(OUT + 'graph-tables-%s.jsonl' % s))}
+    prods = [json.loads(l) for l in Z.open_text(OUT + 'graph-prods-%s.jsonl' % s)]
+    tasks = [json.loads(l) for l in Z.open_text(OUT + 'graph-tasks-%s.jsonl' % s)]
 
     def read_kind(task, table):
         t = tables.get((task, table))

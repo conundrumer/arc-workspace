@@ -1,6 +1,6 @@
 """The shape of the expensive productions of one set's union graph. Writes expensive-productions-SET.json in work/lm/data-study/gold/gold-union and prints the summary.
 
-  python3 gold_union_expensive.py SET
+  .venv/bin/python gold_union_expensive.py SET
 
 - A production's text is its form in union-SET.jsonl (with union-SET-addendum.jsonl), joined to graph-prods-SET.jsonl by task and identity.
 - Atoms: the relation atoms of the form, `(name (:` or `(&label (:`. Control: which of ALL, NOT, OR and IF the body holds. Ports: the top-level clauses of an INIT.
@@ -13,6 +13,8 @@
 - Expensive: over 20 bits. Each task's cheapest path and minimax path (graph-tasks-SET.jsonl) give the group of the production on it with the most bits.
 """
 import collections, json, os, re, sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 
 U = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 EX = re.compile(r'\((input|output|ex_output|ex_input) ')
@@ -37,8 +39,8 @@ def main():
     s = sys.argv[1]
     rows = {}
     for p in (U + 'union-%s.jsonl' % s, U + 'union-%s-addendum.jsonl' % s):
-        if os.path.exists(p):
-            for l in open(p):
+        if Z.exists(p):
+            for l in Z.open_text(p):
                 r = json.loads(l)
                 rows[r['task']] = r
     text, reads, idents = {}, {}, {}
@@ -59,7 +61,7 @@ def main():
 
     goals = {}
     tasks = {}
-    for l in open(U + 'graph-tasks-%s.jsonl' % s):
+    for l in Z.open_text(U + 'graph-tasks-%s.jsonl' % s):
         k = json.loads(l)
         tasks[k['task']] = k
         goals[k['task']] = set(k.get('goal') or [])
@@ -72,7 +74,7 @@ def main():
         return dict(task=t, ident=p['ident'], bits=p['bits'], depth=p['depth'], kind=p['kind'], component=x.split()[2] if p['kind'] == 'INIT' else None, atoms=atoms, control=ctl,
                     ports=len(top(x)) if p['kind'] == 'INIT' else None, level='per-example' if per_example(t, p['ident']) else 'task', group=group, before_out=bool(set(p['heads']) & goals.get(t, set())), text=x)
 
-    prods = [json.loads(l) for l in open(U + 'graph-prods-%s.jsonl' % s)]
+    prods = [json.loads(l) for l in Z.open_text(U + 'graph-prods-%s.jsonl' % s)]
     byid = {(p['task'], p['ident']): p for p in prods}
     over = [feats(p) for p in prods if p['bits'] is not None and p['bits'] > CUT]
     under = [feats(p) for p in prods if p['bits'] is not None and p['bits'] <= CUT]

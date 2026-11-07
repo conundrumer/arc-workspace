@@ -33,16 +33,16 @@ echo "$(date +%H:%M) $SET keys"
 shards keys $E $U/gold_union_keys.py $SET
 $E $U/gold_union_keys.py $SET merge > $S/$SET-keys-merge.log 2>&1
 mkdir -p $G/keys-shards-done
-mv $G/union-keys-$SET-[0-9]*.jsonl $G/keys-shards-done/
+mv $G/union-keys-$SET-[0-9]*.jsonl* $G/keys-shards-done/
 
 echo "$(date +%H:%M) $SET graph"
 shards graph $E $U/gold_union_graph.py $SET
 for f in tables prods tasks; do
   parts=$(for ((k=0; k<$N; k++)); do echo $G/graph-$f-$SET-$k.jsonl; done)
-  cat $parts > $G/graph-$f-$SET.jsonl
+  .venv/bin/python model/study/study_zst.py concat $G/graph-$f-$SET.jsonl $parts
   python3 $U/gold_union_code.py concat $G/graph-$f-$SET.jsonl $parts
-  rm $parts $(for p in $parts; do echo $p.code.json; done)
+  rm -f $parts $(for p in $parts; do echo $p.zst $p.code.json; done)
 done
 echo "$(date +%H:%M) $SET walks"
-python3 $U/gold_union_walks.py $SET > $S/$SET-walks.log 2>&1
+.venv/bin/python $U/gold_union_walks.py $SET > $S/$SET-walks.log 2>&1
 echo "$(date +%H:%M) $SET done"

@@ -1,6 +1,6 @@
 """The enabled queries of the states of state sequences over a set's union graph, against the task's cheapest and minimax paths. Prints the counts and writes walks-SET.json in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union).
 
-  python3 gold_union_walks.py SET [SET ...]
+  .venv/bin/python gold_union_walks.py SET [SET ...]
 
 - A state sequence starts at the empty state, a set of built graph tables. At each step it records the state and its enabled queries (each table the query uses is built, and some head is not), then adds the heads of one enabled query, chosen at random by the sequence's seed. It stops when every table of some goal option is built, or when nothing is enabled. Base tables aren't graph tables, so a query that uses none is enabled in the empty state.
 - State sequence types: `union` picks among all enabled queries, and `path` picks among the enabled queries of the cheapest path. 8 state sequences a task per type, seeds 0 to 7.
@@ -14,6 +14,8 @@
 - WALK_KINDS (default `union path`) picks the state sequence types.
 """
 import collections, json, os, random, sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the graph files are zstd streams or plain files, whichever is on disk
 
 OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union') + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 PER_TASK = 8
@@ -49,13 +51,13 @@ def state_sequence(queries, goals, pick_from, seed):
 def main():
     for s in sys.argv[1:]:
         queries, query_of = collections.defaultdict(list), {}
-        for p in map(json.loads, open(OUT + 'graph-prods-%s.jsonl' % s)):
+        for p in map(json.loads, Z.open_text(OUT + 'graph-prods-%s.jsonl' % s)):
             queries[p['task']].append(p)
             query_of[p['task'], p['ident']] = p.get('query')
         out, states, steps_of, seqs, tables_seen = {}, {}, collections.defaultdict(list), [], set()
         for kind in KINDS:
             rows, reached, count = [], 0, 0
-            for t in map(json.loads, open(OUT + 'graph-tasks-%s.jsonl' % s)):
+            for t in map(json.loads, Z.open_text(OUT + 'graph-tasks-%s.jsonl' % s)):
                 if not t.get('goals') or not t.get('path'):
                     continue
                 cheap = set(t['path']['idents'])
@@ -100,15 +102,15 @@ def main():
             print(s, 'distinct states', json.dumps(out['union']['distinct']['all']), 'distinct table sets', len(tables_seen))
             print(s, 'over steps', json.dumps(out['union']['over_steps']['all']))
             line = {}
-            with open(OUT + 'walk-states-%s.jsonl.part' % s, 'w') as f:
+            with Z.open_part(OUT + 'walk-states-%s.jsonl' % s) as f:
                 for i, ((task, added), v) in enumerate(states.items()):
                     line[task, added] = i
                     f.write(json.dumps(dict(task=task, forms=sorted(added), queries=sorted(query_of[task, i] for i in added), built=sorted(v['built']), depth=v['depth'], redundant_forms=v['redundant_forms'])) + '\n')
-            with open(OUT + 'walk-seqs-%s.jsonl.part' % s, 'w') as f:
+            with Z.open_part(OUT + 'walk-seqs-%s.jsonl' % s) as f:
                 for task, seed, ok, keys in seqs:
                     f.write(json.dumps(dict(task=task, seed=seed, reached_goal=bool(ok), states=[line[k] for k in keys])) + '\n')
             for name in ('walk-states-%s.jsonl' % s, 'walk-seqs-%s.jsonl' % s):  # a reader never sees a part-written file, nor states without their sequences
-                os.replace(OUT + name + '.part', OUT + name)
+                Z.commit(OUT + name)
         json.dump(out, open(OUT + 'walks-%s.json.part' % s, 'w'), indent=1)
         os.replace(OUT + 'walks-%s.json.part' % s, OUT + 'walks-%s.json' % s)
 

@@ -12,6 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import gold_union_code
+sys.path.append(str(Path(__file__).resolve().parents[3]))  # model/study
+import study_zst as Z  # the large files of OUT are zstd streams or plain files, whichever is on disk
 
 ROOT = Path('/Users/davidlu/code/arc-workspace')
 OUT = os.environ.get('GOLD_UNION_DIR', str(ROOT / 'work/lm/data-study/gold/gold-union')) + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
@@ -48,7 +50,7 @@ def engine():
 def programs_of(set_name):
     """{task: {text: [case]}} of the lines of cases-SET.jsonl that are not excluded, in the order of the file."""
     got = {}
-    for l in open(OUT + 'cases-%s.jsonl' % set_name):
+    for l in Z.open_text(OUT + 'cases-%s.jsonl' % set_name):
         r = json.loads(l)
         if r['excluded'] in (True, 'True'):
             continue
@@ -308,9 +310,9 @@ def sampler_run(set_name, k, n, field='sampler'):
         rows = [r for r in rows if r['task'] in os.environ['FITS_TASKS'].split()]
     mine = [r for i, r in enumerate(sorted(rows, key=lambda r: r['task'])) if i % n == k]
     path = OUT + '%s-%s-%d.jsonl' % (field, set_name, k)
-    done = {json.loads(l)['task'] for l in open(path) if l.endswith('\n')} if os.path.exists(path) else set()
+    done = {json.loads(l)['task'] for l in Z.open_text(path) if l.endswith('\n')} if Z.exists(path) else set()
     env, start = engine(), time.time()
-    with open(path, 'a') as f:
+    with Z.open_text(path, 'a') as f:
         for i, r in enumerate(mine, 1):
             if r['task'] in done:
                 continue
@@ -331,12 +333,12 @@ def sampler_run(set_name, k, n, field='sampler'):
 
 
 def shard_files(set_name):
-    return sorted(glob.glob(OUT + 'fits-%s-*.jsonl' % set_name))
+    return Z.glob(OUT + 'fits-%s-*.jsonl' % set_name)
 
 
 def rows_of(path):
     """The task rows of a fits file, whole lines only, less its header line."""
-    for l in open(path):
+    for l in Z.open_text(path):
         if l.endswith('\n'):
             r = json.loads(l)
             if r.get('t') != 'header':
@@ -346,8 +348,8 @@ def rows_of(path):
 def merge(set_name):
     got, outcome = {}, {}
     for field in ('sampler', 'decode'):  # outcomes that sampler_run added to older rows
-        for p in sorted(glob.glob(OUT + '%s-%s-*.jsonl' % (field, set_name))):
-            for l in open(p):
+        for p in Z.glob(OUT + '%s-%s-*.jsonl' % (field, set_name)):
+            for l in Z.open_text(p):
                 if l.endswith('\n'):
                     s = json.loads(l)
                     if s.get(field):
@@ -362,7 +364,8 @@ def merge(set_name):
                         x[f] = v
             got[r['task']] = json.dumps(r) + '\n'
     if got:
-        open(OUT + 'fits-%s.jsonl' % set_name, 'w').write(gold_union_code.header() + ''.join(got[t] for t in sorted(got)))
+        with Z.open_text(OUT + 'fits-%s.jsonl' % set_name, 'w', atomic=True) as f:
+            f.write(gold_union_code.header() + ''.join(got[t] for t in sorted(got)))
     print(len(got), 'tasks')
 
 
@@ -373,14 +376,12 @@ def run(set_name, shard=None):
     if os.environ.get('FITS_TASKS'):  # tasks separated by spaces, in place of the shard's own
         mine = [t for t in os.environ['FITS_TASKS'].split() if t in todo]
     path = OUT + ('fits-%s-%d.jsonl' % (set_name, k) if shard else 'fits-%s.jsonl' % set_name)
-    done = {r['task'] for r in rows_of(path)} if os.path.exists(path) else set()
-    if os.path.exists(path):  # a killed run may leave half a line
-        text = open(path).read()
-        open(path, 'w').write(text[:text.rfind('\n') + 1])
+    done = {r['task'] for r in rows_of(path)} if Z.exists(path) else set()
+    Z.trim_to_last_newline(path)  # a killed run may leave half a line
     left = [t for t in mine if t not in done]
     env, tasks, reuse = engine(), ROOT / 'data/tasks', reuse_of()
     rest, fit, seen, start = sum(len(todo[t]) for t in left), 0, 0, time.time()
-    with open(path, 'a') as f:
+    with Z.open_text(path, 'a') as f:
         for i, t in enumerate(left, len(mine) - len(left) + 1):
             row, copied = one(env, t, todo[t], tasks, reuse.get(t, {}))
             f.write(json.dumps(row) + '\n')

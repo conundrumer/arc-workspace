@@ -35,8 +35,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 from study_paths import DATA_ROOT as DATA  # noqa: E402
-GRAPH = DATA / 'gold/gold-union-exp46/graph-tables-dev.jsonl'
-OUT_OF_SCOPE = DATA / 'gold/gold-union-exp46/out-of-scope.jsonl'  # dataset-worker's list of the tasks that are out of scope, one {task, set, reason} a line
+import study_zst as Z  # noqa: E402  the union files are zstd streams or plain files, whichever is on disk
+UNION = Path(os.environ['GOLD_UNION_DIR']) if os.environ.get('GOLD_UNION_DIR') else DATA / 'gold/gold-union-exp46'  # GOLD_UNION_DIR: another union folder
+GRAPH = UNION / 'graph-tables-dev.jsonl'
+OUT_OF_SCOPE = UNION / 'out-of-scope.jsonl'  # dataset-worker's list of the tasks that are out of scope, one {task, set, reason} a line
 ROWS = DATA / 'samples/dev/rows'
 
 
@@ -131,7 +133,7 @@ def main():
         d = json.load(open(a.skip_file))
         skip |= set(d.get('A_tasks', [])) | set(d.get('B_tasks', []))
     depth = collections.defaultdict(dict)  # task -> graph table -> depth
-    for r in map(json.loads, open(a.graph)):
+    for r in map(json.loads, Z.open_text(a.graph)):
         if r['table'].startswith('t') and r.get('kind') not in a.skip_kinds.split(','):
             depth[r['task']][r['table']] = r['depth']
     jobs = collections.defaultdict(dict)  # task -> arm -> job folder

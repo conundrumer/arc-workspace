@@ -33,6 +33,8 @@ import zlib
 from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(HERE, '..'))  # model/study
+import study_zst as Z  # the union files and the records are zstd streams or plain files, whichever is on disk
 WORK = '/Users/davidlu/code/arc-workspace/work'
 RELEASE = WORK + '/lm/data-study/sampler/sampler-worker/kits/writer-rel-534dec52f53c'
 RECORDS = os.environ.get('UNION_REACH_OUT', WORK + '/synth-kaggle/kit-union-read')  # records-<set>.jsonl
@@ -148,12 +150,12 @@ def replay(a):
 def set_aside(want):
     """The tasks of the set that the union files set aside, as build.py's merged_rows gives them, read one line at a time."""
     names = ['union-%s.jsonl' % want]
-    if not os.path.exists(UNION + names[0]):
-        names = sorted((n for n in os.listdir(UNION) if re.fullmatch(r'union-%s-\d+\.jsonl' % re.escape(want), n)), key=lambda n: int(n.rsplit('-', 1)[1][:-6]))
+    if not Z.exists(UNION + names[0]):
+        names = sorted((n for n in Z.listdir(UNION) if re.fullmatch(r'union-%s-\d+\.jsonl' % re.escape(want), n)), key=lambda n: int(n.rsplit('-', 1)[1][:-6]))
     aside, kept = set(), set()
     for name in names + ['union-%s-addendum.jsonl' % want]:
-        if os.path.exists(UNION + name):
-            with open(UNION + name) as f:
+        if Z.exists(UNION + name):
+            with Z.open_text(UNION + name) as f:
                 for line in f:
                     r = json.loads(line)
                     (kept if 'tables' in r else aside).add(r['task'])
@@ -164,23 +166,19 @@ def set_aside(want):
     return aside
 
 
-def last_lines(path, keep):
-    """{task: byte offset of its last line} in the records file, for the tasks that keep(task) admits."""
-    at, pos = {}, 0
-    with open(path, 'rb') as f:
-        for line in f:
-            m = TASK_LINE.match(line)
-            t = m[1].decode() if m else json.loads(line)['task']
-            if keep(t):
-                at[t] = pos
-            pos += len(line)
+def last_lines(store, keep):
+    """{task: handle of its last line} in the records file (a study_zst.LineStore), for the tasks that keep(task) admits."""
+    at = {}
+    for pos, line in store.scan():
+        m = TASK_LINE.match(line)
+        t = m[1].decode() if m else json.loads(line)['task']
+        if keep(t):
+            at[t] = pos
     return at
 
 
-def line_at(path, pos):
-    with open(path, 'rb') as f:
-        f.seek(pos)
-        return f.readline()
+def line_at(store, pos):
+    return store.get(pos)
 
 
 def one(r: dict[str, Any], a: argparse.Namespace, tmp: str, outdir: str) -> dict[str, Any]:
@@ -188,7 +186,7 @@ def one(r: dict[str, Any], a: argparse.Namespace, tmp: str, outdir: str) -> dict
     t = r['task']
     rec = os.path.join(tmp, t + '.json')
     with open(rec, 'wb') as f:
-        f.write(line_at(a.records, r['pos']))
+        f.write(line_at(a.store, r['pos']))
     log = os.path.join(tmp, t + '.log')
     out = '%s/%s.jsonl.gz' % (outdir, t)
     t0 = time.time()
@@ -219,14 +217,15 @@ def run_set(a):
     k, n = map(int, a.shard.split('/'))
     only = set(filter(None, a.tasks.split(',')))
     a.records = a.records or '%s/records-%s.jsonl' % (RECORDS, want)
-    at = last_lines(a.records, lambda t: zlib.crc32(t.encode()) % n == k and (not only or t in only))
+    a.store = Z.LineStore(a.records)
+    at = last_lines(a.store, lambda t: zlib.crc32(t.encode()) % n == k and (not only or t in only))
     aside = set_aside(want)
     code, version = RS.code_sha(), 'engine@' + os.path.basename(a.site.rstrip('/'))
     recs = []
     for t, pos in at.items():
         if t in aside:
             continue
-        r = json.loads(line_at(a.records, pos))
+        r = json.loads(line_at(a.store, pos))
         src = r.get('src') or hashlib.sha256(json.dumps(r, sort_keys=True).encode()).hexdigest()[:16]  # the record's own hash, where the union file gave it none
         recs.append(dict(task=t, pos=pos, src=str(src), split=split_of(t), size=sum(len(p['form_keys']) for p in r['programs']), programs=len(r['programs'])))
         del r

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Union records for the reach measurement kit from the merged union files (gold/gold-union/union-<set>.jsonl and union-<set>-addendum.jsonl), one task a line, streamed to records-<set>.jsonl next to this script; a restart skips tasks it has. A task whose merged line has no tables is set aside and gets no record. A task with no merged line takes the text-level record of union-identity-<set>.jsonl through build.py's union_record, and gets its merged record on a later run once one exists.
+"""Union records for the reach measurement kit from the merged union files (gold/gold-union/union-<set>.jsonl and union-<set>-addendum.jsonl), one task a line, streamed to records-<set>.jsonl.zst (a zstd stream, a frame for each record, so a reader can read it while it is written; a plain records-<set>.jsonl is read too) next to this script; a restart skips tasks it has. A task whose merged line has no tables is set aside and gets no record. A task with no merged line takes the text-level record of union-identity-<set>.jsonl through build.py's union_record, and gets its merged record on a later run once one exists.
 
   SAMPLER_CODE=<kit>/model/study/sampler PYTHONPATH=<repo>/model/study/gold/cover_forms:<arclog site> <runtime python> build_merged.py [--jobs N] [--merged-only] SET...
 
@@ -12,6 +12,8 @@ OUT = os.environ.get('UNION_REACH_OUT', '/Users/davidlu/code/arc-workspace/work/
 UNION = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union').rstrip('/') + '/'  # the union files' folder
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/gold/reads/union')
 sys.path.insert(0, HERE)
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../model/study'))  # study_zst.py
+import study_zst as Z  # noqa: E402  the union files and the records are zstd streams or plain files, whichever is on disk
 import gold_union as U  # noqa: E402
 import build as B  # noqa: E402
 
@@ -62,14 +64,14 @@ def main():
     merged_only = '--merged-only' in args  # no text-level record for a task with no merged line
     for want in [a for a in args if a != '--merged-only']:
         out = OUT + '/records-%s.jsonl' % want
-        done = {r['task']: r.get('src', 'text' if r['merged'] == 'text' else None) for r in map(json.loads, open(out))} if os.path.exists(out) else {}
+        done = {r['task']: r.get('src', 'text' if r['merged'] == 'text' else None) for r in map(json.loads, Z.open_text(out))} if Z.exists(out) else {}
         merged, _, aside = B.merged_rows(want)
         order = B.task_order(want)
         todo = [(t, merged.get(t), want) for t in order if t not in aside and (
             (t in merged and done.get(t) != merged[t]['src']) or (t not in merged and t not in done and not merged_only))]
         t0, n = time.time(), 0
         print('%s: %d tasks to build, %d jobs' % (want, len(todo), jobs), flush=True)
-        with open(out, 'a') as f, multiprocessing.get_context('spawn').Pool(jobs, initializer=init) as pool:
+        with Z.open_text(out, 'a') as f, multiprocessing.get_context('spawn').Pool(jobs, initializer=init) as pool:
             for r in pool.imap_unordered(one, todo):  # a task's later record, from a changed line, follows its earlier one; build.py takes the last
                 n += 1
                 if 'error' in r:

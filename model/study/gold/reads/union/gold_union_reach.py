@@ -9,8 +9,10 @@
 - Remaining path: `remaining` is the cheapest hyperpath to the goal with each reached or read-past table made at no cost, on known bits: its bits, its count of productions (each one unreached), and the production on it with the most bits (`max_production`), with that production's bits and depth.
 - Bits: `open_cost_known` and `open_cost_low` are the tree cost of the goal (the least over the goal options of graph-tasks-SET.jsonl of the sum over the option's tables) with each reached or read-past table's cost taken as 0, on known bits (a production without bits unusable) and on low bits (a production without bits at 0 bits).
 """
-import ast, collections, json, sys
+import ast, collections, json, os, sys
 from gold_union_graph import cheapest, max_production
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 
 D = '/Users/davidlu/code/arc-workspace/work/lm/data-study/'
 OUT = D + 'gold/gold-union/'
@@ -28,13 +30,13 @@ def main():
     for r in map(json.loads, open(RUNS + 'outmap-%s.jsonl' % s)):
         names[r['task'], r['table']] = str(r['key']) if not r['component'] else '%d.%s' % (r['key'], r['name']) if r['name'] else None
     tables, member_of = collections.defaultdict(dict), collections.defaultdict(dict)
-    for r in map(json.loads, open(OUT + 'graph-tables-%s.jsonl' % s)):
+    for r in map(json.loads, Z.open_text(OUT + 'graph-tables-%s.jsonl' % s)):
         tables[r['task']][r['table']] = r
         for m in r['members']:
             member_of[r['task']][m] = r['table']
-    goals = {r['task']: r.get('goals', []) for r in map(json.loads, open(OUT + 'graph-tasks-%s.jsonl' % s))}
+    goals = {r['task']: r.get('goals', []) for r in map(json.loads, Z.open_text(OUT + 'graph-tasks-%s.jsonl' % s))}
     prods, byid, made = collections.defaultdict(list), collections.defaultdict(dict), collections.defaultdict(lambda: collections.defaultdict(list))
-    for r in map(json.loads, open(OUT + 'graph-prods-%s.jsonl' % s)):
+    for r in map(json.loads, Z.open_text(OUT + 'graph-prods-%s.jsonl' % s)):
         prods[r['task']].append(r)
         byid[r['task']][r['ident']] = r
         for h in r['heads']:

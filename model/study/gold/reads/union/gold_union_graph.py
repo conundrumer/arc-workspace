@@ -22,6 +22,7 @@ sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/go
 import gold_case_counts as G
 import gold_union_code
 from gold_union import OUT, forms_of, union_rows
+import study_zst as Z  # on the path since gold_union is imported
 from gold_cheapest_common import D, program_lines
 from gold_union_tables import Tables, tables_of
 
@@ -387,7 +388,7 @@ def main():
                 if '~' in r['task']:
                     rows5[r['task'].split('~')[0]].append(r)
     cases = collections.defaultdict(list)
-    for l in open(OUT + 'union-keys-%s.jsonl' % s):
+    for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s):
         c = json.loads(l)
         cases[c['task']].append(c)
     outname, registry = {}, ports()
@@ -400,8 +401,8 @@ def main():
         for r in map(json.loads, open(MAPS % s)):
             for key, out, why in r.get('left') or []:
                 left[r['task']][outname.get((r['task'], key, out)) or str(key)] = why
-    part = '.part%d' % os.getpid()
-    with open(OUT + 'graph-tables-%s.jsonl' % tag + part, 'w') as ft, open(OUT + 'graph-tasks-%s.jsonl' % tag + part, 'w') as fk, open(OUT + 'graph-prods-%s.jsonl' % tag + part, 'w') as fp:
+    part = str(os.getpid())  # the suffix of the .part files, so that two processes of one tag keep apart
+    with Z.open_part(OUT + 'graph-tables-%s.jsonl' % tag, suffix=part) as ft, Z.open_part(OUT + 'graph-tasks-%s.jsonl' % tag, suffix=part) as fk, Z.open_part(OUT + 'graph-prods-%s.jsonl' % tag, suffix=part) as fp:
         for u in [u for u in union_rows(s) if u['task'] in only] if only else union_rows(s)[k::n]:
             if not u.get('tables'):
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error=u.get('error', 'no tables'))) + '\n')
@@ -431,7 +432,7 @@ def main():
             print(u['task'], task.get('path', task.get('error')), flush=True)
 
     for f in ('tables', 'tasks', 'prods'):
-        os.replace(OUT + 'graph-%s-%s.jsonl' % (f, tag) + part, OUT + 'graph-%s-%s.jsonl' % (f, tag))
+        Z.commit(OUT + 'graph-%s-%s.jsonl' % (f, tag), part)
         gold_union_code.write_sidecar(OUT + 'graph-%s-%s.jsonl' % (f, tag))
 
 

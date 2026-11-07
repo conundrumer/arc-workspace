@@ -1,12 +1,13 @@
 """Writes out-of-scope.jsonl in GOLD_UNION_DIR: the tasks the union sets aside, one line each, {task, set, reason}.
 
-  python3 gold_union_scope.py
+  .venv/bin/python gold_union_scope.py
 
 - A task is out of scope when every program the union keeps for it (its row in the union-SET-K.jsonl files, less left_out) has a DEMONSTRATED form in its text in cases-SET.jsonl.
 - A task where some kept programs have a DEMONSTRATED form and others don't would need its tables reached only through such a form marked. The script lists those tasks and exits with status 1, and writes nothing.
 """
 import collections, json, os, sys
 from gold_union import OUT, OUT_OF_SCOPE, SETS, shards
+import study_zst as Z  # on the path since gold_union is imported
 
 REASON = 'out of scope: DEMONSTRATED (user ruling)'
 
@@ -14,7 +15,7 @@ REASON = 'out of scope: DEMONSTRATED (user ruling)'
 def demonstrated(s):
     """{task: {case: whether its text has a DEMONSTRATED form}} of the cases of the set that are not excluded."""
     got = collections.defaultdict(dict)
-    for l in open(OUT + 'cases-%s.jsonl' % s):
+    for l in Z.open_text(OUT + 'cases-%s.jsonl' % s):
         c = json.loads(l)
         if c['excluded'] not in (True, 'True'):
             got[c['task']][c['case']] = '(DEMONSTRATED' in c['gold_sexp']
@@ -26,7 +27,7 @@ def main():
     for s in SETS:
         last = {}
         for p in shards(s):
-            for l in open(p):
+            for l in Z.open_text(p):
                 if l.endswith('\n'):
                     r = json.loads(l)
                     last[r['task']] = r

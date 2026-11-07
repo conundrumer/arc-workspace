@@ -15,6 +15,7 @@ from pathlib import Path as _StudyPath
 import sys as _study_sys
 _study_sys.path.insert(0, str(_StudyPath(__file__).resolve().parents[1]))
 from study_paths import CODE_ROOT, DATA_ROOT, MAIN_ROOT, REPO_ROOT, data_path
+import study_zst as Z
 import argparse, functools, hashlib, json, os, sys, tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -73,7 +74,7 @@ def guard(task: str, allowed: Iterable[Split]) -> None:
 def goal_depths() -> dict[str, float | None]:
     got: dict[str, float | None] = {}
     for name in ('training', 'ramp', '37'):
-        for line in (GRAPHS / f'graph-tasks-{name}.jsonl').read_text().splitlines():
+        for line in Z.read_text(GRAPHS / f'graph-tasks-{name}.jsonl').splitlines():
             r = json.loads(line)
             got[r['task']] = None if 'error' in r else r['goal_depth']
     return got

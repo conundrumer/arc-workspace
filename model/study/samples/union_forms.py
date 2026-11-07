@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from canon_text import Tree, given_tables, parse, with_fields
+import study_zst as Z
 
 HEAD = re.compile(r'\((\w+) &([A-Za-z_][\w]*)')
 NAME = re.compile(r'&([A-Za-z_]\w*)((?:\.\w+)*)')
@@ -17,29 +18,23 @@ TASK = re.compile(rb'^\{"task": "([^"]*)"')
 
 
 class LineIndex:
-    """The lines of a jsonl file by task, as byte ranges: one pass over the file, so a task's lines are read without loading the file. The file stays open, so
-    the ranges stay valid when a writer replaces the file by a rename while it is read."""
+    """The lines of a jsonl file by task: one pass over the file, so a task's lines are read without loading the file. The file is plain or a zstd stream (study_zst.LineStore): a plain file stays open, so the
+    ranges stay valid when a writer replaces the file by a rename while it is read, and a zstd stream is kept in memory as compressed chunks, because it has no byte offsets of its text."""
 
     def __init__(self, path: Path):
         self.path = path
-        self.at: dict[str, list[tuple[int, int, int]]] = collections.defaultdict(list)
-        pos = 0
-        self.f = open(path, 'rb')
-        for n, line in enumerate(self.f):
+        self.at: dict[str, list[tuple[tuple[int, int, int], int]]] = collections.defaultdict(list)
+        self.store = Z.LineStore(path)
+        for n, (handle, line) in enumerate(self.store.scan()):
             m = TASK.match(line)
             if m:
-                self.at[m[1].decode()].append((pos, len(line), n))
-            pos += len(line)
+                self.at[m[1].decode()].append((handle, n))
 
     def tasks(self) -> list[str]:
         return sorted(self.at)
 
     def lines(self, task: str) -> list[bytes]:
-        out = []
-        for pos, size, _ in self.at.get(task, []):
-            self.f.seek(pos)
-            out.append(self.f.read(size))
-        return out
+        return [self.store.get(handle) for handle, _ in self.at.get(task, [])]
 
 
 def sha(text: str) -> str:

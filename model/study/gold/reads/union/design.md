@@ -42,6 +42,10 @@ Each output in this folder records the code that made it, as `{"sha": HEAD, "dir
 - `union-SET.manifest.json`: the key `code`.
 - Any other output (`union-keys-SET.jsonl`, `graph-*-SET.jsonl`): the file `<output>.code.json`, `{"code": ...}`.
 
+## File form
+
+A large output of the stages is a zstd stream, `NAME.jsonl.zst`: a sequence of independent frames, each of whole rows, written as the rows go out, so a reader can read a file that a stage still writes. Every stage reads a file through `model/study/study_zst.py`, which reads `NAME.jsonl.zst` and a plain `NAME.jsonl` alike, and where both exist reads the one modified last. A name in this document is the logical name, without `.zst`. A `NAME.jsonl.sha256` holds the sha256 of the text, and `NAME.jsonl.code.json` keeps the logical name too.
+
 ## Search programs
 
 Search-found right programs are not gold. They go to `search-programs.jsonl`, one line per program: task, source file, line, the program pruned to the forms OUT reads, and which test attempts are right.

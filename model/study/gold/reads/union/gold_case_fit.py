@@ -6,6 +6,8 @@ A case's OUT rows on each train pair are drawn as a grid: the OUT form's first ^
 """
 import ast, json, os, re, sys
 from gold_cheapest_common import Bar, program_lines, ROOT
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,11 +27,11 @@ def grid(rows, out_line):
 def main():
     s = sys.argv[1]
     progs = {}
-    for l in open(HERE + '/cases-%s.jsonl' % s):
+    for l in Z.open_text(HERE + '/cases-%s.jsonl' % s):
         r = json.loads(l)
         progs[r['task'], r['case']] = r['gold_sexp']
     with open(HERE + '/case-fit-%s.jsonl' % s, 'w') as out:
-        for l in open(HERE + '/union-%s.jsonl' % s):
+        for l in Z.open_text(HERE + '/union-%s.jsonl' % s):
             u = json.loads(l)
             bad = {h for h, why in (u.get('left_out') or {}).items() if why == 'OUT rows differ'}
             if not bad:

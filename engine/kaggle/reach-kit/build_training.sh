@@ -8,7 +8,7 @@ JOBS=${1:-4}
 R=/Users/davidlu/code/arc-workspace
 PY=$R/work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python
 cd "$H"
-python3 "$S/build.py" --code
+$PY "$S/build.py" --code  # the study runtime reads .zst files
 SAMPLER_CODE=$H/kit-union-read-79af0a4f2/model/study/sampler PYTHONPATH=$R/model/study/gold/cover_forms:$R/work/synth-kaggle/macsite13 \
   $R/scripts/run_heavy.py --cpus "$JOBS" --need soon $PY "$S/build_merged.py" --jobs "$JOBS" --merged-only training
-$R/scripts/run_heavy.py --cpus "$JOBS" --need soon python3 "$S/build_map.py" training "$JOBS"
+$R/scripts/run_heavy.py --cpus "$JOBS" --need soon $PY "$S/build_map.py" training "$JOBS"
