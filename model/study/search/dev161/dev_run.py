@@ -44,7 +44,7 @@ TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 
-POPPED = ('NODE_SCORE', 'WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE')
+POPPED = ('NODE_SCORE', 'WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'WRITER', 'SEARCH_STATE_SCORE')
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'tok_read': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '8', 'SEARCH_READ_SCOPE': '1'}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
         'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'},
@@ -201,7 +201,7 @@ def job_env(a, w, arm, seed):
     env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.base_models if arm == 'base' and a.base_models else a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
                POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES=a.source, ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
-               NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
+               NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1', ARCLOG_IDENT_SOURCE='value')  # an Ident cell is a digest of its content; unset, it is an intern number, which depends on the order of interning
     for k in POPPED:
         env.pop(k, None)
     env.update({k: v if v is not None else str(arm_tree(a, arm)) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
