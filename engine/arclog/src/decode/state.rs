@@ -40,7 +40,7 @@ use crate::read::is_type_parameter_column;
 use crate::registry::{Component, LibEntry, LibName, Need};
 use crate::registry::Registry;
 use crate::resolver::columns::example;
-use crate::resolver::{resolve, resolve_in_progress, ResolvedProgram, SolverScope};
+use crate::resolver::{resolve, resolve_in_progress, resolve_last, ResolvedProgram, SolverScope};
 use crate::safety::body_labels;
 use crate::resolver::form_columns::{demonstrated_columns, part_steps, rigid_outputs};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
@@ -87,7 +87,7 @@ pub struct State {
     stack: Vec<Frame>,
     /// The resolution of the finished forms, made on its first read, which
     /// every clone of the state shares until a form finishes.
-    resolved: Arc<std::sync::OnceLock<Arc<ResolvedProgram>>>,
+    resolved: Arc<FinishedResolution>,
     /// The clauses of the finished forms, which every clone of the state
     /// shares until a form finishes. A clause set memoizes in cells that
     /// one thread reads at a time, so the pool lends each to one reader,
@@ -128,6 +128,52 @@ pub(super) enum AtomPlace {
     Sites,
     /// A site is open, and a value of it or of a field of its record is due.
     Value,
+}
+
+/// The resolution of the finished forms of a state, which every clone of
+/// the state shares until a form finishes.
+///
+/// It is made on its first read, from the resolution of the finished forms
+/// before the last one ([`resolve_last`]), which a read makes first where
+/// none was read yet; the first state's is [`resolve`]'s. A resolution built
+/// by [`resolve_last`] holds what [`resolve`] gives for the same forms, and
+/// is [`resolve`]'s itself where [`resolve_last`] does not layer, so what
+/// the finished forms are is all that fixes it.
+#[derive(Debug)]
+struct FinishedResolution {
+    resolved: std::sync::OnceLock<Arc<ResolvedProgram>>,
+    /// The resolution of the forms before the last, until this one is made.
+    before: std::sync::Mutex<Option<Arc<FinishedResolution>>>,
+}
+
+impl FinishedResolution {
+    /// The resolution of no form.
+    fn first() -> FinishedResolution {
+        FinishedResolution { resolved: std::sync::OnceLock::new(), before: std::sync::Mutex::new(None) }
+    }
+
+    /// The resolution of the forms after those that `before` resolves, one
+    /// form more.
+    fn after(before: Arc<FinishedResolution>) -> FinishedResolution {
+        FinishedResolution { resolved: std::sync::OnceLock::new(), before: std::sync::Mutex::new(Some(before)) }
+    }
+
+    /// The resolution of `program`, the finished forms this resolution is of.
+    /// A resolution that `before` holds is of `program` less its last form.
+    fn get(&self, program: &Node<Program>, registry: &Registry) -> Arc<ResolvedProgram> {
+        let resolved = self.resolved.get_or_init(|| {
+            let before = self.before.lock().expect("the resolution chain is not poisoned").take();
+            let resolution = match (before, program.value().forms.split_last()) {
+                (Some(before), Some((_, complete))) => {
+                    let complete = Node::new(Program { forms: complete.into() });
+                    resolve_last(&before.get(&complete, registry), program, registry)
+                }
+                _ => resolve(program, None, &SolverScope::default(), registry).value,
+            };
+            Arc::new(resolution)
+        });
+        Arc::clone(resolved)
+    }
 }
 
 /// The most bytes of a prefix key that [`State::cached_prefix`] keeps.
@@ -543,7 +589,7 @@ pub(super) struct OpenProjection {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::new(FinishedResolution::first()), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
     }
 
     /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
@@ -649,8 +695,7 @@ impl State {
     /// The resolution of the finished forms, a synthesized program whose
     /// names resolve within it.
     pub(super) fn resolved(&self, registry: &Registry) -> Arc<ResolvedProgram> {
-        let resolved = self.resolved.get_or_init(|| Arc::new(resolve(&self.program, None, &SolverScope::default(), registry).value));
-        Arc::clone(resolved)
+        self.resolved.get(&self.program, registry)
     }
 
     /// Runs `body` with the clauses of the finished forms' resolution, made
@@ -1140,7 +1185,7 @@ impl State {
     fn finish_form(&mut self, form: Form) {
         self.program = self.with_form(form);
         self.finished_slots = self.next_slot();
-        self.resolved = Arc::default();
+        self.resolved = Arc::new(FinishedResolution::after(Arc::clone(&self.resolved)));
         self.clauses = Arc::default();
         self.fixed_columns = Arc::default();
         self.prefixes = Arc::default();
