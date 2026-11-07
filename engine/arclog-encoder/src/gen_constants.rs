@@ -6,7 +6,7 @@
 use std::sync::{Arc, OnceLock};
 
 use arclog::registry::Registry;
-use arclog::terms::{Color, Constant, Margins, Term, TermId};
+use arclog::terms::{Color, Constant, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::catalog_facts::*;
@@ -47,13 +47,18 @@ pub fn number_of(bits: Cell) -> i64 {
 
 #[inline]
 pub fn box_bits(top: i32, bottom: i32, left: i32, right: i32) -> Cell {
-    Term::Box(Margins { top, bottom, left, right }).encode().map_or(u32::MAX, TermId::encoding)
+    // The four margins as signed bytes, the top in the low byte, as a Box's term id packs them. A margin outside a signed byte has no id.
+    let byte = |margin: i32| i8::try_from(margin).map(|margin| u32::from(margin as u8));
+    match (byte(top), byte(bottom), byte(left), byte(right)) {
+        (Ok(t), Ok(b), Ok(l), Ok(r)) => t | (b << 8) | (l << 16) | (r << 24),
+        _ => u32::MAX,
+    }
 }
 
 #[inline]
 pub fn margins_of(bits: Cell) -> [i32; 4] {
-    let held = Term::decode_box(TermId::from_encoding(bits));
-    [held.top, held.bottom, held.left, held.right]
+    let byte = |shift: u32| i32::from((bits >> shift) as u8 as i8);
+    [byte(0), byte(8), byte(16), byte(24)]
 }
 
 /// The bits of a cell of a grid.
