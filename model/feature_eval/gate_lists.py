@@ -186,6 +186,13 @@ def told_apart(gold, mutant):
     return np.concatenate((gold[0][~hit], mutant[0][~place(mutant[0], gold[0])[1]], gold[0][hit][differs]))
 
 
+def in_step(ours, theirs):
+    """Whether two runs' items hold the same candidates at the same places. A run of the tables command can keep other candidates than an earlier run did, and then a place names
+    another table."""
+    places = lambda held: [(item['table'], item['gold'], [mutant['table'] for mutant in item['mutants']]) for item in held]
+    return places(ours) == places(theirs)
+
+
 def with_named(lists, others, folder, name, items):
     """Adds to a task's lists each table's named shapes from a folder of named lists, where its tables stand at the same places. Gives the lists of the
     candidates' query numbers."""
@@ -193,9 +200,7 @@ def with_named(lists, others, folder, name, items):
     if not path.exists():
         return {}
     head, named_lists, named_others = read_lists(path, graded=True)
-    # A run of the tables command can keep other candidates than an earlier run did, and then a place names another table.
-    places = lambda held: [(item['table'], item['gold'], [mutant['table'] for mutant in item['mutants']]) for item in held]
-    if places(head['items']) != places(items):
+    if not in_step(head['items'], items):
         print('named file out of step', folder, name, flush=True)
         return {}
     queries = {}
@@ -474,7 +479,12 @@ def build(root, out):
             pair_numbers = wide_others.get('constant-values', (np.zeros(0, dtype=np.uint64),) + (np.zeros(0, dtype=np.float32),) * 3)
             pair_spots, pair_hit = place(pair_numbers[0], pair_columns)
             state, state_others, state_item = state_lists(state_root / 'lists', path.name)
-            _, state_each_others, _ = state_lists(state_each_root / 'lists', path.name)
+            state_each_others = {}
+            if (state_each_root / 'lists' / path.name).exists():
+                each_head, _, state_each_others = read_lists(state_each_root / 'lists' / path.name, graded=True)
+                if not in_step(each_head['items'], head['items']):
+                    print('per-example file out of step', path.name, flush=True)
+                    state_each_others = {}
             first_example.append(examples_so_far)
             task_train.append(head['train'])
             example_count = head['train'] + head.get('test', 0)
