@@ -412,6 +412,23 @@ impl PrefixChecks<'_> {
         self.check(resolved, Some(open), Candidate::AtomHead, class.as_ref())
     }
 
+    /// What [`PrefixChecks::check_atom_head`] gives for a candidate that opens,
+    /// at `open`, the path `full` in its program, an atom of `relation`, where
+    /// the checks hold all that this reads: the resolution at `full` and the
+    /// result of each check up to the first refusal for the relation's class.
+    /// None where they do not.
+    pub fn held_atom_head(&self, earlier: &Arc<ResolvedProgram>, full: &NodePath, open: &NodePath, relation: &RelationRef) -> Option<Option<(CheckId, Box<[Refusal]>)>> {
+        if self.head.open.get() != Some(open) {
+            return None;
+        }
+        let class = {
+            let held = self.head.resolution.borrow();
+            let held = held.as_ref().filter(|held| held.at == *full)?;
+            relation_class(self.registry, earlier, &held.resolved, relation)
+        };
+        self.held_result(relation, class.as_ref())
+    }
+
     /// What [`PrefixChecks::check`] gives for a candidate that opens an
     /// atom of `relation`, of `class`, where `head` holds the result of each
     /// check up to the first that refuses: `Some` of the first refusal, or

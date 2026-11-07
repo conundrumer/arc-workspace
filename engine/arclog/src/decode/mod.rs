@@ -771,11 +771,28 @@ impl<'a> Decoder<'a> {
         if forced.iter().any(|token| vocabulary.id(token).is_none()) {
             return Err(Refusal::Grammar("a token the engine emits after it passes a vocabulary cap"));
         }
+        // A relation token after the first that the mask steps takes the
+        // static prune's verdict and the path of its atom from that first, and
+        // the results of the head checks that the checks hold for its class,
+        // with no partial program built.
+        if let (Some((open, pruned)), true, Token::Lib(_) | Token::Relation(_)) = (memo.head.get(), opened.is_some(), token) {
+            let relation = state.open_relation().expect("an atom stands open");
+            let full = NodePath(std::iter::once(crate::program::path::PathStep(self.state.program().value().forms.len() as u32)).chain(open.0.iter().copied()).collect());
+            if let Some(held) = checks.held_atom_head(&earlier(), &full, open, &relation) {
+                pruned.clone()?;
+                return match held {
+                    Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
+                    None => Ok((state, forced)),
+                };
+            }
+        }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                if self.context.settings.static_pruning {
-                    self.check_static_prune(&program, open.as_ref(), checks, memo)?;
+                let pruned = if self.context.settings.static_pruning { self.check_static_prune(&program, open.as_ref(), checks, memo) } else { Ok(()) };
+                if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
+                    let _ = memo.head.set((open.clone(), pruned.clone()));
                 }
+                pruned?;
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let relation = state.open_relation().expect("an atom stands open");
                     if let Some((check, refusals)) = checks.check_atom_head(&earlier(), &program, open, &relation) {
@@ -1012,6 +1029,11 @@ fn projection_steps() -> usize {
 #[derive(Default)]
 struct MaskMemo {
     order: RefCell<Order>,
+    /// The path in the form in progress of the atom that a relation token
+    /// opens at the state, and the static prune's verdict on the conjuncts
+    /// that its step completes, which every relation token of the mask
+    /// shares; set by the first relation token that the mask steps.
+    head: std::cell::OnceCell<(NodePath, Result<(), Refusal>)>,
     /// The forms of the state's program with the form in progress, and the
     /// conjuncts complete in that form, where it is a clause.
     before: std::cell::OnceCell<Option<(usize, usize)>>,
