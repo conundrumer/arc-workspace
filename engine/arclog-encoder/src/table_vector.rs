@@ -27,6 +27,8 @@ pub struct Grids {
     /// What the catalog reads of each train pair, and of each test input, which stands in for its own output.
     pub facts: Vec<crate::catalog_facts::PairFacts>,
     pub test_facts: Vec<crate::catalog_facts::PairFacts>,
+    /// What the catalog reads of each train input as its own output, so a kind over the output also reads the input.
+    pub input_facts: Vec<crate::catalog_facts::PairFacts>,
 }
 
 impl Grids {
@@ -47,7 +49,8 @@ impl Grids {
         let tests: Vec<GridFacts> = task_json["test"].as_array().unwrap_or(&empty).iter().map(|pair| crate::catalog_run::grid_of(&pair["input"])).collect();
         let constants = constants_of(&facts, &tests);
         let test_facts = tests.iter().map(|test| crate::catalog_facts::PairFacts::new(test.clone(), test.clone())).collect();
-        Grids { train, inputs, outputs, constants, facts, test_facts }
+        let input_facts = facts.iter().map(|fact| crate::catalog_facts::PairFacts::new(fact.input.clone(), fact.input.clone())).collect();
+        Grids { train, inputs, outputs, constants, facts, test_facts, input_facts }
     }
 
     /// The grids of the task stored at `task_dir` under `name`.

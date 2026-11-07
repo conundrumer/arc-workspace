@@ -43,6 +43,8 @@ A store's `contingent` holds about as many entries as its lists, and one group o
 
 `--why PATTERN` judges nothing. For each feature whose name the pattern finds, it prints its nearest single column, the feature's values at each of that column's values, and the first table rows where the two part, by task, item, candidate, ARC example and table.
 
+A run over many tasks holds too much to sort every entry. `--ids-out FILE` reads every list and writes one column of each set of columns with one source and equal entries, holding only a sum per column, and judges nothing. `--keep-ids FILE` then reads only those columns.
+
 A missing feature also has `equal share`, the most table rows on which one column equals it, with a table row of no entry at 0, and `equal`, that column's name. A feature of two values holding 0 and 1 reads a column as holding where it has an entry that is not 0, so a count can stand for a flag. One odd table keeps a whole column from `covered`, so these say how near it stands.
 
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
@@ -195,6 +197,8 @@ def main():
     parser.add_argument('--only')
     parser.add_argument('--why')
     parser.add_argument('--contingent', action='store_true')
+    parser.add_argument('--ids-out')
+    parser.add_argument('--keep-ids')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
     args = parser.parse_args()
@@ -245,20 +249,50 @@ def main():
     row_candidate = []
     row_info = []
 
+    keep_ids = np.load(args.keep_ids) if args.keep_ids else None
+    seen_ids, seen_sums = [], []
+
+    def take(row, ids, values):
+        """A row's entries, of the kept columns where some are kept."""
+        if keep_ids is not None and len(ids):
+            at = np.searchsorted(keep_ids, ids)
+            at[at == len(keep_ids)] = 0
+            found = keep_ids[at] == ids
+            ids, values = ids[found], values[found]
+        row_of.append(np.full(len(ids), row, dtype=np.int32))
+        shape_of.append(ids)
+        # A copy, since a list's values are a view that would hold its whole file in memory.
+        value_of.append(np.array(values, dtype=np.float32))
+
     def add_list(row, held, other, at):
         """A row's entries from a table's list at a pair."""
-        row_of.append(np.full(len(held[0]), row, dtype=np.int32))
-        shape_of.append(held[0])
-        # A copy, since a list's values are a view that would hold its whole file in memory.
-        value_of.append(np.array(held[1], dtype=np.float32))
+        take(row, held[0], np.asarray(held[1]))
         if len(other[0]) and other[4].shape[1] > at:
             values = other[4][:, at]
             active = values != 0
-            row_of.append(np.full(int(active.sum()), row, dtype=np.int32))
-            shape_of.append(other[0][active])
-            value_of.append(values[active])
+            take(row, other[0][active], values[active])
+
+    def sum_entries():
+        """Each column's sum of its entries' hashes, for the entries read since the last call. Two columns with equal entries have equal sums."""
+        if not row_of:
+            return
+        ids = np.concatenate(shape_of)
+        values = np.nan_to_num(np.concatenate(value_of), nan=-7.77e7)
+        places = np.concatenate(row_of).astype(np.uint64)
+        row_of.clear(), shape_of.clear(), value_of.clear()
+        present = values != 0
+        ids, values, places = ids[present], values[present], places[present]
+        mixed = (places * np.uint64(0x9E3779B97F4A7C15)) ^ (values.astype(np.float32).view(np.uint32).astype(np.uint64) * np.uint64(0xC2B2AE3D27D4EB4F))
+        mixed = (mixed ^ (mixed >> np.uint64(29))) * np.uint64(0xBF58476D1CE4E5B9)
+        unique, inverse = np.unique(ids, return_inverse=True)
+        total = np.zeros(len(unique), dtype=np.uint64)
+        np.add.at(total, inverse, mixed)
+        seen_ids.append(unique)
+        seen_sums.append(total)
 
     for path in paths:
+        if args.ids_out:
+            sum_entries()
         with open_text(path) as lines:
             data = json.load(lines)
         task = data['task']
@@ -334,15 +368,12 @@ def main():
                 for source, by in extras.items():
                     if candidate in by:
                         columns, values = by[candidate]
-                        row_of.append(np.full(len(columns), row, dtype=np.int32))
-                        shape_of.append(np.uint64(offset[source]) + columns.astype(np.uint64))
-                        value_of.append(values)
+                        take(row, np.uint64(offset[source]) + columns.astype(np.uint64), values)
                 if first_each is not None and int(first_each[candidate]) + at in each_rows:
                     columns, values = each_rows[int(first_each[candidate]) + at]
-                    row_of.append(np.full(len(columns), row, dtype=np.int32))
-                    shape_of.append(np.uint64(offset['relations_each']) + columns.astype(np.uint64))
-                    value_of.append(values)
-                collect(table_at, name, own_types, tables, args.form, features, row, coordinates, coordinate_of, args.one_binding)
+                    take(row, np.uint64(offset['relations_each']) + columns.astype(np.uint64), values)
+                if not args.ids_out:
+                    collect(table_at, name, own_types, tables, args.form, features, row, coordinates, coordinate_of, args.one_binding)
 
         for item_at, item in enumerate(head['items']):
             name, place = item['table'], item['gold']
@@ -356,6 +387,34 @@ def main():
                         own_types.update({key: {token: ty for token, ty in columns} for key, columns in held['columns'].items()})
                         add_rows([by_table(pair) for pair in held['pairs']], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query')
     del extras, each_rows
+    if args.ids_out:
+        sum_entries()
+        ids = np.concatenate(seen_ids)
+        sums = np.concatenate(seen_sums)
+        unique_ids, inverse = np.unique(ids, return_inverse=True)
+        total = np.zeros(len(unique_ids), dtype=np.uint64)
+        np.add.at(total, inverse, sums)
+        del ids, sums, inverse, seen_ids, seen_sums
+        wanted = set(unique_ids.tolist())
+        for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.more] if args.more else []) + ([args.state] if args.state else []):
+            for key, parts in g.names_in(Path(folder), wanted)[0].items():
+                name_of[key] = parts[1]
+        source_at = {offset[source] + column: source for source, names in extra.items() for column in names}
+
+        def kind_of(key):
+            name = name_of.get(key, '')
+            return source_at.get(key) or ('named' if name.startswith('(named') else 'query' if name.startswith('(query') else 'shape')
+
+        first = {}
+        for key, held in zip(unique_ids.tolist(), total.tolist()):
+            signature = (kind_of(key), held)
+            other = first.get(signature)
+            if other is None or len(name_of.get(key, '')) < len(name_of.get(other, '')):
+                first[signature] = key
+        kept = np.array(sorted(first.values()), dtype=np.uint64)
+        np.save(args.ids_out, kept)
+        print(f'columns {len(unique_ids)} one of each {len(kept)}', flush=True)
+        return
     row = np.concatenate(row_of)
     del row_of
     ids = np.concatenate(shape_of)

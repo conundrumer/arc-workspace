@@ -71,7 +71,11 @@ pub(crate) struct Forms<'a> {
     held: StableHashMap<usize, Option<Arc<(QueryIdentity, String)>>>,
 }
 
-impl Forms<'_> {
+impl<'a> Forms<'a> {
+    pub(crate) fn new(checked: &'a CheckedProgram, registry: &'a Registry) -> Self {
+        Forms { checked, registry, held: StableHashMap::default() }
+    }
+
     pub(crate) fn of(&mut self, top: usize) -> Option<Arc<(QueryIdentity, String)>> {
         let (checked, registry) = (self.checked, self.registry);
         self.held
@@ -178,7 +182,7 @@ pub(crate) fn spelled(path: &NodePath) -> String {
 }
 
 /// The identity of `table` and of each of its columns.
-fn table_identity(forms: &mut Forms, table: &Table) -> (String, Vec<String>) {
+pub(crate) fn table_identity(forms: &mut Forms, table: &Table) -> (String, Vec<String>) {
     let Ok(contents) = &table.contents else { return (String::new(), Vec::new()) };
     if let TableRelation::Fact(fact) = contents.relation {
         return (fact_ident(spelling(FACT_RELATIONS, &fact)), contents.columns.iter().map(|column| column.name.clone()).collect());

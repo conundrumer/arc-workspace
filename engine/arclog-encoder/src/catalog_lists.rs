@@ -7,7 +7,7 @@ use arclog::registry::Registry;
 use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
 
-use crate::catalog::{orientation, pass, Cell, Kind, Record, TableAt, Value};
+use crate::catalog::{orientation, pass, pass_input, Cell, Kind, Record, TableAt, Value};
 use crate::catalog_facts::PairFacts;
 use crate::catalog_vector::shape_name;
 use crate::gen_constants::{margins_of, number_of};
@@ -76,6 +76,89 @@ pub fn reads_output(name: &str) -> bool {
     name.contains("output") || name.contains("change")
 }
 
+/// What a table holds at one example: the kinds over the output and over the input that hold of some of its columns, and the changed cells that it reaches and states the output colors of.
+#[derive(Clone, Debug, Default)]
+pub struct Claims {
+    pub outs: std::collections::BTreeSet<&'static str>,
+    pub ins: std::collections::BTreeSet<&'static str>,
+    pub covers: std::collections::BTreeSet<usize>,
+    pub states: std::collections::BTreeSet<usize>,
+    /// Whether the table has rows, in a pair whose grids have one size.
+    pub cells: bool,
+}
+
+/// Whether a record of a kind says that it holds.
+fn holds(record: &Record) -> bool {
+    match record.value {
+        Value::Bool(flag) => flag,
+        Value::Share(hits, of) => of > 0 && hits == of && record.kind.ends_with(", proportion"),
+        Value::Num(number) => number == 1 && record.kind.ends_with(", proportion"),
+        _ => false,
+    }
+}
+
+/// What a table holds at each example, or None where it has no rows to read there. `facts` are the train pairs, `tests` the test inputs, and `inputs` each train input as its own output.
+pub fn claims_of(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], inputs: &[PairFacts]) -> Vec<Option<Claims>> {
+    let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
+    let mut out = Vec::with_capacity(facts.len() + tests.len());
+    let mut records = Vec::with_capacity(256);
+    let mut cells: Vec<Cell> = Vec::new();
+    for (pair, fact) in facts.iter().chain(tests).enumerate() {
+        let Some(model) = table.rows.get(pair).and_then(|models| models.first()) else {
+            out.push(None);
+            continue;
+        };
+        cells.clear();
+        for row in model.rows() {
+            cells.extend(row.iter().zip(&table.types).zip(&kinds).map(|((bits, ty), kind)| cell_of(*bits, ty, *kind)));
+        }
+        let at = TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells };
+        let mut claims = Claims::default();
+        if pair < facts.len() {
+            records.clear();
+            pass(&at, fact, &mut records);
+            claims.outs = records.iter().filter(|record| holds(record) && reads_output(record.kind)).map(|record| record.kind).collect();
+        }
+        let own = if pair < inputs.len() { &inputs[pair] } else { fact };
+        records.clear();
+        pass(&at, own, &mut records);
+        claims.ins = records.iter().filter(|record| holds(record) && record.kind.contains("output") && !record.kind.contains("input") && !record.kind.contains("change")).map(|record| record.kind).collect();
+        records.clear();
+        pass_input(&at, own, &mut records);
+        claims.ins.extend(records.iter().filter(|record| holds(record)).map(|record| record.kind));
+        if pair < facts.len() && fact.same && model.len > 0 {
+            claims.cells = true;
+            let (h, w) = (fact.output.h as i32, fact.output.w as i32);
+            let colors: Vec<usize> = (0..kinds.len()).filter(|column| kinds[*column] == Kind::Color).collect();
+            for column in (0..kinds.len()).filter(|column| matches!(kinds[*column], Kind::Position | Kind::Box)) {
+                let position = kinds[column] == Kind::Position;
+                let fits = (0..model.len).all(|row| {
+                    let m = at.at(row, column);
+                    m[0] + m[1] + 1 == h && m[2] + m[3] + 1 == w && (position || m.iter().all(|margin| *margin >= 0))
+                });
+                if !fits {
+                    continue;
+                }
+                for row in 0..model.len {
+                    let m = at.at(row, column);
+                    if m[0] < 0 || m[2] < 0 || m[0] >= h || m[2] >= w {
+                        continue;
+                    }
+                    let place = (m[0] * w + m[2]) as usize;
+                    if fact.changed.get(place) {
+                        claims.covers.insert(place);
+                        if position && colors.iter().any(|color| at.at(row, *color)[0] == i32::from(fact.output.color[place])) {
+                            claims.states.insert(place);
+                        }
+                    }
+                }
+            }
+        }
+        out.push(Some(claims));
+    }
+    out
+}
+
 /// A named shape of a table: its name, and its value at each example, or None where it has no value.
 pub struct NamedShape {
     pub name: String,
@@ -84,7 +167,7 @@ pub struct NamedShape {
 
 /// The shapes of a table over its examples: `facts` for each train pair, then `tests` for each test input. Over an example's TableRows, a shape
 /// takes the mean of its value where it has one. A shape that reads the output has values at the train pairs alone.
-pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts]) -> Vec<NamedShape> {
+pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], inputs: &[PairFacts]) -> Vec<NamedShape> {
     let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
     let pairs = facts.len() + tests.len();
     let mut shapes: HashMap<String, Vec<Option<f64>>> = HashMap::new();
@@ -101,6 +184,17 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts]) ->
             records.clear();
             pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, fact, &mut records);
             let mut per = HashMap::new();
+            greatest_of(&records, &kinds, &mut per);
+            // A kind that reads the output alone also stands for the input, read as its own output.
+            records.clear();
+            let own = if pair < inputs.len() { &inputs[pair] } else { fact };
+            pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
+            records.retain(|record| record.kind.contains("output") && !record.kind.contains("input") && !record.kind.contains("change"));
+            let mut mirrored = HashMap::new();
+            greatest_of(&records, &kinds, &mut mirrored);
+            per.extend(mirrored.into_iter().map(|(name, value)| (name.replace("output", "input"), value)));
+            records.clear();
+            pass_input(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
             greatest_of(&records, &kinds, &mut per);
             for (name, value) in per {
                 let held = sums.entry(name).or_insert((0.0, 0));

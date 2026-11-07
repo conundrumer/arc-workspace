@@ -313,6 +313,47 @@ pub fn pass(t: &TableAt<'_>, f: &PairFacts, out: &mut Vec<Record>) {
     crate::catalog_cells::position_columns(&mut view);
 }
 
+/// The kinds that read the input alone, which no kind over the output stands for.
+pub fn pass_input(t: &TableAt<'_>, f: &PairFacts, out: &mut Vec<Record>) {
+    if t.rows == 0 {
+        return;
+    }
+    let mut view = View { t, f, dense: Vec::new(), out };
+    for column in 0..t.kinds.len() {
+        let kind = t.kinds[column];
+        if kind.is_number() {
+            input_numbers(&mut view, column);
+        } else if kind.is_line() {
+            crate::catalog_orient::input_lines(&mut view, column);
+        } else if matches!(kind, Kind::D4 | Kind::C4) {
+            crate::catalog_orient::input_turns(&mut view, column);
+        } else if matches!(kind, Kind::Position | Kind::Box) {
+            crate::catalog_boxes::input_frames(&mut view, column);
+            if kind == Kind::Box {
+                crate::catalog_boxes::input_borders(&mut view, column);
+            }
+        }
+    }
+}
+
+/// A number column against the input's counts.
+fn input_numbers(view: &mut View<'_>, n: usize) {
+    let t = view.t;
+    let g = &view.f.input;
+    let mut values: Vec<i64> = (0..t.rows).map(|row| i64::from(t.at(row, n)[0])).collect();
+    values.sort_unstable();
+    values.dedup();
+    let has = |count: i64| values.binary_search(&count).is_ok();
+    let full_lines = g.line_colors[0].iter().chain(&g.line_colors[1]).filter(|mask| mask.count_ones() == 1).count() as i64;
+    view.put("C includes the input full line count", &[n], Value::Bool(has(full_lines)));
+    view.put("C includes the input one-color component count", &[n], Value::Bool(has(g.pieces.len() as i64)));
+    view.put("C includes the count of some input color", &[n], Value::Bool(g.counts.iter().any(|count| *count > 0 && has(i64::from(*count)))));
+    if g.foreground.is_some() {
+        let largest = g.foreground_parts.iter().map(|part| i64::from(part.count())).max().unwrap_or(0);
+        view.put("C includes the largest input foreground component", &[n], Value::Bool(has(largest)));
+    }
+}
+
 fn number_column(view: &mut View<'_>, n: usize) {
     let t = view.t;
     let f = view.f;
