@@ -7,7 +7,7 @@ use arclog::registry::Registry;
 use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
 
-use crate::catalog::{orientation, pass, Cell, Kind, Record, TableAt, Value};
+use crate::catalog::{orientation, pass, pass_input, Cell, Kind, Record, TableAt, Value};
 use crate::catalog_facts::PairFacts;
 use crate::catalog_vector::shape_name;
 use crate::gen_constants::{margins_of, number_of};
@@ -104,11 +104,15 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], in
             greatest_of(&records, &kinds, &mut per);
             // A kind that reads the output alone also stands for the input, read as its own output.
             records.clear();
-            pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, if pair < inputs.len() { &inputs[pair] } else { fact }, &mut records);
+            let own = if pair < inputs.len() { &inputs[pair] } else { fact };
+            pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
             records.retain(|record| record.kind.contains("output") && !record.kind.contains("input") && !record.kind.contains("change"));
             let mut mirrored = HashMap::new();
             greatest_of(&records, &kinds, &mut mirrored);
             per.extend(mirrored.into_iter().map(|(name, value)| (name.replace("output", "input"), value)));
+            records.clear();
+            pass_input(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
+            greatest_of(&records, &kinds, &mut per);
             for (name, value) in per {
                 let held = sums.entry(name).or_insert((0.0, 0));
                 held.0 += value;

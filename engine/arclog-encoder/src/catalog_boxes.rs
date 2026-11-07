@@ -62,6 +62,46 @@ pub(crate) fn image_source(which: usize, r: usize, c: usize, h: usize, w: usize)
     }
 }
 
+/// A column's frame against the input's size, where its values are the cells of one frame.
+pub(crate) fn input_frames(view: &mut View<'_>, col: usize) {
+    let t = view.t;
+    let g = &view.f.input;
+    let first = t.at(0, col);
+    let (h, w) = (first[0] + first[1] + 1, first[2] + first[3] + 1);
+    let position = t.kinds[col] == Kind::Position;
+    if h <= 0 || w <= 0 || !(0..t.rows).all(|row| {
+        let m = t.at(row, col);
+        m[0] + m[1] + 1 == h && m[2] + m[3] + 1 == w && (position || m.iter().all(|margin| *margin >= 0))
+    }) {
+        return;
+    }
+    let (hi, wi) = (g.h as i32, g.w as i32);
+    view.put("C frame proportion of the input", &[col], Value::Share((h * w) as u32, (hi * wi) as u32));
+    view.put("C frame divides the input size", &[col], Value::Bool((h, w) != (hi, wi) && hi % h == 0 && wi % w == 0));
+}
+
+/// The boxes that lie wholly in the input and whose border is one of its colors.
+pub(crate) fn input_borders(view: &mut View<'_>, b: usize) {
+    let t = view.t;
+    let g = &view.f.input;
+    let (h, w) = (g.h as i32, g.w as i32);
+    let mut spans: Vec<Span> = (0..t.rows).map(|row| {
+        let cell = t.at(row, b);
+        [cell[0], h - 1 - cell[1], cell[2], w - 1 - cell[3]]
+    }).collect();
+    spans.sort_unstable();
+    spans.dedup();
+    spans.retain(|s| 0 <= s[0] && s[0] <= s[1] && s[1] < h && 0 <= s[2] && s[2] <= s[3] && s[3] < w);
+    if spans.is_empty() || spans.len() > 200 {
+        return;
+    }
+    let one = spans.iter().filter(|s| {
+        let [r0, r1, c0, c1] = s.map(|at| at as usize);
+        (g.colors_in(r0, r0, c0, c1) | g.colors_in(r1, r1, c0, c1) | g.colors_in(r0, r1, c0, c0) | g.colors_in(r0, r1, c1, c1)).count_ones() == 1
+    }).count() as u32;
+    view.put("C boxes whose border is one input color, proportion", &[b], Value::Share(one, spans.len() as u32));
+}
+
 pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
     let t = view.t;
     let f = view.f;

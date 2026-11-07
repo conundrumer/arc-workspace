@@ -56,6 +56,76 @@ fn goes_past(ahead: &[u8; 4], behind: &[u8; 4], s: (i32, i32)) -> bool {
     })
 }
 
+/// The reflection across the line along an axis, and the one that swaps the two directions on it.
+fn reflections(code: i32) -> (i32, i32) {
+    match code {
+        AXIS_V => (D4_LR, D4_TB),
+        AXIS_H => (D4_TB, D4_LR),
+        DAXIS_DG => (D4_DG, D4_AD),
+        _ => (D4_AD, D4_DG),
+    }
+}
+
+/// An orientation column against the input alone.
+pub(crate) fn input_lines(view: &mut View<'_>, d: usize) {
+    let t = view.t;
+    let g = &view.f.input;
+    let kind = t.kinds[d];
+    let values: Vec<i32> = each_code(codes(t, d)).collect();
+    if matches!(kind, Kind::Dir | Kind::Dir8) {
+        let edges: Vec<i32> = values.iter().copied().filter(|code| matches!(*code, DIR_T | DIR_B | DIR_L | DIR_R)).collect();
+        if !edges.is_empty() {
+            let of = edges.len() as u32;
+            let (h, w) = (g.h, g.w);
+            let one_color = |code: i32| match code {
+                DIR_T => g.line_colors[0][0],
+                DIR_B => g.line_colors[0][h - 1],
+                DIR_L => g.line_colors[1][0],
+                _ => g.line_colors[1][w - 1],
+            }.count_ones() == 1;
+            view.put("C the input edge toward it is one color, proportion", &[d], Value::Share(edges.iter().filter(|code| one_color(**code)).count() as u32, of));
+            if let Some(span) = g.foreground.as_ref().and_then(|cells| span_of(cells, w)) {
+                let touches = |code: i32| match code {
+                    DIR_T => span[0] == 0,
+                    DIR_B => usize::from(span[1]) == h - 1,
+                    DIR_L => span[2] == 0,
+                    _ => usize::from(span[3]) == w - 1,
+                };
+                view.put("C the input foreground touches the edge toward it, proportion", &[d], Value::Share(edges.iter().filter(|code| touches(**code)).count() as u32, of));
+            }
+        }
+    }
+    if matches!(kind, Kind::Axis | Kind::DiagAxis | Kind::Axis4) {
+        if !values.is_empty() {
+            let cells = (g.h * g.w) as u32;
+            let of = values.len() as u32 * cells;
+            let kept = |pick: &dyn Fn((i32, i32)) -> i32| values.iter().map(|code| image_agreement(g, (pick(reflections(*code)) - D4_ID) as usize)).sum::<u32>();
+            view.put("C the input agrees with itself under the reflection across it, mean", &[d], Value::Share(kept(&|pair| pair.0), of));
+            view.put("C the input agrees with itself under the reflection that swaps it, mean", &[d], Value::Share(kept(&|pair| pair.1), of));
+        }
+        let straight: Vec<i32> = values.iter().copied().filter(|code| *code == AXIS_V || *code == AXIS_H).collect();
+        if !straight.is_empty() {
+            let of = straight.len() as u32;
+            let longer = |height: usize, width: usize| straight.iter().filter(|code| if **code == AXIS_V { height > width } else { width > height }).count() as u32;
+            view.put("C the longer side of the input lies along it, proportion", &[d], Value::Share(longer(g.h, g.w), of));
+            if let Some(span) = g.foreground.as_ref().and_then(|cells| span_of(cells, g.w)) {
+                view.put("C the longer side of the input foreground lies along it, proportion", &[d], Value::Share(longer(usize::from(span[1] - span[0]), usize::from(span[3] - span[2])), of));
+            }
+        }
+    }
+}
+
+/// A column of symmetries against the input alone.
+pub(crate) fn input_turns(view: &mut View<'_>, d: usize) {
+    let t = view.t;
+    let g = &view.f.input;
+    let values: Vec<i32> = each_code(codes(t, d)).filter(|code| (D4_ID..=D4_AD).contains(code)).collect();
+    if !values.is_empty() {
+        let kept = values.iter().map(|code| image_agreement(g, (*code - D4_ID) as usize)).sum::<u32>();
+        view.put("C the input agrees with itself under it, mean", &[d], Value::Share(kept, values.len() as u32 * (g.h * g.w) as u32));
+    }
+}
+
 pub(crate) fn line_column(view: &mut View<'_>, d: usize) {
     let t = view.t;
     let f = view.f;
