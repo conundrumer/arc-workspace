@@ -23,6 +23,10 @@
     - Run one.
 - Souffle binary required for `.dl` solvers (`brew install souffle`).
 
+## Large data
+* comment: The user's words, session 12a37de8, 2026-11-06: "All large data from all agents must be in compressed stream format always".
+- Write all large data as streamable zstd from the start, with no uncompressed intermediate. This holds in a scratchpad too.
+
 ## Commands that use much memory
 * comment: The user's words, session 64993706, 2026-10-26T01:38:48Z: "multiple claude sessions using up RAM resulted in OOM: feels like a known problem with a known solution, help me manage this".
 - A command is heavy where it may use much memory, or where it starts several processes at once.
