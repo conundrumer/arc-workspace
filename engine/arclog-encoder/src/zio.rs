@@ -70,6 +70,25 @@ pub fn write_bytes(path: impl AsRef<Path>, bytes: &[u8]) -> Result<(), String> {
     std::fs::rename(&temporary, path).map_err(|error| error.to_string())
 }
 
+/// A file written by parts, which stands only once it is complete.
+pub fn write_with(path: impl AsRef<Path>, write: impl FnOnce(&mut dyn std::io::Write) -> Result<(), String>) -> Result<(), String> {
+    let path = path.as_ref();
+    let mut temporary = path.as_os_str().to_os_string();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
+    let file = std::fs::File::create(&temporary).map_err(|error| error.to_string())?;
+    if is_zstd(path) {
+        let mut encoder = zstd::stream::write::Encoder::new(file, LEVEL).map_err(|error| error.to_string())?;
+        write(&mut encoder)?;
+        encoder.finish().map_err(|error| error.to_string())?;
+    } else {
+        let mut writer = std::io::BufWriter::new(file);
+        write(&mut writer)?;
+        std::io::Write::flush(&mut writer).map_err(|error| error.to_string())?;
+    }
+    std::fs::rename(&temporary, path).map_err(|error| error.to_string())
+}
+
 pub fn write_text(path: impl AsRef<Path>, text: &str) -> Result<(), String> {
     write_bytes(path, text.as_bytes())
 }
