@@ -43,6 +43,8 @@ A store's `contingent` holds about as many entries as its lists, and one group o
 
 `--why PATTERN` judges nothing. For each feature whose name the pattern finds, it prints its nearest single column, the feature's values at each of that column's values, and the first table rows where the two part, by task, item, candidate, ARC example and table.
 
+`--aggregates` also gives each shape of a table's lists its least, mean and greatest over the ARC examples, as columns of their own, so a feature that states something across the examples can be judged against them. A shape that holds one value at every example has that value as all three.
+
 `--left-out FILE` names tables by task and name, tab-separated, whose table rows stand out of the judging: the spec gives such a table no value where the first version gives one, as on a table with a cell off its frame.
 
 A run over many tasks holds too much to sort every entry. `--ids-out FILE` reads every list and writes one column of each set of columns with one source and equal entries, holding only a sum per column, and judges nothing. `--keep-ids FILE` then reads only those columns.
@@ -82,6 +84,8 @@ OTHER = 1 << 63
 MIN_DATA = 20
 PAIR_COLUMNS = 40
 PAIR_VALUES = 12
+# The ids of a shape's least, mean and greatest over the examples are its own id with one of these bits set.
+AGGREGATE_SALTS = [np.uint64(0x5A1E000000000001), np.uint64(0x3EA0000000000002), np.uint64(0x7051000000000003)]
 CANDIDATE_SOURCES = ['relations', 'relations_least', 'relations_most', 'graph', 'query', 'base', 'qv', 'wide']
 JUDGE = None
 
@@ -205,6 +209,7 @@ def main():
     parser.add_argument('--contingent', action='store_true')
     parser.add_argument('--ids-out')
     parser.add_argument('--left-out')
+    parser.add_argument('--aggregates', action='store_true')
     parser.add_argument('--keep-ids')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
@@ -283,6 +288,12 @@ def main():
             values = other[4][:, at]
             active = values != 0
             take(row, other[0][active], values[active])
+        if args.aggregates:
+            for place, salt in enumerate(AGGREGATE_SALTS, 1):
+                take(row, held[0] ^ salt, np.asarray(held[1]))
+                if len(other[0]):
+                    active = other[place] != 0
+                    take(row, other[0][active] ^ salt, np.asarray(other[place])[active])
 
     def sum_entries():
         """Each column's sum of its entries' hashes, for the entries read since the last call. Two columns with equal entries have equal sums."""
@@ -451,9 +462,16 @@ def main():
     shape = shape.astype(np.int32)
     del ids
     wanted = set(unique_ids.tolist())
+    if args.aggregates:
+        wanted |= {key ^ int(salt) for key in list(wanted) for salt in AGGREGATE_SALTS}
     for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.more] if args.more else []) + ([args.state] if args.state else []):
         for key, parts in g.names_in(Path(folder), wanted)[0].items():
             name_of[key] = parts[1]
+    if args.aggregates:
+        for key in unique_ids.tolist():
+            for word, salt in zip(('least', 'mean', 'most'), AGGREGATE_SALTS):
+                if key ^ int(salt) in name_of and key not in name_of:
+                    name_of[key] = f'{word}:{name_of[key ^ int(salt)]}'
     source_at = {offset[source] + column: source for source, names in extra.items() for column in names}
 
     def source_of(key):
