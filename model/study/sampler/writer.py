@@ -224,6 +224,7 @@ class Finished:
 @dataclasses.dataclass(frozen=True, slots=True)
 class Ended:
     reason: str  # 'empty', a cap ('cap:tokens', 'cap:branch', 'cap:port', 'cap:body', 'cap:stuck', 'cap:demo'), or the name of the component that removed the last id
+    tokens: tuple = ()  # the path's tokens where it ended
 
 
 class Lookahead(Protocol):
@@ -1984,7 +1985,7 @@ def write(start, plan, rng, cache=None, on_atom=None):
                 whole, closing = False, pt.place.phase == Phase.COLUMN
         ids, fac, reason = options(pt, plan)
         if reason:
-            return Ended(reason)
+            return Ended(reason, tuple(int(t) for t in pt.tokens))
         if len(ids) == 1:
             j = 0
         else:

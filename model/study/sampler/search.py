@@ -55,6 +55,7 @@ import json
 import math
 import mmap
 import os
+import time
 import re
 import struct
 import sys
@@ -533,9 +534,11 @@ class SearchRun(Run):
         self.rng.keys = TieKeys(self) if 'tie' in S.ORDER_FREE else None
         pg.new = []
         start = writer.start_point(self, pg, self.open_form(pg, dec, kind), kind)
+        c0 = time.process_time()
         got = writer.write(start, self.plan, self.rng, self.points, self.atom_closed)
         if isinstance(got, writer.Ended):
             self.c['writer:ended ' + got.reason] += 1
+            ended_record(self, kind, got, time.process_time() - c0)
             raise Dead('writer ended: ' + got.reason)
         self.finished = got
         return got.dec
@@ -1326,3 +1329,15 @@ def search(sampler, session, deadline, task, forms, kind, lim, cap, eager=True, 
     """Sampler.search: the Search of the scope, new or the earlier one with the new deadline."""
     mgr = getattr(sampler, 'search_manager', None) or configure(sampler)
     return mgr.get(session, deadline, task, forms, kind, lim, cap, eager, unread)
+
+
+def ended_record(run, kind, got, seconds):
+    """Where draw records are on (draw_record.py), one line for a path that the writer ended with no query: {"ended": its reason, kind, tokens: their count, cpu: the CPU seconds of the path's own writing (the points that an earlier path had made are not counted again), last: the names of its last 12 tokens}. Readers of draws skip it, since it has no steps."""
+    import sys as _sys
+    dr = _sys.modules.get('draw_record')
+    f = None if dr is None else dr.STATE.get('f')
+    if f is None:
+        return
+    import writer
+    names = writer.core_of(run).names
+    f.write(json.dumps(dict(ended=got.reason, kind=kind, tokens=len(got.tokens), cpu=round(seconds, 4), last=[names[t] for t in got.tokens[-12:]])) + '\n')
