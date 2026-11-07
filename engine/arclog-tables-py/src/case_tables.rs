@@ -5,6 +5,9 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
+use arclog_tables::shape_rows::ShapeRows;
+
+use crate::shapes::{PyTableShapes, ShapeRuntime};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyCapsule, PyInt, PyList, PyModule, PyTuple};
 use pyo3::sync::PyOnceLock;
@@ -236,6 +239,9 @@ pub(crate) struct PyCaseTables {
     /// unavailable with this exact stop, never a completed empty table.
     #[pyo3(get)]
     materialization_stop: Option<String>,
+    /// The rows of each row of `tables` and its TableHash, for `shapes`; none for a row whose summary holds none, and none at all in the result of a function that gives no summary.
+    shape_rows: Vec<Option<(Arc<ShapeRows>, u128)>>,
+    shape_runtime: Option<Arc<ShapeRuntime>>,
 }
 
 /// What a `step_tables` call leaves for the call at the decode's next model
@@ -573,6 +579,7 @@ impl PyCaseTables {
         // ledger, not the packing's allowance.
         let capsule=PyCapsule::new(py,columns.take_allocations(owned.bytes.get()),None)?;
         let by_assignment=columns.by_assignment;
+        let shape_rows: Vec<Option<(Arc<ShapeRows>, u128)>> = std::mem::take(&mut columns.tables.shape_rows).into_iter().enumerate().map(|(row, rows)| rows.map(|rows| (rows, columns.tables.hash[row]))).collect();
         drop(columns);
         for object in owned.objects.take() {
             object.setattr("_owner",&capsule)?;
@@ -600,7 +607,15 @@ impl PyCaseTables {
             dtypes: dtypes.unbind(),
             step: None,
             materialization_stop,
+            shape_rows,
+            shape_runtime: None,
         })
+    }
+
+    /// This `CaseTables` as one whose `shapes` read the session's `runtime`.
+    pub(crate) fn with_shapes(mut self, runtime: Arc<ShapeRuntime>) -> Self {
+        self.shape_runtime = Some(runtime);
+        self
     }
 
     /// This `CaseTables` as the one a `step_tables` call gives, which keeps `step`.
@@ -612,5 +627,16 @@ impl PyCaseTables {
     /// The `step` that the call which gave this `CaseTables` kept, or `None` for a `CaseTables` of another function.
     pub(crate) fn step(&self) -> Option<&Step> {
         self.step.as_ref()
+    }
+}
+
+#[pymethods]
+impl PyCaseTables {
+    /// The shapes of the table at row `row` of `tables`, a `TableShapes`, or `None` where the row's summary holds no rows (a table with no TableHash, or a result of a call
+    /// that gives no summary) or `row` is past the rows. The walk of the shapes runs at the first `vector` call that needs it.
+    fn shapes(&self, row: usize) -> Option<PyTableShapes> {
+        let runtime = self.shape_runtime.as_ref()?;
+        let (rows, hash) = self.shape_rows.get(row)?.as_ref()?;
+        Some(PyTableShapes::new(Arc::clone(rows), *hash, Arc::clone(runtime)))
     }
 }

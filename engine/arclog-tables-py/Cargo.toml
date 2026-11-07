@@ -15,4 +15,6 @@ arclog = { path = "../arclog" }
 arclog-tables = { path = "../arclog-tables" }
 # The names and the version of the TableVector's features.
 arclog-features = { path = "../arclog-features" }
+# The shape values of a table, which `TableShapes` gives.
+arclog-encoder = { path = "../arclog-encoder" }
 pyo3 = { version = "0.27.2", features = ["abi3-py312"] }
