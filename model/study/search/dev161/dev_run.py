@@ -23,6 +23,7 @@ job's draws.jsonl (sampler/draw_record.py), which becomes draws.jsonl.zst when t
 import argparse
 import collections
 import concurrent.futures as cf
+import hashlib
 import importlib.util
 import json
 import os
@@ -42,6 +43,7 @@ TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 
+POPPED = ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE')
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'tok_read': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '8', 'SEARCH_READ_SCOPE': '1'}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
         'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
@@ -142,6 +144,50 @@ def cpu_job(a, w, task, seed, env, samp, sup):
     return rc, text, json.loads((w / 'submission.json').read_text())
 
 
+def parity_gate(a, out, arm, tasks):
+    """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in the code's folder keeps a pass for this code, site, tree and writer settings."""
+    samp = Path(a.code) / 'model/study/sampler'
+    if not (samp / 'serving_parity.py').exists():
+        raise SystemExit('this kit has no serving parity check: %s has no serving_parity.py. --no-parity runs it unchecked.' % samp)
+    settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k not in ('WRITER_ATOM_LOG_DIR', 'WRITER_PARITY_DIR'))
+    key = hashlib.sha256(json.dumps([a.site, str(a.tree), a.plan, settings]).encode()).hexdigest()[:16]
+    stamp = Path(a.code) / 'parity' / (key + '.json')
+    if stamp.exists():
+        return
+    folder = out / 'parity'
+    short = argparse.Namespace(**{**vars(a), 'seconds': 25})
+    for task in tasks[:3]:
+        w = folder / task
+        w.mkdir(parents=True)
+        d = json.loads((MAIN_ROOT / 'data/tasks' / (task + '.json')).read_text())
+        (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
+        env = job_env(a, w, arm, 0)
+        env['WRITER_PARITY_DIR'] = str(folder)
+        sup = Path(a.code) / 'supervisor.py'
+        cpu_job(short, w, task, 0, env, samp, sup if sup.exists() else DATASET / 'supervisor.py')
+    env = job_env(a, folder, arm, 0)
+    env.update(ARC_ROOT=str(MAIN_ROOT), WRITER_ROW_DEADLINE='3600', ARCLOG_IDENT_SOURCE='value', PYTHONPATH='%s:%s:%s' % (a.site, samp, Path(a.code) / 'model/study/samples'))
+    env.pop('ARC_DRAW_RECORD', None)
+    got = subprocess.run([str(PY), str(samp / 'serving_parity.py'), str(folder), '--tree', str(a.tree), '--models', str(a.models)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    print(got.stdout[-3000:], flush=True)
+    if got.returncode:
+        raise SystemExit('serving parity failed: this run would read other rows than its model was fit on. Details above; --no-parity runs it anyway.')
+    stamp.parent.mkdir(exist_ok=True)
+    stamp.write_text(json.dumps(dict(site=a.site, tree=str(a.tree), plan=a.plan, settings=settings, report=got.stdout[-2000:])))
+
+
+def job_env(a, w, arm, seed):
+    samp = Path(a.code) / 'model/study/sampler'
+    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
+               POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES=a.source, ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
+               RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
+               NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
+    for k in POPPED:
+        env.pop(k, None)
+    env.update({k: v if v is not None else str(a.tree) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
+    return env
+
+
 def run_job(a, out, task, arm, seed):
     n = 0
     while (out / 'jobs' / ('%s.%s.s%d.%d' % (task, arm, seed, n))).exists():  # an attempt that a stopped run left keeps its folder; each attempt has a fresh store
@@ -151,13 +197,7 @@ def run_job(a, out, task, arm, seed):
     d = json.loads((MAIN_ROOT / 'data/tasks' / (task + '.json')).read_text())
     (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
     samp = Path(a.code) / 'model/study/sampler'
-    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
-               POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES=a.source, ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
-               RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
-               NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
-    for k in ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE'):
-        env.pop(k, None)
-    env.update({k: v if v is not None else str(a.tree) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
+    env = job_env(a, w, arm, seed)
     if a.record:  # the draw records (sampler/draw_record.py), one file per job
         env.update(ARC_DRAW_RECORD=str(w / 'draws.jsonl'), ARC_DRAW_RUN='%s/%s' % (a.run, w.name), ARC_DRAW_SITE=Path(a.site).name,
                    ARC_DRAW_RELEASE=Path(a.code).name)
@@ -235,6 +275,7 @@ def main():
     ap.add_argument('--tasks', type=int, default=0)
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
+    ap.add_argument('--no-parity', action='store_true', help='runs with no check that a worker gives the model the rows it was fit on (parity_gate)')
     ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
@@ -250,6 +291,10 @@ def main():
         done = {(r['task'], r['arm'], r['seed']) for r in map(json.loads, open(out / 'results.jsonl'))}
     tasks = [t for t in split_tasks(a.split) if t not in a.skip.split(',')][:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
+    if not a.no_parity and a.budget == 'cpu':
+        for arm in a.arms.split(','):
+            if 'WRITER_TREE' in ARMS[arm]:
+                parity_gate(a, out, arm, tasks)
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
     t0, n, dead = time.time(), 0, 0
     with cf.ThreadPoolExecutor(16) as ex:  # gate() holds the jobs to the limit

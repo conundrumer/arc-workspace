@@ -819,6 +819,7 @@ class Search:
         clause = None
         t0 = live.time.process_time()
         try:
+            run.current_forms = self.forms  # for the serving parity's record of a point
             dec, pg = run.scope(self.forms)
             f = run.form(pg, dec, self.kind)
             clause = run.clause_of(self.forms, pg, f)

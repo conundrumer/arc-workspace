@@ -12,7 +12,7 @@ import live, live_try, writer, train_rows, order, lookahead
 import importlib
 from lookahead import closers, starts
 
-ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('set'); ap.add_argument('skeleton'); ap.add_argument('tasks', nargs='+'); ap.add_argument('--negatives', type=int, default=16); ap.add_argument('--tree'); ap.add_argument('--samples', type=int, default=6); ap.add_argument('--targets', type=int, default=8); ap.add_argument('--tables', action='store_true', help='also write <task>.tables.zst, a line per decision in the order of the rows, with the body table and each candidate table')
+ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('set'); ap.add_argument('skeleton'); ap.add_argument('tasks', nargs='+'); ap.add_argument('--negatives', type=int, default=16); ap.add_argument('--tree'); ap.add_argument('--samples', type=int, default=6); ap.add_argument('--targets', type=int, default=8); ap.add_argument('--first-only', action='store_true', help='only the decisions at the first item of a body, with a file <task>.first.atoms.zst'); ap.add_argument('--tables', action='store_true', help='also write <task>.tables.zst, a line per decision in the order of the rows, with the body table and each candidate table')
 a = ap.parse_args()
 live_try.P.REPO = os.environ.get('ARC_ROOT', live_try.P.REPO)
 pw = importlib.import_module('points_write')
@@ -20,6 +20,7 @@ M = writer.M
 Phase = writer.Phase
 import atom_writer as AW
 STRUCT = AW.STRUCT
+STARTS = AW.__dict__.get('START_PHASES', (Phase.ATOM_START,))
 import tree_dist
 TREE = tree_dist.load(a.tree)
 
@@ -64,11 +65,12 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
     pt = writer.start_point(run, pg, run.open_form(pg, dec, kind), kind)
     i = 0
     n = 0
+    inside = 0
     while i < len(stream):
         t = stream[i]
         if pt.track.where == 'done' or t not in pt.ids_:
             return n
-        if AW.decision(pt) and (pt.place.phase == Phase.ATOM_START or closes(core, t)):
+        if i >= inside and AW.decision(pt) and (pt.place.phase in STARTS or closes(core, t)) and (not a.first_only or pt.place.phase == Phase.PROPOSER):
             ids = writer.point_ids(pt)
             if t in ids.tolist() and len(ids) >= 2:
                 # the positive: its tokens up to the next decision on the path
@@ -82,7 +84,7 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
                         u = stream[j]
                         if probe.track.where != 'body' or u not in probe.ids_:
                             break
-                        if probe.place.phase == Phase.ATOM_START and stream[i:j] != [M.NOT]:
+                        if probe.place.phase in STARTS and stream[i:j] != [M.NOT]:
                             break
                         if probe.place.phase == Phase.COLUMN and not probe.track.rec and probe.track.col is None and closes(core, u):
                             pos_bits += close_bits(probe, core, plan)
@@ -91,6 +93,7 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
                         probe = writer.step_point(probe, u)
                         j += 1
                 gold = stream[i:j]
+                inside = j  # the atom holds no decision of its own, as after a NOT
                 try:
                     tops = AW.top_atoms(pt, a.negatives, core, plan, skip={tuple(gold)})
                 except Exception as e:
@@ -115,7 +118,7 @@ def main():
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     smp = live.Sampler(str(Path(writer.__file__).resolve().parents[3] / 'models-current'), steers=())
     for task in a.tasks:
-        path = out / f'{task}.atoms.zst'
+        path = out / (f'{task}.first.atoms.zst' if a.first_only else f'{task}.atoms.zst')
         if path.exists():
             continue
         t0 = time.time()
@@ -129,7 +132,7 @@ def main():
         writer.keep_state_tables(run)
         core = writer.core_of(run)
         point_names, tok_names, _, _ = AW.names_of(run)
-        plan = writer.default_plan(run, 3.0, None, TREE)  # the search's OR_BITS
+        plan = writer.default_plan(run, 3.0, ('legal',), TREE)  # the search's OR_BITS and its plan with a tree
         env = types.SimpleNamespace(live=live, run=run)
         tmp = path.with_suffix('.working')
         n = 0

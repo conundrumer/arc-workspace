@@ -12,6 +12,7 @@ A share of the mass that the token tree gives to atoms outside the proposals (WR
 
 Time blocked on a server counts toward a job's budget, through time.blocked_seconds where the CPU clock is on (cpu_clock/sitecustomize.py)."""
 import collections
+import dataclasses
 import heapq
 import json
 import os
@@ -29,6 +30,7 @@ K = int(os.environ.get('WRITER_ATOM_K', 8))
 ESCAPE = float(os.environ.get('WRITER_ATOM_ESCAPE', 0.25))  # the share of the mass outside the proposals that stays with token writing: the true atom lies outside them far less often than the tree's mass there says
 SET_NAMES = ['atom:bits_rank', 'atom:bits_share', 'atom:same_first', 'atom:first_share']
 ENOUGH = float(os.environ.get('WRITER_ATOM_ENOUGH', 2.0))  # a walk ends once the atoms it has found hold this much of the token tree's mass
+START_PHASES = (Phase.PROPOSER, Phase.ATOM_START)  # where the next token starts an item: the first of a body, and the others
 POPS = int(os.environ.get('WRITER_ATOM_POPS', 12))  # the items that a walk takes off its heap, per atom wanted
 FINISHED = -1  # an item of the walk that is an atom with its closing share counted
 MIN_CHANCE = 1e-5  # a token below this chance at a point goes on no heap
@@ -61,7 +63,7 @@ def is_group_token(core, t):
 def decision(pt):
     """Whether the next token at pt starts an item or ends a body, or may: at a column point, the open atom may close."""
     T = pt.track
-    return T.where == 'body' and not T.form and not T.rec and T.col is None and (pt.place.phase == Phase.ATOM_START or (pt.place.phase == Phase.COLUMN and bool(pt.open_atom)))
+    return T.where == 'body' and not T.form and not T.rec and T.col is None and (pt.place.phase in START_PHASES or (pt.place.phase == Phase.COLUMN and bool(pt.open_atom)))
 
 
 def closes_here(pt):
@@ -144,7 +146,7 @@ def top_atoms(pt, want, core, plan, skip=frozenset()):
                 continue
             stepped += 1
             tokens = tokens + (t,)
-            if cur.track.where != 'body' or (len(tokens) == 1 and is_group_token(core, t)) or (cur.place.phase == Phase.ATOM_START and tokens != (M.NOT,)):
+            if cur.track.where != 'body' or (len(tokens) == 1 and is_group_token(core, t)) or (cur.place.phase in START_PHASES and tokens != (M.NOT,)):
                 if tokens not in skip:
                     out.append((list(tokens), cur, bits, cost))
                     found += 2.0 ** -bits
@@ -276,6 +278,8 @@ def choose(pt, plan, rng):
         else:
             point, tok, struct, defined, av, delta, keep = got
             s = model().score(run, point, tok, struct, defined, av, delta, np.array([c[2] for c in keep], np.float32), [c[0][0] for c in keep])
+            if writer.PARITY is not None:
+                writer.PARITY.note_atom(pt, keep, point, tok, struct, defined, av, delta, np.array([c[2] for c in keep], np.float32), core)
             s = np.round(s / ROUND) * ROUND
             e = np.exp(s - s.max())
             covered = min(1.0, sum(2.0 ** -c[2] for c in keep))
@@ -299,4 +303,5 @@ def choose(pt, plan, rng):
     if j == len(keep):
         STATS['by tokens'] += 1
         return None
-    return keep[j][1]
+    got = keep[j][1]
+    return got if got.pg is pt.pg else dataclasses.replace(got, pg=pt.pg)  # each try of a path has its own Program, and a kept point holds the one of the try that made it

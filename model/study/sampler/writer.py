@@ -1843,6 +1843,11 @@ def _demo_caps(pt, lim, ids, cap):
     return ids, cap
 
 
+PARITY = None
+if os.environ.get('WRITER_PARITY_DIR'):
+    import serving_parity as PARITY
+
+
 def probabilities(pt, plan, ids, fac):
     """(probs, costs) at point pt over ids, kept on the point."""
     key = ('probs', id(plan))
@@ -1850,6 +1855,8 @@ def probabilities(pt, plan, ids, fac):
     if got is None:
         x = Features(pt, ids)
         z = np.asarray(plan.distribution.logits(pt, ids, x), np.float64) + fac
+        if PARITY is not None:
+            PARITY.note_token(pt, ids, x, core_of(pt.run))
         z = z - z.max()
         p = np.exp(z)
         p /= p.sum()
@@ -1887,7 +1894,7 @@ def write(start, plan, rng, cache=None, on_atom=None):
         if pt.track.where == 'done':
             return finish(pt)
         if atoms is not None:
-            if not whole and pt.place.phase == Phase.ATOM_START and atoms.decision(pt):
+            if not whole and pt.place.phase in atoms.START_PHASES and atoms.decision(pt):
                 whole = True
             if whole and atoms.decision(pt):
                 got = atoms.choose(pt, plan, rng)
