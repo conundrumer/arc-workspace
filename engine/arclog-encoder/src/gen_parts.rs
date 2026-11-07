@@ -1153,7 +1153,7 @@ fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u64, u128, u128)
 fn turned_moves_of(framed: &Option<Framed>, grid: &GridView, plain: &[Cell]) -> Vec<Cell> {
     let mut out = plain.to_vec();
     if let Some((cells, frame)) = framed {
-        each_turned_image(cells, *frame, |which, image| {
+        each_turned_image(cells, *frame, true, |which, image| {
             // A turn by a quarter swaps the frame's height and width.
             let turned = if which >= 4 { (frame.1, frame.0) } else { *frame };
             framed_moves(image, turned, grid, &mut out);

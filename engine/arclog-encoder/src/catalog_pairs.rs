@@ -645,7 +645,7 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
             elsewhere += weight;
         }
         // A one-cell pattern is its own image under every turn and reflection.
-        if !moves.is_empty() || (pattern.len() > 1 && each_turned_image(pattern, extent_of(pattern), |_, image| !crate::occurrence::moves(output, image).is_empty())) {
+        if !moves.is_empty() || (pattern.len() > 1 && each_turned_image(pattern, extent_of(pattern), false, |_, image| !crate::occurrence::moves(output, image).is_empty())) {
             turned += weight;
         }
         common = Some(match common {
