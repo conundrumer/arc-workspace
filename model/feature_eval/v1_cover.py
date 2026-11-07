@@ -15,7 +15,7 @@ greatest value, and for a word, whether some binding gives that word. Under `--f
 
 A feature is covered where its value at each row is a function of one column's value there, on the rows where the feature has a value, and that
 function is monotone or changes few times along the column, so a few splits can read it. A feature with under 5 rows off its commonest value has low
-support, and is not judged. Text that describes a column or a table has no number, so it is not judged. A table at another assignment than its list's is left out. With
+support, and is not judged. Text that describes a column or a table has no number, so it is not judged. A table at another assignment than its list's is left out, and so is a table with no rows at the pair. With
 `--nearest`, a missing feature that reads the table alone also has the column that gives its value on the most rows, with that share, where a value
 met once counts for nothing.
 
@@ -214,6 +214,7 @@ def main():
     started = time.time()
     used = 0
     other_assignment = [0]
+    no_rows = [0]
     row_width = []
 
     def add_list(row, held, other, at):
@@ -277,6 +278,10 @@ def main():
                 # A table at another assignment than its list's reads other rows, so it says nothing of its list's columns.
                 if pair.get(f'{name}|rows') not in (None, head['train_rows'][place][at]):
                     other_assignment[0] += 1
+                    continue
+                # On a table with no rows a first-version feature says only that its claim holds of nothing, and `(cardinality T)` gives that.
+                if pair.get(f'{name}|rows') == 0:
+                    no_rows[0] += 1
                     continue
                 row = rows
                 rows += 1
@@ -381,7 +386,7 @@ def main():
     def group_of(feature):
         return next(((name, mask) for name, pattern, mask in groups if pattern.search(feature)), ('', None))
 
-    print(f'tasks {used} rows {rows} left out at another assignment {other_assignment[0]} columns {int(keep_shape.sum())} entries {len(row)} features {len(features)} read {time.time() - started:.0f}s', flush=True)
+    print(f'tasks {used} rows {rows} left out at another assignment {other_assignment[0]} with no rows {no_rows[0]} columns {int(keep_shape.sum())} entries {len(row)} features {len(features)} read {time.time() - started:.0f}s', flush=True)
 
     def key_of(value):
         return (0, float(value)) if isinstance(value, (bool, int, float)) else (1, str(value))
@@ -550,7 +555,7 @@ def main():
         holes = len(OWN_HOLE.findall(feature))
         if real[4] == 'missing' and holes and not args.base:
             narrow = {own: value for own, value in at.items() if row_width[own] > holes}
-            if len(narrow) < len(at):
+            if narrow and len(narrow) < len(at):
                 wider = judged(feature, narrow, False)[4]
         shuffled = dict(zip(at, values))
         pair = ('', '', '', '', '', '')
