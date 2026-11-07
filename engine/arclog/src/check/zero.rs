@@ -51,7 +51,11 @@ impl Check for EqualityAndZeroCheck {
     ///   branch or an `IF`'s then, whose label `Y` a site of a positive atom
     ///   of the same list makes, where that site could make `V`. In the first
     ///   branch of an `OR` that is a body's one conjunct, the `OR` may export
-    ///   `V`, and the check refuses the `=` only where it does not.
+    ///   `V`, and the check refuses the `=` only where it does not;
+    /// - a `(= *V Y)` at the top level of a body whose label `Y` a field
+    ///   site of a positive atom of the same list makes, such as a field
+    ///   site of a key, `(:key (:F *Y))`, or a site on a column of a type
+    ///   parameter, with a message of its own.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let mut refused = rule_refusals(input.form, input.path, &input.scope, &|_| false);
         refused.extend(head_zero(input.form, input.scope.clauses));
@@ -320,11 +324,11 @@ fn lists(form_body: &FormBody<'_>, union: bool, union_open: bool, refused: &mut 
                     };
                     match top {
                         Some((_, true)) => {}
-                        Some((true, false)) => made_from_site(branches[0].value(), &at.child(0), &|label| !exported(label), MADE_IN_BRANCH, refused),
-                        _ => made_from_site(branches[0].value(), &at.child(0), &|_| true, MADE_IN_BRANCH, refused),
+                        Some((true, false)) => made_from_site(branches[0].value(), &at.child(0), &|label| !exported(label), MADE_IN_BRANCH, None, refused),
+                        _ => made_from_site(branches[0].value(), &at.child(0), &|_| true, MADE_IN_BRANCH, None, refused),
                     }
                 }
-                Conjunct::If { then, .. } => made_from_site(then.value(), &at.child(1), &|_| true, MADE_IN_BRANCH, refused),
+                Conjunct::If { then, .. } => made_from_site(then.value(), &at.child(1), &|_| true, MADE_IN_BRANCH, None, refused),
                 _ => {}
             }
             each_body(conjunct, &at, &mut |body, at| walk(body, at, None, refused));
@@ -332,34 +336,60 @@ fn lists(form_body: &FormBody<'_>, union: bool, union_open: bool, refused: &mut 
     }
     // At the top level of a body, the `=` makes a column of the clause or a label of the body that a head site
     // projects, which the site that makes `Y` could make as well.
-    made_from_site(form_body.body.value(), &form_body.at, &|_| true, MADE_AT_TOP, refused);
+    made_from_site(form_body.body.value(), &form_body.at, &|_| true, MADE_AT_TOP, Some(MADE_AT_TOP_FIELD), refused);
     walk(form_body.body.value(), &form_body.at, Some((union, union_open)), refused);
 }
 
 const MADE_IN_BRANCH: &str = "a site of the list makes the second label, so it could make the first";
 const MADE_AT_TOP: &str = "at the top level of a body, a site of the list makes the second label of `=`, so it could make the first";
+const MADE_AT_TOP_FIELD: &str = "at the top level of a body, a field site of the list, such as one of a key, makes the second label of `=`, so it could make the first";
 
 /// Pushes onto `refused`, with `message`, each `(= *V Y)` of the list
 /// `body`, at `at`, whose `Y` a site of a positive atom of the list makes, a
 /// site of one label on a column of a fixed type, where `refuse` holds for
-/// `V`.
-fn made_from_site(body: &Body, at: &NodePath, refuse: &dyn Fn(LabelId) -> bool, message: &str, refused: &mut Vec<Refusal>) {
+/// `V`. With `field_message`, a `Y` that a field site or a site on a column
+/// of a type parameter makes is refused with that message, since such a site
+/// could make `V` as well.
+fn made_from_site(body: &Body, at: &NodePath, refuse: &dyn Fn(LabelId) -> bool, message: &str, field_message: Option<&str>, refused: &mut Vec<Refusal>) {
     let list = list_of(body, at);
     let mut made = Vec::new();
+    let mut made_in_field = Vec::new();
     for (_, conjunct) in &list {
         if let Conjunct::Atom(atom) = conjunct {
             for site in atom.value().sites.iter() {
                 if let [SiteArg::Label(LabelUse::Fresh(label))] = &site.value.args[..] {
                     made.push(*label);
                 }
+                if field_message.is_some() {
+                    field_site_labels(&site.value.args, false, &mut made_in_field);
+                }
             }
         }
     }
     for (at, conjunct) in list {
         if let Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Label(second) }) = conjunct {
-            if first.fresh && !second.fresh && made.contains(&second.label) && refuse(first.label) {
-                refused.push(refusal(message, at));
+            if first.fresh && !second.fresh && refuse(first.label) {
+                if made.contains(&second.label) {
+                    refused.push(refusal(message, at));
+                } else if let (Some(field_message), true) = (field_message, made_in_field.contains(&second.label)) {
+                    refused.push(refusal(field_message, at));
+                }
             }
+        }
+    }
+}
+
+/// Pushes onto `out` each fresh label that `args`, the arguments of a site,
+/// make at a field site, at any depth, or as a bare label on a column of a
+/// type parameter, which names a field of the record there. `in_field` holds
+/// where `args` are those of a field site.
+fn field_site_labels(args: &[SiteArg], in_field: bool, out: &mut Vec<LabelId>) {
+    for arg in args {
+        match arg {
+            SiteArg::Label(LabelUse::Fresh(label)) if in_field => out.push(*label),
+            SiteArg::NamedLabel { label: LabelUse::Fresh(label), .. } => out.push(*label),
+            SiteArg::Field(field) => field_site_labels(&field.value.args, true, out),
+            _ => {}
         }
     }
 }
