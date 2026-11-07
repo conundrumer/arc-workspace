@@ -191,7 +191,7 @@ pub fn train_pairs(task: &Task) -> Vec<Pair> {
         let rows = grid.rows();
         FeatureGrid { height: rows.len(), width: rows.first().map_or(0, |row| row.len()), cells: rows.iter().flat_map(|row| row.iter().map(|color| color.digit())).collect() }
     };
-    task.train.iter().map(|pair| Pair { input: grid(&pair.input), output: grid(&pair.output) }).collect()
+    task.train.iter().map(|pair| Pair::new(grid(&pair.input), grid(&pair.output))).collect()
 }
 
 /// The summary of `table` at each of its assignments, on a task with the train

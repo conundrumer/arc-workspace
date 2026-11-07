@@ -60,7 +60,7 @@ fn features(py: Python<'_>, types: Vec<String>, cells: PyBuffer<i32>, example_co
     }
     let at: usize = example_column.map_or(0, |column| codes[..column].iter().map(|&code| cell_width(code)).sum());
     let count = cells.len() / width;
-    let pairs = train.into_iter().map(|(input, output)| Ok(Pair { input: grid(input)?, output: grid(output)? })).collect::<PyResult<Vec<_>>>()?;
+    let pairs = train.into_iter().map(|(input, output)| Ok(Pair::new(grid(input)?, grid(output)?))).collect::<PyResult<Vec<_>>>()?;
     let mut pieces: Vec<(u32, usize, Vec<i32>)> = Vec::new();
     match bounds {
         Some(starts) => {

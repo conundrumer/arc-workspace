@@ -13,8 +13,9 @@
 //! successor bodies are equal ([`Decoder::sub_body_key`]) share one
 //! evaluation, and a successor body equal to the body in progress takes its
 //! table. A successor whose tables equal those of an earlier one
-//! ([`same_tables`]) names that one ([`Successor::same_as`]), so that a caller
-//! exports the tables once.
+//! ([`same_tables`]), or whose body and point are those of an earlier one,
+//! names that one ([`Successor::same_as`]), so that a caller exports the
+//! tables once.
 
 use std::collections::HashMap;
 
@@ -58,9 +59,10 @@ pub struct Successor<'a> {
     pub kind: SuccessorKind,
     pub tables: Vec<Table>,
     /// The place, among the successors of the call, of the first successor
-    /// whose tables equal these ([`same_tables`]), where that is an earlier
-    /// one. Only a successor of the kind [`SuccessorKind::Body`],
-    /// [`SuccessorKind::LeftOut`] or [`SuccessorKind::NoBody`], or of the
+    /// whose tables equal these ([`same_tables`]) or whose body and point are
+    /// these, where that is an earlier one. Only a successor of the kind
+    /// [`SuccessorKind::Body`], [`SuccessorKind::LeftOut`] or
+    /// [`SuccessorKind::NoBody`], or of the
     /// kind [`SuccessorKind::Finished`] with no table, names one, and only
     /// such a successor is named.
     pub same_as: Option<usize>,
@@ -121,6 +123,8 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
     let mut each: Vec<Result<Successor<'a>, Refusal>> = Vec::with_capacity(tokens.len());
     // The places in `each` of the successors that name no earlier one, and that a later one can name.
     let mut firsts: Vec<usize> = Vec::new();
+    // For each successor body and point, the place in `each` of the successor that a later one of that body and point names. Both hold the contents of one evaluation, which `same_tables` takes as different where they hold extents.
+    let mut held_at: HashMap<(Vec<u8>, Point), usize> = HashMap::new();
     for token in tokens {
         let next = match decoder.successor(token) {
             Ok(next) => next.with_operation_limits(limits.clone()),
@@ -130,6 +134,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
             }
         };
         let before = next.before().expect("a successor has a step");
+        let mut body_key = None;
         let (kind, tables) = if next.program().value().forms.len() > before.program().value().forms.len() {
             let mut tables = relation_tables(&next, before, earlier);
             mark_selected(&next, tables.iter_mut());
@@ -144,6 +149,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
                 },
                 Some(after) => {
                     let kind = key.as_ref().and_then(|key| key.left_out).map_or(SuccessorKind::Body, SuccessorKind::LeftOut);
+                    body_key = key.as_ref().map(|key| (key.source.clone(), after));
                     let found = key.as_ref().and_then(|key| evaluated.get(&key.source));
                     let table = match found {
                         Some(contents) => Some(Table { form: form.clone(), point: after, contents: contents.clone() }),
@@ -162,9 +168,12 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         // A caller exports a relation table with the QueryHash that the successor's own decode gives, and the table of an unchanged body with no step of its own, so neither takes part.
         let named = kind != SuccessorKind::Unchanged && tables.iter().all(|table| matches!(table.point, Point::Body { .. }));
         let same_as = if named {
-            let found = firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables)));
+            let found = body_key.as_ref().and_then(|key| held_at.get(key).copied()).or_else(|| firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables))));
             if found.is_none() {
                 firsts.push(each.len());
+            }
+            if let Some(key) = body_key {
+                held_at.entry(key).or_insert(found.unwrap_or(each.len()));
             }
             found
         } else {

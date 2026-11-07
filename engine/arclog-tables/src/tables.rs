@@ -75,7 +75,7 @@ pub(crate) fn example_axis(example: Option<Example>, train: usize) -> (u8, usize
 }
 
 /// Where in a form a table stands.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Point {
     /// The body of the clause in progress, with its count of conjuncts and
     /// the count of sites of its open atom, none counting as zero.

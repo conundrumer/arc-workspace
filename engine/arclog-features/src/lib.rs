@@ -21,6 +21,7 @@
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::OnceLock;
 
 /// The code of a column of type `Example`.
 pub const EXAMPLE: u8 = 1;
@@ -68,11 +69,14 @@ pub struct Grid {
     pub cells: Vec<u8>,
 }
 
-/// A train pair of the task.
-#[derive(Clone, Debug)]
+/// A train pair of the task, with what the features read of it, each made on its first read.
+#[derive(Debug)]
 pub struct Pair {
     pub input: Grid,
     pub output: Grid,
+    facts: OnceLock<PairFacts>,
+    heavy: OnceLock<Heavy>,
+    masks: OnceLock<Masks>,
 }
 
 /// One TableRows: the rows of one example under one constraint model.
@@ -167,6 +171,7 @@ fn objects(by_color: &[HashSet<Cell>]) -> Vec<Vec<Cell>> {
 }
 
 /// The cell sets of a pair that the Position features compare with.
+#[derive(Debug)]
 struct Heavy {
     changed: HashSet<Cell>,
     fg: HashSet<Cell>,
@@ -179,8 +184,8 @@ struct Heavy {
 }
 
 /// What a train pair gives to the features that compare rows with it.
-struct PairFacts<'a> {
-    pair: &'a Pair,
+#[derive(Debug)]
+struct PairFacts {
     area: usize,
     /// Whether the input and the output have one size.
     same: bool,
@@ -195,11 +200,24 @@ struct PairFacts<'a> {
     ocolors: u16,
     /// The colors of the output that the input lacks, as a bit set.
     newcolors: u16,
-    heavy: OnceCell<Heavy>,
 }
 
-impl<'a> PairFacts<'a> {
-    fn of(pair: &'a Pair) -> PairFacts<'a> {
+impl Pair {
+    pub fn new(input: Grid, output: Grid) -> Pair {
+        Pair { input, output, facts: OnceLock::new(), heavy: OnceLock::new(), masks: OnceLock::new() }
+    }
+
+    fn facts(&self) -> &PairFacts {
+        self.facts.get_or_init(|| PairFacts::of(self))
+    }
+
+    fn masks(&self) -> &Masks {
+        self.masks.get_or_init(|| Masks::of(self))
+    }
+}
+
+impl PairFacts {
+    fn of(pair: &Pair) -> PairFacts {
         let (input, output) = (&pair.input, &pair.output);
         let same = input.height == output.height && input.width == output.width;
         let changed = if same { input.cells.iter().zip(&output.cells).filter(|(a, b)| a != b).count() } else { 0 };
@@ -208,26 +226,30 @@ impl<'a> PairFacts<'a> {
         let ofg = output.cells.iter().filter(|&&color| color.min(9) != obg).count();
         let bits = |cells: &[u8]| cells.iter().fold(0u16, |bits, &color| bits | 1 << color.min(9));
         let (ocolors, icolors) = (bits(&output.cells), bits(&input.cells));
-        PairFacts { pair, area: input.height * input.width, same, changed, obg, ofg, bg, ocolors, newcolors: ocolors & !icolors, heavy: OnceCell::new() }
+        PairFacts { area: input.height * input.width, same, changed, obg, ofg, bg, ocolors, newcolors: ocolors & !icolors }
     }
 
     /// The error before any paint: the cells that differ where the sizes are one, else the output's cells off its background.
     fn base_err(&self) -> usize {
         if self.same { self.changed } else { self.ofg }
     }
+}
 
+impl Pair {
     /// The color that the painted grid has at (i, j) before any paint.
     fn base_of(&self, i: usize, j: usize) -> u8 {
-        if self.same { self.pair.input.cells[i * self.pair.input.width + j] } else { self.obg }
+        let facts = self.facts();
+        if facts.same { self.input.cells[i * self.input.width + j] } else { facts.obg }
     }
 
     fn out_at(&self, i: usize, j: usize) -> u8 {
-        self.pair.output.cells[i * self.pair.output.width + j]
+        self.output.cells[i * self.output.width + j]
     }
 
     fn heavy(&self) -> &Heavy {
         self.heavy.get_or_init(|| {
-            let (input, output) = (&self.pair.input, &self.pair.output);
+            let facts = self.facts();
+            let (input, output) = (&self.input, &self.output);
             let mut changed = HashSet::new();
             let (mut fg, mut ofg) = (HashSet::new(), HashSet::new());
             let mut in_by: Vec<HashSet<Cell>> = vec![HashSet::new(); 10];
@@ -238,11 +260,11 @@ impl<'a> PairFacts<'a> {
                     let a = input.cells[i * input.width + j].min(9);
                     let at = (i as i32, j as i32);
                     in_by[a as usize].insert(at);
-                    if a != self.bg {
+                    if a != facts.bg {
                         fg.insert(at);
                         fg_by[a as usize].insert(at);
                     }
-                    if self.same && a != output.cells[i * output.width + j] {
+                    if facts.same && a != output.cells[i * output.width + j] {
                         changed.insert(at);
                     }
                 }
@@ -250,7 +272,7 @@ impl<'a> PairFacts<'a> {
             for i in 0..output.height {
                 for j in 0..output.width {
                     let b = output.cells[i * output.width + j].min(9);
-                    if b != self.obg {
+                    if b != facts.obg {
                         ofg.insert((i as i32, j as i32));
                         ofg_by[b as usize].insert((i as i32, j as i32));
                     }
@@ -264,7 +286,7 @@ impl<'a> PairFacts<'a> {
             let nout = oobj.iter().map(|part| normalized(part)).collect();
             let live = oobj
                 .iter()
-                .filter(|part| !(self.same && iobj_set.contains(part) && part.iter().all(|&(i, j)| input.cells[i as usize * input.width + j as usize] == output.cells[i as usize * output.width + j as usize])))
+                .filter(|part| !(facts.same && iobj_set.contains(part) && part.iter().all(|&(i, j)| input.cells[i as usize * input.width + j as usize] == output.cells[i as usize * output.width + j as usize])))
                 .map(|part| normalized(part))
                 .collect();
             Heavy { changed, fg, ofg, incolor, nin, nout, live }
@@ -274,6 +296,7 @@ impl<'a> PairFacts<'a> {
 
 /// The cells that a train output wants, as `Gate`'s cell masks have them: for a mask of size 9000 the cell (y, x, color),
 /// for 900 the cell, for 10 the color.
+#[derive(Debug)]
 struct Masks {
     want: Vec<bool>,
     right: Vec<bool>,
@@ -370,7 +393,6 @@ pub struct Examples<'a> {
     /// The type of each column, without parameters.
     names: Vec<&'a str>,
     pairs: &'a [Pair],
-    facts: Vec<PairFacts<'a>>,
     /// The index of the first cell of each Color column in a row.
     color_at: Vec<usize>,
     /// The same, of each Position column.
@@ -379,7 +401,6 @@ pub struct Examples<'a> {
     grid_at: Vec<usize>,
     columns: OnceCell<Option<[f32; 5]>>,
     fit: OnceCell<[f32; FIT]>,
-    masks: OnceCell<Vec<Masks>>,
     suit: OnceCell<f32>,
     out: OnceCell<[f32; OUT]>,
 }
@@ -418,7 +439,6 @@ impl<'a> Examples<'a> {
         let sets = train_rows.iter().chain(&test_rows).map(|of| of.len() as f64).collect();
         let starts: Vec<(usize, u8)> = codes.iter().scan(0, |at, &code| { let start = *at; *at += cell_width(code); Some((start, code)) }).collect();
         let at_of = |wanted: &[u8]| starts.iter().filter(|(_, code)| wanted.contains(code)).map(|&(start, _)| start).collect::<Vec<usize>>();
-        let facts = input.train.iter().map(PairFacts::of).collect();
         let mut examples = Examples {
             train: Vec::new(),
             inputs: Vec::new(),
@@ -430,13 +450,11 @@ impl<'a> Examples<'a> {
             capped: input.capped,
             names: input.types.iter().map(|name| base_name(name)).collect(),
             pairs: input.train,
-            facts,
             color_at: at_of(&[COLOR]),
             position_at: at_of(&[POSITION]),
             grid_at: at_of(&[POSITION, BOX]),
             columns: OnceCell::new(),
             fit: OnceCell::new(),
-            masks: OnceCell::new(),
             suit: OnceCell::new(),
             out: OnceCell::new(),
         };
@@ -504,7 +522,8 @@ impl<'a> Examples<'a> {
             if self.n_train == 0 {
                 return [0.0; FIT];
             }
-            for (rows_of, pair) in self.train_rows.iter().zip(&self.facts) {
+            for (rows_of, whole) in self.train_rows.iter().zip(self.pairs) {
+                let pair = whole.facts();
                 let mut own = [(0.0f64, 0usize); FIT];
                 let mut add = |place: usize, value: f64| { own[place].0 += value; own[place].1 += 1; };
                 for rows in rows_of.iter().filter(|rows| !rows.is_empty()) {
@@ -521,7 +540,7 @@ impl<'a> Examples<'a> {
                     }
                     for &at in &self.position_at {
                         let cells: HashSet<Cell> = rows.iter().map(|row| (row[at], row[at + 2])).collect();
-                        let heavy = pair.heavy();
+                        let heavy = whole.heavy();
                         let size = cells.len() as f64;
                         add(6, size / pair.area.max(1) as f64);
                         add(7, cells.intersection(&heavy.fg).count() as f64 / size);
@@ -556,10 +575,6 @@ impl<'a> Examples<'a> {
         })
     }
 
-    fn masks(&self) -> &Vec<Masks> {
-        self.masks.get_or_init(|| self.pairs.iter().map(Masks::of).collect())
-    }
-
     /// The best mean overlap with the train outputs over the pairs of a Position or Box column (the first `SUIT_COLUMNS`)
     /// and a Color column (the first `SUIT_COLUMNS`). On a train example, the overlap with that example's output; on a
     /// task-level table, the mean over the train outputs. An example with no rows counts 0, and so does an empty TableRows.
@@ -570,7 +585,7 @@ impl<'a> Examples<'a> {
             if ps.is_empty() && cs.is_empty() || self.pairs.is_empty() {
                 return 0.0;
             }
-            let masks = self.masks();
+            let masks: Vec<&Masks> = self.pairs.iter().map(Pair::masks).collect();
             let sites: Vec<(Option<usize>, Option<usize>)> = if ps.is_empty() { cs.iter().map(|&c| (None, Some(c))).collect() } else if cs.is_empty() { ps.iter().map(|&p| (Some(p), None)).collect() } else { ps.iter().flat_map(|&p| cs.iter().map(move |&c| (Some(p), Some(c)))).collect() };
             let mean = |values: &[f64]| if values.is_empty() { 0.0 } else { values.iter().sum::<f64>() / values.len() as f64 };
             let mut best = 0.0f64;
@@ -580,7 +595,7 @@ impl<'a> Examples<'a> {
                     .iter()
                     .enumerate()
                     .map(|(index, rows_of)| {
-                        let against: Vec<&Masks> = if self.task_level { masks.iter().collect() } else { vec![&masks[index]] };
+                        let against: Vec<&Masks> = if self.task_level { masks.clone() } else { vec![masks[index]] };
                         mean(&rows_of.iter().map(|rows| mean(&against.iter().map(|m| m.overlap(rows, p, c)).collect::<Vec<_>>())).collect::<Vec<_>>())
                     })
                     .collect();
@@ -604,7 +619,7 @@ impl<'a> Examples<'a> {
             if self.n_train == 0 || self.position_at.is_empty() {
                 return d;
             }
-            let base = self.facts.iter().map(PairFacts::base_err).sum::<usize>().max(1) as f64;
+            let base = self.pairs.iter().map(|pair| pair.facts().base_err()).sum::<usize>().max(1) as f64;
             let unpainted: [TableRowsOf<'a>; 1] = [Vec::new()];
             let examples: Vec<&[TableRowsOf<'a>]> = self.train_rows.iter().map(|of| if of.is_empty() { &unpainted[..] } else { &of[..] }).collect();
             // Painting. Each count is summed over the examples, each example's count being the mean over its TableRows.
@@ -614,9 +629,9 @@ impl<'a> Examples<'a> {
                 for &ci in &self.color_at {
                     let mut paint = Paint { err: 0.0, fixed: 0.0, broke: 0.0, stale: 0.0, oob: 0.0, conflict: 0.0, per: Vec::new(), remap_ok: true, remap_moves: false };
                     let mut remap: HashMap<i32, u8> = HashMap::new();
-                    for (e, p) in self.facts.iter().enumerate() {
-                        let be = p.base_err();
-                        let (height, width) = (p.pair.output.height as i32, p.pair.output.width as i32);
+                    for (e, p) in self.pairs.iter().enumerate() {
+                        let be = p.facts().base_err();
+                        let (height, width) = (p.output.height as i32, p.output.width as i32);
                         // The sums over the example's TableRows of: fixed, broke, stale, oob, conflict, pair value.
                         let mut own = [0.0f64; 6];
                         for rows in examples[e] {
@@ -697,8 +712,8 @@ impl<'a> Examples<'a> {
             let mut best_fill: Option<(f64, f64, f64)> = None;
             for &pi in &self.position_at {
                 let (mut got, mut own, mut inside, mut n) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
-                for (e, p) in self.facts.iter().enumerate() {
-                    let (height, width) = (p.pair.output.height as i32, p.pair.output.width as i32);
+                for (e, p) in self.pairs.iter().enumerate() {
+                    let (height, width) = (p.output.height as i32, p.output.width as i32);
                     // The sums over the example's TableRows of: cells got, cells that held their own, cells in the fill color, cells.
                     let mut sums = [0.0f64; 4];
                     for rows in examples[e] {

@@ -92,6 +92,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     // The evidence tables hold the task alone, so a session derives them once.
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let summaries = decoder.derived(SummaryCache::default);
+    let train = decoder.derived(|| train_pairs(evidence));
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
     let index = written.last().copied();
@@ -120,7 +121,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
                 let _timed = split::span(Part::OwnQueryHash);
                 tables.iter().map(|(_, table)| query_of(table)).collect()
             };
-            step_case_columns_by_assignment_with(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, &train_pairs(evidence), queries, rows, &summaries, assemblies(engine))
+            step_case_columns_by_assignment_with(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(engine))
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
@@ -153,12 +154,13 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, rows: bool) -> PyResult<PyCaseTables> {
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
+    let train = decoder.derived(|| train_pairs(evidence));
     let columns = py.detach(|| {
         let limits = engine.limits();
         let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
         let base: Vec<Table> = std::iter::once(input_table(evidence, engine.registry())).chain(evidence_tables.iter().cloned()).collect();
         // A cache of its own: the evidence tables' summaries are kept by their place, which differs here.
-        step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train_pairs(evidence), Vec::new(), rows, &SummaryCache::default()).0
+        step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train, Vec::new(), rows, &SummaryCache::default()).0
     });
     complete(&columns)?;
     PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)
@@ -227,8 +229,8 @@ enum Packed {
 /// Ids whose `tables` would hold equal columns share one `CaseTables`: the ids
 /// of `"unchanged"`, and ids of `"body"`, `"left_out"` and `"none"`, and of
 /// `"finished"` with no table, whose successors' tables are equal
-/// (`arclog_tables::tables::successors::same_tables`) and whose evaluations
-/// found the same copy violations.
+/// (`arclog_tables::tables::successors::same_tables`) or whose successors have
+/// one body and point, and whose evaluations found the same copy violations.
 ///
 /// Where a table of the result faulted, as a body that no check passes, `note`
 /// also gives the fault, and the table's `fault` gives it as `step_tables`
@@ -255,7 +257,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let index = records.len();
     written.push(index);
     let earlier = check_before(before.as_deref(), &task, &case, true, &written)?;
-    let train = train_pairs(evidence);
+    let train = decoder.derived(|| train_pairs(evidence));
     let (current, each, unchanged) = py.detach(|| {
         let limits = engine.limits();
         let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
