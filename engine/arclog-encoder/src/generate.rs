@@ -2503,6 +2503,17 @@ pub fn example_bits(example: usize) -> u32 {
     arclog::terms::Term::Constant(arclog::terms::Constant::Example(arclog::terms::Example::at(example as u16))).encode().expect("an example has bits").encoding()
 }
 
+/// A hash of this program's file. Saved families stand under it, so that a build reads only the families it wrote itself.
+fn build_id() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        let program = std::env::current_exe().and_then(std::fs::read).expect("this program's file");
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&program, &mut hasher);
+        format!("{:016x}", std::hash::Hasher::finish(&hasher))
+    })
+}
+
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
 const CACHED_TERMS: usize = 3_000_000;
 const SAVED_CACHED_TERMS: usize = 400_000;
@@ -2555,7 +2566,7 @@ impl Generators {
     }
 
     fn saved_path(&self, hash: u128) -> Option<std::path::PathBuf> {
-        self.saved.as_ref().map(|folder| folder.join(format!("{hash:032x}.json.zst")))
+        self.saved.as_ref().map(|folder| folder.join(build_id()).join(format!("{hash:032x}.json.zst")))
     }
 
     fn read_saved(&self, hash: u128) -> Option<Generated> {
@@ -2594,6 +2605,9 @@ impl Generators {
         };
         let Ok(text) = serde_json::to_vec(&held) else { return };
         let Ok(packed) = zstd::stream::encode_all(&text[..], 3) else { return };
+        if let Some(folder) = path.parent() {
+            let _ = std::fs::create_dir_all(folder);
+        }
         // Two threads can build one family, so each writes a file of its own and the rename decides.
         let mut temporary = path.as_os_str().to_os_string();
         temporary.push(format!(".{}.{:?}.tmp", std::process::id(), std::thread::current().id()));
