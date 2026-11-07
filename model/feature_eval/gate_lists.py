@@ -42,6 +42,8 @@ output; TIO, all three. A set is written as terms joined by `+`:
   graph         a candidate's place in its state's graph, from ROOT/../state
   relations     the state's other tables against the candidate's: each shape's mean over the tables that the
                 query reads, over their ancestors and over the rest, from ROOT/../state
+  relations_least, relations_most
+                the same, with each shape's least and greatest over those tables
   query         what a candidate's query says of its table with no row: where its columns come from, and what the
                 query does with them, from ROOT/../named
   qv            what a candidate's table has against the tables its query reads: a share of its entries
@@ -73,6 +75,8 @@ READS = {4: 'T', 5: 'TI', 6: 'TO', 7: 'TIO'}
 # What a task holds, and where each list stands.
 FAMILIES = {'input': 'input', 'output': 'ex_output', 'pairs': 'pair'}
 RELATIONS = ('parent', 'ancestor', 'other')
+# A shape's mean, least and greatest over the tables of a relation, at their places in a pooled list.
+RELATION_NUMBERS = {'relations': 2, 'relations_least': 1, 'relations_most': 3}
 # The numbers of a shape that each graded term reads.
 CHANNELS = {'TIOg': ('stable', 'mean'), 'TIOr': ('stable', 'mean', 'least', 'most'), 'TIg': ('stable', 'mean'), 'TIr': ('stable', 'mean', 'least', 'most')}
 
@@ -398,7 +402,7 @@ def build(root, out):
     each_keep = column_tasks >= 1
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'relations', 'query')}
+        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'query') + tuple(RELATION_NUMBERS)}
         example_of = []
         example_pair = []
         row_task = []
@@ -506,17 +510,19 @@ def build(root, out):
                     else:
                         spots, hit = place(graph[0], graph_columns)
                         mats['graph'].add(spots[hit], graph[1][hit])
-                    relation_at, relation_values = [], []
+                    relation_at, relation_values = [], {name: [] for name in RELATION_NUMBERS}
                     for number, relation in enumerate(RELATIONS):
                         held = state_others.get(f'{state_at}/{j}/{relation}')
                         if held is not None:
                             spots, hit = place(held[0], relation_columns)
                             relation_at.append(spots[hit] + number * len(relation_columns))
-                            relation_values.append(held[2][hit])
-                    if relation_at:
-                        mats['relations'].add(np.concatenate(relation_at), np.concatenate(relation_values))
-                    else:
-                        mats['relations'].add([])
+                            for name, place_at in RELATION_NUMBERS.items():
+                                relation_values[name].append(held[place_at][hit])
+                    for name in RELATION_NUMBERS:
+                        if relation_at:
+                            mats[name].add(np.concatenate(relation_at), np.concatenate(relation_values[name]))
+                        else:
+                            mats[name].add([])
                     held = query_lists.get(f'{at}/{j}/query')
                     if held is None:
                         mats['query'].add([])
@@ -591,7 +597,7 @@ def build(root, out):
             pickle.dump(data[split]['index'], sink, protocol=4)
     meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, family_flags=family_flags, graph_columns=graph_columns, relation_columns=relation_columns, query_columns=query_columns)
     meta['blocks'] = True
-    meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), graph=len(graph_columns), relations=len(RELATIONS) * len(relation_columns), query=len(query_columns))
+    meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), graph=len(graph_columns), query=len(query_columns), **{name: len(RELATIONS) * len(relation_columns) for name in RELATION_NUMBERS})
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()

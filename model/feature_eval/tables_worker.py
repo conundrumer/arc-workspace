@@ -61,6 +61,8 @@ def read_table(tb, name, prefer=None, sources=False):
             stopped = True
             continue
         by_key.setdefault(repr(key), {}).setdefault(ex, {}).setdefault(model, raw)
+    # The contract's `distinct`: how many assignments give different rows.
+    contents = {hash(repr(sorted((ex, sorted((model, repr(raw)) for model, raw in held.items())) for ex, held in rows.items()))) for rows in by_key.values()} if len(by_key) > 1 else set(by_key)
     if not by_key:
         return None, 'stopped' if stopped else 'no rows at any assignment'
     chosen = prefer if prefer in by_key else min(by_key)
@@ -91,7 +93,7 @@ def read_table(tb, name, prefer=None, sources=False):
     if sources:
         held = tb.T['column_ident_sources'][t]
         types = [f'{ty}@{source}' if ty == 'Ident' and source else ty for ty, source in zip(types, held)]
-    return dict(columns=names, types=types, assignments=len(by_key), assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, rows=out, models=models), None
+    return dict(columns=names, types=types, assignments=len(by_key), distinct_assignments=len(contents), capped=stopped, assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, rows=out, models=models), None
 
 
 def worker(root, task):
