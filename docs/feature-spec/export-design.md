@@ -43,33 +43,33 @@ A vector is sparse, since most entries are at their default on most parameterize
 
 ## What a learned model reads
 
-A learned model reads model input rows, as [Structure of the search](structure.md#maps) gives them. Offline ranking keeps one model input row for each candidate query and ARC example, and a learned function has a value at each of a candidate's model input rows. Those values stay apart, since a rule has to hold at every ARC example. The model input rows have fixed columns, so a column means one thing on every model input row of every task. The count of ARC examples differs between tasks, so a model input row holds one ARC example's values and no column stands for an ARC example. `model/feature_eval/gate_lists.py` builds these model input rows.
+A learned model reads feature vectors, as [Structure of the search](structure.md#maps) gives them. Offline ranking keeps one feature vector for each candidate query and ARC example, and a learned function has a value at each of a candidate's feature vectors. Those values stay apart, since a rule has to hold at every ARC example. The feature vectors have fixed columns, so a column means one thing on every feature vector of every task. The count of ARC examples differs between tasks, so a feature vector holds one ARC example's values and no column stands for an ARC example. `model/feature_eval/gate_lists.py` builds these feature vectors.
 
 - **Columns:** a fit fixes its list of columns from train tasks and stores the list with the learned model. Every shape that a parameterized table of a train task holds is a column, in each number its set reads.
-- **Duplicate columns:** columns equal on every train model input row are one column, named by the shortest label. A fit samples columns, and a set of duplicates would otherwise count once per member.
-- **Low-support columns:** a column with an entry on fewer model input rows than `min_data_in_leaf` stands in no fit, since one side of any split of it would hold too few model input rows.
+- **Duplicate columns:** columns equal on every train feature vector are one column, named by the shortest label. A fit samples columns, and a set of duplicates would otherwise count once per member.
+- **Low-support columns:** a column with an entry on fewer feature vectors than `min_data_in_leaf` stands in no fit, since one side of any split of it would hold too few feature vectors.
 - **A shape's numbers:** these read a shape's greatest value. Its scope is the train ARC examples where it reads the output, and every ARC example otherwise.
-    - `each`: its value at the model input row's ARC example. So a model input row keeps which value of one shape goes with which value of another at an ARC example. Past a shape's scope it has no entry.
-    - `stable`: its value, on each of a candidate's model input rows, where it has one value at every ARC example of its scope and that value is not the default. It states an invariant of the task, which a value at one ARC example does not state.
-    - `mean`, `least` and `most`, over its scope: a reading for a fit with one model input row per candidate, which loses that pairing.
+    - `each`: its value at the feature vector's ARC example. So a feature vector keeps which value of one shape goes with which value of another at an ARC example. Past a shape's scope it has no entry.
+    - `stable`: its value, on each of a candidate's feature vectors, where it has one value at every ARC example of its scope and that value is not the default. It states an invariant of the task, which a value at one ARC example does not state.
+    - `mean`, `least` and `most`, over its scope: a reading for a fit with one feature vector per candidate, which loses that pairing.
 - **Missing entries:** a missing entry takes its default. A shape with no value at any ARC example has NaN, since that differs from the default.
-- **Beside the shapes,** on each of a candidate's model input rows:
+- **Beside the shapes,** on each of a candidate's feature vectors:
     - The query's body, with no table content.
     - What the parameterized table has against the parameterized tables its query reads and the input: its entries, its stable entries, those new to these parameterized tables, the share of its entries that each of them has, and its table row count over theirs.
-    - Its count of assignments. A model input row reads one parameterized table at one assignment.
+    - Its count of assignments. A feature vector reads one parameterized table at one assignment.
     - Its task-wide roots.
     - Its place in the state's graph, and the state's other parameterized tables against it: each shape's mean over the parameterized tables its query reads, over their ancestors and over the rest.
-- **What the task holds,** which is the same on every candidate's model input row at an ARC example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a ground truth query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
+- **What the task holds,** which is the same on every candidate's feature vector at an ARC example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a ground truth query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
 
-## How a fit stores its model input rows
+## How a fit stores its feature vectors
 
-A fit's model input rows are a normalized store. Each fact stands once, at the grain where it holds, and a model input row has a foreign key to one record of each grain.
+A fit's feature vectors are a normalized store. Each fact stands once, at the grain where it holds, and a feature vector has a foreign key to one record of each grain.
 
-- A value at one ARC example stands in that model input row's record.
+- A value at one ARC example stands in that feature vector's record.
 - A value that every ARC example of a candidate has stands in the candidate's record. It is that shape's `stable` number and, at each ARC example of its scope, its `each` number.
 - What a task holds stands in the task's record, or in the record of the task at one ARC example.
 
-`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A leaf's model input rows add their gradients to each record, and each record's entries then add those sums to the histogram once.
+`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A leaf's feature vectors add their gradients to each record, and each record's entries then add those sums to the histogram once.
 
 ## Cost
 

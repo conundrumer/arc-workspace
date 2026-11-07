@@ -1,4 +1,4 @@
-"""Draw records of the pool search and of the state search, for the training rows' negative ids (docs/sample-build/training-rows.md, "Search draws").
+"""Draw records of the pool search and of the state search, for the training instances' negative ids (docs/sample-build/training-instances.md, "Search draws").
 
 kaggle_worker.source installs it where ARC_DRAW_RECORD names a file: install() for the pool search, install_state() for the state search. Each
 draw appends one JSON line to that file as it ends. A draw of the pool search is superdag_search.try_clause, one query the writer wrote at a

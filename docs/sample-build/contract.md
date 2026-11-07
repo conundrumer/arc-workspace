@@ -26,9 +26,10 @@ This contract gives the types of the sample data and the invariants that every i
 - A program **solves** a task when, over the assignments at which its train outputs equal the given ones, and within each over the constraint models of the OUT, the distinct test grids number at most two, one of them the answer.
 - The **union graph** of a task holds every case's queries. A parameterized table of one query stands for one of another where their maps Assignment → `TableHash` are equal, DETs of different `QueryHash` being paired by equal sets of their values' `TableHash`es. It is a measurement. A graph query is a query of the union graph, and it is **applicable** at a state when every parameterized table it uses is in the state.
 - The **writer** is the component that writes one query from a state. Its **learned model**, a set of trees or a neural network, scores the tokens the engine admits. The writer writes a query, never an assignment.
-- A **model input row** is the one input vector that a learned model reads. [Structure of the search](../feature-spec/structure.md#maps) gives its content.
+- A **feature vector** is the one input vector that a learned model reads. [Structure of the search](../feature-spec/structure.md#maps) gives its content.
+- A **training instance** is one feature vector with its label, as a fit reads it. [Training instances](training-instances.md) gives the writer's.
 - A **fit** is any step that sets, from data, the parameters of the learned model or of another learned function, or a statistic that one of them uses.
-- Other words stand for these and are not used: definition, function, form, clause and line (for a query); node (for a parameterized table); world (for an assignment); walk (for a state sequence); given table (for a base table); and a bare row, model or example.
+- Other words stand for these and are not used: definition, function, form, clause and line (for a query); node (for a parameterized table); world (for an assignment); walk (for a state sequence); given table (for a base table); row (for a training instance or a feature vector); and a bare row, model or example.
 
 ## Levels
 
@@ -38,14 +39,14 @@ A feature's value stands at one level, and a level above it combines the values 
 |---|---|---|
 | 1. A feature's value | one table | a feature expression's value on one table |
 | 2. Over constraint models | the constraint models of one ARC example, at one assignment | the mean within the ARC example |
-| 3. Over ARC examples (`TableVector`) | the ARC examples, at one assignment | the values of level 2 stay apart, and offline ranking keeps one model input row for each ARC example. The numbers across ARC examples are `stable`, `least`, `mean` and `most`, which a learned model reads as columns of its model input row |
+| 3. Over ARC examples (`TableVector`) | the ARC examples, at one assignment | the values of level 2 stay apart, and offline ranking keeps one feature vector for each ARC example. The numbers across ARC examples are `stable`, `least`, `mean` and `most`, which a learned model reads as columns of its feature vector |
 | 4. Over assignments (`AssignmentVector`) | the assignments of one parameterized table | the count of assignments, `capped`, `distinct`, `differ`, and the assignment min, assignment mean and assignment max of each entry |
 | 5. Query (`QueryVector`) | the tables a query uses and computes | the query's own features |
 | 6. State features | any parameterized tables of a state | [State features](../feature-spec/feature-spec.md#state-features) |
 
 - Level 2 comes first because a constraint model has no identity across ARC examples.
 - `least`, `mean` and `most` are taken over an entry's scope: the train ARC examples where the entry reads the output, and every ARC example otherwise. `stable` is an entry's value where it has one value at every ARC example of its scope and that value is not the default.
-- The assignment min, assignment mean and assignment max are taken over the assignments of a parameterized table. Code writes them as the suffixes `:min`, `:mean` and `:max` (`assignment_vector_names()` in `model/study/sampler/writer.py` and the `delta:` columns of [Training rows](training-rows.md)), and those suffixes mean over assignments wherever they stand.
+- The assignment min, assignment mean and assignment max are taken over the assignments of a parameterized table. Code writes them as the suffixes `:min`, `:mean` and `:max` (`assignment_vector_names()` in `model/study/sampler/writer.py` and the `delta:` columns of [Training instances](training-instances.md)), and those suffixes mean over assignments wherever they stand.
 
 ## Primitive types
 
@@ -402,7 +403,7 @@ Further invariants:
 
 - No fit uses a sample of a `held-out` task.
 - A statistic over tasks (a normalization, a vocabulary) is computed from `train` samples only.
-- No record pools model input rows of two tasks.
+- No record pools feature vectors of two tasks.
 
 ## Assignments
 

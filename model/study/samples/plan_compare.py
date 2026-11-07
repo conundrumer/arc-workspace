@@ -1,4 +1,4 @@
-"""The comparison of the two writer plans on dev samples (docs/sample-build/training-rows.md, "Comparison of the plans").
+"""The comparison of the two writer plans on dev samples (docs/sample-build/training-instances.md, "Comparison of the plans").
 
   python3 plan_compare.py SET --plan ordered|unordered --model FILE [--shard k/N] [--tasks T,T,...] [--samples-per-task K] [--seed S] [--steps N] [--sample-seconds X] [--out DIR]
   python3 plan_compare.py SET --plan ordered|unordered --model FILE --report
@@ -16,7 +16,7 @@ Values of a kind (the targets are the sample's distinct QueryHash values of that
     - ordered: a query has one path, its canonical stream (order.canonical_stream; the stream as given where the rule gives none). The chance is the product of the tree's
       probabilities along it. A path of another order that writes the same query is not a path of the plan, and its chance is not counted.
     - unordered: paths are merged into the states of the extractor's search (order.set_key), and the chance of the states is carried forward over the search graph in topological
-      order, summing at merges. The tree is evaluated once for a state, at the point of the state's first visit, as the training rows are. The graph follows only the tokens that
+      order, summing at merges. The tree is evaluated once for a state, at the point of the state's first visit, as the training instances are. The graph follows only the tokens that
       continue some target's item set (the extractor's positives); the other tokens lead to queries that are no target. The sum is exact over that graph. --check also
       enumerates the paths one by one and compares.
 - v2: whether the most probable completed query is a target. A completed query's chance is the sum over every path that writes it under the plan. v2 is a bound pair (v2_lo,

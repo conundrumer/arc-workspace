@@ -1,4 +1,4 @@
-"""The table columns of the query writer's writing-point vector (spec: docs/sample-build/training-rows.md,
+"""The table columns of the query writer's writing-point vector (spec: docs/sample-build/training-instances.md,
 "Table columns of the writing-point vector"). Pure functions over `table_export.ExportTable`s, which `table_export.read_export` makes from
 `arclog.step_tables(..., by_assignment=True, rows=True)`. They read no writer state and keep no cache between calls.
 

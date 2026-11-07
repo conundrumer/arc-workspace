@@ -6,7 +6,7 @@ Where each thing about features over tables is defined. One document defines eac
 
 * comment: The user's words, session 12a37de8, 2026-11-06: "Always use conventional terms".
 * comment: The user's words, session 12a37de8, 2026-11-06: "Always qualify or conventional terms . No more single loose words. Row is confusing".
-- Reports and documents on features use conventional terms, and qualify each term that a bare word could misread: table row, model input row, ARC example, constraint model, learned model. A name from code or from the first version appears only where it names that code. [Terms](sample-build/contract.md#terms) defines them, and [Measures](../work/measures.md) gives each measure's conventional term, with the project's word as its alias.
+- Reports and documents on features use conventional terms, and qualify each term that a bare word could misread: table row, feature vector, ARC example, constraint model, learned model. A name from code or from the first version appears only where it names that code. [Terms](sample-build/contract.md#terms) defines them, and [Measures](../work/measures.md) gives each measure's conventional term, with the project's word as its alias.
 
 ## Authoritative
 
@@ -20,7 +20,7 @@ Where each thing about features over tables is defined. One document defines eac
 - The live search is the pool search, `model/study/sampler/superdag_search.py`, which `model/study/search/dev161/dev_run.py` runs. [Search handoff](../work/search-handoff.md) lists its decision steps and the state of the work.
 - The writer, its writing points and the blocks of its vector: [Writer spec](../work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md).
 - The rules by which the feature encoder refuses a term, and their arclog reading: [Feature grammar refusal rules](feature-spec/grammar-rules.md).
-- The columns of the writer's training rows, and the search's draws as negative examples: [Training rows](sample-build/training-rows.md).
+- The columns of the writer's training instances, and the search's draws as negative examples: [Training instances](sample-build/training-instances.md).
 - The split of tasks: [Split design](sample-build/split.md).
 - The arclog language and lib, which features are written in: [arclog](arclog/arclog.md) and [The arclog lib](arclog/lib.md).
 
@@ -30,7 +30,7 @@ Where each thing about features over tables is defined. One document defines eac
 - The named parts: `engine/lib/features.arclog`.
 - The scripts that score features: `model/feature_eval`.
 - The trainer those scripts run: `engine/block-boost`.
-- The first version: `model/contracts/features`, described in [its README](../model/contracts/README.md). It is a baseline, and a model input row must give what it tells a learned model. It does not define what a feature is.
+- The first version: `model/contracts/features`, described in [its README](../model/contracts/README.md). It is a baseline, and a feature vector must give what it tells a learned model. It does not define what a feature is.
 - The neural encoder beside a language model, a route the project left: [Feature encoder](feature-encoder.md) is the design that `model/encoder.py` implements. Its tables are parameterized tables at one assignment.
 
 ## Run outputs

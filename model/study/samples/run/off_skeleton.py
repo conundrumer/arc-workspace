@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """off_skeleton.py SKELETON_OUT SPLIT RUN [RUN ...] [--states K] [--seed S]: a skeleton file per task whose samples are the states that a recorded search visited.
 
-For each task with draw records in a run of dev_run.py, it takes up to K distinct non-empty states of the draws' last steps (docs/sample-build/training-rows.md, "States off the samples"). A state's queries that the union holds are its gold part. Its targets are the union's target queries that aren't in the state and whose closure lies in the gold part. A query that reads no query is a target only with --all-targets. A query outside the union becomes a query record whose program is its text with local labels, and whose closure comes from what its text reads in the draw. `points_write.py SPLIT --skeleton SKELETON_OUT --samples-per-task 0` then writes the points."""
+For each task with draw records in a run of dev_run.py, it takes up to K distinct non-empty states of the draws' last steps (docs/sample-build/training-instances.md, "States off the samples"). A state's queries that the union holds are its gold part. Its targets are the union's target queries that aren't in the state and whose closure lies in the gold part. A query that reads no query is a target only with --all-targets. A query outside the union becomes a query record whose program is its text with local labels, and whose closure comes from what its text reads in the draw. `points_write.py SPLIT --skeleton SKELETON_OUT --samples-per-task 0` then writes the points."""
 import argparse, collections, hashlib, json, re, sys
 from pathlib import Path
 

@@ -18,7 +18,7 @@ The rules for the encoder from tables to features. [Arclog column types](arclog-
 
 Features support the program search and do not replace it. A feature expression has the form of a query, so a ground expression of size d shows a learned model what a query of that size would compute. An encoder run at a size large enough to reach the output would be the search itself, done by brute force.
 
-The features are a superset of the first version: a model input row must give whatever the first version tells a learned model, in the forms of this specification. [Coverage of the first version](evaluation-protocol.md#coverage-of-the-first-version) measures this.
+The features are a superset of the first version: a feature vector must give whatever the first version tells a learned model, in the forms of this specification. [Coverage of the first version](evaluation-protocol.md#coverage-of-the-first-version) measures this.
 
 ## Definition
 
@@ -232,7 +232,7 @@ A vector is sparse. A table gives the entries whose value differs from the defau
 
 - A shape gives two numbers at each ARC example: the greatest and the sum of its ground expressions' values. The sum of a `nonempty` is the number of bindings with a row. With one binding, the two are equal. A `ratio` gives the greatest and the least, since a sum of fractions counts nothing. A fraction is exact, so two ARC examples have one value exactly where their fractions are equal.
 - A task-wide root gives those two numbers once.
-- A per-input root gives them per ARC example and constraint model. Within an ARC example it takes the mean over the constraint models, as the contract gives. The value at an ARC example is the feature's value. A learned model reads it at each ARC example, as [What a learned model reads](export-design.md#what-a-learned-model-reads) gives. The `least`, `mean` and `most` entries, which the encoder combines outside arclog, are a reading for a learned model with one model input row per candidate: over the train ARC examples where the expression has an `output` leaf, and over every ARC example otherwise. They lose which value of one entry goes with which value of another at an ARC example.
+- A per-input root gives them per ARC example and constraint model. Within an ARC example it takes the mean over the constraint models, as the contract gives. The value at an ARC example is the feature's value. A learned model reads it at each ARC example, as [What a learned model reads](export-design.md#what-a-learned-model-reads) gives. The `least`, `mean` and `most` entries, which the encoder combines outside arclog, are a reading for a learned model with one feature vector per candidate: over the train ARC examples where the expression has an `output` leaf, and over every ARC example otherwise. They lose which value of one entry goes with which value of another at an ARC example.
 - A `value-set` over one number column gives a number where the set has one member, and no value otherwise. `Order`'s `maximal` and `minimal` give such a column. Another `value-set` is no vector entry, and it is for a consumer that reads a set.
 - In a QueryVector, a hole's type can also state the column's lineage root, as [What column metadata adds to features](arclog-types.md#what-column-metadata-adds-to-features) gives.
 - A task-wide count over the table rows of every ARC example depends on how many ARC examples there are, so a ratio pairs it with that count.

@@ -1,4 +1,4 @@
-"""Stage 5 of the sample build: the training rows of the gradient-boosted trees, one writing point of a target query at a time, with the writer's own features.
+"""Stage 5 of the sample build: the training instances of the gradient-boosted trees, one writing point of a target query at a time, with the writer's own features.
 
   python3 points_write.py SET --plan ordered|unordered [--shard k/N] [--tasks T,T,...] [--samples-per-task K] [--seed S] [--seconds X] [--max-states N] [--vectors] [--draws GLOB|DIR] [--skeleton DIR] [--out DIR]
 
@@ -34,7 +34,7 @@ With --vectors a point row is the writer's full writing-point vector of each id 
   A point that fails is counted (`rebuild failures`, `point-scope columns that differ across ids`) and not written.
 - A file with vectors and a file without are never current for each other.
 
-With --draws, the search's draws give each point's `drawn` counts (docs/sample-build/training-rows.md, "Search draws"). GLOB is a glob of draw record files (model/study/sampler/draw_record.py);
+With --draws, the search's draws give each point's `drawn` counts (docs/sample-build/training-instances.md, "Search draws"). GLOB is a glob of draw record files (model/study/sampler/draw_record.py);
 DIR is a folder searched for `draws.jsonl` files. A draw file of a task that is not train by split.py is refused (exit 2) before any file is written.
 - A draw is one line of a file: a record, or {"repeat": d, "draw": n}, which adds 1 to the count of the record of draw d of that file. A draw whose record solves every train example gives nothing.
 - A draw's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps, and every sample whose state a draw has); its other steps
