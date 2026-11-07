@@ -17,8 +17,13 @@ impl Check for PicksCheck {
         CheckId::Picks
     }
 
+    /// The base key, or none where a clause of the form holds a `ONE` mark
+    /// that `repeated_mark` refuses: the canonical form writes the labels
+    /// of each mark of a clause as a set, and each such set once, so the
+    /// base key of such a form is the key of the form without the repeat,
+    /// whose result differs.
     fn cache_key(&self, at: &KeyInput<'_>) -> Option<CheckCacheKey> {
-        Some(at.base(self.id()))
+        (!holds_repeated_mark(NodeRef::from(at.form))).then(|| at.base(self.id()))
     }
 
     /// Refuses a `SET` mark on a clause that is a `RULE` or a `RULE_OR_DET`
@@ -26,7 +31,9 @@ impl Check for PicksCheck {
     /// that the registry does not mark `domain`. Refuses an atom that reads `ONE`, a mark that stands only after a
     /// clause's body. It refuses, at the clause, a `ONE` mark that names a
     /// label which is no column of the clause, as a mark with a key on a clause whose columns
-    /// a proposer gives. At a `CHOOSE` form, it refuses:
+    /// a proposer gives, a mark that names a label twice, and a mark that
+    /// names the set of labels of an earlier mark of the clause
+    /// (`docs/arclog/constraints.md#one`). At a `CHOOSE` form, it refuses:
     /// - a form with no `never` body, since a pick with no never is written
     ///   with `ONE` marks;
     /// - at a `never` body, a body that holds fewer than two positive atoms
@@ -59,8 +66,11 @@ fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> Chec
     let (form, registry) = (input.form, input.scope.registry);
     let mut refused: Vec<(NodePath, &str)> = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match (node, node.atom()) {
-        (NodeRef::Clause(clause), _) if ended(at) && !marks_name_columns(clause) => refused.push((at.into(), "a `ONE` mark names only columns of the clause")),
-        (NodeRef::Clause(clause), _) if !set_mark_fits(clause, registry) => refused.push((at.into(), set_mark_refusal(clause))),
+        (NodeRef::Clause(clause), _) => {
+            let marks = if ended(at) { marks_refusal(clause) } else { None };
+            let set = (!set_mark_fits(clause, registry)).then(|| set_mark_refusal(clause));
+            refused.extend(marks.or(set).map(|message| (at.into(), message)));
+        }
         (NodeRef::Choose(choose), _) if ended(at) => choose_refusals(choose, &NodePath::from(at), &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
             refused.push((at.into(), "`ONE` stands at a clause's top level, after its body"));
@@ -94,6 +104,49 @@ fn set_mark_refusal(clause: &Clause) -> &'static str {
     } else {
         "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`"
     }
+}
+
+/// Why the `ONE` marks of `clause` are refused, where they are: a mark
+/// names a label that is no column of the clause, or [`repeated_mark`]
+/// refuses a mark.
+fn marks_refusal(clause: &Clause) -> Option<&'static str> {
+    if !marks_name_columns(clause) {
+        return Some("a `ONE` mark names only columns of the clause");
+    }
+    repeated_mark(clause)
+}
+
+/// Whether `node`, a form or a node that holds forms, holds a clause with a
+/// `ONE` mark that [`repeated_mark`] refuses.
+fn holds_repeated_mark(node: NodeRef<'_>) -> bool {
+    match node {
+        NodeRef::Clause(clause) => repeated_mark(clause).is_some(),
+        NodeRef::Program(_) | NodeRef::Claim(_) | NodeRef::Alts(_) | NodeRef::Alt(_) | NodeRef::Demonstrated(_) | NodeRef::DemoRule(_) => {
+            node.children().into_iter().any(holds_repeated_mark)
+        }
+        _ => false,
+    }
+}
+
+/// Why a `ONE` mark of `clause` is refused for a repeat, where one is: a
+/// mark names a label twice, which adds nothing to its key, or a mark
+/// names, as a set, the labels of an earlier mark of the clause, and so
+/// keeps the rows that the earlier mark keeps
+/// (`docs/arclog/constraints.md#one`).
+fn repeated_mark(clause: &Clause) -> Option<&'static str> {
+    let mut keys: Vec<Vec<u32>> = Vec::new();
+    for mark in clause.ones.iter() {
+        let mut key: Vec<u32> = mark.key.iter().map(|label| label.0).collect();
+        key.sort_unstable();
+        if key.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Some("a `ONE` mark names each label once, since a label named twice adds nothing to its key");
+        }
+        if keys.contains(&key) {
+            return Some("no two `ONE` marks of a clause name the same labels, since a second mark of a key keeps the rows that the first keeps");
+        }
+        keys.push(key);
+    }
+    None
 }
 
 /// Whether each label of each `ONE` mark of `clause` is a column of the

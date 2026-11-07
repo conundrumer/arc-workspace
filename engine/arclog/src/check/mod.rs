@@ -153,7 +153,11 @@ pub enum CheckId {
     /// cached under no [`CheckCacheKey`].
     Spelling,
     /// The picks: the labels of a clause's `ONE` marks, and the `never`
-    /// bodies of a `CHOOSE` form.
+    /// bodies of a `CHOOSE` form. The result on a form that holds a clause
+    /// with a `ONE` mark that names a label twice, or the set of labels of an
+    /// earlier mark of the clause, is cached under no [`CheckCacheKey`],
+    /// since the canonical form writes the labels of each mark as a set, and
+    /// each such set once.
     Picks,
     /// The reads of the outputs of a `RIGID_DET` form, and the names of a
     /// clause's proposers and their count, and, for a program read from a

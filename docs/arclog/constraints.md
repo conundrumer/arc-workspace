@@ -11,6 +11,7 @@
   (ONE F))
 ```
 - A clause may end in `ONE` marks. A mark `(ONE <col> ...)` names key columns of the relation, and `(ONE)` names none, so it keeps one row. A relation may have several marks. A model of the marks keeps, of the clause's rows, exactly one row for each value of each mark's key that has rows, for all marks at once. The relation is a chosen relation, and it holds the rows of one model. The mark stands on the relation, with its clause, and not at a read site, so every reader of the relation reads the same model.
+- A mark names each label once, and no two marks of a clause name the same set of labels, since `(ONE K K)` keeps the rows that `(ONE K)` keeps, and two marks that name one set of labels keep the rows that one of them keeps.
 - Rows are independent where no mark's key links them. A part of the rows that has no model has no rows, and the rest of the rows stand. The engine finds those parts, so the file writes no group.
 
 ## Choose
