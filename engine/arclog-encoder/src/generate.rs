@@ -2407,7 +2407,7 @@ pub struct Walker<'a> {
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
-    /// Whether the last walk passed `WALK_CELLS` cells of values, so that the terms after that point have no value.
+    /// Whether the last walk passed `WALK_CELLS` cells of values, so that the terms it extends after that point, and every term that reads one, have no value.
     pub over_budget: bool,
 }
 
@@ -2640,11 +2640,14 @@ impl<'a> Walker<'a> {
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
         self.written_cells = 0;
+        // Per term, whether the walk's stop left it unevaluated, or it reads a term so left. Such a term has no value, and so has each root over it.
+        let mut stopped: Vec<bool> = vec![false; leaves.len()];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             // A term that no listed root reads stands as an empty value, which no term that is walked reads.
             let listed = match mask {
                 Some(mask) if !mask.needed[at] => {
                     ids.push(Vec::new());
+                    stopped.push(false);
                     continue;
                 }
                 Some(mask) => mask.listed[at],
@@ -2665,14 +2668,16 @@ impl<'a> Walker<'a> {
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
             // A term whose first relation has no value, or the rows of `inside` that `step` cannot write, has no value at any instance.
             let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| self.has_no_value(step, *id)) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
+            let past_bound = extended && walk_cells + self.written_cells > WALK_CELLS;
+            let is_stopped = past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
             if extended {
                 own.reserve(instances);
-                if walk_cells + self.written_cells > WALK_CELLS {
+                if past_bound {
                     self.over_budget = true;
                     crate::bounds::skipped(crate::bounds::Bound::Walk, scope as u64);
                 }
                 // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
-                for pair in 0..if walk_cells + self.written_cells > WALK_CELLS { 0 } else { scope } {
+                for pair in 0..if past_bound { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (step_id, first[pair], b);
                     // A memo hit adds the cells that the evaluation wrote out when it ran, as a fresh evaluation adds them.
@@ -2696,7 +2701,15 @@ impl<'a> Walker<'a> {
                 }
                 own.resize(instances, 0);
             }
-            if wanted && !idle && listed != 0 && !term.roots.is_empty() {
+            if wanted && is_stopped && listed != 0 {
+                // A root over a stopped term has no value at any instance, which is not its default.
+                for (place, (hash, of)) in term.roots.iter().enumerate() {
+                    if listed & (1 << place) != 0 {
+                        let base = table.slots_of(*hash, term.flags, term.size, *of);
+                        table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
+                    }
+                }
+            } else if wanted && !idle && listed != 0 && !term.roots.is_empty() {
                 for pair in 0..scope {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
                     let (rows, number) = if extended {
@@ -2758,6 +2771,7 @@ impl<'a> Walker<'a> {
                 ids[term.b as usize] = second;
             }
             ids.push(own);
+            stopped.push(is_stopped);
         }
         // A task keeps a walker per schema, so one large walk leaves nothing behind.
         self.keep_within_budget();
