@@ -26,6 +26,8 @@
     - Upstream is pinned via submodules, and corrections live in patches, not in `data/upstream/`.
 - **Type aliases use the `type` keyword** (PEP 695, native to 3.12).
 - **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, 0 as `0`.
+* comment: The user's words, session 12a37de8, 2026-11-07: "Always use precise conventional literal terms, eg not row unless table row".
+- **Reports and names use precise conventional terms.** "Row" is only a table row. Say training instance, feature vector, writing point, sampled query, experimental condition, engine build and patched code version, not row, point, draw, arm, site or overlay. A code name stands in text only where it names that code.
 
 ## Tests
 - Before you write, ask for, change, delete or judge a test, read [Tests](prompts/agents/notes/tests.md#tests).
