@@ -205,7 +205,7 @@ impl Joined {
         self.places.len()
     }
 
-    /// The cells that the sides and the ids of the join hold, which a walker's count of held cells leaves out.
+    /// The cells that the sides and the ids of the join hold, which a walker counts as held.
     pub fn held_cells(&self) -> usize {
         self.left.cells.len() + self.right.cells.len() + self.left_ids.len() + self.right_ids.len() + self.left_counts.len() + self.right_counts.len()
     }
