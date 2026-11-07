@@ -249,19 +249,48 @@ struct PartHashes {
 }
 
 impl PartHashes {
-    /// The numbers of the rows of `part` in the order of their values, as a
-    /// signed cell reads each. A reader that sorts the rows finds them close to
-    /// sorted, and the rows that an atom keeps stay in this order.
-    fn order(&self, part: &RelationPart) -> &[u32] {
+    /// The numbers of the rows of `part` in the order of the cells of a table,
+    /// whose columns have the types `types`. A reader that sorts the rows finds
+    /// them sorted, and the rows that an atom keeps stay in this order.
+    fn order(&self, part: &RelationPart, types: &[ValueType]) -> &[u32] {
         self.order.get_or_init(|| {
+            let mut places: Vec<usize> = (0..part.columns.len()).collect();
+            places.sort_unstable_by_key(|&place| part.columns[place].0);
+            let boxes: Vec<bool> = places.iter().map(|&place| types[usize::from(part.columns[place].0)].is_box()).collect();
             let mut order: Vec<u32> = (0..part.rows.len() as u32).collect();
             order.sort_unstable_by(|&a, &b| {
-                let values = |number: u32| part.rows.row(number as usize).iter().map(|value| value.encoding() as i32);
+                let values = |number: u32| {
+                    let row = part.rows.row(number as usize);
+                    places.iter().zip(&boxes).map(move |(&place, &is_box)| cell_key(row[place], is_box))
+                };
                 values(a).cmp(values(b))
             });
             order
         })
     }
+}
+
+/// A key that orders the values of a column as a table's cells order them: by
+/// its margins, in the order of the cells, for a column of Boxes, and by its bits
+/// as a signed number for any other.
+fn cell_key(value: TermId, is_box: bool) -> i64 {
+    if is_box {
+        let margins = crate::terms::Term::decode_box(value);
+        [margins.top, margins.bottom, margins.left, margins.right].into_iter().fold(0i64, |key, margin| (key << 8) | i64::from(margin + 128))
+    } else {
+        i64::from(value.encoding() as i32)
+    }
+}
+
+/// Adds to `made` the rows of `found`, each `width` values, in the order of the
+/// cells of a table, each once, and ends the group's rows.
+fn end_group(made: &mut Made, found: &[TermId], boxes: &[bool]) {
+    let width = made.width;
+    let mut rows: Vec<&[TermId]> = found.chunks_exact(width).collect();
+    rows.sort_unstable_by(|a, b| a.iter().zip(boxes).map(|(&value, &is_box)| cell_key(value, is_box)).cmp(b.iter().zip(boxes).map(|(&value, &is_box)| cell_key(value, is_box))));
+    rows.dedup();
+    rows.iter().for_each(|row| made.values.extend_from_slice(row));
+    made.starts.push((made.values.len() / width) as u32);
 }
 
 /// An atom over the groups that it reads: its relation, the column of each site
@@ -341,22 +370,23 @@ impl JoinedAtom {
     /// The types of the table's columns, and for each example, at each
     /// assignment, the value.
     pub fn table(self) -> (Vec<ValueType>, Vec<(Option<Example>, Outcome<Assigned<Vec<RelationValue>>>)>) {
+        let types = self.types;
         let examples = self.examples.into_iter().map(|(example, value)| {
             (example, value.map(|assigned| Assigned {
                 at: assigned.at.into_iter().map(|(values, value)| (values, vec![match value {
                     HeldValue::Whole(value) => value,
-                    HeldValue::Grouped(grouped) => grouped.value(),
+                    HeldValue::Grouped(grouped) => grouped.value(&types),
                 }])).collect(),
                 stop: assigned.stop,
             }))
         }).collect();
-        (self.types, examples)
+        (types, examples)
     }
 }
 
 impl GroupedValue {
-    /// The value, with its rows.
-    fn value(&self) -> RelationValue {
+    /// The value, with its rows, whose columns have the types `types`.
+    fn value(&self, types: &[ValueType]) -> RelationValue {
         let part = &self.rows.parts()[self.part];
         let mut parts: Vec<RelationPart> = self.rows.parts().iter().enumerate().filter(|(at, _)| *at != self.part).map(|(_, part)| part.clone()).collect();
         let arity = usize::from(part.rows.arity());
@@ -369,7 +399,7 @@ impl GroupedValue {
                 let mut values = Vec::new();
                 if (0..self.groups.count()).any(stays) {
                     let of_row = self.groups.of_row(part);
-                    for &number in self.hashes.order(part) {
+                    for &number in self.hashes.order(part, types) {
                         if stays(of_row[number as usize] as usize) {
                             values.extend_from_slice(part.rows.row(number as usize));
                         }
@@ -382,7 +412,7 @@ impl GroupedValue {
                 let columns = part.columns.iter().copied().chain((0..made.width as u16).map(|index| ColumnIndex(first + index))).collect();
                 let of_row = self.groups.of_row(part);
                 let mut values = Vec::new();
-                for &number in self.hashes.order(part) {
+                for &number in self.hashes.order(part, types) {
                     let row = part.rows.row(number as usize);
                     for added in made.at(of_row[number as usize] as usize).chunks_exact(made.width) {
                         values.extend_from_slice(row);
@@ -862,6 +892,7 @@ impl<'a> Decoder<'a> {
                     PlanArgument::Made(index) => Some((usize::from(column.0), usize::from(index))),
                     _ => None,
                 }).collect();
+                let boxes: Vec<bool> = plan.made.iter().map(ValueType::is_box).collect();
                 let mut found: Vec<TermId> = Vec::new();
                 let mut row_values = vec![TermId::from_encoding(0); width];
                 for group in 0..groups.count() {
@@ -880,23 +911,22 @@ impl<'a> Decoder<'a> {
                         found.extend_from_slice(&row_values);
                     }
                     // A column with no site repeats a row of the columns at sites.
-                    let mut rows: Vec<&[TermId]> = found.chunks_exact(width).collect();
-                    rows.sort_unstable_by(|a, b| a.iter().map(|value| value.encoding()).cmp(b.iter().map(|value| value.encoding())));
-                    rows.dedup();
-                    rows.iter().for_each(|row| made.values.extend_from_slice(row));
-                    made.starts.push((made.values.len() / width) as u32);
+                    end_group(&mut made, &found, &boxes);
                 }
             }
             (_, NodeInput::Relation(relation)) => {
                 let (index, levels) = trie_reading(relation, plan, group_place);
                 let bound = levels.iter().take_while(|level| !matches!(level, Level::Made(_))).count();
+                let boxes: Vec<bool> = plan.made.iter().map(ValueType::is_box).collect();
                 let mut row_values = vec![None; width];
+                let mut found: Vec<TermId> = Vec::new();
                 for group in 0..groups.count() {
                     let values = groups.values_at(group);
+                    found.clear();
                     if let Some(node) = walk_group(index.root(), &levels[..bound], values) {
-                        walk_made(node, &levels[bound..], &mut row_values, &mut made.values);
+                        walk_made(node, &levels[bound..], &mut row_values, &mut found);
                     }
-                    made.starts.push((made.values.len() / width) as u32);
+                    end_group(&mut made, &found, &boxes);
                 }
             }
             _ => unreachable!("an atom of a program or fact relation reads its rows"),
