@@ -154,21 +154,21 @@ pub(crate) struct Context<'a> {
     registry: &'a Registry,
     settings: DecodeSettings,
     vocabulary: Vocabulary<'a>,
-    /// The masks that the decodes of this context computed, by the path of
-    /// tokens that reached each state ([`Decoder::path`]).
-    masks: std::sync::Mutex<PathMasks>,
+    /// A hash of the settings and the registry, which the key of a mask in the
+    /// session's masks holds ([`Decoder::path_key`]).
+    key_base: u128,
 }
 
 /// The most masks that a generation of [`PathMasks`] holds.
 const PATH_MASKS: usize = 8192;
 
-/// The masks of the states that the decodes of one context reached, by the
-/// hash of the path of tokens from the context's first state and whether the
-/// decode evaluates. Two decodes of one context that took the same tokens
-/// stand at the same state, so they have the same mask. Where a generation
-/// is full, it becomes the older one, and the one before it goes.
-#[derive(Default)]
-struct PathMasks {
+/// The masks of the states that the decodes of one task session reached, by
+/// [`Decoder::path_key`]: two decodes of the session, of one task, registry,
+/// constructions and settings, that took the same tokens from their first
+/// state stand at the same state, so they have the same mask. Where a
+/// generation is full, it becomes the older one, and the one before it goes.
+#[derive(Default, Debug)]
+pub(crate) struct PathMasks {
     entries: std::collections::HashMap<u128, TokenMask>,
     older: std::collections::HashMap<u128, TokenMask>,
 }
@@ -234,7 +234,14 @@ impl<'a> Decoder<'a> {
     /// differ.
     pub fn new(task: &'a Task, session: &'a TaskSession, registry: &'a Registry, constructions: &'a Constructions, settings: &DecodeSettings) -> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
-        let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), masks: Default::default() };
+        let key_base = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = crate::hash::StableHasher::new();
+            format!("{settings:?}").hash(&mut hasher);
+            hasher.write_usize(registry as *const Registry as usize);
+            hasher.finish128().0
+        };
+        let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), key_base };
         let state = state::State::new();
         Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
     }
@@ -321,7 +328,7 @@ impl<'a> Decoder<'a> {
     /// Where the decode holds the mask of its state, it reads the verdicts
     /// from the mask.
     pub fn admits(&self, ids: &[u32]) -> Vec<bool> {
-        let kept = self.path_key().and_then(|key| self.context.masks.lock().expect("the masks are not poisoned").get(key));
+        let kept = self.path_key().and_then(|key| self.session.path_masks.lock().expect("the masks are not poisoned").get(key));
         let mask = match (self.held.0.get(), kept) {
             (Some(held), _) => held.mask.clone(),
             (None, Some(mask)) => mask,
@@ -656,26 +663,30 @@ impl<'a> Decoder<'a> {
     }
 
     /// The key of the mask of this decode's state among the masks of its
-    /// context: the path of its tokens, and whether it evaluates, since the
-    /// liveness walk of a written `DET` reads that.
+    /// session: the path of its tokens, its settings, registry, task and
+    /// constructions, and whether it evaluates, since the liveness walk of a
+    /// written `DET` reads that.
     fn path_key(&self) -> Option<u128> {
         use std::hash::Hasher;
         let mut hasher = crate::hash::StableHasher::new();
         hasher.write_u128(self.path?);
+        hasher.write_u128(self.context.key_base);
+        hasher.write_usize(self.task as *const Task as usize);
+        hasher.write_usize(self.constructions as *const Constructions as usize);
         hasher.write_u8(u8::from(self.evaluates));
         Some(hasher.finish128().0)
     }
 
-    /// The mask of this decode's state, from the masks of its context where a
-    /// decode of the same path computed it, and else computed and kept there.
-    /// A mask from the context holds no states of its tokens' steps.
+    /// The mask of this decode's state, from the masks of its session where a
+    /// decode of the same key computed it, and else computed and kept there.
+    /// A mask from the session holds no states of its tokens' steps.
     fn path_mask(&self) -> Mask {
         let Some(key) = self.path_key() else { return self.compute_mask() };
-        if let Some(mask) = self.context.masks.lock().expect("the masks are not poisoned").get(key) {
+        if let Some(mask) = self.session.path_masks.lock().expect("the masks are not poisoned").get(key) {
             return Mask { mask, steps: HashMap::new() };
         }
         let mask = self.compute_mask();
-        self.context.masks.lock().expect("the masks are not poisoned").insert(key, mask.mask.clone());
+        self.session.path_masks.lock().expect("the masks are not poisoned").insert(key, mask.mask.clone());
         mask
     }
 

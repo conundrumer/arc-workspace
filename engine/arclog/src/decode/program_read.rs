@@ -27,7 +27,7 @@ impl<'r> ProgramReader<'r> {
                 registry,
                 settings,
                 vocabulary: Vocabulary::new(registry, &settings),
-                masks: Default::default(),
+                key_base: 0,
             },
             ids: Vec::new(),
             model: Vec::new(),

@@ -869,6 +869,9 @@ pub struct TaskSession {
     /// The domains that the table walks of the decodes of this session
     /// keep, made on the first walk.
     det_domains: Arc<OnceLock<crate::decode::det_memo::SessionMemo>>,
+    /// The masks that the decodes of the session computed, by the path of
+    /// tokens that reached each state.
+    pub(crate) path_masks: Arc<Mutex<crate::decode::PathMasks>>,
 }
 
 /// A count of bindings tried and a count of rows held.
@@ -901,7 +904,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default(), path_masks: Arc::default() }
     }
 
     /// A session with this session's intern table and fact relations, and
@@ -914,6 +917,7 @@ impl TaskSession {
             largest_rows: Arc::new(AtomicU64::new(0)),
             det_probes: Arc::default(),
             det_domains: Arc::default(),
+            path_masks: Arc::default(),
             ..self.clone()
         }
     }
