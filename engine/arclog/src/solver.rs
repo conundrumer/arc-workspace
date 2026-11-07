@@ -80,7 +80,7 @@ pub enum Exclusion {
 /// `&<instance>.<port>`, a case holds what its reading of the line gives, as
 /// `docs/arclog/arclog.md#stored-readings` gives it. A case that reads a line
 /// by a proposer other than the line's first reads the line's relation at
-/// that proposer's columns ([`ColumnMap`]).
+/// that proposer's columns (`ColumnMap`).
 #[derive(Clone, Debug)]
 pub struct Case {
     pub name: CaseName,
@@ -146,7 +146,7 @@ impl Case {
     /// with several proposers that stands on a port of an instance, or a read
     /// of a line's relation at a column that the case's reading by a
     /// proposer other than the line's first maps onto no column of that
-    /// proposer ([`ColumnMap`]); `None` where the case has neither.
+    /// proposer (`ColumnMap`); `None` where the case has neither.
     pub fn reading_fault(&self) -> Option<String> {
         (!self.reading_faults.is_empty()).then(|| self.reading_faults.join("; "))
     }
@@ -161,7 +161,7 @@ impl Case {
     /// - A `DET` of the concept program that reads the relation of a line
     ///   that the case reads by a proposer other than the line's first names
     ///   that proposer's columns, as the other forms of the case do
-    ///   ([`ColumnMap`]).
+    ///   (`ColumnMap`).
     /// - The columns that the zero-column lowering drops, as
     ///   `docs/engine/arclog-expansion.md#zero-columns` gives, each with the
     ///   `(= *X 0)` that made it. A form that the drop rewrites keeps its
