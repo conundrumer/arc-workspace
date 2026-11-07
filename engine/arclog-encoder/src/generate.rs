@@ -1957,6 +1957,8 @@ pub struct Walker<'a> {
     held_cells: usize,
     /// The count of examples of a task-wide walk.
     pub examples: u32,
+    /// The cells and the memo entries it holds at most between walks.
+    budget: (usize, usize),
 }
 
 /// What a walker holds at most between walks.
@@ -2020,13 +2022,25 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, examples: 0 }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO) }
+    }
+
+    /// A walker that holds more between walks than [`Walker::new`], for many related tables.
+    pub fn with_budget(family: &'a Generated, cells: usize, entries: usize) -> Self {
+        let mut walker = Walker::new(family);
+        walker.budget = (cells, entries);
+        walker
+    }
+
+    /// The memo entries and the cells it holds.
+    pub fn held(&self) -> (usize, usize) {
+        (self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len(), self.held_cells)
     }
 
     /// Drops the values and the memos where they pass the budget. A later walk computes again
     /// what it needs.
     fn keep_within_budget(&mut self) {
-        if self.held_cells > HELD_CELLS || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > HELD_MEMO {
+        if self.held_cells > self.budget.0 || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > self.budget.1 {
             self.values = vec![Val::None, Val::Empty];
             self.value_index = FastMap::default();
             self.memo = FastMap::default();

@@ -1,0 +1,399 @@
+//! Lists for a study of whole atoms. A writer's rows hold, for each decision of a task, the body's table and each candidate's table, in files `<source>/<task>.tables.zst`. For each distinct table of such a
+//! file, `<source>/<task>.gen.zst` holds what the candidate lists hold: each shape's value where it is stable over the examples, and otherwise its least, its mean and its greatest. `<source>/<task>.null.zst`
+//! holds the same for the shapes that read the output, with each train pair reading another pair's output.
+//!
+//! A file holds a header line and then a line per decision, each its own zstd frame, so a reader can read a file in progress:
+//! `{"record": "decision", "decision": D, "body": I, "cands": [I, ..], "shapes": ids, "reads_output": flags, "tables": [{"at": I, "ids": places, "values": floats, "graded": places, "least": floats,
+//! "mean": floats, "most": floats}, ..]}`. `I` is a table's place in the task, and -1 where the decision has no table there. `shapes` adds shape ids (u64) to the file's list of shapes, `reads_output`
+//! (u8) says which of them read the output, and `places` (u32) index that list. Arrays are little-endian in base64. A shape with no value at any example has NaN for its least, mean and most.
+
+use crate::generate::{Generated, Generators, Walker, READS_OUTPUT};
+use crate::schema::type_of_name;
+use crate::stored::{cell_bits, Stored};
+use crate::table_vector::{table_vector, Grids, TableVector};
+use arclog::types::ValueType;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::{BufRead, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+/// A table above this many rows at an example has no value there, as in the candidate lists.
+const ROW_CAP: u64 = 2000;
+/// The assignments of a table that a list reads.
+const ASSIGNMENT_CAP: usize = 16;
+/// What the walkers of a task hold at most. Past either bound, they start over.
+const HELD_ENTRIES: usize = 4_000_000;
+const HELD_CELLS: usize = 20_000_000;
+
+fn base64(bytes: &[u8]) -> String {
+    const LETTERS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let held = (u32::from(chunk[0]) << 16) | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8) | u32::from(*chunk.get(2).unwrap_or(&0));
+        out.push(LETTERS[(held >> 18) as usize & 63] as char);
+        out.push(LETTERS[(held >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { LETTERS[(held >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { LETTERS[held as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+fn floats(values: &[f32]) -> String {
+    base64(&values.iter().flat_map(|value| value.to_le_bytes()).collect::<Vec<u8>>())
+}
+
+fn places(values: &[u32]) -> String {
+    base64(&values.iter().flat_map(|value| value.to_le_bytes()).collect::<Vec<u8>>())
+}
+
+/// One of a task's two files: its shapes so far, and each line as its own frame under a working name.
+struct Sink {
+    path: PathBuf,
+    working: PathBuf,
+    file: std::io::BufWriter<std::fs::File>,
+    index: HashMap<u64, u32>,
+    fresh: Vec<(u64, u8)>,
+}
+
+impl Sink {
+    fn new(path: PathBuf, header: &serde_json::Value) -> Result<Sink, String> {
+        let working = path.with_extension("working");
+        let file = std::io::BufWriter::new(std::fs::File::create(&working).map_err(|error| error.to_string())?);
+        let mut sink = Sink { path, working, file, index: HashMap::new(), fresh: Vec::new() };
+        sink.line(header)?;
+        Ok(sink)
+    }
+
+    fn line(&mut self, value: &serde_json::Value) -> Result<(), String> {
+        let mut text = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+        text.push(b'\n');
+        let packed = zstd::stream::encode_all(&text[..], 3).map_err(|error| error.to_string())?;
+        self.file.write_all(&packed).map_err(|error| error.to_string())?;
+        self.file.flush().map_err(|error| error.to_string())
+    }
+
+    fn place(&mut self, shape: u64, reads_output: bool) -> u32 {
+        let next = self.index.len() as u32;
+        *self.index.entry(shape).or_insert_with(|| {
+            self.fresh.push((shape, u8::from(reads_output)));
+            next
+        })
+    }
+
+    /// A table's list, as a line's entry.
+    fn list(&mut self, at: i64, vector: &TableVector) -> serde_json::Value {
+        let (mut ids, mut values) = (Vec::new(), Vec::new());
+        let (mut graded, mut least, mut mean, mut most) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for shape in 0..vector.shapes.len() {
+            let (low, middle, high, count) = vector.over_examples(shape, false);
+            let reads_output = vector.meta[shape].0 & READS_OUTPUT != 0;
+            if vector.stable(shape) {
+                ids.push(self.place(vector.shapes[shape], reads_output));
+                values.push(middle as f32);
+            } else if count == 0 || low != 0.0 || high != 0.0 {
+                graded.push(self.place(vector.shapes[shape], reads_output));
+                least.push(low as f32);
+                mean.push(middle as f32);
+                most.push(high as f32);
+            }
+        }
+        serde_json::json!({"at": at, "ids": places(&ids), "values": floats(&values), "graded": places(&graded), "least": floats(&least), "mean": floats(&mean), "most": floats(&most)})
+    }
+
+    fn fresh_shapes(&mut self) -> (String, String) {
+        let ids = base64(&self.fresh.iter().flat_map(|(shape, _)| shape.to_le_bytes()).collect::<Vec<u8>>());
+        let flags = base64(&self.fresh.iter().map(|(_, flag)| *flag).collect::<Vec<u8>>());
+        self.fresh.clear();
+        (ids, flags)
+    }
+
+    fn finish(mut self) -> Result<(), String> {
+        self.file.flush().map_err(|error| error.to_string())?;
+        drop(self.file);
+        std::fs::rename(&self.working, &self.path).map_err(|error| error.to_string())
+    }
+}
+
+/// A file's table as a table of the candidate lists, with each assignment's each model as a model at its example. `Ok(None)` is no table, and `Err` says why a table can't be read.
+fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &HashMap<i64, String>) -> Result<Option<Stored>, &'static str> {
+    use serde_json::Value;
+    let Some(parts) = table.as_array() else { return Ok(None) };
+    if parts.len() != 1 {
+        return Err("several slots");
+    }
+    let part = &parts[0];
+    let names: Vec<&str> = part["types"].as_array().ok_or("types")?.iter().filter_map(Value::as_str).collect();
+    let types: Vec<ValueType> = names.iter().map(|name| type_of_name(name)).collect::<Option<_>>().ok_or("a type")?;
+    if types.len() > 8 {
+        return Err("past 8 columns");
+    }
+    let examples = train + test;
+    let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); examples];
+    let mut blocked = vec![false; examples];
+    for at in part["at"].as_array().ok_or("at")?.iter().take(ASSIGNMENT_CAP) {
+        for entry in at["entries"].as_array().ok_or("entries")? {
+            let kind = entry[0].as_i64().ok_or("kind")?;
+            let index = entry[1].as_u64().ok_or("index")? as usize;
+            let scope: Vec<usize> = match kind {
+                0 => (0..examples).collect(),
+                1 => vec![index],
+                2 => vec![train + index],
+                _ => return Err("a kind of example"),
+            };
+            let count = entry[4].as_u64().unwrap_or(0);
+            let cells = entry[5].as_array();
+            if entry[3].as_bool() != Some(true) || count > ROW_CAP || cells.is_none() {
+                for example in scope {
+                    if example < examples {
+                        blocked[example] = true;
+                    }
+                }
+                continue;
+            }
+            let mut model: Vec<Vec<u32>> = Vec::with_capacity(count as usize);
+            if types.is_empty() {
+                model.resize(count as usize, Vec::new());
+            } else if let Some(cells) = cells {
+                let mut place = 0;
+                while place < cells.len() {
+                    let mut row = Vec::with_capacity(types.len());
+                    for ty in &types {
+                        let value = if ty.is_box() {
+                            let held = Value::Array(cells.get(place..place + 4).ok_or("a cell")?.to_vec());
+                            place += 4;
+                            held
+                        } else {
+                            let held = cells.get(place).ok_or("a cell")?.clone();
+                            place += 1;
+                            match orient.get(&held.as_i64().unwrap_or(-1)) {
+                                Some(name) if !matches!(ty, ValueType::Color | ValueType::Int | ValueType::Nat | ValueType::Example | ValueType::Ident(_)) => Value::String(name.clone()),
+                                _ => held,
+                            }
+                        };
+                        row.push(cell_bits(&value, ty).ok_or("a cell")?);
+                    }
+                    model.push(row);
+                }
+            }
+            for example in scope {
+                if example < examples {
+                    rows[example].push(model.clone());
+                }
+            }
+        }
+    }
+    for (example, held) in rows.iter_mut().enumerate() {
+        if blocked[example] {
+            held.clear();
+        }
+    }
+    Ok(Some(Stored::of_rows(&types, rows)))
+}
+
+/// What one file's walks hold. The walkers stand before the families, so they leave memory first.
+struct Walkers {
+    real: HashMap<String, Walker<'static>>,
+    null: HashMap<String, Walker<'static>>,
+    families: HashMap<String, Arc<Generated>>,
+}
+
+impl Walkers {
+    /// A walker of `stored`'s family. `family` stands in `families` until the walkers have left, which makes the longer lifetime sound.
+    fn walker<'w>(walkers: &'w mut HashMap<String, Walker<'static>>, families: &mut HashMap<String, Arc<Generated>>, generators: &Generators, stored: &Stored, d: usize) -> &'w mut Walker<'static> {
+        let family = families.entry(stored.key.clone()).or_insert_with(|| generators.get(stored, d));
+        let family: &'static Generated = unsafe { &*Arc::as_ptr(family) };
+        walkers.entry(stored.key.clone()).or_insert_with(|| Walker::with_budget(family, HELD_CELLS, HELD_ENTRIES))
+    }
+
+    fn over_budget(walkers: &HashMap<String, Walker<'static>>) -> bool {
+        let (mut entries, mut cells) = (0, 0);
+        for walker in walkers.values() {
+            let (own_entries, own_cells) = walker.held();
+            entries += own_entries;
+            cells += own_cells;
+        }
+        entries > HELD_ENTRIES || cells > HELD_CELLS
+    }
+}
+
+/// One task's state as its decisions come.
+struct TaskRun<'r> {
+    train: usize,
+    test: usize,
+    examples: usize,
+    grids: Grids,
+    null_grids: Option<Grids>,
+    real: Sink,
+    null: Sink,
+    table_at: HashMap<u128, i64>,
+    walkers: Walkers,
+    generators: &'r Generators,
+    d: usize,
+    walks: u64,
+    reads: u64,
+    faults: BTreeMap<&'static str, u64>,
+}
+
+impl TaskRun<'_> {
+    /// The place of a table in the task, with its lists in the decision's lines where it is new.
+    fn place(&mut self, table: &serde_json::Value, orient: &HashMap<i64, String>, real: &mut Vec<serde_json::Value>, null: &mut Vec<serde_json::Value>) -> i64 {
+        let stored = match stored_of(table, self.train, self.test, orient) {
+            Ok(Some(stored)) => stored,
+            Ok(None) => return -1,
+            Err(why) => {
+                *self.faults.entry(why).or_insert(0) += 1;
+                return -1;
+            }
+        };
+        self.reads += 1;
+        let content = stored.content();
+        if let Some(at) = self.table_at.get(&content) {
+            return *at;
+        }
+        let at = self.table_at.len() as i64;
+        self.table_at.insert(content, at);
+        self.walks += 1;
+        let walker = Walkers::walker(&mut self.walkers.real, &mut self.walkers.families, self.generators, &stored, self.d);
+        let vector = table_vector(walker, &stored, &self.grids, self.examples, false);
+        real.push(self.real.list(at, &vector));
+        if let Some(grids) = &self.null_grids {
+            let walker = Walkers::walker(&mut self.walkers.null, &mut self.walkers.families, self.generators, &stored, self.d);
+            let vector = table_vector(walker, &stored, grids, self.examples, true);
+            null.push(self.null.list(at, &vector));
+        }
+        at
+    }
+}
+
+/// Writes the lists of one file of tables.
+#[allow(clippy::too_many_arguments)]
+fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d: usize, order_of: &BTreeMap<String, Option<Vec<usize>>>, orient: &HashMap<i64, String>) -> Result<String, String> {
+    let begun = std::time::Instant::now();
+    let raw = std::fs::File::open(input).map_err(|error| error.to_string())?;
+    let reader = std::io::BufReader::new(zstd::stream::read::Decoder::new(raw).map_err(|error| error.to_string())?);
+    let mut run: Option<TaskRun> = None;
+    let mut decisions = 0u64;
+    let mut name = String::new();
+    for line in reader.lines() {
+        let line = line.map_err(|error| error.to_string())?;
+        let record: serde_json::Value = serde_json::from_str(&line).map_err(|error| error.to_string())?;
+        drop(line);
+        match record["record"].as_str() {
+            Some("header") => {
+                name = record["task"].as_str().ok_or("a task's name")?.to_string();
+                let (task, grids) = Grids::of_file(task_dir, &name, None)?;
+                let (train, test) = (task.train.len(), task.test.len());
+                let order = order_of.get(&name).and_then(Option::as_ref);
+                let null_grids = match order {
+                    Some(order) => Some(Grids::of_file(task_dir, &name, Some(order))?.1),
+                    None => None,
+                };
+                let header = serde_json::json!({"record": "header", "task": name, "train": train, "test": test});
+                let mut null_header = header.clone();
+                null_header["order"] = order.map_or(serde_json::Value::Null, |order| serde_json::json!(order));
+                run = Some(TaskRun {
+                    train,
+                    test,
+                    examples: train + test,
+                    grids,
+                    null_grids,
+                    real: Sink::new(out.join(format!("{name}.gen.zst")), &header)?,
+                    null: Sink::new(out.join(format!("{name}.null.zst")), &null_header)?,
+                    table_at: HashMap::new(),
+                    walkers: Walkers { real: HashMap::new(), null: HashMap::new(), families: HashMap::new() },
+                    generators,
+                    d,
+                    walks: 0,
+                    reads: 0,
+                    faults: BTreeMap::new(),
+                });
+            }
+            Some("decision") => {
+                let run = run.as_mut().ok_or("a decision before its header")?;
+                let (mut real, mut null) = (Vec::new(), Vec::new());
+                let body = run.place(&record["body"], orient, &mut real, &mut null);
+                let empty = Vec::new();
+                let cands: Vec<i64> = record["candidates"].as_array().unwrap_or(&empty).iter().map(|table| run.place(table, orient, &mut real, &mut null)).collect();
+                let line_of = |shapes: (String, String), tables: Vec<serde_json::Value>| serde_json::json!({"record": "decision", "decision": record["decision"], "body": body, "cands": cands, "shapes": shapes.0, "reads_output": shapes.1, "tables": tables});
+                let (real_shapes, null_shapes) = (run.real.fresh_shapes(), run.null.fresh_shapes());
+                run.real.line(&line_of(real_shapes, real))?;
+                run.null.line(&line_of(null_shapes, null))?;
+                decisions += 1;
+                if Walkers::over_budget(&run.walkers.real) || Walkers::over_budget(&run.walkers.null) {
+                    run.walkers.real.clear();
+                    run.walkers.null.clear();
+                }
+            }
+            other => return Err(format!("a line of no known record: {other:?}")),
+        }
+    }
+    let run = run.ok_or("a file with no header")?;
+    let summary = format!("{name}: {decisions} decisions, {} tables read, {} walked, {:.1} s, {:.2} walks/s, faults {:?}", run.reads, run.walks, begun.elapsed().as_secs_f64(), run.walks as f64 / begun.elapsed().as_secs_f64().max(1e-3), run.faults);
+    let TaskRun { real, null, walkers, .. } = run;
+    drop(walkers);
+    real.finish()?;
+    null.finish()?;
+    Ok(summary)
+}
+
+/// The finished files of tables under `input`, as (source folder's name, task, path), in a mixed order that does not change as files come.
+fn files_of(input: &Path) -> Vec<(String, String, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(sources) = std::fs::read_dir(input) else { return out };
+    for source in sources.flatten() {
+        let Ok(files) = std::fs::read_dir(source.path()) else { continue };
+        let folder = source.file_name().to_string_lossy().to_string();
+        for file in files.flatten() {
+            let name = file.file_name().to_string_lossy().to_string();
+            if let Some(task) = name.strip_suffix(".tables.zst") {
+                out.push((folder.clone(), task.to_string(), file.path()));
+            }
+        }
+    }
+    out.sort_by_key(|(folder, task, _)| crate::native::hash_words(format!("{folder}/{task}").bytes().map(u64::from)));
+    out
+}
+
+/// Writes the lists of each finished file of tables under `input` into the same folders under `out`, on `threads` threads, with a line of progress per file, and goes on as files come. It ends once no new
+/// file has come for `idle_seconds`, and a restart skips the files whose lists stand.
+#[allow(clippy::too_many_arguments)]
+pub fn run(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d: usize, order_of: &BTreeMap<String, Option<Vec<usize>>>, orient: &HashMap<i64, String>, threads: usize, idle_seconds: u64) -> Result<(), String> {
+    let claimed: Mutex<HashSet<PathBuf>> = Mutex::new(HashSet::new());
+    let finished = std::sync::atomic::AtomicUsize::new(0);
+    let begun = std::time::Instant::now();
+    let last_new = Mutex::new(std::time::Instant::now());
+    std::thread::scope(|scope| {
+        for _ in 0..threads.max(1) {
+            scope.spawn(|| loop {
+                let next = {
+                    let mut claimed = claimed.lock().expect("no panic");
+                    files_of(input).into_iter().find(|(folder, task, path)| {
+                        !claimed.contains(path) && !out.join(folder).join(format!("{task}.gen.zst")).exists()
+                    }).inspect(|(_, _, path)| {
+                        claimed.insert(path.clone());
+                    })
+                };
+                let Some((folder, _, path)) = next else {
+                    if last_new.lock().expect("no panic").elapsed().as_secs() > idle_seconds {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    continue;
+                };
+                *last_new.lock().expect("no panic") = std::time::Instant::now();
+                let target = out.join(&folder);
+                let _ = std::fs::create_dir_all(&target);
+                let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lists_of_file(&path, &target, task_dir, generators, d, order_of, orient)));
+                match written {
+                    Ok(Ok(summary)) => {
+                        let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        eprintln!("{done} files, {:.2} files/min; {folder}/{summary}", done as f64 * 60.0 / begun.elapsed().as_secs_f64());
+                    }
+                    Ok(Err(message)) => eprintln!("{folder}/{}: {message}", path.display()),
+                    Err(_) => eprintln!("{folder}/{}: a panic", path.display()),
+                }
+            });
+        }
+    });
+    Ok(())
+}
