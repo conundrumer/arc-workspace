@@ -162,13 +162,13 @@ pub fn skipped(bound: Bound, count: u64) {
     }
 }
 
-/// The slots that the idle shortcut of a walk decides, by its cause and by the kind of root.
-static IDLE_ROOTS: OnceLock<Mutex<HashMap<(&'static str, String), u64>>> = OnceLock::new();
+/// Counts of a walk by group and by label, for the checks of a change.
+static TALLIES: OnceLock<Mutex<HashMap<(&'static str, String), u64>>> = OnceLock::new();
 
-/// `slots` slots of roots of one kind, that a term idle for `cause` decides.
-pub fn idle_roots(cause: &'static str, kind: String, slots: u64) {
-    if enabled() && slots > 0 {
-        *IDLE_ROOTS.get_or_init(Default::default).lock().unwrap().entry((cause, kind)).or_insert(0) += slots;
+/// `count` more under a label of a group.
+pub fn tally(group: &'static str, label: String, count: u64) {
+    if enabled() && count > 0 {
+        *TALLIES.get_or_init(Default::default).lock().unwrap().entry((group, label)).or_insert(0) += count;
     }
 }
 
@@ -200,12 +200,12 @@ pub fn summary() -> String {
             out.push_str(&format!("bounds\t{name}\t{head}\t{count}\n"));
         }
     }
-    out.push_str("bounds\tidle cause\troot kind\tslots\n");
-    if let Some(idle) = IDLE_ROOTS.get() {
-        let mut rows: Vec<_> = idle.lock().unwrap().iter().map(|((cause, kind), slots)| (*cause, kind.clone(), *slots)).collect();
+    out.push_str("bounds\ttally\tgroup\tlabel\tcount\n");
+    if let Some(tallies) = TALLIES.get() {
+        let mut rows: Vec<_> = tallies.lock().unwrap().iter().map(|((group, label), count)| (*group, label.clone(), *count)).collect();
         rows.sort();
-        for (cause, kind, slots) in rows {
-            out.push_str(&format!("bounds\tidle\t{cause}\t{kind}\t{slots}\n"));
+        for (group, label, count) in rows {
+            out.push_str(&format!("bounds\ttally\t{group}\t{label}\t{count}\n"));
         }
     }
     out.push_str("bounds\thead\tevaluations\tinput had no value\n");

@@ -2393,16 +2393,22 @@ pub struct Walker<'a> {
     eval: Evaluator<'a>,
     values: Vec<Val>,
     value_index: FastMap<u128, u32>,
-    memo: FastMap<(u32, u32, u32), (u32, usize)>,
-    counts: FastMap<(u32, u32, u32), (u32, u32, usize)>,
+    memo: FastMap<(u32, u32, u32), (u32, Forced)>,
+    counts: FastMap<(u32, u32, u32), (u32, u32, Forced)>,
     /// How keys group a value's rows: a hash of the grouping, and the count of groups.
     groupings: FastMap<(u32, u32), (u128, u32)>,
     /// A part's count of rows at a grouping of its first value, with its second value.
-    group_counts: FastMap<(u32, u32, u128, u32), (u32, usize)>,
+    group_counts: FastMap<(u32, u32, u128, u32), (u32, Forced)>,
     /// The cells that `values` holds.
     held_cells: usize,
-    /// The cells of `inside` rows that the walk in progress has written out.
+    /// The cells of the rows of lazy values that the walk in progress has written out, each lazy value once.
     written_cells: usize,
+    /// The lazy values that the walk in progress has charged for, by id.
+    charged: FastMap<u32, ()>,
+    /// The lazy values, with the cells of their written rows, that the evaluations in progress have forced, in order.
+    forced: Vec<(u32, usize)>,
+    /// For a lazy value by id, the id of its written rows and their cells.
+    written_of: FastMap<u32, (u32, usize)>,
     /// The count of examples of a task-wide walk.
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
@@ -2410,6 +2416,9 @@ pub struct Walker<'a> {
     /// Whether the last walk passed `WALK_CELLS` cells of values, so that the terms it extends after that point, and every term that reads one, have no value.
     pub over_budget: bool,
 }
+
+/// The lazy values that an evaluation forced, by id, with the cells of the rows written out for each.
+type Forced = Option<Arc<[(u32, usize)]>>;
 
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
@@ -2485,7 +2494,7 @@ fn no_value_by_count(of: RootOf, rows: u32, left: u32, other: u32) -> bool {
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2510,6 +2519,7 @@ impl<'a> Walker<'a> {
             self.counts = FastMap::default();
             self.groupings = FastMap::default();
             self.group_counts = FastMap::default();
+            self.written_of = FastMap::default();
             self.held_cells = 0;
             // The tables those values held are gone, so an address they had can hold another.
             clear_views();
@@ -2536,21 +2546,61 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells.
+    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells. A walk charges the cells of a lazy value's written rows once, however many evaluations force it.
     fn written_id(&mut self, step: &Step, id: u32, first: bool) -> u32 {
         let held = &self.values[id as usize];
         if !held.is_lazy() || held.lazy_reads(step, first) {
             return id;
         }
-        let value = held.written();
-        // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
-        let cells = match &value {
-            Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
-            _ => 0,
+        let (written, cells) = match self.written_of.get(&id) {
+            Some(&found) => found,
+            None => {
+                let value = self.values[id as usize].written();
+                // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
+                let cells = match &value {
+                    Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+                    _ => 0,
+                };
+                let written = self.value_id(value);
+                self.written_of.insert(id, (written, cells));
+                (written, cells)
+            }
         };
-        let written = self.value_id(value);
-        self.written_cells += cells;
+        self.force(id, cells);
         written
+    }
+
+    /// An evaluation forces the lazy value at `id`: the walk in progress charges its `cells` if it has not, and the evaluation records it.
+    fn force(&mut self, id: u32, cells: usize) {
+        self.forced.push((id, cells));
+        if self.charged.insert(id, ()).is_none() {
+            self.written_cells += cells;
+            if crate::bounds::enabled() {
+                crate::bounds::tally("charge", "cells charged, each lazy value once per walk".to_string(), cells as u64);
+            }
+        } else if crate::bounds::enabled() {
+            crate::bounds::tally("charge", "cells that a repeated force would have charged".to_string(), cells as u64);
+        }
+    }
+
+    /// The lazy values that the evaluations since `mark` forced.
+    fn forced_since(&self, mark: usize) -> Forced {
+        if self.forced.len() == mark {
+            return None;
+        }
+        let mut list = self.forced[mark..].to_vec();
+        list.sort_unstable();
+        list.dedup();
+        Some(list.into())
+    }
+
+    /// A memo hit forces the lazy values that its evaluation forced when it ran, as a fresh evaluation does.
+    fn replay(&mut self, forced: &Forced) {
+        if let Some(list) = forced {
+            for &(id, cells) in list.iter() {
+                self.force(id, cells);
+            }
+        }
     }
 
     /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes `CELL_CAP` cells written out: a bound cuts it off.
@@ -2596,8 +2646,8 @@ impl<'a> Walker<'a> {
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
     fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
-        if let Some(&(found, cost)) = self.memo.get(&(steps.ids[at], id, b)) {
-            self.written_cells += cost;
+        if let Some((found, forced)) = self.memo.get(&(steps.ids[at], id, b)).cloned() {
+            self.replay(&forced);
             let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
@@ -2619,13 +2669,14 @@ impl<'a> Walker<'a> {
                     return (groups, 0);
                 }
                 let key = (part, written, grouping, b);
-                if let Some(&(found, cost)) = self.group_counts.get(&key) {
-                    self.written_cells += cost;
+                if let Some((found, forced)) = self.group_counts.get(&key).cloned() {
+                    self.replay(&forced);
                     return (found, 0);
                 }
-                let before = self.written_cells;
+                let mark = self.forced.len();
                 let found = count_of(&self.apply(step, written, b));
-                self.group_counts.insert(key, (found, self.written_cells - before));
+                let forced = self.forced_since(mark);
+                self.group_counts.insert(key, (found, forced));
                 return (found, 0);
             }
         }
@@ -2686,6 +2737,8 @@ impl<'a> Walker<'a> {
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
         self.written_cells = 0;
+        self.charged.clear();
+        self.forced.clear();
         // Per term, whether the walk's stop left it unevaluated, or it reads a term so left. Such a term has no value, and so has each root over it.
         let mut stopped: Vec<bool> = vec![false; leaves.len()];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
@@ -2731,20 +2784,22 @@ impl<'a> Walker<'a> {
                 for pair in 0..if past_bound { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (step_id, first[pair], b);
-                    // A memo hit adds the cells that the evaluation wrote out when it ran, as a fresh evaluation adds them.
-                    let id = match self.memo.get(&key) {
-                        Some(&(found, cost)) => {
-                            self.written_cells += cost;
+                    // A memo hit charges the lazy values that the evaluation forced when it ran, as a fresh evaluation does, those that the walk has not charged.
+                    let mark = self.forced.len();
+                    let id = match self.memo.get(&key).cloned() {
+                        Some((found, forced)) => {
+                            self.replay(&forced);
                             found
                         }
                         None => {
-                            let before = self.written_cells;
                             let value = self.apply(step, first[pair], b);
                             let id = self.value_id(value);
-                            self.memo.insert(key, (id, self.written_cells - before));
+                            let forced = self.forced_since(mark);
+                            self.memo.insert(key, (id, forced));
                             id
                         }
                     };
+                    self.forced.truncate(mark);
                     if let Val::Rows(parts) = &self.values[id as usize] {
                         walk_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
                     }
@@ -2758,7 +2813,7 @@ impl<'a> Walker<'a> {
                 for (place, (hash, of)) in term.roots.iter().enumerate() {
                     if listed & (1 << place) != 0 {
                         if counted {
-                            crate::bounds::idle_roots("stopped: first cut by cap", format!("{of:?}"), scope as u64);
+                            crate::bounds::tally("stopped: first cut by cap", format!("{of:?}"), scope as u64);
                         }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
@@ -2775,18 +2830,21 @@ impl<'a> Walker<'a> {
                         (count_of(value), if term.root == RootKind::Number { number_word(value) } else { 0 })
                     } else {
                         let key = (step_id, id, b);
-                        match self.counts.get(&key) {
-                            Some(&(rows, number, cost)) => {
-                                self.written_cells += cost;
+                        let mark = self.forced.len();
+                        let counted = match self.counts.get(&key).cloned() {
+                            Some((rows, number, forced)) => {
+                                self.replay(&forced);
                                 (rows, number)
                             }
                             None => {
-                                let before = self.written_cells;
                                 let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
-                                self.counts.insert(key, (found.0, found.1, self.written_cells - before));
+                                let forced = self.forced_since(mark);
+                                self.counts.insert(key, (found.0, found.1, forced));
                                 found
                             }
-                        }
+                        };
+                        self.forced.truncate(mark);
+                        counted
                     };
                     let left = count_of(&self.values[id as usize]);
                     let other = if term.b == NO_TERM { NO_COUNT } else { count_of(&self.values[b as usize]) };
@@ -2803,7 +2861,7 @@ impl<'a> Walker<'a> {
                             let denominator = no_value_by_count(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other });
                             let cause = if !idle && !denominator { None } else if idle && first_cut { Some("idle: first has no value") } else if idle && rows == NO_COUNT { Some("idle: second has no value") } else if idle { Some("idle: no denominator rows or no single member") } else { Some("full path: no denominator rows or no single member") };
                             if let Some(cause) = cause {
-                                crate::bounds::idle_roots(cause, format!("{of:?}"), 1);
+                                crate::bounds::tally(cause, format!("{of:?}"), 1);
                             }
                         }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
@@ -2847,6 +2905,8 @@ impl<'a> Walker<'a> {
     /// The count of rows at each instance of each term whose text holds `pattern`, leaves
     /// included, for a check against the expression that a term stands for.
     pub fn term_counts(&mut self, leaves: &[Vec<Val>], train: usize, pattern: &str) -> Vec<(String, Vec<Option<u64>>)> {
+        self.charged.clear();
+        self.forced.clear();
         let family = self.family;
         let pairs = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
