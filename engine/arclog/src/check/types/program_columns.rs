@@ -39,7 +39,7 @@ pub fn program_types(
     program: &ResolvedProgram,
     registry: &Registry,
     _clauses: &SolverClauses,
-    forms: &[(NodePath, Arc<ScopeTypes>, CanonicalOrder)],
+    forms: &[(NodePath, Arc<ScopeTypes>, &CanonicalOrder)],
 ) -> ProgramTypes {
     let _timed = crate::stats::span(crate::stats::Phase::CheckProgramTypes);
     crate::stats::units(crate::stats::Phase::CheckProgramTypes, program.graph.nodes.len());

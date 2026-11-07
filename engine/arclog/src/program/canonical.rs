@@ -42,7 +42,7 @@ pub use order::CanonicalOrder;
 pub(crate) use replay::cached_write;
 pub(crate) use walk::one_scope_labels;
 
-pub(crate) use form::{normalized_constraint,canonical_form, form_scope_labels, prediction, relation_of, scope_labels, shares_rule_scope};
+pub(crate) use form::{holds_rigid_det, normalized_constraint,canonical_form, form_scope_labels, prediction, relation_of, scope_labels, shares_rule_scope};
 pub use form::{canonical_hash, opens_scope, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
 pub(in crate::program) use form::form_of;
 
@@ -83,10 +83,12 @@ impl Default for SearchBudget {
 /// [`form_scope_labels`] gives them, and its canonical order and form, as
 /// [`CanonicalOrder::with_form`] gives them, with whether a search reached
 /// the cap; that form with the written order of its lists, as
-/// [`CanonicalOrder::with_written_lists`] gives it; and its writes through
+/// [`CanonicalOrder::with_written_lists`] gives it; whether a `RIGID_DET`
+/// form stands in it, as [`holds_rigid_det`] gives it; and its writes through
 /// name writers other than [`AsWritten`], as [`cached_write`] gives them.
 #[derive(Debug, Default)]
 pub(super) struct FormCache {
+    holds_rigid_det: std::sync::OnceLock<bool>,
     scope_labels: std::sync::OnceLock<Box<[LabelId]>>,
     order: std::sync::OnceLock<(CanonicalOrder, CanonicalForm, bool)>,
     written_lists: std::sync::OnceLock<CanonicalForm>,

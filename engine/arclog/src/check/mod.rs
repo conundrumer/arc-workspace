@@ -10,6 +10,7 @@
 //! The checker stage writes the bodies of the checks, each in a submodule of
 //! its own.
 
+mod earlier;
 mod frames;
 mod held_det;
 pub use held_det::HeldDetInterfaceError;
@@ -52,6 +53,8 @@ use crate::resolver::{DependencyGraph, ResolvedContent, ResolvedProgram, Signatu
 use crate::stats::{self, Phase};
 use crate::types::{ProgramTypes, ValueType};
 
+pub use earlier::EarlierForms;
+use earlier::Kept;
 mod clauses;
 pub use clauses::{ClauseEntry, FileScope, HeldClauses, SolverClauses};
 use clauses::{clause_signature, top_level_forms};
@@ -639,7 +642,24 @@ pub fn check_program_of_files(
     cache: &mut CheckCache,
     files: Option<&CaseFiles<'_>>,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
-    check_program_with_open(program, clauses, registry, cache, files, None)
+    check_program_with_open(program, clauses, registry, cache, files, None, None)
+}
+
+/// [`check_shared_program`] over a program whose forms before its last are
+/// the finished forms that `earlier` serves: its resolution is
+/// [`crate::resolver::resolve_last`]'s over the resolution of those forms,
+/// which gives each read of theirs the signature it has in the program, and
+/// `clauses` holds those forms' clauses. The check reads from `earlier`
+/// what it reads of each of those forms in every such program, and holds in
+/// it what it reads there the first time.
+pub fn check_shared_program_over(
+    program: Arc<ResolvedProgram>,
+    clauses: &SolverClauses,
+    registry: &Registry,
+    cache: &mut CheckCache,
+    earlier: &EarlierForms,
+) -> Result<CheckedProgram, Vec<Diagnostic>> {
+    check_program_with_open(program, clauses, registry, cache, None, None, Some(earlier))
 }
 
 /// Check and type an unfinished contextual query with the decoder's prefix checks.
@@ -648,12 +668,12 @@ pub fn check_shared_open_program(
     program: Arc<ResolvedProgram>, clauses: &SolverClauses, registry: &Registry,
     cache: &mut CheckCache, open: &NodePath,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
-    check_program_with_open(program, clauses, registry, cache, None, Some(open))
+    check_program_with_open(program, clauses, registry, cache, None, Some(open), None)
 }
 
 fn check_program_with_open(
     program: Arc<ResolvedProgram>, clauses: &SolverClauses, registry: &Registry,
-    cache: &mut CheckCache, files: Option<&CaseFiles<'_>>, open: Option<&NodePath>,
+    cache: &mut CheckCache, files: Option<&CaseFiles<'_>>, open: Option<&NodePath>, earlier: Option<&EarlierForms>,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
     let _timed = stats::span(Phase::CheckProgram);
     let mut refused = Vec::new();
@@ -673,19 +693,40 @@ fn check_program_with_open(
     }
     let mut alerts = Vec::new();
     let held = clauses.held_of(&program).unwrap_or_else(|| Arc::new(HeldClauses::of(&program)));
+    // A cycle leaves the order that forms are inferred in to the checks, which a form kept from another program was not under.
+    let earlier = earlier.filter(|_| refused.is_empty() && files.is_none() && open.is_none());
+    let last = program.program.value().forms.len().saturating_sub(1) as u32;
     let forms: Vec<TopLevelForm<'_>> = top_level_forms(&program)
-        .map(|(path, form)| {
+        .zip(0u32..)
+        .map(|((path, form), index)| {
             let mut search = SearchBudget::new();
             let (order, canonical) = CanonicalOrder::with_form(form, &mut search);
-            let (order, canonical) = (order.clone(), canonical.clone());
             if search.reached {
                 let message = "the search for the form's canonical form reached its cap".into();
                 alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
             }
-            let mut signatures = read_signatures(&program, form, &path, &order).into_vec();
-            signatures.extend(types::type_clause_signatures(form, &order, clauses, &held).cloned());
-            let untyped = labels_in_scopes(&order, &|_, _| None);
-            TopLevelForm { path, form, order, canonical, signatures: signatures.into(), untyped }
+            // The signatures that the program's resolution gives the reads of a form before the last are those of the finished forms'.
+            let kept = earlier.filter(|_| index < last).map(|earlier| earlier.form(index));
+            let reads = || read_signatures(&program, form, &path, order);
+            let mut signatures = match &kept {
+                Some(kept) => kept.reads.get_or_init(reads).to_vec(),
+                None => reads().into_vec(),
+            };
+            signatures.extend(types::type_clause_signatures(form, order, clauses, &held).cloned());
+            let untyped = || -> Arc<[LabelInScope]> { labels_in_scopes(order, &|_, _| None).into() };
+            let untyped = match &kept {
+                Some(kept) => Arc::clone(kept.untyped.get_or_init(untyped)),
+                None => untyped(),
+            };
+            let zero: Box<[Signature]> = if kept.is_some() { zero::zero_clause_signatures(form, clauses).cloned().collect() } else { Box::new([]) };
+            let at = TopLevelForm { path, form, order, canonical, signatures: signatures.into(), untyped, zero, earlier: None, kept: None };
+            match kept {
+                Some(held) if *held.alone.get_or_init(|| earlier::alone(form)) => {
+                    let kept = held.kept(&at.signatures, &at.zero);
+                    TopLevelForm { earlier: Some(held), kept, ..at }
+                }
+                _ => at,
+            }
         })
         .collect();
     stats::units(Phase::CheckProgram, forms.len());
@@ -698,9 +739,13 @@ fn check_program_with_open(
             .iter()
             .zip(&mut refused_by_form)
             .map(|(at, refused)| {
+                if let Some(kept) = &at.kept {
+                    refused.extend(kept.refused.iter().cloned());
+                    return Arc::clone(&kept.types);
+                }
                 let input = CheckInput { form: at.form, path: &at.path, scope: scope(&at.untyped) };
                 let infer = || {
-                    let (result, types) = types::infer_form(&input, &at.order);
+                    let (result, types) = types::infer_form(&input, at.order);
                     (result, Arc::new(types))
                 };
                 let (result, types) = match types::TypesCheck.cache_key(&at.key_input(clauses)) {
@@ -722,9 +767,17 @@ fn check_program_with_open(
                 types
             })
             .collect();
-        let labels: Vec<Vec<LabelInScope>> = forms.iter().zip(&form_types).map(|(at, types)| typed_labels(&at.order, types)).collect();
+        let labels: Vec<Arc<[LabelInScope]>> = forms
+            .iter()
+            .zip(&form_types)
+            .map(|(at, types)| match &at.kept {
+                Some(kept) => Arc::clone(&kept.labels),
+                None => typed_labels(at.order, types).into(),
+            })
+            .collect();
         for ((at, labels), refused) in forms.iter().zip(&labels).zip(&mut refused_by_form) {
             if open.is_some() && at.path == NodePath::top(forms.len() as u32 - 1) { continue; }
+            if at.kept.is_some() { continue; }
             let input = CheckInput { form: at.form, path: &at.path, scope: scope(labels) };
             for check in checks().iter().filter(|check| check.id() != CheckId::Types) {
                 let result = match check.cache_key(&at.key_input(clauses)) {
@@ -732,6 +785,12 @@ fn check_program_with_open(
                     Some(key) => cached(cache, key, || check.check(&input)),
                 };
                 at.report(refused, check.id(), &result);
+            }
+        }
+        for (((at, types), labels), refused) in forms.iter().zip(&form_types).zip(&labels).zip(&refused_by_form) {
+            if let (Some(earlier), None) = (&at.earlier, &at.kept) {
+                let kept = Kept { signatures: at.signatures.clone(), zero: at.zero.clone(), types: Arc::clone(types), labels: Arc::clone(labels), refused: refused.clone() };
+                earlier.keep(Arc::new(kept));
             }
         }
         form_types
@@ -746,7 +805,7 @@ fn check_program_with_open(
             }
         }
     }
-    let form_types: Vec<(NodePath, Arc<types::ScopeTypes>, CanonicalOrder)> = forms.into_iter().zip(form_types).map(|(at, types)| (at.path, types, at.order)).collect();
+    let form_types: Vec<(NodePath, Arc<types::ScopeTypes>, &CanonicalOrder)> = forms.into_iter().zip(form_types).map(|(at, types)| (at.path, types, at.order)).collect();
     if !refused.is_empty() {
         return Err(refused);
     }
@@ -761,17 +820,27 @@ fn check_program_with_open(
 struct TopLevelForm<'p> {
     path: NodePath,
     form: &'p Form,
-    order: CanonicalOrder,
-    canonical: CanonicalForm,
+    order: &'p CanonicalOrder,
+    canonical: &'p CanonicalForm,
     signatures: Box<[Signature]>,
-    untyped: Vec<LabelInScope>,
+    untyped: Arc<[LabelInScope]>,
+    /// The signatures of the clauses of the form's relation that the check of
+    /// [`CheckId::EqualityAndZero`] reads, for a form before the last of a
+    /// program that [`EarlierForms`] serves.
+    zero: Box<[Signature]>,
+    /// What the check of the form keeps, where the form stands before the
+    /// last of such a program and its checks read it alone.
+    earlier: Option<Arc<earlier::EarlierForm>>,
+    /// What the checks gave on the form, where that form kept it for keys
+    /// like these.
+    kept: Option<Arc<Kept>>,
 }
 
 impl TopLevelForm<'_> {
     /// What the checks' cache keys on the form are built from, with
     /// `clauses`, the clauses of each relation across the solver's blocks.
     fn key_input<'a>(&'a self, clauses: &'a SolverClauses) -> KeyInput<'a> {
-        KeyInput { form: self.form, canonical: &self.canonical, order: &self.order, signatures: &self.signatures, clauses }
+        KeyInput { form: self.form, canonical: self.canonical, order: self.order, signatures: &self.signatures, clauses }
     }
 
     /// Pushes onto `refused` a diagnostic of `check` for each refusal of

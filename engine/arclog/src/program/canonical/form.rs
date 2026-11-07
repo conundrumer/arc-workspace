@@ -448,6 +448,15 @@ pub(crate) fn form_scope_labels(form: &Form) -> &[LabelId] {
     cache(form).scope_labels.get_or_init(|| super::order::CanonicalOrder::root_labels(form))
 }
 
+/// Whether `form` is a `RIGID_DET` form or holds one, at any depth, as a
+/// `DEMONSTRATED` form's rule does.
+pub(crate) fn holds_rigid_det(form: &Form) -> bool {
+    fn holds(node: NodeRef<'_>) -> bool {
+        matches!(node, NodeRef::RigidDet(_)) || node.children().into_iter().any(holds)
+    }
+    *cache(form).holds_rigid_det.get_or_init(|| holds(NodeRef::from(form)))
+}
+
 /// What the node of `form` keeps.
 pub(super) fn cache(form: &Form) -> &FormCache {
     let cache = match form {

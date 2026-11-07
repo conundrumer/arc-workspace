@@ -112,6 +112,10 @@ pub struct State {
     /// the finished forms, shared by the states and forks with the same
     /// finished forms.
     checks: Arc<SharedChecks>,
+    /// What the checks of the programs that start with the finished forms
+    /// read of each of those forms, shared by the states and forks with
+    /// those finished forms.
+    earlier_forms: Arc<crate::check::EarlierForms>,
     /// The atom that the step in progress opened, as [`State::step`] takes
     /// it: none in every state a step gives.
     opened: Option<Opened>,
@@ -539,7 +543,7 @@ pub(super) struct OpenProjection {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
     }
 
     /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
@@ -668,6 +672,12 @@ impl State {
     /// The check cache of the programs that hold the finished forms.
     pub(super) fn checks(&self) -> &SharedChecks {
         &self.checks
+    }
+
+    /// What the checks of the programs that start with the finished forms
+    /// read of each of those forms.
+    pub(super) fn earlier_forms(&self) -> &crate::check::EarlierForms {
+        &self.earlier_forms
     }
 
     /// The resolution of `partial`, the finished forms with the form in
@@ -1137,6 +1147,7 @@ impl State {
         self.atom_verdicts = Arc::default();
         self.checked_last = Arc::default();
         self.checks = Arc::new(SharedChecks::after(&self.checks));
+        self.earlier_forms = Arc::default();
         self.labels = 0;
     }
 

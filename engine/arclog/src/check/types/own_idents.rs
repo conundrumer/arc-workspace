@@ -35,6 +35,10 @@ use crate::types::{each_site_label, use_label};
 /// The labels at the part sites and key columns of each `RIGID_DET` form
 /// of `program`, by the form's path, that are the assembly's own Idents.
 pub fn own_idents(program: &ResolvedProgram, registry: &Registry) -> StableHashMap<NodePath, StableHashSet<LabelId>> {
+    // The map holds an entry for each `RIGID_DET` form of the program, so a program with none has an empty one.
+    if !program.program.value().forms.iter().any(crate::program::canonical::holds_rigid_det) {
+        return StableHashMap::default();
+    }
     let mut places = Places::new(program, registry);
     let root = NodeRef::Program(program.program.value());
     for (child, index) in root.children().into_iter().zip(0u32..) {

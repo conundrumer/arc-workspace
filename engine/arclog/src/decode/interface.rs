@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::state::State;
 use super::Decoder;
-use crate::check::{check_shared_program, CheckCache, CheckedProgram, SolverClauses};
+use crate::check::{check_shared_program, check_shared_program_over, CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::examples::{scope_of, ExampleScope};
 use crate::eval::ir::atom_modes;
 use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
@@ -566,31 +566,31 @@ impl<'a> Decoder<'a> {
 
     /// [`Decoder::checked`] with `cache`, which the check fills, and
     /// `finished`, the state whose finished forms `resolved` holds.
+    ///
+    /// Where `resolved` is the resolution that [`resolve_last`] gives from
+    /// the resolution of the finished forms of `finished`, with one form
+    /// more, the check stands on what `finished` holds of those forms for
+    /// each of its clones: their clauses, and what the checks read of
+    /// each of them. Those are the same for each such program, which
+    /// resolves the finished forms as the resolution of `finished` does.
     fn checked_with(&self, finished: &State, resolved: Arc<ResolvedProgram>, form: &NodePath, cache: &mut CheckCache) -> Outcome<CheckedProgram> {
         let registry = self.context.registry;
-        let clauses = self.clauses_over(finished, &resolved);
-        check_shared_program(resolved, &clauses, registry, cache).map_err(|refusals| {
-            let messages: Vec<&str> = refusals.iter().map(|refusal| &*refusal.message).collect();
-            RunFault { message: format!("a check refuses the program: {}", messages.join("; ")).into(), form: form.clone() }
-        })
-    }
-
-    /// The clauses of `resolved`. Where `resolved` is the resolution that
-    /// [`resolve_last`] gives from the resolution of the finished forms of
-    /// `finished`, with one form more, they stand on the clauses of those
-    /// forms, which `finished` makes once for each of its clones, so that
-    /// the content of a finished clause is written once for them.
-    fn clauses_over(&self, finished: &State, resolved: &Arc<ResolvedProgram>) -> SolverClauses {
-        let registry = self.context.registry;
         let earlier = finished.resolved(registry);
+        let forms = &earlier.program.value().forms;
         // A resolution that layers over another reports the address of that one, and one that does not reports its own, which is
         // the address of `earlier` where `resolved` is `earlier`, a program of as many forms.
-        let forms = &earlier.program.value().forms;
         let layered = resolved.stats_finished_id() == Arc::as_ptr(&earlier) as usize
             && resolved.program.value().forms.len() == forms.len() + 1
             && forms.iter().zip(resolved.program.value().forms.iter()).all(|(held, form)| crate::solver::equal_forms(held, form));
-        let extended = layered.then(|| finished.with_clauses(registry, |clauses| SolverClauses::of_last_form(clauses, Arc::clone(resolved)))).flatten();
-        extended.unwrap_or_else(|| SolverClauses::of_shared_program(Arc::clone(resolved)))
+        let extended = layered.then(|| finished.with_clauses(registry, |clauses| SolverClauses::of_last_form(clauses, Arc::clone(&resolved)))).flatten();
+        let checked = match &extended {
+            Some(clauses) => check_shared_program_over(resolved, clauses, registry, cache, finished.earlier_forms()),
+            None => check_shared_program(Arc::clone(&resolved), &SolverClauses::of_shared_program(Arc::clone(&resolved)), registry, cache),
+        };
+        checked.map_err(|refusals| {
+            let messages: Vec<&str> = refusals.iter().map(|refusal| &*refusal.message).collect();
+            RunFault { message: format!("a check refuses the program: {}", messages.join("; ")).into(), form: form.clone() }
+        })
     }
 
     /// The program of `after`, whose last form just finished, checked: it
