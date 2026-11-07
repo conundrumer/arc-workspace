@@ -4,6 +4,7 @@ Rows and the live writer share this module, so a model reads at serving what it 
 
   WRITER_ATOM_TREE     a LightGBM text model over those columns (with its .uses.json), or
   WRITER_ATOM_SOCKET   the socket of a server, whose Client.score(point, cands) gives one logit per candidate; WRITER_ATOM_SERVER_DIR holds atom_serve.py
+  WRITER_ATOM_FULL     instead, a model over the full candidate set from Decoder.atoms at the first item of a RULE's or DET's body (WRITER_ATOM_FULL_T and WRITER_ATOM_FULL_TOP: a table model for its top atoms); other tokens go as ever
   WRITER_ATOM_K        the atoms a decision proposes (default 8)
   WRITER_ATOM_ENOUGH   the token tree's mass at which a proposal walk ends (default: no limit)
   WRITER_ATOM_POPS     the items that a proposal walk takes off its heap, per atom wanted (default 12)
@@ -16,11 +17,13 @@ import dataclasses
 import heapq
 import json
 import os
+import subprocess
 import sys
 import time
 
 import numpy as np
 
+import atom_columns as C
 import writer
 from lookahead import closers
 
@@ -305,3 +308,174 @@ def choose(pt, plan, rng):
         return None
     got = keep[j][1]
     return got if got.pg is pt.pg else dataclasses.replace(got, pg=pt.pg)  # each try of a path has its own Program, and a kept point holds the one of the try that made it
+
+
+# ---- the full candidate set: Decoder.atoms lists every atom at a decision, a model scores them all, and a table model re-scores the top ones
+
+FULL_S = os.environ.get('WRITER_ATOM_FULL')  # a LightGBM text model over the point, the first token and the atom's columns
+FULL_T = os.environ.get('WRITER_ATOM_FULL_T')  # one that also reads the table with the atom added; it shares out among the top atoms the mass that the first model gives them
+FULL_TOP = int(os.environ.get('WRITER_ATOM_FULL_TOP', 64))
+FULL_MODELS = {}
+VERDICTS_LOADED = []
+
+
+def first_item(pt):
+    """Whether pt is the first item of a RULE's or a DET's body, which a model over the full candidate set chooses."""
+    T = pt.track
+    return T.where == 'body' and not T.form and not T.rec and T.col is None and pt.place.phase == Phase.PROPOSER and pt.kind in ('RULE', 'DET')
+
+
+def full_model(run, path):
+    """(booster, its columns by source) of a model file: for each source, the places in the row and in the source."""
+    got = FULL_MODELS.get(path)
+    if got is None:
+        import tree_dist
+        booster = tree_dist.import_lightgbm().Booster(model_file=path)
+        uses = json.load(open(os.path.splitext(path)[0] + '.uses.json'))
+        point_names, token_names, _, _ = names_of(run)
+        av = ['a:' + x for x in writer.AV_NAMES]
+        sources = dict(point=point_names, tok=token_names, cand=C.CAND, table=av + ['d:' + x for x in writer.AV_NAMES])
+        maps = {}
+        for source, names in sources.items():
+            at = {n: i for i, n in enumerate(names)}
+            pairs = [(k, at[u]) for k, u in enumerate(uses) if u in at]
+            maps[source] = (np.array([x[0] for x in pairs], np.int64), np.array([x[1] for x in pairs], np.int64))
+        got = FULL_MODELS[path] = (booster, len(uses), maps, uses)
+    return got
+
+
+def full_score(run, path, point, tok, first_of, cand, tables=None, table_of=None):
+    booster, width, maps, _ = full_model(run, path)
+    M = np.zeros((len(cand), width), np.float32)
+    at, src = maps['point']
+    M[:, at] = point[src]
+    at, src = maps['tok']
+    M[:, at] = tok[first_of][:, src]
+    at, src = maps['cand']
+    M[:, at] = cand[:, src]
+    if tables is not None:
+        at, src = maps['table']
+        M[:, at] = tables[table_of][:, src]
+    return np.asarray(booster.predict(M, raw_score=True, num_threads=1), np.float64), M
+
+
+def full_structure(run, core, tokens):
+    memo = run.__dict__.setdefault('atom_structures', {})
+    key = tuple(tokens)
+    got = memo.get(key)
+    if got is None:
+        got = memo[key] = C.structure([core.names[t] for t in tokens])
+    return got
+
+
+def summary_vector(summary):
+    capped, hashes, features = summary
+    n = len(hashes) // 16
+    if n == 0:
+        return writer._nan(len(writer.AV_NAMES))
+    f = np.frombuffer(features, '<f4').reshape(n, -1)
+    return writer.assignment_vector([(hashes[i * 16:i * 16 + 16].hex() if any(hashes[i * 16:i * 16 + 16]) else None, f[i]) for i in range(n)], bool(capped))
+
+
+def load_verdicts():
+    """The walk's verdicts from a file, once in a process, so that a worker doesn't walk cold (WRITER_ATOM_VERDICTS)."""
+    if not VERDICTS_LOADED:
+        VERDICTS_LOADED.append(True)
+        path = os.environ.get('WRITER_ATOM_VERDICTS')
+        if path:
+            writer.arclog.add_atom_verdicts(subprocess.run(['zstd', '-dc', path], capture_output=True, check=True).stdout)
+
+
+def full_decide(pt, plan):
+    """(candidates by token list, their chances, their bits off the bound or None) at a decision over the full candidate set."""
+    run = pt.run
+    core = writer.core_of(run)
+    load_verdicts()
+    t0 = time.process_time()
+    atoms, states, truncated = pt.dec.fork().atoms()
+    atoms = [list(x) for x in atoms]
+    t1 = time.process_time()
+    ids = writer.point_ids(pt)
+    if pt.place.phase == Phase.COLUMN:
+        ids = ids[closers(core, ids)]
+    starts = {x[0] for x in atoms} | {x[1] for x in atoms if x[0] == M.NOT and len(x) > 1}
+    tokens = atoms + [[int(t)] for t in ids.tolist() if int(t) not in starts]
+    all_ids = writer.point_ids(pt)
+    X = writer.Features(pt, all_ids).vectors()
+    _, _, point_at, tok_at = names_of(run)
+    at = {int(x): k for k, x in enumerate(all_ids.tolist())}
+    head = lambda x: x[1] if x[0] == M.NOT and len(x) > 1 else x[0]
+    tokens = [x for x in tokens if x[0] in at]
+    first = sorted({head(x) for x in tokens if head(x) in at} | {x[0] for x in tokens})
+    place = {x: k for k, x in enumerate(first)}
+    first_of = np.array([place[head(x)] if head(x) in place else place[x[0]] for x in tokens])
+    point = X[0][point_at]
+    tok = X[[at[x] for x in first]][:, tok_at]
+    prob_ids, prob, prob_costs = token_probs(pt, plan)
+    chance = dict(zip(prob_ids.tolist(), prob.tolist()))
+    first_bits = np.array([-np.log2(max(chance.get(x, 0.0), 1e-9)) for x in first])
+    structures = [full_structure(run, core, x) for x in tokens]
+    cand = C.cand_rows(structures, first_of, first_bits, np.zeros(len(tokens)))
+    s, M_s = full_score(run, FULL_S, point, tok, first_of, cand)
+    if writer.PARITY is not None:
+        writer.PARITY.note_full(pt, tokens, M_s, core)
+    t2 = time.process_time()
+    STATS['full walk seconds'] += t1 - t0
+    STATS['full score seconds'] += t2 - t1
+    STATS['full decisions'] += 1
+    STATS['full candidates'] += len(tokens)
+    e = np.exp(s - s.max())
+    probs = e / e.sum()
+    if FULL_T and len(atoms):
+        order_ = np.argsort(-s, kind='stable')[:FULL_TOP]
+        is_atom = {tuple(x) for x in atoms}
+        chosen = [int(k) for k in order_ if tuple(tokens[k]) in is_atom]
+        t3 = time.process_time()
+        index, summaries, _, _ = arclog_module().atom_tables(pt.dec.fork(), [tokens[k] for k in chosen], *live_tables(), before=pt.pg.before)
+        rows = [summary_vector(x) for x in summaries]
+        base, _ = body_vector(pt)
+        if base is None:
+            base = writer._nan(len(writer.AV_NAMES))
+        v = np.concatenate([np.stack(rows)] if rows else [np.zeros((0, len(writer.AV_NAMES)), np.float32)])
+        v = np.concatenate([v, writer._nan(len(writer.AV_NAMES))[None, :]])
+        T = np.concatenate([v, v - base], 1)
+        table_of = np.array([len(rows) if x is None else x for x in index])
+        has = np.array([x is not None for x in index], np.float32)
+        cand_t = cand[chosen].copy()
+        cand_t[:, C.CAND.index('atom:defined')] = has
+        st, _ = full_score(run, FULL_T, point, tok, first_of[chosen], cand_t, T, table_of)
+        mass = probs[chosen].sum()
+        et = np.exp(st - st.max())
+        probs = probs.copy()
+        probs[chosen] = et / et.sum() * mass
+        STATS['full table seconds'] += time.process_time() - t3
+    costs = None
+    if prob_costs is not None and prob_costs.any():
+        by = dict(zip(prob_ids.tolist(), prob_costs.tolist()))
+        costs = np.array([by.get(x[0], 0.0) for x in tokens])
+    return tokens, probs, costs
+
+
+def arclog_module():
+    return writer.arclog
+
+
+def live_tables():
+    return writer.live.TABLES
+
+
+def choose_full(pt, plan, rng):
+    """The point after the atom that the search takes at a first item, over the full candidate set."""
+    held = pt.memo.get('atoms_full')
+    if held is None:
+        held = pt.memo['atoms_full'] = full_decide(pt, plan)
+    tokens, probs, costs = held
+    j = rng.node(probs, costs, None)
+    ends = pt.memo.setdefault('atoms_full_ends', {})
+    got = ends.get(j)
+    if got is None:
+        got = pt
+        for t in tokens[j]:
+            got = writer.step_point(got, t)
+        ends[j] = got
+    return got if got.pg is pt.pg else dataclasses.replace(got, pg=pt.pg)

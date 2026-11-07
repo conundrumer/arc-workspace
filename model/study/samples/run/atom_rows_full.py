@@ -10,7 +10,7 @@ import live, live_try, writer, train_rows, order, tree_dist
 import atom_writer as AW
 from lookahead import closers
 
-ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('set'); ap.add_argument('skeleton'); ap.add_argument('tasks', nargs='+'); ap.add_argument('--tree', required=True); ap.add_argument('--samples', type=int, default=4); ap.add_argument('--targets', type=int, default=6)
+ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('set'); ap.add_argument('skeleton'); ap.add_argument('tasks', nargs='+'); ap.add_argument('--tree', required=True); ap.add_argument('--samples', type=int, default=4); ap.add_argument('--targets', type=int, default=6); ap.add_argument('--first-only', action='store_true', help='only the first item of a body; a state and kind is written once, and each other target there gives a short line with same_as')
 a = ap.parse_args()
 live_try.P.REPO = os.environ.get('ARC_ROOT', live_try.P.REPO)
 pw = importlib.import_module('points_write')
@@ -81,6 +81,18 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
                     j += 1
             gold = stream[i:j]
             inside = j
+            key = (sample, kind, pt.tokens)
+            if a.first_only and key in seen:
+                held = seen[key]
+                positive, twin = held['place'].get(tuple(gold)), False
+                if positive is None:
+                    positive = held['sorted'].get(tuple(sorted(gold)))
+                    twin = positive is not None
+                if positive is None and (gold[0] in M.CMP or (gold[0] == M.NOT and len(gold) > 1 and gold[1] in M.CMP)):
+                    positive = held['place'].get((gold[0],))
+                sink.write(json.dumps(dict(task=task, decision=COUNT[0], same_as=held['decision'], sample=sample, target=target, kind=kind, positive=positive, twin=twin, gold=gold)) + '\n')
+                COUNT[0] += 1
+                return n + 1
             t0 = time.process_time()
             atoms, others, truncated = candidates(pt, core)
             t1 = time.process_time()
@@ -95,7 +107,7 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
                     by_sorted.setdefault(tuple(sorted(x)), k)
                 positive = by_sorted.get(tuple(sorted(gold)))
                 twin = positive is not None
-            if positive is None and gold[0] in M.CMP or positive is None and gold[0] == M.NOT and len(gold) > 1 and gold[1] in M.CMP:  # a comparison's first token stands for it
+            if positive is None and (gold[0] in M.CMP or (gold[0] == M.NOT and len(gold) > 1 and gold[1] in M.CMP)):  # a comparison's first token stands for it
                 positive = place.get((gold[0],))
             ids = writer.point_ids(pt)
             X = writer.Features(pt, ids).vectors()
@@ -116,15 +128,39 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
             prob_ids, prob, _ = AW.token_probs(pt, plan)
             chance = dict(zip(prob_ids.tolist(), prob.tolist()))
             first_bits = [float(-np.log2(max(chance.get(x, 0.0), 1e-9))) for x in first]
-            sink.write(json.dumps(dict(task=task, decision=COUNT[0], sample=sample, target=target, kind=kind, length=len(pt.tokens), phase=pt.place.phase.name, positive=None if positive is None else remap.get(positive), twin=twin, gold=gold, n=len(tokens), tokens=tokens, first=first, first_of=[first_place[x[0]] for x in tokens], table_of=table_of, point=b64(X[0][point_at]), tok=b64(X[[at[x] for x in first]][:, tok_at]), tables=b64(np.stack([av_of(summaries[x]) for x in used])) if used else '', base=b64(base), base_defined=float(base_defined), first_bits=first_bits, truncated=bool(truncated), over_cap=len(over), walk_seconds=t1 - t0, table_seconds=t2 - t1)) + '\n')
+            if a.first_only:
+                by_sorted = {}
+                for k, x in enumerate(tokens):
+                    by_sorted.setdefault(tuple(sorted(x)), k)
+                seen[key] = dict(decision=COUNT[0], place={tuple(x): k for k, x in enumerate(tokens)}, sorted=by_sorted)
+            sink.write(json.dumps(dict(task=task, decision=COUNT[0], sample=sample, target=target, kind=kind, length=len(pt.tokens), phase=pt.place.phase.name, positive=None if positive is None else remap.get(positive), twin=twin, gold=gold, n=len(tokens), tokens=tokens, first=first, first_of=[first_place[first_token(x) if first_token(x) in first_place else x[0]] for x in tokens], table_of=table_of, point=b64(X[0][point_at]), tok=b64(X[[at[x] for x in first]][:, tok_at]), tables=b64(np.stack([av_of(summaries[x]) for x in used])) if used else '', base=b64(base), base_defined=float(base_defined), first_bits=first_bits, truncated=bool(truncated), over_cap=len(over), walk_seconds=t1 - t0, table_seconds=t2 - t1)) + '\n')
             COUNT[0] += 1
             n += 1
+            if a.first_only:
+                return n
         pt = writer.step_point(pt, t)
         i += 1
     return n
 
 
+def load_verdicts():
+    """The walk's verdicts that earlier batches kept (WRITER_ROW_VERDICTS), so that a new process doesn't walk cold."""
+    path = os.environ.get('WRITER_ROW_VERDICTS')
+    if path and os.path.exists(path):
+        arclog.add_atom_verdicts(zstandard.ZstdDecompressor().stream_reader(open(path, 'rb')).read())
+
+
+def keep_verdicts():
+    path = os.environ.get('WRITER_ROW_VERDICTS')
+    if path:
+        tmp = '%s.%d' % (path, os.getpid())
+        with open(tmp, 'wb') as f:
+            f.write(zstandard.ZstdCompressor(level=3).compress(arclog.atom_verdicts()))
+        os.replace(tmp, path)
+
+
 def main():
+    load_verdicts()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     smp = live.Sampler(str(Path(writer.__file__).resolve().parents[3] / 'models-current'), steers=())
     for task in a.tasks:
@@ -146,6 +182,7 @@ def main():
         tmp = path.with_suffix('.working')
         n = 0
         COUNT[0] = 0
+        seen = {}
         dec_order = train_rows.order_env(run)
         with io.TextIOWrapper(zstandard.ZstdCompressor(level=3).stream_writer(open(tmp, 'wb')), encoding='utf-8') as sink:
             sink.write(json.dumps(dict(record='header', task=task, point_names=point_names, tok_names=tok_names, struct_names=AW.STRUCT, av_names=['a:' + x for x in writer.AV_NAMES])) + '\n')
@@ -160,12 +197,15 @@ def main():
                     try:
                         kind, stream = pw.query_stream(env, scope, pw.rewrite(queries[h], label, f'&r{len(scope)}'))
                         walk, _, _ = order.canonical_stream(dec_order, dec0, kind, stream, train_rows.ORDER_SECONDS)
-                        n += process_target(run, core, plan, sink, task, sample['id'], scope, kind, walk, h[:8], None)
-                    except Exception as e:
+                        n += process_target(run, core, plan, sink, task, sample['id'], scope, kind, walk, h[:8], seen)
+                    except (KeyboardInterrupt, SystemExit):
+                        raise
+                    except BaseException as e:  # noqa: BLE001 - the engine's panic is a BaseException
                         print('target failed', task, h[:8], type(e).__name__, str(e)[:160], flush=True)
                 sink.flush()
         os.replace(tmp, path)
         print(f'{task}: {n} decisions, {time.time() - t0:.1f}s', flush=True)
+    keep_verdicts()
 
 
 if __name__ == '__main__':
