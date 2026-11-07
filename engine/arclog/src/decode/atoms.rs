@@ -37,7 +37,7 @@ struct Tokens {
     end: Option<u32>,
     /// What may stand after a site's column, in ascending order of id.
     ascending_after_site: Vec<u32>,
-    /// The settings of the decode, which give the ids of the tokens.
+    /// The settings of the decode that give the ids of the tokens or that a check reads.
     settings: String,
 }
 
@@ -227,7 +227,7 @@ impl Decoder<'_> {
     pub fn candidate_atoms(&self, limit: usize) -> CandidateAtoms {
         let mut found = CandidateAtoms::default();
         let vocabulary = self.vocabulary();
-        let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new(), settings: format!("{:?}", self.context.settings) };
+        let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new(), settings: { let settings = &self.context.settings; format!("{:?}", (settings.proposer_tokens, settings.type_domain_proposers, &settings.vocabulary, &settings.caps, settings.check_copies, settings.rule_tests, settings.static_pruning, settings.grids_at_model_cap)) } };
         for id in 0..vocabulary.len() as u32 {
             match vocabulary.token(id).expect("an id of the vocabulary") {
                 Token::Relation(_) | Token::Fact(_) | Token::Lib(_) => tokens.opening.push(id),
