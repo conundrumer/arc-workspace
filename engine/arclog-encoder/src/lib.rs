@@ -14,6 +14,8 @@
 //! - [`table_vector`]: a table's `TableVector`, and the base tables'.
 //! - [`query_vector`]: a query's `QueryVector`.
 //! - [`candidate_lists`]: the stable roots that Candidate recognition reads.
+//! - [`table_stream`]: a task's tables, read from a tables command's framed stream of typed column
+//!   arrays or from a tables file's JSON.
 //! - [`vectors`]: the vector entries that name no column.
 //! - [`law`]: the check of the transformation law on stored rows.
 //! - [`closed`]: the values of the closed roots on grids alone, which the
@@ -54,6 +56,7 @@ pub mod run;
 pub mod schema;
 pub mod state_features;
 pub mod stored;
+pub mod table_stream;
 pub mod table_vector;
 pub mod vectors;
 pub mod worked;

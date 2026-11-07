@@ -5,7 +5,7 @@
 
 It evaluates gold and each stored mutant once, and draws nothing. It keeps the tables' train rows under NEW_ROOT as zstd, and
 prints to stdout the tables with their test rows too, with `prefix` and `state` as state_tables.py gives them, for the pipe of
-`candidate-lists`. Test rows go nowhere else. An Ident is the digest of its members, so a value means one thing across gold's
+`candidate-lists`, as the framed stream of typed column arrays that tables_columns.py writes. Test rows go nowhere else. An Ident is the digest of its members, so a value means one thing across gold's
 run and a mutant's. On a fault it prints only the fault's type.
 """
 import importlib.util
@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE))
 from common import read_json  # noqa: E402
 from query_structure import DEFINING, parse_forms  # noqa: E402
 from state_tables import parents_of  # noqa: E402
+from tables_columns import write_stream  # noqa: E402
 from tables_worker import REPO, TASKS, keep, read_table, split_of  # noqa: E402
 
 
@@ -106,8 +107,7 @@ def worker(old_root, new_root, task):
 
     kept_items = [{**{key: value for key, value in item.items() if key != 'text'}, 'gold': train_rows(item['gold']), 'mutants': [{**{key: value for key, value in mutant.items() if key != 'text'}, 'table': train_rows(mutant['table'])} for mutant in item['mutants']]} for item in items]
     keep(Path(new_root) / split / 'candidate-tables' / f'{task}.json.zst', dict(head, left_out=left_out, items=kept_items, prefix={name: train_rows(table) for name, table in prefix.items()}, state=dict(nodes=nodes), seconds=round(time.time() - started, 2), programs=programs + 1))
-    json.dump(full, sys.stdout)
-    sys.stdout.flush()
+    write_stream(full)
 
 
 if __name__ == '__main__':

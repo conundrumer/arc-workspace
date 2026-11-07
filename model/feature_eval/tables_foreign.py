@@ -9,7 +9,7 @@ draws forms from the gold programs of the task's split's other tasks, renames wh
 up to PER_STATE that hold all of these: the program type-checks, the table has rows at every train pair, no table of the
 state has its rows, and no gold query of the task has them. It keeps each kept program under NEW_ROOT as `mutants`, in the form
 tables_worker.py gives, with each candidate's `edit` saying whether its column types are gold's, and what the draw met under
-NEW_ROOT/draws. It prints the tables with their test rows, which go nowhere else. On a fault it prints only the fault's type.
+NEW_ROOT/draws. It prints the tables with their test rows, as the framed stream that tables_columns.py writes, and they go nowhere else. On a fault it prints only the fault's type.
 
 With FOREIGN_READS=gold in the environment, a draw is harder to tell from gold without table content: a form must read a table
 of the state, a read goes to a table that gold's query reads wherever one has the columns or the port, and a table has an Example
@@ -29,6 +29,7 @@ sys.path.insert(0, str(HERE))
 from common import read_json  # noqa: E402
 from query_structure import DEFINING, parse_forms, relation_of  # noqa: E402
 from state_tables import parents_of  # noqa: E402
+from tables_columns import json_default, write_stream  # noqa: E402
 from tables_worker import REPO, TASKS, keep, read_table, split_of  # noqa: E402
 
 SEED = 'arc-foreign-queries-1'
@@ -140,7 +141,7 @@ def worker(old_root, pool_dir, new_root, task):
     def rows_key(table):
         """A table's content at the train pairs."""
         keep_key = lambda held: {key: value for key, value in held.items() if key == 'task' or key.startswith('train/')}
-        return json.dumps([[ty.split('@')[0] for ty in table['types']], keep_key(table['rows']), keep_key(table['models'])], sort_keys=True)
+        return json.dumps([[ty.split('@')[0] for ty in table['types']], keep_key(table['rows']), keep_key(table['models'])], sort_keys=True, default=json_default)
 
     def has_rows(table):
         if 'task' in table['rows'] or 'task' in table['models']:
@@ -246,8 +247,7 @@ def worker(old_root, pool_dir, new_root, task):
     head = dict(task=task, case=drawn_file['case'], train=train, last_query=stored.get('last_query'), budget_cut=False, left_out=[])
     keep(Path(new_root) / split / 'mutants' / f'{task}.json.zst', dict(task=task, case=drawn_file['case'], gold=text, gold_status='', budget_cut=False, queries=queries))
     keep(Path(new_root) / 'draws' / f'{task}.json.zst', dict(task=task, split=split, seconds=round(time.time() - started, 2), states=draws))
-    json.dump(dict(head, test=len(task_json['test']), items=items, prefix=prefix, state=dict(nodes=nodes)), sys.stdout)
-    sys.stdout.flush()
+    write_stream(dict(head, test=len(task_json['test']), items=items, prefix=prefix, state=dict(nodes=nodes)))
 
 
 if __name__ == '__main__':
