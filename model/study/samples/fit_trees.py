@@ -85,6 +85,7 @@ class Groups:
     columns: int
     tasks: list[str] = field(default_factory=list)
     drawn: Floats | None = None  # (rows,) float32: the drawn count of each row's id; None where the rows have none
+    weights: Floats | None = None  # (groups,) float64: each point's `weight` (1 where it has none); None where no point has one
 
     @property
     def rows(self) -> int:
@@ -159,6 +160,9 @@ def objective_of(groups: Groups, alpha: float = 0.0, task_weights: bool = False)
     starts, sizes, positive = groups.starts, groups.sizes, groups.positive.astype(np.float64)
     weight = loss_weight(groups, alpha)
     rows = task_weight(groups) if task_weights else None
+    if groups.weights is not None:  # each point's own weight, as a kind point's share of its state's targets
+        own = np.repeat(groups.weights, groups.sizes)
+        rows = own if rows is None else rows * own
 
     def objective(scores: Floats, _data: Any) -> tuple[Floats, Floats]:
         t = group_terms(np.asarray(scores, np.float64), positive, starts, sizes, weight)
@@ -324,6 +328,7 @@ class Kept:
     vp: Floats | None = None
     vo: Floats | None = None
     drawn: Floats | None = None  # (size,) float32 where the point lists drawn counts
+    weight: float | None = None  # the point's `weight`, where it has one: the share of a state's targets that a kind point stands for (points_write.write_kind_point)
 
 
 def choice_key(seed: int, sample: str, position: int) -> int:
@@ -384,6 +389,8 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
             else:
                 got = Kept(np.array(rec['option'], np.float32).reshape(n, n_option), np.array(rec['table'], np.int64),
                            np.array(rec['point'], np.float32), np.array(rec['positive'], np.int64), n, drawn=drawn)
+            if 'weight' in rec:
+                got.weight = float(rec['weight'])
             if per_task > 0 and len(kept) >= per_task:
                 heapq.heapreplace(kept, (-key, position, got))
             elif per_task > 0:
@@ -426,6 +433,20 @@ def positive_of(kept: list[Kept]) -> tuple[Floats, Ints, Floats | None]:
     return positive, sizes, drawn
 
 
+def weights_of(kept: list[Kept]) -> Floats | None:
+    """The weight of each point, 1 where it has none; None where no point has one."""
+    if all(k.weight is None for k in kept):
+        return None
+    return np.array([1.0 if k.weight is None else k.weight for k in kept], np.float64)
+
+
+def joined_weights(pieces: list[Groups]) -> Floats | None:
+    """The weights of the pieces' groups in one array, 1 for a piece with none; None where no piece has any."""
+    if all(g.weights is None for g in pieces):
+        return None
+    return np.concatenate([g.weights if g.weights is not None else np.ones(len(g.sizes)) for g in pieces])
+
+
 def joined_drawn(pieces: list[Groups]) -> Floats | None:
     """The drawn counts of the pieces' rows in one array, 0 for a piece with none; None where no piece has any."""
     if all(g.drawn is None for g in pieces):
@@ -443,7 +464,7 @@ def read_file(path: Path, head: dict, layout: Layout, per_task: int, seed: int) 
         end = at + k.size
         fill_rows(matrix[at:end], k, tables, layout, 0, k.size)
         at = end
-    return Dense(positive, sizes, len(layout.names), [head['task']] * len(sizes), drawn, matrix=matrix), count
+    return Dense(positive, sizes, len(layout.names), [head['task']] * len(sizes), drawn, weights_of(kept), matrix=matrix), count
 
 
 def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: int, seed: int) -> tuple[Dense, Counter[str]]:
@@ -458,7 +479,7 @@ def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: in
     if not pieces:
         raise FitError('the files give no point with two ids and a positive id')
     total = sum(g.rows for g in pieces)
-    drawn = joined_drawn(list(pieces))
+    drawn, weights = joined_drawn(list(pieces)), joined_weights(list(pieces))
     matrix = np.empty((total, len(layout.names)), np.float32)
     positive = np.empty(total, np.float32)
     sizes: list[Ints] = []
@@ -471,7 +492,7 @@ def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: in
         sizes.append(g.sizes)
         tasks.extend(g.tasks)
         at += g.rows
-    return Dense(positive, np.concatenate(sizes), len(layout.names), tasks, drawn, matrix=matrix), count
+    return Dense(positive, np.concatenate(sizes), len(layout.names), tasks, drawn, weights, matrix=matrix), count
 
 
 class PointReader:
@@ -552,12 +573,12 @@ def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_tas
         positive, size, file_drawn = positive_of(kept)
         positives.append(positive)
         sizes.append(size)
-        drawn.append(Groups(positive, size, 0, drawn=file_drawn))
+        drawn.append(Groups(positive, size, 0, drawn=file_drawn, weights=weights_of(kept)))
         tasks.extend([head['task']] * len(size))
         rows.append(PointRows(reader, p, head, size))
     if not rows:
         raise FitError('the files give no point with two ids and a positive id')
-    return Groups(np.concatenate(positives), np.concatenate(sizes), len(layout.names), tasks, joined_drawn(drawn)), rows, reader, count
+    return Groups(np.concatenate(positives), np.concatenate(sizes), len(layout.names), tasks, joined_drawn(drawn), joined_weights(drawn)), rows, reader, count
 
 
 def booster_names(names: list[str]) -> list[str]:
