@@ -68,11 +68,11 @@ linux() {
   linux_encoder
 }
 
-# The Linux feature-encoder into linux/NAME/, with zig as the linker and the C compiler, for the glibc that the wheels target; then the folder's SHA256SUMS and COMMIT. cc-rs runs the C compiler through no wrapper, since sccache refuses the zig one.
+# The Linux feature-encoder into linux/NAME/, with zig as the linker and the C compiler, for the glibc that the wheels target; then the folder's SHA256SUMS, over every file it holds, and COMMIT. cc-rs runs the C compiler through no wrapper, since sccache refuses the zig one.
 linux_encoder() {
   local Z=$R/zig M
   M=$(command -v maturin) || return 1
-  mkdir -p "$Z" &&
+  mkdir -p "$Z" "$R/linux/$NAME" &&
   printf '#!/bin/sh\nexec "%s" zig cc -- -g -fno-sanitize=all -target x86_64-linux-gnu.2.17 "$@"\n' "$M" > "$Z/cc" &&
   printf '#!/bin/sh\nexec "%s" zig c++ -- -g -fno-sanitize=all -target x86_64-linux-gnu.2.17 "$@"\n' "$M" > "$Z/c++" &&
   printf '#!/bin/sh\nexec "%s" zig ar -- "$@"\n' "$M" > "$Z/ar" &&
@@ -81,7 +81,7 @@ linux_encoder() {
   RUSTC_WRAPPER= CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$Z/cc CC_x86_64_unknown_linux_gnu=$Z/cc CXX_x86_64_unknown_linux_gnu=$Z/c++ AR_x86_64_unknown_linux_gnu=$Z/ar RANLIB_x86_64_unknown_linux_gnu=$Z/ranlib \
     CARGO_TARGET_DIR=$T cargo build --offline --profile tool --target x86_64-unknown-linux-gnu --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
   cp "$T/x86_64-unknown-linux-gnu/tool/feature-encoder" "$R/linux/$NAME/feature-encoder" &&
-  (cd "$R/linux/$NAME" && shasum -a 256 *.whl feature-encoder > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
+  (cd "$R/linux/$NAME" && shasum -a 256 $(ls | grep -v -x -e SHA256SUMS -e COMMIT) > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
 }
 
 tests() {
