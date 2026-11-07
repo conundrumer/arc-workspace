@@ -1386,8 +1386,8 @@ impl State {
     }
 
     /// The shape of each label at this state, where an atom just opened: its
-    /// type, whether the body binds it and whether a key marks it, and whether
-    /// each label has that shape. A label that stands in anything but an atom
+    /// type, whether the body binds it, whether a key marks it and whether a
+    /// `NOT` holds it, and whether each label has that shape. A label that stands in anything but an atom
     /// or a `NOT` of an atom of fixed scalar columns, or a head site of a fixed
     /// scalar column, in a top-level clause body or a body of an `INIT` form or
     /// a branch of an `OR` in one, has its id for its shape in place of them.
@@ -1497,6 +1497,14 @@ impl State {
             }
         }
         let list: Vec<&Conjunct> = in_scope.iter().flat_map(|body| body.iter()).collect();
+        // A check refuses a label that a `NOT` holds before a conjunct binds it, where no other label of that type and binding is refused.
+        let negated: Vec<u32> = list.iter().flat_map(|conjunct| match conjunct {
+            Conjunct::Not(Negated::Atom(atom)) => atom.value().sites.iter().flat_map(|site| site.value.args.iter()).filter_map(|arg| match arg {
+                SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label)) => Some(label.0),
+                _ => None,
+            }).collect::<Vec<u32>>(),
+            _ => Vec::new(),
+        }).collect();
         let bound = crate::safety::bound_labels(&list, &Default::default(), &Default::default(), &|atom| crate::eval::ir::atom_modes(registry, atom), &|label| types.get(&label.0).cloned());
         let mut each = true;
         for (at, shape) in shapes.iter_mut().enumerate() {
@@ -1506,6 +1514,7 @@ impl State {
                     ty.hash(&mut hasher);
                     bound.contains(&LabelId(at as u32)).hash(&mut hasher);
                     keys.contains(&(at as u32)).hash(&mut hasher);
+                    negated.contains(&(at as u32)).hash(&mut hasher);
                     *shape = (1u64 << 59) | (hasher.finish() >> 8);
                 }
                 None => each = false,

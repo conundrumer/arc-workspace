@@ -347,8 +347,9 @@ impl Decoder<'_> {
         (Shapes { labels: kinds.len() as u32, kinds }, each)
     }
 
-    /// A state at the place that `walk` stands at, made from the nearest that it holds.
-    fn state_of_walk(&mut self, walk: &mut AtomWalk<'_>) -> State {
+    /// A state at the place that `walk` stands at, made from the nearest that it
+    /// holds; none where a check refuses a token that an atom of its shape passed.
+    fn state_of_walk(&mut self, walk: &mut AtomWalk<'_>) -> Option<State> {
         let mut from = walk.states.len() - 1;
         while walk.states[from].is_none() {
             from -= 1;
@@ -359,9 +360,9 @@ impl Decoder<'_> {
             let state = walk.states[at].clone().expect("the state before it");
             let mut next = None;
             self.at(state, |walker| next = Some(walker.next_state(&token)));
-            walk.states[at + 1] = Some(next.expect("the body ran").expect("an atom of a shape that the checks admit").0);
+            walk.states[at + 1] = Some(next.expect("the body ran").ok()?.0);
         }
-        walk.states[walk.shape.len()].clone().expect("the state just made")
+        walk.states[walk.shape.len()].clone()
     }
 
     /// The atoms that hold the tokens of `walk`, at the place it stands at. A site's column stands above `floor`.
@@ -385,7 +386,7 @@ impl Decoder<'_> {
             Some(HeldVerdict::Place(verdict)) => verdict,
             _ => {
                 found.states += 1;
-                let here = self.state_of_walk(walk);
+                let Some(here) = self.state_of_walk(walk) else { return };
                 let place = here.atom_place().expect("a place in an open atom");
                 let mut made = None;
                 self.at(here, |walker| {
@@ -442,7 +443,7 @@ impl Decoder<'_> {
             }
             if !missing.is_empty() {
                 found.states += 1;
-                let here = self.state_of_walk(walk);
+                let Some(here) = self.state_of_walk(walk) else { return };
                 let mut mask = None;
                 self.at(here, |walker| mask = Some(walker.mask_over(missing.iter().map(|(id, _)| *id))));
                 let mask = mask.expect("the body ran");
