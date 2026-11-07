@@ -56,11 +56,14 @@ pub fn extent_of(pattern: &[PatternCell]) -> (i32, i32) {
 
 /// Calls `visit` with the number of each element of D4 other than the identity, in the order LR, TB, HT, CW, CC, DG, AD
 /// (1 to 7), and the pattern's image under it, sorted. `extent` is the last row and the last column of the frame that the
-/// pattern turns in. An image equal to the pattern or to an earlier image is not visited. It stops where `visit` gives
-/// true, and gives whether that happened.
-pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), mut visit: impl FnMut(usize, &[PatternCell]) -> bool) -> bool {
+/// pattern turns in. An image equal to the pattern or to an earlier image is not visited. Where `frame_matters`, an image
+/// counts as equal only if it also turns the frame the same way: a quarter turn swaps the frame's height and width, so
+/// on a frame that is not square its image differs from the cells' image under a half turn or a reflection.
+/// It stops where `visit` gives true, and gives whether that happened.
+pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), frame_matters: bool, mut visit: impl FnMut(usize, &[PatternCell]) -> bool) -> bool {
     let (r1, c1) = extent;
-    let mut seen: Vec<Vec<PatternCell>> = Vec::new();
+    let same_frame = |a: bool, b: bool| !frame_matters || r1 == c1 || a == b;
+    let mut seen: Vec<(bool, Vec<PatternCell>)> = Vec::new();
     for which in 1..8 {
         let mut image: Vec<PatternCell> = pattern.iter().map(|&(r, c, color)| {
             let (y, z) = match which {
@@ -75,13 +78,14 @@ pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), mut visit:
             (y, z, color)
         }).collect();
         image.sort_unstable();
-        if image == pattern || seen.contains(&image) {
+        let quarter = which >= 4;
+        if (image == pattern && same_frame(quarter, false)) || seen.iter().any(|(held, cells)| *cells == image && same_frame(quarter, *held)) {
             continue;
         }
         if visit(which, &image) {
             return true;
         }
-        seen.push(image);
+        seen.push((quarter, image));
     }
     false
 }
