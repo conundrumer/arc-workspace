@@ -44,7 +44,7 @@ TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 
-POPPED = ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE')
+POPPED = ('NODE_SCORE', 'WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE')
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'tok_read': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '8', 'SEARCH_READ_SCOPE': '1'}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
         'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'},
@@ -207,6 +207,8 @@ def job_env(a, w, arm, seed):
     env.update({k: v if v is not None else str(arm_tree(a, arm)) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
     if a.lookahead and 'WRITER_TREE' in ARMS[arm] and arm != 'base':
         env['WRITER_LOOKAHEAD'] = a.lookahead
+    if a.node_score and arm != 'base':  # the scope pick's node score file for every arm but base (policy/nodescore.py)
+        env['NODE_SCORE'] = a.node_score
     return env
 
 
@@ -307,6 +309,7 @@ def main():
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
+    ap.add_argument('--node-score', help='a node score file (.npz) for the scope pick of every arm but base: NODE_SCORE of policy.py, which needs policy/nodescore.py in --code')
     ap.add_argument('--gate-records', action='store_true', help='each job writes the gate\'s record of every form at the gate into its folder (gate-records/<task>.jsonl.gz)')
     ap.add_argument('--task-list', help='a file of the tasks to run, one a line, in its order, in place of the split\'s')
     ap.add_argument('--shuffle', type=int, help='takes the split\'s tasks in an order that this seed shuffles, so that --tasks gives a mixed sample')
