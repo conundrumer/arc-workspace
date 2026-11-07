@@ -1881,6 +1881,67 @@ def finish(pt):
     return Finished(f, pt.tokens, query_hash(f), S.atom_uses(run.V, pt.tokens))
 
 
+REPEATS = os.environ.get('WRITER_NO_REPEAT') == '1'  # sampling without replacement over queries whose table no state changes
+FINISHED, LAST_STEP, CLOSE_SHARE = set(), set(), {}
+REPEAT_STATS = dict(points=0, removed=0.0)
+
+
+def _reads_state(core, tokens):
+    return any(core.kind[t] == 'relation' for t in tokens)
+
+
+def _note_finished(pt):
+    """Keeps the tokens of a finished query that reads no relation of the state: its table is the same at every state, so the job holds it from now on."""
+    tokens = tuple(int(t) for t in pt.tokens)
+    if not _reads_state(core_of(pt.run), tokens):
+        FINISHED.add(tokens)
+        LAST_STEP.add(tokens[:-1])
+        CLOSE_SHARE.pop(tokens[:-1], None)
+
+
+def _close_share(pt, plan, t):
+    """The chance, at the point after token t, of a token that finishes a query the job holds. It is computed at the first state that needs it and kept for the job."""
+    key = tuple(int(x) for x in pt.tokens) + (int(t),)
+    got = CLOSE_SHARE.get(key)
+    if got is None:
+        q = step_point(pt, int(t))
+        ids, fac, reason = options(q, plan)
+        if reason or not len(ids):
+            got = 1.0
+        elif len(ids) == 1:
+            got = float(key + (int(ids[0]),) in FINISHED)
+        else:
+            p, _ = probabilities(q, plan, ids, fac)
+            got = float(sum(p[i] for i, u in enumerate(ids.tolist()) if key + (u,) in FINISHED))
+        CLOSE_SHARE[key] = got
+    return got
+
+
+def without_repeats(pt, plan, ids, probs):
+    """The chances at point pt without the draws that would only repeat a query the job holds, where the writer knows that before the draw. A token that finishes such a query loses all its chance. At a query's first item, a token that started a whole query the job holds, such as a body of one registered relation, keeps only the share of its chance that goes on to another query. The rest goes to the other tokens."""
+    pre = tuple(int(x) for x in pt.tokens)
+    first = len(pre) == 1
+    if not first and pre not in LAST_STEP:
+        return probs
+    out = None
+    for i, t in enumerate(ids.tolist()):
+        seq = pre + (t,)
+        if seq in FINISHED:
+            keep = 0.0
+        elif first and seq in LAST_STEP:
+            keep = 1.0 - _close_share(pt, plan, t)
+        else:
+            continue
+        if out is None:
+            out = np.array(probs, np.float64)
+        out[i] *= keep
+    if out is None or out.sum() <= 0:
+        return probs
+    REPEAT_STATS['points'] += 1
+    REPEAT_STATS['removed'] += 1.0 - float(out.sum())
+    return out / out.sum()
+
+
 def write(start, plan, rng, cache=None, on_atom=None):
     """The query that the writer writes from writing point `start`, or Ended. Each choice of two ids or more goes through rng.node, so each is
     a node of the search. cache maps the tokens of a path to its WritingPoint. on_atom(ctx, point) is called at each atom close, with the path's hash
@@ -1895,6 +1956,8 @@ def write(start, plan, rng, cache=None, on_atom=None):
     whole, closing = atoms is not None, False  # whether the next atom is one choice; and, for an atom that goes by tokens, whether the search has chosen to close the one before it
     while True:
         if pt.track.where == 'done':
+            if REPEATS:
+                _note_finished(pt)
             return finish(pt)
         if full is not None and full.first_item(pt):
             before = len(pt.track.texts)
@@ -1926,6 +1989,8 @@ def write(start, plan, rng, cache=None, on_atom=None):
             j = 0
         else:
             probs, costs = probabilities(pt, plan, ids, fac)
+            if REPEATS:
+                probs = without_repeats(pt, plan, ids, probs)
             keys = getattr(rng, 'keys', None)
             tie = None if keys is None else (lambda i, pt=pt, ids=ids, keys=keys: keys.of(pt, int(ids[i])))
             if full is not None and closing and full.closes_here(pt):
