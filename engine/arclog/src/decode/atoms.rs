@@ -296,8 +296,11 @@ impl Decoder<'_> {
     /// Runs `body` with the decode at `state`, and puts the state back.
     fn at(&mut self, state: State, body: impl FnOnce(&mut Self)) {
         let held = std::mem::replace(&mut self.state, state);
+        // The decode's path is not the path of `state`, so no mask of its context stands for it.
+        let path = self.path.take();
         body(self);
         self.state = held;
+        self.path = path;
     }
 
     /// The atoms of the relation that the tokens `opening` open, which leave the decode at `state`.

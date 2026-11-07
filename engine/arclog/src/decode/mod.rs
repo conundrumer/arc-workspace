@@ -102,6 +102,9 @@ pub struct Decoder<'a> {
     assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
     /// One record per accepted token, shared with the forks.
     trace: DecodeTrace,
+    /// The hash of the ids of the tokens of the trace, in order, or none
+    /// where the decode stands at a state that its tokens did not reach.
+    path: Option<u128>,
     /// The mask of the current state with the step of each token it admits.
     held: Held,
     /// Where the evaluations report the declared rows that a construction's
@@ -151,6 +154,41 @@ pub(crate) struct Context<'a> {
     registry: &'a Registry,
     settings: DecodeSettings,
     vocabulary: Vocabulary<'a>,
+    /// The masks that the decodes of this context computed, by the path of
+    /// tokens that reached each state ([`Decoder::path`]).
+    masks: std::sync::Mutex<PathMasks>,
+}
+
+/// The most masks that a generation of [`PathMasks`] holds.
+const PATH_MASKS: usize = 8192;
+
+/// The masks of the states that the decodes of one context reached, by the
+/// hash of the path of tokens from the context's first state and whether the
+/// decode evaluates. Two decodes of one context that took the same tokens
+/// stand at the same state, so they have the same mask. Where a generation
+/// is full, it becomes the older one, and the one before it goes.
+#[derive(Default)]
+struct PathMasks {
+    entries: std::collections::HashMap<u128, TokenMask>,
+    older: std::collections::HashMap<u128, TokenMask>,
+}
+
+impl PathMasks {
+    fn get(&mut self, key: u128) -> Option<TokenMask> {
+        if let Some(mask) = self.entries.get(&key) {
+            return Some(mask.clone());
+        }
+        let mask = self.older.remove(&key)?;
+        self.insert(key, mask.clone());
+        Some(mask)
+    }
+
+    fn insert(&mut self, key: u128, mask: TokenMask) {
+        if self.entries.len() >= PATH_MASKS {
+            self.older = std::mem::take(&mut self.entries);
+        }
+        self.entries.insert(key, mask);
+    }
 }
 
 /// Why a decode refuses a token: the token is outside the mask.
@@ -196,9 +234,9 @@ impl<'a> Decoder<'a> {
     /// differ.
     pub fn new(task: &'a Task, session: &'a TaskSession, registry: &'a Registry, constructions: &'a Constructions, settings: &DecodeSettings) -> Decoder<'a> {
         assert_eq!(settings.caps, session.caps, "the caps of the decode settings are those of the session");
-        let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings) };
+        let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), masks: Default::default() };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
     }
 
     /// The decode, with steps that evaluate nothing: a step runs the
@@ -274,7 +312,7 @@ impl<'a> Decoder<'a> {
     /// mask, and keeps the state and forced tokens of each admitted token for
     /// [`Decoder::step`]; a later call at that state gives the same mask.
     pub fn admissible(&self) -> TokenMask {
-        self.held.0.get_or_init(|| self.compute_mask()).mask.clone()
+        self.held.0.get_or_init(|| self.path_mask()).mask.clone()
     }
 
     /// Whether each token whose id `ids` gives may come next, as
@@ -283,9 +321,11 @@ impl<'a> Decoder<'a> {
     /// Where the decode holds the mask of its state, it reads the verdicts
     /// from the mask.
     pub fn admits(&self, ids: &[u32]) -> Vec<bool> {
-        let mask = match self.held.0.get() {
-            Some(held) => held.mask.clone(),
-            None => self.mask_over(ids.iter().copied()).mask,
+        let kept = self.path_key().and_then(|key| self.context.masks.lock().expect("the masks are not poisoned").get(key));
+        let mask = match (self.held.0.get(), kept) {
+            (Some(held), _) => held.mask.clone(),
+            (None, Some(mask)) => mask,
+            (None, None) => self.mask_over(ids.iter().copied()).mask,
         };
         ids.iter().map(|&id| mask.contains(id)).collect()
     }
@@ -594,10 +634,49 @@ impl<'a> Decoder<'a> {
             record.stop = record.stop.or(stop);
         }
         record.capped_sets = step.capped_sets + step.rule_capped_sets;
+        self.extend_path(&record.token);
         self.trace.push(record);
         for forced in step.forced.iter() {
+            self.extend_path(forced);
             self.trace.push(DecodeRecord::new(forced.clone(), Emitter::Engine));
         }
+    }
+
+    /// Adds `token` to [`Decoder::path`].
+    fn extend_path(&mut self, token: &Token) {
+        use std::hash::{Hash, Hasher};
+        let Some(path) = self.path else { return };
+        let mut hasher = crate::hash::StableHasher::new();
+        hasher.write_u128(path);
+        match self.context.vocabulary.id(token) {
+            Some(id) => hasher.write_u32(id),
+            None => format!("{token:?}").hash(&mut hasher),
+        }
+        self.path = Some(hasher.finish128().0);
+    }
+
+    /// The key of the mask of this decode's state among the masks of its
+    /// context: the path of its tokens, and whether it evaluates, since the
+    /// liveness walk of a written `DET` reads that.
+    fn path_key(&self) -> Option<u128> {
+        use std::hash::Hasher;
+        let mut hasher = crate::hash::StableHasher::new();
+        hasher.write_u128(self.path?);
+        hasher.write_u8(u8::from(self.evaluates));
+        Some(hasher.finish128().0)
+    }
+
+    /// The mask of this decode's state, from the masks of its context where a
+    /// decode of the same path computed it, and else computed and kept there.
+    /// A mask from the context holds no states of its tokens' steps.
+    fn path_mask(&self) -> Mask {
+        let Some(key) = self.path_key() else { return self.compute_mask() };
+        if let Some(mask) = self.context.masks.lock().expect("the masks are not poisoned").get(key) {
+            return Mask { mask, steps: HashMap::new() };
+        }
+        let mask = self.compute_mask();
+        self.context.masks.lock().expect("the masks are not poisoned").insert(key, mask.mask.clone());
+        mask
     }
 
     /// The trace of the decode: one record per accepted token, the engine's
