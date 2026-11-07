@@ -193,8 +193,10 @@ def with_named(lists, others, folder, name, items):
     if not path.exists():
         return {}
     head, named_lists, named_others = read_lists(path, graded=True)
-    if [item['gold'] for item in head['items']] != [item['gold'] for item in items]:
-        print('named file out of step', name, flush=True)
+    # A run of the tables command can keep other candidates than an earlier run did, and then a place names another table.
+    places = lambda held: [(item['table'], item['gold'], [mutant['table'] for mutant in item['mutants']]) for item in held]
+    if places(head['items']) != places(items):
+        print('named file out of step', folder, name, flush=True)
         return {}
     queries = {}
     for owner, held in named_lists.items():
