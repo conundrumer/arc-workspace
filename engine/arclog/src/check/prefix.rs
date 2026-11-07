@@ -656,26 +656,24 @@ fn with_prefix<R>(
 }
 
 /// The labels of each label scope of `form`, the form at `path`, as a mask's
-/// checks read them: with the inference's types, and the canonical labels in
-/// Pose key rows. A mask finds a label by its scope and its id, so the labels
-/// stand in no order, and a form of one scope takes its canonical order only
-/// for a type that holds a label.
+/// checks read them: each with the type that the inference gives it, in no
+/// order, since a mask finds a label by its scope and its id.
+///
+/// A type that holds labels, a Pose type's key row, names them as the form
+/// writes them, where the checks outside a mask name them by their canonical
+/// positions. No check of a mask reads a label that stands inside a type, so
+/// a mask takes no canonical order of the form for them. A form of several
+/// label scopes takes its canonical order for the paths of its scopes alone.
 fn mask_labels(form: &Form, path: &NodePath, inference: &inference::Inference<'_>) -> Vec<LabelInScope> {
-    let order = || CanonicalOrder::of(form, &mut SearchBudget::new());
     let in_scope = |at: &NodePath, members: &mut dyn Iterator<Item = LabelId>, labels: &mut Vec<LabelInScope>| {
         let inferred = inference.infer(&path.join(at)).expect("a label scope has an inference");
-        for label in members {
-            let ty = inferred.label(label).map(|ty| {
-                types::try_map_labels(&ty, &|label| Some(LabelId(order().canonical_label(at, label)))).expect("every key-row label belongs to its scope")
-            });
-            labels.push(LabelInScope { scope: at.clone(), label, ty });
-        }
+        labels.extend(members.map(|label| LabelInScope { scope: at.clone(), label, ty: inferred.label(label) }));
     };
     let mut labels = Vec::new();
     match one_scope_labels(form) {
         Some(members) => in_scope(&NodePath::default(), &mut members.into_iter(), &mut labels),
         None => {
-            for (at, members) in order().label_scopes() {
+            for (at, members) in CanonicalOrder::of(form, &mut SearchBudget::new()).label_scopes() {
                 in_scope(&at, &mut members.iter().map(|(label, _)| *label), &mut labels);
             }
         }
