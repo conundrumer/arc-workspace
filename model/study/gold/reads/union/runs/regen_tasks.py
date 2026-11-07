@@ -6,11 +6,12 @@
   .venv/bin/python regen_tasks.py graph BATCH TASK...      per split of the tasks: graph-*-SPLIT-BATCH.jsonl, then graph-*-SPLIT.jsonl made as `regen_run.py` makes it (a later batch's line of a task replaces an earlier one's, and a task whose latest graph-tasks line is an error has no line in graph-tables and graph-prods). It needs the row store of each task (ARC_SAMPLE_OUT/SPLIT/rows/TASK.jsonl.gz).
   .venv/bin/python regen_tasks.py walks                    the walks of every split that has a graph-tasks file
 
-BATCH is the number of the shard files, above every number in GOLD_UNION_DIR. A task's lines in the shard files of the union, the union keys and the fits must be gone first, as the stages skip a task that a shard holds. A task in the union phase with no fits row gets the union row `no fits row`.
+BATCH is the number of the shard files, above every number in GOLD_UNION_DIR. A task's lines in the shard files of the union, the union keys and the fits must be gone first (`strip_tasks.py` in this folder, add `--kinds union,keys,fits,graph` to take the graph shard files of a batch again), as the stages skip a task that a shard holds and a merge takes a task's line from the last shard file by name; the fits and union phases stop, naming the files, where an older shard holds a line of a task. A task in the union phase with no fits row gets the union row `no fits row`.
+A Python with zstandard runs this file (`.venv/bin/python`); it stops at once where the Python has none.
 Each step logs to LOG/<step>.log, LOG being REGEN_LOG (default GOLD_UNION_DIR/regen), and runs through run_heavy.py with one CPU. A rerun takes up where the stages' own restart rules take it.
 Environment: SITE (the engine), GOLD_UNION_DIR, ROWS_VERSION, ARC_SAMPLE_OUT (the samples folder that holds the row stores), SAMPLER_LIVE_TRY (see gold_union_fits.py), FITS_CAP (default 300), FITS_PROCS (default 2).
 """
-import glob, json, os, subprocess, sys, threading, time
+import glob, json, os, re, subprocess, sys, threading, time
 
 CODE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../../../..')) + '/'  # the checkout that holds this file
 DATA = '/Users/davidlu/code/arc-workspace/'  # the main checkout: .venv and the data
@@ -21,6 +22,11 @@ LOG = os.environ.get('REGEN_LOG', G + 'regen') + '/'
 sys.path.insert(0, U)
 from gold_union_fits import set_of  # noqa: E402
 import study_zst as Z  # noqa: E402  on the path since gold_union_fits is imported
+
+try:
+    import zstandard  # noqa: F401  the stages' files may be zstd streams, and the graph phase reads them in this process
+except ImportError:
+    sys.exit('regen_tasks.py needs a Python with zstandard (.venv/bin/python): %s has none' % sys.executable)
 
 os.makedirs(LOG, exist_ok=True)
 SLOTS = threading.Semaphore(int(os.environ.get('FITS_PROCS', '2')))
@@ -38,6 +44,30 @@ def sh(name, cmd, env=None):
 
 def fits_py(args, env):
     return ['env', 'PYTHONPATH=' + os.environ['SITE'], 'ARCLOG_IDENT_SOURCE=value'] + ['%s=%s' % kv for kv in env.items()] + [DATA + '.venv/bin/python', U + 'gold_union_fits.py'] + args
+
+
+TASK = re.compile(r'\{"(?:task|stem)": "([0-9a-f]{8})"')
+
+
+def held_elsewhere(kind, split, b, tasks):
+    """{shard file: [task]} of the shard files of the split, other than those of batch b, that hold a line of a task. kind is fits (shards b * 100 to b * 100 + 99), union or keys (shard b)."""
+    pat = re.compile({'fits': r'fits-%s-(\d+)', 'union': r'union-%s-(\d+)', 'keys': r'union-keys-%s-(\d+)'}[kind] % re.escape(split) + r'\.jsonl')
+    got = {}
+    for p in Z.glob(G + '*-%s-*.jsonl' % split):
+        m = pat.fullmatch(os.path.basename(p))
+        if not m or (b * 100 <= int(m[1]) < b * 100 + 100 if kind == 'fits' else int(m[1]) == b):
+            continue
+        for l in Z.open_text(p):
+            t = TASK.match(l)
+            if t and t[1] in tasks and l.endswith('\n') and t[1] not in got.get(os.path.basename(p), []):
+                got.setdefault(os.path.basename(p), []).append(t[1])
+    return got
+
+
+def refuse_held(kind, split, b, tasks):
+    held = held_elsewhere(kind, split, b, set(tasks))
+    if held:
+        sys.exit('%s shard files hold lines of tasks that this batch takes again: %s\nRun: %s %s/strip_tasks.py %s %s' % (kind, '; '.join('%s: %s' % kv for kv in sorted(held.items())), sys.executable, os.path.dirname(os.path.abspath(__file__)), G, ' '.join(tasks)))
 
 
 def by_split(tasks):
@@ -61,6 +91,8 @@ def fits_one(split, b, n, task, reuse):
 
 
 def fits_phase(b, tasks):
+    for split, ts in by_split(tasks).items():
+        refuse_held('fits', split, b, ts)
     reuse = ','.join(Z.glob(G + 'fits-*.jsonl') + [x for x in os.environ.get('FITS_REUSE', '').split(',') if x])
     threads = [threading.Thread(target=fits_one, args=(set_of(t), b, i, t, reuse)) for i, t in enumerate(tasks)]
     for th in threads:
@@ -73,6 +105,8 @@ def union_phase(b, tasks):
     for split, ts in by_split(tasks).items():
         tag = '%s-%d' % (split, b)
         names = ' '.join(ts)
+        refuse_held('union', split, b, ts)
+        refuse_held('keys', split, b, ts)
         sh(tag + '-fits-merge', fits_py([split, 'merge'], {}))
         say(tag, 'union')
         sh(tag + '-union', [E, U + 'gold_union.py', 'run', str(b), '1000', split], dict(UNION_TASKS=names))
@@ -101,7 +135,7 @@ def graph_phase(b, tasks):
             with Z.open_text(G + 'graph-%s-%s.jsonl' % (f, split), 'w', atomic=True) as out:
                 for p in parts:
                     out.writelines(l for l in Z.open_text(p) if keep.get(json.loads(l)['task']) == p)
-            subprocess.run(['python3', U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
+            subprocess.run([sys.executable, U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
 
 
 def walks_phase():
