@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Whether a model's row gives each first-version feature, on the tables that v1_dump.py wrote.
 
-  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--tasks N] [--procs N]
+  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--disposition FILE] [--tasks N] [--procs N]
 
 A row is one table, of the ground-truth program or of a dumped mutant, at one train pair. Its columns are the table's shapes at that pair, from its list and its list in
 `--named`, and the columns of a store's `base`, `qv`, `graph`, `relations` and `wide` at its candidate. `--skip` names tasks to leave out.
@@ -21,7 +21,10 @@ met once counts for nothing.
 
 Each feature is judged again with its values shuffled across the rows where it has a value, so a reader can see how often the criterion passes by
 chance: more columns and fewer rows raise that rate. `--counts` names a file of v1_column_counts.py, and then a column stands only where a store's train
-rows hold an entry of it on at least a leaf's least count of rows, since no fit can read another.
+rows hold an entry of it on at least a leaf's least count of rows, since no fit can read another. A column the file does not count stands.
+
+`--disposition` names a file that gives each group of features the sources of the columns that may give it, by the form the specification states it in:
+`shape`, `named`, or a store's source. A line gives its feature's group.
 
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
@@ -154,9 +157,11 @@ def main():
     parser.add_argument('--no-mutants', action='store_true')
     parser.add_argument('--nearest', action='store_true')
     parser.add_argument('--counts')
+    parser.add_argument('--disposition')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
     args = parser.parse_args()
+    begun_at = time.time()
     blocks = Path(args.blocks)
     meta = pickle.load((blocks / 'meta.pkl').open('rb'))
     candidates = pickle.load((blocks / 'train.rows.pkl').open('rb'))
@@ -167,6 +172,7 @@ def main():
     extra['graph'] = {place: 'graph:' + meta['family_names'].get(int(key), '') for place, key in enumerate(meta['graph_columns'])}
     extra['relations'] = {place: relation + ':' + meta['family_names'].get(int(key), '') for place, (relation, key) in enumerate((r, k) for r in g.RELATIONS for k in meta['relation_columns'])}
     extra['wide'] = {place: 'wide:' + meta['wide_names'].get(int(key), '') for place, key in enumerate(meta['wide_columns'])}
+    extra['contingent'] = {place: 'contingent:' + meta['names'].get(int(key), '') for place, key in enumerate(meta['columns'])}
     offset = {source: OTHER + (place << 32) for place, source in enumerate(extra)}
     name_of = {offset[source] + column: name for source, names in extra.items() for column, name in names.items()}
     skipped = set(Path(args.skip).read_text().split()) if args.skip else set()
@@ -174,6 +180,7 @@ def main():
     paths = paths[:args.tasks] if args.tasks else paths
     tasks = {path.name.split('.')[0] for path in paths}
     extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra}
+    print(f'sources read {time.time() - begun_at:.0f}s', flush=True)
     rows = 0
     row_of, shape_of, value_of = [], [], []
     features = collections.defaultdict(dict)
@@ -284,7 +291,22 @@ def main():
                 column.setdefault(own, 0.0)
     unique_ids, shape = np.unique(ids, return_inverse=True)
     del ids
-    # Columns that give one partition of the rows stand as one, kept as its shortest name, so each feature tests fewer columns.
+    wanted = set(unique_ids.tolist())
+    for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.state] if args.state else []):
+        for line in g.name_lines(Path(folder)):
+            parts = line.rstrip('\n').split('\t')
+            if len(parts) == 4 and int(parts[0], 16) in wanted:
+                name_of[int(parts[0], 16)] = parts[1]
+    source_at = {OTHER + (place << 32): source for place, source in enumerate(extra)}
+
+    def source_of(key):
+        if key >= OTHER:
+            return source_at[OTHER + ((key - OTHER) >> 32 << 32)]
+        name = name_of.get(key, '')
+        return 'named' if name.startswith('(named') else 'query' if name.startswith('(query') else 'shape'
+
+    sources = [source_of(int(key)) for key in unique_ids.tolist()]
+    # Columns of one source that give one partition of the rows stand as one, so each feature tests fewer columns.
     order = np.lexsort((row, val, shape))
     row, shape, val = row[order], shape[order], val[order]
     new_group = np.concatenate(([True], (shape[1:] != shape[:-1]) | (val[1:] != val[:-1])))
@@ -296,20 +318,14 @@ def main():
     readable = np.ones(len(unique_ids), dtype=bool)
     if args.counts:
         held = np.load(args.counts)
-        readable = np.isin(unique_ids, held['ids'][held['counts'] >= MIN_DATA])
+        readable = np.isin(unique_ids, held['ids'][held['counts'] >= MIN_DATA]) | ~np.isin(unique_ids, held['ids'])
         print(f'columns a fit can read {int(readable.sum())} of {len(unique_ids)}', flush=True)
     for start, end in zip(starts.tolist(), ends.tolist()):
-        key = (row[start:end].tobytes(), (rank[start:end] - rank[start]).tobytes())
+        key = (sources[shape[start]], row[start:end].tobytes(), (rank[start:end] - rank[start]).tobytes())
         if readable[shape[start]] and key not in signature:
             signature[key] = shape[start]
             keep_shape[shape[start]] = True
     print(f'columns {len(unique_ids)} kept {int(keep_shape.sum())}', flush=True)
-    wanted = set(unique_ids.tolist())
-    for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.state] if args.state else []):
-        for line in g.name_lines(Path(folder)):
-            parts = line.rstrip('\n').split('\t')
-            if len(parts) == 4 and int(parts[0], 16) in wanted:
-                name_of[int(parts[0], 16)] = parts[1]
     kept = keep_shape[shape]
     row, shape, val = row[kept], shape[kept], val[kept]
     del signature, rank, new_group
@@ -320,6 +336,17 @@ def main():
     entry_shape_start = np.flatnonzero(np.concatenate(([True], shape[1:] != shape[:-1])))
     columns_here = group_shape[shape_start]
     total = len(unique_ids)
+    source_here = np.array([sources[at] for at in columns_here.tolist()])
+    groups = []
+    if args.disposition:
+        with open(args.disposition) as lines:
+            for line in list(lines)[1:]:
+                parts = line.rstrip('\n').split('\t')
+                groups.append((parts[0], re.compile(parts[1]), np.isin(source_here, parts[4].split(','))))
+
+    def group_of(feature):
+        return next(((name, mask) for name, pattern, mask in groups if pattern.search(feature)), ('', None))
+
     print(f'tasks {used} rows {rows} left out at another assignment {other_assignment[0]} columns {int(keep_shape.sum())} entries {len(row)} features {len(features)} read {time.time() - started:.0f}s', flush=True)
 
     def key_of(value):
@@ -374,6 +401,9 @@ def main():
         rest_n, rest_1, rest_2 = n - cn, s1 - c1, s2 - c2
         rest_bad = rest_n * rest_2 != rest_1 * rest_1
         candidate_shapes = ~shape_bad & ~rest_bad & (cn > 0)
+        allowed = group_of(feature)[1]
+        if allowed is not None:
+            candidate_shapes &= allowed
 
         def missing():
             if not with_nearest or (coordinate_of.get(feature) or ['', '', ''])[2] != 'owner':
@@ -414,7 +444,7 @@ def main():
         feature, at = item
         values = list(at.values())
         random.Random(feature).shuffle(values)
-        return judged(feature, at, args.nearest) + (judged(feature, dict(zip(at, values)), False)[4],)
+        return judged(feature, at, args.nearest) + (judged(feature, dict(zip(at, values)), False)[4], group_of(feature)[0])
 
     JUDGE = one
     same_values = collections.defaultdict(list)
@@ -427,7 +457,7 @@ def main():
     begun = time.time()
     tally = collections.Counter()
     with open(args.out, 'w') as sink, mp.get_context('fork').Pool(args.procs) as pool:
-        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\treads\tlevel\tarity\tsame values\n')
+        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\treads\tlevel\tarity\tsame values\n')
         for done, result in enumerate(pool.imap_unordered(judge, items, chunksize=4), 1):
             coordinate = coordinate_of.get(result[0]) or ['', '', '']
             sink.write('\t'.join(map(str, result)) + '\t' + '\t'.join(coordinate) + '\t' + ' ;; '.join(others_of[result[0]][:6]) + '\n')
