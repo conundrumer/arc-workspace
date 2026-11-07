@@ -8,7 +8,7 @@
 //! on one: most give an empty relation, `antijoin` with an empty right side gives
 //! its left, and a component runs on its empty input.
 //!
-//! The rows of `inside` stand as their boxes ([`Val::Boxes`]) until an operator needs the rows themselves.
+//! The rows of `inside` stand as their boxes ([`Val::Boxes`]), and the rows of a `join` as its two sides ([`Val::Joined`]), until an operator needs the rows themselves.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -315,6 +315,8 @@ pub enum Val {
     /// The rows of `inside`, as the relation and the grid they come from. An operator that needs
     /// the rows themselves writes them out; the others, and the count of rows, read the boxes.
     Boxes(Arc<crate::boxes::Boxes>),
+    /// The rows of a `join`, as its two sides and how many rows each has at each value of the paired columns. An operator that needs the rows themselves writes them out; the others, and the count of rows, read the sides.
+    Joined(Arc<crate::joined::Joined>),
 }
 
 impl Val {
@@ -322,7 +324,31 @@ impl Val {
     pub fn written(&self) -> Val {
         match self {
             Val::Boxes(boxes) => boxes.written(),
+            Val::Joined(joined) => joined.written(),
             other => other.clone(),
+        }
+    }
+
+    /// Whether the value stands as the relations its rows come from, until an operator needs the rows.
+    pub fn is_lazy(&self) -> bool {
+        matches!(self, Val::Boxes(_) | Val::Joined(_))
+    }
+
+    /// Whether `step` takes what it needs from a lazy value as its first relation or, where `first` is false, as its second, without writing the rows.
+    pub fn lazy_reads(&self, step: &Step, first: bool) -> bool {
+        match self {
+            Val::Boxes(boxes) => if first { boxes.reads(step) } else { boxes.reads_second(step) },
+            Val::Joined(joined) => if first { joined.reads(step) } else { joined.reads_second(step) },
+            _ => false,
+        }
+    }
+
+    /// Whether the rows of a lazy value can be written out, in at most `CELL_CAP` cells.
+    pub fn lazy_fits(&self) -> bool {
+        match self {
+            Val::Boxes(boxes) => boxes.fits(),
+            Val::Joined(joined) => joined.fits(),
+            _ => true,
         }
     }
 
@@ -355,6 +381,7 @@ impl Val {
             Val::None => 1,
             Val::Empty => 2,
             Val::Boxes(boxes) => boxes.hash(),
+            Val::Joined(joined) => joined.hash(),
             Val::Rows(parts) => {
                 let mut hash = hash_words([parts.len() as u64 + 3]);
                 for part in parts.iter() {
@@ -368,8 +395,8 @@ impl Val {
 
     /// The rows, each in the order of the value's columns; `None` past `cap`.
     pub fn rows(&self, arity: usize, cap: usize) -> Option<Vec<Vec<Cell>>> {
-        if let Val::Boxes(boxes) = self {
-            return boxes.written().rows(arity, cap);
+        if self.is_lazy() {
+            return self.written().rows(arity, cap);
         }
         let Val::Rows(parts) = self else { return Some(Vec::new()) };
         let total: usize = parts.iter().map(|part| part.table.len).try_fold(1usize, |total, len| total.checked_mul(len))?;
@@ -536,10 +563,11 @@ impl<'a> Evaluator<'a> {
         if children.iter().any(|child| matches!(child, Val::None)) {
             return Val::None;
         }
-        if children.iter().any(|child| matches!(child, Val::Boxes(_))) {
-            // The rows of `inside` serve an operator that takes what it needs from the boxes as they are. Any other reads them written out.
+        if children.iter().any(|child| child.is_lazy()) {
+            // The rows of `inside` and of a `join` serve an operator that takes what it needs from the relations they come from as they are. Any other reads them written out.
             let second = match children.get(1) {
                 Some(Val::Boxes(boxes)) => boxes.read_second(step),
+                Some(Val::Joined(joined)) => joined.read_second(step),
                 _ => None,
             };
             let mut held: Vec<&Val> = children.to_vec();
@@ -549,10 +577,13 @@ impl<'a> Evaluator<'a> {
                     return Val::None;
                 }
             }
-            if let Val::Boxes(boxes) = held[0] {
-                if let Some(value) = boxes.read(step, &held) {
-                    return value;
-                }
+            let read = match held[0] {
+                Val::Boxes(boxes) => boxes.read(step, &held),
+                Val::Joined(joined) => joined.read(step, &held),
+                _ => None,
+            };
+            if let Some(value) = read {
+                return value;
             }
             let written: Vec<Val> = held.iter().map(|child| child.written()).collect();
             let held: Vec<&Val> = written.iter().collect();
@@ -584,7 +615,7 @@ impl<'a> Evaluator<'a> {
         if children.iter().any(|child| matches!(child, Val::None)) {
             return Some(None);
         }
-        if children.iter().any(|child| matches!(child, Val::Boxes(_))) {
+        if children.iter().any(|child| child.is_lazy()) {
             return None;
         }
         let parts = |at: usize| -> Option<&Arc<Vec<Part>>> {
@@ -664,12 +695,6 @@ impl<'a> Evaluator<'a> {
                     if let Some(count) = histogram.get(key_word(row, &l_places)) {
                         matched += u64::from(count);
                     }
-                }
-                // The rows that `join` would build, which past the cap give no value.
-                let width = l.columns.len() + (0..r.columns.len()).filter(|place| !r_places.contains(place)).count();
-                if matched.saturating_mul(width as u64) > CELL_CAP as u64 {
-                    crate::bounds::mark(Bound::CountOutput);
-                    return Some(None);
                 }
                 let rest: Vec<&Part> = l_rest.into_iter().chain(r_rest).collect();
                 Some(Some(matched.saturating_mul(product(&rest))))
@@ -1125,11 +1150,11 @@ impl<'a> Evaluator<'a> {
     /// their masks. `names` says which positions hold a lib name.
     pub fn words(&mut self, value: &Val, invariant: &[u16], names: &[bool], out: &mut Vec<u64>) {
         let masks = (1u32 << invariant.len().min(12)) - 1;
-        if let Val::Boxes(boxes) = value {
-            return self.words(&boxes.written(), invariant, names, out);
+        if value.is_lazy() {
+            return self.words(&value.written(), invariant, names, out);
         }
         match value {
-            Val::Boxes(_) => {}
+            Val::Boxes(_) | Val::Joined(_) => {}
             Val::None => out.extend(std::iter::repeat_n(0, 2 + masks as usize)),
             Val::Empty => {
                 out.push(WORD_NONEMPTY);
@@ -1163,7 +1188,7 @@ impl<'a> Evaluator<'a> {
 }
 
 /// A 64-bit key of the values of `row` at `places`.
-fn key_word(row: &[Cell], places: &[usize]) -> u64 {
+pub(crate) fn key_word(row: &[Cell], places: &[usize]) -> u64 {
     match places {
         [one] => u64::from(row[*one]),
         [one, two] => (u64::from(row[*one]) << 32) | u64::from(row[*two]),
@@ -1388,6 +1413,14 @@ struct Merged<'p> {
     cells: std::borrow::Cow<'p, [Cell]>,
 }
 
+/// The table of the product of `parts`, which `merged` holds.
+fn side_table(parts: &[&Part], merged: &Merged) -> Arc<Table> {
+    match parts {
+        [one] => one.table.clone(),
+        _ => Table::new(merged.columns.len(), merged.cells.to_vec()),
+    }
+}
+
 /// The product of `parts`, or `None` past the cap. One part is its own rows, read in place.
 fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
     let columns: Vec<u16> = parts.iter().flat_map(|part| part.columns.iter().copied()).collect();
@@ -1533,7 +1566,7 @@ pub struct KeyIndex {
 
 impl KeyIndex {
     /// The index of `keys`, and the id of each key.
-    fn of(keys: &[u64]) -> (KeyIndex, Vec<u32>) {
+    pub(crate) fn of(keys: &[u64]) -> (KeyIndex, Vec<u32>) {
         let capacity = (2 * keys.len()).next_power_of_two().max(16);
         let mut index = KeyIndex { slots: vec![0; 2 * capacity], shift: 64 - capacity.trailing_zeros() };
         let mut ids = Vec::with_capacity(keys.len());
@@ -1565,7 +1598,7 @@ impl KeyIndex {
     }
 
     #[inline]
-    fn get(&self, key: u64) -> Option<u32> {
+    pub(crate) fn get(&self, key: u64) -> Option<u32> {
         let mut at = self.start(key);
         loop {
             let held = self.slots[2 * at + 1];
@@ -1613,6 +1646,13 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
     }
     let tl = merge(&left_touched, Bound::JoinSide)?;
     let tr = merge(&right_touched, Bound::JoinSide)?;
+    // Where every part is read, the rows stand as the two sides until an operator needs them.
+    if left_rest.is_empty() && right_rest.is_empty() {
+        let (left_table, right_table) = (side_table(&left_touched, &tl), side_table(&right_touched, &tr));
+        if let Some(value) = crate::joined::Joined::of(left_table, tl.columns.clone(), right_table, tr.columns.clone(), left_at, right_at, kept, left_arity) {
+            return Some(value);
+        }
+    }
     let left_places: Vec<usize> = left_at.iter().map(|at| tl.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let right_places: Vec<usize> = right_at.iter().map(|at| tr.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let right_kept: Vec<usize> = (0..tr.columns.len()).filter(|place| !right_places.contains(place)).collect();
