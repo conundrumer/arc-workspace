@@ -1,7 +1,15 @@
 //! The rows of each of many atoms joined to the body in progress at a state of
 //! a decode, with no program made for any of them.
+//!
+//! An atom that reads one part of the body's rows reads it through the columns
+//! at its sites alone. The rows of the part with equal values at those columns
+//! form a group, and what the atom gives at a group holds for each row of it.
+//! So the atom costs one read of its relation for each group, and no row of its
+//! table is made until a caller asks for the rows of a table it has not seen.
+//! A table's hash comes from the groups: it needs no rows.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use super::interface::{relation_dets, SubBody};
@@ -10,8 +18,9 @@ use crate::eval::ir::{Argument, Arguments, AtomSource, ClauseIr, Filter, IrNode,
 use crate::eval::join::{self, Budget, JoinInputs, NodeInput};
 use crate::eval::{examples, plan};
 use crate::eval::{Evaluation, Limits, Outcome, ParameterValues, ReachedBound, RelationValue, TableWork};
+use crate::hash::{StableHash, StableHashMap};
 use crate::program::{FactRelation, ProgramRelation, RelationRef};
-use crate::relations::{ColumnIndex, Relation, RelationPart};
+use crate::relations::{hash_plus, hash_times, row_hash_at, rows_hash_of, value_hash, ColumnIndex, ColumnOrder, Index, IndexNode, Relation, RelationPart, RowSet};
 use crate::resolver::DependencyKind;
 use crate::stream::{Control, Token};
 use crate::terms::{Example, TermId};
@@ -40,6 +49,8 @@ struct HeldBase {
 /// One candidate atom as the join reads it.
 struct AtomPlan {
     negated: bool,
+    /// The token that opens the atom.
+    relation: u32,
     source: PlanSource,
     /// The column of the relation and what stands at it, for each site.
     sites: Vec<(ColumnIndex, PlanArgument)>,
@@ -65,6 +76,9 @@ enum PlanArgument {
     Zero,
 }
 
+/// The most labels that an atom makes where the join reads it one group at a time.
+const MADE_LABELS: usize = 32;
+
 /// What is known of a relation that an atom opens.
 #[derive(Clone)]
 struct OpenedRelation {
@@ -78,15 +92,252 @@ struct OpenedRelation {
 
 /// What the join gives for one atom.
 pub enum AtomRows {
-    /// The types of the columns of the atom's table, and for each example, at
-    /// each assignment, the value.
-    Rows { types: Vec<ValueType>, examples: Vec<(Option<Example>, Outcome<Assigned<Vec<RelationValue>>>)> },
+    /// The table of the atom.
+    Rows(JoinedAtom),
     /// The body with the atom is no body that a program holds, so it has no table.
     NoTable,
     /// The atom's work passed the cap.
     OverCap,
     /// The join does not read the atom. A program made for it does.
     ByProgram,
+}
+
+/// The table of one atom: the types of its columns, and for each example, at
+/// each assignment, its value, whose rows are made on a call of [`JoinedAtom::table`].
+pub struct JoinedAtom {
+    types: Vec<ValueType>,
+    examples: Vec<(Option<Example>, Outcome<Assigned<HeldValue>>)>,
+}
+
+/// The value of an atom's table at one assignment of one example.
+enum HeldValue {
+    Whole(RelationValue),
+    Grouped(GroupedValue),
+}
+
+/// The rows of a body with the rows of one part kept or extended by what an
+/// atom gives at each group of them.
+struct GroupedValue {
+    rows: Arc<Relation>,
+    part: usize,
+    groups: Rc<Groups>,
+    result: GroupResult,
+    /// Whether the atom is negated, so that a row stays where the atom does not hold.
+    negated: bool,
+    /// The columns of the value.
+    arity: u16,
+    /// The value's rows hash ([`Relation::rows_hash`]).
+    hash: StableHash,
+}
+
+/// What an atom gives at each group.
+enum GroupResult {
+    /// Whether the atom holds.
+    Holds(Rc<Bits>),
+    /// The values of the labels that the atom makes.
+    Makes(Made),
+}
+
+/// For each group, the rows of the values of the labels an atom makes.
+struct Made {
+    /// The labels the atom makes.
+    width: usize,
+    /// The first row of each group, and the end of the last.
+    starts: Vec<u32>,
+    values: Vec<TermId>,
+}
+
+impl Made {
+    fn at(&self, group: usize) -> &[TermId] {
+        &self.values[self.starts[group] as usize * self.width..self.starts[group + 1] as usize * self.width]
+    }
+}
+
+/// A set of bits.
+struct Bits(Box<[u64]>);
+
+impl Bits {
+    fn new(count: usize) -> Self {
+        Bits(vec![0; count.div_ceil(64)].into())
+    }
+
+    fn set(&mut self, at: usize) {
+        self.0[at / 64] |= 1 << (at % 64);
+    }
+
+    fn get(&self, at: usize) -> bool {
+        self.0[at / 64] & (1 << (at % 64)) != 0
+    }
+}
+
+/// The rows of a part of a body's rows, grouped by their values at some of its columns.
+struct Groups {
+    /// The places of those columns in the part's rows, ascending.
+    places: Box<[u16]>,
+    /// The values of each group at those places, group after group.
+    values: Vec<TermId>,
+    /// The group of each list of values.
+    of_values: StableHashMap<Box<[TermId]>, u32>,
+    /// The count of rows of each group.
+    rows: Vec<u32>,
+    /// The sum of the hashes of the rows of each group.
+    sums: Vec<u64>,
+}
+
+impl Groups {
+    fn of(part: &RelationPart, hashes: &[u64], places: Box<[u16]>) -> Self {
+        let mut groups = Groups { values: Vec::new(), of_values: StableHashMap::default(), rows: Vec::new(), sums: Vec::new(), places };
+        let mut key: Vec<TermId> = Vec::with_capacity(groups.places.len());
+        for (row, &hash) in part.rows.rows().zip(hashes) {
+            key.clear();
+            key.extend(groups.places.iter().map(|&place| row[usize::from(place)]));
+            let group = match groups.of_values.get(&key[..]) {
+                Some(&group) => group as usize,
+                None => {
+                    let group = groups.rows.len();
+                    groups.of_values.insert(key.as_slice().into(), group as u32);
+                    groups.values.extend_from_slice(&key);
+                    groups.rows.push(0);
+                    groups.sums.push(0);
+                    group
+                }
+            };
+            groups.rows[group] += 1;
+            groups.sums[group] = hash_plus(groups.sums[group], hash);
+        }
+        groups
+    }
+
+    fn count(&self) -> usize {
+        self.rows.len()
+    }
+
+    fn values_at(&self, group: usize) -> &[TermId] {
+        let width = self.places.len();
+        &self.values[group * width..(group + 1) * width]
+    }
+
+    /// The group of `row`, a row of the part.
+    fn group_of(&self, row: &[TermId], key: &mut Vec<TermId>) -> usize {
+        key.clear();
+        key.extend(self.places.iter().map(|&place| row[usize::from(place)]));
+        self.of_values[&key[..]] as usize
+    }
+}
+
+/// The hash of each row of a part of a body's rows, and their sum.
+struct PartHashes {
+    rows: Vec<u64>,
+    sum: u64,
+}
+
+/// An atom with no label of its own, over the groups that it reads: its relation,
+/// the column of each site with the place among a group's values of what stands
+/// there, the example, the assignment, the part and the places of the groups.
+type HoldsKey = (u32, Box<[(u16, u16)]>, usize, usize, usize, Box<[u16]>);
+
+/// What the atoms of one call share.
+#[derive(Default)]
+struct BatchMemo {
+    /// The rows of a relation that atoms read, by the token that opens it, at each assignment of each example.
+    read: HashMap<(u32, usize, usize), Option<Arc<Relation>>>,
+    /// The hashes of each part of the base, by example, assignment and part.
+    hashes: HashMap<(usize, usize, usize), Rc<PartHashes>>,
+    /// The groups of each part, by the places they read.
+    groups: HashMap<(usize, usize, usize, Box<[u16]>), Rc<Groups>>,
+    /// Whether an atom with no label of its own holds at each group, for an atom and the `NOT` of it.
+    holds: HashMap<HoldsKey, Rc<Bits>>,
+}
+
+/// What stands at a level of an index that an atom walks.
+#[derive(Clone, Copy)]
+enum Level {
+    /// A value that the group holds at this place of its values.
+    Group(u16),
+    Term(TermId),
+    Made(u16),
+}
+
+impl JoinedAtom {
+    /// A hash of the types of the table's columns and of its value at each
+    /// assignment of each example, which reads no row.
+    pub fn key(&self) -> u128 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = crate::hash::StableHasher::new();
+        self.types.hash(&mut hasher);
+        for (example, value) in &self.examples {
+            example.hash(&mut hasher);
+            match value {
+                Err(fault) => fault.message.hash(&mut hasher),
+                Ok(assigned) => {
+                    assigned.stop.as_ref().map(|stop| format!("{:?}", stop.bound)).hash(&mut hasher);
+                    for (_, value) in &assigned.at {
+                        hasher.write_usize(1);
+                        match value {
+                            HeldValue::Grouped(grouped) => hasher.write_u128(grouped.hash.0),
+                            HeldValue::Whole(RelationValue::Rows(rows)) => hasher.write_u128(rows.rows_hash().0),
+                            HeldValue::Whole(RelationValue::Undefined) => hasher.write_u8(1),
+                            HeldValue::Whole(RelationValue::Stopped(stop)) => format!("{:?}", stop.bound).hash(&mut hasher),
+                        }
+                    }
+                }
+            }
+        }
+        hasher.finish128().0
+    }
+
+    /// The types of the table's columns, and for each example, at each
+    /// assignment, the value.
+    pub fn table(self) -> (Vec<ValueType>, Vec<(Option<Example>, Outcome<Assigned<Vec<RelationValue>>>)>) {
+        let examples = self.examples.into_iter().map(|(example, value)| {
+            (example, value.map(|assigned| Assigned {
+                at: assigned.at.into_iter().map(|(values, value)| (values, vec![match value {
+                    HeldValue::Whole(value) => value,
+                    HeldValue::Grouped(grouped) => grouped.value(),
+                }])).collect(),
+                stop: assigned.stop,
+            }))
+        }).collect();
+        (self.types, examples)
+    }
+}
+
+impl GroupedValue {
+    /// The value, with its rows.
+    fn value(&self) -> RelationValue {
+        let part = &self.rows.parts()[self.part];
+        let mut parts: Vec<RelationPart> = self.rows.parts().iter().enumerate().filter(|(at, _)| *at != self.part).map(|(_, part)| part.clone()).collect();
+        let mut key = Vec::new();
+        match &self.result {
+            GroupResult::Holds(holds) => {
+                let stays = |group: usize| holds.get(group) != self.negated;
+                if (0..self.groups.count()).all(stays) {
+                    return RelationValue::Rows(Arc::clone(&self.rows));
+                }
+                let mut rows = RowSet::empty(part.rows.arity());
+                if (0..self.groups.count()).any(stays) {
+                    for row in part.rows.rows() {
+                        if stays(self.groups.group_of(row, &mut key)) {
+                            rows.insert(row.into());
+                        }
+                    }
+                }
+                parts.push(RelationPart { columns: part.columns.clone(), rows });
+            }
+            GroupResult::Makes(made) => {
+                let first = self.arity - made.width as u16;
+                let columns = part.columns.iter().copied().chain((0..made.width as u16).map(|index| ColumnIndex(first + index))).collect();
+                let mut rows = RowSet::empty(part.rows.arity() + made.width as u16);
+                for row in part.rows.rows() {
+                    for values in made.at(self.groups.group_of(row, &mut key)).chunks_exact(made.width) {
+                        rows.insert(row.iter().chain(values).copied().collect());
+                    }
+                }
+                parts.push(RelationPart { columns, rows });
+            }
+        }
+        RelationValue::Rows(Arc::new(Relation::from_parts(self.arity, parts.into())))
+    }
 }
 
 impl<'a> Decoder<'a> {
@@ -176,7 +427,8 @@ impl<'a> Decoder<'a> {
 
     /// How the join reads the atom `tokens`, or what stands in place of it.
     /// `labels` is the count of labels at this state.
-    fn atom_plan(&self, opened: &OpenedRelation, base: &BaseRows, labels: u32, negated: bool, sites: &[u32], column_type: &dyn Fn(&RelationRef, &crate::program::ColumnName) -> Option<ValueType>) -> Result<AtomPlan, AtomRows> {
+    #[allow(clippy::too_many_arguments)]
+    fn atom_plan(&self, opened: &OpenedRelation, base: &BaseRows, labels: u32, relation: u32, negated: bool, sites: &[u32], column_type: &dyn Fn(&RelationRef, &crate::program::ColumnName) -> Option<ValueType>) -> Result<AtomPlan, AtomRows> {
         let vocabulary = self.vocabulary();
         let token = |id: &u32| vocabulary.token(*id).expect("an id of the vocabulary");
         let mut types: Vec<ValueType> = base.columns.iter().map(|(_, ty)| ty.clone()).collect();
@@ -233,7 +485,7 @@ impl<'a> Decoder<'a> {
         if !negated {
             types.extend(made.iter().cloned());
         }
-        Ok(AtomPlan { negated, source: opened.source.clone(), sites: plan, made, types, variables })
+        Ok(AtomPlan { negated, relation, source: opened.source.clone(), sites: plan, made, types, variables })
     }
 
     /// Meets the type of each label at a site of a lib relation with what a
@@ -276,13 +528,15 @@ impl<'a> Decoder<'a> {
         Some(())
     }
 
-    /// What the join gives for each atom of `atoms`, each its token ids.
-    /// `labels` is the count of labels at this state, and each atom's work
-    /// counts under `cap`.
-    pub fn atom_rows(&self, sub: Option<&SubBody>, base: &BaseRows, labels: u32, atoms: &[Box<[u32]>], cap: u64) -> Vec<AtomRows> {
+    /// Calls `visit` with the place of each atom of `atoms`, each its token
+    /// ids, and what the join gives for it, in the order of the list. `labels`
+    /// is the count of labels at this state, and each atom's work counts under
+    /// `cap`.
+    pub fn each_atom_rows(&self, sub: Option<&SubBody>, base: &BaseRows, labels: u32, atoms: &[Box<[u32]>], cap: u64, visit: &mut dyn FnMut(usize, AtomRows)) {
         // A `NOT` that stands before the atoms reads them in a way that the tokens of an atom do not show.
         if self.state.negation_pending() {
-            return atoms.iter().map(|_| AtomRows::ByProgram).collect();
+            (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram));
+            return;
         }
         let limits = self.limits();
         let mut opened: HashMap<u32, Option<OpenedRelation>> = HashMap::new();
@@ -295,68 +549,271 @@ impl<'a> Decoder<'a> {
                 let (relation, sites) = rest.split_first().ok_or(AtomRows::ByProgram)?;
                 let held = opened.entry(*relation).or_insert_with(|| self.opened_relation(sub, base, *relation));
                 let held = held.as_ref().ok_or(AtomRows::ByProgram)?;
-                self.atom_plan(held, base, labels, negated, sites, &column_type)
+                self.atom_plan(held, base, labels, *relation, negated, sites, &column_type)
             }).collect()
         });
-        // The rows of a relation that atoms read, at each assignment of each example.
-        let mut read: HashMap<(u32, usize, usize), Option<Arc<Relation>>> = HashMap::new();
-        plans.into_iter().map(|plan| {
-            let plan = match plan {
-                Ok(plan) => plan,
-                Err(other) => return other,
+        let mut memo = BatchMemo::default();
+        for (at, plan) in plans.into_iter().enumerate() {
+            let rows = match plan {
+                Ok(plan) => self.atom_table(sub, base, plan, cap, &limits, &mut memo),
+                Err(other) => other,
             };
-            let work = TableWork::new(cap);
-            let limits = limits.clone().counted_in(work);
-            let mut found = Vec::with_capacity(base.examples.len());
-            for (at_example, (example, held)) in base.examples.iter().enumerate() {
-                let value = match held {
-                    Err(fault) => Err(fault.clone()),
-                    Ok(assigned) => {
-                        let mut at = Vec::with_capacity(assigned.at.len());
-                        for (at_assignment, (values, held)) in assigned.at.iter().enumerate() {
-                            let value = match &held.value {
-                                RelationValue::Rows(rows) => {
-                                    let input = match &plan.source {
-                                        PlanSource::Relation(relation, slot) => {
-                                            let rows = read.entry((*slot, at_example, at_assignment)).or_insert_with(|| {
-                                                let program = &sub.expect("a body where an atom reads a relation of the program").program;
-                                                let (task, session, constructions) = self.evaluation_inputs();
-                                                let parameters = ParameterValues::determined(values.clone());
-                                                let evaluation = Evaluation { program, concept: None, task, session, constructions, registry: self.context.registry, parameters: &parameters, limits: &limits };
-                                                let on = (examples::scope_of(program, relation) == examples::ExampleScope::PerExample).then_some(*example).flatten();
-                                                match evaluation.relation(relation, on) {
-                                                    Ok(RelationValue::Rows(rows)) => Some(rows),
-                                                    _ => None,
-                                                }
-                                            });
-                                            match rows {
-                                                Some(rows) => NodeInput::Relation(Arc::clone(rows)),
-                                                None => return AtomRows::ByProgram,
+            visit(at, rows);
+        }
+    }
+
+    /// The table of the atom of `plan`.
+    fn atom_table(&self, sub: Option<&SubBody>, base: &BaseRows, plan: AtomPlan, cap: u64, limits: &Limits, memo: &mut BatchMemo) -> AtomRows {
+        let work = TableWork::new(cap);
+        let limits = limits.clone().counted_in(work);
+        let mut found = Vec::with_capacity(base.examples.len());
+        for (at_example, (example, held)) in base.examples.iter().enumerate() {
+            let value = match held {
+                Err(fault) => Err(fault.clone()),
+                Ok(assigned) => {
+                    let mut at = Vec::with_capacity(assigned.at.len());
+                    for (at_assignment, (values, held)) in assigned.at.iter().enumerate() {
+                        let value = match &held.value {
+                            RelationValue::Rows(rows) => {
+                                let input = match &plan.source {
+                                    PlanSource::Relation(relation, slot) => {
+                                        let rows = memo.read.entry((*slot, at_example, at_assignment)).or_insert_with(|| {
+                                            let program = &sub.expect("a body where an atom reads a relation of the program").program;
+                                            let (task, session, constructions) = self.evaluation_inputs();
+                                            let parameters = ParameterValues::determined(values.clone());
+                                            let evaluation = Evaluation { program, concept: None, task, session, constructions, registry: self.context.registry, parameters: &parameters, limits: &limits };
+                                            let on = (examples::scope_of(program, relation) == examples::ExampleScope::PerExample).then_some(*example).flatten();
+                                            match evaluation.relation(relation, on) {
+                                                Ok(RelationValue::Rows(rows)) => Some(rows),
+                                                _ => None,
                                             }
+                                        });
+                                        match rows {
+                                            Some(rows) => NodeInput::Relation(Arc::clone(rows)),
+                                            None => return AtomRows::ByProgram,
                                         }
-                                        PlanSource::Fact(fact) => {
-                                            let on = fact.per_example().then_some(*example).flatten();
-                                            NodeInput::Relation(self.session.fact_relation(self.task, *fact, on))
-                                        }
-                                        PlanSource::Lib(_) => NodeInput::Unread,
-                                    };
-                                    match self.joined(rows, &held.parts, &plan, input, base.columns.len(), &limits) {
-                                        Ok(value) => value,
-                                        Err(ReachedBound::TableWork { .. }) => return AtomRows::OverCap,
-                                        Err(_) => return AtomRows::ByProgram,
                                     }
+                                    PlanSource::Fact(fact) => {
+                                        let on = fact.per_example().then_some(*example).flatten();
+                                        NodeInput::Relation(self.session.fact_relation(self.task, *fact, on))
+                                    }
+                                    PlanSource::Lib(_) => NodeInput::Unread,
+                                };
+                                let mut budget = Budget::new(&limits, self.session);
+                                let part = self.part_it_reads(rows, &plan);
+                                let value = match part {
+                                    Some(part) => self.grouped(rows, part, &plan, &input, base.columns.len(), (at_example, at_assignment), memo, &mut budget).map(HeldValue::Grouped),
+                                    None => self.joined(rows, &held.parts, &plan, input, base.columns.len(), &limits).map(HeldValue::Whole),
+                                };
+                                match value {
+                                    Ok(value) => value,
+                                    Err(ReachedBound::TableWork { .. }) => return AtomRows::OverCap,
+                                    Err(_) => return AtomRows::ByProgram,
                                 }
-                                other => other.clone(),
-                            };
-                            at.push((values.clone(), vec![value]));
-                        }
-                        Ok(Assigned { at, stop: assigned.stop.clone() })
+                            }
+                            other => HeldValue::Whole(other.clone()),
+                        };
+                        at.push((values.clone(), value));
                     }
-                };
-                found.push((*example, value));
+                    Ok(Assigned { at, stop: assigned.stop.clone() })
+                }
+            };
+            found.push((*example, value));
+        }
+        AtomRows::Rows(JoinedAtom { types: plan.types, examples: found })
+    }
+
+    /// The place of the one part of `rows` that the atom of `plan` reads, where
+    /// the atom's values come from its relation at the values of that part.
+    fn part_it_reads(&self, rows: &Relation, plan: &AtomPlan) -> Option<usize> {
+        let holds = |part: &RelationPart| plan.sites.iter().any(|&(_, argument)| matches!(argument, PlanArgument::Column(column) if part.columns.contains(&ColumnIndex(column))));
+        let mut reads = rows.parts().iter().enumerate().filter(|(_, part)| holds(part)).map(|(at, _)| at);
+        let part = reads.next()?;
+        if reads.next().is_some() || plan.made.len() > MADE_LABELS {
+            return None;
+        }
+        if let PlanSource::Lib(name) = &plan.source {
+            let relation = self.context.registry.algebra_relation(name)?;
+            if !relation.modes.is_empty() {
+                let mut bound = vec![false; relation.columns.len()];
+                for &(column, argument) in &plan.sites {
+                    bound[usize::from(column.0)] = !matches!(argument, PlanArgument::Made(_));
+                }
+                crate::algebra::satisfied_mode(relation, &bound)?;
             }
-            AtomRows::Rows { types: plan.types, examples: found }
-        }).collect()
+        }
+        Some(part)
+    }
+
+    /// The value of the atom of `plan` over the part at `part` of `rows`, read one group at a time.
+    #[allow(clippy::too_many_arguments)]
+    fn grouped(&self, rows: &Arc<Relation>, part: usize, plan: &AtomPlan, input: &NodeInput, width: usize, at: (usize, usize), memo: &mut BatchMemo, budget: &mut Budget<'_>) -> Result<GroupedValue, ReachedBound> {
+        let held = &rows.parts()[part];
+        let place_of = |column: u16| held.columns.iter().position(|held| held.0 == column).expect("a column of the part") as u16;
+        let mut places: Vec<u16> = plan.sites.iter().filter_map(|&(_, argument)| match argument { PlanArgument::Column(column) => Some(place_of(column)), _ => None }).collect();
+        places.sort_unstable();
+        places.dedup();
+        let hashes = |memo: &mut BatchMemo, part: usize| {
+            Rc::clone(memo.hashes.entry((at.0, at.1, part)).or_insert_with(|| {
+                let held = &rows.parts()[part];
+                let hashes: Vec<u64> = held.rows.rows().map(|row| row_hash_at(&held.columns, row)).collect();
+                let sum = hashes.iter().fold(0, |sum, hash| hash_plus(sum, *hash));
+                Rc::new(PartHashes { rows: hashes, sum })
+            }))
+        };
+        let own = hashes(memo, part);
+        let groups = Rc::clone(memo.groups.entry((at.0, at.1, part, places.as_slice().into())).or_insert_with(|| Rc::new(Groups::of(held, &own.rows, places.as_slice().into()))));
+        budget.charge_work(groups.count() as u64)?;
+        // Where each site's value stands among the values of a group.
+        let group_place = |column: u16| places.iter().position(|place| *place == place_of(column)).expect("a place of the groups") as u16;
+        let result = if plan.made.is_empty() {
+            let sites = plan.sites.iter().map(|&(column, argument)| (column.0, match argument {
+                PlanArgument::Column(held) => group_place(held),
+                _ => u16::MAX,
+            })).collect();
+            let key = (plan.relation, sites, at.0, at.1, part, places.as_slice().into());
+            match memo.holds.get(&key) {
+                Some(holds) => GroupResult::Holds(Rc::clone(holds)),
+                None => {
+                    let holds = Rc::new(self.holds_at(plan, input, &groups, &group_place)?);
+                    memo.holds.insert(key, Rc::clone(&holds));
+                    GroupResult::Holds(holds)
+                }
+            }
+        } else {
+            GroupResult::Makes(self.makes_at(plan, input, &groups, &group_place)?)
+        };
+        // The hash of a row with what the atom adds is the row's hash times the hash of what it adds.
+        let others = (0..rows.parts().len()).filter(|other| *other != part).fold(1u64, |product, other| hash_times(product, hashes(memo, other).sum));
+        let (sum, count) = match &result {
+            GroupResult::Holds(holds) => (0..groups.count()).filter(|&group| holds.get(group) != plan.negated).fold((0u64, 0u64), |(sum, count), group| (hash_plus(sum, groups.sums[group]), count + u64::from(groups.rows[group]))),
+            GroupResult::Makes(made) => (0..groups.count()).fold((0u64, 0u64), |(sum, count), group| {
+                let values = made.at(group);
+                let adds = values.chunks_exact(made.width).fold(0u64, |adds, row| hash_plus(adds, row.iter().enumerate().fold(1u64, |hash, (index, value)| hash_times(hash, value_hash((width + index) as u16, value.encoding())))));
+                (hash_plus(sum, hash_times(groups.sums[group], adds)), count + u64::from(groups.rows[group]) * (values.len() / made.width) as u64)
+            }),
+        };
+        budget.charge_rows(count)?;
+        // A program counts the rows of a product as the bindings of its walk, and stops at their cap.
+        if rows.parts().len() >= 2 {
+            let product = (0..rows.parts().len()).filter(|other| *other != part).fold(count, |product, other| product.saturating_mul(rows.parts()[other].rows.len() as u64));
+            budget.charge_work(product)?;
+        }
+        let arity = (width + plan.made.len()) as u16;
+        Ok(GroupedValue { rows: Arc::clone(rows), part, groups, result, negated: plan.negated, arity, hash: rows_hash_of(arity, hash_times(others, sum)) })
+    }
+
+    /// Whether the atom of `plan`, which makes no label, holds at each group.
+    fn holds_at(&self, plan: &AtomPlan, input: &NodeInput, groups: &Groups, group_place: &dyn Fn(u16) -> u16) -> Result<Bits, ReachedBound> {
+        let mut holds = Bits::new(groups.count());
+        match (&plan.source, input) {
+            (PlanSource::Lib(name), _) => {
+                let (algebra, mut bound, sites) = self.lib_reading(name, plan, group_place);
+                for group in 0..groups.count() {
+                    let values = groups.values_at(group);
+                    for &(column, place) in &sites {
+                        bound[column] = Some(values[usize::from(place)]);
+                    }
+                    let mut found = false;
+                    algebra.evaluate(&bound, self.context.registry, &mut |row| {
+                        found |= bound.iter().zip(row).all(|(held, value)| held.is_none_or(|held| held == *value));
+                    }).map_err(ReachedBound::Margin)?;
+                    if found {
+                        holds.set(group);
+                    }
+                }
+            }
+            (_, NodeInput::Relation(relation)) => {
+                let (index, levels) = trie_reading(relation, plan, group_place);
+                for group in 0..groups.count() {
+                    if walk_group(index.root(), &levels, groups.values_at(group)).is_some() {
+                        holds.set(group);
+                    }
+                }
+            }
+            _ => unreachable!("an atom of a program or fact relation reads its rows"),
+        }
+        Ok(holds)
+    }
+
+    /// The values of the labels that the atom of `plan` makes, at each group.
+    fn makes_at(&self, plan: &AtomPlan, input: &NodeInput, groups: &Groups, group_place: &dyn Fn(u16) -> u16) -> Result<Made, ReachedBound> {
+        let width = plan.made.len();
+        let mut made = Made { width, starts: Vec::with_capacity(groups.count() + 1), values: Vec::new() };
+        made.starts.push(0);
+        match (&plan.source, input) {
+            (PlanSource::Lib(name), _) => {
+                let (algebra, mut bound, sites) = self.lib_reading(name, plan, group_place);
+                let made_sites: Vec<(usize, usize)> = plan.sites.iter().filter_map(|&(column, argument)| match argument {
+                    PlanArgument::Made(index) => Some((usize::from(column.0), usize::from(index))),
+                    _ => None,
+                }).collect();
+                let mut found: Vec<TermId> = Vec::new();
+                let mut row_values = vec![TermId::from_encoding(0); width];
+                for group in 0..groups.count() {
+                    let values = groups.values_at(group);
+                    for &(column, place) in &sites {
+                        bound[column] = Some(values[usize::from(place)]);
+                    }
+                    found.clear();
+                    algebra.evaluate(&bound, self.context.registry, &mut |row| {
+                        if !bound.iter().zip(row).all(|(held, value)| held.is_none_or(|held| held == *value)) {
+                            return;
+                        }
+                        let mut seen = [false; MADE_LABELS];
+                        for &(column, index) in &made_sites {
+                            if std::mem::replace(&mut seen[index], true) {
+                                if row_values[index] != row[column] {
+                                    return;
+                                }
+                            } else {
+                                row_values[index] = row[column];
+                            }
+                        }
+                        found.extend_from_slice(&row_values);
+                    }).map_err(ReachedBound::Margin)?;
+                    // A column with no site repeats a row of the columns at sites.
+                    let mut rows: Vec<&[TermId]> = found.chunks_exact(width).collect();
+                    rows.sort_unstable_by(|a, b| a.iter().map(|value| value.encoding()).cmp(b.iter().map(|value| value.encoding())));
+                    rows.dedup();
+                    rows.iter().for_each(|row| made.values.extend_from_slice(row));
+                    made.starts.push((made.values.len() / width) as u32);
+                }
+            }
+            (_, NodeInput::Relation(relation)) => {
+                let (index, levels) = trie_reading(relation, plan, group_place);
+                let bound = levels.iter().take_while(|level| !matches!(level, Level::Made(_))).count();
+                let mut row_values = vec![None; width];
+                for group in 0..groups.count() {
+                    let values = groups.values_at(group);
+                    if let Some(node) = walk_group(index.root(), &levels[..bound], values) {
+                        walk_made(node, &levels[bound..], &mut row_values, &mut made.values);
+                    }
+                    made.starts.push((made.values.len() / width) as u32);
+                }
+            }
+            _ => unreachable!("an atom of a program or fact relation reads its rows"),
+        }
+        Ok(made)
+    }
+
+    /// How an atom of the lib relation `name` reads a group: the relation, its
+    /// columns with the values that no group changes, and for each column that
+    /// a group gives, the place of its value among the group's values.
+    #[allow(clippy::type_complexity)]
+    fn lib_reading(&self, name: &crate::registry::LibName, plan: &AtomPlan, group_place: &dyn Fn(u16) -> u16) -> (&'static dyn crate::algebra::Algebra, Vec<Option<TermId>>, Vec<(usize, u16)>) {
+        let algebra = crate::algebra::algebra(name).expect("a native form of each algebra relation");
+        let columns = self.context.registry.algebra_relation(name).expect("the declaration of an algebra relation").columns.len();
+        let mut bound = vec![None; columns];
+        let mut sites = Vec::new();
+        for &(column, argument) in &plan.sites {
+            match argument {
+                PlanArgument::Column(held) => sites.push((usize::from(column.0), group_place(held))),
+                PlanArgument::Zero => bound[usize::from(column.0)] = Some(TermId::from_encoding(0)),
+                PlanArgument::Made(_) => {}
+            }
+        }
+        (algebra, bound, sites)
     }
 
     /// The value of the atom of `plan`, reading `input`, joined to the body's rows `rows`.
@@ -419,5 +876,58 @@ impl<'a> Decoder<'a> {
         // A program counts the rows of a product as the bindings of its walk, and stops at their cap.
         budget.charge_product(&relation)?;
         Ok(RelationValue::Rows(Arc::new(relation)))
+    }
+}
+
+/// The index of `relation` in the order of the sites of `plan` whose values no
+/// walk of the index makes, and then the others, with what stands at each level.
+fn trie_reading(relation: &Relation, plan: &AtomPlan, group_place: &dyn Fn(u16) -> u16) -> (Arc<Index>, Vec<Level>) {
+    let mut sites: Vec<(ColumnIndex, Level)> = plan.sites.iter().filter(|(_, argument)| !matches!(argument, PlanArgument::Made(_))).map(|&(column, argument)| (column, match argument {
+        PlanArgument::Column(held) => Level::Group(group_place(held)),
+        PlanArgument::Zero => Level::Term(TermId::from_encoding(0)),
+        PlanArgument::Made(_) => unreachable!("a site that the filter leaves out"),
+    })).collect();
+    sites.extend(plan.sites.iter().filter_map(|&(column, argument)| match argument {
+        PlanArgument::Made(index) => Some((column, Level::Made(index))),
+        _ => None,
+    }));
+    let order = ColumnOrder(sites.iter().map(|(column, _)| *column).collect());
+    (relation.index(&order), sites.into_iter().map(|(_, level)| level).collect())
+}
+
+/// The node of an index at the values that `levels`, none of them a made label, give at `values`.
+fn walk_group<'i>(root: IndexNode<'i>, levels: &[Level], values: &[TermId]) -> Option<IndexNode<'i>> {
+    let mut at = root;
+    for level in levels {
+        at = at.child(match level {
+            Level::Group(place) => values[usize::from(*place)],
+            Level::Term(term) => *term,
+            Level::Made(_) => unreachable!("levels that hold no made label"),
+        })?;
+    }
+    Some(at)
+}
+
+/// Adds to `found` the values of the made labels at each path below `node`.
+fn walk_made(node: IndexNode<'_>, levels: &[Level], row: &mut Vec<Option<TermId>>, found: &mut Vec<TermId>) {
+    let Some((level, rest)) = levels.split_first() else {
+        found.extend(row.iter().map(|value| value.expect("a value of each made label")));
+        return;
+    };
+    let Level::Made(index) = *level else { unreachable!("levels that hold made labels alone") };
+    let index = usize::from(index);
+    match row[index] {
+        Some(value) => {
+            if let Some(child) = node.child(value) {
+                walk_made(child, rest, row, found);
+            }
+        }
+        None => {
+            for (value, child) in node.entries() {
+                row[index] = Some(value);
+                walk_made(child, rest, row, found);
+            }
+            row[index] = None;
+        }
     }
 }

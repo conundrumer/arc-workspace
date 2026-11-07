@@ -1353,6 +1353,21 @@ impl State {
                     body.conjuncts.is_empty().hash(hasher);
                 }
                 Frame::Atom(atom) => atom.negated.hash(hasher),
+                // What stands in an `INIT` form outside the body in progress, other than the key body that a keyed input reads.
+                Frame::Instance(instance) => {
+                    instance.component.as_ref().map(|name| &*name.0).hash(hasher);
+                    instance.demonstrated.hash(hasher);
+                    let in_key = matches!(self.stack.get(1), Some(Frame::KeyClause(_)));
+                    if !in_key {
+                        format!("{:?}", instance.key).hash(hasher);
+                    }
+                    format!("{:?}", instance.inputs).hash(hasher);
+                }
+                Frame::KeyClause(clause) => {
+                    clause.body.is_some().hash(hasher);
+                    format!("{:?}", clause.inputs).hash(hasher);
+                }
+                Frame::Input(input) => input.position.hash(hasher),
                 _ => {}
             }
         }
@@ -1362,17 +1377,25 @@ impl State {
     }
 
     /// The shape of each label at this state, where an atom just opened: its
-    /// type and whether the body binds it, and whether each label has that
-    /// shape. A label that stands in anything but an atom or a `NOT` of an atom
-    /// of fixed scalar columns, in a top-level clause body, has its id for its
-    /// shape in place of them.
+    /// type, whether the body binds it and whether a key marks it, and whether
+    /// each label has that shape. A label that stands in anything but an atom
+    /// or a `NOT` of an atom of fixed scalar columns, in a top-level clause body
+    /// or a body of an `INIT` form, has its id for its shape in place of them. So
+    /// has a label of a body of an `INIT` form that is out of scope of the body
+    /// in progress, whose form's other bodies [`State::atom_context`] holds.
     pub(super) fn label_shapes(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> (Vec<u64>, bool) {
         use std::hash::{Hash, Hasher};
         let by_id = |label: u32| (1u64 << 60) | u64::from(label);
         let mut shapes: Vec<u64> = (0..self.labels).map(by_id).collect();
-        let [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] = &self.stack[..] else { return (shapes, false) };
+        let (before, body, in_form): (&[Conjunct], _, bool) = match &self.stack[..] {
+            [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] => (&[], body, false),
+            [Frame::Instance(instance), Frame::KeyClause(_), Frame::Body(body), Frame::Atom(_)] | [Frame::Instance(instance), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&[], body, true),
+            [Frame::Instance(instance), Frame::KeyClause(KeyClauseFrame { body: Some(key), .. }), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&key.value().conjuncts[..], body, true),
+            _ => return (shapes, false),
+        };
         let mut types: std::collections::BTreeMap<u32, ValueType> = std::collections::BTreeMap::new();
-        for conjunct in &body.conjuncts {
+        let mut keys: Vec<u32> = Vec::new();
+        for conjunct in before.iter().chain(body.conjuncts.iter()) {
             let prior = match conjunct {
                 Conjunct::Atom(prior) | Conjunct::Not(Negated::Atom(prior)) => prior,
                 _ => return (shapes, false),
@@ -1380,7 +1403,15 @@ impl State {
             for site in prior.value().sites.iter() {
                 let Some(ty) = column_type(&prior.value().relation, &site.column) else { return (shapes, false) };
                 for arg in site.value.args.iter() {
-                    let SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label)) = arg else { return (shapes, false) };
+                    let SiteArg::Label(use_) = arg else { return (shapes, false) };
+                    let label = match use_ {
+                        LabelUse::Fresh(label) | LabelUse::Join(label) => label,
+                        LabelUse::Key(label) => {
+                            keys.push(label.0);
+                            label
+                        }
+                        LabelUse::Zero => return (shapes, false),
+                    };
                     match types.get(&label.0) {
                         Some(old) => match old.meet(&ty) {
                             Meet::Type(ty) => { types.insert(label.0, ty); }
@@ -1391,7 +1422,7 @@ impl State {
                 }
             }
         }
-        let list: Vec<&Conjunct> = body.conjuncts.iter().collect();
+        let list: Vec<&Conjunct> = before.iter().chain(body.conjuncts.iter()).collect();
         let bound = crate::safety::bound_labels(&list, &Default::default(), &Default::default(), &|atom| crate::eval::ir::atom_modes(registry, atom), &|label| types.get(&label.0).cloned());
         let mut each = true;
         for (at, shape) in shapes.iter_mut().enumerate() {
@@ -1400,9 +1431,10 @@ impl State {
                     let mut hasher = crate::hash::StableHasher::new();
                     ty.hash(&mut hasher);
                     bound.contains(&LabelId(at as u32)).hash(&mut hasher);
+                    keys.contains(&(at as u32)).hash(&mut hasher);
                     *shape = (1u64 << 59) | (hasher.finish() >> 8);
                 }
-                None => each = false,
+                None => each &= in_form,
             }
         }
         (shapes, each)

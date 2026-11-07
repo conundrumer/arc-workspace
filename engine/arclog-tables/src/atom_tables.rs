@@ -71,20 +71,17 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
         return out;
     }
     let base = if by_program { None } else { base_of(decoder, closed.as_ref()) };
-    let rows: Vec<AtomRows> = match &base {
-        Some((_, rows, sub)) => decoder.atom_rows(*sub, rows, decoder.state().label_count(), atoms, cap),
-        None => atoms.iter().map(|_| AtomRows::ByProgram).collect(),
-    };
-    for (at, (tokens, rows)) in atoms.iter().zip(rows).enumerate() {
+    let mut visit = |at: usize, rows: AtomRows| {
         let mut key = None;
         let summary = match rows {
-            AtomRows::Rows { types, examples } => {
-                let hash = rows_key(&types, &examples);
+            AtomRows::Rows(atom) => {
+                let hash = atom.key();
                 if let Some(held) = by_rows.get(&hash) {
                     out.index.push(*held);
-                    continue;
+                    return;
                 }
                 key = Some(hash);
+                let (types, examples) = atom.table();
                 let (contents, _, _) = base.as_ref().expect("a base where the join gave rows");
                 summary_of_rows(contents, types, examples, materializer, train, fulls)
             }
@@ -95,7 +92,7 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
             }
             AtomRows::ByProgram => {
                 out.by_program += 1;
-                summary_by_program(decoder, tokens, materializer, train, fulls)
+                summary_by_program(decoder, &atoms[at], materializer, train, fulls)
             }
         };
         let place = summary.map(|summary| *distinct.entry(summary_key(&summary)).or_insert_with(|| {
@@ -106,35 +103,12 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
             by_rows.insert(key, place);
         }
         out.index.push(place);
+    };
+    match &base {
+        Some((_, rows, sub)) => decoder.each_atom_rows(*sub, rows, decoder.state().label_count(), atoms, cap, &mut visit),
+        None => (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram)),
     }
     out
-}
-
-/// A hash of the types of a table's columns and of its value at each assignment of each example.
-fn rows_key(types: &[ValueType], examples: &[(Option<Example>, Outcome<Assigned<Vec<RelationValue>>>)]) -> u128 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = arclog::hash::StableHasher::new();
-    types.hash(&mut hasher);
-    for (example, rows) in examples {
-        example.hash(&mut hasher);
-        match rows {
-            Err(fault) => fault.message.hash(&mut hasher),
-            Ok(assigned) => {
-                assigned.stop.as_ref().map(|stop| format!("{:?}", stop.bound)).hash(&mut hasher);
-                for (_, models) in &assigned.at {
-                    hasher.write_usize(models.len());
-                    for model in models {
-                        match model {
-                            RelationValue::Rows(rows) => hasher.write_u128(rows.rows_hash().0),
-                            RelationValue::Undefined => hasher.write_u8(1),
-                            RelationValue::Stopped(stop) => format!("{:?}", stop.bound).hash(&mut hasher),
-                        }
-                    }
-                }
-            }
-        }
-    }
-    hasher.finish128().0
 }
 
 /// The body at the state of `decoder`, closed: its contents with no rows, its rows, and its sub-body.

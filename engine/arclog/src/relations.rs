@@ -271,15 +271,10 @@ impl Relation {
     pub fn rows_hash(&self) -> StableHash {
         *self.rows_hash.get_or_init(|| {
             let sum = self.parts().iter().fold(1u64, |product, part| {
-                let rows = part.rows.rows().fold(0u64, |sum, row| {
-                    let hash = part.columns.iter().zip(row).fold(1u64, |hash, (column, value)| times(hash, value_hash(column.0, value.encoding())));
-                    (sum + hash) % MODULUS
-                });
-                times(product, rows)
+                let rows = part.rows.rows().fold(0u64, |sum, row| hash_plus(sum, row_hash_at(&part.columns, row)));
+                hash_times(product, rows)
             });
-            let mut hasher = StableHasher::new();
-            std::hash::Hash::hash(&(self.arity(), sum), &mut hasher);
-            hasher.finish128()
+            rows_hash_of(self.arity(), sum)
         })
     }
 
@@ -569,13 +564,32 @@ impl<'i> IndexNode<'i> {
 /// The modulus of the rows hash, the Mersenne prime 2^61 - 1.
 const MODULUS: u64 = (1 << 61) - 1;
 
+/// The hash of `row`, a row of a part that holds `columns`, in the sum that
+/// [`Relation::rows_hash`] takes.
+pub(crate) fn row_hash_at(columns: &[ColumnIndex], row: &[TermId]) -> u64 {
+    columns.iter().zip(row).fold(1u64, |hash, (column, value)| hash_times(hash, value_hash(column.0, value.encoding())))
+}
+
+/// The rows hash of a relation of `arity` columns from the product of the sums of its parts.
+pub(crate) fn rows_hash_of(arity: u16, product: u64) -> StableHash {
+    let mut hasher = StableHasher::new();
+    std::hash::Hash::hash(&(arity, product), &mut hasher);
+    hasher.finish128()
+}
+
+/// The sum of two hashes in the sum that [`Relation::rows_hash`] takes.
+pub(crate) fn hash_plus(a: u64, b: u64) -> u64 {
+    (a + b) % MODULUS
+}
+
 /// The hash of `value` at `column`, in `1..MODULUS`.
-fn value_hash(column: u16, value: u32) -> u64 {
+pub(crate) fn value_hash(column: u16, value: u32) -> u64 {
     let mut hasher = StableHasher::new();
     std::hash::Hash::hash(&(column, value), &mut hasher);
     1 + (hasher.finish128().0 as u64) % (MODULUS - 1)
 }
 
-fn times(a: u64, b: u64) -> u64 {
+/// The product of two hashes in the sum that [`Relation::rows_hash`] takes.
+pub(crate) fn hash_times(a: u64, b: u64) -> u64 {
     ((u128::from(a) * u128::from(b)) % u128::from(MODULUS)) as u64
 }

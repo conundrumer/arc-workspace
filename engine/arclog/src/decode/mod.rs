@@ -45,7 +45,7 @@ pub(crate) mod det_memo;
 pub mod corpus;
 mod interface;
 pub mod replay;
-pub use atom_values::{AtomRows, BaseRows};
+pub use atom_values::{AtomRows, BaseRows, JoinedAtom};
 pub use atoms::CandidateAtoms;
 pub(crate) use atoms::HeldVerdict;
 pub mod program_read;

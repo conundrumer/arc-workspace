@@ -366,19 +366,85 @@ struct Encoded {
 /// The cells of `rows`, of columns of `types`. `held` takes the admission of
 /// the cells, which the caller drops when it is done with them.
 fn encode(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType], held: &mut Vec<Arc<SessionAllocation>>) -> Result<Encoded, ReachedBound> {
-    let width = row_width(types) as usize;
-    held.push(materializer.admit(rows, Materializer::row_bytes(width.saturating_mul(32).saturating_add(32), 4))?);
-    let (written, order) = sorted_rows(materializer, rows, types)?;
-    let mut cells = Vec::with_capacity(written.len());
-    for &at in &order {
-        cells.extend_from_slice(&written[at * width..(at + 1) * width]);
-    }
+    let (count, cells) = sorted_cells(materializer, rows, types, held)?;
     let mut hasher = StableHasher::new();
-    hasher.write_u64(order.len() as u64);
+    hasher.write_u64(count);
     for &cell in &cells {
         hasher.write_i32(cell);
     }
-    Ok(Encoded { count: order.len() as u64, cells, key: hasher.finish128() })
+    Ok(Encoded { count, cells, key: hasher.finish128() })
+}
+
+/// The count of `rows`, of columns of `types`, and their cells in the order of
+/// their cells. `held` takes the admission of the cells. Where each part of
+/// `rows` holds a run of the columns in order, the rows of the product of the
+/// parts, each part's rows in the order of their cells, stand in the order of
+/// their cells, so no row of the product takes part in a sort.
+fn sorted_cells(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType], held: &mut Vec<Arc<SessionAllocation>>) -> Result<(u64, Vec<i32>), ReachedBound> {
+    let width = row_width(types) as usize;
+    held.push(materializer.admit(rows, Materializer::row_bytes(width.saturating_mul(32).saturating_add(32), 4))?);
+    let mut parts: Vec<&arclog::relations::RelationPart> = rows.parts().iter().collect();
+    parts.sort_by_key(|part| part.columns.first().map(|column| column.0));
+    let mut next = 0u16;
+    let in_order = parts.iter().all(|part| part.columns.iter().all(|column| {
+        let holds = column.0 == next;
+        next += 1;
+        holds
+    }));
+    if parts.len() < 2 || !in_order {
+        let (written, order) = sorted_rows(materializer, rows, types)?;
+        let mut cells = Vec::with_capacity(written.len());
+        for &at in &order {
+            cells.extend_from_slice(&written[at * width..(at + 1) * width]);
+        }
+        return Ok((order.len() as u64, cells));
+    }
+    let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
+    let mut sorted: Vec<Vec<i32>> = Vec::with_capacity(parts.len());
+    let mut first = 0usize;
+    for part in &parts {
+        let part_types = &types[first..first + part.columns.len()];
+        first += part.columns.len();
+        let (written, order) = sorted_rows(materializer, &arclog::eval::join::one_part(part.rows.clone()), part_types)?;
+        let part_width = row_width(part_types) as usize;
+        let mut cells = Vec::with_capacity(written.len());
+        for &at in &order {
+            cells.extend_from_slice(&written[at * part_width..(at + 1) * part_width]);
+        }
+        sorted.push(cells);
+    }
+    let widths: Vec<usize> = parts.iter().scan(0usize, |first, part| {
+        let part_types = &types[*first..*first + part.columns.len()];
+        *first += part.columns.len();
+        Some(row_width(part_types) as usize)
+    }).collect();
+    let mut cells: Vec<i32> = Vec::with_capacity(count.saturating_mul(width));
+    let mut places = vec![0usize; parts.len()];
+    for at in 0..count {
+        if at % (1 << 16) == 0 {
+            materializer.check()?;
+        }
+        for ((part, place), part_width) in sorted.iter().zip(&places).zip(&widths) {
+            cells.extend_from_slice(&part[place * part_width..(place + 1) * part_width]);
+        }
+        // The last part's rows turn fastest, as the next column of a row in order does.
+        for (index, place) in places.iter_mut().enumerate().rev() {
+            *place += 1;
+            if *place * widths[index] < sorted[index].len() || widths[index] == 0 && *place < parts[index].rows.len() {
+                break;
+            }
+            *place = 0;
+        }
+    }
+    materializer.check()?;
+    Ok((count as u64, cells))
+}
+
+/// The hash of the rows of `rows` that an atom's table holds in the place of a
+/// TableRows's cells: it tells equal rows, and it reads each part's rows once.
+fn encode_rows(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType], held: &mut Vec<Arc<SessionAllocation>>) -> Result<Encoded, ReachedBound> {
+    let (count, cells) = sorted_cells(materializer, rows, types, held)?;
+    Ok(Encoded { count, cells, key: rows.rows_hash() })
 }
 
 /// The value hash of `rows`, a TableRows of `types` ([`value_hash_of`]).
@@ -475,7 +541,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
                 for value in models {
                     match value {
                         RelationValue::Rows(rows) => {
-                            let found = encode(materializer, rows, types, &mut held)?;
+                            let found = if with_dets { encode(materializer, rows, types, &mut held)? } else { encode_rows(materializer, rows, types, &mut held)? };
                             match distinct.iter().position(|held| held.key == found.key) {
                                 Some(at) => place.push(Some(at)),
                                 None => {
@@ -498,9 +564,10 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         places.push(place);
     }
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
-    let (hash, hashes) = table_hash(types, &views, &fulls.assemblies);
+    // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
+    let (hash, hashes) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()]) };
     // The value hash of each distinct TableRows.
-    let sets: Vec<Vec<u128>> = views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| value_hash_of(types, rows, &fulls.assemblies).0).collect()).collect();
+    let sets: Vec<Vec<u128>> = views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| if with_dets { value_hash_of(types, rows, &fulls.assemblies).0 } else { rows.key.0 }).collect()).collect();
     failed.sort_unstable();
     failed.dedup();
     let hash = if failed.is_empty() {
@@ -551,6 +618,24 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         .map(|((kind, index, rows), hash)| ExampleKey { kind: *kind, index: *index, distinct: rows.len() as u32, rows: rows.iter().map(|rows| rows.count).max().unwrap_or(0), hash })
         .collect();
     Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features) })
+}
+
+/// A hash of the types of a table and of the keys of the TableRows of each of
+/// its examples.
+fn rows_hash_of_table(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies) -> StableHash {
+    let mut hasher = StableHasher::new();
+    for name in hashed_names(types, assemblies) {
+        hasher.write(name.as_bytes());
+        hasher.write_u8(0);
+    }
+    for (kind, index, distinct) in examples {
+        hasher.write_u8(*kind);
+        hasher.write_u32(*index);
+        let mut keys: Vec<u128> = distinct.iter().map(|rows| rows.key.0).collect();
+        keys.sort_unstable();
+        hasher.write_u128(digest(&keys));
+    }
+    hasher.finish128()
 }
 
 /// The hash of `items` and their count.
