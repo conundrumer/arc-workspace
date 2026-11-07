@@ -758,7 +758,15 @@ impl Generated {
             }
         }
         for (part, kept, line, root) in pushes {
-            self.push(Step::Part(Box::new(part)), at, NO_TERM, kept, size, line, root);
+            // The classes of a column's cells over the examples: one where its shape is one at every example.
+            let classes = matches!(&part, PartStep::ShapeClass { keys, .. } if keys.as_ref() == [e]);
+            let id = kept.last().cloned();
+            self.push(Step::Part(Box::new(part)), at, NO_TERM, kept, size, line.clone(), root);
+            if let (true, Some(id)) = (classes, id) {
+                let place = self.terms.last().map_or(0, |term| term.columns.len() as u16 - 1);
+                self.force_next = true;
+                self.push(Step::Project { columns: vec![place].into_boxed_slice() }, self.terms.len() as u32 - 1, NO_TERM, vec![id.clone()], size, format!("(project {line} {})", id.name), RootKind::Rows);
+            }
         }
     }
 

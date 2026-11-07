@@ -32,11 +32,17 @@ Under `--one-binding`, a feature that names a column stands only on the rows whe
 A missing feature is also judged on the rows whose table has more columns than the feature names: `on wider tables` gives that status, since a shape over a
 `project` of all of a table's columns has no entry on that table, and such a feature is missing for that reason alone.
 
+With `--pairs`, a missing feature of at most 12 values is judged against pairs of the 40 columns that alone give its value on the most rows: `two columns`
+is `yes` where its value at each row is a function of the two columns' values and the two make few distinct pairs of values, and `pair share` is the best pair's
+share of the rows it gives, with its names in `pair`, and `one share` and `one` give the best single column. `two columns shuffled` is that status on the shuffled values. `--only FILE` judges only the features whose
+status in that earlier output is `missing`.
+
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
 """
 import argparse
 import collections
+import csv
 import json
 import multiprocessing as mp
 import pickle
@@ -63,6 +69,8 @@ BASE_TYPES = {'⟨c:P⟩': 'Position', '⟨c:Col⟩': 'Color'}
 DEFAULT = np.iinfo(np.int64).max
 OTHER = 1 << 63
 MIN_DATA = 20
+PAIR_COLUMNS = 40
+PAIR_VALUES = 12
 JUDGE = None
 
 
@@ -170,6 +178,8 @@ def main():
     parser.add_argument('--counts')
     parser.add_argument('--one-binding', action='store_true')
     parser.add_argument('--disposition')
+    parser.add_argument('--pairs', action='store_true')
+    parser.add_argument('--only')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
     args = parser.parse_args()
@@ -185,10 +195,14 @@ def main():
     extra['relations'] = {place: relation + ':' + meta['family_names'].get(int(key), '') for place, (relation, key) in enumerate((r, k) for r in g.RELATIONS for k in meta['relation_columns'])}
     extra['wide'] = {place: 'wide:' + meta['wide_names'].get(int(key), '') for place, key in enumerate(meta['wide_columns'])}
     extra['contingent'] = {place: 'contingent:' + meta['names'].get(int(key), '') for place, key in enumerate(meta['columns'])}
+    for pool in ('relations_least', 'relations_most'):
+        if (blocks / 'blocks' / f'train.{pool}.zst').exists():
+            extra[pool] = {place: pool + ':' + name.split(':', 1)[0] + ':' + name.split(':', 1)[1] for place, name in extra['relations'].items()}
     offset = {source: OTHER + (place << 32) for place, source in enumerate(extra)}
     name_of = {offset[source] + column: name for source, names in extra.items() for column, name in names.items()}
     skipped = set(Path(args.skip).read_text().split()) if args.skip else set()
     paths = sorted(path for path in Path(args.v1).glob('*.json.zst') if path.name.split('.')[0] not in skipped)
+    paths = [path for path in paths if any((Path(folder) / (path.name.split('.')[0] + '.lists.zst')).exists() for folder in args.lists)]
     paths = paths[:args.tasks] if args.tasks else paths
     tasks = {path.name.split('.')[0] for path in paths}
     extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra}
@@ -351,6 +365,10 @@ def main():
     shape_start = np.flatnonzero(np.concatenate(([True], group_shape[1:] != group_shape[:-1])))
     entry_shape_start = np.flatnonzero(np.concatenate(([True], shape[1:] != shape[:-1])))
     columns_here = group_shape[shape_start]
+    # Each entry's group of equal values, for `--pairs`.
+    group_of_entry = np.cumsum(new_group).astype(np.int32) - 1
+    groups_of_shape = np.diff(np.append(shape_start, len(group_start)))
+    shape_first_group = shape_start
     total = len(unique_ids)
     source_here = np.array([sources[at] for at in columns_here.tolist()])
     groups = []
@@ -386,6 +404,72 @@ def main():
         best = np.add.reduceat(most, shape_start) + in_rest.max(axis=1)
         at = int(np.argmax(best))
         return name_of.get(int(unique_ids[columns_here[at]]), '?'), round(float(best[at]) / n, 3)
+
+    def by_pairs(feature, at):
+        """Whether two columns together give the feature's value: the status, the best pair's share of the rows and its names, and the best single column's share and name."""
+        counts = collections.Counter(key_of(value) for value in at.values())
+        keys = {key: place for place, key in enumerate(sorted(counts))}
+        k = len(keys)
+        if k < 2 or k > PAIR_VALUES:
+            return '', '', '', '', ''
+        c = np.full(rows, DEFAULT, dtype=np.int64)
+        for own, value in at.items():
+            c[own] = keys[key_of(value)]
+        defined = c != DEFAULT
+        n = int(defined.sum())
+        entries = np.flatnonzero(defined[row])
+        groups, classes_at = group_of_entry[entries], c[row[entries]]
+        most = np.zeros(len(group_start), dtype=np.int64)
+        members = np.zeros(len(group_start), dtype=np.int64)
+        in_rest = np.tile(np.bincount(c[defined], minlength=k), (len(shape_start), 1)).astype(np.int64)
+        for place in range(k):
+            hits = np.bincount(groups[classes_at == place], minlength=len(group_start))
+            most = np.maximum(most, hits)
+            members += hits
+            in_rest[:, place] -= np.add.reduceat(hits, shape_start)
+        most = np.where(members >= 2, most, 0)
+        best = np.add.reduceat(most, shape_start) + in_rest.max(axis=1)
+        best = np.where(groups_of_shape <= PAIR_VALUES, best, -1)
+        allowed = group_of(feature)[1]
+        if allowed is not None:
+            best = np.where(allowed, best, -1)
+        chosen = np.argsort(-best, kind='stable')[:PAIR_COLUMNS]
+        chosen = chosen[best[chosen] >= 0]
+        if len(chosen) < 2:
+            return 'no', 0.0, '', 0.0, ''
+        name_at = lambda at: name_of.get(int(unique_ids[columns_here[chosen[at]]]), '?')
+        one_share = round(float(best[chosen[0]]) / n, 3)
+        rows_here = np.flatnonzero(defined)
+        place_of = np.full(rows, -1, dtype=np.int64)
+        place_of[rows_here] = np.arange(n)
+        classes = c[rows_here]
+        dense = []
+        for at_shape in chosen.tolist():
+            first = entry_shape_start[at_shape]
+            last = entry_shape_start[at_shape + 1] if at_shape + 1 < len(entry_shape_start) else len(row)
+            places = place_of[row[first:last]]
+            codes = np.zeros(n, dtype=np.int64)
+            codes[places[places >= 0]] = group_of_entry[first:last][places >= 0] - shape_first_group[at_shape] + 1
+            dense.append(codes)
+        limit = max(4 * k, 12)
+        found, top, top_pair = False, -1, None
+        for a in range(len(chosen)):
+            for b in range(a + 1, len(chosen)):
+                wide = int(dense[b].max()) + 1
+                cells = (int(dense[a].max()) + 1) * wide
+                table = np.bincount((dense[a] * wide + dense[b]) * k + classes, minlength=cells * k).reshape(cells, k)
+                table = table[table.sum(axis=1) > 0]
+                if len(table) > limit:
+                    continue
+                sizes = table.sum(axis=1)
+                share = int(table.max(axis=1)[sizes >= 2].sum())
+                if int((table > 0).sum()) == len(table) and sizes.min() >= 2:
+                    found = True
+                if share > top:
+                    top, top_pair = share, (a, b)
+        if top_pair is None:
+            return 'no', 0.0, '', one_share, name_at(0)
+        return 'yes' if found else 'no', round(top / n, 3), ' ;; '.join(name_at(at) for at in top_pair), one_share, name_at(0)
 
     def judged(feature, at, with_nearest):
         counts = collections.Counter(key_of(value) for value in at.values())
@@ -468,7 +552,11 @@ def main():
             narrow = {own: value for own, value in at.items() if row_width[own] > holes}
             if len(narrow) < len(at):
                 wider = judged(feature, narrow, False)[4]
-        return real + (judged(feature, dict(zip(at, values)), False)[4], group_of(feature)[0], wider)
+        shuffled = dict(zip(at, values))
+        pair = ('', '', '', '', '', '')
+        if args.pairs and real[4] == 'missing':
+            pair = by_pairs(feature, at) + (by_pairs(feature, shuffled)[0],)
+        return real + (judged(feature, shuffled, False)[4], group_of(feature)[0], wider) + pair
 
     JUDGE = one
     same_values = collections.defaultdict(list)
@@ -476,12 +564,16 @@ def main():
         same_values[hash(tuple(sorted((own, str(value)) for own, value in at.items())))].append(feature)
     items = [(names[0], features[names[0]]) for names in same_values.values()]
     others_of = {names[0]: names[1:] for names in same_values.values()}
+    if args.only:
+        with open(args.only) as lines:
+            wanted = {parts['feature'] for parts in csv.DictReader(lines, delimiter='\t') if parts['status'] == 'missing'}
+        items = [item for item in items if item[0] in wanted]
     items.sort(key=lambda item: -len(item[1]))
     print('features with distinct values', len(items), flush=True)
     begun = time.time()
     tally = collections.Counter()
     with open(args.out, 'w') as sink, mp.get_context('fork').Pool(args.procs) as pool:
-        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\ton wider tables\treads\tlevel\tarity\tsame values\n')
+        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\ton wider tables\ttwo columns\tpair share\tpair\tone share\tone\ttwo columns shuffled\treads\tlevel\tarity\tsame values\n')
         for done, result in enumerate(pool.imap_unordered(judge, items, chunksize=4), 1):
             coordinate = coordinate_of.get(result[0]) or ['', '', '']
             sink.write('\t'.join(map(str, result)) + '\t' + '\t'.join(coordinate) + '\t' + ' ;; '.join(others_of[result[0]][:6]) + '\n')

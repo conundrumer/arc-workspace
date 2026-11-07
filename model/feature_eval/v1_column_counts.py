@@ -20,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from candidate import read_lists  # noqa: E402
 
 OTHER = 1 << 63
-SOURCES = ('base', 'qv', 'graph', 'relations', 'wide')
+# Each source at the place v1_cover.py numbers it.
+SOURCES = {'base': 0, 'qv': 1, 'graph': 2, 'relations': 3, 'wide': 4, 'relations_least': 6, 'relations_most': 7}
 
 
 def frames(path):
@@ -80,7 +81,9 @@ def main():
     print(f'stable {time.time() - started:.0f}s', flush=True)
     ids, counts = [columns], [held]
     widths = dict(meta['widths'])
-    for place, source in enumerate(SOURCES):
+    for source, place in SOURCES.items():
+        if not (blocks / 'blocks' / f'train.{source}.zst').exists():
+            continue
         width = widths[source]
         ids.append(np.uint64(OTHER + (place << 32)) + np.arange(width, dtype=np.uint64))
         counts.append(counted(blocks / 'blocks' / f'train.{source}.zst', width, examples))
