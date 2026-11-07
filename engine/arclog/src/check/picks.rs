@@ -5,7 +5,7 @@
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::path::{NodePath, NodeRef, PathStep};
-use crate::registry::{ColumnType, LibEntry, LibName, Registry};
+use crate::registry::{LibName, Registry};
 use crate::resolver::registry_columns::{is_domain, proposer_columns};
 use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
 
@@ -60,9 +60,6 @@ fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> Chec
         (NodeRef::Clause(clause), _) if ended(at) && !set_mark_fits(clause, registry) => {
             refused.push((at.into(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
         }
-        (NodeRef::Clause(clause), _) if !proposers_fit(clause, registry) => {
-            refused.push((at.into(), "each proposer of a clause has, at each column of its first proposer, a type that joins that proposer's type"))
-        }
         (NodeRef::Choose(choose), _) if ended(at) => choose_refusals(choose, &NodePath::from(at), &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
             refused.push((at.into(), "`ONE` stands at a clause's top level, after its body"));
@@ -73,30 +70,6 @@ fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> Chec
         return CheckResult::Pass;
     }
     result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
-}
-
-/// Whether each proposer of `clause` after the first has, at each column of
-/// the first proposer, a type that joins the first proposer's type there,
-/// where both types are fixed. The rows of each other proposer map by position
-/// onto the first proposer's columns (`docs/engine/determination.md`), so a
-/// value of another type would stand in a column of the first one's type.
-fn proposers_fit(clause: &Clause, registry: &Registry) -> bool {
-    let Some(first) = clause.proposers.first() else { return true };
-    clause.proposers[1..].iter().all(|other| proposer_fits(first, other, registry))
-}
-
-/// Whether `other` has, at each column of the proposer `first`, a type that
-/// joins that proposer's type there, where both types are fixed.
-pub(crate) fn proposer_fits(first: &LibName, other: &LibName, registry: &Registry) -> bool {
-    let columns = |name: &LibName| match registry.entry(name) {
-        Some(LibEntry::Proposer(proposer)) => Some(&proposer.columns),
-        _ => None,
-    };
-    let (Some(first), Some(other)) = (columns(first), columns(other)) else { return true };
-    other.iter().zip(first.iter()).all(|(a, b)| match (&a.ty, &b.ty) {
-        (ColumnType::Fixed(a), ColumnType::Fixed(b)) => a.join(b).is_some(),
-        _ => true,
-    })
 }
 
 /// Whether the `SET` mark of `clause`, if it has one, stands after a body of

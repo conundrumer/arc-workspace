@@ -431,7 +431,7 @@ impl<'a> Decoder<'a> {
                         }
                         continue;
                     }
-                    let next = if self.state.grammar_only_candidate(token, self.context.registry) { self.grammar_next(token) } else { self.next(token, checks, &memo) };
+                    let next = if self.state.grammar_only_candidate(token) { self.grammar_next(token) } else { self.next(token, checks, &memo) };
                     if let Some(class) = class_of[id as usize] {
                         admitted[class] = Some(next.is_ok());
                     }

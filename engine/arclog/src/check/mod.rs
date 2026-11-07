@@ -156,8 +156,10 @@ pub enum CheckId {
     /// bodies of a `CHOOSE` form.
     Picks,
     /// The reads of the outputs of a `RIGID_DET` form, and the names of a
-    /// clause's proposers. The check reads the `RIGID_DET` forms of the
-    /// case program, which the form's [`CheckCacheKey`] does not hold, so
+    /// clause's proposers and their count, and, for a program read from a
+    /// solver's files, that the case's reading of each line gives a program
+    /// ([`Case::reading_fault`]). The check reads the `RIGID_DET` forms of
+    /// the case program, which the form's [`CheckCacheKey`] does not hold, so
     /// its result is cached under no key.
     RigidPartsAndProposers,
     /// The `OUT` form: its atoms, its sites and the types of its columns,
@@ -660,6 +662,9 @@ fn check_program_with_open(
         let refusals = [missing, out::several(files.case, program.program.value())];
         for refusal in refusals.into_iter().flatten() {
             refused.push(diagnostic(DiagnosticKind::Check(CheckId::Out), Severity::Error, refusal.message, refusal.at));
+        }
+        if let Some(refusal) = rigid_proposer::reading_fault(files.case, program.program.value()) {
+            refused.push(diagnostic(DiagnosticKind::Check(CheckId::RigidPartsAndProposers), Severity::Error, refusal.message, refusal.at));
         }
     }
     let mut alerts = Vec::new();

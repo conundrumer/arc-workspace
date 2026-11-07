@@ -17,7 +17,7 @@ use super::{cache, init_form, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::StableHashMap;
 use crate::program::path::{node_at, NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, ParamValue, ProgramRelation, RelationRef};
+use crate::program::{Clause, ParamValue, ProgramRelation, RelationRef};
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
 use crate::resolver::ResolvedContent;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
@@ -716,19 +716,15 @@ impl FormBodies<'_> {
 }
 
 /// The index of the proposer that `clause`, at `form`, derives by, where it
-/// has no body and names a proposer: its one proposer, or, in the derived
-/// reading by a proposer other than its line's first, the second it holds,
-/// as `crate::solver` reads a `DET_OR_RULE` or `RULE_OR_DET` line. A clause
-/// with no body and several proposers in any other reading, the stored
-/// reading of a line with several, is a fault.
+/// has no body and names a proposer: its one proposer. A clause with no body
+/// that names several proposers is a fault: a `DET` or `RULE` names one, and
+/// each reading of a `DET_OR_RULE` or `RULE_OR_DET` line names the proposer
+/// it is by alone, as `crate::solver` reads the line.
 pub(super) fn derivation(clause: &Clause, form: &NodePath) -> Outcome<Option<usize>> {
-    if !clause.body.value().conjuncts.is_empty() || clause.proposers.is_empty() {
-        return Ok(None);
-    }
-    match (clause.keyword, clause.proposers.len()) {
-        (_, 1) => Ok(Some(0)),
-        (ClauseKeyword::Rule, 2) => Ok(Some(1)),
-        _ => Err(RunFault { message: "a clause with no body that names several proposers derives by none of them".into(), form: form.clone() }),
+    match (clause.body.value().conjuncts.is_empty(), clause.proposers.len()) {
+        (false, _) | (true, 0) => Ok(None),
+        (true, 1) => Ok(Some(0)),
+        (true, _) => Err(RunFault { message: "a clause with no body names several proposers, and a `DET` or `RULE` names one".into(), form: form.clone() }),
     }
 }
 

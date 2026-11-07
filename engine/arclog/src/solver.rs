@@ -12,6 +12,8 @@ use crate::layout::Layout;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::zero_columns;
 use crate::program::canonical::relation_of;
+use crate::registry::{LibName, Registry};
+use crate::resolver::registry_columns::proposer_columns;
 use crate::write::relation_ref;
 use crate::resolver::SolverScope;
 use std::sync::Arc;
@@ -76,7 +78,9 @@ pub enum Exclusion {
 ///
 /// Of a `DET_OR_RULE` or `RULE_OR_DET` line on a port of an instance,
 /// `&<instance>.<port>`, a case holds what its reading of the line gives, as
-/// `docs/arclog/arclog.md#stored-readings` gives it.
+/// `docs/arclog/arclog.md#stored-readings` gives it. A case that reads a line
+/// by a proposer other than the line's first reads the line's relation at
+/// that proposer's columns ([`ColumnMap`]).
 #[derive(Clone, Debug)]
 pub struct Case {
     pub name: CaseName,
@@ -99,6 +103,9 @@ pub struct Case {
     /// The program as [`Case::program_alone`] gives it, where it differs from
     /// `program`.
     alone: Option<Node<Program>>,
+    /// The faults of the case's readings of its lines, as
+    /// [`Case::reading_fault`] gives them.
+    reading_faults: Box<[String]>,
 }
 
 impl Case {
@@ -135,6 +142,15 @@ impl Case {
         Some(format!("the case takes more than one `OUT` form, from {}; an `ALT` block of their combination holds an `OUT` form of its own to state the case's", blocks.join(" and ")))
     }
 
+    /// The fault of a case whose reading of a line gives no program: a line
+    /// with several proposers that stands on a port of an instance, or a read
+    /// of a line's relation at a column that the case's reading by a
+    /// proposer other than the line's first maps onto no column of that
+    /// proposer ([`ColumnMap`]); `None` where the case has neither.
+    pub fn reading_fault(&self) -> Option<String> {
+        (!self.reading_faults.is_empty()).then(|| self.reading_faults.join("; "))
+    }
+
     /// The case program as it reads when it stands alone, with no concept
     /// program to take a `DET` from, and with each column that is `0` in
     /// every clause of its relation dropped:
@@ -142,6 +158,10 @@ impl Case {
     /// - A `DET` of the concept program that reads the relation of a
     ///   `RULE_OR_DET` line at its stored reading reads the derivation of the
     ///   line's body, the line's helper, as the concept program reads it.
+    /// - A `DET` of the concept program that reads the relation of a line
+    ///   that the case reads by a proposer other than the line's first names
+    ///   that proposer's columns, as the other forms of the case do
+    ///   ([`ColumnMap`]).
     /// - The columns that the zero-column lowering drops, as
     ///   `docs/engine/arclog-expansion.md#zero-columns` gives, each with the
     ///   `(= *X 0)` that made it. A form that the drop rewrites keeps its
@@ -212,19 +232,20 @@ impl Solver {
     /// `INIT` form.
     ///
     /// Where the arcdata file has a `representative` line, the names are as
-    /// `docs/arclog/arcdata.md#header` gives.
+    /// `docs/arclog/arcdata.md#header` gives. An `exclude` form and a
+    /// `representative` line select the cases as [`selects_case`] gives.
     pub fn case_names(&self, exclusion: Exclusion) -> Vec<CaseName> {
         let names = self.all_case_names();
         if let Some(given) = self.arcdata.value().representative.as_ref().and_then(|line| line.case.as_ref()) {
-            let named: Vec<CaseName> = names.into_iter().filter(|name| given.iter().all(|alt| name.0.contains(alt))).collect();
-            assert!(named.len() == 1, "a `representative` line names one case of the solver's alts");
+            let named: Vec<CaseName> = names.into_iter().filter(|name| selects_case(given, name)).collect();
+            assert!(!named.is_empty(), "a `representative` line names a case of the solver's alts");
             return named;
         }
         match exclusion {
             Exclusion::WithExcluded => names,
             Exclusion::WithoutExcluded => {
                 let excludes = &self.arcdata.value().excludes;
-                let excluded = |name: &CaseName| excludes.iter().any(|e| e.combination.iter().all(|alt| name.0.contains(alt)));
+                let excluded = |name: &CaseName| excludes.iter().any(|e| selects_case(&e.combination, name));
                 names.into_iter().filter(|name| !excluded(name)).collect()
             }
         }
@@ -301,6 +322,8 @@ impl Solver {
         let mut other_readings = StableHashSet::default();
         let mut placed: Vec<Vec<Placed>> = walk.placed.iter().cloned().map(|p| vec![p]).collect();
         let mut stored = Vec::new();
+        let mut maps = Vec::new();
+        let mut reading_faults = Vec::new();
         for (index, p) in walk.placed.iter().enumerate() {
             let Some(line) = line_of(&p.form) else { continue };
             let all = readings(line);
@@ -309,13 +332,23 @@ impl Solver {
                 other_readings.insert(p.step);
             }
             let port = port_of(line, &walk.placed);
+            if port.is_some() && line.proposers.len() > 1 {
+                let relation = relation_ref(&relation_of(&line.derives), crate::write::declared);
+                reading_faults.push(format!("the line of `{relation}` stands on a port of an instance and names several proposers, and a reading by a proposer names it alone"));
+            }
+            // A deeper block's form of the relation takes the place of the
+            // line, so the reads of the relation read that form.
+            let superseded = walk.placed.iter().any(|q| q.depth() > p.depth() && derives(&q.form) == derives(&p.form));
+            if !superseded {
+                maps.extend(ColumnMap::of(line, *reading, Registry::get()));
+            }
             placed[index] = match (port, reading) {
                 (Some(_), Reading::Derived(_)) if line.proposers.is_empty() => Vec::new(),
                 _ => vec![Placed { form: Form::Clause(Node::new(read_as(line, *reading))), ..p.clone() }],
             };
-            if line.keyword == ClauseKeyword::RuleOrDet && *reading == Reading::Stored {
+            if line.keyword == ClauseKeyword::RuleOrDet && matches!(reading, Reading::Stored(_)) {
                 stored.push((index, line, port));
-            } else if let (Some(Port { instance, name, input: true }), Reading::Stored) = (port, reading) {
+            } else if let (Some(Port { instance, name, input: true }), Reading::Stored(_)) = (port, reading) {
                 if let Some(first) = placed[instance].first_mut() {
                     rewrite_instance(first, |instance| without_input(instance, name));
                 }
@@ -396,6 +429,22 @@ impl Solver {
                 }
             }
         }
+        // A read of a line's relation names the columns of the case's
+        // reading. A `DET` of the concept program reads the concept
+        // program's relation, so it is read so only when the case program
+        // stands alone.
+        for map in &maps {
+            for p in placed.iter_mut().flatten() {
+                p.unmapped.extend(map.unmapped(&p.form));
+                if concept_determination(p) {
+                    continue;
+                }
+                if let Some(form) = map_atoms(&p.form, &|atom| map.of_atom(atom)) {
+                    p.form = form;
+                    p.made = true;
+                }
+            }
+        }
         let placed: Vec<Placed> = placed.into_iter().flatten().collect();
         let taken = rederived(&placed);
         let mut forms = Vec::new();
@@ -407,6 +456,11 @@ impl Solver {
         for taken in taken {
             let p = taken.placed;
             let path = NodePath::top(forms.len() as u32);
+            for unmapped in std::iter::once(p).chain(taken.in_rules.iter().copied()).flat_map(|p| &p.unmapped) {
+                if !reading_faults.contains(unmapped) {
+                    reading_faults.push(unmapped.clone());
+                }
+            }
             if derives(&p.form) == Some(Derives::Out) {
                 out_blocks.push(p.alts.clone().into());
             }
@@ -435,6 +489,12 @@ impl Solver {
                     changed = true;
                 }
             }
+            for map in &maps {
+                if let Some(form) = map_atoms(&alone[at], &|atom| map.of_atom(atom)) {
+                    alone[at] = form;
+                    changed = true;
+                }
+            }
         }
         if let Some(lowered) = zero_columns::lower(&alone, crate::registry::Registry::get()) {
             alone = lowered;
@@ -450,6 +510,7 @@ impl Solver {
             rederived: rederived.into(),
             out_blocks: out_blocks.into(),
             alone,
+            reading_faults: reading_faults.into(),
         })
     }
 
@@ -655,6 +716,9 @@ struct Placed {
     /// Whether the case's reading of a line made or rewrote the form, so the
     /// file does not write it as it stands.
     made: bool,
+    /// The faults of the reads in the form that the case's column maps
+    /// carry onto no column ([`ColumnMap::unmapped`]).
+    unmapped: Vec<String>,
 }
 
 impl Placed {
@@ -710,7 +774,7 @@ impl<'a> Walk<'a> {
             }
             _ => {
                 let step = self.placed.len() + self.points.len();
-                self.placed.push(Placed { step, form: form.clone(), owner, path, alts: alts.to_vec(), made: false })
+                self.placed.push(Placed { step, form: form.clone(), owner, path, alts: alts.to_vec(), made: false, unmapped: Vec::new() })
             }
         }
     }
@@ -795,13 +859,57 @@ fn is_determination(form: &Form) -> bool {
     matches!(form, Form::Clause(clause) if matches!(clause.value().keyword, ClauseKeyword::Det | ClauseKeyword::DetOrRule))
 }
 
-/// The name of each reading of `clause` where it is a `DET_OR_RULE` or
-/// `RULE_OR_DET` line, and none otherwise.
+/// The names that select a reading of `clause` where it is a `DET_OR_RULE`
+/// or `RULE_OR_DET` line, and none otherwise: the name of each reading, and
+/// `&x=$Stored` where the line has a stored reading per proposer, which
+/// selects each of them ([`selects`]).
 pub(crate) fn line_reading_names(clause: &Clause) -> Vec<AltsName> {
     match clause.keyword {
-        ClauseKeyword::DetOrRule | ClauseKeyword::RuleOrDet => readings(clause).into_iter().map(|(name, _)| name).collect(),
+        ClauseKeyword::DetOrRule | ClauseKeyword::RuleOrDet => {
+            let all = readings(clause);
+            let selector = all.iter().any(|(_, reading)| matches!(reading, Reading::Stored(Some(_)))).then(|| reading_name(clause, STORED));
+            all.into_iter().map(|(name, _)| name).chain(selector).collect()
+        }
         _ => Vec::new(),
     }
+}
+
+/// The reading `&x=$Stored` of a line's relation `&x`, and the start of the
+/// name of each of its stored readings where the line has one per proposer,
+/// `&x=$Stored.TileCount`.
+const STORED: &str = "$Stored";
+
+/// The name of the reading `reading` of the line `line`'s relation `&x`:
+/// `&x=<reading>`.
+fn reading_name(line: &Clause, reading: &str) -> AltsName {
+    let relation = relation_ref(&relation_of(&line.derives), crate::write::declared);
+    AltsName(format!("{relation}={reading}").into())
+}
+
+/// The relation `&x` of a line whose stored reading `alt` names: `&x` of
+/// `&x=$Stored` and of `&x=$Stored.TileCount`; `None` where `alt` names no
+/// stored reading.
+pub fn stored_relation(alt: &AltsName) -> Option<&str> {
+    let (relation, reading) = alt.0.split_once('=')?;
+    let rest = reading.strip_prefix(STORED)?;
+    (rest.is_empty() || rest.starts_with('.')).then_some(relation)
+}
+
+/// Whether the alt `selector`, as an `exclude` form, a `representative` line
+/// or an `output` form of an arcdata file names it, selects the alt `alt` of a
+/// case's name: `selector` is `alt`, or `selector` is a line's `&x=$Stored`
+/// and `alt` one of that line's stored readings by a proposer,
+/// `&x=$Stored.TileCount`, as `docs/arclog/arcdata.md#alts` gives.
+pub fn selects(selector: &AltsName, alt: &AltsName) -> bool {
+    let stored = selector.0.strip_suffix(STORED).is_some_and(|relation| relation.ends_with('='));
+    selector == alt || stored && alt.0.strip_prefix(&*selector.0).is_some_and(|proposer| proposer.starts_with('.'))
+}
+
+/// Whether the alts `selectors`, an `exclude` form's combination or the
+/// names of a `representative` line, select the case `name`: each selects an
+/// alt of `name` ([`selects`]).
+pub fn selects_case(selectors: &[AltsName], name: &CaseName) -> bool {
+    selectors.iter().all(|selector| name.0.iter().any(|alt| selects(selector, alt)))
 }
 
 /// The port of an instance that a clause derives: the index among `placed`
@@ -920,28 +1028,35 @@ fn line_of(form: &Form) -> Option<&Clause> {
 }
 
 /// A reading of a `DET_OR_RULE` or `RULE_OR_DET` line: the stored
-/// parameter, or the derivation, by the proposer at an index on a line
-/// with several.
+/// parameter, or the derivation, each by the proposer at an index where the
+/// line has a reading of that kind per proposer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Reading {
-    Stored,
+    Stored(Option<usize>),
     Derived(Option<usize>),
 }
 
 /// The readings of a line, each with its name, the concept case's first, as
-/// `docs/arclog/arclog.md#stored-readings` gives.
+/// `docs/arclog/arclog.md#stored-readings` gives: a line with several
+/// proposers has a derived reading per proposer, `&x=TileCount`, and, where
+/// it has no body, a stored reading per proposer, `&x=$Stored.TileCount`,
+/// each in the order of the line's proposers.
 fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
-    let relation = relation_ref(&relation_of(&line.derives), crate::write::declared);
-    let named = |reading: &str| AltsName(format!("{relation}={reading}").into());
-    let stored = (named("$Stored"), Reading::Stored);
-    let derived: Vec<(AltsName, Reading)> = if line.proposers.len() > 1 {
+    let named = |reading: &str| reading_name(line, reading);
+    let several = line.proposers.len() > 1;
+    let stored: Vec<(AltsName, Reading)> = if several && line.body.value().conjuncts.is_empty() {
+        line.proposers.iter().enumerate().map(|(index, proposer)| (named(&format!("{STORED}.{}", proposer.0)), Reading::Stored(Some(index)))).collect()
+    } else {
+        vec![(named(STORED), Reading::Stored(None))]
+    };
+    let derived: Vec<(AltsName, Reading)> = if several {
         line.proposers.iter().enumerate().map(|(index, proposer)| (named(&proposer.0), Reading::Derived(Some(index)))).collect()
     } else {
         vec![(named("$Derived"), Reading::Derived(None))]
     };
     match line.keyword {
-        ClauseKeyword::RuleOrDet => derived.into_iter().chain([stored]).collect(),
-        _ => std::iter::once(stored).chain(derived).collect(),
+        ClauseKeyword::RuleOrDet => derived.into_iter().chain(stored).collect(),
+        _ => stored.into_iter().chain(derived).collect(),
     }
 }
 
@@ -950,28 +1065,118 @@ fn readings(line: &Clause) -> Vec<(AltsName, Reading)> {
 /// columns; the stored reading alone keeps its `SET` mark. The line's body is
 /// one reading's, as `docs/arclog/arclog.md#stored-readings` gives, and the
 /// other reading holds no body. The reading that owns a body names no
-/// proposer, as a `DET` or `RULE` that names a proposer has no body; the other
-/// reading keeps the line's proposers. The derived reading by a proposer other
-/// than the line's first holds the line's first proposer, which names the
-/// relation's columns, then its own, whose columns map onto them by position.
+/// proposer, as a `DET` or `RULE` that names a proposer has no body. The
+/// other reading names one proposer: the one it is by, or the line's one
+/// proposer. The stored reading of a `RULE_OR_DET` line with a body and
+/// several proposers names none, since [`stored_reading`] gives its forms. A
+/// reading by a proposer other than the line's first has that proposer's
+/// columns, which [`ColumnMap`] gives the reads of the relation in its case.
 fn read_as(line: &Clause, reading: Reading) -> Clause {
-    let (keyword, proposers, owns_body) = match reading {
-        Reading::Stored => (ClauseKeyword::Det, line.proposers.clone(), line.keyword == ClauseKeyword::DetOrRule),
-        Reading::Derived(proposer) => {
-            let proposers = match proposer {
-                Some(0) => Arc::from([line.proposers[0].clone()]),
-                Some(index) => Arc::from([line.proposers[0].clone(), line.proposers[index].clone()]),
-                None => line.proposers.clone(),
-            };
-            (ClauseKeyword::Rule, proposers, line.keyword == ClauseKeyword::RuleOrDet)
-        }
+    let (keyword, proposer, owns_body) = match reading {
+        Reading::Stored(proposer) => (ClauseKeyword::Det, proposer, line.keyword == ClauseKeyword::DetOrRule),
+        Reading::Derived(proposer) => (ClauseKeyword::Rule, proposer, line.keyword == ClauseKeyword::RuleOrDet),
     };
     let body = if owns_body { line.body.clone() } else { Node::new(Body { conjuncts: Arc::from([]) }) };
-    let proposers = if body.value().conjuncts.is_empty() { proposers } else { Arc::from([]) };
+    let proposers: Arc<[LibName]> = match (proposer, &line.proposers[..]) {
+        _ if !body.value().conjuncts.is_empty() => Arc::from([]),
+        (Some(index), all) => Arc::from([all[index].clone()]),
+        (None, [one]) => Arc::from([one.clone()]),
+        (None, _) => Arc::from([]),
+    };
     // A reading with no body has no labels for the body's columns: its
     // proposer declares the columns.
     let columns = if body.value().conjuncts.is_empty() && !proposers.is_empty() { Arc::from([]) } else { line.columns.clone() };
-    Clause { keyword, proposers, body, columns, set: line.set && reading == Reading::Stored, ..line.clone() }
+    Clause { keyword, proposers, body, columns, set: line.set && matches!(reading, Reading::Stored(_)), ..line.clone() }
+}
+
+/// The columns of a line's relation in a case that reads the line by a
+/// proposer other than its first, where the two proposers name some column
+/// differently. The line's first proposer names the relation's columns, and
+/// the reads of the relation in the solver's file name them; the reading by
+/// the other proposer gives the relation that proposer's columns, each at the
+/// position of the first proposer's column it stands for, as
+/// `docs/arclog/arclog.md#stored-readings` gives. So each read of the
+/// relation in the case names, for each column of the first proposer, the
+/// other proposer's column at its position.
+struct ColumnMap {
+    relation: RelationRef,
+    /// Each column of the line's first proposer, with the column of the
+    /// reading's proposer at its position, or `None` where that proposer has
+    /// fewer columns.
+    columns: Vec<(ColumnName, Option<ColumnName>)>,
+    /// The line's first proposer, and the reading's.
+    first: LibName,
+    proposer: LibName,
+}
+
+impl ColumnMap {
+    /// The map of the case that reads `line` at `reading`, or `None` where the
+    /// reading's clause names no proposer other than the line's first, holds
+    /// a body, or names a proposer whose columns are the first proposer's.
+    fn of(line: &Clause, reading: Reading, registry: &Registry) -> Option<ColumnMap> {
+        let clause = read_as(line, reading);
+        let ([proposer], Some(first)) = (&clause.proposers[..], line.proposers.first()) else { return None };
+        if proposer == first || !clause.body.value().conjuncts.is_empty() {
+            return None;
+        }
+        let (from, to) = (proposer_columns(registry, first)?, proposer_columns(registry, proposer)?);
+        let columns: Vec<(ColumnName, Option<ColumnName>)> = from.iter().enumerate().map(|(at, name)| (name.clone(), to.get(at).cloned())).collect();
+        if columns.iter().all(|(from, to)| to.as_ref() == Some(from)) {
+            return None;
+        }
+        Some(ColumnMap { relation: relation_of(&line.derives), columns, first: first.clone(), proposer: proposer.clone() })
+    }
+
+    /// `atom` with each site on a column of the first proposer at the
+    /// reading's column at its position, where `atom` reads the relation and
+    /// some site changes; `None` otherwise. A site that the map carries onto
+    /// no column stays, and [`ColumnMap::unmapped`] gives its fault.
+    fn of_atom(&self, atom: &Atom) -> Option<Atom> {
+        if atom.relation != self.relation {
+            return None;
+        }
+        let mapped = |site: &Site| self.columns.iter().find(|(from, _)| *from == site.column).and_then(|(_, to)| to.clone()).filter(|to| *to != site.column);
+        if !atom.sites.iter().any(|site| mapped(site).is_some()) {
+            return None;
+        }
+        let sites = atom.sites.iter().map(|site| match mapped(site) {
+            Some(column) => Site { column, value: site.value.clone() },
+            None => site.clone(),
+        });
+        Some(Atom { relation: atom.relation.clone(), sites: sites.collect() })
+    }
+
+    /// The fault of each read of the relation in `form` at a column that the
+    /// map carries onto no column: a column of the first proposer past the
+    /// reading proposer's columns, or a column other than the Example column
+    /// that the first proposer does not name.
+    fn unmapped(&self, form: &Form) -> Vec<String> {
+        let example = crate::resolver::columns::example();
+        let mut faults = Vec::new();
+        each_atom(NodeRef::from(form), &mut |atom| {
+            if atom.relation != self.relation {
+                return;
+            }
+            for site in atom.sites.iter() {
+                let mapped = match self.columns.iter().find(|(from, _)| *from == site.column) {
+                    Some((_, to)) => to.is_some(),
+                    None => site.column == example,
+                };
+                if !mapped {
+                    let relation = relation_ref(&self.relation, crate::write::declared);
+                    let column = match &site.column {
+                        ColumnName::Written(name) => name.to_string(),
+                        ColumnName::Slot(slot) => format!("slot {slot}"),
+                    };
+                    faults.push(format!(
+                        "a read of `{relation}` names the column `{column}`, which no column of `{}` stands for: the line's first proposer `{}` names the relation's columns, and the columns of `{}` stand for them by position",
+                        self.proposer.0, self.first.0, self.proposer.0
+                    ));
+                }
+            }
+        });
+        faults
+    }
 }
 
 /// A read of one relation that a form reads as another, with its sites as

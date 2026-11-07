@@ -302,7 +302,8 @@ fn named_stream(solver: &Solver, case: &ResolvedCase, checked: &CheckedProgram, 
 /// `DET` the block's derivation, and the concept program's derivation is
 /// the one it reads in the case. A case that takes more than one `OUT` form
 /// ([`crate::solver::Case::several_outs`]) has no stream either, since a
-/// stream holds one.
+/// stream holds one, and neither has a case whose reading of a line gives no
+/// program ([`crate::solver::Case::reading_fault`]).
 pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary) -> Result<WrittenStream, String> {
     case_stream_with(case, checked, vocabulary, &mut CheckCache::default())
 }
@@ -310,7 +311,7 @@ pub fn case_stream(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &V
 /// [`case_stream`], with the check of the case program read alone made with
 /// `cache`.
 fn case_stream_with(case: &ResolvedCase, checked: &CheckedProgram, vocabulary: &Vocabulary, cache: &mut CheckCache) -> Result<WrittenStream, String> {
-    if let Some(fault) = case.case.several_outs() {
+    if let Some(fault) = case.case.several_outs().or_else(|| case.case.reading_fault()) {
         return Err(format!("the writer gives no stream: {fault}"));
     }
     let written = |program: &CheckedProgram| written_stream(program, vocabulary).map_err(|diagnostic| format!("the writer gives no stream: {}", diagnostic.message));

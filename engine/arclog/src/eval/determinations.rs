@@ -170,12 +170,12 @@ impl Evaluation<'_> {
     /// body, by the proposer that rule gives, one value per row where the
     /// registry marks that proposer type-domain or the proposer has one
     /// column and the form carries no `(SET)` mark, and otherwise one value
-    /// of the proposer's whole set of rows. A `DET` form with no body that
-    /// names several proposers, the stored reading of a `DET_OR_RULE` line
-    /// with several, gives the domain of each proposer by that rule, its rows mapped by
-    /// position onto the relation's columns. A `DET` of several forms has the
-    /// values that each of its forms gives as its domain. A form with no body and no
-    /// proposer is a fault of the conversion.
+    /// of the proposer's whole set of rows. A form with no body that names
+    /// several proposers is a fault, as that rule gives: each stored reading
+    /// of a `DET_OR_RULE` line with several names its own proposer alone. A
+    /// `DET` of several forms has the values that each of its forms gives as
+    /// its domain. A form with no body and no proposer is a fault of the
+    /// conversion.
     pub fn domain(&self, node: GraphNodeIndex) -> Outcome<Domain> {
         let program = &self.program.program;
         assert!(is_det(program, node), "the node of a `DET`");
@@ -198,29 +198,19 @@ impl Evaluation<'_> {
                 return Err(fault);
             }
             let fault = |message: String| RunFault { message: message.into(), form: at.clone() };
-            let several = clause.keyword == ClauseKeyword::Det && clause.proposers.len() > 1 && clause.body.value().conjuncts.is_empty();
-            let sources: Vec<(Outcome<RelationValue>, bool)> = if several {
-                let proposers = clause.proposers.iter().enumerate();
-                proposers.map(|(index, proposer)| (driver.proposed(at, clause, index, None), per_row(self.registry, clause, proposer))).collect()
-            } else {
-                let domain = derivation(clause, at)?.is_some_and(|index| per_row(self.registry, clause, &clause.proposers[index]));
-                vec![(driver.clause(at, None), domain)]
+            let domain = derivation(clause, at)?.is_some_and(|index| per_row(self.registry, clause, &clause.proposers[index]));
+            let mut rows = match super::init_form::rows_of(self, at, driver.clause(at, None)?, types.len()).map_err(fault)? {
+                Ok(rows) => rows,
+                Err(RelationValue::Undefined) => return Ok(Domain::Undefined),
+                Err(RelationValue::Stopped(stop)) => return Ok(Domain::Stopped(stop)),
+                Err(RelationValue::Rows(_)) => unreachable!("a value that holds no rows"),
             };
-            let mut found: Vec<Vec<Row>> = Vec::new();
-            for (value, domain) in sources {
-                let mut rows = match super::init_form::rows_of(self, at, value?, types.len()).map_err(fault)? {
-                    Ok(rows) => rows,
-                    Err(RelationValue::Undefined) => return Ok(Domain::Undefined),
-                    Err(RelationValue::Stopped(stop)) => return Ok(Domain::Stopped(stop)),
-                    Err(RelationValue::Rows(_)) => unreachable!("a value that holds no rows"),
-                };
-                {
-                    let table = self.session.intern.read().expect("an intern table that no panic poisoned");
-                    rows.sort_by(|a, b| crate::terms::content_order(types, a, b, &table));
-                }
-                rows.dedup();
-                if domain { found.extend(rows.into_iter().map(|row| vec![row])) } else { found.push(rows) }
+            {
+                let table = self.session.intern.read().expect("an intern table that no panic poisoned");
+                rows.sort_by(|a, b| crate::terms::content_order(types, a, b, &table));
             }
+            rows.dedup();
+            let found: Vec<Vec<Row>> = if domain { rows.into_iter().map(|row| vec![row]).collect() } else { vec![rows] };
             kept = Some(match kept {
                 None => found,
                 Some(kept) => kept.into_iter().filter(|value| found.contains(value)).collect(),

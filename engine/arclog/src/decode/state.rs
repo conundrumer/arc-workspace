@@ -711,18 +711,16 @@ impl State {
     /// Whether `token` takes the grammar step alone, with no check of the
     /// prefix: an `INIT`'s component token, and a proposer of a clause. At an
     /// `INIT` that holds its component alone, no check refuses, and at a
-    /// clause that holds proposers and no body, no check refuses but the
-    /// proposer's name rule of `RigidPartsAndProposersCheck` and the rule of
-    /// `PicksCheck` that each proposer fits the first. A proposer that breaks
-    /// a rule takes the checks, which refuse it.
-    pub(super) fn grammar_only_candidate(&self, token: &Token, registry: &Registry) -> bool {
+    /// clause that holds no body, no check refuses a proposer but the
+    /// proposer's name rule of `RigidPartsAndProposersCheck`: the grammar
+    /// refuses a second proposer of a `DET` or `RULE` before any check runs.
+    /// A proposer that breaks the name rule takes the checks, which refuse it.
+    pub(super) fn grammar_only_candidate(&self, token: &Token) -> bool {
         if self.awaits_component() {
             return matches!(token, Token::Lib(_));
         }
         match (&self.stack[..], token) {
-            ([Frame::Clause(ClauseFrame { stage: ClauseStage::Proposers, proposers, .. })], Token::Proposer(name)) => {
-                crate::check::rigid_proposer::is_proposer_name(&name.0) && proposers.first().is_none_or(|first| crate::check::picks::proposer_fits(first, name, registry))
-            }
+            ([Frame::Clause(ClauseFrame { stage: ClauseStage::Proposers, .. })], Token::Proposer(name)) => crate::check::rigid_proposer::is_proposer_name(&name.0),
             _ => false,
         }
     }
@@ -1210,9 +1208,13 @@ impl State {
         let clause = top!(self, Frame::Clause);
         match (&clause.stage, token) {
             (ClauseStage::Proposers, Token::Proposer(name)) if !clause.predict => {
-                // A second naming of a proposer adds no value to a `DET`'s domain and no reading to a line.
+                // A second naming of a proposer adds no reading to a line.
                 if clause.proposers.contains(name) {
                     return Err("a clause names each proposer once");
+                }
+                // A line names several proposers, a reading per proposer, and each reading names its proposer alone.
+                if matches!(clause.keyword, ClauseKeyword::Det | ClauseKeyword::Rule) && !clause.proposers.is_empty() {
+                    return Err("a `DET` or `RULE` names one proposer");
                 }
                 clause.proposers.push(name.clone());
                 Ok(Offer::Taken)

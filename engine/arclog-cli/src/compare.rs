@@ -40,6 +40,7 @@ use arclog::judge::run::{full_output_set, judged_run, Depth, JudgedRun};
 use arclog::judge::solves::OutputSet;
 use arclog::program::{AltRecord, AltsName, Arcdata, DataValue, ParamValue, ProgramRelation, Witness, WitnessRecord};
 use arclog::session::TaskSession;
+use arclog::solver::stored_relation;
 use arclog::task::{Grid, Task};
 use arclog::terms::{Color, Example};
 use serde_json::Value;
@@ -98,18 +99,22 @@ const DERIVED: &str = "=$Derived";
 /// Whether the snapshot's key `key` names the case whose departures from the
 /// concept case are `departures` (`Solver::departures`; `case_name` of
 /// `src/parity/__init__.py`): the key joins with ` & `, in the snapshot's
-/// order, each departure, a line's stored reading
-/// `<relation>=$Stored` as `<relation>=stored` and its derived reading by
-/// its one proposer as `<relation>=<proposer>`, and is `concept` where
-/// there is none.
+/// order, each departure, a line's stored reading as
+/// `<relation>=stored` and its derived reading by its one proposer as
+/// `<relation>=<proposer>`, and is `concept` where there is none. The
+/// snapshot's `<relation>=stored` is the record of the line's `$Stored`,
+/// which names each stored reading of a line that has one per proposer
+/// (`selects`).
 pub(crate) fn names_case(key: &str, departures: &[AltsName]) -> bool {
     let mut parts: BTreeSet<&str> = if key == "concept" { BTreeSet::new() } else { key.split(" & ").collect() };
     for alt in departures {
         let found = if let Some(relation) = alt.0.strip_suffix(DERIVED) {
             parts.iter().find(|part| part.strip_prefix(relation).is_some_and(|rest| rest.starts_with('=') && rest != "=stored")).copied()
-        } else {
-            let stored = alt.0.replace("=$Stored", "=stored");
+        } else if let Some(relation) = stored_relation(alt) {
+            let stored = format!("{relation}=stored");
             parts.iter().find(|part| **part == stored).copied()
+        } else {
+            parts.iter().find(|part| **part == &*alt.0).copied()
         };
         match found {
             Some(part) => {
@@ -255,7 +260,7 @@ fn compare_witnesses(key: &str, case: DeterminedCase<'_>, case_record: &Value, w
     if witnesses.is_empty() {
         return Vec::new();
     }
-    let readings: Vec<String> = case.name.0.iter().filter_map(|alt| alt.0.strip_suffix("=$Stored").map(str::to_owned)).collect();
+    let readings: Vec<String> = case.name.0.iter().filter_map(|alt| stored_relation(alt).map(str::to_owned)).collect();
     let rows = case.evaluation(stored).determination_rows();
     // Whether the `DET` of `relation` follows the `assign` of one of `assigns`.
     let follows = |relation: &ProgramRelation, assigns: &[(ProgramRelation, ParamValue)]| {

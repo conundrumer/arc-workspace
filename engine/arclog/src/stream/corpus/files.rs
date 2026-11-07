@@ -62,7 +62,8 @@ pub fn case_file_name(name: &CaseName) -> String {
 /// concept case is that program. A case gets a fault in place of its texts
 /// where its program read alone has no stream: a `DET` it takes from the
 /// concept program reads a relation that a block other than the concept
-/// program derives, as [`super::case_stream`] gives.
+/// program derives, or its reading of a line gives no program, as
+/// [`super::case_stream`] gives.
 ///
 /// `Err` where the solver's texts do not read, or two cases get one file
 /// name.
@@ -106,8 +107,13 @@ pub(super) fn read_case_files(corpus: &Path, task_id: &str, name: &CaseName) -> 
 
 /// The texts of the case `case` of `solver`, or the fault that it has none:
 /// the fault that [`super::case_stream`] gives for the same case, where the
-/// program read alone has no stream or the checker refuses it.
+/// case's reading of a line gives no program
+/// ([`crate::solver::Case::reading_fault`]), or the program read alone has
+/// no stream or the checker refuses it.
 fn case_texts(solver: &Solver, case: &Case, cache: &mut CheckCache) -> Result<CaseTexts, String> {
+    if let Some(fault) = case.reading_fault() {
+        return Err(format!("the case's reading of a line gives no program: {fault}"));
+    }
     if !case.reads_alone_as_it_stands() {
         check_alone(case, cache).map_err(|fault| format!("the case program read alone has no files: {fault}"))?;
     }

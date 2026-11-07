@@ -75,6 +75,7 @@
     (witness two-openings variant $EachOpening)))
 ```
 - Each name in an `exclude` or `output` form, other than `concept`, is an alt or a reading of a line of the arclog file, and the reader refuses any other.
+- `&x=$Stored` names each stored reading of a line that has a stored reading per proposer, as [Stored readings](./arclog.md#stored-readings) gives them: in an `exclude` form, a `representative` line or an `output` form, `&tile_size=$Stored` names `&tile_size=$Stored.ConstInDim` and `&tile_size=$Stored.SepTileDim`.
 - An `alts` form is named as the arclog file's `ALTS` form or `DET_OR_RULE` line is. It holds an `alt` form per alt that has a witness, and an `alt` form holds that alt's witnesses and a nested `alt` form per combination with an alt of another `ALTS` form that has one. An `ALTS` form with no witness has no `alts` form.
 - An `approximated` form is named for an output claim whose arclog block holds an `APPROXIMATED` form, and holds the witnesses on which the approximation differs from the rule.
     ```

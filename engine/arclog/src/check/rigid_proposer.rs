@@ -1,14 +1,15 @@
 //! The check of the names that reach past a form: the reads of the parts of
 //! a `RIGID_DET` form (`docs/arclog/rigid.md#semantics`), and the names of
-//! the proposers a clause gives, and the rule that a clause that names a
-//! proposer has no body.
+//! the proposers a clause gives, and the rules that a clause that names a
+//! proposer has no body and names one proposer.
 
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, OutputName, OutputOwner, RelationRef, RigidDetName};
+use crate::program::{Clause, ClauseKeyword, OutputName, OutputOwner, Program, RelationRef, RigidDetName};
 use crate::resolver::form_columns::rigid_outputs;
 use crate::resolver::ResolvedProgram;
+use crate::solver::Case;
 
 /// [`CheckId::RigidPartsAndProposers`].
 pub struct RigidPartsAndProposersCheck;
@@ -25,8 +26,9 @@ impl Check for RigidPartsAndProposersCheck {
     }
 
     /// Refuses, at the clause, a proposer whose name is not an uppercase
-    /// letter and then letters and digits, and a `DET` or `RULE` that names
-    /// a proposer and holds a body (`docs/arclog/arclog.md#program`), and,
+    /// letter and then letters and digits, a `DET` or `RULE` that names
+    /// a proposer and holds a body, and a `DET` or `RULE` that names more
+    /// than one proposer (`docs/arclog/arclog.md#program`), and,
     /// at the atom, a read of an
     /// output of a `RIGID_DET` form of the case program that gives no such
     /// output: a part that no atom of the form reads. A read of a form that
@@ -42,6 +44,9 @@ impl Check for RigidPartsAndProposersCheck {
                 }
                 if names_proposer_and_holds_body(clause) {
                     refused.push((at.into(), "a `DET` or `RULE` that names a proposer has no body"));
+                }
+                if names_several_proposers(clause) {
+                    refused.push((at.into(), "a `DET` or `RULE` names at most one proposer"));
                 }
             }
             if let Some(RelationRef::Output(output @ OutputName { of: OutputOwner::RigidDet(owner), .. })) = node.atom().map(|atom| &atom.relation) {
@@ -68,6 +73,22 @@ impl Check for RigidPartsAndProposersCheck {
 /// conjunct in its body.
 fn names_proposer_and_holds_body(clause: &Clause) -> bool {
     matches!(clause.keyword, ClauseKeyword::Det | ClauseKeyword::Rule) && !clause.proposers.is_empty() && !clause.body.value().conjuncts.is_empty()
+}
+
+/// Whether `clause` is a `DET` or `RULE` that names more than one proposer.
+/// A `DET_OR_RULE` or `RULE_OR_DET` line may name several, and each of its
+/// readings names one.
+fn names_several_proposers(clause: &Clause) -> bool {
+    matches!(clause.keyword, ClauseKeyword::Det | ClauseKeyword::Rule) && clause.proposers.len() > 1
+}
+
+/// The refusal of a case program read from a solver's files whose reading of
+/// a line gives no program, which `case` gives ([`Case::reading_fault`]), at
+/// the last form of the program.
+pub(super) fn reading_fault(case: &Case, program: &Program) -> Option<Refusal> {
+    let message = case.reading_fault()?;
+    let at = program.forms.len().checked_sub(1).map_or_else(NodePath::default, |last| NodePath::top(last as u32));
+    Some(Refusal { message: message.into(), at })
 }
 
 /// Whether `name` is a proposer's name: an uppercase letter, then letters
