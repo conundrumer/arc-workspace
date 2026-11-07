@@ -75,7 +75,7 @@ A fit's model input rows are a normalized store. Each fact stands once, at the g
 
 - The catalog takes 80 to 115 microseconds per table at one pair, on tables of a mean of 292 table rows.
 - A parameterized table at one assignment on a task of 4 train pairs takes under half a millisecond.
-- The state search computes each `TableVector` once, when that parameterized table is first made, as its [specification](../state-search/state-search-spec.md) gives. The export adds no cache.
+- The search computes each `TableVector` once, when that parameterized table is first made. The export adds no cache.
 
 ## Checks
 
