@@ -1,4 +1,4 @@
-"""Check of the state search, an in-progress feature: what a run's files show against the contract (state-search-spec.md). It gates nothing.
+"""Check of the state search, an in-progress feature: what a run's files show against the contract (docs/state-search/state-search-spec.md). It gates nothing.
 
     PYTHONPATH=model/study/sampler:<engine path> <python> check_state_search.py out/NAME/TASK
 

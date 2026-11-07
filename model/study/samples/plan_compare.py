@@ -1,4 +1,4 @@
-"""The comparison of the two writer plans on dev samples (training-rows.md, "Comparison of the plans").
+"""The comparison of the two writer plans on dev samples (docs/sample-build/training-rows.md, "Comparison of the plans").
 
   python3 plan_compare.py SET --plan ordered|unordered --model FILE [--shard k/N] [--tasks T,T,...] [--samples-per-task K] [--seed S] [--steps N] [--sample-seconds X] [--out DIR]
   python3 plan_compare.py SET --plan ordered|unordered --model FILE --report

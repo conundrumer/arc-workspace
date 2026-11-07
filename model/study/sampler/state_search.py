@@ -1,4 +1,4 @@
-"""The state search: a best-first search over states (search-worker/state-search-spec.md), on the writer kit's tables.
+"""The state search: a best-first search over states (docs/state-search/state-search-spec.md), on the writer kit's tables.
 
 A state is a set of queries closed under inputs. Each expansion pops the state with the highest score, scopes its program, has the writer
 write one query at it, evaluates the query, and pushes the child state. The score and the writer are the only choices.
