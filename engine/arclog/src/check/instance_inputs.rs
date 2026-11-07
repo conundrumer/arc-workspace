@@ -8,7 +8,7 @@ use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixRe
 use crate::safety::body_labels;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Form, Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, LabelId, OutputName, OutputOwner, PortName, RelationRef};
-use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, LibName, Registry, TypeParameter};
+use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, Component, InputPort, LibName, Need, Registry, TypeParameter};
 use crate::resolver::ResolvedProgram;
 use crate::types::{each_site_label, use_label};
 
@@ -32,7 +32,9 @@ impl Check for InstanceInputsCheck {
     /// than a column of an unbounded type parameter that no place of the form binds,
     /// and each input whose rows its component counts, a `Cardinality`
     /// instance's `member` input or an `Excess` instance's `plus` or `minus`
-    /// input, whose head holds no site, as
+    /// input, whose head holds no site, and each input its component
+    /// requires, and each `one-of` group of its component, that the form
+    /// leaves with no row ([`left_needs`]), as
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
@@ -79,6 +81,9 @@ impl Check for InstanceInputsCheck {
                     refusals.push((message, input_at.clone()));
                 }
             }
+            for message in left_needs(&component, &written, instance.key.as_ref().is_some_and(|key| !key.value().key.columns.is_empty())) {
+                refusals.push((message, at.clone()));
+            }
         }
         if refusals.is_empty() {
             return CheckResult::Pass;
@@ -93,6 +98,36 @@ impl Check for InstanceInputsCheck {
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         super::prefix::settled(prefix, self)
     }
+}
+
+/// Why an `INIT` form of `component` that writes the inputs `written` is
+/// refused where it leaves a need empty, one message for each input that
+/// the component requires and the form leaves with no row for certain, and
+/// each `one-of` group whose inputs the form leaves so, as
+/// `docs/arclog/arclog.md#instance` gives. The decoder refuses the `SKIP`
+/// that leaves such a need ([`crate::registry::Component::group_is_empty`],
+/// [`crate::registry::InputPort::holds_no_row_unwritten`]), and a `DEMONSTRATED`
+/// form is no `INIT` form, so it takes no such refusal. `key_has_column` is
+/// whether the form's key has a column.
+fn left_needs(component: &Component, written: &[&PortName], key_has_column: bool) -> Vec<String> {
+    let mut messages = Vec::new();
+    for input in component.inputs.iter() {
+        if input.need == Some(Need::Required) && !written.contains(&&input.port.name) && input.holds_no_row_unwritten(key_has_column) {
+            messages.push(format!(
+                "the form writes no input {:?}, which its component requires and no key column fills: the input holds no row, and the component then gives no output",
+                input.port.name.0
+            ));
+        }
+    }
+    for group in component.groups() {
+        if component.group_is_empty(group, written, key_has_column) {
+            messages.push(format!(
+                "the form writes no input of the `one-of` group {:?} of its component, and no key column fills one: each input of the group holds no row, and the component then gives no output",
+                group.0
+            ));
+        }
+    }
+    messages
 }
 
 /// Why `written`, an input of the port `port`, writes no head site on a
