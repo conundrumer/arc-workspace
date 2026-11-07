@@ -1,10 +1,10 @@
 # Arclog column types
 
-What the engine knows about a column before it reads a row, written down from the engine's code, which is the source of truth. The reader is whoever designs features over tables, or changes the type check. Each section names the code it comes from.
+What the engine knows about a column before it reads a table row, written down from the engine's code, which is the source of truth. The reader is whoever designs features over tables, or changes the type check. Each section names the code it comes from.
 
 ## Column metadata
 
-A column has four static facts. A row contains none of them: a row is a fixed-arity array of 32-bit term ids, and the checker holds the types.
+A column has four static facts. A table row contains none of them: a table row is a fixed-arity array of 32-bit term ids, and the checker holds the types.
 
 | Fact | Says | Where |
 |---|---|---|
@@ -22,7 +22,7 @@ The value type and the source are one thing in the code, since the source is a f
 | `Int` | | signed 32-bit | none | yes | yes | |
 | `Nat` | `Int` | whole numbers from 0 | none | yes | yes | |
 | `Color` | | a constant | the color permutation | | | |
-| `Example` | | an example's index | none, and a reorder of the train pairs moves it | | | |
+| `Example` | | an ARC example's index | none, and a reorder of the train pairs moves it | | | |
 | `Unit` | | one value, with no fields | none | | | |
 | `Box` | | four margins (t, b, l, r) | `apply` | | yes | yes |
 | `Position` | `Box` | a box of one cell | `apply` | | yes | yes |
@@ -91,10 +91,10 @@ The engine's default is `type`, and the sample build's map mode sets `value`.
 
 A frame says what grid a place stands in. The two checks that read frames work from the same idea, and each has its own form.
 
-- **A grid** (`check/frames.rs`) is the input or the output of one example. The example is the one a per-input form runs on, or the one an Example label holds. A label is in a grid where its value stands in that grid in every row of the label's form.
+- **A grid** (`check/frames.rs`) is the input or the output of one ARC example. The ARC example is the one a per-input form runs on, or the one an Example label holds. A label is in a grid where its value stands in that grid in every table row of the label's form.
 - **A source's frame** (`flows.rs`, `SourceFrame`) is one of:
     - `Read`: the frame of the column read.
-    - `Made { maker, at, within }`: a frame that a lib column makes, one per row of the atom or instance at `at`, lying in the frame `within` where that exists.
+    - `Made { maker, at, within }`: a frame that a lib column makes, one per table row of the atom or instance at `at`, lying in the frame `within` where that exists.
     - `Unknown`: a frame the engine cannot name, such as where a D4 element moves the values.
 
 **Frame rules** (`registry/frames.rs`, the `frames` forms of the registry) say how a lib column of type `Position` or `Box` gets its frame:
@@ -103,7 +103,7 @@ A frame says what grid a place stands in. The two checks that read frames work f
 - `new`: a frame the column makes.
 - `(new (of <column> ...))`: a made frame that lies in the frame of those columns' values.
 - A `new` rule on a `Box` column ends in `(size <column> [(by <column>)])`, the column whose values have the own size of the made values.
-- A column no form names takes `of` the columns of its type that the mode binds, or, for a component's output, the input columns that its rows copy, or else its inputs' columns other than `key`.
+- A column no form names takes `of` the columns of its type that the mode binds, or, for a component's output, the input columns that its table rows copy, or else its inputs' columns other than `key`.
 
 **What a value determines:**
 
@@ -120,9 +120,9 @@ A column's lineage says where its values come from (`flows.rs`, `ColumnSource`).
 | `Copy` | the upstream column's values |
 | `Computed` | values the engine computes from the upstream column's |
 | `Constant` | `0` |
-| `LibName` | values a lib name gives with no program relation read: a proposer's, or a component's default rows |
+| `LibName` | values a lib name gives with no program relation read: a proposer's, or a component's default table rows |
 
-An upstream entry also names the relation read, the column, the atom that reads it, which row of that atom's relation the value comes from, and the frames it gives. Following `Copy` entries back to `input`, `ex_output`, a proposer or a lib column gives a column's **lineage roots**.
+An upstream entry also names the relation read, the column, the atom that reads it, which table row of that atom's relation the value comes from, and the frames it gives. Following `Copy` entries back to `input`, `ex_output`, a proposer or a lib column gives a column's **lineage roots**.
 
 The tables export writes the lineage beside each table (`FlowColumns` in `arclog-tables/src/columns.rs`).
 
@@ -135,12 +135,12 @@ A join states that two values are equal. The type says whether the statement is 
     - `input.Col` with `input.Col` at another cell: two cells of one color.
     - `input.Col` with `ex_output.Col` at one Position: a color the output keeps.
     - `input.Col` with `DominantColor.C`: a cell of the proposed color.
-    - `input.Col` at two examples: a color that recurs across examples.
+    - `input.Col` at two ARC examples: a color that recurs across ARC examples.
 - **A place:** a join within one frame is a statement about one grid. A join across frames of equal extents is a correspondence between two grids.
 
 So a column's metadata acts as a finer type, a refinement of its value type, and it gives features three things:
 
-1. **Aggregates over joins.** For a pair of columns, a feature can state their lineage roots and frames beside what their rows show. A query's joins can be classified the same way: same root, different roots, same frame, across frames.
+1. **Aggregates over joins.** For a pair of columns, a feature can state their lineage roots and frames beside what their table rows show. A query's joins can be classified the same way: same root, different roots, same frame, across frames.
 2. **Finer holes.** A hole can range over the columns of one kind of metadata, such as the Color columns whose lineage root is `ex_output`.
 3. **Global names.** Lineage roots form a finite vocabulary: the base tables' columns and the lib's columns. So a pool over the columns of one kind of metadata has a name that means the same in every task, which a column's identity in one program does not.
 

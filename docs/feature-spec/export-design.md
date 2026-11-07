@@ -1,20 +1,20 @@
 # Feature export: design
 
-How the engine gives the model a table's features. The reader is whoever implements the export, and whoever reads its vectors. The [feature specification](feature-spec.md) defines what a feature is, and the [sample contract](../sample-build/contract.md) defines `TableVector` and the keys it stands under.
+How the engine gives the learned model a parameterized table's features. The reader is whoever implements the export, and whoever reads its vectors. The [feature specification](feature-spec.md) defines what a feature is, and the [sample contract](../sample-build/contract.md) defines `TableVector` and the keys it stands under.
 
 ## The path
 
-- A feature expression in `engine/arclog-encoder` is the definition. `table_vector` walks a table's generated shapes over its rows and the base tables, and the catalog is a native implementation of named kinds, checked against the definition, as a native lib element is.
-- `feature-encoder candidate-lists` writes the vectors of candidate queries' tables, `vector` those of a solver's table, and `base-vectors` and `query-vectors` the rest of a state's features.
-- `arclog_tables::summary` still stores the older `arclog_features::vector` with each row of the export, so nothing in the export or a search reads the encoder's features. A search needs a call into the encoder before it can read a fit's columns.
+- A feature expression in `engine/arclog-encoder` is the definition. `table_vector` walks a parameterized table's generated shapes over its tables and the base tables, and the catalog is a native implementation of named kinds, checked against the definition, as a native lib element is.
+- `feature-encoder candidate-lists` writes the vectors of candidate queries' parameterized tables, `vector` those of a solver's parameterized table, and `base-vectors` and `query-vectors` the rest of a state's features.
+- `arclog_tables::summary` still stores the older `arclog_features::vector` with each exported record, so nothing in the export or a search reads the encoder's features. A search needs a call into the encoder before it can read a fit's columns.
 
 ## What the catalog takes
 
-`catalog::pass(table, facts, out)` runs on one table at one example.
+`catalog::pass(table, facts, out)` runs on one table.
 
 | Input | Holds | Built |
 |---|---|---|
-| `TableAt` | each column's value type, whether it is a key column, and the rows as flat cells | once per table at an example, from the export's cells |
+| `TableAt` | each column's value type, whether it is a key column, and the table rows as flat cells | once per table, from the export's cells |
 | `PairFacts` | what the grids of a pair give: pieces, line colors, neighborhood ids, changed cells and so on | once per pair of a task, and shared by all that pair's tables |
 
 A test input has no output. So a kind that reads no output runs on `GridFacts` of the input alone, and a kind that reads the output has no record there.
@@ -23,7 +23,7 @@ A test input has no output. So a kind that reads no output runs on `GridFacts` o
 
 `pass` gives a record per binding of a kind's holes. A kind's value type decides the numbers.
 
-| `Value` | Number | At an example |
+| `Value` | Number | At an ARC example |
 |---|---|---|
 | `Bool` | 0 or 1 | greatest and sum |
 | `Num(n)` | n | greatest and sum |
@@ -31,60 +31,59 @@ A test input has no output. So a kind that reads no output runs on `GridFacts` o
 | `Word(w)` | one categorical column per kind, whose categories are the kind's words | the multiset's words, as one value |
 | `Null`, or no record | none | no value |
 
-- **Over constraint models:** the mean within an example, as the contract gives for several TableRows.
-- **Over examples:** `:min`, `:mean` and `:max`, over the train examples for a kind that reads the output, and over every example for any other.
-- **Examples with a value:** a kind with no value at some example also gives `:count`, the number of examples that have one. So a kind has one value at every example where its `:min` equals its `:max` and it has no `:count`, and a consumer reads stability from the vector.
+- **Over constraint models:** the mean within an ARC example, as [Levels](../sample-build/contract.md#levels) gives.
+- **Across ARC examples:** `least`, `mean` and `most`, over the train ARC examples for a kind that reads the output, and over every ARC example for any other.
+- **ARC examples with a value:** a kind with no value at some ARC example also gives the count of ARC examples that have one. So a kind has one value at every ARC example where its `least` equals its `most` and it has no such count, and a consumer reads stability from the vector.
 
 So a kind gives 6 numbers, and at most one more. These are the `TableVector`'s entries, under names that hold the kind's template, with its holes typed by value type, and the number's name.
 
 ## Layout
 
-A vector is sparse, since most entries are at their default on most tables. It is stored as compressed rows: an offset per row, then for each entry its index into `names()` and its value as `float32`. `names()` lists every entry of one schema version once. `version()` is a hash of that list.
+A vector is sparse, since most entries are at their default on most parameterized tables. It is stored as compressed records: an offset per vector, then for each entry its index into `names()` and its value as `float32`. `names()` lists every entry of one schema version once. `version()` is a hash of that list.
 
-## What a model reads
+## What a learned model reads
 
-A model reads one row for each candidate query at a state and each example, as [Structure of the search](structure.md#maps) gives. A learned function has a value at each of a candidate's rows, and those values stay apart, since a rule has to hold at every example. Where something must order candidates, it reads the worst example beside the mean. The rows have fixed columns, so a column means one thing on every row of every task. The count of examples differs between tasks, so a row holds one example's values and no column stands for an example. `model/feature_eval/gate_lists.py` builds these rows.
+A learned model reads model input rows, as [Structure of the search](structure.md#maps) gives them. Offline ranking keeps one model input row for each candidate query and ARC example, and a learned function has a value at each of a candidate's model input rows. Those values stay apart, since a rule has to hold at every ARC example. The model input rows have fixed columns, so a column means one thing on every model input row of every task. The count of ARC examples differs between tasks, so a model input row holds one ARC example's values and no column stands for an ARC example. `model/feature_eval/gate_lists.py` builds these model input rows.
 
-- **Columns:** a fit fixes its list of columns from train tasks and stores the list with the model. Every shape that a train table holds is a column, in each number its set reads.
-- **Duplicate columns:** columns equal on every train row are one column, named by the shortest label. A fit samples columns, and a set of duplicates would otherwise count once per member.
-- **Low-support columns:** a column with an entry on fewer rows than `min_data_in_leaf` stands in no fit, since one side of any split of it would hold too few rows.
-- **A shape's numbers:** these read a shape's greatest value. Its scope is the train examples where it reads the output, and every example otherwise.
-    - `each`: its value at the row's example. So a row keeps which value of one shape goes with which value of another at an example. Past a shape's scope it has no entry.
-    - `stable`: its value, on each of a candidate's rows, where it has one value at every example of its scope and that value is not the default. It states an invariant of the task, which a value at one example does not state.
-    - `mean`, `least` and `most`, over its scope: a reading for a fit with one row per candidate, which loses that pairing.
-- **Missing entries:** a missing entry takes its default. A shape with no value at any example has NaN, since that differs from the default.
-- **Beside the shapes,** on each of a candidate's rows:
+- **Columns:** a fit fixes its list of columns from train tasks and stores the list with the learned model. Every shape that a parameterized table of a train task holds is a column, in each number its set reads.
+- **Duplicate columns:** columns equal on every train model input row are one column, named by the shortest label. A fit samples columns, and a set of duplicates would otherwise count once per member.
+- **Low-support columns:** a column with an entry on fewer model input rows than `min_data_in_leaf` stands in no fit, since one side of any split of it would hold too few model input rows.
+- **A shape's numbers:** these read a shape's greatest value. Its scope is the train ARC examples where it reads the output, and every ARC example otherwise.
+    - `each`: its value at the model input row's ARC example. So a model input row keeps which value of one shape goes with which value of another at an ARC example. Past a shape's scope it has no entry.
+    - `stable`: its value, on each of a candidate's model input rows, where it has one value at every ARC example of its scope and that value is not the default. It states an invariant of the task, which a value at one ARC example does not state.
+    - `mean`, `least` and `most`, over its scope: a reading for a fit with one model input row per candidate, which loses that pairing.
+- **Missing entries:** a missing entry takes its default. A shape with no value at any ARC example has NaN, since that differs from the default.
+- **Beside the shapes,** on each of a candidate's model input rows:
     - The query's body, with no table content.
-    - What the table has against the tables its query reads and the input: its entries, its stable entries, those new to these tables, the share of its entries that each of them has, and its rows over theirs.
-    - Its count of assignments. A row reads one table at one assignment.
+    - What the parameterized table has against the parameterized tables its query reads and the input: its entries, its stable entries, those new to these parameterized tables, the share of its entries that each of them has, and its table row count over theirs.
+    - Its count of assignments. A model input row reads one parameterized table at one assignment.
     - Its task-wide roots.
-    - Its place in the state's graph, and the state's other tables against it: each shape's mean over the tables its query reads, over their ancestors and over the rest.
-- **What the task holds,** which is the same on every candidate's row at an example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a ground truth query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
+    - Its place in the state's graph, and the state's other parameterized tables against it: each shape's mean over the parameterized tables its query reads, over their ancestors and over the rest.
+- **What the task holds,** which is the same on every candidate's model input row at an ARC example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a ground truth query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
 
-## How a fit stores its rows
+## How a fit stores its model input rows
 
-A fit's rows are a normalized store. Each fact stands once, at the grain where it holds, and a row has a foreign key to one record of each grain.
+A fit's model input rows are a normalized store. Each fact stands once, at the grain where it holds, and a model input row has a foreign key to one record of each grain.
 
-- A value at one example stands in that row's record.
-- A value that every example of a candidate has stands in the candidate's record. It is that shape's `stable` number and, at each example of its scope, its `each` number.
-- What a task holds stands in the task's record, or in the record of the task at one example.
+- A value at one ARC example stands in that model input row's record.
+- A value that every ARC example of a candidate has stands in the candidate's record. It is that shape's `stable` number and, at each ARC example of its scope, its `each` number.
+- What a task holds stands in the task's record, or in the record of the task at one ARC example.
 
-`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A leaf's rows add their gradients to each record, and each record's entries then add those sums to the histogram once.
+`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A leaf's model input rows add their gradients to each record, and each record's entries then add those sums to the histogram once.
 
 ## Cost
 
-- The catalog takes 80 to 115 microseconds per table at one pair, on tables of a mean of 292 rows.
-- A table at one assignment on a task of 4 train pairs takes under half a millisecond.
-- The state search computes each `TableVector` once, when that table is first made, as its [specification](../state-search/state-search-spec.md) gives. The export adds no cache.
+- The catalog takes 80 to 115 microseconds per table at one pair, on tables of a mean of 292 table rows.
+- A parameterized table at one assignment on a task of 4 train pairs takes under half a millisecond.
+- The state search computes each `TableVector` once, when that parameterized table is first made, as its [specification](../state-search/state-search-spec.md) gives. The export adds no cache.
 
 ## Checks
 
 - **Against the first version:** every value of a sample of tables, by `model/feature_eval/catalog_check.py` for the catalog and `model/feature_eval/template_shapes.py` for written expressions, until the first version leaves.
 - **Against the definition:** each kind that has a written expression, evaluated through the engine beside the catalog.
 - **Under the group:** the transformation law and the reorder check of the [evaluation protocol](evaluation-protocol.md#checks).
-- **Between callers:** the export's vector and `arclog-features-py`'s are bit-equal on a sample, as the contract requires.
 
 ## What consumers do
 
 - A new schema version compares with no earlier one, so a fit reads the new names.
-- `TableHash` and the rows do not change, so the tables and the `RowStore` stay. A feature change writes no tables.
+- `TableHash` and the table rows do not change, so the tables and the `RowStore` stay. A feature change writes no tables.

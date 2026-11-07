@@ -9,10 +9,46 @@ no rewrite removes, and a relation that the decode gives no table, which
 
     <task_id> <relation> <rows per input> <test> <rewrite>
 
-The test is the first that derives the relation of the table of
-`docs/table-information.md#the-lint`, those that read no rows (the form of
-the clauses that make the relation, read from the arclog file) before those
-that read the rows of every rows file. The rewrite is a sentence that says
+The principle each line states is that a table should hold something the
+relations it is derived from do not. The test is the first of these that
+derives the relation, those that read no rows (the form of the clauses that
+make the relation, read from the arclog file) before those that read the rows
+of every rows file:
+
+    restatement             the rows equal another relation's, or a projection
+                            of one; the table holds nothing beyond the other
+                            relation
+    cell instance           an `edge` of Distance or Propagation whose body is
+                            the grid's adjacency inside a node set; the table
+                            holds nothing beyond the node set, which CellDistance
+                            or Flood takes alone
+    product                 the rows are the product of the projections onto a
+                            partition of the columns, or, for an input, a guard
+                            with no variable times a domain; the table holds
+                            nothing beyond the factors, or for a guard the
+                            conjuncts that bind the columns
+    closure                 the rows are the closure of a step relation inside a
+                            node set; the table holds nothing beyond the steps
+    order or class as pairs the key is a pair, and the rows are the pairs some
+                            column orders, or an equivalence's pairs; the table
+                            holds nothing beyond a score per member, or the
+                            classes
+    lib relation per pair   the rows are a lib relation (`same_line`,
+                            `neighbor`, `apply`) restricted to a cell set; the
+                            table holds nothing beyond the lib relation and the
+                            cell set
+    none                    a residual: the line gives the rows, the key and
+                            the bits per row
+
+The lines are hints. `--measure <task_id>` judges an edit of a solver by its
+tables: it converts the solver as committed and as its file now holds it, each
+apart from the corpus and cached by the solver's text, and prints each table's
+rows, summed over the inputs, on both sides, with the largest table, the
+tables over the cap and over the threshold, and whether the solver's tables got
+smaller. It marks a table that no relation of the solver is the source of, by
+the converter's name map, and it judges an edit that removes an instance of a
+lib component worse. An edit is kept where the solver still passes its pairs
+and its tables got smaller. The rewrite is a sentence that says
 what to change, from what the test found: the relation the table restates,
 the columns of each factor, the step relation of a closure, or the lib
 relation per pair, each column by the name the solver gives it in the rows

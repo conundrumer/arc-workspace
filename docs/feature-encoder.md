@@ -1,6 +1,6 @@
 # Feature encoder
 
-Status: record of a neural encoder beside a language model, a route the project left. [Features map](features-map.md) gives the current sources.
+Status: the design of the neural encoder beside a language model that `model/encoder.py` implements. The project left this route ([Goal](../work/goal.md)). Here a table is a parameterized table at one assignment, over every ARC example and constraint model, and a row is one of its table rows; [Terms](sample-build/contract.md#terms) gives the other words.
 
 An encoder turns the tables the engine computes during a decode into feature tokens that the program language model reads. It rests on one hypothesis: learned heuristics that read intermediate computations make program search efficient.
 
@@ -100,7 +100,7 @@ Attention among a table's rows costs the square of the row count.
 
 The row cap of [Decode settings](engine/synthesis.md#decode-settings) bounds the rows of one entry, since a larger relation gives its projections there ([Tables](#tables)). It is the bound of the export. A table's rows are the sum over its entries, so a table can hold far more rows than the row cap, and the main branch has large tables: one corpus table has 30 entries and 66,144 rows.
 
-The encoder sees a derived table only up to a table cap on its rows, summed over its entries: 4,000 rows by default, `--enc-max-rows` of `train.py` and `pretrain.py`. The table cap applies to each assignment's table on its own. A derived table over the table cap is unseen: it enters with a constant marker, and the encoder learns nothing for it. A decode whose table exceeds the table cap runs with that table unseen from then on. The evidence tables are exempt. The table cap rests on these facts ([Large tables in the feature encoder](encoder-large-tables.md#decision)):
+The encoder sees a derived table only up to a table cap on its rows, summed over its entries: 4,000 rows by default, `--enc-max-rows` of `train.py` and `pretrain.py`. The table cap applies to each assignment's table on its own. A derived table over the table cap is unseen: it enters with a constant marker, and the encoder learns nothing for it. A decode whose table exceeds the table cap runs with that table unseen from then on. The evidence tables are exempt. The table cap rests on these facts:
 
 - 90% of derived tables hold at most 1,000 rows, and the median table holds 42. The 5% over 2,000 rows hold 84% of all rows, and attention costs the square of the row count.
 - Such tables are not what a solver holds in mind.

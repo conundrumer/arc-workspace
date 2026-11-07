@@ -16,16 +16,17 @@ The rules for the encoder from tables to features. [Arclog column types](arclog-
 
 ## Purpose
 
-Features support the program search and do not replace it. A feature expression has the form of a query, so a ground expression of size d shows the model what a query of that size would compute. An encoder run at a size large enough to reach the output would be the search itself, done by brute force.
+Features support the program search and do not replace it. A feature expression has the form of a query, so a ground expression of size d shows a learned model what a query of that size would compute. An encoder run at a size large enough to reach the output would be the search itself, done by brute force.
 
-The features are a superset of the first version: a model's row must give whatever the first version tells a model, in the forms of this specification. [Coverage of the first version](evaluation-protocol.md#coverage-of-the-first-version) measures this.
+The features are a superset of the first version: a model input row must give whatever the first version tells a learned model, in the forms of this specification. [Coverage of the first version](evaluation-protocol.md#coverage-of-the-first-version) measures this.
 
 ## Definition
 
 - A **feature** is arclog: forms that read tables of a state and base tables, and an `EXPORT` form that says what they give.
 - A solver extracts what it needs from a task in arclog, so arclog can state what a feature extracts. A feature is a solver's fragment with `EXPORT` in place of `OUT`.
-- Feature forms run after the state's queries and are not added to the state. A model never reads them as part of a program.
-- A feature's value is taken at one assignment, and a per-input value at one model. Arclog's own rules say how often a form runs: a `RULE` per input, a `DET` once for a task, and an instance of a component by what its bodies read.
+- Feature forms run after the state's queries and are not added to the state. A learned model never reads them as part of a program.
+- A feature's value is taken at one assignment, and a per-input value at one constraint model. Arclog's own rules say how often a form runs: a `RULE` per input, a `DET` once for a task, and an instance of a component by what its bodies read.
+- A feature expression's table hole is bound to a parameterized table at one assignment, and the expression is evaluated on each of that parameterized table's tables. [Levels](../sample-build/contract.md#levels) gives how the values combine.
 
 ## What the language gives by construction
 
@@ -71,7 +72,7 @@ Operand      ::= Column | 0
 - `LibRelation`, `LibColumn`: a `relation` or `macro` form of the registry, other than `pose_difference`, which takes Pose values, and one of its columns.
 - `Component`, `Input`, `Port`: a component of the registry, one of its inputs, and one of its outputs.
 - A proposer: a `proposer` form of the registry with no `domain` mark, read as the whole set of rows it gives. So it stands for no choice of a parameter. A domain belongs to determinations. The values of an orientation type come from a lib relation such as `dir_elem`, and the colors of a grid from a `project` of it.
-- `output`: the train output of the current example, with the columns `P` and `Col`. It has no rows on a test input. So a per-input feature can compare a table with the output of its own example, at each model. It stands where `input` stands in the rule that gives an instance's level, in the check of what a form reads, and in the frames, where its `P` stands in the current example's output.
+- `output`: the train output of the current ARC example, with the columns `P` and `Col`. It has no rows on a test input. So a per-input feature can compare a table with the output of its own ARC example, at each constraint model. It stands where `input` stands in the rule that gives an instance's level, in the check of what a form reads, and in the frames, where its `P` stands in the current ARC example's output.
 
 ### Aggregates
 
@@ -86,7 +87,7 @@ The root is one aggregate over a relation.
 
 Everything else is an operator under one of these. The number of distinct values of `x` is `(cardinality (project R x))`. The share of `R`'s rows that `S` matches is `(ratio (semijoin R S ...) R)`. Whether `x` determines `y` is whether `(ratio (component Singleton (member R (x) (y)) value) (project R x))` is 1. Whether one count is above, at or below another is whether their ratio is above, at or below 1. The greatest group size is a `value-set` over `Order`'s `maximal`.
 
-`ratio` is a root because a vector combines each entry over the examples on its own, which loses which value of one entry goes with which value of another at an example. Examples differ in scale, and a count changes with scale. A ratio of two counts is what stays fixed, so an invariant across examples of different sizes can show only there.
+`ratio` is a root because a vector combines each entry over the ARC examples on its own, which loses which value of one entry goes with which value of another at an ARC example. ARC examples differ in scale, and a count changes with scale. A ratio of two counts is what stays fixed, so an invariant across ARC examples of different sizes can show only there.
 
 ### Operators
 
@@ -118,7 +119,7 @@ A term is **entailed** where its value follows from smaller terms on every table
     - A `project` that keeps a key leaves the row count as it was.
     - A group count over a key of `T` is 1 at each group.
 - **Normal forms:** where two orders of operators are equal by their rules, as a `select` and a `semijoin` over columns it does not change are, one order is generated.
-- **Soundness:** a rule's claim is tested against evaluation on train tables, and a counterexample is a fault in the rule. No rule is taken from a corpus.
+- **Soundness:** a rule's claim is tested against evaluation on tables of the train ARC examples, and a counterexample is a fault in the rule. No rule is taken from a corpus.
 
 A rule need not be complete, since equivalence over negation and aggregates is undecidable, so a term that no rule rejects stays.
 
@@ -177,17 +178,17 @@ A derived relation's columns are its labels as written, so each operator's outpu
 
 ### Per input or task-wide
 
-An expression is **task-wide** where a leaf has an Example column (`ex_input`, `ex_output`, or a table with one), or is a proposer, since a proposer reads every example. Its `QUERY` forms expand to `DET`. Every other expression is **per input**, and its `QUERY` forms expand to `RULE`.
+An expression is **task-wide** where a leaf has an Example column (`ex_input`, `ex_output`, or a table with one), or is a proposer, since a proposer reads every ARC example. Its `QUERY` forms expand to `DET`. Every other expression is **per input**, and its `QUERY` forms expand to `RULE`.
 
 In a task-wide expression:
 
 - A per-input table is read in its lifted form, with a column `E`. `input` is read as `ex_input`, and `output` as `ex_output`.
 - A lifted read gives the label `E` to the Example column, so it cannot read a table's own column named `E`. The expansion first copies that table by a `RULE`, with that column under `E_2`.
-- `E` is a column like any other. A binary operator pairs it only where its pairs list it, so a `join` without that pair compares one example with another, and has `E` and `E_2`.
-- A macro states no pairs. So its atom on a grid hole has a site on `E` that joins the `E` of the macro's relation, and it reads that example's grid.
-- A `component` pools over the examples unless `E` is among its key columns, and a `project` that leaves out `E` pools too. An input's body keeps a site on `E` where its binding leaves `E` out, since a body that reads a per-input table with no such site makes the instance per input.
+- `E` is a column like any other. A binary operator pairs it only where its pairs list it, so a `join` without that pair compares one ARC example with another, and has `E` and `E_2`.
+- A macro states no pairs. So its atom on a grid hole has a site on `E` that joins the `E` of the macro's relation, and it reads that ARC example's grid.
+- A `component` pools over the ARC examples unless `E` is among its key columns, and a `project` that leaves out `E` pools too. An input's body keeps a site on `E` where its binding leaves `E` out, since a body that reads a per-input table with no such site makes the instance per input.
 - A lifted read of `ex_input` contains the test inputs, and `ex_output` contains train outputs alone. So an `antijoin` with `ex_output` keeps every row of a test input.
-- On a table with several models, the expression has no value, since no one table stands for every example. A `DET` that reads such a table gives a fault when it runs.
+- On a parameterized table with several constraint models at an ARC example, the expression has no value, since no one table stands for every ARC example. A `DET` that reads such a parameterized table gives a fault when it runs.
 
 A proposer leaf expands to one form, by the proposer's entry in the registry. A body atom cannot read a proposer, so a later form reads that form's relation.
 
@@ -209,33 +210,33 @@ A native proposer takes these forms as a proposer written in arclog does. The ot
 - Several atoms: the product of their projections, as a two-atom `OUT` gives. A `ratio` exports its two counts, each from its own atom, so arclog divides nothing. The encoder reduces the two to lowest terms outside arclog, which gives the exact fraction.
 - No feature compares a number with a literal. It exports the number.
 
-So `0` and "no value" differ. `cardinality` gives `0` on no rows. A ground expression has no value where its binding was refused, which means it does not exist, where a bound stopped it, where it is task-wide over a table with several models, or, for a `ratio`, where the second relation has no rows.
+So `0` and "no value" differ. `cardinality` gives `0` on no rows. A ground expression has no value where its binding was refused, which means it does not exist, where a bound stopped it, where it is task-wide over a parameterized table with several constraint models, or, for a `ratio`, where the second relation has no rows.
 
 ## Vectors
 
-The sample contract defines the vectors. This section gives their holes and how a shape stands for an entry.
+The [sample contract](../sample-build/contract.md) defines the vectors and their levels. This section gives their holes and how a shape stands for an entry.
 
 | Vector | Holes |
 |---|---|
-| TableVector | one table at one assignment, and the base tables |
-| QueryVector | the tables a query uses and the tables it computes, and the program relations, which ground the table features in the query's text |
-| State features | any tables of a state |
+| TableVector | one parameterized table at one assignment, and the base tables |
+| QueryVector | the parameterized tables a query uses and the parameterized tables it computes, and the program relations, which ground the table features in the query's text |
+| State features | any parameterized tables of a state |
 
-A table's **upstream tables** are the tables its query reads, and the tables those read in turn, down to the base tables, at the same assignment. An upstream table has one of two hole kinds: a **parent**, which the query reads, or an **ancestor**, which it reads through other queries. A shape with such a hole is a QueryVector entry. A TableVector is a function of its table's rows and the base tables, so two tables of one task with one `TableHash` have one vector.
+A parameterized table's **upstream tables** are the parameterized tables its query reads, and the parameterized tables those read in turn, down to the base tables, at the same assignment. An upstream table has one of two hole kinds: a **parent**, which the query reads, or an **ancestor**, which it reads through other queries. A shape with such a hole is a QueryVector entry. A TableVector is a function of its parameterized table's tables and the base tables, so two parameterized tables of one task with one `TableHash` have one vector.
 
 A vector entry is a **shape**: a ground expression that reads a table, with that table, any upstream table and each of their columns written as a hole. A column's hole is typed by the column's value type. Holes are numbered by first appearance, so the order of a table's columns does not enter. Each ground expression on a table has one shape. One shape has one ground expression for each binding of its holes to that table's columns that the checker accepts. The shape's name is its expression. So a shape has no cost beyond its ground expressions' size, and a version of the library and the registry, and a size, define one set of names for every table. A **list hole** stands for every column of the table that is a key column or has a type of a named set, as over a group's columns, so it has one binding on a table.
 
-A shape's value at an example is the multiset of its ground expressions' values there. With no binding, the shape is at its default.
+A shape's value at an ARC example is the multiset of its ground expressions' values there. With no binding, the shape is at its default.
 
 A vector is sparse. A table gives the entries whose value differs from the default, keyed by name, and the set of names needs no enumeration. An entry's default is its aggregate's value on no rows: `0`, false or the empty set. An entry with no value, such as one that a bound stopped, is stored as that, since it differs from the default. A `ratio` is the exception: one with no rows in its second relation is left out, since that relation's `nonempty` states it. A `ratio` of 0 is at its default, and where the second relation has rows, the `antijoin` in place of the `semijoin` gives 1 less the value, so a share of 0 shows as a share of 1 there.
 
-- A shape gives two numbers at each example: the greatest and the sum of its ground expressions' values. The sum of a `nonempty` is the number of bindings with a row. With one binding, the two are equal. A `ratio` gives the greatest and the least, since a sum of fractions counts nothing. A fraction is exact, so two examples have one value exactly where their fractions are equal.
+- A shape gives two numbers at each ARC example: the greatest and the sum of its ground expressions' values. The sum of a `nonempty` is the number of bindings with a row. With one binding, the two are equal. A `ratio` gives the greatest and the least, since a sum of fractions counts nothing. A fraction is exact, so two ARC examples have one value exactly where their fractions are equal.
 - A task-wide root gives those two numbers once.
-- A per-input root gives them per example and model. Within an example it takes the mean over the models, as the contract gives. The value at an example is the feature's value. A model reads it at each example, as [What a model reads](export-design.md#what-a-model-reads) gives. `:min`, `:mean` and `:max` entries, which the encoder combines outside arclog, are a reading for a model with one row per candidate: over the train examples where the expression has an `output` leaf, and over every example otherwise. They lose which value of one entry goes with which value of another at an example.
+- A per-input root gives them per ARC example and constraint model. Within an ARC example it takes the mean over the constraint models, as the contract gives. The value at an ARC example is the feature's value. A learned model reads it at each ARC example, as [What a learned model reads](export-design.md#what-a-learned-model-reads) gives. The `least`, `mean` and `most` entries, which the encoder combines outside arclog, are a reading for a learned model with one model input row per candidate: over the train ARC examples where the expression has an `output` leaf, and over every ARC example otherwise. They lose which value of one entry goes with which value of another at an ARC example.
 - A `value-set` over one number column gives a number where the set has one member, and no value otherwise. `Order`'s `maximal` and `minimal` give such a column. Another `value-set` is no vector entry, and it is for a consumer that reads a set.
 - In a QueryVector, a hole's type can also state the column's lineage root, as [What column metadata adds to features](arclog-types.md#what-column-metadata-adds-to-features) gives.
-- A task-wide count over the rows of every example depends on how many examples there are, so a ratio pairs it with that count.
-- Pools over assignments stay as the contract gives them: symmetric functions of the vectors, outside arclog. Assignments are not columns.
+- A task-wide count over the table rows of every ARC example depends on how many ARC examples there are, so a ratio pairs it with that count.
+- Aggregates over assignments are as the contract gives them: symmetric functions of the vectors, outside arclog. Assignments are not columns.
 
 ### State features
 
@@ -252,7 +253,7 @@ A value stands two ways: at the pair (T, U), and pooled into T over each U by U'
 
 The state's graph gives its own numbers, each of which counts members, so none depends on the order of a program's forms: a table's depth and its depth below the deepest member, whether it is a root or a leaf, how many tables it reads and how many read it, its ancestors and its descendants, and how many other tables have its rows.
 
-A shape over the base parts that reads no other table stands in a vector of the task's own, at each example. That vector is the same for every candidate of a task, so a comparison of candidates reads it only through what it says together with theirs.
+A shape over the base parts that reads no other table stands in a vector of the task's own, at each ARC example. That vector is the same for every candidate of a task, so a comparison of candidates reads it only through what it says together with theirs.
 
 ## Program relations
 
@@ -273,12 +274,12 @@ A feature that reads the program text is an arclog query over these relations, i
 
 ## Coverage
 
-**Definition.** Features cover a difference between two databases when at least one feature gives a different value on them. A gap is a difference that no feature sees. A database here is a table with the grids it is read against, at one of two levels:
+**Definition.** Features cover a difference between two databases when at least one feature gives a different value on them. A gap is a difference that no feature sees. A database here is a table, or the tables of one constraint model, with the grids they are read against, at one of two levels:
 
 | Level | Table | Database | Features |
 |---|---|---|---|
-| One example | no Example column | one model's rows at that example, its input and its train output | per input |
-| The task | one model at every example | its rows at every example, every input and every train output | task-wide |
+| One ARC example | no Example column | one table at that ARC example, its input and its train output | per input |
+| The task | one constraint model at every ARC example | its tables at every ARC example, every input and every train output | task-wide |
 
 Two databases are compared under one schema: column names, types, sources and frames. A different schema shows in which expressions the checker accepts.
 
@@ -322,28 +323,17 @@ If a symmetry relates two databases, their values are equal. The program is equi
     4. The other orientation values map by g's action, since their lib relations determine them from the edges.
     5. The colors that occur map by a bijection, which extends to a color permutation.
     6. The Idents in the rows of a remade output map by the bijection that the symmetry induces, since those rows must be kept, and they determine what each Ident labels. Any other Ident, and the poses of each assembly, map by a bijection.
-    7. At the level of the task, the examples map by a bijection. It keeps train pairs and test inputs apart, since only a train pair has output rows.
+    7. At the level of the task, the ARC examples map by a bijection. It keeps train pairs and test inputs apart, since only a train pair has output rows.
 
     So the rows of one table are the rows of the other under a symmetry.
 
 **What this does not say.**
 
-- The guarantee is about ground expressions. A vector entry combines over bindings and examples, so it sees less. It loses which value of one entry goes with which value of another at an example, and `ratio` keeps that pairing for two counts.
-- At the level of the task, a table with several models at an example has no value, so its models stay unseen there.
+- The guarantee is about ground expressions. A vector entry combines over bindings and ARC examples, so it sees less. It loses which value of one entry goes with which value of another at an ARC example, and `ratio` keeps that pairing for two counts.
+- At the level of the task, a parameterized table with several constraint models at an ARC example has no value, so its constraint models stay unseen there.
 - The proof reads `join`, `lib-join`, `select`, `project`, `union`, `Cardinality` and `value-set`. So every other operator adds nothing at unbounded size. Connectivity, Flood, `semijoin`, `antijoin` and `all` lower the size at which a difference appears, and a feature expression's size does not measure pattern size for them. A `ratio` is a function of two `cardinality` values.
 - The guarantee needs patterns as large as the data. At a fixed size, different databases can stay unseen, and a separation check is how they are found.
-- Seeing a difference is not usefulness. A digest of the whole table would have full coverage and teach a model nothing. Coverage is necessary and not sufficient.
-
-## What in the sample contract changes
-
-The contract holds except where this list changes it.
-
-- A feature is defined in arclog. An implementation that runs faster is a separate matter, and it is checked against the definition, as a native lib element is. This replaces "written once in the crate, which has no engine dependency".
-- A number from arclog is an integer. A `ratio`'s value is an exact fraction, stored as two integers in lowest terms.
-- `names` and `values` become a sparse map from name to value, in place of one list of names and one float per name.
-- `types` includes the Ident source, since a shape's bindings depend on it.
-- A feature's value at an example is defined per expression, and a model reads it at each example, as [What a model reads](export-design.md#what-a-model-reads) gives. In the contract, a feature combines over examples as it defines. The aggregates over assignments stay as the contract gives them.
-- The rule "where colors tie for the most common, the lowest color is taken" goes, since it is a free choice. Under a tie, `Order`'s `maximal` output contains every tied member.
+- Seeing a difference is not usefulness. A digest of the whole table would have full coverage and teach a learned model nothing. Coverage is necessary and not sufficient.
 
 ## Computational limits
 

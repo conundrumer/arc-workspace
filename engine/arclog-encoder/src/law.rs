@@ -1,5 +1,5 @@
 //! The check of the transformation law on a sample of tables, which
-//! `work/feature-spec/directive.md` gives: an element of D4 and a color
+//! `docs/feature-spec/evaluation-protocol.md` gives: an element of D4 and a color
 //! permutation act on a table's rows and on the grids, the result is read as
 //! stored rows, and each feature is compared. An invariant feature keeps its
 //! value, and an equivariant one moves by the group's action. A difference is a

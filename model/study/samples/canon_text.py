@@ -1,6 +1,6 @@
 """The canonical text of one form, the `body` of a target function, and the stand-in for the engine's canonical form.
 
-The engine exposes no canonical text to Python, so this module writes one (spec Part 3, "The canonical text"; contract, `TargetFunction.body`). It is the `body` of a function, not its hash: `function_hash.py` gives the engine's FunctionHash.
+The engine exposes no canonical text to Python, so this module writes one (contract, `TargetQuery.body`). It is the `body` of a function, not its hash: `function_hash.py` gives the engine's FunctionHash.
 
 - The form's own label is dropped.
 - A reference is written by the caller's `refs`: the table it uses, `@<FunctionHash>.<Name>`.

@@ -1429,7 +1429,7 @@ def _member_maps(k, ka, ca, ex):
 
 def pair_test(ftypes, fk, shaped, n_train):
     """(the test that makes a factor of two columns of one type degenerate, or None; whether PAIR_CANDIDATES or an
-    earlier Table without keyed rows cut the tests), the lint's tests of docs/table-information.md against the
+    earlier Table without keyed rows cut the tests), the lint's tests of src/study/table_lint.py against the
     earlier Tables [(types, rows, keyed rows)], each at every train example:
     - `class`: the pairs (x, y) of members of one class, x = y kept or left out, where some earlier Table gives each
       member of one of its columns one value of another column (a class membership);

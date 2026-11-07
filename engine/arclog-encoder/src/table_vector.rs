@@ -1,10 +1,11 @@
-//! `TableVector`: the features of one table at one assignment, and the base tables', as the
-//! contract and the specification's section on vectors give them. A shape gives two numbers at each
-//! example: the greatest and the sum of its ground expressions' values, or for a `ratio` the
-//! greatest and the least. Within an example it takes the mean over the example's TableRows.
+//! `TableVector`: the features of one parameterized table at one assignment, and the base tables',
+//! as the contract and the specification's section on vectors give them. A shape gives two numbers
+//! at each ARC example: the greatest and the sum of its ground expressions' values, or for a `ratio`
+//! the greatest and the least. Within an ARC example it takes the mean over the ARC example's tables.
 //!
-//! A vector is a function of the table's rows and of the grids it is given, so two tables with one
-//! `TableHash` have one vector. A caller that reads a table against other outputs gives other grids.
+//! A vector is a function of the parameterized table's tables and of the grids it is given, so two
+//! parameterized tables with one `TableHash` have one vector. A caller that reads a parameterized
+//! table against other outputs gives other grids.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -69,7 +70,7 @@ pub struct TableVector {
     pub meta: Vec<(u8, u8, RootOf)>,
     /// `examples` slots per shape.
     pub slots: Vec<Slot>,
-    /// The mean and the greatest over the examples of the count of an example's TableRows.
+    /// The mean and the greatest over the ARC examples of the count of an ARC example's tables.
     pub table_rows: (f64, u32),
 }
 
@@ -155,7 +156,7 @@ fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usiz
     TableVector { train, examples, shapes, meta, slots, table_rows }
 }
 
-/// A root's numbers at an example: the mean over its TableRows, where a default counts as 0.
+/// A root's numbers at an ARC example: the mean over its tables, where a default counts as 0.
 fn mean_over_models(held: &[&Slot]) -> Slot {
     let Some(first) = held.first() else { return Slot::default() };
     if held.len() == 1 {

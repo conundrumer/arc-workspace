@@ -412,7 +412,7 @@ def grow(self, deadline, every=50):
 def pool_init(self, *args):
     _init(self, *args)
     self.run.want_rows = False  # the state search reads no rows: one rows=False export per step
-    self.run.lim = dataclasses.replace(self.run.lim, one_repair=0.0)  # the ONE repair needs the rows of every table, and on the state search it fit none (search-worker/kit-decisions.md)
+    self.run.lim = dataclasses.replace(self.run.lim, one_repair=0.0)  # the ONE repair needs the rows of every table, and on the state search it fit none
     self.states, self.state_ids, self.frontier, self.expanded = {}, {}, [], 0
     self.expansions_out = open(self.a.out_path + '.expansions', 'a')
 
