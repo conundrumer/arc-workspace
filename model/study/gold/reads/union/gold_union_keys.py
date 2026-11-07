@@ -13,14 +13,15 @@ A case is a line of cases-SET.jsonl. The union is union-SET.jsonl with union-SET
 import glob, json, os, re, sys
 import gold_union_code
 from gold_union import OUT, Bar, forms_of, out_of_scope, program_lines, shards, union_rows
+import study_zst as Z  # on the path since gold_union is imported
 
 
 def union(s):
-    if os.path.exists(OUT + 'union-%s.jsonl' % s):
+    if Z.exists(OUT + 'union-%s.jsonl' % s):
         return list(union_rows(s))
     got = {}
     for p in shards(s):
-        for l in open(p):
+        for l in Z.open_text(p):
             if l.endswith('\n'):
                 r = json.loads(l)
                 got[r['task']] = r
@@ -28,35 +29,35 @@ def union(s):
 
 
 def key_shards(s):
-    return [p for p in glob.glob(OUT + 'union-keys-%s-*.jsonl' % s) if re.search(r'-\d+\.jsonl$', p)]
+    return [p for p in Z.glob(OUT + 'union-keys-%s-*.jsonl' % s) if re.search(r'-\d+\.jsonl$', p)]
 
 
 def merge(s):
     got, aside = {}, out_of_scope()
     for p in key_shards(s):
-        for l in open(p):
+        for l in Z.open_text(p):
             if l.endswith('\n'):
                 c = json.loads(l)
                 if c['task'] not in aside:
                     got[c['task'], c['case']] = l
     with open(OUT + 'union-keys-%s.jsonl.part' % s, 'w') as out:
-        for l in open(OUT + 'cases-%s.jsonl' % s):
+        for l in Z.open_text(OUT + 'cases-%s.jsonl' % s):
             c = json.loads(l)
             if (c['task'], c['case']) in got:
                 out.write(got.pop((c['task'], c['case'])))
     os.replace(OUT + 'union-keys-%s.jsonl.part' % s, OUT + 'union-keys-%s.jsonl' % s)
     gold_union_code.write_sidecar(OUT + 'union-keys-%s.jsonl' % s)
-    print(len({json.loads(l)['task'] for l in open(OUT + 'union-keys-%s.jsonl' % s)}), 'tasks')
+    print(len({json.loads(l)['task'] for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s)}), 'tasks')
 
 
 def stream(s, k, n):
     rows = union(s)
     only = os.environ.get('UNION_TASKS', '').split()
-    done = {json.loads(l)['task'] for p in key_shards(s) for l in open(p) if l.endswith('\n')}
+    done = {json.loads(l)['task'] for p in key_shards(s) for l in Z.open_text(p) if l.endswith('\n')}
     keys = {u['task']: {f['ident']: x['key'] for x in u.get('tables') or [] for f in x['forms']} for i, u in enumerate(rows) if (u['task'] in only if only else i % n == k) and u['task'] not in done}
     print(len(keys), 'tasks', flush=True)
     cases = {}
-    for l in open(OUT + 'cases-%s.jsonl' % s):
+    for l in Z.open_text(OUT + 'cases-%s.jsonl' % s):
         c = json.loads(l)
         if c['task'] in keys and c['excluded'] != 'True':
             cases.setdefault(c['task'], []).append(c)
@@ -90,7 +91,7 @@ def main():
     n = miss = 0
     bar = None
     with open(OUT + 'union-keys-%s.jsonl.part' % s, 'w') as out:
-        for l in open(OUT + 'cases-%s.jsonl' % s):
+        for l in Z.open_text(OUT + 'cases-%s.jsonl' % s):
             c = json.loads(l)
             if c['task'] not in keys or c['excluded'] == 'True':
                 continue

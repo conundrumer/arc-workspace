@@ -1,6 +1,6 @@
 """The programs of the union gold of one task set, one line per program: the pinned program (case `pinned`, source view-final, where view-final has one) and every case of each task's solver from the latest empty-gold publication, with `excluded` true for the cases gen-v3's excluded-case-files.tsv lists. Writes cases-<set>.jsonl and its sha256 in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union).
 
-  python3 gold_union_cases.py SET      SET: train, dev or held-out
+  .venv/bin/python gold_union_cases.py SET      SET: train, dev or held-out
 """
 import hashlib, json, os, sys
 import gold_case_counts as K

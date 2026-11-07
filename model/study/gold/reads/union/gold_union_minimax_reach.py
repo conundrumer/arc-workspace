@@ -1,12 +1,15 @@
 """The minimax path of each task of one set against the search jobs that reached its tables. Writes minimax-reach-SET.json in work/lm/data-study/gold/gold-union and prints one line per task.
 
-  python3 gold_union_minimax_reach.py SET [JOB_PREFIX]
+  .venv/bin/python gold_union_minimax_reach.py SET [JOB_PREFIX]
 
 - The minimax path is `minimax_path` of graph-tasks-SET.jsonl, by its `idents`; its productions come from graph-prods-SET.jsonl.
 - A job is a line of search-worker's reach-SET.jsonl whose `job` starts with JOB_PREFIX (all jobs where it is left out), at 600 s. Its reached tables are named as in gold_union_reach.py, through outmap-SET.jsonl and the graph tables' `members`.
 - A production on the path is done when each of its heads is reached, or read past by a reached table. Per job: done, left, and left over CUT bits (12.6, one job's reach).
 """
 import json, ast, collections, statistics, sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 W = '/Users/davidlu/code/arc-workspace/work/lm/data-study/'
 U = W + 'gold/gold-union/'
 RUNS = W + 'sampler/search-worker/runs/search-union-reach-ramp22-heldout37/'
@@ -16,15 +19,15 @@ names = {}
 for r in map(json.loads, open(RUNS + 'outmap-%s.jsonl' % SET)):
     names[r['task'], r['table']] = str(r['key']) if not r['component'] else '%d.%s' % (r['key'], r['name']) if r['name'] else None
 member_of = collections.defaultdict(dict)
-for r in map(json.loads, open(U + 'graph-tables-%s.jsonl' % SET)):
+for r in map(json.loads, Z.open_text(U + 'graph-tables-%s.jsonl' % SET)):
     for m in r['members']:
         member_of[r['task']][m] = r['table']
-prods = {(p['task'], p['ident']): p for p in map(json.loads, open(U + 'graph-prods-%s.jsonl' % SET))}
+prods = {(p['task'], p['ident']): p for p in map(json.loads, Z.open_text(U + 'graph-prods-%s.jsonl' % SET))}
 reads = collections.defaultdict(lambda: collections.defaultdict(set))
 for p in prods.values():
     for h in p['heads']:
         reads[p['task']][h] |= set(p['reads'])
-tasks = {json.loads(l)['task']: json.loads(l) for l in open(U + 'graph-tasks-%s.jsonl' % SET)}
+tasks = {json.loads(l)['task']: json.loads(l) for l in Z.open_text(U + 'graph-tasks-%s.jsonl' % SET)}
 jobs = collections.defaultdict(list)
 for r in map(json.loads, open(RUNS + 'reach-%s.jsonl' % SET)):
     if not str(r['job']).startswith(JOBS):

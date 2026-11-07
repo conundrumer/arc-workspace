@@ -11,5 +11,5 @@ for ((k=0; k<$2; k++)); do
 done
 wait
 cat $S/tor/$1-*.jsonl > $S/tor/$1-all.jsonl
-python3 $U/runs/apply_reruns.py $1 $S/tor/$1-all.jsonl
+.venv/bin/python $U/runs/apply_reruns.py $1 $S/tor/$1-all.jsonl
 .venv/bin/python $U/gold_union_fits.py $1 merge

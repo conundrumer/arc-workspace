@@ -11,6 +11,7 @@
 """
 import collections, json, sys
 from gold_union import forms_of, program_lines
+import study_zst as Z  # on the path since gold_union is imported
 
 OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 
@@ -18,7 +19,7 @@ OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 def case_idents(s):
     """Per task, the set of form identities of each case."""
     out = collections.defaultdict(list)
-    for l in open(OUT + 'union-keys-%s.jsonl' % s):
+    for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s):
         c = json.loads(l)
         fs, _ = forms_of([x for x in program_lines(c['text']) if not x.startswith('(OUT')])
         out[c['task']].append({f['ident'] for f in fs})
@@ -45,8 +46,8 @@ def counts(prods, cases):
 def main():
     out = {}
     for s in sys.argv[1:]:
-        depth = {(t['task'], t['table']): t['depth'] for t in map(json.loads, open(OUT + 'graph-tables-%s.jsonl' % s))}
-        prods = [json.loads(l) for l in open(OUT + 'graph-prods-%s.jsonl' % s)]
+        depth = {(t['task'], t['table']): t['depth'] for t in map(json.loads, Z.open_text(OUT + 'graph-tables-%s.jsonl' % s))}
+        prods = [json.loads(l) for l in Z.open_text(OUT + 'graph-prods-%s.jsonl' % s)]
         cases = case_idents(s)
         nonempty = [p for p in prods if p['reads']]
         r = dict(all=counts(prods, cases), without_empty=counts(nonempty, cases), per_head_depth={})

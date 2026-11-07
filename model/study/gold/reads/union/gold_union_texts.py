@@ -1,6 +1,6 @@
 """The union identities as text: counts for a model that writes a form as text. Prints the counts and writes texts-SET.json in work/lm/data-study/gold/gold-union.
 
-  python3 gold_union_texts.py SET [SET ...]
+  .venv/bin/python gold_union_texts.py SET [SET ...]
 
 - A form is one union identity of a task: a `forms` entry of union-SET.jsonl (with its addendum), whose `text` is the union's normal form.
 - Canonical text: the form's own label becomes `&H`, and each other label of the program becomes `&R<i>`, i by the order of first reference in the form, keeping an output suffix such as `.cell`. Two forms of different tasks with the same canonical text are a repeat.
@@ -14,6 +14,9 @@
   - column labels, markers (`*`, `^`) and constants (numbers).
 """
 import collections, json, re, sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
+import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 
 OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 TOKEN = re.compile(r'\(|\)|&[A-Za-z_]\w*(?:\.\w+)*|:\w+|[*^]\w+|>=|<=|!=|=|<|>|[A-Za-z_]\w*|-?\d+|\S')
@@ -26,7 +29,7 @@ def rows(s):
     got = {}
     for p in (OUT + 'union-%s.jsonl' % s, OUT + 'union-%s-addendum.jsonl' % s):
         try:
-            for l in open(p):
+            for l in Z.open_text(p):
                 r = json.loads(l)
                 got[r['task']] = r
         except FileNotFoundError:

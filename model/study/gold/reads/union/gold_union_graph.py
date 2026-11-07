@@ -22,6 +22,7 @@ sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/go
 import gold_case_counts as G
 import gold_union_code
 from gold_union import OUT, forms_of, union_rows
+import study_zst as Z  # on the path since gold_union is imported
 from gold_cheapest_common import D, program_lines
 from gold_union_tables import Tables, tables_of
 
@@ -387,7 +388,7 @@ def main():
                 if '~' in r['task']:
                     rows5[r['task'].split('~')[0]].append(r)
     cases = collections.defaultdict(list)
-    for l in open(OUT + 'union-keys-%s.jsonl' % s):
+    for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s):
         c = json.loads(l)
         cases[c['task']].append(c)
     outname, registry = {}, ports()

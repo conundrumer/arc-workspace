@@ -8,18 +8,19 @@
 """
 import collections, json, re, sys
 from gold_union import OUT, forms_of, program_lines
+import study_zst as Z  # on the path since gold_union is imported
 
 
 def main():
     s = sys.argv[1]
-    tasks = {json.loads(l)['task']: json.loads(l) for l in open(OUT + 'graph-tasks-%s.jsonl' % s)}
-    prods = {(p['task'], p['ident']): p for p in map(json.loads, open(OUT + 'graph-prods-%s.jsonl' % s))}
+    tasks = {json.loads(l)['task']: json.loads(l) for l in Z.open_text(OUT + 'graph-tasks-%s.jsonl' % s)}
+    prods = {(p['task'], p['ident']): p for p in map(json.loads, Z.open_text(OUT + 'graph-prods-%s.jsonl' % s))}
     want = collections.defaultdict(set)
     for t, k in tasks.items():
         for which in ('path', 'minimax_path'):
             want[t] |= set((k.get(which) or {}).get('idents', []))
     at = {}
-    for l in open(OUT + 'union-keys-%s.jsonl' % s):
+    for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s):
         c = json.loads(l)
         if not want.get(c['task']):
             continue

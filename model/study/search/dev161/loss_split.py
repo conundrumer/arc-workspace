@@ -16,17 +16,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 import reach as R
+import study_zst as Z
 
 run, arm = Path(sys.argv[1]), sys.argv[2]
 out = open(sys.argv[3], 'w') if len(sys.argv) > 3 else None
-U = R.DATA / 'gold/gold-union-exp46'
+U = R.UNION
 skip = {json.loads(l)['task'] for l in open(R.OUT_OF_SCOPE)}
 tables = collections.defaultdict(dict)
-for r in map(json.loads, open(U / 'graph-tables-dev.jsonl')):
+for r in map(json.loads, Z.open_text(U / 'graph-tables-dev.jsonl')):
     if r['table'].startswith('t') and r.get('kind') != 'DEMONSTRATED':
         tables[r['task']][r['table']] = r
 prods = collections.defaultdict(lambda: collections.defaultdict(list))
-for p in map(json.loads, open(U / 'graph-prods-dev.jsonl')):
+for p in map(json.loads, Z.open_text(U / 'graph-prods-dev.jsonl')):
     for h in p['heads']:
         prods[p['task']][h].append(p)
 band = lambda d: '0' if d == 0 else '1' if d == 1 else '2-3' if d <= 3 else '4+'  # noqa: E731

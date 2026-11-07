@@ -1,6 +1,6 @@
 """Write the union outputs of each split (train, dev, held-out) from the outputs of the old sets (ramp, 37, training, 62) in GOLD_UNION_DIR, by task. Every output is per task (cases, fits, union rows, keys and graph lines), so a split's file is the lines of its tasks, with `set` changed to the split's name. gold_union_walks.py SPLIT then gives the walks of a split.
 
-  GOLD_UNION_DIR=<folder> python3 split_outputs.py
+  GOLD_UNION_DIR=<folder> .venv/bin/python split_outputs.py
 
 - The split of a task is its `split` column in model/study/samples/split_design/split2.tsv, where 'held' and 'held-out' both name held-out.
 - Each output records the code stamps of its sources: the one stamp they share, else "code" null and "mixed" listing them (gold_union_code.py).
@@ -8,6 +8,8 @@
 """
 import hashlib, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../..'))  # model/study
+import study_zst as Z  # the outputs are zstd streams or plain files, whichever is on disk
 
 ROOT = '/Users/davidlu/code/arc-workspace/'
 G = os.environ['GOLD_UNION_DIR'] + '/'
@@ -36,9 +38,9 @@ def sidecar(old_paths):
 
 def lines(kind):
     """{split: [line]} of G + kind % old set, over the old sets, and the source paths."""
-    got, paths = {s: [] for s in SPLITS}, [G + kind % o for o in OLD if os.path.exists(G + kind % o)]
+    got, paths = {s: [] for s in SPLITS}, [G + kind % o for o in OLD if Z.exists(G + kind % o)]
     for p in paths:
-        for l in open(p):
+        for l in Z.open_text(p):
             r = json.loads(l)
             if r.get('t') == 'header':
                 continue
@@ -59,7 +61,7 @@ def main():
     unions, union_paths = lines('union-%s.jsonl')
     keys, keys_paths = lines('union-keys-%s.jsonl')
     graph = {f: lines('graph-' + f + '-%s.jsonl') for f in ('tables', 'prods', 'tasks')}
-    fits_code = joined([json.loads(open(p).readline())['code'] for p in fits_paths])
+    fits_code = joined([json.loads(Z.open_text(p).readline())['code'] for p in fits_paths])
     union_code = joined([json.load(open(p.replace('.jsonl', '.manifest.json')))['code'] for p in union_paths])
     for s in SPLITS:
         sha = write(G + 'cases-%s.jsonl' % s, ''.join(l for _, l in cases[s]))

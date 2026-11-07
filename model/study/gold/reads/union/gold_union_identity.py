@@ -1,6 +1,6 @@
 """The text-level union gold of one task set: every non-excluded case of each task's solver and the pinned program, with forms merged by identity only (text with each read replaced by its ancestry, labels dropped), so equal tables made by different text stay apart and the table count is an upper bound. Writes union-identity-<set>.jsonl and its sha256 in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union). design.md gives the cases and the table fields.
 
-  python3 gold_union_identity.py SET      SET: train, dev or held-out
+  .venv/bin/python gold_union_identity.py SET      SET: train, dev or held-out
 """
 import gzip, hashlib, json, os, re, sys
 import gold_case_counts as K

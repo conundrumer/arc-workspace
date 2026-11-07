@@ -13,6 +13,8 @@ SRC = '/Users/davidlu/code/arc-workspace/work/lm/data-study/sampler/sampler-work
 KIT = OUT + '/kit-union-read-79af0a4f2'
 UNION = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union').rstrip('/') + '/'  # the union files' folder
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/gold/reads/union')
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../model/study'))  # study_zst.py
+import study_zst as Z  # noqa: E402  the union files and the records are zstd streams or plain files, whichever is on disk
 import gold_case_counts as K  # noqa: E402
 import gold_union_identity as I  # noqa: E402
 
@@ -161,12 +163,12 @@ def merged_rows(want):
     the set_aside of union-<set>.manifest.json. Each record gets src, a hash of its line, so that a changed line is built again."""
     rows, files, aside = {}, [], {}
     names = ['union-%s.jsonl' % want]
-    if not os.path.exists(UNION + names[0]):
-        names = sorted((n for n in os.listdir(UNION) if re.fullmatch(r'union-%s-\d+\.jsonl' % re.escape(want), n)), key=lambda n: int(n.rsplit('-', 1)[1][:-6]))
+    if not Z.exists(UNION + names[0]):
+        names = sorted((n for n in Z.listdir(UNION) if re.fullmatch(r'union-%s-\d+\.jsonl' % re.escape(want), n)), key=lambda n: int(n.rsplit('-', 1)[1][:-6]))
     for name in names + ['union-%s-addendum.jsonl' % want]:
-        if os.path.exists(UNION + name):
+        if Z.exists(UNION + name):
             files.append(name)
-            for line in open(UNION + name):
+            for line in Z.open_text(UNION + name):
                 r = json.loads(line)
                 r['src'] = hashlib.sha256(line.strip().encode()).hexdigest()[:16]
                 rows.pop(r['task'], None), aside.pop(r['task'], None)
@@ -185,14 +187,14 @@ def merged_rows(want):
 
 def task_order(want):
     """The set's tasks, in the order of union-identity-<set>.jsonl; while that file is missing, the tasks of the union lines so far, in their order."""
-    if not os.path.exists(UNION + 'union-identity-%s.jsonl' % want):
+    if not Z.exists(UNION + 'union-identity-%s.jsonl' % want):
         return list(merged_rows(want)[0])
-    return [json.loads(l)['task'] for l in open(UNION + 'union-identity-%s.jsonl' % want)]
+    return [json.loads(l)['task'] for l in Z.open_text(UNION + 'union-identity-%s.jsonl' % want)]
 
 
 def records(want):
     """The last record of each task in records-<set>.jsonl that is not set aside, in task_order."""
-    last = {r['task']: r for r in map(json.loads, open(OUT + '/records-%s.jsonl' % want))}
+    last = {r['task']: r for r in map(json.loads, Z.open_text(OUT + '/records-%s.jsonl' % want))}
     aside = merged_rows(want)[2]
     return [last[t] for t in task_order(want) if t in last and t not in aside]
 
@@ -240,7 +242,7 @@ def main():
                 if r['task'] in maps:
                     r['map'], r['check'] = maps[r['task']]['map'], maps[r['task']]['check']
         recs += rows
-        sources[want] = dict(tasks=len(rows), set_aside={t: str(v)[:200] for t, v in sorted(aside.items())}, merged_tasks=sum(r['merged'] != 'text' for r in rows), files={n: hashlib.sha256(open(UNION + n, 'rb').read()).hexdigest() for n in files},
+        sources[want] = dict(tasks=len(rows), set_aside={t: str(v)[:200] for t, v in sorted(aside.items())}, merged_tasks=sum(r['merged'] != 'text' for r in rows), files={n: Z.sha256(UNION + n) for n in files},
                              forms_unkeyed=sum(r.get('forms_unkeyed', 0) for r in rows), mapped=sum('map' in r for r in rows),
                              map_seconds=round(sum(m['seconds'] for m in maps.values()), 1), map_failed_programs=sum(m['failed'] for m in maps.values()))
     with open(KIT + '/gold-union.json.part', 'w') as f:  # renamed into place, so a reader sees the old file or the new one

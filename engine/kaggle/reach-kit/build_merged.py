@@ -12,6 +12,8 @@ OUT = os.environ.get('UNION_REACH_OUT', '/Users/davidlu/code/arc-workspace/work/
 UNION = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union').rstrip('/') + '/'  # the union files' folder
 sys.path.insert(0, '/Users/davidlu/code/arc-workspace/model/study/gold/reads/union')
 sys.path.insert(0, HERE)
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../model/study'))  # study_zst.py
+import study_zst as Z  # noqa: E402  the union files and the records are zstd streams or plain files, whichever is on disk
 import gold_union as U  # noqa: E402
 import build as B  # noqa: E402
 
@@ -62,7 +64,7 @@ def main():
     merged_only = '--merged-only' in args  # no text-level record for a task with no merged line
     for want in [a for a in args if a != '--merged-only']:
         out = OUT + '/records-%s.jsonl' % want
-        done = {r['task']: r.get('src', 'text' if r['merged'] == 'text' else None) for r in map(json.loads, open(out))} if os.path.exists(out) else {}
+        done = {r['task']: r.get('src', 'text' if r['merged'] == 'text' else None) for r in map(json.loads, Z.open_text(out))} if Z.exists(out) else {}
         merged, _, aside = B.merged_rows(want)
         order = B.task_order(want)
         todo = [(t, merged.get(t), want) for t in order if t not in aside and (

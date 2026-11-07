@@ -1,6 +1,6 @@
 """The union forms under the target-form canonical text, with counts. Prints the counts and writes canonical-SET.json in work/lm/data-study/gold/gold-union.
 
-  python3 gold_union_canonical.py SET [SET ...]
+  .venv/bin/python gold_union_canonical.py SET [SET ...]
 
 The canonical text of a form:
 - The form's own label is dropped.
@@ -16,6 +16,7 @@ Counts: forms (union identities per task), distinct written texts (the union's t
 """
 import collections, json, re, sys
 from gold_union_texts import BASE, CMP, OUT, TOKEN, canonical as simple, rows
+import study_zst as Z  # on the path since gold_union_texts is imported
 
 VAR = re.compile(r'\^?[A-Z]\w*')
 WORDS = {'RULE', 'DET', 'INIT', 'CHOOSE', 'OR', 'NOT', 'OUT'}
@@ -161,7 +162,7 @@ def main():
             per_kind[kind][0] += 1
             per_kind[kind][1].add(simple(text))
         lines = set()
-        for l in open(OUT + 'union-keys-%s.jsonl' % s):
+        for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s):
             c = json.loads(l)
             ls = [x for x in c['text'].splitlines() if x.strip() and not x.startswith('(OUT')]
             if len(ls) != len(c['keys']):

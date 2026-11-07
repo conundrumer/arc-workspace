@@ -14,4 +14,4 @@ for f in tables prods tasks; do
   cat $shards > $G/graph-$f-$1.jsonl && python3 $U/gold_union_code.py concat $G/graph-$f-$1.jsonl $shards && rm $shards $(for s in $shards; do echo $s.code.json; done)
 done
 wc -l $G/graph-*-$1.jsonl
-UNION_SCRATCH=$S timeout 300 python3 $U/runs/graph_compare.py $1 2>&1 | grep -v "^split\|^join"
+UNION_SCRATCH=$S timeout 300 .venv/bin/python $U/runs/graph_compare.py $1 2>&1 | grep -v "^split\|^join"

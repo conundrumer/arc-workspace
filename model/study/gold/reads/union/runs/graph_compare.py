@@ -1,14 +1,16 @@
 """The old graph of a set ($UNION_SCRATCH/graph-before-maps/graph-{tables,prods,tasks}-SET.jsonl; UNION_SCRATCH default: the scratchpad of session 64993706) against the new one (graph-*-SET.jsonl in work/lm/data-study/gold/gold-union): prints counts of tasks, tables, queries, OR tables, splits and joins of old tables, and changes of goal depth and path bits.
 
-  python graph_compare.py SET
+  .venv/bin/python graph_compare.py SET
 """
 import json, os, sys, collections
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../..'))  # model/study
+import study_zst as Z
 s = sys.argv[1]
 OLD = os.environ.get('UNION_SCRATCH', '/private/tmp/claude-501/-Users-davidlu-code-arc-workspace/64993706-bdea-4acd-bcaf-7d7b1e3ea40a/scratchpad') + '/graph-before-maps/'
 NEW = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 def load(d, f):
     got = collections.defaultdict(list)
-    for l in open(d + 'graph-%s-%s.jsonl' % (f, s)):
+    for l in Z.open_text(d + 'graph-%s-%s.jsonl' % (f, s)):
         r = json.loads(l); got[r['task']].append(r)
     return got
 ot, nt, op, np_, ok, nk = load(OLD, 'tables'), load(NEW, 'tables'), load(OLD, 'prods'), load(NEW, 'prods'), load(OLD, 'tasks'), load(NEW, 'tasks')
