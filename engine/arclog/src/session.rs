@@ -98,13 +98,35 @@ pub struct ResultCache {
     /// The entries that a thread of the pool computes, which a thread that
     /// asks for one of them waits for.
     in_flight: InFlight<ResultKey, CachedValue>,
-    /// Whether [`ResultCache::record`] keeps the lookups, ids and stores
-    /// that [`crate::eval::cache`] makes in `recorded`.
+    /// Whether a capture is open ([`ResultCache::begin_capture`]), so that
+    /// [`ResultCache::record`] keeps the lookups, ids and stores that
+    /// [`crate::eval::cache`] makes in `recorded`.
     recording: AtomicBool,
-    recorded: Mutex<Vec<crate::eval::cache::Recorded>>,
+    recorded: Mutex<Captured>,
     /// The count of threads that keep the events they make in this cache
     /// ([`ResultCache::record_on_thread`]).
     thread_recorders: AtomicUsize,
+}
+
+/// What the open captures of a result cache keep ([`ResultCache::begin_capture`]).
+#[derive(Debug, Default)]
+struct Captured {
+    /// The lookups, ids and stores since the outermost capture began, in
+    /// their order.
+    events: Vec<crate::eval::cache::Recorded>,
+    /// For each open capture, the outermost first, the largest counts that
+    /// [`TaskSession::record_counts`] was given since it began.
+    counts: Vec<Counts>,
+}
+
+/// An open capture of a result cache's events and counts
+/// ([`ResultCache::begin_capture`]).
+#[derive(Debug)]
+pub(crate) struct Capture {
+    /// The place in the cache's events where the capture began.
+    mark: usize,
+    /// The count of captures open when it began, itself included.
+    depth: usize,
 }
 
 thread_local! {
@@ -260,7 +282,7 @@ impl ResultCache {
     }
 
     /// Makes the events `events`, which a cache recorded
-    /// ([`ResultCache::start_recording`]) in a session that shares this
+    /// ([`ResultCache::begin_capture`]) in a session that shares this
     /// session's intern table, where each would do here what it did there,
     /// and gives whether it made them. They would where each lookup finds
     /// here, after the events before it, an entry whose value has the rows
@@ -382,21 +404,48 @@ impl ResultCache {
     }
 
     /// Starts keeping each lookup, id and store that [`crate::eval::cache`]
-    /// makes, until [`ResultCache::take_recorded`].
-    pub fn start_recording(&self) {
-        self.recorded.lock().expect(UNPOISONED).clear();
+    /// makes, from every thread, and the largest counts that
+    /// [`TaskSession::record_counts`] is given, until the capture ends
+    /// ([`ResultCache::end_capture`]). A capture may begin while another is
+    /// open, and ends before it.
+    pub(crate) fn begin_capture(&self) -> Capture {
+        let mut captured = self.recorded.lock().expect(UNPOISONED);
+        captured.counts.push(Counts::default());
         self.recording.store(true, Ordering::Relaxed);
+        Capture { mark: captured.events.len(), depth: captured.counts.len() }
     }
 
-    /// The lookups, ids and stores kept since
-    /// [`ResultCache::start_recording`], in their order, and stops keeping
-    /// them.
-    pub fn take_recorded(&self) -> Vec<crate::eval::cache::Recorded> {
-        self.recording.store(false, Ordering::Relaxed);
-        std::mem::take(&mut *self.recorded.lock().expect(UNPOISONED))
+    /// The lookups, ids and stores kept since `capture` began, in their
+    /// order, and the largest counts recorded since then. A capture that
+    /// was open when this one began keeps them too, and the cache keeps
+    /// none once no capture is open.
+    pub(crate) fn end_capture(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts) {
+        let mut captured = self.recorded.lock().expect(UNPOISONED);
+        assert_eq!(captured.counts.len(), capture.depth, "a capture ends before the one that was open when it began");
+        let counts = captured.counts.pop().expect("an open capture");
+        let events = if captured.counts.is_empty() {
+            self.recording.store(false, Ordering::Relaxed);
+            std::mem::take(&mut captured.events)
+        } else {
+            captured.events[capture.mark..].to_vec()
+        };
+        (events, counts)
     }
 
-    /// Keeps the lookup, id or store `event()` where the cache is recording,
+    /// Keeps `counts`, as the count of one evaluation that ended with no
+    /// stop, in each open capture, each as the larger of it and the count
+    /// the capture holds.
+    fn capture_counts(&self, counts: Counts) {
+        if !self.recording.load(Ordering::Relaxed) {
+            return;
+        }
+        for held in &mut self.recorded.lock().expect(UNPOISONED).counts {
+            held.bindings = held.bindings.max(counts.bindings);
+            held.rows = held.rows.max(counts.rows);
+        }
+    }
+
+    /// Keeps the lookup, id or store `event()` where a capture is open,
     /// and where this thread keeps its events in this cache
     /// ([`ResultCache::record_on_thread`]).
     #[inline]
@@ -418,7 +467,7 @@ impl ResultCache {
             });
         }
         if recording {
-            self.recorded.lock().expect(UNPOISONED).push(event);
+            self.recorded.lock().expect(UNPOISONED).events.push(event);
         }
     }
 
@@ -1080,6 +1129,7 @@ impl TaskSession {
     pub fn record_counts(&self, counts: Counts) {
         self.largest_bindings.fetch_max(counts.bindings, Ordering::Relaxed);
         self.largest_rows.fetch_max(counts.rows, Ordering::Relaxed);
+        self.results.capture_counts(counts);
     }
 
     /// The largest counts of the session's evaluations that ended with no

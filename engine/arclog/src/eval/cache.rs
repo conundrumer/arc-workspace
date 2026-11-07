@@ -111,8 +111,8 @@ pub fn relation_id(session: &TaskSession, relation: &Arc<Relation>) -> RelationI
 }
 
 /// What [`lookup`], [`relation_id`] and [`store`] did to a session's result
-/// cache while it was recording
-/// ([`crate::session::ResultCache::start_recording`]).
+/// cache while a capture was open
+/// ([`crate::session::ResultCache::begin_capture`]).
 #[derive(Clone, Debug)]
 pub enum Recorded {
     /// A lookup, and the value it found, if any.
@@ -136,8 +136,13 @@ pub struct RecordedKey {
 }
 
 impl RecordedKey {
-    fn of(request: &EntryRequest<'_>) -> Self {
+    pub(crate) fn of(request: &EntryRequest<'_>) -> Self {
         RecordedKey { clause: request.clause.owned(), reads: request.reads.into(), example: request.example, parameters: request.parameters.into() }
+    }
+
+    /// This key with each relation it holds replaced by `one` of it.
+    pub(crate) fn with_relations(&self, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> RecordedKey {
+        RecordedKey { clause: self.clause.clone(), reads: self.reads.iter().map(&mut *one).collect(), example: self.example, parameters: self.parameters.iter().map(&mut *one).collect() }
     }
 
     /// Whether `self` and `other` are the key of one entry: the same content
@@ -169,12 +174,7 @@ impl Recorded {
     /// This event with each relation it holds replaced by `one` of it.
     pub fn with_relations(&self, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> Recorded {
         fn key(key: &RecordedKey, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> RecordedKey {
-            RecordedKey {
-                clause: key.clause.clone(),
-                reads: key.reads.iter().map(&mut *one).collect(),
-                example: key.example,
-                parameters: key.parameters.iter().map(&mut *one).collect(),
-            }
+            key.with_relations(one)
         }
         fn value(value: &CachedValue, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> CachedValue {
             match value {
@@ -237,6 +237,22 @@ pub(crate) fn relation_estimate(relation: &Relation) -> usize {
 /// them.
 pub fn replay(session: &TaskSession, events: &[Recorded]) -> bool {
     session.results.replay(events, cache_bytes_bound(session))
+}
+
+/// [`replay`] of `events`, where the replay also records each event that it
+/// makes where a call of [`lookup`], [`relation_id`] or [`store`] would have
+/// recorded it: in each open capture
+/// ([`crate::session::ResultCache::begin_capture`]) and in the thread's
+/// recording. A computation that replays events in place of making them is
+/// then captured as one that made them.
+pub fn replay_recorded(session: &TaskSession, events: &[Recorded]) -> bool {
+    if !replay(session, events) {
+        return false;
+    }
+    for event in events {
+        session.results.record(|| event.clone());
+    }
+    true
 }
 
 /// The share of the session's byte bound that the result cache may hold:

@@ -459,6 +459,10 @@ pub struct Limits {
     /// clauses stops as soon as the rows it has found would take a
     /// reservation past the session's room ([`crate::eval::join::Budget::charge_rows`]).
     pub exported: Option<crate::resolver::GraphNodeIndex>,
+    /// The computations of entries that the evaluation takes from the walks
+    /// before it and keeps for those after it ([`super::carry`]); none where
+    /// the evaluation is not a liveness walk of a decode.
+    pub carry: Option<super::carry::Carry>,
 }
 
 /// The bytes that the export of a relation's rows reserves for each row at
@@ -481,7 +485,7 @@ impl RowReserve {
 impl Limits {
     /// The limits of an evaluation outside a table and outside a decode.
     pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, row_reserve: None, exported: None }
+        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, row_reserve: None, exported: None, carry: None }
     }
 
     /// These limits with the evaluation checking the declared rows of the
@@ -512,6 +516,12 @@ impl Limits {
     /// the rows whose reservation would pass the session's room.
     pub fn exporting(self, node: crate::resolver::GraphNodeIndex) -> Self {
         Limits { exported: Some(node), ..self }
+    }
+
+    /// These limits with the evaluation taking and keeping computations of
+    /// entries in `carry`.
+    pub fn carrying(self, carry: super::carry::Carry) -> Self {
+        Limits { carry: Some(carry), ..self }
     }
 
     /// These limits with the evaluation taking and holding stops in `stops`.

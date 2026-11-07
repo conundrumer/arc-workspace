@@ -43,6 +43,15 @@
 //! that stops at the byte bound, or whose cache evicts, runs again in a
 //! session of its own with no kept domain ([`super::det_admission`]).
 //!
+//! A walk that computes a domain that no kept domain stands for evaluates the
+//! entries of its forms, each a part of a body or a clause. The memo also keeps
+//! the computation of each such entry, in a store of its own that stands as long
+//! as the intern table that the walks share ([`CarryStore`], [`Probe::carry`]),
+//! and a walk takes a kept computation of an entry in place of computing it. The
+//! domains of two candidate bodies then share the computations of the parts that
+//! the candidates leave unchanged. The module [`crate::eval::carry`] gives what
+//! each key holds, and why it decides its computation.
+//!
 //! What the walk of a part of a program's `DET`s gave is kept too
 //! ([`PartKey`]). It reads only the forms that the key's content holds, in a
 //! session that starts empty, so it stands for each program that holds that
@@ -56,6 +65,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::check::CheckedProgram;
 use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
+use crate::eval::carry::{kept_relation, Carry, CarryStore};
 use crate::eval::determinations::det_relation;
 use crate::eval::{Domain, Evaluation, Outcome};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
@@ -85,6 +95,10 @@ const EVENT_BYTES: usize = 256;
 /// with the old one is taken.
 const TERM_SHARE: usize = 16;
 
+/// The fraction of the session's byte bound that the kept computations of
+/// entries ([`crate::eval::carry`]) may hold, in both their tiers.
+const CARRY_SHARE: usize = 16;
+
 /// The most computations kept for one key, each with its own lookups.
 const PER_KEY: usize = 4;
 
@@ -109,6 +123,7 @@ pub(crate) struct ProbeMemo {
     scope: Scope,
     kept_bytes: usize,
     term_bytes: usize,
+    carry_bytes: usize,
     kept: Mutex<Kept>,
     parts: Mutex<StableHashMap<PartKey, PartWalk>>,
 }
@@ -169,6 +184,9 @@ struct Kept {
     generation: u64,
     /// A session that holds the shared intern table and fact relations.
     terms: TaskSession,
+    /// The computations of entries kept with the walks that began under this
+    /// count ([`CarryStore`]).
+    carry: Arc<CarryStore>,
     /// The domains kept since the last turn of the memo, and those it
     /// kept before that turn that a walk asked for since.
     young: Tier,
@@ -211,9 +229,9 @@ impl ProbeMemo {
     /// The memo of the walks of `session` under `scope`, with nothing kept.
     pub(crate) fn new(scope: Scope, session: &TaskSession) -> Self {
         let terms = TaskSession::new(session.bound, session.caps);
-        let kept = Kept { generation: 0, terms, young: Tier::default(), old: Tier::default() };
         let bytes = session.bound.bytes;
-        ProbeMemo { scope, kept_bytes: bytes / KEPT_SHARE, term_bytes: bytes / TERM_SHARE, kept: Mutex::new(kept), parts: Mutex::default() }
+        let kept = Kept { generation: 0, terms, carry: Arc::new(CarryStore::new(bytes / CARRY_SHARE)), young: Tier::default(), old: Tier::default() };
+        ProbeMemo { scope, kept_bytes: bytes / KEPT_SHARE, term_bytes: bytes / TERM_SHARE, carry_bytes: bytes / CARRY_SHARE, kept: Mutex::new(kept), parts: Mutex::default() }
     }
 
     /// The bytes the memo counts, its count of relations, the bytes of their
@@ -254,9 +272,10 @@ impl ProbeMemo {
         if kept.terms.intern.read().expect("an intern table that no panic poisoned").bytes() > self.term_bytes {
             kept.generation += 1;
             kept.terms = TaskSession::new(session.bound, session.caps);
+            kept.carry = Arc::new(CarryStore::new(self.carry_bytes));
             kept.clear();
         }
-        Some(Probe { memo: self, generation: kept.generation, session: kept.terms.sharing_terms() })
+        Some(Probe { memo: self, generation: kept.generation, session: kept.terms.sharing_terms(), carry: Arc::clone(&kept.carry) })
     }
 
     /// The computations kept under `key`, those of the old tier moved into
@@ -382,26 +401,25 @@ impl Computed {
     }
 }
 
-/// The relation of `relations` with the rows of `relation`, held in parts of
-/// the same columns, or `relation`, which `relations` then holds.
-fn kept_relation(relations: &mut StableHashMap<StableHash, Vec<Arc<Relation>>>, relation: &Arc<Relation>) -> Arc<Relation> {
-    let alike = relations.entry(relation.rows_hash()).or_default();
-    let columns = |relation: &Relation| relation.parts().iter().map(|part| part.columns.clone()).collect::<Vec<_>>();
-    if let Some(found) = alike.iter().find(|held| columns(held) == columns(relation) && same_rows(held, relation)) {
-        return Arc::clone(found);
-    }
-    alike.push(Arc::clone(relation));
-    Arc::clone(relation)
-}
-
 /// One liveness walk's session, and the memo it takes domains from.
 pub(crate) struct Probe<'m> {
     memo: &'m ProbeMemo,
     generation: u64,
     pub(crate) session: TaskSession,
+    /// The kept computations of entries of the intern table that `session`
+    /// shares.
+    carry: Arc<CarryStore>,
 }
 
 impl Probe<'_> {
+    /// The kept computations of entries that this walk takes, and keeps its
+    /// own in, as [`crate::eval::carry`] gives. They hold the term ids of the
+    /// intern table that this walk shares, and no walk that shares another
+    /// table reaches them.
+    pub(crate) fn carry(&self) -> Carry {
+        Carry::new(Arc::clone(&self.carry))
+    }
+
     /// The domains of `dets`, the `DET`s of `program` in the order of the
     /// walk, through the memo.
     pub(crate) fn domains<'p>(&'p self, program: &CheckedProgram, dets: &'p [Det]) -> ProbeDomains<'p> {
@@ -578,10 +596,10 @@ impl Domains for ProbeDomains<'_> {
                 return Ok(computed.domain.clone());
             }
         }
-        session.results.start_recording();
+        let capture = session.results.begin_capture();
         let before = work.count();
         let found = evaluation.domain(node);
-        let events = session.results.take_recorded();
+        let (events, _) = session.results.end_capture(capture);
         let charged = work.count() - before;
         if let Ok(domain @ (Domain::Rows(_) | Domain::Undefined)) = &found {
             let computed = Computed { events: events.into(), charged, domain: domain.clone(), found: None };

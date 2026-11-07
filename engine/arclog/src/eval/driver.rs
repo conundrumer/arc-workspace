@@ -13,9 +13,9 @@ use super::ir::{self, AtomSource, ClauseIr, CompiledBody, IrNode};
 use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::{self, Domain};
-use super::{cache, init_form, instance, plan, proposers, rigid};
+use super::{cache, carry, init_form, instance, plan, proposers, rigid};
 use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
-use crate::hash::StableHashMap;
+use crate::hash::{StableHash, StableHashMap};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Clause, ParamValue, ProgramRelation, RelationRef};
 use crate::relations::{ColumnIndex, Relation, RelationPart, RowSet};
@@ -288,7 +288,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let Some(NodeRef::Clause(written)) = node_at(NodeRef::Program(program.program.value()), form) else { panic!("the path of a clause of the program") };
         if let Some(index) = derivation(written, form)? {
             let request = cache::EntryRequest { clause: cache::EntryContent::Form(&content), reads: &[], example, parameters: &[] };
-            return self.cached(form, &request, || self.proposed(form, written, index, example));
+            return self.cached(form, &request, None, || self.proposed(form, written, index, example));
         }
         let (body, inputs) = match self.compiled(form, &every_conjunct(written), example)? {
             Ok(compiled) => compiled,
@@ -299,7 +299,8 @@ impl<'e, 'a> Driver<'e, 'a> {
         // The rows of a clause of the exported relation are held by its export.
         let exported = self.evaluation.limits.exported.is_some_and(|node| self.program().forms_of(node).contains(form));
         let reserve = self.evaluation.limits.row_reserve.filter(|_| exported).map(|reserve| reserve.bytes_per_row(body.clause.columns.len()));
-        self.cached(form, &reads.request(&content, example), || Ok(self.body_relation(form, &body, &inputs, example, reserve)))
+        let shape = || carry::body_shape(&body);
+        self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example, reserve)))
     }
 
     /// The relation of the conjuncts at `kept` of the body of the clause at
@@ -384,20 +385,27 @@ impl<'e, 'a> Driver<'e, 'a> {
         if let Some(value) = cache::lookup(evaluation.session, &request, form) {
             return value;
         }
-        let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        if let Some((bytes_per_row, multiplier)) = floor {
-            budget = budget.with_row_floor(bytes_per_row, multiplier);
+        let compute = || {
+            let mut budget = Budget::new(evaluation.limits, evaluation.session);
+            if let Some((bytes_per_row, multiplier)) = floor {
+                budget = budget.with_row_floor(bytes_per_row, multiplier);
+            }
+            let Ok(value) = self.holding_stops::<Infallible>(&request, || {
+                let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
+                Ok(match relation {
+                    Ok(relation) => RelationValue::Rows(Arc::new(relation)),
+                    Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+                })
+            });
+            record_whole(&budget, [&value]);
+            cache::store(evaluation.session, &request, &value);
+            Ok(value)
+        };
+        let shape = || carry::part_shape(&body.clause, part, order, &entry.columns);
+        match self.carrying(&request, &shape, compute) {
+            Ok(value) => value,
+            Err(fault) => unreachable!("the evaluation of a part gives no fault: {fault:?}"),
         }
-        let Ok(value) = self.holding_stops::<Infallible>(&request, || {
-            let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
-            Ok(match relation {
-                Ok(relation) => RelationValue::Rows(Arc::new(relation)),
-                Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-            })
-        });
-        record_whole(&budget, [&value]);
-        cache::store(evaluation.session, &request, &value);
-        value
     }
 
     /// The entry of `part`, a part of `body`, the conjuncts of the body of
@@ -453,8 +461,10 @@ impl<'e, 'a> Driver<'e, 'a> {
 
     /// The value the result cache holds for `request`, made at `form`, or,
     /// where it holds none, the value of `compute`, which the cache then
-    /// stores. A fault of `compute` is given and not stored.
-    fn cached(&self, form: &NodePath, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+    /// stores. A fault of `compute` is given and not stored. Where `shape` is
+    /// given, the computation is carried across the walks that carry one
+    /// ([`Driver::carrying`]).
+    fn cached(&self, form: &NodePath, request: &cache::EntryRequest<'_>, shape: Option<&dyn Fn() -> StableHash>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
         let session = self.evaluation.session;
         if let Some(value) = cache::lookup(session, request, form) {
             return Ok(value);
@@ -465,7 +475,13 @@ impl<'e, 'a> Driver<'e, 'a> {
             // A computation that ended since the lookup above stored the entry.
             let value = match cache::lookup(session, request, form) {
                 Some(value) => Ok(value),
-                None => self.holding_stops(request, compute).inspect(|value| cache::store(session, request, value)),
+                None => {
+                    let run = || self.holding_stops(request, compute).inspect(|value| cache::store(session, request, value));
+                    match shape {
+                        Some(shape) => self.carrying(request, shape, run),
+                        None => run(),
+                    }
+                }
             };
             let shared = value.as_ref().ok().and_then(cache::cached);
             own = Some(value);
@@ -475,6 +491,26 @@ impl<'e, 'a> Driver<'e, 'a> {
             let shared = shared.expect("a value from the computation another thread ended");
             Ok(shared.map_stop(|bound| Stop { bound, form: form.clone() }))
         })
+    }
+
+    /// The value of `compute`, the evaluation of the entry `request` that
+    /// the result cache holds no value of, which stores the value in the
+    /// cache. Where the limits carry computations ([`carry`]) and bound the
+    /// evaluation by nothing that depends on the time, the value is the one
+    /// of a kept computation that replays, and otherwise `compute` is
+    /// captured and kept. `shape` is the digest of what the search of the
+    /// entry reads beside its request.
+    fn carrying(&self, request: &cache::EntryRequest<'_>, shape: &dyn Fn() -> StableHash, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+        let limits = self.evaluation.limits;
+        let (Some(carry), Some(work), None, None, None) = (&limits.carry, &limits.table_work, &limits.held_stops, &limits.deadline, &limits.copies) else {
+            return compute();
+        };
+        let session = self.evaluation.session;
+        let key = carry::CarryKey::new(request, shape());
+        match carry.replay(session, work, &key) {
+            Some(value) => Ok(value),
+            None => carry.capture(session, work, key, compute),
+        }
     }
 
     /// The value of `compute`, the evaluation of the entry `request`, where
@@ -730,7 +766,7 @@ impl FormBodies<'_> {
     /// where it holds none, the value of `compute`, which the cache then
     /// stores, as the driver does for a clause.
     pub fn cached(&self, form: &NodePath, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
-        self.driver.cached(form, request, compute)
+        self.driver.cached(form, request, None, compute)
     }
 }
 

@@ -4,6 +4,7 @@ use std::ops::ControlFlow;
 use super::det_memo::{part_key, PartWalk, ProbeMemo, Scope};
 use super::{Decoder, Refusal, State};
 use crate::check::CheckedProgram;
+use crate::eval::carry::Carry;
 use crate::eval::{Cancellation, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
 use crate::judge::determination::{descend_with, held_dets, written_dets, Det, Domains, End, EvaluationInputs};
 use crate::resolver::GraphNodeIndex;
@@ -159,22 +160,27 @@ impl Decoder<'_> {
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         if let Some(probe) = memo.probe(scope, self.session) {
             let domains = probe.domains(program, dets);
-            let walked = self.live(program, dets, picks, root, &probe.session, Some(&domains));
+            let walked = self.live(program, dets, picks, root, &probe.session, Some(&domains), Some(probe.carry()));
             if !probe.session.results.evicted() && !matches!(walked.1, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
                 return walked;
             }
         }
         let session = TaskSession::new(self.session.bound, self.session.caps);
-        self.live(program, dets, picks, root, &session, None)
+        self.live(program, dets, picks, root, &session, None, None)
     }
 
     /// The leaves that the walk of `dets` in `session` reached, and its
     /// verdict: whether some leaf gives each of them a value and each of
-    /// `picks` a model, with the domains from `domains` where it is given.
+    /// `picks` a model, with the domains from `domains` where it is given,
+    /// and the computations of entries from `carry` where it is given.
     #[allow(clippy::too_many_arguments)]
-    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>) -> (u64, Result<(), DetRefusal>) {
+    fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>, carry: Option<Carry>) -> (u64, Result<(), DetRefusal>) {
         let limits = Limits::new(None, Cancellation::default())
             .counted_in(TableWork::new(self.context.settings.table_work_cap));
+        let limits = match carry {
+            Some(carry) => limits.carrying(carry),
+            None => limits,
+        };
         let inputs = EvaluationInputs {
             program, concept: None, task: self.task, session,
             registry: self.context.registry, constructions: self.constructions, limits: &limits,
