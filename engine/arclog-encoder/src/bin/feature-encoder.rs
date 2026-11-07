@@ -15,6 +15,7 @@
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
+//!   feature-encoder time-heads TABLES_FILE... [--size D]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
@@ -1134,6 +1135,147 @@ fn rows_over(rows: &[Vec<u32>], columns: &[String], names: &[String]) -> Option<
 /// Each rule's claim against evaluation, at each table of a tables file: a term a rule rejects is evaluated
 /// and compared with what the rule claims, and each kept term's keys, bounds and subset relations with its
 /// rows. Train pairs alone are read. It prints a counterexample for the first failures of a rule.
+/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
+/// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
+/// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
+fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String> {
+    use arclog_encoder::generate::{leaves_at, Generated, NameStore, Walker};
+    use arclog_encoder::native::hash_words;
+    use arclog_encoder::stored::Stored;
+    use arclog_encoder::table_vector::Grids;
+    use std::collections::{BTreeMap, HashMap, HashSet};
+    let limit: usize = std::env::var("TIME_TABLES").ok().and_then(|text| text.parse().ok()).unwrap_or(12);
+    let wanted: Vec<(f64, String, u128)> = match std::env::var("TIME_SHAPES") {
+        Ok(path) => arclog_encoder::zio::read_text(&path)?.lines().filter_map(|line| {
+            let (gain, shape) = line.split_once('\t')?;
+            Some((gain.parse().ok()?, shape.to_string(), hash_words(shape.bytes().map(u64::from))))
+        }).collect(),
+        Err(_) => Vec::new(),
+    };
+    let index: HashMap<u128, usize> = wanted.iter().enumerate().map(|(at, held)| (held.2, at)).collect();
+    let store = NameStore::default();
+    let empty = Vec::new();
+    let mut heads: BTreeMap<String, [u64; 4]> = BTreeMap::new();
+    let mut table_times: Vec<(f64, usize, usize, usize)> = Vec::new();
+    let mut chosen_times: Vec<(f64, usize, usize)> = Vec::new();
+    let mut shape_time: Vec<f64> = vec![0.0; wanted.len()];
+    let mut shape_seen: Vec<u64> = vec![0; wanted.len()];
+    let mut families: HashMap<String, Generated> = HashMap::new();
+    for file in files {
+        let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
+        let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
+        let train = data["train"].as_u64().ok_or("a file's train")? as usize;
+        let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
+        let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
+            let mut out = vec![item["gold"].clone()];
+            out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
+            out
+        }).collect();
+        let mut seen: HashSet<u128> = HashSet::new();
+        let mut taken = 0;
+        for item in &items {
+            if taken >= limit {
+                break;
+            }
+            let Some(stored) = Stored::of_json(item, train, 0, 2000) else { continue };
+            if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+                continue;
+            }
+            taken += 1;
+            let family = families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store));
+            let (count, first) = family.counts();
+            let example_of: Vec<usize> = (0..train).collect();
+            let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
+            let rows: usize = held.iter().flatten().map(|table| table.len).sum();
+            let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+            let mut walker = Walker::new(family);
+            let times = walker.timed_terms(&leaves, train, None);
+            let mut total = 0;
+            for (at, (nanos, evals, gave)) in times.iter().enumerate().take(count).skip(first) {
+                let text = family.term_info(at).0;
+                let head = text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string();
+                let held = heads.entry(head).or_insert([0; 4]);
+                held[0] += 1;
+                held[1] += u64::from(*evals);
+                held[2] += u64::from(*gave);
+                held[3] += *nanos;
+                total += *nanos;
+            }
+            table_times.push((total as f64 / 1000.0, count - first, rows, stored.types.len()));
+            if !wanted.is_empty() {
+                // The terms that the chosen shapes read, and how many chosen shapes read each.
+                let mut needed = vec![false; count];
+                let mut shapes_of: Vec<Vec<usize>> = vec![Vec::new(); count];
+                for at in (first..count).rev() {
+                    let (roots, a, b) = family.term_links(at);
+                    for root in roots {
+                        if let Some(shape) = index.get(&root) {
+                            shapes_of[at].push(*shape);
+                            needed[at] = true;
+                        }
+                    }
+                    if needed[at] {
+                        let carried = shapes_of[at].clone();
+                        for parent in [a, b] {
+                            if parent != Generated::no_term() && (parent as usize) >= first {
+                                needed[parent as usize] = true;
+                                shapes_of[parent as usize].extend(carried.iter().copied());
+                            }
+                        }
+                    }
+                }
+                let mut walker = Walker::new(family);
+                let times = walker.timed_terms(&leaves, train, Some(&needed));
+                let mut total = 0;
+                let mut terms = 0;
+                let mut active: HashSet<usize> = HashSet::new();
+                for at in first..count {
+                    if needed[at] {
+                        terms += 1;
+                        total += times[at].0;
+                        shapes_of[at].sort_unstable();
+                        shapes_of[at].dedup();
+                        let share = times[at].0 as f64 / 1000.0 / shapes_of[at].len().max(1) as f64;
+                        for shape in &shapes_of[at] {
+                            shape_time[*shape] += share;
+                            active.insert(*shape);
+                        }
+                    }
+                }
+                for shape in active {
+                    shape_seen[shape] += 1;
+                }
+                chosen_times.push((total as f64 / 1000.0, terms, train));
+            }
+        }
+    }
+    let mut order: Vec<(&String, &[u64; 4])> = heads.iter().collect();
+    order.sort_by_key(|entry| std::cmp::Reverse(entry.1[3]));
+    let whole: u64 = order.iter().map(|entry| entry.1[3]).sum();
+    println!("head\tterms\tevaluations\twith rows\tmicroseconds\tshare\tns per evaluation");
+    for (head, held) in order {
+        println!("{head}\t{}\t{}\t{}\t{:.0}\t{:.3}\t{:.0}", held[0], held[1], held[2], held[3] as f64 / 1000.0, held[3] as f64 / whole.max(1) as f64, held[3] as f64 / held[1].max(1) as f64);
+    }
+    table_times.sort_by(|a, b| a.0.total_cmp(&b.0));
+    if !table_times.is_empty() {
+        let at = |share: f64| table_times[((table_times.len() - 1) as f64 * share) as usize];
+        println!("tables {} ms at 10% {:.1} 50% {:.1} 90% {:.1} 100% {:.1}; terms at 50% {} rows at 50% {}", table_times.len(), at(0.1).0 / 1000.0, at(0.5).0 / 1000.0, at(0.9).0 / 1000.0, at(1.0).0 / 1000.0, at(0.5).1, at(0.5).2);
+    }
+    if !chosen_times.is_empty() {
+        chosen_times.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let at = |share: f64| chosen_times[((chosen_times.len() - 1) as f64 * share) as usize];
+        println!("chosen {} shapes on {} tables: ms at 10% {:.2} 50% {:.2} 90% {:.2} 100% {:.2}; terms at 50% {}", wanted.len(), chosen_times.len(), at(0.1).0 / 1000.0, at(0.5).0 / 1000.0, at(0.9).0 / 1000.0, at(1.0).0 / 1000.0, at(0.5).1);
+        println!("shape\tgain\ttables\tmicroseconds per table\tgain per microsecond");
+        let mut ranked: Vec<usize> = (0..wanted.len()).collect();
+        let cost = |at: usize| shape_time[at] / shape_seen[at].max(1) as f64;
+        ranked.sort_by(|a, b| (wanted[*b].0 / cost(*b).max(1e-3)).total_cmp(&(wanted[*a].0 / cost(*a).max(1e-3))));
+        for at in ranked {
+            println!("{}\t{:.1}\t{}\t{:.1}\t{:.2}", wanted[at].1, wanted[at].0, shape_seen[at], cost(at), wanted[at].0 / cost(at).max(1e-3));
+        }
+    }
+    Ok(())
+}
+
 fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
     use arclog_encoder::generate::{leaves_at, Generated, NameStore, Walker};
     use arclog_encoder::refine::{bit, Claim};
@@ -1749,6 +1891,7 @@ fn main() {
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("refine-check", [file]) => run_refine_check(&arguments, file),
+        ("time-heads", files) => run_time_heads(&arguments, files),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
