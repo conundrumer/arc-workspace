@@ -212,13 +212,13 @@ class Engine:
         for p in (repo + '/model/study/samples', site, code + '/model/study/samples', code + '/model/study/sampler'):
             sys.path.insert(0, p)
         import numpy
+        import writer  # first: importing live puts the main checkout's model/study first on the path, where an older writer.py stands
         import live
         import live_try
         import order
         import points_write as pw
         import search
         import train_rows
-        import writer
         self.np, self.live, self.live_try, self.order, self.pw, self.search, self.tr, self.writer = numpy, live, live_try, order, pw, search, train_rows, writer
         live_try.P.REPO = env.get('ARC_ROOT', live_try.P.REPO)
         self.sampler = live.Sampler(cfg['models'], steers=())
@@ -229,7 +229,8 @@ class Engine:
         live = self.live
         sess, d, _ = self.live_try.session_of(task)
         run = self.search.SearchRun(self.sampler.pri, sess, time.monotonic() + 86400, d, live.Limits())
-        plan = self.writer.default_plan(run, self.search.OR_BITS, self.search.WRITER_LOOKAHEAD, self.search.DISTRIBUTION)
+        lookahead = (self.search.WRITER_LOOKAHEAD,) if hasattr(self.search, 'WRITER_LOOKAHEAD') else ()  # code with no WRITER_LOOKAHEAD has its rules fixed in the legality mask
+        plan = self.writer.default_plan(run, self.search.OR_BITS, *lookahead, self.search.DISTRIBUTION)
         return run, plan
 
     def stream_of(self, run, scope, text):
