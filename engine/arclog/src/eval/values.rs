@@ -499,11 +499,14 @@ pub struct Limits {
     /// for each row at the least; none where the operation's export is not
     /// known to reserve. See [`RowReserve`].
     pub row_reserve: Option<RowReserve>,
-    /// The node of the relation that the operation exports, which
-    /// [`Limits::row_reserve`] applies to: the evaluation of that node's
-    /// clauses stops as soon as the rows it has found would take a
-    /// reservation past the session's room ([`crate::eval::join::Budget::charge_rows`]).
-    pub exported: Option<crate::resolver::GraphNodeIndex>,
+    /// The relation that the operation exports, which
+    /// [`Limits::row_reserve`] applies to, as the address of the resolution
+    /// it is a node of and the node: the evaluation of that node's clauses
+    /// stops as soon as the rows it has found would take a reservation past
+    /// the session's room ([`crate::eval::join::Budget::charge_rows`]). An
+    /// evaluation of another program under these limits, such as a
+    /// proposer's, holds no node of it.
+    pub exported: Option<(usize, crate::resolver::GraphNodeIndex)>,
     /// The computations of entries that the evaluation takes from the walks
     /// before it and keeps for those after it ([`super::carry`]); none where
     /// the evaluation is not a liveness walk of a decode.
@@ -556,11 +559,11 @@ impl Limits {
         Limits { row_reserve: Some(reserve), ..self }
     }
 
-    /// These limits with the relation of `node` exported: where
+    /// These limits with the relation of `node` of `program` exported: where
     /// [`Limits::row_reserve`] is set, the evaluation of its clauses stops at
     /// the rows whose reservation would pass the session's room.
-    pub fn exporting(self, node: crate::resolver::GraphNodeIndex) -> Self {
-        Limits { exported: Some(node), ..self }
+    pub fn exporting(self, program: &crate::resolver::ResolvedProgram, node: crate::resolver::GraphNodeIndex) -> Self {
+        Limits { exported: Some((std::ptr::from_ref(program) as usize, node)), ..self }
     }
 
     /// These limits with the evaluation taking and keeping computations of

@@ -297,7 +297,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let all: Vec<usize> = (0..body.clause.nodes.len()).collect();
         let reads = self.reads(&body.clause, &all, &inputs);
         // The rows of a clause of the exported relation are held by its export.
-        let exported = self.evaluation.limits.exported.is_some_and(|node| self.program().forms_of(node).contains(form));
+        let exported = self.evaluation.limits.exported.is_some_and(|(program, node)| program == std::ptr::from_ref(self.program()) as usize && self.program().forms_of(node).contains(form));
         let reserve = self.evaluation.limits.row_reserve.filter(|_| exported).map(|reserve| reserve.bytes_per_row(body.clause.columns.len()));
         let shape = || carry::body_shape(&body);
         self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example, reserve)))

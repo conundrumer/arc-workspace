@@ -750,7 +750,7 @@ fn models_at(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Opt
     let limits;
     let exporting;
     let evaluation = if evaluation.limits.row_reserve.is_some() {
-        limits = evaluation.limits.clone().exporting(relation.node);
+        limits = evaluation.limits.clone().exporting(&evaluation.program.program, relation.node);
         exporting = Evaluation { limits: &limits, ..*evaluation };
         &exporting
     } else {
