@@ -110,7 +110,12 @@ pub struct Table {
     groupings: std::sync::OnceLock<Box<[std::sync::OnceLock<Arc<Grouping>>]>>,
     /// For each column, its distinct values in order, once something has read it.
     sorted: std::sync::OnceLock<Box<[std::sync::OnceLock<Arc<[Cell]>>]>>,
+    /// Its finest split into groups of columns whose product it is, once something has read it.
+    factors: std::sync::OnceLock<Arc<Factors>>,
 }
+
+/// A table's finest split into groups of columns whose product it is: for each column the place of its group, and for each group the number of distinct rows of its columns.
+pub type Factors = (Vec<u8>, Vec<u64>);
 
 /// How keys group a table's rows: the dense id of each row's key in order of first appearance, and the place of the first row at each key.
 pub type Grouping = (Vec<u32>, Vec<u32>);
@@ -172,7 +177,7 @@ impl Table {
     /// The table of `cells`, whose rows are distinct.
     pub fn new(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
         let len = cells.len().checked_div(arity).unwrap_or(0);
-        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
+        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
     }
 
     /// A hash of the set of rows, which their order does not change.
@@ -241,11 +246,16 @@ impl Table {
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
-        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
+        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
         self.cells.chunks_exact(self.arity.max(1))
+    }
+
+    /// The table's finest split into groups of columns whose product it is, which `make` gives the first time something asks.
+    pub fn factors(&self, make: impl FnOnce() -> Factors) -> Arc<Factors> {
+        self.factors.get_or_init(|| Arc::new(make())).clone()
     }
 }
 
