@@ -2428,6 +2428,7 @@ fn rows_of(value: &Val) -> Option<u64> {
         Val::None => None,
         Val::Empty => Some(0),
         Val::Boxes(boxes) => Some(boxes.rows()),
+        Val::Joined(joined) => Some(joined.rows()),
         Val::Rows(parts) => Some(parts.iter().fold(1u64, |count, part| count.saturating_mul(part.table.len as u64))),
     }
 }
@@ -2508,7 +2509,7 @@ impl<'a> Walker<'a> {
         match value {
             Val::None => 0,
             Val::Empty => 1,
-            Val::Rows(_) | Val::Boxes(_) => {
+            Val::Rows(_) | Val::Boxes(_) | Val::Joined(_) => {
                 let hash = value.hash();
                 if let Some(found) = self.value_index.get(&hash) {
                     return *found;
@@ -2524,13 +2525,13 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The id of the value at `id` with the rows of `inside` written out, unless `step` takes what it needs from the boxes they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells.
+    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells.
     fn written_id(&mut self, step: &Step, id: u32, first: bool) -> u32 {
-        let Val::Boxes(boxes) = &self.values[id as usize] else { return id };
-        if if first { boxes.reads(step) } else { boxes.reads_second(step) } {
+        let held = &self.values[id as usize];
+        if !held.is_lazy() || held.lazy_reads(step, first) {
             return id;
         }
-        let value = boxes.written();
+        let value = held.written();
         // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
         let cells = match &value {
             Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
@@ -2541,13 +2542,10 @@ impl<'a> Walker<'a> {
         written
     }
 
-    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` that `step` would write out past `CELL_CAP` cells.
+    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
     fn has_no_value(&self, step: &Step, id: u32) -> bool {
-        match &self.values[id as usize] {
-            Val::None => true,
-            Val::Boxes(boxes) => !boxes.reads(step) && !boxes.fits(),
-            _ => false,
-        }
+        let held = &self.values[id as usize];
+        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits())
     }
 
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
@@ -2600,10 +2598,27 @@ impl<'a> Walker<'a> {
                 return (found, 0);
             }
         }
+        // The count of distinct tuples of a `join`'s rows is read from its sides, with no tuples written.
+        if !number {
+            let joined = match &self.values[id as usize] {
+                Val::Joined(joined) => Some(joined.clone()),
+                _ => None,
+            };
+            if let Some(joined) = joined {
+                crate::bounds::begin();
+                if let Some(found) = joined.count_of(step) {
+                    crate::bounds::end(false);
+                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                }
+            }
+        }
+        // The count of a `join` or an `antijoin` is read from its sides' histograms, with no rows written. Their sides are written where they stand as the rows of `inside` or of a `join`.
         if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
-            let first = self.values[id as usize].clone();
-            let second = self.values[b as usize].clone();
             crate::bounds::begin();
+            let first_id = self.written_id(step, id, true);
+            let second_id = self.written_id(step, b, false);
+            let first = self.values[first_id as usize].clone();
+            let second = self.values[second_id as usize].clone();
             if let Some(found) = self.eval.count(step, &[&first, &second]) {
                 crate::bounds::end(id == 0 || b == 0);
                 return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
@@ -3015,8 +3030,8 @@ impl Walker<'_> {
 
 /// The word of a relation's one number, where it has one row.
 fn number_word(value: &Val) -> u32 {
-    // The rows of `inside` have three columns at least.
-    if matches!(value, Val::Boxes(_)) {
+    // The rows of `inside` have three columns at least, and a number stands in a relation of one column.
+    if value.is_lazy() {
         return 0;
     }
     let Some(table) = flat(value) else { return 0 };

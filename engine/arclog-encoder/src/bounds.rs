@@ -19,7 +19,7 @@ pub enum Bound {
     BoxesGuard,
     /// A side of a `join`, as a product of parts, passes `CELL_CAP` cells.
     JoinSide,
-    /// The rows that a `join` builds pass `CELL_CAP` cells.
+    /// The rows of a `join` that an operator reads, written out or as the tuples at the columns it names, pass `CELL_CAP` cells.
     JoinOutput,
     /// A side of an `antijoin` passes `CELL_CAP` cells.
     AntijoinSide,
@@ -27,7 +27,7 @@ pub enum Bound {
     SelectSide,
     /// A side or the output of a `union` passes `CELL_CAP` cells.
     Union,
-    /// The rows that a count of a `join` stands for pass `CELL_CAP` cells.
+    /// The groups that a count over a `join` stands for pass `CELL_CAP` cells, or the work of counting the distinct tuples of its rows passes its bound.
     CountOutput,
     /// A product of parts that `flat` writes passes 2^18 rows.
     Flat,
