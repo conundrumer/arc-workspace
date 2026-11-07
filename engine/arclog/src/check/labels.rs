@@ -228,10 +228,30 @@ fn kept(body: &Body) -> Vec<LabelId> {
     out
 }
 
+/// The labels that a read in `form_body` may name: those its context gives
+/// it, and `top`, the labels its list keeps.
+fn visible_labels(form_body: &FormBody<'_>, top: &[LabelId]) -> StableHashSet<LabelId> {
+    form_body.given.iter().chain(&form_body.columns).chain(&form_body.fields).chain(top).copied().collect()
+}
+
+/// The labels that a head site of the input written last in `form`, a form
+/// with an input in progress or complete, may read: the labels visible to
+/// the input's body in `refusals`, which refuses a head site that reads any
+/// other label with [`READ_OUTSIDE`]. The labels depend on the form's key
+/// clause and the input's body, which the input's head leaves as they are,
+/// so a label this gives no head site may read is refused wherever the head
+/// reads it and whatever else the head holds. It is none where `form` has no
+/// input.
+pub fn head_readable_labels(form: &Form) -> Option<StableHashSet<LabelId>> {
+    let bodies = form_bodies(form);
+    let form_body = bodies.iter().rev().find(|body| body.head().is_some())?;
+    Some(visible_labels(form_body, &kept(form_body.body.value())))
+}
+
 /// Pushes onto `refused` each refusal of `form_body`.
 fn refusals(form_body: &FormBody<'_>, refused: &mut Vec<(&'static str, NodePath)>) {
     let top = kept(form_body.body.value());
-    let visible: StableHashSet<LabelId> = form_body.given.iter().chain(&form_body.columns).chain(&form_body.fields).chain(&top).copied().collect();
+    let visible = visible_labels(form_body, &top);
     list(&list_of(form_body.body.value(), &form_body.at), &visible, refused);
     each_label_use_at(NodeRef::Body(form_body.body.value()), &form_body.at, &mut |at, use_| {
         if let LabelUse::Key(label) = use_ {

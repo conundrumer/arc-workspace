@@ -4,11 +4,11 @@
 
 use super::reads::{form_reads, forms_within, FormRead};
 use super::types::{component, result};
-use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
+use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::safety::body_labels;
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};
-use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, LibName, TypeParameter};
+use crate::program::{Form, Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, LabelId, OutputName, OutputOwner, PortName, RelationRef};
+use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, LibName, Registry, TypeParameter};
 use crate::resolver::ResolvedProgram;
 use crate::types::{each_site_label, use_label};
 
@@ -102,8 +102,7 @@ impl Check for InstanceInputsCheck {
 /// `docs/arclog/arclog.md#instance` gives. The evaluator reads the same
 /// columns ([`crate::eval::init_form`]).
 fn headless_column(port: &InputPort, written: &InstanceInput, unit: &[&TypeParameter]) -> Option<String> {
-    let binds_nothing = |column: &Column| matches!(&column.ty, ColumnType::Parameter(parameter) if parameter.bound.is_none() && unit.contains(&parameter));
-    let column = port.port.columns.iter().find(|column| !is_key(column) && !binds_nothing(column) && !written.head.iter().any(|site| site.column == column.name))?;
+    let column = port.port.columns.iter().find(|column| must_have_site(column, unit) && !written.head.iter().any(|site| site.column == column.name))?;
     Some(format!("the input writes no head site on column {:?}", column.name))
 }
 
@@ -120,6 +119,82 @@ fn empty_counted_head(component: &LibName, written: &InstanceInput) -> Option<&'
     (counted && written.head.is_empty()).then_some(
         "the head of a `Cardinality` instance's `member` input, or of an `Excess` instance's `plus` or `minus` input, holds a site, since such an input of no column holds at most one row at each key, so the count of its rows is 0 or 1",
     )
+}
+
+/// Whether an input must write a head site on `column`, a column of its
+/// port, where `unit` holds the type parameters that no place of its form
+/// binds: each column but `key` and a column of an unbounded parameter of
+/// `unit`.
+fn must_have_site(column: &Column, unit: &[&TypeParameter]) -> bool {
+    let binds_nothing = matches!(&column.ty, ColumnType::Parameter(parameter) if parameter.bound.is_none() && unit.contains(&parameter));
+    !is_key(column) && !binds_nothing
+}
+
+/// What the form's other nodes fix of the head of the input written last in
+/// an `INIT` form, which the search of `Decoder::completes_projection` reads
+/// before it writes the head.
+#[derive(Clone, Debug)]
+pub struct HeadNeeds {
+    /// For each column of the input's port, in the port's order, whether the
+    /// head must hold a site on it in every completion.
+    ///
+    /// [`headless_column`] refuses a head with no site on a column for which
+    /// [`must_have_site`] holds. That predicate reads the column and `unit`,
+    /// the parameters onto which no place of the form projects. A site
+    /// written later in the head, or in a later input, makes a place of the
+    /// form project onto its parameter, and no node removes one, so `unit`
+    /// of a completion is a subset of `unit` of the form as it stands. A
+    /// column that must have a site at the form as it stands must have one in
+    /// each completion, and a head that closes the column with no site is
+    /// refused in each completion, whatever sites follow. A column of an
+    /// unbounded parameter that `unit` holds is marked as one that needs
+    /// no site, since a site on another column of that parameter, written
+    /// later, makes it need one.
+    pub required: Vec<bool>,
+    /// The labels of the key body, where the input stands in the key clause
+    /// and the form's other nodes leave it a broadcast: its body names no
+    /// label of the key body and reads no output of any instance, so
+    /// [`group_fault`] refuses it unless a label of its head is one of these.
+    /// None where its body names such a label or reads such an output, or
+    /// where it stands outside the key clause.
+    ///
+    /// [`group_fault`] reads the labels of the input's body and of its head
+    /// sites against the labels of the key body, and the reads of the input's
+    /// atoms for an output of the instance. A head label is the only
+    /// reading that the head adds. The body's labels are those the form
+    /// holds, and no node written after the body changes them. A body that
+    /// reads no output of any instance reads none of its own instance's.
+    pub key_labels: Option<Vec<LabelId>>,
+}
+
+/// The needs of the head of the input written last in `form`, where `form`
+/// is an `INIT` form whose component declares the input; none otherwise.
+pub fn head_needs(registry: &Registry, form: &Form) -> Option<HeadNeeds> {
+    let Form::Instance(instance) = form else { return None };
+    let instance = instance.value();
+    let component = component(registry, &instance.component)?;
+    let (_, keyed, written) = inputs_at(instance).into_iter().last()?;
+    let port = component.inputs.iter().find(|declared| declared.port.name == written.name)?;
+    let sites = binding_sites(instance, &component.inputs);
+    let unit = unbound(&component.type_parameters, &sites);
+    let required = port.port.columns.iter().map(|column| must_have_site(column, &unit)).collect();
+    let key_labels = instance.key.as_ref().filter(|_| keyed).and_then(|key| {
+        let key_labels = body_labels(key.value().key.body.value());
+        let named_in_body = body_labels(written.body.value());
+        let mut reads_output = false;
+        each_node(NodeRef::Body(written.body.value()), &NodePath::default(), &mut |node, _| {
+            let NodeRef::Conjunct(conjunct) = node else { return };
+            let Some(atom) = conjunct.atom() else { return };
+            reads_output |= matches!(&atom.value().relation, RelationRef::Output(OutputName { of: OutputOwner::Instance(_), .. }));
+        });
+        if reads_output || named_in_body.iter().any(|label| key_labels.contains(label)) {
+            return None;
+        }
+        let mut labels: Vec<LabelId> = key_labels.into_iter().collect();
+        labels.sort_by_key(|label| label.0);
+        Some(labels)
+    });
+    Some(HeadNeeds { required, key_labels })
 }
 
 /// Why `written`, an input of an instance whose key is `key`, stands in the

@@ -21,7 +21,8 @@
 //! completion of the constraint passes the checks (`Decoder::completes`), and a
 //! token whose state stands in the projection of an instance input only where
 //! some completion of the projection does (`Decoder::completes_projection`),
-//! or where the search spends its steps. Its interface
+//! which the search of `projection_search` decides, and refuses with no
+//! verdict only where it spends its cap of steps. Its interface
 //! beside the mask, in `interface`, gives the rows of the body so far and the
 //! consistency test at an `OUT` form's end, and its batch form, in
 //! `batch`, steps many decodes at once, and its projections of the body so far,
@@ -50,6 +51,7 @@ pub use atoms::{add_atom_verdicts, atom_verdicts, CandidateAtoms};
 pub mod program_read;
 mod state;
 mod prefix_key;
+mod projection_search;
 mod projections;
 
 pub use batch::step_batch;
@@ -820,9 +822,7 @@ impl<'a> Decoder<'a> {
             self.completes(&state, checks, &reads_example, &memo.order)?;
         } else if state.head_site_completions(usize::MAX).is_some() {
             let _timed = stats::span(Phase::DecodeCompletes);
-            let steps = &mut projection_steps();
-            // A site of one argument first: the sets of labels it can hold are many, and one label passes where any does.
-            self.completes_projection(&state, checks, &reads_example, 1, steps).or_else(|_| self.completes_projection(&state, checks, &reads_example, usize::MAX, steps))?;
+            self.completes_projection(&state, checks, &reads_example)?;
         }
         self.admit_written_dets(token, &state)?;
         Ok((state, forced))
@@ -1045,45 +1045,6 @@ impl<'a> Decoder<'a> {
         Err(refusal)
     }
 
-    /// Whether some completion of the projection of an instance input, or
-    /// of the field of a body site, that stands open in `state` passes the
-    /// checks, or, where none does, the refusal of the last completion
-    /// tried. The completions are the tokens of
-    /// [`state::State::head_site_completions`] with `limit` at each head
-    /// site that stands open or follows, up to the state where the input is
-    /// closed or the field's label stands, which is the one the checks must
-    /// pass. The search is depth-first, and where it has spent `steps` it
-    /// refuses, with a refusal that says the search spent its budget.
-    fn completes_projection(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
-        let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
-        let conflicts = if checks.is_mask() { state.fixed_label_conflicts(self.context.registry, &|relation, column| self.fixed_column_type(checks, relation, column)) } else { Vec::new() };
-        let mut refusal = Refusal::Grammar("a projection has no completion");
-        for token in tokens {
-            if *steps == 0 {
-                return Err(Refusal::Grammar("the completion search of a projection spent its budget"));
-            }
-            *steps -= 1;
-            stats::units(Phase::DecodeCompletes, 1);
-            // The refused label still spends its search step, as the original
-            // refuses it at `check_state` with no deeper search.
-            if matches!(&token, Token::Label(label) if conflicts.contains(label)) {
-                continue;
-            }
-            let next = match state.step(&self.context, &token, reads_example) {
-                Ok((next, _, _)) => next,
-                Err(unexpected) => {
-                    refusal = Refusal::Grammar(unexpected);
-                    continue;
-                }
-            };
-            match self.check_state(&next, Candidate::Any, checks).and_then(|()| self.completes_projection(&next, checks, reads_example, limit, steps)) {
-                Ok(()) => return Ok(()),
-                Err(next) => refusal = next,
-            }
-        }
-        Err(refusal)
-    }
-
     /// [`Decoder::completes`] of the state after `token` from `state`.
     fn completes_with(&self, state: &state::State, token: &Token, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
         stats::units(Phase::DecodeCompletes, 1);
@@ -1092,15 +1053,6 @@ impl<'a> Decoder<'a> {
             Err(unexpected) => Err(Refusal::Grammar(unexpected)),
         }
     }
-}
-
-/// The steps of the completion search of a projection, per token. A token
-/// whose search spends them is refused. `ARCLOG_PROJECTION_STEPS` sets them,
-/// read once; 96 where it is unset or not a number. Every gold program of the
-/// ramp and training corpora decodes within 64.
-fn projection_steps() -> usize {
-    static STEPS: OnceLock<usize> = OnceLock::new();
-    *STEPS.get_or_init(|| std::env::var("ARCLOG_PROJECTION_STEPS").ok().and_then(|v| v.parse().ok()).unwrap_or(96))
 }
 
 /// What the candidates of one mask share, each read of the state before

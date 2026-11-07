@@ -516,6 +516,27 @@ enum Offer {
 /// The most fields of a record that [`State::head_site_completions`] offers.
 const FIELDS_TRIED: u32 = 1;
 
+/// Where the head site of an instance input stands, as
+/// [`State::open_projection`] gives it.
+#[derive(Clone, Debug)]
+pub(super) struct OpenProjection {
+    /// The index, among the port's columns, of the column whose site stands
+    /// open.
+    pub(super) column: usize,
+    /// The indices of the columns before it that the head closed with no site.
+    pub(super) without_site: Vec<usize>,
+    /// Whether the instance is a `DEMONSTRATED` form's.
+    pub(super) demonstrated: bool,
+    /// The arguments the open site holds.
+    pub(super) args: usize,
+    /// Whether the label of a field of the open site's record stands next.
+    pub(super) field_open: bool,
+    /// Whether the `END` of the open site's record is written.
+    pub(super) record_ended: bool,
+    /// Whether the open site's column is a type parameter's.
+    pub(super) parameter: bool,
+}
+
 impl State {
     pub(super) fn new() -> State {
         State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), opened: None }
@@ -734,6 +755,25 @@ impl State {
     /// holds, as the label is not given, so a later site cannot undo it. A
     /// form with an `OR`, a list or a `NOT` body gives none.
     pub(super) fn fixed_label_conflicts(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> Vec<u32> {
+        self.label_conflicts(registry, column_type, None)
+    }
+
+    /// [`State::fixed_label_conflicts`] for the head site of `column`, a
+    /// column of the port of the input whose head site stands on top, in
+    /// place of the site on top: the labels that a site on `column` of a fixed
+    /// scalar type refuses. The labels depend on the bodies of the form and
+    /// the column's type alone, and the head sites written leave them as they
+    /// are, so they are the same at each head site of the column, whatever
+    /// sites of the input's head are written before it. None where no head
+    /// site stands on top.
+    pub(super) fn head_label_conflicts(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>, column: &ColumnName) -> Vec<u32> {
+        match self.stack.last() {
+            Some(Frame::HeadSite(_)) => self.label_conflicts(registry, column_type, Some(column)),
+            _ => Vec::new(),
+        }
+    }
+
+    fn label_conflicts(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>, head_column: Option<&ColumnName>) -> Vec<u32> {
         if self.stack.iter().any(|frame| matches!(frame, Frame::Or(_) | Frame::Lists(_) | Frame::Body(BodyFrame { close: Close::Not, .. }))) {
             return Vec::new();
         }
@@ -745,10 +785,11 @@ impl State {
                 }
                 (column_type(&atom.relation, &site.column), None, Some(atom))
             }
-            Some(Frame::HeadSite(site)) if site.field.is_none() && site.args.is_empty() => {
+            Some(Frame::HeadSite(site)) if head_column.is_some() || (site.field.is_none() && site.args.is_empty()) => {
                 let Some(Frame::Input(input)) = self.stack.iter().rev().nth(1) else { return Vec::new() };
                 let port = &self.component_from_input(registry).inputs[input.position].port;
-                let expected = port.columns.iter().find(|column| column.name == site.column).and_then(|column| scalar_fixed(&column.ty));
+                let named = head_column.unwrap_or(&site.column);
+                let expected = port.columns.iter().find(|column| column.name == *named).and_then(|column| scalar_fixed(&column.ty));
                 (expected, input.body.as_ref().map(Node::value), None)
             }
             _ => return Vec::new(),
@@ -995,6 +1036,58 @@ impl State {
             tokens.insert(0, end);
         }
         Some(tokens)
+    }
+
+    /// Whether `limit` shortens the tokens of
+    /// [`State::head_site_completions`] at the head site on top: the site
+    /// holds `limit` arguments or more, its column is a type parameter's, and
+    /// its record is not ended, where `END` stands alone under the limit and
+    /// more tokens stand without it. Some such site holds more tokens than it
+    /// gives when this holds, and none holds more tokens when it does not.
+    pub(super) fn limit_shortens(&self, limit: usize) -> bool {
+        matches!(self.stack.last(), Some(Frame::HeadSite(site)) if site.field.is_none() && !site.record_ended && site.args.len() >= limit && type_parameter(&site.column))
+    }
+
+    /// Where the head site of an instance input stands on top: for the cuts of
+    /// `Decoder::completes_projection`, which read the input's port, its
+    /// columns that closed with no site, and the open site. None where no
+    /// head site stands on top.
+    pub(super) fn open_projection(&self) -> Option<OpenProjection> {
+        let Some(Frame::HeadSite(site)) = self.stack.last() else { return None };
+        let Some(Frame::Input(input)) = self.stack.iter().rev().nth(1) else { return None };
+        let without_site = if input.head.len() == input.column {
+            Vec::new()
+        } else {
+            (0..input.column).filter(|&index| !input.head.iter().any(|written| written.column == input.columns[index])).collect()
+        };
+        Some(OpenProjection {
+            column: input.column,
+            without_site,
+            demonstrated: self.instance().demonstrated,
+            args: site.args.len(),
+            field_open: site.field.is_some(),
+            record_ended: site.record_ended,
+            parameter: type_parameter(&site.column),
+        })
+    }
+
+    /// The labels that the head sites of the input whose head site stands on
+    /// top read, the site on top included, each as many times as it reads it.
+    pub(super) fn head_labels(&self) -> Vec<u32> {
+        let (Some(Frame::HeadSite(open)), Some(Frame::Input(input))) = (self.stack.last(), self.stack.iter().rev().nth(1)) else { return Vec::new() };
+        let current = Site { column: open.column.clone(), value: SiteValue { args: open.args.iter().cloned().collect() } };
+        let mut labels = Vec::new();
+        for site in input.head.iter().chain([&current]) {
+            crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| labels.extend(crate::types::use_label(use_).map(|label| label.0)));
+        }
+        labels
+    }
+
+    /// The names of the columns of the port of the input whose head site
+    /// stands on top, in the port's order.
+    pub(super) fn head_columns(&self, registry: &Registry) -> Vec<ColumnName> {
+        let Some(Frame::Input(input)) = self.stack.iter().rev().nth(1) else { return Vec::new() };
+        self.component_from_input(registry).inputs[input.position].port.columns.iter().map(|column| column.name.clone()).collect()
     }
 
     /// The count of the labels made so far.
